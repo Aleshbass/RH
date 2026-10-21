@@ -11,11 +11,14 @@
  * search and stats queries scan a capped window of the most recent bookings.
  */
 
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { paginationOptsValidator } from "convex/server";
 import { query, mutation, type QueryCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
 import { ensureUserRole } from "../auth";
+import { isPhysioNetworkEligible } from "../physioSetup";
+import { isBookableServiceId } from "../../lib/rehabify-services";
+import { findSlotClash } from "../helpers/slotHolds";
 
 const BOOKING_STATUSES = new Set([
   "pending_payment",
@@ -61,6 +64,11 @@ function fullName(user: Doc<"users"> | null | undefined) {
  * recorded. Derive it so reporting is historically accurate while new bookings persist it.
  */
 function rehabifyShare(booking: Doc<"marketplaceBookings">) {
+  // Standard pricing: after the physio's payout and Paystack's actual fee (once known)
+  if (booking.pricingModel) {
+    const estimate = booking.paystackFeeEstimateKobo ?? 0;
+    return (booking.rehabifyEarnings ?? 0) + estimate - (booking.paystackFeeActualKobo ?? estimate);
+  }
   return booking.rehabifyEarnings ?? (
     booking.joyBookingRoute === "admin_scheduled_virtual" ? booking.totalAmount : booking.platformFee
   );
@@ -73,9 +81,11 @@ async function enrichBooking(ctx: QueryCtx, booking: Doc<"marketplaceBookings">)
   let patientEmail = booking.guestEmail || "";
   let patientPhone = booking.guestPhone || "";
   let isGuest = Boolean(booking.isGuestBooking);
+  // Guest bookings point at a guest user row, which carries the patient's Rehabify ID too
+  const patient = await ctx.db.get(booking.patientId);
+  const patientNumber = patient?.patientNumber ?? null;
 
   if (!booking.isGuestBooking) {
-    const patient = await ctx.db.get(booking.patientId);
     if (patient) {
       patientName = fullName(patient) || patient.email || "Patient";
       patientEmail = patient.email || "";
@@ -121,6 +131,12 @@ async function enrichBooking(ctx: QueryCtx, booking: Doc<"marketplaceBookings">)
     isOnline: booking.isOnline,
     packageSessions: booking.packageSessions,
     conditionLabel: booking.conditionLabel,
+    // Standard pricing
+    serviceId: booking.serviceId,
+    travelZoneName: booking.travelZoneName,
+    travelArea: booking.travelArea,
+    adminAttentionReason: booking.adminAttentionReason,
+    isAccess: Boolean(booking.accessAwardId),
 
     // Status
     bookingStatus: booking.bookingStatus,
@@ -136,6 +152,7 @@ async function enrichBooking(ctx: QueryCtx, booking: Doc<"marketplaceBookings">)
 
     // Patient
     patientId: booking.patientId,
+    patientNumber,
     patientName,
     patientEmail,
     patientPhone,
@@ -207,7 +224,7 @@ export const adminSearchMarketplaceBookings = query({
     // Load each patient and clinician once, however many bookings they have.
     const userIds = new Set<Id<"users">>();
     for (const b of scan) {
-      if (!b.isGuestBooking && b.patientId) userIds.add(b.patientId);
+      if (b.patientId) userIds.add(b.patientId);
       if (b.physiotherapistId) userIds.add(b.physiotherapistId);
     }
     const users = new Map<Id<"users">, Doc<"users"> | null>();
@@ -216,9 +233,9 @@ export const adminSearchMarketplaceBookings = query({
     const matches: Doc<"marketplaceBookings">[] = [];
     for (const b of scan) {
       if (matches.length >= SEARCH_RESULT_LIMIT) break;
-      const haystack: (string | undefined)[] = [b.guestName, b.guestEmail, b.guestPhone, b.paymentReference, b.bookingCode];
+      const patient = users.get(b.patientId);
+      const haystack: (string | undefined)[] = [b.guestName, b.guestEmail, b.guestPhone, b.paymentReference, b.bookingCode, patient?.patientNumber];
       if (!b.isGuestBooking) {
-        const patient = users.get(b.patientId);
         haystack.push(fullName(patient), patient?.email, patient?.phoneNumber);
       }
       if (b.physiotherapistId) haystack.push(fullName(users.get(b.physiotherapistId)));
@@ -341,6 +358,37 @@ export const adminReassignBookingPhysio = mutation({
     if (!newPhysio || newPhysio.role !== "physiotherapist") {
       throw new Error("Target user is not a physiotherapist");
     }
+
+    // Standard-priced bookings: the new physio must deliver this service (mode, zone, Access
+    // opt-in), be free at that time, and the old physio must not have been paid already.
+    const invoice = booking.invoiceId ? await ctx.db.get(booking.invoiceId) : null;
+    if (booking.pricingModel && isBookableServiceId(booking.serviceId)) {
+      const eligible = await isPhysioNetworkEligible(ctx, newPhysioId, {
+        serviceId: booking.serviceId,
+        zoneId: booking.travelZoneId ?? null,
+        access: booking.accessAwardId ? { payoutKobo: booking.payoutKobo ?? 0 } : undefined,
+      });
+      if (!eligible) {
+        throw new ConvexError("That physiotherapist doesn't offer this service in the patient's area (or isn't in the Rehabify network).");
+      }
+      if (booking.sessionDate) {
+        const clash = await findSlotClash(
+          ctx,
+          newPhysioId,
+          { start: booking.sessionDate, end: booking.sessionDate + booking.sessionDuration * 60_000 },
+          { excludeBookingId: booking._id, excludeAppointmentId: booking.appointmentId }
+        );
+        if (clash) throw new ConvexError("That physiotherapist is already booked at this time.");
+      }
+      if (invoice) {
+        const payout = await ctx.db
+          .query("payouts")
+          .withIndex("by_payout_invoice_id", (q) => q.eq("invoiceId", invoice._id))
+          .first();
+        if (payout) throw new ConvexError("The session has already been paid out, so it can't be reassigned.");
+      }
+    }
+    if (invoice) await ctx.db.patch(invoice._id, { physiotherapistId: newPhysioId });
 
     // 1. Update the booking
     await ctx.db.patch(args.bookingId, {

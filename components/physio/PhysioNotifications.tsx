@@ -27,17 +27,30 @@ type NotificationDoc = {
   }
 }
 
-function linkFor(notification: NotificationDoc) {
+/** Physio-portal links opened from the clinic portal go to the same thing there */
+function toClinicPortal(url: string) {
+  const patient = url.match(/^\/dashboard\/physiotherapist\/patients\/([^/?#]+)/)
+  if (patient) return `/dashboard/clinic/patients?patient=${patient[1]}`
+  if (url.startsWith('/dashboard/physiotherapist/billing')) return '/dashboard/clinic/billing'
+  if (url.startsWith('/dashboard/physiotherapist/appointments') || url.startsWith('/dashboard/physiotherapist/calendar')) {
+    return '/dashboard/clinic/appointments'
+  }
+  if (url.startsWith('/dashboard/physiotherapist')) return '/dashboard/clinic'
+  return url
+}
+
+function linkFor(notification: NotificationDoc, portal: 'physio' | 'clinic' = 'physio') {
   const url = notification.payload?.data?.actionUrl || notification.payload?.link
   // Only follow in-app links; anything else stays in the list
-  return url && url.startsWith('/') ? url : null
+  if (!url || !url.startsWith('/')) return null
+  return portal === 'clinic' ? toClinicPortal(url) : url
 }
 
 /**
  * Bell with unread count and the latest notifications. Also toasts a notification that
  * arrives while the page is open.
  */
-export function PhysioNotifications({ className }: { className?: string }) {
+export function PhysioNotifications({ className, portal = 'physio' }: { className?: string; portal?: 'physio' | 'clinic' }) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const notifications = useQuery(api.notifications.getMyNotifications, { limit: 8, includeRead: true }) as
@@ -64,12 +77,12 @@ export function PhysioNotifications({ className }: { className?: string }) {
     if (kind === 'payment_received' || kind === 'payment_confirmed') playSound('paid')
     else if (kind === 'appointment_scheduled' || kind === 'appointment_confirmed' || kind === 'appointment') playSound('booked')
     else if (kind === 'patient_check_in') playSound('receive')
-    const href = linkFor(latest)
+    const href = linkFor(latest, portal)
     toast(latest.payload?.title ?? 'New notification', {
       description: latest.payload?.body,
       action: href ? { label: 'Open', onClick: () => router.push(href) } : undefined,
     })
-  }, [notifications, router])
+  }, [notifications, router, portal])
 
   const openNotification = async (notification: NotificationDoc) => {
     if (!notification.readAt && notification.status !== 'read') {
@@ -77,7 +90,7 @@ export function PhysioNotifications({ className }: { className?: string }) {
         // Stays unread; not worth interrupting the user
       })
     }
-    const href = linkFor(notification)
+    const href = linkFor(notification, portal)
     if (href) {
       setOpen(false)
       router.push(href)

@@ -168,13 +168,14 @@ export const getAllReports = query({
     // Enrich with user details
     const enrichedReports = await Promise.all(
       paginatedReports.map(async (report) => {
-        const [physiotherapist, reporter, reviewer, appointment, booking] = await Promise.all([
+        // Separate awaits: one Promise.all over five different tables is too deep for TypeScript (TS2589)
+        const [physiotherapist, reporter, reviewer] = await Promise.all([
           ctx.db.get(report.physiotherapistId),
           ctx.db.get(report.reporterId),
           report.reviewedBy ? ctx.db.get(report.reviewedBy) : null,
-          report.appointmentId ? ctx.db.get(report.appointmentId) : null,
-          report.bookingId ? ctx.db.get(report.bookingId) : null,
         ]);
+        const appointment = report.appointmentId ? await ctx.db.get(report.appointmentId) : null;
+        const booking = report.bookingId ? await ctx.db.get(report.bookingId) : null;
 
         return {
           ...report,

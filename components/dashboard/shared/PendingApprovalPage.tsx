@@ -8,6 +8,10 @@ import { useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { PhysioGuideVideoModal } from '@/components/dashboard/shared/PhysioGuideVideoModal';
 
+const ROLE_LABELS: Record<string, string> = { physiotherapist: 'physiotherapist', clinic_owner: 'clinic' }
+// Each application is updated from its own onboarding form, which resubmits it for review
+const APPLY_AGAIN_PATH: Record<string, string> = { physiotherapist: '/physiotherapist', clinic_owner: '/clinic-owner' }
+
 interface PendingApprovalPageProps {
   userRole: string
   approvalStatus: 'pending_review' | 'declined'
@@ -54,12 +58,12 @@ export default function PendingApprovalPage({
           <p className="text-gray-600 mb-8 leading-relaxed">
             {isPending ? (
               <>
-                Your {userRole} account is currently <span className="font-semibold text-yellow-700">pending review</span>.
+                Your {ROLE_LABELS[userRole] ?? userRole.replace(/_/g, ' ')} account is currently <span className="font-semibold text-yellow-700">pending review</span>.
                 Our team is verifying your credentials. This typically takes 1-2 business days.
               </>
             ) : (
               <>
-                We regret to inform you that your {userRole} application was <span className="font-semibold text-red-700">declined</span>.
+                We regret to inform you that your {ROLE_LABELS[userRole] ?? userRole.replace(/_/g, ' ')} application was <span className="font-semibold text-red-700">declined</span>.
               </>
             )}
           </p>
@@ -115,10 +119,10 @@ export default function PendingApprovalPage({
 
             {isDeclined && (
               <Button
-                onClick={() => router.push('/role-selection')}
+                onClick={() => router.push(APPLY_AGAIN_PATH[userRole] ?? '/role-selection')}
                 className="w-full h-12 bg-teal-600 hover:bg-teal-700 text-white"
               >
-                Apply Again
+                Update and resubmit
               </Button>
             )}
           </div>

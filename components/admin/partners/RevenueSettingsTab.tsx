@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { useMutation, useQuery } from 'convex/react'
 import { format } from 'date-fns'
 import { Clock, Save, ShieldCheck, Sparkles } from 'lucide-react'
@@ -8,11 +9,11 @@ import { toast } from 'sonner'
 import { api } from '@/convex/_generated/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cardClass, ConfirmDialog, inputClass, Panel, primaryButtonClass, StatusBadge } from '@/components/admin/ui'
+import { paystackFeeEstimateKobo } from '@/lib/rehabify-services'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
-import { Callout, errorMessage, hintClass, labelClass, LoadingBlock, selectContentClass } from './shared'
+import { Callout, errorMessage, hintClass, labelClass, linkClass, LoadingBlock } from './shared'
 
 type InboundBearer = 'physiotherapist' | 'patient' | 'rehabify' | 'split_proportional'
 type OutboundBearer = 'physiotherapist' | 'partner' | 'rehabify' | 'split_proportional'
@@ -101,13 +102,18 @@ function SimulationCard({
   )
 }
 
+/** The standard-pricing example in the preview (serviceTariffs.adminGetTariffs). */
+type TariffExample = { services: { id: string; name: string; priceKobo: number; payoutKobo: number; active: boolean }[] }
+
 export function RevenueSettingsTab() {
   const settings = useQuery(api.platformSettings.getPlatformRevenueSettings)
   const updateSettings = useMutation(api.platformSettings.updatePlatformRevenueSettings)
+  const tariffs = useQuery(api.serviceTariffs.adminGetTariffs) as unknown as TariffExample | undefined
 
   const [physioPercent, setPhysioPercent] = useState(80)
   const [rehabifyPercent, setRehabifyPercent] = useState(10)
   const [partnerPercent, setPartnerPercent] = useState(10)
+  // No longer edited here (standard pricing replaced them); saved back unchanged
   const [virtualRateNaira, setVirtualRateNaira] = useState(6000)
   const [inPersonRateNaira, setInPersonRateNaira] = useState(10000)
   const [feeBearerInbound, setFeeBearerInbound] = useState<InboundBearer>('physiotherapist')
@@ -136,10 +142,6 @@ export function RevenueSettingsTab() {
       toast.error(`Total percentage must equal 100%. Current sum: ${total}%`)
       return false
     }
-    if (virtualRateNaira <= 0 || inPersonRateNaira <= 0) {
-      toast.error('Rates must be greater than zero')
-      return false
-    }
     return true
   }
 
@@ -156,7 +158,7 @@ export function RevenueSettingsTab() {
         paystackFeeBearerOutbound: feeBearerOutbound,
       })
       playSound('success')
-      toast.success('Revenue split and pricing saved. Changes are live platform-wide.')
+      toast.success('Revenue split saved. Changes are live platform-wide.')
     } catch (error) {
       playSound('error')
       toast.error(errorMessage(error, 'Failed to update revenue settings'))
@@ -166,21 +168,28 @@ export function RevenueSettingsTab() {
   if (settings === undefined) return <LoadingBlock className="h-64" />
 
   const share = (amount: number, percent: number) => Math.round((amount * percent) / 100)
-  const inboundFee = (amount: number) => Math.min(2000, Math.round(amount * 0.015))
-  const bookingRows = (amount: number) => [
-    { label: `Physiotherapist (${physioPercent}%)`, value: naira(share(amount, physioPercent)) },
-    { label: `Rehabify (${rehabifyPercent}%)`, value: naira(share(amount, rehabifyPercent)) },
-    { label: `Referring partner gross (${partnerPercent}%)`, value: naira(share(amount, partnerPercent)) },
-    { label: 'Paystack inbound (1.5%)', value: `${naira(inboundFee(amount))} (${feeBearerInbound.replace(/_/g, ' ')})`, tone: 'muted' as const },
-  ]
-  const estNet = (amount: number) => naira(Math.max(0, share(amount, partnerPercent) - (feeBearerOutbound === 'partner' ? 10 : 0)))
+
+  // Standard pricing example: fixed physio payout, partner % of the price before travel, Rehabify absorbs Paystack
+  const example =
+    tariffs?.services.find((s) => s.id === 'virtual_assessment' && s.active) ?? tariffs?.services.find((s) => s.active) ?? null
+  const examplePrice = example ? example.priceKobo / 100 : 0
+  const examplePayout = example ? example.payoutKobo / 100 : 0
+  const exampleFee = example ? paystackFeeEstimateKobo(example.priceKobo) / 100 : 0
+  const examplePartner = share(examplePrice, partnerPercent)
 
   return (
     <div className="space-y-6">
-      <Callout tone="info" title="Platform revenue split and pricing">
-        Sets how each booking is shared between physiotherapists, Rehabify and the referring partner, and the default prices for virtual and in-person
-        sessions. Physiotherapists can set their own higher in-person rate. Saving applies straight away to checkout, payment reconciliation and the
-        partner portal. A signed partner contract overrides the default split for that partner.
+      <Callout tone="info" title="Partner revenue split">
+        Sets the default commission a referring partner earns on each paid booking. A signed partner contract overrides it for that partner. Saving
+        applies straight away to payment reconciliation and the partner portal.
+        <span className="mt-1 block">
+          Marketplace prices and physiotherapist payouts now live in{' '}
+          <Link href="/dashboard/admin/service-tariffs" className={linkClass}>
+            Admin › Pricing & payouts
+          </Link>
+          , and Rehabify absorbs Paystack&apos;s fee. On those bookings the physiotherapist gets their fixed payout and the partner percentage is
+          worked out on the session price before any travel charge. The physiotherapist and Rehabify percentages only apply to older bookings.
+        </span>
         {settings.isCustom && 'updatedBy' in settings && (
           <span className="mt-1 block text-neutral-500 dark:text-neutral-400">
             Last saved {format(settings.updatedAt, 'd MMM yyyy, h:mm a')}
@@ -216,77 +225,10 @@ export function RevenueSettingsTab() {
             </div>
           </Panel>
 
-          <Panel title="Default session prices" description="Used when patients book virtual or in-person care." bodyClassName="space-y-4 px-5 pb-5 pt-3">
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div className="space-y-1.5">
-                <label htmlFor="rate-virtual" className={labelClass}>
-                  Virtual session (₦)
-                </label>
-                <Input
-                  id="rate-virtual"
-                  type="number"
-                  min="1000"
-                  step="500"
-                  value={virtualRateNaira}
-                  onChange={(e) => setVirtualRateNaira(Number(e.target.value))}
-                  className={cn(inputClass, 'tabular-nums')}
-                />
-                <p className={hintClass}>Tele-physio consultation (default ₦6,000)</p>
-              </div>
-              <div className="space-y-1.5">
-                <label htmlFor="rate-in-person" className={labelClass}>
-                  In-person baseline (₦)
-                </label>
-                <Input
-                  id="rate-in-person"
-                  type="number"
-                  min="5000"
-                  step="500"
-                  value={inPersonRateNaira}
-                  onChange={(e) => setInPersonRateNaira(Number(e.target.value))}
-                  className={cn(inputClass, 'tabular-nums')}
-                />
-                <p className={hintClass}>Minimum; physios can set a higher rate on their dashboard</p>
-              </div>
-            </div>
-            <Callout tone="warning">
-              Bookings at a physiotherapist&apos;s custom rate are split with the same percentages in real time.
-            </Callout>
-          </Panel>
-
-          <Panel title="Fees and stamp duty" description="Who absorbs payment collection charges and outbound transfer levies." bodyClassName="space-y-4 px-5 pb-5 pt-3">
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div className="space-y-1.5">
-                <span className={labelClass}>Inbound Paystack fee (1.5%, capped ₦2k)</span>
-                <Select value={feeBearerInbound} onValueChange={(value) => setFeeBearerInbound(value as InboundBearer)}>
-                  <SelectTrigger className={cn(inputClass, 'w-full')}>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className={selectContentClass}>
-                    <SelectItem value="physiotherapist">Physiotherapist absorbs (standard)</SelectItem>
-                    <SelectItem value="patient">Patient pays at checkout</SelectItem>
-                    <SelectItem value="rehabify">Rehabify absorbs</SelectItem>
-                    <SelectItem value="split_proportional">Split proportionally</SelectItem>
-                  </SelectContent>
-                </Select>
-                <p className={hintClass}>Collection fee on card / online checkouts.</p>
-              </div>
-              <div className="space-y-1.5">
-                <span className={labelClass}>Outbound transfer and stamp duty</span>
-                <Select value={feeBearerOutbound} onValueChange={(value) => setFeeBearerOutbound(value as OutboundBearer)}>
-                  <SelectTrigger className={cn(inputClass, 'w-full')}>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className={selectContentClass}>
-                    <SelectItem value="partner">Partner commission (standard)</SelectItem>
-                    <SelectItem value="physiotherapist">Physiotherapist payout</SelectItem>
-                    <SelectItem value="rehabify">Rehabify absorbs</SelectItem>
-                    <SelectItem value="split_proportional">Split proportionally</SelectItem>
-                  </SelectContent>
-                </Select>
-                <p className={hintClass}>₦10 / ₦50 Paystack transfer fee plus ₦50 stamp duty.</p>
-              </div>
-            </div>
+          <Panel title="Fees and stamp duty" description="Payment collection charges and outbound transfer levies." bodyClassName="space-y-4 px-5 pb-5 pt-3">
+            <p className="text-xs text-neutral-600 dark:text-neutral-300">
+              Rehabify absorbs Paystack&apos;s collection fee, so patients pay the published price and nothing is added at checkout.
+            </p>
             <Callout tone="info" title="Stamp duty (EMTL)">
               Under the Finance Act and Electronic Money Transfer Levy, electronic transfers of ₦10,000 and above attract a ₦50 stamp duty. It is shown
               as its own deduction on every partner invoice.
@@ -318,18 +260,18 @@ export function RevenueSettingsTab() {
               </h3>
               <span className="text-[11px] text-neutral-500 dark:text-neutral-400">Updates as you type</span>
             </div>
-            <SimulationCard
-              title="Virtual session"
-              amount={virtualRateNaira}
-              rows={bookingRows(virtualRateNaira)}
-              net={{ label: 'Est. net partner payout', value: estNet(virtualRateNaira) }}
-            />
-            <SimulationCard
-              title="In-person baseline"
-              amount={inPersonRateNaira}
-              rows={bookingRows(inPersonRateNaira)}
-              net={{ label: 'Est. net partner payout', value: estNet(inPersonRateNaira) }}
-            />
+            {example && (
+              <SimulationCard
+                title={`${example.name}, referred by a partner`}
+                amount={examplePrice}
+                rows={[
+                  { label: 'Physiotherapist (fixed payout)', value: naira(examplePayout) },
+                  { label: `Referring partner (${partnerPercent}%)`, value: naira(examplePartner) },
+                  { label: 'Paystack fee (Rehabify absorbs)', value: `~${naira(exampleFee)}`, tone: 'muted' },
+                ]}
+                net={{ label: 'Rehabify keeps', value: naira(examplePrice - examplePayout - examplePartner - exampleFee) }}
+              />
+            )}
             <SimulationCard
               title="Partner batch example"
               amount={100000}
@@ -375,7 +317,7 @@ export function RevenueSettingsTab() {
         open={confirmOpen}
         onOpenChange={setConfirmOpen}
         title="Save platform revenue settings?"
-        description={`New bookings will use ${physioPercent}% / ${rehabifyPercent}% / ${partnerPercent}%, ${naira(virtualRateNaira)} virtual and ${naira(inPersonRateNaira)} in-person. This applies platform-wide straight away.`}
+        description={`Referring partners without a contract will earn ${partnerPercent}% (older bookings split ${physioPercent}% / ${rehabifyPercent}% / ${partnerPercent}%). This applies platform-wide straight away.`}
         confirmLabel="Save settings"
         onConfirm={save}
       >

@@ -1,6 +1,7 @@
-import { v } from "convex/values";
-import { query, mutation, internalQuery } from "./_generated/server";
+import { ConvexError, Infer, v } from "convex/values";
+import { query, mutation, internalQuery, MutationCtx } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
+import { ensureUserNumbers } from "./helpers/rehabifyIds";
 
 /**
  * Validate a patient invitation code
@@ -88,11 +89,15 @@ export const getMyPhysiotherapists = query({
     }
 
     // Get patient-physiotherapist relationships
-    const relationships = await ctx.db
+    const activeRelationships = await ctx.db
       .query("patientPhysiotherapistRelationships")
       .withIndex("by_patient", (q) => q.eq("patientId", user._id))
       .filter((q) => q.eq(q.field("status"), "active"))
       .collect();
+    // Each clinician once, even if older data linked them twice
+    const relationships = [
+      ...new Map(activeRelationships.map((r) => [r.physiotherapistId, r] as const)).values(),
+    ];
 
     // Get physiotherapist details for each relationship
     const physiotherapists = await Promise.all(
@@ -104,7 +109,7 @@ export const getMyPhysiotherapists = query({
         const physiotherapistProfile = await ctx.db
           .query("physiotherapistProfiles")
           .withIndex("by_user_id", (q) => q.eq("userId", physiotherapist._id))
-          .unique();
+          .first();
 
         // Get clinic information if applicable
         let clinicInfo = null;
@@ -133,117 +138,167 @@ export const getMyPhysiotherapists = query({
   },
 });
 
+const patientDataValidator = v.object({
+  firstName: v.string(),
+  lastName: v.string(),
+  email: v.string(),
+  phoneNumber: v.optional(v.string()),
+  dateOfBirth: v.optional(v.string()),
+  gender: v.optional(
+    v.union(
+      v.literal("male"),
+      v.literal("female"),
+      v.literal("other"),
+      v.literal("prefer_not_to_say")
+    )
+  ),
+  medicalHistory: v.optional(v.string()),
+  emergencyContact: v.optional(v.string()),
+});
+
 /**
- * Accept a patient invitation
+ * Accept a patient invitation for the signed-in account (acceptInvitation and
+ * completePatientOnboarding). Only a new or patient account can accept, so a clinician who
+ * opens the link is never turned into a patient. An existing patient keeps their record:
+ * their profile and any earlier link with this clinician are reused, never duplicated.
  */
-export const acceptInvitation = mutation({
-  args: {
-    invitationCode: v.string(),
-    patientData: v.object({
-      firstName: v.string(),
-      lastName: v.string(),
-      email: v.string(),
-      phoneNumber: v.optional(v.string()),
-      dateOfBirth: v.optional(v.string()),
-      gender: v.optional(
-        v.union(
-          v.literal("male"),
-          v.literal("female"),
-          v.literal("other"),
-          v.literal("prefer_not_to_say")
-        )
-      ),
-      medicalHistory: v.optional(v.string()),
-      emergencyContact: v.optional(v.string()),
-    }),
-  },
-  handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
+async function acceptPatientInvitation(
+  ctx: MutationCtx,
+  invitationCode: string,
+  patientData: Infer<typeof patientDataValidator>
+) {
+  const identity = await ctx.auth.getUserIdentity();
+  if (!identity) {
+    throw new ConvexError("Please sign in to accept this invitation.");
+  }
+
+  const invitation = await ctx.db
+    .query("patientInvitations")
+    .withIndex("by_code", (q) => q.eq("code", invitationCode))
+    .first();
+
+  if (!invitation) {
+    throw new ConvexError("This invitation link isn't valid.");
+  }
+
+  let user = await ctx.db
+    .query("users")
+    .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+    .unique();
+
+  if (invitation.status === "accepted") {
+    // Opening the link again after accepting it is fine
+    if (user && invitation.patientUserId === user._id) {
+      return { success: true, patientId: user._id, message: "Invitation already accepted" };
     }
+    throw new ConvexError("This invitation has already been used.");
+  }
 
-    // Validate invitation
-    const invitation = await ctx.db
-      .query("patientInvitations")
-      .withIndex("by_code", (q) => q.eq("code", args.invitationCode))
-      .unique();
+  if (invitation.status !== "pending" || invitation.expiresAt < Date.now()) {
+    throw new ConvexError("This invitation has expired. Ask your physiotherapist to send a new one.");
+  }
 
-    if (!invitation) {
-      throw new Error("Invalid invitation code");
-    }
+  if (user?.role && user.role !== "patient") {
+    throw new ConvexError(
+      `You're signed in with a ${user.role.replace(/_/g, " ")} account. Sign out, then open the link again with the patient's own account.`
+    );
+  }
 
-    if (invitation.expiresAt < Date.now()) {
-      throw new Error("Invitation has expired");
-    }
+  // Emails are case-insensitive; an invitation without an email can be accepted by its holder
+  const invitedEmail = invitation.patientEmail?.trim().toLowerCase();
+  const signedInEmail = (user?.email ?? (typeof identity.email === "string" ? identity.email : ""))
+    .trim()
+    .toLowerCase();
+  if (invitedEmail && signedInEmail && signedInEmail !== invitedEmail) {
+    throw new ConvexError(
+      `This invitation was sent to ${invitation.patientEmail}. Sign in with that email to accept it.`
+    );
+  }
 
-    if (invitation.status === "accepted") {
-      throw new Error("Invitation has already been accepted");
-    }
-
-    // Create or update user
-    let user = await ctx.db
-      .query("users")
-      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
-      .unique();
-
-    if (!user) {
-      // Create new user (patient by default via invitation)
-      const userId = await ctx.db.insert("users", {
-        clerkId: identity.subject,
-        email: args.patientData.email,
-        firstName: args.patientData.firstName,
-        lastName: args.patientData.lastName,
-        role: "patient",
-        phoneNumber: args.patientData.phoneNumber,
-        imageUrl: identity.pictureUrl,
-        onboarded: true,
-      });
-      
-      // Get the created user
-      user = await ctx.db.get(userId);
-      if (!user) {
-        throw new Error("Failed to create user");
-      }
-    } else {
-      // Ensure existing account is provisioned as a patient
-      await ctx.db.patch(user._id, {
-        role: "patient",
-        onboarded: true,
-        firstName: user.firstName ?? args.patientData.firstName,
-        lastName: user.lastName ?? args.patientData.lastName,
-        email: user.email ?? args.patientData.email,
-        phoneNumber: user.phoneNumber ?? args.patientData.phoneNumber,
-      });
-      user = await ctx.db.get(user._id);
-      if (!user) {
-        throw new Error("User not found after update");
-      }
-    }
-
-    // Narrow nullability for TypeScript
-    const ensuredUser = user as NonNullable<typeof user>;
-    // Create patient profile if none exists
-    let patientProfileId = ensuredUser.patientProfileId;
-    if (!patientProfileId) {
-      patientProfileId = await ctx.db.insert("patientProfiles", {
-        userId: ensuredUser._id,
-        dateOfBirth: args.patientData.dateOfBirth,
-        gender: args.patientData.gender,
-        medicalHistorySummary: args.patientData.medicalHistory,
-        emergencyContact:
-          typeof args.patientData.emergencyContact === "string"
-            ? undefined
-            : (args.patientData.emergencyContact as any),
-      });
-    }
-
-    // Update user with patient profile ID
-    await ctx.db.patch(ensuredUser._id, {
-      patientProfileId,
+  if (!user) {
+    // Create new user (patient by default via invitation)
+    const userId = await ctx.db.insert("users", {
+      clerkId: identity.subject,
+      email: patientData.email,
+      firstName: patientData.firstName,
+      lastName: patientData.lastName,
+      role: "patient",
+      phoneNumber: patientData.phoneNumber,
+      imageUrl: identity.pictureUrl,
+      onboarded: true,
     });
 
-    // Create patient-physiotherapist relationship
+    user = await ctx.db.get(userId);
+    if (!user) {
+      throw new Error("Failed to create user");
+    }
+  } else {
+    // Ensure existing account is provisioned as a patient
+    await ctx.db.patch(user._id, {
+      role: "patient",
+      onboarded: true,
+      firstName: user.firstName ?? patientData.firstName,
+      lastName: user.lastName ?? patientData.lastName,
+      email: user.email ?? patientData.email,
+      phoneNumber: user.phoneNumber ?? patientData.phoneNumber,
+    });
+    user = await ctx.db.get(user._id);
+    if (!user) {
+      throw new Error("User not found after update");
+    }
+  }
+
+  // Narrow nullability for TypeScript
+  const ensuredUser = user as NonNullable<typeof user>;
+  // Reuse the patient's profile: marketplace and Joy bookings create one without setting the pointer
+  let patientProfileId =
+    ensuredUser.patientProfileId ??
+    (
+      await ctx.db
+        .query("patientProfiles")
+        .withIndex("by_user_id", (q) => q.eq("userId", ensuredUser._id))
+        .first()
+    )?._id;
+  if (!patientProfileId) {
+    patientProfileId = await ctx.db.insert("patientProfiles", {
+      userId: ensuredUser._id,
+      dateOfBirth: patientData.dateOfBirth,
+      gender: patientData.gender,
+      medicalHistorySummary: patientData.medicalHistory,
+      emergencyContact:
+        typeof patientData.emergencyContact === "string"
+          ? undefined
+          : (patientData.emergencyContact as any),
+    });
+  }
+
+  // Update user with patient profile ID
+  await ctx.db.patch(ensuredUser._id, {
+    patientProfileId,
+  });
+  await ensureUserNumbers(ctx, ensuredUser._id);
+
+  // Re-link an earlier relationship with this clinician (a past booking, an older invite)
+  // instead of adding a second one
+  const earlierRelationships = await ctx.db
+    .query("patientPhysiotherapistRelationships")
+    .withIndex("by_patient_and_physiotherapist", (q) =>
+      q.eq("patientId", ensuredUser._id).eq("physiotherapistId", invitation.physiotherapistId)
+    )
+    .collect();
+  const earlierRelationship =
+    earlierRelationships.find((r) => r.status === "active") ?? earlierRelationships[0];
+
+  if (earlierRelationship) {
+    await ctx.db.patch(earlierRelationship._id, {
+      status: "active",
+      endDate: undefined,
+      clinicId: invitation.clinicId ?? earlierRelationship.clinicId,
+      invitationId: invitation._id,
+      source: earlierRelationship.source ?? invitation.source ?? "invite",
+      referredBy: earlierRelationship.referredBy ?? invitation.referredBy,
+    });
+  } else {
     await ctx.db.insert("patientPhysiotherapistRelationships", {
       patientId: ensuredUser._id,
       physiotherapistId: invitation.physiotherapistId,
@@ -255,37 +310,48 @@ export const acceptInvitation = mutation({
       source: invitation.source ?? "invite",
       referredBy: invitation.referredBy,
     });
+  }
 
-    // Update invitation status
-    await ctx.db.patch(invitation._id, {
-      status: "accepted",
-      patientUserId: ensuredUser._id,
-    });
+  // Update invitation status
+  await ctx.db.patch(invitation._id, {
+    status: "accepted",
+    patientUserId: ensuredUser._id,
+  });
 
-    // Notify physiotherapist that patient accepted invitation
-    await ctx.db.insert("notifications", {
-      userId: invitation.physiotherapistId,
-      type: "invitation_accepted" as any,
-      priority: "high",
-      status: "pending",
-      payload: {
-        title: "Patient Accepted Invitation",
-        body: `${ensuredUser.firstName} ${ensuredUser.lastName} accepted your invitation`,
-        data: {
-          entityId: String(ensuredUser._id),
-          entityType: "patient",
-        },
-        link: `/dashboard/physiotherapist/patients/${ensuredUser._id}`,
+  // Notify physiotherapist that patient accepted invitation
+  await ctx.db.insert("notifications", {
+    userId: invitation.physiotherapistId,
+    type: "invitation_accepted" as any,
+    priority: "high",
+    status: "pending",
+    payload: {
+      title: "Patient Accepted Invitation",
+      body: `${ensuredUser.firstName} ${ensuredUser.lastName} accepted your invitation`,
+      data: {
+        entityId: String(ensuredUser._id),
+        entityType: "patient",
       },
-      createdAt: Date.now(),
-    });
+      link: `/dashboard/physiotherapist/patients/${ensuredUser._id}`,
+    },
+    createdAt: Date.now(),
+  });
 
-    return {
-      success: true,
-      patientId: ensuredUser._id,
-      message: "Invitation accepted successfully",
-    };
+  return {
+    success: true,
+    patientId: ensuredUser._id,
+    message: "Invitation accepted successfully",
+  };
+}
+
+/**
+ * Accept a patient invitation
+ */
+export const acceptInvitation = mutation({
+  args: {
+    invitationCode: v.string(),
+    patientData: patientDataValidator,
   },
+  handler: async (ctx, args) => acceptPatientInvitation(ctx, args.invitationCode, args.patientData),
 });
 
 /**
@@ -294,153 +360,9 @@ export const acceptInvitation = mutation({
 export const completePatientOnboarding = mutation({
   args: {
     invitationCode: v.string(),
-    patientData: v.object({
-      firstName: v.string(),
-      lastName: v.string(),
-      email: v.string(),
-      phoneNumber: v.optional(v.string()),
-      dateOfBirth: v.optional(v.string()),
-      gender: v.optional(
-        v.union(
-          v.literal("male"),
-          v.literal("female"),
-          v.literal("other"),
-          v.literal("prefer_not_to_say")
-        )
-      ),
-      medicalHistory: v.optional(v.string()),
-      emergencyContact: v.optional(v.string()),
-    }),
+    patientData: patientDataValidator,
   },
-  handler: async (ctx, args) => {
-    // This is just an alias for acceptInvitation - implement the same logic
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
-    }
-
-    // Validate invitation code
-    const invitation = await ctx.db
-      .query("patientInvitations")
-      .withIndex("by_code", (q) => q.eq("code", args.invitationCode))
-      .unique();
-
-    if (!invitation) {
-      throw new Error("Invalid invitation code");
-    }
-
-    if (invitation.expiresAt < Date.now()) {
-      throw new Error("Invitation has expired");
-    }
-
-    if (invitation.status === "accepted") {
-      throw new Error("Invitation has already been accepted");
-    }
-
-    // Check if user already exists
-    let user = await ctx.db
-      .query("users")
-      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
-      .unique();
-
-    if (!user) {
-      // Create new user
-      const userId = await ctx.db.insert("users", {
-        clerkId: identity.subject,
-        email: args.patientData.email,
-        firstName: args.patientData.firstName,
-        lastName: args.patientData.lastName,
-        role: "patient",
-        phoneNumber: args.patientData.phoneNumber,
-        imageUrl: identity.pictureUrl,
-        onboarded: true,
-      });
-      
-      user = await ctx.db.get(userId);
-      if (!user) {
-        throw new Error("Failed to create user");
-      }
-    } else {
-      // Ensure existing account is provisioned as a patient
-      await ctx.db.patch(user._id, {
-        role: "patient",
-        onboarded: true,
-        firstName: user.firstName ?? args.patientData.firstName,
-        lastName: user.lastName ?? args.patientData.lastName,
-        email: user.email ?? args.patientData.email,
-        phoneNumber: user.phoneNumber ?? args.patientData.phoneNumber,
-      });
-      user = await ctx.db.get(user._id);
-      if (!user) {
-        throw new Error("User not found after update");
-      }
-    }
-
-    // Narrow nullability for TypeScript
-    const ensuredUser = user as NonNullable<typeof user>;
-    // Create patient profile if none exists
-    let patientProfileId = ensuredUser.patientProfileId;
-    if (!patientProfileId) {
-      patientProfileId = await ctx.db.insert("patientProfiles", {
-        userId: ensuredUser._id,
-        dateOfBirth: args.patientData.dateOfBirth,
-        gender: args.patientData.gender,
-        medicalHistorySummary: args.patientData.medicalHistory,
-        emergencyContact:
-          typeof args.patientData.emergencyContact === "string"
-            ? undefined
-            : (args.patientData.emergencyContact as any),
-      });
-    }
-
-    // Update user with patient profile ID
-    await ctx.db.patch(ensuredUser._id, {
-      patientProfileId,
-    });
-
-    // Create patient-physiotherapist relationship
-    await ctx.db.insert("patientPhysiotherapistRelationships", {
-      patientId: ensuredUser._id,
-      physiotherapistId: invitation.physiotherapistId,
-      clinicId: invitation.clinicId,
-      invitationId: invitation._id,
-      isPrimaryPhysiotherapist: true,
-      status: "active",
-      startDate: Date.now(),
-      source: invitation.source ?? "invite",
-      referredBy: invitation.referredBy,
-    });
-
-    // Update invitation status
-    await ctx.db.patch(invitation._id, {
-      status: "accepted",
-      patientUserId: ensuredUser._id,
-    });
-
-    // Notify physiotherapist that patient accepted invitation
-    await ctx.db.insert("notifications", {
-      userId: invitation.physiotherapistId,
-      type: "invitation_accepted" as any,
-      priority: "high",
-      status: "pending",
-      payload: {
-        title: "Patient Accepted Invitation",
-        body: `${ensuredUser.firstName} ${ensuredUser.lastName} accepted your invitation`,
-        data: {
-          entityId: String(ensuredUser._id),
-          entityType: "patient",
-        },
-        link: `/dashboard/physiotherapist/patients/${ensuredUser._id}`,
-      },
-      createdAt: Date.now(),
-    });
-
-    return {
-      success: true,
-      patientId: ensuredUser._id,
-      message: "Invitation accepted successfully",
-    };
-  },
+  handler: async (ctx, args) => acceptPatientInvitation(ctx, args.invitationCode, args.patientData),
 });
 
 /**
@@ -573,11 +495,24 @@ export const createPatientInvitation = mutation({
       referredBy: args.source === "referred" ? args.referredBy?.trim() || undefined : undefined,
     });
 
+    // Tell the physio when this person already has a Rehabify patient record (e.g. from another
+    // clinic), so they know accepting links that record instead of starting a duplicate.
+    const email = args.patientEmail.trim();
+    let existingPatient = null;
+    for (const candidate of new Set([email, email.toLowerCase()])) {
+      existingPatient = await ctx.db
+        .query("users")
+        .withIndex("by_email", (q) => q.eq("email", candidate))
+        .first();
+      if (existingPatient) break;
+    }
+
     return {
       success: true,
       invitationCode: code,
       invitationId,
       message: "Patient invitation created successfully.",
+      existingPatientNumber: existingPatient?.role === "patient" ? existingPatient.patientNumber : undefined,
     };
   },
 });
@@ -633,6 +568,54 @@ export const getMyPatientInvitations = query({
   },
 });
 
+/** The signed-in physio's own pending invitation, for revoke and resend. */
+async function getOwnPendingInvitation(ctx: MutationCtx, invitationId: Id<"patientInvitations">) {
+  const identity = await ctx.auth.getUserIdentity();
+  if (!identity) throw new ConvexError("Please sign in again.");
+  const user = await ctx.db
+    .query("users")
+    .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+    .unique();
+  const invitation = await ctx.db.get(invitationId);
+  if (!user || !invitation || invitation.physiotherapistId !== user._id) {
+    throw new ConvexError("Invitation not found.");
+  }
+  if (invitation.status !== "pending") {
+    throw new ConvexError(
+      invitation.status === "accepted" ? "This patient has already accepted." : "This invitation was cancelled."
+    );
+  }
+  return { user, invitation };
+}
+
+/** Cancel a pending invitation: its link stops working. */
+export const revokePatientInvitation = mutation({
+  args: { invitationId: v.id("patientInvitations") },
+  handler: async (ctx, args) => {
+    const { invitation } = await getOwnPendingInvitation(ctx, args.invitationId);
+    await ctx.db.patch(invitation._id, { status: "expired", expiresAt: Math.min(invitation.expiresAt, Date.now()) });
+    return { success: true };
+  },
+});
+
+/** Give a pending (or lapsed) invitation another 7 days; the resend action then emails the same link. */
+export const preparePatientInvitationResend = mutation({
+  args: { invitationId: v.id("patientInvitations") },
+  handler: async (ctx, args) => {
+    const { user, invitation } = await getOwnPendingInvitation(ctx, args.invitationId);
+    if (!invitation.patientEmail) throw new ConvexError("This invitation has no email address to send to.");
+    const expiresAt = Date.now() + 7 * 24 * 60 * 60 * 1000;
+    await ctx.db.patch(invitation._id, { expiresAt, lastReminderSentAt: Date.now() });
+    return {
+      code: invitation.code,
+      patientEmail: invitation.patientEmail,
+      patientName: invitation.patientName,
+      expiresAt,
+      physiotherapistName: `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() || user.email || "Your physiotherapist",
+    };
+  },
+});
+
 /**
  * Get patients for the current physiotherapist
  */
@@ -670,7 +653,14 @@ export const getMyPatients = query({
       relationshipQuery = relationshipQuery.filter((q) => q.eq(q.field("status"), args.status));
     }
 
-    const relationships = await relationshipQuery.collect();
+    const allRelationships = await relationshipQuery.collect();
+    // One row per patient (older data can hold several links to the same clinician); the active one wins
+    const byPatient = new Map<string, (typeof allRelationships)[number]>();
+    for (const rel of allRelationships) {
+      const seen = byPatient.get(rel.patientId);
+      if (!seen || (seen.status !== "active" && rel.status === "active")) byPatient.set(rel.patientId, rel);
+    }
+    const relationships = [...byPatient.values()];
 
     // Get patient details for each relationship
     const patients = await Promise.all(
@@ -678,11 +668,13 @@ export const getMyPatients = query({
         const patient = await ctx.db.get(relationship.patientId);
         if (!patient) return null;
 
-        // Get patient profile
-        const patientProfile = await ctx.db
-          .query("patientProfiles")
-          .withIndex("by_user_id", (q) => q.eq("userId", patient._id))
-          .unique();
+        // Get patient profile (the user's own pointer first; a patient can have more than one)
+        const patientProfile =
+          (patient.patientProfileId ? await ctx.db.get(patient.patientProfileId) : null) ??
+          (await ctx.db
+            .query("patientProfiles")
+            .withIndex("by_user_id", (q) => q.eq("userId", patient._id))
+            .first());
 
         return {
           _id: patient._id,

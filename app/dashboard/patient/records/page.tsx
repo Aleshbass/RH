@@ -3,7 +3,7 @@
 import { useAuth } from '@clerk/nextjs'
 import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useQuery } from 'convex/react'
+import { useMutation, useQuery } from 'convex/react'
 import { api } from '@/convex/_generated/api'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -18,12 +18,22 @@ import { Download, FileText, Filter, Loader2, Upload as UploadIcon, Search, Fold
 import { toast } from 'sonner'
 import type { Id } from '@/convex/_generated/dataModel'
 import { Switch } from '@/components/ui/switch'
+import { programError } from '@/components/exercise-programs/errors'
 
 export default function PatientRecordsPage() {
   const router = useRouter()
   const { isLoaded, isSignedIn } = useAuth()
   const user = useQuery(api.users.getMyUser) as (null | { role?: string; patientProfileId?: Id<'patientProfiles'> } | undefined)
   const patientProfileId = user?.patientProfileId as Id<'patientProfiles'> | undefined
+
+  // Patients who came through a booking or Joy may not have their profile linked yet
+  const ensureMyPatientProfile = useMutation(api.patients.ensureMyPatientProfile)
+  const profileLinkRequested = useRef(false)
+  useEffect(() => {
+    if (user?.role !== 'patient' || patientProfileId || profileLinkRequested.current) return
+    profileLinkRequested.current = true
+    ensureMyPatientProfile({}).catch((e) => console.error('Could not link patient profile', e))
+  }, [user?.role, patientProfileId, ensureMyPatientProfile])
 
   const {
     documents = [],
@@ -122,8 +132,7 @@ export default function PatientRecordsPage() {
       toast.success('Document uploaded successfully')
       setSelectedFile(null)
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : 'Failed to upload document'
-      toast.error(msg)
+      toast.error(programError(e, 'Failed to upload document'))
     } finally {
       isUploadingRef.current = false
     }
@@ -219,7 +228,7 @@ export default function PatientRecordsPage() {
                 <FileUpload
                   id="patient-record-upload"
                   label="Select file"
-                  accept="application/pdf,image/jpeg,image/jpg,image/png"
+                  accept="application/pdf,image/jpeg,image/jpg,image/png,image/webp"
                   onChange={(f) => setSelectedFile((Array.isArray(f) ? f[0] : f) || null)}
                   maxSizeInMB={10}
                 />
@@ -244,7 +253,7 @@ export default function PatientRecordsPage() {
               {isUploadingPatientDocument ? (
                 <>
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Uploading... {Math.round((uploadProgress || 0) * 100)}%
+                  Uploading... {Math.round(uploadProgress || 0)}%
                 </>
               ) : (
                 <>

@@ -9,8 +9,11 @@
  */
 import { query, type QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
+import { getService, type BookableServiceId } from "../lib/rehabify-services";
+import { NETWORK_TERMS_VERSION } from "../lib/rehabify-network-terms";
+import { loadPricingSettings } from "./helpers/rehabifyPricing";
 
-export type PhysioSetupItemId = "profile" | "availability" | "pricing" | "payout" | "documents";
+export type PhysioSetupItemId = "profile" | "availability" | "coverage" | "network_terms" | "payout" | "documents";
 
 export type PhysioSetupItem = {
   id: PhysioSetupItemId;
@@ -49,14 +52,22 @@ export function hasAvailability(schedule: unknown): boolean {
   });
 }
 
-function hasPricing(profile: Doc<"physiotherapistProfiles"> | null) {
+/** Offers video sessions, or home visits in at least one travel zone. */
+function hasCoverage(profile: Doc<"physiotherapistProfiles"> | null) {
   if (!profile) return false;
-  return [
-    profile.inPersonConsultationRate,
-    profile.virtualConsultationRate,
-    profile.initialConsultRate,
-    profile.hourlyRate,
-  ].some((rate) => typeof rate === "number" && rate > 0);
+  if (profile.offersOnlineSessions !== false) return true;
+  return Boolean(profile.offersInPersonSessions) && (profile.coveredZoneIds?.length ?? 0) > 0;
+}
+
+/** Accepted the current version of the Rehabify network terms. */
+export function hasAcceptedNetworkTerms(profile: Pick<Doc<"physiotherapistProfiles">, "networkTerms"> | null) {
+  return profile?.networkTerms?.version === NETWORK_TERMS_VERSION;
+}
+
+/** Network terms block bookings only once an admin sets an enforcement date that has passed. */
+async function networkTermsRequired(ctx: QueryCtx): Promise<boolean> {
+  const { networkTermsEnforcedAt } = await loadPricingSettings(ctx);
+  return typeof networkTermsEnforcedAt === "number" && networkTermsEnforcedAt <= Date.now();
 }
 
 export async function computePhysioSetup(
@@ -112,11 +123,19 @@ export async function computePhysioSetup(
       required: true,
     },
     {
-      id: "pricing",
-      title: "Set your session prices",
-      description: "Optional. Until you do, standard Rehabify prices are shown.",
+      id: "network_terms",
+      title: "Accept the Rehabify network terms",
+      description: "Standard Rehabify prices and your payout for each service.",
+      href: `${SETTINGS}/network-terms`,
+      done: hasAcceptedNetworkTerms(profile),
+      required: await networkTermsRequired(ctx),
+    },
+    {
+      id: "coverage",
+      title: "Choose your services and areas",
+      description: "Video sessions, home visits, and the areas you travel to.",
       href: `${SETTINGS}/marketplace`,
-      done: hasPricing(profile),
+      done: hasCoverage(profile),
       required: false,
     },
   ];
@@ -149,6 +168,62 @@ export async function isPhysioBookable(ctx: QueryCtx, physioUserId: Id<"users">)
 
   const setup = await computePhysioSetup(ctx, user, profile);
   return setup.isComplete;
+}
+
+/**
+ * Whether a physio can take a Rehabify patient for this service: bookable, part of the
+ * Rehabify network (clinic members work under their clinic's own terms and prices), offers
+ * the service's mode, covers the travel zone for home visits and, for Rehabify Access, has
+ * opted in with a minimum payout the assisted tariff meets.
+ */
+export async function isPhysioNetworkEligible(
+  ctx: QueryCtx,
+  physioUserId: Id<"users">,
+  options: {
+    serviceId?: BookableServiceId;
+    zoneId?: Id<"travelZones"> | null;
+    access?: { payoutKobo: number };
+  } = {}
+): Promise<boolean> {
+  if (!(await isPhysioBookable(ctx, physioUserId))) return false;
+  const profile = await ctx.db
+    .query("physiotherapistProfiles")
+    .withIndex("by_user_id", (q) => q.eq("userId", physioUserId))
+    .first();
+  if (!profile || !servesRehabifyNetwork(profile)) return false;
+  if (!options.serviceId) return true;
+  const service = getService(options.serviceId);
+  if (!service) return false;
+  if (!offersServiceMode(profile, service.mode, options.zoneId ?? null)) return false;
+  if (options.access && !meetsAccessMinimum(profile, options.serviceId, options.access.payoutKobo)) return false;
+  return true;
+}
+
+/** Clinic members are excluded: their clinic sets prices and terms for their patients. */
+export function servesRehabifyNetwork(profile: Pick<Doc<"physiotherapistProfiles">, "clinicId">): boolean {
+  return !profile.clinicId;
+}
+
+export function offersServiceMode(
+  profile: Pick<Doc<"physiotherapistProfiles">, "offersOnlineSessions" | "offersInPersonSessions" | "coveredZoneIds">,
+  mode: "virtual" | "home",
+  zoneId: Id<"travelZones"> | null
+): boolean {
+  if (mode === "virtual") return profile.offersOnlineSessions !== false;
+  if (!profile.offersInPersonSessions) return false;
+  return zoneId !== null && (profile.coveredZoneIds ?? []).includes(zoneId);
+}
+
+/** Opted in to Rehabify Access, and the assisted payout meets their minimum for the service. */
+export function meetsAccessMinimum(
+  profile: Pick<Doc<"physiotherapistProfiles">, "networkTerms">,
+  serviceId: string,
+  payoutKobo: number
+): boolean {
+  const terms = profile.networkTerms;
+  if (!terms?.accessOptIn) return false;
+  const minimum = terms.accessMinimumPayouts?.find((row) => row.serviceId === serviceId)?.minimumPayoutKobo ?? 0;
+  return minimum <= payoutKobo;
 }
 
 /**

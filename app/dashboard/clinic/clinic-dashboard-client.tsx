@@ -31,15 +31,16 @@ import {
 import { cn } from '@/lib/utils'
 import { useClinicAccess, type ClinicStaffKind } from '@/components/clinic/ClinicPreviewContext'
 import { PHYSIO_PORTAL_HOME } from '@/components/clinic/clinician-routing'
+import { APPOINTMENT_STATUS_LABELS, appointmentStatusTone } from '@/convex/helpers/appointmentStatus'
 
-const appointmentStatus: Record<string, { label: string; tone: 'teal' | 'green' | 'amber' | 'red' | 'neutral' }> = {
-  scheduled: { label: 'Booked', tone: 'teal' },
-  confirmed: { label: 'Confirmed', tone: 'teal' },
-  completed: { label: 'Attended', tone: 'green' },
-  no_show: { label: 'No-show', tone: 'amber' },
-  cancelled_by_patient: { label: 'Cancelled', tone: 'neutral' },
-  cancelled_by_therapist: { label: 'Cancelled', tone: 'neutral' },
-}
+// Shared labels, so the clinic, physio and patient views say the same thing
+const appointmentStatus: Record<string, { label: string; tone: 'teal' | 'green' | 'amber' | 'red' | 'neutral' }> =
+  Object.fromEntries(
+    Object.entries(APPOINTMENT_STATUS_LABELS).map(([status, label]) => [
+      status,
+      { label, tone: appointmentStatusTone(status) },
+    ])
+  )
 
 /** Referred patients and the referral inbox live under Patients. */
 const REFERRALS_HREF = '/dashboard/clinic/patients?filter=referred'

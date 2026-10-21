@@ -194,7 +194,7 @@ function InviteForm({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value={FULL_ACCESS}>Full access</SelectItem>
+            <SelectItem value={FULL_ACCESS}>Clinician access (Appointments, Patients)</SelectItem>
             {(roles ?? []).map((role) => (
               <SelectItem key={role._id} value={role._id}>
                 {role.name}
@@ -206,8 +206,8 @@ function InviteForm({
           {selectedRole && selectedRole.permissions.length > 0
             ? `Can open Home, ${roleSummary(selectedRole.permissions)}. You can change this later.`
             : roles && roles.length === 0
-              ? 'They can open every page. Create roles under Roles to limit this.'
-              : 'They can open every page. You can change this later.'}
+              ? 'Can open Home, Appointments and Patients. To give Billing or other pages, create a role under Roles.'
+              : 'Can open Home, Appointments and Patients. Pick a role to add Billing or other pages.'}
         </p>
       </div>
 

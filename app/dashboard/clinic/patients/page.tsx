@@ -21,6 +21,8 @@ import {
 } from '@/components/clinic/patients/ReferralInbox'
 import { useClinicPreview } from '@/components/clinic/ClinicPreviewContext'
 import { EmptyState, PageShell, Panel, StatusBadge, primaryButtonClass } from '@/components/clinic/ui'
+import { RehabifyId } from '@/components/shared/RehabifyId'
+import { matchesRehabifyId } from '@/convex/helpers/rehabifyIdFormat'
 import { cn } from '@/lib/utils'
 
 type SourceFilter = 'all' | 'referred' | 'clinic'
@@ -79,6 +81,7 @@ interface PatientRow {
   email: string
   phoneNumber?: string
   imageUrl?: string
+  patientNumber?: string
   clinician: string
   isReferral: boolean
   /** Progress of the Rehabify referral this patient came from, when known */
@@ -182,6 +185,7 @@ function ClinicPatients() {
         email: p.email ?? '',
         phoneNumber: p.phoneNumber ?? undefined,
         imageUrl: p.imageUrl ?? undefined,
+        patientNumber: p.patientNumber ?? undefined,
         clinician: p.primaryPhysiotherapist
           ? fullName(p.primaryPhysiotherapist.firstName, p.primaryPhysiotherapist.lastName)
           : '',
@@ -219,7 +223,8 @@ function ClinicPatients() {
       return (
         fullName(p.firstName, p.lastName).toLowerCase().includes(term) ||
         p.email.toLowerCase().includes(term) ||
-        (p.phoneNumber ?? '').replace(/\s/g, '').includes(term.replace(/\s/g, ''))
+        (p.phoneNumber ?? '').replace(/\s/g, '').includes(term.replace(/\s/g, '')) ||
+        matchesRehabifyId(p.patientNumber, term)
       )
     })
   }, [statusRows, filter, searchTerm])
@@ -326,7 +331,7 @@ function ClinicPatients() {
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
           <Input
             type="search"
-            placeholder="Search by name, phone or email"
+            placeholder="Search by name, phone, email or patient ID"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="h-10 border-neutral-200 bg-white pl-9 text-sm dark:border-neutral-800 dark:bg-neutral-900"
@@ -482,6 +487,7 @@ function ClinicPatients() {
                         <span className="min-w-0 truncate text-sm font-medium text-neutral-900 dark:text-white">
                           {name}
                         </span>
+                        <RehabifyId value={p.patientNumber} copyable={false} />
                         {p.careStatus === 'paused' && <StatusBadge>Paused</StatusBadge>}
                         {p.careStatus === 'discharged' && <StatusBadge>Discharged</StatusBadge>}
                         {p.isReferral && <StatusBadge tone="teal">Referred by Rehabify</StatusBadge>}

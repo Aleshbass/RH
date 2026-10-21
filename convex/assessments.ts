@@ -1,6 +1,14 @@
 import { v } from 'convex/values';
-import { mutation, query, internalQuery } from './_generated/server';
+import { mutation, query, internalQuery, type MutationCtx } from './_generated/server';
 import { Doc, Id } from './_generated/dataModel';
+import { requireActiveRelationship, requirePhysio } from './helpers/careAccess';
+
+/** The signed-in physio, who must be treating this patient, records the assessment. */
+async function requireAssessingPhysio(ctx: MutationCtx, patientId: Id<'users'>) {
+  const physio = await requirePhysio(ctx);
+  await requireActiveRelationship(ctx, physio._id, patientId);
+  return physio;
+}
 // import { AssessmentType } from '@/types/assessments';
 
 // Define assessment types directly to avoid import issues
@@ -75,8 +83,7 @@ export const createOswestryAssessment = mutation({
     notes: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const user = await ctx.auth.getUserIdentity();
-    if (!user) throw new Error('Not authenticated');
+    const physio = await requireAssessingPhysio(ctx, args.patientId);
     
     const totalScore = Object.values(args.responses).reduce((sum, val) => sum + val, 0);
     const percentage = (totalScore / 50) * 100;
@@ -90,7 +97,7 @@ export const createOswestryAssessment = mutation({
     
     return await ctx.db.insert('assessments', {
       patientId: args.patientId,
-      physiotherapistId: user.subject as Id<'users'>,
+      physiotherapistId: physio._id,
       clinicId: undefined,
       assessmentType: 'oswestry',
       title: 'Oswestry Disability Index',
@@ -121,8 +128,7 @@ export const createDashAssessment = mutation({
     notes: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const user = await ctx.auth.getUserIdentity();
-    if (!user) throw new Error('Not authenticated');
+    const physio = await requireAssessingPhysio(ctx, args.patientId);
     
     const totalScore = Object.values(args.responses).reduce((sum, val) => sum + val, 0);
     const dashScore = ((totalScore / 30) - 1) * 25;
@@ -135,7 +141,7 @@ export const createDashAssessment = mutation({
     
     return await ctx.db.insert('assessments', {
       patientId: args.patientId,
-      physiotherapistId: user.subject as Id<'users'>,
+      physiotherapistId: physio._id,
       clinicId: undefined,
       assessmentType: 'custom' as const,
       title: 'DASH Assessment',
@@ -164,8 +170,7 @@ export const createPSFSAssessment = mutation({
     notes: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const user = await ctx.auth.getUserIdentity();
-    if (!user) throw new Error('Not authenticated');
+    const physio = await requireAssessingPhysio(ctx, args.patientId);
     
     let totalScore = args.responses.activity1.score;
     let count = 1;
@@ -206,7 +211,7 @@ export const createPSFSAssessment = mutation({
 
     return await ctx.db.insert('assessments', {
       patientId: args.patientId,
-      physiotherapistId: user.subject as Id<'users'>,
+      physiotherapistId: physio._id,
       clinicId: undefined,
       assessmentType: 'psfs',
       title: 'Patient-Specific Functional Scale',
@@ -230,8 +235,7 @@ export const createNPRSAssessment = mutation({
     notes: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const user = await ctx.auth.getUserIdentity();
-    if (!user) throw new Error('Not authenticated');
+    const physio = await requireAssessingPhysio(ctx, args.patientId);
     
     const totalScore = args.responses.currentPain;
     const percentage = (totalScore / 10) * 100;
@@ -244,7 +248,7 @@ export const createNPRSAssessment = mutation({
     
     return await ctx.db.insert('assessments', {
       patientId: args.patientId,
-      physiotherapistId: user.subject as Id<'users'>,
+      physiotherapistId: physio._id,
       clinicId: undefined,
       assessmentType: 'nprs',
       title: 'Numeric Pain Rating Scale',
@@ -273,8 +277,7 @@ export const createNPSAssessment = mutation({
     notes: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const user = await ctx.auth.getUserIdentity();
-    if (!user) throw new Error('Not authenticated');
+    const physio = await requireAssessingPhysio(ctx, args.patientId);
     
     const score = args.responses.rating;
     
@@ -285,7 +288,7 @@ export const createNPSAssessment = mutation({
     
     return await ctx.db.insert('assessments', {
       patientId: args.patientId,
-      physiotherapistId: user.subject as Id<'users'>,
+      physiotherapistId: physio._id,
       clinicId: undefined,
       assessmentType: 'nps',
       title: 'Net Promoter Score',

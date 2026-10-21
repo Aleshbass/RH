@@ -7,6 +7,9 @@ import { v } from "convex/values";
 import { query } from "./_generated/server";
 import { ensureUserRole } from "./auth";
 import { partnerApprovalStatus } from "./helpers/partnerShared";
+import { findUserByRehabifyId } from "./helpers/rehabifyIds";
+import { matchesRehabifyId, parseRehabifyId } from "./helpers/rehabifyIdFormat";
+import type { Doc } from "./_generated/dataModel";
 
 const BADGE_CAP = 100;
 
@@ -15,7 +18,7 @@ export const getNavBadges = query({
   handler: async (ctx) => {
     await ensureUserRole(ctx, ["admin"]);
 
-    const [approvals, pendingReports, reviewingReports, pendingBookings, partners] = await Promise.all([
+    const [approvals, pendingReports, reviewingReports, pendingBookings, partners, newAccess, reviewingAccess] = await Promise.all([
       ctx.db
         .query("accountApprovalStatus")
         .withIndex("by_status", (q) => q.eq("status", "pending_review"))
@@ -35,6 +38,15 @@ export const getNavBadges = query({
         .take(BADGE_CAP * 2),
       // Partners is a small, admin-curated table
       ctx.db.query("partners").take(500),
+      // Rehabify Access applications waiting for a decision
+      ctx.db
+        .query("assistedCareApplications")
+        .withIndex("by_status", (q) => q.eq("status", "submitted"))
+        .take(BADGE_CAP),
+      ctx.db
+        .query("assistedCareApplications")
+        .withIndex("by_status", (q) => q.eq("status", "under_review"))
+        .take(BADGE_CAP),
     ]);
 
     const bankTransfers = pendingBookings.filter(
@@ -46,12 +58,13 @@ export const getNavBadges = query({
       openReports: pendingReports.length + reviewingReports.length,
       bankTransfers: Math.min(bankTransfers, BADGE_CAP),
       partnerApplications: partners.filter((p) => partnerApprovalStatus(p) === "pending").length,
+      accessApplications: Math.min(newAccess.length + reviewingAccess.length, BADGE_CAP),
       cap: BADGE_CAP,
     };
   },
 });
 
-/** Quick people search for the command palette. Matches name or email prefix. */
+/** Quick people search for the command palette. Matches name, email or Rehabify ID. */
 export const searchPeople = query({
   args: { term: v.string() },
   handler: async (ctx, args) => {
@@ -59,9 +72,9 @@ export const searchPeople = query({
     const term = args.term.trim().toLowerCase();
     if (term.length < 2) return [];
 
-    const results: { _id: string; name: string; email: string; role: string; imageUrl?: string }[] = [];
+    const results: { _id: string; name: string; email: string; role: string; imageUrl?: string; rehabifyId?: string }[] = [];
     const seen = new Set<string>();
-    const push = (u: { _id: string; firstName?: string; lastName?: string; email?: string; role?: string; imageUrl?: string }) => {
+    const push = (u: Doc<"users">) => {
       if (seen.has(u._id) || results.length >= 8) return;
       seen.add(u._id);
       results.push({
@@ -70,8 +83,16 @@ export const searchPeople = query({
         email: u.email ?? "",
         role: u.role ?? "user",
         imageUrl: u.imageUrl,
+        rehabifyId: u.patientNumber ?? u.staffNumber,
       });
     };
+
+    const rehabifyId = parseRehabifyId(term);
+    if (rehabifyId) {
+      const user = await findUserByRehabifyId(ctx, rehabifyId);
+      if (user) push(user);
+      return results;
+    }
 
     if (term.includes("@")) {
       const exact = await ctx.db
@@ -85,7 +106,14 @@ export const searchPeople = query({
     const recent = await ctx.db.query("users").order("desc").take(2000);
     for (const u of recent) {
       const name = `${u.firstName ?? ""} ${u.lastName ?? ""}`.toLowerCase();
-      if (name.includes(term) || (u.email ?? "").toLowerCase().includes(term)) push(u);
+      if (
+        name.includes(term) ||
+        (u.email ?? "").toLowerCase().includes(term) ||
+        matchesRehabifyId(u.patientNumber, term) ||
+        matchesRehabifyId(u.staffNumber, term)
+      ) {
+        push(u);
+      }
       if (results.length >= 8) break;
     }
     return results;

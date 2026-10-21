@@ -3,6 +3,7 @@ import { z } from "zod";
 import { actorSchema, authenticatedJson, errorResponse, success } from "@/lib/joy-integration/http";
 import { JoyAuthError } from "@/lib/joy-integration/auth";
 import { callJoyConvexGateway } from "@/lib/joy-integration/convex-gateway";
+import { publicAppUrl } from "@/lib/public-app-url";
 
 const schema = z.object({ patient_id: z.string().min(1), email: z.string().email(), actor: actorSchema }).strict();
 
@@ -19,7 +20,7 @@ export async function POST(request: Request, context: { params: Promise<{ review
     const reference = `JOYREV_${reviewId.slice(-8)}_${createHash("sha256").update(idempotencyKey).digest("hex").slice(0, 18)}`;
     const prepared = await callJoyConvexGateway("prepare_specialist_review_payment", { review_id: reviewId, patient_id: input.patient_id, request_id: requestId, idempotency_key: idempotencyKey, reference }) as { attempt_id: string; amount_kobo: number; authorization_url?: string };
     if (prepared.authorization_url) return success(requestId, { review_id: reviewId, reference, authorization_url: prepared.authorization_url, payment_status: "pending" });
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://physioaroundme.com";
+    const appUrl = publicAppUrl();
     const response = await fetch("https://api.paystack.co/transaction/initialize", { method: "POST", headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY ?? ""}`, "Content-Type": "application/json" }, body: JSON.stringify({ email: input.email, amount: prepared.amount_kobo, currency: "NGN", reference, callback_url: `${appUrl}/payment/callback`, metadata: { joy_specialist_review_id: reviewId, source_system: "joy_ai", source_channel: "whatsapp", correlation_id: requestId } }) });
     let result: { status?: boolean; message?: string; data?: { authorization_url?: string } };
     try {

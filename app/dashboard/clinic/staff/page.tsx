@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useQuery, useAction } from 'convex/react'
+import { useQuery, useAction, useMutation } from 'convex/react'
 import { useSearchParams, usePathname, useRouter } from 'next/navigation'
 import { format } from 'date-fns'
 import { toast } from 'sonner'
@@ -47,6 +47,7 @@ export default function StaffManagementPage() {
   const resendStaffInvitation = useAction(
     api.actions.clinics.inviteClinicStaff.resendClinicStaffInvitation
   )
+  const revokeStaffInvitation = useMutation(api.clinics.revokeClinicStaffInvitation)
 
   const team = teamQuery as TeamMember[] | undefined
   const invitations: StaffInvitation[] | undefined = isPreviewMode ? [] : invitationsQuery
@@ -79,6 +80,20 @@ export default function StaffManagementPage() {
     } catch (error) {
       toast.error(teamError(error, 'Could not resend invitation'))
       console.error('Resend invitation error:', error)
+    } finally {
+      setResendingId(null)
+    }
+  }
+
+  const handleRevoke = async (id: StaffInvitation['_id']) => {
+    if (!requireFullAccess('Cancel invitation')) return
+    if (!window.confirm('Cancel this invitation? Its link will stop working.')) return
+    setResendingId(id)
+    try {
+      await revokeStaffInvitation({ invitationId: id })
+      toast.success('Invitation cancelled')
+    } catch (error) {
+      toast.error(teamError(error, 'Could not cancel the invitation'))
     } finally {
       setResendingId(null)
     }
@@ -164,7 +179,16 @@ export default function StaffManagementPage() {
                           handleResend(invitation.inviteeEmail, invitation.inviteeName, invitation._id)
                         }
                       >
-                        {resendingId === invitation._id ? 'Sending…' : 'Resend'}
+                        {resendingId === invitation._id ? 'Sending…' : invitation.isExpired ? 'Renew & resend' : 'Resend'}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 text-neutral-500 hover:text-rose-600"
+                        disabled={resendingId === invitation._id}
+                        onClick={() => handleRevoke(invitation._id)}
+                      >
+                        Cancel
                       </Button>
                     </div>
                   </li>

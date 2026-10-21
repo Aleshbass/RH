@@ -106,6 +106,20 @@ export async function POST(request: NextRequest) {
           data: null
         }, { status: 500 })
       }
+    } else if (!reference.startsWith('VERIFICATION_')) {
+      // Invoice payments are recorded by Convex (amount checked against the invoice); any
+      // other reference isn't a Rehabify checkout, so it's never reported as a success here.
+      if (!/^(INV|CLN|PHY)_/.test(reference)) {
+        return NextResponse.json({ success: false, message: 'Unknown payment reference', data: null }, { status: 404 })
+      }
+      const result = await getConvexClient().action(api.payments.verifyPaystackTransaction, { reference })
+      if (!result?.success || result.status !== 'success') {
+        return NextResponse.json({
+          success: false,
+          message: result?.error || 'Payment was received but the invoice could not be updated. Our team has been notified.',
+          data: null,
+        }, { status: 409 })
+      }
     }
 
     return NextResponse.json({

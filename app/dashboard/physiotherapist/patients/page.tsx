@@ -11,8 +11,11 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import AddPatientModal from '@/components/dashboard/physiotherapist/AddPatientModal';
+import { PendingInvitations } from '@/components/physio/PendingInvitations';
 import { EmptyState, PageContainer, PageHeader, Panel, StatusBadge, primaryButtonClass } from '@/components/physio/ui';
 import { OUTCOME_LABELS, type Outcome } from '@/components/physio/workspace/shared';
+import { RehabifyId } from '@/components/shared/RehabifyId';
+import { matchesRehabifyId } from '@/convex/helpers/rehabifyIdFormat';
 import { cn } from '@/lib/utils';
 
 type ActivePatient = {
@@ -22,6 +25,7 @@ type ActivePatient = {
   email?: string;
   imageUrl?: string;
   phoneNumber?: string;
+  patientNumber?: string;
   relationship: { status: string; startDate: number; source?: string; referredBy?: string };
   stats?: { appointmentCount?: number; lastSessionDate?: number };
 };
@@ -33,6 +37,7 @@ type CompletedPatient = {
   lastName?: string;
   email?: string;
   imageUrl?: string;
+  patientNumber?: string;
   completedAt?: number;
   outcome?: Outcome;
   followUpRating?: number;
@@ -73,13 +78,21 @@ export default function PatientsPage() {
   const filteredActive = useMemo(
     () =>
       (active ?? []).filter((p) =>
-        !term ? true : [p.firstName, p.lastName, p.email, p.phoneNumber].filter(Boolean).join(' ').toLowerCase().includes(term)
+        !term
+          ? true
+          : [p.firstName, p.lastName, p.email, p.phoneNumber].filter(Boolean).join(' ').toLowerCase().includes(term) ||
+            matchesRehabifyId(p.patientNumber, term)
       ),
     [active, term]
   );
   const filteredCompleted = useMemo(
     () =>
-      (completed ?? []).filter((p) => (!term ? true : [p.firstName, p.lastName, p.email].filter(Boolean).join(' ').toLowerCase().includes(term))),
+      (completed ?? []).filter((p) =>
+        !term
+          ? true
+          : [p.firstName, p.lastName, p.email].filter(Boolean).join(' ').toLowerCase().includes(term) ||
+            matchesRehabifyId(p.patientNumber, term)
+      ),
     [completed, term]
   );
 
@@ -129,7 +142,7 @@ export default function PatientsPage() {
         <div className="relative w-full sm:max-w-xs">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
           <Input
-            placeholder="Search by name, email or phone"
+            placeholder="Search by name, email, phone or patient ID"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="h-10 rounded-xl border-0 bg-white pl-9 shadow-soft dark:bg-rh-ink-2"
@@ -137,6 +150,8 @@ export default function PatientsPage() {
           />
         </div>
       </div>
+
+      {view === 'active' && <PendingInvitations />}
 
       {view === 'active' ? (
         <Panel>
@@ -150,7 +165,7 @@ export default function PatientsPage() {
             <EmptyState
               icon={<Users />}
               title={term ? 'No patients match that search' : 'No patients yet'}
-              description={term ? 'Check the spelling, or search by email or phone.' : 'Invite a patient, or share your booking link so they can book you.'}
+              description={term ? 'Check the spelling, or search by email, phone or patient ID.' : 'Invite a patient, or share your booking link so they can book you.'}
             />
           ) : (
             <ul className="p-2">
@@ -171,6 +186,7 @@ export default function PatientsPage() {
                       <div className="min-w-0 flex-1">
                         <div className="flex min-w-0 flex-wrap items-center gap-2">
                           <p className="truncate text-sm font-semibold text-rh-night dark:text-white">{nameOf(patient)}</p>
+                          <RehabifyId value={patient.patientNumber} copyable={false} />
                           {source && (
                             <StatusBadge tone="teal" className="hidden sm:inline-flex">
                               {source}
@@ -223,7 +239,10 @@ export default function PatientsPage() {
                       <AvatarFallback className={cn('text-sm font-semibold', tintFor(patient.patientId))}>{initials(patient)}</AvatarFallback>
                     </Avatar>
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-semibold text-rh-night dark:text-white">{nameOf(patient)}</p>
+                      <div className="flex min-w-0 flex-wrap items-center gap-2">
+                        <p className="truncate text-sm font-semibold text-rh-night dark:text-white">{nameOf(patient)}</p>
+                        <RehabifyId value={patient.patientNumber} copyable={false} />
+                      </div>
                       <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">
                         {patient.completedAt ? `Completed ${format(patient.completedAt, 'd MMM yyyy')}` : 'Completed'}
                       </p>

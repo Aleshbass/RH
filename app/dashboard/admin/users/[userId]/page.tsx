@@ -69,6 +69,7 @@ import {
   roleMeta,
 } from '@/components/dashboard/admin/UserManagement'
 import { publicAppUrl } from '@/lib/public-app-url'
+import { NETWORK_TERMS_VERSION } from '@/lib/rehabify-network-terms'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
 
@@ -246,7 +247,14 @@ export default function AdminUserDetailPage() {
           </Link>
         }
         title={displayName(user)}
-        description={[user.email, `Joined ${format(new Date(user._creationTime), 'd MMM yyyy')}`].filter(Boolean).join(' · ')}
+        description={[
+          user.patientNumber,
+          user.staffNumber,
+          user.email,
+          `Joined ${format(new Date(user._creationTime), 'd MMM yyyy')}`,
+        ]
+          .filter(Boolean)
+          .join(' · ')}
         actions={
           <>
             {isPhysio && (
@@ -413,6 +421,26 @@ export default function AdminUserDetailPage() {
           )}
 
           <Panel title="System references" bodyClassName="space-y-2.5 px-5 pb-4 pt-2 text-xs">
+            {user.patientNumber && (
+              <CopyRow
+                icon={User}
+                label="patient ID"
+                value={user.patientNumber}
+                mono
+                copied={copiedField === 'Patient ID'}
+                onCopy={() => copyToClipboard(user.patientNumber!, 'Patient ID')}
+              />
+            )}
+            {user.staffNumber && (
+              <CopyRow
+                icon={Stethoscope}
+                label="clinician ID"
+                value={user.staffNumber}
+                mono
+                copied={copiedField === 'Clinician ID'}
+                onCopy={() => copyToClipboard(user.staffNumber!, 'Clinician ID')}
+              />
+            )}
             <CopyRow
               icon={Shield}
               label="user ID"
@@ -477,7 +505,7 @@ export default function AdminUserDetailPage() {
                   </TabsTrigger>
                   <TabsTrigger value="marketplace" className="gap-1.5 text-xs font-semibold">
                     <Globe className="h-3.5 w-3.5" />
-                    Marketplace & rates
+                    Marketplace
                   </TabsTrigger>
                   <TabsTrigger value="activity" className="gap-1.5 text-xs font-semibold">
                     <Activity className="h-3.5 w-3.5" />
@@ -559,42 +587,38 @@ export default function AdminUserDetailPage() {
                   )}
                 </TabsContent>
 
-                {/* ── Marketplace & rates ── */}
+                {/* ── Marketplace ── */}
                 <TabsContent value="marketplace" className="mt-0 space-y-6">
-                  <Panel title="Fees & pricing" description="Published marketplace session rates and packages" bodyClassName="space-y-5 p-5 pt-3">
+                  <Panel
+                    title="Rehabify network"
+                    description="Standard Rehabify prices apply; the physio earns the payout schedule in Admin › Pricing & payouts"
+                    bodyClassName="space-y-5 p-5 pt-3"
+                  >
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                      <Field label="Standard session">
-                        <span className="text-xl">{formatKobo(physioProfile?.hourlyRate)}</span>
+                      <Field label="Network terms">
+                        {physioProfile?.clinicId
+                          ? 'Clinic member: works under the clinic’s terms'
+                          : physioProfile?.networkTerms?.version === NETWORK_TERMS_VERSION
+                            ? `Accepted ${format(physioProfile.networkTerms.acceptedAt, 'd MMM yyyy')}`
+                            : 'Not accepted yet'}
                       </Field>
-                      <Field label="Initial assessment">
-                        <span className="text-xl">{formatKobo(physioProfile?.initialConsultRate || physioProfile?.hourlyRate)}</span>
+                      <Field label="Sees patients">
+                        {[
+                          physioProfile?.offersOnlineSessions !== false ? 'Video' : null,
+                          physioProfile?.offersInPersonSessions
+                            ? `Home visits (${physioProfile?.coveredZoneIds?.length ?? 0} zone${physioProfile?.coveredZoneIds?.length === 1 ? '' : 's'})`
+                            : null,
+                        ]
+                          .filter(Boolean)
+                          .join(' · ') || 'Not set'}
+                      </Field>
+                      <Field label="Rehabify Access">
+                        {physioProfile?.networkTerms?.accessOptIn ? 'Open to reduced-fee cases' : 'Not opted in'}
                       </Field>
                       <Field icon={Video} label="Video provider">
                         <span className="capitalize">{physioProfile?.videoPlatformPreference || 'GetStream Video'}</span>
                       </Field>
                     </div>
-
-                    {physioProfile?.packageRates && physioProfile.packageRates.length > 0 && (
-                      <div className="space-y-3">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <p className="text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">Session packages</p>
-                          {physioProfile.packageDiscountPercent ? (
-                            <StatusBadge tone="green">{physioProfile.packageDiscountPercent}% package discount</StatusBadge>
-                          ) : null}
-                        </div>
-                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                          {physioProfile.packageRates.map((pkg: { sessions: number; price: number; description?: string }, idx: number) => (
-                            <div key={idx} className="rounded-xl bg-rh-canvas p-3.5 dark:bg-white/[0.04]">
-                              <div className="flex items-center justify-between gap-2">
-                                <span className="text-sm font-semibold text-rh-night dark:text-white">{pkg.sessions} sessions</span>
-                                <StatusBadge tone="teal">{formatKobo(pkg.price)}</StatusBadge>
-                              </div>
-                              {pkg.description && <p className="pt-1 text-xs leading-snug text-neutral-500 dark:text-neutral-400">{pkg.description}</p>}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
                   </Panel>
 
                   <section className={cn(cardClass, 'p-5')}>

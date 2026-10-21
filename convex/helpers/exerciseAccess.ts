@@ -11,7 +11,13 @@
 import { ConvexError } from "convex/values";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
-import { getClinicMember, requireClinicWrite, assertPatientInClinic, type ClinicMember } from "../clinicTools";
+import {
+  getClinicMember,
+  requireClinicWrite,
+  assertPatientInClinic,
+  requireTreatingClinician,
+  type ClinicMember,
+} from "../clinicTools";
 import { clipIdFor } from "../exerciseLibraryContent";
 import { currentUser, findRelationship, isApproved } from "./careAccess";
 import { sha256Hex } from "./exerciseCrypto";
@@ -50,6 +56,11 @@ export async function requireCareTeam(ctx: Ctx, patientId: Id<"users">, opts: { 
   let careEnded = false;
   if (user.role === "physiotherapist" && (await isApproved(ctx, user._id))) {
     const rel = await findRelationship(ctx, user._id, patientId);
+    // A clinician the clinic has suspended can still read, but not change, the clinic's patients
+    const suspendedHere = Boolean(user.clinicId && rel?.clinicId === user.clinicId && user.status && user.status !== "active");
+    if (opts.write && suspendedHere) {
+      throw new ConvexError("Your access to this clinic has been suspended. Contact the clinic owner.");
+    }
     if (rel && (rel.status === "active" || !opts.write)) {
       return { user, kind: "physio", clinicId: user.clinicId ?? undefined, senderName: displayName(user) };
     }
@@ -58,8 +69,12 @@ export async function requireCareTeam(ctx: Ctx, patientId: Id<"users">, opts: { 
 
   const member = await clinicMemberOrNull(ctx);
   if (member) {
-    if (opts.write) await requireClinicWrite(ctx, "patients");
     await assertPatientInClinic(ctx, member.clinic, patientId);
+    if (opts.write) {
+      await requireClinicWrite(ctx, "patients");
+      // Prescribing stays with the patient's own clinician; the owner and colleagues can read
+      await requireTreatingClinician(ctx, member, patientId);
+    }
     return { user, kind: "clinic", clinicId: member.clinic._id, senderName: member.clinic.name };
   }
 

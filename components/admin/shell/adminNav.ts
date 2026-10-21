@@ -12,12 +12,14 @@ import {
   Flag,
   Globe,
   GraduationCap,
+  HandHeart,
   Handshake,
   HeartPulse,
   Home,
   Inbox,
   Landmark,
   LineChart,
+  MapPinned,
   Megaphone,
   Percent,
   ReceiptText,
@@ -25,6 +27,7 @@ import {
   ShieldCheck,
   Stethoscope,
   Store,
+  Tags,
   UserCheck,
   UserRound,
   UserX,
@@ -36,7 +39,7 @@ import {
 export const ADMIN_HOME = '/dashboard/admin'
 
 /** Live counts shown next to nav items. Resolved in AdminSidebar. */
-export type AdminBadgeKey = 'approvals' | 'partnerApplications' | 'openReports' | 'bankTransfers'
+export type AdminBadgeKey = 'approvals' | 'partnerApplications' | 'openReports' | 'bankTransfers' | 'accessApplications'
 
 export type AdminNavItem = {
   title: string
@@ -110,9 +113,10 @@ export const ADMIN_NAV: AdminNavSection[] = [
     icon: Store,
     items: [
       { title: 'Bookings', href: a('/marketplace-bookings'), icon: CalendarCheck, keywords: ['appointments', 'joy', 'reassign'] },
-      { title: 'Bank transfers', href: a('/bank-transfers'), icon: Landmark, badgeKey: 'bankTransfers', keywords: ['confirm', 'manual payment'] },
+      { title: 'Pricing & payouts', href: a('/service-tariffs'), icon: Tags, keywords: ['tariffs', 'prices', 'services', 'network terms', 'margin'] },
+      { title: 'Travel zones', href: a('/travel-zones'), icon: MapPinned, keywords: ['home visits', 'areas', 'surcharge', 'travel charge'] },
+      { title: 'Rehabify Access', href: a('/rehabify-access'), icon: HandHeart, badgeKey: 'accessApplications', keywords: ['assisted care', 'reduced fee', 'applications', 'subsidy'] },
       { title: 'Reports', href: a('/marketplace-reports'), icon: Flag, badgeKey: 'openReports', keywords: ['moderation', 'complaints'] },
-      { title: 'Marketplace analytics', href: a('/marketplace-analytics'), icon: LineChart, keywords: ['earnings', 'packages'] },
     ],
   },
   {
@@ -122,16 +126,20 @@ export const ADMIN_NAV: AdminNavSection[] = [
     items: [
       { title: 'Partners & applications', href: a('/partnerships'), icon: Handshake, badgeKey: 'partnerApplications', keywords: ['go-live', 'inquiries', 'api'] },
       { title: 'Contracts', href: a('/partner-contracts'), icon: FileSignature, keywords: ['commercial terms', 'pricing'] },
+      { title: 'Partner payouts', href: a('/partnerships?tab=bulk_payouts'), icon: Banknote, keywords: ['settlements', 'monthly'] },
       { title: 'AwaDoc', href: a('/awadoc'), icon: Globe, keywords: ['integration', 'webhooks'] },
     ],
   },
   {
+    // Every money screen lives here except payouts (Rehabify Physios, Partners) and clinic fees (Clinics).
+    // Finance identifies patients by Rehabify ID, not by name.
     id: 'finance',
     label: 'Finance',
     icon: ReceiptText,
     items: [
-      { title: 'Transactions', href: a('/transactions'), icon: ReceiptText, keywords: ['payments', 'invoices'] },
-      { title: 'Partner payouts', href: a('/partnerships?tab=bulk_payouts'), icon: Banknote, keywords: ['settlements', 'monthly'] },
+      { title: 'Transactions', href: a('/transactions'), icon: ReceiptText, keywords: ['payments', 'invoices', 'patient id'] },
+      { title: 'Bank transfers', href: a('/bank-transfers'), icon: Landmark, badgeKey: 'bankTransfers', keywords: ['confirm', 'manual payment'] },
+      { title: 'Marketplace revenue', href: a('/marketplace-analytics'), icon: LineChart, keywords: ['earnings', 'packages', 'analytics'] },
       { title: 'Revenue settings', href: a('/partnerships?tab=revenue'), icon: Percent, keywords: ['split', 'commission'] },
     ],
   },

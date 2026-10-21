@@ -26,9 +26,11 @@ import {
 type Ctx = QueryCtx | MutationCtx;
 
 const DAY = 86_400_000;
+const LAGOS_OFFSET = 60 * 60 * 1000; // West Africa Time, UTC+1
 const DEFAULT_FOLLOW_UP_DAYS = 14;
 const UPCOMING_STATUSES = new Set(["scheduled", "confirmed"]);
 const MAX_FILE_BYTES = 15 * 1024 * 1024;
+const HIGH_PAIN = 7;
 
 const sourceValidator = v.union(
   v.literal("referred"),
@@ -224,6 +226,35 @@ function planSnapshot(plan: Doc<"treatmentPlans">) {
   };
 }
 
+/** Home-programme logs with the programme title and exercise name, newest first. */
+async function describeProgramLogs(ctx: Ctx, logs: Doc<"exerciseProgramLogs">[]) {
+  const programs = new Map<string, Doc<"exercisePrograms"> | null>();
+  const exercises = new Map<string, string | null>();
+  const rows = [];
+  for (const log of logs) {
+    if (!programs.has(log.programId)) programs.set(log.programId, await ctx.db.get(log.programId));
+    const program = programs.get(log.programId);
+    const item = log.itemIndex >= 0 ? program?.items[log.itemIndex] : undefined;
+    let name = item?.name ?? null;
+    if (item?.exerciseId) {
+      if (!exercises.has(item.exerciseId)) exercises.set(item.exerciseId, (await ctx.db.get(item.exerciseId))?.name ?? null);
+      name = exercises.get(item.exerciseId) ?? name;
+    }
+    rows.push({
+      _id: log._id,
+      programTitle: program?.title ?? "A removed programme",
+      exerciseName: name ?? "A removed exercise",
+      painScore: log.painScore ?? null,
+      difficulty: log.difficulty ?? null,
+      note: log.note ?? null,
+      source: log.source,
+      createdAt: log.createdAt,
+      reviewedAt: log.reviewedAt ?? null,
+    });
+  }
+  return rows;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Physio: reading a patient's workspace
 // ─────────────────────────────────────────────────────────────────────────────
@@ -278,18 +309,58 @@ export const getPatientWorkspace = query({
     const completedSessions = appointments.filter((a) => a.status === "completed" && a.startTime >= episodeStart);
     const lastSession = completedSessions.sort((a, b) => b.startTime - a.startTime)[0] ?? null;
 
-    // Home exercise adherence, last 7 days
-    let adherence: { completed: number; expected: number; rate: number } | null = null;
-    if (plan && totalExercises > 0) {
-      const since = now - 7 * DAY;
-      const done = await ctx.db
-        .query("exerciseCompletions")
-        .withIndex("by_patient_and_plan", (q) => q.eq("patientId", args.patientId).eq("treatmentPlanId", plan._id))
-        .filter((q) => q.gte(q.field("completedAt"), since))
-        .collect();
-      const expected = totalExercises * 7;
-      adherence = { completed: done.length, expected, rate: Math.min(100, Math.round((done.length / expected) * 100)) };
-    }
+    // Home exercise adherence, last 7 days: one session per exercise per day. Home programmes
+    // (exerciseProgramLogs) are the main source; the older care-plan exercises
+    // (exerciseCompletions) only count towards the target while the patient still logs them.
+    const since = now - 7 * DAY;
+    const programs = (
+      await ctx.db
+        .query("exercisePrograms")
+        .withIndex("by_patient", (q) => q.eq("patientId", args.patientId))
+        .collect()
+    ).filter((p) => p.status === "active");
+    const programExercises = programs.reduce((n, p) => n + p.items.filter((i) => i.kind !== "education").length, 0);
+    const activeProgramIds = new Set<string>(programs.map((p) => p._id));
+    const weekLogs = await ctx.db
+      .query("exerciseProgramLogs")
+      .withIndex("by_patient", (q) => q.eq("patientId", args.patientId).gte("createdAt", since))
+      .collect();
+    const programDone = new Set(
+      weekLogs
+        .filter((l) => activeProgramIds.has(l.programId) && l.itemIndex >= 0)
+        .map((l) => `${l.programId}:${l.itemIndex}:${Math.floor((l.createdAt + LAGOS_OFFSET) / DAY)}`)
+    ).size;
+    const legacyDone =
+      plan && totalExercises > 0
+        ? (
+            await ctx.db
+              .query("exerciseCompletions")
+              .withIndex("by_patient_and_plan", (q) => q.eq("patientId", args.patientId).eq("treatmentPlanId", plan._id))
+              .filter((q) => q.gte(q.field("completedAt"), since))
+              .collect()
+          ).length
+        : 0;
+    const legacyExpected = programExercises === 0 || legacyDone > 0 ? totalExercises * 7 : 0;
+    const expected = programExercises * 7 + legacyExpected;
+    const completed = Math.min(expected, programDone + legacyDone);
+    const adherence =
+      expected > 0
+        ? {
+            completed,
+            expected,
+            rate: Math.min(100, Math.round((completed / expected) * 100)),
+            source: (programExercises > 0 ? (legacyExpected > 0 ? "both" : "programme") : "care_plan") as "programme" | "care_plan" | "both",
+            lastLoggedAt: weekLogs.length ? Math.max(...weekLogs.map((l) => l.createdAt)) : null,
+          }
+        : null;
+
+    // Recent home-programme logs (pain, difficulty, note) for the Check-ins tab and Overview
+    const recentLogs = await ctx.db
+      .query("exerciseProgramLogs")
+      .withIndex("by_patient", (q) => q.eq("patientId", args.patientId))
+      .order("desc")
+      .take(30);
+    const exerciseLogs = await describeProgramLogs(ctx, recentLogs);
 
     // Check-ins addressed to this physio (or to nobody in particular)
     const checkIns = (
@@ -324,15 +395,16 @@ export const getPatientWorkspace = query({
         email: patient.email,
         phoneNumber: patient.phoneNumber,
         imageUrl: patient.imageUrl,
+        patientNumber: patient.patientNumber,
       },
+      // patientProfiles holds a free-text history summary and one emergency contact
       profile: profile
         ? {
             dateOfBirth: profile.dateOfBirth,
             gender: profile.gender,
-            medicalHistory: (profile as any).medicalHistory ?? (profile as any).currentConditions ?? [],
-            medications: (profile as any).currentMedications ?? (profile as any).medications ?? [],
-            allergies: (profile as any).allergies ?? [],
-            emergencyContact: (profile as any).emergencyContact,
+            medicalHistory: profile.medicalHistorySummary?.trim() || null,
+            city: profile.city ?? null,
+            emergencyContact: profile.emergencyContact ?? null,
           }
         : null,
       relationship: {
@@ -381,6 +453,7 @@ export const getPatientWorkspace = query({
         : null,
       adherence,
       checkIns: checkIns.slice(0, 20),
+      exerciseLogs,
       notesCount: myNotes.length,
       lastNoteAt: myNotes[0]?.sessionDate ?? null,
       payments: {
@@ -510,7 +583,7 @@ export const getNeedsAttention = query({
     const now = Date.now();
     type Item = {
       key: string;
-      kind: "check_in" | "plan_review" | "no_booking" | "unconfirmed" | "overdue_invoice";
+      kind: "check_in" | "exercise_pain" | "plan_review" | "no_booking" | "unconfirmed" | "overdue_invoice";
       severity: "high" | "medium" | "low";
       patientId: Id<"users">;
       patientName: string;
@@ -525,27 +598,29 @@ export const getNeedsAttention = query({
       if (!names.has(id)) names.set(id, fullName(await ctx.db.get(id)));
       return names.get(id)!;
     };
+    const addCheckIn = async (c: Doc<"patientCheckIns">) => {
+      items.push({
+        key: `checkin-${c._id}`,
+        kind: "check_in",
+        severity: c.painScore >= HIGH_PAIN ? "high" : "medium",
+        patientId: c.patientId,
+        patientName: await nameOf(c.patientId),
+        title: c.flagReason ?? `Pain ${c.painScore}/10`,
+        detail: c.note ? `“${c.note.length > 90 ? `${c.note.slice(0, 90)}…` : c.note}”` : "From their check-in",
+        href: `/dashboard/physiotherapist/patients/${c.patientId}?tab=checkins`,
+        at: c.createdAt,
+      });
+    };
 
     // 1. Check-ins flagged in the last two weeks that the physio hasn't seen
     const checkIns = await ctx.db
       .query("patientCheckIns")
       .withIndex("by_physiotherapist", (q) => q.eq("physiotherapistId", physio._id).gte("createdAt", now - 14 * DAY))
       .collect();
-    for (const c of checkIns.filter((c) => c.flagged && !c.reviewedAt)) {
-      items.push({
-        key: `checkin-${c._id}`,
-        kind: "check_in",
-        severity: c.painScore >= 7 ? "high" : "medium",
-        patientId: c.patientId,
-        patientName: await nameOf(c.patientId),
-        title: c.flagReason ?? `Pain ${c.painScore}/10`,
-        detail: "From their check-in",
-        href: `/dashboard/physiotherapist/patients/${c.patientId}`,
-        at: c.createdAt,
-      });
-    }
+    for (const c of checkIns.filter((c) => c.flagged && !c.reviewedAt)) await addCheckIn(c);
 
-    // 2-3. Per active patient: plan review due, nothing booked
+    // 2-3. Per active patient: high pain in home exercises, flagged check-ins sent before
+    // this physio was linked, plan review due, nothing booked
     const relationships = (
       await ctx.db
         .query("patientPhysiotherapistRelationships")
@@ -555,6 +630,44 @@ export const getNeedsAttention = query({
 
     for (const relationship of relationships.slice(0, 150)) {
       const patientId = relationship.patientId;
+
+      // High pain logged during home exercises and not yet reviewed: one item per patient
+      const painLogs = (
+        await ctx.db
+          .query("exerciseProgramLogs")
+          .withIndex("by_patient", (q) => q.eq("patientId", patientId).gte("createdAt", now - 14 * DAY))
+          .collect()
+      )
+        .filter((l) => (l.painScore ?? 0) >= HIGH_PAIN && !l.reviewedAt)
+        .sort((a, b) => b.createdAt - a.createdAt);
+      if (painLogs.length > 0) {
+        const [latest] = await describeProgramLogs(ctx, [painLogs[0]]);
+        items.push({
+          key: `exercise-pain-${latest._id}`,
+          kind: "exercise_pain",
+          severity: "high",
+          patientId,
+          patientName: await nameOf(patientId),
+          title: `Pain ${latest.painScore}/10 during ${latest.exerciseName}`,
+          detail:
+            painLogs.length > 1
+              ? `${painLogs.length} high-pain logs in their home exercises`
+              : latest.note
+                ? `“${latest.note}”`
+                : `From “${latest.programTitle}”`,
+          href: `/dashboard/physiotherapist/patients/${patientId}?tab=checkins`,
+          at: latest.createdAt,
+        });
+      }
+
+      const unassigned = (
+        await ctx.db
+          .query("patientCheckIns")
+          .withIndex("by_patient", (q) => q.eq("patientId", patientId).gte("createdAt", now - 14 * DAY))
+          .collect()
+      ).filter((c) => !c.physiotherapistId && c.flagged && !c.reviewedAt);
+      for (const c of unassigned) await addCheckIn(c);
+
       const plan = await activePlanFor(ctx, physio._id, patientId);
       if (plan?.reviewDate && plan.reviewDate <= now + DAY) {
         items.push({
@@ -692,6 +805,7 @@ export const getCompletedCare = query({
           lastName: patient?.lastName,
           email: patient?.email,
           imageUrl: patient?.imageUrl,
+          patientNumber: patient?.patientNumber,
           completedAt: e.completedAt,
           outcome: e.outcome,
           followUpRating: e.followUpRating,
@@ -1019,13 +1133,35 @@ export const attachPatientFile = mutation({
   },
 });
 
+/**
+ * The physio has seen a check-in. Check-ins sent before the patient had a physio carry no
+ * physiotherapistId but still show in the workspace, so access follows the care relationship
+ * (as getPatientWorkspace does); one addressed to another physio stays theirs.
+ */
 export const markCheckInReviewed = mutation({
   args: { checkInId: v.id("patientCheckIns") },
   handler: async (ctx, args) => {
     const physio = await requirePhysio(ctx);
     const checkIn = await ctx.db.get(args.checkInId);
-    if (!checkIn || checkIn.physiotherapistId !== physio._id) throw new ConvexError("Check-in not found.");
+    if (!checkIn) throw new ConvexError("This check-in no longer exists.");
+    if (checkIn.physiotherapistId && checkIn.physiotherapistId !== physio._id) {
+      throw new ConvexError("This check-in was sent to another physiotherapist.");
+    }
+    if (!(await findRelationship(ctx, physio._id, checkIn.patientId))) throw new ConvexError("This patient isn't on your list.");
     if (!checkIn.reviewedAt) await ctx.db.patch(checkIn._id, { reviewedAt: Date.now() });
+    return { success: true };
+  },
+});
+
+/** The physio has seen a high-pain home exercise log, so it leaves Needs attention. */
+export const markExerciseLogReviewed = mutation({
+  args: { logId: v.id("exerciseProgramLogs") },
+  handler: async (ctx, args) => {
+    const physio = await requirePhysio(ctx);
+    const log = await ctx.db.get(args.logId);
+    if (!log) throw new ConvexError("This exercise log no longer exists.");
+    if (!(await findRelationship(ctx, physio._id, log.patientId))) throw new ConvexError("This patient isn't on your list.");
+    if (!log.reviewedAt) await ctx.db.patch(log._id, { reviewedAt: Date.now() });
     return { success: true };
   },
 });
@@ -1190,10 +1326,13 @@ export const submitCheckIn = mutation({
     mood: v.optional(v.union(v.literal("great"), v.literal("good"), v.literal("okay"), v.literal("low"))),
     exercisesDone: v.union(v.literal("all"), v.literal("some"), v.literal("none")),
     note: v.optional(v.string()),
+    // The patient ticked "I'm worried about something" (their note says what)
+    concern: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const patient = await requirePatient(ctx);
     const pain = Math.max(0, Math.min(10, Math.round(args.painScore)));
+    const note = args.note?.trim().slice(0, 1000) || undefined;
     const fn = args.functionScore === undefined ? undefined : Math.max(0, Math.min(10, Math.round(args.functionScore)));
     const now = Date.now();
 
@@ -1215,9 +1354,12 @@ export const submitCheckIn = mutation({
       : undefined;
 
     const reasons: string[] = [];
-    if (pain >= 7) reasons.push(`Pain ${pain}/10`);
+    if (pain >= HIGH_PAIN) reasons.push(`Pain ${pain}/10`);
     else if (previous && pain - previous.painScore >= 3) reasons.push(`Pain up from ${previous.painScore} to ${pain}`);
     if (args.mood === "low") reasons.push("Feeling low");
+    // Something written for the physio is flagged whatever the pain score, so it gets read
+    if (args.concern) reasons.push("Raised a concern");
+    else if (note) reasons.push("Left a note");
     const flagged = reasons.length > 0;
 
     const id = await ctx.db.insert("patientCheckIns", {
@@ -1228,7 +1370,7 @@ export const submitCheckIn = mutation({
       functionScore: fn,
       mood: args.mood,
       exercisesDone: args.exercisesDone,
-      note: args.note?.trim().slice(0, 1000) || undefined,
+      note,
       flagged,
       flagReason: flagged ? reasons.join(" · ") : undefined,
       createdAt: now,
@@ -1240,9 +1382,9 @@ export const submitCheckIn = mutation({
         physioId,
         "patient_check_in",
         `${fullName(patient)} needs your attention`,
-        `${reasons.join(", ")} in today's check-in.`,
-        `/dashboard/physiotherapist/patients/${patient._id}`,
-        pain >= 7 ? "high" : "medium"
+        `${reasons.join(", ")} in today's check-in.${note ? ` They wrote: "${note.length > 140 ? `${note.slice(0, 140)}…` : note}"` : ""}`,
+        `/dashboard/physiotherapist/patients/${patient._id}?tab=checkins`,
+        pain >= HIGH_PAIN || args.concern ? "high" : "medium"
       );
     }
     return { checkInId: id, flagged };

@@ -1,6 +1,7 @@
 'use client'
 
 import { useQuery } from 'convex/react'
+import { useAuth } from '@clerk/nextjs'
 import { api } from '@/convex/_generated/api'
 import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
@@ -10,19 +11,33 @@ interface DashboardAuthGuardProps {
   children: React.ReactNode
 }
 
+// A brand-new Clerk account gets its Convex record from SyncUserWithConvex a moment after sign-up
+const NEW_ACCOUNT_SYNC_WAIT_MS = 10_000
+
 export default function DashboardAuthGuard({ children }: DashboardAuthGuardProps) {
   const router = useRouter()
+  const { isSignedIn } = useAuth()
   const currentUser = useQuery(api.users.getMyUser)
   const approvalStatus = useQuery(
     api.accountApproval.getStatus,
     currentUser ? { userId: currentUser._id } : "skip"
   )
   const [isRedirecting, setIsRedirecting] = useState(false)
+  const [syncWaitOver, setSyncWaitOver] = useState(false)
+
+  useEffect(() => {
+    if (currentUser !== null || !isSignedIn) return
+    const t = setTimeout(() => setSyncWaitOver(true), NEW_ACCOUNT_SYNC_WAIT_MS)
+    return () => clearTimeout(t)
+  }, [currentUser, isSignedIn])
 
   useEffect(() => {
     // Wait for user data to load
     if (currentUser === undefined) return
     if (isRedirecting) return
+
+    // Signed in but the record isn't there yet: wait for the sync instead of flashing /sign-in
+    if (!currentUser && isSignedIn && !syncWaitOver) return
 
     // If no user found, check for pending invite first
     if (!currentUser) {
@@ -148,10 +163,10 @@ export default function DashboardAuthGuard({ children }: DashboardAuthGuardProps
 
     // Admin and patient roles don't require approval, allow access
     // Approved physiotherapists and clinic owners also reach here
-  }, [currentUser, approvalStatus, router, isRedirecting])
+  }, [currentUser, approvalStatus, router, isRedirecting, isSignedIn, syncWaitOver])
 
   // Show loading state while checking authentication or redirecting
-  if (isRedirecting || currentUser === undefined ||
+  if (isRedirecting || currentUser === undefined || (currentUser === null && isSignedIn && !syncWaitOver) ||
     (currentUser?.role === 'physiotherapist' || currentUser?.role === 'clinic_owner') && approvalStatus === undefined) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">

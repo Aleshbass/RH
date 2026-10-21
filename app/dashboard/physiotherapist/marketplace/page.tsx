@@ -8,11 +8,13 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import PhysioCard from "@/components/marketplace/PhysioCard";
 import VerificationBadgeWidget from "@/components/marketplace/VerificationBadgeWidget";
-import { EmptyState, PageContainer, PageHeader, Panel, StatTile, formatNaira } from "@/components/physio/ui";
+import { EmptyState, PageContainer, PageHeader, Panel, StatTile, StatusBadge, formatNaira } from "@/components/physio/ui";
+import type { MarketplaceSettings, TravelZone } from "@/lib/rehabify-api-types";
 
-/** Marketplace performance, the verified badge and a preview of the public profile. */
+/** Marketplace performance, services and coverage, the verified badge and a preview of the public profile. */
 export default function PhysiotherapistMarketplacePage() {
-  const settings = useQuery(api.marketplace.settings.getMyMarketplaceSettings);
+  const settings = useQuery(api.marketplace.settings.getMyMarketplaceSettings) as MarketplaceSettings | null | undefined;
+  const zones = useQuery(api.travelZones.listZones) as TravelZone[] | undefined;
 
   if (settings === undefined) {
     return (
@@ -42,6 +44,22 @@ export default function PhysiotherapistMarketplacePage() {
     );
   }
 
+  if (settings.isClinicMember) {
+    return (
+      <PageContainer>
+        <PageHeader title="Marketplace profile" />
+        <Panel>
+          <EmptyState
+            title="You see patients through your clinic"
+            description="Clinic physiotherapists work under their clinic’s terms and prices, so you aren’t listed on the Rehabify marketplace."
+          />
+        </Panel>
+      </PageContainer>
+    );
+  }
+
+  const coveredZones = (zones ?? []).filter((zone) => settings.coveredZoneIds.includes(zone.id));
+
   const previewData = {
     id: settings.userId,
     fullName: settings.fullName,
@@ -51,8 +69,6 @@ export default function PhysiotherapistMarketplacePage() {
     specializations: settings.specializations,
     yearsOfExperience: settings.yearsOfExperience,
     location: settings.location || "Location not set",
-    hourlyRate: settings.hourlyRate,
-    initialConsultRate: settings.initialConsultRate,
     averageRating: settings.averageRating,
     reviewCount: settings.reviewCount,
     isVerified: settings.verificationBadge.status !== "none",
@@ -68,7 +84,7 @@ export default function PhysiotherapistMarketplacePage() {
         actions={
           <>
             <Button asChild variant="outline">
-              <Link href="/dashboard/physiotherapist/settings/marketplace">Prices &amp; listing</Link>
+              <Link href="/dashboard/physiotherapist/settings/marketplace">Services &amp; coverage</Link>
             </Button>
             <Button asChild variant="outline">
               <a href={`/find-a-physio/${settings.userId}`} target="_blank" rel="noopener noreferrer">
@@ -83,7 +99,7 @@ export default function PhysiotherapistMarketplacePage() {
       <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
         <StatTile label="Profile views" value={settings.profileViews || 0} hint="all time" />
         <StatTile label="Bookings" value={settings.bookingsThroughMarketplace || 0} hint="from the marketplace" />
-        <StatTile label="Earnings" value={formatNaira(settings.totalMarketplaceEarnings || 0)} hint="from the marketplace" />
+        <StatTile label="Earnings" value={formatNaira(settings.totalMarketplaceEarnings || 0)} hint="your payouts from the marketplace" />
         <StatTile
           label="Rating"
           value={settings.averageRating > 0 ? settings.averageRating.toFixed(1) : "–"}
@@ -99,7 +115,47 @@ export default function PhysiotherapistMarketplacePage() {
             </div>
           </Panel>
         </div>
-        <div className="lg:col-span-2">
+        <div className="space-y-6 lg:col-span-2">
+          <Panel
+            title="Services & coverage"
+            description="How Rehabify patients can see you"
+            actions={
+              <Link href="/dashboard/physiotherapist/settings/marketplace" className="text-sm font-medium text-rh-teal hover:underline dark:text-rh-aqua">
+                Change
+              </Link>
+            }
+          >
+            <dl className="divide-y divide-neutral-100 text-sm dark:divide-white/[0.07]">
+              <div className="flex items-center justify-between gap-4 px-5 py-3">
+                <dt className="text-neutral-500 dark:text-neutral-400">Video sessions</dt>
+                <dd>
+                  <StatusBadge tone={settings.offersOnlineSessions ? "green" : "neutral"}>{settings.offersOnlineSessions ? "On" : "Off"}</StatusBadge>
+                </dd>
+              </div>
+              <div className="flex items-start justify-between gap-4 px-5 py-3">
+                <dt className="shrink-0 text-neutral-500 dark:text-neutral-400">Home visits</dt>
+                <dd className="min-w-0 text-right">
+                  {settings.offersInPersonSessions && coveredZones.length > 0 ? (
+                    <span className="text-neutral-900 dark:text-white">{coveredZones.map((zone) => `${zone.name}, ${zone.city}`).join(" · ")}</span>
+                  ) : (
+                    <StatusBadge>Off</StatusBadge>
+                  )}
+                </dd>
+              </div>
+              <div className="flex items-center justify-between gap-4 px-5 py-3">
+                <dt className="text-neutral-500 dark:text-neutral-400">Network terms</dt>
+                <dd>
+                  {settings.networkTermsAccepted ? (
+                    <StatusBadge tone="green">Accepted</StatusBadge>
+                  ) : (
+                    <Link href="/dashboard/physiotherapist/settings/network-terms" className="font-medium text-rh-teal hover:underline dark:text-rh-aqua">
+                      Review and accept
+                    </Link>
+                  )}
+                </dd>
+              </div>
+            </dl>
+          </Panel>
           <Panel title="Verified badge" description="Rank higher in search and build trust">
             <div className="p-4 sm:p-5">
               <VerificationBadgeWidget currentStatus={settings.verificationBadge} />

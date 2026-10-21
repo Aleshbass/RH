@@ -1,9 +1,21 @@
 /**
- * Shared bits for the booking flows (public /book pages and the physio "schedule a patient" modal):
- * session types, the price a patient pays, and the onboarding prefs saved by /start-treatment.
+ * Shared bits for the booking flows (public /book pages, /get-care and the physio
+ * "schedule a patient" modal): session types, the Rehabify service catalogue as the pages
+ * read it, travel zones, Paystack checkout and the onboarding prefs saved by /start-treatment.
  *
- * Prices here are in NAIRA (the marketplace profile query converts from kobo).
+ * Prices come from Convex (api.serviceTariffs.getCatalogue / getServiceQuote) in KOBO.
  */
+
+import type { Id } from "@/convex/_generated/dataModel";
+import {
+    formatKobo,
+    isBookableServiceId,
+    serviceForLegacyDuration,
+    type BookableServiceId,
+    type RehabifyServiceId,
+    type ServiceKind,
+    type ServiceMode,
+} from "@/lib/rehabify-services";
 
 export type SessionType = {
     id: "initial" | "followup" | "quick";
@@ -25,29 +37,8 @@ export function sessionTypeForDuration(duration: number): SessionType {
     return SESSION_TYPES[0];
 }
 
-/**
- * Last-resort standard rates. The live ones come from Admin › Revenue settings via
- * getPhysiotherapistProfile (standardVirtualRate / standardInPersonRate); these match the
- * built-in fallbacks in convex/helpers/marketplacePricing.ts.
- */
-export const STANDARD_VIDEO_RATE_NAIRA = 6000;
-export const STANDARD_IN_PERSON_RATE_NAIRA = 10000;
-
-export type SessionMode = "online" | "in-person";
-
-/** The pricing fields of api.marketplace.search.getPhysiotherapistProfile (naira). */
-export type PricedPhysio = {
-    hourlyRate?: number;
-    initialConsultRate?: number;
-    virtualConsultationRate?: number;
-    inPersonConsultationRate?: number;
-    // Platform standard prices (Admin › Revenue settings) for physios without their own
-    standardVirtualRate?: number;
-    standardInPersonRate?: number;
-};
-
 /** What the booking pages read from api.marketplace.search.getPhysiotherapistProfile. */
-export type BookingProfile = PricedPhysio & {
+export type BookingProfile = {
     id: string;
     fullName: string;
     firstName?: string;
@@ -58,58 +49,182 @@ export type BookingProfile = PricedPhysio & {
     yearsOfExperience?: number;
     location?: string;
     languagesSpoken?: string[];
-    packageDiscountPercent?: number;
     averageRating?: number;
     reviewCount?: number;
     isVerified?: boolean;
     offersOnlineSessions?: boolean;
     offersInPersonSessions?: boolean;
+    /** Rehabify service ids this physio delivers. */
+    servicesOffered?: string[];
+    /** Travel zones the physio visits for home services. */
+    coveredZoneIds?: string[];
 };
 
+// ── Catalogue, zones and quotes (shapes of the Convex queries) ─────────────
+
+/** One row of api.serviceTariffs.getCatalogue. */
+export type CatalogueService = {
+    id: RehabifyServiceId;
+    name: string;
+    shortName: string;
+    mode: ServiceMode;
+    kind: ServiceKind;
+    durationMinutes: number;
+    durationLabel: string;
+    bookable: boolean;
+    requiresPriorAssessment: boolean;
+    priceKobo: number;
+    travelApplies: boolean;
+    offeredUnderAccess: boolean;
+    summary: string;
+    whatHappens: string[];
+    youReceive: string;
+    notIncluded: string | null;
+};
+
+export type Catalogue = { version: number; services: CatalogueService[] };
+
+/** One row of api.travelZones.listZones. */
+export type TravelZone = {
+    id: Id<"travelZones">;
+    city: string;
+    name: string;
+    areas: string[];
+    surchargeKobo: number;
+};
+
+/** api.marketplace.booking.getServiceQuote. */
+export type ServiceQuote =
+    | {
+          ok: true;
+          serviceId: string;
+          durationMinutes: number;
+          basePriceKobo: number;
+          travelSurchargeKobo: number;
+          chargeKobo: number;
+          zoneName: string | null;
+          assisted: boolean;
+      }
+    | { ok: false; message: string };
+
+export const SERVICE_MODE_LABEL: Record<ServiceMode, string> = {
+    virtual: "Video call",
+    home: "Home visit",
+};
+
+/** "₦30,000", or "From ₦30,000" when a travel charge is added. */
+export function servicePriceLabel(service: Pick<CatalogueService, "priceKobo" | "travelApplies">): string {
+    return service.travelApplies ? `From ${formatKobo(service.priceKobo)}` : formatKobo(service.priceKobo);
+}
+
+/** Bookable catalogue services, limited to the ones a physio offers when given. */
+export function bookableServices(services: CatalogueService[] | undefined, offered?: string[]): CatalogueService[] {
+    return (services ?? []).filter(
+        (service) => service.bookable && isBookableServiceId(service.id) && (!offered || offered.includes(service.id))
+    );
+}
+
+/** "From ₦6,000": the cheapest bookable service. */
+export function lowestPriceLabel(services: CatalogueService[] | undefined): string | null {
+    const prices = bookableServices(services).map((service) => service.priceKobo);
+    return prices.length > 0 ? `From ${formatKobo(Math.min(...prices))}` : null;
+}
+
+/** The video equivalent of a home service, for patients outside our travel zones. */
+export function virtualAlternative(serviceId: string): BookableServiceId | null {
+    if (serviceId === "home_assessment") return "virtual_assessment";
+    if (serviceId === "home_treatment") return "virtual_treatment";
+    return null;
+}
+
 /**
- * How a booking is priced. Must stay in step with resolveServiceAmountKobo on the server:
- *  - "package": a per-session rate packages can be built from (onboarding tariff or the physio's
- *    hourly rate). The page sends the package total.
- *  - "initial": only an initial consultation rate is set. Single session, the page sends it.
- *  - "standard": no rate of their own. The page sends 0 and the server charges the physio's
- *    video / in-person price (or the platform standard), so the price depends on the session mode.
+ * The [duration] segment of /book/[id]/[duration]: a service id, or a legacy minutes value
+ * (30/45/60) that preselects a service the patient then confirms.
  */
-export type BookingPricing =
-    | { kind: "package"; sessionRate: number }
-    | { kind: "initial"; sessionRate: number }
-    | { kind: "standard"; video: number; inPerson: number };
-
-export function bookingPricing(profile: PricedPhysio | null | undefined, onboardingRate?: number): BookingPricing {
-    if (onboardingRate && onboardingRate > 0) return { kind: "package", sessionRate: onboardingRate };
-    const hourly = profile?.hourlyRate ?? 0;
-    if (hourly > 0) return { kind: "package", sessionRate: hourly };
-    const initial = profile?.initialConsultRate ?? 0;
-    if (initial > 0) return { kind: "initial", sessionRate: initial };
-    return {
-        kind: "standard",
-        video: profile?.virtualConsultationRate || profile?.standardVirtualRate || STANDARD_VIDEO_RATE_NAIRA,
-        inPerson: profile?.inPersonConsultationRate || profile?.standardInPersonRate || STANDARD_IN_PERSON_RATE_NAIRA,
-    };
+export function parseServiceSegment(segment: string | undefined): { serviceId: BookableServiceId | null; legacy: boolean } {
+    if (!segment) return { serviceId: null, legacy: false };
+    if (/^\d+$/.test(segment)) {
+        const minutes = parseInt(segment, 10);
+        return { serviceId: minutes > 0 ? serviceForLegacyDuration(minutes) : null, legacy: true };
+    }
+    return { serviceId: isBookableServiceId(segment) ? segment : null, legacy: false };
 }
 
-/** Price of one session in the given mode (naira). */
-export function singleSessionPrice(pricing: BookingPricing, mode: SessionMode): number {
-    if (pricing.kind === "standard") return mode === "online" ? pricing.video : pricing.inPerson;
-    return pricing.sessionRate;
+/** Cities with travel zones, in the order listZones returns them. */
+export function zoneCities(zones: TravelZone[] | undefined): string[] {
+    return [...new Set((zones ?? []).map((zone) => zone.city))];
 }
 
-/** Price rows to show patients for the modes a physio offers. */
-export function priceRows(
-    pricing: BookingPricing,
-    offersOnline: boolean,
-    offersInPerson: boolean
-): { label: string; amount: string }[] {
-    if (pricing.kind !== "standard") return [{ label: "Per session", amount: formatNaira(pricing.sessionRate) }];
-    const rows: { label: string; amount: string }[] = [];
-    if (offersOnline) rows.push({ label: "Video call", amount: formatNaira(pricing.video) });
-    if (offersInPerson) rows.push({ label: "In person", amount: formatNaira(pricing.inPerson) });
-    if (rows.length === 2 && pricing.video === pricing.inPerson) return [{ label: "Per session", amount: rows[0].amount }];
-    return rows.length > 0 ? rows : [{ label: "Video call", amount: formatNaira(pricing.video) }];
+/** Every area we visit in a city, A–Z. */
+export function cityAreas(zones: TravelZone[] | undefined, city: string): string[] {
+    const areas = (zones ?? []).filter((zone) => zone.city === city).flatMap((zone) => zone.areas);
+    return [...new Set(areas)].sort((a, b) => a.localeCompare(b));
+}
+
+/** The travel zone an area belongs to (an area is in at most one active zone per city). */
+export function zoneForArea(zones: TravelZone[] | undefined, city: string, area: string): TravelZone | null {
+    const wanted = area.trim().toLowerCase();
+    if (!wanted) return null;
+    return (
+        (zones ?? []).find((zone) => zone.city === city && zone.areas.some((a) => a.toLowerCase() === wanted)) ?? null
+    );
+}
+
+/** "?a=1&b=2" from the params that are set, or "". */
+export function queryString(params: Record<string, string | null | undefined>): string {
+    const search = new URLSearchParams();
+    for (const [key, value] of Object.entries(params)) if (value) search.set(key, value);
+    const text = search.toString();
+    return text ? `?${text}` : "";
+}
+
+/** The readable part of a Convex error (ConvexError data, or the server message). */
+export function convexErrorMessage(error: unknown, fallback: string): string {
+    const err = error as { data?: unknown; message?: unknown } | null;
+    if (typeof err?.data === "string" && err.data.trim()) return err.data;
+    const raw = typeof err?.message === "string" ? err.message : "";
+    const match = raw.match(/(?:Uncaught (?:Convex)?Error|ConvexError):\s*(.+?)(?:\n|\s+at\s|$)/);
+    return match?.[1] || fallback;
+}
+
+/** Errors that mean the patient should pick another time. */
+export function isSlotError(message: string): boolean {
+    return /pick (?:another|a new|a later) time|30 minutes from now|starts too soon/i.test(message);
+}
+
+export type CheckoutResult = { ok: true; url: string } | { ok: false; message: string; reason?: string };
+
+/**
+ * Starts Paystack checkout for a booking. The route charges the booking's own amount and
+ * re-holds the slot; a 409 with reason "slot_taken" / "too_late" means pick a new time.
+ */
+export async function startMarketplaceCheckout(input: {
+    bookingId: string;
+    email: string;
+    phone?: string;
+    name?: string;
+}): Promise<CheckoutResult> {
+    try {
+        const response = await fetch("/api/payments/marketplace", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                bookingId: input.bookingId,
+                email: input.email,
+                phone: input.phone || null,
+                name: input.name || null,
+            }),
+        });
+        const data = await response.json().catch(() => null);
+        if (response.ok && data?.success && data.authorization_url) return { ok: true, url: data.authorization_url };
+        return {
+            ok: false,
+            message: data?.error || "We couldn't start the payment. Please try again.",
+            reason: typeof data?.reason === "string" ? data.reason : undefined,
+        };
+    } catch {
+        return { ok: false, message: "We couldn't reach the payment service. Please check your connection and try again." };
+    }
 }
 
 export function formatNaira(amount: number): string {
@@ -123,7 +238,6 @@ export interface TreatmentPrefs {
     areaLabel: string;
     conditionLabel: string;
     conditionLevel: string;
-    sessionRate: number;
     timestamp: number;
 }
 

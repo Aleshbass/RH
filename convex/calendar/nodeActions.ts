@@ -63,7 +63,7 @@ export async function updateCalendarEvent(
   eventId: string,
   event: Partial<GoogleCalendarEvent>
 ) {
-  const calendar = calendar_v3({ version: "v3", auth: client });
+  const calendar = google.calendar({ version: "v3", auth: client });
 
   const response = await calendar.events.update({
     calendarId,
@@ -79,7 +79,7 @@ export async function deleteCalendarEvent(
   calendarId: string,
   eventId: string
 ) {
-  const calendar = calendar_v3({ version: "v3", auth: client });
+  const calendar = google.calendar({ version: "v3", auth: client });
 
   await calendar.events.delete({
     calendarId,
@@ -93,7 +93,7 @@ export async function getCalendarEvents(
   timeMin?: string,
   timeMax?: string
 ) {
-  const calendar = calendar_v3({ version: "v3", auth: client });
+  const calendar = google.calendar({ version: "v3", auth: client });
 
   const response = await calendar.events.list({
     calendarId,
@@ -107,7 +107,7 @@ export async function getCalendarEvents(
 }
 
 export async function getCalendarList(client: OAuth2Client) {
-  const calendar = calendar_v3({ version: "v3", auth: client });
+  const calendar = google.calendar({ version: "v3", auth: client });
 
   const response = await calendar.calendarList.list();
   return response.data.items || [];
@@ -333,7 +333,7 @@ export const updateEvent = internalAction({
   },
   handler: async (ctx, args): Promise<void> => {
     const client = await getClientForUser(ctx, args.userId);
-    const calendar = calendar_v3({ version: "v3", auth: client });
+    const calendar = google.calendar({ version: "v3", auth: client });
 
     const requestBody: any = {};
     if (args.summary) requestBody.summary = args.summary;
@@ -378,7 +378,7 @@ export const deleteEvent = internalAction({
   },
   handler: async (ctx, args): Promise<void> => {
     const client = await getClientForUser(ctx, args.userId);
-    const calendar = calendar_v3({ version: "v3", auth: client });
+    const calendar = google.calendar({ version: "v3", auth: client });
     await calendar.events.delete({
       calendarId: args.calendarId || "primary",
       eventId: args.eventId,
@@ -403,7 +403,7 @@ export const setupWatch = internalAction({
     args
   ): Promise<{ resourceId: string; expiration: number }> => {
     const client = await getClientForUser(ctx, args.userId);
-    const calendar = calendar_v3({ version: "v3", auth: client });
+    const calendar = google.calendar({ version: "v3", auth: client });
 
     const watchRequest: any = {
       id: args.channelId,
@@ -438,7 +438,7 @@ export const getEvents = internalAction({
   },
   handler: async (ctx, args): Promise<any> => {
     const client = await getClientForUser(ctx, args.userId);
-    const calendar = calendar_v3({ version: "v3", auth: client });
+    const calendar = google.calendar({ version: "v3", auth: client });
 
     const timeMin = args.startDate
       ? new Date(args.startDate).toISOString()

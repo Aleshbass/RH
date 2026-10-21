@@ -11,7 +11,7 @@
  */
 
 import { v } from "convex/values";
-import { query, mutation, action, internalAction } from "../_generated/server";
+import { query, mutation, action, internalAction, internalMutation, type QueryCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { Id } from "../_generated/dataModel";
 import { getCallerOrNull } from "./access";
@@ -25,6 +25,7 @@ import {
     TimeSlot,
     DayAvailability,
 } from "./availabilityTypes";
+import { LAGOS_TIME_ZONE, startOfZonedDay, zonedDateTimeToUtc } from "../helpers/lagosTime";
 
 // ============================================================================
 // HELPER FUNCTIONS
@@ -109,8 +110,9 @@ function normalizeAvailabilitySchedule(schedule: unknown): AvailabilitySchedule 
         return convertOperatingHoursToSchedule(schedule);
     }
 
-    // Assume it's the new format
-    return schedule as AvailabilitySchedule;
+    // Assume it's the new format; hours without a zone are Lagos time
+    const current = schedule as AvailabilitySchedule;
+    return current.timezone ? current : { ...current, timezone: LAGOS_TIME_ZONE };
 }
 
 /**
@@ -171,27 +173,22 @@ function getDateString(timestamp: number, timezone: string): string {
  * Get start of day timestamp for a date in a timezone
  */
 function getStartOfDay(timestamp: number, timezone: string): number {
-    const dateStr = getDateString(timestamp, timezone);
-    // Create date at midnight in the timezone
-    const date = new Date(`${dateStr}T00:00:00`);
-    return date.getTime();
+    return startOfZonedDay(timestamp, timezone || LAGOS_TIME_ZONE);
 }
 
 /**
- * Convert a time slot on a specific date to timestamps
+ * Convert a time slot on a specific date to timestamps.
+ * The hours are wall-clock time in the schedule's zone; Convex itself runs in UTC.
  */
 function slotToTimestamps(
     dateStr: string,
     slot: TimeSlot,
     timezone: string
 ): { start: number; end: number } {
-    // Parse the date and times
-    const startDate = new Date(`${dateStr}T${slot.start}:00`);
-    const endDate = new Date(`${dateStr}T${slot.end}:00`);
-
+    const zone = timezone || LAGOS_TIME_ZONE;
     return {
-        start: startDate.getTime(),
-        end: endDate.getTime(),
+        start: zonedDateTimeToUtc(dateStr, slot.start, zone),
+        end: zonedDateTimeToUtc(dateStr, slot.end, zone),
     };
 }
 
@@ -307,6 +304,8 @@ export const getAvailableSlots = query({
         startDate: v.number(), // Unix timestamp
         endDate: v.number(), // Unix timestamp
         sessionDuration: v.optional(v.number()), // Override default duration
+        // Moving a visit: its own current time doesn't block the new one
+        excludeAppointmentId: v.optional(v.id("appointments")),
     },
     handler: async (ctx, args): Promise<AvailableSlot[]> => {
         // 1. Get physiotherapist profile and availability
@@ -341,12 +340,14 @@ export const getAvailableSlots = query({
             .collect();
 
         // Convert appointments to busy blocks
-        const rehabifyBusy: BusyBlock[] = appointments.map((apt) => ({
-            start: apt.startTime,
-            end: apt.endTime,
-            source: "rehabify" as const,
-            eventId: apt._id,
-        }));
+        const rehabifyBusy: BusyBlock[] = appointments
+            .filter((apt) => apt._id !== args.excludeAppointmentId)
+            .map((apt) => ({
+                start: apt.startTime,
+                end: apt.endTime,
+                source: "rehabify" as const,
+                eventId: apt._id,
+            }));
 
         // A pending Marketplace/Joy booking is a real, short-lived hold.  It
         // must be removed from availability as well as checked by the booking
@@ -369,6 +370,11 @@ export const getAvailableSlots = query({
                 source: "rehabify" as const,
                 eventId: booking._id,
             }));
+
+        // Google Calendar busy times, cached by refreshGoogleBusy when a booking page opens
+        const googleBusy: BusyBlock[] = (await getCachedGoogleBusy(ctx, args.physiotherapistId))
+            .filter((block) => block.start < args.endDate && block.end > args.startDate)
+            .map((block) => ({ start: block.start, end: block.end, source: "google_calendar" as const }));
 
         // 3. Generate available slots for each day in range
         const allSlots: Array<{ start: number; end: number }> = [];
@@ -416,7 +422,7 @@ export const getAvailableSlots = query({
         }
 
         // 4. Subtract busy blocks
-        const afterBusy = subtractBusyBlocks(allSlots, [...rehabifyBusy, ...holdBusy]);
+        const afterBusy = subtractBusyBlocks(allSlots, [...rehabifyBusy, ...holdBusy, ...googleBusy]);
 
         // 5. Apply buffers
         const afterBuffers = applyBuffers(
@@ -827,5 +833,88 @@ export const getAvailableSlotsWithGoogleCalendar = internalAction({
             console.error("Failed to fetch Google Calendar busy times:", error);
             return baseSlots;
         }
+    },
+});
+
+// ============================================================================
+// GOOGLE CALENDAR BUSY TIMES (cache)
+// ============================================================================
+
+/** How far ahead busy times are fetched, and how long a fetch stays fresh. */
+const GOOGLE_BUSY_WINDOW_MS = 60 * 24 * 60 * 60 * 1000;
+const GOOGLE_BUSY_FRESH_MS = 5 * 60 * 1000;
+
+/** The physio's cached Google Calendar busy times (empty when not connected or never fetched). */
+export async function getCachedGoogleBusy(
+    ctx: QueryCtx,
+    physiotherapistId: Id<"users">
+): Promise<Array<{ start: number; end: number }>> {
+    const cache = await ctx.db
+        .query("googleBusyCache")
+        .withIndex("by_user_id", (q) => q.eq("userId", physiotherapistId))
+        .first();
+    return cache?.blocks ?? [];
+}
+
+export const saveGoogleBusy = internalMutation({
+    args: {
+        userId: v.id("users"),
+        rangeStart: v.number(),
+        rangeEnd: v.number(),
+        blocks: v.array(v.object({ start: v.number(), end: v.number() })),
+    },
+    handler: async (ctx, args) => {
+        const existing = await ctx.db
+            .query("googleBusyCache")
+            .withIndex("by_user_id", (q) => q.eq("userId", args.userId))
+            .first();
+        const row = { ...args, blocks: args.blocks.slice(0, 2000), fetchedAt: Date.now() };
+        if (existing) await ctx.db.patch(existing._id, row);
+        else await ctx.db.insert("googleBusyCache", row);
+    },
+});
+
+export const getGoogleBusyCacheInfo = internalQuery({
+    args: { userId: v.id("users") },
+    handler: async (ctx, args) => {
+        const cache = await ctx.db
+            .query("googleBusyCache")
+            .withIndex("by_user_id", (q) => q.eq("userId", args.userId))
+            .first();
+        return cache ? { fetchedAt: cache.fetchedAt } : null;
+    },
+});
+
+/**
+ * Refresh a physio's Google Calendar busy times. Booking pages call this when they open; the
+ * slot list (getAvailableSlots) then updates on its own. Public because guests book too: it
+ * returns nothing, and fetches at most once every five minutes per physio.
+ */
+export const refreshGoogleBusy = action({
+    args: { physiotherapistId: v.id("users") },
+    handler: async (ctx, args): Promise<null> => {
+        const info = await ctx.runQuery(internal.calendar.availability.getGoogleBusyCacheInfo, {
+            userId: args.physiotherapistId,
+        });
+        if (info && Date.now() - info.fetchedAt < GOOGLE_BUSY_FRESH_MS) return null;
+
+        const credentials = await ctx.runQuery(internal.calendar.oauth.getCredentialsInternal, {
+            userId: args.physiotherapistId,
+        });
+        if (!credentials) return null;
+
+        const rangeStart = Date.now();
+        const rangeEnd = rangeStart + GOOGLE_BUSY_WINDOW_MS;
+        const blocks: Array<{ start: number; end: number }> = await ctx.runAction(
+            internal.calendar.nodeActions.getFreeBusy,
+            { userId: args.physiotherapistId, timeMin: rangeStart, timeMax: rangeEnd }
+        );
+        await ctx.runMutation(internal.calendar.availability.saveGoogleBusy, {
+            userId: args.physiotherapistId,
+            rangeStart,
+            rangeEnd,
+            blocks: blocks.filter((b) => Number.isFinite(b.start) && Number.isFinite(b.end) && b.end > b.start),
+        });
+        return null;
     },
 });

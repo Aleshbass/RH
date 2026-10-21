@@ -34,7 +34,10 @@ function RoleSelectionContent() {
   useEffect(() => {
     // Check for pending patient invitation first
     const pendingInvite = typeof window !== 'undefined' ? localStorage.getItem('rehabify_pending_invite') : null
-    if (pendingInvite) {
+    // Patient invites are only for new or patient accounts; a staff account just drops the stale code
+    if (pendingInvite && currentUser?.role && currentUser.role !== 'patient') {
+      localStorage.removeItem('rehabify_pending_invite')
+    } else if (pendingInvite && currentUser !== undefined) {
       // User has a pending invitation, redirect to complete it
       router.replace(`/patient-invite/${pendingInvite}`)
       return

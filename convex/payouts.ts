@@ -465,7 +465,9 @@ export const adminListPayouts = query({
             ? { bankName: bank.bankName, accountName: bank.accountName, accountNumber: bank.accountNumber, isVerified: bank.isVerified }
             : null,
           invoice: invoice ? { _id: invoice._id, invoiceNumber: invoice.invoiceNumber, totalAmountKobo: invoice.totalAmount } : null,
-          patientName: fullName(patient),
+          // Patients are identified by Rehabify ID on finance screens, never by name
+          patientUserId: patient?._id ?? null,
+          patientNumber: patient?.patientNumber ?? null,
         };
       })
     );
@@ -547,6 +549,8 @@ export const adminRetryPayout = mutation({
     const payout = await ctx.db.get(args.payoutId);
     if (!payout) throw new ConvexError("Payout not found.");
     if (payout.status !== "failed") throw new ConvexError("Only failed payouts can be retried.");
+    const invoice = await ctx.db.get(payout.invoiceId);
+    if (invoice?.status === "void") throw new ConvexError("This booking was refunded, so there's nothing to pay.");
     await applyPayoutStatus(ctx, payout, "pending", { updatedBy: admin._id });
     return { success: true };
   },

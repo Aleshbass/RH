@@ -249,6 +249,18 @@ export const updateLoanFromWebhook = mutation({
             throw new Error("Loan application not found");
         }
 
+        // Statuses only move forward: a replayed or out-of-order event can't reopen a loan that
+        // was declined, expired or repaid, or undo a disbursement
+        const FINAL = new Set(["declined", "expired", "repaid"]);
+        const RANK: Record<string, number> = { initiated: 0, pending: 1, approved: 2, disbursed: 3, repaid: 4 };
+        const current = String(loan.status ?? "initiated");
+        const movesBack = RANK[args.status] !== undefined && RANK[current] !== undefined && RANK[args.status] < RANK[current];
+        if (current !== args.status && (FINAL.has(current) || movesBack || (current === "disbursed" && args.status !== "repaid"))) {
+            console.warn(`[MediLoan Webhook] Ignored ${current} → ${args.status} for loan ${loan._id}`);
+            await ctx.db.patch(loan._id, { lastWebhookPayload: args.lastWebhookPayload?.slice(0, 20_000), updatedAt: Date.now() });
+            return loan._id;
+        }
+
         const updates: Record<string, any> = {
             status: args.status,
             updatedAt: Date.now(),

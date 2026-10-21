@@ -28,6 +28,7 @@ import { useClinicAccess } from '@/components/clinic/ClinicPreviewContext'
 import { BankLogo } from '@/components/clinic/BankLogo'
 import { HowPayoutsWork } from '@/components/clinic/FeeBreakdown'
 import { PageShell, Panel, StatusBadge, primaryButtonClass } from '@/components/clinic/ui'
+import { RehabifyId } from '@/components/shared/RehabifyId'
 
 const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'] as const
 type Day = (typeof DAYS)[number]
@@ -229,6 +230,13 @@ export default function ClinicSettingsPage() {
 
       <Panel title="Clinic details" actions={saveButton('details')}>
         <div id="details" className="grid scroll-mt-20 grid-cols-1 gap-4 p-4 sm:grid-cols-2 sm:p-5">
+          {setup.clinicNumber && (
+            <Field label="Clinic ID" hint="Your permanent Rehabify clinic number. Quote it when you contact support." className="sm:col-span-2">
+              <div>
+                <RehabifyId value={setup.clinicNumber} />
+              </div>
+            </Field>
+          )}
           <Field label="Clinic name" className="sm:col-span-2">
             <Input value={form.name} onChange={(e) => update('name', e.target.value)} />
           </Field>

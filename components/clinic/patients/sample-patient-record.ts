@@ -105,6 +105,7 @@ export function samplePatientRecord(patientId: string): PatientRecord {
       hasAccount: false,
       phoneNumber: p.phone,
       imageUrl: undefined,
+      patientNumber: 'RH-P-SAMPLE',
       _creationTime: now - 15 * DAY,
     },
     profile: {

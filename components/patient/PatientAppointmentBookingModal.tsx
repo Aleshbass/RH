@@ -13,10 +13,12 @@ import { Calendar } from '@/components/ui/calendar'
 import { Textarea } from '@/components/ui/textarea'
 import { toast } from 'sonner'
 import { Id } from '@/convex/_generated/dataModel'
-import { format, addDays, isBefore, startOfToday, startOfDay, isSameDay } from 'date-fns'
+import { format, isBefore, startOfToday } from 'date-fns'
+import { lagosDate, lagosDateTime, lagosTime, lagosTimeRange, startOfZonedDay, zonedDateKey } from '@/convex/helpers/lagosTime'
 import { ChevronLeft, Check, Video, Calendar as CalendarIcon, Clock, User, MapPin, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { playSound } from '@/lib/sounds'
+import { useGoogleBusyRefresh } from '@/lib/hooks/useGoogleBusyRefresh'
 
 interface PatientAppointmentBookingModalProps {
     isOpen: boolean
@@ -46,6 +48,9 @@ const SESSION_MINUTES = 60
 const BOOKING_WINDOW_DAYS = 60
 
 function errorMessage(error: unknown) {
+    // ConvexError keeps its readable message in `data`, also in production
+    const data = (error as { data?: unknown } | null)?.data
+    if (typeof data === 'string' && data.trim()) return data
     const raw = error instanceof Error ? error.message : ''
     // Convex prefixes server errors with request details; keep the readable part
     const match = raw.match(/(?:Uncaught Error|ConvexError):\s*(.+?)(?:\n|\s+at\s|$)/)
@@ -74,6 +79,13 @@ export function PatientAppointmentBookingModal({
         | undefined as CareTeamMember[] | undefined
     const requestAppointment = useMutation(api.appointments.requestAppointment)
 
+    // Rehabify patients book and pay for sessions on the physio's booking page instead
+    const billingMode = useQuery(
+        api.rehabifyFollowUps.getCareBillingMode,
+        isOpen && physiotherapistId ? { physiotherapistId: physiotherapistId as Id<'users'> } : 'skip'
+    ) as { mode: 'rehabify' | 'own' } | null | undefined
+    const paidOnRehabify = billingMode?.mode === 'rehabify'
+
     useEffect(() => {
         if (preselectedPhysiotherapistId) {
             setPhysiotherapistId(preselectedPhysiotherapistId)
@@ -96,13 +108,15 @@ export function PatientAppointmentBookingModal({
         }
     }, [isOpen])
 
-    // The physio's real openings (working hours, days off, existing bookings and holds)
+    // The physio's real openings (working hours, days off, existing bookings and holds).
+    // Days are Lagos days, whatever zone the browser is in.
     const range = useMemo(() => {
-        const start = startOfToday()
-        return { startDate: start.getTime(), endDate: addDays(start, BOOKING_WINDOW_DAYS).getTime() - 1 }
+        const start = startOfZonedDay(Date.now())
+        return { startDate: start, endDate: start + BOOKING_WINDOW_DAYS * 24 * 60 * 60 * 1000 - 1 }
         // Recomputed each time the modal opens so "today" stays current
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isOpen])
+    useGoogleBusyRefresh(isOpen ? physiotherapistId : null)
     const slots = useQuery(
         api.calendar.availability.getAvailableSlots,
         isOpen && physiotherapistId
@@ -114,12 +128,13 @@ export function PatientAppointmentBookingModal({
         () => (slots ?? []).filter((s) => s.start > Date.now()).sort((a, b) => a.start - b.start),
         [slots]
     )
+    // A calendar cell is a plain day; slots are matched to it by their Lagos date
     const openDays = useMemo(
-        () => new Set(upcomingSlots.map((s) => startOfDay(new Date(s.start)).getTime())),
+        () => new Set(upcomingSlots.map((s) => zonedDateKey(s.start))),
         [upcomingSlots]
     )
     const slotsForDate = useMemo(
-        () => (date ? upcomingSlots.filter((s) => isSameDay(new Date(s.start), date)) : []),
+        () => (date ? upcomingSlots.filter((s) => zonedDateKey(s.start) === format(date, 'yyyy-MM-dd')) : []),
         [date, upcomingSlots]
     )
 
@@ -144,7 +159,7 @@ export function PatientAppointmentBookingModal({
     }
 
     const handleSubmit = async () => {
-        if (!slot || !serviceType || !physiotherapistId) return
+        if (!slot || !serviceType || !physiotherapistId || paidOnRehabify) return
         if (appointmentType === 'in-person' && !location.trim()) {
             toast.error('Please enter the address for your visit')
             return
@@ -233,6 +248,20 @@ export function PatientAppointmentBookingModal({
                                         </Select>
                                     </div>
                                 )}
+                                {paidOnRehabify ? (
+                                    <div className="space-y-3 rounded-2xl bg-rh-mint/60 p-5 text-sm text-rh-night">
+                                        <p className="font-semibold">
+                                            Sessions with {physioName || 'your physiotherapist'} are booked and paid on Rehabify
+                                        </p>
+                                        <p className="text-neutral-600">
+                                            Choose a service and a time on their booking page. The price you see is the price you pay, and your booking is confirmed once paid.
+                                        </p>
+                                        <Button asChild className="w-full rounded-full bg-rh-teal text-white hover:bg-rh-teal-deep">
+                                            <Link href={`/book/${physiotherapistId}`} onClick={onClose}>Go to the booking page</Link>
+                                        </Button>
+                                    </div>
+                                ) : (
+                                <>
                                 {physioName && (
                                     <p className="text-sm text-neutral-600">
                                         Days with openings for <span className="font-medium text-rh-night">{physioName}</span> are shown below.
@@ -254,11 +283,13 @@ export function PatientAppointmentBookingModal({
                                             onSelect={handleDateSelect}
                                             {...({
                                                 disabled: (day: Date) =>
-                                                    isBefore(day, startOfToday()) || !openDays.has(startOfDay(day).getTime()),
+                                                    isBefore(day, startOfToday()) || !openDays.has(format(day, 'yyyy-MM-dd')),
                                             } as any)}
                                             initialFocus
                                         />
                                     </div>
+                                )}
+                                </>
                                 )}
                             </div>
                         )
@@ -283,7 +314,7 @@ export function PatientAppointmentBookingModal({
                                             className="h-11 rounded-xl border-rh-teal/20 text-rh-night hover:border-rh-teal hover:bg-rh-teal hover:text-white"
                                             onClick={() => { setSlot(s); setStep('details') }}
                                         >
-                                            {format(new Date(s.start), 'h:mm a')}
+                                            {lagosTime(s.start)}
                                         </Button>
                                     ))}
                                 </div>
@@ -300,11 +331,11 @@ export function PatientAppointmentBookingModal({
                                 </div>
                                 <div className="flex items-center gap-2">
                                     <CalendarIcon className="h-4 w-4 text-rh-teal" />
-                                    <span>{format(new Date(slot.start), 'EEEE, MMMM d, yyyy')}</span>
+                                    <span>{lagosDate(slot.start)}</span>
                                 </div>
                                 <div className="flex items-center gap-2">
                                     <Clock className="h-4 w-4 text-rh-teal" />
-                                    <span>{format(new Date(slot.start), 'h:mm a')} – {format(new Date(slot.end), 'h:mm a')}</span>
+                                    <span>{lagosTimeRange(slot.start, slot.end)} (Lagos time)</span>
                                 </div>
                             </div>
 
@@ -397,7 +428,7 @@ export function PatientAppointmentBookingModal({
                                 <DialogTitle className="text-2xl font-bold text-rh-night">Request sent</DialogTitle>
                                 <p className="text-sm text-neutral-600">
                                     {physioName || 'Your physiotherapist'} will confirm your visit on{' '}
-                                    <span className="font-medium text-rh-night">{format(new Date(slot.start), 'EEEE, MMMM d')} at {format(new Date(slot.start), 'h:mm a')}</span>.
+                                    <span className="font-medium text-rh-night">{lagosDateTime(slot.start)}</span>.
                                     We&apos;ll email you when it&apos;s confirmed.
                                 </p>
                             </div>

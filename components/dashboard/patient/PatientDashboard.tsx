@@ -27,12 +27,15 @@ import {
 } from 'lucide-react'
 import { format } from 'date-fns'
 import { useRouter } from 'next/navigation'
+import { appointmentStatusLabel, type AppointmentStatusFields } from '@/convex/helpers/appointmentStatus'
 import { usePatientDocuments, PatientDocument } from '@/lib/hooks/usePatientDocuments'
 import FileUpload from '@/components/ui/FileUpload'
 import { TourGuide } from '@/components/shared/TourGuide'
 import { InsightsSidebar } from '@/components/dashboard/shared/InsightsSidebar'
 import { PatientCheckInCard, PatientFollowUpBanner } from '@/components/patient/PatientCheckInCard'
 import { JoyJourneyCard } from '@/components/patient/JoyJourneyCard'
+import { OpenBookingsCard } from '@/components/patient/OpenBookingsCard'
+import { AccessAwardCard } from '@/components/patient/AccessAwardCard'
 
 interface PatientDashboardProps {
   initialUser?: any;
@@ -131,6 +134,10 @@ export function PatientDashboard({ initialUser, initialAppointments, initialStat
           </p>
         </div>
 
+        {/* Scheduled bookings waiting for payment, then any Rehabify Access rate */}
+        <OpenBookingsCard />
+        <AccessAwardCard />
+
         {/* After-care follow-up, then today's check-in for the physio */}
         <PatientFollowUpBanner />
         <PatientCheckInCard />
@@ -155,7 +162,7 @@ export function PatientDashboard({ initialUser, initialAppointments, initialStat
                   </div>
                 </div>
                 <Badge className="bg-green-100 text-green-800 border-green-200">
-                  {nextAppointment.status}
+                  {appointmentStatusLabel(nextAppointment as unknown as AppointmentStatusFields, 'patient')}
                 </Badge>
               </div>
 
@@ -318,7 +325,7 @@ export function PatientDashboard({ initialUser, initialAppointments, initialStat
                         </div>
                       </div>
                       <Badge variant="secondary" className="ml-2 shrink-0 text-xs">
-                        {appointment.status}
+                        {appointmentStatusLabel(appointment as unknown as AppointmentStatusFields, 'patient')}
                       </Badge>
                     </div>
                   ))}
@@ -382,7 +389,7 @@ export function PatientDashboard({ initialUser, initialAppointments, initialStat
                           variant={appointment.status === 'confirmed' ? 'default' : 'secondary'}
                           className="shrink-0"
                         >
-                          {appointment.status}
+                          {appointmentStatusLabel(appointment as unknown as AppointmentStatusFields, 'patient')}
                         </Badge>
                         {isOnlineVisit(appointment) && appointment.status === 'confirmed' && meetingLinkFor(appointment) && new Date(appointment.endTime) > new Date() && (
                           <Button

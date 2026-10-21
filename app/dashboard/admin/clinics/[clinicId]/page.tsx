@@ -34,6 +34,7 @@ import { ApprovalBadge, ClinicAvatar, ClinicStatusBadge, CLINICS_BASE, countLabe
 import { ClinicFeesTab, ClinicOverviewTab } from '@/components/admin/clinics/ClinicOverview'
 import { ClinicPatientsTab, ClinicReferralsTab, ClinicStaffTab } from '@/components/admin/clinics/ClinicLists'
 import type { ClinicDetailResult } from '@/components/admin/clinics/types'
+import { RehabifyId } from '@/components/shared/RehabifyId'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
 
@@ -134,6 +135,7 @@ export default function AdminClinicDetailPage() {
             <div className="min-w-0">
               <div className="flex min-w-0 flex-wrap items-center gap-2">
                 <h1 className="truncate text-2xl font-semibold tracking-tight text-rh-night dark:text-white sm:text-[28px]">{clinic.name}</h1>
+                <RehabifyId value={clinic.clinicNumber} />
                 <ClinicStatusBadge status={clinic.status} />
                 <ApprovalBadge status={data.approval.status} hideApproved />
               </div>

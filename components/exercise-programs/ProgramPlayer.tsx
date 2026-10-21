@@ -3,17 +3,19 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Image from 'next/image'
 import { format } from 'date-fns'
-import { Check, ChevronRight, Dumbbell, Loader2, Mic, PartyPopper, Play, ShieldAlert, Sparkles, Timer, X } from 'lucide-react'
+import { BookOpen, Check, ChevronRight, Dumbbell, ExternalLink, Loader2, Mic, PartyPopper, Play, ShieldAlert, Sparkles, Timer, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Slider } from '@/components/ui/slider'
 import { Textarea } from '@/components/ui/textarea'
 import { ExerciseViewer } from '@/components/exercise3d/ExerciseViewer'
+import { VideoEmbed } from '@/components/media/VideoEmbed'
 import { posterUrl } from '@/convex/exerciseLibraryCatalog'
 import type { ViewerGrant } from '@/lib/exercise3d/useViewerGrant'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
+import { programError } from './errors'
 import { doseLabel, isLocalImage, sideLabel, type LogInput, type ProgramForPlayer, type ProgramItem } from './types'
 
 const REST_SECONDS = 20
@@ -73,7 +75,7 @@ function LogDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="rounded-3xl sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>How did {item.exercise?.name ?? 'that'} go?</DialogTitle>
+          <DialogTitle>How did {item.name || 'that'} go?</DialogTitle>
           <DialogDescription>Your physiotherapist sees this, so they can adjust your programme.</DialogDescription>
         </DialogHeader>
         <div className="space-y-5 py-1">
@@ -187,6 +189,46 @@ function Guided({ item, rep, onFinish, onExit }: { item: ProgramItem & { sets: n
   )
 }
 
+/** Education picked from the Rehabify Library: its video, guide and link. */
+function LibraryResource({ resource }: { resource: NonNullable<ProgramItem['resource']> }) {
+  return (
+    <div className="mt-4 space-y-3">
+      {resource.steps.length > 0 &&
+        (resource.kind === 'link' ? (
+          <div className="space-y-1.5 text-sm text-neutral-700 dark:text-neutral-200">
+            {resource.steps.map((step, i) => <p key={i}>{step}</p>)}
+          </div>
+        ) : (
+          <ol className="space-y-2.5">
+            {resource.steps.map((step, i) => (
+              <li key={i} className="flex gap-3 text-sm text-neutral-700 dark:text-neutral-200">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-rh-teal text-xs font-semibold text-white dark:bg-rh-aqua dark:text-rh-night">{i + 1}</span>
+                <span className="pt-0.5">{step}</span>
+              </li>
+            ))}
+          </ol>
+        ))}
+      {resource.stop && (
+        <div className="flex gap-3 rounded-2xl bg-rh-peach p-3.5 text-sm text-[#7c4a0a] dark:bg-amber-400/10 dark:text-amber-200">
+          <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0" />
+          <p>{resource.stop}</p>
+        </div>
+      )}
+      {resource.url && resource.kind !== 'youtube' && (
+        <a
+          href={resource.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1.5 rounded-xl border border-black/[0.08] px-3 py-2 text-sm font-medium text-rh-teal transition hover:bg-rh-mist dark:border-white/10 dark:text-rh-aqua dark:hover:bg-white/[0.05]"
+        >
+          <ExternalLink className="h-4 w-4" /> Open the {resource.source} page
+        </a>
+      )}
+      <p className="text-xs text-neutral-500">From the Rehabify Library · {resource.source}</p>
+    </div>
+  )
+}
+
 export function ProgramPlayer({
   program,
   doneToday,
@@ -204,11 +246,18 @@ export function ProgramPlayer({
   const [rep, setRep] = useState(0)
   const [guided, setGuided] = useState(false)
   const [logOpen, setLogOpen] = useState(false)
+  // The 3D demonstration is actually playing (approved, loaded, not in low-data mode). The
+  // viewer reports it on every change, including when it mounts for the next exercise.
+  const [playing3d, setPlaying3d] = useState(false)
   const detailRef = useRef<HTMLDivElement>(null)
   const item = program.items[selected] ?? null
+  const isEducation = item?.kind === 'education'
   // Education items have no dose, so there is nothing to count through
   const dosed = item && item.sets !== null && item.reps !== null ? { ...item, sets: item.sets, reps: item.reps } : null
   const done = useMemo(() => new Set(doneToday), [doneToday])
+  // Education is read, not logged, so it doesn't count towards "done today"
+  const exerciseItems = program.items.filter((it) => it.kind !== 'education')
+  const doneCount = exerciseItems.filter((it) => done.has(it.index)).length
   const from = program.clinicName ?? program.senderName
 
   useEffect(() => {
@@ -227,10 +276,10 @@ export function ProgramPlayer({
       await onLog({ itemIndex: item.index, ...input })
       playSound('success')
       toast.success('Logged. Nice work!')
-      const next = program.items.findIndex((it, i) => i > selected && !done.has(it.index))
+      const next = program.items.findIndex((it, i) => i > selected && it.kind !== 'education' && !done.has(it.index))
       if (next >= 0) setSelected(next)
     } catch (error) {
-      toast.error((error as Error).message?.replace(/^.*ConvexError: /, '') || 'Couldn’t save that')
+      toast.error(programError(error, 'Couldn’t save that. Check your connection and try again.'))
       throw error
     }
   }
@@ -244,12 +293,14 @@ export function ProgramPlayer({
             <h2 className="mt-0.5 text-xl font-semibold tracking-tight text-rh-night dark:text-white">{program.title}</h2>
             <p className="text-sm text-neutral-500">From {from} · {format(program.createdAt, 'd MMM yyyy')}</p>
           </div>
-          <div className="flex items-center gap-2 rounded-2xl bg-rh-canvas px-3 py-2 dark:bg-white/[0.04]">
-            <Sparkles className="h-4 w-4 text-rh-lime" />
-            <span className="text-sm font-medium tabular-nums text-rh-night dark:text-white">
-              {done.size} of {program.items.length} done today
-            </span>
-          </div>
+          {exerciseItems.length > 0 && (
+            <div className="flex items-center gap-2 rounded-2xl bg-rh-canvas px-3 py-2 dark:bg-white/[0.04]">
+              <Sparkles className="h-4 w-4 text-rh-lime" />
+              <span className="text-sm font-medium tabular-nums text-rh-night dark:text-white">
+                {doneCount} of {exerciseItems.length} done today
+              </span>
+            </div>
+          )}
         </div>
         {(program.voiceNoteUrl || program.note) && (
           <div className="mt-4 space-y-3">
@@ -262,8 +313,14 @@ export function ProgramPlayer({
       <div className="grid gap-5 lg:grid-cols-[320px_1fr]">
         <ol className="space-y-2">
           {program.items.map((it, i) => {
-            const isDone = done.has(it.index)
+            const education = it.kind === 'education'
+            const isDone = !education && done.has(it.index)
             const side = sideLabel(it.exercise?.animation?.slug, it.side)
+            const detail = education
+              ? it.resource
+                ? `${it.resource.youtubeId ? 'Video' : it.resource.kind === 'link' ? 'Web page' : 'Guide'} · ${it.resource.source}`
+                : 'Information to read'
+              : [doseLabel(it), it.frequency].filter(Boolean).join(' · ')
             return (
               <li key={it.index}>
                 <button
@@ -276,8 +333,15 @@ export function ProgramPlayer({
                       : 'border-black/[0.05] bg-white/70 hover:bg-white dark:border-white/[0.06] dark:bg-white/[0.02]'
                   )}
                 >
-                  <span className="relative h-16 w-16 shrink-0 overflow-hidden rounded-xl bg-rh-mist dark:bg-white/[0.05]">
-                    {it.clipId ? (
+                  <span
+                    className={cn(
+                      'relative h-16 w-16 shrink-0 overflow-hidden rounded-xl',
+                      education ? 'bg-rh-cream dark:bg-amber-400/10' : 'bg-rh-mist dark:bg-white/[0.05]'
+                    )}
+                  >
+                    {education ? (
+                      <BookOpen className="m-5 h-6 w-6 text-[#b4690e] dark:text-amber-300" />
+                    ) : it.clipId ? (
                       <Image src={posterUrl(it.clipId)} alt="" fill sizes="64px" className="object-contain" draggable={false} />
                     ) : (
                       <Dumbbell className="m-5 h-6 w-6 text-rh-teal" />
@@ -289,8 +353,8 @@ export function ProgramPlayer({
                     )}
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-semibold text-rh-night dark:text-white">{it.exercise?.name ?? 'Exercise'}</span>
-                    <span className="block text-xs text-neutral-500">{[doseLabel(it), it.frequency].filter(Boolean).join(' · ')}</span>
+                    <span className="block truncate text-sm font-semibold text-rh-night dark:text-white">{it.name}</span>
+                    {detail && <span className="block truncate text-xs text-neutral-500">{detail}</span>}
                     {side && <span className="mt-0.5 inline-block rounded-full bg-rh-peach px-2 py-0.5 text-[10px] font-medium text-[#b4690e]">{side}</span>}
                   </span>
                   <ChevronRight className="h-4 w-4 text-neutral-400" />
@@ -302,8 +366,16 @@ export function ProgramPlayer({
 
         {item && (
           <div ref={detailRef} className="scroll-mt-20 space-y-4">
-            {item.clipId ? (
-              <ExerciseViewer clipId={item.clipId} requestGrant={requestGrant} onRep={setRep} className="max-h-[min(72vh,620px)]" />
+            {isEducation ? (
+              item.resource?.youtubeId ? <VideoEmbed youtubeId={item.resource.youtubeId} className="rounded-3xl" /> : null
+            ) : item.clipId ? (
+              <ExerciseViewer
+                clipId={item.clipId}
+                requestGrant={requestGrant}
+                onRep={setRep}
+                onReadyChange={setPlaying3d}
+                className="max-h-[min(72vh,620px)]"
+              />
             ) : (
               <div className="relative flex aspect-video items-center justify-center overflow-hidden rounded-3xl bg-rh-mist text-sm text-neutral-500 dark:bg-white/[0.04]">
                 {item.exercise?.imageUrl ? (
@@ -325,21 +397,29 @@ export function ProgramPlayer({
 
             <section className="rounded-3xl border border-black/[0.04] bg-white p-5 shadow-soft dark:border-white/[0.06] dark:bg-rh-ink-2">
               <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <h3 className="text-lg font-semibold tracking-tight text-rh-night dark:text-white">{item.exercise?.name}</h3>
+                <div className="min-w-0">
+                  <h3 className="text-lg font-semibold tracking-tight text-rh-night dark:text-white">{item.name}</h3>
                   <div className="mt-1.5 flex flex-wrap gap-1.5 text-xs">
+                    {isEducation && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-rh-cream px-2.5 py-1 font-medium text-[#b4690e] dark:bg-amber-400/10 dark:text-amber-300">
+                        <BookOpen className="h-3 w-3" /> {item.resource?.youtubeId ? 'Video to watch' : 'Information to read'}
+                      </span>
+                    )}
                     {item.sets !== null && <span className="rounded-full bg-rh-mist px-2.5 py-1 font-medium text-rh-teal dark:bg-rh-aqua/10 dark:text-rh-aqua">{item.sets} sets</span>}
                     {item.reps !== null && <span className="rounded-full bg-rh-mist px-2.5 py-1 font-medium text-rh-teal dark:bg-rh-aqua/10 dark:text-rh-aqua">{item.reps} reps</span>}
                     {item.holdSeconds ? <span className="rounded-full bg-rh-mist px-2.5 py-1 font-medium text-rh-teal dark:bg-rh-aqua/10 dark:text-rh-aqua">hold {item.holdSeconds}s</span> : null}
-                    <span className="rounded-full bg-rh-canvas px-2.5 py-1 text-neutral-600 dark:bg-white/[0.05] dark:text-neutral-300">{item.frequency}</span>
+                    {!isEducation && item.frequency && (
+                      <span className="rounded-full bg-rh-canvas px-2.5 py-1 text-neutral-600 dark:bg-white/[0.05] dark:text-neutral-300">{item.frequency}</span>
+                    )}
                     {sideLabel(item.exercise?.animation?.slug, item.side) && (
                       <span className="rounded-full bg-rh-peach px-2.5 py-1 font-medium text-[#b4690e]">{sideLabel(item.exercise?.animation?.slug, item.side)}</span>
                     )}
                   </div>
                 </div>
-                {!readOnly && (
+                {!readOnly && !isEducation && (
                   <div className="flex gap-2">
-                    {item.clipId && dosed && !guided && (
+                    {/* Guided sets count reps from the animation, so they need the 3D demonstration playing */}
+                    {item.animated && playing3d && dosed && !guided && (
                       <Button variant="outline" className="rounded-xl" onClick={() => setGuided(true)}>
                         <Play className="mr-1.5 h-4 w-4" /> Do it with me
                       </Button>
@@ -354,12 +434,18 @@ export function ProgramPlayer({
                 )}
               </div>
 
-              {item.note && (
-                <p className="mt-4 rounded-2xl bg-rh-cream p-3.5 text-sm text-rh-night dark:bg-white/[0.04] dark:text-neutral-200">
-                  <span className="font-semibold">Note from {from}: </span>
-                  {item.note}
-                </p>
-              )}
+              {item.note &&
+                (isEducation && !item.resource ? (
+                  // Education the care team wrote: the note is the content
+                  <p className="mt-4 whitespace-pre-line rounded-2xl bg-rh-cream p-3.5 text-sm text-rh-night dark:bg-white/[0.04] dark:text-neutral-200">{item.note}</p>
+                ) : (
+                  <p className="mt-4 whitespace-pre-line rounded-2xl bg-rh-cream p-3.5 text-sm text-rh-night dark:bg-white/[0.04] dark:text-neutral-200">
+                    <span className="font-semibold">Note from {from}: </span>
+                    {item.note}
+                  </p>
+                ))}
+
+              {isEducation && item.resource && <LibraryResource resource={item.resource} />}
 
               {item.exercise && item.exercise.instructions.length > 0 && (
                 <ol className="mt-4 space-y-2.5">

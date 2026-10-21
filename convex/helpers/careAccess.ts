@@ -56,6 +56,13 @@ export async function findRelationship(ctx: Ctx, physioId: Id<"users">, patientI
 export async function requireActiveRelationship(ctx: Ctx, physioId: Id<"users">, patientId: Id<"users">) {
   const relationship = await findRelationship(ctx, physioId, patientId);
   if (!relationship) throw new ConvexError("This patient isn't on your list.");
+  // A clinician the clinic has suspended can't keep changing the clinic's patients' records
+  if (relationship.clinicId) {
+    const physio = await ctx.db.get(physioId);
+    if (physio?.clinicId === relationship.clinicId && physio.status && physio.status !== "active") {
+      throw new ConvexError("Your access to this clinic has been suspended. Contact the clinic owner.");
+    }
+  }
   if (relationship.status !== "active") {
     throw new ConvexError("Care with this patient has ended. Start a new course of care first.");
   }

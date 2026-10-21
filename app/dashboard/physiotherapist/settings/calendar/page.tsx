@@ -74,7 +74,7 @@ export default function CalendarSettingsPage() {
         <div className="space-y-6">
             <SettingsPageHeader
                 title="Calendar sync"
-                description="Keep Rehabify appointments in your own calendar and avoid double bookings."
+                description="Give your video sessions a Google Meet link and put them in your Google Calendar."
             />
 
             <SettingsSection>
@@ -93,8 +93,8 @@ export default function CalendarSettingsPage() {
                                 </div>
                                 <p className="mt-0.5 text-sm text-neutral-500 dark:text-neutral-400">
                                     {credentials
-                                        ? 'Appointments sync to your calendar and video sessions get a Google Meet link.'
-                                        : 'Connect to add appointments to your calendar and give video sessions a Google Meet link.'}
+                                        ? 'New video sessions are added to your Google Calendar with a Google Meet link. In-person visits stay in your Rehabify calendar for now.'
+                                        : 'Connect so new video sessions get a Google Meet link and appear in your Google Calendar. In-person visits stay in your Rehabify calendar for now.'}
                                 </p>
                             </div>
                         </div>
@@ -123,7 +123,7 @@ export default function CalendarSettingsPage() {
                     <AlertDialogHeader>
                         <AlertDialogTitle>Disconnect Google Calendar?</AlertDialogTitle>
                         <AlertDialogDescription>
-                            New appointments won’t appear in your calendar, and video sessions won’t get Meet links.
+                            New video sessions won’t get Google Meet links or appear in your Google Calendar.
                         </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>

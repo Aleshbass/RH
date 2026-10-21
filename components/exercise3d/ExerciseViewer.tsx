@@ -6,6 +6,7 @@ import Image from 'next/image'
 import type { AnimationClip } from 'three'
 import type { GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { Eye, Loader2, Pause, Play, RotateCcw, Rotate3d, Turtle, Volume2, VolumeX, WifiOff } from 'lucide-react'
+import { programError } from '@/components/exercise-programs/errors'
 import { EXERCISE_CATALOG, findClip, posterUrl } from '@/convex/exerciseLibraryCatalog'
 import type { ViewerGrant } from '@/lib/exercise3d/useViewerGrant'
 import { VoiceGuide } from '@/lib/exercise3d/voice'
@@ -59,14 +60,20 @@ export type ExerciseViewerProps = {
   /** Start loading straight away (otherwise waits for a tap in low-data mode only). */
   autoPlay?: boolean
   onRep?: (count: number) => void
+  /** Told whether the 3D demonstration is playing (false for the poster, low-data mode, review or errors). */
+  onReadyChange?: (ready: boolean) => void
   /** Hide the small control bar (e.g. thumbnails). */
   bare?: boolean
 }
 
 /** One exercise in 3D, with a poster first and graceful fallbacks. */
-export function ExerciseViewer({ clipId, requestGrant, className, autoPlay = true, onRep, bare }: ExerciseViewerProps) {
+export function ExerciseViewer({ clipId, requestGrant, className, autoPlay = true, onRep, onReadyChange, bare }: ExerciseViewerProps) {
   const clipInfo = findClip(clipId)
   const [phase, setPhase] = useState<Phase>('checking')
+
+  useEffect(() => {
+    onReadyChange?.(phase === 'ready')
+  }, [phase, onReadyChange])
   const [lite, setLite] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [assets, setAssets] = useState<{ gltf: GLTF; clip: AnimationClip; watermark: string } | null>(null)
@@ -144,7 +151,7 @@ export function ExerciseViewer({ clipId, requestGrant, className, autoPlay = tru
       setPhase('ready')
     } catch (err) {
       if (id !== loadId.current) return
-      setError((err as Error)?.message?.replace(/^.*ConvexError: /, '') || 'Couldn’t load the demonstration.')
+      setError(programError(err, 'Couldn’t load the demonstration. Check your connection and try again.'))
       setPhase('error')
     }
   }, [clipId, requestGrant])

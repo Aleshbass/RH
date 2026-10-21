@@ -71,6 +71,8 @@ import {
 } from '@/components/admin/ui'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
+import { RehabifyId } from '@/components/shared/RehabifyId'
+import { parseRehabifyId } from '@/convex/helpers/rehabifyIdFormat'
 
 // ─── Shared helpers (also used by the user detail, approvals and declined pages) ─────────
 
@@ -296,6 +298,8 @@ type UserRow = {
   onboarded: boolean
   status?: string
   lastLoginAt?: number
+  patientNumber?: string
+  staffNumber?: string
   approvalStatus: 'pending_review' | 'approved' | 'declined' | null
 }
 
@@ -386,7 +390,7 @@ export function UserManagement() {
   }))
 
   const header = headerFor(role)
-  const searchingWithinPages = !!search && !EMAIL_RE.test(search)
+  const searchingWithinPages = !!search && !EMAIL_RE.test(search) && !parseRehabifyId(search)
 
   const exportCsv = () => {
     if (results.length === 0) return
@@ -394,6 +398,8 @@ export function UserManagement() {
       `rehabify-${role === 'all' ? 'users' : role}-${format(new Date(), 'yyyy-MM-dd')}`,
       results.map((u) => ({
         id: u._id,
+        patientId: u.patientNumber ?? '',
+        clinicianId: u.staffNumber ?? '',
         name: displayName(u),
         email: u.email ?? '',
         phone: u.phoneNumber ?? '',
@@ -476,7 +482,7 @@ export function UserManagement() {
               <Input
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
-                placeholder="Search name, email or phone"
+                placeholder="Search name, email, phone or ID"
                 className={cn(inputClass, 'h-10 pl-9')}
                 aria-label="Search users"
               />
@@ -553,7 +559,11 @@ export function UserManagement() {
                                 {displayName(u)}
                                 {isMe && <span className="ml-1.5 text-xs font-normal text-neutral-400">(you)</span>}
                               </p>
-                              <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">{u.email ?? 'No email'}</p>
+                              <div className="flex min-w-0 items-center gap-1.5">
+                                <RehabifyId value={u.patientNumber} />
+                                <RehabifyId value={u.staffNumber} />
+                                <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">{u.email ?? 'No email'}</p>
+                              </div>
                             </div>
                           </div>
                         </td>

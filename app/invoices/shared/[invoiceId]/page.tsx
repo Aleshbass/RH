@@ -203,7 +203,7 @@ function SharedInvoicePageComponent() {
                   <div className="flex justify-between">
                     <span className="text-gray-600">Due Date:</span>
                     <span className={`${invoice.isOverdue ? 'text-red-600 font-medium' : 'text-gray-900'}`}>
-                      {format(new Date(invoice.dueDate), 'MMM d, yyyy, h:mm a')}
+                      {Number.isFinite(invoice.dueDate) ? format(new Date(invoice.dueDate), 'MMM d, yyyy, h:mm a') : '—'}
                     </span>
                   </div>
                   {invoice.paymentDate && (
@@ -290,15 +290,15 @@ function SharedInvoicePageComponent() {
         </Card>
         
         {/* Actions */}
-        <div className="mt-8 flex justify-center space-x-4">
-          <Button>
+        <div className="mt-8 flex justify-center space-x-4 print:hidden">
+          <Button onClick={() => window.print()}>
             <Download className="w-4 h-4 mr-2" />
-            Download PDF
+            Print or save as PDF
           </Button>
-          {invoice.status !== 'paid' && (
+          {invoice.status !== 'paid' && invoice.status !== 'void' && (
             <Button variant="default" onClick={() => {
               // suggest users to login and go to dashboard payment modal
-              window.location.href = `/dashboard/patient/invoices`
+              window.location.href = `/dashboard/patient/invoices/${invoice._id}`
             }}>
               Pay Now
             </Button>

@@ -36,6 +36,8 @@ import {
   tabsListClass,
 } from '@/components/admin/ui'
 import { dateStamp, errorText, formatKobo, koboToNairaNumber } from '@/components/admin/finance/format'
+import { PatientRef } from '@/components/admin/finance/PatientRef'
+import { RehabifyId } from '@/components/shared/RehabifyId'
 
 const transfersApi = api.adminBankTransfers
 
@@ -59,7 +61,7 @@ type TransferRow = {
   paidAt: number | null
   paymentReference: string | null
   holdExpired: boolean
-  patient: { _id: Id<'users'>; name: string; email: string | null; phone: string | null; isGuest: boolean }
+  patient: { _id: Id<'users'>; patientNumber: string | null; name: string; email: string | null; phone: string | null; isGuest: boolean }
   physiotherapist: { _id: Id<'users'>; name: string; email: string | null } | null
   bankTransferDetails: {
     senderName?: string
@@ -118,7 +120,7 @@ export default function AdminBankTransfersPage() {
     const term = search.trim().toLowerCase()
     if (!term) return rows ?? []
     return (rows ?? []).filter((r) =>
-      [r.patient.name, r.patient.email, r.patient.phone, r.physiotherapist?.name, r.bookingCode, r.bankTransferDetails?.senderName, r.paymentReference]
+      [r.patient.patientNumber, r.patient.name, r.patient.email, r.patient.phone, r.physiotherapist?.name, r.bookingCode, r.bankTransferDetails?.senderName, r.paymentReference]
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(term))
     )
@@ -191,6 +193,7 @@ export default function AdminBankTransfersPage() {
       visible.map((r) => ({
         'Booking code': r.bookingCode ?? '',
         'Booking ID': r._id,
+        'Patient ID': r.patient.patientNumber ?? '',
         Patient: r.patient.name,
         'Patient email': r.patient.email ?? '',
         'Patient phone': r.patient.phone ?? '',
@@ -213,7 +216,7 @@ export default function AdminBankTransfersPage() {
   return (
     <AdminPage>
       <PageHeader
-        eyebrow="Marketplace"
+        eyebrow="Finance"
         title="Bank transfers"
         description="Bookings still waiting for payment. When a patient pays by bank transfer, check the money is in Rehabify’s account, then confirm it here to book the session."
         actions={
@@ -306,6 +309,7 @@ export default function AdminBankTransfersPage() {
                 <div className="min-w-0 flex-1 space-y-1">
                   <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                     <p className="truncate text-sm font-semibold text-rh-night dark:text-white">{r.patient.name}</p>
+                    <RehabifyId value={r.patient.patientNumber} />
                     {r.bookingCode && <StatusBadge tone="teal">{r.bookingCode}</StatusBadge>}
                     {r.patient.isGuest && <StatusBadge>Guest</StatusBadge>}
                     {r.sourceSystem === 'joy_ai' && <StatusBadge>Joy</StatusBadge>}
@@ -387,6 +391,11 @@ export default function AdminBankTransfersPage() {
                       </TableCell>
                       <TableCell className="min-w-[160px] text-sm">
                         <span className="block text-rh-night dark:text-white">{r.patient.name}</span>
+                        {r.patient.patientNumber && (
+                          <span className="block">
+                            <PatientRef userId={r.patient._id} patientNumber={r.patient.patientNumber} />
+                          </span>
+                        )}
                         {r.bookingCode && <span className="block text-xs text-neutral-500 dark:text-neutral-400">{r.bookingCode}</span>}
                       </TableCell>
                       <TableCell className="min-w-[150px] text-sm">

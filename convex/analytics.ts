@@ -3,6 +3,7 @@ import { v } from "convex/values"
 import { Id } from "./_generated/dataModel"
 import { ensureUserRole } from "./auth"
 import { assertServerCaller } from "./helpers/serverSecret"
+import { physioOutstandingKobo, physioPaidKobo } from "./billing"
 
 // Size caps for analytics rows written on behalf of the public /api/analytics/* routes
 const MAX_NAME = 100
@@ -466,14 +467,15 @@ export const getPhysiotherapistStats = query({
 
     // Earnings are money actually received; drafts and voided invoices count for nothing,
     // and invoices that were sent but not paid are "pending". Amounts are stored in kobo.
+    // Rehabify marketplace invoices count the physio's share, not the patient's full charge.
     let paidEarnings = 0;
     let pendingEarnings = 0;
     const paidInvoices = invoices.filter((invoice) => invoice.status === "paid");
     for (const invoice of invoices) {
       if (invoice.status === "paid") {
-        paidEarnings += (invoice.paidAmount ?? invoice.totalAmount) / 100;
+        paidEarnings += physioPaidKobo(invoice) / 100;
       } else if (invoice.status !== "draft" && invoice.status !== "void") {
-        pendingEarnings += (invoice.totalAmount - (invoice.paidAmount ?? 0)) / 100;
+        pendingEarnings += physioOutstandingKobo(invoice) / 100;
       }
     }
     const totalEarnings = paidEarnings;
@@ -489,7 +491,7 @@ export const getPhysiotherapistStats = query({
     paidInvoices.forEach((invoice) => {
       const date = new Date(invoice.paymentDate ?? invoice.issueDate);
       const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-      monthlyEarnings[key] = (monthlyEarnings[key] || 0) + ((invoice.paidAmount ?? invoice.totalAmount) / 100);
+      monthlyEarnings[key] = (monthlyEarnings[key] || 0) + physioPaidKobo(invoice) / 100;
     });
 
     const earningsChartData = Object.entries(monthlyEarnings)

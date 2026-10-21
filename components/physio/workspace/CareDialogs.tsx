@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { primaryButtonClass } from '@/components/physio/ui'
+import { programError } from '@/components/exercise-programs/errors'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
 import { OUTCOME_LABELS, SOURCE_LABELS, type EpisodeSource, type Outcome, type Workspace } from './shared'
@@ -94,7 +95,7 @@ export function EpisodeDialog({
       toast.success('Care details saved')
       onOpenChange(false)
     } catch (error) {
-      toast.error((error as Error).message || 'Couldn’t save')
+      toast.error(programError(error, 'Couldn’t save. Please try again.'))
     } finally {
       setSaving(false)
     }
@@ -224,7 +225,7 @@ export function CompleteCareDialog({
       })
       onOpenChange(false)
     } catch (error) {
-      toast.error((error as Error).message || 'Couldn’t complete care')
+      toast.error(programError(error, 'Couldn’t complete care. Please try again.'))
     } finally {
       setSaving(false)
     }

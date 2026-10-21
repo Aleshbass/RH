@@ -64,7 +64,9 @@ export default function AddPatientDirectForm({ onSuccess, onCancel }: AddPatient
       if (!result?.success) throw new Error(result?.message || 'We couldn’t send the invitation.')
       playSound('success')
       toast.success(`Invitation sent to ${firstName.trim()}`, {
-        description: 'They’ll appear in your patients once they accept.',
+        description: result.existingPatientNumber
+          ? `Already on Rehabify as ${result.existingPatientNumber}. Accepting links their existing record, so there’s no duplicate.`
+          : 'They’ll appear in your patients once they accept.',
       })
       onSuccess?.()
     } catch (error) {

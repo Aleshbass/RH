@@ -9,6 +9,19 @@ import { AppointmentData } from '@/lib/calendar/dayPilotAdapter';
 import { toast } from 'sonner';
 import { RecurringEditDialog } from './RecurringEditDialog';
 import type { RecurringEditScope } from './RecurringEditDialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { isOpenAppointment } from '@/convex/helpers/appointmentStatus';
+import { lagosDateTime, lagosTimeRange } from '@/convex/helpers/lagosTime';
+import { appointmentErrorMessage } from '@/components/appointments/appointment-ui';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
 import 'react-big-calendar/lib/addons/dragAndDrop/styles.css';
 
@@ -86,6 +99,28 @@ export function AppointmentCalendar({
     newEndTime: number;
     actionType: 'move' | 'resize';
   } | null>(null);
+  // A dragged visit waits here until the physio confirms the move (the patient gets told)
+  const [pendingMove, setPendingMove] = useState<{
+    appointment: AppointmentData;
+    newStartTime: number;
+    newEndTime: number;
+    actionType: 'move' | 'resize';
+  } | null>(null);
+  const [moving, setMoving] = useState(false);
+
+  const confirmPendingMove = async () => {
+    if (!pendingMove) return;
+    setMoving(true);
+    try {
+      await onAppointmentReschedule(pendingMove.appointment._id, pendingMove.newStartTime, pendingMove.newEndTime);
+      toast.success(pendingMove.actionType === 'move' ? 'Visit moved. The patient has been asked to confirm.' : 'Visit length updated.');
+      setPendingMove(null);
+    } catch (error) {
+      toast.error(appointmentErrorMessage(error, 'Could not move the visit. Please try again.'));
+    } finally {
+      setMoving(false);
+    }
+  };
 
   // Convert appointments to calendar events
   const events: CalendarEvent[] = useMemo(() => {
@@ -139,6 +174,11 @@ export function AppointmentCalendar({
       toast.error('Cannot reschedule appointments to the past');
       return;
     }
+    // Finished or cancelled visits stay where they are
+    if (!isOpenAppointment(appointment.status)) {
+      toast.error('Only upcoming visits can be moved.');
+      return;
+    }
 
     // Check if recurring
     if (appointment.isRecurring) {
@@ -153,13 +193,8 @@ export function AppointmentCalendar({
       return;
     }
 
-    try {
-      await onAppointmentReschedule(appointment._id, newStartTime, newEndTime);
-      toast.success('Appointment rescheduled successfully');
-    } catch (error) {
-      toast.error('Failed to reschedule appointment');
-    }
-  }, [onAppointmentReschedule]);
+    setPendingMove({ appointment, newStartTime, newEndTime, actionType: 'move' });
+  }, []);
 
   // Handle event resize
   const handleEventResize = useCallback(async ({ event, start, end }: any) => {
@@ -173,6 +208,10 @@ export function AppointmentCalendar({
     // Prevent resizing to past
     if (newStartTime < now) {
       toast.error('Cannot reschedule appointments to the past');
+      return;
+    }
+    if (!isOpenAppointment(appointment.status)) {
+      toast.error('Only upcoming visits can be changed.');
       return;
     }
 
@@ -189,13 +228,8 @@ export function AppointmentCalendar({
       return;
     }
 
-    try {
-      await onAppointmentReschedule(appointment._id, newStartTime, newEndTime);
-      toast.success('Appointment duration updated');
-    } catch (error) {
-      toast.error('Failed to update appointment');
-    }
-  }, [onAppointmentReschedule]);
+    setPendingMove({ appointment, newStartTime, newEndTime, actionType: 'resize' });
+  }, []);
 
   // Handle recurring edit confirmation
   const handleRecurringEditConfirm = async (scope: RecurringEditScope) => {
@@ -210,9 +244,9 @@ export function AppointmentCalendar({
       // For now, only handle single instance
       // TODO: Wire to updateRecurringSeries for 'future' and 'series'
       await onAppointmentReschedule(appointmentId, newStartTime, newEndTime);
-      toast.success('Appointment rescheduled successfully');
+      toast.success('Visit moved. The patient has been asked to confirm.');
     } catch (error) {
-      toast.error('Failed to reschedule appointment');
+      toast.error(appointmentErrorMessage(error, 'Failed to reschedule appointment'));
     } finally {
       setRecurringDialogOpen(false);
       setPendingRecurringEdit(null);
@@ -539,6 +573,8 @@ export function AppointmentCalendar({
           onSelectEvent={handleSelectEvent}
           onEventDrop={handleEventDrop}
           onEventResize={handleEventResize}
+          draggableAccessor={(event: any) => Boolean(event.resource && isOpenAppointment(event.resource.status))}
+          resizableAccessor={(event: any) => Boolean(event.resource && isOpenAppointment(event.resource.status))}
           eventPropGetter={eventStyleGetter}
           slotPropGetter={slotPropGetter}
           dayPropGetter={dayPropGetter}
@@ -554,6 +590,40 @@ export function AppointmentCalendar({
           showMultiDayTimes
           style={{ height: '100%' }}
         />
+
+        <AlertDialog open={pendingMove !== null} onOpenChange={(open) => { if (!open && !moving) setPendingMove(null); }}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                {pendingMove?.actionType === 'resize' ? 'Change the visit length?' : 'Move this visit?'}
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                {pendingMove && (
+                  <>
+                    {pendingMove.appointment.patient
+                      ? `${pendingMove.appointment.patient.firstName} ${pendingMove.appointment.patient.lastName}`.trim()
+                      : 'The patient'}
+                    : {lagosDateTime(pendingMove.appointment.startTime)} → {lagosDateTime(pendingMove.newStartTime)} (
+                    {lagosTimeRange(pendingMove.newStartTime, pendingMove.newEndTime)}, Lagos time). The patient is told
+                    by email and in the app, and asked to confirm the new time.
+                  </>
+                )}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={moving}>Keep it</AlertDialogCancel>
+              <AlertDialogAction
+                disabled={moving}
+                onClick={(e) => {
+                  e.preventDefault();
+                  void confirmPendingMove();
+                }}
+              >
+                {moving ? 'Moving…' : pendingMove?.actionType === 'resize' ? 'Change length' : 'Move visit'}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
         {pendingRecurringEdit && (
           <RecurringEditDialog

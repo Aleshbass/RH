@@ -31,16 +31,42 @@ export type CheckIn = {
   createdAt: number
 }
 
+/** One home-programme log (the patient did an exercise), as getPatientWorkspace returns it. */
+export type ExerciseLog = {
+  _id: Id<'exerciseProgramLogs'>
+  programTitle: string
+  exerciseName: string
+  painScore: number | null
+  difficulty: 'easy' | 'ok' | 'hard' | null
+  note: string | null
+  source: 'app' | 'link'
+  createdAt: number
+  reviewedAt: number | null
+}
+
+export const DIFFICULTY_LABELS: Record<'easy' | 'ok' | 'hard', string> = { easy: 'Easy', ok: 'Just right', hard: 'Hard' }
+
+/** Pain at or above this in a check-in or exercise log needs the physio's attention (as on the server). */
+export const HIGH_PAIN = 7
+
 /** Shape returned by api.physioCare.getPatientWorkspace. */
 export type Workspace = {
-  patient: { _id: Id<'users'>; firstName?: string; lastName?: string; email?: string; phoneNumber?: string; imageUrl?: string }
+  patient: {
+    _id: Id<'users'>
+    firstName?: string
+    lastName?: string
+    email?: string
+    phoneNumber?: string
+    imageUrl?: string
+    patientNumber?: string
+  }
   profile: {
     dateOfBirth?: string
     gender?: string
-    medicalHistory: string[]
-    medications: string[]
-    allergies: string[]
-    emergencyContact?: unknown
+    /** patientProfiles.medicalHistorySummary (free text) */
+    medicalHistory: string | null
+    city: string | null
+    emergencyContact: { name: string; relationship: string; phone: string } | null
   } | null
   relationship: { status: string; startDate: number; endDate?: number; source?: string; referredBy?: string }
   episode: {
@@ -83,8 +109,17 @@ export type Workspace = {
     status: string
     isOnline?: boolean
   } | null
-  adherence: { completed: number; expected: number; rate: number } | null
+  adherence: {
+    completed: number
+    expected: number
+    rate: number
+    /** Where the target comes from: home programmes, the older care-plan exercises, or both */
+    source: 'programme' | 'care_plan' | 'both'
+    lastLoggedAt: number | null
+  } | null
   checkIns: CheckIn[]
+  /** Latest home-programme logs, newest first */
+  exerciseLogs: ExerciseLog[]
   notesCount: number
   lastNoteAt: number | null
   payments: { unpaidCount: number; unpaidKobo: number; paidKobo: number }

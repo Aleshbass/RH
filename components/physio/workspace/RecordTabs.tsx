@@ -18,7 +18,8 @@ import { useFileUpload } from '@/lib/hooks/useFileUpload'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
 import { NoteMediaControls, NoteMediaView, useNoteMedia } from '@/components/physio/NoteMedia'
-import { EXERCISES_LABELS, MOOD_LABELS, PainPill, type Workspace } from './shared'
+import { programError } from '@/components/exercise-programs/errors'
+import { DIFFICULTY_LABELS, EXERCISES_LABELS, HIGH_PAIN, MOOD_LABELS, PainPill, type ExerciseLog, type Workspace } from './shared'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Clinical notes
@@ -76,7 +77,7 @@ function NoteComposer({ workspace, onDone }: { workspace: Workspace; onDone: () 
       toast.success('Note saved')
       onDone()
     } catch (error) {
-      toast.error((error as Error).message || 'Couldn’t save the note')
+      toast.error(programError(error, 'Couldn’t save the note. Please try again.'))
     } finally {
       setSaving(false)
     }
@@ -213,20 +214,71 @@ export function NotesTab({ workspace, composing, setComposing }: { workspace: Wo
 // Check-ins
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** What the patient reported while doing their home programme: pain, difficulty and notes. */
+function ExerciseLogsPanel({ logs }: { logs: ExerciseLog[] }) {
+  const markReviewed = useMutation(api.physioCare.markExerciseLogReviewed)
+  if (logs.length === 0) return null
+  return (
+    <Panel title="Home exercise logs" description="Pain and notes the patient gave after each exercise in their programme">
+      <ul className="divide-y divide-black/[0.04] dark:divide-white/[0.05]">
+        {logs.map((log) => {
+          const highPain = log.painScore !== null && log.painScore >= HIGH_PAIN
+          return (
+            <li key={log._id} className="flex flex-col gap-2 px-5 py-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0 space-y-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  {log.painScore !== null && <PainPill score={log.painScore} />}
+                  {log.difficulty && <StatusBadge>{DIFFICULTY_LABELS[log.difficulty]}</StatusBadge>}
+                  <span className="truncate text-sm font-medium text-rh-night dark:text-white">{log.exerciseName}</span>
+                </div>
+                {log.note && <p className="text-sm text-neutral-600 dark:text-neutral-300">“{log.note}”</p>}
+                <p className="text-xs text-neutral-400">
+                  {format(log.createdAt, 'EEE d MMM, h:mm a')} · {log.programTitle}
+                  {log.source === 'link' ? ' · from the WhatsApp link' : ''}
+                </p>
+              </div>
+              {highPain &&
+                (log.reviewedAt ? (
+                  <span className="inline-flex shrink-0 items-center text-xs text-neutral-400">
+                    <CheckCircle2 className="mr-1 h-3.5 w-3.5" />
+                    Reviewed
+                  </span>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="shrink-0 rounded-xl"
+                    onClick={() => markReviewed({ logId: log._id }).catch((error: unknown) => toast.error(programError(error, 'Couldn’t update. Please try again.')))}
+                  >
+                    Mark reviewed
+                  </Button>
+                ))}
+            </li>
+          )
+        })}
+      </ul>
+    </Panel>
+  )
+}
+
 export function CheckInsTab({ workspace }: { workspace: Workspace }) {
   const markReviewed = useMutation(api.physioCare.markCheckInReviewed)
   const checkIns = workspace.checkIns
+  const exerciseLogs = workspace.exerciseLogs ?? []
   const points = useMemo(() => checkIns.slice(0, 14).reverse(), [checkIns])
 
   if (checkIns.length === 0) {
     return (
-      <Panel>
-        <EmptyState
-          icon={<HeartPulse />}
-          title="No check-ins yet"
-          description="Patients check in from their Rehabify home screen: pain, how daily activities feel, mood and whether they did their exercises."
-        />
-      </Panel>
+      <div className="space-y-5">
+        <Panel>
+          <EmptyState
+            icon={<HeartPulse />}
+            title="No check-ins yet"
+            description="Patients check in from their Rehabify home screen: pain, how daily activities feel, mood and whether they did their exercises."
+          />
+        </Panel>
+        <ExerciseLogsPanel logs={exerciseLogs} />
+      </div>
     )
   }
 
@@ -286,7 +338,7 @@ export function CheckInsTab({ workspace }: { workspace: Workspace }) {
                     size="sm"
                     variant="outline"
                     className="shrink-0 rounded-xl"
-                    onClick={() => markReviewed({ checkInId: c._id }).catch(() => toast.error('Couldn’t update'))}
+                    onClick={() => markReviewed({ checkInId: c._id }).catch((error: unknown) => toast.error(programError(error, 'Couldn’t update. Please try again.')))}
                   >
                     Mark reviewed
                   </Button>
@@ -295,6 +347,8 @@ export function CheckInsTab({ workspace }: { workspace: Workspace }) {
           ))}
         </ul>
       </Panel>
+
+      <ExerciseLogsPanel logs={exerciseLogs} />
     </div>
   )
 }
@@ -344,7 +398,7 @@ export function FilesTab({ workspace }: { workspace: Workspace }) {
       })
       toast.success(`${file.name} added`)
     } catch (error) {
-      toast.error((error as Error).message || 'Upload failed')
+      toast.error(programError(error, 'Upload failed. Please try again.'))
     } finally {
       setUploading(false)
     }
@@ -452,7 +506,7 @@ export function PaymentsTab({ workspace }: { workspace: Workspace }) {
         toast.success(result.emailed ? 'Payment link emailed' : 'Link ready, but this patient has no email on file')
       }
     } catch (error) {
-      toast.error((error as Error).message || 'Couldn’t create the payment link')
+      toast.error(programError(error, 'Couldn’t create the payment link. Please try again.'))
     } finally {
       setBusyId(null)
     }
@@ -502,7 +556,7 @@ export function PaymentsTab({ workspace }: { workspace: Workspace }) {
                       {invoiceBadge(invoice)}
                     </div>
                     <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                      #{invoice.invoiceNumber} · issued {formatDistanceToNow(invoice.issueDate, { addSuffix: true })} · due {format(invoice.dueDate, 'd MMM')}
+                      #{invoice.invoiceNumber} · issued {Number.isFinite(invoice.issueDate) ? formatDistanceToNow(invoice.issueDate, { addSuffix: true }) : '—'} · due {Number.isFinite(invoice.dueDate) ? format(invoice.dueDate, 'd MMM') : '—'}
                     </p>
                   </div>
                   {unpaid && (

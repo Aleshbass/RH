@@ -57,11 +57,11 @@ export function GoogleCalendarRequiredModal({
                         <ul className="space-y-2">
                             <li className="flex items-start gap-2 text-sm text-gray-600">
                                 <CheckCircle2 className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" />
-                                <span>Automatic Google Meet links for every appointment</span>
+                                <span>Automatic Google Meet links for video sessions</span>
                             </li>
                             <li className="flex items-start gap-2 text-sm text-gray-600">
                                 <CheckCircle2 className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" />
-                                <span>Appointments synced to your Google Calendar</span>
+                                <span>Video sessions added to your Google Calendar</span>
                             </li>
                             <li className="flex items-start gap-2 text-sm text-gray-600">
                                 <CheckCircle2 className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" />

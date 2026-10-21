@@ -27,8 +27,9 @@ type StaticRoute = {
 const STATIC_ROUTES: StaticRoute[] = [
   { path: '', changeFrequency: 'daily', priority: 1.0 },
   { path: '/find-a-physio', changeFrequency: 'daily', priority: 0.9 },
-  { path: '/start-treatment', changeFrequency: 'monthly', priority: 0.8 },
+  { path: '/get-care', changeFrequency: 'monthly', priority: 0.8 },
   { path: '/pricing', changeFrequency: 'monthly', priority: 0.8 },
+  { path: '/rehabify-access', changeFrequency: 'monthly', priority: 0.6 },
   { path: '/about', changeFrequency: 'monthly', priority: 0.7 },
   { path: '/meet-joy', changeFrequency: 'monthly', priority: 0.6 },
   { path: '/payment', changeFrequency: 'monthly', priority: 0.5 },
@@ -42,7 +43,7 @@ const STATIC_ROUTES: StaticRoute[] = [
   // Policies
   { path: '/terms-and-conditions', changeFrequency: 'yearly', priority: 0.3, lastModified: '2025-10-02' },
   { path: '/privacy-policy', changeFrequency: 'yearly', priority: 0.3, lastModified: '2025-10-02' },
-  { path: '/payment-policy', changeFrequency: 'yearly', priority: 0.3, lastModified: '2025-10-02' },
+  { path: '/payment-policy', changeFrequency: 'yearly', priority: 0.3, lastModified: '2026-10-19' },
   { path: '/consultation-booking-policy', changeFrequency: 'yearly', priority: 0.3, lastModified: '2026-09-22' },
   { path: '/payout-policy', changeFrequency: 'yearly', priority: 0.3 },
 ];

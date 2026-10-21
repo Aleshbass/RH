@@ -1,12 +1,15 @@
 'use client';
 
 import React from 'react';
-import { format, isBefore, isAfter, startOfDay } from 'date-fns';
-import { Calendar, Clock, AlertCircle, CheckCircle2, History, Repeat } from 'lucide-react';
+import { format } from 'date-fns';
+import { Calendar, Clock, AlertCircle, CheckCircle2, History } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+import { awaitingConfirmationFrom, hasPendingProposal, isOpenAppointment } from '@/convex/helpers/appointmentStatus';
+import { lagosShortDate, lagosTimeRange } from '@/convex/helpers/lagosTime';
+import { AppointmentPlace, AppointmentStatusBadge, PhysioAppointmentActions } from '@/components/appointments/appointment-ui';
 
 interface AppointmentDashboardProps {
     appointments: any[];
@@ -16,27 +19,35 @@ interface AppointmentDashboardProps {
 
 export function AppointmentDashboard({ appointments, onNewAppointment, onAppointmentClick }: AppointmentDashboardProps) {
     const now = new Date();
+    const nowMs = now.getTime();
+    // Booked and not over yet (in progress counts: it can be marked completed)
+    const isLive = (a: any) => isOpenAppointment(a.status) && a.endTime > nowMs;
 
-    // Unconfirmed appointments that need action - only show if they have additional flags
-    // Since we're now showing 'scheduled' in upcoming, we can remove this or make it more specific
+    // Requests the patient made: the physio accepts, declines or proposes another time
     const unconfirmed = appointments.filter(a =>
-        false // Disabled for now since scheduled appointments show in upcoming
-    );
-
-    const upcoming = appointments.filter(a =>
-        (a.status === 'confirmed' || a.status === 'scheduled') && !isBefore(new Date(a.startTime), now)
+        isLive(a) && a.startTime > nowMs && awaitingConfirmationFrom(a) === 'provider' && !hasPendingProposal(a)
     ).sort((a, b) => a.startTime - b.startTime);
 
+    const upcoming = appointments.filter(a =>
+        isLive(a) && !unconfirmed.includes(a)
+    ).sort((a, b) => a.startTime - b.startTime);
+
+    // Finished, cancelled, or past visits still open (those can be marked completed / no-show)
     const past = appointments.filter(a =>
-        isBefore(new Date(a.startTime), now) || ['completed', 'cancelled_by_patient', 'cancelled_by_therapist'].includes(a.status)
+        !isLive(a)
     ).sort((a, b) => b.startTime - a.startTime).slice(0, 10); // Show last 10
 
-    const AppointmentCard = ({ appointment, type }: { appointment: any, type: 'unconfirmed' | 'upcoming' | 'past' }) => (
+    // A render function, not a nested component: a nested component type changes on every
+    // render, which would remount the cards and close their action dialogs on each data update
+    const renderCard = (appointment: any, type: 'unconfirmed' | 'upcoming' | 'past') => (
         <div
+            key={appointment._id}
             onClick={() => onAppointmentClick(appointment)}
             className={cn(
                 "bg-white p-4 rounded-xl border transition-all cursor-pointer hover:shadow-md",
-                type === 'unconfirmed' ? "border-amber-200 bg-amber-50/30" : "border-gray-100 shadow-sm"
+                type === 'unconfirmed' ? "border-amber-200 bg-amber-50/30" : "border-gray-100 shadow-sm",
+                // Finished history is muted; past visits still open need an action, so stay bright
+                type === 'past' && !isOpenAppointment(appointment.status) && "opacity-75"
             )}
         >
             <div className="flex justify-between items-start mb-3">
@@ -57,22 +68,28 @@ export function AppointmentDashboard({ appointments, onNewAppointment, onAppoint
                         <p className="text-sm text-gray-500 line-clamp-1">{appointment.serviceType}</p>
                     </div>
                 </div>
-                {type === 'unconfirmed' && (
-                    <Badge variant="outline" className="bg-amber-100 text-amber-700 border-amber-200 shrink-0">
-                        Action
-                    </Badge>
-                )}
+                <AppointmentStatusBadge appointment={appointment} viewer="provider" />
             </div>
 
-            <div className="flex items-center gap-4 text-sm text-gray-600 bg-gray-50/50 p-2 rounded-lg">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-600 bg-gray-50/50 p-2 rounded-lg">
                 <div className="flex items-center gap-1.5">
                     <Calendar className="h-4 w-4 text-gray-400" />
-                    <span className="whitespace-nowrap">{format(new Date(appointment.startTime), 'MMM d')}</span>
+                    <span className="whitespace-nowrap">{lagosShortDate(appointment.startTime)}</span>
                 </div>
                 <div className="flex items-center gap-1.5">
                     <Clock className="h-4 w-4 text-gray-400" />
-                    <span className="whitespace-nowrap">{format(new Date(appointment.startTime), 'h:mm a')}</span>
+                    <span className="whitespace-nowrap">{lagosTimeRange(appointment.startTime, appointment.endTime)}</span>
                 </div>
+            </div>
+
+            <AppointmentPlace appointment={appointment} viewer="provider" className="mt-2 px-1" />
+
+            {appointment.cancellationReason && appointment.status?.startsWith('cancelled') && (
+                <p className="mt-2 px-1 text-xs text-gray-500 line-clamp-2">Reason: {appointment.cancellationReason}</p>
+            )}
+
+            <div className="mt-3 space-y-2 empty:hidden">
+                <PhysioAppointmentActions appointment={appointment} />
             </div>
         </div>
     );
@@ -86,7 +103,8 @@ export function AppointmentDashboard({ appointments, onNewAppointment, onAppoint
                         {format(now, 'EEEE, MMMM d')}
                     </h2>
                     <p className="text-gray-500">
-                        You have <span className="font-semibold text-gray-900">{upcoming.length}</span> upcoming appointments
+                        You have <span className="font-semibold text-gray-900">{upcoming.length + unconfirmed.length}</span> upcoming appointments
+                        {unconfirmed.length > 0 && <>, <span className="font-semibold text-amber-700">{unconfirmed.length}</span> waiting for your answer</>}
                     </p>
                 </div>
                 <Button onClick={onNewAppointment} className="w-full sm:w-auto bg-black text-white hover:bg-gray-800 px-6">
@@ -99,13 +117,11 @@ export function AppointmentDashboard({ appointments, onNewAppointment, onAppoint
                 <section>
                     <div className="flex items-center gap-2 mb-4 px-1">
                         <AlertCircle className="h-5 w-5 text-amber-600" />
-                        <h3 className="text-lg font-bold text-gray-900">Needs Confirmation</h3>
+                        <h3 className="text-lg font-bold text-gray-900">Needs your confirmation</h3>
                         <Badge variant="secondary" className="ml-auto">{unconfirmed.length}</Badge>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {unconfirmed.map(apt => (
-                            <AppointmentCard key={apt._id} appointment={apt} type="unconfirmed" />
-                        ))}
+                        {unconfirmed.map(apt => renderCard(apt, 'unconfirmed'))}
                     </div>
                 </section>
             )}
@@ -122,9 +138,7 @@ export function AppointmentDashboard({ appointments, onNewAppointment, onAppoint
                     </div>
                 ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {upcoming.map(apt => (
-                            <AppointmentCard key={apt._id} appointment={apt} type="upcoming" />
-                        ))}
+                        {upcoming.map(apt => renderCard(apt, 'upcoming'))}
                     </div>
                 )}
             </section>
@@ -136,10 +150,8 @@ export function AppointmentDashboard({ appointments, onNewAppointment, onAppoint
                         <History className="h-5 w-5 text-gray-400" />
                         <h3 className="text-lg font-bold text-gray-500">Recent History</h3>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 opacity-75">
-                        {past.map(apt => (
-                            <AppointmentCard key={apt._id} appointment={apt} type="past" />
-                        ))}
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {past.map(apt => renderCard(apt, 'past'))}
                     </div>
                 </section>
             )}

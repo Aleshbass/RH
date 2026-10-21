@@ -12,7 +12,32 @@ type InvitationResult = {
   invitationCode?: string;
   invitationId?: string;
   message?: string;
+  /** Set when the email already belongs to a Rehabify patient record */
+  existingPatientNumber?: string;
 };
+
+/** Email a pending invitation again (same link, expiry extended by 7 days). */
+export const resendPatientInvitation = action({
+  args: { invitationId: v.id("patientInvitations") },
+  returns: v.object({ success: v.boolean(), message: v.optional(v.string()) }),
+  handler: async (ctx, args) => {
+    const invite = await ctx.runMutation(api.patientInvitations.preparePatientInvitationResend, {
+      invitationId: args.invitationId,
+    });
+    const sent = await ctx.runAction(internal.actions.emails.sendInvitationEmail.sendPatientInvitationEmail, {
+      patientEmail: invite.patientEmail,
+      patientName: invite.patientName,
+      physiotherapistName: invite.physiotherapistName,
+      invitationCode: invite.code,
+      invitationLink: `${publicAppUrl().replace(/\/$/, "")}/patient-invite/${invite.code}`,
+      expiresAt: invite.expiresAt,
+    });
+    if (!sent?.success) {
+      return { success: false, message: "The email couldn't be sent. Copy the link and send it to the patient instead." };
+    }
+    return { success: true };
+  },
+});
 
 /**
  * Create a new patient invitation and send notification
@@ -33,6 +58,7 @@ export const createPatientInvitationWithNotification = action({
     invitationCode: v.optional(v.string()),
     invitationId: v.optional(v.string()),
     message: v.optional(v.string()),
+    existingPatientNumber: v.optional(v.string()),
   }),
   handler: async (ctx, args): Promise<InvitationResult> => {
     try {

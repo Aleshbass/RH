@@ -2,23 +2,21 @@ import { v } from "convex/values";
 import { internalMutation } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { publicAppUrl } from "../helpers/appUrl";
+import { lagosTimeRange, startOfZonedDay } from "../helpers/lagosTime";
 
 /**
- * Send appointment reminders for all appointments happening tomorrow (UTC day window).
+ * Send appointment reminders for all appointments happening tomorrow (Lagos day window).
  * Runs daily via cron. Creates notifications that send emails via the router.
  */
 export const sendDailyAppointmentReminders = internalMutation({
   args: {},
   // Explicit return type: inferring it through the generated api types is too deep (TS2589).
   handler: async (ctx): Promise<{ success: boolean; count: number }> => {
-    const now = new Date();
-    const utcYear = now.getUTCFullYear();
-    const utcMonth = now.getUTCMonth();
-    const utcDate = now.getUTCDate();
+    const DAY = 24 * 60 * 60 * 1000;
 
-    // Tomorrow UTC start/end boundaries
-    const startOfTomorrowUTC = Date.UTC(utcYear, utcMonth, utcDate + 1, 0, 0, 0, 0);
-    const endOfTomorrowUTC = Date.UTC(utcYear, utcMonth, utcDate + 1, 23, 59, 59, 999);
+    // Tomorrow's start/end in Lagos time (Convex runs in UTC); names kept from the UTC version
+    const startOfTomorrowUTC = startOfZonedDay(Date.now()) + DAY;
+    const endOfTomorrowUTC = startOfTomorrowUTC + DAY - 1;
 
     // Query appointments scheduled for tomorrow that are not cancelled
     const appointments = await ctx.db
@@ -46,7 +44,7 @@ export const sendDailyAppointmentReminders = internalMutation({
         // Compute names and strings
         const patientName = `${patient.firstName || ""} ${patient.lastName || ""}`.trim() || patient.email;
         const physiotherapistName = `${physio.firstName || ""} ${physio.lastName || ""}`.trim() || "Physiotherapist";
-        const appointmentTime = `${new Date(appt.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${new Date(appt.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+        const appointmentTime = lagosTimeRange(appt.startTime, appt.endTime);
 
         // Resolve clinic name best-effort
         let clinicName = "Rehabify Health";

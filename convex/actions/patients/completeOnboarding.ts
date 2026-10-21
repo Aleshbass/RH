@@ -2,7 +2,7 @@
 
 "use node";
 
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { action } from "../../_generated/server";
 import { api } from "../../_generated/api";
 import { Id } from "../../_generated/dataModel";
@@ -125,10 +125,13 @@ export const completePatientOnboardingWithNotification = action({
       console.error("Error in completePatientOnboardingWithNotification:", error);
       return {
         success: false,
+        // ConvexError carries the user-facing reason in .data
         message:
-          error instanceof Error
-            ? error.message
-            : "An error occurred while completing onboarding.",
+          error instanceof ConvexError && typeof error.data === "string"
+            ? error.data
+            : error instanceof Error
+              ? error.message
+              : "An error occurred while completing onboarding.",
       };
     }
   },

@@ -48,6 +48,19 @@ import MessageContent from './MessageContent'
 import MessageStatus from './MessageStatus'
 import { useMutationUntyped, useQueryUntyped } from '@/lib/convexUntyped'
 import { playSound } from '@/lib/sounds'
+import { programError } from '@/components/exercise-programs/errors'
+
+/** A text message not confirmed by the server yet. */
+type PendingMessage = {
+  localId: string
+  content: string
+  replyToMessageId?: Id<'messages'>
+  status: 'sending' | 'failed'
+  createdAt: number
+}
+
+/** getMessages adds a link to open each attachment (fileUrl holds a storage id). */
+const downloadUrlOf = (message: ChatMessage) => (message as ChatMessage & { fileDownloadUrl?: string | null }).fileDownloadUrl ?? null
 
 type ChatProps = {
   recipientId: Id<"users">;
@@ -84,13 +97,18 @@ const RealtimeChat = ({ recipientId, className, embedded = false }: ChatProps) =
   const [editingMessage, setEditingMessage] = useState<{ id: string; content: string } | null>(null)
   // Starred dialog
   const [starredOpen, setStarredOpen] = useState(false)
+  // Text messages on their way to the server: shown straight away as "Sending…", kept as
+  // "Failed" with a Retry if the send doesn't go through
+  const [pending, setPending] = useState<PendingMessage[]>([])
+  const [sending, setSending] = useState(false)
+  const sendingRef = useRef(false)
 
   const { uploadFile, isUploading } = useFileUpload({
     onSuccess: () => {
       toast.success("File uploaded successfully");
     },
     onError: (error) => {
-      toast.error(error.message);
+      toast.error(programError(error, "Couldn't upload that file. Please try again."));
     },
   });
 
@@ -108,7 +126,7 @@ const RealtimeChat = ({ recipientId, className, embedded = false }: ChatProps) =
         setConversationId(result.conversationId)
       } catch (error: unknown) {
         console.error('Failed to get/create conversation:', error)
-        toast.error("Failed to initialize chat. Please try again.")
+        toast.error(programError(error, "Couldn't open this chat. Please try again."))
       }
     }
     initConversation()
@@ -288,26 +306,56 @@ const RealtimeChat = ({ recipientId, className, embedded = false }: ChatProps) =
     }
 
     if (!newMessage.trim() || !conversationId || !currentUser) return;
+    // A second tap or Enter while a message is on its way would send it twice
+    if (sendingRef.current) return;
 
+    const item: PendingMessage = {
+      localId: `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      content: newMessage.trim(),
+      replyToMessageId: replyingTo?._id,
+      status: 'sending',
+      createdAt: Date.now(),
+    };
+    setPending((current) => [...current, item]);
+    setNewMessage('');
+    setReplyingTo(null);
+    await deliver(item);
+
+    // Clear typing status
+    setTypingStatus({ conversationId, isTyping: false }).catch(() => {});
+  };
+
+  /** Sends one pending message; on failure it stays in the list as "Failed" with a Retry. */
+  const deliver = async (item: PendingMessage) => {
+    if (!conversationId) return;
+    sendingRef.current = true;
+    setSending(true);
     try {
       await sendMessage({
         conversationId,
-        content: newMessage.trim(),
+        content: item.content,
         contentType: "text",
-        replyToMessageId: replyingTo?._id,
+        replyToMessageId: item.replyToMessageId,
       });
       playSound('send');
-      setNewMessage('');
-      setReplyingTo(null);
-      
-      // Clear typing status
-      await setTypingStatus({
-        conversationId,
-        isTyping: false,
-      });
+      setPending((current) => current.filter((p) => p.localId !== item.localId));
     } catch (error: unknown) {
       console.error('Failed to send message:', error);
+      setPending((current) => current.map((p) => (p.localId === item.localId ? { ...p, status: 'failed' } : p)));
+      playSound('error');
+      toast.error(programError(error, "Your message wasn't sent. Check your connection and tap Retry."));
+    } finally {
+      sendingRef.current = false;
+      setSending(false);
     }
+  };
+
+  const retry = (localId: string) => {
+    if (sendingRef.current) return;
+    const item = pending.find((p) => p.localId === localId);
+    if (!item) return;
+    setPending((current) => current.map((p) => (p.localId === localId ? { ...p, status: 'sending' } : p)));
+    void deliver({ ...item, status: 'sending' });
   };
 
   // Handle message reply
@@ -619,20 +667,23 @@ const RealtimeChat = ({ recipientId, className, embedded = false }: ChatProps) =
                         <div className="flex items-center gap-2">
                           <FileIcon className="h-4 w-4" />
                           <span className="text-sm">{message.content}</span>
-                          {(message.fileUrl || (message.metadata as { fileUrl?: string })?.fileUrl) && (
+                          {downloadUrlOf(message) ? (
                             <Button
                               variant="ghost"
                               size="sm"
                               className="p-0 h-auto"
+                              aria-label={`Download ${message.content}`}
                               onClick={(e) => {
                                 e.stopPropagation();
-                                const url = (message.metadata as { fileUrl?: string })?.fileUrl || message.fileUrl;
-                                if (url) window.open(url, '_blank');
+                                const url = downloadUrlOf(message);
+                                if (url) window.open(url, '_blank', 'noopener,noreferrer');
                               }}
                             >
                               <Download className="h-4 w-4" />
                             </Button>
-                          )}
+                          ) : message.fileUrl ? (
+                            <span className="text-[11px] opacity-70">File no longer available</span>
+                          ) : null}
                         </div>
                       )}
                       
@@ -727,7 +778,48 @@ const RealtimeChat = ({ recipientId, className, embedded = false }: ChatProps) =
                 </div>
               );
             })}
-            
+
+            {/* Messages on their way, or that didn't go through */}
+            {pending.map((item) => (
+              <div key={item.localId} className="flex flex-row-reverse items-end gap-2">
+                <Avatar className="h-8 w-8 flex-shrink-0">
+                  <AvatarImage src={currentUser?.imageUrl} />
+                  <AvatarFallback className="text-xs">{getUserInitials(currentUser)}</AvatarFallback>
+                </Avatar>
+                <div className="flex max-w-[70%] flex-col items-end">
+                  <div
+                    className={cn(
+                      "rounded-2xl rounded-br-md px-4 py-2",
+                      item.status === 'failed'
+                        ? "border border-rose-300 bg-rose-50 text-rose-900 dark:border-rose-400/40 dark:bg-rose-400/10 dark:text-rose-100"
+                        : "bg-rh-teal/70 text-white dark:bg-rh-aqua/70 dark:text-rh-night"
+                    )}
+                  >
+                    <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">{item.content}</p>
+                  </div>
+                  {item.status === 'sending' ? (
+                    <span className="mt-1 inline-flex items-center gap-1 text-[11px] text-muted-foreground">
+                      <Loader2 className="h-3 w-3 animate-spin" /> Sending…
+                    </span>
+                  ) : (
+                    <span className="mt-1 inline-flex items-center gap-2 text-[11px] text-rose-600 dark:text-rose-300">
+                      Failed
+                      <button type="button" className="font-semibold underline underline-offset-2" onClick={() => retry(item.localId)} disabled={sending}>
+                        Retry
+                      </button>
+                      <button
+                        type="button"
+                        className="text-muted-foreground underline underline-offset-2"
+                        onClick={() => setPending((current) => current.filter((p) => p.localId !== item.localId))}
+                      >
+                        Discard
+                      </button>
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+
             {typingStatus.isOtherUserTyping && (
               <div className="flex items-center gap-2 text-sm text-muted-foreground px-4">
                 <Avatar className="h-6 w-6">
@@ -833,9 +925,10 @@ const RealtimeChat = ({ recipientId, className, embedded = false }: ChatProps) =
               size="icon"
               className="shrink-0 rounded-full"
               onClick={handleSendMessage}
-              disabled={(!!editingMessage && !newMessage.trim()) || (!editingMessage && !newMessage.trim()) || isUploading || isRecording}
+              aria-label={sending ? 'Sending' : 'Send'}
+              disabled={!newMessage.trim() || !conversationId || sending || isUploading || isRecording}
             >
-              <Send className="h-4 w-4" />
+              {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
             </Button>
           </div>
           {editingMessage && (

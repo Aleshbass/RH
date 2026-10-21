@@ -1,7 +1,8 @@
-import { query, mutation } from "./_generated/server";
-import { v } from "convex/values";
-import { Id } from "./_generated/dataModel";
+import { query, mutation, type QueryCtx } from "./_generated/server";
+import { ConvexError, v } from "convex/values";
+import { Doc, Id } from "./_generated/dataModel";
 import { getUserByIdOrThrow } from "./users";
+import { assertPatientInClinic } from "./clinicTools";
 import { 
   ChatMessage, 
   ChatConversation, 
@@ -15,6 +16,105 @@ import { QueryBuilder } from "convex/server";
  * Real-time chat system for patient-physiotherapist communication
  * Following PRD: Secure messaging between patients and PTs
  */
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Who may message whom (shared with messages.ts)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const CLINIC_TEAM_ROLES = new Set(["clinic_owner", "clinic_staff", "physiotherapist"]);
+
+/** The clinic a team member works in: the owner's clinic, or the clinic a physio or front desk belongs to. */
+async function clinicIdOf(ctx: QueryCtx, user: Doc<"users">): Promise<Id<"clinics"> | null> {
+  if (user.role === "clinic_owner") {
+    const clinic = await ctx.db
+      .query("clinics")
+      .withIndex("by_owner_id", (q) => q.eq("ownerId", user._id))
+      .first();
+    return clinic?._id ?? null;
+  }
+  if (user.role === "clinic_staff") return user.clinicId ?? null;
+  if (user.role === "physiotherapist") {
+    if (user.clinicId) return user.clinicId;
+    const profile = await ctx.db
+      .query("physiotherapistProfiles")
+      .withIndex("by_user_id", (q) => q.eq("userId", user._id))
+      .first();
+    return profile?.clinicId ?? null;
+  }
+  return null;
+}
+
+/** The patient is (or was) under this physio's care: a care relationship or a booking with them. */
+async function hasCareLink(ctx: QueryCtx, patientId: Id<"users">, physioId: Id<"users">) {
+  const relationship = await ctx.db
+    .query("patientPhysiotherapistRelationships")
+    .withIndex("by_patient_and_physiotherapist", (q) => q.eq("patientId", patientId).eq("physiotherapistId", physioId))
+    .first();
+  if (relationship) return true;
+  const appointment = await ctx.db
+    .query("appointments")
+    .withIndex("by_patient_id_and_time", (q) => q.eq("patientId", patientId))
+    .filter((q) => q.eq(q.field("physiotherapistId"), physioId))
+    .first();
+  return Boolean(appointment);
+}
+
+/** A link to open an attachment: full URLs pass through, storage ids are resolved (null if gone). */
+async function attachmentUrl(ctx: QueryCtx, fileUrl: string | undefined): Promise<string | null> {
+  if (!fileUrl) return null;
+  if (/^https?:\/\//.test(fileUrl)) return fileUrl;
+  try {
+    return await ctx.storage.getUrl(fileUrl as Id<"_storage">);
+  } catch {
+    return null; // not a storage id
+  }
+}
+
+async function isClinicPatient(ctx: QueryCtx, clinicId: Id<"clinics">, patientId: Id<"users">) {
+  const clinic = await ctx.db.get(clinicId);
+  if (!clinic) return false;
+  try {
+    await assertPatientInClinic(ctx, clinic, patientId);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Messaging needs a care link, whichever side starts it:
+ * - a patient and a physiotherapist who treats (or treated) them, or who works in the patient's clinic;
+ * - a patient and the owner or front desk of a clinic the patient belongs to;
+ * - members of the same clinic team;
+ * - Rehabify admins, with anyone (support).
+ * Everyone else (partners, doctors, other clinics, other patients) is refused.
+ */
+export async function assertCanMessage(ctx: QueryCtx, me: Doc<"users">, other: Doc<"users">) {
+  if (me._id === other._id) throw new ConvexError("You can't send a message to yourself.");
+  if (me.role === "admin" || other.role === "admin") return;
+
+  const patient = me.role === "patient" ? me : other.role === "patient" ? other : null;
+  const staff = patient === me ? other : me;
+  if (patient && staff.role !== "patient") {
+    if (staff.role === "physiotherapist" && (await hasCareLink(ctx, patient._id, staff._id))) return;
+    if (staff.role && CLINIC_TEAM_ROLES.has(staff.role)) {
+      const clinicId = await clinicIdOf(ctx, staff);
+      if (clinicId && (await isClinicPatient(ctx, clinicId, patient._id))) return;
+    }
+    throw new ConvexError(
+      patient === me
+        ? "You can only message a physiotherapist or clinic that's treating you."
+        : "You can only message patients you're treating, or patients of your clinic."
+    );
+  }
+
+  if (me.role && other.role && CLINIC_TEAM_ROLES.has(me.role) && CLINIC_TEAM_ROLES.has(other.role)) {
+    const [mine, theirs] = await Promise.all([clinicIdOf(ctx, me), clinicIdOf(ctx, other)]);
+    if (mine && mine === theirs) return;
+    throw new ConvexError("You can only message members of your own clinic team.");
+  }
+  throw new ConvexError("Messages are for patients and their care team.");
+}
 
 /**
  * Get or create conversation between patient and physiotherapist
@@ -44,16 +144,12 @@ export const getOrCreateConversation = mutation({
 
     const otherUser = await ctx.db.get(args.participantId);
     if (!otherUser) {
-      throw new Error("Participant not found");
+      throw new ConvexError("This person's account couldn't be found.");
     }
 
-    // Verify relationship (patient-PT or PT-patient)
-    if (currentUser.role === "patient" && otherUser.role !== "physiotherapist") {
-      throw new Error("Patients can only chat with physiotherapists");
-    }
-    if (currentUser.role === "physiotherapist" && otherUser.role !== "patient") {
-      throw new Error("Physiotherapists can only chat with patients");
-    }
+    // Needs a care link (or clinic team / admin), checked for existing conversations too, so
+    // ones opened before this check can't be reused by people with no link
+    await assertCanMessage(ctx, currentUser, otherUser);
 
     // Check if conversation already exists (either participant order)
     const existingConversation =
@@ -71,26 +167,6 @@ export const getOrCreateConversation = mutation({
         conversationId: existingConversation._id,
         isNew: false,
       };
-    }
-
-    // A new conversation needs a care link: a patient–physio relationship or an appointment
-    if (currentUser.role === "patient" || currentUser.role === "physiotherapist") {
-      const patientId = currentUser.role === "patient" ? currentUser._id : otherUser._id;
-      const physioId = currentUser.role === "patient" ? otherUser._id : currentUser._id;
-      const relationship = await ctx.db
-        .query("patientPhysiotherapistRelationships")
-        .withIndex("by_patient_and_physiotherapist", (q) => q.eq("patientId", patientId).eq("physiotherapistId", physioId))
-        .first();
-      const appointment = relationship
-        ? null
-        : await ctx.db
-            .query("appointments")
-            .withIndex("by_patient_id_and_time", (q) => q.eq("patientId", patientId))
-            .filter((q) => q.eq(q.field("physiotherapistId"), physioId))
-            .first();
-      if (!relationship && !appointment) {
-        throw new Error("You can only message a physiotherapist you're seeing");
-      }
     }
 
     // Create new conversation
@@ -334,13 +410,17 @@ export const sendMessage = mutation({
     const conversation = await ctx.db.get(args.conversationId);
     if (!conversation) throw new Error("Conversation not found");
     if (conversation.participant1Id !== user._id && conversation.participant2Id !== user._id) {
-      throw new Error("Not authorized to send messages in this conversation");
+      throw new ConvexError("You're not part of this conversation.");
     }
 
     // Get receiver ID (the participant that's not the sender)
-    const receiverId = conversation.participant1Id === user._id 
-      ? conversation.participant2Id 
+    const receiverId = conversation.participant1Id === user._id
+      ? conversation.participant2Id
       : conversation.participant1Id;
+    const receiver = await ctx.db.get(receiverId);
+    if (!receiver) throw new ConvexError("This person's account no longer exists.");
+    await assertCanMessage(ctx, user, receiver);
+    if (!args.content.trim() && !args.fileUrl) throw new ConvexError("Write a message first.");
 
     const message = {
       conversationId: args.conversationId,
@@ -513,7 +593,8 @@ export const getMessages = query({
       .order("desc")
       .paginate({ cursor: args.cursor ?? null, numItems: args.limit || 50 });
 
-    // Transform messages to include reply context
+    // Transform messages to include reply context, and a download link for attachments (their
+    // fileUrl holds the storage id, which the browser can't open by itself)
     const messagesWithReplies = await Promise.all(
       page.map(async (message) => {
         let replyToMessage = null;
@@ -523,6 +604,7 @@ export const getMessages = query({
         return {
           ...message,
           replyToMessage,
+          fileDownloadUrl: await attachmentUrl(ctx, message.contentType === "text" ? undefined : message.fileUrl),
         };
       })
     );

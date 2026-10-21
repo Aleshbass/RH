@@ -88,8 +88,8 @@ Patient → Paystack → Split Payment
 ## 🔑 Environment Variables
 Already configured in `.env.local`:
 ```env
-PAYSTACK_SECRET_KEY=sk_test_b100077fe435907aa4a3287c7761ac62a0ceed0e
-NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY=pk_test_9ac3476136e9cf713857d4ebe03626b9e5df35f7
+PAYSTACK_SECRET_KEY=sk_live_xxxxxxxxxxxxxxxx   # never commit real keys
+NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY=pk_live_xxxxxxxxxxxxxxxx
 PLATFORM_FEE_AMOUNT=100000  # ₦1,000 in kobo
 ```
 

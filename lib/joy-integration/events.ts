@@ -12,7 +12,7 @@ export async function deliverJoyEvent(eventId: string, eventType: string, data: 
   const timestamp = Math.floor(Date.now() / 1000).toString();
   const signature = createHmac("sha256", secret).update([timestamp, eventId, body].join("\n"), "utf8").digest("hex");
   try {
-    const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json", "X-RH-Event-Timestamp": timestamp, "X-RH-Event-Signature": signature }, body });
+    const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json", "X-RH-Event-Timestamp": timestamp, "X-RH-Event-Signature": signature }, body, signal: AbortSignal.timeout(10_000) });
     if (!response.ok) throw new Error(`Joy event receiver returned ${response.status}`);
     await callJoyConvexGateway("mark_event_delivery", { event_id: eventId, delivered: true });
     return { delivered: true, deferred: false };

@@ -6,6 +6,19 @@ import { internal } from "./_generated/api";
 import { clinicPaymentSplit } from "./clinicFees";
 import { loadClinicFeeConfig } from "./clinicFeeSettings";
 import { logSecurityEvent } from "./helpers/securityLog";
+import { ensureUserNumbers } from "./helpers/rehabifyIds";
+import { activePaymentLink } from "./helpers/paymentLinks";
+import { isClinicInviteApproval } from "./helpers/clinicApproval";
+import {
+  CLEAR_PROPOSAL,
+  appointmentsPathFor,
+  emailAboutAppointment,
+  notifyAboutAppointment,
+  personName,
+  syncGoogleCalendarEvent,
+  visitPlace,
+} from "./helpers/appointmentNotify";
+import { lagosDateTime, lagosTimeRange } from "./helpers/lagosTime";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Clinic access: the owner, and team members (clinicians and front-desk staff)
@@ -200,6 +213,33 @@ async function isPatientInClinic(ctx: QueryCtx, clinic: Doc<"clinics">, patientI
 
   const staffIds = await getClinicStaffUserIds(ctx, clinic);
   return rels.some((r) => r.status === "active" && staffIds.has(r.physiotherapistId));
+}
+
+/**
+ * Clinical records (notes, assessments, programmes) are written by the patient's own clinician,
+ * under their own name. The owner and colleagues can read them; to take over someone's care,
+ * the patient is reassigned first. An owner who treats patients is their clinician too.
+ */
+export async function requireTreatingClinician(
+  ctx: QueryCtx,
+  member: ClinicMember,
+  patientId: Id<"users">
+): Promise<Id<"users">> {
+  if (member.kind === "front_desk") {
+    throw new ConvexError("Only the patient's clinician can write clinical records.");
+  }
+  const rels = await ctx.db
+    .query("patientPhysiotherapistRelationships")
+    .withIndex("by_patient_and_physiotherapist", (q: any) =>
+      q.eq("patientId", patientId).eq("physiotherapistId", member.user._id)
+    )
+    .collect();
+  if (!rels.some((r) => r.status === "active")) {
+    throw new ConvexError(
+      "Only this patient's clinician can write their clinical notes and programmes. To take over their care, reassign the patient to yourself first."
+    );
+  }
+  return member.user._id;
 }
 
 export async function assertPatientInClinic(ctx: QueryCtx, clinic: Doc<"clinics">, patientId: Id<"users">) {
@@ -484,6 +524,7 @@ export const addClinicPatient = mutation({
       throw new ConvexError("This email belongs to a non-patient account and cannot be enrolled as a patient.");
     }
 
+    const existingAccount = !!patientUser;
     if (!patientUser) {
       const generatedClerkId = `clinic_patient_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
       const patientUserId = await ctx.db.insert("users", {
@@ -504,6 +545,7 @@ export const addClinicPatient = mutation({
     if (!patientUser) {
       throw new ConvexError("Failed to create or locate patient user account");
     }
+    const { patientNumber } = await ensureUserNumbers(ctx, patientUser._id);
 
     // Upsert Patient Profile
     const profile = await ctx.db
@@ -566,6 +608,8 @@ export const addClinicPatient = mutation({
     return {
       success: true,
       patientId: patientUser._id,
+      patientNumber,
+      existingAccount,
       emailSent,
       message: `Patient ${args.firstName} ${args.lastName} enrolled successfully.`,
     };
@@ -702,13 +746,15 @@ export const getClinicPatientFullRecord = query({
       })
     );
 
-    // Patient Documents
+    // Patient Documents: the patient's own uploads only when they shared them with their clinician
     let documents: any[] = [];
     if (profile?._id) {
-      const rawDocuments = await ctx.db
-        .query("patientDocuments")
-        .withIndex("by_patient_profile_id", (q: any) => q.eq("patientProfileId", profile._id))
-        .collect();
+      const rawDocuments = (
+        await ctx.db
+          .query("patientDocuments")
+          .withIndex("by_patient_profile_id", (q: any) => q.eq("patientProfileId", profile._id))
+          .collect()
+      ).filter((doc: any) => doc.sharedWithPhysiotherapist !== false);
       documents = await Promise.all(
         rawDocuments.map(async (doc: any) => ({
           ...doc,
@@ -816,6 +862,7 @@ export const getClinicPatientFullRecord = query({
         hasAccount: patientHasAccount(patient),
         phoneNumber: patient.phoneNumber,
         imageUrl: patient.imageUrl,
+        patientNumber: patient.patientNumber,
         _creationTime: patient._creationTime,
       },
       profile: profile || null,
@@ -870,11 +917,24 @@ export const attachPatientDocument = mutation({
       throw new ConvexError("Unable to locate patient profile");
     }
 
+    // Trust the stored file, not what the browser said about it
+    const stored = await ctx.storage.getMetadata(args.storageId);
+    if (!stored) throw new ConvexError("The upload didn't finish. Please try again.");
+    const storedType = (stored.contentType ?? args.contentType ?? "").toLowerCase();
+    if (!/^(application\/pdf|image\/(jpeg|jpg|png|webp))$/.test(storedType)) {
+      await ctx.storage.delete(args.storageId);
+      throw new ConvexError("Upload a PDF, JPEG, PNG or WebP file.");
+    }
+    if (stored.size > 15 * 1024 * 1024) {
+      await ctx.storage.delete(args.storageId);
+      throw new ConvexError("Files can be up to 15 MB.");
+    }
+
     const docId = await ctx.db.insert("patientDocuments", {
       patientProfileId: profile._id,
-      fileName: args.fileName,
-      fileSize: args.fileSize,
-      contentType: args.contentType,
+      fileName: args.fileName.slice(0, 200),
+      fileSize: stored.size,
+      contentType: storedType,
       documentType: args.documentType,
       storageId: args.storageId,
       uploadedAt: Date.now(),
@@ -1099,6 +1159,9 @@ export const rescheduleClinicAppointment = mutation({
 
     const appointment = await getClinicAppointmentOrThrow(ctx, clinic, args.appointmentId);
 
+    if (appointment.status === "completed") {
+      throw new ConvexError("This visit is already completed, so it can't be moved.");
+    }
     if (args.endTime <= args.startTime) {
       throw new ConvexError("Appointment end time must be after the start time");
     }
@@ -1113,9 +1176,26 @@ export const rescheduleClinicAppointment = mutation({
       endTime: args.endTime,
       physiotherapistId: clinicianId,
       status: "scheduled",
+      // The clinic set the new time, so the patient is the one who confirms it
+      requestedBy: "provider",
+      ...CLEAR_PROPOSAL,
       notesForTherapist: args.reason
         ? `${appointment.notesForTherapist ? appointment.notesForTherapist + "\n" : ""}Rescheduled: ${args.reason}`
         : appointment.notesForTherapist,
+    });
+    if (clinicianId === appointment.physiotherapistId) {
+      await syncGoogleCalendarEvent(ctx, args.appointmentId, { startTime: args.startTime, endTime: args.endTime });
+    } else {
+      // The old clinician's calendar event no longer applies
+      await syncGoogleCalendarEvent(ctx, args.appointmentId, "delete");
+    }
+
+    await notifyClinicVisitChange(ctx, clinic, user._id, appointment, {
+      kind: "rescheduled",
+      startTime: args.startTime,
+      endTime: args.endTime,
+      clinicianId,
+      reason: args.reason,
     });
 
     return { success: true };
@@ -1123,13 +1203,14 @@ export const rescheduleClinicAppointment = mutation({
 });
 
 /**
- * Update appointment status (scheduled, completed, cancelled, no-show)
+ * Update appointment status (scheduled, confirmed, completed, cancelled, no-show)
  */
 export const updateAppointmentStatus = mutation({
   args: {
     appointmentId: v.id("appointments"),
     status: v.union(
       v.literal("scheduled"),
+      v.literal("confirmed"),
       v.literal("completed"),
       v.literal("cancelled"),
       v.literal("no_show")
@@ -1145,18 +1226,193 @@ export const updateAppointmentStatus = mutation({
     // A clinic-initiated cancellation is stored as cancelled_by_therapist
     const status = args.status === "cancelled" ? "cancelled_by_therapist" : args.status;
 
+    if (status === "confirmed" && appointment.status !== "scheduled") {
+      throw new ConvexError("Only a visit waiting for confirmation can be confirmed.");
+    }
+    if (status === "cancelled_by_therapist" && appointment.status !== "scheduled" && appointment.status !== "confirmed") {
+      throw new ConvexError("Only an upcoming visit can be cancelled.");
+    }
+
     await ctx.db.patch(args.appointmentId, {
       status,
       cancellationReason: status === "cancelled_by_therapist" ? args.cancellationReason : undefined,
+      ...(status === "confirmed" || status === "cancelled_by_therapist" ? CLEAR_PROPOSAL : {}),
     });
 
     if (status === "completed") {
       await advanceClinicReferral(ctx, clinic, appointment.patientId, "attended", user._id);
     }
+    if (status === "cancelled_by_therapist") {
+      await syncGoogleCalendarEvent(ctx, args.appointmentId, "delete");
+      await notifyClinicVisitChange(ctx, clinic, user._id, appointment, {
+        kind: "cancelled",
+        reason: args.cancellationReason,
+      });
+    }
+    if (status === "confirmed") {
+      await notifyClinicVisitChange(ctx, clinic, user._id, appointment, { kind: "confirmed" });
+    }
 
     return { success: true };
   },
 });
+
+/**
+ * Tells the patient (in-app and email) about a clinic-side change to their visit, and the
+ * clinician too unless they made the change themselves. Times are Lagos time.
+ */
+async function notifyClinicVisitChange(
+  ctx: MutationCtx,
+  clinic: Doc<"clinics">,
+  actorId: Id<"users">,
+  appointment: Doc<"appointments">,
+  change:
+    | { kind: "rescheduled"; startTime: number; endTime: number; clinicianId: Id<"users">; reason?: string }
+    | { kind: "cancelled"; reason?: string }
+    | { kind: "confirmed" }
+) {
+  const PATIENT_PATH = "/dashboard/patient/appointments";
+  const patient = await ctx.db.get(appointment.patientId);
+  const clinicianId = change.kind === "rescheduled" ? change.clinicianId : appointment.physiotherapistId;
+  const clinician = await ctx.db.get(clinicianId);
+  const patientName = personName(patient, "Patient");
+  const clinicianName = personName(clinician, clinic.name);
+  const oldTime = lagosTimeRange(appointment.startTime, appointment.endTime);
+  const reasonText = "reason" in change && change.reason?.trim() ? change.reason.trim() : undefined;
+
+  try {
+    if (change.kind === "rescheduled") {
+      const newTime = lagosTimeRange(change.startTime, change.endTime);
+      await notifyAboutAppointment(ctx, {
+        userId: appointment.patientId,
+        type: "appointment_rescheduled",
+        title: "Appointment Rescheduled",
+        body: `${clinic.name} moved your visit with ${clinicianName} from ${lagosDateTime(appointment.startTime)} to ${lagosDateTime(change.startTime)}.${reasonText ? ` ${reasonText}` : ""}`,
+        appointmentId: appointment._id,
+        actionUrl: PATIENT_PATH,
+      });
+      if (patient?.email) {
+        await ctx.scheduler.runAfter(0, internal.actions.emails.sendAppointmentRescheduledPatientEmail.sendAppointmentRescheduledPatientEmail, {
+          to: patient.email,
+          patientName,
+          physiotherapistName: clinicianName,
+          oldDate: appointment.startTime,
+          oldTime,
+          newDate: change.startTime,
+          newTime,
+          viewLink: PATIENT_PATH,
+          subjectOverride: `${clinic.name} moved your appointment`,
+        });
+      }
+      if (clinicianId !== actorId) {
+        await notifyAboutAppointment(ctx, {
+          userId: clinicianId,
+          type: "appointment_rescheduled",
+          title: clinicianId === appointment.physiotherapistId ? "Appointment Rescheduled" : "Appointment Assigned to You",
+          body: `${patientName}'s visit is now on ${lagosDateTime(change.startTime)} (${clinic.name}).`,
+          appointmentId: appointment._id,
+          actionUrl: appointmentsPathFor(clinician),
+        });
+        if (clinician?.email) {
+          await ctx.scheduler.runAfter(0, internal.actions.emails.sendAppointmentRescheduledProviderEmail.sendAppointmentRescheduledProviderEmail, {
+            to: clinician.email,
+            patientName,
+            physiotherapistName: clinicianName,
+            oldDate: appointment.startTime,
+            oldTime,
+            newDate: change.startTime,
+            newTime,
+            viewLink: appointmentsPathFor(clinician),
+            subjectOverride: `Appointment rescheduled: ${patientName}`,
+          });
+        }
+      }
+      // A visit handed to someone else: the previous clinician hears it's off their list
+      if (clinicianId !== appointment.physiotherapistId && appointment.physiotherapistId !== actorId) {
+        const previous = await ctx.db.get(appointment.physiotherapistId);
+        await notifyAboutAppointment(ctx, {
+          userId: appointment.physiotherapistId,
+          type: "appointment_rescheduled",
+          title: "Appointment Reassigned",
+          body: `${patientName}'s visit on ${lagosDateTime(appointment.startTime)} was moved to ${clinicianName}.`,
+          appointmentId: appointment._id,
+          actionUrl: appointmentsPathFor(previous),
+        });
+      }
+      return;
+    }
+
+    if (change.kind === "cancelled") {
+      await notifyAboutAppointment(ctx, {
+        userId: appointment.patientId,
+        type: "appointment_cancelled",
+        title: "Appointment Cancelled",
+        body: `${clinic.name} cancelled your visit on ${lagosDateTime(appointment.startTime)}.${reasonText ? ` ${reasonText}` : ""}`,
+        appointmentId: appointment._id,
+        actionUrl: PATIENT_PATH,
+      });
+      if (patient?.email) {
+        await ctx.scheduler.runAfter(0, internal.actions.emails.sendAppointmentCanceledPatientEmail.sendAppointmentCanceledPatientEmail, {
+          to: patient.email,
+          patientName,
+          physiotherapistName: clinicianName,
+          appointmentDate: appointment.startTime,
+          appointmentTime: oldTime,
+          cancellationReason: reasonText,
+          rescheduleLink: PATIENT_PATH,
+          subjectOverride: `${clinic.name} cancelled your appointment`,
+        });
+      }
+      if (clinicianId !== actorId) {
+        await notifyAboutAppointment(ctx, {
+          userId: clinicianId,
+          type: "appointment_cancelled",
+          title: "Appointment Cancelled",
+          body: `${patientName}'s visit on ${lagosDateTime(appointment.startTime)} was cancelled by ${clinic.name}.`,
+          appointmentId: appointment._id,
+          actionUrl: appointmentsPathFor(clinician),
+        });
+        if (clinician?.email) {
+          await ctx.scheduler.runAfter(0, internal.actions.emails.sendAppointmentCanceledProviderEmail.sendAppointmentCanceledProviderEmail, {
+            to: clinician.email,
+            patientName,
+            physiotherapistName: clinicianName,
+            appointmentDate: appointment.startTime,
+            appointmentTime: oldTime,
+            cancellationReason: reasonText,
+            viewLink: appointmentsPathFor(clinician),
+            subjectOverride: `Appointment canceled: ${patientName}`,
+          });
+        }
+      }
+      return;
+    }
+
+    await notifyAboutAppointment(ctx, {
+      userId: appointment.patientId,
+      type: "appointment_confirmed",
+      title: "Appointment Confirmed",
+      body: `${clinic.name} confirmed your visit with ${clinicianName} on ${lagosDateTime(appointment.startTime)}.`,
+      appointmentId: appointment._id,
+      actionUrl: PATIENT_PATH,
+    });
+    await emailAboutAppointment(ctx, {
+      to: patient?.email,
+      audience: "patient",
+      subject: `Your visit at ${clinic.name} is confirmed`,
+      greetingName: patient?.firstName,
+      heading: "Your visit is confirmed",
+      paragraphs: [
+        `${clinic.name} confirmed your ${appointment.serviceType} with ${clinicianName} on ${lagosDateTime(appointment.startTime)} (Lagos time), ${visitPlace(appointment)}.`,
+      ],
+      buttonLabel: "View my appointments",
+      buttonPath: PATIENT_PATH,
+    });
+  } catch (err) {
+    // A message failing to queue never undoes the clinic's change
+    console.error("Failed to notify about clinic appointment change:", err);
+  }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 3. CLINICAL DOCUMENTATION
@@ -1187,10 +1443,8 @@ export const saveClinicalNote = mutation({
     const { user, clinic } = member;
     await assertPatientInClinic(ctx, clinic, args.patientId);
 
-    const clinicianId = args.physiotherapistId || defaultClinicianId(member);
-    if (args.physiotherapistId) {
-      await assertStaffInClinic(ctx, clinic, args.physiotherapistId);
-    }
+    // Always the signed-in clinician (args.physiotherapistId is kept for older clients and ignored)
+    const clinicianId = await requireTreatingClinician(ctx, member, args.patientId);
 
     const hasContent = [
       args.subjectiveAssessment, args.objectiveAssessment, args.treatmentAdministered,
@@ -1256,10 +1510,8 @@ export const assignHomeProgramme = mutation({
     const { user, clinic } = member;
     await assertPatientInClinic(ctx, clinic, args.patientId);
 
-    const clinicianId = args.physiotherapistId || defaultClinicianId(member);
-    if (args.physiotherapistId) {
-      await assertStaffInClinic(ctx, clinic, args.physiotherapistId);
-    }
+    // Prescribed by the signed-in clinician (args.physiotherapistId is ignored, as for notes)
+    const clinicianId = await requireTreatingClinician(ctx, member, args.patientId);
 
     // Convert exercises into treatment plan phases
     const phases = [
@@ -1349,6 +1601,7 @@ export const updateHomeProgramme = mutation({
     if (!plan || plan.clinicId !== clinic._id) {
       throw new ConvexError("Programme not found");
     }
+    await requireTreatingClinician(ctx, member, plan.patientId);
 
     const now = Date.now();
     const patch: Partial<Doc<"treatmentPlans">> = { updatedAt: now };
@@ -1403,7 +1656,16 @@ export const getClinicFollowUpQueue = query({
       ];
     }
     const { clinic } = auth;
-    const patientIds = await getActiveClinicPatientIds(ctx, clinic);
+    let patientIds = await getActiveClinicPatientIds(ctx, clinic);
+    // Clinicians follow up their own patients (same rule as the Patients list)
+    if (auth.kind === "clinician" && auth.permissions !== "all") {
+      const mine = await ctx.db
+        .query("patientPhysiotherapistRelationships")
+        .withIndex("by_physiotherapist", (q: any) => q.eq("physiotherapistId", auth.user._id))
+        .collect();
+      const myPatients = new Set(mine.filter((r) => r.status === "active").map((r) => r.patientId));
+      patientIds = patientIds.filter((id) => myPatients.has(id));
+    }
     return await buildFollowUpRows(ctx, clinic, patientIds);
   },
 });
@@ -1539,26 +1801,33 @@ export const logPatientFollowUp = mutation({
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Create a service or package payment request / invoice
+ * Insert a clinic invoice: the admin's fee split, the clinic's payout, and whether the patient is
+ * the clinic's own or a Rehabify referral. Used by the clinic Billing page and by clinic
+ * clinicians requesting payment from their physio workspace, so clinic money always goes to the clinic.
+ * Item amounts are in kobo.
  */
-export const createClinicPaymentRequest = mutation({
-  args: {
-    patientId: v.id("users"),
-    serviceName: v.string(),
-    amountNaira: v.number(), // Amount in Naira
-    notes: v.optional(v.string()),
-    dueDate: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    const member = await requireClinicWrite(ctx, "billing");
-    const { user, clinic } = member;
-    await assertPatientInClinic(ctx, clinic, args.patientId);
+export async function insertClinicInvoice(
+  ctx: MutationCtx,
+  clinic: Doc<"clinics">,
+  input: {
+    patientId: Id<"users">;
+    items: { description: string; quantity: number; unitPrice: number; totalPrice: number }[];
+    notes?: string;
+    dueDate?: number;
+    appointmentIds?: Id<"appointments">[];
+  }
+) {
+    // Clinic-owned and Rehabify-referred patients are billed apart, so the invoice keeps the source
+    const clinicStaffIds = await getClinicStaffUserIds(ctx, clinic);
+    const careRelationship = (
+      await ctx.db
+        .query("patientPhysiotherapistRelationships")
+        .withIndex("by_patient", (q: any) => q.eq("patientId", input.patientId))
+        .collect()
+    ).find((rel) => rel.status === "active" && (rel.clinicId === clinic._id || clinicStaffIds.has(rel.physiotherapistId)));
+    const patientSource = careRelationship?.source === "rehabify_referral" ? "rehabify_referral" : "clinic_direct";
 
-    if (!(args.amountNaira > 0)) {
-      throw new ConvexError("Amount must be greater than zero");
-    }
-
-    const totalKobo = Math.round(args.amountNaira * 100);
+    const totalKobo = input.items.reduce((sum, item) => sum + item.totalPrice, 0);
     // Online payment split with the admin's current fee settings: Paystack fee first, then the
     // clinic/Rehabify split; stamp duty comes off the clinic's payout. The patient pays the quoted
     // price; nothing is added on top. The amounts are fixed on the invoice now, so later settings
@@ -1587,24 +1856,17 @@ export const createClinicPaymentRequest = mutation({
     if (!invoiceNumber) {
       throw new ConvexError("Could not generate an invoice number, please try again");
     }
-    const due = args.dueDate || now + 7 * 24 * 60 * 60 * 1000;
+    const due = input.dueDate || now + 7 * 24 * 60 * 60 * 1000;
 
     const invoiceId = await ctx.db.insert("invoices", {
-      patientId: args.patientId,
+      patientId: input.patientId,
       // The owner gets the "payment received" notification for clinic invoices
       physiotherapistId: clinic.ownerId,
       clinicId: clinic._id,
       invoiceNumber,
       issueDate: now,
       dueDate: due,
-      items: [
-        {
-          description: args.serviceName,
-          quantity: 1,
-          unitPrice: totalKobo,
-          totalPrice: totalKobo,
-        },
-      ],
+      items: input.items,
       subtotalAmount: totalKobo,
       platformFeeAmount: platformFeeKobo,
       paystackFeeAmount: split.paystackFeeKobo,
@@ -1613,7 +1875,9 @@ export const createClinicPaymentRequest = mutation({
       totalAmount: totalKobo,
       currency: "NGN",
       status: "sent",
-      notes: args.notes,
+      patientSource,
+      relatedAppointmentIds: input.appointmentIds?.length ? input.appointmentIds : undefined,
+      notes: input.notes,
       physiotherapistShare: clinicShareKobo,
       platformShare: platformFeeKobo,
       // feeBreakdown.total is what checkout charges, so the patient pays the quoted price exactly once.
@@ -1631,6 +1895,50 @@ export const createClinicPaymentRequest = mutation({
     });
 
     return { success: true, invoiceId, invoiceNumber };
+}
+
+/**
+ * Create a service or package payment request / invoice
+ */
+export const createClinicPaymentRequest = mutation({
+  args: {
+    patientId: v.id("users"),
+    serviceName: v.string(),
+    amountNaira: v.number(), // Amount in Naira
+    notes: v.optional(v.string()),
+    dueDate: v.optional(v.number()),
+    // The visit this payment is for, when there is one
+    appointmentId: v.optional(v.id("appointments")),
+  },
+  handler: async (ctx, args) => {
+    const member = await requireClinicWrite(ctx, "billing");
+    const { clinic } = member;
+    await assertPatientInClinic(ctx, clinic, args.patientId);
+
+    if (!(args.amountNaira > 0)) {
+      throw new ConvexError("Amount must be greater than zero");
+    }
+    if (!args.serviceName.trim()) {
+      throw new ConvexError("Say what the payment is for");
+    }
+    if (args.dueDate !== undefined && !Number.isFinite(args.dueDate)) {
+      throw new ConvexError("Pick a valid due date");
+    }
+    if (args.appointmentId) {
+      const appointment = await getClinicAppointmentOrThrow(ctx, clinic, args.appointmentId);
+      if (appointment.patientId !== args.patientId) {
+        throw new ConvexError("That visit belongs to a different patient");
+      }
+    }
+
+    const amountKobo = Math.round(args.amountNaira * 100);
+    return await insertClinicInvoice(ctx, clinic, {
+      patientId: args.patientId,
+      items: [{ description: args.serviceName.trim(), quantity: 1, unitPrice: amountKobo, totalPrice: amountKobo }],
+      notes: args.notes,
+      dueDate: args.dueDate,
+      appointmentIds: args.appointmentId ? [args.appointmentId] : undefined,
+    });
   },
 });
 
@@ -1724,6 +2032,15 @@ export const getClinicBillingSummary = query({
     let feesThisMonthKobo = 0;
     let processingThisMonthKobo = 0;
 
+    // Older invoices have no patientSource: fall back to how the patient came to the clinic
+    const clinicRelationships = await ctx.db
+      .query("patientPhysiotherapistRelationships")
+      .withIndex("by_clinic", (q: any) => q.eq("clinicId", clinic._id))
+      .collect();
+    const referredPatients = new Set(
+      clinicRelationships.filter((rel) => rel.source === "rehabify_referral").map((rel) => rel.patientId)
+    );
+
     const enrichedInvoices = await Promise.all(
       invoices.map(async (inv) => {
         const patient = await ctx.db.get(inv.patientId);
@@ -1782,10 +2099,13 @@ export const getClinicBillingSummary = query({
                 : null,
           status: overdue ? "overdue" : inv.status,
           paymentMethod: inv.paymentMethod ?? null,
-          paymentLink: inv.paymentLink ?? null,
+          // Only a link that can still be shared; otherwise the page creates a fresh one
+          paymentLink: activePaymentLink(inv),
           paidAt,
           dueDate: inv.dueDate,
           createdAt: inv.issueDate || inv._creationTime,
+          patientSource:
+            inv.patientSource ?? (referredPatients.has(inv.patientId) ? "rehabify_referral" : "clinic_direct"),
         };
       })
     );
@@ -1838,7 +2158,8 @@ export const removeClinician = mutation({
       .collect();
     let moved = 0;
     for (const rel of rels) {
-      if (rel.status !== "active") continue;
+      // Only the clinic's patients move; the clinician's own private patients stay with them
+      if (rel.status !== "active" || rel.clinicId !== clinic._id) continue;
       const ownerRel = await ctx.db
         .query("patientPhysiotherapistRelationships")
         .withIndex("by_patient_and_physiotherapist", (q: any) =>
@@ -1866,6 +2187,20 @@ export const removeClinician = mutation({
     const clinician = await ctx.db.get(args.clinicianId);
     if (clinician?.clinicId === clinic._id) {
       await ctx.db.patch(args.clinicianId, { clinicId: undefined, status: undefined });
+    }
+
+    // Approval that came only from the clinic's invitation ends with the clinic: working on
+    // Rehabify on their own needs Rehabify's review like any other physio application
+    const approval = await ctx.db
+      .query("accountApprovalStatus")
+      .withIndex("by_user_id", (q: any) => q.eq("userId", args.clinicianId))
+      .first();
+    if (approval && approval.status === "approved" && isClinicInviteApproval(approval)) {
+      await ctx.db.patch(approval._id, {
+        status: "pending_review",
+        submittedAt: Date.now(),
+        comments: "Left their clinic; independent practice needs review",
+      });
     }
 
     return { success: true, patientsMoved: moved };
@@ -2045,6 +2380,7 @@ export const getClinicSetupDetails = query({
       return {
         _id: "prev_clinic_1",
         name: "Victoria Island Physiotherapy Center",
+        clinicNumber: "RH-CL-SAMPLE",
         contactEmail: "admin@viphysio.ng",
         contactPhone: "+234 803 555 1200",
         address: "Plot 14B, Bishop Oluwole Street, Victoria Island",
@@ -2079,6 +2415,7 @@ export const getClinicSetupDetails = query({
     return {
       _id: clinic._id,
       name: clinic.name,
+      clinicNumber: clinic.clinicNumber ?? null,
       contactEmail: clinic.contactEmail || "",
       contactPhone: clinic.contactPhone || "",
       address: clinic.address || "",
@@ -2409,6 +2746,7 @@ export const respondToRehabifyReferral = mutation({
           joinedAt: now,
         });
       }
+      await ensureUserNumbers(ctx, patientUserId);
 
       const profile = await ctx.db
         .query("patientProfiles")
@@ -2680,6 +3018,69 @@ export const getClinicConsolidatedDashboard = query({
  * Small counts for the sidebar: new referrals waiting for a response (shown on Patients),
  * only for those whose role includes Referrals.
  */
+/**
+ * What the patient reported between visits, for the clinic record: their check-ins (pain, mood,
+ * concerns) and home-exercise logs from programmes the clinic's team sent.
+ */
+export const getClinicPatientReports = query({
+  args: { patientId: v.id("users") },
+  handler: async (ctx, args) => {
+    const member = await getClinicMemberOrPreview(ctx, "patients");
+    if (!member) return { checkIns: [], exerciseLogs: [] };
+    await assertPatientInClinic(ctx, member.clinic, args.patientId);
+    const staffIds = await getClinicStaffUserIds(ctx, member.clinic);
+
+    const checkIns = (
+      await ctx.db
+        .query("patientCheckIns")
+        .withIndex("by_patient", (q: any) => q.eq("patientId", args.patientId))
+        .order("desc")
+        .take(40)
+    )
+      .filter((c) => !c.physiotherapistId || staffIds.has(c.physiotherapistId))
+      .slice(0, 20)
+      .map((c) => ({
+        _id: c._id,
+        createdAt: c.createdAt,
+        painScore: c.painScore,
+        functionScore: c.functionScore,
+        mood: c.mood,
+        exercisesDone: c.exercisesDone,
+        note: c.note,
+        flagged: c.flagged,
+        flagReason: c.flagReason,
+        reviewedAt: c.reviewedAt,
+      }));
+
+    const programmes = new Map<string, Doc<"exercisePrograms"> | null>();
+    const exerciseLogs = [];
+    for (const log of await ctx.db
+      .query("exerciseProgramLogs")
+      .withIndex("by_patient", (q: any) => q.eq("patientId", args.patientId))
+      .order("desc")
+      .take(60)) {
+      if (!programmes.has(log.programId)) programmes.set(log.programId, await ctx.db.get(log.programId));
+      const programme = programmes.get(log.programId);
+      if (!programme || !(programme.clinicId === member.clinic._id || staffIds.has(programme.createdBy))) continue;
+      const item = programme.items[log.itemIndex] as { name?: string; exerciseId?: Id<"exercises"> } | undefined;
+      const exercise = item?.exerciseId ? await ctx.db.get(item.exerciseId) : null;
+      exerciseLogs.push({
+        _id: log._id,
+        createdAt: log.createdAt,
+        programmeTitle: programme.title,
+        exerciseName: item?.name ?? exercise?.name ?? "Exercise",
+        setsDone: log.setsDone,
+        painScore: log.painScore,
+        difficulty: log.difficulty,
+        note: log.note,
+      });
+      if (exerciseLogs.length >= 30) break;
+    }
+
+    return { checkIns, exerciseLogs };
+  },
+});
+
 export const getClinicNavCounts = query({
   args: {},
   handler: async (ctx) => {

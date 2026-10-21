@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { v } from "convex/values"
-import { mutation, query, action, internalMutation, internalQuery } from "./_generated/server"
+import { mutation, query, action, internalAction, internalMutation, internalQuery } from "./_generated/server"
 import { api, internal } from "./_generated/api"
 import { type ActionCtx, type MutationCtx, type QueryCtx } from './_generated/server';
 import type { Doc, Id } from './_generated/dataModel';
@@ -95,6 +95,15 @@ export const createVideoCall = action({
       throw new Error("User not found")
     }
 
+    return await createStreamCallFor(ctx, user, args)
+  },
+})
+
+/**
+ * Creates a Stream room hosted by `user`: the call record, participant rows and email
+ * invitations. Shared by the signed-in action above and appointment booking (no signed-in user).
+ */
+async function createStreamCallFor(ctx: ActionCtx, user: any, args: CreateVideoCallInput): Promise<CreateVideoCallOutput> {
     // Verify user is authorized to create calls with these participants
     if (!args.participants.includes(user._id)) {
       args.participants.push(user._id) // Add creator to participants
@@ -193,6 +202,67 @@ export const createVideoCall = action({
       console.error("Failed to create video call:", error)
       throw new Error(`Failed to create video call: ${error instanceof Error ? error.message : String(error)}`)
     }
+}
+
+/**
+ * Video room for a booked telehealth appointment. Runs from the scheduler, where there is no
+ * signed-in user, so the host (the visit's physio) is passed in. The link is saved on the
+ * appointment so the patient and physio both see it.
+ */
+export const createAppointmentVideoCall = internalAction({
+  args: {
+    appointmentId: v.id("appointments"),
+    hostId: v.id("users"),
+    participants: v.array(v.id("users")),
+    title: v.optional(v.string()),
+  },
+  handler: async (ctx, args): Promise<{ meetingLink: string } | null> => {
+    const host = await ctx.runQuery(internal.videoCalls.getUserById, { userId: args.hostId })
+    const appointment = await ctx.runQuery(internal.videoCalls.getAppointmentForCall, { appointmentId: args.appointmentId })
+    if (!host || !appointment) return null
+    // Already has a room (or a link the physio added): keep it
+    if (appointment.videoCallId || appointment.meetingLink) return { meetingLink: appointment.meetingLink ?? '' }
+
+    const call = await createStreamCallFor(ctx, host, {
+      appointmentId: args.appointmentId,
+      participants: [...args.participants],
+      callType: "appointment",
+      title: args.title,
+      settings: {
+        recordingEnabled: false,
+        chatEnabled: true,
+        maxParticipants: 2,
+        waitingRoomEnabled: false,
+      },
+    })
+    await ctx.runMutation(internal.videoCalls.attachCallToAppointment, {
+      appointmentId: args.appointmentId,
+      callId: call.callId,
+      meetingLink: call.meetingLink,
+    })
+    return { meetingLink: call.meetingLink }
+  },
+})
+
+export const getAppointmentForCall = internalQuery({
+  args: { appointmentId: v.id("appointments") },
+  handler: async (ctx, args) => await ctx.db.get(args.appointmentId),
+})
+
+export const attachCallToAppointment = internalMutation({
+  args: {
+    appointmentId: v.id("appointments"),
+    callId: v.id("videoCalls"),
+    meetingLink: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const appointment = await ctx.db.get(args.appointmentId)
+    if (!appointment || appointment.meetingLink) return
+    await ctx.db.patch(args.appointmentId, {
+      meetingLink: args.meetingLink,
+      videoCallId: args.callId,
+      isOnline: true,
+    })
   },
 })
 

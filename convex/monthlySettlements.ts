@@ -321,6 +321,8 @@ export const confirmBankTransferBooking = mutation({
     if (!booking) throw new ConvexError("Booking not found.");
     if (booking.paymentStatus === "completed") throw new ConvexError("This booking is already paid.");
     if (!booking.physiotherapistId) throw new ConvexError("Booking has not been assigned to a physiotherapist yet.");
+    // Joy bookings wait for the physio to accept after payment; they're confirmed through Joy's flow
+    if (booking.sourceSystem === "joy_ai") throw new ConvexError("Confirm Joy payments from the Joy bookings screen.");
     const transferRef = `TXFR-${Date.now()}-${randomString(6, "ABCDEFGHJKMNPQRSTUVWXYZ23456789")}`;
     await ctx.db.patch(booking._id, {
       bankTransferDetails: {
@@ -466,6 +468,68 @@ export const saveRecipientCode = internalMutation({
   },
 });
 
+/** Paystack answered and refused the transfer (so no money moved). */
+class TransferRejected extends Error {
+  constructor(message: string, readonly httpStatus: number, readonly answered: boolean) {
+    super(message);
+  }
+}
+
+/**
+ * Only a clear 4xx refusal from Paystack means nothing was sent. Timeouts, network errors,
+ * 5xx and unreadable replies may still have gone through, so those transfers stay pending
+ * for the transfer webhook (or verifyPartnerTransfer) to settle, and their commissions are
+ * not released to be paid a second time.
+ */
+function isDefiniteRefusal(error: unknown): boolean {
+  return error instanceof TransferRejected && error.answered && error.httpStatus >= 400 && error.httpStatus < 500;
+}
+
+export const getTransferForVerify = internalQuery({
+  args: { transferId: v.id("partnerPayoutTransfers") },
+  handler: async (ctx, args) => ctx.db.get(args.transferId),
+});
+
+/**
+ * Admin: ask Paystack for the real outcome of a partner transfer that is stuck pending (no
+ * webhook arrived, or the request timed out) and settle it.
+ */
+export const verifyPartnerTransfer = action({
+  args: { transferId: v.id("partnerPayoutTransfers") },
+  returns: v.any(),
+  handler: async (ctx, args): Promise<any> => {
+    await ctx.runQuery(internal.monthlySettlements.assertAdminForAction, {});
+    const secret = process.env.PAYSTACK_SECRET_KEY;
+    if (!secret) throw new ConvexError("Payment service not configured (PAYSTACK_SECRET_KEY missing).");
+    const transfer: Doc<"partnerPayoutTransfers"> | null = await ctx.runQuery(internal.monthlySettlements.getTransferForVerify, args);
+    if (!transfer) throw new ConvexError("Transfer not found.");
+    const response = await fetch(`https://api.paystack.co/transfer/verify/${encodeURIComponent(transfer.transferReference)}`, {
+      headers: { Authorization: `Bearer ${secret}` },
+      signal: AbortSignal.timeout(15_000),
+    });
+    const data = (await response.json().catch(() => null)) as { status?: boolean; message?: string; data?: { status?: string; transfer_code?: string } } | null;
+    if (response.status === 404 || (data && data.status === false && /not found/i.test(data.message ?? ""))) {
+      // Paystack never created it: safe to release the commissions
+      await ctx.runMutation(internal.monthlySettlements.markTransferState, {
+        transferId: transfer._id,
+        state: "failed",
+        reason: "Paystack has no record of this transfer",
+      });
+      return { status: "failed", message: "Paystack has no record of this transfer. The commissions are payable again." };
+    }
+    if (!response.ok || !data?.status) throw new ConvexError(data?.message || `Paystack returned HTTP ${response.status}`);
+    const paystackStatus = data.data?.status ?? "unknown";
+    const state = paystackStatus === "success" ? "success" : paystackStatus === "failed" ? "failed" : paystackStatus === "otp" ? "otp_required" : "pending";
+    await ctx.runMutation(internal.monthlySettlements.markTransferState, {
+      transferId: transfer._id,
+      state,
+      transferCode: data.data?.transfer_code,
+      reason: state === "failed" ? "Paystack reports the transfer failed" : undefined,
+    });
+    return { status: state, paystackStatus, message: `Paystack reports this transfer as ${paystackStatus}.` };
+  },
+});
+
 async function settleTransfer(ctx: MutationCtx, transfer: Doc<"partnerPayoutTransfers">, outcome: "success" | "failed" | "reversed", reason?: string) {
   if (transfer.status === "success" || transfer.status === "failed" || transfer.status === "reversed") {
     // Paystack can deliver "reversed" after "success": release the commissions again.
@@ -514,6 +578,7 @@ export const markTransferState = internalMutation({
       status: args.state,
       transferCode: args.transferCode ?? transfer.transferCode,
       bulkBatchCode: args.bulkBatchCode ?? transfer.bulkBatchCode,
+      failureReason: args.reason ?? transfer.failureReason,
       updatedAt: Date.now(),
     });
   },
@@ -576,11 +641,14 @@ export const executePartnerPayoutTransfer = action({
       billingPeriod: args.billingPeriod,
       initiatedBy: admin.name,
     });
+    let requestSent = false;
     try {
       const recipient = await ensureRecipient(ctx, secret, prepared);
+      requestSent = true;
       const response = await fetch("https://api.paystack.co/transfer", {
         method: "POST",
         headers: { Authorization: `Bearer ${secret}`, "Content-Type": "application/json" },
+        signal: AbortSignal.timeout(30_000),
         body: JSON.stringify({
           source: "balance",
           amount: prepared.amountKobo,
@@ -590,7 +658,7 @@ export const executePartnerPayoutTransfer = action({
         }),
       });
       const data = (await response.json().catch(() => null)) as { status?: boolean; message?: string; data?: { status?: string; transfer_code?: string } } | null;
-      if (!response.ok || !data?.status) throw new Error(data?.message || `Paystack transfer failed (HTTP ${response.status})`);
+      if (!response.ok || !data?.status) throw new TransferRejected(data?.message || `Paystack transfer failed (HTTP ${response.status})`, response.status, data !== null);
       const state = data.data?.status === "otp" ? "otp_required" : data.data?.status === "success" ? "success" : "pending";
       await ctx.runMutation(internal.monthlySettlements.markTransferState, {
         transferId: prepared.transferId,
@@ -610,12 +678,18 @@ export const executePartnerPayoutTransfer = action({
             : `Transfer of ₦${Math.round(prepared.amountKobo / 100).toLocaleString()} to ${prepared.partnerName} submitted. Commissions are marked paid when Paystack confirms it.`,
       };
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const unknown = requestSent && !isDefiniteRefusal(error);
       await ctx.runMutation(internal.monthlySettlements.markTransferState, {
         transferId: prepared.transferId,
-        state: "failed",
-        reason: error instanceof Error ? error.message : String(error),
+        state: unknown ? "pending" : "failed",
+        reason: unknown ? `Outcome unknown (${message}). Check this transfer on Paystack before paying again.` : message,
       });
-      throw new ConvexError(error instanceof Error ? error.message : "Transfer failed");
+      throw new ConvexError(
+        unknown
+          ? "We couldn't confirm whether Paystack accepted the transfer. It's marked pending: check it on Paystack before trying again."
+          : message || "Transfer failed"
+      );
     }
   },
 });
@@ -702,6 +776,7 @@ export const executePaystackBulkMonthlyPayout = action({
       const response = await fetch("https://api.paystack.co/transfer/bulk", {
         method: "POST",
         headers: { Authorization: `Bearer ${secret}`, "Content-Type": "application/json" },
+        signal: AbortSignal.timeout(60_000),
         body: JSON.stringify({
           currency: "NGN",
           source: "balance",
@@ -709,7 +784,7 @@ export const executePaystackBulkMonthlyPayout = action({
         }),
       });
       const data = (await response.json().catch(() => null)) as { status?: boolean; message?: string; data?: Array<{ reference?: string; transfer_code?: string; status?: string }> } | null;
-      if (!response.ok || !data?.status) throw new Error(data?.message || `Paystack bulk transfer failed (HTTP ${response.status})`);
+      if (!response.ok || !data?.status) throw new TransferRejected(data?.message || `Paystack bulk transfer failed (HTTP ${response.status})`, response.status, data !== null);
       for (const p of prepared) {
         const row = data.data?.find((d) => d.reference === p.reference);
         await ctx.runMutation(internal.monthlySettlements.markTransferState, {
@@ -719,14 +794,20 @@ export const executePaystackBulkMonthlyPayout = action({
         });
       }
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const unknown = !isDefiniteRefusal(error);
       for (const p of prepared) {
         await ctx.runMutation(internal.monthlySettlements.markTransferState, {
           transferId: p.transferId,
-          state: "failed",
-          reason: error instanceof Error ? error.message : String(error),
+          state: unknown ? "pending" : "failed",
+          reason: unknown ? `Outcome unknown (${message}). Check these transfers on Paystack before paying again.` : message,
         });
       }
-      throw new ConvexError(error instanceof Error ? error.message : "Bulk transfer failed");
+      throw new ConvexError(
+        unknown
+          ? "We couldn't confirm whether Paystack accepted the bulk transfer. The transfers are marked pending: check them on Paystack before trying again."
+          : message || "Bulk transfer failed"
+      );
     }
     const total = prepared.reduce((s, p) => s + p.amountKobo, 0);
     return {

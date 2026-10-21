@@ -3,8 +3,10 @@ import { ConvexError, v } from "convex/values";
 import { api } from "./_generated/api";
 import { Doc, Id } from "./_generated/dataModel";
 import { publicAppUrl } from "./helpers/appUrl";
+import { closeInvoicePaymentLinks } from "./helpers/paymentLinks";
 import { getAuthenticatedUser } from "./auth";
 import { isServerCaller } from "./helpers/serverSecret";
+import { insertClinicInvoice } from "./clinicTools";
 
 /**
  * True when the signed-in caller is a party to the invoice: its patient, its
@@ -73,17 +75,17 @@ export const createInvoice = mutation({
       .unique();
 
     if (!physiotherapist || physiotherapist.role !== "physiotherapist") {
-      throw new Error("Only physiotherapists can create invoices");
+      throw new ConvexError("Only physiotherapists can create invoices");
     }
 
     // Get physiotherapist profile to find clinic
     const physiotherapistProfile = await ctx.db
       .query("physiotherapistProfiles")
       .withIndex("by_user_id", (q: any) => q.eq("userId", physiotherapist._id))
-      .unique();
+      .first();
 
     if (!physiotherapistProfile) {
-      throw new Error("Physiotherapist profile not found");
+      throw new ConvexError("Physiotherapist profile not found");
     }
 
     // Determine if physiotherapist is independent or clinic-based
@@ -94,17 +96,54 @@ export const createInvoice = mutation({
     // Verify patient relationship exists
     const relationship = await ctx.db
       .query("patientPhysiotherapistRelationships")
-      .filter((q: any) => 
-        q.and(
-          q.eq(q.field("patientId"), args.patientId),
-          q.eq(q.field("physiotherapistId"), physiotherapist._id),
-          q.eq(q.field("status"), "active")
-        )
+      .withIndex("by_patient_and_physiotherapist", (q: any) =>
+        q.eq("patientId", args.patientId).eq("physiotherapistId", physiotherapist._id)
       )
-      .unique();
+      .filter((q: any) => q.eq(q.field("status"), "active"))
+      .first();
 
     if (!relationship) {
-      throw new Error("No active relationship with this patient");
+      throw new ConvexError("No active relationship with this patient");
+    }
+
+    // A due date the page couldn't read (e.g. left blank) would break every invoice list
+    if (!Number.isFinite(args.dueDate) || args.dueDate < Date.now() - 24 * 60 * 60 * 1000) {
+      throw new ConvexError("Pick a due date from today onwards.");
+    }
+    if (args.items.length === 0 || args.items.some((item) => !item.description.trim() || !(item.totalPrice > 0))) {
+      throw new ConvexError("Each item needs a description and an amount.");
+    }
+    // A payment request can be for specific visits: they must be this patient's visits with you
+    for (const appointmentId of args.appointmentIds) {
+      const appointment = await ctx.db.get(appointmentId);
+      if (!appointment || appointment.patientId !== args.patientId || appointment.physiotherapistId !== physiotherapist._id) {
+        throw new ConvexError("That visit isn't one of this patient's visits with you.");
+      }
+    }
+
+    // Clinic clinicians bill for their clinic: the clinic's fee split, and its payout account
+    if (clinicId && (!relationship.clinicId || relationship.clinicId === clinicId)) {
+      const clinic = await ctx.db.get(clinicId);
+      if (clinic) {
+        const created = await insertClinicInvoice(ctx, clinic, {
+          patientId: args.patientId,
+          items: args.items.map((item) => ({
+            description: item.description.trim(),
+            quantity: item.quantity,
+            unitPrice: Math.round(item.unitPrice * 100),
+            totalPrice: Math.round(item.totalPrice * 100),
+          })),
+          notes: args.notes,
+          dueDate: args.dueDate,
+          appointmentIds: args.appointmentIds,
+        });
+        return {
+          success: true,
+          invoiceId: created.invoiceId,
+          invoiceNumber: created.invoiceNumber,
+          message: `Payment request sent for ${clinic.name}`,
+        };
+      }
     }
 
     // Calculate totals - ALL amounts should be in Naira from the UI
@@ -291,14 +330,18 @@ export const sendInvoice = mutation({
     message: v.string(),
   }),
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Not authenticated");
+    const caller = await getAuthenticatedUser(ctx);
 
     const invoice = await ctx.db.get(args.invoiceId);
-    if (!invoice) throw new Error("Invoice not found");
+    // Only the physio who issued it can (re)send an invoice
+    if (!invoice || invoice.physiotherapistId !== caller._id) throw new ConvexError("Invoice not found");
 
     if (invoice.status === "paid") {
       return { success: false, message: "Invoice already paid" };
+    }
+    // A cancelled invoice stays cancelled; issue a new one instead
+    if (invoice.status === "void") {
+      return { success: false, message: "This invoice was cancelled. Create a new one instead." };
     }
 
     // Mark as sent
@@ -366,11 +409,47 @@ export const sendPaymentReminders = mutation({
 /**
  * Get invoice details for patient view
  */
+const patientPaymentFields = {
+  /** What checkout charges, in kobo (the invoice amount plus any fees the patient pays) */
+  payableAmount: v.number(),
+  patientFees: v.array(v.object({ label: v.string(), amount: v.number() })),
+  lastPaymentStatus: v.optional(v.string()),
+  lastPaymentAt: v.optional(v.number()),
+  paymentReference: v.optional(v.string()),
+};
+
+/**
+ * What the patient sees about paying an invoice: the amount checkout will charge (feeBreakdown.total,
+ * which payments.ts checks every payment against), the fees inside it, and the latest attempt.
+ */
+async function patientPaymentView(ctx: QueryCtx, invoice: Doc<"invoices">) {
+  const payableAmount = invoice.feeBreakdown?.total ?? invoice.totalAmount;
+  const extra = Math.max(0, payableAmount - invoice.totalAmount);
+  const serviceFee = Math.min(extra, invoice.feeBreakdown?.platformFee ?? 0);
+  const patientFees = [
+    ...(serviceFee > 0 ? [{ label: "Rehabify service fee", amount: serviceFee }] : []),
+    ...(extra - serviceFee > 0 ? [{ label: "Payment processing", amount: extra - serviceFee }] : []),
+  ];
+  const lastAttempt = await ctx.db
+    .query("payments")
+    .withIndex("by_invoice_id", (q: any) => q.eq("invoiceId", invoice._id))
+    .order("desc")
+    .first();
+  return {
+    payableAmount,
+    patientFees,
+    lastPaymentStatus: lastAttempt?.status,
+    lastPaymentAt: lastAttempt?.updatedAt,
+    paymentReference: invoice.status === "paid" ? invoice.paymentReference : undefined,
+  };
+}
+
 export const getInvoiceForPatient = query({
   args: { invoiceId: v.id("invoices") },
   returns: v.union(
     v.null(),
     v.object({
+      ...patientPaymentFields,
       _id: v.id("invoices"),
       invoiceNumber: v.string(),
       clinicName: v.optional(v.string()),
@@ -423,18 +502,15 @@ export const getInvoiceForPatient = query({
       // Check if physiotherapist has relationship with patient
       const relationship = await ctx.db
         .query("patientPhysiotherapistRelationships")
-        .filter((q: any) => 
-          q.and(
-            q.eq(q.field("patientId"), invoice.patientId),
-            q.eq(q.field("physiotherapistId"), user._id)
-          )
+        .withIndex("by_patient_and_physiotherapist", (q: any) =>
+          q.eq("patientId", invoice.patientId).eq("physiotherapistId", user._id)
         )
-        .unique();
+        .first();
       hasAccess = !!relationship;
     }
 
     if (!hasAccess) {
-      throw new Error("Access denied");
+      throw new ConvexError("Access denied");
     }
 
     // Get clinic details
@@ -444,10 +520,11 @@ export const getInvoiceForPatient = query({
       clinicName = clinic?.name;
     }
 
-    const isOverdue = Date.now() > invoice.dueDate && invoice.status !== "paid";
+    const isOverdue = Date.now() > invoice.dueDate && invoice.status !== "paid" && invoice.status !== "void";
     const canPay = invoice.status !== "paid" && invoice.status !== "void";
 
     return {
+      ...(await patientPaymentView(ctx, invoice)),
       _id: invoice._id,
       invoiceNumber: invoice.invoiceNumber,
       clinicName,
@@ -542,6 +619,8 @@ export const processPayment = mutation({
       paymentMethod: args.paymentMethod,
       paymentDate: Date.now(),
     });
+    // Recorded by hand: the online payment link must not collect a second time
+    await closeInvoicePaymentLinks(ctx, args.invoiceId);
 
     // Create payment confirmation notification
     await ctx.db.insert("notifications", {
@@ -608,6 +687,8 @@ export const getMyInvoices = query({
     dueDate: v.number(),
     paymentDate: v.optional(v.number()),
     isOverdue: v.boolean(),
+    /** The latest checkout attempt, so a failed or pending payment shows here as it does to the patient */
+    lastPaymentStatus: v.optional(v.string()),
   })),
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
@@ -646,9 +727,14 @@ export const getMyInvoices = query({
     const invoicesWithDetails = await Promise.all(
       invoices.map(async (invoice) => {
         const patientUser = await ctx.db.get(invoice.patientId);
-        
-        const isOverdue = Date.now() > invoice.dueDate && invoice.status !== "paid";
-        
+
+        const isOverdue = Date.now() > invoice.dueDate && invoice.status !== "paid" && invoice.status !== "void";
+        const lastAttempt = await ctx.db
+          .query("payments")
+          .withIndex("by_invoice_id", (q: any) => q.eq("invoiceId", invoice._id))
+          .order("desc")
+          .first();
+
         return {
           _id: invoice._id,
           invoiceNumber: invoice.invoiceNumber,
@@ -663,6 +749,7 @@ export const getMyInvoices = query({
           dueDate: invoice.dueDate,
           paymentDate: invoice.paymentDate,
           isOverdue,
+          lastPaymentStatus: lastAttempt?.status,
         };
       })
     );
@@ -677,6 +764,7 @@ export const getMyInvoices = query({
 export const getPatientInvoices = query({
   args: { limit: v.optional(v.number()) },
   returns: v.array(v.object({
+    ...patientPaymentFields,
     _id: v.id("invoices"),
     invoiceNumber: v.string(),
     clinicName: v.optional(v.string()),
@@ -711,6 +799,7 @@ export const getPatientInvoices = query({
     const invoices = await ctx.db
       .query("invoices")
       .withIndex("by_patient_id", (q: any) => q.eq("patientId", user._id))
+      .order("desc")
       .collect();
 
     const mapped = await Promise.all(invoices.map(async (inv) => {
@@ -719,9 +808,10 @@ export const getPatientInvoices = query({
         const clinic = await ctx.db.get(inv.clinicId as Id<"clinics">);
         clinicName = clinic?.name;
       }
-      const isOverdue = Date.now() > inv.dueDate && inv.status !== "paid";
+      const isOverdue = Date.now() > inv.dueDate && inv.status !== "paid" && inv.status !== "void";
       const canPay = inv.status !== "paid" && inv.status !== "void";
       return {
+        ...(await patientPaymentView(ctx, inv)),
         _id: inv._id,
         invoiceNumber: inv.invoiceNumber,
         clinicName,
@@ -813,6 +903,25 @@ export const getInvoiceByIdInternal = internalQuery({
   },
 });
 
+type EarningsInvoice = { invoiceNumber?: string; payoutRoute?: string; physiotherapistShare?: number; totalAmount: number; paidAmount?: number };
+
+/** Rehabify marketplace invoices carry the patient's full charge; the physio earns physiotherapistShare. */
+function isMarketplaceInvoice(invoice: EarningsInvoice): boolean {
+  return Boolean(invoice.invoiceNumber?.startsWith("INV-MKT-")) || invoice.payoutRoute === "held_by_platform";
+}
+
+/** What the physio earned from a paid invoice, in kobo. */
+export function physioPaidKobo(invoice: EarningsInvoice): number {
+  const received = invoice.paidAmount || invoice.totalAmount;
+  return isMarketplaceInvoice(invoice) ? invoice.physiotherapistShare ?? received : received;
+}
+
+/** What the physio is still owed on an unpaid invoice, in kobo. */
+export function physioOutstandingKobo(invoice: EarningsInvoice): number {
+  const outstanding = invoice.totalAmount - (invoice.paidAmount || 0);
+  return isMarketplaceInvoice(invoice) ? invoice.physiotherapistShare ?? outstanding : outstanding;
+}
+
 /**
  * Get billing statistics for physiotherapist dashboard
  */
@@ -837,16 +946,16 @@ export const getBillingStats = query({
     const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).getTime();
 
     const totalRevenue = allInvoices.filter(i => i.status === "paid")
-      .reduce((sum, i) => sum + (i.paidAmount || i.totalAmount), 0);
+      .reduce((sum, i) => sum + physioPaidKobo(i), 0);
     const pendingPayments = allInvoices
       .filter(i => i.status === "sent" || i.status === "partial_payment")
-      .reduce((sum, i) => sum + (i.totalAmount - (i.paidAmount || 0)), 0);
+      .reduce((sum, i) => sum + physioOutstandingKobo(i), 0);
     const overdueInvoices = allInvoices
       .filter(i => i.status !== "paid" && i.dueDate < now).length;
     const paidInvoices = allInvoices.filter(i => i.status === "paid").length;
     const monthlyRevenue = allInvoices
       .filter(i => i.status === "paid" && i.paymentDate && i.paymentDate >= startOfMonth)
-      .reduce((sum, i) => sum + (i.paidAmount || i.totalAmount), 0);
+      .reduce((sum, i) => sum + physioPaidKobo(i), 0);
 
     return { totalRevenue, pendingPayments, overdueInvoices, paidInvoices, monthlyRevenue };
   },

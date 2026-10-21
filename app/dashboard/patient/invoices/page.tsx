@@ -31,6 +31,8 @@ import { toast } from 'sonner'
 import { usePaystackCheckout } from '@/components/billing/PaystackCheckout'
 import { motion, AnimatePresence } from 'framer-motion'
 import { cn } from '@/lib/utils'
+import Link from 'next/link'
+import { PaystackTestModeBanner } from '@/components/billing/PaystackTestModeBanner'
 
 interface Invoice {
   _id: Id<"invoices">
@@ -55,7 +57,15 @@ interface Invoice {
   currency: string
   paymentMethod?: string
   paymentDate?: number
+  /** What checkout charges (kobo), worked out on the server */
+  payableAmount?: number
+  patientFees?: { label: string; amount: number }[]
+  lastPaymentStatus?: string
 }
+
+const payableOf = (inv: Invoice) => inv.payableAmount ?? inv.totalAmount
+const safeDate = (value: number | undefined, pattern: string) =>
+  typeof value === 'number' && Number.isFinite(value) ? format(new Date(value), pattern) : '—'
 
 export default function PatientInvoicesPage() {
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null)
@@ -72,15 +82,18 @@ export default function PatientInvoicesPage() {
   // Calculate summary stats
   const stats = {
     total: invoices?.length || 0,
-    pending: invoices?.filter(inv => inv.status === 'pending' || inv.status === 'sent').length || 0,
-    overdue: invoices?.filter(inv => inv.isOverdue).length || 0,
+    pending: invoices?.filter(inv => inv.canPay && !inv.isOverdue).length || 0,
+    overdue: invoices?.filter(inv => inv.canPay && inv.isOverdue).length || 0,
     paid: invoices?.filter(inv => inv.status === 'paid').length || 0,
-    totalPending: invoices?.filter(inv => inv.status === 'pending' || inv.status === 'sent').reduce((sum, inv) => sum + inv.totalAmount, 0) || 0,
+    totalPending: invoices?.filter(inv => inv.canPay).reduce((sum, inv) => sum + payableOf(inv), 0) || 0,
   }
 
   const getStatusBadge = (status: string, isOverdue: boolean) => {
     if (status === 'paid') {
       return <Badge className="bg-green-100 text-green-700 hover:bg-green-100 border-green-200">Paid</Badge>
+    }
+    if (status === 'void') {
+      return <Badge variant="outline" className="text-gray-600">Cancelled</Badge>
     }
     if (isOverdue && status !== 'paid') {
       return <Badge className="bg-red-100 text-red-700 hover:bg-red-100 border-red-200">Overdue</Badge>
@@ -146,6 +159,7 @@ export default function PatientInvoicesPage() {
 
   return (
     <div className="max-w-5xl mx-auto space-y-8 p-4 md:p-6 pb-20">
+      <PaystackTestModeBanner />
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
@@ -243,9 +257,9 @@ export default function PatientInvoicesPage() {
                       </div>
                       <p className="text-sm text-gray-500">{invoice.clinicName || 'Rehabify Clinic'}</p>
                       <div className="flex items-center gap-3 mt-2 text-xs text-gray-400">
-                        <span>Issued: {format(new Date(invoice.issueDate), 'MMM d, yyyy')}</span>
-                        {invoice.dueDate && (
-                          <span>• Due: {format(new Date(invoice.dueDate), 'MMM d, yyyy')}</span>
+                        <span>Issued: {safeDate(invoice.issueDate, 'MMM d, yyyy')}</span>
+                        {invoice.dueDate && invoice.canPay && (
+                          <span>• Due: {safeDate(invoice.dueDate, 'MMM d, yyyy')}</span>
                         )}
                       </div>
                     </div>
@@ -254,15 +268,18 @@ export default function PatientInvoicesPage() {
                   <div className="flex items-center justify-between md:justify-end gap-4 border-t md:border-t-0 pt-4 md:pt-0 mt-2 md:mt-0">
                     <div className="text-left md:text-right">
                       <p className="text-lg font-bold text-gray-900">
-                        {formatCurrency(invoice.totalAmount, invoice.currency)}
+                        {formatCurrency(payableOf(invoice), invoice.currency)}
                       </p>
-                      {invoice.paymentMethod && (
+                      {invoice.status === 'paid' && invoice.paymentMethod && (
                         <p className="text-xs text-gray-500">Paid via {invoice.paymentMethod}</p>
+                      )}
+                      {invoice.canPay && (invoice.lastPaymentStatus === 'failed' || invoice.lastPaymentStatus === 'cancelled') && (
+                        <p className="text-xs text-red-600">Last payment attempt failed</p>
                       )}
                     </div>
 
                     <div className="flex gap-2">
-                      {((invoice.status === 'pending' || invoice.status === 'sent') || invoice.isOverdue) && (
+                      {invoice.canPay && (
                         <Button
                           size="sm"
                           onClick={() => handlePayNow(invoice)}
@@ -300,21 +317,21 @@ export default function PatientInvoicesPage() {
                   {getStatusBadge(selectedInvoice.status, selectedInvoice.isOverdue)}
                 </div>
                 <DialogDescription>
-                  {selectedInvoice.clinicName} • Issued on {format(new Date(selectedInvoice.issueDate), 'MMMM d, yyyy')}
+                  {selectedInvoice.clinicName} • Issued on {safeDate(selectedInvoice.issueDate, 'MMMM d, yyyy')}
                 </DialogDescription>
               </div>
 
               <div className="p-6 space-y-8">
                 {/* Amount Section */}
                 <div className="bg-gray-50 p-6 rounded-xl text-center">
-                  <p className="text-sm text-gray-500 mb-1">Total Amount</p>
+                  <p className="text-sm text-gray-500 mb-1">{selectedInvoice.status === 'paid' ? 'Total paid' : 'Total payable'}</p>
                   <p className="text-4xl font-bold text-gray-900">
-                    {formatCurrency(selectedInvoice.totalAmount, selectedInvoice.currency)}
+                    {formatCurrency(payableOf(selectedInvoice), selectedInvoice.currency)}
                   </p>
                   {selectedInvoice.status === 'paid' && selectedInvoice.paymentDate && (
                     <div className="flex items-center justify-center gap-2 mt-2 text-sm text-green-600 font-medium">
                       <CheckCircle2 className="h-4 w-4" />
-                      Paid on {format(new Date(selectedInvoice.paymentDate), 'MMM d, yyyy')}
+                      Paid on {safeDate(selectedInvoice.paymentDate, 'MMM d, yyyy')}
                     </div>
                   )}
                 </div>
@@ -345,23 +362,34 @@ export default function PatientInvoicesPage() {
                         <span>-{formatCurrency(selectedInvoice.discountAmount, selectedInvoice.currency)}</span>
                       </div>
                     )}
-                    <div className="flex justify-between text-sm text-gray-600">
-                      <span>Platform Fee</span>
-                      <span>{formatCurrency(selectedInvoice.platformFeeAmount, selectedInvoice.currency)}</span>
-                    </div>
+                    {(selectedInvoice.patientFees ?? []).map((fee) => (
+                      <div key={fee.label} className="flex justify-between text-sm text-gray-600">
+                        <span>{fee.label}</span>
+                        <span>{formatCurrency(fee.amount, selectedInvoice.currency)}</span>
+                      </div>
+                    ))}
                     <div className="flex justify-between text-base font-bold text-gray-900 pt-2">
                       <span>Total</span>
-                      <span>{formatCurrency(selectedInvoice.totalAmount, selectedInvoice.currency)}</span>
+                      <span>{formatCurrency(payableOf(selectedInvoice), selectedInvoice.currency)}</span>
                     </div>
                   </div>
                 </div>
 
                 {/* Actions */}
                 <div className="grid grid-cols-2 gap-3">
-                  <Button variant="outline" onClick={downloadInvoice} className="rounded-xl h-12">
-                    <Download className="w-4 h-4 mr-2" />
-                    Download PDF
-                  </Button>
+                  {selectedInvoice.status === 'paid' ? (
+                    <Button asChild variant="outline" className="rounded-xl h-12">
+                      <Link href={`/dashboard/patient/invoices/${selectedInvoice._id}/receipt`}>
+                        <Download className="w-4 h-4 mr-2" />
+                        Receipt
+                      </Link>
+                    </Button>
+                  ) : (
+                    <Button variant="outline" onClick={downloadInvoice} className="rounded-xl h-12">
+                      <Download className="w-4 h-4 mr-2" />
+                      Download PDF
+                    </Button>
+                  )}
                   <Button variant="outline" onClick={() => setShareModalOpen(true)} className="rounded-xl h-12">
                     <Share2 className="w-4 h-4 mr-2" />
                     Share

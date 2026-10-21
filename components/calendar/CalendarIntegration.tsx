@@ -99,7 +99,7 @@ export function CalendarIntegration({ userId, className }: CalendarIntegrationPr
           Calendar Integration
         </CardTitle>
         <CardDescription>
-          Connect your Google Calendar to sync appointments and enable Google Meet links
+          Connect your Google Calendar to get Google Meet links for video sessions
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -108,7 +108,7 @@ export function CalendarIntegration({ userId, className }: CalendarIntegrationPr
             <Alert>
               <AlertCircle className="h-4 w-4" />
               <AlertDescription>
-                Connect your Google Calendar to automatically sync appointments and generate Google Meet links
+                Connect your Google Calendar to add video sessions with a Google Meet link to your calendar. Other appointments stay in Rehabify and aren&apos;t copied to Google Calendar.
               </AlertDescription>
             </Alert>
             

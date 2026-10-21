@@ -7,6 +7,7 @@ import { action, internalAction, internalMutation } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 import { NotificationType, NotificationPriority, NotificationPayload } from "../../types/notifications";
 import { publicAppUrl } from "../helpers/appUrl";
+import { lagosTime } from "../helpers/lagosTime";
 
 // Email templates
 const EMAIL_TEMPLATES = {
@@ -151,7 +152,7 @@ export const processEmailForNotification = internalAction({
 
           // Compute best-effort fields
           const appointmentDate = md.appointmentDate || Date.now();
-          const appointmentTime = md.appointmentTime || new Date(appointmentDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          const appointmentTime = md.appointmentTime || lagosTime(appointmentDate);
           const cancellationReason = md.cancellationReason;
 
           if (user.role === "patient") {
@@ -197,7 +198,7 @@ export const processEmailForNotification = internalAction({
           const patientName = displayName;
           const physiotherapistName = md.physiotherapistName || "your physiotherapist";
           const appointmentDate = md.appointmentDate || Date.now();
-          const appointmentTime = md.appointmentTime || new Date(appointmentDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          const appointmentTime = md.appointmentTime || lagosTime(appointmentDate);
           const clinicName = md.clinicName || "Rehabify Health";
           const confirmLink = md.confirmLink || `${appUrl}/dashboard/patient/appointments`;
           const rescheduleLink = md.rescheduleLink || `${appUrl}/dashboard/patient/appointments`;

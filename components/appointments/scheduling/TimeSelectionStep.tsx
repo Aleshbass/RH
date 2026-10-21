@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useQueryUntyped } from '@/lib/convexUntyped';
 import { api } from '@/convex/_generated/api';
 import { Loader2 } from 'lucide-react';
+import { zonedDateTimeToUtc } from '@/convex/helpers/lagosTime';
 
 interface TimeSelectionStepProps {
     selectedDate: Date;
@@ -18,8 +19,9 @@ interface TimeSelectionStepProps {
 }
 
 export function TimeSelectionStep({ selectedDate, selectedTime, duration, physiotherapistId, onSelect }: TimeSelectionStepProps) {
-    // Fetch existing appointments for conflict checking
-    const dayStart = startOfDay(selectedDate).getTime();
+    // Fetch existing appointments for conflict checking (the picked day is a Lagos day)
+    const dateKey = format(selectedDate, 'yyyy-MM-dd');
+    const dayStart = zonedDateTimeToUtc(dateKey, '00:00');
     const dayEnd = dayStart + 24 * 60 * 60 * 1000;
 
     const apiRoot = api as unknown as Record<string, unknown>;
@@ -40,9 +42,10 @@ export function TimeSelectionStep({ selectedDate, selectedTime, duration, physio
         const endTime = setMinutes(setHours(selectedDate, 18), 0); // End at 6:00 PM
 
         while (isBefore(currentTime, endTime)) {
+            // Wall-clock label, read as Lagos time (as the booking is saved)
             const timeString = format(currentTime, 'HH:mm');
-            const slotStart = currentTime.getTime();
-            const slotEnd = addMinutes(currentTime, duration).getTime();
+            const slotStart = zonedDateTimeToUtc(dateKey, timeString);
+            const slotEnd = slotStart + duration * 60 * 1000;
 
             // Check conflict
             const hasConflict = appointments?.some(apt => {
@@ -55,7 +58,7 @@ export function TimeSelectionStep({ selectedDate, selectedTime, duration, physio
             });
 
             // Check past time if today
-            const isPast = isBefore(currentTime, new Date());
+            const isPast = slotStart < Date.now();
 
             if (!hasConflict && !isPast) {
                 timeSlots.push(timeString);
@@ -65,7 +68,7 @@ export function TimeSelectionStep({ selectedDate, selectedTime, duration, physio
         }
 
         return timeSlots;
-    }, [selectedDate, duration, appointments]);
+    }, [selectedDate, dateKey, duration, appointments]);
 
     if (appointments === undefined) {
         return (

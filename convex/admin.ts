@@ -1009,9 +1009,10 @@ export const getMarketplaceTransactions = query({
           invoiceNumber: invoice.invoiceNumber,
           isMarketplace: Boolean(linkedBooking),
           isGuest: Boolean(linkedBooking?.isGuestBooking),
-          patientName: patient ? displayName(patient, "Guest") : "Unknown",
-          patientEmail: patient?.email || "",
-          patientPhone: patient?.phoneNumber || linkedBooking?.guestPhone || "",
+          // Finance shows the patient's Rehabify ID, never their name or contact details.
+          // Admins follow up by opening the patient's user page.
+          patientUserId: patient?._id ?? null,
+          patientNumber: patient?.patientNumber ?? null,
           physiotherapistName: physio ? displayName(physio, "Unknown") : "Unknown",
           physiotherapistEmail: physio?.email || "",
           physioLocation: physioProfile?.location || "",

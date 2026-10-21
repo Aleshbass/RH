@@ -82,12 +82,12 @@ export function AdminCommandPalette() {
   }, [term])
 
   const results: Result[] = useMemo(() => {
-    type Person = { _id: string; name: string; email: string; role: string }
+    type Person = { _id: string; name: string; email: string; role: string; rehabifyId?: string }
     const peopleResults: Result[] = ((people ?? []) as Person[]).map((p) => ({
       kind: 'person' as const,
       key: p._id,
       title: p.name,
-      subtitle: `${p.email} · ${p.role.replace(/_/g, ' ')}`,
+      subtitle: [p.rehabifyId, p.email, p.role.replace(/_/g, ' ')].filter(Boolean).join(' · '),
       href: `${ADMIN_HOME}/users/${p._id}`,
     }))
     return [...pages, ...peopleResults]
@@ -131,7 +131,7 @@ export function AdminCommandPalette() {
             value={term}
             onChange={(e) => setTerm(e.target.value)}
             onKeyDown={onKeyDown}
-            placeholder="Jump to a page, or search people by name or email…"
+            placeholder="Jump to a page, or search people by name, email or ID…"
             className="h-12 w-full bg-transparent text-sm outline-none placeholder:text-neutral-400 dark:text-white"
           />
           <kbd className="hidden rounded-md border border-black/10 px-1.5 py-0.5 text-[10px] text-neutral-500 dark:border-white/15 sm:block">ESC</kbd>

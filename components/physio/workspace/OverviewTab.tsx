@@ -5,8 +5,10 @@ import { AlertTriangle, CalendarClock, ClipboardList, HeartPulse, Pencil, Shield
 import { Button } from '@/components/ui/button'
 import { IconChip, Panel, StatusBadge } from '@/components/physio/ui'
 import {
+  DIFFICULTY_LABELS,
   EXERCISES_LABELS,
   Fact,
+  HIGH_PAIN,
   MOOD_LABELS,
   Meter,
   OUTCOME_LABELS,
@@ -45,6 +47,8 @@ export function OverviewTab({
   const { episode, plan, sessions, nextAppointment, checkIns, adherence, followUp, profile } = workspace
   const isActive = episode.status === 'active'
   const latest = checkIns[0]
+  // The latest home-exercise log with a pain score or a note, shown beside adherence
+  const latestLog = (workspace.exerciseLogs ?? []).find((l) => l.painScore !== null || l.note)
   const painPoints = checkIns.slice(0, 10).map((c) => c.painScore).reverse()
   const planned = sessions.planned ?? undefined
   const reviewOverdue = plan?.reviewDate ? isPast(plan.reviewDate) : false
@@ -240,11 +244,39 @@ export function OverviewTab({
                   <p className="text-3xl font-semibold tabular-nums tracking-tight text-rh-night dark:text-white">{adherence.rate}%</p>
                   <Meter value={adherence.completed} max={adherence.expected} tone={adherence.rate < 40 ? 'amber' : 'teal'} />
                   <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                    {adherence.completed} of {adherence.expected} exercise sessions done
+                    {adherence.completed} of {adherence.expected} exercise sessions done (each exercise once a day)
+                    {adherence.source === 'care_plan' ? ' · care plan exercises' : ''}
+                  </p>
+                  <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                    {adherence.lastLoggedAt
+                      ? `Last logged ${formatDistanceToNow(adherence.lastLoggedAt, { addSuffix: true })}`
+                      : adherence.source !== 'care_plan'
+                        ? 'Nothing logged in the last 7 days'
+                        : null}
                   </p>
                 </>
               ) : (
-                <p className="text-sm text-neutral-500 dark:text-neutral-400">Add exercises to the care plan to track this.</p>
+                <p className="text-sm text-neutral-500 dark:text-neutral-400">
+                  Send a home exercise programme from the Care plan tab to track this. Each exercise the patient logs counts here.
+                </p>
+              )}
+              {latestLog && (
+                <div className="space-y-1 border-t border-black/[0.05] pt-3 dark:border-white/[0.06]">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {latestLog.painScore !== null && <PainPill score={latestLog.painScore} />}
+                    {latestLog.difficulty && <StatusBadge>{DIFFICULTY_LABELS[latestLog.difficulty]}</StatusBadge>}
+                    {latestLog.painScore !== null && latestLog.painScore >= HIGH_PAIN && !latestLog.reviewedAt && (
+                      <StatusBadge tone="red">
+                        <AlertTriangle className="mr-1 h-3 w-3" />
+                        Not reviewed
+                      </StatusBadge>
+                    )}
+                  </div>
+                  <p className="truncate text-xs text-neutral-600 dark:text-neutral-300">
+                    {latestLog.exerciseName} · {formatDistanceToNow(latestLog.createdAt, { addSuffix: true })}
+                  </p>
+                  {latestLog.note && <p className="line-clamp-2 text-xs italic text-neutral-600 dark:text-neutral-300">“{latestLog.note}”</p>}
+                </div>
               )}
             </div>
           </div>
@@ -276,9 +308,28 @@ export function OverviewTab({
         ) : (
           <Panel title="Background">
             <dl className="space-y-3 px-5 pb-5 pt-3">
-              <Fact label="Medical history">{profile?.medicalHistory?.length ? profile.medicalHistory.join(', ') : 'None recorded'}</Fact>
-              <Fact label="Medications">{profile?.medications?.length ? profile.medications.join(', ') : 'None recorded'}</Fact>
-              <Fact label="Allergies">{profile?.allergies?.length ? profile.allergies.join(', ') : 'None recorded'}</Fact>
+              <Fact label="Medical history">
+                {profile?.medicalHistory ? <span className="whitespace-pre-line">{profile.medicalHistory}</span> : 'None recorded'}
+              </Fact>
+              <Fact label="Emergency contact">
+                {profile?.emergencyContact ? (
+                  <span>
+                    {profile.emergencyContact.name}
+                    {profile.emergencyContact.relationship ? ` (${profile.emergencyContact.relationship})` : ''}
+                    {profile.emergencyContact.phone && (
+                      <>
+                        {' · '}
+                        <a href={`tel:${profile.emergencyContact.phone.replace(/[^\d+]/g, '')}`} className="text-rh-teal underline-offset-2 hover:underline dark:text-rh-aqua">
+                          {profile.emergencyContact.phone}
+                        </a>
+                      </>
+                    )}
+                  </span>
+                ) : (
+                  'None recorded'
+                )}
+              </Fact>
+              {profile?.city && <Fact label="City">{profile.city}</Fact>}
             </dl>
           </Panel>
         )}

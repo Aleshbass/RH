@@ -10,16 +10,17 @@
  *  - loan.expired     → Application window lapsed
  *  - loan.repaid      → Patient fully repaid
  *
- * Security: We verify the incoming request by checking that MyItura sends
- * our public key in the X-API-Public-Key header. This ensures only MyItura
- * (who knows our public key) can trigger status updates.
- *
- * TODO: Ask MyItura if they support HMAC webhook signatures for an additional
- *       layer of security, and implement signature verification if so.
+ * Security (all configured checks must pass; with neither secret set, every request is refused):
+ *  - MYITURA_WEBHOOK_TOKEN: a long random secret in the webhook URL registered with MyItura
+ *    (https://physioaroundme.com/api/myitura/webhook?token=…) or an X-Webhook-Token header.
+ *    The public key alone is not a secret, so it can't authenticate a webhook.
+ *  - MYITURA_WEBHOOK_SECRET: when MyItura issues a signing secret, the HMAC of the raw body
+ *    (hex SHA-256 or SHA-512, optional "sha256=" prefix) in X-MyItura-Signature / X-Signature.
+ *  - The X-API-Public-Key header must still match MYITURA_PUBLIC_KEY.
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { timingSafeEqual } from "crypto";
+import { createHmac, timingSafeEqual } from "crypto";
 import { api } from "@/convex/_generated/api";
 import { getConvexClient } from "@/lib/convex-client";
 import { convexServerSecret } from "@/lib/convex-server-secret";
@@ -35,40 +36,58 @@ const EVENT_STATUS_MAP: Record<string, string> = {
     "loan.failed": "failed",
 };
 
+function safeEqual(a: string, b: string): boolean {
+    const left = Buffer.from(a);
+    const right = Buffer.from(b);
+    return left.length === right.length && timingSafeEqual(left, right);
+}
+
+/** Whether the HMAC header matches the raw body (SHA-256 or SHA-512, hex). */
+function hasValidSignature(request: NextRequest, rawBody: string, secret: string): boolean {
+    const header = (request.headers.get("x-myitura-signature") || request.headers.get("x-signature") || "").trim();
+    if (!header) return false;
+    const signature = header.replace(/^sha(256|512)=/i, "").toLowerCase();
+    const algorithm = signature.length === 128 ? "sha512" : "sha256";
+    const expected = createHmac(algorithm, secret).update(rawBody, "utf8").digest("hex");
+    return safeEqual(expected, signature);
+}
+
 /**
- * Validates that the incoming webhook request is genuinely from MyItura
- * by checking that the X-API-Public-Key header matches our configured key.
+ * Validates that the incoming webhook request is genuinely from MyItura (see the security notes
+ * above). Fails closed: a missing configuration rejects every request.
  */
-function isAuthorizedWebhook(request: NextRequest): boolean {
+function isAuthorizedWebhook(request: NextRequest, rawBody: string): boolean {
     const expectedPublicKey = process.env.MYITURA_PUBLIC_KEY;
-    if (!expectedPublicKey) {
-        // If env var is missing, block all webhooks to prevent accidental open door
-        console.error("[MyItura Webhook] MYITURA_PUBLIC_KEY env var is not set — rejecting all incoming webhooks.");
+    const token = process.env.MYITURA_WEBHOOK_TOKEN;
+    const signingSecret = process.env.MYITURA_WEBHOOK_SECRET;
+    if (!expectedPublicKey || (!token && !signingSecret)) {
+        console.error("[MyItura Webhook] Set MYITURA_PUBLIC_KEY and MYITURA_WEBHOOK_TOKEN (or MYITURA_WEBHOOK_SECRET) — rejecting all incoming webhooks.");
         return false;
     }
 
-    const incomingPublicKey =
-        request.headers.get("x-api-public-key") ||
-        request.headers.get("X-API-Public-Key");
-    if (!incomingPublicKey) return false;
+    const incomingPublicKey = request.headers.get("x-api-public-key") || "";
+    if (!safeEqual(expectedPublicKey, incomingPublicKey)) return false;
 
-    const expected = Buffer.from(expectedPublicKey);
-    const received = Buffer.from(incomingPublicKey);
-    return expected.length === received.length && timingSafeEqual(expected, received);
+    if (token) {
+        const incomingToken = request.nextUrl.searchParams.get("token") || request.headers.get("x-webhook-token") || "";
+        if (!safeEqual(token, incomingToken)) return false;
+    }
+    if (signingSecret && !hasValidSignature(request, rawBody, signingSecret)) return false;
+    return true;
 }
 
 export async function POST(request: NextRequest) {
     const convex = getConvexClient();
 
-    // --- Security Check ---
-    if (!isAuthorizedWebhook(request)) {
-        console.warn("[MyItura Webhook] Unauthorized request — invalid or missing API key header.");
+    // --- Security Check (needs the raw body for the signature) ---
+    const rawBody = await request.text();
+    if (!isAuthorizedWebhook(request, rawBody)) {
+        console.warn("[MyItura Webhook] Unauthorized request — token, signature or API key header did not match.");
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     let body: any;
     try {
-        const rawBody = await request.text();
         body = JSON.parse(rawBody);
     } catch {
         return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });

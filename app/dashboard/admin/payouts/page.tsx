@@ -55,6 +55,7 @@ import {
   tabsListClass,
 } from '@/components/admin/ui'
 import { dateStamp, errorText, formatKobo, koboToNairaNumber } from '@/components/admin/finance/format'
+import { PatientRef } from '@/components/admin/finance/PatientRef'
 
 const payoutsApi = api.payouts
 
@@ -75,7 +76,8 @@ type PayoutRow = {
   recipient: { _id: Id<'users'>; name: string; email: string; role: string } | null
   bank: { bankName: string; accountName: string; accountNumber: string; isVerified: boolean } | null
   invoice: { _id: Id<'invoices'>; invoiceNumber: string; totalAmountKobo: number } | null
-  patientName: string | null
+  patientUserId: Id<'users'> | null
+  patientNumber: string | null
 }
 
 type Bucket = { count: number; amountKobo: number }
@@ -149,7 +151,7 @@ export default function AdminPayoutsPage() {
       if (tab === 'open' && openFilter !== 'all' && r.status !== openFilter) return false
       if (tab === 'history' && historyFilter === 'month' && stats && (r.completedAt ?? 0) < stats.monthStart) return false
       if (!term) return true
-      return [r.recipient?.name, r.recipient?.email, r.patientName, r.invoice?.invoiceNumber, r.transferReference, r.bank?.accountNumber]
+      return [r.recipient?.name, r.recipient?.email, r.patientNumber, r.invoice?.invoiceNumber, r.transferReference, r.bank?.accountNumber]
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(term))
     })
@@ -199,7 +201,7 @@ export default function AdminPayoutsPage() {
         'Account name': r.bank?.accountName ?? '',
         'Amount (NGN)': koboToNairaNumber(r.amountKobo),
         Invoice: r.invoice?.invoiceNumber ?? '',
-        Patient: r.patientName ?? '',
+        'Patient ID': r.patientNumber ?? '',
         Created: format(r.createdAt, 'yyyy-MM-dd HH:mm'),
         'Paid at': r.completedAt ? format(r.completedAt, 'yyyy-MM-dd HH:mm') : '',
         'Transfer reference': r.transferReference ?? '',
@@ -520,7 +522,11 @@ export default function AdminPayoutsPage() {
                     </TableCell>
                     <TableCell className="min-w-[150px] text-sm">
                       <span className="block text-rh-night dark:text-white">{r.invoice ? `#${r.invoice.invoiceNumber}` : 'Invoice missing'}</span>
-                      {r.patientName && <span className="block text-xs text-neutral-500 dark:text-neutral-400">{r.patientName}</span>}
+                      {r.patientUserId && (
+                        <span className="block">
+                          <PatientRef userId={r.patientUserId} patientNumber={r.patientNumber} />
+                        </span>
+                      )}
                     </TableCell>
                     <TableCell className="text-right text-sm font-semibold tabular-nums text-rh-night dark:text-white">{formatKobo(r.amountKobo)}</TableCell>
                     <TableCell className="min-w-[120px]">

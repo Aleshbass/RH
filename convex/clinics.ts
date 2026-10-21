@@ -1,9 +1,11 @@
 import { ConvexError, v } from "convex/values";
-import { mutation, query, internalQuery } from "./_generated/server";
+import { mutation, query, internalQuery, type MutationCtx } from "./_generated/server";
 import { Doc, Id } from "./_generated/dataModel";
 import { api } from "./_generated/api";
 import { getAuthenticatedUser, ensureClinicOwner, ensureUserRole, ensureIsClinicOwner } from "./auth";
 import { assertClinicNotSuspended, getClinicMember, getClinicMemberOrPreview, getOwnerClinic, getOwnerClinicOrPreview } from "./clinicTools";
+import { ensureClinicNumber, ensureUserNumbers } from "./helpers/rehabifyIds";
+import { CLINIC_INVITE_APPROVAL_NOTE } from "./helpers/clinicApproval";
 
 /**
  * Create the owner's clinic during onboarding, or update it if one already exists
@@ -50,6 +52,7 @@ export const createClinic = mutation({
       }
       await ctx.db.patch(user._id, { role: "clinic_owner" });
     }
+    await ensureUserNumbers(ctx, user._id);
 
     const name = args.name.trim();
     if (!name) {
@@ -76,6 +79,7 @@ export const createClinic = mutation({
 
     if (existing) {
       await ctx.db.patch(existing._id, details);
+      await ensureClinicNumber(ctx, existing._id);
       return {
         clinicId: existing._id,
         success: true,
@@ -96,6 +100,7 @@ export const createClinic = mutation({
         language: "en"          // Default to English
       }
     });
+    await ensureClinicNumber(ctx, clinicId);
 
     return {
       clinicId,
@@ -242,7 +247,10 @@ export const invitePhysiotherapist = mutation({
       )
       .first();
 
-    if (existingInvitation) {
+    if (existingInvitation && existingInvitation.expiresAt < Date.now()) {
+      // A lapsed invite can't be accepted any more: retire it and issue a fresh one below
+      await ctx.db.patch(existingInvitation._id, { status: "expired" });
+    } else if (existingInvitation) {
       // If there's already a pending invitation, return it instead of throwing error
       // This handles the case where the user clicks invite multiple times
       return {
@@ -362,6 +370,7 @@ export const acceptClinicInvitation = mutation({
       status: "active",
       joinedAt: now,
     });
+    await ensureUserNumbers(ctx, user._id);
 
     if (isClinician || user.role === "physiotherapist") {
       const physiotherapistProfile = await ctx.db
@@ -423,7 +432,7 @@ export const acceptClinicInvitation = mutation({
         status: "approved",
         submittedAt: Date.now(),
         reviewedAt: Date.now(),
-        comments: "Automatically approved via clinic invitation",
+        comments: CLINIC_INVITE_APPROVAL_NOTE,
       });
     }
     // Email notification to clinic owner is handled by the action wrapper
@@ -440,6 +449,40 @@ export const acceptClinicInvitation = mutation({
 /**
  * Get pending invitations for a clinic
  */
+/** A pending staff invitation of the caller's clinic (owner, or a member with the Team page). */
+async function getOwnClinicStaffInvitation(ctx: MutationCtx, invitationId: Id<"clinicStaffInvitations">) {
+  const { clinic } = await getClinicMember(ctx, "team");
+  const invitation = await ctx.db.get(invitationId);
+  if (!invitation || invitation.clinicId !== clinic._id) {
+    throw new ConvexError("Invitation not found.");
+  }
+  if (invitation.status !== "pending") {
+    throw new ConvexError("This invitation has already been answered or cancelled.");
+  }
+  return invitation;
+}
+
+/** Resending gives the same link another 7 days, so an old invitation still works. */
+export const extendClinicStaffInvitation = mutation({
+  args: { invitationId: v.id("clinicStaffInvitations") },
+  handler: async (ctx, args) => {
+    const invitation = await getOwnClinicStaffInvitation(ctx, args.invitationId);
+    const expiresAt = Date.now() + 7 * 24 * 60 * 60 * 1000;
+    await ctx.db.patch(invitation._id, { expiresAt });
+    return { expiresAt };
+  },
+});
+
+/** Cancel a pending staff invitation: its link stops working. */
+export const revokeClinicStaffInvitation = mutation({
+  args: { invitationId: v.id("clinicStaffInvitations") },
+  handler: async (ctx, args) => {
+    const invitation = await getOwnClinicStaffInvitation(ctx, args.invitationId);
+    await ctx.db.patch(invitation._id, { status: "expired", expiresAt: Math.min(invitation.expiresAt, Date.now()) });
+    return { success: true };
+  },
+});
+
 export const getClinicInvitations = query({
   args: {},
   returns: v.array(v.object({
@@ -606,7 +649,8 @@ export const getInvitationByCode = query({
       return null;
     }
 
-    // Get clinic details
+    // Anyone holding the code can read this (no sign-in), so it returns only what the
+    // invitation page shows, never the owner's account or the clinic's private details
     const clinic = await ctx.db.get(invitation.clinicId);
     const clinicOwner = await ctx.db.get(invitation.clinicOwnerId);
 
@@ -617,12 +661,25 @@ export const getInvitationByCode = query({
       .collect();
 
     return {
-      ...invitation,
+      _id: invitation._id,
+      code: invitation.code,
+      role: invitation.role,
+      status: invitation.status,
+      inviteeEmail: invitation.inviteeEmail,
+      inviteeName: invitation.inviteeName,
+      clinicId: invitation.clinicId,
+      clinicOwnerId: invitation.clinicOwnerId,
+      message: invitation.message,
+      createdAt: invitation.createdAt,
+      expiresAt: invitation.expiresAt,
       clinic: clinic ? {
-        ...clinic,
+        _id: clinic._id,
+        name: clinic.name,
+        city: clinic.city,
+        logoUrl: clinic.logoUrl,
         staffCount: staffCount.length,
       } : null,
-      clinicOwner,
+      clinicOwner: clinicOwner ? { firstName: clinicOwner.firstName, lastName: clinicOwner.lastName } : null,
       isExpired: Date.now() > invitation.expiresAt,
     };
   },
@@ -1744,6 +1801,7 @@ export const createStaffDirect = mutation({
       onboarded: false, // Will be set to true when they complete onboarding
       joinedAt: Date.now(),
     } as any); // Avoid deep type instantiation
+    await ensureUserNumbers(ctx, staffId);
 
     // If role is physiotherapist, create physiotherapist profile
     if (args.role === "physiotherapist") {
@@ -2071,7 +2129,8 @@ export const getClinicPatients = query({
     offset: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const clinic = (await getOwnerClinicOrPreview(ctx))?.clinic ?? null;
+    const member = await getOwnerClinicOrPreview(ctx);
+    const clinic = member?.clinic ?? null;
 
     if (!clinic) {
       return [
@@ -2081,6 +2140,7 @@ export const getClinicPatients = query({
           lastName: "Adebayo",
           email: "folake.adebayo@example.com",
           phoneNumber: "+234 803 123 4567",
+          patientNumber: "RH-P-SAMPLE",
           status: "active",
           gender: "female",
           initialDiagnosis: "Post-Op Right ACL Reconstruction",
@@ -2098,6 +2158,7 @@ export const getClinicPatients = query({
           lastName: "Eze",
           email: "chukwudi.eze@example.com",
           phoneNumber: "+234 802 987 6543",
+          patientNumber: "RH-P-SAMPLE",
           status: "active",
           gender: "male",
           initialDiagnosis: "Lumbar Disc Herniation (L4-L5)",
@@ -2168,17 +2229,23 @@ export const getClinicPatients = query({
       }
     });
 
-    // Patients in care first, then by most recent start
-    const uniqueRelationships = Array.from(uniquePatientMap.values()).sort((a, b) =>
-      a.status === "active" && b.status !== "active"
-        ? -1
-        : b.status === "active" && a.status !== "active"
-          ? 1
-          : b.startDate - a.startDate
-    );
+    // A clinician works with the patients assigned to them; the owner, and anyone the owner gave
+    // full access, sees the whole clinic
+    const onlyOwnPatients = member?.kind === "clinician" && member.permissions !== "all";
 
-    // Apply pagination
-    const limit = args.limit || 50;
+    // Patients in care first, then by most recent start
+    const uniqueRelationships = Array.from(uniquePatientMap.values())
+      .filter((rel) => !onlyOwnPatients || rel.physiotherapistId === member!.user._id)
+      .sort((a, b) =>
+        a.status === "active" && b.status !== "active"
+          ? -1
+          : b.status === "active" && a.status !== "active"
+            ? 1
+            : b.startDate - a.startDate
+      );
+
+    // Apply pagination (the Patients page searches this list in the browser, so load all of it)
+    const limit = args.limit || 1000;
     const offset = args.offset || 0;
     const paginatedRelationships = uniqueRelationships.slice(offset, offset + limit);
 
@@ -2203,6 +2270,7 @@ export const getClinicPatients = query({
           email: patient.email || "",
           imageUrl: patient.imageUrl,
           phoneNumber: patient.phoneNumber,
+          patientNumber: patient.patientNumber,
           primaryPhysiotherapist: physiotherapist ? {
             _id: physiotherapist._id,
             firstName: physiotherapist.firstName || "",

@@ -4,7 +4,7 @@ import { useQuery, useMutation } from 'convex/react'
 import { api } from '@/convex/_generated/api'
 import RealtimeChat from '@/components/chat/RealtimeChat'
 import { Card, CardContent } from '@/components/ui/card'
-import { MessageSquare, Users, Plus, Search, ChevronLeft, MoreVertical, Phone, Video } from 'lucide-react'
+import { MessageSquare, Users, Plus, Search, ChevronLeft } from 'lucide-react'
 import { useState, useMemo, useEffect } from 'react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -16,24 +16,37 @@ import { Id } from '@/convex/_generated/dataModel'
 import { motion, AnimatePresence } from 'framer-motion'
 import { cn } from '@/lib/utils'
 import { formatDistanceToNow } from 'date-fns'
+import { programError } from '@/components/exercise-programs/errors'
 
-// Type definition for conversation with participant
+// Shape returned by api.chat.getMyConversations
 interface ConversationWithParticipant {
   _id: Id<"conversations">;
   otherParticipant: {
     _id: Id<"users">;
     firstName?: string;
     lastName?: string;
+    role?: string;
     imageUrl?: string;
     isOnline?: boolean;
   };
   lastMessage?: {
     content: string;
-    senderId: Id<"users">;
-    createdAt: number;
+    timestamp: number;
+    senderName: string;
   };
   unreadCount: number;
+  updatedAt: number;
 }
+
+const ROLE_LABELS: Record<string, string> = {
+  physiotherapist: 'Physiotherapist',
+  clinic_owner: 'Clinic',
+  clinic_staff: 'Clinic team',
+  admin: 'Rehabify support',
+}
+
+// Shape returned by api.patientInvitations.getMyPhysiotherapists (only the fields used here)
+type MyPhysiotherapist = { _id: Id<"users">; firstName?: string; lastName?: string; clinic?: { name?: string } | null }
 
 export default function PatientMessagesPage() {
   const [selectedConversationId, setSelectedConversationId] = useState<Id<"conversations"> | null>(null)
@@ -51,8 +64,20 @@ export default function PatientMessagesPage() {
     currentUser ? {} : 'skip'
   ) as ConversationWithParticipant[] | undefined
 
-  // Get physiotherapists list
-  const physiotherapists = useQuery(api.patientInvitations.getMyPhysiotherapists, {}) as { physiotherapistId: Id<"users">; name: string }[] | undefined
+  // The patient's physiotherapists (the query is patients only, so wait for the account)
+  const myPhysiotherapists = useQuery(
+    api.patientInvitations.getMyPhysiotherapists,
+    currentUser?.role === 'patient' ? {} : 'skip'
+  ) as MyPhysiotherapist[] | undefined
+  const physiotherapists = useMemo(
+    () =>
+      (myPhysiotherapists ?? []).map((p) => ({
+        physiotherapistId: p._id,
+        name: [p.firstName, p.lastName].filter(Boolean).join(' ') || 'Your physiotherapist',
+        clinicName: p.clinic?.name ?? null,
+      })),
+    [myPhysiotherapists]
+  )
 
   const getOrCreateConversation = useMutation(api.chat.getOrCreateConversation)
 
@@ -124,18 +149,25 @@ export default function PatientMessagesPage() {
                   <DialogTitle>New Message</DialogTitle>
                 </DialogHeader>
                 <div className="grid gap-4 py-4">
-                  <Select onValueChange={(value) => setNewConversationPtId(value as Id<"users">)}>
-                    <SelectTrigger className="w-full rounded-xl">
-                      <SelectValue placeholder="Select a physiotherapist" />
-                    </SelectTrigger>
-                    <SelectContent className="rounded-xl">
-                      {physiotherapists?.map((p: { physiotherapistId: Id<"users">; name: string }) => (
-                        <SelectItem key={p.physiotherapistId} value={p.physiotherapistId}>
-                          {p.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  {myPhysiotherapists !== undefined && physiotherapists.length === 0 ? (
+                    <p className="text-sm text-gray-500">
+                      You can message a physiotherapist once you&apos;re under their care. Book a session or accept your physio&apos;s invitation first.
+                    </p>
+                  ) : (
+                    <Select value={newConversationPtId || undefined} onValueChange={(value) => setNewConversationPtId(value as Id<"users">)}>
+                      <SelectTrigger className="w-full rounded-xl">
+                        <SelectValue placeholder={myPhysiotherapists === undefined ? 'Loading…' : 'Select a physiotherapist'} />
+                      </SelectTrigger>
+                      <SelectContent className="rounded-xl">
+                        {physiotherapists.map((p) => (
+                          <SelectItem key={p.physiotherapistId} value={p.physiotherapistId}>
+                            {p.name}
+                            {p.clinicName ? ` · ${p.clinicName}` : ''}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
                 </div>
                 <Button
                   disabled={!newConversationPtId}
@@ -148,7 +180,7 @@ export default function PatientMessagesPage() {
                       setIsNewConversationOpen(false)
                       setNewConversationPtId('')
                     } catch (err) {
-                      toast.error('Failed to start conversation')
+                      toast.error(programError(err, 'Couldn’t start the conversation. Please try again.'))
                       console.error(err)
                     }
                   }}
@@ -217,9 +249,9 @@ export default function PatientMessagesPage() {
                           <h3 className={cn("font-semibold truncate text-sm", isSelected ? "text-blue-900" : "text-gray-900")}>
                             {other.firstName} {other.lastName}
                           </h3>
-                          {conversation.lastMessage?.createdAt && (
+                          {conversation.lastMessage?.timestamp && (
                             <span className="text-[10px] text-gray-400 shrink-0 ml-2">
-                              {formatDistanceToNow(conversation.lastMessage.createdAt, { addSuffix: false })}
+                              {formatDistanceToNow(conversation.lastMessage.timestamp, { addSuffix: false })}
                             </span>
                           )}
                         </div>
@@ -273,30 +305,19 @@ export default function PatientMessagesPage() {
                       <h2 className="font-semibold text-sm text-gray-900">
                         {selectedConversation?.otherParticipant.firstName} {selectedConversation?.otherParticipant.lastName}
                       </h2>
-                      <p className="text-xs text-green-600 flex items-center gap-1">
-                        <span className="w-1.5 h-1.5 bg-green-500 rounded-full"></span>
-                        Online
-                      </p>
+                      {selectedConversation?.otherParticipant.role && (
+                        <p className="text-xs text-gray-500">
+                          {ROLE_LABELS[selectedConversation.otherParticipant.role] ?? 'Care team'}
+                        </p>
+                      )}
                     </div>
                   </div>
-                </div>
-
-                <div className="flex items-center gap-1">
-                  <Button variant="ghost" size="icon" className="text-gray-400 hover:text-gray-600 rounded-full">
-                    <Phone className="h-4 w-4" />
-                  </Button>
-                  <Button variant="ghost" size="icon" className="text-gray-400 hover:text-gray-600 rounded-full">
-                    <Video className="h-4 w-4" />
-                  </Button>
-                  <Button variant="ghost" size="icon" className="text-gray-400 hover:text-gray-600 rounded-full">
-                    <MoreVertical className="h-4 w-4" />
-                  </Button>
                 </div>
               </div>
 
               {/* Chat Messages */}
-              <div className="flex-1 overflow-hidden bg-gray-50/30 relative">
-                <RealtimeChat recipientId={selectedRecipientId} className="h-full" />
+              <div className="flex-1 min-h-0 overflow-hidden bg-gray-50/30 relative">
+                <RealtimeChat key={selectedRecipientId} recipientId={selectedRecipientId} embedded />
               </div>
             </>
           ) : (

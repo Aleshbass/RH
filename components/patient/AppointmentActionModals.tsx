@@ -12,10 +12,11 @@ import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Card, CardContent } from '@/components/ui/card'
 import { AlertTriangle, Calendar, Clock, CheckCircle, Loader2, XCircle } from 'lucide-react'
-import { format, addDays } from 'date-fns'
 import { toast } from 'sonner'
 import { playSound } from '@/lib/sounds'
 import { Id } from '@/convex/_generated/dataModel'
+import { lagosDate, lagosTimeRange } from '@/convex/helpers/lagosTime'
+import { SlotPicker, appointmentErrorMessage } from '@/components/appointments/appointment-ui'
 
 interface Appointment {
   _id: string
@@ -27,6 +28,10 @@ interface Appointment {
   status: string
   notesForPatient?: string
   cancellationReason?: string
+  proposedStartTime?: number
+  proposedEndTime?: number
+  proposalNote?: string
+  physiotherapistName?: string
 }
 
 // Cancel Appointment Modal
@@ -74,13 +79,15 @@ export function CancelAppointmentModal({
       }
     } catch (error) {
       console.error('Error cancelling appointment:', error)
-      toast.error(error instanceof Error ? error.message : 'Failed to cancel appointment')
+      toast.error(appointmentErrorMessage(error, 'Failed to cancel appointment'))
     } finally {
       setIsSubmitting(false)
     }
   }
 
   if (!appointment) return null
+  // A request the physio hasn't confirmed yet is withdrawn; a confirmed visit is cancelled
+  const isRequest = appointment.status === 'scheduled'
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
@@ -88,7 +95,7 @@ export function CancelAppointmentModal({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-red-600">
             <XCircle className="h-5 w-5" />
-            Cancel Appointment
+            {isRequest ? 'Cancel Request' : 'Cancel Appointment'}
           </DialogTitle>
         </DialogHeader>
 
@@ -97,9 +104,11 @@ export function CancelAppointmentModal({
             <div className="flex items-start gap-2">
               <AlertTriangle className="h-5 w-5 text-red-600 mt-0.5" />
               <div>
-                <p className="font-medium text-red-800">Are you sure you want to cancel this appointment?</p>
+                <p className="font-medium text-red-800">
+                  {isRequest ? 'Cancel this appointment request?' : 'Are you sure you want to cancel this appointment?'}
+                </p>
                 <p className="text-sm text-red-700 mt-1">
-                  {format(new Date(appointment.startTime), 'EEEE, MMMM do, yyyy')} at {format(new Date(appointment.startTime), 'h:mm a')}
+                  {lagosDate(appointment.startTime)}, {lagosTimeRange(appointment.startTime, appointment.endTime)}
                 </p>
                 <p className="text-sm text-red-700">{appointment.serviceType}</p>
               </div>
@@ -123,7 +132,7 @@ export function CancelAppointmentModal({
                 Keep Appointment
               </Button>
               <Button type="submit" variant="destructive" disabled={isSubmitting} className="flex-1">
-                {isSubmitting ? (<><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Cancelling...</>) : 'Cancel Appointment'}
+                {isSubmitting ? (<><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Cancelling...</>) : isRequest ? 'Cancel Request' : 'Cancel Appointment'}
               </Button>
             </div>
           </form>
@@ -163,7 +172,7 @@ export function ConfirmAppointmentModal({
       }
     } catch (error) {
       console.error('Error confirming appointment:', error)
-      toast.error(error instanceof Error ? error.message : 'Failed to confirm appointment')
+      toast.error(appointmentErrorMessage(error, 'Failed to confirm appointment'))
     } finally {
       setIsSubmitting(false)
     }
@@ -188,11 +197,11 @@ export function ConfirmAppointmentModal({
               <div className="text-sm text-green-700 space-y-1">
                 <div className="flex items-center gap-2">
                   <Calendar className="h-4 w-4" />
-                  {format(new Date(appointment.startTime), 'EEEE, MMMM do, yyyy')}
+                  {lagosDate(appointment.startTime)}
                 </div>
                 <div className="flex items-center gap-2">
                   <Clock className="h-4 w-4" />
-                  {format(new Date(appointment.startTime), 'h:mm a')} - {format(new Date(appointment.endTime), 'h:mm a')}
+                  {lagosTimeRange(appointment.startTime, appointment.endTime)}
                 </div>
                 <div>Service: {appointment.serviceType}</div>
               </div>
@@ -221,13 +230,11 @@ interface RescheduleAppointmentModalProps {
   onAppointmentRescheduled: () => void
 }
 
-// Time slot returned by getAvailableTimeSlots query
+// Bookable slot from calendar.availability.getAvailableSlots
 interface TimeSlot {
-  startTime: number;
-  endTime: number;
-  startTimeFormatted: string;
-  endTimeFormatted: string;
-  available: boolean;
+  start: number;
+  end: number;
+  duration: number;
 }
 
 export function RescheduleAppointmentModal({
@@ -236,23 +243,14 @@ export function RescheduleAppointmentModal({
   appointment,
   onAppointmentRescheduled,
 }: RescheduleAppointmentModalProps) {
-  const [selectedDate, setSelectedDate] = useState('')
   const [selectedTimeSlot, setSelectedTimeSlot] = useState<TimeSlot | null>(null)
   const [reason, setReason] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
-
-  const availableSlots = useQuery(
-    api.appointments.getAvailableTimeSlots,
-    appointment && selectedDate
-      ? { physiotherapistId: appointment.physiotherapistId as Id<'users'>, date: selectedDate }
-      : 'skip'
-  )
 
   const rescheduleAppointment = useMutation(api.appointments.requestAppointmentReschedule)
 
   useEffect(() => {
     if (isOpen) {
-      setSelectedDate('')
       setSelectedTimeSlot(null)
       setReason('')
     }
@@ -265,8 +263,8 @@ export function RescheduleAppointmentModal({
     try {
       const result = await rescheduleAppointment({
         appointmentId: appointment._id as Id<'appointments'>,
-        newStartTime: selectedTimeSlot.startTime,
-        newEndTime: selectedTimeSlot.endTime,
+        newStartTime: selectedTimeSlot.start,
+        newEndTime: selectedTimeSlot.end,
         reason: reason || undefined,
       })
       if (result.success) {
@@ -276,22 +274,15 @@ export function RescheduleAppointmentModal({
       }
     } catch (error) {
       console.error('Error rescheduling appointment:', error)
-      toast.error(error instanceof Error ? error.message : 'Failed to reschedule appointment')
+      toast.error(appointmentErrorMessage(error, 'Failed to reschedule appointment'))
     } finally {
       setIsSubmitting(false)
     }
   }
 
-  const getNextAvailableDates = () => {
-    const dates: { value: string; label: string }[] = []
-    for (let i = 1; i <= 14; i++) {
-      const date = addDays(new Date(), i)
-      dates.push({ value: format(date, 'yyyy-MM-dd'), label: format(date, 'EEEE, MMMM do') })
-    }
-    return dates
-  }
-
   if (!appointment) return null
+  // Same length as the original visit, from the physio's real working hours
+  const durationMinutes = Math.max(15, Math.round((appointment.endTime - appointment.startTime) / 60000))
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
@@ -308,8 +299,8 @@ export function RescheduleAppointmentModal({
             <CardContent className="p-4">
               <p className="font-medium text-gray-800 mb-2">Current Appointment:</p>
               <div className="text-sm text-gray-600 space-y-1">
-                <div>{format(new Date(appointment.startTime), 'EEEE, MMMM do, yyyy')}</div>
-                <div>{format(new Date(appointment.startTime), 'h:mm a')} - {format(new Date(appointment.endTime), 'h:mm a')}</div>
+                <div>{lagosDate(appointment.startTime)}</div>
+                <div>{lagosTimeRange(appointment.startTime, appointment.endTime)}</div>
                 <div>{appointment.serviceType}</div>
               </div>
             </CardContent>
@@ -317,54 +308,16 @@ export function RescheduleAppointmentModal({
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="date">New Date *</Label>
-              <Select value={selectedDate} onValueChange={setSelectedDate}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select new appointment date" />
-                </SelectTrigger>
-                <SelectContent>
-                  {getNextAvailableDates().map((date) => (
-                    <SelectItem key={date.value} value={date.value}>{date.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label>New time *</Label>
+              <SlotPicker
+                physiotherapistId={appointment.physiotherapistId}
+                durationMinutes={durationMinutes}
+                excludeAppointmentId={appointment._id}
+                selected={selectedTimeSlot}
+                onSelect={setSelectedTimeSlot}
+              />
+              <p className="text-xs text-gray-500">Your physio confirms the new time; we&apos;ll let you know.</p>
             </div>
-
-            {selectedDate && (
-              <div className="space-y-2">
-                <Label>Available Time Slots *</Label>
-                {availableSlots === undefined ? (
-                  <div className="flex items-center gap-2 p-4 text-gray-500">
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Loading available slots...
-                  </div>
-                ) : availableSlots?.length === 0 ? (
-                  <Card>
-                    <CardContent className="p-4">
-                      <p className="text-center text-gray-500">
-                        No available slots for this date. Please select a different date.
-                      </p>
-                    </CardContent>
-                  </Card>
-                ) : (
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-48 overflow-y-auto">
-                    {availableSlots?.map((slot: TimeSlot, index: number) => (
-                      <Button
-                        key={index}
-                        type="button"
-                        variant={selectedTimeSlot?.startTime === slot.startTime ? 'default' : 'outline'}
-                        size="sm"
-                        onClick={() => setSelectedTimeSlot(slot)}
-                        className="justify-start"
-                      >
-                        <Clock className="h-3 w-3 mr-1" />
-                        {slot.startTimeFormatted}
-                      </Button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
 
             <div className="space-y-2">
               <Label htmlFor="reason">Reason for rescheduling (Optional)</Label>
@@ -386,6 +339,93 @@ export function RescheduleAppointmentModal({
               </Button>
             </div>
           </form>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// Answer the physio's proposed time
+interface RespondToProposalModalProps {
+  isOpen: boolean
+  onClose: () => void
+  appointment: Appointment | null
+  /** What the patient picked on the card; they can still switch here */
+  accept: boolean
+}
+
+export function RespondToProposalModal({ isOpen, onClose, appointment, accept }: RespondToProposalModalProps) {
+  const [isSubmitting, setIsSubmitting] = useState<'accept' | 'decline' | null>(null)
+  const respond = useMutation(api.appointments.respondToProposedTime)
+
+  if (!appointment || !appointment.proposedStartTime || !appointment.proposedEndTime) return null
+  const physio = appointment.physiotherapistName || 'Your physio'
+
+  const answer = async (yes: boolean) => {
+    setIsSubmitting(yes ? 'accept' : 'decline')
+    try {
+      const result = await respond({ appointmentId: appointment._id as Id<'appointments'>, accept: yes })
+      if (yes) playSound('booked')
+      toast.success(result?.message ?? (yes ? 'Your visit is moved and confirmed.' : 'Kept your original time.'))
+      onClose()
+    } catch (error) {
+      console.error('Error answering proposed time:', error)
+      toast.error(appointmentErrorMessage(error, 'Could not send your answer. Please try again.'))
+    } finally {
+      setIsSubmitting(null)
+    }
+  }
+
+  return (
+    <Dialog open={isOpen} onOpenChange={(open) => { if (!open && !isSubmitting) onClose(); }}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Calendar className="h-5 w-5 text-amber-600" />
+            {physio} proposed a new time
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-3 text-sm">
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-amber-900">
+            <p className="font-medium">New time</p>
+            <p>{lagosDate(appointment.proposedStartTime)}</p>
+            <p>{lagosTimeRange(appointment.proposedStartTime, appointment.proposedEndTime)} (Lagos time)</p>
+            {appointment.proposalNote && <p className="mt-1">&ldquo;{appointment.proposalNote}&rdquo;</p>}
+          </div>
+          <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-gray-700">
+            <p className="font-medium">Original time</p>
+            <p>{lagosDate(appointment.startTime)}</p>
+            <p>{lagosTimeRange(appointment.startTime, appointment.endTime)}</p>
+          </div>
+          <p className="text-gray-500">
+            {appointment.status === 'scheduled'
+              ? 'Accepting confirms the visit at the new time. Keeping the original sends your request back to your physio.'
+              : 'Accepting moves your confirmed visit to the new time. Keeping the original leaves it as it is.'}
+          </p>
+        </div>
+
+        <div className="flex gap-3 pt-2">
+          <Button
+            type="button"
+            variant={accept ? 'outline' : 'default'}
+            onClick={() => answer(false)}
+            disabled={isSubmitting !== null}
+            className="flex-1"
+          >
+            {isSubmitting === 'decline' ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+            Keep original time
+          </Button>
+          <Button
+            type="button"
+            variant={accept ? 'default' : 'outline'}
+            onClick={() => answer(true)}
+            disabled={isSubmitting !== null}
+            className="flex-1"
+          >
+            {isSubmitting === 'accept' ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <CheckCircle className="h-4 w-4 mr-2" />}
+            Accept new time
+          </Button>
         </div>
       </DialogContent>
     </Dialog>

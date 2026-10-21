@@ -22,6 +22,8 @@ import {
   softButtonClass,
   tableWrapClass,
 } from '@/components/admin/ui'
+import { PatientRef, patientRefText } from '@/components/admin/finance/PatientRef'
+import { matchesRehabifyId } from '@/convex/helpers/rehabifyIdFormat'
 import { cn } from '@/lib/utils'
 
 type StatusFilter = 'all' | 'paid' | 'sent' | 'partial_payment' | 'overdue' | 'failed' | 'void' | 'draft'
@@ -68,10 +70,11 @@ export default function AdminTransactionsPage() {
   const term = search.trim().toLowerCase()
   const rows = useMemo(() => {
     if (!term) return results
-    return results.filter((tx) =>
-      [tx.patientName, tx.patientEmail, tx.patientPhone, tx.physiotherapistName, tx.physiotherapistEmail, tx.invoiceNumber, tx.paymentReference].some(
-        (f) => (f ?? '').toLowerCase().includes(term)
-      )
+    return results.filter(
+      (tx) =>
+        [tx.physiotherapistName, tx.physiotherapistEmail, tx.invoiceNumber, tx.paymentReference].some((f) =>
+          (f ?? '').toLowerCase().includes(term)
+        ) || matchesRehabifyId(tx.patientNumber, term)
     )
   }, [results, term])
 
@@ -87,9 +90,7 @@ export default function AdminTransactionsPage() {
         invoice: tx.invoiceNumber,
         source: tx.isMarketplace ? 'marketplace' : 'clinic/physio',
         status: tx.status,
-        patient: tx.patientName,
-        patient_email: tx.patientEmail,
-        patient_phone: tx.patientPhone,
+        patient_id: patientRefText(tx.patientNumber, tx.isGuest),
         guest: tx.isGuest ? 'yes' : 'no',
         physiotherapist: tx.physiotherapistName,
         physiotherapist_email: tx.physiotherapistEmail,
@@ -124,7 +125,7 @@ export default function AdminTransactionsPage() {
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search name, email, invoice or ref"
+            placeholder="Search patient ID, physio, invoice or ref"
             aria-label="Search loaded transactions"
             className={cn(inputClass, 'h-9 pl-9')}
           />
@@ -160,7 +161,7 @@ export default function AdminTransactionsPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead className="pl-5">Date</TableHead>
-                  <TableHead>Patient</TableHead>
+                  <TableHead>Patient ID</TableHead>
                   <TableHead>Physiotherapist</TableHead>
                   <TableHead className="text-right">Amount</TableHead>
                   <TableHead>Status</TableHead>
@@ -178,15 +179,13 @@ export default function AdminTransactionsPage() {
                       </TableCell>
                       <TableCell className="align-top">
                         <div className="flex items-center gap-1.5">
-                          <span className="text-sm font-medium text-rh-night dark:text-white">{tx.patientName}</span>
+                          <PatientRef userId={tx.patientUserId} patientNumber={tx.patientNumber} isGuest={tx.isGuest} />
                           {tx.isGuest && (
                             <StatusBadge tone="teal">
                               <Globe className="mr-0.5 h-3 w-3" /> Guest
                             </StatusBadge>
                           )}
                         </div>
-                        {tx.patientEmail && <div className="text-xs text-neutral-500 dark:text-neutral-400">{tx.patientEmail}</div>}
-                        {tx.patientPhone && <div className="text-xs text-neutral-500 dark:text-neutral-400">{tx.patientPhone}</div>}
                       </TableCell>
                       <TableCell className="align-top">
                         <div className="text-sm font-medium text-rh-night dark:text-white">{tx.physiotherapistName}</div>

@@ -15,6 +15,7 @@ export type ClinicsListResult = {
   rows: {
     _id: Id<'clinics'>
     name: string
+    clinicNumber: string | null
     logoUrl: string | null
     city: string | null
     state: string | null

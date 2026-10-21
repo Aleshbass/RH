@@ -9,12 +9,17 @@ import {
   ArrowRight,
   ArrowUp,
   BookOpen,
+  Check,
   Dumbbell,
+  FileText,
+  Globe,
   Library,
   Loader2,
   Mic,
+  PlayCircle,
   Plus,
   Save,
+  Search,
   Send,
   Square,
   Trash2,
@@ -37,7 +42,15 @@ import { cn } from '@/lib/utils'
 import { programError } from './errors'
 import { ExercisePreviewDialog } from './ExercisePreviewDialog'
 import { LibraryPicker, entryPoster } from './LibraryPicker'
-import { isLocalImage, itemsSummary, sideLabel, type CareTeamProgram, type LibraryData, type LibraryEntry } from './types'
+import {
+  isLocalImage,
+  itemsSummary,
+  sideLabel,
+  type CareTeamProgram,
+  type LibraryData,
+  type LibraryEntry,
+  type LibraryResourceRow,
+} from './types'
 
 /** Keep in step with MAX_ITEMS in convex/exercisePrograms.ts. */
 const MAX_ITEMS = 30
@@ -61,9 +74,14 @@ type Draft = {
   frequency: string
   /** Instructions for an exercise, or the text of an education item. */
   note: string
+  /** Education from the Rehabify Library (null for education the clinician writes). */
+  resource: ResourceLabel | null
   /** Position in the programme being edited, so the patient's logs follow the item. */
   fromIndex?: number
 }
+
+/** What the dialog shows for a library resource; `missing` when it has left the library. */
+type ResourceLabel = { key: string; title: string; source: string; kind: 'link' | 'youtube' | 'guide'; missing?: boolean }
 
 /** One item as the server accepts it (itemFields in convex/exercisePrograms.ts), plus its old position when editing. */
 type PayloadItem = {
@@ -76,6 +94,7 @@ type PayloadItem = {
   holdSeconds?: number
   frequency?: string
   note?: string
+  resourceKey?: string
   fromIndex?: number
 }
 
@@ -89,7 +108,15 @@ function clampInt(value: number | null | undefined, lo: number, hi: number, fall
 }
 
 function blankDraft(type: DraftType): Draft {
-  return { key: nextKey(), type, entry: null, exerciseId: null, name: '', side: null, sets: 3, reps: 10, hold: null, frequency: 'Once a day', note: '' }
+  return { key: nextKey(), type, entry: null, exerciseId: null, name: '', side: null, sets: 3, reps: 10, hold: null, frequency: 'Once a day', note: '', resource: null }
+}
+
+function resourceDraft(row: LibraryResourceRow): Draft {
+  return {
+    ...blankDraft('education'),
+    name: row.title.slice(0, 120),
+    resource: { key: row.key, title: row.title, source: row.source, kind: row.kind },
+  }
 }
 
 function draftFor(entry: LibraryEntry): Draft {
@@ -106,6 +133,7 @@ function draftFor(entry: LibraryEntry): Draft {
     hold: hold ? clampInt(hold, 1, 120, 5) : null,
     frequency: entry.defaults.frequency?.trim() || 'Once a day',
     note: '',
+    resource: null,
   }
 }
 
@@ -119,7 +147,14 @@ function draftsFromProgram(program: CareTeamProgram): Draft[] {
       note: item.note ?? '',
       fromIndex: item.index,
     }
-    if (item.kind === 'education') return { ...blankDraft('education'), name: item.name, note: item.note ?? '', fromIndex: item.index }
+    if (item.kind === 'education') {
+      const resource: ResourceLabel | null = item.resource
+        ? { key: item.resource.key, title: item.resource.title, source: item.resource.source, kind: item.resource.kind }
+        : item.resourceKey
+          ? { key: item.resourceKey, title: item.name, source: 'Rehabify Library', kind: 'guide', missing: true }
+          : null
+      return { ...blankDraft('education'), name: item.name, note: item.note ?? '', resource, fromIndex: item.index }
+    }
     if (item.custom) return { ...blankDraft('custom'), ...dose, name: item.name }
     return {
       ...blankDraft('library'),
@@ -191,6 +226,96 @@ function GoalsEditor({ goals, onChange }: { goals: string[]; onChange: (goals: s
   )
 }
 
+const RESOURCE_KIND_ICON = { youtube: PlayCircle, link: Globe, guide: FileText } as const
+const RESOURCE_KIND_LABEL = { youtube: 'Video', link: 'Web page', guide: 'Written guide' } as const
+
+/**
+ * Education from the Rehabify Library (NHS and hospital pages, videos, Rehabify's written guides),
+ * searched by title or condition. Each pick becomes an education item that keeps its library key.
+ */
+function ResourcePickerDialog({
+  open,
+  onOpenChange,
+  added,
+  onAdd,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  added: Set<string>
+  onAdd: (row: LibraryResourceRow) => void
+}) {
+  const rows = useQuery(api.libraryResources.listResources, open ? {} : 'skip') as LibraryResourceRow[] | null | undefined
+  const [search, setSearch] = useState('')
+  useEffect(() => {
+    if (open) setSearch('')
+  }, [open])
+
+  const results = useMemo(() => {
+    const words = search.toLowerCase().split(/\s+/).filter(Boolean)
+    const all = rows ?? []
+    const matching = words.length
+      ? all.filter((r) => {
+          const text = `${r.title} ${r.condition} ${r.source} ${r.region}`.toLowerCase()
+          return words.every((w) => text.includes(w))
+        })
+      : all
+    return { total: matching.length, shown: matching.slice(0, 60) }
+  }, [rows, search])
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="flex max-h-[85vh] flex-col gap-0 overflow-hidden rounded-3xl p-0 sm:max-w-2xl">
+        <DialogHeader className="border-b border-black/[0.05] px-6 pb-4 pt-5 dark:border-white/[0.06]">
+          <DialogTitle>Education from the Rehabify Library</DialogTitle>
+          <DialogDescription>Trusted pages, videos and written guides. The patient sees the guide, video or link in their programme.</DialogDescription>
+          <div className="relative mt-3">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+            <Input autoFocus className="h-10 rounded-xl pl-9" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by title or condition, e.g. knee osteoarthritis" aria-label="Search the Rehabify Library" />
+          </div>
+        </DialogHeader>
+        <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
+          {rows === undefined ? (
+            <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-rh-teal" /></div>
+          ) : rows === null ? (
+            <p className="py-10 text-center text-sm text-neutral-500">The Rehabify Library isn&apos;t available to your account. You can still write your own education.</p>
+          ) : results.total === 0 ? (
+            <p className="py-10 text-center text-sm text-neutral-500">{rows.length === 0 ? 'The library is empty for now.' : 'Nothing matches that search. Try fewer words.'}</p>
+          ) : (
+            <ul className="space-y-1">
+              {results.shown.map((row) => {
+                const Icon = RESOURCE_KIND_ICON[row.kind]
+                const isAdded = added.has(row.key)
+                return (
+                  <li key={row.key} className="flex items-center gap-3 rounded-2xl px-3 py-2.5 hover:bg-rh-canvas dark:hover:bg-white/[0.03]">
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rh-cream text-[#b4690e] dark:bg-amber-400/10 dark:text-amber-300">
+                      <Icon className="h-5 w-5" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium text-rh-night dark:text-white">{row.title}</p>
+                      <p className="truncate text-xs text-neutral-500">
+                        {RESOURCE_KIND_LABEL[row.kind]} · {row.condition} · {row.source}
+                      </p>
+                    </div>
+                    <Button type="button" size="sm" variant={isAdded ? 'ghost' : 'outline'} className="h-8 shrink-0 rounded-full" disabled={isAdded} onClick={() => onAdd(row)}>
+                      {isAdded ? <><Check className="mr-1 h-3.5 w-3.5" /> Added</> : <><Plus className="mr-1 h-3.5 w-3.5" /> Add</>}
+                    </Button>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+          {results.total > results.shown.length && (
+            <p className="px-3 pt-2 text-center text-xs text-neutral-500">Showing {results.shown.length} of {results.total}. Search to narrow it down.</p>
+          )}
+        </div>
+        <div className="flex justify-end border-t border-black/[0.05] px-6 py-3 dark:border-white/[0.06]">
+          <Button className={primaryButtonClass} onClick={() => onOpenChange(false)}>Done</Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 export type ProgramDialogMode = 'send' | 'new' | 'edit'
 
 /**
@@ -244,6 +369,7 @@ export function SendProgramDialog({
   const [keepVoice, setKeepVoice] = useState(false)
   const [preview, setPreview] = useState<LibraryEntry | null>(null)
   const [saving, setSaving] = useState(false)
+  const [resourcePickerOpen, setResourcePickerOpen] = useState(false)
 
   useEffect(() => {
     if (!open) return
@@ -295,13 +421,19 @@ export function SendProgramDialog({
     setStep(2)
     setTimeout(() => listEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }), 50)
   }
+  const addedResources = useMemo(() => new Set(drafts.flatMap((d) => (d.resource ? [d.resource.key] : []))), [drafts])
+  const addResource = (row: LibraryResourceRow) => setDrafts((current) => [...current, resourceDraft(row)])
+  const closeResourcePicker = (o: boolean) => {
+    setResourcePickerOpen(o)
+    if (!o && drafts.some((d) => d.resource)) setStep(2)
+  }
 
   /** Checks what the server would refuse, so mistakes show here with the item named. */
   const problem = (): string | null => {
     if (drafts.length === 0) return 'Add at least one exercise or education item.'
     for (const [i, d] of drafts.entries()) {
       if (d.type === 'custom' && !d.name.trim()) return `Give item ${i + 1} an exercise name, or remove it.`
-      if (d.type === 'education' && !d.name.trim() && !d.note.trim()) return `Item ${i + 1} is empty education. Give it a title or some text, or remove it.`
+      if (d.type === 'education' && !(d.resource && !d.resource.missing) && !d.name.trim() && !d.note.trim()) return `Item ${i + 1} is empty education. Give it a title or some text, or remove it.`
       if (d.type === 'library' && d.entry?.sided && !d.side) return `Choose a side for ${d.name}.`
     }
     const total = (existing && !editing ? existing.items.length : 0) + itemCount
@@ -316,7 +448,11 @@ export function SendProgramDialog({
   const payloadItems = () =>
     drafts.flatMap((d): PayloadItem[] => {
       const fromIndex = d.fromIndex
-      if (d.type === 'education') return [{ kind: 'education' as const, name: d.name.trim() || undefined, note: d.note.trim() || undefined, fromIndex }]
+      if (d.type === 'education') {
+        // A resource that has left the library is kept as plain education (its title and note)
+        const resourceKey = d.resource && !d.resource.missing ? d.resource.key : undefined
+        return [{ kind: 'education' as const, name: d.name.trim() || undefined, note: d.note.trim() || undefined, resourceKey, fromIndex }]
+      }
       const dose = {
         sets: d.sets,
         reps: d.reps,
@@ -433,6 +569,9 @@ export function SendProgramDialog({
                   <Button type="button" size="sm" variant="outline" className="h-8 rounded-full" onClick={() => addOwn('education')}>
                     <BookOpen className="mr-1.5 h-3.5 w-3.5 text-[#b4690e] dark:text-amber-300" /> Add education
                   </Button>
+                  <Button type="button" size="sm" variant="outline" className="h-8 rounded-full" onClick={() => setResourcePickerOpen(true)}>
+                    <Library className="mr-1.5 h-3.5 w-3.5 text-[#b4690e] dark:text-amber-300" /> Education from the Rehabify Library
+                  </Button>
                 </div>
                 {library === undefined ? (
                   <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-rh-teal" /></div>
@@ -473,7 +612,13 @@ export function SendProgramDialog({
                             <div className="flex items-start justify-between gap-2">
                               <div className="min-w-0 flex-1">
                                 <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-                                  {d.type === 'library' ? 'Library exercise' : d.type === 'custom' ? 'Your own exercise' : 'Education'}
+                                  {d.type === 'library'
+                                    ? 'Library exercise'
+                                    : d.type === 'custom'
+                                      ? 'Your own exercise'
+                                      : d.resource && !d.resource.missing
+                                        ? `Education · ${RESOURCE_KIND_LABEL[d.resource.kind]} from ${d.resource.source}`
+                                        : 'Education'}
                                 </p>
                                 {d.type === 'library' ? (
                                   <p className="font-semibold text-rh-night dark:text-white">{d.name}</p>
@@ -517,14 +662,23 @@ export function SendProgramDialog({
                               </div>
                             )}
 
+                            {d.resource?.missing && (
+                              <p className="flex items-center gap-1.5 rounded-xl bg-rh-blush px-3 py-2 text-xs text-rose-700 dark:bg-rose-400/10 dark:text-rose-300">
+                                <TriangleAlert className="h-3.5 w-3.5" /> This resource is no longer in the Rehabify Library. It stays as its title and your note.
+                              </p>
+                            )}
                             {d.type === 'education' ? (
                               <Textarea
-                                aria-label="Education text"
-                                rows={4}
+                                aria-label={d.resource ? 'Note for the patient' : 'Education text'}
+                                rows={d.resource ? 2 : 4}
                                 className="resize-y rounded-lg"
                                 value={d.note}
                                 onChange={(e) => patchDraft(d.key, { note: e.target.value })}
-                                placeholder="What you want them to know, e.g. how to pace activity, posture tips, when to rest or call you"
+                                placeholder={
+                                  d.resource
+                                    ? 'A note to go with it (optional), e.g. Read this before our next session'
+                                    : 'What you want them to know, e.g. how to pace activity, posture tips, when to rest or call you'
+                                }
                               />
                             ) : (
                               <>
@@ -558,6 +712,9 @@ export function SendProgramDialog({
                   </Button>
                   <Button type="button" size="sm" variant="outline" className="h-8 rounded-full" onClick={() => addOwn('education')}>
                     <BookOpen className="mr-1.5 h-3.5 w-3.5 text-[#b4690e] dark:text-amber-300" /> Add education
+                  </Button>
+                  <Button type="button" size="sm" variant="outline" className="h-8 rounded-full" onClick={() => setResourcePickerOpen(true)}>
+                    <Library className="mr-1.5 h-3.5 w-3.5 text-[#b4690e] dark:text-amber-300" /> Education from the Rehabify Library
                   </Button>
                 </div>
                 <datalist id="rh-frequencies">{FREQUENCIES.map((f) => <option key={f} value={f} />)}</datalist>
@@ -686,6 +843,7 @@ export function SendProgramDialog({
         </DialogContent>
       </Dialog>
       <ExercisePreviewDialog entry={preview} onOpenChange={(o) => !o && setPreview(null)} />
+      <ResourcePickerDialog open={resourcePickerOpen} onOpenChange={closeResourcePicker} added={addedResources} onAdd={addResource} />
     </>
   )
 }

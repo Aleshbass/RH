@@ -5,6 +5,7 @@ import { Doc, Id } from "./_generated/dataModel";
 import { ensureClinicApproved, getOwnerClinic, getOwnerClinicOrPreview, requireClinicWrite } from "./clinicTools";
 import { getAuthenticatedUser } from "./auth";
 import { publicAppUrl } from "./helpers/appUrl";
+import { activePaymentLink, closeInvoicePaymentLinks, PAYMENT_LINK_TTL_MS } from "./helpers/paymentLinks";
 
 /**
  * Clinic billing: payout account (Paystack subaccount), shareable payment links,
@@ -282,7 +283,8 @@ export const getInvoiceForPaymentLink = internalQuery({
       status: invoice.status,
       totalKobo: invoice.feeBreakdown?.total ?? invoice.totalAmount,
       mainAccountChargeKobo: mainAccountChargeKobo(invoice),
-      paymentLink: invoice.paymentLink ?? null,
+      // Expired or out-of-date links are replaced with a fresh one
+      paymentLink: activePaymentLink(invoice),
       patientId: invoice.patientId,
       patientEmail: patient?.email || null,
       fallbackEmail: clinic.contactEmail || user.email || null,
@@ -302,6 +304,8 @@ export const recordPaymentLink = internalMutation({
   },
   handler: async (ctx, args) => {
     const now = Date.now();
+    // One live link per invoice: the previous one (expired or for an old amount) is closed
+    await closeInvoicePaymentLinks(ctx, args.invoiceId);
     await ctx.db.insert("payments", {
       invoiceId: args.invoiceId,
       userId: args.patientId,
@@ -317,6 +321,8 @@ export const recordPaymentLink = internalMutation({
     await ctx.db.patch(args.invoiceId, {
       paymentReference: args.reference,
       paymentLink: args.paymentLink,
+      paymentLinkExpiresAt: now + PAYMENT_LINK_TTL_MS,
+      paymentLinkAmount: args.amountKobo,
     });
   },
 });
@@ -412,6 +418,8 @@ export const markInvoicePaid = mutation({
       paymentDate: Date.now(),
       paidAmount: invoice.totalAmount,
     });
+    // Paid in person: the online link must not collect a second time
+    await closeInvoicePaymentLinks(ctx, args.invoiceId);
     return { success: true };
   },
 });
@@ -430,6 +438,7 @@ export const voidInvoice = mutation({
       throw new ConvexError("Paid invoices cannot be cancelled");
     }
     await ctx.db.patch(args.invoiceId, { status: "void" });
+    await closeInvoicePaymentLinks(ctx, args.invoiceId);
     return { success: true, invoiceId: invoice._id as Id<"invoices"> };
   },
 });

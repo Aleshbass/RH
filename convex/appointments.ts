@@ -1,8 +1,60 @@
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { mutation, query, internalQuery } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
-import { api, internal } from "./_generated/api";
+import { internal } from "./_generated/api";
 import { onPatientSessionCompleted } from "./helpers/partnerAttribution";
+import { isRehabifyCare } from "./rehabifyFollowUps";
+import { lagosDate, lagosDateTime, lagosShortDate, lagosTime, lagosTimeRange, startOfZonedDay, zonedDateTimeToUtc } from "./helpers/lagosTime";
+import { awaitingConfirmationFrom, isOpenAppointment } from "./helpers/appointmentStatus";
+import { isGoogleBusy } from "./helpers/slotHolds";
+import {
+  CLEAR_PROPOSAL,
+  emailAboutAppointment,
+  notifyAboutAppointment,
+  personName,
+  syncGoogleCalendarEvent,
+  visitPlace,
+} from "./helpers/appointmentNotify";
+
+const PATIENT_APPOINTMENTS = "/dashboard/patient/appointments";
+const PHYSIO_APPOINTMENTS = "/dashboard/physiotherapist/appointments";
+
+/** True when [start, end) overlaps another live visit of this physio (ignoring `exceptId`). */
+async function physioHasClash(
+  ctx: any,
+  physiotherapistId: Id<"users">,
+  start: number,
+  end: number,
+  exceptId?: Id<"appointments">
+) {
+  const nearby = await ctx.db
+    .query("appointments")
+    .withIndex("by_physiotherapist_id_and_time", (q: any) =>
+      q.eq("physiotherapistId", physiotherapistId).gte("startTime", start - 24 * 60 * 60 * 1000).lt("startTime", end)
+    )
+    .collect();
+  return nearby.some(
+    (apt: any) =>
+      apt._id !== exceptId &&
+      !apt.isRecordOnly &&
+      isOpenAppointment(apt.status) &&
+      apt.startTime < end &&
+      apt.endTime > start
+  );
+}
+
+/** Schedules a video room for a telehealth visit that has no link yet (Stream, hosted by the physio). */
+async function ensureVideoRoom(ctx: any, appointment: any, title: string) {
+  const isVideo = appointment.appointmentType === "telehealth" || appointment.isOnline === true;
+  const hasLink = appointment.meetingLink || appointment.googleMeetLink || /^https?:\/\//i.test(appointment.manualMeetingLink ?? "");
+  if (!isVideo || hasLink || appointment.videoCallId) return;
+  await ctx.scheduler.runAfter(0, internal.videoCalls.createAppointmentVideoCall, {
+    appointmentId: appointment._id,
+    hostId: appointment.physiotherapistId,
+    participants: [appointment.patientId, appointment.physiotherapistId],
+    title,
+  });
+}
 
 /**
  * Get authenticated user with role-based validation
@@ -84,10 +136,16 @@ export const createAppointment = mutation({
         q.eq("patientId", args.patientId).eq("physiotherapistId", user._id)
       )
       .filter((q) => q.eq(q.field("status"), "active"))
-      .unique();
+      // Old data can hold two links to the same physio; .unique() would throw
+      .first();
 
     if (!relationship) {
       throw new Error("Access denied. Patient not assigned to you.");
+    }
+
+    // Rehabify patients pay for each session: their follow-ups go through scheduleRehabifyFollowUp
+    if (await isRehabifyCare(ctx, args.patientId, user._id)) {
+      throw new ConvexError("This is a Rehabify patient, so sessions are paid. Schedule a Rehabify session and they'll pay to confirm it.");
     }
 
     // Get physiotherapist profile to get clinic info
@@ -119,9 +177,12 @@ export const createAppointment = mutation({
 
     if (conflictingAppointments.length > 0) {
       const sorted = conflictingAppointments.sort((a, b) => a.startTime - b.startTime);
-      const details = sorted.slice(0, 3).map((a) => `${new Date(a.startTime).toISOString()} - ${new Date(a.endTime).toISOString()}`).join(", ");
-      throw new Error(`Time slot conflicts with existing appointment: ${details}`);
+      const details = sorted.slice(0, 3).map((a) => `${lagosShortDate(a.startTime)}, ${lagosTimeRange(a.startTime, a.endTime)}`).join("; ");
+      throw new ConvexError(`That time overlaps another appointment (${details}). Pick another time.`);
     }
+
+    // "google_meet" is the wizard's platform choice, not a link
+    const manualMeetingLink = args.manualMeetingLink === "google_meet" ? undefined : args.manualMeetingLink;
 
     // Create the appointment
     const appointmentId = await ctx.db.insert("appointments", {
@@ -132,6 +193,8 @@ export const createAppointment = mutation({
       endTime: args.endTime,
       serviceType: args.serviceType,
       status: "scheduled",
+      // The physio set this time, so the patient is the one who confirms it
+      requestedBy: "provider",
       notesForPatient: args.notesForPatient,
       notesForTherapist: args.notesForTherapist,
       // Enhanced appointment features
@@ -139,7 +202,7 @@ export const createAppointment = mutation({
       appointmentType: args.appointmentType || "in-person",
       isPinned: args.isPinned || false,
       colorCode: args.colorCode || "#3B82F6", // Default blue
-      manualMeetingLink: args.manualMeetingLink,
+      manualMeetingLink,
       location: args.location,
     });
 
@@ -157,8 +220,8 @@ export const createAppointment = mutation({
         clinicAddress = (clinic as any).address || '';
       }
     }
-    // Precompute a friendly time range string for emails
-    const appointmentTimeStr = `${new Date(args.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${new Date(args.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+    // Precompute a friendly time range string for emails (Convex runs in UTC; people read Lagos time)
+    const appointmentTimeStr = lagosTimeRange(args.startTime, args.endTime);
 
     // Notification for patient
     await ctx.db.insert("notifications", {
@@ -168,7 +231,7 @@ export const createAppointment = mutation({
       status: "pending",
       payload: {
         title: "Appointment Scheduled",
-        body: `Your appointment has been scheduled for ${new Date(args.startTime).toLocaleDateString()}`,
+        body: `${physiotherapistName} booked a visit for ${lagosDateTime(args.startTime)}. Please confirm it on your appointments page.`,
         data: {
           entityId: appointmentId,
           entityType: "appointment",
@@ -225,21 +288,19 @@ export const createAppointment = mutation({
           }
         }
 
-        if (preferredPlatform === 'stream') {
-          // Create Stream video call
-          await ctx.scheduler.runAfter(0, api.videoCalls.createVideoCall as any, {
+        // A link typed by the physio is used as is; otherwise the wizard's choice, then their preference
+        const wantsGoogleMeet = args.manualMeetingLink === 'google_meet' || (!manualMeetingLink && preferredPlatform === 'google_meet');
+
+        if (!wantsGoogleMeet && !manualMeetingLink) {
+          // Stream room via an internal action: scheduled functions have no signed-in user,
+          // so the public createVideoCall would refuse. The link is saved on the appointment.
+          await ctx.scheduler.runAfter(0, internal.videoCalls.createAppointmentVideoCall, {
             appointmentId: appointmentId,
+            hostId: user._id,
             participants: [args.patientId, user._id],
-            callType: "appointment" as const,
             title: `Appointment: ${patientName}`,
-            settings: {
-              recordingEnabled: false,
-              chatEnabled: true,
-              maxParticipants: 2,
-              waitingRoomEnabled: false,
-            }
           });
-        } else if (preferredPlatform === 'google_meet' || args.manualMeetingLink === 'google_meet') {
+        } else if (wantsGoogleMeet) {
           // Schedule Google Meet link generation via Google Calendar API
           console.log("[DEBUG] Scheduling Google Meet link creation for appointment:", appointmentId);
           console.log("[DEBUG] User ID:", user._id);
@@ -458,13 +519,44 @@ export const updateAppointmentStatus = mutation({
       throw new Error("Access denied. Appointment not assigned to you.");
     }
 
+    // Only a live visit can change; a finished or cancelled one stays as it is
+    // (a no-show may still be corrected to completed).
+    const correctingNoShow = appointment.status === "no_show" && args.status === "completed";
+    if (!isOpenAppointment(appointment.status) && !correctingNoShow) {
+      throw new ConvexError("This visit is already finished or cancelled, so it can't be changed.");
+    }
+    if (args.status === "confirmed" && appointment.status !== "scheduled") {
+      throw new ConvexError("This visit is already confirmed.");
+    }
+    if (args.status === "confirmed" && appointment.endTime < Date.now()) {
+      throw new ConvexError("This visit's time has passed. Propose another time instead.");
+    }
+    // A visit the patient paid for on Rehabify needs a refund or rebooking, which support handles
+    if (args.status === "cancelled_by_therapist") {
+      const paidBooking = await ctx.db
+        .query("marketplaceBookings")
+        .withIndex("by_appointment", (q) => q.eq("appointmentId", args.appointmentId))
+        .first();
+      if (paidBooking?.paymentStatus === "completed") {
+        throw new ConvexError("This visit was paid through Rehabify. Contact Rehabify support to cancel it so the patient is refunded or rebooked.");
+      }
+    }
+
     // Update the appointment
     const updateData: any = { status: args.status };
     if (args.cancellationReason) {
-      updateData.cancellationReason = args.cancellationReason;
+      updateData.cancellationReason = args.cancellationReason.trim().slice(0, 500);
+    }
+    // Confirming or cancelling settles any time the physio had offered instead
+    if (args.status === "confirmed" || args.status === "cancelled_by_therapist") {
+      Object.assign(updateData, CLEAR_PROPOSAL);
     }
 
     await ctx.db.patch(args.appointmentId, updateData);
+
+    if (args.status === "cancelled_by_therapist") {
+      await syncGoogleCalendarEvent(ctx, args.appointmentId, "delete");
+    }
 
     // A completed session moves the patient's booked partner referral into treatment
     // (fires referral.in_treatment to the partner).
@@ -479,20 +571,23 @@ export const updateAppointmentStatus = mutation({
     let notificationTitle = "";
     let notificationMessage = "";
 
+    const physioName = personName(user, "Your physiotherapist");
+    const when = lagosDateTime(appointment.startTime);
+
     switch (args.status) {
       case "confirmed":
         notificationTitle = "Appointment Confirmed";
-        notificationMessage = "Your appointment has been confirmed";
+        notificationMessage = `${physioName} confirmed your visit on ${when}.`;
         break;
       case "completed":
         notificationTitle = "Appointment Completed";
         notificationMessage = "Your appointment has been completed";
         break;
       case "cancelled_by_therapist":
-        notificationTitle = "Appointment Cancelled";
+        notificationTitle = appointment.status === "scheduled" ? "Appointment Request Declined" : "Appointment Cancelled";
         notificationMessage = args.cancellationReason
-          ? `Your appointment has been cancelled: ${args.cancellationReason}`
-          : "Your appointment has been cancelled";
+          ? `${physioName} can't see you on ${when}: ${args.cancellationReason}`
+          : `${physioName} can't see you on ${when}.`;
         break;
       case "no_show":
         notificationTitle = "Missed Appointment";
@@ -500,9 +595,36 @@ export const updateAppointmentStatus = mutation({
         break;
     }
 
+    const notificationTypes = {
+      confirmed: "appointment_confirmed",
+      completed: "appointment_completed",
+      cancelled_by_therapist: "appointment_cancelled",
+      no_show: "appointment_no_show",
+    } as const;
+
+    // Confirmed telehealth visit without a link yet (e.g. no Google Calendar): make a Stream room
+    if (args.status === "confirmed") {
+      await ensureVideoRoom(ctx, appointment, `Appointment: ${patientName}`);
+      await emailAboutAppointment(ctx, {
+        to: patient?.email,
+        audience: "patient",
+        subject: `Your visit with ${physioName} is confirmed`,
+        greetingName: patient?.firstName,
+        heading: "Your visit is confirmed",
+        paragraphs: [
+          `${physioName} confirmed your ${appointment.serviceType} on ${lagosDate(appointment.startTime)}, ${lagosTimeRange(appointment.startTime, appointment.endTime)} (Lagos time), ${visitPlace(appointment)}.`,
+          appointment.appointmentType === "telehealth" || appointment.isOnline
+            ? "Your video link is on your appointments page."
+            : "If you need to change or cancel, you can do it from your appointments page.",
+        ],
+        buttonLabel: "View my appointments",
+        buttonPath: PATIENT_APPOINTMENTS,
+      });
+    }
+
     await ctx.db.insert("notifications", {
       userId: appointment.patientId,
-      type: "appointment_cancelled", // Generic type for now
+      type: notificationTypes[args.status],
       priority: "medium",
       status: "pending",
       payload: {
@@ -526,7 +648,7 @@ export const updateAppointmentStatus = mutation({
           : null;
         const physiotherapistName = physiotherapist ? `${physiotherapist.firstName} ${physiotherapist.lastName}` : "your physiotherapist";
         const patientNameForEmail = `${patient.firstName} ${patient.lastName}`;
-        const appointmentTimeStr = `${new Date(appointment.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${new Date(appointment.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+        const appointmentTimeStr = lagosTimeRange(appointment.startTime, appointment.endTime);
 
         await ctx.scheduler.runAfter(0, internal.actions.emails.sendAppointmentCanceledPatientEmail.sendAppointmentCanceledPatientEmail, {
           to: patient.email as string,
@@ -536,6 +658,10 @@ export const updateAppointmentStatus = mutation({
           appointmentTime: appointmentTimeStr,
           cancellationReason: args.cancellationReason,
           rescheduleLink: "/dashboard/patient/appointments",
+          // A pending request that the physio turned down reads as declined, not cancelled
+          subjectOverride: appointment.status === "scheduled" && awaitingConfirmationFrom(appointment) === "provider"
+            ? `${physiotherapistName} can't take your appointment request`
+            : undefined,
         });
       } catch (err) {
         console.error("Failed to schedule patient cancellation email (provider-initiated):", err);
@@ -545,18 +671,27 @@ export const updateAppointmentStatus = mutation({
     // AUTOMATED PAYOUT GENERATION
     // If appointment is marked as completed, check for paid invoice and generate payout
     if (args.status === "completed") {
-      // Find invoice linked to this appointment
-      // Note: Invoices usually link to appointments via relatedAppointmentIds array
-      const invoice = await ctx.db
-        .query("invoices")
-        .withIndex("by_patient_id", (q) => q.eq("patientId", appointment.patientId))
-        .filter((q) => q.eq(q.field("status"), "paid"))
-        .collect()
-        .then((invoices) =>
-          invoices.find((inv) => inv.relatedAppointmentIds?.includes(args.appointmentId))
-        );
+      // Rehabify-priced bookings carry their own invoice; others link the appointment from
+      // the invoice's relatedAppointmentIds.
+      const booking = await ctx.db
+        .query("marketplaceBookings")
+        .withIndex("by_appointment", (q) => q.eq("appointmentId", args.appointmentId))
+        .first();
+      const bookingInvoice = booking?.invoiceId ? await ctx.db.get(booking.invoiceId) : null;
+      const invoice =
+        bookingInvoice?.status === "paid"
+          ? bookingInvoice
+          : await ctx.db
+              .query("invoices")
+              .withIndex("by_patient_id", (q) => q.eq("patientId", appointment.patientId))
+              .filter((q) => q.eq(q.field("status"), "paid"))
+              .collect()
+              .then((invoices) =>
+                invoices.find((inv) => inv.relatedAppointmentIds?.includes(args.appointmentId))
+              );
 
-      if (invoice) {
+      // Paystack already sent the provider's share straight to their bank: nothing to pay out
+      if (invoice && invoice.payoutRoute !== "split_to_provider") {
         // Check if payout already exists for this invoice to prevent duplicates
         const existingPayout = await ctx.db
           .query("payouts")
@@ -564,9 +699,12 @@ export const updateAppointmentStatus = mutation({
           .first();
 
         if (!existingPayout) {
-          // The physio's share of the invoice. Rehabify's fee stays with the platform, so it
-          // is not a payout to anyone.
-          const physiotherapistEarning = invoice.feeBreakdown?.physiotherapistEarnings || (invoice.physiotherapistShare || 0);
+          // The physio's share: the booking's fixed payout (plus travel share) under standard
+          // pricing, else the invoice's share. Rehabify's share stays with the platform.
+          const physiotherapistEarning =
+            booking?.pricingModel && booking.invoiceId === invoice._id
+              ? booking.physiotherapistEarnings
+              : invoice.feeBreakdown?.physiotherapistEarnings || (invoice.physiotherapistShare || 0);
 
           if (physiotherapistEarning > 0 && appointment.physiotherapistId) {
             const payment = await ctx.db
@@ -643,6 +781,17 @@ export const rescheduleAppointment = mutation({
       throw new Error("Access denied. Appointment not assigned to you.");
     }
 
+    // Only live visits move; a completed or cancelled one must not be reopened by a drag
+    if (!isOpenAppointment(appointment.status) || appointment.isRecordOnly) {
+      throw new ConvexError("Only upcoming visits can be moved. This one is already finished or cancelled.");
+    }
+    if (args.newEndTime <= args.newStartTime) {
+      throw new ConvexError("The visit must end after it starts.");
+    }
+    if (args.newStartTime < Date.now() - 60_000) {
+      throw new ConvexError("Pick a time in the future.");
+    }
+
     // Check for time conflicts (excluding the current appointment)
     const conflictingAppointments = await ctx.db
       .query("appointments")
@@ -668,20 +817,23 @@ export const rescheduleAppointment = mutation({
       .collect();
 
     if (conflictingAppointments.length > 0) {
-      throw new Error("New time slot conflicts with existing appointment");
+      throw new ConvexError("That time overlaps another appointment. Pick another time.");
     }
 
     // Keep old times for email content before updating
     const oldStart = appointment.startTime;
     const oldEnd = appointment.endTime;
 
-    // Update the appointment
+    // Update the appointment. The physio set the new time, so the patient confirms it.
     await ctx.db.patch(args.appointmentId, {
       startTime: args.newStartTime,
       endTime: args.newEndTime,
       status: "scheduled", // Reset to scheduled after rescheduling
+      requestedBy: "provider",
       rescheduledFromAppointmentId: args.appointmentId,
+      ...CLEAR_PROPOSAL,
     });
+    await syncGoogleCalendarEvent(ctx, args.appointmentId, { startTime: args.newStartTime, endTime: args.newEndTime });
 
     // Create notification for patient
     const patient = await ctx.db.get(appointment.patientId);
@@ -693,7 +845,7 @@ export const rescheduleAppointment = mutation({
       status: "pending",
       payload: {
         title: "Appointment Rescheduled",
-        body: `Your appointment has been rescheduled to ${new Date(args.newStartTime).toLocaleDateString()}`,
+        body: `${personName(user, "Your physiotherapist")} moved your visit to ${lagosDateTime(args.newStartTime)}. Please confirm the new time.`,
         data: {
           entityId: args.appointmentId,
           entityType: "appointment",
@@ -710,8 +862,8 @@ export const rescheduleAppointment = mutation({
     const physioEmail = physiotherapist?.email as string | undefined;
     const physiotherapistName = physiotherapist ? `${physiotherapist.firstName} ${physiotherapist.lastName}` : "Physiotherapist";
     const patientNameForEmail = patient ? `${patient.firstName} ${patient.lastName}` : "Patient";
-    const oldTimeStr = `${new Date(oldStart).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${new Date(oldEnd).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
-    const newTimeStr = `${new Date(args.newStartTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${new Date(args.newEndTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+    const oldTimeStr = lagosTimeRange(oldStart, oldEnd);
+    const newTimeStr = lagosTimeRange(args.newStartTime, args.newEndTime);
     if (physioEmail) {
       await ctx.scheduler.runAfter(0, internal.actions.emails.sendAppointmentRescheduledProviderEmail.sendAppointmentRescheduledProviderEmail, {
         to: physioEmail,
@@ -750,6 +902,200 @@ export const rescheduleAppointment = mutation({
 });
 
 /**
+ * Physio offers the patient another time for a visit (a request they can't take, or a confirmed
+ * visit they need to move). The visit keeps its time and status until the patient answers.
+ */
+export const proposeNewTime = mutation({
+  args: {
+    appointmentId: v.id("appointments"),
+    startTime: v.number(),
+    endTime: v.number(),
+    note: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const user = await getAuthenticatedUser(ctx, ["physiotherapist"]);
+
+    const appointment = await ctx.db.get(args.appointmentId);
+    if (!appointment) {
+      throw new ConvexError("Appointment not found.");
+    }
+    if (appointment.physiotherapistId !== user._id) {
+      throw new ConvexError("Only this visit's physiotherapist can propose another time.");
+    }
+    if (!isOpenAppointment(appointment.status) || appointment.isRecordOnly) {
+      throw new ConvexError("Only upcoming visits can be moved. This one is already finished or cancelled.");
+    }
+    if (args.endTime <= args.startTime || args.endTime - args.startTime > 4 * 60 * 60_000) {
+      throw new ConvexError("Please choose a valid session length.");
+    }
+    if (args.startTime < Date.now()) {
+      throw new ConvexError("Pick a time in the future.");
+    }
+    if (args.startTime === appointment.startTime && args.endTime === appointment.endTime) {
+      throw new ConvexError("That's the visit's current time. Pick a different one.");
+    }
+    if (await physioHasClash(ctx, user._id, args.startTime, args.endTime, appointment._id)) {
+      throw new ConvexError("That time overlaps another appointment. Pick another time.");
+    }
+
+    const note = args.note?.trim().slice(0, 500) || undefined;
+    await ctx.db.patch(args.appointmentId, {
+      proposedStartTime: args.startTime,
+      proposedEndTime: args.endTime,
+      proposedBy: user._id,
+      proposedAt: Date.now(),
+      proposalNote: note,
+    });
+
+    const patient = await ctx.db.get(appointment.patientId);
+    const physioName = personName(user, "Your physiotherapist");
+    await notifyAboutAppointment(ctx, {
+      userId: appointment.patientId,
+      type: "appointment_time_proposed",
+      title: "New time proposed",
+      body: `${physioName} proposed moving your visit from ${lagosDateTime(appointment.startTime)} to ${lagosDateTime(args.startTime)}.${note ? ` "${note}"` : ""}`,
+      appointmentId: args.appointmentId,
+      actionUrl: PATIENT_APPOINTMENTS,
+    });
+    await emailAboutAppointment(ctx, {
+      to: patient?.email,
+      audience: "patient",
+      subject: `${physioName} proposed a new time for your visit`,
+      greetingName: patient?.firstName,
+      heading: "Your physio proposed a new time",
+      paragraphs: [
+        `${physioName} proposed moving your ${appointment.serviceType} from ${lagosDate(appointment.startTime)}, ${lagosTimeRange(appointment.startTime, appointment.endTime)} to ${lagosDate(args.startTime)}, ${lagosTimeRange(args.startTime, args.endTime)} (Lagos time).`,
+        ...(note ? [`Their note: "${note}"`] : []),
+        "Open your appointments to accept the new time or keep the original one.",
+      ],
+      buttonLabel: "Answer now",
+      buttonPath: PATIENT_APPOINTMENTS,
+    });
+
+    return { success: true, message: "New time sent. We'll let you know when the patient answers." };
+  },
+});
+
+/**
+ * Patient answers the physio's proposed time. Accept: the visit moves there and is confirmed
+ * (if the time is still free). Decline: the visit keeps its original time; a pending request
+ * goes back to the physio to confirm or decline.
+ */
+export const respondToProposedTime = mutation({
+  args: {
+    appointmentId: v.id("appointments"),
+    accept: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    const patient = await getAuthenticatedPatient(ctx);
+
+    const appointment = await ctx.db.get(args.appointmentId);
+    if (!appointment || appointment.patientId !== patient._id) {
+      throw new ConvexError("This is not your appointment.");
+    }
+    const start = appointment.proposedStartTime;
+    const end = appointment.proposedEndTime;
+    if (start === undefined || end === undefined || !isOpenAppointment(appointment.status)) {
+      throw new ConvexError("There's no new time waiting for your answer.");
+    }
+
+    const physiotherapist = await ctx.db.get(appointment.physiotherapistId);
+    const patientName = personName(patient, "Your patient");
+    const physioName = personName(physiotherapist, "your physiotherapist");
+
+    if (args.accept) {
+      if (start < Date.now()) {
+        throw new ConvexError("That time has passed. Keep your original time or ask your physio for another.");
+      }
+      if (await physioHasClash(ctx, appointment.physiotherapistId, start, end, appointment._id)) {
+        throw new ConvexError("That time has just been taken. Keep your original time or ask your physio for another.");
+      }
+
+      await ctx.db.patch(args.appointmentId, {
+        startTime: start,
+        endTime: end,
+        status: "confirmed",
+        requestedBy: "provider",
+        rescheduledFromAppointmentId: args.appointmentId,
+        ...CLEAR_PROPOSAL,
+      });
+      await syncGoogleCalendarEvent(ctx, args.appointmentId, { startTime: start, endTime: end });
+      await ensureVideoRoom(ctx, appointment, `Appointment: ${patientName}`);
+
+      await notifyAboutAppointment(ctx, {
+        userId: appointment.physiotherapistId,
+        type: "appointment_confirmed",
+        title: "New time accepted",
+        body: `${patientName} accepted ${lagosDateTime(start)}. The visit is confirmed.`,
+        appointmentId: args.appointmentId,
+        actionUrl: PHYSIO_APPOINTMENTS,
+      });
+      await notifyAboutAppointment(ctx, {
+        userId: patient._id,
+        type: "appointment_confirmed",
+        title: "Appointment Confirmed",
+        body: `Your visit with ${physioName} is now on ${lagosDateTime(start)}.`,
+        appointmentId: args.appointmentId,
+        actionUrl: PATIENT_APPOINTMENTS,
+      });
+      if (physiotherapist?.email) {
+        try {
+          await ctx.scheduler.runAfter(0, internal.actions.emails.sendAppointmentRescheduledProviderEmail.sendAppointmentRescheduledProviderEmail, {
+            to: physiotherapist.email,
+            patientName,
+            physiotherapistName: personName(physiotherapist, "Physiotherapist"),
+            oldDate: appointment.startTime,
+            oldTime: lagosTimeRange(appointment.startTime, appointment.endTime),
+            newDate: start,
+            newTime: lagosTimeRange(start, end),
+            viewLink: PHYSIO_APPOINTMENTS,
+            subjectOverride: `${patientName} accepted your new time`,
+          });
+        } catch (err) {
+          console.error("Failed to schedule proposal-accepted email:", err);
+        }
+      }
+
+      return { success: true, message: "Your visit is moved and confirmed." };
+    }
+
+    await ctx.db.patch(args.appointmentId, { ...CLEAR_PROPOSAL });
+    const stillPending = appointment.status === "scheduled";
+    const keptWhen = lagosDateTime(appointment.startTime);
+    await notifyAboutAppointment(ctx, {
+      userId: appointment.physiotherapistId,
+      type: "appointment_time_declined",
+      title: "Patient kept the original time",
+      body: `${patientName} declined ${lagosDateTime(start)} and kept ${keptWhen}.${stillPending ? " Their request still needs your answer." : ""}`,
+      appointmentId: args.appointmentId,
+      actionUrl: PHYSIO_APPOINTMENTS,
+    });
+    await emailAboutAppointment(ctx, {
+      to: physiotherapist?.email,
+      audience: "provider",
+      subject: `${patientName} kept the original time`,
+      greetingName: physiotherapist?.firstName,
+      heading: "Your proposed time was declined",
+      paragraphs: [
+        `${patientName} declined ${lagosDate(start)}, ${lagosTimeRange(start, end)} and kept ${lagosDate(appointment.startTime)}, ${lagosTimeRange(appointment.startTime, appointment.endTime)} (Lagos time).`,
+        stillPending
+          ? "Their request is still waiting: confirm it, decline it, or propose another time."
+          : "The visit stays confirmed at the original time.",
+      ],
+      buttonLabel: "Open appointments",
+      buttonPath: PHYSIO_APPOINTMENTS,
+    });
+
+    return {
+      success: true,
+      message: stillPending
+        ? "Kept your original time. Your physio will confirm it or suggest another."
+        : "Kept your original time.",
+    };
+  },
+});
+
+/**
  * Update appointment status
  */
 export const getTodaysSchedule = query({
@@ -757,9 +1103,8 @@ export const getTodaysSchedule = query({
   handler: async (ctx) => {
     const user = await getAuthenticatedUser(ctx, ["physiotherapist", "clinic_owner"]);
 
-    // Get today's date boundaries
-    const today = new Date();
-    const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+    // Today's boundaries in Lagos (Convex runs in UTC)
+    const startOfDay = startOfZonedDay(Date.now());
     const endOfDay = startOfDay + (24 * 60 * 60 * 1000) - 1;
 
     // Get appointments for today
@@ -818,11 +1163,11 @@ export const getAppointmentDetails = query({
     // Get patient details
     const patient = await ctx.db.get(appointment.patientId);
 
-    // Get session log if exists
+    // Get session log if exists (a visit can have more than one note; .unique() would throw)
     const sessionLog = await ctx.db
       .query("sessionLogs")
       .withIndex("by_appointment_id", (q) => q.eq("appointmentId", args.appointmentId))
-      .unique();
+      .first();
 
     return {
       appointment: {
@@ -1051,62 +1396,31 @@ export const getAvailableTimeSlots = query({
         q.eq("patientId", patient._id).eq("physiotherapistId", args.physiotherapistId)
       )
       .filter((q) => q.eq(q.field("status"), "active"))
-      .unique();
+      // Old data can hold two links to the same physio; .unique() would throw
+      .first();
 
     if (!relationship) {
       throw new Error("Access denied. You are not assigned to this physiotherapist.");
     }
 
-    // Parse the date
-    const selectedDate = new Date(args.date);
-    const startOfDay = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate()).getTime();
+    // The physio's real openings that day (working hours, days off, bookings and holds),
+    // with the Lagos day boundaries: Convex runs in UTC.
+    const startOfDay = zonedDateTimeToUtc(args.date, "00:00");
     const endOfDay = startOfDay + (24 * 60 * 60 * 1000) - 1;
+    const openings: Array<{ start: number; end: number }> = await ctx.runQuery(
+      internal.calendar.availability.getAvailableSlotsInternal,
+      { physiotherapistId: args.physiotherapistId, startDate: startOfDay, endDate: endOfDay }
+    );
 
-    // Get existing appointments for that day
-    const existingAppointments = await ctx.db
-      .query("appointments")
-      .withIndex("by_physiotherapist_id_and_time", (q) =>
-        q.eq("physiotherapistId", args.physiotherapistId)
-      )
-      .filter((q) =>
-        q.and(
-          q.gte(q.field("startTime"), startOfDay),
-          q.lte(q.field("startTime"), endOfDay),
-          q.neq(q.field("status"), "cancelled_by_patient"),
-          q.neq(q.field("status"), "cancelled_by_therapist")
-        )
-      )
-      .collect();
-
-    // Generate available time slots (9 AM to 5 PM in 30-minute intervals)
-    const slots = [];
-    const appointmentDuration = 30 * 60 * 1000; // 30 minutes in milliseconds
-
-    for (let hour = 9; hour < 17; hour++) {
-      for (let minute = 0; minute < 60; minute += 30) {
-        const slotStart = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate(), hour, minute).getTime();
-        const slotEnd = slotStart + appointmentDuration;
-
-        // Check if this slot conflicts with existing appointments
-        const hasConflict = existingAppointments.some(appointment =>
-          (slotStart >= appointment.startTime && slotStart < appointment.endTime) ||
-          (slotEnd > appointment.startTime && slotEnd <= appointment.endTime) ||
-          (slotStart <= appointment.startTime && slotEnd >= appointment.endTime)
-        );
-
-        if (!hasConflict) {
-          slots.push({
-            startTime: slotStart,
-            endTime: slotEnd,
-            startTimeFormatted: new Date(slotStart).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            endTimeFormatted: new Date(slotEnd).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            available: true,
-          });
-        }
-      }
-    }
-
-    return slots;
+    return openings
+      .filter((slot) => slot.start >= startOfDay && slot.start <= endOfDay && slot.start > Date.now())
+      .map((slot) => ({
+        startTime: slot.start,
+        endTime: slot.end,
+        startTimeFormatted: lagosTime(slot.start),
+        endTimeFormatted: lagosTime(slot.end),
+        available: true,
+      }));
   },
 });
 
@@ -1133,13 +1447,13 @@ export const requestAppointment = mutation({
     const patient = await getAuthenticatedPatient(ctx);
 
     if (args.startTime < Date.now() - 60_000) {
-      throw new Error("Please choose a time in the future.");
+      throw new ConvexError("Please choose a time in the future.");
     }
     if (args.endTime <= args.startTime || args.endTime - args.startTime > 4 * 60 * 60_000) {
-      throw new Error("Please choose a valid session length.");
+      throw new ConvexError("Please choose a valid session length.");
     }
     if (args.appointmentType === "in-person" && !args.location?.trim()) {
-      throw new Error("Please enter the address for an in-person visit.");
+      throw new ConvexError("Please enter the address for an in-person visit.");
     }
 
     // Verify patient has relationship with this physiotherapist
@@ -1153,6 +1467,11 @@ export const requestAppointment = mutation({
 
     if (!relationship) {
       throw new Error("Access denied. You are not assigned to this physiotherapist.");
+    }
+
+    // Sessions with a Rehabify physio are booked and paid on the booking page
+    if (await isRehabifyCare(ctx, patient._id, args.physiotherapistId)) {
+      throw new ConvexError("Please book this session on the booking page. It's confirmed once you pay.");
     }
 
     // Get physiotherapist info for clinic details
@@ -1187,7 +1506,11 @@ export const requestAppointment = mutation({
       .collect();
 
     if (conflictingAppointments.length > 0) {
-      throw new Error("That time has just been taken. Please choose another time.");
+      throw new ConvexError("That time has just been taken. Please choose another time.");
+    }
+    // Busy in the physio's Google Calendar (cached free/busy)
+    if (await isGoogleBusy(ctx, args.physiotherapistId, { start: args.startTime, end: args.endTime })) {
+      throw new ConvexError("That time isn't available any more. Please choose another time.");
     }
 
     // Create the appointment
@@ -1199,6 +1522,8 @@ export const requestAppointment = mutation({
       endTime: args.endTime,
       serviceType: args.serviceType,
       status: "scheduled",
+      // The patient asked for this time, so the physio is the one who confirms it
+      requestedBy: "patient",
       notesForPatient: undefined,
       notesForTherapist: args.notes,
       appointmentType: args.appointmentType || "telehealth", // Default to telehealth for patient booking as per design
@@ -1241,8 +1566,7 @@ export const requestAppointment = mutation({
       }
     }
     // Convex runs in UTC; show times as patients and physios see them
-    const lagosTime = (ms: number) => new Date(ms).toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit', timeZone: 'Africa/Lagos' });
-    const appointmentTimeStr = `${lagosTime(args.startTime)} - ${lagosTime(args.endTime)}`;
+    const appointmentTimeStr = lagosTimeRange(args.startTime, args.endTime);
 
     // Create notification for physiotherapist
     await ctx.db.insert("notifications", {
@@ -1252,7 +1576,7 @@ export const requestAppointment = mutation({
       status: "pending",
       payload: {
         title: "New Appointment Request",
-        body: `${patientName} has requested an appointment for ${new Date(args.startTime).toLocaleDateString()}`,
+        body: `${patientName} asked for a visit on ${lagosDateTime(args.startTime)}. Accept it, decline it, or propose another time.`,
         data: {
           entityId: appointmentId,
           entityType: "appointment",
@@ -1270,7 +1594,7 @@ export const requestAppointment = mutation({
       status: "pending",
       payload: {
         title: "Appointment Requested",
-        body: `Your appointment with ${physiotherapistName} has been requested for ${new Date(args.startTime).toLocaleDateString()}`,
+        body: `You asked ${physiotherapistName} for a visit on ${lagosDateTime(args.startTime)}. We'll let you know when they confirm.`,
         data: {
           entityId: appointmentId,
           entityType: "appointment",
@@ -1297,20 +1621,20 @@ export const requestAppointment = mutation({
       });
     }
 
-    const patientEmail = patient.email as string | undefined;
-    if (patientEmail) {
-      await ctx.scheduler.runAfter(0, internal.actions.emails.sendAppointmentScheduledEmail.sendAppointmentScheduledEmail, {
-        to: patientEmail,
-        patientName,
-        physiotherapistName,
-        appointmentDate: args.startTime,
-        appointmentTime: appointmentTimeStr,
-        clinicName,
-        clinicAddress,
-        calendarLink: "/dashboard/patient/appointments",
-        rescheduleLink: "/dashboard/patient/appointments",
-      });
-    }
+    // The patient's copy says it's a request: the physio still has to confirm it
+    await emailAboutAppointment(ctx, {
+      to: patient.email as string | undefined,
+      audience: "patient",
+      subject: `Your appointment request to ${physiotherapistName}`,
+      greetingName: patient.firstName,
+      heading: "We've sent your request",
+      paragraphs: [
+        `You asked ${physiotherapistName} for a ${args.serviceType} on ${lagosDate(args.startTime)}, ${appointmentTimeStr} (Lagos time), ${args.appointmentType === "in-person" ? `at ${args.location?.trim()}` : "by video call"}.`,
+        "Your physio will confirm it, or propose another time. We'll email you either way.",
+      ],
+      buttonLabel: "View my appointments",
+      buttonPath: PATIENT_APPOINTMENTS,
+    });
 
     return {
       success: true,
@@ -1344,16 +1668,19 @@ export const cancelAppointmentAsPatient = mutation({
       throw new Error("Access denied. This is not your appointment.");
     }
 
-    // Check if appointment can be cancelled
-    if (appointment.status === "completed" || appointment.status === "cancelled_by_patient" || appointment.status === "cancelled_by_therapist") {
-      throw new Error("Cannot cancel this appointment. It may already be completed or cancelled.");
+    // Pending requests and confirmed visits can both be cancelled
+    if (!isOpenAppointment(appointment.status)) {
+      throw new ConvexError("This appointment is already completed or cancelled.");
     }
+    const wasRequest = appointment.status === "scheduled";
 
     // Update the appointment
     await ctx.db.patch(args.appointmentId, {
       status: "cancelled_by_patient",
-      cancellationReason: args.cancellationReason,
+      cancellationReason: args.cancellationReason?.trim().slice(0, 500) || undefined,
+      ...CLEAR_PROPOSAL,
     });
+    await syncGoogleCalendarEvent(ctx, args.appointmentId, "delete");
 
     // Get physiotherapist info for notification
     const physiotherapist = await ctx.db.get(appointment.physiotherapistId);
@@ -1367,10 +1694,10 @@ export const cancelAppointmentAsPatient = mutation({
       priority: "medium",
       status: "pending",
       payload: {
-        title: "Appointment Cancelled",
+        title: wasRequest ? "Appointment Request Withdrawn" : "Appointment Cancelled",
         body: args.cancellationReason
-          ? `${patientName} cancelled their appointment: ${args.cancellationReason}`
-          : `${patientName} cancelled their appointment`,
+          ? `${patientName} cancelled their ${wasRequest ? "request for" : "visit on"} ${lagosDateTime(appointment.startTime)}: ${args.cancellationReason}`
+          : `${patientName} cancelled their ${wasRequest ? "request for" : "visit on"} ${lagosDateTime(appointment.startTime)}`,
         data: {
           entityId: args.appointmentId,
           entityType: "appointment",
@@ -1388,7 +1715,7 @@ export const cancelAppointmentAsPatient = mutation({
       status: "pending",
       payload: {
         title: "Appointment Cancelled",
-        body: `Your appointment with ${physiotherapistName} has been cancelled`,
+        body: `Your appointment with ${physiotherapistName} on ${lagosDateTime(appointment.startTime)} has been cancelled`,
         data: {
           entityId: args.appointmentId,
           entityType: "appointment",
@@ -1400,7 +1727,7 @@ export const cancelAppointmentAsPatient = mutation({
 
     // Email: notify physiotherapist (provider-facing) about cancellation
     const physioEmail = physiotherapist?.email as string | undefined;
-    const appointmentTimeStr = `${new Date(appointment.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${new Date(appointment.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+    const appointmentTimeStr = lagosTimeRange(appointment.startTime, appointment.endTime);
     if (physioEmail) {
       await ctx.scheduler.runAfter(0, internal.actions.emails.sendAppointmentCanceledProviderEmail.sendAppointmentCanceledProviderEmail, {
         to: physioEmail,
@@ -1462,13 +1789,21 @@ export const confirmAppointmentAsPatient = mutation({
 
     // Check if appointment can be confirmed
     if (appointment.status !== "scheduled") {
-      throw new Error("Only scheduled appointments can be confirmed.");
+      throw new ConvexError("Only pending appointments can be confirmed.");
+    }
+    // The side that didn't set the time confirms it: a patient's own request waits for the physio
+    if (awaitingConfirmationFrom(appointment) !== "patient") {
+      throw new ConvexError("Your physio confirms this visit. We'll let you know when they do.");
+    }
+    if (appointment.endTime < Date.now()) {
+      throw new ConvexError("This visit's time has passed.");
     }
 
     // Update the appointment
     await ctx.db.patch(args.appointmentId, {
       status: "confirmed",
     });
+    await ensureVideoRoom(ctx, appointment, `Appointment: ${patient.firstName ?? ""} ${patient.lastName ?? ""}`.trim());
 
     // Get physiotherapist info for notification
     const physiotherapist = await ctx.db.get(appointment.physiotherapistId);
@@ -1483,7 +1818,7 @@ export const confirmAppointmentAsPatient = mutation({
       status: "pending",
       payload: {
         title: "Appointment Confirmed",
-        body: `${patientName} confirmed their appointment for ${new Date(appointment.startTime).toLocaleDateString()}`,
+        body: `${patientName} confirmed their appointment for ${lagosDateTime(appointment.startTime)}`,
         data: {
           entityId: args.appointmentId,
           entityType: "appointment",
@@ -1504,7 +1839,7 @@ export const confirmAppointmentAsPatient = mutation({
 
     // Email: notify physiotherapist (provider-facing) about confirmation
     const physioEmail = physiotherapist?.email as string | undefined;
-    const appointmentTimeStr = `${new Date(appointment.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${new Date(appointment.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+    const appointmentTimeStr = lagosTimeRange(appointment.startTime, appointment.endTime);
     if (physioEmail) {
       try {
         await ctx.scheduler.runAfter(0, internal.actions.emails.sendAppointmentConfirmedProviderEmail.sendAppointmentConfirmedProviderEmail, {
@@ -1554,8 +1889,14 @@ export const requestAppointmentReschedule = mutation({
     }
 
     // Check if appointment can be rescheduled
-    if (appointment.status === "completed" || appointment.status === "cancelled_by_patient" || appointment.status === "cancelled_by_therapist") {
-      throw new Error("Cannot reschedule this appointment. It may already be completed or cancelled.");
+    if (!isOpenAppointment(appointment.status)) {
+      throw new ConvexError("This appointment is already completed or cancelled.");
+    }
+    if (args.newEndTime <= args.newStartTime || args.newEndTime - args.newStartTime > 4 * 60 * 60_000) {
+      throw new ConvexError("Please choose a valid session length.");
+    }
+    if (args.newStartTime < Date.now() - 60_000) {
+      throw new ConvexError("Please choose a time in the future.");
     }
 
     // Check for time conflicts (excluding the current appointment)
@@ -1583,16 +1924,22 @@ export const requestAppointmentReschedule = mutation({
       .collect();
 
     if (conflictingAppointments.length > 0) {
-      throw new Error("The requested time slot conflicts with another appointment. Please choose a different time.");
+      throw new ConvexError("The requested time slot conflicts with another appointment. Please choose a different time.");
+    }
+    if (await isGoogleBusy(ctx, appointment.physiotherapistId, { start: args.newStartTime, end: args.newEndTime })) {
+      throw new ConvexError("That time isn't available any more. Please choose a different time.");
     }
 
-    // Update the appointment
+    // Update the appointment. The patient picked the new time, so the physio confirms it.
     await ctx.db.patch(args.appointmentId, {
       startTime: args.newStartTime,
       endTime: args.newEndTime,
       status: "scheduled", // Reset to scheduled after rescheduling
+      requestedBy: "patient",
       rescheduledFromAppointmentId: args.appointmentId,
+      ...CLEAR_PROPOSAL,
     });
+    await syncGoogleCalendarEvent(ctx, args.appointmentId, { startTime: args.newStartTime, endTime: args.newEndTime });
 
     // Get physiotherapist info for notification
     const physiotherapist = await ctx.db.get(appointment.physiotherapistId);
@@ -1608,8 +1955,8 @@ export const requestAppointmentReschedule = mutation({
       payload: {
         title: "Appointment Rescheduled",
         body: args.reason
-          ? `${patientName} rescheduled their appointment to ${new Date(args.newStartTime).toLocaleDateString()}: ${args.reason}`
-          : `${patientName} rescheduled their appointment to ${new Date(args.newStartTime).toLocaleDateString()}`,
+          ? `${patientName} asked to move their visit to ${lagosDateTime(args.newStartTime)}: ${args.reason}. Please confirm the new time.`
+          : `${patientName} asked to move their visit to ${lagosDateTime(args.newStartTime)}. Please confirm the new time.`,
         data: {
           entityId: args.appointmentId,
           entityType: "appointment",
@@ -1627,7 +1974,7 @@ export const requestAppointmentReschedule = mutation({
       status: "pending",
       payload: {
         title: "Appointment Rescheduled",
-        body: `Your appointment with ${physiotherapistName} has been rescheduled to ${new Date(args.newStartTime).toLocaleDateString()}`,
+        body: `You asked ${physiotherapistName} to move your visit to ${lagosDateTime(args.newStartTime)}. We'll let you know when they confirm.`,
         data: {
           entityId: args.appointmentId,
           entityType: "appointment",
@@ -1640,13 +1987,8 @@ export const requestAppointmentReschedule = mutation({
     // 📧 EMAIL: Notify physiotherapist about patient-initiated reschedule
     const physioEmail = physiotherapist?.email as string | undefined;
     if (physioEmail) {
-      const oldStartTime = new Date(appointment.startTime);
-      const oldEndTime = new Date(appointment.endTime);
-      const newStartTime = new Date(args.newStartTime);
-      const newEndTime = new Date(args.newEndTime);
-
-      const oldTimeStr = `${oldStartTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${oldEndTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
-      const newTimeStr = `${newStartTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${newEndTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+      const oldTimeStr = lagosTimeRange(appointment.startTime, appointment.endTime);
+      const newTimeStr = lagosTimeRange(args.newStartTime, args.newEndTime);
 
       try {
         await ctx.scheduler.runAfter(0, internal.actions.emails.sendAppointmentRescheduledProviderEmail.sendAppointmentRescheduledProviderEmail, {
@@ -1668,9 +2010,7 @@ export const requestAppointmentReschedule = mutation({
     // 📧 EMAIL: Notify patient about successful reschedule
     const patientEmail = patient?.email as string | undefined;
     if (patientEmail) {
-      const newStartTime = new Date(args.newStartTime);
-      const newEndTime = new Date(args.newEndTime);
-      const newTimeStr = `${newStartTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${newEndTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+      const newTimeStr = lagosTimeRange(args.newStartTime, args.newEndTime);
 
       try {
         await ctx.scheduler.runAfter(0, internal.actions.emails.sendAppointmentRescheduledPatientEmail.sendAppointmentRescheduledPatientEmail, {
@@ -1678,7 +2018,7 @@ export const requestAppointmentReschedule = mutation({
           patientName: patientName,
           physiotherapistName: physiotherapistName,
           oldDate: appointment.startTime,
-          oldTime: `${new Date(appointment.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${new Date(appointment.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
+          oldTime: lagosTimeRange(appointment.startTime, appointment.endTime),
           newDate: args.newStartTime,
           newTime: newTimeStr,
           viewLink: "/dashboard/patient/appointments",

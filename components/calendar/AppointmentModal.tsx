@@ -1,6 +1,7 @@
  'use client'
 
 import { useState, useEffect } from 'react'
+import { ConvexError } from 'convex/values'
 import { api } from '@/convex/_generated/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -16,10 +17,16 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Id } from '@/convex/_generated/dataModel'
-import { format } from 'date-fns'
 import { PatientProfileMiniCard } from '@/components/dashboard/physiotherapist/PatientProfileMiniCard'
 import { useQueryUntyped, useMutationUntyped } from '@/lib/convexUntyped'
 import { playSound } from '@/lib/sounds'
+import { lagosDate, lagosTimeRange, zonedDateKey, zonedDateTimeToUtc, zonedTimeKey } from '@/convex/helpers/lagosTime'
+import {
+  AppointmentPlace,
+  AppointmentStatusBadge,
+  PhysioAppointmentActions,
+  type AppointmentLike,
+} from '@/components/appointments/appointment-ui'
 
 
 
@@ -72,11 +79,12 @@ export function AppointmentModal({
   onAppointmentCreated,
   appointmentId,
 }: AppointmentModalProps) {
+  // Date and times are typed as Lagos wall-clock time, whatever zone the browser is in
   const [formData, setFormData] = useState({
     patientId: '',
-    date: format(selectedDate, 'yyyy-MM-dd'),
-    startTime: format(selectedDate, 'HH:mm'),
-    endTime: format(new Date(selectedDate.getTime() + 60 * 60 * 1000), 'HH:mm'),
+    date: zonedDateKey(selectedDate.getTime()),
+    startTime: zonedTimeKey(selectedDate.getTime()),
+    endTime: zonedTimeKey(selectedDate.getTime() + 60 * 60 * 1000),
     serviceType: '',
     notesForPatient: '',
     notesForTherapist: '',
@@ -109,30 +117,15 @@ export function AppointmentModal({
     if (!appointmentId) {
       setFormData(prev => ({
         ...prev,
-        date: format(selectedDate, 'yyyy-MM-dd'),
-        startTime: format(selectedDate, 'HH:mm'),
-        endTime: format(new Date(selectedDate.getTime() + 60 * 60 * 1000), 'HH:mm'),
+        date: zonedDateKey(selectedDate.getTime()),
+        startTime: zonedTimeKey(selectedDate.getTime()),
+        endTime: zonedTimeKey(selectedDate.getTime() + 60 * 60 * 1000),
         manualMeetingLink: '',
       }))
     }
   }, [selectedDate, appointmentId])
 
-  // Populate form with existing appointment data
-  useEffect(() => {
-    if (existingAppointment?.appointment) {
-      const apt = existingAppointment.appointment
-      setFormData({
-        patientId: apt.patientId,
-        date: format(new Date(apt.startTime), 'yyyy-MM-dd'),
-        startTime: format(new Date(apt.startTime), 'HH:mm'),
-        endTime: format(new Date(apt.endTime), 'HH:mm'),
-        serviceType: apt.serviceType,
-        notesForPatient: apt.notesForPatient || '',
-        notesForTherapist: apt.notesForTherapist || '',
-        manualMeetingLink: apt.manualMeetingLink || '',
-      })
-    }
-  }, [existingAppointment])
+  // An existing appointment opens as details with its actions (see below), not this form
 
   const handleInputChange = (field: string, value: string) => {
     setFormData(prev => ({
@@ -156,9 +149,9 @@ export function AppointmentModal({
     }
 
     // Validate that end time is after start time
-    const startDateTime = new Date(`${formData.date}T${formData.startTime}`)
-    const endDateTime = new Date(`${formData.date}T${formData.endTime}`)
-    
+    const startDateTime = zonedDateTimeToUtc(formData.date, formData.startTime)
+    const endDateTime = zonedDateTimeToUtc(formData.date, formData.endTime)
+
     if (endDateTime <= startDateTime) {
       toast.error('End time must be after start time')
       return false
@@ -175,33 +168,34 @@ export function AppointmentModal({
     setIsSubmitting(true)
 
     try {
-      if (appointmentId) {
-        // Update existing appointment logic would go here
-        toast.success('Appointment updated successfully')
-      } else {
-        // Create new appointment
-        const startDateTime = new Date(`${formData.date}T${formData.startTime}`)
-        const endDateTime = new Date(`${formData.date}T${formData.endTime}`)
-
-        await createAppointment({
-          patientId: formData.patientId as Id<'users'>,
-          startTime: startDateTime.getTime(),
-          endTime: endDateTime.getTime(),
+      // Create new appointment (the times are Lagos wall-clock time)
+      await createAppointment({
+        patientId: formData.patientId as Id<'users'>,
+        startTime: zonedDateTimeToUtc(formData.date, formData.startTime),
+        endTime: zonedDateTimeToUtc(formData.date, formData.endTime),
         serviceType: formData.serviceType,
-          notesForPatient: formData.notesForPatient || undefined,
-          notesForTherapist: formData.notesForTherapist || undefined,
-          manualMeetingLink: formData.manualMeetingLink || undefined,
-        })
+        notesForPatient: formData.notesForPatient || undefined,
+        notesForTherapist: formData.notesForTherapist || undefined,
+        manualMeetingLink: formData.manualMeetingLink || undefined,
+        // A typed meeting link means a video visit; otherwise it's in person
+        appointmentType: formData.manualMeetingLink ? 'telehealth' : 'in-person',
+      })
 
-        playSound('booked')
-        toast.success('Appointment created successfully')
-      }
+      playSound('booked')
+      toast.success('Appointment created successfully')
 
       onAppointmentCreated()
       onClose()
     } catch (error) {
       console.error('Error saving appointment:', error)
-      toast.error(error instanceof Error ? error.message : 'Failed to save appointment')
+      // ConvexError carries a readable reason, e.g. a Rehabify patient who pays per session
+      toast.error(
+        error instanceof ConvexError && typeof error.data === 'string'
+          ? error.data
+          : error instanceof Error
+            ? error.message
+            : 'Failed to save appointment'
+      )
     } finally {
       setIsSubmitting(false)
     }
@@ -219,16 +213,19 @@ export function AppointmentModal({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Calendar className="h-5 w-5" />
-            {appointmentId ? 'Edit Appointment' : 'Create New Appointment'}
+            {appointmentId ? 'Appointment' : 'Create New Appointment'}
           </DialogTitle>
           <DialogDescription>
-            {appointmentId 
-              ? 'Update the appointment details below.'
+            {appointmentId
+              ? 'Status, place and what you can do next. Times are Lagos time.'
               : 'Schedule a new appointment with your patient.'
             }
           </DialogDescription>
         </DialogHeader>
 
+        {appointmentId ? (
+          <ExistingAppointmentDetails details={existingAppointment} onClose={onClose} />
+        ) : (
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Patient Selection */}
           <div className="space-y-2">
@@ -396,7 +393,7 @@ export function AppointmentModal({
                    })()}
                  </p>
                 <p>
-                  <strong>Date:</strong> {format(new Date(formData.date), 'EEEE, MMMM dd, yyyy')}
+                  <strong>Date:</strong> {lagosDate(zonedDateTimeToUtc(formData.date, '12:00'))}
                 </p>
                 <p>
                   <strong>Time:</strong> {formData.startTime} - {formData.endTime}
@@ -428,18 +425,90 @@ export function AppointmentModal({
               {isSubmitting ? (
                 <>
                   <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                  {appointmentId ? 'Updating...' : 'Creating...'}
+                  Creating...
                 </>
               ) : (
                 <>
                   <FileText className="h-4 w-4" />
-                  {appointmentId ? 'Update Appointment' : 'Create Appointment'}
+                  Create Appointment
                 </>
               )}
             </Button>
           </div>
         </form>
+        )}
       </DialogContent>
     </Dialog>
+  )
+}
+
+/**
+ * A booked visit opened from the calendar: who, when (Lagos time), where, its status, and the
+ * physio's actions (accept, decline, propose another time, cancel, mark completed).
+ */
+function ExistingAppointmentDetails({
+  details,
+  onClose,
+}: {
+  details: ExistingAppointmentResult | undefined
+  onClose: () => void
+}) {
+  if (details === undefined) {
+    return (
+      <div className="flex items-center gap-2 py-8 text-sm text-gray-500">
+        <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+        Loading appointment…
+      </div>
+    )
+  }
+
+  const apt = details.appointment as unknown as AppointmentLike & {
+    notesForPatient?: string | null
+    notesForTherapist?: string | null
+    cancellationReason?: string
+    patient?: { _id?: string; firstName?: string; lastName?: string; email?: string } | null
+  }
+  const patientName = [apt.patient?.firstName, apt.patient?.lastName].filter(Boolean).join(' ') || 'Patient'
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate font-semibold text-gray-900 dark:text-white">{patientName}</p>
+          <p className="text-sm text-gray-500">{apt.serviceType}</p>
+        </div>
+        <AppointmentStatusBadge appointment={apt} viewer="provider" />
+      </div>
+
+      <div className="space-y-2 rounded-lg bg-[#005b57]/5 p-4 text-sm text-[#00443e] dark:text-neutral-200">
+        <p className="flex items-center gap-2">
+          <Calendar className="h-4 w-4 shrink-0" />
+          {lagosDate(apt.startTime)}
+        </p>
+        <p className="flex items-center gap-2">
+          <Clock className="h-4 w-4 shrink-0" />
+          {lagosTimeRange(apt.startTime, apt.endTime)}
+        </p>
+        <AppointmentPlace appointment={apt} viewer="provider" />
+      </div>
+
+      {(apt.notesForTherapist || apt.notesForPatient || apt.cancellationReason) && (
+        <div className="space-y-1 text-sm text-gray-600 dark:text-neutral-300">
+          {apt.notesForTherapist && <p><strong>Notes:</strong> {apt.notesForTherapist}</p>}
+          {apt.notesForPatient && <p><strong>For the patient:</strong> {apt.notesForPatient}</p>}
+          {apt.cancellationReason && <p><strong>Cancellation reason:</strong> {apt.cancellationReason}</p>}
+        </div>
+      )}
+
+      <div className="space-y-2">
+        <PhysioAppointmentActions appointment={apt} />
+      </div>
+
+      <div className="flex justify-end border-t pt-4">
+        <Button type="button" variant="outline" onClick={onClose}>
+          Close
+        </Button>
+      </div>
+    </div>
   )
 }

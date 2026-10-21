@@ -4,11 +4,12 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { useMutation, useQuery } from 'convex/react'
 import { formatDistanceToNow } from 'date-fns'
-import { ArrowRight, Check, HeartPulse, Loader2 } from 'lucide-react'
+import { AlertTriangle, ArrowRight, Check, HeartPulse, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { api } from '@/convex/_generated/api'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
+import { programError } from '@/components/exercise-programs/errors'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
 
@@ -65,6 +66,7 @@ export function PatientCheckInCard() {
   const [mood, setMood] = useState<Mood | null>(null)
   const [exercises, setExercises] = useState<Exercises | null>(null)
   const [note, setNote] = useState('')
+  const [concern, setConcern] = useState(false)
   const [saving, setSaving] = useState(false)
   const [justSent, setJustSent] = useState(false)
 
@@ -92,16 +94,24 @@ export function PatientCheckInCard() {
   const send = async () => {
     if (pain === null) return toast.error('Choose a pain score from 0 to 10.')
     if (!exercises) return toast.error('Tell us whether you did your exercises.')
+    if (concern && !note.trim()) return toast.error(`Tell ${physio} what’s worrying you in the note.`)
     setSaving(true)
     try {
-      const result = await submit({ painScore: pain, functionScore: fn, mood: mood ?? undefined, exercisesDone: exercises, note: note || undefined })
+      const result = await submit({
+        painScore: pain,
+        functionScore: fn,
+        mood: mood ?? undefined,
+        exercisesDone: exercises,
+        note: note.trim() || undefined,
+        concern: concern || undefined,
+      })
       playSound('success')
       setJustSent(true)
       if (result.flagged) {
         toast.message(`We’ve let ${physio} know`, { description: 'If your pain is severe or sudden, contact them or seek medical help.' })
       }
     } catch (error) {
-      toast.error((error as Error).message || 'Couldn’t send your check-in')
+      toast.error(programError(error, 'Couldn’t send your check-in. Check your connection and try again.'))
     } finally {
       setSaving(false)
     }
@@ -180,6 +190,19 @@ export function PatientCheckInCard() {
         placeholder={`Anything ${physio === 'your physiotherapist' ? 'they' : physio.split(' ')[0]} should know? (optional)`}
         aria-label="Note for your physiotherapist"
       />
+      <button
+        type="button"
+        role="checkbox"
+        aria-checked={concern}
+        onClick={() => setConcern((c) => !c)}
+        className={cn(
+          'inline-flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-sm transition-all active:scale-95',
+          concern ? 'border-[#be3a5f] bg-[#fff0f4] font-medium text-[#be3a5f]' : 'border-black/[0.08] bg-white text-neutral-700 hover:bg-[#fff0f4]'
+        )}
+      >
+        <AlertTriangle className="h-4 w-4" />
+        I&apos;m worried about something
+      </button>
 
       <Button onClick={send} disabled={saving} className="h-11 w-full rounded-2xl bg-[#005b57] text-white hover:bg-[#00443e] active:scale-[0.98] sm:w-auto">
         {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}

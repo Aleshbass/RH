@@ -1,54 +1,81 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Id } from "@/convex/_generated/dataModel";
 import { useUser } from "@clerk/nextjs";
 import Image from "next/image";
 import Link from "next/link";
 import { motion, useReducedMotion } from "framer-motion";
 import {
+    AlertCircle,
     ArrowLeft,
     ArrowRight,
+    BadgeCheck,
     CalendarDays,
-    Check,
+    Home,
     Loader2,
     Lock,
+    LogIn,
     Mail,
-    MapPin,
     Phone,
     User,
     Video,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { calculatePaystackInboundGrossAmount } from "@/lib/pricing";
 import { getReferralPublicCode } from "@/lib/referralCookie";
 import { playSound } from "@/lib/sounds";
+import { formatKobo, getService, isBookableServiceId, type BookableServiceId } from "@/lib/rehabify-services";
 import CalendarBookingWidget, { type AvailableSlot } from "@/components/marketplace/CalendarBookingWidget";
 import { BookingShell, PoweredBy } from "@/components/booking/BookingShell";
 import { BookingBottomSheet } from "@/components/booking/BookingBottomSheet";
 import { PhysioHostCard } from "@/components/booking/PhysioHostCard";
-import { PACKAGE_LABELS, PackagePicker, calcPackage, type PackageSize } from "@/components/booking/PackagePicker";
+import { ServiceOption } from "@/components/booking/ServiceOption";
+import { NOT_LISTED, ServiceAreaPicker } from "@/components/booking/ServiceAreaPicker";
 import {
-    bookingPricing,
-    formatNaira,
+    bookableServices,
+    convexErrorMessage,
     initialsOf,
+    isSlotError,
     looksLikeConvexId,
-    priceRows,
+    parseServiceSegment,
+    queryString,
     readTreatmentPrefs,
-    sessionTypeForDuration,
-    singleSessionPrice,
+    servicePriceLabel,
+    startMarketplaceCheckout,
+    virtualAlternative,
+    zoneCities,
+    zoneForArea,
     type BookingProfile,
-    type SessionMode,
+    type Catalogue,
+    type ServiceQuote,
+    type TravelZone,
     type TreatmentPrefs,
 } from "@/components/booking/booking-shared";
 
-type BookingStep = "select-time" | "select-package" | "details" | "confirm";
+type BookingStep = "service" | "area" | "time" | "details";
 
+const STEP_LABELS: Record<BookingStep, string> = { service: "Service", area: "Area", time: "Time", details: "Details" };
+
+/** api.rehabifyAccess.getMyAccess (the parts this page uses). */
+type MyAccess = {
+    award: {
+        id: string;
+        physiotherapistId: string;
+        physiotherapistName: string;
+        sessionsLeft: number;
+        services: { id: string; name: string; assistedPriceKobo: number | null; standardPriceKobo: number }[];
+    } | null;
+} | null;
+
+/** A booking in progress, restored after signing in. */
 const PENDING_KEY = "pendingBooking";
+/** The unpaid booking made by this tab, reused if payment has to be retried. */
+const ATTEMPT_KEY = "rhBookingAttempt";
+const HOLD_MS = 30 * 60 * 1000;
 
 const fieldClass =
     "w-full rounded-xl border border-rh-night/15 bg-white px-3.5 py-2.5 text-base text-rh-night placeholder:text-rh-night/40 transition-[border-color,box-shadow] focus:border-rh-night focus:outline-none focus:ring-4 focus:ring-rh-lime/25 sm:text-sm";
@@ -59,12 +86,15 @@ const primaryButton =
 const secondaryButton =
     "inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-rh-night/15 bg-white px-5 text-[15px] font-semibold text-rh-night transition-colors hover:bg-rh-night/[0.04] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-lime";
 
+const cardClass = "rounded-[28px] bg-white p-5 text-rh-night shadow-[0_30px_80px_-30px_rgba(0,0,0,0.6)] sm:p-7";
+
+// Slots are Lagos time (the physio's schedule), whatever zone the browser is in
 function formatDate(timestamp: number) {
-    return new Date(timestamp).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+    return new Date(timestamp).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "Africa/Lagos" });
 }
 
 function formatTime(timestamp: number) {
-    return new Date(timestamp).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+    return new Date(timestamp).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true, timeZone: "Africa/Lagos" });
 }
 
 function StepDots({ steps, current }: { steps: string[]; current: number }) {
@@ -91,17 +121,54 @@ function StepDots({ steps, current }: { steps: string[]; current: number }) {
     );
 }
 
+function Notice({ tone = "info", children }: { tone?: "info" | "warn" | "error"; children: ReactNode }) {
+    return (
+        <div
+            role={tone === "error" ? "alert" : undefined}
+            className={cn(
+                "flex items-start gap-2.5 rounded-2xl p-4 text-sm ring-1 ring-inset",
+                tone === "info" && "bg-rh-canvas/80 text-rh-night/80 ring-rh-night/[0.06]",
+                tone === "warn" && "bg-amber-50 text-amber-950 ring-amber-200",
+                tone === "error" && "bg-red-50 text-red-900 ring-red-200"
+            )}
+        >
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+            <div className="min-w-0 flex-1 space-y-2">{children}</div>
+        </div>
+    );
+}
+
+function LoadingShell() {
+    return (
+        <BookingShell wide>
+            <div className="flex min-h-[50vh] items-center justify-center">
+                <Loader2 className="h-8 w-8 animate-spin text-rh-lime" aria-label="Loading" />
+            </div>
+        </BookingShell>
+    );
+}
+
 export default function BookingPage() {
+    return (
+        <Suspense fallback={<LoadingShell />}>
+            <BookingFlow />
+        </Suspense>
+    );
+}
+
+function BookingFlow() {
     const params = useParams();
     const router = useRouter();
+    const searchParams = useSearchParams();
     const reduceMotion = useReducedMotion();
-    const { user, isSignedIn } = useUser();
+    const { user, isSignedIn, isLoaded: userLoaded } = useUser();
 
     const rawParam = params.physiotherapistId as string;
-    const durationParam = params.duration as string;
-    const parsedDuration = durationParam ? parseInt(durationParam, 10) : 60;
-    const sessionDuration = Number.isFinite(parsedDuration) && parsedDuration > 0 ? parsedDuration : 60;
-    const sessionInfo = useMemo(() => sessionTypeForDuration(sessionDuration), [sessionDuration]);
+    // A service id, or a legacy minutes value (/book/[id]/60) that preselects one
+    const segment = useMemo(() => parseServiceSegment(params.duration as string | undefined), [params.duration]);
+    const accessParam = searchParams.get("access") ?? "";
+    const zoneParam = searchParams.get("zone") ?? "";
+    const areaParam = searchParams.get("area") ?? "";
 
     const isRawId = looksLikeConvexId(rawParam);
     const slugResult = useQuery(api.marketplace.search.resolveBookingSlug, isRawId ? "skip" : { slug: rawParam }) as
@@ -111,16 +178,23 @@ export default function BookingPage() {
     const physiotherapistId: Id<"users"> | null = isRawId ? (rawParam as Id<"users">) : slugResult?.userId ?? null;
 
     // State
-    const [step, setStep] = useState<BookingStep>("select-time");
-    const [selectedSlot, setSelectedSlot] = useState<AvailableSlot | null>(null);
-    const [sessionMode, setSessionMode] = useState<SessionMode>("online");
-    const [notes, setNotes] = useState("");
+    const [serviceId, setServiceId] = useState<BookableServiceId | null>(segment.serviceId);
+    const [step, setStep] = useState<BookingStep>(() => {
+        if (!segment.serviceId || segment.legacy) return "service";
+        return getService(segment.serviceId)?.mode === "home" ? "area" : "time";
+    });
+    const [city, setCity] = useState("");
+    const [area, setArea] = useState("");
     const [patientAddress, setPatientAddress] = useState("");
+    const [selectedSlot, setSelectedSlot] = useState<AvailableSlot | null>(null);
+    const [notes, setNotes] = useState("");
     const [treatmentPrefs, setTreatmentPrefs] = useState<TreatmentPrefs | null>(null);
     const [isProcessing, setIsProcessing] = useState(false);
-    const [selectedPackage, setSelectedPackage] = useState<PackageSize>(1);
+    const [bookingError, setBookingError] = useState<string | null>(null);
+    const [attempt, setAttempt] = useState<{ bookingId: string; key: string } | null>(null);
     const savedPrefsRef = useRef(false);
     const restoredRef = useRef(false);
+    const prefilledRef = useRef(false);
 
     // Guest checkout (not signed in)
     const [guestEmail, setGuestEmail] = useState("");
@@ -132,39 +206,43 @@ export default function BookingPage() {
         api.marketplace.search.getPhysiotherapistProfile,
         physiotherapistId ? { physiotherapistId } : "skip"
     ) as BookingProfile | null | undefined;
-    const revenueSettings = useQuery(api.platformSettings.getPlatformRevenueSettings) as
-        | { paystackFeeBearerInbound?: string }
+    const catalogue = useQuery(api.serviceTariffs.getCatalogue) as Catalogue | undefined;
+
+    const isHome = serviceId ? getService(serviceId)?.mode === "home" : false;
+    const zones = useQuery(api.travelZones.listZones, isHome ? {} : "skip") as TravelZone[] | undefined;
+    const myAccess = useQuery(api.rehabifyAccess.getMyAccess, isSignedIn && accessParam ? {} : "skip") as
+        | MyAccess
         | undefined;
 
-    const createBooking = useMutation(api.marketplace.booking.createMarketplaceBooking);
-    const guestCreateBooking = useMutation(api.marketplace.booking.guestCreateMarketplaceBooking);
-    const confirmFreeBooking = useMutation(api.marketplace.booking.confirmFreeMarketplaceBooking);
+    const offeredServices = useMemo(
+        () => bookableServices(catalogue?.services, profile?.servicesOffered ?? []),
+        [catalogue, profile]
+    );
+    const service = offeredServices.find((s) => s.id === serviceId);
+
+    const zone = isHome ? zoneForArea(zones, city, area) : null;
+    const physioVisitsZone = Boolean(zone && profile?.coveredZoneIds?.includes(zone.id));
+
+    // Rehabify Access: only the patient's own active award, with this physio, for this service
+    const award = myAccess?.award && myAccess.award.id === accessParam ? myAccess.award : null;
+    const awardService = award?.services.find((s) => s.id === serviceId) ?? null;
+    const accessAwardId =
+        award && award.physiotherapistId === physiotherapistId && awardService?.assistedPriceKobo != null && award.sessionsLeft > 0
+            ? (award.id as Id<"accessAwards">)
+            : undefined;
+
+    const quote = useQuery(
+        api.marketplace.booking.getServiceQuote,
+        service && (!isHome || zone)
+            ? { serviceId: service.id, ...(zone ? { zoneId: zone.id } : {}), ...(accessAwardId ? { accessAwardId } : {}) }
+            : "skip"
+    ) as ServiceQuote | undefined;
+    const quoteOk = quote?.ok ? quote : null;
+
+    const createBooking = useMutation(api.marketplace.booking.createServiceBooking);
+    const guestCreateBooking = useMutation(api.marketplace.booking.guestCreateServiceBooking);
+    const cancelUnpaid = useMutation(api.marketplace.booking.cancelUnpaidMarketplaceBooking);
     const saveTreatmentPrefs = useMutation(api.marketplace.matching.savePatientTreatmentPrefs);
-
-    // ── Pricing (mirrors resolveServiceAmountKobo on the server) ──
-    const pricing = useMemo(() => bookingPricing(profile, treatmentPrefs?.sessionRate), [profile, treatmentPrefs]);
-    const packagesAvailable = pricing.kind === "package";
-    const discountPercent = profile?.packageDiscountPercent || 7;
-    const effectivePackage: PackageSize = packagesAvailable ? selectedPackage : 1;
-    const packageBreakdown = pricing.kind === "package" ? calcPackage(pricing.sessionRate, effectivePackage, discountPercent) : null;
-    const packageName = PACKAGE_LABELS[effectivePackage];
-
-    /** Naira amount sent to the server: 0 lets the server charge the physio's standard rate. */
-    const amountToSend = packageBreakdown ? packageBreakdown.total : pricing.kind === "initial" ? pricing.sessionRate : 0;
-    /** What the patient pays before any processing fee. */
-    const displayBase = packageBreakdown ? packageBreakdown.total : singleSessionPrice(pricing, sessionMode);
-
-    const patientBearsFee = revenueSettings?.paystackFeeBearerInbound === "patient";
-    const feeSurcharge = useMemo(() => {
-        if (!patientBearsFee || amountToSend <= 0) return { grossNaira: 0, feeNaira: 0, applies: false };
-        const { grossKobo, feeKobo } = calculatePaystackInboundGrossAmount(Math.round(amountToSend * 100));
-        return { grossNaira: Math.round(grossKobo / 100), feeNaira: Math.round(feeKobo / 100), applies: feeKobo > 0 };
-    }, [patientBearsFee, amountToSend]);
-    const totalToPay = feeSurcharge.applies ? feeSurcharge.grossNaira : displayBase;
-
-    const offersOnline = profile?.offersOnlineSessions ?? true;
-    const offersInPerson = profile?.offersInPersonSessions ?? false;
-    const prices = useMemo(() => priceRows(pricing, offersOnline, offersInPerson), [pricing, offersOnline, offersInPerson]);
 
     // ── Treatment prefs from /start-treatment ──
     useEffect(() => {
@@ -184,21 +262,43 @@ export default function BookingPage() {
             if (!stored) return;
             localStorage.removeItem(PENDING_KEY);
             const pending = JSON.parse(stored);
-            if (pending.physiotherapistId !== physiotherapistId || pending.sessionDuration !== sessionDuration) return;
+            if (pending.physiotherapistId !== physiotherapistId || !isBookableServiceId(pending.serviceId)) return;
+            setServiceId(pending.serviceId);
+            if (typeof pending.notes === "string") setNotes(pending.notes);
+            if (typeof pending.patientAddress === "string") setPatientAddress(pending.patientAddress);
+            if (typeof pending.city === "string" && pending.city && typeof pending.area === "string") {
+                setCity(pending.city);
+                setArea(pending.area);
+                prefilledRef.current = true;
+            }
             if (pending.slot && pending.slot.start > Date.now()) {
                 setSelectedSlot(pending.slot);
                 setStep("details");
+            } else {
+                setStep(getService(pending.serviceId)?.mode === "home" ? "area" : "time");
             }
-            if (pending.sessionMode === "online" || pending.sessionMode === "in-person") setSessionMode(pending.sessionMode);
-            if (typeof pending.notes === "string") setNotes(pending.notes);
-            if (typeof pending.patientAddress === "string") setPatientAddress(pending.patientAddress);
-            if ([1, 4, 8, 12].includes(pending.selectedPackage)) setSelectedPackage(pending.selectedPackage);
         } catch {
             // localStorage unavailable
         }
-    }, [physiotherapistId, sessionDuration]);
+    }, [physiotherapistId]);
 
-    // Coming Back from Paystack can restore this page from the back-forward cache mid-"Processing…"
+    // ── An unpaid booking from this tab (e.g. back from Paystack): pay for it rather than book twice ──
+    useEffect(() => {
+        try {
+            const raw = sessionStorage.getItem(ATTEMPT_KEY);
+            if (!raw) return;
+            const saved = JSON.parse(raw);
+            if (typeof saved?.bookingId === "string" && typeof saved?.key === "string" && Date.now() - saved.at < HOLD_MS) {
+                setAttempt({ bookingId: saved.bookingId, key: saved.key });
+            } else {
+                sessionStorage.removeItem(ATTEMPT_KEY);
+            }
+        } catch {
+            // sessionStorage unavailable
+        }
+    }, []);
+
+    // Coming back from Paystack can restore this page from the back-forward cache mid-"Processing…"
     useEffect(() => {
         const onPageShow = (event: PageTransitionEvent) => {
             if (event.persisted) setIsProcessing(false);
@@ -207,10 +307,32 @@ export default function BookingPage() {
         return () => window.removeEventListener("pageshow", onPageShow);
     }, []);
 
-    // Physios who only see patients in person
+    // ── Home visits: prefill the area from ?zone=&area= (from /get-care), or /start-treatment ──
     useEffect(() => {
-        if (profile && profile.offersOnlineSessions === false && profile.offersInPersonSessions) setSessionMode("in-person");
-    }, [profile]);
+        if (prefilledRef.current || !zones) return;
+        prefilledRef.current = true;
+        const match = (z: TravelZone, wanted: string) => z.areas.find((a) => a.toLowerCase() === wanted.trim().toLowerCase());
+        const byParam = zones.find((z) => z.id === zoneParam);
+        if (byParam) {
+            setCity(byParam.city);
+            const found = areaParam ? match(byParam, areaParam) : undefined;
+            if (found) setArea(found);
+            return;
+        }
+        const wanted = areaParam || readTreatmentPrefs()?.areaLabel || "";
+        if (wanted) {
+            for (const z of zones) {
+                const found = match(z, wanted);
+                if (found) {
+                    setCity(z.city);
+                    setArea(found);
+                    return;
+                }
+            }
+        }
+        const cities = zoneCities(zones);
+        if (cities.length === 1) setCity(cities[0]);
+    }, [zones, zoneParam, areaParam]);
 
     // ── Save treatment prefs to DB after sign-in ──
     useEffect(() => {
@@ -222,31 +344,23 @@ export default function BookingPage() {
                 areaLabel: treatmentPrefs.areaLabel,
                 conditionLabel: treatmentPrefs.conditionLabel,
                 conditionLevel: treatmentPrefs.conditionLevel,
-                sessionRate: treatmentPrefs.sessionRate,
             }).catch(() => {
                 // Non-critical: prefs only personalise future matching
             });
         }
     }, [isSignedIn, treatmentPrefs, saveTreatmentPrefs]);
 
-    const isLoading = (!isRawId && slugResult === undefined) || (physiotherapistId !== null && profile === undefined);
+    const isLoading =
+        (!isRawId && slugResult === undefined) || (physiotherapistId !== null && profile === undefined) || catalogue === undefined;
 
-    if (isLoading) {
-        return (
-            <BookingShell wide>
-                <div className="flex min-h-[50vh] items-center justify-center">
-                    <Loader2 className="h-8 w-8 animate-spin text-rh-lime" aria-label="Loading" />
-                </div>
-            </BookingShell>
-        );
-    }
+    if (isLoading) return <LoadingShell />;
 
     if (!profile || !physiotherapistId) {
         return (
             <BookingShell>
                 <div className="rounded-[28px] bg-white p-8 text-center text-rh-night">
                     <p className="mb-5 text-rh-night/70">This physiotherapist isn&#39;t taking bookings right now.</p>
-                    <button type="button" onClick={() => router.push("/find-a-physio")} className={secondaryButton}>
+                    <button type="button" onClick={() => router.push("/get-care")} className={secondaryButton}>
                         <ArrowLeft className="h-4 w-4" />
                         Find another physio
                     </button>
@@ -255,130 +369,164 @@ export default function BookingPage() {
         );
     }
 
-    const steps = packagesAvailable ? ["Time", "Plan", "Details"] : ["Time", "Details"];
-    const stepIndex = step === "select-time" ? 0 : step === "select-package" ? 1 : steps.length - 1;
-    const modeLabel = sessionMode === "online" ? "Video call" : "In person";
+    const firstName = profile.firstName || profile.fullName.split(" ")[0];
+    const addressReady = Boolean(zone && physioVisitsZone && patientAddress.trim());
 
-    const goNext = () => {
+    const activeStep: BookingStep = (() => {
+        if (!service || step === "service") return "service";
+        if (isHome && step !== "area" && !addressReady) return "area";
+        if (!isHome && step === "area") return "time";
+        if (step === "details" && !selectedSlot) return "time";
+        return step;
+    })();
+
+    const pickerInFlow = segment.legacy || segment.serviceId !== serviceId || activeStep === "service";
+    const stepIds: BookingStep[] = [...(pickerInFlow ? (["service"] as const) : []), ...(isHome ? (["area"] as const) : []), "time", "details"];
+    const steps = stepIds.map((id) => STEP_LABELS[id]);
+    const stepIndex = Math.max(0, stepIds.indexOf(activeStep));
+
+    const currentQuery = queryString({
+        access: accessParam,
+        zone: zone?.id ?? zoneParam,
+        area: area && area !== NOT_LISTED ? area : areaParam,
+    });
+    const signInHref = `/sign-in?redirect=${encodeURIComponent(`/book/${rawParam}/${serviceId ?? ""}${currentQuery}`)}`;
+    const needsSignIn = Boolean(service?.requiresPriorAssessment || accessParam);
+    const chargeKobo = quoteOk?.chargeKobo ?? null;
+
+    const chooseService = (id: BookableServiceId) => {
+        if (id !== serviceId) setSelectedSlot(null);
+        setServiceId(id);
+        setBookingError(null);
+        setShowGuestForm(false);
+        setStep(getService(id)?.mode === "home" ? "area" : "time");
+    };
+
+    const goToDetails = () => {
         if (!selectedSlot) {
             toast.error("Please pick a time");
             return;
         }
-        setStep(packagesAvailable ? "select-package" : "details");
+        setBookingError(null);
+        setStep("details");
     };
 
-    const goBack = () => {
+    const backToTime = (message: string) => {
+        playSound("error");
+        toast.error("Please pick another time", { description: message });
+        setSelectedSlot(null);
         setShowGuestForm(false);
-        if (step === "select-package") setStep("select-time");
-        else if (step === "details") setStep(packagesAvailable ? "select-package" : "select-time");
+        setIsProcessing(false);
+        setStep("time");
     };
 
-    const initializePaystackPayment = async (
-        bookingId: Id<"marketplaceBookings">,
-        amountNaira: number,
-        email: string,
-        phone?: string,
-        name?: string,
-        feeBreakdown?: { baseAmount: number; processingFee: number; feeBearer: string }
-    ) => {
-        const response = await fetch("/api/payments/marketplace", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                bookingId,
-                amount: amountNaira, // informational — the route charges the booking's own amount
-                email,
-                phone: phone || null,
-                name: name || null,
-                ...(feeBreakdown || {}),
-            }),
-        });
-        const data = await response.json().catch(() => null);
-        if (!response.ok || !data?.success || !data.authorization_url) {
-            throw new Error(data?.error || "We couldn't start the payment. Please try again.");
+    const rememberAttempt = (next: { bookingId: string; key: string }) => {
+        setAttempt(next);
+        try {
+            sessionStorage.setItem(ATTEMPT_KEY, JSON.stringify({ ...next, at: Date.now() }));
+        } catch {
+            // Payment retries will just book again
         }
-        window.location.href = data.authorization_url;
+    };
+
+    const forgetAttempt = () => {
+        setAttempt(null);
+        try {
+            sessionStorage.removeItem(ATTEMPT_KEY);
+        } catch {
+            // sessionStorage unavailable
+        }
     };
 
     const processBookingAndPay = async (email: string, phone?: string, name?: string) => {
-        if (!selectedSlot) {
+        if (!service || !selectedSlot) {
             toast.error("Please pick a time");
             return;
         }
-        if (sessionMode === "in-person" && !patientAddress.trim()) {
-            toast.error("Please add your address for the home visit.");
+        if (isHome && !addressReady) {
+            toast.error("Please add your area and address for the home visit.");
+            setStep("area");
             return;
         }
 
         setIsProcessing(true);
+        setBookingError(null);
+        const key = [
+            physiotherapistId,
+            service.id,
+            selectedSlot.start,
+            zone?.id ?? "",
+            isHome ? area : "",
+            isHome ? patientAddress.trim() : "",
+            accessAwardId ?? "",
+            email.toLowerCase(),
+        ].join("|");
+
         try {
-            const packageNote = `Package: ${packageName} (${effectivePackage} session${effectivePackage > 1 ? "s" : ""})`;
-            const bookingArgs = {
-                physiotherapistId,
-                sessionType: effectivePackage === 1 ? "initial_consult" : "package",
-                sessionDate: selectedSlot.start,
-                sessionDuration,
-                isOnline: sessionMode === "online",
-                serviceAmount: Math.round((feeSurcharge.applies ? feeSurcharge.grossNaira : amountToSend) * 100), // kobo
-                patientNotes: notes ? `${notes}\n\n${packageNote}` : packageNote,
-                packageSessions: effectivePackage,
-                packageDiscountPercent: discountPercent,
-                patientAddress: sessionMode === "in-person" ? patientAddress : undefined,
-                conditionLabel: treatmentPrefs?.conditionLabel,
-                conditionLevel: treatmentPrefs?.conditionLevel,
-                // Partner referral-link code (validated server-side; first partner wins)
-                referralPublicCode: getReferralPublicCode(),
-            };
-
-            const result = (isSignedIn
-                ? await createBooking(bookingArgs)
-                : await guestCreateBooking({ ...bookingArgs, guestEmail: email, guestPhone: phone, guestName: name })) as {
-                bookingId: Id<"marketplaceBookings">;
-                fees?: { serviceAmount: number };
-            };
-
-            // Free session — only when the server priced the booking at zero
-            if (result.fees?.serviceAmount === 0) {
-                await confirmFreeBooking({ bookingId: result.bookingId });
-                playSound("booked");
-                toast.success("Booking confirmed!");
-                setStep("confirm");
-                setIsProcessing(false);
-                return;
+            let bookingId = attempt?.key === key ? attempt.bookingId : null;
+            if (!bookingId) {
+                // A different booking from this tab is still holding a time: let it go
+                if (attempt && isSignedIn) {
+                    cancelUnpaid({ bookingId: attempt.bookingId as Id<"marketplaceBookings"> }).catch(() => {});
+                    forgetAttempt();
+                }
+                const bookingArgs = {
+                    physiotherapistId,
+                    serviceId: service.id,
+                    slotStart: selectedSlot.start,
+                    ...(isHome && zone ? { zoneId: zone.id, area, patientAddress: patientAddress.trim() } : {}),
+                    ...(accessAwardId ? { accessAwardId } : {}),
+                    patientNotes: notes.trim() || undefined,
+                    // Partner referral-link code (validated server-side; first partner wins)
+                    referralPublicCode: getReferralPublicCode(),
+                };
+                const result = (isSignedIn
+                    ? await createBooking(bookingArgs)
+                    : await guestCreateBooking({ ...bookingArgs, guestEmail: email, guestPhone: phone, guestName: name })) as {
+                    bookingId: Id<"marketplaceBookings">;
+                };
+                bookingId = result.bookingId as string;
+                rememberAttempt({ bookingId, key });
             }
 
-            const chargedNaira = result.fees?.serviceAmount ? result.fees.serviceAmount / 100 : totalToPay;
-            const feeBreakdown = feeSurcharge.applies
-                ? { baseAmount: amountToSend, processingFee: feeSurcharge.feeNaira, feeBearer: "patient" }
-                : undefined;
-            await initializePaystackPayment(result.bookingId, chargedNaira, email, phone, name, feeBreakdown);
-        } catch (error) {
-            const err = error as { data?: unknown; message?: string };
+            const checkout = await startMarketplaceCheckout({ bookingId, email, phone, name });
+            if (checkout.ok) {
+                window.location.href = checkout.url;
+                return;
+            }
+            if (checkout.reason === "slot_taken" || checkout.reason === "too_late") {
+                forgetAttempt();
+                backToTime(checkout.message);
+                return;
+            }
+            if (checkout.reason === "cancelled" || checkout.reason === "not_found" || /cancelled|not found/i.test(checkout.message)) {
+                forgetAttempt();
+            }
             playSound("error");
-            toast.error("Booking failed", {
-                description:
-                    (typeof err?.data === "string" ? err.data : undefined) || err?.message || "We couldn't create the booking. Please try again.",
-            });
+            setBookingError(checkout.message);
+            toast.error("Payment didn't start", { description: checkout.message });
+            setIsProcessing(false);
+        } catch (error) {
+            const message = convexErrorMessage(error, "We couldn't create the booking. Please try again.");
+            if (isSlotError(message)) {
+                backToTime(message);
+                return;
+            }
+            playSound("error");
+            setBookingError(message);
+            toast.error("Booking failed", { description: message });
             setIsProcessing(false);
         }
     };
 
     const handleBooking = async () => {
-        if (!selectedSlot) {
-            toast.error("Please pick a time");
-            return;
-        }
-        if (sessionMode === "in-person" && !patientAddress.trim()) {
-            toast.error("Please add your address for the home visit.");
-            return;
-        }
         if (isSignedIn) {
             const email = user?.primaryEmailAddress?.emailAddress;
             if (!email) {
                 toast.error("No email address found on your account.");
                 return;
             }
-            await processBookingAndPay(email, undefined, user?.fullName || user?.firstName || undefined);
+            await processBookingAndPay(email, user?.primaryPhoneNumber?.phoneNumber || undefined, user?.fullName || user?.firstName || undefined);
         } else {
             setShowGuestForm(true);
         }
@@ -398,12 +546,12 @@ export default function BookingPage() {
                 PENDING_KEY,
                 JSON.stringify({
                     physiotherapistId,
-                    sessionDuration,
+                    serviceId,
                     slot: selectedSlot,
-                    sessionMode,
                     notes,
+                    city,
+                    area,
                     patientAddress,
-                    selectedPackage: effectivePackage,
                 })
             );
         } catch {
@@ -411,11 +559,341 @@ export default function BookingPage() {
         }
     };
 
-    const signInHref = `/sign-in?redirect=${encodeURIComponent(`/book/${rawParam}/${sessionDuration}`)}`;
-    const ctaLabel = totalToPay > 0 ? (isSignedIn ? `Confirm & pay ${formatNaira(totalToPay)}` : "Continue to payment") : "Book now";
+    const changeServiceLink = (
+        <Link
+            href={`/book/${rawParam}${queryString({ access: accessParam })}`}
+            className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium text-white/75 ring-1 ring-white/15 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-lime"
+        >
+            <ArrowLeft className="h-4 w-4" aria-hidden />
+            All services
+        </Link>
+    );
 
-    // ── Shared summary for the later steps ──
-    const summary = selectedSlot && (
+    const stepHeader = (title: string) => (
+        <div className="mb-5 flex items-center justify-between gap-3">
+            <h1 className="text-xl font-semibold tracking-tight">{title}</h1>
+            <StepDots steps={steps} current={stepIndex} />
+        </div>
+    );
+
+    // ── Step: choose a service (legacy links, or a service this physio doesn't offer) ──
+    if (activeStep === "service" || !service) {
+        const requested = serviceId ? catalogue?.services.find((s) => s.id === serviceId) : undefined;
+        return (
+            <BookingShell topRight={changeServiceLink}>
+                <PhysioHostCard profile={profile} tone="dark" />
+                <motion.div
+                    initial={reduceMotion ? false : { opacity: 0, y: 12 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: reduceMotion ? 0 : 0.22, ease: "easeOut" }}
+                    className={cn(cardClass, "mt-8")}
+                >
+                    {stepHeader("Choose a service")}
+                    {requested && !service && (
+                        <div className="mb-4">
+                            <Notice tone="warn">
+                                <p>
+                                    {firstName} doesn&#39;t offer {requested.name.toLowerCase()} right now. Choose another service or{" "}
+                                    <Link
+                                        href={`/get-care${queryString({ service: requested.id })}`}
+                                        className="font-semibold underline underline-offset-4 hover:no-underline"
+                                    >
+                                        find a physiotherapist who does
+                                    </Link>
+                                    .
+                                </p>
+                            </Notice>
+                        </div>
+                    )}
+                    {offeredServices.length === 0 ? (
+                        <p className="text-sm text-rh-night/65">{profile.fullName} isn&#39;t taking bookings right now.</p>
+                    ) : (
+                        <div className="space-y-2.5">
+                            {offeredServices.map((option) => (
+                                <ServiceOption
+                                    key={option.id}
+                                    service={option}
+                                    selected={option.id === service?.id}
+                                    highlight={option.id === "recovery_consultation" ? "Not sure where to start?" : undefined}
+                                    onSelect={() => chooseService(option.id as BookableServiceId)}
+                                />
+                            ))}
+                        </div>
+                    )}
+                    {service && (
+                        <button type="button" onClick={() => chooseService(service.id as BookableServiceId)} className={cn(primaryButton, "mt-5 w-full")}>
+                            Continue with {service.shortName.toLowerCase()}
+                            <ArrowRight className="h-4 w-4" aria-hidden />
+                        </button>
+                    )}
+                    <p className="mt-4 text-xs leading-relaxed text-rh-night/55">
+                        The price you see is the price you pay. Your booking is confirmed once paid.
+                    </p>
+                </motion.div>
+                <PoweredBy />
+            </BookingShell>
+        );
+    }
+
+    const videoAlternative = virtualAlternative(service.id);
+    const videoAlternativeOffered = videoAlternative ? offeredServices.some((s) => s.id === videoAlternative) : false;
+
+    // ── Step: where should we visit? (home services) ──
+    if (activeStep === "area") {
+        const notCovered = (
+            <Notice tone="warn">
+                <p className="font-semibold">We don&#39;t cover your area for home visits yet — book a video session or contact us.</p>
+                <div className="flex flex-wrap gap-2">
+                    {videoAlternative && videoAlternativeOffered && (
+                        <button
+                            type="button"
+                            onClick={() => chooseService(videoAlternative)}
+                            className="inline-flex min-h-10 items-center gap-1.5 rounded-xl bg-rh-night px-3.5 text-sm font-semibold text-white transition-colors hover:bg-rh-night/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-lime"
+                        >
+                            <Video className="h-4 w-4" aria-hidden />
+                            Book a video session
+                        </button>
+                    )}
+                    <Link
+                        href="/support"
+                        className="inline-flex min-h-10 items-center rounded-xl border border-amber-300 bg-white px-3.5 text-sm font-semibold text-amber-950 transition-colors hover:bg-amber-100"
+                    >
+                        Contact us
+                    </Link>
+                </div>
+            </Notice>
+        );
+
+        return (
+            <BookingShell topRight={changeServiceLink}>
+                <motion.div
+                    initial={reduceMotion ? false : { opacity: 0, y: 12 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: reduceMotion ? 0 : 0.22, ease: "easeOut" }}
+                    className={cardClass}
+                >
+                    {stepHeader("Where should we visit?")}
+                    <p className="mb-5 text-sm text-rh-night/65">
+                        {service.name} with {profile.fullName} at your home. Choose your area so we can confirm the travel charge.
+                    </p>
+
+                    <ServiceAreaPicker
+                        zones={zones}
+                        city={city}
+                        area={area}
+                        onChange={(next) => {
+                            setCity(next.city);
+                            setArea(next.area);
+                        }}
+                        notCovered={notCovered}
+                    />
+
+                    {zone && !physioVisitsZone && (
+                        <div className="mt-4">
+                            <Notice tone="warn">
+                                <p>
+                                    {firstName} doesn&#39;t visit {area} yet.{" "}
+                                    <Link
+                                        href={`/get-care${queryString({ service: service.id, zone: zone.id, area })}`}
+                                        className="font-semibold underline underline-offset-4 hover:no-underline"
+                                    >
+                                        See physiotherapists who do
+                                    </Link>
+                                    {videoAlternative && videoAlternativeOffered && (
+                                        <>
+                                            {" "}or{" "}
+                                            <button
+                                                type="button"
+                                                onClick={() => chooseService(videoAlternative)}
+                                                className="font-semibold underline underline-offset-4 hover:no-underline"
+                                            >
+                                                book a video session with {firstName}
+                                            </button>
+                                        </>
+                                    )}
+                                    .
+                                </p>
+                            </Notice>
+                        </div>
+                    )}
+
+                    {zone && physioVisitsZone && (
+                        <div className="mt-5 space-y-5">
+                            <div className="rounded-2xl border border-rh-night/10 p-4">
+                                {quote === undefined ? (
+                                    <p className="flex items-center gap-2 text-sm text-rh-night/60">
+                                        <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> Checking the price for {area}…
+                                    </p>
+                                ) : quoteOk ? (
+                                    <dl className="space-y-1.5 text-sm">
+                                        <div className="flex items-baseline justify-between gap-3">
+                                            <dt className="text-rh-night/70">{service.shortName}</dt>
+                                            <dd className="font-semibold tabular-nums">{formatKobo(quoteOk.basePriceKobo)}</dd>
+                                        </div>
+                                        {quoteOk.travelSurchargeKobo > 0 && (
+                                            <div className="flex items-baseline justify-between gap-3">
+                                                <dt className="text-rh-night/70">Travel charge ({quoteOk.zoneName ?? zone.name})</dt>
+                                                <dd className="font-semibold tabular-nums">{formatKobo(quoteOk.travelSurchargeKobo)}</dd>
+                                            </div>
+                                        )}
+                                        <div className="flex items-baseline justify-between gap-3 border-t border-rh-night/10 pt-2">
+                                            <dt className="font-semibold">You pay</dt>
+                                            <dd className="text-lg font-bold tabular-nums">{formatKobo(quoteOk.chargeKobo)}</dd>
+                                        </div>
+                                    </dl>
+                                ) : (
+                                    <p className="text-sm text-red-700">{quote.ok ? "" : quote.message}</p>
+                                )}
+                            </div>
+                            <div>
+                                <label htmlFor="address" className="mb-1.5 block text-sm font-semibold">
+                                    Your address <span className="text-red-600">*</span>
+                                </label>
+                                <textarea
+                                    id="address"
+                                    value={patientAddress}
+                                    onChange={(e) => setPatientAddress(e.target.value)}
+                                    placeholder="House number, street, landmarks and anything the physio should know"
+                                    className={cn(fieldClass, "resize-none")}
+                                    rows={3}
+                                    required
+                                />
+                            </div>
+                        </div>
+                    )}
+
+                    <div className="mt-6 grid grid-cols-[auto_1fr] gap-3">
+                        {pickerInFlow ? (
+                            <button type="button" onClick={() => setStep("service")} className={secondaryButton} aria-label="Back">
+                                <ArrowLeft className="h-4 w-4" />
+                            </button>
+                        ) : (
+                            <Link href={`/book/${rawParam}${queryString({ access: accessParam })}`} className={secondaryButton} aria-label="Back">
+                                <ArrowLeft className="h-4 w-4" />
+                            </Link>
+                        )}
+                        <button type="button" onClick={() => setStep("time")} disabled={!addressReady || !quoteOk} className={primaryButton}>
+                            Choose a time
+                            <ArrowRight className="h-4 w-4" aria-hidden />
+                        </button>
+                    </div>
+                </motion.div>
+                <PoweredBy />
+            </BookingShell>
+        );
+    }
+
+    const priceRows = quoteOk
+        ? [
+              ...(quoteOk.travelSurchargeKobo > 0
+                  ? [
+                        { label: service.shortName, amount: formatKobo(quoteOk.basePriceKobo) },
+                        { label: "Travel charge", amount: formatKobo(quoteOk.travelSurchargeKobo) },
+                    ]
+                  : []),
+              { label: quoteOk.assisted ? "You pay (Access rate)" : "You pay", amount: formatKobo(quoteOk.chargeKobo) },
+          ]
+        : [{ label: "Price", amount: servicePriceLabel(service) }];
+
+    const where = isHome ? `Home visit · ${area}, ${city}` : "Video call";
+    const WhereIcon = isHome ? Home : Video;
+
+    // ── Step: pick a time ──
+    if (activeStep === "time") {
+        return (
+            <BookingShell wide topRight={changeServiceLink} className={selectedSlot ? "pb-56 lg:pb-14" : undefined}>
+                <CalendarBookingWidget
+                    physiotherapistId={physiotherapistId}
+                    physiotherapistName={profile.fullName}
+                    physiotherapistImage={profile.imageUrl}
+                    sessionDuration={service.durationMinutes}
+                    sessionTitle={service.name}
+                    sessionDescription={service.summary}
+                    offersOnlineSessions={!isHome}
+                    offersInPersonSessions={isHome}
+                    host={<PhysioHostCard profile={profile} tone="light" />}
+                    prices={priceRows}
+                    sidebarFooter={
+                        <div className="mt-4 space-y-3 text-sm">
+                            {quoteOk?.assisted && (
+                                <p className="inline-flex items-center gap-1.5 rounded-full bg-rh-lime/15 px-2.5 py-1 text-xs font-semibold text-rh-night dark:text-rh-lime">
+                                    <BadgeCheck className="h-3.5 w-3.5" aria-hidden /> Rehabify Access rate
+                                </p>
+                            )}
+                            {isHome && (
+                                <p className="flex items-start gap-2 text-rh-night/70 dark:text-white/65">
+                                    <Home className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+                                    <span className="min-w-0 flex-1">
+                                        {area}, {city}{" "}
+                                        <button
+                                            type="button"
+                                            onClick={() => setStep("area")}
+                                            className="font-semibold text-rh-night underline-offset-4 hover:underline dark:text-rh-lime"
+                                        >
+                                            Change
+                                        </button>
+                                    </span>
+                                </p>
+                            )}
+                            <p className="text-xs text-rh-night/55 dark:text-white/50">All-inclusive. Your booking is confirmed once paid.</p>
+                        </div>
+                    }
+                    selectedSlot={selectedSlot}
+                    onSlotSelect={setSelectedSlot}
+                    onContinue={goToDetails}
+                    continueLabel="Next"
+                />
+                <PoweredBy />
+
+                <BookingBottomSheet open={Boolean(selectedSlot)} label="Selected time">
+                    {selectedSlot && (
+                        <div className="text-rh-night dark:text-white">
+                            <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                    <p className="text-[11px] font-semibold uppercase tracking-wider text-rh-night/50 dark:text-white/50">
+                                        {service.shortName} · {service.durationMinutes} min
+                                    </p>
+                                    <p className="mt-1 truncate text-base font-semibold">
+                                        {new Date(selectedSlot.start).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "Africa/Lagos" })}
+                                        <span className="tabular-nums"> · {formatTime(selectedSlot.start)}</span>
+                                    </p>
+                                </div>
+                                <div className="shrink-0 text-right">
+                                    <p className="text-lg font-bold tabular-nums">
+                                        {chargeKobo !== null ? formatKobo(chargeKobo) : servicePriceLabel(service)}
+                                    </p>
+                                    <p className="text-[11px] text-rh-night/55 dark:text-white/55">all-inclusive</p>
+                                </div>
+                            </div>
+                            <button type="button" onClick={goToDetails} className={cn(primaryButton, "mt-4 w-full")}>
+                                Continue
+                                <ArrowRight className="h-4 w-4" aria-hidden />
+                            </button>
+                        </div>
+                    )}
+                </BookingBottomSheet>
+            </BookingShell>
+        );
+    }
+
+    // ── Step: details, price and payment ──
+    if (!selectedSlot) return null;
+
+    const accessNote = (() => {
+        if (!accessParam || !isSignedIn || myAccess === undefined) return null;
+        if (!award) return "We couldn't find an active Rehabify Access arrangement on your account. You can still book at the standard price.";
+        if (award.physiotherapistId !== physiotherapistId) return `Your Rehabify Access rate is for sessions with ${award.physiotherapistName}.`;
+        if (!awardService || awardService.assistedPriceKobo == null) return "Your Rehabify Access rate doesn't cover this service, so the standard price applies.";
+        if (award.sessionsLeft <= 0) return "You've used all the sessions in your Rehabify Access arrangement, so the standard price applies.";
+        return null;
+    })();
+
+    const payLabel = chargeKobo !== null ? `Book and pay ${formatKobo(chargeKobo)}` : "Book and pay";
+    // With ?access=, wait for the award so the booking isn't made at the standard price by mistake
+    const accessLoading = Boolean(accessParam && isSignedIn && myAccess === undefined);
+    const canPay = Boolean(quoteOk) && userLoaded && !isProcessing && !accessLoading;
+
+    const summary = (
         <div className="flex items-start gap-3.5 rounded-2xl bg-rh-canvas/80 p-4 ring-1 ring-inset ring-rh-night/[0.06]">
             {profile.imageUrl ? (
                 <Image
@@ -433,7 +911,7 @@ export default function BookingPage() {
             )}
             <div className="min-w-0 flex-1">
                 <p className="text-sm font-semibold text-rh-night">
-                    {sessionInfo.title} <span className="font-normal text-rh-night/55">with {profile.fullName}</span>
+                    {service.name} <span className="font-normal text-rh-night/55">with {profile.fullName}</span>
                 </p>
                 <p className="mt-1 flex items-center gap-1.5 text-sm text-rh-night/75">
                     <CalendarDays className="h-4 w-4 shrink-0 text-rh-night/45" aria-hidden />
@@ -441,14 +919,18 @@ export default function BookingPage() {
                 </p>
                 <p className="mt-0.5 pl-[22px] text-sm font-semibold tabular-nums text-rh-night">
                     {formatTime(selectedSlot.start)} – {formatTime(selectedSlot.end)}
-                    <span className="font-normal text-rh-night/55"> · {sessionDuration} min</span>
+                    <span className="font-normal text-rh-night/55"> · {service.durationMinutes} min</span>
+                </p>
+                <p className="mt-1 flex items-center gap-1.5 text-sm text-rh-night/75">
+                    <WhereIcon className="h-4 w-4 shrink-0 text-rh-night/45" aria-hidden />
+                    <span className="min-w-0 truncate">{where}</span>
                 </p>
             </div>
             <button
                 type="button"
                 onClick={() => {
                     setShowGuestForm(false);
-                    setStep("select-time");
+                    setStep("time");
                 }}
                 className="shrink-0 rounded-lg px-2 py-1 text-xs font-semibold text-rh-night underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-lime"
             >
@@ -457,348 +939,205 @@ export default function BookingPage() {
         </div>
     );
 
-    const changeSessionLink = (
-        <Link
-            href={`/book/${rawParam}`}
-            className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium text-white/75 ring-1 ring-white/15 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-lime"
-        >
-            <ArrowLeft className="h-4 w-4" aria-hidden />
-            All sessions
-        </Link>
-    );
-
-    // ── Step: pick a time ──
-    if (step === "select-time") {
-        return (
-            <BookingShell wide topRight={changeSessionLink} className={selectedSlot ? "pb-56 lg:pb-14" : undefined}>
-                <CalendarBookingWidget
-                    physiotherapistId={physiotherapistId}
-                    physiotherapistName={profile.fullName}
-                    physiotherapistImage={profile.imageUrl}
-                    sessionDuration={sessionDuration}
-                    sessionTitle={sessionInfo.title}
-                    sessionDescription={sessionInfo.description}
-                    offersOnlineSessions={offersOnline}
-                    offersInPersonSessions={offersInPerson}
-                    host={<PhysioHostCard profile={profile} tone="light" />}
-                    prices={prices}
-                    selectedSlot={selectedSlot}
-                    onSlotSelect={setSelectedSlot}
-                    onContinue={goNext}
-                    continueLabel="Next"
-                />
-                <PoweredBy />
-
-                <BookingBottomSheet open={Boolean(selectedSlot)} label="Selected time">
-                    {selectedSlot && (
-                        <div className="text-rh-night dark:text-white">
-                            <div className="flex items-start justify-between gap-3">
-                                <div className="min-w-0">
-                                    <p className="text-[11px] font-semibold uppercase tracking-wider text-rh-night/50 dark:text-white/50">
-                                        {sessionInfo.title} · {sessionDuration} min
-                                    </p>
-                                    <p className="mt-1 truncate text-base font-semibold">
-                                        {new Date(selectedSlot.start).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}
-                                        <span className="tabular-nums"> · {formatTime(selectedSlot.start)}</span>
-                                    </p>
-                                </div>
-                                <div className="shrink-0 text-right">
-                                    <p className="text-lg font-bold tabular-nums">
-                                        {formatNaira(singleSessionPrice(pricing, sessionMode))}
-                                    </p>
-                                    <p className="text-[11px] text-rh-night/55 dark:text-white/55">
-                                        {pricing.kind === "standard" && offersOnline && offersInPerson && pricing.video !== pricing.inPerson
-                                            ? `video · ${formatNaira(pricing.inPerson)} in person`
-                                            : "per session"}
-                                    </p>
-                                </div>
-                            </div>
-                            <button type="button" onClick={goNext} className={cn(primaryButton, "mt-4 w-full")}>
-                                Continue
-                                <ArrowRight className="h-4 w-4" aria-hidden />
-                            </button>
-                        </div>
-                    )}
-                </BookingBottomSheet>
-            </BookingShell>
-        );
-    }
-
-    // ── Step: confirmed (free sessions) ──
-    if (step === "confirm") {
-        return (
-            <BookingShell>
-                <div className="rounded-[28px] bg-white p-6 text-center text-rh-night shadow-[0_30px_80px_-30px_rgba(0,0,0,0.6)] sm:p-8">
-                    <motion.div
-                        initial={reduceMotion ? false : { scale: 0.6, opacity: 0 }}
-                        animate={{ scale: 1, opacity: 1 }}
-                        transition={reduceMotion ? { duration: 0 } : { type: "spring", stiffness: 380, damping: 18 }}
-                        className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-full bg-rh-lime shadow-[0_14px_30px_-12px_rgba(0,205,15,0.9)]"
-                    >
-                        <Check className="h-8 w-8 text-rh-night" strokeWidth={3} />
-                    </motion.div>
-                    <h2 className="text-2xl font-semibold tracking-tight">You&#39;re booked</h2>
-                    <p className="mt-2 text-rh-night/65">
-                        Your {packageName.toLowerCase()} with {profile.fullName} is scheduled.
-                    </p>
-                    <div className="mt-6 text-left">{summary}</div>
-                    {effectivePackage > 1 && (
-                        <p className="mt-3 text-sm text-rh-night/55">+ {effectivePackage - 1} more sessions to schedule with your physio</p>
-                    )}
-                    <p className="mt-6 text-sm text-rh-night/55">We&#39;ve emailed you the details and the meeting link.</p>
-                    <button type="button" onClick={() => router.push("/dashboard/patient/appointments")} className={cn(primaryButton, "mt-6 w-full")}>
-                        View my appointments
-                    </button>
-                </div>
-                <PoweredBy />
-            </BookingShell>
-        );
-    }
-
-    // ── Steps: plan and details ──
     return (
-        <BookingShell topRight={changeSessionLink}>
+        <BookingShell topRight={changeServiceLink}>
             <motion.div
-                key={step}
+                key="details"
                 initial={reduceMotion ? false : { opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: reduceMotion ? 0 : 0.22, ease: "easeOut" }}
-                className="rounded-[28px] bg-white p-5 text-rh-night shadow-[0_30px_80px_-30px_rgba(0,0,0,0.6)] sm:p-7"
+                className={cardClass}
             >
-                <div className="mb-5 flex items-center justify-between gap-3">
-                    <h1 className="text-xl font-semibold tracking-tight">{step === "select-package" ? "Choose your plan" : "Your details"}</h1>
-                    <StepDots steps={steps} current={stepIndex} />
-                </div>
+                {stepHeader("Your details")}
 
                 {summary}
 
-                {step === "select-package" && packageBreakdown && pricing.kind === "package" && (
-                    <>
-                        <p className="mb-3 mt-6 text-sm text-rh-night/60">
-                            Book one session or save with a package. Each session is {formatNaira(pricing.sessionRate)}.
-                        </p>
-                        <PackagePicker
-                            sessionRate={pricing.sessionRate}
-                            discountPercent={discountPercent}
-                            selected={effectivePackage}
-                            onSelect={setSelectedPackage}
+                <div className="mt-6 space-y-6">
+                    <div>
+                        <label htmlFor="notes" className="mb-1.5 block text-sm font-semibold">
+                            Anything we should know? <span className="font-normal text-rh-night/50">(optional)</span>
+                        </label>
+                        <textarea
+                            id="notes"
+                            value={notes}
+                            onChange={(e) => setNotes(e.target.value)}
+                            placeholder="Tell the physiotherapist about your pain or condition"
+                            className={cn(fieldClass, "resize-none")}
+                            rows={3}
                         />
-                        <div className="mt-6 grid grid-cols-[auto_1fr] gap-3">
-                            <button type="button" onClick={goBack} className={secondaryButton} aria-label="Back">
-                                <ArrowLeft className="h-4 w-4" />
-                            </button>
-                            <button type="button" onClick={() => setStep("details")} className={primaryButton}>
-                                Continue · {formatNaira(packageBreakdown.total)}
-                                <ArrowRight className="h-4 w-4" aria-hidden />
-                            </button>
-                        </div>
-                    </>
-                )}
+                    </div>
 
-                {step === "details" && selectedSlot && (
-                    <div className="mt-6 space-y-6">
-                        {/* Session mode */}
-                        {offersOnline && offersInPerson && (
-                            <fieldset>
-                                <legend className="mb-2.5 text-sm font-semibold">How would you like to meet?</legend>
-                                <div role="radiogroup" className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-                                    {(["online", "in-person"] as const).map((mode) => {
-                                        const selected = sessionMode === mode;
-                                        const Icon = mode === "online" ? Video : MapPin;
-                                        return (
-                                            <motion.button
-                                                key={mode}
-                                                type="button"
-                                                role="radio"
-                                                aria-checked={selected}
-                                                onClick={() => setSessionMode(mode)}
-                                                whileTap={reduceMotion ? undefined : { scale: 0.98 }}
-                                                className={cn(
-                                                    "flex items-center gap-3 rounded-2xl border p-4 text-left transition-[background-color,border-color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-lime focus-visible:ring-offset-2",
-                                                    selected
-                                                        ? "border-rh-lime bg-rh-honeydew shadow-[0_0_0_1px_#00cd0f]"
-                                                        : "border-rh-night/10 hover:border-rh-night/30"
-                                                )}
-                                            >
-                                                <span className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-xl", selected ? "bg-rh-night text-rh-lime" : "bg-rh-night/[0.06] text-rh-night/70")}>
-                                                    <Icon className="h-4 w-4" aria-hidden />
-                                                </span>
-                                                <span className="min-w-0 flex-1">
-                                                    <span className="block text-sm font-semibold">{mode === "online" ? "Video call" : "In person"}</span>
-                                                    <span className="block text-xs text-rh-night/55">
-                                                        {mode === "online" ? "From anywhere" : "Home visit at your address"}
-                                                        {pricing.kind === "standard" && ` · ${formatNaira(mode === "online" ? pricing.video : pricing.inPerson)}`}
-                                                    </span>
-                                                </span>
-                                                <span
-                                                    aria-hidden
-                                                    className={cn(
-                                                        "flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2",
-                                                        selected ? "border-rh-lime bg-rh-lime text-rh-night" : "border-rh-night/20"
-                                                    )}
-                                                >
-                                                    {selected && <Check className="h-3 w-3" strokeWidth={3} />}
-                                                </span>
-                                            </motion.button>
-                                        );
-                                    })}
-                                </div>
-                            </fieldset>
+                    {/* Price */}
+                    <div className="rounded-2xl border border-rh-night/10 p-4">
+                        {quoteOk?.assisted && (
+                            <p className="mb-3 inline-flex items-center gap-1.5 rounded-full bg-rh-lime/15 px-2.5 py-1 text-xs font-semibold text-rh-night">
+                                <BadgeCheck className="h-3.5 w-3.5" aria-hidden /> Rehabify Access rate · {formatKobo(quoteOk.basePriceKobo)}
+                            </p>
                         )}
-
-                        {sessionMode === "in-person" && (
-                            <div>
-                                <label htmlFor="address" className="mb-1.5 block text-sm font-semibold">
-                                    Your address <span className="text-red-600">*</span>
-                                </label>
-                                <textarea
-                                    id="address"
-                                    value={patientAddress}
-                                    onChange={(e) => setPatientAddress(e.target.value)}
-                                    placeholder="Street, apartment number, landmarks and anything the physio should know"
-                                    className={cn(fieldClass, "resize-none")}
-                                    rows={3}
-                                    required
-                                />
-                            </div>
-                        )}
-
-                        <div>
-                            <label htmlFor="notes" className="mb-1.5 block text-sm font-semibold">
-                                Anything we should know? <span className="font-normal text-rh-night/50">(optional)</span>
-                            </label>
-                            <textarea
-                                id="notes"
-                                value={notes}
-                                onChange={(e) => setNotes(e.target.value)}
-                                placeholder="Tell the physiotherapist about your pain or condition"
-                                className={cn(fieldClass, "resize-none")}
-                                rows={3}
-                            />
-                        </div>
-
-                        {/* Price summary */}
-                        <div className="rounded-2xl border border-rh-night/10 p-4">
+                        {quote === undefined ? (
+                            <p className="flex items-center gap-2 text-sm text-rh-night/60">
+                                <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> Checking the price…
+                            </p>
+                        ) : quoteOk ? (
                             <dl className="space-y-2 text-sm">
                                 <div className="flex items-baseline justify-between gap-3">
-                                    <dt className="text-rh-night/70">
-                                        {effectivePackage > 1 ? `${packageName} · ${effectivePackage} sessions` : `${sessionInfo.title} · ${modeLabel}`}
-                                    </dt>
-                                    <dd className="font-semibold tabular-nums">{formatNaira(displayBase)}</dd>
+                                    <dt className="text-rh-night/70">{service.name}</dt>
+                                    <dd className="shrink-0 font-semibold tabular-nums">
+                                        {quoteOk.assisted && service.priceKobo > quoteOk.basePriceKobo && (
+                                            <s className="mr-1.5 font-normal text-rh-night/45">{formatKobo(service.priceKobo)}</s>
+                                        )}
+                                        {formatKobo(quoteOk.basePriceKobo)}
+                                    </dd>
                                 </div>
-                                {packageBreakdown && packageBreakdown.saves > 0 && (
-                                    <div className="flex items-baseline justify-between gap-3 text-emerald-700">
-                                        <dt>Package saving ({packageBreakdown.discountPercent}%)</dt>
-                                        <dd className="font-semibold tabular-nums">−{formatNaira(packageBreakdown.saves)}</dd>
-                                    </div>
-                                )}
-                                {feeSurcharge.applies && (
+                                {quoteOk.travelSurchargeKobo > 0 && (
                                     <div className="flex items-baseline justify-between gap-3">
-                                        <dt className="text-rh-night/70">Payment processing (Paystack)</dt>
-                                        <dd className="font-semibold tabular-nums">{formatNaira(feeSurcharge.feeNaira)}</dd>
+                                        <dt className="text-rh-night/70">Travel charge ({quoteOk.zoneName ?? zone?.name})</dt>
+                                        <dd className="shrink-0 font-semibold tabular-nums">{formatKobo(quoteOk.travelSurchargeKobo)}</dd>
                                     </div>
                                 )}
                                 <div className="flex items-baseline justify-between gap-3 border-t border-rh-night/10 pt-3">
-                                    <dt className="font-semibold">Total</dt>
-                                    <dd className="text-2xl font-bold tabular-nums">{formatNaira(totalToPay)}</dd>
+                                    <dt className="font-semibold">You pay</dt>
+                                    <dd className="text-2xl font-bold tabular-nums">{formatKobo(quoteOk.chargeKobo)}</dd>
                                 </div>
+                                <p className="text-right text-xs text-rh-night/55">All-inclusive. No extra fees at checkout.</p>
                             </dl>
-                            {packagesAvailable && (
-                                <button
-                                    type="button"
-                                    onClick={() => setStep("select-package")}
-                                    className="mt-2 rounded text-xs font-semibold text-rh-night underline underline-offset-4 hover:no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-lime"
-                                >
-                                    Change plan
-                                </button>
-                            )}
-                        </div>
+                        ) : (
+                            <p className="text-sm text-red-700">{quote.ok ? "" : quote.message}</p>
+                        )}
+                    </div>
 
-                        {/* Guest checkout */}
-                        {showGuestForm && !isSignedIn && (
-                            <motion.div
-                                initial={reduceMotion ? false : { opacity: 0, y: 8 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                className="space-y-4 rounded-2xl bg-rh-canvas/80 p-4 ring-1 ring-inset ring-rh-night/[0.06] sm:p-5"
-                            >
-                                <div>
-                                    <p className="text-sm font-semibold">Quick checkout</p>
-                                    <p className="text-xs text-rh-night/55">No account needed. We&#39;ll send your booking to this email.</p>
-                                </div>
-                                <div>
-                                    <label htmlFor="guestName" className="mb-1.5 block text-xs font-semibold">Full name <span className="font-normal text-rh-night/50">(optional)</span></label>
-                                    <div className="relative">
-                                        <User className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-rh-night/40" />
-                                        <input id="guestName" value={guestName} onChange={(e) => setGuestName(e.target.value)} placeholder="Your full name" autoComplete="name" className={cn(fieldClass, "pl-10")} />
-                                    </div>
-                                </div>
-                                <div>
-                                    <label htmlFor="guestEmail" className="mb-1.5 block text-xs font-semibold">Email <span className="text-red-600">*</span></label>
-                                    <div className="relative">
-                                        <Mail className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-rh-night/40" />
-                                        <input id="guestEmail" type="email" value={guestEmail} onChange={(e) => setGuestEmail(e.target.value)} placeholder="you@example.com" autoComplete="email" className={cn(fieldClass, "pl-10")} />
-                                    </div>
-                                </div>
-                                <div>
-                                    <label htmlFor="guestPhone" className="mb-1.5 block text-xs font-semibold">Phone <span className="font-normal text-rh-night/50">(optional)</span></label>
-                                    <div className="relative">
-                                        <Phone className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-rh-night/40" />
-                                        <input id="guestPhone" type="tel" value={guestPhone} onChange={(e) => setGuestPhone(e.target.value)} placeholder="080xxxxxxxx" autoComplete="tel" className={cn(fieldClass, "pl-10")} />
-                                    </div>
-                                </div>
-                                <button type="button" onClick={handleGuestPay} disabled={isProcessing || !guestEmail.trim()} className={cn(primaryButton, "w-full")}>
-                                    {isProcessing ? (
-                                        <>
-                                            <Loader2 className="h-4 w-4 animate-spin" /> Processing…
-                                        </>
-                                    ) : totalToPay > 0 ? (
-                                        <>
-                                            <Lock className="h-4 w-4" aria-hidden /> Pay {formatNaira(totalToPay)}
-                                        </>
-                                    ) : (
-                                        "Book now"
-                                    )}
-                                </button>
+                    {accessNote && (
+                        <Notice>
+                            <p>{accessNote}</p>
+                        </Notice>
+                    )}
+
+                    {bookingError && (
+                        <Notice tone="error">
+                            <p>{bookingError}</p>
+                            {service.requiresPriorAssessment && /assessment/i.test(bookingError) && (
+                                <Link
+                                    href={`/book/${rawParam}${offeredServices.some((s) => s.id === "virtual_assessment") ? "/virtual_assessment" : ""}`}
+                                    className="inline-flex font-semibold underline underline-offset-4 hover:no-underline"
+                                >
+                                    Book an assessment
+                                </Link>
+                            )}
+                            {!isSignedIn && /sign in/i.test(bookingError) && (
+                                <Link
+                                    href={signInHref}
+                                    onClick={rememberBookingForSignIn}
+                                    className="inline-flex font-semibold underline underline-offset-4 hover:no-underline"
+                                >
+                                    Sign in
+                                </Link>
+                            )}
+                        </Notice>
+                    )}
+
+                    {needsSignIn && userLoaded && !isSignedIn ? (
+                        <div className="space-y-3 rounded-2xl bg-rh-canvas/80 p-4 ring-1 ring-inset ring-rh-night/[0.06] sm:p-5">
+                            <p className="text-sm font-semibold">Sign in to book</p>
+                            <p className="text-sm text-rh-night/65">
+                                {service.requiresPriorAssessment
+                                    ? `${service.name} follows an assessment, so we need to check your records first.`
+                                    : "Sign in to use your Rehabify Access rate."}
+                            </p>
+                            <Link href={signInHref} onClick={rememberBookingForSignIn} className={cn(primaryButton, "w-full")}>
+                                <LogIn className="h-4 w-4" aria-hidden />
+                                Sign in to continue
+                            </Link>
+                            {service.requiresPriorAssessment && (
                                 <p className="text-center text-xs text-rh-night/55">
-                                    Have an account?{" "}
-                                    <Link href={signInHref} onClick={rememberBookingForSignIn} className="font-semibold text-rh-night underline underline-offset-4 hover:no-underline">
-                                        Sign in instead
+                                    New to Rehabify?{" "}
+                                    <Link href={`/book/${rawParam}`} className="font-semibold text-rh-night underline underline-offset-4 hover:no-underline">
+                                        Book an assessment first
                                     </Link>
                                 </p>
-                            </motion.div>
-                        )}
-
-                        {!showGuestForm && (
-                            <div className="grid grid-cols-[auto_1fr] gap-3">
-                                <button type="button" onClick={goBack} className={secondaryButton} aria-label="Back">
-                                    <ArrowLeft className="h-4 w-4" />
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={handleBooking}
-                                    disabled={isProcessing || (sessionMode === "in-person" && !patientAddress.trim())}
-                                    className={primaryButton}
-                                >
-                                    {isProcessing ? (
-                                        <>
-                                            <Loader2 className="h-4 w-4 animate-spin" /> Processing…
-                                        </>
-                                    ) : (
-                                        <>
-                                            {totalToPay > 0 && <Lock className="h-4 w-4" aria-hidden />}
-                                            {ctaLabel}
-                                        </>
-                                    )}
-                                </button>
+                            )}
+                        </div>
+                    ) : showGuestForm && !isSignedIn ? (
+                        <motion.div
+                            initial={reduceMotion ? false : { opacity: 0, y: 8 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            className="space-y-4 rounded-2xl bg-rh-canvas/80 p-4 ring-1 ring-inset ring-rh-night/[0.06] sm:p-5"
+                        >
+                            <div>
+                                <p className="text-sm font-semibold">Quick checkout</p>
+                                <p className="text-xs text-rh-night/55">No account needed. We&#39;ll send your booking to this email.</p>
                             </div>
-                        )}
+                            <div>
+                                <label htmlFor="guestName" className="mb-1.5 block text-xs font-semibold">Full name <span className="font-normal text-rh-night/50">(optional)</span></label>
+                                <div className="relative">
+                                    <User className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-rh-night/40" />
+                                    <input id="guestName" value={guestName} onChange={(e) => setGuestName(e.target.value)} placeholder="Your full name" autoComplete="name" className={cn(fieldClass, "pl-10")} />
+                                </div>
+                            </div>
+                            <div>
+                                <label htmlFor="guestEmail" className="mb-1.5 block text-xs font-semibold">Email <span className="text-red-600">*</span></label>
+                                <div className="relative">
+                                    <Mail className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-rh-night/40" />
+                                    <input id="guestEmail" type="email" value={guestEmail} onChange={(e) => setGuestEmail(e.target.value)} placeholder="you@example.com" autoComplete="email" className={cn(fieldClass, "pl-10")} />
+                                </div>
+                            </div>
+                            <div>
+                                <label htmlFor="guestPhone" className="mb-1.5 block text-xs font-semibold">Phone <span className="font-normal text-rh-night/50">(optional)</span></label>
+                                <div className="relative">
+                                    <Phone className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-rh-night/40" />
+                                    <input id="guestPhone" type="tel" value={guestPhone} onChange={(e) => setGuestPhone(e.target.value)} placeholder="080xxxxxxxx" autoComplete="tel" className={cn(fieldClass, "pl-10")} />
+                                </div>
+                            </div>
+                            <button type="button" onClick={handleGuestPay} disabled={!canPay || !guestEmail.trim()} className={cn(primaryButton, "w-full")}>
+                                {isProcessing ? (
+                                    <>
+                                        <Loader2 className="h-4 w-4 animate-spin" /> Processing…
+                                    </>
+                                ) : (
+                                    <>
+                                        <Lock className="h-4 w-4" aria-hidden /> {payLabel}
+                                    </>
+                                )}
+                            </button>
+                            <p className="text-center text-xs text-rh-night/55">
+                                Have an account?{" "}
+                                <Link href={signInHref} onClick={rememberBookingForSignIn} className="font-semibold text-rh-night underline underline-offset-4 hover:no-underline">
+                                    Sign in instead
+                                </Link>
+                            </p>
+                        </motion.div>
+                    ) : (
+                        <div className="grid grid-cols-[auto_1fr] gap-3">
+                            <button type="button" onClick={() => setStep("time")} className={secondaryButton} aria-label="Back">
+                                <ArrowLeft className="h-4 w-4" />
+                            </button>
+                            <button type="button" onClick={handleBooking} disabled={!canPay} className={primaryButton}>
+                                {isProcessing ? (
+                                    <>
+                                        <Loader2 className="h-4 w-4 animate-spin" /> Processing…
+                                    </>
+                                ) : isSignedIn ? (
+                                    <>
+                                        <Lock className="h-4 w-4" aria-hidden />
+                                        {payLabel}
+                                    </>
+                                ) : (
+                                    <>
+                                        Continue to payment
+                                        <ArrowRight className="h-4 w-4" aria-hidden />
+                                    </>
+                                )}
+                            </button>
+                        </div>
+                    )}
 
-                        <p className="flex items-center justify-center gap-1.5 text-center text-xs text-rh-night/50">
+                    <div className="space-y-1.5 text-center text-xs text-rh-night/50">
+                        <p>Your time is held for 30 minutes while you pay. Your booking is confirmed once paid.</p>
+                        <p className="flex items-center justify-center gap-1.5">
                             <Lock className="h-3.5 w-3.5" aria-hidden />
                             Secure payment by Paystack
                         </p>
                     </div>
-                )}
+                </div>
             </motion.div>
             <PoweredBy />
         </BookingShell>

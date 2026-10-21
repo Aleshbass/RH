@@ -3,6 +3,7 @@ import { mutation, query, type QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { ensureUserRole } from "./auth";
 import { loadClinicFeeConfig } from "./clinicFeeSettings";
+import { matchesRehabifyId } from "./helpers/rehabifyIdFormat";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Admin console: clinics. Every function is admin-only. Reads are capped so a big
@@ -88,11 +89,13 @@ export const listClinics = query({
       if (status === "suspended" && clinicStatus(clinic) !== "suspended") return false;
       if (status === "pending" && approvalStatus === "approved") return false;
       if (!term) return true;
-      return [clinic.name, clinic.city, clinic.state, clinic.contactEmail, fullName(owner), owner?.email]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase()
-        .includes(term);
+      return (
+        [clinic.name, clinic.city, clinic.state, clinic.contactEmail, fullName(owner), owner?.email]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase()
+          .includes(term) || matchesRehabifyId(clinic.clinicNumber, term)
+      );
     });
 
     const limit = Math.min(Math.max(1, Math.floor(args.limit ?? 50)), 200);
@@ -106,6 +109,7 @@ export const listClinics = query({
         return {
           _id: clinic._id,
           name: clinic.name,
+          clinicNumber: clinic.clinicNumber ?? null,
           logoUrl: clinic.logoUrl ?? null,
           city: clinic.city ?? null,
           state: clinic.state ?? null,
@@ -238,6 +242,7 @@ export const getClinic = query({
       clinic: {
         _id: clinic._id,
         name: clinic.name,
+        clinicNumber: clinic.clinicNumber ?? null,
         createdAt: clinic._creationTime,
         status: clinicStatus(clinic),
         suspendedReason: clinic.suspendedReason ?? null,
@@ -439,6 +444,7 @@ export const listClinicPatients = query({
         return {
           userId: patient._id,
           name: fullName(patient),
+          patientNumber: patient.patientNumber ?? null,
           email: patient.email ?? null,
           phoneNumber: patient.phoneNumber ?? null,
           imageUrl: patient.imageUrl ?? null,

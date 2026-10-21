@@ -16,6 +16,9 @@ import { AppointmentModal } from '@/components/calendar/AppointmentModal';
 import { SessionLogModal } from '@/components/dashboard/physiotherapist/SessionLogModal';
 import { PageContainer, primaryButtonClass, StatusBadge } from '@/components/physio/ui';
 import { cn } from '@/lib/utils';
+import { APPOINTMENT_STATUS_LABELS, appointmentStatusLabel } from '@/convex/helpers/appointmentStatus';
+import { appointmentBadgeTone, type AppointmentLike } from '@/components/appointments/appointment-ui';
+import { lagosTimeRange } from '@/convex/helpers/lagosTime';
 
 type AppointmentStatus = 'scheduled' | 'confirmed' | 'completed' | 'cancelled_by_patient' | 'cancelled_by_therapist' | 'no_show';
 
@@ -32,20 +35,19 @@ type RawAppointment = {
 
 const STATUS_FILTERS: { value: AppointmentStatus | 'all'; label: string }[] = [
   { value: 'all', label: 'All statuses' },
-  { value: 'scheduled', label: 'Scheduled' },
-  { value: 'confirmed', label: 'Confirmed' },
-  { value: 'completed', label: 'Completed' },
-  { value: 'cancelled_by_patient', label: 'Cancelled by patient' },
-  { value: 'cancelled_by_therapist', label: 'Cancelled by you' },
-  { value: 'no_show', label: 'No-show' },
+  ...(Object.keys(APPOINTMENT_STATUS_LABELS) as AppointmentStatus[]).map((value) => ({
+    value,
+    label: value === 'cancelled_by_therapist' ? 'Cancelled by you' : APPOINTMENT_STATUS_LABELS[value],
+  })),
 ];
 
-function statusBadge(status: string) {
-  if (status === 'confirmed') return <StatusBadge tone="teal">Confirmed</StatusBadge>;
-  if (status === 'completed') return <StatusBadge tone="green">Completed</StatusBadge>;
-  if (status === 'no_show') return <StatusBadge tone="amber">No-show</StatusBadge>;
-  if (status.startsWith('cancelled')) return <StatusBadge tone="red">Cancelled</StatusBadge>;
-  return <StatusBadge>Scheduled</StatusBadge>;
+// Same labels as the appointments list, patient and clinic views
+function statusBadge(appointment: RawAppointment) {
+  return (
+    <StatusBadge tone={appointmentBadgeTone(appointment as AppointmentLike, 'provider')}>
+      {appointmentStatusLabel(appointment as AppointmentLike, 'provider')}
+    </StatusBadge>
+  );
 }
 
 export default function CalendarPage() {
@@ -267,10 +269,10 @@ export default function CalendarPage() {
                           {[appointment.patient?.firstName, appointment.patient?.lastName].filter(Boolean).join(' ') || 'Patient'}
                         </p>
                         <p className="text-xs tabular-nums text-neutral-500 dark:text-neutral-400">
-                          {format(appointment.startTime, 'h:mm a')} – {format(appointment.endTime, 'h:mm a')}
+                          {lagosTimeRange(appointment.startTime, appointment.endTime)}
                         </p>
                       </div>
-                      {statusBadge(appointment.status)}
+                      {statusBadge(appointment)}
                     </li>
                   ))}
               </ul>

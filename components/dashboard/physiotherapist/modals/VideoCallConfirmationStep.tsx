@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { useMutation, useQuery } from 'convex/react';
+import { ConvexError } from 'convex/values';
 import { api } from '@/convex/_generated/api';
 import { Id } from '@/convex/_generated/dataModel';
 import { toast } from 'sonner';
@@ -95,7 +96,8 @@ export function VideoCallConfirmationStep({ data, onUpdate, onSuccess }: VideoCa
             }
         } catch (error) {
             console.error('Failed to create appointment:', error);
-            toast.error('Failed to create appointment');
+            // ConvexError carries a readable reason, e.g. a Rehabify patient who pays per session
+            toast.error(error instanceof ConvexError && typeof error.data === 'string' ? error.data : 'Failed to create appointment');
         } finally {
             setIsSubmitting(false);
         }

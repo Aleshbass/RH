@@ -20,11 +20,13 @@ import { PatientAppointmentBookingModal } from '@/components/patient/PatientAppo
 import {
   CancelAppointmentModal,
   ConfirmAppointmentModal,
-  RescheduleAppointmentModal
+  RescheduleAppointmentModal,
+  RespondToProposalModal
 } from '@/components/patient/AppointmentActionModals'
 import { AppointmentFeedbackModal } from '@/components/patient/AppointmentFeedbackModal'
 import { Id } from '@/convex/_generated/dataModel'
 import { PatientAppointmentDashboard } from '@/components/appointments/PatientAppointmentDashboard'
+import { OpenBookingsCard } from '@/components/patient/OpenBookingsCard'
 
 interface Appointment {
   _id: string
@@ -44,6 +46,12 @@ interface Appointment {
   streamMeetingLink?: string
   videoCallId?: string
   appointmentType?: 'in-person' | 'telehealth'
+  location?: string
+  meetingLink?: string
+  // Another time the physio proposed, waiting for the patient's answer
+  proposedStartTime?: number
+  proposedEndTime?: number
+  proposalNote?: string
 }
 
 
@@ -58,6 +66,7 @@ export default function PatientAppointmentsPage() {
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false)
   const [isRescheduleModalOpen, setIsRescheduleModalOpen] = useState(false)
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null)
+  const [proposalAnswer, setProposalAnswer] = useState<{ appointment: Appointment; accept: boolean } | null>(null)
 
   const user = useQuery(api.users.getMyUser) as UserType | null | undefined
   const allAppointments = useQuery(api.appointments.getPatientAppointments, {
@@ -151,6 +160,11 @@ export default function PatientAppointmentsPage() {
 
   return (
     <div className="container mx-auto p-6 max-w-7xl">
+      {/* Scheduled bookings waiting for payment (renders nothing when there are none) */}
+      <div className="mb-6 empty:hidden">
+        <OpenBookingsCard />
+      </div>
+
       {/* Appointment Booking Modal */}
       <PatientAppointmentBookingModal
         isOpen={isBookingModalOpen}
@@ -191,6 +205,14 @@ export default function PatientAppointmentsPage() {
         onAppointmentRescheduled={handleActionComplete}
       />
 
+      {/* Answer the physio's proposed time */}
+      <RespondToProposalModal
+        isOpen={proposalAnswer !== null}
+        onClose={() => setProposalAnswer(null)}
+        appointment={proposalAnswer?.appointment ?? null}
+        accept={proposalAnswer?.accept ?? true}
+      />
+
       {/* Feedback Modal */}
       {feedbackModal.appointment && (
         <AppointmentFeedbackModal
@@ -210,6 +232,7 @@ export default function PatientAppointmentsPage() {
         onReschedule={handleReschedule}
         onConfirm={handleConfirm}
         onRateVisit={(apt) => setFeedbackModal({ isOpen: true, appointment: apt })}
+        onRespondToProposal={(apt, accept) => setProposalAnswer({ appointment: apt, accept })}
       />
     </div>
   )

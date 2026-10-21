@@ -10,6 +10,7 @@ import Link from "next/link";
 import PhysioCard from "@/components/marketplace/PhysioCard";
 import { DynamicPhysioMapView } from "@/components/marketplace/DynamicPhysioMapView";
 import { useMarketplaceStore } from "@/stores/marketplaceStore";
+import { bookableServices, lowestPriceLabel, type Catalogue } from "@/components/booking/booking-shared";
 
 import {
   Select,
@@ -78,6 +79,11 @@ export default function FindAPhysioPage() {
       setCachedResults(cacheKey, results);
     }
   }, [results, cacheKey, setCachedResults]);
+
+  // Standard Rehabify prices: each card shows the cheapest service the physio offers
+  const catalogue = useQuery(api.serviceTariffs.getCatalogue) as Catalogue | undefined;
+  const priceHintFor = (servicesOffered?: string[]) =>
+    catalogue ? lowestPriceLabel(bookableServices(catalogue.services, servicesOffered ?? [])) : null;
 
   // Use cached results if available while loading
   const cachedData = getCachedResults(cacheKey);
@@ -288,7 +294,7 @@ export default function FindAPhysioPage() {
                           onMouseEnter={() => setHoveredPhysioId(physio.id)}
                           onMouseLeave={() => setHoveredPhysioId(null)}
                         >
-                          <PhysioCard physiotherapist={physio} />
+                          <PhysioCard physiotherapist={physio} priceHint={priceHintFor(physio.servicesOffered)} />
                         </div>
                       ))}
                     </div>

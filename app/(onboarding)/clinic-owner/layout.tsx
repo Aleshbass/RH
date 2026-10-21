@@ -16,6 +16,10 @@ export default function ClinicOwnerOnboardingLayout({
   const { user, isLoaded } = useUser();
   const { data, setRole } = useOnboardingStore();
   const currentUser = useQuery(api.users.getMyUser);
+  const approval = useQuery(
+    api.accountApproval.getStatus,
+    currentUser?.onboarded && currentUser.role === 'clinic_owner' ? { userId: currentUser._id } : 'skip'
+  ) as { status?: string } | null | undefined;
 
   useEffect(() => {
     if (isLoaded) {
@@ -26,8 +30,13 @@ export default function ClinicOwnerOnboardingLayout({
         return;
       }
 
-      // Already onboarded: go to their dashboard
+      // Already onboarded: go to their dashboard. A declined clinic stays here to update and
+      // resubmit its application (the dashboard would only send it back to the declined page).
       if (currentUser?.onboarded) {
+        if (currentUser.role === 'clinic_owner') {
+          if (approval === undefined) return;
+          if (approval?.status === 'declined') return;
+        }
         router.replace(currentUser.role === 'clinic_owner' ? '/dashboard/clinic' : '/dashboard');
         return;
       }
@@ -37,7 +46,7 @@ export default function ClinicOwnerOnboardingLayout({
         setRole('clinic_owner');
       }
     }
-  }, [isLoaded, user, currentUser, data.role, setRole, router]);
+  }, [isLoaded, user, currentUser, approval, data.role, setRole, router]);
 
   return (
     <div className="min-h-screen bg-white">

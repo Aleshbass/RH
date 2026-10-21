@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { toast } from 'sonner'
 import { usePaystackCheckout } from '@/components/billing/PaystackCheckout'
+import { PaystackTestModeBanner } from '@/components/billing/PaystackTestModeBanner'
 import {
   Receipt,
   AlertTriangle,
@@ -39,6 +40,10 @@ interface PatientInvoice {
   currency: string
   paymentMethod?: string
   paymentDate?: number
+  payableAmount?: number
+  patientFees?: { label: string; amount: number }[]
+  lastPaymentStatus?: string
+  paymentReference?: string
 }
 
 export default function PatientInvoiceDetailPage() {
@@ -72,6 +77,7 @@ export default function PatientInvoiceDetailPage() {
   const statusBadge = (status?: string, isOverdue?: boolean) => {
     if (!status) return null
     if (status === 'paid') return <Badge className="bg-green-100 text-green-800">Paid</Badge>
+    if (status === 'void') return <Badge className="bg-gray-100 text-gray-700">Cancelled</Badge>
     if (isOverdue && status !== 'paid') return <Badge className="bg-red-100 text-red-800">Overdue</Badge>
     if (status === 'pending' || status === 'sent') return <Badge className="bg-blue-100 text-blue-800">Pending</Badge>
     return <Badge className="bg-gray-100 text-gray-800">{status}</Badge>
@@ -123,14 +129,15 @@ export default function PatientInvoiceDetailPage() {
     )
   }
 
-  // Calculate payable summary (for display only)
-  const base = invoice.totalAmount || 0
-  const platform = invoice.platformFeeAmount || 100000 // ₦1,000 in kobo
-  const paystackFee = Math.round((base + platform) * 0.015) + 10000 // 1.5% + ₦100
-  const payable = base + platform + paystackFee
+  // The server works out what checkout charges; the page only shows it
+  const payable = invoice.payableAmount ?? invoice.totalAmount
+  const lastAttemptFailed =
+    invoice.canPay && (invoice.lastPaymentStatus === 'failed' || invoice.lastPaymentStatus === 'cancelled')
+  const paymentProcessing = invoice.canPay && (invoice.lastPaymentStatus === 'pending' || invoice.lastPaymentStatus === 'processing')
 
   return (
     <div className="p-6 space-y-6">
+      <PaystackTestModeBanner />
       <div className="flex items-center justify-between">
         <Button variant="outline" onClick={() => router.push('/dashboard/patient/invoices')}>
           <ArrowLeft className="h-4 w-4 mr-2" />
@@ -192,17 +199,15 @@ export default function PatientInvoiceDetailPage() {
                   <span>-{formatCurrency(invoice.discountAmount, invoice.currency)}</span>
                 </div>
               )}
-              <div className="flex justify-between text-sm">
-                <span>Platform Fee:</span>
-                <span>{formatCurrency(platform, invoice.currency)}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span>Paystack Fee (est.):</span>
-                <span>{formatCurrency(paystackFee, invoice.currency)}</span>
-              </div>
+              {(invoice.patientFees ?? []).map((fee) => (
+                <div key={fee.label} className="flex justify-between text-sm">
+                  <span>{fee.label}:</span>
+                  <span>{formatCurrency(fee.amount, invoice.currency)}</span>
+                </div>
+              ))}
               <Separator className="my-2" />
               <div className="flex justify-between text-lg font-bold">
-                <span>Total Payable:</span>
+                <span>{invoice.status === 'paid' ? 'Total paid:' : 'Total payable:'}</span>
                 <span className="text-green-600">{formatCurrency(payable, invoice.currency)}</span>
               </div>
             </div>
@@ -225,21 +230,46 @@ export default function PatientInvoiceDetailPage() {
                 )}
               </div>
 
+              {lastAttemptFailed && (
+                <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+                  Your last payment attempt didn&apos;t go through, so nothing was charged. You can try again.
+                </p>
+              )}
+              {paymentProcessing && (
+                <p className="rounded-lg bg-blue-50 px-3 py-2 text-sm text-blue-700">
+                  A payment was started and is being confirmed. If you completed it, this page updates on its own.
+                </p>
+              )}
+
               {invoice.canPay && (
                 <Button
                   onClick={handlePayNow}
                   className="w-full bg-green-600 hover:bg-green-700"
                 >
                   <CreditCard className="h-4 w-4 mr-2" />
-                  Pay Now
+                  {lastAttemptFailed ? 'Try again' : 'Pay'} {formatCurrency(payable, invoice.currency)}
                 </Button>
               )}
 
               {!invoice.canPay && invoice.status === 'paid' && (
-                <div className="flex items-center text-green-600 text-sm">
-                  <CheckCircle2 className="h-4 w-4 mr-2" />
-                  This invoice has been paid.
+                <div className="space-y-2">
+                  <div className="flex items-center text-green-600 text-sm">
+                    <CheckCircle2 className="h-4 w-4 mr-2" />
+                    This invoice has been paid.
+                  </div>
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => router.push(`/dashboard/patient/invoices/${invoice._id}/receipt`)}
+                  >
+                    <Receipt className="h-4 w-4 mr-2" />
+                    View receipt
+                  </Button>
                 </div>
+              )}
+
+              {invoice.status === 'void' && (
+                <p className="text-sm text-gray-600">This invoice was cancelled, so there is nothing to pay.</p>
               )}
             </div>
           </div>

@@ -74,10 +74,13 @@ export default function AddPatientModal({ isOpen, onClose, onSuccess }: AddPatie
         assignedClinicianId: formData.assignedClinicianId ? (formData.assignedClinicianId as any) : undefined,
       })
 
-      toast.success('Patient added', {
-        description: result?.emailSent
-          ? `We've emailed ${formData.email.trim()} a link to see their appointments and exercises.`
-          : undefined,
+      const emailNote = result?.emailSent
+        ? `We've emailed ${formData.email.trim()} a link to see their appointments and exercises.`
+        : undefined
+      toast.success(result?.patientNumber ? `Patient added · ${result.patientNumber}` : 'Patient added', {
+        description: result?.existingAccount
+          ? `Already on Rehabify, so their existing record was linked instead of making a duplicate.${emailNote ? ` ${emailNote}` : ''}`
+          : emailNote,
       })
       setFormData({
         firstName: '',

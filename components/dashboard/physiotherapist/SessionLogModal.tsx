@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useMutation } from 'convex/react'
+import { useMutation, useQuery } from 'convex/react'
 import { api } from '@/convex/_generated/api'
 import { Id } from '@/convex/_generated/dataModel'
 import {
@@ -21,6 +21,7 @@ import { Badge } from '@/components/ui/badge'
 import { NoteMediaControls, useNoteMedia } from '@/components/physio/NoteMedia'
 import { playSound } from '@/lib/sounds'
 import { format } from 'date-fns'
+import { programError } from '@/components/exercise-programs/errors'
 import { TemplateSelector } from './TemplateSelector'
 // import { useToast } from '@/components/ui/use-toast'
 
@@ -77,14 +78,23 @@ export function SessionLogModal({
   const createSessionLog = useMutation(api.sessionLogs.createSessionLog)
   const updateSessionLog = useMutation(api.sessionLogs.updateSessionLog)
 
+  // Opened from the calendar with just the visit: load the notes already written for it, so a
+  // second save edits them instead of trying to create a duplicate.
+  const loadedSessionLog = useQuery(
+    api.sessionLogs.getMySessionLogForAppointment,
+    isOpen && appointmentId && !existingSessionLog ? { appointmentId } : 'skip'
+  ) as SessionLogModalProps['existingSessionLog'] | null | undefined
+  const sessionLog = existingSessionLog ?? loadedSessionLog ?? undefined
+  const loadingSessionLog = isOpen && Boolean(appointmentId) && !existingSessionLog && loadedSessionLog === undefined
+
   // Initialize form data when modal opens or existing session log changes
   useEffect(() => {
-    if (existingSessionLog) {
+    if (sessionLog) {
       setFormData({
-        subjectiveAssessment: existingSessionLog.subjectiveAssessment || '',
-        objectiveAssessment: existingSessionLog.objectiveAssessment || '',
-        treatmentAdministered: existingSessionLog.treatmentAdministered || '',
-        planForNextSession: existingSessionLog.planForNextSession || '',
+        subjectiveAssessment: sessionLog.subjectiveAssessment || '',
+        objectiveAssessment: sessionLog.objectiveAssessment || '',
+        treatmentAdministered: sessionLog.treatmentAdministered || '',
+        planForNextSession: sessionLog.planForNextSession || '',
       })
     } else {
       setFormData({
@@ -95,7 +105,7 @@ export function SessionLogModal({
       })
     }
     resetMedia()
-  }, [existingSessionLog, isOpen, resetMedia])
+  }, [sessionLog, isOpen, resetMedia])
 
   const handleInputChange = (field: keyof typeof formData, value: string) => {
     setFormData(prev => ({
@@ -121,14 +131,14 @@ export function SessionLogModal({
     setIsSubmitting(true)
 
     try {
-      if (existingSessionLog) {
+      if (sessionLog) {
         // Update existing session log
         // The update replaces these fields, so keep what was already saved.
         await updateSessionLog({
-          sessionLogId: existingSessionLog._id,
+          sessionLogId: sessionLog._id,
           ...formData,
-          voiceNoteUrl: media.voiceStorageId ?? existingSessionLog.voiceNoteUrl,
-          attachments: [...(existingSessionLog.attachments ?? []), ...media.attachmentIds],
+          voiceNoteUrl: media.voiceStorageId ?? sessionLog.voiceNoteUrl,
+          attachments: [...(sessionLog.attachments ?? []), ...media.attachmentIds],
         })
         toast({
           title: "Success",
@@ -155,7 +165,7 @@ export function SessionLogModal({
       console.error('Error saving session log:', error)
       toast({
         title: "Error",
-        description: error instanceof Error ? error.message : "Failed to save session log.",
+        description: programError(error, "Couldn’t save the session notes. Please try again."),
         variant: "destructive",
       })
     } finally {
@@ -163,7 +173,7 @@ export function SessionLogModal({
     }
   }
 
-  const isEditing = !!existingSessionLog
+  const isEditing = !!sessionLog
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
@@ -190,6 +200,12 @@ export function SessionLogModal({
             </DialogDescription>
           )}
         </DialogHeader>
+
+        {loadingSessionLog && (
+          <p className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" /> Checking for notes already written for this visit…
+          </p>
+        )}
 
         <div className="space-y-6">
           {/* Template Selector */}
@@ -316,9 +332,9 @@ export function SessionLogModal({
 
           <div className="border-t pt-4">
             <h4 className="mb-3 text-sm font-medium text-muted-foreground">Voice note and attachments</h4>
-            {existingSessionLog && (existingSessionLog.voiceNoteUrl || existingSessionLog.attachments?.length) ? (
+            {sessionLog && (sessionLog.voiceNoteUrl || sessionLog.attachments?.length) ? (
               <p className="mb-3 text-xs text-muted-foreground">
-                Already saved: {[existingSessionLog.voiceNoteUrl && 'a voice note', existingSessionLog.attachments?.length && `${existingSessionLog.attachments.length} file(s)`].filter(Boolean).join(' and ')}. Anything you add here is kept alongside.
+                Already saved: {[sessionLog.voiceNoteUrl && 'a voice note', sessionLog.attachments?.length && `${sessionLog.attachments.length} file(s)`].filter(Boolean).join(' and ')}. Anything you add here is kept alongside.
               </p>
             ) : null}
             <NoteMediaControls media={media} />
@@ -329,7 +345,7 @@ export function SessionLogModal({
           <Button variant="outline" onClick={onClose} disabled={isSubmitting || media.recording}>
             Cancel
           </Button>
-          <Button onClick={handleSubmit} disabled={isSubmitting || media.busy}>
+          <Button onClick={handleSubmit} disabled={isSubmitting || media.busy || loadingSessionLog}>
             {isSubmitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
             {isEditing ? 'Update Session Log' : 'Create Session Log'}
           </Button>

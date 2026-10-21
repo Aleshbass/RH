@@ -382,6 +382,7 @@ export default function PhysiotherapistOnboardingWizard() {
                         referralSource: referralSource || undefined,
                         // Someone coming from the Physio Register keeps the bio they wrote there
                         bio: registryBio || undefined,
+                        termsAcceptedAt: termsAccepted ? Date.now() : undefined,
                     }) as never,
                     firstName: firstName.trim(),
                     lastName: lastName.trim(),

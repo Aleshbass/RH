@@ -16,6 +16,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { SimpleInvoiceModal } from '@/components/billing/SimpleInvoiceModal';
 import { CreateInvoiceModal } from '@/components/dashboard/physiotherapist/modals/CreateInvoiceModal';
 import { EmptyState, PageContainer, PageHeader, Panel, StatTile, StatusBadge, primaryButtonClass } from '@/components/physio/ui';
+import { PaystackTestModeBanner } from '@/components/billing/PaystackTestModeBanner';
+import { programError } from '@/components/exercise-programs/errors';
 
 type InvoiceFromQuery = {
   _id: Id<'invoices'>;
@@ -30,6 +32,7 @@ type InvoiceFromQuery = {
   dueDate: number;
   paymentDate?: number;
   isOverdue: boolean;
+  lastPaymentStatus?: string;
 };
 
 type BillingStats = {
@@ -106,8 +109,8 @@ export default function BillingPage() {
       try {
         await sendInvoice({ invoiceId });
         toast.success('Invoice sent');
-      } catch {
-        toast.error('Couldn’t send the invoice');
+      } catch (error) {
+        toast.error(programError(error, 'Couldn’t send the invoice'));
       }
     },
     [sendInvoice]
@@ -115,6 +118,12 @@ export default function BillingPage() {
 
   const handleRecordPayment = useCallback(
     async (invoiceId: Id<'invoices'>, amount: number, method: string) => {
+      // Marking an invoice paid by hand is final, so the physio confirms the money really arrived
+      const ok = window.confirm(
+        `Record ₦${amount.toLocaleString('en-NG')} as received by ${method === 'cash' ? 'cash' : 'bank transfer'}? ` +
+          'Only do this once the money is in your account. The patient will see the invoice as paid.'
+      );
+      if (!ok) return;
       try {
         await recordPayment({
           invoiceId,
@@ -125,8 +134,8 @@ export default function BillingPage() {
         });
         playSound('paid');
         toast.success('Payment recorded');
-      } catch {
-        toast.error('Couldn’t record the payment');
+      } catch (error) {
+        toast.error(programError(error, 'Couldn’t record the payment'));
       }
     },
     [recordPayment]
@@ -191,6 +200,7 @@ export default function BillingPage() {
 
   return (
     <PageContainer>
+      <PaystackTestModeBanner />
       <PageHeader
         title="Billing"
         description="Invoices you’ve sent and payments you’ve received."
@@ -288,9 +298,17 @@ export default function BillingPage() {
                   <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
                     <p className="truncate text-sm font-medium text-neutral-900 dark:text-white">{invoice.patientName}</p>
                     {invoiceStatus(invoice)}
+                    {invoice.status !== 'paid' && invoice.status !== 'void' &&
+                      (invoice.lastPaymentStatus === 'failed' || invoice.lastPaymentStatus === 'cancelled') && (
+                        <StatusBadge tone="red">Payment failed</StatusBadge>
+                      )}
+                    {invoice.status !== 'paid' && invoice.status !== 'void' &&
+                      (invoice.lastPaymentStatus === 'pending' || invoice.lastPaymentStatus === 'processing') && (
+                        <StatusBadge tone="amber">Payment started</StatusBadge>
+                      )}
                   </div>
                   <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">
-                    #{invoice.invoiceNumber} · Issued {format(invoice.issueDate, 'd MMM yyyy')} · Due {format(invoice.dueDate, 'd MMM')}
+                    #{invoice.invoiceNumber} · Issued {Number.isFinite(invoice.issueDate) ? format(invoice.issueDate, 'd MMM yyyy') : '—'} · Due {Number.isFinite(invoice.dueDate) ? format(invoice.dueDate, 'd MMM') : '—'}
                   </p>
                 </button>
                 <p className="shrink-0 text-sm font-semibold tabular-nums text-neutral-900 dark:text-white">

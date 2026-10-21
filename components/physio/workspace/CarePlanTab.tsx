@@ -13,6 +13,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { InteractiveTreatmentPlan } from '@/components/dashboard/physiotherapist/treatment/InteractiveTreatmentPlan'
 import { ExerciseProgramsPanel } from '@/components/exercise-programs/ExerciseProgramsPanel'
 import { EmptyState, Panel, StatusBadge, primaryButtonClass } from '@/components/physio/ui'
+import { programError } from '@/components/exercise-programs/errors'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
 import { Fact, Meter, type Goal, type Workspace } from './shared'
@@ -70,7 +71,7 @@ function CarePlanForm({ workspace, onDone }: { workspace: Workspace; onDone: () 
       })
       onDone()
     } catch (error) {
-      toast.error((error as Error).message || 'Couldn’t save the plan')
+      toast.error(programError(error, 'Couldn’t save the plan. Please try again.'))
     } finally {
       setSaving(false)
     }
@@ -210,7 +211,7 @@ function GoalRow({ goal, index, planId, editable }: { goal: Goal; index: number;
       await setAchieved({ planId: planId as never, goalIndex: index, achieved: !goal.achieved })
       if (!goal.achieved) playSound('success')
     } catch (error) {
-      toast.error((error as Error).message || 'Couldn’t update the goal')
+      toast.error(programError(error, 'Couldn’t update the goal. Please try again.'))
     } finally {
       setBusy(false)
     }

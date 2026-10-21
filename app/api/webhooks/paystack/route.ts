@@ -19,7 +19,18 @@ import { SERVER_SECRET_HEADER } from '@/app/api/emails/_auth'
  * - charge.failed — payment failed
  * - transfer.success / transfer.failed / transfer.reversed — partner & doctor payouts
  * - refund.processed — refunds (reverses partner commissions)
+ *
+ * Payments are routed by reference prefix. A failure for any of our own references returns
+ * 500 so Paystack retries; every handler in Convex is idempotent, so retries are safe.
+ * Each Convex mutation re-verifies the signature with the Convex deployment's
+ * PAYSTACK_SECRET_KEY, so Vercel and Convex must hold the same key (same account and mode).
  */
+
+const OUR_PREFIXES = ['JOYREV_', 'JOY_', 'MKT_', 'VERIFICATION_', 'LEARN_', 'INV_', 'CLN_', 'PHY_', 'RH_']
+const INVOICE_PREFIXES = ['INV_', 'CLN_', 'PHY_', 'RH_']
+const EMAIL_TIMEOUT_MS = 10_000
+
+const startsWithAny = (reference: string, prefixes: string[]) => prefixes.some((prefix) => reference.startsWith(prefix))
 
 function verifyWebhookSignature(body: string, signature: string | null): boolean {
     if (!signature) return false
@@ -30,12 +41,16 @@ function verifyWebhookSignature(body: string, signature: string | null): boolean
     const secret = process.env.PAYSTACK_WEBHOOK_SECRET || process.env.PAYSTACK_SECRET_KEY
     if (!secret) return false
 
-    const hash = crypto
-        .createHmac('sha512', secret)
-        .update(body)
-        .digest('hex')
+    const expected = Buffer.from(crypto.createHmac('sha512', secret).update(body).digest('hex'))
+    const actual = Buffer.from(signature.trim().toLowerCase())
+    return expected.length === actual.length && crypto.timingSafeEqual(expected, actual)
+}
 
-    return hash === signature
+async function convexClient() {
+    // Lazy-import to avoid heavy type instantiation at module level
+    const { ConvexHttpClient } = await import('convex/browser')
+    const { api } = await import('@/convex/_generated/api') as any
+    return { convex: new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!), api }
 }
 
 export async function POST(request: NextRequest) {
@@ -57,7 +72,7 @@ export async function POST(request: NextRequest) {
 
         log.info('Paystack webhook received', {
             action: 'paystack_webhook_received',
-            metadata: { event, reference: data?.reference }
+            metadata: { event, reference: data?.reference, domain: data?.domain }
         })
 
         switch (event) {
@@ -119,10 +134,11 @@ async function handlePaymentSuccess(data: {
     paid_at?: string
     [key: string]: unknown
 }, rawBody: string, signature: string) {
+    const reference = String(data.reference || '')
     log.info('Processing successful Paystack payment', {
         action: 'paystack_payment_success',
         metadata: {
-            reference: data.reference,
+            reference,
             amount: data.amount,
             channel: data.channel,
         }
@@ -132,87 +148,76 @@ async function handlePaymentSuccess(data: {
         // Joy payment attempts are resolved from RH's durable reference, not
         // from untrusted client metadata. Payment evidence does not create an
         // appointment: provider acceptance and current safety remain gates.
-        try {
+        // The events are also queued in Convex with the payment; this is the fast path.
+        if (reference.startsWith('JOY_')) {
             const joyPayment = await callJoyConvexGateway('record_payment_webhook', {
-                reference: data.reference,
+                reference,
                 amount_kobo: data.amount,
                 currency: data.currency,
-                paystack_event_id: String(data.id ?? data.reference),
+                paystack_event_id: String(data.id ?? reference),
             }) as { handled?: boolean; duplicate?: boolean; booking_id?: string; patient_id?: string; physiotherapist_id?: string; provider_response_due_at?: number; admin_scheduling_required?: boolean };
-            if (joyPayment.handled) {
-                if (!joyPayment.duplicate && joyPayment.booking_id) {
-                    const eventData = { booking_id: joyPayment.booking_id, patient_id: joyPayment.patient_id, physiotherapist_id: joyPayment.physiotherapist_id, payment_reference: data.reference, provider_response_due_at: joyPayment.provider_response_due_at };
-                    await deliverJoyEvent(`pay-${data.reference}`, 'booking.payment_confirmed', eventData);
-                    if (!joyPayment.admin_scheduling_required) {
-                        await deliverJoyEvent(`provider-response-${joyPayment.booking_id}`, 'booking.provider_response_requested', eventData);
-                    }
+            if (!joyPayment.handled) throw new Error(`Joy payment attempt not found for ${reference}`)
+            if (!joyPayment.duplicate && joyPayment.booking_id) {
+                const eventData = { booking_id: joyPayment.booking_id, patient_id: joyPayment.patient_id, physiotherapist_id: joyPayment.physiotherapist_id, payment_reference: reference, provider_response_due_at: joyPayment.provider_response_due_at };
+                await deliverJoyEvent(`pay-${reference}`, 'booking.payment_confirmed', eventData);
+                if (!joyPayment.admin_scheduling_required) {
+                    await deliverJoyEvent(`provider-response-${joyPayment.booking_id}`, 'booking.provider_response_requested', eventData);
                 }
-                log.info('Recorded verified Joy payment evidence', {
-                    action: 'joy_payment_webhook_recorded', metadata: { reference: data.reference },
-                });
-                return;
             }
-        } catch (joyError) {
-            // A gateway outage must be retried by Paystack rather than silently
-            // falling through to an unrelated invoice path.
-            if (String(data.reference || '').startsWith('JOY_')) throw joyError;
+            log.info('Recorded verified Joy payment evidence', {
+                action: 'joy_payment_webhook_recorded', metadata: { reference },
+            });
+            return
         }
 
-        try {
+        if (reference.startsWith('JOYREV_')) {
             const specialistReviewPayment = await callJoyConvexGateway('record_specialist_review_payment_webhook', {
-                reference: data.reference,
+                reference,
                 amount_kobo: data.amount,
                 currency: data.currency,
-                paystack_event_id: String(data.id ?? data.reference),
+                paystack_event_id: String(data.id ?? reference),
             }) as { handled?: boolean; duplicate?: boolean; review_id?: string; patient_id?: string; reviewer_id?: string; review_status?: string };
-            if (specialistReviewPayment.handled) {
-                if (!specialistReviewPayment.duplicate && specialistReviewPayment.review_id) {
-                    await deliverJoyEvent(`review-payment-${data.reference}`, 'specialist_review.payment_confirmed', {
-                        review_id: specialistReviewPayment.review_id,
-                        patient_id: specialistReviewPayment.patient_id,
-                        payment_reference: data.reference,
-                        reviewer_id: specialistReviewPayment.reviewer_id,
-                        assignment_status: specialistReviewPayment.review_status ?? 'awaiting_assignment',
-                    });
-                }
-                return;
+            if (!specialistReviewPayment.handled) throw new Error(`Specialist review payment attempt not found for ${reference}`)
+            if (!specialistReviewPayment.duplicate && specialistReviewPayment.review_id) {
+                await deliverJoyEvent(`review-payment-${reference}`, 'specialist_review.payment_confirmed', {
+                    review_id: specialistReviewPayment.review_id,
+                    patient_id: specialistReviewPayment.patient_id,
+                    payment_reference: reference,
+                    reviewer_id: specialistReviewPayment.reviewer_id,
+                    assignment_status: specialistReviewPayment.review_status ?? 'awaiting_assignment',
+                });
             }
-        } catch (reviewError) {
-            if (String(data.reference || '').startsWith('JOYREV_')) throw reviewError;
+            return
         }
 
-        // Lazy-import to avoid heavy type instantiation at module level
-        const { ConvexHttpClient } = await import('convex/browser')
-        const { api } = await import('@/convex/_generated/api') as any
-
-        const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!)
+        const { convex, api } = await convexClient()
 
         // Marketplace bookings: completed only from this verified event (idempotent).
         // Convex re-verifies the Paystack signature and checks the amount.
-        if (String(data.reference || '').startsWith('MKT_')) {
+        if (reference.startsWith('MKT_')) {
             const result = await convex.mutation(api.marketplace.booking.recordMarketplacePaystackWebhook, {
                 rawBody,
                 signature,
             })
             log.info('Marketplace booking payment processed', {
                 action: 'paystack_marketplace_payment',
-                metadata: { reference: data.reference, result },
+                metadata: { reference, result },
             })
             return
         }
 
-        // 1. Verification badge payments (VERIFICATION_ references): completed only from
+        // Verification badge payments (VERIFICATION_ references): completed only from
         // this verified event (idempotent). Convex re-verifies the Paystack signature, takes
         // the transaction from the reference, checks amount/currency and sends the
         // confirmation email to the physiotherapist's own address.
-        if (String(data.reference || '').startsWith('VERIFICATION_')) {
+        if (reference.startsWith('VERIFICATION_')) {
             const result = await convex.mutation(api.marketplace.verification.recordVerificationPaystackWebhook, {
                 rawBody,
                 signature,
             })
             log.info('Verification badge payment processed', {
                 action: 'paystack_verification_payment',
-                metadata: { reference: data.reference, result },
+                metadata: { reference, result },
             })
             return
         }
@@ -220,43 +225,56 @@ async function handlePaymentSuccess(data: {
         // Rehabify Learn registrations (LEARN_ references): Convex re-verifies the signature,
         // takes the registration from the reference, checks the amount and emails the
         // confirmation (idempotent with the browser's own verify call).
-        if (String(data.reference || '').startsWith('LEARN_')) {
+        if (reference.startsWith('LEARN_')) {
             const result = await convex.mutation(api.learn.recordLearnPaystackWebhook, {
                 rawBody,
                 signature,
             })
             log.info('Learn registration payment processed', {
                 action: 'paystack_learn_payment',
-                metadata: { reference: data.reference, result },
+                metadata: { reference, result },
             })
             return
         }
 
-        // 2. Regular Invoice Payments
-        log.info('Processing regular invoice payment', { action: 'regular_payment_path' });
+        if (!startsWithAny(reference, INVOICE_PREFIXES)) {
+            // Not a Rehabify checkout (e.g. a payment made directly on the Paystack dashboard)
+            log.warn('Paystack payment with an unknown reference', {
+                action: 'paystack_unknown_reference', metadata: { reference, amount: data.amount },
+            })
+            return
+        }
 
-        // Convex re-verifies the Paystack signature, then marks the payment and invoice
-        // paid and keeps the patient balance in sync
-        await convex.mutation(api.payments.recordPaystackChargeWebhook, {
+        // Invoice payments (patient checkout, clinic and physio payment links). Convex
+        // re-verifies the signature, checks the amount against the invoice, and marks the
+        // payment and invoice paid once.
+        const result = await convex.mutation(api.payments.recordPaystackChargeWebhook, {
             rawBody,
             signature,
+        }) as { success: boolean; message: string }
+        log.info('Invoice payment processed', {
+            action: 'paystack_invoice_payment',
+            metadata: { reference, result },
         })
 
-        // Send payment notification emails
-        await sendPaymentEmails({
-            type: 'success',
-            reference: data.reference,
-            amount: data.amount,
-            metadata: data.metadata,
-        })
+        // Only the first time the payment is recorded
+        if (result.success && result.message === 'Payment status updated') {
+            await sendPaymentEmails({
+                type: 'success',
+                reference,
+                amount: data.amount,
+                metadata: data.metadata,
+            })
+        }
 
     } catch (error) {
         log.error('Failed to process successful payment', { error: error as Error })
         ErrorTracker.captureException(error as Error, {
             action: 'paystack_success_handler_error',
-            extra: { reference: data.reference }
+            extra: { reference }
         })
-        if (String(data.reference || '').startsWith('JOY_') || String(data.reference || '').startsWith('MKT_') || String(data.reference || '').startsWith('VERIFICATION_') || String(data.reference || '').startsWith('LEARN_')) throw error
+        // Our own payments are retried by Paystack until they are recorded
+        if (startsWithAny(reference, OUR_PREFIXES)) throw error
     }
 }
 
@@ -269,10 +287,11 @@ async function handlePaymentFailed(data: {
     metadata?: Record<string, unknown>
     [key: string]: unknown
 }, rawBody: string, signature: string) {
+    const reference = String(data.reference || '')
     log.info('Processing failed Paystack payment', {
         action: 'paystack_payment_failed',
         metadata: {
-            reference: data.reference,
+            reference,
             status: data.status,
         }
     })
@@ -281,55 +300,48 @@ async function handlePaymentFailed(data: {
         // Joy payment failures are matched by RH's durable Paystack reference,
         // not checkout metadata.  The failed attempt stays auditable and the
         // booking remains unschedulable until a later successful payment.
-        try {
+        if (reference.startsWith('JOY_')) {
             const joyPayment = await callJoyConvexGateway('record_payment_failed_webhook', {
-                reference: data.reference,
-                paystack_event_id: String(data.id ?? data.reference),
+                reference,
+                paystack_event_id: String(data.id ?? reference),
                 failure_category: 'PAYSTACK_CHARGE_FAILED',
             }) as { handled?: boolean; duplicate?: boolean; booking_id?: string; patient_id?: string };
-            if (joyPayment.handled) {
-                if (!joyPayment.duplicate && joyPayment.booking_id) {
-                    await deliverJoyEvent(`payment-failed-${data.reference}`, 'booking.payment_failed', {
-                        booking_id: joyPayment.booking_id,
-                        patient_id: joyPayment.patient_id,
-                        payment_reference: data.reference,
-                    });
-                }
-                return;
+            if (joyPayment.handled && !joyPayment.duplicate && joyPayment.booking_id) {
+                await deliverJoyEvent(`payment-failed-${reference}`, 'booking.payment_failed', {
+                    booking_id: joyPayment.booking_id,
+                    patient_id: joyPayment.patient_id,
+                    payment_reference: reference,
+                });
             }
-        } catch (joyError) {
-            // Acknowledging a Joy payment failure before it is durably stored
-            // would lose the patient's retry guidance. Ask Paystack to retry.
-            if (String(data.reference || '').startsWith('JOY_')) throw joyError;
+            return
         }
 
-        // A failed Learn checkout leaves the registration pending, so the person can simply
-        // pay again; it is not an invoice and gets no invoice emails.
-        if (String(data.reference || '').startsWith('LEARN_')) return
+        // Only invoice payments keep a per-attempt status. A failed marketplace, Learn,
+        // verification or review checkout leaves the item unpaid, so the person can simply
+        // pay again.
+        if (!startsWithAny(reference, INVOICE_PREFIXES)) return
 
-        const { ConvexHttpClient } = await import('convex/browser')
-        const { api } = await import('@/convex/_generated/api') as any
-
-        const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!)
-
-        await convex.mutation(api.payments.recordPaystackChargeWebhook, {
+        const { convex, api } = await convexClient()
+        const result = await convex.mutation(api.payments.recordPaystackChargeWebhook, {
             rawBody,
             signature,
-        })
+        }) as { success: boolean; message: string }
 
-        await sendPaymentEmails({
-            type: 'failed',
-            reference: data.reference,
-            metadata: data.metadata,
-        })
+        if (result.success && result.message === 'Payment status updated') {
+            await sendPaymentEmails({
+                type: 'failed',
+                reference,
+                metadata: data.metadata,
+            })
+        }
 
     } catch (error) {
         log.error('Failed to process failed payment', { error: error as Error })
         ErrorTracker.captureException(error as Error, {
             action: 'paystack_failure_handler_error',
-            extra: { reference: data.reference }
+            extra: { reference }
         })
-        if (String(data.reference || '').startsWith('JOY_')) throw error
+        if (reference.startsWith('JOY_') || startsWithAny(reference, INVOICE_PREFIXES)) throw error
     }
 }
 
@@ -339,9 +351,7 @@ async function handlePaymentFailed(data: {
  * own transfer record — nothing is parsed out of the reference string here.
  */
 async function handleTransferEvent(data: any, rawBody: string, signature: string, event: string) {
-    const { ConvexHttpClient } = await import('convex/browser')
-    const { api } = await import('@/convex/_generated/api') as any
-    const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!)
+    const { convex, api } = await convexClient()
     const result = await convex.mutation(api.monthlySettlements.recordPaystackTransferWebhook, { rawBody, signature })
     log.info('Paystack transfer event processed', {
         action: 'paystack_transfer_event',
@@ -350,13 +360,11 @@ async function handleTransferEvent(data: any, rawBody: string, signature: string
 }
 
 /**
- * Refunds: marks the marketplace booking refunded and reverses the partner commission
- * earned on that payment (or books a negative adjustment if it was already paid out).
+ * Refunds for every payment type (convex/helpers/paymentRefunds.ts): a full refund undoes the
+ * purchase and reverses partner commission; a partial refund is recorded and flagged.
  */
 async function handleRefundProcessed(data: any, rawBody: string, signature: string) {
-    const { ConvexHttpClient } = await import('convex/browser')
-    const { api } = await import('@/convex/_generated/api') as any
-    const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!)
+    const { convex, api } = await convexClient()
     const result = await convex.mutation(api.marketplace.booking.recordPaystackRefundWebhook, { rawBody, signature })
     log.info('Paystack refund processed', {
         action: 'paystack_refund_processed',
@@ -374,14 +382,9 @@ async function sendPaymentEmails(params: {
     metadata?: Record<string, unknown>
 }) {
     try {
-        // Generate invoice
         const baseUrl = process.env.NEXT_PUBLIC_APP_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000')
 
-        const endpoint = params.type === 'success'
-            ? '/api/emails/payment-notification'
-            : '/api/emails/payment-notification'
-
-        await fetch(`${baseUrl}${endpoint}`, {
+        await fetch(`${baseUrl}/api/emails/payment-notification`, {
             method: 'POST',
             // The email routes only accept our own server (or a signed-in admin)
             headers: { 'Content-Type': 'application/json', [SERVER_SECRET_HEADER]: convexServerSecret() },
@@ -390,7 +393,9 @@ async function sendPaymentEmails(params: {
                 amount: params.amount,
                 status: params.type,
                 metadata: params.metadata,
-            })
+            }),
+            // Never hold up Paystack's webhook on an email
+            signal: AbortSignal.timeout(EMAIL_TIMEOUT_MS),
         })
     } catch (error) {
         // Email sending is non-critical — log but don't throw

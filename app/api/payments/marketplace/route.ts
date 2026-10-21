@@ -46,6 +46,24 @@ export async function POST(request: NextRequest) {
     }
 
     const txRef = `MKT_${bookingId.slice(-8)}_${Date.now()}_${randomBytes(4).toString('hex')}`;
+    // Keep the slot held while the patient pays (or re-hold it if the hold lapsed and it's free),
+    // and record the reference so a missed webhook is picked up by the reconciliation cron
+    const hold = await getConvexClient().mutation(api.marketplace.booking.refreshMarketplaceHold, {
+      bookingId: bookingId as Id<'marketplaceBookings'>,
+      checkoutReference: txRef,
+    });
+    if (!hold.ok) {
+      const message =
+        hold.reason === 'slot_taken'
+          ? 'That time has been booked by someone else. Please pick a new time.'
+          : hold.reason === 'too_late'
+            ? 'This session starts too soon to pay online. Please pick a later time.'
+            : hold.reason === 'already_paid'
+              ? 'This booking has already been paid'
+              : 'This booking is no longer open for payment';
+      return NextResponse.json({ error: message, reason: hold.reason }, { status: 409 });
+    }
+
     const paymentData: Record<string, unknown> = {
       email,
       amount: amountInKobo,
@@ -62,20 +80,8 @@ export async function POST(request: NextRequest) {
       },
     };
 
-    // Split to the physiotherapist's Paystack subaccount when one is configured.
-    if (quote.physiotherapistId) {
-      try {
-        const bankDetails = await getConvexClient().query((api as any).paystack.getPhysiotherapistBankDetails, {
-          physiotherapistId: quote.physiotherapistId,
-        });
-        if (bankDetails?.subaccountCode) {
-          paymentData.subaccount = bankDetails.subaccountCode;
-          paymentData.bearer = 'account';
-        }
-      } catch {
-        // No subaccount — proceed without split
-      }
-    }
+    // No split: Rehabify holds the payment and pays the physio's fixed payout once the
+    // session is completed (Admin › Payouts).
 
     const response = await fetch('https://api.paystack.co/transaction/initialize', {
       method: 'POST',

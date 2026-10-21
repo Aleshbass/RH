@@ -8,6 +8,7 @@ import { action, internalQuery } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { mainAccountChargeKobo, paystackRequest } from "./clinicBilling";
 import { publicAppUrl } from "./helpers/appUrl";
+import { activePaymentLink } from "./helpers/paymentLinks";
 
 export const getPhysioInvoiceForPaymentLink = internalQuery({
   args: { invoiceId: v.id("invoices") },
@@ -33,7 +34,8 @@ export const getPhysioInvoiceForPaymentLink = internalQuery({
       status: invoice.status,
       totalKobo: invoice.feeBreakdown?.total ?? invoice.totalAmount,
       mainAccountChargeKobo: mainAccountChargeKobo(invoice),
-      paymentLink: invoice.paymentLink ?? null,
+      // Expired or out-of-date links are replaced with a fresh one
+      paymentLink: activePaymentLink(invoice),
       patientId: invoice.patientId,
       patientEmail: patient?.email ?? null,
       patientFirstName: patient?.firstName ?? null,

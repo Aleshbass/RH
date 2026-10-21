@@ -62,12 +62,18 @@ import {
   primaryButtonClass,
 } from '@/components/clinic/ui'
 import { friendlyError, useClinicianOptions } from '@/components/clinic/patients/patient-record-shared'
+import { appointmentStatusLabel } from '@/convex/helpers/appointmentStatus'
+import {
+  AppointmentPlace,
+  appointmentBadgeTone,
+  type AppointmentLike,
+} from '@/components/appointments/appointment-ui'
 
 // ─── Types & helpers ─────────────────────────────────────────────────────────
 
 type Person = { _id: string; firstName?: string; lastName?: string; email?: string; imageUrl?: string } | null | undefined
 
-type Appointment = {
+type Appointment = AppointmentLike & {
   _id: string
   startTime: number
   endTime: number
@@ -105,23 +111,13 @@ function dayKey(date: Date) {
   return format(date, 'EEEE').toLowerCase()
 }
 
-function statusBadge(status: string) {
-  switch (status) {
-    case 'scheduled':
-      return <StatusBadge tone="teal">Booked</StatusBadge>
-    case 'confirmed':
-      return <StatusBadge tone="teal">Confirmed</StatusBadge>
-    case 'completed':
-      return <StatusBadge tone="green">Attended</StatusBadge>
-    case 'no_show':
-      return <StatusBadge tone="amber">No-show</StatusBadge>
-    case 'cancelled_by_patient':
-      return <StatusBadge tone="red">Cancelled by patient</StatusBadge>
-    case 'cancelled_by_therapist':
-      return <StatusBadge tone="red">Cancelled</StatusBadge>
-    default:
-      return <StatusBadge>{status.replace(/_/g, ' ')}</StatusBadge>
-  }
+// Same labels as the physio and patient views (the clinic is the provider side)
+function statusBadge(apt: Appointment) {
+  return (
+    <StatusBadge tone={appointmentBadgeTone(apt, 'provider')}>
+      {appointmentStatusLabel(apt, 'provider')}
+    </StatusBadge>
+  )
 }
 
 function durationLabel(minutes: number) {
@@ -230,11 +226,12 @@ export default function ClinicAppointmentsPage() {
 
   const setStatus = async (
     apt: Appointment,
-    status: 'scheduled' | 'completed' | 'cancelled' | 'no_show',
+    status: 'scheduled' | 'confirmed' | 'completed' | 'cancelled' | 'no_show',
     cancellationReason?: string
   ) => {
     const labels = {
       scheduled: 'Reopen appointment',
+      confirmed: 'Confirm appointment',
       completed: 'Mark attended',
       cancelled: 'Cancel appointment',
       no_show: 'Mark no-show',
@@ -248,6 +245,7 @@ export default function ClinicAppointmentsPage() {
       })
       const done = {
         scheduled: 'Appointment reopened',
+        confirmed: 'Appointment confirmed. The patient has been told.',
         completed: 'Marked as attended',
         cancelled: 'Appointment cancelled',
         no_show: 'Marked as no-show',
@@ -274,6 +272,9 @@ export default function ClinicAppointmentsPage() {
             >
               {clinicians.length > 1 ? 'Reschedule or reassign' : 'Reschedule'}
             </DropdownMenuItem>
+          )}
+          {apt.status === 'scheduled' && apt.endTime > Date.now() && (
+            <DropdownMenuItem onClick={() => setStatus(apt, 'confirmed')}>Confirm appointment</DropdownMenuItem>
           )}
           {isOpen && (
             <>
@@ -633,14 +634,14 @@ function AppointmentRow({
           <p className="truncate text-sm font-medium text-neutral-900 dark:text-white">
             {personName(apt.patient, 'Patient')}
           </p>
-          {statusBadge(apt.status)}
+          {statusBadge(apt)}
         </div>
         <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs text-neutral-500 dark:text-neutral-400">
           <span className="truncate">with {personName(apt.physiotherapist, 'clinician')}</span>
           <span aria-hidden>·</span>
           <span className="inline-flex items-center gap-1">
             {isVideo && <Video className="h-3 w-3" />}
-            {isVideo ? 'Video' : 'In clinic'}
+            {isVideo ? 'Video' : apt.location ? 'In person' : 'In clinic'}
           </span>
           {apt.serviceType && (
             <>
@@ -649,6 +650,10 @@ function AppointmentRow({
             </>
           )}
         </p>
+        {/* The address for a visit away from the clinic, or the join link for a video visit */}
+        {(isVideo || apt.location) && (
+          <AppointmentPlace appointment={apt} viewer="provider" className="mt-1 text-xs" />
+        )}
       </div>
       {menu}
     </div>

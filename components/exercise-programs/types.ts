@@ -1,5 +1,7 @@
 import type { LibraryItem } from '@/convex/exerciseLibrary'
 import type { careTeamProgramView, patientProgramView, programView } from '@/convex/exercisePrograms'
+import type { listResources } from '@/convex/libraryResources'
+import type { QueryResult } from '@/lib/convexUntyped'
 
 // The generated `api` object degrades to `any` in the app (the project has ~190 Convex modules),
 // so query results are cast to these types, which come straight from the Convex view builders.
@@ -29,6 +31,9 @@ export type ProgramForPlayer = Pick<
   '_id' | 'title' | 'note' | 'goals' | 'voiceNoteUrl' | 'voiceNoteSeconds' | 'senderName' | 'clinicName' | 'createdAt' | 'items'
 >
 export type ProgramItem = ProgramForPlayer['items'][number]
+
+/** One Rehabify Library resource (link, video or written guide) as libraryResources.listResources lists it. */
+export type LibraryResourceRow = NonNullable<QueryResult<typeof listResources>>[number]
 
 /** What to call a list of items: "3 exercises", "2 exercises · 1 education". */
 export function itemsSummary(items: { kind?: string | null }[]) {

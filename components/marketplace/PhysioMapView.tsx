@@ -25,8 +25,6 @@ export interface PhysioMapItem {
     location?: string;
     latitude?: number;
     longitude?: number;
-    hourlyRate: number;
-    initialConsultRate: number;
     averageRating: number;
     reviewCount: number;
     isVerified: boolean;
@@ -265,7 +263,7 @@ export function PhysioMapView({
                                         ))}
                                     </div>
 
-                                    {/* Footer: price + session types */}
+                                    {/* Footer: session types */}
                                     <div className="flex items-end justify-between pt-2 border-t border-gray-100">
                                         <div>
                                             <div className="flex items-center gap-1.5">

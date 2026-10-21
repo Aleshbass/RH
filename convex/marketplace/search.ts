@@ -1,13 +1,25 @@
 // @ts-nocheck
 /**
  * Marketplace Search & Discovery
- * Public queries for browsing and filtering physiotherapists
+ * Public queries for browsing and filtering physiotherapists.
+ *
+ * Every Rehabify physio charges the same standard price per service (lib/rehabify-services.ts),
+ * so there's no price filter or sort. Only Rehabify network physios are listed: clinic members
+ * work under their clinic's own terms.
  */
 
 import { v } from "convex/values";
 import { query, mutation, internalQuery } from "../_generated/server";
-import { isPhysioBookable } from "../physioSetup";
-import { platformDefaultKobo } from "../helpers/marketplacePricing";
+import { isPhysioNetworkEligible, offersServiceMode } from "../physioSetup";
+import { BOOKABLE_SERVICE_IDS, getService, isBookableServiceId } from "../../lib/rehabify-services";
+
+/** The Rehabify services this physio offers (virtual ones, plus home ones if they visit). */
+function servicesOffered(profile: any): string[] {
+  return BOOKABLE_SERVICE_IDS.filter((id) => {
+    const mode = getService(id)!.mode;
+    return mode === "virtual" ? profile?.offersOnlineSessions !== false : Boolean(profile?.offersInPersonSessions) && (profile?.coveredZoneIds?.length ?? 0) > 0;
+  });
+}
 
 /**
  * Search and filter physiotherapists in the marketplace
@@ -55,8 +67,8 @@ export const searchPhysiotherapists = query({
         const user = await ctx.db.get(profile.userId);
         if (!user) return null;
 
-        // Approved, listed, and required setup finished
-        if (!(await isPhysioBookable(ctx, profile.userId))) {
+        // Approved, listed, required setup finished, and in the Rehabify network
+        if (!(await isPhysioNetworkEligible(ctx, profile.userId))) {
           return null;
         }
 
@@ -103,21 +115,7 @@ export const searchPhysiotherapists = query({
       );
     }
 
-    if (args.minPrice !== undefined || args.maxPrice !== undefined) {
-      filteredPhysios = filteredPhysios.filter((p) => {
-        // Use the lower of hourlyRate or initialConsultRate for filtering
-        const hourlyNaira = (p.hourlyRate || 0) / 100;
-        const initialNaira = (p.initialConsultRate || 0) / 100;
-        const rate = Math.min(
-          hourlyNaira || initialNaira || 0,
-          initialNaira || hourlyNaira || 0
-        ) || hourlyNaira || initialNaira || 0;
-
-        if (args.minPrice !== undefined && rate < args.minPrice) return false;
-        if (args.maxPrice !== undefined && rate > args.maxPrice) return false;
-        return true;
-      });
-    }
+    // minPrice / maxPrice are accepted for old clients but ignored: prices are standard.
 
     if (args.verifiedOnly) {
       filteredPhysios = filteredPhysios.filter(
@@ -164,16 +162,6 @@ export const searchPhysiotherapists = query({
 
       // For other sorts, apply directly
       switch (sortBy) {
-        case "price_low": {
-          const aPrice = Math.min(a.hourlyRate || Infinity, a.initialConsultRate || Infinity);
-          const bPrice = Math.min(b.hourlyRate || Infinity, b.initialConsultRate || Infinity);
-          return aPrice - bPrice;
-        }
-        case "price_high": {
-          const aPrice = Math.max(a.hourlyRate || 0, a.initialConsultRate || 0);
-          const bPrice = Math.max(b.hourlyRate || 0, b.initialConsultRate || 0);
-          return bPrice - aPrice;
-        }
         case "experience":
           return (b.yearsOfExperience || 0) - (a.yearsOfExperience || 0);
         case "rating":
@@ -208,21 +196,14 @@ export const searchPhysiotherapists = query({
       location: p.location,
       latitude: p.latitude,
       longitude: p.longitude,
-      hourlyRate: p.hourlyRate ? p.hourlyRate / 100 : 0, // Convert to Naira
-      initialConsultRate: p.initialConsultRate
-        ? p.initialConsultRate / 100
-        : 0,
-      packageRates: (p.packageRates || []).map((pkg) => ({
-        ...pkg,
-        price: pkg.price / 100, // Convert to Naira
-      })),
+      servicesOffered: servicesOffered(p),
       averageRating: p.averageRating || 0,
       reviewCount: p.reviewCount || 0,
       isVerified:
         p.verificationBadge?.status === "verified" ||
         p.verificationBadge?.status === "pro_verified",
       verificationBadge: p.verificationBadge,
-      offersOnlineSessions: p.offersOnlineSessions || false,
+      offersOnlineSessions: p.offersOnlineSessions !== false,
       offersInPersonSessions: p.offersInPersonSessions || false,
       profileViews: p.profileViews || 0,
     }));
@@ -250,7 +231,6 @@ export const getPhysiotherapistProfile = query({
       .query("physiotherapistProfiles")
       .withIndex("by_user_id", (q) => q.eq("userId", args.physiotherapistId))
       .first();
-    const revenueSettings = await ctx.db.query("platformRevenueSettings").order("desc").first();
 
     // Return null ONLY if explicitly opted out
     if (profile && profile.isAvailableOnMarketplace === false) {
@@ -262,8 +242,8 @@ export const getPhysiotherapistProfile = query({
       return null;
     }
 
-    // Approved, listed, and required setup finished
-    if (!(await isPhysioBookable(ctx, args.physiotherapistId))) {
+    // Approved, listed, required setup finished, and in the Rehabify network
+    if (!(await isPhysioNetworkEligible(ctx, args.physiotherapistId))) {
       return null;
     }
 
@@ -310,27 +290,9 @@ export const getPhysiotherapistProfile = query({
       longitude: profile?.longitude,
       languagesSpoken: profile?.languagesSpoken || [],
 
-      // Pricing
-      hourlyRate: profile?.hourlyRate ? profile.hourlyRate / 100 : 0,
-      initialConsultRate: profile?.initialConsultRate
-        ? profile.initialConsultRate / 100
-        : 0,
-      packageRates: (profile?.packageRates || []).map((pkg) => ({
-        ...pkg,
-        price: pkg.price / 100,
-      })),
-      packageDiscountPercent: (profile as any)?.packageDiscountPercent || 0,
-      // Video / in-person prices set under Prices & listing (0 = platform standard rate).
-      // The booking page shows these; the server charges them via resolveServiceAmountKobo.
-      virtualConsultationRate: profile?.virtualConsultationRate
-        ? profile.virtualConsultationRate / 100
-        : 0,
-      inPersonConsultationRate: profile?.inPersonConsultationRate
-        ? profile.inPersonConsultationRate / 100
-        : 0,
-      // The platform standard (Admin › Revenue settings) used when the physio has no price set
-      standardVirtualRate: platformDefaultKobo(revenueSettings?.defaultVirtualRateKobo, 600_000) / 100,
-      standardInPersonRate: platformDefaultKobo(revenueSettings?.defaultInPersonRateKobo, 1_000_000) / 100,
+      // Services (standard Rehabify prices come from serviceTariffs.getCatalogue)
+      servicesOffered: servicesOffered(profile),
+      coveredZoneIds: profile?.offersInPersonSessions ? profile?.coveredZoneIds ?? [] : [],
 
       // Ratings
       averageRating: profile?.averageRating || 0,
@@ -344,8 +306,8 @@ export const getPhysiotherapistProfile = query({
       verificationBadge: profile?.verificationBadge || { status: "none" },
 
       // Availability
-      offersOnlineSessions: profile?.offersOnlineSessions ?? true,
-      offersInPersonSessions: profile?.offersInPersonSessions ?? true,
+      offersOnlineSessions: profile?.offersOnlineSessions !== false,
+      offersInPersonSessions: Boolean(profile?.offersInPersonSessions),
       availabilitySchedule: profile?.availabilitySchedule,
 
       // Stats
@@ -472,5 +434,54 @@ export const ensureBookingSlug = mutation({
 
     await ctx.db.patch(profile._id, { bookingSlug: slug });
     return slug;
+  },
+});
+
+/**
+ * Physios who can deliver a Rehabify service, for the service-first booking page (/get-care).
+ * Home services need the patient's travel zone; only physios covering it are returned.
+ */
+export const findPhysiosForService = query({
+  args: {
+    serviceId: v.string(),
+    zoneId: v.optional(v.id("travelZones")),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    if (!isBookableServiceId(args.serviceId)) return [];
+    const service = getService(args.serviceId)!;
+    const zoneId = service.mode === "home" ? args.zoneId ?? null : null;
+    if (service.mode === "home" && !zoneId) return [];
+
+    const profiles = await ctx.db.query("physiotherapistProfiles").collect();
+    const results = [];
+    for (const profile of profiles) {
+      // Cheap checks first; isPhysioNetworkEligible then confirms approval and setup
+      if (profile.isAvailableOnMarketplace === false || profile.clinicId) continue;
+      if (!offersServiceMode(profile, service.mode, zoneId)) continue;
+      if (!(await isPhysioNetworkEligible(ctx, profile.userId, { serviceId: args.serviceId, zoneId }))) continue;
+      const user = await ctx.db.get(profile.userId);
+      if (!user) continue;
+      results.push({
+        id: profile.userId,
+        fullName: `${user.firstName || ""} ${user.lastName || ""}`.trim() || "Physiotherapist",
+        imageUrl: user.imageUrl,
+        bio: profile.bio || "",
+        specializations: profile.specializations || [],
+        yearsOfExperience: profile.yearsOfExperience || 0,
+        location: profile.location,
+        averageRating: profile.averageRating || 0,
+        reviewCount: profile.reviewCount || 0,
+        isVerified: profile.verificationBadge?.status === "verified" || profile.verificationBadge?.status === "pro_verified",
+        bookingSlug: profile.bookingSlug ?? null,
+      });
+    }
+    results.sort(
+      (a, b) =>
+        Number(b.isVerified) - Number(a.isVerified) ||
+        b.averageRating - a.averageRating ||
+        b.yearsOfExperience - a.yearsOfExperience
+    );
+    return results.slice(0, Math.min(Math.max(args.limit ?? 24, 1), 60));
   },
 });

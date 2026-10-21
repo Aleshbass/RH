@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { useAuth, useUser } from '@clerk/nextjs'
+import { useAuth, useClerk, useUser } from '@clerk/nextjs'
 import { useRouter, useParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import {
@@ -36,17 +36,13 @@ export default function PatientInvitePage() {
   const code = params.code as string
 
   const { isLoaded, isSignedIn } = useAuth()
-
-  // Store invitation code in localStorage so DashboardAuthGuard can redirect back here
-  useEffect(() => {
-    if (code) {
-      localStorage.setItem(PENDING_INVITE_KEY, code)
-    }
-  }, [code])
+  const { signOut } = useClerk()
   const { user } = useUser()
   const [isAccepting, setIsAccepting] = useState(false)
   const [autoAcceptTriggered, setAutoAcceptTriggered] = useState(false)
   const [showConfetti, setShowConfetti] = useState(false)
+  // Why accepting failed (e.g. signed in with a clinician's account), shown instead of retrying
+  const [acceptError, setAcceptError] = useState<string | null>(null)
 
   // Get invitation details with validation
   const {
@@ -57,6 +53,14 @@ export default function PatientInvitePage() {
     clinic,
     message,
   } = useValidateInvitationCode(code || null)
+
+  // Remember a live invitation so DashboardAuthGuard can bring a new account back here after
+  // sign-up; forget a dead one so it can't keep redirecting this browser
+  useEffect(() => {
+    if (!code || isValidating) return
+    if (isValid) localStorage.setItem(PENDING_INVITE_KEY, code)
+    else localStorage.removeItem(PENDING_INVITE_KEY)
+  }, [code, isValid, isValidating])
 
   // Use action wrapper that also sends notifications
   const completePatientOnboarding = usePatientOnboardingAction()
@@ -103,11 +107,13 @@ export default function PatientInvitePage() {
           router.push('/dashboard/patient')
         }, 1200)
       } else {
-        toast.error(result.message || 'Failed to accept invitation')
+        // Wrong account or email: don't let this browser keep coming back to the invite
+        localStorage.removeItem(PENDING_INVITE_KEY)
+        setAcceptError(result.message || 'Failed to accept invitation')
       }
     } catch (error) {
       console.error('Error accepting invitation:', error)
-      toast.error(
+      setAcceptError(
         error instanceof Error
           ? error.message
           : 'Failed to accept invitation. Please try again.'
@@ -256,6 +262,34 @@ export default function PatientInvitePage() {
   }
 
   if (!invitation) return null
+
+  if (acceptError) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-blue-50 to-green-50 px-4">
+        <Card className="w-full max-w-md shadow-lg border-amber-200">
+          <CardHeader className="space-y-1">
+            <CardTitle className="text-2xl font-bold text-center">Couldn&apos;t accept this invitation</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-center text-muted-foreground">{acceptError}</p>
+          </CardContent>
+          <CardFooter>
+            <div className="flex flex-col gap-3 w-full">
+              <Button
+                onClick={() => signOut({ redirectUrl: `/patient-invite/${code}` })}
+                className="w-full bg-[#005b57] hover:bg-[#004843] text-white"
+              >
+                Sign out and use another account
+              </Button>
+              <Button onClick={() => router.push('/dashboard')} variant="outline" className="w-full">
+                Go to my dashboard
+              </Button>
+            </div>
+          </CardFooter>
+        </Card>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-green-50">

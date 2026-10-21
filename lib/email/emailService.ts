@@ -302,6 +302,18 @@ function escapeHtml(value: unknown): string {
     .replace(/'/g, "&#39;");
 }
 
+/** Appointment dates in emails: Lagos time, since the sending server runs in UTC. */
+function lagosEmailDate(value: string | number | Date, withTime = false): string {
+  return new Date(value).toLocaleString('en-NG', {
+    timeZone: 'Africa/Lagos',
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+    ...(withTime ? { hour: 'numeric', minute: '2-digit', hour12: true } : {}),
+  });
+}
+
 // Discriminated union for EmailOptions
 export type EmailOptions =
   | { to: string; subject?: string; template: 'INVITATION_CREATED'; data: InvitationCreatedData }
@@ -422,7 +434,7 @@ export function getEmailContent(options: EmailOptions): { subject: string; body:
           <p>Hello ${options.data.physiotherapistName},</p>
           <p>${options.data.patientName} has requested an appointment.</p>
           <div style="background-color: #f3f4f6; padding: 16px; border-radius: 6px; margin: 20px 0;">
-            <p style="margin: 0; font-weight: bold;">Date: ${new Date(options.data.appointmentDate).toLocaleDateString()}</p>
+            <p style="margin: 0; font-weight: bold;">Date: ${lagosEmailDate(options.data.appointmentDate)}</p>
             <p style="margin: 8px 0 0 0; font-weight: bold;">Time: ${options.data.appointmentTime}</p>
             ${options.data.clinicName ? `<p style="margin: 8px 0 0 0;">Clinic: ${options.data.clinicName}</p>` : ''}
             ${options.data.clinicAddress ? `<p style=\"margin: 8px 0 0 0;\">Address: ${options.data.clinicAddress}</p>` : ''}
@@ -455,7 +467,7 @@ export function getEmailContent(options: EmailOptions): { subject: string; body:
           <p>Hello ${options.data.physiotherapistName},</p>
           <p>${options.data.patientName} has confirmed their appointment.</p>
           <div style="background-color: #f3f4f6; padding: 16px; border-radius: 6px; margin: 20px 0;">
-            <p style="margin: 0; font-weight: bold;">Date: ${new Date(options.data.appointmentDate).toLocaleDateString()}</p>
+            <p style="margin: 0; font-weight: bold;">Date: ${lagosEmailDate(options.data.appointmentDate)}</p>
             <p style="margin: 8px 0 0 0; font-weight: bold;">Time: ${options.data.appointmentTime}</p>
           </div>
           <a href="${options.data.viewLink}" style="display: inline-block; background-color: #10b981; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none;">View Appointment</a>
@@ -469,9 +481,9 @@ export function getEmailContent(options: EmailOptions): { subject: string; body:
           <p>Hello ${options.data.physiotherapistName},</p>
           <p>The appointment with ${options.data.patientName} has been rescheduled.</p>
           <div style="background-color: #f3f4f6; padding: 16px; border-radius: 6px; margin: 20px 0;">
-            <p style="margin: 0; font-weight: bold;">Old Date: ${new Date(options.data.oldDate).toLocaleDateString()}</p>
+            <p style="margin: 0; font-weight: bold;">Old Date: ${lagosEmailDate(options.data.oldDate)}</p>
             <p style="margin: 8px 0 0 0;">Old Time: ${options.data.oldTime}</p>
-            <p style="margin: 12px 0 0 0; font-weight: bold;">New Date: ${new Date(options.data.newDate).toLocaleDateString()}</p>
+            <p style="margin: 12px 0 0 0; font-weight: bold;">New Date: ${lagosEmailDate(options.data.newDate)}</p>
             <p style="margin: 8px 0 0 0;">New Time: ${options.data.newTime}</p>
           </div>
           <a href="${options.data.viewLink}" style="display: inline-block; background-color: #10b981; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none;">View Updated Schedule</a>
@@ -485,9 +497,9 @@ export function getEmailContent(options: EmailOptions): { subject: string; body:
           <p>Hello ${options.data.patientName},</p>
           <p>Your appointment with ${options.data.physiotherapistName} has been rescheduled.</p>
           <div style="background-color: #f3f4f6; padding: 16px; border-radius: 6px; margin: 20px 0;">
-            <p style="margin: 0; font-weight: bold;">Old Date: ${new Date(options.data.oldDate).toLocaleDateString()}</p>
+            <p style="margin: 0; font-weight: bold;">Old Date: ${lagosEmailDate(options.data.oldDate)}</p>
             <p style="margin: 8px 0 0 0;">Old Time: ${options.data.oldTime}</p>
-            <p style="margin: 12px 0 0 0; font-weight: bold;">New Date: ${new Date(options.data.newDate).toLocaleDateString()}</p>
+            <p style="margin: 12px 0 0 0; font-weight: bold;">New Date: ${lagosEmailDate(options.data.newDate)}</p>
             <p style="margin: 8px 0 0 0;">New Time: ${options.data.newTime}</p>
           </div>
           <a href="${options.data.viewLink}" style="display: inline-block; background-color: #10b981; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none;">View Appointment</a>
@@ -501,7 +513,7 @@ export function getEmailContent(options: EmailOptions): { subject: string; body:
           <p>Hello ${options.data.physiotherapistName},</p>
           <p>The appointment with ${options.data.patientName} has been canceled.</p>
           <div style="background-color: #f3f4f6; padding: 16px; border-radius: 6px; margin: 20px 0;">
-            <p style="margin: 0; font-weight: bold;">Date: ${new Date(options.data.appointmentDate).toLocaleDateString()}</p>
+            <p style="margin: 0; font-weight: bold;">Date: ${lagosEmailDate(options.data.appointmentDate)}</p>
             <p style="margin: 8px 0 0 0; font-weight: bold;">Time: ${options.data.appointmentTime}</p>
           </div>
           ${options.data.cancellationReason ? `<p><strong>Reason:</strong> ${options.data.cancellationReason}</p>` : ''}
@@ -515,7 +527,7 @@ export function getEmailContent(options: EmailOptions): { subject: string; body:
           <h1>Video Call Invitation</h1>
           <p>Hello ${options.data.patientName || 'there'},</p>
           <p>${options.data.physiotherapistName} has invited you to a secure video call${options.data.callTitle ? `: <strong>${options.data.callTitle}</strong>` : ''}.</p>
-          ${options.data.scheduledAt ? `<p><strong>When:</strong> ${new Date(options.data.scheduledAt).toLocaleString()}</p>` : ''}
+          ${options.data.scheduledAt ? `<p><strong>When:</strong> ${lagosEmailDate(options.data.scheduledAt, true)} (Lagos time)</p>` : ''}
           ${options.data.message ? `<p>${options.data.message}</p>` : ''}
           <p>Click the button below to join at the scheduled time:</p>
           <a href="${options.data.callLink}" style="display: inline-block; background-color: #10b981; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; margin: 16px 0;">
@@ -874,7 +886,7 @@ export function getEmailContent(options: EmailOptions): { subject: string; body:
           <p>Hello ${options.data.patientName},</p>
           <p>Your appointment with ${options.data.physiotherapistName} has been scheduled for:</p>
           <div style="background-color: #f3f4f6; padding: 16px; border-radius: 6px; margin: 20px 0;">
-            <p style="margin: 0; font-weight: bold;">Date: ${new Date(options.data.appointmentDate).toLocaleDateString()}</p>
+            <p style="margin: 0; font-weight: bold;">Date: ${lagosEmailDate(options.data.appointmentDate)}</p>
             <p style="margin: 8px 0 0 0; font-weight: bold;">Time: ${options.data.appointmentTime}</p>
             <p style="margin: 8px 0 0 0;">Location: ${options.data.clinicName || 'Online Video Call'}</p>
             ${options.data.clinicAddress ? `<p style="margin: 8px 0 0 0;">Address: ${options.data.clinicAddress}</p>` : ''}
@@ -899,7 +911,7 @@ export function getEmailContent(options: EmailOptions): { subject: string; body:
           <p>Hello ${options.data.patientName},</p>
           <p>This is a friendly reminder that you have an appointment scheduled for tomorrow:</p>
           <div style="background-color: #f3f4f6; padding: 16px; border-radius: 6px; margin: 20px 0;">
-            <p style="margin: 0; font-weight: bold;">Date: ${new Date(options.data.appointmentDate).toLocaleDateString()}</p>
+            <p style="margin: 0; font-weight: bold;">Date: ${lagosEmailDate(options.data.appointmentDate)}</p>
             <p style="margin: 8px 0 0 0; font-weight: bold;">Time: ${options.data.appointmentTime}</p>
             <p style="margin: 8px 0 0 0;">Physiotherapist: ${options.data.physiotherapistName}</p>
             <p style="margin: 8px 0 0 0;">Location: ${options.data.clinicName}</p>
@@ -922,7 +934,7 @@ export function getEmailContent(options: EmailOptions): { subject: string; body:
         body: `
           <h1>Appointment Canceled</h1>
           <p>Hello ${options.data.patientName},</p>
-          <p>We're writing to inform you that your appointment scheduled for ${new Date(options.data.appointmentDate).toLocaleDateString()} at ${options.data.appointmentTime} with ${options.data.physiotherapistName} has been canceled.</p>
+          <p>We're writing to inform you that your appointment scheduled for ${lagosEmailDate(options.data.appointmentDate)} at ${options.data.appointmentTime} with ${options.data.physiotherapistName} has been canceled.</p>
           <p>${options.data.cancellationReason ? `Reason: ${options.data.cancellationReason}` : ''}</p>
           <p>Please use the link below to reschedule at your convenience:</p>
           <a href="${options.data.rescheduleLink}" style="display: inline-block; background-color: #10b981; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; margin: 16px 0;">
@@ -956,14 +968,7 @@ export function getEmailContent(options: EmailOptions): { subject: string; body:
               <div style="background-color: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; margin-bottom: 24px;">
                 <p style="margin: 0; color: #6b7280; font-size: 14px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em;">Scheduled for</p>
                 <p style="margin: 8px 0 0 0; color: #111827; font-size: 18px; font-weight: 600;">
-                  ${new Date(options.data.appointmentDate).toLocaleString(undefined, {
-          weekday: 'long',
-          year: 'numeric',
-          month: 'long',
-          day: 'numeric',
-          hour: 'numeric',
-          minute: '2-digit'
-        })}
+                  ${lagosEmailDate(options.data.appointmentDate, true)} (Lagos time)
                 </p>
               </div>
               

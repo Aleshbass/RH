@@ -18,6 +18,8 @@ import {
     Video,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { LAGOS_TIME_ZONE, zonedDateKey, zonedDateTimeToUtc } from "@/convex/helpers/lagosTime";
+import { useGoogleBusyRefresh } from "@/lib/hooks/useGoogleBusyRefresh";
 
 export interface AvailableSlot {
     start: number;
@@ -60,6 +62,18 @@ function dayKey(date: Date): string {
     return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
 }
 
+/** Calendar cell of a slot: its Lagos date, keyed like dayKey (month 0-based). */
+function slotDay(timestamp: number): { year: number; month: number; day: number; key: string } {
+    const [year, month, day] = zonedDateKey(timestamp).split("-").map(Number);
+    return { year, month: month - 1, day, key: `${year}-${month - 1}-${day}` };
+}
+
+/** Midnight (Lagos) starting the given calendar month; month may overflow (13 → next year). */
+function lagosMonthStart(year: number, month: number): number {
+    const first = new Date(Date.UTC(year, month, 1));
+    return zonedDateTimeToUtc(first.toISOString().slice(0, 10), "00:00");
+}
+
 function monthDays(year: number, month: number): (number | null)[] {
     const leading = new Date(year, month, 1).getDay();
     const count = new Date(year, month + 1, 0).getDate();
@@ -86,7 +100,9 @@ export default function CalendarBookingWidget({
 }: CalendarBookingWidgetProps) {
     const reduceMotion = useReducedMotion();
     const today = new Date();
-    const initialDate = controlledSlot ? new Date(controlledSlot.start) : null;
+    // Calendar cells are Lagos days: a slot sits on its Lagos date in any browser zone
+    const initialDay = controlledSlot ? slotDay(controlledSlot.start) : null;
+    const initialDate = initialDay ? new Date(initialDay.year, initialDay.month, initialDay.day) : null;
 
     const [currentMonth, setCurrentMonth] = useState((initialDate ?? today).getMonth());
     const [currentYear, setCurrentYear] = useState((initialDate ?? today).getFullYear());
@@ -101,13 +117,14 @@ export default function CalendarBookingWidget({
     // Current month plus the next one, so "next available" can look ahead.
     const dateRange = useMemo(
         () => ({
-            startDate: new Date(currentYear, currentMonth, 1).getTime(),
-            endDate: new Date(currentYear, currentMonth + 2, 1).getTime() - 1,
+            startDate: lagosMonthStart(currentYear, currentMonth),
+            endDate: lagosMonthStart(currentYear, currentMonth + 2) - 1,
         }),
         [currentYear, currentMonth]
     );
 
     // Only real availability is bookable; undefined while loading.
+    useGoogleBusyRefresh(physiotherapistId);
     const availableSlots = useQuery(api.calendar.availability.getAvailableSlots, {
         physiotherapistId,
         startDate: dateRange.startDate,
@@ -123,7 +140,7 @@ export default function CalendarBookingWidget({
 
     const daysWithSlots = useMemo(() => {
         const keys = new Set<string>();
-        for (const slot of upcomingSlots ?? []) keys.add(dayKey(new Date(slot.start)));
+        for (const slot of upcomingSlots ?? []) keys.add(slotDay(slot.start).key);
         return keys;
     }, [upcomingSlots]);
 
@@ -135,14 +152,14 @@ export default function CalendarBookingWidget({
     );
 
     const nextAvailableAfterMonth = useMemo(() => {
-        const monthEnd = new Date(currentYear, currentMonth + 1, 1).getTime();
+        const monthEnd = lagosMonthStart(currentYear, currentMonth + 1);
         return upcomingSlots?.find((slot) => slot.start >= monthEnd) ?? null;
     }, [upcomingSlots, currentYear, currentMonth]);
 
     const slotsForSelectedDate = useMemo(() => {
         if (!selectedDate || !upcomingSlots) return [];
         const key = dayKey(selectedDate);
-        return upcomingSlots.filter((slot) => dayKey(new Date(slot.start)) === key);
+        return upcomingSlots.filter((slot) => slotDay(slot.start).key === key);
     }, [selectedDate, upcomingSlots]);
 
     // Open on the first day with openings so patients see times straight away.
@@ -151,17 +168,19 @@ export default function CalendarBookingWidget({
         autoPicked.current = true;
         const first = upcomingSlots[0];
         if (!first) return;
-        const date = new Date(first.start);
-        setCurrentMonth(date.getMonth());
-        setCurrentYear(date.getFullYear());
-        setSelectedDate(new Date(date.getFullYear(), date.getMonth(), date.getDate()));
+        const day = slotDay(first.start);
+        setCurrentMonth(day.month);
+        setCurrentYear(day.year);
+        setSelectedDate(new Date(day.year, day.month, day.day));
     }, [upcomingSlots]);
 
+    // Lagos time, the physio's schedule zone
     const formatTime = (timestamp: number) =>
         new Date(timestamp).toLocaleTimeString("en-US", {
             hour: timeFormat === "12h" ? "numeric" : "2-digit",
             minute: "2-digit",
             hour12: timeFormat === "12h",
+            timeZone: LAGOS_TIME_ZONE,
         });
 
     const shiftMonth = (delta: number) => {
@@ -189,10 +208,10 @@ export default function CalendarBookingWidget({
     };
 
     const jumpTo = (slot: AvailableSlot) => {
-        const date = new Date(slot.start);
-        setCurrentMonth(date.getMonth());
-        setCurrentYear(date.getFullYear());
-        pickDate(new Date(date.getFullYear(), date.getMonth(), date.getDate()), true);
+        const day = slotDay(slot.start);
+        setCurrentMonth(day.month);
+        setCurrentYear(day.year);
+        pickDate(new Date(day.year, day.month, day.day), true);
     };
 
     const title =
@@ -364,7 +383,7 @@ export default function CalendarBookingWidget({
                                     className="inline-flex items-center gap-1 rounded-full font-semibold text-rh-night underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-lime dark:text-rh-lime"
                                 >
                                     Next opening{" "}
-                                    {new Date(nextAvailableAfterMonth.start).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}
+                                    {new Date(nextAvailableAfterMonth.start).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: LAGOS_TIME_ZONE })}
                                     <ArrowRight className="h-3.5 w-3.5" aria-hidden />
                                 </button>
                             ) : (

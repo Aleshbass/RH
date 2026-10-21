@@ -18,6 +18,7 @@ import { ProfilePhotoUploader } from '@/components/dashboard/shared/ProfilePhoto
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Download, Loader2, Mail, Trash2 } from 'lucide-react';
 import { TourGuide } from '@/components/shared/TourGuide';
+import { RehabifyId } from '@/components/shared/RehabifyId';
 import { PageContainer, PageHeader, Panel, primaryButtonClass, softButtonClass } from '@/components/physio/ui';
 
 type Gender = 'male' | 'female' | 'other' | 'prefer_not_to_say';
@@ -133,7 +134,7 @@ export default function PatientSettingsPage() {
   const handleRemindersChange = async (checked: boolean) => {
     try {
       await updateNotificationPreferences({ notificationPreferences: { appointmentReminders: checked } });
-      toast.success(checked ? 'Appointment reminders on' : 'Appointment reminders off');
+      toast.success(checked ? 'Reminders on' : 'Reminders off');
     } catch (error) {
       toast.error(readableError(error, "We couldn't update your reminders."));
     }
@@ -172,7 +173,9 @@ export default function PatientSettingsPage() {
           <TabsTrigger id="tab-profile" value="profile" className="rounded-xl py-2 data-[state=active]:bg-rh-teal data-[state=active]:text-white">Profile</TabsTrigger>
           <TabsTrigger id="tab-notifications" value="notifications" className="rounded-xl py-2 data-[state=active]:bg-rh-teal data-[state=active]:text-white">Reminders</TabsTrigger>
           <TabsTrigger id="tab-privacy" value="privacy" className="rounded-xl py-2 data-[state=active]:bg-rh-teal data-[state=active]:text-white">Privacy &amp; data</TabsTrigger>
-          <TabsTrigger id="tab-calendar" value="calendar" className="rounded-xl py-2 data-[state=active]:bg-rh-teal data-[state=active]:text-white">Calendar</TabsTrigger>
+          <TabsTrigger id="tab-calendar" value="calendar" className="rounded-xl py-2 data-[state=active]:bg-rh-teal data-[state=active]:text-white">
+            Calendar <span className="ml-1 text-[10px] font-medium uppercase tracking-wide opacity-70">Soon</span>
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="profile" className="space-y-5">
@@ -205,6 +208,16 @@ export default function PatientSettingsPage() {
                   <Input id="email" type="email" value={patient?.email ?? ''} disabled />
                   <p className="text-xs text-neutral-500">This is the email you sign in with.</p>
                 </div>
+
+                {currentUser?.patientNumber && (
+                  <div className="space-y-2">
+                    <Label>Patient ID</Label>
+                    <div>
+                      <RehabifyId value={currentUser.patientNumber} className="text-xs" />
+                    </div>
+                    <p className="text-xs text-neutral-500">Your permanent Rehabify number. Quote it when you contact a clinic or support.</p>
+                  </div>
+                )}
 
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div className="space-y-2">
@@ -262,8 +275,8 @@ export default function PatientSettingsPage() {
           <Panel title="Reminders" bodyClassName="space-y-4 p-5">
             <div className="flex items-center justify-between gap-4">
               <div className="space-y-0.5">
-                <Label htmlFor="appointment-reminders">Appointment reminders</Label>
-                <p className="text-sm text-neutral-500">An email and dashboard reminder before each visit</p>
+                <Label htmlFor="appointment-reminders">Appointment and exercise reminders</Label>
+                <p className="text-sm text-neutral-500">An email and dashboard reminder before each visit, and a morning reminder in your dashboard when you have home exercises</p>
               </div>
               <Switch
                 id="appointment-reminders"
@@ -306,7 +319,7 @@ export default function PatientSettingsPage() {
         <TabsContent value="calendar">
           <Panel
             title="Calendar"
-            description="Connect your Google account for calendar features."
+            description="Adding your visits to Google Calendar is coming soon."
             bodyClassName="space-y-4 p-5"
           >
             {calendarNotice === 'success' && (
@@ -343,7 +356,7 @@ export default function PatientSettingsPage() {
           {
             target: "#tab-notifications",
             title: "Reminders",
-            content: "Choose whether we remind you before appointments.",
+            content: "Choose whether we remind you before appointments and about your home exercises.",
             position: "bottom",
           },
           {
@@ -355,7 +368,7 @@ export default function PatientSettingsPage() {
           {
             target: "#tab-calendar",
             title: "Calendar Integration",
-            content: "Connect your Google Calendar to sync appointments automatically.",
+            content: "Adding your visits to Google Calendar is coming soon.",
             position: "bottom",
           },
         ]}

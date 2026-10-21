@@ -36,6 +36,7 @@ import { CarePlanTab } from '@/components/physio/workspace/CarePlanTab';
 import { CheckInsTab, FilesTab, NotesTab, PaymentsTab } from '@/components/physio/workspace/RecordTabs';
 import { CompleteCareDialog, EpisodeDialog } from '@/components/physio/workspace/CareDialogs';
 import { SOURCE_LABELS, fullName, type Workspace } from '@/components/physio/workspace/shared';
+import { RehabifyId } from '@/components/shared/RehabifyId';
 import { cn } from '@/lib/utils';
 
 const TABS = [
@@ -152,7 +153,8 @@ export default function PatientWorkspacePage() {
               <p className="truncate text-sm text-white/70">
                 {[patient.email, patient.phoneNumber].filter(Boolean).join(' · ') || 'No contact details'}
               </p>
-              <div className="mt-2 flex flex-wrap gap-1.5">
+              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                <RehabifyId value={patient.patientNumber} tone="onDark" className="rounded-full px-2.5 text-xs" />
                 <span className={cn('rounded-full px-2.5 py-0.5 text-xs font-semibold', isActive ? 'bg-rh-mint text-rh-teal' : 'bg-white/15 text-white')}>
                   {isActive ? 'In treatment' : `Care completed${episode.completedAt ? ` · ${format(episode.completedAt, 'd MMM yyyy')}` : ''}`}
                 </span>
@@ -198,7 +200,7 @@ export default function PatientWorkspacePage() {
               <DropdownMenuContent align="end" className="w-52 rounded-xl">
                 {isActive && (
                   <>
-                    <DropdownMenuItem onClick={() => { go('notes'); setComposing(true); }}>Write a clinical note</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => { go('notes'); setComposing(true); }}>Write an assessment or note</DropdownMenuItem>
                     <DropdownMenuItem onClick={() => go('plan')}>{workspace.plan ? 'Revise care plan' : 'Create care plan'}</DropdownMenuItem>
                     <DropdownMenuItem onClick={() => setDialog('video')}>Schedule a video session</DropdownMenuItem>
                     <DropdownMenuItem onClick={() => go('payments')}>Request payment</DropdownMenuItem>
@@ -240,7 +242,9 @@ export default function PatientWorkspacePage() {
               )}
             >
               {t.label}
-              {t.id === 'checkins' && workspace.checkIns.some((c) => c.flagged && !c.reviewedAt) && (
+              {t.id === 'checkins' &&
+                (workspace.checkIns.some((c) => c.flagged && !c.reviewedAt) ||
+                  (workspace.exerciseLogs ?? []).some((l) => l.painScore !== null && l.painScore >= 7 && !l.reviewedAt)) && (
                 <span className="ml-1.5 inline-block h-2 w-2 rounded-full bg-rose-400 align-middle" aria-label="needs review" />
               )}
             </button>
@@ -296,7 +300,14 @@ export default function PatientWorkspacePage() {
         isOpen={dialog === 'edit'}
         onClose={() => setDialog(null)}
         patientId={patientId}
-        currentData={{ firstName: patient.firstName ?? '', lastName: patient.lastName ?? '', phoneNumber: patient.phoneNumber }}
+        currentData={{
+          firstName: patient.firstName ?? '',
+          lastName: patient.lastName ?? '',
+          email: patient.email,
+          phoneNumber: patient.phoneNumber,
+          dateOfBirth: workspace.profile?.dateOfBirth,
+          gender: workspace.profile?.gender,
+        }}
         onSuccess={() => setDialog(null)}
       />
       <CreateVideoCallModal isOpen={dialog === 'video'} onClose={() => setDialog(null)} preselectedPatientId={patientId} />

@@ -59,6 +59,8 @@ const itemFields = {
   holdSeconds: v.optional(v.number()),
   frequency: v.optional(v.string()),
   note: v.optional(v.string()),
+  // Education from the Rehabify Library (libraryResources.key)
+  resourceKey: v.optional(v.string()),
 };
 const itemInput = v.object(itemFields);
 // When editing, items already in the programme say where they were, so logs follow them.
@@ -109,10 +111,16 @@ async function cleanItems(ctx: MutationCtx, team: CareTeamAccess, input: ItemInp
   for (const [i, item] of input.entries()) {
     const position = `Item ${i + 1}`;
     if (item.kind === "education") {
-      const name = clean(item.name, 120);
+      // A library resource keeps its key, so the patient sees its guide, link or video.
+      // Retired resources still pass, so programmes that already hold one can be edited.
+      const resource = item.resourceKey ? await resourceByKey(ctx, item.resourceKey) : null;
+      if (item.resourceKey && !resource) {
+        throw new ConvexError(`${position} is no longer in the Rehabify Library. Remove it and choose another.`);
+      }
+      const name = clean(item.name, 120) ?? resource?.title.slice(0, 120);
       const note = clean(item.note, MAX_EDUCATION_TEXT);
       if (!name && !note) throw new ConvexError(`${position} is empty education. Give it a title or some text, or remove it.`);
-      items.push({ kind: "education", name: name ?? "Information", note });
+      items.push({ kind: "education", name: name ?? "Information", note, resourceKey: resource?.key });
       continue;
     }
 
@@ -178,9 +186,38 @@ async function activePlanAndEpisode(ctx: Ctx, patientId: Id<"users">, physioId?:
   return { plan, episode };
 }
 
+function resourceByKey(ctx: Ctx, key: string) {
+  return ctx.db
+    .query("libraryResources")
+    .withIndex("by_key", (q) => q.eq("key", key))
+    .first();
+}
+
+/**
+ * A Rehabify Library resource as the patient sees it: the English guide only, because
+ * translations stay drafts until a clinician reviews them.
+ */
+function resourceView(resource: Doc<"libraryResources"> | null) {
+  if (!resource) return null;
+  const guide = resource.guides.find((g) => g.lang === "en");
+  return {
+    key: resource.key,
+    kind: resource.kind,
+    title: resource.title,
+    source: resource.source,
+    url: resource.url ?? null,
+    youtubeId: resource.youtubeId ?? null,
+    steps: guide?.steps ?? [],
+    stop: guide?.stop ?? null,
+  };
+}
+
 /** A programme with its items, ready to show (used by the care team, the patient and links). */
 export async function programView(ctx: Ctx, program: Doc<"exercisePrograms">) {
   const exercises = await Promise.all(program.items.map((item) => (item.exerciseId ? ctx.db.get(item.exerciseId) : null)));
+  const resources = await Promise.all(
+    program.items.map((item) => (item.kind === "education" && item.resourceKey ? resourceByKey(ctx, item.resourceKey) : null))
+  );
   const sender = await ctx.db.get(program.createdBy);
   const clinic = program.clinicId ? await ctx.db.get(program.clinicId) : null;
   return {
@@ -218,6 +255,9 @@ export async function programView(ctx: Ctx, program: Doc<"exercisePrograms">) {
         // Patients only see approved animations; others see the poster and steps.
         animated: Boolean(clipId && exercise?.animationStatus === "approved"),
         exercise: exercise ? libraryItem(exercise) : null,
+        // Education picked from the Rehabify Library
+        resourceKey: item.resourceKey ?? null,
+        resource: resourceView(resources[index]),
       };
     }),
   };
@@ -615,16 +655,48 @@ async function insertLog(
     linkId,
     createdAt: Date.now(),
   });
-  if (pain !== undefined && pain >= 7) {
+  if (pain !== undefined && pain >= 7) await notifyHighPain(ctx, program, args.itemIndex, pain, clean(args.note, 200));
+}
+
+/**
+ * High pain in a log goes to the patient's current clinician (their active care relationship,
+ * primary first) and to whoever sent the programme, if that's someone else. It also shows in
+ * the physio's Needs attention until they mark it reviewed (physioCare.getNeedsAttention).
+ */
+async function notifyHighPain(ctx: MutationCtx, program: Doc<"exercisePrograms">, itemIndex: number, pain: number, note?: string) {
+  const patient = await ctx.db.get(program.patientId);
+  const patientName = [patient?.firstName, patient?.lastName].filter(Boolean).join(" ") || "A patient";
+  const item = program.items[itemIndex];
+  const exercise = item.exerciseId ? await ctx.db.get(item.exerciseId) : null;
+  const what = exercise?.name ?? item.name ?? "an exercise";
+
+  const active = (
+    await ctx.db
+      .query("patientPhysiotherapistRelationships")
+      .withIndex("by_patient", (q) => q.eq("patientId", program.patientId))
+      .collect()
+  ).filter((r) => r.status === "active");
+  const current = active.find((r) => r.isPrimaryPhysiotherapist) ?? active.sort((a, b) => b.startDate - a.startDate)[0];
+  const recipients = new Set<Id<"users">>([program.createdBy]);
+  if (current) recipients.add(current.physiotherapistId);
+
+  for (const userId of recipients) {
+    const recipient = await ctx.db.get(userId);
+    if (!recipient) continue;
     await ctx.db.insert("notifications", {
-      userId: program.createdBy,
+      userId,
       type: "exercise_pain_flag",
       priority: "high",
       status: "pending",
       payload: {
-        title: "High pain reported during exercises",
-        body: `A patient reported pain of ${pain}/10 during "${program.title}".`,
-        data: { actionUrl: `/dashboard/physiotherapist/patients/${program.patientId}` },
+        title: `${patientName} reported high pain`,
+        body: `Pain ${pain}/10 during ${what} ("${program.title}").${note ? ` They wrote: "${note}"` : ""}`,
+        data: {
+          actionUrl:
+            recipient.role === "physiotherapist"
+              ? `/dashboard/physiotherapist/patients/${program.patientId}?tab=checkins`
+              : "/dashboard/clinic/patients",
+        },
       },
       createdAt: Date.now(),
     });

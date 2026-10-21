@@ -86,17 +86,14 @@ export function usePatientDocuments({ patientProfileId }: UsePatientDocumentsPro
     profileIdToSave: Id<"patientProfiles"> // Explicitly pass patientProfileId for saving
   ) => {
     if (!profileIdToSave) {
-      console.error("Patient Profile ID is required to save a document.");
-      return;
+      throw new Error("Your patient profile isn't ready yet. Please refresh and try again.");
     }
-    try {
-      const { storageId } = await uploadFile(file);
-      if (storageId) {
-        await saveDocumentMutation.mutateAsync({ storageId, documentType, fileName: file.name, profileIdToSave });
-      }
-    } catch (error) {
-      console.error("Error uploading and saving patient document:", error);
+    // Errors reach the caller, so the page never reports a failed upload as a success
+    const { storageId } = await uploadFile(file);
+    if (!storageId) {
+      throw new Error("The file didn't upload. Please try again.");
     }
+    await saveDocumentMutation.mutateAsync({ storageId, documentType, fileName: file.name, profileIdToSave });
   };
 
   return {

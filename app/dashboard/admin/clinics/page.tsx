@@ -30,6 +30,7 @@ import {
   countLabel,
 } from '@/components/admin/clinics/shared'
 import type { ClinicsListResult } from '@/components/admin/clinics/types'
+import { RehabifyId } from '@/components/shared/RehabifyId'
 import { cn } from '@/lib/utils'
 
 type StatusFilter = 'all' | 'active' | 'suspended' | 'pending'
@@ -148,7 +149,7 @@ export default function AdminClinicsPage() {
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search name, city or owner"
+            placeholder="Search name, city, owner or clinic ID"
             aria-label="Search clinics"
             className={cn(inputClass, 'h-10 pl-9')}
           />
@@ -200,7 +201,10 @@ export default function AdminClinicsPage() {
                     <div className="flex min-w-0 flex-1 items-center gap-3">
                       <ClinicAvatar id={row._id} name={row.name} logoUrl={row.logoUrl} />
                       <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-rh-night dark:text-white">{row.name}</p>
+                        <div className="flex min-w-0 items-center gap-2">
+                          <p className="truncate text-sm font-semibold text-rh-night dark:text-white">{row.name}</p>
+                          <RehabifyId value={row.clinicNumber} copyable={false} />
+                        </div>
                         <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">
                           {[row.city, row.state].filter(Boolean).join(', ') || 'No city'} · Joined {format(row.createdAt, 'd MMM yyyy')}
                         </p>

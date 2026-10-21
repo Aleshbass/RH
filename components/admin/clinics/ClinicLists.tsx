@@ -13,6 +13,8 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState, FilterChips, Panel, StatusBadge, inputClass } from '@/components/admin/ui'
 import { humanize, initialsOf, tintFor, userHref } from '@/components/admin/clinics/shared'
 import type { ClinicPatientsResult, ClinicReferralsResult, ClinicStaffResult } from '@/components/admin/clinics/types'
+import { RehabifyId } from '@/components/shared/RehabifyId'
+import { matchesRehabifyId } from '@/convex/helpers/rehabifyIdFormat'
 import { cn } from '@/lib/utils'
 
 type Tone = 'neutral' | 'teal' | 'green' | 'amber' | 'red'
@@ -173,7 +175,9 @@ export function ClinicPatientsTab({ clinicId }: { clinicId: Id<'clinics'> }) {
   const filtered = patients.filter(
     (p) =>
       (care === 'all' || p.careStatus === care) &&
-      (!q || [p.name, p.email, p.phoneNumber, p.clinicianName].filter(Boolean).join(' ').toLowerCase().includes(q))
+      (!q ||
+        [p.name, p.email, p.phoneNumber, p.clinicianName].filter(Boolean).join(' ').toLowerCase().includes(q) ||
+        matchesRehabifyId(p.patientNumber, q))
   )
 
   return (
@@ -194,7 +198,7 @@ export function ClinicPatientsTab({ clinicId }: { clinicId: Id<'clinics'> }) {
           <Input
             value={term}
             onChange={(e) => setTerm(e.target.value)}
-            placeholder="Search patients"
+            placeholder="Search patients or IDs"
             aria-label="Search this clinic's patients"
             className={cn(inputClass, 'h-10 pl-9')}
           />
@@ -222,6 +226,7 @@ export function ClinicPatientsTab({ clinicId }: { clinicId: Id<'clinics'> }) {
                   subtitle={[p.clinicianName ? `With ${p.clinicianName}` : null, p.email ?? p.phoneNumber].filter(Boolean).join(' · ') || 'No contact details'}
                   badges={
                     <>
+                      <RehabifyId value={p.patientNumber} copyable={false} />
                       <StatusBadge tone={CARE_STATUS[p.careStatus].tone}>{CARE_STATUS[p.careStatus].label}</StatusBadge>
                       <StatusBadge tone="neutral" className="hidden sm:inline-flex">
                         {SOURCE_LABEL[p.source] ?? humanize(p.source)}

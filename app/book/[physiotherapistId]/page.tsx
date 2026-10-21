@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Id } from "@/convex/_generated/dataModel";
 import Link from "next/link";
 import { useReducedMotion } from "framer-motion";
@@ -20,15 +20,12 @@ import {
 } from "lucide-react";
 import { PhysioHostCard } from "@/components/booking/PhysioHostCard";
 import { BookingShell, PoweredBy } from "@/components/booking/BookingShell";
-import { SessionTypeOption } from "@/components/booking/SessionTypeOption";
+import { ServiceOption } from "@/components/booking/ServiceOption";
 import {
-    SESSION_TYPES,
-    bookingPricing,
+    bookableServices,
     looksLikeConvexId,
-    priceRows,
-    readTreatmentPrefs,
     type BookingProfile,
-    type SessionType,
+    type Catalogue,
 } from "@/components/booking/booking-shared";
 
 // ── MediLoan Self-Service Widget ──────────────────────────────────────────────
@@ -233,17 +230,23 @@ export default function PhysioBookingPage() {
         resolvedUserId ? { physiotherapistId: resolvedUserId } : "skip"
     ) as BookingProfile | null | undefined;
 
-    const [onboardingRate, setOnboardingRate] = useState<number | undefined>(undefined);
-    const [selectedId, setSelectedId] = useState<SessionType["id"] | null>(null);
+    const catalogue = useQuery(api.serviceTariffs.getCatalogue) as Catalogue | undefined;
+
+    const searchParams = useSearchParams();
+    // Keep ?access=, ?zone=, ?area= etc. on the way to the next step
+    const search = searchParams.toString() ? `?${searchParams.toString()}` : "";
+
+    const [selectedId, setSelectedId] = useState<string | null>(null);
     const navTimer = useRef<number | null>(null);
 
-    useEffect(() => {
-        setOnboardingRate(readTreatmentPrefs()?.sessionRate || undefined);
-    }, []);
+    const services = useMemo(
+        () => bookableServices(catalogue?.services, profile?.servicesOffered ?? []),
+        [catalogue, profile]
+    );
 
     useEffect(() => {
-        for (const session of SESSION_TYPES) router.prefetch(`/book/${rawParam}/${session.duration}`);
-    }, [router, rawParam]);
+        for (const service of services) router.prefetch(`/book/${rawParam}/${service.id}${search}`);
+    }, [router, rawParam, services, search]);
 
     useEffect(() => {
         // Restored from the back-forward cache: let the patient pick again.
@@ -257,14 +260,8 @@ export default function PhysioBookingPage() {
         };
     }, []);
 
-    const offersOnline = profile?.offersOnlineSessions ?? true;
-    const offersInPerson = profile?.offersInPersonSessions ?? false;
-    const prices = useMemo(
-        () => priceRows(bookingPricing(profile, onboardingRate), offersOnline, offersInPerson),
-        [profile, onboardingRate, offersOnline, offersInPerson]
-    );
-
-    const isLoading = (!isRawId && slugResult === undefined) || (resolvedUserId !== null && profile === undefined);
+    const isLoading =
+        (!isRawId && slugResult === undefined) || (resolvedUserId !== null && profile === undefined) || catalogue === undefined;
 
     if (isLoading) {
         return (
@@ -315,12 +312,12 @@ export default function PhysioBookingPage() {
         );
     }
 
-    const handleSessionSelect = (session: SessionType) => {
+    const handleServiceSelect = (serviceId: string) => {
         if (selectedId) return;
-        setSelectedId(session.id);
+        setSelectedId(serviceId);
         // Let the selected state register before moving on.
         navTimer.current = window.setTimeout(
-            () => router.push(`/book/${rawParam}/${session.duration}`),
+            () => router.push(`/book/${rawParam}/${serviceId}${search}`),
             reduceMotion ? 120 : 340
         );
     };
@@ -331,28 +328,39 @@ export default function PhysioBookingPage() {
 
             <section
                 className="mt-8 rounded-[28px] bg-white p-3 text-rh-night shadow-[0_30px_80px_-30px_rgba(0,0,0,0.6)] ring-1 ring-white/10 sm:p-4"
-                aria-labelledby="session-types-heading"
+                aria-labelledby="services-heading"
             >
                 <div className="flex flex-wrap items-baseline justify-between gap-2 px-2 pb-3 pt-2 sm:px-3">
-                    <h2 id="session-types-heading" className="text-lg font-semibold tracking-tight">
-                        Choose a session
+                    <h2 id="services-heading" className="text-lg font-semibold tracking-tight">
+                        Choose a service
                     </h2>
-                    <p className="text-xs text-rh-night/55">Pay securely when you book</p>
+                    <p className="text-xs text-rh-night/55">The price you see is the price you pay</p>
                 </div>
-                <div className="space-y-2.5">
-                    {SESSION_TYPES.map((session) => (
-                        <SessionTypeOption
-                            key={session.id}
-                            session={session}
-                            prices={prices}
-                            offersOnline={offersOnline}
-                            offersInPerson={offersInPerson}
-                            selected={selectedId === session.id}
-                            busy={selectedId !== null}
-                            onSelect={() => handleSessionSelect(session)}
-                        />
-                    ))}
-                </div>
+                {services.length === 0 ? (
+                    <p className="px-2 pb-4 text-sm text-rh-night/65 sm:px-3">
+                        {profile.fullName} isn&#39;t taking bookings right now.{" "}
+                        <Link href="/get-care" className="font-semibold text-rh-night underline underline-offset-4 hover:no-underline">
+                            Find another physiotherapist
+                        </Link>
+                    </p>
+                ) : (
+                    <div className="space-y-2.5">
+                        {services.map((service) => (
+                            <ServiceOption
+                                key={service.id}
+                                service={service}
+                                highlight={service.id === "recovery_consultation" ? "Not sure where to start?" : undefined}
+                                selected={selectedId === service.id}
+                                busy={selectedId !== null}
+                                onSelect={() => handleServiceSelect(service.id)}
+                            />
+                        ))}
+                    </div>
+                )}
+                <p className="px-2 pb-2 pt-4 text-xs leading-relaxed text-rh-night/55 sm:px-3">
+                    Prices are all-inclusive. Home visits add a travel charge for your area, shown before you pay. Your
+                    booking is confirmed once paid.
+                </p>
             </section>
 
             <MediLoanWidget physiotherapistName={profile.fullName} />

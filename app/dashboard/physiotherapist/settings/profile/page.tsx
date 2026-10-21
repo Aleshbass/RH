@@ -13,6 +13,7 @@ import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { primaryButtonClass } from '@/components/physio/ui';
+import { RehabifyId } from '@/components/shared/RehabifyId';
 import {
     SettingsPageHeader,
     SettingsSection,
@@ -244,6 +245,15 @@ export default function ProfileSettingsPage() {
                             <Input id="email" type="email" value={currentUser.email || ''} disabled />
                             <p className={fieldHintClass}>Change it under Login &amp; security in your account menu.</p>
                         </div>
+                        {currentUser.staffNumber && (
+                            <div className="space-y-1.5 sm:col-span-2">
+                                <Label className={fieldLabelClass}>Clinician ID</Label>
+                                <div>
+                                    <RehabifyId value={currentUser.staffNumber} className="text-xs" />
+                                </div>
+                                <p className={fieldHintClass}>Your permanent Rehabify number. It stays the same if your role or clinic changes.</p>
+                            </div>
+                        )}
                         <div className="space-y-1.5">
                             <Label htmlFor="phone" className={fieldLabelClass}>Phone</Label>
                             <Input id="phone" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} autoComplete="tel" placeholder="0803 123 4567" />

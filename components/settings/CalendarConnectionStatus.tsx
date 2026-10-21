@@ -87,13 +87,13 @@ export function CalendarConnectionStatus({ currentUser }: CalendarConnectionStat
                         </div>
                         <div>
                             <div className="flex items-center gap-2">
-                                <h4 className="font-semibold text-gray-900 text-lg">Google Calendar Connected</h4>
-                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                    Active
+                                <h4 className="font-semibold text-gray-900 text-lg">Google account connected</h4>
+                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
+                                    Coming soon
                                 </span>
                             </div>
                             <p className="text-sm text-gray-500 mt-1">
-                                Your calendar is synced. Google Meet links will be automatically generated for appointments.
+                                Rehabify doesn&apos;t add your visits to Google Calendar yet. Your appointments and video links are in Rehabify and your emails. You can disconnect at any time.
                             </p>
                         </div>
                     </div>
@@ -120,15 +120,22 @@ export function CalendarConnectionStatus({ currentUser }: CalendarConnectionStat
                             <Calendar className="w-8 h-8 text-gray-500" />
                         </div>
                         <div>
-                            <h4 className="font-semibold text-gray-900 text-lg">Connect Google Calendar</h4>
+                            <div className="flex items-center gap-2">
+                                <h4 className="font-semibold text-gray-900 text-lg">Google Calendar</h4>
+                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
+                                    Coming soon
+                                </span>
+                            </div>
                             <p className="text-sm text-gray-500 mt-1">
-                                Enable automatic Google Meet links for your telehealth appointments.
+                                Adding your visits to Google Calendar is coming soon. Until then, your appointments and video links are in Rehabify and your emails.
                             </p>
                         </div>
                     </div>
+                    {/* Nothing uses a patient's Google connection yet, so connecting is off until it does */}
                     <Button
                         onClick={handleConnect}
-                        disabled={isLoading}
+                        disabled
+                        aria-disabled="true"
                         className="bg-blue-600 hover:bg-blue-700 text-white w-full sm:w-auto shadow-sm"
                     >
                         {isLoading ? (
@@ -144,7 +151,7 @@ export function CalendarConnectionStatus({ currentUser }: CalendarConnectionStat
                                     <path d="M5.84 14.11c-.22-.66-.35-1.36-.35-2.11s.13-1.45.35-2.11V7.05H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.95l3.66-2.84z" fill="currentColor" />
                                     <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.05l3.66 2.84c.87-2.6 3.3-4.51 6.16-4.51z" fill="currentColor" />
                                 </svg>
-                                Connect with Google
+                                Coming soon
                             </>
                         )}
                     </Button>
@@ -162,7 +169,7 @@ export function CalendarConnectionStatus({ currentUser }: CalendarConnectionStat
                             <AlertDialogTitle className="text-xl">Disconnect Calendar?</AlertDialogTitle>
                         </div>
                         <AlertDialogDescription className="text-base text-gray-600 leading-relaxed">
-                            Are you sure you want to disconnect your Google Calendar? You will no longer be able to generate Google Meet links automatically.
+                            Rehabify will stop holding access to your Google account. Nothing in your Rehabify appointments changes.
                         </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter className="gap-2 sm:gap-2">

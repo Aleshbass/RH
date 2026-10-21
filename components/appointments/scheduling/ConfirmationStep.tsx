@@ -9,11 +9,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { useMutation, useQuery } from 'convex/react';
+import { ConvexError } from 'convex/values';
 import { api } from '@/convex/_generated/api';
 import { Id } from '@/convex/_generated/dataModel';
 import { toast } from 'sonner';
 import { GoogleCalendarRequiredModal } from '@/components/modals/GoogleCalendarRequiredModal';
 import { playSound } from '@/lib/sounds';
+import { zonedDateTimeToUtc } from '@/convex/helpers/lagosTime';
 
 interface ConfirmationStepProps {
     data: WizardData;
@@ -52,7 +54,8 @@ export function ConfirmationStep({ data, onUpdate, onSuccess }: ConfirmationStep
 
         try {
             setIsSubmitting(true);
-            const startTime = new Date(`${format(data.date, 'yyyy-MM-dd')}T${data.time}`).getTime();
+            // The picked day and time are Lagos wall-clock time (Convex and some browsers aren't in Lagos)
+            const startTime = zonedDateTimeToUtc(format(data.date, 'yyyy-MM-dd'), data.time);
             const endTime = startTime + (data.duration || 60) * 60 * 1000;
 
             const result = await createAppointment({
@@ -61,8 +64,9 @@ export function ConfirmationStep({ data, onUpdate, onSuccess }: ConfirmationStep
                 endTime,
                 serviceType: data.serviceType,
                 notesForTherapist: data.notes,
-                appointmentType: data.manualMeetingLink === 'google_meet' ? 'telehealth' : 'in-person',
-                manualMeetingLink: data.manualMeetingLink,
+                // Both choices here are video platforms (Rehabify Video or Google Meet)
+                appointmentType: 'telehealth',
+                manualMeetingLink: data.manualMeetingLink || undefined,
             });
 
             console.log('Appointment creation result:', result);
@@ -77,7 +81,8 @@ export function ConfirmationStep({ data, onUpdate, onSuccess }: ConfirmationStep
             }
         } catch (error) {
             console.error('Failed to create appointment:', error);
-            toast.error('Failed to create appointment');
+            // ConvexError carries a readable reason, e.g. a Rehabify patient who pays per session
+            toast.error(error instanceof ConvexError && typeof error.data === 'string' ? error.data : 'Failed to create appointment');
         } finally {
             setIsSubmitting(false);
         }

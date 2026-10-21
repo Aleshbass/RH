@@ -42,8 +42,15 @@ import {
   primaryButtonClass,
 } from '@/components/clinic/ui'
 import { cn } from '@/lib/utils'
+import { PaystackTestModeBanner } from '@/components/billing/PaystackTestModeBanner'
 
 type Filter = 'unpaid' | 'paid' | 'all'
+type SourceFilter = 'all' | 'clinic_direct' | 'rehabify_referral'
+
+/** A date that can't throw: an invoice saved without a valid date shows a dash instead of crashing */
+function safeFormat(value: number | null | undefined, pattern: string) {
+  return typeof value === 'number' && Number.isFinite(value) ? format(new Date(value), pattern) : '—'
+}
 type OfflineMethod = 'cash' | 'bank_transfer' | 'pos'
 
 const CUSTOM_SERVICE = '__custom__'
@@ -134,6 +141,7 @@ export default function ClinicBillingPage() {
   const voidInvoice = useMutation(api.clinicBilling.voidInvoice)
 
   const [filter, setFilter] = useState<Filter>('unpaid')
+  const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all')
   const [requestOpen, setRequestOpen] = useState(false)
   const [busyInvoice, setBusyInvoice] = useState<string | null>(null)
   const [markPaidFor, setMarkPaidFor] = useState<{ id: string; label: string } | null>(null)
@@ -142,10 +150,14 @@ export default function ClinicBillingPage() {
 
   const invoices = useMemo(() => {
     if (!billing) return []
-    if (filter === 'all') return billing.invoices
-    if (filter === 'paid') return billing.invoices.filter((inv: any) => inv.status === 'paid')
-    return billing.invoices.filter((inv: any) => ['sent', 'overdue', 'partial_payment'].includes(inv.status))
-  }, [billing, filter])
+    const bySource =
+      sourceFilter === 'all'
+        ? billing.invoices
+        : billing.invoices.filter((inv: any) => (inv.patientSource ?? 'clinic_direct') === sourceFilter)
+    if (filter === 'all') return bySource
+    if (filter === 'paid') return bySource.filter((inv: any) => inv.status === 'paid')
+    return bySource.filter((inv: any) => ['sent', 'overdue', 'partial_payment'].includes(inv.status))
+  }, [billing, filter, sourceFilter])
 
   if (billing === undefined) {
     return (
@@ -245,6 +257,8 @@ export default function ClinicBillingPage() {
         </Button>
       }
     >
+      <PaystackTestModeBanner />
+
       {!billing.isPreview && !billing.payoutAccount && (
         <div className="flex flex-col gap-3 rounded-xl border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900 sm:flex-row sm:items-center">
           <Landmark className="h-5 w-5 shrink-0 text-neutral-400 dark:text-neutral-500" />
@@ -283,6 +297,17 @@ export default function ClinicBillingPage() {
       <Panel
         title="Invoices"
         actions={
+          <div className="flex flex-wrap items-center gap-2">
+          <select
+            value={sourceFilter}
+            onChange={(e) => setSourceFilter(e.target.value as SourceFilter)}
+            aria-label="Which patients"
+            className="h-8 rounded-lg border border-neutral-200 bg-white px-2 text-sm text-neutral-700 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-200"
+          >
+            <option value="all">All patients</option>
+            <option value="clinic_direct">Clinic&apos;s own patients</option>
+            <option value="rehabify_referral">Referred by Rehabify</option>
+          </select>
           <div className="flex rounded-lg border border-neutral-200 p-0.5 text-sm dark:border-neutral-800">
             {(['unpaid', 'paid', 'all'] as Filter[]).map((option) => (
               <button
@@ -300,6 +325,7 @@ export default function ClinicBillingPage() {
                 {option === 'unpaid' && unpaidCount > 0 ? ` (${unpaidCount})` : ''}
               </button>
             ))}
+          </div>
           </div>
         }
       >
@@ -323,14 +349,15 @@ export default function ClinicBillingPage() {
                     <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                       <p className="truncate text-sm font-medium text-neutral-900 dark:text-white">{inv.patientName}</p>
                       <StatusBadge tone={badge.tone}>{badge.label}</StatusBadge>
+                      {inv.patientSource === 'rehabify_referral' && <StatusBadge tone="neutral">Referred by Rehabify</StatusBadge>}
                     </div>
                     <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">
                       {inv.serviceName} · {inv.invoiceNumber}
                     </p>
                     <p className="text-xs text-neutral-400 dark:text-neutral-500">
                       {inv.status === 'paid' && inv.paidAt
-                        ? `Paid ${format(new Date(inv.paidAt), 'd MMM yyyy')}${inv.paymentMethod ? ` by ${methodLabel[inv.paymentMethod] ?? inv.paymentMethod}` : ''}`
-                        : `Issued ${format(new Date(inv.createdAt), 'd MMM yyyy')} · due ${format(new Date(inv.dueDate), 'd MMM')}`}
+                        ? `Paid ${safeFormat(inv.paidAt, 'd MMM yyyy')}${inv.paymentMethod ? ` by ${methodLabel[inv.paymentMethod] ?? inv.paymentMethod}` : ''}`
+                        : `Issued ${safeFormat(inv.createdAt, 'd MMM yyyy')} · due ${safeFormat(inv.dueDate, 'd MMM')}`}
                     </p>
                     {showFee && (
                       <p className="text-xs tabular-nums text-neutral-500 dark:text-neutral-400">

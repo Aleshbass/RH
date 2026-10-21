@@ -26,8 +26,10 @@ export const createDoctorSubaccount = action({
             return { success: false, message: "Unauthorized" };
         }
 
-        const callerId = await ctx.runQuery(api.users.getUserById as any, { userId: args.doctorId });
-        if (!callerId || (callerId.clerkId !== identity.subject && callerId.role !== "admin")) {
+        // The caller must be this doctor, or an admin acting for them
+        const caller = await ctx.runQuery(api.users.getMyUser as any, {});
+        const target = await ctx.runQuery(api.users.getUserById as any, { userId: args.doctorId });
+        if (!caller || !target || (target.clerkId !== identity.subject && caller.role !== "admin")) {
             return { success: false, message: "Unauthorized" };
         }
 

@@ -3,6 +3,7 @@ import { v } from "convex/values";
 import { Id, Doc } from "./_generated/dataModel";
 import { api } from "./_generated/api";
 import { internal } from "./_generated/api";
+import { closeInvoicePaymentLinks } from "./helpers/paymentLinks";
 
 // Payment status enum (aligned with schema.payments.status)
 const paymentStatus = v.union(
@@ -146,6 +147,24 @@ export const createPaymentRecord = mutation({
     if (!invoice || (invoice.patientId !== user._id && user.role !== "admin")) {
       return { success: false, message: "Invoice not found" };
     }
+    if (invoice.status === "paid" || invoice.status === "void") {
+      return { success: false, message: "This invoice can't be paid" };
+    }
+    // The checkout route's reference format, used once, for at least what the invoice is owed:
+    // the record can't be pointed at someone else's payment or set below the amount due.
+    if (!/^INV_[A-Za-z0-9_-]+$/.test(args.reference)) {
+      return { success: false, message: "Invalid payment reference" };
+    }
+    const existing = await ctx.db
+      .query("payments")
+      .withIndex("by_paystack_reference", (q) => q.eq("paystackReference", args.reference))
+      .first();
+    if (existing) {
+      return { success: false, message: "This payment reference is already in use" };
+    }
+    if (!Number.isInteger(args.amount) || args.amount < invoiceMinimumDueKobo(invoice)) {
+      return { success: false, message: "Payment amount doesn't match the invoice" };
+    }
 
     // Create payment record
     const paymentId = await ctx.db.insert("payments", {
@@ -272,7 +291,9 @@ export const initializePaystackPayment = internalAction({
 });
 
 /**
- * Verify Paystack transaction
+ * Verify an invoice payment with Paystack (the /payment/callback page calls this, so it works
+ * even if the webhook is late). Only invoice references (INV_/CLN_/PHY_) are handled, the
+ * amount is checked against the invoice, and only the invoice id is returned.
  */
 export const verifyPaystackTransaction = action({
   args: {
@@ -285,20 +306,26 @@ export const verifyPaystackTransaction = action({
     metadata: v.optional(v.any()),
     error: v.optional(v.string())
   }),
-  handler: async (ctx, args) => {
+  // Annotated so the generated api type doesn't depend on itself through runMutation
+  handler: async (ctx, args): Promise<{ success: boolean; status?: string; amount?: number; metadata?: any; error?: string }> => {
     const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY;
 
     if (!PAYSTACK_SECRET) {
       console.error("Paystack secret key not configured");
       return { success: false, error: "Payment service not configured" };
     }
+    const reference = args.reference.trim();
+    if (!isInvoicePaymentReference(reference)) {
+      return { success: false, error: "Unknown payment reference" };
+    }
 
     try {
-      const response = await fetch(`https://api.paystack.co/transaction/verify/${encodeURIComponent(args.reference)}`, {
+      const response = await fetch(`https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`, {
         method: "GET",
         headers: {
           "Authorization": `Bearer ${PAYSTACK_SECRET}`
-        }
+        },
+        signal: AbortSignal.timeout(15_000),
       });
 
       const data = await response.json();
@@ -306,35 +333,25 @@ export const verifyPaystackTransaction = action({
       if (data.status && data.data) {
         const transaction = data.data;
 
-        // Update payment and invoice status based on transaction status
-        if (transaction.status === "success") {
-          await ctx.runMutation(internal.payments.updatePaymentStatus, {
-            paystackReference: args.reference,
-            status: "completed",
-            paystackData: transaction
-          })
-
-          // Update patient balance automatically
-          if (transaction.metadata?.invoiceId) {
-            await ctx.runMutation(internal.payments.updatePatientBalance, {
-              invoiceId: transaction.metadata.invoiceId,
-              amountPaid: transaction.amount // Already in kobo
-            })
+        if (transaction.status === "success" || transaction.status === "failed") {
+          const result = await ctx.runMutation(internal.payments.updatePaymentStatus, {
+            paystackReference: reference,
+            status: transaction.status === "success" ? "completed" : "failed",
+            paystackData: paystackEvidence(transaction),
+          });
+          if (transaction.status === "success" && !result.success) {
+            return { success: false, status: "under_review", error: "We received your payment but couldn't match it to the invoice. Our team will check it." };
           }
-        } else if (transaction.status === "failed") {
-          await ctx.runMutation(internal.payments.updatePaymentStatus, {
-            paystackReference: args.reference,
-            status: "failed",
-            paystackData: transaction
-          })
+          return {
+            success: true,
+            status: transaction.status,
+            amount: transaction.amount,
+            metadata: result.invoiceId ? { invoiceId: result.invoiceId } : undefined,
+          };
         }
 
-        return {
-          success: true,
-          status: transaction.status, // paystack returns "success" directly
-          amount: transaction.amount, // native kobo
-          metadata: transaction.metadata
-        };
+        // pending / ongoing / processing (bank transfer, USSD): not final yet
+        return { success: true, status: transaction.status, amount: transaction.amount };
       } else {
         return {
           success: false,
@@ -463,30 +480,11 @@ export const recordPaystackChargeWebhook = mutation({
     }
 
     if (payload.event === "charge.success") {
-      const result = await applyPaymentStatus(ctx, {
+      return await applyPaymentStatus(ctx, {
         paystackReference: reference,
         status: "completed",
-        paystackData: {
-          amount: data.amount,
-          currency: data.currency,
-          channel: data.channel,
-          paid_at: data.paid_at,
-          customer_email: data.customer?.email,
-        },
+        paystackData: paystackEvidence(data),
       });
-      const invoiceId = data.metadata?.invoiceId;
-      if (result.success && typeof invoiceId === "string") {
-        const normalized = ctx.db.normalizeId("invoices", invoiceId);
-        if (normalized) {
-          await applyPatientBalanceUpdate(ctx, { invoiceId: normalized, amountPaid: data.amount });
-          // Paystack names the subaccount when it split the payment to the provider's bank
-          const splitToProvider = typeof data.subaccount?.subaccount_code === "string" && data.subaccount.subaccount_code !== "";
-          await ctx.db.patch(normalized, {
-            payoutRoute: splitToProvider ? "split_to_provider" : "held_by_platform",
-          });
-        }
-      }
-      return result;
     }
 
     if (payload.event === "charge.failed") {
@@ -501,93 +499,221 @@ export const recordPaystackChargeWebhook = mutation({
   },
 });
 
+/** The fields of a Paystack transaction (webhook data or /transaction/verify) we act on. */
+export function paystackEvidence(data: any): PaystackEvidence {
+  const subaccount = typeof data?.subaccount?.subaccount_code === "string" ? data.subaccount.subaccount_code : "";
+  return {
+    amount: typeof data?.amount === "number" ? data.amount : undefined,
+    currency: typeof data?.currency === "string" ? data.currency : undefined,
+    channel: typeof data?.channel === "string" ? data.channel : undefined,
+    paid_at: typeof data?.paid_at === "string" ? data.paid_at : undefined,
+    customer_email: typeof data?.customer?.email === "string" ? data.customer.email : undefined,
+    subaccount_code: subaccount || undefined,
+    metadata_invoice_id: typeof data?.metadata?.invoiceId === "string" ? data.metadata.invoiceId : undefined,
+    status: typeof data?.status === "string" ? data.status : undefined,
+  };
+}
+
+/** References of invoice payments (patient checkout, clinic and physio payment links). */
+const INVOICE_REFERENCE = /^(INV|CLN|PHY)_[A-Za-z0-9_-]+$/;
+
+export function isInvoicePaymentReference(reference: string): boolean {
+  return INVOICE_REFERENCE.test(reference);
+}
+
+/** The least a genuine checkout for this invoice can charge (kobo). */
+function invoiceMinimumDueKobo(invoice: Doc<"invoices">): number {
+  const total = invoice.feeBreakdown?.total ?? invoice.totalAmount;
+  return Math.max(0, Math.round(total - (invoice.paidAmount ?? 0)));
+}
+
+export type PaystackEvidence = {
+  amount?: number; // kobo actually charged
+  currency?: string;
+  channel?: string;
+  paid_at?: string;
+  customer_email?: string;
+  /** Set when Paystack split the payment to the provider's subaccount */
+  subaccount_code?: string;
+  /** The invoiceId our server put in the checkout metadata */
+  metadata_invoice_id?: string;
+  status?: string;
+};
+
+async function logPaymentProblem(ctx: MutationCtx, action: string, reference: string, details: Record<string, unknown>) {
+  console.error(`invoice_payment_${action}`, { reference, ...details });
+  await ctx.db.insert("systemLogs", {
+    type: "payment",
+    timestamp: Date.now(),
+    action: `invoice_payment_${action}`,
+    targetEntityType: "payment_reference",
+    targetEntityId: reference,
+    details,
+  });
+}
+
+/**
+ * Applies verified Paystack evidence (webhook or server-side verify) to an invoice payment.
+ * Idempotent: a payment is completed once; repeats and late "failed" events change nothing.
+ * A "completed" result needs the charged amount and currency, so a payment row can never
+ * mark an invoice paid for less than it owes.
+ */
 async function applyPaymentStatus(
   ctx: MutationCtx,
-  args: { paystackReference: string; status: string; paystackData?: any }
+  args: { paystackReference: string; status: string; paystackData?: PaystackEvidence }
 ) {
-  {
-    // Find payment by reference
-    const payment = await ctx.db
-      .query("payments")
-      .withIndex("by_paystack_reference", (q) => q.eq("paystackReference", args.paystackReference))
-      .first();
+  const payment = await ctx.db
+    .query("payments")
+    .withIndex("by_paystack_reference", (q) => q.eq("paystackReference", args.paystackReference))
+    .first();
 
-    if (!payment) {
-      console.error("Payment not found for reference:", args.paystackReference);
-      return {
-        success: false,
-        message: "Payment not found"
-      };
-    }
-
-    // Update payment status
-    await ctx.db.patch(payment._id, {
-      status: args.status as any,
-      updatedAt: Date.now(),
-      metadata: args.paystackData
-    });
-
-    // If payment is completed, update invoice
-    if (args.status === "completed") {
-      const invoice = await ctx.db.get(payment.invoiceId as Id<"invoices">) as Doc<"invoices"> | null;
-      if (invoice) {
-        await ctx.db.patch(payment.invoiceId, {
-          status: "paid" as const,
-          paymentDate: Date.now(),
-          paymentMethod: payment.paymentMethod,
-          paidAmount: payment.amount
-        });
-
-        // Create notification for physiotherapist if physiotherapistId exists
-        if ((invoice as any).physiotherapistId) {
-          await ctx.db.insert("notifications", {
-            userId: (invoice as any).physiotherapistId,
-            type: "payment_received" as any,
-            priority: "high",
-            status: "pending",
-            payload: {
-              title: "Payment Received",
-              body: `Invoice #${invoice.invoiceNumber} has been paid (₦${(payment.amount / 100).toLocaleString()})`,
-              data: {
-                entityId: invoice._id,
-                entityType: "invoice",
-                actionUrl: invoice.clinicId ? `/dashboard/clinic/billing` : `/dashboard/physiotherapist/billing`,
-                invoiceNumber: invoice.invoiceNumber,
-                amount: payment.amount
-              }
-            },
-            createdAt: Date.now()
-          });
-        }
-
-        // Create notification for patient
-        await ctx.db.insert("notifications", {
-          userId: invoice.patientId,
-          type: "payment_confirmed" as any,
-          priority: "medium",
-          status: "pending",
-          payload: {
-            title: "Payment Confirmed",
-            body: `Your payment for invoice #${invoice.invoiceNumber} has been confirmed`,
-            data: {
-              entityId: invoice._id,
-              entityType: "invoice",
-              actionUrl: `/dashboard/patient/invoices/${invoice._id}`,
-              invoiceNumber: invoice.invoiceNumber
-            }
-          },
-          createdAt: Date.now()
-        });
-      }
-    }
-
-    return {
-      success: true,
-      message: "Payment status updated",
-      paymentId: payment._id,
-      invoiceId: payment.invoiceId
-    };
+  if (!payment) {
+    console.error("Payment not found for reference:", args.paystackReference);
+    return { success: false, message: "Payment not found" };
   }
+
+  // Already settled: Paystack retries and repeat verifications are no-ops
+  if (payment.status === "completed") {
+    return { success: true, message: "Payment already recorded", paymentId: payment._id, invoiceId: payment.invoiceId };
+  }
+
+  const evidence = args.paystackData ?? {};
+  const now = Date.now();
+
+  if (args.status !== "completed") {
+    if (args.status === "failed" && (payment.status === "pending" || payment.status === "processing")) {
+      await ctx.db.patch(payment._id, { status: "failed", updatedAt: now, metadata: { status: evidence.status } });
+    }
+    return { success: true, message: "Payment status updated", paymentId: payment._id, invoiceId: payment.invoiceId };
+  }
+
+  const invoice = (await ctx.db.get(payment.invoiceId as Id<"invoices">)) as Doc<"invoices"> | null;
+  if (!invoice) {
+    await logPaymentProblem(ctx, "invoice_missing", args.paystackReference, { paymentId: payment._id });
+    return { success: false, message: "Invoice not found" };
+  }
+
+  const paidKobo = typeof evidence.amount === "number" ? Math.round(evidence.amount) : NaN;
+  const minimumDue = invoiceMinimumDueKobo(invoice);
+  if (evidence.currency !== "NGN" || !Number.isFinite(paidKobo) || paidKobo < payment.amount || paidKobo < minimumDue) {
+    await logPaymentProblem(ctx, "amount_mismatch", args.paystackReference, {
+      invoiceId: invoice._id,
+      paidKobo,
+      currency: evidence.currency,
+      expectedKobo: Math.max(payment.amount, minimumDue),
+    });
+    return { success: false, message: "Paid amount doesn't cover the invoice" };
+  }
+  if (evidence.metadata_invoice_id && evidence.metadata_invoice_id !== String(invoice._id)) {
+    await logPaymentProblem(ctx, "invoice_mismatch", args.paystackReference, {
+      invoiceId: invoice._id,
+      checkoutInvoiceId: evidence.metadata_invoice_id,
+    });
+    return { success: false, message: "Payment belongs to another invoice" };
+  }
+
+  await ctx.db.patch(payment._id, {
+    status: "completed",
+    updatedAt: now,
+    metadata: {
+      amount: paidKobo,
+      currency: evidence.currency,
+      channel: evidence.channel,
+      paid_at: evidence.paid_at,
+      customer_email: evidence.customer_email,
+      subaccount_code: evidence.subaccount_code,
+    },
+  });
+
+  // Money arrived for an invoice that was voided or already settled another way: keep the
+  // payment on record for a refund instead of re-marking the invoice.
+  if (invoice.status === "void" || invoice.status === "paid") {
+    await logPaymentProblem(ctx, invoice.status === "void" ? "paid_after_void" : "paid_twice", args.paystackReference, {
+      invoiceId: invoice._id,
+      paidKobo,
+    });
+    return { success: true, message: "Payment recorded; invoice was already settled", paymentId: payment._id, invoiceId: payment.invoiceId };
+  }
+
+  await ctx.db.patch(invoice._id, {
+    status: "paid" as const,
+    paymentDate: now,
+    paymentMethod: payment.paymentMethod,
+    paymentReference: args.paystackReference,
+    paidAmount: (invoice.paidAmount ?? 0) + paidKobo,
+    // Paystack names the subaccount when it split the payment to the provider's bank
+    payoutRoute: evidence.subaccount_code ? "split_to_provider" : "held_by_platform",
+  });
+  // Any other open link for this invoice must not collect again
+  await closeInvoicePaymentLinks(ctx, invoice._id, { keepReference: args.paystackReference });
+  await applyPatientBalanceUpdate(ctx, { invoiceId: invoice._id, amountPaid: paidKobo });
+
+  if (invoice.physiotherapistId) {
+    await ctx.db.insert("notifications", {
+      userId: invoice.physiotherapistId,
+      type: "payment_received",
+      priority: "high",
+      status: "pending",
+      payload: {
+        title: "Payment Received",
+        body: `Invoice #${invoice.invoiceNumber} has been paid (₦${(paidKobo / 100).toLocaleString()})`,
+        data: {
+          entityId: invoice._id,
+          entityType: "invoice",
+          actionUrl: invoice.clinicId ? `/dashboard/clinic/billing` : `/dashboard/physiotherapist/billing`,
+          invoiceNumber: invoice.invoiceNumber,
+          amount: paidKobo,
+        },
+      },
+      createdAt: now,
+    });
+  }
+
+  await ctx.db.insert("notifications", {
+    userId: invoice.patientId,
+    type: "payment_confirmed",
+    priority: "medium",
+    status: "pending",
+    payload: {
+      title: "Payment Confirmed",
+      body: `Your payment for invoice #${invoice.invoiceNumber} has been confirmed`,
+      data: {
+        entityId: invoice._id,
+        entityType: "invoice",
+        actionUrl: `/dashboard/patient/invoices/${invoice._id}`,
+        invoiceNumber: invoice.invoiceNumber,
+      },
+    },
+    createdAt: now,
+  });
+
+  // Email the patient a receipt (the printable one is on their invoice page). This runs once:
+  // the payment is now "completed", so retries and repeat verifications return early above.
+  const patient = await ctx.db.get(invoice.patientId);
+  if (patient?.email) {
+    const provider = invoice.clinicId ? await ctx.db.get(invoice.clinicId) : null;
+    const physio = invoice.physiotherapistId ? await ctx.db.get(invoice.physiotherapistId) : null;
+    const patientName = `${patient.firstName ?? ""} ${patient.lastName ?? ""}`.trim() || "Patient";
+    await ctx.scheduler.runAfter(0, internal.actions.emails.sendPaymentReceiptEmail.sendPaymentReceiptEmail as any, {
+      to: patient.email,
+      recipientName: patientName,
+      patientName,
+      physiotherapistName:
+        (provider as Doc<"clinics"> | null)?.name ??
+        (`${physio?.firstName ?? ""} ${physio?.lastName ?? ""}`.trim() || "Rehabify"),
+      amount: paidKobo,
+      currency: "NGN",
+      paymentReference: args.paystackReference,
+      date: now,
+      bookingId: invoice.invoiceNumber,
+      patientEmail: patient.email,
+      patientPhone: patient.phoneNumber,
+      role: "patient",
+      subjectOverride: `Payment receipt: invoice #${invoice.invoiceNumber}`,
+    });
+  }
+
+  return { success: true, message: "Payment status updated", paymentId: payment._id, invoiceId: payment.invoiceId };
 }
 
 /**

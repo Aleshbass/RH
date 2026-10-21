@@ -13,6 +13,8 @@
 
 import { v } from "convex/values";
 import { query, mutation } from "../_generated/server";
+import { ensureUserNumbers } from "../helpers/rehabifyIds";
+import { isPhysioNetworkEligible } from "../physioSetup";
 
 /**
  * Get matched physiotherapists for a patient based on their preferences.
@@ -39,15 +41,8 @@ export const getMatchedPhysiotherapists = query({
                 const user = await ctx.db.get(profile.userId);
                 if (!user) return null;
 
-                // Check approval
-                const approvalStatus = await ctx.db
-                    .query("accountApprovalStatus")
-                    .withIndex("by_user_id", (q) => q.eq("userId", profile.userId))
-                    .first();
-
-                if (!approvalStatus || approvalStatus.status !== "approved") {
-                    return null;
-                }
+                // Bookable and in the Rehabify network (clinic members work under their clinic)
+                if (!(await isPhysioNetworkEligible(ctx, profile.userId))) return null;
 
                 return { ...profile, user };
             })
@@ -203,12 +198,6 @@ export const getMatchedPhysiotherapists = query({
                 yearsOfExperience: p.yearsOfExperience || 0,
                 location: p.location,
                 hasLocation: hasPhysioLocation,
-                hourlyRate: p.hourlyRate ? p.hourlyRate / 100 : 0,
-                initialConsultRate: p.initialConsultRate ? p.initialConsultRate / 100 : 0,
-                packageRates: (p.packageRates || []).map((pkg) => ({
-                    ...pkg,
-                    price: pkg.price / 100,
-                })),
                 averageRating: p.averageRating || 0,
                 reviewCount: p.reviewCount || 0,
                 isVerified,
@@ -288,7 +277,7 @@ export const savePatientTreatmentPrefs = mutation({
         areaLabel: v.string(),
         conditionLabel: v.string(),
         conditionLevel: v.string(),
-        sessionRate: v.number(),
+        sessionRate: v.optional(v.number()), // legacy: prices are now standard
     },
 
     handler: async (ctx, args) => {
@@ -310,6 +299,7 @@ export const savePatientTreatmentPrefs = mutation({
                 role: "patient",
                 onboarded: true,
             });
+            await ensureUserNumbers(ctx, user._id);
         }
 
         // Find or create patient profile

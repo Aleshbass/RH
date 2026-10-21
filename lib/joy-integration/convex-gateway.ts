@@ -26,6 +26,8 @@ export async function callJoyConvexGateway(operation: GatewayOperation, payload:
       headers: { "Content-Type": "application/json", "X-Joy-Gateway-Timestamp": timestamp, "X-Joy-Gateway-Nonce": nonce, "X-Joy-Gateway-Signature": signature },
       body,
       cache: "no-store",
+      // Callers include the Paystack webhook: a hung gateway must fail fast so Paystack retries
+      signal: AbortSignal.timeout(15_000),
     });
   } catch (error) {
     console.error("joy_convex_gateway_unreachable", {

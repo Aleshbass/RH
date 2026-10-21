@@ -30,8 +30,8 @@ import {
   UserCheck,
   CreditCard,
   Building2,
-  Inbox,
   BarChart3,
+  MessageSquare,
   LogIn,
   LogOut,
   type LucideIcon,
@@ -47,16 +47,20 @@ type NavItem = {
   title: string
   href: string
   icon: LucideIcon
-  badgeKey?: 'newReferrals'
+  badgeKey?: 'newReferrals' | 'unreadMessages'
   /** Page permission needed; Home has none */
   area?: ClinicArea
+  /** Another permission that also opens this page */
+  orArea?: ClinicArea
 }
 
+// Rehabify referrals live inside Patients (the "Referred by Rehabify" filter), so their
+// new-referral badge sits on Patients and there is no separate Referrals entry
 const mainItems: NavItem[] = [
   { title: 'Home', href: '/dashboard/clinic', icon: LayoutDashboard },
   { title: 'Appointments', href: '/dashboard/clinic/appointments', icon: Calendar, area: 'appointments' },
-  { title: 'Patients', href: '/dashboard/clinic/patients', icon: Users, area: 'patients' },
-  { title: 'Referrals', href: '/dashboard/clinic/referrals', icon: Inbox, badgeKey: 'newReferrals', area: 'referrals' },
+  { title: 'Patients', href: '/dashboard/clinic/patients', icon: Users, area: 'patients', orArea: 'referrals', badgeKey: 'newReferrals' },
+  { title: 'Messages', href: '/dashboard/clinic/messages', icon: MessageSquare, area: 'patients', badgeKey: 'unreadMessages' },
   { title: 'Billing', href: '/dashboard/clinic/billing', icon: CreditCard, area: 'billing' },
   { title: 'Team', href: '/dashboard/clinic/staff', icon: UserCheck, area: 'team' },
   { title: 'Reports', href: '/dashboard/clinic/analytics', icon: BarChart3, area: 'reports' },
@@ -150,11 +154,14 @@ function AccountMenu({ collapsed, onNavigate }: { collapsed: boolean; onNavigate
 export default function ClinicSidebar({ className, onNavigate, collapsible = true }: SidebarProps) {
   const pathname = usePathname()
   const [isCollapsed, setIsCollapsed] = useState(false)
-  const counts = useQuery(api.clinicTools.getClinicNavCounts, {})
+  const navCounts = useQuery(api.clinicTools.getClinicNavCounts, {})
+  const { isPreviewMode } = useClinicAccess()
+  const unreadMessages = useQuery(api.chat.getUnreadCount, isPreviewMode ? 'skip' : {}) as number | undefined
+  const counts = navCounts ? { ...navCounts, unreadMessages: unreadMessages ?? 0 } : undefined
   const collapsed = collapsible && isCollapsed
   const { canUse } = useClinicAccess()
   // Team members only see the pages their role includes
-  const allowed = (item: NavItem) => !item.area || canUse(item.area)
+  const allowed = (item: NavItem) => !item.area || canUse(item.area) || (item.orArea ? canUse(item.orArea) : false)
 
   const renderItem = (item: NavItem) => {
     const active = isActivePath(pathname, item.href)

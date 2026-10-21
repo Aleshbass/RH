@@ -135,11 +135,11 @@ export default function RoleBasedFeatures() {
               </div>
               <div className="flex items-center justify-between text-[#005b57] font-bold">
                 <span className="text-sm">Rehabify Direct Care</span>
-                <span className="text-lg text-emerald-700 font-extrabold">From ₦8,000</span>
+                <span className="text-lg text-emerald-700 font-extrabold">From ₦6,000</span>
               </div>
               <div className="pt-2 border-t border-gray-200/80 flex items-center gap-2 text-xs text-emerald-800 font-semibold">
                 <TrendingDown className="w-4 h-4 text-emerald-600" />
-                <span>Save up to 20% more on treatment packages</span>
+                <span>All-inclusive, pay per session, same price whichever physio</span>
               </div>
             </div>
           </motion.div>

@@ -24,7 +24,9 @@ const GROUPS: { label: string; items: SettingsLink[] }[] = [
         label: 'Practice',
         items: [
             { label: 'Working hours', href: `${BASE}/availability`, setupItem: 'availability' },
-            { label: 'Prices & listing', href: `${BASE}/marketplace`, setupItem: 'pricing' },
+            { label: 'Services & coverage', href: `${BASE}/marketplace`, setupItem: 'coverage' },
+            { label: 'Network terms', href: `${BASE}/network-terms`, setupItem: 'network_terms' },
+            { label: 'Payout schedule', href: `${BASE}/fee-schedule` },
             { label: 'Payouts', href: `${BASE}/payout`, setupItem: 'payout' },
             { label: 'Calendar sync', href: `${BASE}/calendar` },
         ],

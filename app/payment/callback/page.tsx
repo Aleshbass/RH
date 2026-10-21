@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { CheckCircle, XCircle, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { playSound } from '@/lib/sounds'
+import { PaystackTestModeBanner } from '@/components/billing/PaystackTestModeBanner'
 
 function PaymentCallbackContent() {
   const searchParams = useSearchParams()
@@ -18,6 +19,7 @@ function PaymentCallbackContent() {
   const [invoiceId, setInvoiceId] = useState<string | null>(null)
   const [isMarketplaceBooking, setIsMarketplaceBooking] = useState(false)
   const [isJoyPayment, setIsJoyPayment] = useState(false)
+  const [title, setTitle] = useState<string | null>(null)
 
   // Paystack verification
   const verifyPaystackTransaction = useAction(api.payments.verifyPaystackTransaction)
@@ -43,7 +45,7 @@ function PaymentCallbackContent() {
     // so a completed Joy checkout must not be displayed as a false failure.
     // A browser redirect remains non-authoritative: it cannot confirm an
     // appointment or bypass physiotherapist acceptance.
-    if (paymentRef.startsWith('JOY_')) {
+    if (paymentRef.startsWith('JOY_') || paymentRef.startsWith('JOYREV_')) {
       setIsJoyPayment(true)
       setStatus('success')
       setMessage('Your payment was submitted. We are verifying it securely. You will receive a Joy message once RH receives and verifies the Paystack payment event.')
@@ -58,23 +60,38 @@ function PaymentCallbackContent() {
         try {
           const result = await verifyMarketplacePayment({ reference: paymentRef })
           setIsMarketplaceBooking(true)
-          if (result?.success) {
+          // Paid after the slot hold lapsed and someone else took the time: kept, rescheduled by us
+          const needsNewTime = result?.needsNewTime === true || result?.status === 'needs_new_time'
+          if (result?.success && result?.status === 'paid_after_cancel') {
             setStatus('success')
-            setMessage('Payment confirmed — your booking is confirmed.')
+            setTitle('Payment received')
+            setMessage('This booking had expired before your payment came through. Your payment is safe: we’ll contact you to rebook or refund you.')
+          } else if (result?.success && needsNewTime) {
+            setStatus('success')
+            setTitle('Payment received')
+            setMessage('The time you chose was booked while you paid. Your payment is safe and we’ll contact you to agree a new time.')
+            playSound('paid')
+          } else if (result?.success) {
+            setStatus('success')
+            setTitle('Your booking is confirmed')
+            setMessage('Payment received. We’ve emailed you the details.')
             playSound('booked')
             toast.success('Payment successful!')
           } else if (result?.status === 'abandoned' || result?.status === 'failed') {
             setStatus('failed')
-            setMessage('The payment was not completed. You have not been charged.')
+            setTitle('Payment not completed')
+            setMessage('You have not been charged. Your time is held for a short while, so you can go back and try again.')
           } else {
             setStatus('success')
-            setMessage('Payment received. We are confirming your booking — you will get an email shortly.')
+            setTitle('Payment received')
+            setMessage('We’re confirming your booking and will email you shortly.')
           }
         } catch (error) {
           console.error('Marketplace payment verification error:', error)
           setStatus('success')
           setIsMarketplaceBooking(true)
-          setMessage('Payment received. We are confirming your booking — you will get an email shortly.')
+          setTitle('Payment received')
+          setMessage('We’re confirming your booking and will email you shortly.')
         }
         return
       }
@@ -86,7 +103,8 @@ function PaymentCallbackContent() {
 
         if (result.success && result.status === 'success') {
           setStatus('success')
-          setMessage('Payment completed successfully! Your booking is confirmed.')
+          setTitle('Payment received')
+          setMessage('Your invoice has been paid. Thank you.')
 
           if (result.metadata?.invoiceId) {
             setInvoiceId(result.metadata.invoiceId)
@@ -94,6 +112,15 @@ function PaymentCallbackContent() {
 
           playSound('paid')
           toast.success('Payment successful!')
+        } else if (result.success && ['pending', 'ongoing', 'processing', 'queued'].includes(String(result.status))) {
+          // Bank transfer and USSD payments can take a few minutes to be confirmed
+          setStatus('success')
+          setTitle('Payment processing')
+          setMessage('Your bank is still confirming this payment. Your invoice will update as soon as it does. There is no need to pay again.')
+        } else if (result.status === 'under_review') {
+          setStatus('success')
+          setTitle('Payment received')
+          setMessage(result.error || 'We received your payment and our team is checking it.')
         } else {
           setStatus('failed')
           setMessage(result.error || 'Payment verification failed')
@@ -125,7 +152,8 @@ function PaymentCallbackContent() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+    <div className="min-h-screen flex flex-col items-center justify-center gap-3 bg-gray-50 p-4">
+      <PaystackTestModeBanner className="w-full max-w-md" />
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <div className="mx-auto mb-4">
@@ -141,8 +169,9 @@ function PaymentCallbackContent() {
           </div>
           <CardTitle>
             {status === 'loading' && 'Verifying Payment...'}
-            {status === 'success' && (isJoyPayment ? 'Payment Submitted' : 'Payment Successful!')}
-            {status === 'failed' && 'Payment Failed'}
+            {status !== 'loading' && title}
+            {status === 'success' && !title && (isJoyPayment ? 'Payment Submitted' : 'Payment Successful!')}
+            {status === 'failed' && !title && 'Payment Failed'}
           </CardTitle>
           <CardDescription>{message}</CardDescription>
         </CardHeader>

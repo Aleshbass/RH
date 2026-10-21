@@ -213,9 +213,11 @@ export const resendClinicStaffInvitation = action({
         };
       }
 
-      // Get full invitation details (for clinic name and accurate expiry)
+      // Resending renews the link for another 7 days, so an invite that lapsed works again
+      const { expiresAt } = await ctx.runMutation(api.clinics.extendClinicStaffInvitation, {
+        invitationId: invitation._id,
+      });
       const fullInvitation = await ctx.runQuery(api.clinics.getInvitationByCode, { code: invitation.code });
-      const expiresAt = fullInvitation?.expiresAt ?? invitation.expiresAt;
       const clinicName = fullInvitation?.clinic?.name as string | undefined;
 
       // Use env-based domain for staff invitation reminder links

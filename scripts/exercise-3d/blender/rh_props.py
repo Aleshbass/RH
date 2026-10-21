@@ -1,9 +1,10 @@
-"""Simple props for the exercise scenes: chair, mat, step, wall, decline board, towel.
+"""Simple props for the exercise scenes: chair, mat, step, walls, doorway, table, decline board, towel.
 
 They exist in Blender only to check contact and framing. The web viewer draws the same
 props from the dimensions each builder reports, so they add nothing to the download.
-A towel strap follows the hands and foot, so Blender updates it on every frame change and
-the web viewer rebuilds it from the same bones.
+Props held in the hands or pressed against the body (towel, band, stick, bottles, ball) follow
+the bones, so Blender updates them on every frame change and the web viewer rebuilds them from
+the same bones.
 """
 
 import json
@@ -21,6 +22,11 @@ COLORS = {
     "pillow": (0.90, 0.94, 0.94),   # Rehabify mist #e6f0ef
     "towel": (0.72, 0.86, 0.85),    # soft teal #b8dbd8
     "line": (0.0, 0.36, 0.34),      # Rehabify teal #005b57
+    "band": (0.91, 0.53, 0.42),     # coral #e8876b
+    "bottle": (0.62, 0.80, 0.90),   # light blue #9ecce5
+    "ball": (0.80, 0.90, 0.31),     # tennis ball #cce64f
+    "door": (0.80, 0.68, 0.55),     # #ccad8c
+    "metal": (0.35, 0.36, 0.38),
 }
 
 
@@ -81,6 +87,16 @@ def chair(seat_top, front_y, x=0.0, width=0.46, depth=0.42):
     return {"type": "chair", "seatTop": round(seat_top, 3), "frontY": round(front_y, 3), "x": x, "width": width, "depth": depth}
 
 
+def table(top, x, y, width=0.9, depth=0.6):
+    """Table centred at (x, y) with its top surface at `top`."""
+    t, leg = 0.03, 0.04
+    _box("Prop_Table_Top", (width, depth, t), (x, y, top - t / 2), "wood")
+    for i, (dx, dy) in enumerate(((-1, -1), (1, -1), (-1, 1), (1, 1))):
+        _box(f"Prop_Table_Leg{i}", (leg, leg, top - t),
+             (x + dx * (width / 2 - leg), y + dy * (depth / 2 - leg), (top - t) / 2), "wood")
+    return {"type": "table", "top": round(top, 3), "x": round(x, 3), "y": round(y, 3), "width": width, "depth": depth}
+
+
 def mat(center_y=0.0, length=1.8, width=0.62, along="y"):
     """Exercise mat on the floor, long axis along Y (or X)."""
     size = (width, length, 0.008) if along == "y" else (length, width, 0.008)
@@ -113,6 +129,39 @@ def wall(face_y, width=2.4, height=2.4, x=0.0, behind=False):
     if behind:
         out["at"] = "back"
     return out
+
+
+def side_wall(face_x, y=0.0, width=2.4, height=2.4):
+    """Wall beside the character whose face is the plane x = face_x (on the wearer's left when face_x > 0)."""
+    center_x = face_x + 0.05 if face_x > 0 else face_x - 0.05
+    _box("Prop_Wall", (0.1, width, height), (center_x, y, height / 2), "wall")
+    return {"type": "wall", "faceX": round(face_x, 3), "y": round(y, 3), "width": width, "height": height}
+
+
+def doorway(face_y, opening=0.84, x=0.0, width=3.0, height=2.4, header=2.05):
+    """Wall in front of the character (face towards it at y = face_y) with a door opening centred on x."""
+    half = (width - opening) / 2
+    for i, sx in enumerate((-1, 1)):
+        _box(f"Prop_Doorway_{i}", (half, 0.1, height), (x + sx * (opening / 2 + half / 2), face_y - 0.05, height / 2), "wall")
+    _box("Prop_Doorway_Head", (opening, 0.1, height - header), (x, face_y - 0.05, (height + header) / 2), "wall")
+    return {"type": "doorway", "faceY": round(face_y, 3), "x": round(x, 3), "opening": opening, "width": width,
+            "height": height, "header": header}
+
+
+def jamb(x, near_y, length=1.0, thick=0.1, height=2.4):
+    """End of a wall pointing at the character (a door frame to hold): its edge at near_y, running away along -Y."""
+    _box("Prop_Jamb", (thick, length, height), (x, near_y - length / 2, height / 2), "wall")
+    return {"type": "jamb", "x": round(x, 3), "nearY": round(near_y, 3), "length": length, "thick": thick, "height": height}
+
+
+def door(face_y, handle, width=0.82, height=2.0):
+    """Closed door in front of the character (face towards it at y = face_y) with a handle at world point `handle`."""
+    hx, hz = handle[0], handle[2]
+    x = hx + (width / 2 - 0.08 if hx <= 0 else -(width / 2 - 0.08))
+    _box("Prop_Door", (width, 0.04, height), (x, face_y - 0.02, height / 2), "door")
+    _box("Prop_Door_Handle", (0.12, 0.05, 0.022), (hx, face_y + 0.025, hz), "metal")
+    return {"type": "door", "faceY": round(face_y, 3), "x": round(x, 3), "width": width, "height": height,
+            "handle": [round(c, 3) for c in handle]}
 
 
 def _mesh(name, verts, faces, material):
@@ -165,11 +214,28 @@ def line(x=0.0, width=0.05, length=8.0):
     return {"type": "line", "x": round(x, 3), "width": width, "length": length}
 
 
-# Towel strap ------------------------------------------------------------------------------
-# The towel runs from each hand to the sole of one foot ("ball" of the foot, or the "toes").
-# The web viewer computes the same points from the same bones (components/exercise3d).
+# Props that follow the body -----------------------------------------------------------------
+# A towel or belt (strap), a resistance band, a stick, water bottles and a ball pressed between the
+# back and a wall are drawn as pieces (cylinders between two points, or a sphere) rebuilt from the
+# bones on every frame change. The web viewer computes the same pieces from the same bones
+# (components/exercise3d/ExerciseStage.tsx).
 
 STRAP_RADIUS = 0.014
+# type: (material, radius, number of pieces)
+DYNAMIC = {
+    "strap": ("towel", STRAP_RADIUS, 4),
+    "band": ("band", 0.008, 2),
+    "stick": ("wood", 0.013, 1),
+    "bottle": ("bottle", 0.032, 2),
+    "ball": ("ball", 0.033, 1),
+}
+
+
+def grip(s):
+    """Inside the closed fist of hand s ("Left"/"Right"): between the knuckle and the curled fingertip joint."""
+    import rh_pose as R
+
+    return R.world_point(f"{s}HandMiddle1").lerp(R.world_point(f"{s}HandMiddle3"), 0.5)
 
 
 def belt_points():
@@ -202,26 +268,19 @@ def strap_points(foot, at):
     def tail(b):
         return R.world_point(b, tail=True)
 
-    grips = []
-    for s in ("Left", "Right"):
-        # Inside the closed fist: between the knuckle and the curled fingertip joint.
-        grips.append(head(f"{s}HandMiddle1").lerp(head(f"{s}HandMiddle3"), 0.5))
-    ankle, ball, knee = head(f"{foot}Foot"), head(f"{foot}ToeBase"), head(f"{foot}Leg")
-    along = (ball - ankle).normalized()
+    ankle, ball_, knee = head(f"{foot}Foot"), head(f"{foot}ToeBase"), head(f"{foot}Leg")
+    along = (ball_ - ankle).normalized()
     shin = (ankle - knee).normalized()
     plantar = (shin - along * shin.dot(along)).normalized()
     if at == "toes":
-        base, depth = ball.lerp(tail(f"{foot}ToeBase"), 0.55), 0.022
+        base, depth = ball_.lerp(tail(f"{foot}ToeBase"), 0.55), 0.022
     else:
-        base, depth = ball, 0.03
+        base, depth = ball_, 0.03
     center = base + plantar * depth
     across = along.cross(plantar).normalized() * 0.035
     a, b = center + across, center - across
     left_anchor, right_anchor = (a, b) if a.x > b.x else (b, a)
-    return grips[0], grips[1], left_anchor, right_anchor
-
-
-STRAP_SEGMENTS = 4
+    return grip("Left"), grip("Right"), left_anchor, right_anchor
 
 
 def strap_segments(at, a, b, c, d):
@@ -230,6 +289,48 @@ def strap_segments(at, a, b, c, d):
     if at == "knees":
         return ((a, b), (c, d), (a, c), (b, d))
     return ((a, c), (b, d), (c, d), (c, c))
+
+
+def bottle_axis(s):
+    """Direction of a bottle held in fist s: across the palm, from the little finger to the index knuckle."""
+    import rh_pose as R
+
+    return (R.world_point(f"{s}HandIndex1") - R.world_point(f"{s}HandPinky1")).normalized()
+
+
+def pieces(spec):
+    """Pieces of a body-following prop in the current pose: (a, b) segments; a == b is a sphere's
+    centre, or an unused segment."""
+    import rh_pose as R
+
+    kind = spec["type"]
+    if kind == "strap":
+        return list(strap_segments(spec["at"], *strap_points(spec["foot"], spec["at"])))
+    if kind == "band":
+        # Both ends held, the middle looped round a fixed anchor (a door handle).
+        a = Vector(spec["anchor"])
+        return [(a, grip("Left")), (a, grip("Right"))]
+    if kind == "stick":
+        # Held in both fists; it runs from just outside the `hand` fist through the other fist.
+        a = grip(spec["hand"])
+        b = grip("Right" if spec["hand"] == "Left" else "Left")
+        d = (b - a).normalized()
+        return [(a - d * 0.08, a + d * (spec["length"] - 0.08))]
+    if kind == "bottle":
+        out = []
+        for s in ("Left", "Right"):
+            if s in spec["hands"]:
+                c, axis = grip(s), bottle_axis(s)
+                out.append((c - axis * 0.09, c + axis * 0.09))
+            else:
+                out.append((Vector(), Vector()))
+        return out
+    if kind == "ball":
+        # Pressed between the back and a wall behind it: it rides up and down with the body.
+        b = R.world_point(spec["bone"])
+        c = Vector((b.x + spec["dx"], spec["faceY"] - DYNAMIC["ball"][1], b.z + spec["dz"]))
+        return [(c, c)]
+    raise KeyError(kind)
 
 
 def _place_segment(o, p0, p1):
@@ -243,36 +344,72 @@ def _place_segment(o, p0, p1):
 
 
 def _rh_update_straps(scene=None, depsgraph=None):
-    first = bpy.data.objects.get("Prop_Strap_0")
-    if first is None or "rh_strap" not in first:
-        return
-    spec = json.loads(first["rh_strap"])
-    lh, rh, la, ra = strap_points(spec["foot"], spec["at"])
-    for i, (p0, p1) in enumerate(strap_segments(spec["at"], lh, rh, la, ra)):
-        o = bpy.data.objects.get(f"Prop_Strap_{i}")
-        if o is not None:
-            _place_segment(o, p0, p1)
+    col = bpy.data.collections.get(COLLECTION)
+    for first in list(col.objects) if col else []:
+        if "rh_dyn" not in first:
+            continue
+        spec = json.loads(first["rh_dyn"])
+        prefix = first.name[:-2]
+        for i, (p0, p1) in enumerate(pieces(spec)):
+            o = bpy.data.objects.get(f"{prefix}_{i}")
+            if o is None:
+                continue
+            if spec["type"] == "ball":
+                o.matrix_world = Matrix.Translation(p0)
+            else:
+                _place_segment(o, p0, p1)
 
 
-def strap(foot="Left", at="ball"):
-    """Towel looped under one foot and held in both hands (at="ball" or "toes"), or a belt around
-    both knees (at="knees"); it follows the pose on every frame."""
-    for i in range(STRAP_SEGMENTS):
-        old = bpy.data.objects.get(f"Prop_Strap_{i}")
+def _dynamic(spec):
+    """Create the pieces of a body-following prop and keep them updated on frame changes."""
+    kind = spec["type"]
+    material, radius, n = DYNAMIC[kind]
+    prefix = f"Prop_{kind.capitalize()}"
+    for i in range(n):
+        old = bpy.data.objects.get(f"{prefix}_{i}")
         if old:
             bpy.data.objects.remove(old, do_unlink=True)
-        bpy.ops.mesh.primitive_cylinder_add(radius=STRAP_RADIUS, depth=1.0, vertices=12)
+        if kind == "ball":
+            bpy.ops.mesh.primitive_uv_sphere_add(radius=radius, segments=24, ring_count=12)
+        else:
+            bpy.ops.mesh.primitive_cylinder_add(radius=radius, depth=1.0, vertices=12)
         o = bpy.context.active_object
-        o.name = f"Prop_Strap_{i}"
+        o.name = f"{prefix}_{i}"
         for c in list(o.users_collection):
             c.objects.unlink(o)
         _collection().objects.link(o)
-        o.data.materials.append(_material("towel"))
-    bpy.data.objects["Prop_Strap_0"]["rh_strap"] = json.dumps({"foot": foot, "at": at})
+        o.data.materials.append(_material(material))
+    bpy.data.objects[f"{prefix}_0"]["rh_dyn"] = json.dumps(spec)
     handlers = bpy.app.handlers.frame_change_post
     for h in list(handlers):
         if getattr(h, "__name__", "") == "_rh_update_straps":
             handlers.remove(h)
     handlers.append(_rh_update_straps)
     _rh_update_straps()
-    return {"type": "strap", "foot": foot, "at": at}
+    return spec
+
+
+def strap(foot="Left", at="ball"):
+    """Towel looped under one foot and held in both hands (at="ball" or "toes"), or a belt around
+    both knees (at="knees"); it follows the pose on every frame."""
+    return _dynamic({"type": "strap", "foot": foot, "at": at})
+
+
+def band(anchor):
+    """Resistance band looped round a fixed point (a door handle), one end in each hand."""
+    return _dynamic({"type": "band", "anchor": [round(c, 3) for c in anchor]})
+
+
+def stick(hand="Left", length=1.0):
+    """Stick held in both fists, sticking out 8 cm beyond the `hand` fist."""
+    return _dynamic({"type": "stick", "hand": hand, "length": length})
+
+
+def bottles(hands=("Left", "Right")):
+    """A water bottle held in each named fist."""
+    return _dynamic({"type": "bottle", "hands": list(hands)})
+
+
+def ball(bone, face_y, dx=0.0, dz=0.0):
+    """Tennis ball between the back and a wall behind (wall face at face_y), level with `bone` + dz."""
+    return _dynamic({"type": "ball", "bone": bone, "faceY": round(face_y, 3), "dx": round(dx, 3), "dz": round(dz, 3)})

@@ -8,6 +8,8 @@ import { useValidateInvitationCode } from '@/lib/api/patientInvitations';
 import { useMutation, useQuery } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import { Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
+import { programError } from '@/components/exercise-programs/errors';
 
 function PatientStep1Content() {
   const router = useRouter();
@@ -114,7 +116,7 @@ function PatientStep1Content() {
       router.push('/find-a-physio');
     } catch (error) {
       console.error("Failed to complete profile:", error);
-      // Handle error (maybe show toast)
+      toast.error(programError(error, "We couldn't save your details. Please check them and try again."));
     }
   };
 

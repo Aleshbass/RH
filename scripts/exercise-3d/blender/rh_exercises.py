@@ -6,6 +6,8 @@ degrees; see rh_pose.JOINTS for the sign conventions. Every clip still needs sig
 from a licensed physiotherapist before patients see it.
 """
 
+import math
+
 from mathutils import Vector
 
 import rh_pose as R
@@ -1729,7 +1731,258 @@ def calf_stretch(side="L"):
     return act, report
 
 
+# ─── Shoulder and upper back pack (Oct 2026) ─────────────────────────────────────────────
+
+def shoulder_blade_setting():
+    """Shoulder blade setting, standing tall with the arms relaxed: gently draw the shoulder blades
+    back and down, hold without shrugging, then relax. 6 s."""
+    feet = R.points(FEET)
+    rest = {}
+    set_ = {**_sym(shoulder_protr=-24, shoulder_elev=-8), "spine_flex": -3}
+    hold = {"step": 10}
+    return R.animate("EX_shoulder_blade_setting", rest, [
+        (rest, 12, hold), (set_, 30), (set_, 90, hold), (rest, 30), (rest, 18, hold),
+    ], locks=feet)
+
+
+def arm_side_point(side, frac, out):
+    """A point on the outside of the upper arm, `frac` of the way from the elbow to the shoulder,
+    `out` metres from the bone towards the front and away from the chest (where a hand pulls it)."""
+    n = SIDE_NAME[side]
+    elbow, shoulder = R.world_point(f"{n}ForeArm"), R.world_point(f"{n}Arm")
+    u = (shoulder - elbow).normalized()
+    away = Vector((u.y, -u.x, 0)).normalized()
+    if away.y > 0:
+        away = -away
+    return elbow.lerp(shoulder, frac) + away * out
+
+
+def cross_body_stretch(side="L"):
+    """Cross-body shoulder stretch, standing tall: bring the arm being stretched (side) across the chest
+    and with the other hand gently pull it closer at the elbow until a stretch is felt at the back of
+    the shoulder; hold; release. 10 s."""
+    feet = R.points(FEET)
+    s, o = side, OTHER[side]
+    on = SIDE_NAME[o]
+    rest = {}
+
+    def pose(horiz, helper_flex, helper_horiz, helper_elbow):
+        return {f"arm_{s}": {"flex": 92, "horiz": horiz}, f"elbow_flex_{s}": 6, f"grip_{s}": 15,
+                f"arm_{o}": {"flex": helper_flex, "horiz": helper_horiz}, f"elbow_flex_{o}": helper_elbow,
+                f"forearm_pron_{o}": 70, f"wrist_ext_{o}": 10}
+
+    def hand_on_arm(p):
+        R.apply_pose(p)
+        return {f"{on}HandMiddle1": arm_side_point(s, 0.18, 0.05)}
+
+    reach = [([(f"arm_{o}", "flex"), (f"arm_{o}", "horiz"), f"elbow_flex_{o}"], hand_on_arm)]
+    across = settle(pose(-28, 50, -20, 95), None, reach)
+    stretch = settle(pose(-46, 52, -25, 105), None, reach)
+    hold = {"step": 10}
+    return R.animate(f"EX_cross_body_stretch_{side}", rest, [
+        (rest, 9, hold), (across, 45), (stretch, 30, {"reach": reach}), (stretch, 150, {"reach": reach, "step": 10}),
+        (across, 30, {"reach": reach}), (rest, 36), (rest, 9, hold),
+    ], locks=feet)
+
+
+def scaption():
+    """Scaption, standing tall with a water bottle in each hand, thumbs up: lift both arms forwards and
+    slightly out (a V shape) to shoulder height, then lower slowly. 5 s per rep."""
+    import rh_props as P
+
+    feet = R.points(FEET)
+    hands = _sym(grip=62, forearm_pron=-8)
+    down = dict(hands, arm_L={"abd": 2, "plane": 40, "ext_rot": 10}, arm_R={"abd": 2, "plane": 40, "ext_rot": 10})
+    up = dict(hands, arm_L={"abd": 90, "plane": 40, "ext_rot": 55}, arm_R={"abd": 90, "plane": 40, "ext_rot": 55})
+    hold = {"step": 6}
+    act, report = R.animate("EX_scaption", down, [
+        (down, 6, hold), (up, 54), (up, 12, hold), (down, 66), (down, 12, hold),
+    ], locks=feet)
+    report["props"] = [P.bottles()]
+    return act, report
+
+
+def fist_on(hand, point):
+    """Reach target that puts the inside of the `hand` fist (rh_props.grip) on a world point. The
+    solver moves bone heads, so the knuckle is aimed at the point plus the knuckle-to-grip offset
+    in the current pose."""
+    import rh_props as P
+
+    n = SIDE_NAME[hand]
+    return {f"{n}HandMiddle1": point + (R.world_point(f"{n}HandMiddle1") - P.grip(n))}
+
+
+def assisted_external_rotation(side="L"):
+    """Assisted outward rotation with a stick, sitting. Elbows tucked into the sides and bent to 90
+    degrees, palms up, holding a stick across in front. The good arm pushes the stick so the hand of
+    the painful arm (side) moves outwards, elbow staying at the side; to a comfortable stretch and
+    back. 5 s per rep."""
+    import rh_props as P
+
+    s, o = side, OTHER[side]
+    sit, feet = seated_base()
+    chair = fit_chair(sit)
+    hips = R.points(("LeftUpLeg", "RightUpLeg"), sit)
+    legs = [(leg_params(x), {k: v for k, v in feet.items() if k.startswith(SIDE_NAME[x])}) for x in ("L", "R")]
+
+    def pose(er):
+        return dict(sit, **_sym(elbow_flex=90, forearm_pron=-80, grip=70),
+                    **{f"arm_{s}": {"abd": -6, "ext_rot": er}, f"arm_{o}": {"abd": -6, "ext_rot": -0.8 * er}})
+
+    start = pose(0)
+    R.apply_pose(start)
+    gap = (P.grip(SIDE_NAME[o]) - P.grip(SIDE_NAME[s])).x
+
+    def on_stick(p):
+        # The stick stays level and across the body; the good fist keeps its place on it.
+        R.apply_pose(p)
+        return fist_on(o, P.grip(SIDE_NAME[s]) + Vector((gap, 0, 0)))
+
+    reach = legs + [([(f"arm_{o}", "ext_rot"), (f"arm_{o}", "flex"), (f"arm_{o}", "abd"), f"elbow_flex_{o}"], on_stick)]
+    out = settle(pose(45), hips, reach)
+    hold = {"step": 6}
+    act, report = R.animate(f"EX_assisted_external_rotation_{side}", start, [
+        (start, 9, hold), (out, 60), (out, 15, hold), (start, 60), (start, 6, hold),
+    ], locks=hips, reach=reach)
+    report["props"] = [chair, P.stick(SIDE_NAME[s], 0.8)]
+    return act, report
+
+
+def assisted_abduction(side="L"):
+    """Assisted arm lift out to the side with a stick, standing. Both hands hold a stick in front,
+    palms up. The good arm pushes the stick so the painful arm (side), elbow straight, rises out to
+    the side to a comfortable stretch; lower slowly. 6 s per rep."""
+    import rh_props as P
+
+    s, o = side, OTHER[side]
+    sx = 1 if s == "L" else -1
+    feet = R.points(FEET)
+    fists = _sym(grip=70)
+
+    def pose(abd, angle, ext, elbow):
+        return dict(fists, label=angle, **{
+            f"arm_{s}": {"abd": abd, "plane": 25, "ext_rot": ext}, f"elbow_flex_{s}": elbow, f"forearm_pron_{s}": -75,
+            f"arm_{o}": {"flex": 25, "abd": -8}, f"elbow_flex_{o}": 60, f"forearm_pron_{o}": -75})
+
+    start = pose(14, 0, 20, 55)
+    R.apply_pose(start)
+    gap = (P.grip(SIDE_NAME[o]) - P.grip(SIDE_NAME[s])).length
+
+    def on_stick(p):
+        # label: how far the stick dips from the painful fist towards the good one (degrees).
+        R.apply_pose(p)
+        a = math.radians(p.get("label", 0.0))
+        d = Vector((-sx * math.cos(a), -0.15, -math.sin(a))).normalized()
+        return fist_on(o, P.grip(SIDE_NAME[s]) + d * gap)
+
+    reach = [([(f"arm_{o}", "flex"), (f"arm_{o}", "abd"), (f"arm_{o}", "horiz"), f"elbow_flex_{o}"], on_stick)]
+    start = settle(start, None, reach)
+    up = settle(pose(100, 38, 70, 12), None, reach)
+    hold = {"step": 6}
+    act, report = R.animate(f"EX_assisted_abduction_{side}", start, [
+        (start, 9, hold), (up, 66), (up, 18, hold), (start, 72), (start, 15, hold),
+    ], locks=feet, reach=reach)
+    report["props"] = [P.stick(SIDE_NAME[s], 1.0)]
+    return act, report
+
+
+def _lateral_extent(side, keep):
+    """Furthest point of the skin and shirt towards one side (x for the left, -x for the right)."""
+    sx = 1 if side == "L" else -1
+    pts = mesh_points(("RH_Body1", "RH_Shirt"), keep)
+    return max(pts, key=lambda w: w.x * sx)
+
+
+def static_shoulder_abduction(side="L"):
+    """Static shoulder push out to the side (isometric). Standing side-on to a wall, elbow bent to 90
+    degrees and the outside of the elbow touching the wall: push the elbow gently into the wall
+    without moving; hold; relax. 9 s."""
+    import rh_props as P
+
+    s = side
+    sx = 1 if s == "L" else -1
+    feet = R.points(FEET)
+    rest = {f"arm_{s}": {"abd": 8}, f"elbow_flex_{s}": 90, f"grip_{s}": 15}
+    R.apply_pose(rest)
+    elbow = R.world_point(f"{SIDE_NAME[s]}ForeArm")
+    face = _lateral_extent(s, lambda w: (w - elbow).length < 0.07).x
+    press = dict(rest, **{f"grip_{s}": 55, f"arm_{s}": {"abd": 8.5}})
+    hold = {"step": 10}
+    act, report = R.animate(f"EX_static_shoulder_abduction_{side}", rest, [
+        (rest, 30, hold), (press, 24), (press, 180, hold), (rest, 24), (rest, 12, hold),
+    ], locks=feet)
+    report["props"] = [P.side_wall(face + sx * 0.002)]
+    return act, report
+
+
+def static_external_rotation(side="L"):
+    """Static outward rotation against a wall (isometric). Standing side-on to a wall, elbow bent to 90
+    degrees and tucked into the side, the back of the wrist on the wall: press the wrist gently
+    outwards into the wall without moving the arm; hold; relax. 9 s."""
+    import rh_props as P
+
+    s = side
+    sx = 1 if s == "L" else -1
+    feet = R.points(FEET)
+    # Turned out a little, so the wrist is further out than the shoulder and can reach the wall.
+    rest = {f"arm_{s}": {"abd": -6, "ext_rot": 24}, f"elbow_flex_{s}": 90, f"grip_{s}": 15}
+    R.apply_pose(rest)
+    wrist = R.world_point(f"{SIDE_NAME[s]}Hand")
+    face = _lateral_extent(s, lambda w: (w - wrist).length < 0.05).x
+    press = dict(rest, **{f"grip_{s}": 55})
+    hold = {"step": 10}
+    act, report = R.animate(f"EX_static_external_rotation_{side}", rest, [
+        (rest, 30, hold), (press, 24), (press, 180, hold), (rest, 24), (rest, 12, hold),
+    ], locks=feet)
+    report["props"] = [P.side_wall(face + sx * 0.002)]
+    return act, report
+
+
+def wall_angels():
+    """Wall angels: back against a wall, arms bent in a goalpost shape against the wall. Slide the arms
+    up the wall as far as is comfortable and back down, keeping the back and arms near the wall. 6 s."""
+    import rh_props as P
+
+    feet = R.points(FEET)
+
+    def pose(abd, elbow, horiz):
+        return {**_sym(elbow_flex=elbow, forearm_pron=-10), "spine_flex": -2,
+                "arm_L": {"abd": abd, "ext_rot": 88, "horiz": horiz}, "arm_R": {"abd": abd, "ext_rot": 88, "horiz": horiz}}
+
+    R.apply_pose({})
+    torso = mesh_points(("RH_Shirt", "RH_Pants"), lambda w: w.z > 0.45)
+    face = max(w.y for w in torso) + 0.002
+
+    def on_wall(p):
+        # Elbows and the backs of the wrists stay just off the wall.
+        R.apply_pose(p)
+        out = {}
+        for n in ("Left", "Right"):
+            for b, gap in (("ForeArm", 0.05), ("Hand", 0.035)):
+                w = R.world_point(f"{n}{b}")
+                out[f"{n}{b}"] = Vector((w.x, face - gap, w.z))
+        return out
+
+    reach = [([(f"arm_{x}", "horiz"), (f"arm_{x}", "ext_rot")], on_wall) for x in ("L", "R")]
+    low = settle(pose(80, 95, 12), feet, reach)
+    high = settle(pose(150, 30, 12), feet, reach)
+    hold = {"step": 6}
+    act, report = R.animate("EX_wall_angels", low, [
+        (low, 9, hold), (high, 75), (high, 9, hold), (low, 75), (low, 12, hold),
+    ], locks=feet, reach=reach, rounds=2)
+    report["props"] = [P.wall(face_y=face, behind=True)]
+    return act, report
+
+
 BUILDERS = {
+    "assisted_external_rotation": assisted_external_rotation,
+    "assisted_abduction": assisted_abduction,
+    "static_shoulder_abduction": static_shoulder_abduction,
+    "static_external_rotation": static_external_rotation,
+    "wall_angels": wall_angels,
+    "shoulder_blade_setting": shoulder_blade_setting,
+    "cross_body_stretch": cross_body_stretch,
+    "scaption": scaption,
     "mini_squat": mini_squat,
     "sit_to_stand": sit_to_stand,
     "calf_raise": calf_raise,

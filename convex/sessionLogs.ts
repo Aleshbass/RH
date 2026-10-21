@@ -1,6 +1,37 @@
 import { query, mutation } from "./_generated/server";
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { getAuthenticatedUser, ensureUserRole } from "./auth";
+import { currentUser, findRelationship } from "./helpers/careAccess";
+
+/**
+ * The signed-in physio's notes for one visit, newest first (null when there are none), so the
+ * calendar opens them for editing instead of a blank form. A visit can carry more than one note
+ * (workspace notes attach to today's visit), so this never assumes there is only one.
+ */
+export const getMySessionLogForAppointment = query({
+  args: { appointmentId: v.id("appointments") },
+  handler: async (ctx, args) => {
+    const user = await currentUser(ctx);
+    if (!user || user.role !== "physiotherapist") return null;
+    const logs = await ctx.db
+      .query("sessionLogs")
+      .withIndex("by_appointment_id", (q) => q.eq("appointmentId", args.appointmentId))
+      .collect();
+    const mine = logs.filter((log) => log.physiotherapistId === user._id).sort((a, b) => b.sessionDate - a.sessionDate);
+    const log = mine[0];
+    if (!log) return null;
+    return {
+      _id: log._id,
+      subjectiveAssessment: log.subjectiveAssessment,
+      objectiveAssessment: log.objectiveAssessment,
+      treatmentAdministered: log.treatmentAdministered,
+      planForNextSession: log.planForNextSession,
+      voiceNoteUrl: log.voiceNoteUrl,
+      attachments: log.attachments,
+      sessionDate: log.sessionDate,
+    };
+  },
+});
 
 /**
  * Get the current user's session logs
@@ -97,22 +128,24 @@ export const createSessionLog = mutation({
     // Get the appointment to validate access and get patient info
     const appointment = await ctx.db.get(args.appointmentId);
     if (!appointment) {
-      throw new Error("Appointment not found");
+      throw new ConvexError("This appointment no longer exists.");
     }
 
     // Verify physiotherapist owns this appointment
     if (appointment.physiotherapistId !== user._id) {
-      throw new Error("Access denied. Appointment not assigned to you.");
+      throw new ConvexError("This appointment isn't assigned to you.");
     }
 
-    // Check if session log already exists for this appointment
+    // One calendar note per visit. Workspace notes can also attach to a visit, so there may be
+    // several; first() rather than unique(), which would throw on the second.
     const existingSessionLog = await ctx.db
       .query("sessionLogs")
       .withIndex("by_appointment_id", (q) => q.eq("appointmentId", args.appointmentId))
-      .unique();
+      .filter((q) => q.eq(q.field("physiotherapistId"), user._id))
+      .first();
 
     if (existingSessionLog) {
-      throw new Error("Session log already exists for this appointment. Use update instead.");
+      throw new ConvexError("This visit already has notes. Close this window and open the visit again to edit them.");
     }
 
     // Create the session log
@@ -187,12 +220,12 @@ export const updateSessionLog = mutation({
     // Get the session log
     const sessionLog = await ctx.db.get(args.sessionLogId);
     if (!sessionLog) {
-      throw new Error("Session log not found");
+      throw new ConvexError("These notes no longer exist. Close this window and open the visit again.");
     }
 
     // Verify physiotherapist owns this session log
     if (sessionLog.physiotherapistId !== user._id) {
-      throw new Error("Access denied. Session log not created by you.");
+      throw new ConvexError("Only the physiotherapist who wrote these notes can change them.");
     }
 
     // Update the session log
@@ -224,16 +257,12 @@ export const getPatientSessionLogs = query({
     // Get current user and ensure they're a physiotherapist
     const user = await ensureUserRole(ctx, ["physiotherapist"]);
 
-    // Verify physiotherapist has access to this patient
-    const relationship = await ctx.db
-      .query("patientPhysiotherapistRelationships")
-      .withIndex("by_patient_and_physiotherapist", (q) => 
-        q.eq("patientId", args.patientId).eq("physiotherapistId", user._id)
-      )
-      .filter((q) => q.eq(q.field("status"), "active"))
-      .unique();
+    // Verify physiotherapist has access to this patient (an active relationship). Older data can
+    // link a patient to the same physio twice, so this doesn't use unique(); findRelationship
+    // returns the active row first.
+    const relationship = await findRelationship(ctx, user._id, args.patientId);
 
-    if (!relationship) {
+    if (!relationship || relationship.status !== "active") {
       throw new Error("Access denied. Patient not assigned to you.");
     }
 

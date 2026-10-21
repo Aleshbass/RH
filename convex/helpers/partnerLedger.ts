@@ -56,6 +56,8 @@ export type CommissionInput = {
   physiotherapistName?: string;
   careMode?: "virtual" | "in_person";
   earnedAt?: number;
+  /** Standard pricing pays the physio a fixed amount, so the split isn't a percentage. */
+  physiotherapistKobo?: number;
 };
 
 export async function recordPartnerCommission(
@@ -140,6 +142,10 @@ export async function recordPartnerCommission(
   const netPayable = commissionAmount - whtAmount;
   if (whtPercent > 0) notes.push(`WHT ${whtPercent}%`);
 
+  const fixedPhysio =
+    typeof input.physiotherapistKobo === "number" && input.physiotherapistKobo >= 0 ? input.physiotherapistKobo : undefined;
+  const percentOf = (part: number, whole: number) => Math.round((part / whole) * 1000) / 10;
+
   const commissionId = await ctx.db.insert("partnerCommissions", {
     partnerId: partner.code,
     contractId: contract?._id,
@@ -160,11 +166,20 @@ export async function recordPartnerCommission(
     physiotherapistId: input.physiotherapistId,
     physiotherapistName: input.physiotherapistName,
     careMode: input.careMode,
-    physiotherapistAmount: split.physiotherapistAmount,
-    rehabifyAmount: split.rehabifyAmount,
+    ...(fixedPhysio !== undefined
+      ? {
+          physiotherapistAmount: fixedPhysio,
+          rehabifyAmount: input.grossKobo - fixedPhysio - commissionAmount,
+          physioPercent: percentOf(fixedPhysio, input.grossKobo),
+          rehabifyPercent: percentOf(input.grossKobo - fixedPhysio - commissionAmount, input.grossKobo),
+        }
+      : {
+          physiotherapistAmount: split.physiotherapistAmount,
+          rehabifyAmount: split.rehabifyAmount,
+          physioPercent: split.physioPercent,
+          rehabifyPercent: split.rehabifyPercent,
+        }),
     partnerAmount: commissionAmount,
-    physioPercent: split.physioPercent,
-    rehabifyPercent: split.rehabifyPercent,
     partnerPercent: settings.partnerPercent,
     netPartnerAmount: netPayable,
     paymentMethod: input.paymentMethod,

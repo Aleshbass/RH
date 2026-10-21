@@ -20,6 +20,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from 'sonner';
 import {
+  AlertTriangle,
   ArrowRightLeft,
   Banknote,
   Building2,
@@ -38,6 +39,8 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { playSound } from '@/lib/sounds';
+import { RehabifyId } from '@/components/shared/RehabifyId';
+import { getService } from '@/lib/rehabify-services';
 import {
   AdminPage,
   EmptyState,
@@ -75,6 +78,7 @@ type BookingRow = {
   totalAmount: number;
   platformFee: number;
   rehabifyEarnings?: number;
+  patientNumber: string | null;
   patientName: string;
   patientEmail: string;
   patientPhone: string;
@@ -87,6 +91,11 @@ type BookingRow = {
   physioOffersInPerson: boolean;
   joyBookingRoute?: string;
   adminSchedulingStatus?: string;
+  // Standard pricing (Oct 2026)
+  serviceId?: string;
+  travelZoneName?: string;
+  travelArea?: string;
+  adminAttentionReason?: string;
 };
 
 type PhysioOption = {
@@ -217,6 +226,7 @@ function PatientCell({ booking }: { booking: BookingRow }) {
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-1.5">
           <p className="max-w-[180px] truncate text-sm font-semibold text-rh-night dark:text-white">{booking.patientName}</p>
+          <RehabifyId value={booking.patientNumber} />
           {booking.isGuest && (
             <StatusBadge tone="amber" className="gap-0.5 text-[10px]">
               <Globe className="h-2.5 w-2.5" /> Guest
@@ -238,11 +248,34 @@ function PatientCell({ booking }: { booking: BookingRow }) {
   );
 }
 
+/** Why a paid booking needs an admin (e.g. paid after the hold lapsed and the slot was taken). */
+function AttentionReason({ booking }: { booking: BookingRow }) {
+  if (booking.bookingStatus !== 'awaiting_admin_schedule' || !booking.adminAttentionReason) return null;
+  return (
+    <p className="mt-1.5 flex max-w-[260px] items-start gap-1.5 rounded-lg bg-rh-peach px-2 py-1.5 text-left text-[11px] font-medium leading-snug text-[#8a4b08] dark:bg-amber-400/10 dark:text-amber-200">
+      <AlertTriangle className="mt-px h-3 w-3 shrink-0" />
+      {booking.adminAttentionReason}
+    </p>
+  );
+}
+
 function SessionSummary({ booking }: { booking: BookingRow }) {
+  const service = booking.serviceId ? getService(booking.serviceId) : undefined;
   return (
     <div>
-      <p className="text-sm capitalize text-rh-night dark:text-neutral-100">{booking.sessionType?.replace(/_/g, ' ')}</p>
+      {service ? (
+        <p className="max-w-[220px] whitespace-normal text-sm text-rh-night dark:text-neutral-100">{service.name}</p>
+      ) : (
+        <p className="text-sm capitalize text-rh-night dark:text-neutral-100">{booking.sessionType?.replace(/_/g, ' ')}</p>
+      )}
       <p className="text-xs text-neutral-500 dark:text-neutral-400">{booking.sessionDuration} min</p>
+      {booking.travelZoneName && (
+        <p className="flex items-center gap-0.5 text-[11px] text-neutral-500 dark:text-neutral-400">
+          <MapPin className="h-2.5 w-2.5 shrink-0" />
+          {booking.travelArea ? `${booking.travelArea}, ` : ''}
+          {booking.travelZoneName}
+        </p>
+      )}
       {booking.isOnline ? (
         <span className="inline-flex items-center gap-0.5 text-[11px] text-rh-teal dark:text-rh-aqua">
           <Wifi className="h-2.5 w-2.5" /> Online
@@ -529,8 +562,10 @@ function ScheduleVirtualDialog({ booking, onClose }: { booking: BookingRow; onCl
         <div className="rounded-xl bg-rh-canvas px-4 py-3 text-sm dark:bg-white/[0.04]">
           <p className="font-semibold text-rh-night dark:text-white">{booking.patientName}</p>
           <p className="text-xs text-neutral-500 dark:text-neutral-400">
-            {booking.sessionType?.replace(/_/g, ' ')} · {booking.sessionDuration} min · {naira(booking.totalAmount)}
+            {(booking.serviceId && getService(booking.serviceId)?.name) || booking.sessionType?.replace(/_/g, ' ')} · {booking.sessionDuration} min ·{' '}
+            {naira(booking.totalAmount)}
           </p>
+          <AttentionReason booking={booking} />
         </div>
 
         <div className="space-y-4 py-1">
@@ -609,6 +644,7 @@ function BookingCard({ booking, onReassign, onSchedule }: { booking: BookingRow;
         </div>
         <BookingStatus booking={booking} />
       </div>
+      <AttentionReason booking={booking} />
 
       <PatientCell booking={booking} />
 
@@ -684,6 +720,7 @@ export default function AdminMarketplaceBookingsPage() {
         bookingCode: b.bookingCode ?? '',
         paymentReference: b.paymentReference ?? '',
         status: displayStatus(b),
+        patientId: b.patientNumber ?? '',
         patient: b.patientName,
         patientEmail: b.patientEmail,
         patientPhone: b.patientPhone,
@@ -691,6 +728,8 @@ export default function AdminMarketplaceBookingsPage() {
         physiotherapist: b.physioName,
         physioEmail: b.physioEmail,
         sessionType: b.sessionType,
+        service: b.serviceId ? getService(b.serviceId)?.name ?? b.serviceId : '',
+        travelZone: b.travelZoneName ?? '',
         durationMinutes: b.sessionDuration,
         online: b.isOnline ? 'yes' : 'no',
         packageSessions: b.packageSessions ?? 1,
@@ -843,6 +882,7 @@ export default function AdminMarketplaceBookingsPage() {
                       </TableCell>
                       <TableCell className="py-3 align-top">
                         <BookingStatus booking={booking} />
+                        <AttentionReason booking={booking} />
                       </TableCell>
                       <TableCell className="py-3 pr-5 text-right align-top">
                         <BookingAction

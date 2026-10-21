@@ -40,6 +40,7 @@ const patientNavItems = [
   { title: 'Find a Physio', href: '/find-a-physio', icon: Search, roles: ['patient'] },
   { title: 'Appointments', href: '/dashboard/patient/appointments', icon: Calendar, roles: ['patient'] },
   { title: 'My Physiotherapist', href: '/dashboard/patient/my-physiotherapist', icon: Stethoscope, roles: ['patient'] },
+  { title: 'Messages', href: '/dashboard/patient/messages', icon: MessageSquare, roles: ['patient'] },
   { title: 'My Exercises', href: '/dashboard/patient/exercises', icon: Dumbbell, roles: ['patient'] },
   { title: 'Insights', href: '/dashboard/patient/insights', icon: TrendingUp, roles: ['patient'] },
   { title: 'Invoices', href: '/dashboard/patient/invoices', icon: Receipt, roles: ['patient'] },
@@ -116,6 +117,8 @@ interface DashboardSidebarWrapperProps {
 export function DashboardSidebarWrapper({ defaultCollapsed = false }: DashboardSidebarWrapperProps) {
   // Get current user to determine which sidebar to show
   const currentUser = useQuery(api.users.getMyUser)
+  // Unread messages for the patient's Messages link (chat.getUnreadCount needs a signed-in user)
+  const unreadMessages = useQuery(api.chat.getUnreadCount, currentUser?.role === 'patient' ? {} : 'skip') as number | undefined
 
   // Return empty sidebar while loading
   if (currentUser === undefined) {
@@ -134,7 +137,9 @@ export function DashboardSidebarWrapper({ defaultCollapsed = false }: DashboardS
       navItems = physiotherapistNavItems
       break
     case 'patient':
-      navItems = patientNavItems
+      navItems = patientNavItems.map((item) =>
+        item.href === '/dashboard/patient/messages' && unreadMessages ? { ...item, badge: unreadMessages } : item
+      )
       break
     case 'clinic_owner':
       navItems = clinicOwnerNavItems

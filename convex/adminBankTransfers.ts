@@ -54,8 +54,10 @@ async function enrich(ctx: QueryCtx, bookings: Doc<"marketplaceBookings">[]) {
         paidAt: b.paidAt ?? null,
         paymentReference: b.paymentReference ?? null,
         holdExpired: typeof b.holdExpiresAt === "number" && b.holdExpiresAt < now,
+        // The only finance screen that keeps the patient's name: staff match it to the bank statement
         patient: {
           _id: b.patientId,
+          patientNumber: patient?.patientNumber ?? null,
           name: b.guestName || personName(patient) || "Patient",
           email: b.guestEmail || patient?.email || null,
           phone: b.guestPhone || patient?.phoneNumber || null,

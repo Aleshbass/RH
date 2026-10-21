@@ -18,6 +18,7 @@ import {
 import { ClinicThemeProvider, ClinicThemeToggle } from '@/components/clinic/ClinicTheme'
 import { ClinicBrand, PoweredByRehabify } from '@/components/clinic/ClinicBrand'
 import { EmptyState } from '@/components/clinic/ui'
+import { PhysioNotifications } from '@/components/physio/PhysioNotifications'
 import Link from 'next/link'
 
 export default function ClinicLayout({ children }: { children: React.ReactNode }) {
@@ -35,6 +36,7 @@ const PAGE_AREAS: { prefix: string; area: ClinicArea; orArea?: ClinicArea }[] = 
   { prefix: '/dashboard/clinic/appointments', area: 'appointments' },
   // Someone who only handles referrals still opens Patients, where the referral inbox is
   { prefix: '/dashboard/clinic/patients', area: 'patients', orArea: 'referrals' },
+  { prefix: '/dashboard/clinic/messages', area: 'patients' },
   { prefix: '/dashboard/clinic/billing', area: 'billing' },
   { prefix: '/dashboard/clinic/staff', area: 'team' },
   { prefix: '/dashboard/clinic/analytics', area: 'reports' },
@@ -160,6 +162,7 @@ function ClinicPortal({ children }: { children: React.ReactNode }) {
             ) : null}
 
             <ClinicThemeToggle />
+            {!isPreviewMode && <PhysioNotifications portal="clinic" />}
 
             {canUse('settings') && (
               <Link
@@ -172,6 +175,13 @@ function ClinicPortal({ children }: { children: React.ReactNode }) {
             )}
           </div>
         </header>
+
+        {/* Desktop: notifications (patient check-ins, pain alerts, payments) */}
+        {!isPreviewMode && (
+          <div className="hidden md:flex justify-end px-6 pt-3">
+            <PhysioNotifications portal="clinic" />
+          </div>
+        )}
 
         {/* Preview / verification status */}
         <ClinicPreviewBanner />

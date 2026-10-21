@@ -1,6 +1,7 @@
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { Doc, Id } from "./_generated/dataModel";
+import { assertCanMessage } from "./chat";
 
 // Send a message between users
 export const sendMessage = mutation({
@@ -25,6 +26,12 @@ export const sendMessage = mutation({
             .first();
 
         if (!sender) throw new Error("User not found");
+
+        // Same rule as chat.ts: a care link, the same clinic team, or a Rehabify admin
+        const receiver = await ctx.db.get(args.receiverId);
+        if (!receiver) throw new ConvexError("This person's account couldn't be found.");
+        await assertCanMessage(ctx, sender, receiver);
+        if (!args.content.trim() && !args.fileUrl) throw new ConvexError("Write a message first.");
 
         // Check if conversation exists, or create one
         let conversation = await ctx.db

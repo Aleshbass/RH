@@ -197,7 +197,7 @@ export default function PayoutSettingsPage() {
 
     return (
         <div className="space-y-6">
-            <SettingsPageHeader title="Payouts" description="Where we send your earnings from sessions." />
+            <SettingsPageHeader title="Payouts" description="The account we send your session payouts to." />
 
             <SettingsSection title="Payout account">
                 {accounts === undefined ? (
@@ -231,9 +231,10 @@ export default function PayoutSettingsPage() {
             </SettingsSection>
 
             <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                You keep 80% of each session. When and how payouts are sent is set out in the{' '}
-                <Link href="/payout-policy" className="underline hover:text-neutral-900 dark:hover:text-white">
-                    payout policy
+                Rehabify patients pay Rehabify. For each session you earn the fixed payout for that service, plus your share of any
+                home-visit travel charge, and we send it to this account once the session is marked completed. See your{' '}
+                <Link href="/dashboard/physiotherapist/settings/fee-schedule" className="underline hover:text-neutral-900 dark:hover:text-white">
+                    payout schedule
                 </Link>
                 .
             </p>

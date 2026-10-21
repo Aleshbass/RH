@@ -5,6 +5,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useMutation } from 'convex/react'
+import { programError } from '@/components/exercise-programs/errors'
 import { api } from '@/convex/_generated/api'
 import { Id } from '@/convex/_generated/dataModel'
 import { Button } from '@/components/ui/button'
@@ -63,7 +64,7 @@ export default function EditPatientModal({
       lastName: currentData.lastName,
       email: currentData.email || '',
       phoneNumber: currentData.phoneNumber || '',
-      dateOfBirth: currentData.dateOfBirth || '',
+      dateOfBirth: currentData.dateOfBirth?.slice(0, 10) || '',
       gender: currentData.gender as any,
     }
   })
@@ -76,7 +77,7 @@ export default function EditPatientModal({
         lastName: currentData.lastName,
         email: currentData.email || '',
         phoneNumber: currentData.phoneNumber || '',
-        dateOfBirth: currentData.dateOfBirth || '',
+        dateOfBirth: currentData.dateOfBirth?.slice(0, 10) || '',
         gender: currentData.gender as any,
       })
     }
@@ -92,6 +93,8 @@ export default function EditPatientModal({
           firstName: data.firstName,
           lastName: data.lastName,
           phoneNumber: data.phoneNumber || undefined,
+          dateOfBirth: data.dateOfBirth || undefined,
+          gender: data.gender || undefined,
         }
       })
 
@@ -100,8 +103,7 @@ export default function EditPatientModal({
       onClose()
       reset()
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to update patient information'
-      toast.error(errorMessage)
+      toast.error(programError(error, 'Failed to update patient information'))
     } finally {
       setIsSubmitting(false)
     }
@@ -165,11 +167,9 @@ export default function EditPatientModal({
                 type="email"
                 {...register('email')}
                 placeholder="patient@example.com"
-                disabled={isSubmitting}
+                disabled
               />
-              {errors.email && (
-                <p className="text-sm text-red-600">{errors.email.message}</p>
-              )}
+              <p className="text-xs text-gray-500">This is the patient&apos;s sign-in email. They change it in their own account.</p>
             </div>
 
             {/* Phone Number */}

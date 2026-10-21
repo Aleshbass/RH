@@ -32,9 +32,12 @@ import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import AddPatientModal from '@/components/dashboard/physiotherapist/AddPatientModal'
 import { EmptyState, IconChip, PageContainer, Panel, StatTile, StatusBadge, type Tone } from '@/components/physio/ui'
+import { appointmentStatusLabel, appointmentStatusTone } from '@/convex/helpers/appointmentStatus'
 import { SetupChecklistCard, type SetupStatus } from '@/components/physio/SetupChecklist'
 import { PHYSIO_HOME } from '@/components/physio/PhysioSidebar'
 import { PainPill } from '@/components/physio/workspace/shared'
+import { RehabifyId } from '@/components/shared/RehabifyId'
+import { matchesRehabifyId } from '@/convex/helpers/rehabifyIdFormat'
 import { publicAppUrl } from '@/lib/public-app-url'
 import { cn } from '@/lib/utils'
 
@@ -56,6 +59,7 @@ type PatientRow = {
   lastName?: string
   imageUrl?: string
   email?: string
+  patientNumber?: string
   stats?: { appointmentCount?: number; lastSessionDate?: number }
 }
 
@@ -63,7 +67,7 @@ type Stats = { totalPatients?: number; todaysAppointments?: number; completedSes
 
 type AttentionItem = {
   key: string
-  kind: 'check_in' | 'plan_review' | 'no_booking' | 'unconfirmed' | 'overdue_invoice'
+  kind: 'check_in' | 'exercise_pain' | 'plan_review' | 'no_booking' | 'unconfirmed' | 'overdue_invoice'
   severity: 'high' | 'medium' | 'low'
   patientId: string
   patientName: string
@@ -77,6 +81,7 @@ const CANCELLED = new Set(['cancelled_by_patient', 'cancelled_by_therapist'])
 
 const ATTENTION_STYLE: Record<AttentionItem['kind'], { icon: typeof HeartPulse; tone: Tone }> = {
   check_in: { icon: HeartPulse, tone: 'rose' },
+  exercise_pain: { icon: Activity, tone: 'rose' },
   plan_review: { icon: ClipboardCheck, tone: 'peach' },
   no_booking: { icon: CalendarClock, tone: 'teal' },
   unconfirmed: { icon: CalendarDays, tone: 'mint' },
@@ -95,20 +100,9 @@ const fullName = (p?: { firstName?: string; lastName?: string } | null) =>
 const initials = (p?: { firstName?: string; lastName?: string } | null) =>
   `${p?.firstName?.[0] ?? ''}${p?.lastName?.[0] ?? ''}`.toUpperCase() || 'P'
 
+// Shared labels, so Home, the appointments list, the patient and the clinic say the same thing
 function statusBadge(status: string) {
-  switch (status) {
-    case 'confirmed':
-      return <StatusBadge tone="teal">Confirmed</StatusBadge>
-    case 'completed':
-      return <StatusBadge tone="green">Done</StatusBadge>
-    case 'no_show':
-      return <StatusBadge tone="amber">No-show</StatusBadge>
-    case 'cancelled_by_patient':
-    case 'cancelled_by_therapist':
-      return <StatusBadge tone="red">Cancelled</StatusBadge>
-    default:
-      return <StatusBadge tone="amber">To confirm</StatusBadge>
-  }
+  return <StatusBadge tone={appointmentStatusTone(status)}>{appointmentStatusLabel(status)}</StatusBadge>
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -360,7 +354,11 @@ function OpenWorkspace({ patients }: { patients: PatientRow[] | undefined }) {
     const list = patients ?? []
     const term = query.trim().toLowerCase()
     const filtered = term
-      ? list.filter((p) => `${p.firstName ?? ''} ${p.lastName ?? ''} ${p.email ?? ''}`.toLowerCase().includes(term))
+      ? list.filter(
+          (p) =>
+            `${p.firstName ?? ''} ${p.lastName ?? ''} ${p.email ?? ''}`.toLowerCase().includes(term) ||
+            matchesRehabifyId(p.patientNumber, term)
+        )
       : list.slice().sort((a, b) => (b.stats?.lastSessionDate ?? 0) - (a.stats?.lastSessionDate ?? 0))
     return filtered.slice(0, 5)
   }, [patients, query])
@@ -401,7 +399,10 @@ function OpenWorkspace({ patients }: { patients: PatientRow[] | undefined }) {
                   <AvatarFallback className="bg-rh-mint text-xs font-semibold text-rh-teal">{initials(patient)}</AvatarFallback>
                 </Avatar>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-rh-night dark:text-white">{fullName(patient)}</p>
+                  <div className="flex min-w-0 items-center gap-2">
+                    <p className="truncate text-sm font-medium text-rh-night dark:text-white">{fullName(patient)}</p>
+                    <RehabifyId value={patient.patientNumber} copyable={false} />
+                  </div>
                   <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">
                     {patient.stats?.lastSessionDate
                       ? `Last seen ${formatDistanceToNow(patient.stats.lastSessionDate, { addSuffix: true })}`

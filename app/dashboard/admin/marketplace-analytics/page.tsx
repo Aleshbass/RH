@@ -27,6 +27,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useClinicTheme } from "@/components/clinic/ClinicTheme";
+import { PatientRef } from "@/components/admin/finance/PatientRef";
 import { cn } from "@/lib/utils";
 import {
   AdminPage,
@@ -61,7 +62,9 @@ type PlatformAnalytics = {
     avgPackageSize: number;
     recentPackageBookings: {
       bookingId: string;
-      patientName: string;
+      patientId: string;
+      patientNumber: string | null;
+      isGuest: boolean;
       physioName: string;
       packageSessions: number;
       sessionsRemaining: number;
@@ -118,9 +121,11 @@ type EarningsDetail = {
     paymentStatus: string;
     totalAmount: number;
     physiotherapistEarnings: number;
-    patientName: string;
+    patientId: string;
+    patientNumber: string | null;
+    isGuest: boolean;
   }[];
-  patients: { id: string; name: string; email?: string; isGuest: boolean; totalBookings: number; totalSpent: number; lastBookingDate: number }[];
+  patients: { id: string; patientNumber: string | null; isGuest: boolean; totalBookings: number; totalSpent: number; lastBookingDate: number }[];
   earningsByMonth: Record<string, number>;
   bookingsByMonth: Record<string, number>;
   capped: boolean;
@@ -394,7 +399,7 @@ function PhysioEarningsSheet({
                     <li key={p.id} className="flex items-center gap-3 px-5 py-2.5">
                       <div className="min-w-0 flex-1">
                         <p className="flex items-center gap-1.5 truncate text-sm font-medium text-rh-night dark:text-white">
-                          <span className="truncate">{p.name}</span>
+                          <PatientRef userId={p.id} patientNumber={p.patientNumber} isGuest={p.isGuest} />
                           {p.isGuest && <StatusBadge tone="amber">Guest</StatusBadge>}
                         </p>
                         <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">
@@ -416,7 +421,9 @@ function PhysioEarningsSheet({
                   {detail.recentBookings.map((b) => (
                     <li key={b.id} className="flex items-center gap-3 px-5 py-2.5">
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium text-rh-night dark:text-white">{b.patientName}</p>
+                        <p className="truncate text-sm">
+                          <PatientRef userId={b.patientId} patientNumber={b.patientNumber} isGuest={b.isGuest} />
+                        </p>
                         <p className="truncate text-xs capitalize text-neutral-500 dark:text-neutral-400">
                           {format(b.createdAt, "d MMM yyyy")} · {b.sessionType?.replace(/_/g, " ")}
                         </p>
@@ -484,8 +491,8 @@ export default function AdminMarketplaceAnalyticsPage() {
   return (
     <AdminPage>
       <PageHeader
-        eyebrow="Marketplace"
-        title="Marketplace analytics"
+        eyebrow="Finance"
+        title="Marketplace revenue"
         description="Revenue, physiotherapist earnings, package uptake and patient reports."
         actions={
           <Button asChild className={softButtonClass}>
@@ -708,7 +715,7 @@ export default function AdminMarketplaceAnalyticsPage() {
                 <Table>
                   <TableHeader>
                     <TableRow className="hover:bg-transparent">
-                      <TableHead className="pl-5">Patient</TableHead>
+                      <TableHead className="pl-5">Patient ID</TableHead>
                       <TableHead>Physiotherapist</TableHead>
                       <TableHead>Condition</TableHead>
                       <TableHead>Package</TableHead>
@@ -721,7 +728,9 @@ export default function AdminMarketplaceAnalyticsPage() {
                       const done = pkg.packageSessions > 0 ? Math.round(((pkg.packageSessions - pkg.sessionsRemaining) / pkg.packageSessions) * 100) : 0;
                       return (
                         <TableRow key={pkg.bookingId}>
-                          <TableCell className="pl-5 font-medium text-rh-night dark:text-white">{pkg.patientName}</TableCell>
+                          <TableCell className="pl-5">
+                            <PatientRef userId={pkg.patientId} patientNumber={pkg.patientNumber} isGuest={pkg.isGuest} />
+                          </TableCell>
                           <TableCell className="text-neutral-600 dark:text-neutral-300">{pkg.physioName}</TableCell>
                           <TableCell className="text-sm text-neutral-600 dark:text-neutral-300">{pkg.conditionLabel}</TableCell>
                           <TableCell>

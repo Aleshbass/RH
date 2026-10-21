@@ -36,6 +36,7 @@ import {
 } from './patient-record-shared'
 import { ClinicianPickerDialog, EditPatientDetailsDialog } from './PatientRecordDialogs'
 import { samplePatientRecord } from './sample-patient-record'
+import { RehabifyId } from '@/components/shared/RehabifyId'
 import { ExerciseProgramsPanel } from '@/components/exercise-programs/ExerciseProgramsPanel'
 
 type PatientRecord = NonNullable<FunctionReturnType<typeof api.clinicTools.getClinicPatientFullRecord>>
@@ -142,6 +143,7 @@ function PatientRecord({ patientId, isSample }: { patientId: Id<'users'>; isSamp
   const reopenCare = useMutation(api.clinicTools.reopenPatientCare)
   const reassignPatient = useMutation(api.patients.reassignPatient)
   const resendInvite = useMutation(api.clinicTools.resendClinicPatientInvite)
+  const me = useQuery(api.users.getMyUser) as { _id: string } | null | undefined
   const [editOpen, setEditOpen] = useState(false)
   const [reopenOpen, setReopenOpen] = useState(false)
   const [changeOpen, setChangeOpen] = useState(false)
@@ -268,6 +270,7 @@ function PatientRecord({ patientId, isSample }: { patientId: Id<'users'>; isSamp
         </div>
 
         <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+          <RehabifyId value={patient.patientNumber} />
           <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
           {profile?.referralSource === 'rehabify_referral' && (
             <StatusBadge tone="teal">Referred by Rehabify</StatusBadge>
@@ -379,7 +382,8 @@ function PatientRecord({ patientId, isSample }: { patientId: Id<'users'>; isSamp
                   patientId={patientId}
                   patientName={patient.firstName || 'this patient'}
                   hasPhone={Boolean(patient.phoneNumber?.replace(/\D/g, '').length)}
-                  canWrite={isActive}
+                  // Prescribing is for the patient's own clinician; others can read the programmes
+                  canWrite={isActive && (!primary?._id || !me || me._id === primary._id)}
                 />
               )}
               <EarlierProgrammes plans={record.treatmentPlans} isSample={isSample} />
@@ -631,13 +635,14 @@ function NotesTab({
   const [noteType, setNoteType] = useState<NoteType>('treatment_note')
   const [values, setValues] = useState<Record<NoteField, string>>(EMPTY_NOTE)
   const [saving, setSaving] = useState(false)
-  const [pickedSeenBy, setPickedSeenBy] = useState('')
+  const me = useQuery(api.users.getMyUser) as { _id: string } | null | undefined
 
   const fields = NOTE_FIELDS[noteType]
-  const { options, ownerId } = clinicians
-  const defaultSeenBy =
-    primaryClinicianId && options.some((o) => o.id === primaryClinicianId) ? primaryClinicianId : (ownerId ?? '')
-  const seenBy = pickedSeenBy && options.some((o) => o.id === pickedSeenBy) ? pickedSeenBy : defaultSeenBy
+  const { options } = clinicians
+  // Only the patient's own clinician writes notes; everyone else with access reads them.
+  // While loading (or in the preview, which has sample ids) the form stays usable.
+  const isTreatingClinician = !me || !primaryClinicianId || isPreviewId(primaryClinicianId) || me._id === primaryClinicianId
+  const treatingName = options.find((o) => o.id === primaryClinicianId)?.label
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
@@ -653,9 +658,8 @@ function NotesTab({
     }
     setSaving(true)
     try {
-      const physiotherapistId =
-        seenBy && seenBy !== ownerId && !isPreviewId(seenBy) ? (seenBy as Id<'users'>) : undefined
-      await saveClinicalNote({ patientId, noteType, physiotherapistId, ...payload })
+      // Saved under the signed-in clinician's name (the server enforces this)
+      await saveClinicalNote({ patientId, noteType, ...payload })
       toast.success(noteType === 'discharge_summary' ? 'Discharge summary saved' : 'Note saved')
       setValues(EMPTY_NOTE)
     } catch (err) {
@@ -692,22 +696,11 @@ function NotesTab({
         )}
 
         <div className="space-y-3">
-          {options.length > 0 && (
-            <div className="space-y-1.5">
-              <Label className={labelClass}>Seen by</Label>
-              <Select value={seenBy} onValueChange={setPickedSeenBy}>
-                <SelectTrigger className={cn(fieldClass, 'h-9 w-full sm:w-64')} aria-label="Seen by">
-                  <SelectValue placeholder="Choose a clinician" />
-                </SelectTrigger>
-                <SelectContent>
-                  {options.map((o) => (
-                    <SelectItem key={o.id} value={o.id}>
-                      {o.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+          {!isTreatingClinician && (
+            <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-400/10 dark:text-amber-200">
+              Notes are written by the patient&apos;s clinician
+              {treatingName ? ` (${treatingName})` : ''}. To take over their care, reassign the patient to yourself first.
+            </p>
           )}
           {fields.map((field) => {
             const id = `note-${field.key}`
@@ -740,7 +733,7 @@ function NotesTab({
         </div>
 
         <div className="flex justify-end">
-          <Button type="submit" size="sm" disabled={saving} className={cn(primaryButtonClass, 'h-9 w-full sm:w-auto')}>
+          <Button type="submit" size="sm" disabled={saving || !isTreatingClinician} className={cn(primaryButtonClass, 'h-9 w-full sm:w-auto')}>
             {saving && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
             Save note
           </Button>
@@ -1424,6 +1417,85 @@ function checkInTimestamp(value: string): number | undefined {
   return isValid(date) ? date.getTime() : undefined
 }
 
+type PatientReportsData = {
+  checkIns: {
+    _id: string
+    createdAt: number
+    painScore: number
+    mood?: string
+    exercisesDone: string
+    note?: string
+    flagged: boolean
+    flagReason?: string
+    reviewedAt?: number
+  }[]
+  exerciseLogs: {
+    _id: string
+    createdAt: number
+    programmeTitle: string
+    exerciseName: string
+    setsDone?: number
+    painScore?: number
+    difficulty?: string
+    note?: string
+  }[]
+}
+
+const EXERCISES_DONE_LABEL: Record<string, string> = { all: 'did all exercises', some: 'did some exercises', none: 'did no exercises' }
+
+/** What the patient told us between visits: their check-ins and home-exercise logs. */
+function PatientReports({ patientId }: { patientId: Id<'users'> }) {
+  const reports = useQuery(api.clinicTools.getClinicPatientReports, { patientId }) as PatientReportsData | undefined
+  if (reports === undefined) return <Skeleton className="h-24 rounded-xl" />
+  const { checkIns, exerciseLogs } = reports
+  const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000
+  const activeDays = new Set(exerciseLogs.filter((l) => l.createdAt >= weekAgo).map((l) => new Date(l.createdAt).toDateString())).size
+
+  return (
+    <div className="space-y-3">
+      <SectionHeading>From the patient</SectionHeading>
+      <p className="text-xs text-neutral-500 dark:text-neutral-400">
+        Home exercises logged on {activeDays} of the last 7 days.
+      </p>
+      {checkIns.length === 0 && exerciseLogs.length === 0 ? (
+        <p className="text-sm text-neutral-500">The patient hasn&apos;t sent a check-in or logged exercises yet.</p>
+      ) : (
+        <>
+          {checkIns.slice(0, 5).map((c) => (
+            <ListCard key={c._id} className={cn('space-y-1', c.flagged && !c.reviewedAt && 'border-amber-300 dark:border-amber-400/40')}>
+              <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                <span className="text-sm font-medium text-neutral-900 dark:text-neutral-100">Check-in · pain {c.painScore}/10</span>
+                {c.flagged && <StatusBadge tone="amber">{c.flagReason || 'Needs attention'}</StatusBadge>}
+                <span className="text-xs text-neutral-500 dark:text-neutral-400">
+                  {formatDate(c.createdAt, 'd MMM yyyy, h:mm a')} · {EXERCISES_DONE_LABEL[c.exercisesDone] ?? c.exercisesDone}
+                  {c.mood ? ` · mood ${c.mood}` : ''}
+                </span>
+              </div>
+              {c.note && <p className="whitespace-pre-line break-words text-sm text-neutral-700 dark:text-neutral-300">{c.note}</p>}
+            </ListCard>
+          ))}
+          {exerciseLogs.slice(0, 8).map((l) => (
+            <ListCard key={l._id} className={cn('space-y-1', (l.painScore ?? 0) >= 7 && 'border-amber-300 dark:border-amber-400/40')}>
+              <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                <span className="text-sm font-medium text-neutral-900 dark:text-neutral-100">{l.exerciseName}</span>
+                {typeof l.painScore === 'number' && (
+                  <StatusBadge tone={l.painScore >= 7 ? 'amber' : 'neutral'}>Pain {l.painScore}/10</StatusBadge>
+                )}
+                <span className="text-xs text-neutral-500 dark:text-neutral-400">
+                  {formatDate(l.createdAt, 'd MMM, h:mm a')} · {l.programmeTitle}
+                  {l.setsDone ? ` · ${l.setsDone} sets` : ''}
+                  {l.difficulty ? ` · ${l.difficulty}` : ''}
+                </span>
+              </div>
+              {l.note && <p className="whitespace-pre-line break-words text-sm text-neutral-700 dark:text-neutral-300">{l.note}</p>}
+            </ListCard>
+          ))}
+        </>
+      )}
+    </div>
+  )
+}
+
 function CheckInsTab({
   patientId,
   checkIns,
@@ -1472,6 +1544,7 @@ function CheckInsTab({
 
   return (
     <div className="space-y-6">
+      {!isPreviewId(patientId) && <PatientReports patientId={patientId} />}
       <FormCard onSubmit={handleSubmit}>
         <div className="flex min-w-0 flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
           <SectionHeading>Log a check-in</SectionHeading>

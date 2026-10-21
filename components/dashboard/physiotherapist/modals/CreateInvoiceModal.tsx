@@ -11,6 +11,7 @@ import { Plus, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { Id } from '@/convex/_generated/dataModel';
 import { Patient } from '@/app/types';
+import { programError } from '@/components/exercise-programs/errors';
 
 interface CreateInvoiceModalProps {
     isOpen: boolean;
@@ -18,50 +19,74 @@ interface CreateInvoiceModalProps {
     preselectedPatientId?: string;
 }
 
+/** yyyy-mm-dd a week from today (local time), the usual payment window */
+const defaultDueDate = () => {
+    const d = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
 export function CreateInvoiceModal({ isOpen, onClose, preselectedPatientId }: CreateInvoiceModalProps) {
     const [invoiceForm, setInvoiceForm] = useState({
         patientId: preselectedPatientId || '',
-        dueDate: '',
+        dueDate: defaultDueDate(),
         items: [{ description: '', quantity: 1, unitPrice: 0 }],
         notes: ''
     });
 
     const patients = useQuery(api.patients.getMyPatients, { limit: 100 });
     const createInvoice = useMutation(api.billing.createInvoice);
+    // Optional: the visit this payment is for (recent and upcoming visits with the chosen patient)
+    const [appointmentId, setAppointmentId] = useState('');
+    const [visitWindowStart] = useState(() => Date.now() - 60 * 24 * 60 * 60 * 1000);
+    const myAppointments = useQuery(
+        api.appointments.getMyAppointments,
+        isOpen && invoiceForm.patientId ? { startDate: visitWindowStart, limit: 200 } : 'skip'
+    ) as { _id: string; patientId: string; startTime: number; status: string; appointmentType?: string }[] | undefined;
+    const patientVisits = (myAppointments ?? [])
+        .filter((a) => a.patientId === invoiceForm.patientId && !String(a.status).startsWith('cancelled'))
+        .sort((a, b) => b.startTime - a.startTime)
+        .slice(0, 20);
 
     const handleCreateInvoice = useCallback(async () => {
         if (!invoiceForm.patientId || invoiceForm.items.some(item => !item.description || item.unitPrice <= 0)) {
             toast.error('Please fill in all required fields');
             return;
         }
+        // End of the chosen day, local time; a blank or unreadable date is never sent
+        const dueDate = new Date(`${invoiceForm.dueDate}T23:59:59`).getTime();
+        if (!invoiceForm.dueDate || !Number.isFinite(dueDate)) {
+            toast.error('Pick a due date');
+            return;
+        }
 
         try {
             await createInvoice({
                 patientId: invoiceForm.patientId as Id<"users">,
-                dueDate: new Date(invoiceForm.dueDate).getTime(),
+                dueDate,
                 items: invoiceForm.items.map(item => ({
                     ...item,
                     totalPrice: item.quantity * item.unitPrice
                 })),
-                appointmentIds: [],
+                appointmentIds: appointmentId ? [appointmentId as Id<'appointments'>] : [],
                 discountAmount: 0,
                 notes: invoiceForm.notes
             });
 
             toast.success('Invoice created successfully');
+            setAppointmentId('');
             onClose();
             // Reset form but keep patient if preselected
             setInvoiceForm({
                 patientId: preselectedPatientId || '',
-                dueDate: '',
+                dueDate: defaultDueDate(),
                 items: [{ description: '', quantity: 1, unitPrice: 0 }],
                 notes: ''
             });
         } catch (error) {
-            toast.error('Failed to create invoice');
+            toast.error(programError(error, 'Failed to create invoice'));
             console.error('Create invoice error:', error);
         }
-    }, [invoiceForm, createInvoice, onClose, preselectedPatientId]);
+    }, [invoiceForm, createInvoice, onClose, preselectedPatientId, appointmentId]);
 
     const addInvoiceItem = useCallback(() => {
         setInvoiceForm(prev => ({
@@ -85,8 +110,13 @@ export function CreateInvoiceModal({ isOpen, onClose, preselectedPatientId }: Cr
     }, []);
 
     const subtotal = invoiceForm.items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0);
-    const platformFee = 1000;
-    const total = subtotal + platformFee;
+    // Same sums as billing.createInvoice: an independent physio's patient pays the ₦1,000 service fee
+    // and Paystack's 1.5% + ₦100 on top; a clinic's patient pays the quoted price (fees come off it)
+    const me = useQuery(api.users.getMyUser) as { clinicId?: string } | null | undefined;
+    const billsThroughClinic = Boolean(me?.clinicId);
+    const platformFee = billsThroughClinic ? 0 : 1000;
+    const processingFee = billsThroughClinic || subtotal <= 0 ? 0 : Math.round((subtotal + platformFee) * 0.015 * 100) / 100 + 100;
+    const total = subtotal + platformFee + processingFee;
 
     return (
         <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
@@ -132,6 +162,33 @@ export function CreateInvoiceModal({ isOpen, onClose, preselectedPatientId }: Cr
                             />
                         </div>
                     </div>
+
+                    {invoiceForm.patientId && patientVisits.length > 0 && (
+                        <div className="space-y-2">
+                            <label className="text-sm font-medium text-gray-700">For which visit? (optional)</label>
+                            <Select value={appointmentId || 'none'} onValueChange={(value) => setAppointmentId(value === 'none' ? '' : value)}>
+                                <SelectTrigger className="h-11">
+                                    <SelectValue placeholder="Not linked to a visit" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="none">Not linked to a visit</SelectItem>
+                                    {patientVisits.map((visit) => (
+                                        <SelectItem key={visit._id} value={visit._id}>
+                                            {new Date(visit.startTime).toLocaleString('en-NG', {
+                                                timeZone: 'Africa/Lagos',
+                                                weekday: 'short',
+                                                day: 'numeric',
+                                                month: 'short',
+                                                hour: 'numeric',
+                                                minute: '2-digit',
+                                            })}
+                                            {visit.appointmentType ? ` · ${visit.appointmentType.replace(/[_-]/g, ' ')}` : ''}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                    )}
 
                     {/* Invoice Items */}
                     <div className="space-y-3">
@@ -211,18 +268,30 @@ export function CreateInvoiceModal({ isOpen, onClose, preselectedPatientId }: Cr
                             <span className="font-medium text-gray-900">₦{subtotal.toLocaleString()}</span>
                         </div>
 
-                        <div className="flex justify-between items-center text-sm">
-                            <span className="text-gray-600">Platform Fee</span>
-                            <span className="font-medium text-gray-700">₦{platformFee.toLocaleString()}</span>
-                        </div>
-
-                        <div className="text-xs text-gray-500 bg-white/60 rounded px-3 py-2">
-                            Platform fee includes payment processing and secure hosting
-                        </div>
+                        {billsThroughClinic ? (
+                            <div className="text-xs text-gray-500 bg-white/60 rounded px-3 py-2">
+                                This is billed through your clinic: the patient pays the amount above and the
+                                clinic&apos;s fee split applies.
+                            </div>
+                        ) : (
+                            <>
+                                <div className="flex justify-between items-center text-sm">
+                                    <span className="text-gray-600">Rehabify service fee (paid by patient)</span>
+                                    <span className="font-medium text-gray-700">₦{platformFee.toLocaleString()}</span>
+                                </div>
+                                <div className="flex justify-between items-center text-sm">
+                                    <span className="text-gray-600">Payment processing (paid by patient)</span>
+                                    <span className="font-medium text-gray-700">₦{processingFee.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+                                </div>
+                                <div className="text-xs text-gray-500 bg-white/60 rounded px-3 py-2">
+                                    You receive the subtotal. The patient sees the same total on their invoice.
+                                </div>
+                            </>
+                        )}
 
                         <div className="flex justify-between items-center pt-3 border-t border-green-300">
-                            <span className="text-lg font-semibold text-gray-900">Total</span>
-                            <span className="text-2xl font-bold text-green-600">₦{total.toLocaleString()}</span>
+                            <span className="text-lg font-semibold text-gray-900">Patient pays</span>
+                            <span className="text-2xl font-bold text-green-600">₦{total.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
                         </div>
                     </div>
 

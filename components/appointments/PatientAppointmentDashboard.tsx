@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useState } from 'react';
-import { format, isBefore, isAfter, startOfDay, addDays } from 'date-fns';
 import { Calendar, Clock, AlertCircle, CheckCircle2, History, Repeat, Video, MessageCircle, FileText, XCircle, Star, TrendingUp, Activity, CalendarDays, ChevronRight, Copy, ExternalLink } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -12,6 +11,9 @@ import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { motion, AnimatePresence } from 'framer-motion';
 import { TourGuide } from '@/components/shared/TourGuide';
+import { awaitingConfirmationFrom, hasPendingProposal, isOpenAppointment } from '@/convex/helpers/appointmentStatus';
+import { formatLagos, lagosDateTime, lagosTime, lagosTimeRange } from '@/convex/helpers/lagosTime';
+import { AppointmentPlace, AppointmentStatusBadge, meetingLinkOf } from '@/components/appointments/appointment-ui';
 
 interface PatientAppointmentDashboardProps {
     appointments: any[];
@@ -20,6 +22,8 @@ interface PatientAppointmentDashboardProps {
     onReschedule: (appointment: any) => void;
     onConfirm: (appointment: any) => void;
     onRateVisit?: (appointment: any) => void;
+    /** The physio proposed another time: accept it, or keep the original */
+    onRespondToProposal?: (appointment: any, accept: boolean) => void;
 }
 
 export function PatientAppointmentDashboard({
@@ -28,27 +32,33 @@ export function PatientAppointmentDashboard({
     onCancel,
     onReschedule,
     onConfirm,
-    onRateVisit
+    onRateVisit,
+    onRespondToProposal
 }: PatientAppointmentDashboardProps) {
     const router = useRouter();
     const now = new Date();
+    const nowMs = now.getTime();
     const [activeTab, setActiveTab] = useState('upcoming');
 
-    // Categorize appointments
+    // Booked and not over yet
+    const isLive = (a: any) => isOpenAppointment(a.status) && a.endTime > nowMs;
+
+    // Needs the patient's answer: a new time the physio proposed, or a visit the physio booked.
+    // A visit the patient asked for waits for the physio instead (shown under Upcoming).
     const unconfirmed = appointments.filter(a =>
-        a.status === 'scheduled' && !isBefore(new Date(a.startTime), now)
-    );
+        isLive(a) && (hasPendingProposal(a) || awaitingConfirmationFrom(a) === 'patient')
+    ).sort((a, b) => a.startTime - b.startTime);
 
     const upcoming = appointments.filter(a =>
-        a.status === 'confirmed' && !isBefore(new Date(a.startTime), now)
+        isLive(a) && !unconfirmed.includes(a)
     ).sort((a, b) => a.startTime - b.startTime);
 
     const past = appointments.filter(a =>
-        isBefore(new Date(a.startTime), now) || ['completed', 'cancelled_by_patient', 'cancelled_by_therapist', 'no_show'].includes(a.status)
+        !isLive(a)
     ).sort((a, b) => b.startTime - a.startTime);
 
     const completedCount = appointments.filter(a => a.status === 'completed').length;
-    const nextAppointment = upcoming[0] || unconfirmed[0];
+    const nextAppointment = [...upcoming, ...unconfirmed].sort((a, b) => a.startTime - b.startTime)[0];
 
     // Calculate streak (mock logic for now, can be enhanced)
     const streak = completedCount > 0 ? Math.min(completedCount, 5) : 0;
@@ -56,11 +66,12 @@ export function PatientAppointmentDashboard({
     const AppointmentCard = ({ appointment, type }: { appointment: any, type: 'unconfirmed' | 'upcoming' | 'past' }) => {
         // Check both appointmentType === 'telehealth' AND isOnline === true (for marketplace bookings)
         const canJoinCall = (appointment.appointmentType === 'telehealth' || appointment.isOnline === true) &&
-            appointment.status !== 'cancelled_by_patient' &&
-            appointment.status !== 'cancelled_by_therapist';
+            isLive(appointment);
 
-        // Get the meeting link from any of the possible fields
-        const meetingLink = appointment.meetingLink || appointment.streamMeetingLink || appointment.googleMeetLink;
+        // Get the meeting link from any of the possible fields (Stream, Google Meet, or one the physio added)
+        const meetingLink = meetingLinkOf(appointment);
+        const proposal = hasPendingProposal(appointment);
+        const waitingOnPhysio = awaitingConfirmationFrom(appointment) === 'provider';
 
         const handleStartVideoCall = (e: React.MouseEvent) => {
             e.stopPropagation();
@@ -99,36 +110,45 @@ export function PatientAppointmentDashboard({
                             <p className="text-sm text-gray-500 font-medium">{appointment.serviceType}</p>
                         </div>
                     </div>
-                    {type === 'unconfirmed' && (
-                        <Badge variant="outline" className="bg-amber-100 text-amber-700 border-amber-200 shrink-0 animate-pulse">
-                            Confirm
-                        </Badge>
-                    )}
-                    {type === 'upcoming' && canJoinCall && (
-                        <button
-                            onClick={handleStartVideoCall}
-                            className="bg-blue-50 text-blue-700 p-2 rounded-full hover:bg-blue-100 transition-colors cursor-pointer"
-                            title="Join Video Call"
-                        >
-                            <Video className="h-4 w-4" />
-                        </button>
-                    )}
+                    <AppointmentStatusBadge
+                        appointment={appointment}
+                        viewer="patient"
+                        className={cn(type === 'unconfirmed' && "animate-pulse")}
+                    />
                 </div>
 
-                {/* Date & Time Pill */}
+                {/* Date & Time Pill (Lagos time) */}
                 <div className="flex items-center gap-3 bg-gray-50 p-3 rounded-xl border border-gray-100/50">
                     <div className="flex flex-col items-center justify-center bg-white rounded-lg p-2 shadow-sm border border-gray-100 min-w-[50px]">
-                        <span className="text-xs font-bold text-gray-400 uppercase">{format(new Date(appointment.startTime), 'MMM')}</span>
-                        <span className="text-xl font-bold text-gray-900">{format(new Date(appointment.startTime), 'd')}</span>
+                        <span className="text-xs font-bold text-gray-400 uppercase">{formatLagos(appointment.startTime, { month: 'short' })}</span>
+                        <span className="text-xl font-bold text-gray-900">{formatLagos(appointment.startTime, { day: 'numeric' })}</span>
                     </div>
                     <div className="flex flex-col">
-                        <span className="font-semibold text-gray-900">{format(new Date(appointment.startTime), 'EEEE')}</span>
+                        <span className="font-semibold text-gray-900">{formatLagos(appointment.startTime, { weekday: 'long' })}</span>
                         <div className="flex items-center gap-1.5 text-sm text-gray-500">
                             <Clock className="h-3.5 w-3.5" />
-                            <span>{format(new Date(appointment.startTime), 'h:mm a')}</span>
+                            <span>{lagosTimeRange(appointment.startTime, appointment.endTime)}</span>
                         </div>
                     </div>
                 </div>
+
+                {/* The physio proposed another time */}
+                {proposal && (
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                        <p className="font-semibold">New time proposed: {lagosDateTime(appointment.proposedStartTime)}</p>
+                        <p className="mt-0.5 text-amber-800">
+                            {lagosTime(appointment.proposedStartTime)} – {lagosTime(appointment.proposedEndTime)}, Lagos time
+                        </p>
+                        {appointment.proposalNote && (
+                            <p className="mt-1 text-amber-800">&ldquo;{appointment.proposalNote}&rdquo;</p>
+                        )}
+                    </div>
+                )}
+
+                {/* Where: the address, or the video call when there's no link to show yet */}
+                {!(canJoinCall && meetingLink) && (
+                    <AppointmentPlace appointment={appointment} viewer="patient" className="px-1" />
+                )}
 
                 {/* Meeting Link Section - Always visible for online appointments */}
                 {canJoinCall && meetingLink && (
@@ -176,7 +196,36 @@ export function PatientAppointmentDashboard({
 
                 {/* Actions */}
                 <div className="mt-auto pt-2 flex flex-wrap gap-2">
-                    {type === 'unconfirmed' && (
+                    {type === 'unconfirmed' && proposal && (
+                        <>
+                            <Button
+                                size="sm"
+                                onClick={() => onRespondToProposal?.(appointment, true)}
+                                className="bg-gray-900 hover:bg-black text-white flex-1 rounded-xl h-10 font-medium"
+                            >
+                                <CheckCircle2 className="h-4 w-4 mr-2" />
+                                Accept new time
+                            </Button>
+                            <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => onRespondToProposal?.(appointment, false)}
+                                className="flex-1 rounded-xl h-10 border-gray-200"
+                            >
+                                Keep original time
+                            </Button>
+                            <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => onCancel(appointment)}
+                                className="w-full rounded-xl h-9 text-gray-500 hover:text-red-600 hover:bg-red-50"
+                            >
+                                {appointment.status === 'scheduled' ? 'Cancel request' : 'Cancel visit'}
+                            </Button>
+                        </>
+                    )}
+
+                    {type === 'unconfirmed' && !proposal && (
                         <>
                             <Button
                                 size="sm"
@@ -205,27 +254,52 @@ export function PatientAppointmentDashboard({
                             >
                                 Reschedule
                             </Button>
+                            <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => onCancel(appointment)}
+                                className="w-full rounded-xl h-9 text-gray-500 hover:text-red-600 hover:bg-red-50"
+                            >
+                                Cancel
+                            </Button>
                         </>
                     )}
 
                     {type === 'upcoming' && (
-                        <div className="flex gap-2 w-full">
-                            <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => onReschedule(appointment)}
-                                className="flex-1 rounded-xl h-10 border-gray-200"
-                            >
-                                Reschedule
-                            </Button>
-                            <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => onCancel(appointment)}
-                                className="flex-1 rounded-xl h-10 border-gray-200 text-gray-600 hover:text-red-600 hover:bg-red-50 hover:border-red-100"
-                            >
-                                Cancel
-                            </Button>
+                        <div className="w-full space-y-2">
+                            {waitingOnPhysio && (
+                                <p className="text-xs text-gray-500">
+                                    Your physio will confirm this time, or suggest another. We&apos;ll let you know.
+                                </p>
+                            )}
+                            <div className="flex gap-2 w-full">
+                                {canJoinCall && meetingLink && appointment.status === 'confirmed' && (
+                                    <Button
+                                        size="sm"
+                                        onClick={handleStartVideoCall}
+                                        className="flex-1 rounded-xl h-10 bg-blue-600 text-white hover:bg-blue-700"
+                                    >
+                                        <Video className="h-4 w-4 mr-2" />
+                                        Join
+                                    </Button>
+                                )}
+                                <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => onReschedule(appointment)}
+                                    className="flex-1 rounded-xl h-10 border-gray-200"
+                                >
+                                    Reschedule
+                                </Button>
+                                <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => onCancel(appointment)}
+                                    className="flex-1 rounded-xl h-10 border-gray-200 text-gray-600 hover:text-red-600 hover:bg-red-50 hover:border-red-100"
+                                >
+                                    {waitingOnPhysio ? 'Cancel request' : 'Cancel'}
+                                </Button>
+                            </div>
                         </div>
                     )}
 
@@ -241,15 +315,8 @@ export function PatientAppointmentDashboard({
                         </Button>
                     )}
 
-                    {type === 'past' && appointment.status !== 'completed' && (
-                        <div className="w-full text-center py-2">
-                            <Badge variant="secondary" className={cn(
-                                "px-3 py-1 rounded-full",
-                                appointment.status === 'cancelled_by_patient' ? "bg-red-50 text-red-700" : "bg-gray-100 text-gray-600"
-                            )}>
-                                {appointment.status.replace(/_/g, ' ')}
-                            </Badge>
-                        </div>
+                    {type === 'past' && appointment.cancellationReason && appointment.status?.startsWith('cancelled') && (
+                        <p className="w-full text-xs text-gray-500">Reason: {appointment.cancellationReason}</p>
                     )}
                 </div>
             </motion.div>
@@ -300,11 +367,11 @@ export function PatientAppointmentDashboard({
                             {nextAppointment ? (
                                 <div>
                                     <div className="text-lg font-bold text-gray-900 truncate">
-                                        {format(new Date(nextAppointment.startTime), 'EEEE, MMM d')}
+                                        {formatLagos(nextAppointment.startTime, { weekday: 'long', month: 'short', day: 'numeric' }, 'en-US')}
                                     </div>
                                     <div className="text-gray-500 text-sm flex items-center gap-2 mt-1">
                                         <Clock className="h-3 w-3" />
-                                        {format(new Date(nextAppointment.startTime), 'h:mm a')} • {nextAppointment.physiotherapistName}
+                                        {lagosTime(nextAppointment.startTime)} • {nextAppointment.physiotherapistName}
                                     </div>
                                 </div>
                             ) : (
@@ -338,7 +405,7 @@ export function PatientAppointmentDashboard({
                 <TabsContent value="upcoming" className="space-y-6 focus-visible:outline-none">
                     {unconfirmed.length > 0 && (
                         <div className="space-y-4">
-                            <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider px-1">Action Required</h3>
+                            <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider px-1">Needs your answer</h3>
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                                 {unconfirmed.map(apt => (
                                     <AppointmentCard key={apt._id} appointment={apt} type="unconfirmed" />
@@ -348,7 +415,7 @@ export function PatientAppointmentDashboard({
                     )}
 
                     <div className="space-y-4">
-                        <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider px-1">Scheduled</h3>
+                        <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider px-1">Upcoming</h3>
                         {upcoming.length === 0 && unconfirmed.length === 0 ? (
                             <div className="text-center py-16 bg-gray-50/50 rounded-3xl border border-dashed border-gray-200">
                                 <div className="bg-white p-4 rounded-full shadow-sm inline-block mb-4">

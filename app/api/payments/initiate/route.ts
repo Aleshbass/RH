@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 import { ConvexHttpClient } from 'convex/browser';
 import { Id } from '@/convex/_generated/dataModel';
+import { publicAppUrl } from '@/lib/public-app-url';
 
 export async function POST(request: NextRequest) {
   try {
@@ -68,10 +69,17 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+    // A cancelled invoice must never reach Paystack
+    if (invoice.status === 'void') {
+      return NextResponse.json(
+        { error: 'This invoice was cancelled, so there is nothing to pay' },
+        { status: 400 }
+      );
+    }
 
     // Calculate amounts (all in kobo)
     const baseAmount = invoice.totalAmount || 0;
-    const platformFee = invoice.platformFeeAmount || 100000; // ₦1,000 in kobo
+    const platformFee = invoice.platformFeeAmount ?? 100000; // ₦1,000 in kobo unless the invoice says otherwise
     // Paystack fee: 1.5% + ₦100 (10000 kobo), capped at ₦2,000 (200000 kobo)
     const paystackFee = Math.min(Math.round((baseAmount + platformFee) * 0.015) + 10000, 200000);
     // Prefer using feeBreakdown.total when available
@@ -100,9 +108,8 @@ export async function POST(request: NextRequest) {
       console.log('No payout subaccount found for invoice');
     }
 
-    // Determine absolute origin from the incoming request
-    const url = new URL(request.url);
-    const origin = url.origin;
+    // Never from the request Host header (api./partners. subdomains give broken links)
+    const origin = publicAppUrl();
 
     // Prepare Paystack payment data (amount in kobo — Paystack's native unit)
     const paymentData: Record<string, unknown> = {

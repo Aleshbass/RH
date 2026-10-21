@@ -3,6 +3,7 @@ import { ConvexError, v } from 'convex/values'
 import { Doc, Id } from './_generated/dataModel'
 import { getAuthenticatedUser } from './auth'
 import { assertPatientInClinic, assertStaffInClinic, getClinicStaffUserIds } from './clinicTools'
+import { zonedDateTimeToUtc } from './helpers/lagosTime'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Access. A series and its appointments are visible to their patient and
@@ -230,7 +231,8 @@ async function generateSeriesAppointments(ctx: any, seriesId: Id<'recurringSerie
 
     if (!exception) {
       // Create appointment for this occurrence
-      const startTime = currentDate.getTime()
+      // The series time is Lagos wall-clock; currentDate's UTC fields carry that date and time
+      const startTime = zonedDateTimeToUtc(currentDate.toISOString().slice(0, 10), series.startTime)
       const endTime = startTime + (series.duration * 60 * 1000)
 
       appointments.push({
@@ -241,6 +243,9 @@ async function generateSeriesAppointments(ctx: any, seriesId: Id<'recurringSerie
         endTime,
         serviceType: series.serviceType,
         status: 'scheduled' as const,
+        // Only the clinical side creates series, so the patient confirms each visit
+        requestedBy: 'provider' as const,
+        appointmentType: series.appointmentType,
         notesForPatient: series.notesForPatient,
         notesForTherapist: series.notesForTherapist,
         seriesId,

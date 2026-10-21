@@ -1,6 +1,6 @@
 
 import { ConvexError, v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { internalQuery, mutation, query } from "./_generated/server";
 import { getAuthenticatedUser, ensureClinicOwner, ensureUserRole, ensureIsClinicOwner } from "./auth";
 import { Id } from "./_generated/dataModel";
 import { getClinicMember, requireClinicWrite } from "./clinicTools";
@@ -127,11 +127,13 @@ export const getMyPatients = query({
     const limit = args.limit ?? 50;
 
     // Get all patient relationships for this physiotherapist
-    const relationships = await ctx.db
+    const activeRelationships = await ctx.db
       .query("patientPhysiotherapistRelationships")
       .withIndex("by_physiotherapist", (q) => q.eq("physiotherapistId", physiotherapist._id))
       .filter((q) => q.eq(q.field("status"), "active"))
       .take(limit);
+    // Each patient once, even if older data linked them twice
+    const relationships = [...new Map(activeRelationships.map((r) => [r.patientId, r] as const)).values()];
 
     // Get patient details
     const patients = await Promise.all(
@@ -171,6 +173,7 @@ export const getMyPatients = query({
           email: patient.email,
           imageUrl: patient.imageUrl,
           phoneNumber: patient.phoneNumber,
+          patientNumber: patient.patientNumber,
           relationship: {
             isPrimary: relationship.isPrimaryPhysiotherapist,
             startDate: relationship.startDate,
@@ -220,7 +223,7 @@ export const getPatientDetails = query({
         q.eq("patientId", args.patientId).eq("physiotherapistId", physiotherapist._id)
       )
       .filter((q) => q.eq(q.field("status"), "active"))
-      .unique();
+      .first();
 
     // Not this physio's (active) patient, or no such patient: the page shows "not found"
     // instead of crashing on a thrown query error
@@ -347,7 +350,7 @@ export const getActivePackageBooking = query({
         q.eq("patientId", args.patientId).eq("physiotherapistId", physiotherapist._id)
       )
       .filter((q) => q.eq(q.field("status"), "active"))
-      .unique();
+      .first();
 
     if (!relationship) return null;
 
@@ -462,17 +465,16 @@ export const updatePatientBasicInfo = mutation({
         q.eq("patientId", args.patientId).eq("physiotherapistId", physiotherapist._id)
       )
       .filter((q) => q.eq(q.field("status"), "active"))
-      .unique();
+      .first();
 
     if (!relationship) {
-      throw new Error("Access denied. Patient not assigned to you.");
+      throw new ConvexError("Access denied. Patient not assigned to you.");
     }
 
-    // Update basic user info (firstName, lastName, email, phoneNumber)
+    // Update basic user info. The email is the patient's sign-in, so only the patient changes it.
     const userUpdateData: any = {};
     if (args.updates.firstName !== undefined) userUpdateData.firstName = args.updates.firstName;
     if (args.updates.lastName !== undefined) userUpdateData.lastName = args.updates.lastName;
-    if (args.updates.email !== undefined) userUpdateData.email = args.updates.email;
     if (args.updates.phoneNumber !== undefined) userUpdateData.phoneNumber = args.updates.phoneNumber;
 
     if (Object.keys(userUpdateData).length > 0) {
@@ -485,13 +487,26 @@ export const updatePatientBasicInfo = mutation({
       throw new Error("Patient not found.");
     }
 
-    if (patient.patientProfileId) {
-      const profileUpdateData: any = {};
-      if (args.updates.dateOfBirth !== undefined) profileUpdateData.dateOfBirth = args.updates.dateOfBirth;
-      if (args.updates.gender !== undefined) profileUpdateData.gender = args.updates.gender;
+    const profileUpdateData: any = {};
+    if (args.updates.dateOfBirth !== undefined) profileUpdateData.dateOfBirth = args.updates.dateOfBirth;
+    if (args.updates.gender !== undefined) profileUpdateData.gender = args.updates.gender;
 
-      if (Object.keys(profileUpdateData).length > 0) {
-        await ctx.db.patch(patient.patientProfileId, profileUpdateData);
+    if (Object.keys(profileUpdateData).length > 0) {
+      // Marketplace and Joy patients have a profile without the user pointer, or none yet
+      const profileId =
+        patient.patientProfileId ??
+        (
+          await ctx.db
+            .query("patientProfiles")
+            .withIndex("by_user_id", (q) => q.eq("userId", args.patientId))
+            .first()
+        )?._id;
+      if (profileId) {
+        await ctx.db.patch(profileId, profileUpdateData);
+        if (!patient.patientProfileId) await ctx.db.patch(args.patientId, { patientProfileId: profileId });
+      } else {
+        const newProfileId = await ctx.db.insert("patientProfiles", { userId: args.patientId, ...profileUpdateData });
+        await ctx.db.patch(args.patientId, { patientProfileId: newProfileId });
       }
     }
 
@@ -993,6 +1008,27 @@ const PATIENT_GENDERS = v.union(
   v.literal("prefer_not_to_say")
 );
 
+/**
+ * The signed-in patient's profile id, linking or creating it when needed. Marketplace and Joy
+ * bookings create a profile without setting users.patientProfileId, which the records page needs.
+ */
+export const ensureMyPatientProfile = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const user = await getAuthenticatedUser(ctx);
+    if (user.role !== "patient") throw new ConvexError("Only patients have a patient profile.");
+    if (user.patientProfileId && (await ctx.db.get(user.patientProfileId))) return user.patientProfileId;
+
+    const existing = await ctx.db
+      .query("patientProfiles")
+      .withIndex("by_user_id", (q) => q.eq("userId", user._id))
+      .first();
+    const profileId = existing?._id ?? (await ctx.db.insert("patientProfiles", { userId: user._id }));
+    await ctx.db.patch(user._id, { patientProfileId: profileId });
+    return profileId;
+  },
+});
+
 /** The signed-in patient updates their own details (settings page). Email is managed by Clerk. */
 export const updateMyPatientProfile = mutation({
   args: {
@@ -1147,7 +1183,17 @@ export const reassignPatient = mutation({
   },
   handler: async (ctx, args) => {
     // The clinic owner, or a team member whose role includes Patients, once the clinic is approved
-    const { user: clinicOwner, clinic } = await requireClinicWrite(ctx, "patients");
+    const member = await requireClinicWrite(ctx, "patients");
+    const { user: clinicOwner, clinic } = member;
+    // A clinician can hand over their own patients; moving a colleague's patients is for the
+    // owner or someone the owner gave full access
+    if (
+      member.kind === "clinician" &&
+      member.permissions !== "all" &&
+      args.currentPhysiotherapistId !== member.user._id
+    ) {
+      throw new ConvexError("Only the clinic owner can move another clinician's patients.");
+    }
 
     // Verify both physiotherapists belong to the clinic
     const currentPhysio = await ctx.db.get(args.currentPhysiotherapistId);
@@ -1178,6 +1224,10 @@ export const reassignPatient = mutation({
     if (!relationship) {
       throw new ConvexError("Active relationship not found between patient and current physiotherapist");
     }
+    // Only the clinic's own care moves: a clinician's private patients from outside the clinic stay theirs
+    if (relationship.clinicId && relationship.clinicId !== clinic._id) {
+      throw new ConvexError("This patient is in this clinician's own practice, not the clinic's.");
+    }
 
     // Deactivate current relationship
     await ctx.db.patch(relationship._id, {
@@ -1185,17 +1235,43 @@ export const reassignPatient = mutation({
       endDate: Date.now(),
     });
 
-    // Create new relationship
-    await ctx.db.insert("patientPhysiotherapistRelationships", {
-      patientId: args.patientId,
-      physiotherapistId: args.newPhysiotherapistId,
+    // Re-open an earlier link with the new clinician (moving a patient back and forth) instead
+    // of adding a second row for the same pair
+    const earlier = await ctx.db
+      .query("patientPhysiotherapistRelationships")
+      .withIndex("by_patient_and_physiotherapist", (q) =>
+        q.eq("patientId", args.patientId).eq("physiotherapistId", args.newPhysiotherapistId)
+      )
+      .first();
+    const handover = {
       clinicId: clinic._id,
-      status: "active",
-      startDate: Date.now(),
+      status: "active" as const,
       isPrimaryPhysiotherapist: relationship.isPrimaryPhysiotherapist,
-      // Keep where the patient came from (e.g. a Rehabify referral)
+      // Keep where the patient came from (e.g. a Rehabify referral) and the follow-up date
       source: relationship.source,
-    });
+      nextCheckInAt: relationship.nextCheckInAt,
+    };
+    if (earlier) {
+      await ctx.db.patch(earlier._id, { ...handover, endDate: undefined, startDate: Date.now() });
+    } else {
+      await ctx.db.insert("patientPhysiotherapistRelationships", {
+        patientId: args.patientId,
+        physiotherapistId: args.newPhysiotherapistId,
+        startDate: Date.now(),
+        ...handover,
+      });
+    }
+
+    // The open course of care moves with the patient
+    const openEpisodes = await ctx.db
+      .query("careEpisodes")
+      .withIndex("by_patient", (q: any) => q.eq("patientId", args.patientId))
+      .collect();
+    for (const episode of openEpisodes) {
+      if (episode.status === "active" && episode.physiotherapistId === args.currentPhysiotherapistId) {
+        await ctx.db.patch(episode._id, { physiotherapistId: args.newPhysiotherapistId });
+      }
+    }
 
     // Log the reassignment
     await ctx.db.insert("systemLogs", {
@@ -1281,7 +1357,7 @@ export const dischargePatient = mutation({
         q.eq("patientId", args.patientId).eq("physiotherapistId", physiotherapist._id)
       )
       .filter((q) => q.eq(q.field("status"), "active"))
-      .unique();
+      .first();
 
     if (!relationship) {
       throw new Error("Active relationship not found");
@@ -1451,7 +1527,8 @@ export const togglePatientFlag = mutation({
 });
 
 // Get detailed patient info including session logs
-export const getClinicPatientDetails = query({
+// Internal: it returns a patient's full record without checking who asks (no page uses it)
+export const getClinicPatientDetails = internalQuery({
   args: {
     patientId: v.id("users"),
   },

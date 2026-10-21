@@ -35,19 +35,19 @@ export default function PayoutPolicyPage() {
                 {/* Key Highlights */}
                 <div className="mb-12 grid gap-6 sm:grid-cols-3">
                     <div className="rounded-lg border border-gray-200 bg-white p-6">
-                        <div className="mb-2 text-3xl font-bold text-gray-900">Instant</div>
-                        <div className="text-sm font-medium text-gray-600">Direct Settlement</div>
-                        <div className="mt-2 text-xs text-gray-500">At time of each transaction</div>
+                        <div className="mb-2 text-3xl font-bold text-gray-900">Fixed</div>
+                        <div className="text-sm font-medium text-gray-600">Payout per Session</div>
+                        <div className="mt-2 text-xs text-gray-500">Set out in your payout schedule</div>
                     </div>
                     <div className="rounded-lg border border-gray-200 bg-white p-6">
-                        <div className="mb-2 text-3xl font-bold text-gray-900">100%</div>
-                        <div className="text-sm font-medium text-gray-600">Your Earnings</div>
-                        <div className="mt-2 text-xs text-gray-500">No Rehabify deductions</div>
+                        <div className="mb-2 text-3xl font-bold text-gray-900">Protected</div>
+                        <div className="text-sm font-medium text-gray-600">Patients Pay Upfront</div>
+                        <div className="mt-2 text-xs text-gray-500">Every booking is paid before it&apos;s confirmed</div>
                     </div>
                     <div className="rounded-lg border border-gray-200 bg-white p-6">
                         <div className="mb-2 text-3xl font-bold text-gray-900">Secure</div>
-                        <div className="text-sm font-medium text-gray-600">Direct Transfer</div>
-                        <div className="mt-2 text-xs text-gray-500">Via Paystack Subaccount</div>
+                        <div className="text-sm font-medium text-gray-600">Bank Transfer</div>
+                        <div className="mt-2 text-xs text-gray-500">To your payout account</div>
                     </div>
                 </div>
 
@@ -62,9 +62,9 @@ export default function PayoutPolicyPage() {
                                     1
                                 </div>
                                 <div>
-                                    <h3 className="font-semibold text-gray-900">Patient Initiates Payment</h3>
+                                    <h3 className="font-semibold text-gray-900">The Patient Pays Rehabify</h3>
                                     <p className="mt-1 text-sm text-gray-600">
-                                        The patient pays for their session via Paystack&apos;s secure checkout on the Rehabify platform.
+                                        The patient pays Rehabify&apos;s standard, all-inclusive price through Paystack when they book. The booking is confirmed once the payment is verified, and Rehabify holds the payment.
                                     </p>
                                 </div>
                             </div>
@@ -73,9 +73,9 @@ export default function PayoutPolicyPage() {
                                     2
                                 </div>
                                 <div>
-                                    <h3 className="font-semibold text-gray-900">Paystack Splits Instantly</h3>
+                                    <h3 className="font-semibold text-gray-900">You Complete the Session</h3>
                                     <p className="mt-1 text-sm text-gray-600">
-                                        Paystack processes the transaction and routes your session fee <strong>directly</strong> to your registered Paystack subaccount in real time. Rehabify never holds the funds.
+                                        Once the session is marked as completed, your payout for it is added to your earnings in your dashboard.
                                     </p>
                                 </div>
                             </div>
@@ -84,65 +84,57 @@ export default function PayoutPolicyPage() {
                                     3
                                 </div>
                                 <div>
-                                    <h3 className="font-semibold text-gray-900">Funds Arrive in Your Bank</h3>
+                                    <h3 className="font-semibold text-gray-900">Rehabify Pays You</h3>
                                     <p className="mt-1 text-sm text-gray-600">
-                                        Your full session rate is transferred to your linked Nigerian bank account. You receive the exact amount you set — no deductions by Rehabify.
+                                        Rehabify transfers your payout to your payout account (a Nigerian bank account), and you can follow each payout&apos;s status in your dashboard.
                                     </p>
                                 </div>
                             </div>
                         </div>
                     </section>
 
-                    {/* Fee Structure */}
+                    {/* What You Earn */}
                     <section>
-                        <h2 className="mb-6 text-2xl font-bold text-gray-900">Fee Structure</h2>
+                        <h2 className="mb-6 text-2xl font-bold text-gray-900">What You Earn</h2>
                         <div className="rounded-lg border border-gray-200 bg-white p-6">
                             <div className="mb-6">
-                                <h3 className="text-lg font-semibold text-gray-900">No Platform Fee</h3>
+                                <h3 className="text-lg font-semibold text-gray-900">A Fixed Payout for Each Service</h3>
                                 <p className="mt-2 text-sm text-gray-600">
-                                    Rehabify charges <strong>no platform fee</strong>. You receive the full session rate you set. The only cost is the standard Paystack payment processing fee (1.5% + ₦100, capped at ₦2,000), which is passed on transparently to the patient at checkout.
+                                    Rehabify sets one standard price for each service, the same for every patient, and a fixed payout to you for each session you complete. Your payout schedule lists the current payout for every service and is always available in your dashboard under <Link href="/dashboard/physiotherapist/settings/fee-schedule" className="font-medium text-[#005b57] hover:underline">Settings › Fee schedule</Link>.
                                 </p>
                             </div>
                             <div className="rounded-lg bg-gray-50 p-4">
-                                <h4 className="mb-3 text-sm font-semibold text-gray-700">Example Breakdown</h4>
-                                <div className="space-y-2 text-sm">
-                                    <div className="flex justify-between">
-                                        <span className="text-gray-600">Your Session Rate</span>
-                                        <span className="font-medium text-gray-900">₦20,000</span>
-                                    </div>
-                                    <div className="flex justify-between">
-                                        <span className="text-gray-600">Paystack Processing Fee (paid by patient)</span>
-                                        <span className="font-medium text-gray-900">₦400</span>
-                                    </div>
-                                    <div className="flex justify-between border-t border-gray-200 pt-2 font-semibold">
-                                        <span className="text-gray-900">You Receive</span>
-                                        <span className="text-green-700">₦20,000</span>
-                                    </div>
-                                </div>
+                                <h4 className="mb-3 text-sm font-semibold text-gray-700">Good to Know</h4>
+                                <ul className="space-y-2 text-sm text-gray-600">
+                                    <li><strong>No deductions:</strong> Rehabify pays the Paystack processing fee. It is never taken from your payout.</li>
+                                    <li><strong>Home visits:</strong> where a travel charge applies, you also receive your share of it for that travel zone.</li>
+                                    <li><strong>Rehabify Access:</strong> if you opt in to assisted care, Access sessions pay the assisted payout in your schedule. You can set a minimum payout for each service, and you&apos;re only matched with Access patients where the payout meets it.</li>
+                                    <li><strong>Changes:</strong> if the payout schedule changes, bookings already made keep the payout that applied when they were booked.</li>
+                                </ul>
                             </div>
                         </div>
                     </section>
 
                     {/* Requirements */}
                     <section>
-                        <h2 className="mb-6 text-2xl font-bold text-gray-900">Settlement Requirements</h2>
+                        <h2 className="mb-6 text-2xl font-bold text-gray-900">Payout Requirements</h2>
                         <div className="rounded-lg border border-gray-200 bg-white p-6">
                             <ul className="space-y-3">
                                 <li className="flex gap-3">
                                     <Check className="h-5 w-5 shrink-0 text-green-600" />
-                                    <span className="text-sm text-gray-600">Valid Nigerian bank account linked to your profile</span>
+                                    <span className="text-sm text-gray-600">Your account approved by the Rehabify team, with your profile set up</span>
                                 </li>
                                 <li className="flex gap-3">
                                     <Check className="h-5 w-5 shrink-0 text-green-600" />
-                                    <span className="text-sm text-gray-600">Completed identity and professional license verification</span>
+                                    <span className="text-sm text-gray-600">A valid Nigerian bank account added as your payout account</span>
                                 </li>
                                 <li className="flex gap-3">
                                     <Check className="h-5 w-5 shrink-0 text-green-600" />
-                                    <span className="text-sm text-gray-600">Active Paystack subaccount (configured during provider onboarding)</span>
+                                    <span className="text-sm text-gray-600">The booking paid for by the patient</span>
                                 </li>
                                 <li className="flex gap-3">
                                     <Check className="h-5 w-5 shrink-0 text-green-600" />
-                                    <span className="text-sm text-gray-600">Appointment confirmed and session invoice issued</span>
+                                    <span className="text-sm text-gray-600">The session marked as completed</span>
                                 </li>
                             </ul>
                         </div>
@@ -153,10 +145,10 @@ export default function PayoutPolicyPage() {
                         <h2 className="mb-6 text-2xl font-bold text-gray-900">Security & Privacy</h2>
                         <div className="rounded-lg border border-gray-200 bg-white p-6">
                             <p className="text-sm text-gray-600">
-                                All payments are processed through <strong>Paystack</strong>, a PCI DSS compliant payment gateway. Your banking details are encrypted and securely stored. Rehabify never has direct access to your full bank account information.
+                                Patient payments are processed through <strong>Paystack</strong>, a PCI DSS compliant payment gateway. Your payout account details are used only to pay you.
                             </p>
                             <p className="mt-4 text-sm text-gray-600">
-                                You'll receive email notifications for every payout transaction, keeping you informed at every step of the process.
+                                You can follow the status of every payout in your dashboard, and we&apos;ll let you know when a payout has been sent.
                             </p>
                         </div>
                     </section>

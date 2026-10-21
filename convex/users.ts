@@ -10,6 +10,9 @@ import { attributeUserToLink } from "./helpers/partnerAttribution";
 import { normalizePhone } from "./helpers/partnerShared";
 import { assertSignupAllowed } from "./platformSettings";
 import { logSecurityEvent } from "./helpers/securityLog";
+import { ensureClinicNumber, ensureUserNumbers, findUserByRehabifyId } from "./helpers/rehabifyIds";
+import { matchesRehabifyId, parseRehabifyId } from "./helpers/rehabifyIdFormat";
+import { isClinicInviteApproval } from "./helpers/clinicApproval";
 
 // ==== QUERIES ====
 
@@ -433,6 +436,7 @@ const physiotherapistProfileDataValidator = v.object({
   isAvailableOnMarketplace: v.optional(v.boolean()),
   offersInPersonSessions: v.optional(v.boolean()),
   offersOnlineSessions: v.optional(v.boolean()),
+  termsAcceptedAt: v.optional(v.number()),
 });
 
 const patientProfileDataValidator = v.object({
@@ -613,6 +617,7 @@ export const completeUserProfile = mutation({
                 language: "en"
               }
             });
+            await ensureClinicNumber(ctx, newClinicId);
             clinic = await ctx.db.get(newClinicId);
           } else {
             console.error("[completeUserProfile] Error: No clinic found for clinic owner:", user._id);
@@ -679,6 +684,7 @@ export const completeUserProfile = mutation({
       console.error("[completeUserProfile] Error patching user record:", error, "Payload:", userUpdatePayload);
       throw error; // Re-throw to ensure the mutation fails
     }
+    await ensureUserNumbers(ctx, user._id);
 
     // For physiotherapists and clinic owners, create approval request after final step
     if (args.finalStep && (args.role === "physiotherapist" || args.role === "clinic_owner")) {
@@ -708,6 +714,18 @@ export const completeUserProfile = mutation({
         await ctx.db.patch(existingApproval._id, {
           status: "pending_review",
           submittedAt: Date.now(),
+        });
+        isNewSubmission = true;
+      } else if (
+        existingApproval.status === "approved" &&
+        isClinicInviteApproval(existingApproval) &&
+        !user.clinicId
+      ) {
+        // A clinic invitation approved them for clinic work only; practising on their own needs review
+        await ctx.db.patch(existingApproval._id, {
+          status: "pending_review",
+          submittedAt: Date.now(),
+          comments: undefined,
         });
         isNewSubmission = true;
       }
@@ -846,6 +864,7 @@ export const updateUserRole = mutation({
     await ctx.db.patch(user._id, {
       role: args.role,
     });
+    await ensureUserNumbers(ctx, user._id);
     if (user.role !== args.role) {
       await logSecurityEvent(ctx, "role_changed", {
         userId: user._id,
@@ -919,6 +938,7 @@ export const setUserRole = mutation({
       role: args.role,
       onboarded: true,
     });
+    await ensureUserNumbers(ctx, args.userId);
     if (userToUpdate.role !== args.role) {
       await logSecurityEvent(ctx, "role_changed", {
         userId: args.userId,
@@ -1043,10 +1063,19 @@ export const adminListUsers = query({
             onboarded: u.onboarded,
             status: u.status,
             lastLoginAt: u.lastLoginAt,
+            patientNumber: u.patientNumber,
+            staffNumber: u.staffNumber,
             approvalStatus: approval?.status ?? null,
           };
         })
       );
+
+    const rehabifyId = parseRehabifyId(term);
+    if (rehabifyId) {
+      const user = await findUserByRehabifyId(ctx, rehabifyId);
+      const page = await withApproval(user && roleMatches(user) ? [user] : []);
+      return { page, isDone: true, continueCursor: "" };
+    }
 
     if (term && looksLikeEmail(term)) {
       const variants = Array.from(new Set([term, term.toLowerCase()]));
@@ -1078,7 +1107,9 @@ export const adminListUsers = query({
         return (
           name.includes(needle) ||
           (u.email ?? "").toLowerCase().includes(needle) ||
-          (u.phoneNumber ?? "").includes(needle)
+          (u.phoneNumber ?? "").includes(needle) ||
+          matchesRehabifyId(u.patientNumber, needle) ||
+          matchesRehabifyId(u.staffNumber, needle)
         );
       });
     }
@@ -1302,7 +1333,8 @@ export const testNotificationEmail = action({
   args: {
     testEmail: v.optional(v.string()),
   },
-  handler: async (ctx, args) => {
+  // Annotated: inferring it through ctx.runAction(internal…) made the generated api type circular
+  handler: async (ctx, args): Promise<{ success: boolean; testEmail: string; messageId?: string; error?: string; message: string }> => {
     // Sends real email: admins only.
     await ctx.runQuery(internal.monthlySettlements.assertAdminForAction, {});
 

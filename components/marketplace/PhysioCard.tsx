@@ -19,17 +19,17 @@ interface PhysioCardProps {
     specializations: string[];
     yearsOfExperience: number;
     location?: string;
-    hourlyRate: number;
-    initialConsultRate: number;
     averageRating: number;
     reviewCount: number;
     isVerified: boolean;
     offersOnlineSessions: boolean;
     offersInPersonSessions: boolean;
   };
+  /** e.g. "From ₦6,000": the cheapest Rehabify service this physio offers. */
+  priceHint?: string | null;
 }
 
-export default function PhysioCard({ physiotherapist }: PhysioCardProps) {
+export default function PhysioCard({ physiotherapist, priceHint }: PhysioCardProps) {
   const trackView = useMutation(api.analytics.trackProfileView);
 
   const handleProfileClick = () => {
@@ -154,6 +154,9 @@ export default function PhysioCard({ physiotherapist }: PhysioCardProps) {
                 <Users className="h-3 w-3 text-brand" />
                 <span>In-Person</span>
               </div>
+            )}
+            {priceHint && (
+              <span className="text-[11px] font-semibold text-gray-900 tabular-nums">{priceHint}</span>
             )}
           </div>
 

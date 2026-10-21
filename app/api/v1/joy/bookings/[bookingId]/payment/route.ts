@@ -3,7 +3,7 @@ import { z } from "zod";
 import { actorSchema, authenticatedJson, errorResponse, success } from "@/lib/joy-integration/http";
 import { JoyAuthError } from "@/lib/joy-integration/auth";
 import { callJoyConvexGateway } from "@/lib/joy-integration/convex-gateway";
-import { calculatePaystackInboundGrossAmount } from "@/lib/pricing";
+import { publicAppUrl } from "@/lib/public-app-url";
 
 export const runtime = "nodejs";
 
@@ -30,24 +30,11 @@ export async function POST(request: Request, context: { params: Promise<{ bookin
       return success(requestId, { booking_id: bookingId, reference: prepared.reference ?? reference, authorization_url: prepared.authorization_url, payment_status: "pending" });
     }
 
-    // Check if patient bears Paystack inbound fee — gross up amount if so
-    let chargeAmountKobo = prepared.amount_kobo;
-    let feeMetadata: Record<string, unknown> = {};
-    try {
-      const { ConvexHttpClient } = await import("convex/browser");
-      const { api } = await import("@/convex/_generated/api") as any;
-      const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
-      const settings = await convex.query(api.platformSettings.getPlatformRevenueSettings);
-      if (settings?.paystackFeeBearerInbound === "patient" && prepared.amount_kobo > 0) {
-        const { grossKobo, feeKobo } = calculatePaystackInboundGrossAmount(prepared.amount_kobo);
-        chargeAmountKobo = grossKobo;
-        feeMetadata = { baseAmountKobo: prepared.amount_kobo, processingFeeKobo: feeKobo, feeBearer: "patient" };
-      }
-    } catch {
-      // If settings fetch fails, proceed without surcharge
-    }
+    // All-inclusive pricing: the patient pays the booking's amount; Rehabify absorbs Paystack's fee
+    const chargeAmountKobo = prepared.amount_kobo;
+    const feeMetadata: Record<string, unknown> = {};
 
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://physioaroundme.com";
+    const appUrl = publicAppUrl();
     const response = await fetch("https://api.paystack.co/transaction/initialize", {
       method: "POST", headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY ?? ""}`, "Content-Type": "application/json" },
       body: JSON.stringify({ email: input.email, amount: chargeAmountKobo, currency: "NGN", reference, callback_url: `${appUrl}/payment/callback`, metadata: { rh_booking_id: bookingId, source_system: "joy_ai", source_channel: "whatsapp", correlation_id: requestId, ...feeMetadata } }),

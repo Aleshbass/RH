@@ -1,6 +1,7 @@
 "use client"
 
 import Image from 'next/image'
+import Link from 'next/link'
 
 import { useQueryUntyped } from '@/lib/convexUntyped'
 import { useState, useEffect } from 'react'
@@ -94,6 +95,14 @@ export function AppointmentBookingModal({
 
   const requestAppointment = useMutation(api.appointments.requestAppointment)
 
+  // Rehabify patients book and pay for sessions on the physio's booking page instead
+  const billingMode = useQuery(
+    api.rehabifyFollowUps.getCareBillingMode,
+    selectedPhysiotherapist ? { physiotherapistId: selectedPhysiotherapist as Id<'users'> } : 'skip'
+  ) as { mode: 'rehabify' | 'own' } | null | undefined
+  const paidOnRehabify = billingMode?.mode === 'rehabify'
+  const billingModeLoading = Boolean(selectedPhysiotherapist) && billingMode === undefined
+
   // Check if user has Google Calendar connected
   const hasGoogleCalendar = useQuery(
     api.calendar.oauth.hasGoogleCalendarConnected,
@@ -144,7 +153,7 @@ export function AppointmentBookingModal({
   }
 
   const handleSubmit = async () => {
-    if (!selectedPhysiotherapist || !selectedTimeSlot || !serviceType) return
+    if (!selectedPhysiotherapist || !selectedTimeSlot || !serviceType || paidOnRehabify) return
 
     // Check if calendar needs to be connected (patient flow always uses Google Meet)
     if (!hasGoogleCalendar && manualMeetingLink === 'google_meet') {
@@ -299,19 +308,35 @@ export function AppointmentBookingModal({
                         </div>
                       </div>
 
-                      <div className="space-y-4">
-                        <Label className="text-base font-semibold">Service Type</Label>
-                        <Select value={serviceType} onValueChange={setServiceType}>
-                          <SelectTrigger className="h-12 rounded-xl border-gray-200">
-                            <SelectValue placeholder="Select service type" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {serviceTypes.map((type) => (
-                              <SelectItem key={type} value={type}>{type}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
+                      {paidOnRehabify ? (
+                        <div className="space-y-3 rounded-xl border border-brand/20 bg-brand/5 p-4">
+                          <p className="font-semibold text-gray-900">
+                            Sessions with {selectedPhysioDetails?.firstName ?? 'this physiotherapist'} are booked and paid on Rehabify
+                          </p>
+                          <p className="text-sm text-gray-600">
+                            Choose a service and a time on their booking page. The price you see is the price you pay, and your booking is confirmed once paid.
+                          </p>
+                          <Button asChild className="bg-brand hover:bg-brand-dark text-brand-dark font-semibold">
+                            <Link href={`/book/${selectedPhysiotherapist}`} onClick={onClose}>
+                              Go to the booking page <ChevronRight className="h-4 w-4 ml-1" />
+                            </Link>
+                          </Button>
+                        </div>
+                      ) : (
+                        <div className="space-y-4">
+                          <Label className="text-base font-semibold">Service Type</Label>
+                          <Select value={serviceType} onValueChange={setServiceType}>
+                            <SelectTrigger className="h-12 rounded-xl border-gray-200">
+                              <SelectValue placeholder="Select service type" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {serviceTypes.map((type) => (
+                                <SelectItem key={type} value={type}>{type}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -539,7 +564,7 @@ export function AppointmentBookingModal({
                       else if (step === 'confirmation') handleSubmit()
                     }}
                     disabled={
-                      (step === 'provider' && (!selectedPhysiotherapist || !serviceType)) ||
+                      (step === 'provider' && (!selectedPhysiotherapist || !serviceType || paidOnRehabify || billingModeLoading)) ||
                       (step === 'datetime' && (!selectedDate || !selectedTimeSlot)) ||
                       isSubmitting
                     }

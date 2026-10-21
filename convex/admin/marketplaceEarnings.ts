@@ -61,13 +61,17 @@ async function bookingsInWindow(ctx: QueryCtx, window: { start: number; end: num
   return { bookings, capped };
 }
 
-function fullName(user: Doc<"users"> | null | undefined, fallback = "Unknown") {
-  if (!user) return fallback;
-  return `${user.firstName || ""} ${user.lastName || ""}`.trim() || user.email || fallback;
-}
 
-/** Rehabify's share of a booking; older Joy virtual bookings predate the stored value. */
+/**
+ * Rehabify's share of a booking. Standard-priced bookings: what the patient paid minus the
+ * physio's payout and Paystack's fee (the actual fee once the webhook reports it). Older Joy
+ * virtual bookings predate the stored value.
+ */
 function rehabifyShare(b: Doc<"marketplaceBookings">) {
+  if (b.pricingModel) {
+    const estimate = b.paystackFeeEstimateKobo ?? 0;
+    return (b.rehabifyEarnings ?? 0) + estimate - (b.paystackFeeActualKobo ?? estimate);
+  }
   return b.rehabifyEarnings ?? (b.joyBookingRoute === "admin_scheduled_virtual" ? b.totalAmount : b.platformFee) ?? 0;
 }
 
@@ -258,17 +262,16 @@ export const getPhysiotherapistEarningsDetail = query({
     );
     const completed = bookings.filter((b) => b.paymentStatus === "completed");
 
-    // Patients, by total spent
+    // Patients, by total spent. Identified by Rehabify ID only: this is a finance view.
     const patientIds = [...new Set(bookings.map((b) => b.patientId))];
     const patients = await Promise.all(
       patientIds.map(async (patientId) => {
         const patientBookings = bookings.filter((b) => b.patientId === patientId);
         const guestBooking = patientBookings.find((b) => b.isGuestBooking);
-        const patient = guestBooking ? null : await ctx.db.get(patientId);
+        const patient = await ctx.db.get(patientId);
         return {
           id: patientId,
-          name: guestBooking ? guestBooking.guestName || guestBooking.guestEmail || "Guest" : fullName(patient),
-          email: guestBooking ? guestBooking.guestEmail : patient?.email,
+          patientNumber: patient?.patientNumber ?? null,
           isGuest: Boolean(guestBooking),
           totalBookings: patientBookings.length,
           totalSpent: sum(patientBookings.filter((b) => b.paymentStatus === "completed"), (b) => b.totalAmount) / 100,
@@ -315,9 +318,9 @@ export const getPhysiotherapistEarningsDetail = query({
         paymentStatus: b.paymentStatus,
         totalAmount: (b.totalAmount || 0) / 100,
         physiotherapistEarnings: (b.physiotherapistEarnings || 0) / 100,
-        patientName: b.isGuestBooking
-          ? b.guestName || b.guestEmail || "Guest"
-          : patients.find((p) => p.id === b.patientId)?.name || "Unknown",
+        patientId: b.patientId,
+        patientNumber: patients.find((p) => p.id === b.patientId)?.patientNumber ?? null,
+        isGuest: Boolean(b.isGuestBooking),
       })),
       patients: patients.slice(0, 50),
       earningsByMonth,
@@ -377,11 +380,13 @@ export const getPlatformMarketplaceAnalytics = query({
         .sort((a, b) => (b.paidAt || b.createdAt) - (a.paidAt || a.createdAt))
         .slice(0, 5)
         .map(async (b) => {
-          const patient = b.isGuestBooking ? null : await ctx.db.get(b.patientId);
+          const patient = await ctx.db.get(b.patientId);
           const physio = b.physiotherapistId ? await ctx.db.get(b.physiotherapistId) : null;
           return {
             bookingId: b._id,
-            patientName: b.isGuestBooking ? b.guestName || "Guest" : patient ? `${patient.firstName} ${patient.lastName}` : "Unknown",
+            patientId: b.patientId,
+            patientNumber: patient?.patientNumber ?? null,
+            isGuest: Boolean(b.isGuestBooking),
             physioName: physio ? `${physio.firstName} ${physio.lastName}` : "Unassigned",
             packageSessions: b.packageSessions ?? 1,
             sessionsRemaining: b.sessionsRemaining ?? b.packageSessions ?? 1,

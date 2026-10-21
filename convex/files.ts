@@ -1,4 +1,4 @@
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { mutation, query, action } from "./_generated/server";
 import { getAuthenticatedUser } from "./auth";
 import { Id } from "./_generated/dataModel";
@@ -413,6 +413,7 @@ export const savePatientDocument = mutation({
       jpg: "image/jpeg",
       jpeg: "image/jpeg",
       png: "image/png",
+      webp: "image/webp",
     };
 
     const rawType = fileMetadata.contentType || extToMime[ext] || "application/octet-stream";
@@ -422,18 +423,21 @@ export const savePatientDocument = mutation({
       "application/pdf",
       "image/jpeg",
       "image/png",
+      "image/webp",
       // Accept common variants
       "image/jpg",
       "application/x-pdf",
     ];
     if (!allowedTypes.includes(contentType)) {
-      throw new Error("Invalid file type. Only PDF, JPEG, and PNG files are allowed.");
+      await ctx.storage.delete(args.storageId);
+      throw new ConvexError("This file type isn't supported. Upload a PDF, JPEG, PNG or WebP file.");
     }
 
     // Validate file size (max 10MB)
     const maxSize = 10 * 1024 * 1024; // 10MB
     if (fileMetadata.size > maxSize) {
-      throw new Error("File size exceeds maximum limit of 10MB");
+      await ctx.storage.delete(args.storageId);
+      throw new ConvexError("This file is larger than 10 MB. Please upload a smaller file.");
     }
 
     return await ctx.db.insert("patientDocuments", {

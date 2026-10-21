@@ -78,13 +78,28 @@ export default defineSchema({
     linkedReferralId: v.optional(v.id("inboundReferrals")),
     referralAttributedAt: v.optional(v.number()),
     referralAttributionSource: v.optional(v.string()), // "referral_link" | "partner_referral" | "joy"
+
+    // Permanent Rehabify IDs (see helpers/rehabifyIds.ts). Assigned once, never changed or reused.
+    // A user can hold both: a patient who later becomes a physio keeps RH-P and gains RH-C.
+    patientNumber: v.optional(v.string()), // "RH-P-100001"
+    staffNumber: v.optional(v.string()), // "RH-C-100001"
   })
     .index("by_clerk_id", ["clerkId"])
     .index("by_email", ["email"])
     .index("by_role", ["role"]) // To query users by role (especially after onboarding)
     .index("by_clinic_id", ["clinicId"])
     .index("by_referred_partner", ["referredByPartnerCode"])
-    .index("by_phone_number", ["phoneNumber"]),
+    .index("by_phone_number", ["phoneNumber"])
+    .index("by_patient_number", ["patientNumber"])
+    .index("by_staff_number", ["staffNumber"])
+    .index("by_role_and_patient_number", ["role", "patientNumber"])
+    .index("by_role_and_staff_number", ["role", "staffNumber"]),
+
+  // One row per Rehabify ID kind; `next` is the number the next person or clinic receives.
+  idCounters: defineTable({
+    kind: v.union(v.literal("patient"), v.literal("staff"), v.literal("clinic")),
+    next: v.number(),
+  }).index("by_kind", ["kind"]),
 
   // Short-lived replay reservations for authenticated Joy service requests.
   // This deliberately stores no phone number or clinical request payload.
@@ -162,9 +177,12 @@ export default defineSchema({
     suspendedReason: v.optional(v.string()),
     suspendedAt: v.optional(v.number()),
     suspendedBy: v.optional(v.id("users")),
+    // Permanent Rehabify clinic ID, "RH-CL-100001". Assigned once, never changed or reused.
+    clinicNumber: v.optional(v.string()),
   })
     .index("by_owner_id", ["ownerId"])
-    .index("by_status", ["status"]),
+    .index("by_status", ["status"])
+    .index("by_clinic_number", ["clinicNumber"]),
 
   // Physiotherapist specific profiles/details
   physiotherapistProfiles: defineTable({
@@ -216,6 +234,21 @@ export default defineSchema({
       v.literal("home_visit"), v.literal("clinic"), v.literal("online")
     ))),
     joyServiceAreas: v.optional(v.array(v.string())),
+
+    // Rehabify network (pricing model of Oct 2026): the travel zones this physio covers for
+    // home visits, and their acceptance of the network terms (history in physioNetworkAgreements).
+    coveredZoneIds: v.optional(v.array(v.id("travelZones"))),
+    termsAcceptedAt: v.optional(v.number()), // platform terms & privacy policy, accepted at onboarding
+    networkTerms: v.optional(v.object({
+      version: v.string(),
+      acceptedAt: v.number(),
+      tariffVersion: v.optional(v.number()),
+      accessOptIn: v.boolean(), // open to selected Rehabify Access (reduced-fee) cases
+      accessMinimumPayouts: v.optional(v.array(v.object({
+        serviceId: v.string(),
+        minimumPayoutKobo: v.number(),
+      }))),
+    })),
 
     // Verification & Monetization
     verificationBadge: v.optional(v.object({
@@ -675,6 +708,14 @@ export default defineSchema({
     videoCallId: v.optional(v.id("videoCalls")), // Link to videoCalls table
     // True for entries created only to anchor a clinical note or follow-up log; not a real visit
     isRecordOnly: v.optional(v.boolean()),
+    // Who set the visit's current time; the other side confirms it (older rows: inferred)
+    requestedBy: v.optional(v.union(v.literal("patient"), v.literal("provider"))),
+    // Another time the physio has offered; the patient accepts (visit moves, confirmed) or declines
+    proposedStartTime: v.optional(v.number()),
+    proposedEndTime: v.optional(v.number()),
+    proposedBy: v.optional(v.id("users")),
+    proposedAt: v.optional(v.number()),
+    proposalNote: v.optional(v.string()),
   })
     .index("by_patient_id_and_time", ["patientId", "startTime"])
     .index("by_clinic_id_and_time", ["clinicId", "startTime"])
@@ -1163,6 +1204,9 @@ export default defineSchema({
     paymentMethod: v.optional(v.string()),
     paymentReference: v.optional(v.string()), // Paystack payment reference
     paymentLink: v.optional(v.string()), // Shareable Paystack checkout URL (clinic payment requests)
+    paymentLinkExpiresAt: v.optional(v.float64()), // the link is renewed after this (helpers/paymentLinks.ts)
+    paymentLinkAmount: v.optional(v.float64()), // kobo the link charges; a changed invoice gets a new link
+    refundedAmount: v.optional(v.float64()), // kobo refunded through Paystack (partial or full)
     paymentDate: v.optional(v.float64()),
     // Where an online payment's provider share went: split straight to the
     // clinic/physio bank by Paystack, or held by Rehabify for a manual transfer.
@@ -1173,6 +1217,9 @@ export default defineSchema({
     clinicSharePercent: v.optional(v.float64()),
     notes: v.optional(v.string()),
     relatedAppointmentIds: v.optional(v.array(v.id("appointments"))),
+    // Clinic invoices: whether the patient is the clinic's own or was referred by Rehabify,
+    // copied from the care relationship when the invoice is made (kept for billing reports)
+    patientSource: v.optional(v.union(v.literal("clinic_direct"), v.literal("rehabify_referral"))),
     physiotherapistShare: v.optional(v.float64()), // Amount physiotherapist gets after fees
     platformShare: v.optional(v.float64()), // Platform's fee portion
     feeBreakdown: v.optional(v.object({
@@ -2394,6 +2441,17 @@ export default defineSchema({
   })
     .index("by_user_id", ["userId"]),
 
+  // A physio's Google Calendar busy times (free/busy only: no titles or details), refreshed when
+  // a booking page opens, so bookable slots leave them out (convex/calendar/availability.ts)
+  googleBusyCache: defineTable({
+    userId: v.id("users"),
+    rangeStart: v.number(),
+    rangeEnd: v.number(),
+    blocks: v.array(v.object({ start: v.number(), end: v.number() })),
+    fetchedAt: v.number(),
+  })
+    .index("by_user_id", ["userId"]),
+
   userCalendars: defineTable({
     userId: v.id("users"),
     calendarId: v.string(),
@@ -2736,6 +2794,27 @@ export default defineSchema({
     guestPhone: v.optional(v.string()),
     guestName: v.optional(v.string()),
 
+    // Rehabify standard pricing (Oct 2026). A snapshot of the quote at booking time, so later
+    // tariff changes never alter what this patient pays or what the physio is owed.
+    serviceId: v.optional(v.string()), // lib/rehabify-services.ts BookableServiceId
+    pricingModel: v.optional(v.literal("rehabify_2026_10")),
+    tariffVersion: v.optional(v.number()),
+    basePriceKobo: v.optional(v.number()),
+    travelZoneId: v.optional(v.id("travelZones")),
+    travelZoneName: v.optional(v.string()),
+    travelArea: v.optional(v.string()),
+    travelSurchargeKobo: v.optional(v.number()),
+    payoutKobo: v.optional(v.number()), // the physio's fixed payout for the service
+    travelPhysioShareKobo: v.optional(v.number()),
+    paystackFeeEstimateKobo: v.optional(v.number()), // absorbed by Rehabify
+    paystackFeeActualKobo: v.optional(v.number()), // from the Paystack webhook
+    accessAwardId: v.optional(v.id("accessAwards")), // booked at a Rehabify Access rate
+    invoiceId: v.optional(v.id("invoices")), // created once paid (helpers/marketplaceInvoices.ts)
+    checkoutReferences: v.optional(v.array(v.string())), // MKT_ references started, for payment reconciliation
+    refundedAmountKobo: v.optional(v.number()), // refunded through Paystack (partial or full)
+    scheduledBy: v.optional(v.union(v.literal("patient"), v.literal("physiotherapist"))),
+    adminAttentionReason: v.optional(v.string()), // e.g. paid after the hold lapsed and the slot was taken
+
     createdAt: v.number(),
     updatedAt: v.number(),
   })
@@ -2746,7 +2825,139 @@ export default defineSchema({
     .index("by_payment_status", ["paymentStatus"])
     .index("by_session_date", ["sessionDate"])
     .index("by_origin_idempotency", ["originIdempotencyKey"])
-    .index("by_booking_code", ["bookingCode"]),
+    .index("by_booking_code", ["bookingCode"])
+    .index("by_appointment", ["appointmentId"])
+    .index("by_access_award", ["accessAwardId"]),
+
+  // Every Paystack refund applied (refund.processed), so repeats are ignored and partial
+  // refunds add up per payment. See convex/helpers/paymentRefunds.ts.
+  paymentRefunds: defineTable({
+    refundKey: v.string(), // Paystack refund id (or reference + amount when absent)
+    reference: v.string(), // the original payment's reference
+    kind: v.string(), // marketplace | invoice | learn | verification | specialist_review | unknown
+    amountKobo: v.number(),
+    currency: v.optional(v.string()),
+    full: v.boolean(), // this refund brought the total to the whole amount paid
+    createdAt: v.number(),
+  })
+    .index("by_refund_key", ["refundKey"])
+    .index("by_reference", ["reference"]),
+
+  // ─── Rehabify standard pricing (Oct 2026) ─────────────────────────────────
+  // Versioned price and payout schedule: every admin save inserts a new row; the highest
+  // version is in force. Code defaults (lib/rehabify-services.ts) apply until the first save.
+  serviceTariffs: defineTable({
+    version: v.number(),
+    tariffs: v.array(v.object({
+      serviceId: v.string(),
+      priceKobo: v.number(),
+      payoutKobo: v.number(),
+      assistedPriceKobo: v.optional(v.number()),
+      assistedPayoutKobo: v.optional(v.number()),
+      travelApplies: v.boolean(),
+      active: v.boolean(),
+    })),
+    note: v.optional(v.string()),
+    createdAt: v.number(),
+    createdBy: v.optional(v.string()),
+  }).index("by_version", ["version"]),
+
+  // Home-visit travel zones: named areas per city, each with a fixed surcharge.
+  travelZones: defineTable({
+    city: v.string(),
+    name: v.string(),
+    areas: v.array(v.string()),
+    surchargeKobo: v.number(),
+    physioTravelSharePercent: v.number(), // share of the surcharge paid to the physio
+    active: v.boolean(),
+    sortOrder: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    updatedBy: v.optional(v.string()),
+  }).index("by_city", ["city"]),
+
+  // Network-wide pricing controls (latest row wins).
+  rehabifyPricingSettings: defineTable({
+    accessCapacity: v.number(), // active Rehabify Access places
+    accessIntakeOpen: v.boolean(),
+    networkTermsEnforcedAt: v.optional(v.number()), // from then, unaccepted physios aren't bookable
+    updatedAt: v.number(),
+    updatedBy: v.optional(v.string()),
+  }),
+
+  // Every acceptance of the Rehabify network terms (the profile keeps the latest).
+  physioNetworkAgreements: defineTable({
+    physiotherapistId: v.id("users"),
+    version: v.string(),
+    tariffVersion: v.optional(v.number()),
+    accessOptIn: v.boolean(),
+    accessMinimumPayouts: v.optional(v.array(v.object({
+      serviceId: v.string(),
+      minimumPayoutKobo: v.number(),
+    }))),
+    acceptedAt: v.number(),
+  }).index("by_physiotherapist", ["physiotherapistId"]),
+
+  // Rehabify Access (assisted care): applications for reduced-fee care.
+  assistedCareApplications: defineTable({
+    patientId: v.id("users"),
+    serviceNeeded: v.string(), // a service id, or "not_sure"
+    isCurrentPatient: v.boolean(),
+    currentPhysiotherapistId: v.optional(v.id("users")),
+    situation: v.string(), // lib/rehabify-access.ts SITUATIONS
+    incomeBand: v.string(), // INCOME_BANDS (bands only, never exact figures)
+    alternativeFunding: v.string(), // FUNDING_OPTIONS
+    clinicalNeed: v.string(),
+    statement: v.optional(v.string()),
+    city: v.optional(v.string()),
+    area: v.optional(v.string()),
+    phone: v.optional(v.string()),
+    consentAt: v.number(),
+    status: v.union(
+      v.literal("submitted"),
+      v.literal("under_review"),
+      v.literal("approved"),
+      v.literal("declined"),
+      v.literal("waitlisted"),
+      v.literal("withdrawn")
+    ),
+    reviewChecklist: v.optional(v.object({
+      identityVerified: v.boolean(),
+      financialNeedConfirmed: v.boolean(),
+      clinicalNeedConfirmed: v.boolean(),
+      alternativesExplored: v.boolean(),
+    })),
+    reviewNotes: v.optional(v.string()),
+    decisionReason: v.optional(v.string()),
+    reviewedBy: v.optional(v.id("users")),
+    reviewedAt: v.optional(v.number()),
+    awardId: v.optional(v.id("accessAwards")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_patient", ["patientId"])
+    .index("by_status", ["status"]),
+
+  // An approved Rehabify Access arrangement: which services, how many sessions, with whom.
+  accessAwards: defineTable({
+    applicationId: v.id("assistedCareApplications"),
+    patientId: v.id("users"),
+    physiotherapistId: v.id("users"),
+    serviceIds: v.array(v.string()),
+    sessionsGranted: v.number(),
+    sessionsUsed: v.number(),
+    status: v.union(v.literal("active"), v.literal("completed"), v.literal("expired"), v.literal("revoked")),
+    startsAt: v.number(),
+    expiresAt: v.number(),
+    reassessAt: v.optional(v.number()),
+    note: v.optional(v.string()),
+    approvedBy: v.id("users"),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_patient", ["patientId"])
+    .index("by_status", ["status"])
+    .index("by_physiotherapist", ["physiotherapistId"]),
 
   // A durable record exists before a Paystack initialization request. It is
   // intentionally distinct from the booking so abandoned/failed attempts are
@@ -2770,7 +2981,8 @@ export default defineSchema({
   })
     .index("by_booking", ["bookingId"])
     .index("by_reference", ["reference"])
-    .index("by_origin_idempotency", ["originIdempotencyKey"]),
+    .index("by_origin_idempotency", ["originIdempotencyKey"])
+    .index("by_status_created", ["status", "createdAt"]),
 
   // Durable RH-to-Joy event outbox. Delivery is tracked separately from the
   // business transaction so a transient Joy outage never loses confirmation.
@@ -2923,7 +3135,7 @@ export default defineSchema({
     originIdempotencyKey: v.string(),
     createdAt: v.number(),
     updatedAt: v.number(),
-  }).index("by_review", ["reviewId"]).index("by_reference", ["reference"]).index("by_origin_idempotency", ["originIdempotencyKey"]),
+  }).index("by_review", ["reviewId"]).index("by_reference", ["reference"]).index("by_origin_idempotency", ["originIdempotencyKey"]).index("by_status_created", ["status", "createdAt"]),
 
   // Marketplace Transactions (verification badges, featured listings, commissions)
   marketplaceTransactions: defineTable({
@@ -3755,6 +3967,8 @@ export default defineSchema({
       frequency: v.optional(v.string()),
       // Instructions for an exercise, or the text of an education item.
       note: v.optional(v.string()),
+      // Education from the Rehabify Library: libraryResources.key (title, guide, link or video).
+      resourceKey: v.optional(v.string()),
     })),
     status: v.union(v.literal("active"), v.literal("archived")),
     createdAt: v.number(),
@@ -3777,6 +3991,8 @@ export default defineSchema({
     source: v.union(v.literal("app"), v.literal("link")),
     linkId: v.optional(v.id("exerciseShareLinks")),
     createdAt: v.number(),
+    // A clinician has seen a high-pain log (it leaves Needs attention)
+    reviewedAt: v.optional(v.number()),
   })
     .index("by_program", ["programId", "createdAt"])
     .index("by_patient", ["patientId", "createdAt"]),
@@ -3954,7 +4170,8 @@ export default defineSchema({
     .index("by_cohort", ["cohortId"])
     .index("by_cohort_status", ["cohortId", "status"])
     .index("by_cohort_email", ["cohortId", "email"])
-    .index("by_user", ["userId"]),
+    .index("by_user", ["userId"])
+    .index("by_status", ["status"]),
 
   // People who asked to hear about the next cohort while registration was closed.
   learnInterest: defineTable({

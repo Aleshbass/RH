@@ -46,7 +46,9 @@ AXIAL = {
     "spine_rot":       (("Spine", "Spine1", "Spine2"), Z, +1),   # turn the chest to the wearer's left
     "neck_flex":       (("Neck",), X, +1),                       # lower neck forward
     "neck_side":       (("Neck", "Head"), Y, -1),                # ear towards the wearer's left shoulder
+    "neck_rot":        (("Neck", "Head"), Z, +1),                # turn the head to the wearer's left
     "head_flex":       (("Head",), X, +1),                       # nod (upper neck)
+    "upper_back_flex": (("Spine1", "Spine2"), X, +1),            # round the upper back (negative = extend)
 }
 
 
@@ -71,19 +73,27 @@ def side_name(side):
     return "Left" if side == "L" else "Right"
 
 
-def arm_rotation(side, flex=0.0, abd=0.0, ext_rot=0.0, horiz_abd=None):
+def arm_rotation(side, flex=0.0, abd=0.0, ext_rot=0.0, horiz=0.0, plane=0.0):
     """World rotation for the upper arm, starting from hanging by the side.
 
     flex: forward raise in the sagittal plane (0 = by the side, 90 = forward, 180 = overhead).
-    abd: sideways raise in the frontal plane.
+    abd: sideways raise in the frontal plane, or in a plane turned `plane` degrees forwards
+    (about 35 = the scapular plane of scaption).
     ext_rot: external rotation about the arm's long axis (palm turns forward).
+    horiz: turn about the trunk's vertical axis, applied last: positive takes a raised arm
+    backwards (horizontal abduction), negative brings it across the chest.
     """
     s = 1 if side == "L" else -1
     down = _rot(Y, s * ARM_DOWN_DEG)
     twist = _rot(X, -ext_rot)                # about the T-pose long axis (same sign both sides)
-    raise_side = _rot(Y, -s * abd)
+    if plane:
+        a = math.radians(plane)
+        raise_side = Quaternion(-s * math.cos(a) * Y - math.sin(a) * X, math.radians(abd))
+    else:
+        raise_side = _rot(Y, -s * abd)
     raise_fwd = _rot(X, -flex)
-    return raise_fwd @ raise_side @ down @ twist
+    turn = _rot(Z, s * horiz)
+    return turn @ raise_fwd @ raise_side @ down @ twist
 
 
 def pose_quats(p):
@@ -380,7 +390,7 @@ def mirror(p):
             out[k[:-2] + "_R"] = v
         elif k.endswith("_R"):
             out[k[:-2] + "_L"] = v
-        elif k in ("spine_side", "spine_rot", "neck_side"):
+        elif k in ("spine_side", "spine_rot", "neck_side", "neck_rot"):
             out[k] = -v
         elif k == "root":
             out[k] = [(ax, -deg if ax in ("y", "z") else deg) for ax, deg in v]

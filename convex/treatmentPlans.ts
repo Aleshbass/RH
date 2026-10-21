@@ -1,6 +1,7 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 import { getAuthenticatedUser } from "./auth";
+import { findRelationship } from "./helpers/careAccess";
 import { internal } from "./_generated/api";
 
 /**
@@ -59,12 +60,7 @@ export const createTreatmentPlan = mutation({
     }
 
     // Verify patient relationship
-    const relationship = await ctx.db
-      .query("patientPhysiotherapistRelationships")
-      .withIndex("by_patient_and_physiotherapist", q =>
-        q.eq("patientId", args.patientId).eq("physiotherapistId", physiotherapist._id)
-      )
-      .unique();
+    const relationship = await findRelationship(ctx, physiotherapist._id, args.patientId);
 
     if (!relationship || relationship.status !== "active") {
       throw new Error("No active relationship with this patient");
@@ -161,12 +157,7 @@ export const getPatientTreatmentPlans = query({
     // Check if user has access to this patient
     let hasAccess = false;
     if (currentUser.role === "physiotherapist") {
-      const relationship = await ctx.db
-        .query("patientPhysiotherapistRelationships")
-        .withIndex("by_patient_and_physiotherapist", q =>
-          q.eq("patientId", args.patientId).eq("physiotherapistId", currentUser._id)
-        )
-        .unique();
+      const relationship = await findRelationship(ctx, currentUser._id, args.patientId);
       hasAccess = relationship?.status === "active";
     } else if (currentUser.role === "patient") {
       hasAccess = currentUser._id === args.patientId;
@@ -587,12 +578,7 @@ export const duplicateTreatmentPlan = mutation({
     const newPatientId = args.newPatientId || originalPlan.patientId;
 
     // Verify patient relationship for new patient
-    const relationship = await ctx.db
-      .query("patientPhysiotherapistRelationships")
-      .withIndex("by_patient_and_physiotherapist", q =>
-        q.eq("patientId", newPatientId).eq("physiotherapistId", physiotherapist._id)
-      )
-      .unique();
+    const relationship = await findRelationship(ctx, physiotherapist._id, newPatientId);
 
     if (!relationship || relationship.status !== "active") {
       throw new Error("No active relationship with target patient");
@@ -1160,12 +1146,7 @@ export const assignTemplateToPatient = mutation({
     }
 
     // Verify active relationship with patient
-    const relationship = await ctx.db
-      .query("patientPhysiotherapistRelationships")
-      .withIndex("by_patient_and_physiotherapist", (q) =>
-        q.eq("patientId", args.patientId).eq("physiotherapistId", physiotherapist._id)
-      )
-      .unique();
+    const relationship = await findRelationship(ctx, physiotherapist._id, args.patientId);
     if (!relationship || relationship.status !== "active") {
       throw new Error("No active relationship with this patient");
     }

@@ -1,6 +1,11 @@
 import { cronJobs } from "convex/server";
 import { triggerRetryProcessing } from "./helpers/triggerRetryProcessing";
-import { internal } from "./_generated/api";
+import * as generatedApi from "./_generated/api";
+
+// The generated api types are already `any` (a circular reference in _generated/api.d.ts);
+// typing it here keeps the app-wide tsc under TypeScript's instantiation depth limit.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const internal: any = (generatedApi as any).internal;
 
 const crons = cronJobs();
 
@@ -100,6 +105,30 @@ crons.interval(
   "partner-webhook-delivery-sweeper",
   { minutes: 5 },
   internal.partnerWebhooks.sweepDeliveries,
+  {}
+);
+
+// Rehabify IDs: number any patient, clinician or clinic a creation path missed.
+crons.interval(
+  "assign-missing-rehabify-ids",
+  { minutes: 30 },
+  internal.rehabifyIds.assignMissing,
+  {}
+);
+
+// Paystack safety net: settle checkouts that were paid but whose webhook never arrived.
+crons.interval(
+  "reconcile-paystack-payments",
+  { minutes: 10 },
+  internal.paymentReconciliation.reconcilePaystackPayments,
+  {}
+);
+
+// Marketplace: close web bookings left unpaid for a day (their slot holds have lapsed).
+crons.interval(
+  "expire-unpaid-marketplace-bookings",
+  { hours: 1 },
+  internal.marketplace.booking.expireUnpaidBookings,
   {}
 );
 
