@@ -129,6 +129,7 @@ import type * as helpers_partnerReferralCore from "../helpers/partnerReferralCor
 import type * as helpers_partnerShared from "../helpers/partnerShared.js";
 import type * as helpers_paymentLinks from "../helpers/paymentLinks.js";
 import type * as helpers_paymentRefunds from "../helpers/paymentRefunds.js";
+import type * as helpers_paystackMode from "../helpers/paystackMode.js";
 import type * as helpers_paystackSignature from "../helpers/paystackSignature.js";
 import type * as helpers_rehabifyIdFormat from "../helpers/rehabifyIdFormat.js";
 import type * as helpers_rehabifyIds from "../helpers/rehabifyIds.js";
@@ -356,6 +357,7 @@ declare const fullApi: ApiFromModules<{
   "helpers/partnerShared": typeof helpers_partnerShared;
   "helpers/paymentLinks": typeof helpers_paymentLinks;
   "helpers/paymentRefunds": typeof helpers_paymentRefunds;
+  "helpers/paystackMode": typeof helpers_paystackMode;
   "helpers/paystackSignature": typeof helpers_paystackSignature;
   "helpers/rehabifyIdFormat": typeof helpers_rehabifyIdFormat;
   "helpers/rehabifyIds": typeof helpers_rehabifyIds;

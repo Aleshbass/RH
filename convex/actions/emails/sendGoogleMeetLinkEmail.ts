@@ -22,7 +22,6 @@ export const sendGoogleMeetLinkEmail = internalAction({
     }),
     handler: async (_ctx, args) => {
         try {
-            console.log('[EMAIL SERVICE] Sending Google Meet link to', args.to);
 
             const result = await sendEmail({
                 to: args.to,
@@ -36,7 +35,6 @@ export const sendGoogleMeetLinkEmail = internalAction({
                 },
             });
 
-            console.log('[EMAIL SERVICE] Google Meet link email sent successfully, messageId:', result.messageId);
 
             return {
                 success: result.success,

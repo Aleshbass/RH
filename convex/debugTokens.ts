@@ -7,21 +7,13 @@ export const debugCallTokens = query({
   handler: async (ctx, args) => {
     // Exposes call room details and participant tokens: admins only.
     await ensureUserRole(ctx, ["admin"]);
-    console.log("🔍 DEBUG: Checking tokens for call:", args.callId);
     
     // Get the call
     const call = await ctx.db.get(args.callId);
     if (!call) {
-      console.log("❌ Call not found");
       return { error: "Call not found" };
     }
     
-    console.log("📞 Call found:", {
-      id: call._id,
-      dailyRoomName: call.dailyRoomName,
-      dailyRoomUrl: call.dailyRoomUrl,
-      createdAt: call._creationTime
-    });
     
     // Get all participants for this call
     const participants = await ctx.db
@@ -29,7 +21,6 @@ export const debugCallTokens = query({
       .withIndex("by_call_id", (q) => q.eq("callId", args.callId))
       .collect();
     
-    console.log("👥 Participants found:", participants.length);
     
     const participantDetails = participants.map(p => ({
       id: p._id,
@@ -41,7 +32,6 @@ export const debugCallTokens = query({
       createdAt: p._creationTime
     }));
     
-    console.log("📊 Participant token details:", participantDetails);
     
     return {
       call: {
@@ -68,11 +58,6 @@ export const debugUserParticipation = query({
       return { error: "Not authenticated" };
     }
     
-    console.log("🔍 DEBUG: Checking user participation for call:", args.callId);
-    console.log("👤 Current user identity:", {
-      subject: identity.subject,
-      email: identity.email
-    });
     
     // Find user in database
     const user = await ctx.db
@@ -81,16 +66,9 @@ export const debugUserParticipation = query({
       .unique();
     
     if (!user) {
-      console.log("❌ User not found in database");
       return { error: "User not found" };
     }
     
-    console.log("✅ User found:", {
-      id: user._id,
-      email: user.email,
-      firstName: user.firstName,
-      lastName: user.lastName
-    });
     
     // Find participant record
     const participant = await ctx.db
@@ -101,17 +79,9 @@ export const debugUserParticipation = query({
       .unique();
     
     if (!participant) {
-      console.log("❌ Participant record not found");
       return { error: "Participant record not found" };
     }
     
-    console.log("✅ Participant record found:", {
-      id: participant._id,
-      role: participant.role,
-      hasToken: !!participant.dailyMeetingToken,
-      tokenLength: participant.dailyMeetingToken?.length || 0,
-      tokenExpiration: participant.dailyTokenExpiration
-    });
     
     return {
       user: {

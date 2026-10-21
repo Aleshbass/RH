@@ -154,7 +154,6 @@ export const processSingleNotificationRetry = internalMutation({
       // If email is required, schedule it
       if (retry.sendEmail) {
         // Email processing would be handled here when email service is implemented
-        console.log(`Email would be sent for notification ${notificationId}`);
       }
       
       // Mark as completed
@@ -375,7 +374,6 @@ export const cleanupRetryQueues = internalMutation({
       totalDeleted++;
     }
 
-    console.log(`Cleanup completed. Deleted ${totalDeleted} old retry queue entries.`);
     return { deletedCount: totalDeleted };
   },
 });

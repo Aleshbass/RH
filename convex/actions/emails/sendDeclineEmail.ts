@@ -38,14 +38,13 @@ export const sendDeclineEmail = internalAction({
       });
 
       if (result.success) {
-        console.log(`Decline email sent successfully to ${userEmail}, messageId: ${result.messageId}`);
         return { success: true, messageId: result.messageId };
       } else {
-        console.error(`Failed to send decline email to ${userEmail}:`, result.error);
+        console.error("Failed to send decline email:", result.error);
         return { success: false, error: result.error };
       }
     } catch (error) {
-      console.error(`Exception sending decline email to ${userEmail}:`, error);
+      console.error("Exception sending decline email:", error);
       return { success: false, error: String(error) };
     }
   },

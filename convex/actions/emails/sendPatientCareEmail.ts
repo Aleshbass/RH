@@ -32,7 +32,7 @@ export const sendPatientCareEmail = internalAction({
   handler: async (_ctx, args) => {
     const apiKey = process.env.RESEND_API_KEY;
     if (!apiKey) {
-      console.error("[PATIENT CARE EMAIL] RESEND_API_KEY is not set; email not sent:", args.subject);
+      console.error("[PATIENT CARE EMAIL] RESEND_API_KEY is not set; email not sent");
       return { success: false };
     }
 

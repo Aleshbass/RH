@@ -201,10 +201,6 @@ export const createCalendarEventInternal = internalAction({
 
 async function createCalendarEventForUser(ctx: any, args: any) {
   try {
-    console.log("[CALENDAR SERVICE] Starting calendar event creation");
-    console.log("[CALENDAR SERVICE] User ID:", args.userId);
-    console.log("[CALENDAR SERVICE] Appointment ID:", args.appointmentId);
-    console.log("[CALENDAR SERVICE] Create Meet Link:", args.createMeetLink);
 
     const created: any = await ctx.runAction(
       internal.calendar.nodeActions.createEvent,

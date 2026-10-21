@@ -56,7 +56,7 @@ export const sendPendingInvitationReminders = internalAction({
 
         sent += 1;
       } catch (e) {
-        console.error('Failed to send invitation reminder for code', inv.code, e);
+        console.error('Failed to send invitation reminder for invitation', inv._id, e);
       }
     }
 

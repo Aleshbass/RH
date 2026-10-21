@@ -184,7 +184,6 @@ export const processEmailForNotification = internalAction({
             });
           } else {
             // For other roles, skip with a no-op success to avoid noise
-            console.log(`Skipping email for appointment_cancelled for role ${user.role}`);
             return { success: true, message: "No email routing for this role" } as any;
           }
 
@@ -205,7 +204,6 @@ export const processEmailForNotification = internalAction({
 
           // Skip sending reminder if appointment has already passed
           if (appointmentDate < Date.now()) {
-            console.log(`Skipping appointment reminder - appointment ${notification.payload?.data?.appointmentId} has already passed`);
             return { success: true, message: "Appointment has already passed, skipping reminder" } as any;
           }
 
@@ -238,7 +236,6 @@ export const processEmailForNotification = internalAction({
 
         // Add other notification types as needed
         default:
-          console.log(`Email not configured for notification type: ${notification.type}`);
           return { success: true, message: "Email not configured for this notification type" };
       }
 
@@ -250,7 +247,6 @@ export const processEmailForNotification = internalAction({
           deliveredAt: Date.now(),
         });
 
-        console.log(`Email sent successfully for notification ${args.notificationId}`);
         return { success: true, messageId: emailResult.messageId || undefined };
       } else {
         console.error(`Email failed for notification ${args.notificationId}:`, emailResult.error);

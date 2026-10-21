@@ -302,8 +302,6 @@ export const createAppointment = mutation({
           });
         } else if (wantsGoogleMeet) {
           // Schedule Google Meet link generation via Google Calendar API
-          console.log("[DEBUG] Scheduling Google Meet link creation for appointment:", appointmentId);
-          console.log("[DEBUG] User ID:", user._id);
 
           await ctx.scheduler.runAfter(0, internal.calendar.service.createCalendarEventAsync, {
             userId: user._id,
@@ -316,7 +314,6 @@ export const createAppointment = mutation({
             createMeetLink: true,
           });
 
-          console.log("[DEBUG] Calendar event creation scheduled");
         }
       } catch (error) {
         console.error('Failed to create video call for appointment:', error);
@@ -1539,7 +1536,6 @@ export const requestAppointment = mutation({
 
     if (args.appointmentType === 'telehealth' || !args.appointmentType) {
       // Schedule Google Meet link generation
-      console.log("[DEBUG] Scheduling Google Meet link creation for patient appointment:", appointmentId);
 
       await ctx.scheduler.runAfter(0, internal.calendar.service.createCalendarEventAsync, {
         userId: args.physiotherapistId,
@@ -1552,7 +1548,6 @@ export const requestAppointment = mutation({
         createMeetLink: true,
       });
 
-      console.log("[DEBUG] Calendar event creation scheduled for patient appointment");
     }
 
     // Determine clinic info for emails

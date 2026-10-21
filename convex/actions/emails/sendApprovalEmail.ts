@@ -37,14 +37,13 @@ export const sendApprovalEmail = internalAction({
       });
 
       if (result.success) {
-        console.log(`Approval email sent successfully to ${userEmail}, messageId: ${result.messageId}`);
         return { success: true, messageId: result.messageId };
       } else {
-        console.error(`Failed to send approval email to ${userEmail}:`, result.error);
+        console.error("Failed to send approval email:", result.error);
         return { success: false, error: result.error };
       }
     } catch (error) {
-      console.error(`Exception sending approval email to ${userEmail}:`, error);
+      console.error("Exception sending approval email:", error);
       return { success: false, error: String(error) };
     }
   },

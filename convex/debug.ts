@@ -259,7 +259,6 @@ export const fixClinicOwnerProfiles = mutation({
         .filter((q) => q.eq(q.field("role"), "clinic_owner"))
         .collect();
       
-      console.log(`Found ${clinicOwners.length} clinic owners`);
       
       for (const owner of clinicOwners) {
         try {
@@ -267,7 +266,6 @@ export const fixClinicOwnerProfiles = mutation({
           if (owner.clinicOwnerProfileId) {
             const existingProfile = await ctx.db.get(owner.clinicOwnerProfileId);
             if (existingProfile) {
-              console.log(`Clinic owner ${owner._id} already has profile ${owner.clinicOwnerProfileId}`);
               continue;
             }
           }
@@ -295,7 +293,6 @@ export const fixClinicOwnerProfiles = mutation({
           });
           
           profilesCreated++;
-          console.log(`Created profile ${profileId} for clinic owner ${owner._id}`);
           
         } catch (error) {
           const errorMsg = `Error processing clinic owner ${owner._id}: ${error instanceof Error ? error.message : String(error)}`;
@@ -555,7 +552,6 @@ export const createMissingClinics = mutation({
         .filter((q) => q.eq(q.field("role"), "clinic_owner"))
         .collect();
       
-      console.log(`Found ${clinicOwners.length} clinic owners`);
       
       for (const owner of clinicOwners) {
         try {
@@ -566,7 +562,6 @@ export const createMissingClinics = mutation({
             .first();
           
           if (existingClinic) {
-            console.log(`Clinic owner ${owner._id} already has clinic ${existingClinic._id}`);
             continue;
           }
           
@@ -587,7 +582,6 @@ export const createMissingClinics = mutation({
           });
           
           clinicsCreated++;
-          console.log(`Created clinic ${clinicId} for clinic owner ${owner._id}`);
           
         } catch (error) {
           const errorMsg = `Error processing clinic owner ${owner._id}: ${error instanceof Error ? error.message : String(error)}`;

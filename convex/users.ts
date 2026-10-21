@@ -138,7 +138,7 @@ export const updateOrCreateUser = internalMutation({
     const email = primaryEmailObj?.email_address;
 
     if (!email) {
-      console.warn(`Primary email not found for Clerk user ${clerkId}. Webhook data:`, args.clerkUserData);
+      console.warn(`Primary email not found for Clerk user ${clerkId}`);
       // Depending on your schema, if email is mandatory and not found, you might throw an error here.
       // For example: throw new Error(`Primary email is required but not found for Clerk user ${clerkId}`);
     }
@@ -498,7 +498,6 @@ export const completeUserProfile = mutation({
       throw new Error("User not authenticated.");
     }
     const clerkId = identity.subject;
-    console.log("[completeUserProfile] Authenticated user clerkId:", clerkId);
 
     const user = await ctx.db
       .query("users")
@@ -509,7 +508,6 @@ export const completeUserProfile = mutation({
       console.error("[completeUserProfile] Error: User record not found for clerkId:", clerkId);
       throw new Error("User record not found. Please try signing out and in again.");
     }
-    console.log("[completeUserProfile] Found user:", user);
 
     if (user.onboarded && user.role && user.role !== args.role) {
       console.error(`[completeUserProfile] Error: Role change from ${user.role} to ${args.role} is not permitted.`);
@@ -529,17 +527,13 @@ export const completeUserProfile = mutation({
     };
     if (args.firstName) userUpdatePayload.firstName = args.firstName;
     if (args.lastName) userUpdatePayload.lastName = args.lastName;
-    console.log("[completeUserProfile] Initial userUpdatePayload:", userUpdatePayload);
 
     switch (args.role) {
       case "physiotherapist":
-        console.log("[completeUserProfile] Processing physiotherapist role.");
         const physioData = args.profileData as typeof physiotherapistProfileDataValidator.type;
-        console.log("[completeUserProfile] Physiotherapist profile data from args:", physioData);
         let physioProfileId: Id<"physiotherapistProfiles">;
         try {
           if (user.physiotherapistProfileId) {
-            console.log("[completeUserProfile] Existing physiotherapistProfileId found:", user.physiotherapistProfileId, "Updating profile.");
             
             const existingProfile = await ctx.db.get(user.physiotherapistProfileId);
             
@@ -550,9 +544,7 @@ export const completeUserProfile = mutation({
               offersOnlineSessions: physioData.offersOnlineSessions ?? existingProfile?.offersOnlineSessions ?? true,
             });
             physioProfileId = user.physiotherapistProfileId;
-            console.log("[completeUserProfile] Physiotherapist profile updated. ID:", physioProfileId);
           } else {
-            console.log("[completeUserProfile] No existing physiotherapistProfileId. Creating new profile.");
             physioProfileId = await ctx.db.insert("physiotherapistProfiles", {
               userId: user._id,
               ...physioData,
@@ -560,10 +552,8 @@ export const completeUserProfile = mutation({
               offersInPersonSessions: physioData.offersInPersonSessions ?? true,
               offersOnlineSessions: physioData.offersOnlineSessions ?? true,
             });
-            console.log("[completeUserProfile] New physiotherapist profile created. ID:", physioProfileId);
           }
           userUpdatePayload.physiotherapistProfileId = physioProfileId;
-          console.log("[completeUserProfile] physiotherapistProfileId set in userUpdatePayload:", physioProfileId);
         } catch (error) {
           console.error("[completeUserProfile] Error creating/updating physiotherapist profile:", error);
           throw error; // Re-throw to ensure the mutation fails
@@ -594,7 +584,6 @@ export const completeUserProfile = mutation({
         break;
 
       case "clinic_owner":
-        console.log("[completeUserProfile] Processing clinic_owner role.");
 
         // Get the clinic owned by this user
         let clinic = await ctx.db
@@ -635,7 +624,6 @@ export const completeUserProfile = mutation({
 
         if (user.clinicOwnerProfileId) {
           // Update existing profile
-          console.log("[completeUserProfile] Updating existing clinic owner profile:", user.clinicOwnerProfileId);
           await ctx.db.patch(user.clinicOwnerProfileId, {
             clinicId: clinic._id,
             ...profileFields,
@@ -643,13 +631,11 @@ export const completeUserProfile = mutation({
           clinicOwnerProfileId = user.clinicOwnerProfileId;
         } else {
           // Create new profile
-          console.log("[completeUserProfile] Creating new clinic owner profile for user:", user._id);
           clinicOwnerProfileId = await ctx.db.insert("clinicOwnerProfiles", {
             userId: user._id,
             clinicId: clinic._id,
             ...profileFields,
           });
-          console.log("[completeUserProfile] New clinic owner profile created. ID:", clinicOwnerProfileId);
         }
 
         // Update Clinic with Location and Images
@@ -663,11 +649,9 @@ export const completeUserProfile = mutation({
         }
 
         userUpdatePayload.clinicOwnerProfileId = clinicOwnerProfileId;
-        console.log("[completeUserProfile] clinicOwnerProfileId set in userUpdatePayload:", clinicOwnerProfileId);
         break;
 
       case "family_member":
-        console.log("[completeUserProfile] Processing family_member role.");
         // Add specific logic and logging if necessary
         break;
 
@@ -676,19 +660,16 @@ export const completeUserProfile = mutation({
         throw new Error("Invalid role specified.");
     }
 
-    console.log("[completeUserProfile] Final userUpdatePayload before patching user:", userUpdatePayload);
     try {
       await ctx.db.patch(user._id, userUpdatePayload);
-      console.log("[completeUserProfile] User record patched successfully. User ID:", user._id);
     } catch (error) {
-      console.error("[completeUserProfile] Error patching user record:", error, "Payload:", userUpdatePayload);
+      console.error("[completeUserProfile] Error patching user record:", error, "fields:", Object.keys(userUpdatePayload));
       throw error; // Re-throw to ensure the mutation fails
     }
     await ensureUserNumbers(ctx, user._id);
 
     // For physiotherapists and clinic owners, create approval request after final step
     if (args.finalStep && (args.role === "physiotherapist" || args.role === "clinic_owner")) {
-      console.log("[completeUserProfile] Creating approval request for", args.role);
 
       // Check if approval request already exists
       const existingApproval = await ctx.db
@@ -709,7 +690,6 @@ export const completeUserProfile = mutation({
             : ["Business License", "Tax Registration", "Owner Identification"]
         });
         isNewSubmission = true;
-        console.log("[completeUserProfile] Approval request created for user:", user._id);
       } else if (existingApproval.status === "declined") {
         await ctx.db.patch(existingApproval._id, {
           status: "pending_review",
@@ -749,7 +729,6 @@ export const completeUserProfile = mutation({
         },
         createdAt: Date.now(),
       });
-      console.log("[completeUserProfile] Pending review notification created for user:", user._id);
 
       // Notify all admins in-app and via email that approval is required
       try {
@@ -764,7 +743,6 @@ export const completeUserProfile = mutation({
         const adminActionPath = `/admin/users/${user._id}`;
         const adminDashboardLink = `${appUrl}${adminActionPath}`;
 
-        console.log(`[completeUserProfile] Notifying ${admins.length} admin(s) about ${roleLabel} onboarding completion for ${displayName}`);
 
         for (const admin of admins) {
           // In-app notification to admin
@@ -790,7 +768,6 @@ export const completeUserProfile = mutation({
 
           // Email to admin (if email exists)
           if (admin.email) {
-            console.log(`[completeUserProfile] Scheduling email to admin ${admin.email} for ${displayName} onboarding approval`);
             await ctx.scheduler.runAfter(0, internal.actions.emails.sendOnboardingNotificationEmail.sendOnboardingNotificationEmail, {
               adminEmail: admin.email,
               userName: `${displayName} (${roleLabel})`,
@@ -803,7 +780,6 @@ export const completeUserProfile = mutation({
           }
         }
 
-        console.log(`[completeUserProfile] Admin notifications complete for ${displayName}`);
       } catch (notifyError) {
         console.error("[completeUserProfile] Failed to notify admins of onboarding completion:", notifyError);
         // Log the error details for debugging
@@ -900,7 +876,6 @@ export const deleteUser = internalMutation({
       //   await ctx.db.delete(existingUser.patientProfileId);
       // }
       await ctx.db.delete(existingUser._id);
-      console.log(`User with Clerk ID ${args.clerkId} deleted successfully.`);
     } else {
       console.warn(`User with Clerk ID ${args.clerkId} not found for deletion.`);
     }
@@ -1681,7 +1656,6 @@ Welcome to Rehabify Health!
 
     // Send approval email using existing email service
     if (user.email) {
-      console.log(`Approval email would be sent to: ${user.email}`);
 
       // Schedule email sending using the approval email action
       try {
@@ -1694,7 +1668,6 @@ Welcome to Rehabify Health!
           userId: args.userId,
           comments: args.comments,
         });
-        console.log(`Approval notification with email scheduled for: ${user.email}`);
       } catch (emailError) {
         console.error(`Failed to schedule approval notification for ${user.email}:`, emailError);
         // Don't fail the entire approval process if email fails
@@ -1776,7 +1749,6 @@ export const declineUser = mutation({
 
     // Send decline email using existing email service
     if (user.email) {
-      console.log(`Decline email would be sent to: ${user.email} with comments: ${args.comments}`);
 
       // Schedule email sending using the decline email action
       try {
@@ -1789,7 +1761,6 @@ export const declineUser = mutation({
           userId: args.userId,
           reason: args.comments,
         });
-        console.log(`Decline notification with email scheduled for: ${user.email}`);
       } catch (emailError) {
         console.error(`Failed to schedule decline notification for ${user.email}:`, emailError);
         // Don't fail the entire decline process if email fails
@@ -1893,9 +1864,7 @@ export const deleteTestUser = internalMutation({
 
     if (user) {
       await ctx.db.delete(user._id);
-      console.log(`[deleteTestUser] Deleted user with clerkId: ${args.clerkId}`);
     } else {
-      console.log(`[deleteTestUser] No user found with clerkId: ${args.clerkId}`);
     }
   },
 });
@@ -1966,7 +1935,6 @@ export const bootstrapAdmin = internalMutation({
       onboarded: true,
     });
 
-    console.log(`User ${args.userId} has been set as admin`);
     return { success: true, userId: args.userId };
   },
 });
@@ -2128,7 +2096,6 @@ export const adminDeleteUser = mutation({
     await ctx.db.delete(args.userId);
 
     // Optional: Log the deletion
-    console.log(`Admin ${currentUser._id} deleted user ${args.userId} (${userToDelete.email})`);
 
     return { success: true, message: "User deleted successfully" };
   },

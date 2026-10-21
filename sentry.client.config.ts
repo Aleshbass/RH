@@ -1,7 +1,5 @@
 import * as Sentry from '@sentry/nextjs'
-
-// Exercise share links carry their access token in the path (/x/<token>); never send it to Sentry.
-const scrubLinks = (value?: string) => value?.replace(/\/x\/[A-Za-z0-9]+/g, '/x/[link]')
+import { scrubBreadcrumb, scrubEvent } from './lib/sentryScrub'
 
 Sentry.init({
   dsn: process.env.NEXT_PUBLIC_SENTRY_DSN,
@@ -20,45 +18,23 @@ Sentry.init({
   // Performance monitoring and logging
   integrations: [
     Sentry.browserTracingIntegration(),
-    // Send console.log, console.error, and console.warn calls as logs to Sentry
-    Sentry.consoleLoggingIntegration({ levels: ["log", "error", "warn"] }),
+    // Errors and warnings only: ordinary logs can carry personal data
+    Sentry.consoleLoggingIntegration({ levels: ["error", "warn"] }),
   ],
-  
+
   beforeSend(event) {
-    // Allow all events in development for testing
     // Filter out specific errors you don't want to track
     if (event.exception?.values?.[0]?.value?.includes('ResizeObserver loop limit exceeded')) {
       return null
     }
-
-    if (event.request?.url) event.request.url = scrubLinks(event.request.url)
-    if (event.transaction) event.transaction = scrubLinks(event.transaction)
-    if (event.request?.headers?.Referer) event.request.headers.Referer = scrubLinks(event.request.headers.Referer) ?? ''
-
-    return event
+    // No request bodies, cookies, URL secrets (share links, invite codes, tokens) or user emails/IPs
+    return scrubEvent(event)
   },
-  
+  beforeSendTransaction: (event) => scrubEvent(event),
+
   beforeBreadcrumb(breadcrumb) {
-    if (breadcrumb.data) {
-      for (const key of ['url', 'to', 'from']) {
-        if (typeof breadcrumb.data[key] === 'string') breadcrumb.data[key] = scrubLinks(breadcrumb.data[key])
-      }
-    }
-    // Filter sensitive data from breadcrumbs
-    if (breadcrumb.category === 'console' && breadcrumb.level === 'error') {
-      return breadcrumb
-    }
-    if (breadcrumb.category === 'navigation') {
-      return breadcrumb
-    }
-    if (breadcrumb.category === 'xhr' || breadcrumb.category === 'fetch') {
-      // Remove sensitive headers and data
-      if (breadcrumb.data) {
-        delete breadcrumb.data.headers
-        delete breadcrumb.data.body
-      }
-      return breadcrumb
-    }
-    return breadcrumb
+    // Console breadcrumbs repeat log text, which can hold personal data
+    if (breadcrumb.category === 'console' && breadcrumb.level !== 'error') return null
+    return scrubBreadcrumb(breadcrumb)
   }
 })

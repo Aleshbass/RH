@@ -27,8 +27,6 @@ export const sendClinicStaffInvitationEmail = internalAction({
     message: v.optional(v.string()),
   },
   handler: async (_ctx, args) => {
-    console.log('[CLINIC EMAIL] Sending staff invitation email to:', args.inviteeEmail);
-    console.log('[CLINIC EMAIL] Invitation code:', args.invitationCode);
 
     try {
       // Check for Resend API key
@@ -41,13 +39,11 @@ export const sendClinicStaffInvitationEmail = internalAction({
         };
       }
 
-      console.log('[CLINIC EMAIL] Initializing Resend client');
       const resend = new Resend(RESEND_API_KEY);
 
       const fromEmail = 'info@physioaroundme.com';
       const fromName = 'Rehabify Health';
 
-      console.log('[CLINIC EMAIL] From:', `${fromName} <${fromEmail}>`);
 
       // Create QR code URL
       const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(args.invitationLink)}`;
@@ -97,7 +93,6 @@ export const sendClinicStaffInvitationEmail = internalAction({
         </html>
       `;
 
-      console.log('[CLINIC EMAIL] Sending email via Resend API...');
 
       const { data, error } = await resend.emails.send({
         from: `${fromName} <${fromEmail}>`,
@@ -114,8 +109,6 @@ export const sendClinicStaffInvitationEmail = internalAction({
         };
       }
 
-      console.log('[CLINIC EMAIL] Email sent successfully!');
-      console.log('[CLINIC EMAIL] Message ID:', data?.id);
 
       return {
         success: true,
@@ -145,7 +138,6 @@ export const sendClinicStaffInvitationReminderEmail = internalAction({
     expiresAt: v.number(),
   },
   handler: async (_ctx, args) => {
-    console.log('[CLINIC EMAIL REMINDER] Sending reminder to:', args.inviteeEmail);
 
     try {
       // Check for Resend API key
@@ -222,8 +214,6 @@ export const sendClinicStaffInvitationReminderEmail = internalAction({
         };
       }
 
-      console.log('[CLINIC EMAIL REMINDER] Email sent successfully!');
-      console.log('[CLINIC EMAIL REMINDER] Message ID:', data?.id);
 
       return {
         success: true,

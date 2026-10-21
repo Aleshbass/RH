@@ -29,20 +29,17 @@ export const sendPatientOnboardedProviderEmail = internalAction({
       });
 
       if (result.success) {
-        console.log(
-          `Patient onboarded provider email sent to ${providerEmail}, messageId: ${result.messageId}`
-        );
         return { success: true, messageId: result.messageId } as const;
       }
 
       console.error(
-        `Failed to send patient onboarded provider email to ${providerEmail}:`,
+        "Failed to send patient onboarded provider email:",
         result.error
       );
       return { success: false, error: result.error } as const;
     } catch (error) {
       console.error(
-        `Exception sending patient onboarded provider email to ${providerEmail}:`,
+        "Exception sending patient onboarded provider email:",
         error
       );
       return { success: false, error: String(error) } as const;

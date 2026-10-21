@@ -30,11 +30,9 @@ export const testAllReminders = action({
       },
     };
 
-    console.log("🧪 Starting Reminder System Tests...\n");
 
     // Test 1: Exercise Reminders
     try {
-      console.log("📝 Test 1: Exercise Reminders");
       const exerciseResult = await ctx.runAction(
         internal.reminders.sendDailyExerciseReminders
       );
@@ -45,8 +43,6 @@ export const testAllReminders = action({
         details: exerciseResult || "No active plans found (expected if no data)",
       });
       results.summary.passed++;
-      console.log("✅ Exercise reminders test passed");
-      console.log("   Result:", JSON.stringify(exerciseResult, null, 2));
     } catch (e) {
       results.tests.push({
         name: "Exercise Reminders",
@@ -59,7 +55,6 @@ export const testAllReminders = action({
 
     // Test 2: Invoice Payment Reminders
     try {
-      console.log("\n📝 Test 2: Invoice Payment Reminders");
       const invoiceResult = await ctx.runAction(
         internal.reminderSystem.sendInvoicePaymentReminders
       );
@@ -70,8 +65,6 @@ export const testAllReminders = action({
         details: invoiceResult,
       });
       results.summary.passed++;
-      console.log("✅ Invoice reminders test passed");
-      console.log("   Result:", JSON.stringify(invoiceResult, null, 2));
     } catch (e) {
       results.tests.push({
         name: "Invoice Payment Reminders",
@@ -84,7 +77,6 @@ export const testAllReminders = action({
 
     // Test 3: Appointment Reminders
     try {
-      console.log("\n📝 Test 3: Appointment Reminders");
       const appointmentResult = await ctx.runAction(
         internal.reminderSystem.sendAppointmentReminders
       );
@@ -95,8 +87,6 @@ export const testAllReminders = action({
         details: appointmentResult,
       });
       results.summary.passed++;
-      console.log("✅ Appointment reminders test passed");
-      console.log("   Result:", JSON.stringify(appointmentResult, null, 2));
     } catch (e) {
       results.tests.push({
         name: "Appointment Reminders",
@@ -109,7 +99,6 @@ export const testAllReminders = action({
 
     // Test 4: Query Functions
     try {
-      console.log("\n📝 Test 4: Query Functions");
       
       const activePlans = await ctx.runQuery(internal.reminders.getAllActivePlans);
       const unpaidInvoices = await ctx.runQuery(internal.reminderSystem.getUnpaidInvoices);
@@ -127,10 +116,6 @@ export const testAllReminders = action({
         },
       });
       results.summary.passed++;
-      console.log("✅ Query functions test passed");
-      console.log(`   Active Plans: ${activePlans.length}`);
-      console.log(`   Unpaid Invoices: ${unpaidInvoices.length}`);
-      console.log(`   Upcoming Appointments: ${upcomingAppointments.length}`);
     } catch (e) {
       results.tests.push({
         name: "Query Functions",
@@ -143,21 +128,9 @@ export const testAllReminders = action({
 
     results.summary.total = results.tests.length;
 
-    console.log("\n" + "=".repeat(60));
-    console.log("📊 TEST SUMMARY");
-    console.log("=".repeat(60));
-    console.log(`Total Tests: ${results.summary.total}`);
-    console.log(`✅ Passed: ${results.summary.passed}`);
-    console.log(`❌ Failed: ${results.summary.failed}`);
-    console.log(
-      `Success Rate: ${Math.round((results.summary.passed / results.summary.total) * 100)}%`
-    );
-    console.log("=".repeat(60));
 
     if (results.summary.failed === 0) {
-      console.log("\n🎉 ALL TESTS PASSED! Reminder system is wired correctly.");
     } else {
-      console.log("\n⚠️  Some tests failed. Check errors above.");
     }
 
     return results;
@@ -170,12 +143,9 @@ export const testAllReminders = action({
 export const testExerciseReminders = action({
   handler: async (ctx) => {
     await ctx.runQuery(internal.test_reminders.assertAdmin, {});
-    console.log("🧪 Testing Exercise Reminders Only...\n");
     
     try {
       const result = await ctx.runAction(internal.reminders.sendDailyExerciseReminders);
-      console.log("✅ Test passed!");
-      console.log("Result:", JSON.stringify(result, null, 2));
       return { success: true, result };
     } catch (e) {
       console.error("❌ Test failed:", e);
@@ -187,14 +157,11 @@ export const testExerciseReminders = action({
 export const testInvoiceReminders = action({
   handler: async (ctx) => {
     await ctx.runQuery(internal.test_reminders.assertAdmin, {});
-    console.log("🧪 Testing Invoice Payment Reminders Only...\n");
     
     try {
       const result = await ctx.runAction(
         internal.reminderSystem.sendInvoicePaymentReminders
       );
-      console.log("✅ Test passed!");
-      console.log("Result:", JSON.stringify(result, null, 2));
       return { success: true, result };
     } catch (e) {
       console.error("❌ Test failed:", e);
@@ -206,14 +173,11 @@ export const testInvoiceReminders = action({
 export const testAppointmentReminders = action({
   handler: async (ctx) => {
     await ctx.runQuery(internal.test_reminders.assertAdmin, {});
-    console.log("🧪 Testing Appointment Reminders Only...\n");
     
     try {
       const result = await ctx.runAction(
         internal.reminderSystem.sendAppointmentReminders
       );
-      console.log("✅ Test passed!");
-      console.log("Result:", JSON.stringify(result, null, 2));
       return { success: true, result };
     } catch (e) {
       console.error("❌ Test failed:", e);
@@ -228,7 +192,6 @@ export const testAppointmentReminders = action({
 export const checkTestData = action({
   handler: async (ctx) => {
     await ctx.runQuery(internal.test_reminders.assertAdmin, {});
-    console.log("🔍 Checking Test Data Availability...\n");
 
     const data = {
       activePlans: 0,
@@ -240,7 +203,6 @@ export const checkTestData = action({
     try {
       const activePlans = await ctx.runQuery(internal.reminders.getAllActivePlans);
       data.activePlans = activePlans.length;
-      console.log(`✅ Active Treatment Plans: ${activePlans.length}`);
       
       if (activePlans.length === 0) {
         data.recommendations.push(
@@ -256,7 +218,6 @@ export const checkTestData = action({
         internal.reminderSystem.getUnpaidInvoices
       );
       data.unpaidInvoices = unpaidInvoices.length;
-      console.log(`✅ Unpaid Invoices: ${unpaidInvoices.length}`);
       
       if (unpaidInvoices.length === 0) {
         data.recommendations.push(
@@ -272,7 +233,6 @@ export const checkTestData = action({
         internal.reminderSystem.getUpcomingAppointments
       );
       data.upcomingAppointments = upcomingAppointments.length;
-      console.log(`✅ Upcoming Appointments: ${upcomingAppointments.length}`);
       
       if (upcomingAppointments.length === 0) {
         data.recommendations.push(
@@ -283,16 +243,11 @@ export const checkTestData = action({
       console.error("❌ Error checking upcoming appointments:", e);
     }
 
-    console.log("\n" + "=".repeat(60));
     if (data.recommendations.length > 0) {
-      console.log("💡 RECOMMENDATIONS:");
       data.recommendations.forEach((rec, i) => {
-        console.log(`${i + 1}. ${rec}`);
       });
     } else {
-      console.log("✅ All test data is available!");
     }
-    console.log("=".repeat(60));
 
     return data;
   },

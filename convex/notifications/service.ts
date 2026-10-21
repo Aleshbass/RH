@@ -151,7 +151,6 @@ export const sendNotificationWithFallback = internalMutation({
       );
       
       if (duplicate) {
-        console.log(`Duplicate notification prevented in sendNotificationWithFallback for user ${userId}, type: ${type}`);
         return { success: true, notificationId: duplicate._id, isDuplicate: true };
       }
       
@@ -170,7 +169,6 @@ export const sendNotificationWithFallback = internalMutation({
       });
       
       // Add detailed logging
-      console.log(`Notification created: ID=${notificationId}, Type=${type}, User=${userId}`);
       
       // Step 2: If email notification is requested, schedule it using Convex scheduler
       if (sendEmail) {
@@ -203,7 +201,6 @@ export const sendNotificationWithFallback = internalMutation({
             createdAt: Date.now(),
             status: "pending",
           });
-          console.log(`Notification queued for retry: User=${userId}, Type=${type}`);
         } catch (retryError) {
           console.error("Failed to queue notification for retry:", retryError);
         }
@@ -264,7 +261,6 @@ export const processEmailForNotification = internalMutation({
           await ctx.db.patch(notificationId, {
             deliveredAt: Date.now(),
           });
-          console.log(`Email sent successfully for notification ${notificationId} to ${user.email}`);
         } else {
           console.error(`Cannot send email: No email address found for user ${notification.userId}`);
         }
@@ -285,7 +281,6 @@ export const processEmailForNotification = internalMutation({
             createdAt: Date.now(),
             status: "pending",
           });
-          console.log(`Email queued for retry: NotificationID=${notificationId}`);
         } catch (retryError) {
           console.error("Failed to queue email for retry:", retryError);
         }
@@ -354,7 +349,6 @@ export const scheduleCleanup = internalAction({
         internal.notifications.performScheduledCleanup
       );
       
-      console.log("Scheduled cleanup for retry queues");
       return { success: true };
     } catch (error) {
       console.error("Failed to schedule cleanup:", error);
@@ -399,7 +393,6 @@ export const performScheduledCleanup = internalMutation({
       internal.notifications.performScheduledCleanup
     );
     
-    console.log(`Scheduled cleanup completed. Deleted ${deletedCount} entries.`);
     return { deletedCount };
   },
 });

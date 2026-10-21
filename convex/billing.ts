@@ -190,12 +190,6 @@ export const createInvoice = mutation({
     const invoiceNumber = await generateInvoiceNumber(ctx, clinicId);
 
     // Validate clinic ID exists
-    console.log("Invoice creation details:", {
-      userId: physiotherapist._id,
-      clinicId: clinicId,
-      isIndependentPractice: isIndependentPractice,
-      hasClinicId: !!clinicId
-    });
 
     // Create invoice object with all required fields and fee breakdown
     const invoiceData = {
@@ -229,14 +223,6 @@ export const createInvoice = mutation({
       },
     };
 
-    console.log("Creating invoice with data:", JSON.stringify(invoiceData, null, 2));
-    console.log("Invoice data validation check:", {
-      hasClinicId: !!invoiceData.clinicId,
-      hasPlatformFee: !!invoiceData.platformFeeAmount,
-      platformFeeValue: invoiceData.platformFeeAmount,
-      totalAmount: invoiceData.totalAmount,
-      practiceType: isIndependentPractice ? "Independent" : "Clinic-based"
-    });
 
     // Insert invoice into database
     const invoiceId = await ctx.db.insert("invoices", invoiceData);

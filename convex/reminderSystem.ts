@@ -122,9 +122,6 @@ export const sendInvoicePaymentReminders = internalAction({
         remindersSent++;
 
         // Log reminder sent
-        console.log(
-          `Invoice reminder ${reminderCount + 1}/3 sent for invoice ${invoice.invoiceNumber} to ${patient.email}`
-        );
       } catch (e) {
         console.error(`Failed to send invoice reminder for ${invoice._id}:`, e);
       }
@@ -311,9 +308,6 @@ export const sendAppointmentReminders = internalAction({
           remindersSent++;
         }
 
-        console.log(
-          `Appointment reminder sent for appointment ${appointment._id} (${hoursUntilAppointment}h until start)`
-        );
       } catch (e) {
         console.error(
           `Failed to send appointment reminder for ${appointment._id}:`,

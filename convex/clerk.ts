@@ -62,7 +62,6 @@ export const webhookHandler = action({
         }
 
         default:
-          console.log(`Unhandled webhook event type: ${args.type}`);
           return { success: true, message: "Event ignored" };
       }
     } catch (error) {

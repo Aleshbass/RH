@@ -16,7 +16,6 @@ export const checkAllClinicsMaintenanceDaily = internalMutation({
         });
       }
       
-      console.log(`Scheduled maintenance checks for ${clinics.length} clinics`);
     } catch (error) {
       console.error("Error in daily maintenance check:", error);
     }
@@ -43,7 +42,6 @@ export const checkAllClinicsConflictsHourly = internalMutation({
         });
       }
       
-      console.log(`Scheduled conflict checks for ${clinics.length} clinics`);
     } catch (error) {
       console.error("Error in hourly conflict check:", error);
     }
@@ -327,7 +325,6 @@ export const sendMaintenanceEmail = internalMutation({
         throw new Error(`Email API returned ${response.status}`);
       }
 
-      console.log(`Maintenance email sent for ${args.resourceName}`);
     } catch (error) {
       console.error("Error sending maintenance email:", error);
     }
@@ -403,7 +400,6 @@ export const cleanupOldNotifications = internalMutation({
         await ctx.db.delete(notification._id);
       }
 
-      console.log(`Cleaned up ${oldNotifications.length} old resource notifications`);
     } catch (error) {
       console.error("Error cleaning up old notifications:", error);
     }

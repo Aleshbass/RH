@@ -111,7 +111,6 @@ export const updateCallStatus = internalMutation({
             await ctx.db.patch(call.appointmentId, {
               status: 'completed',
             })
-            console.log(`Marked appointment ${call.appointmentId} as completed after Stream call ended`)
           }
         } catch (error) {
           console.error('Failed to update appointment status:', error)

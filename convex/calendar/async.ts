@@ -24,7 +24,6 @@ export const createCalendarEventAsync = internalAction({
     },
     handler: async (ctx, args) => {
         try {
-            console.log("[CREATE CALENDAR ASYNC] Starting async calendar event creation");
 
             // Call the main calendar event creation action
             const result = await ctx.runAction(internal.calendar.service.createCalendarEventInternal, args);
@@ -37,7 +36,6 @@ export const createCalendarEventAsync = internalAction({
                     googleCalendarLink: result.htmlLink,
                 });
 
-                console.log("[CREATE CALENDAR ASYNC] Successfully updated appointment with Meet link");
 
                 // Send a follow-up email with the Google Meet link
                 if (args.attendees && args.attendees.length > 0) {
@@ -49,7 +47,6 @@ export const createCalendarEventAsync = internalAction({
                         calendarLink: result.htmlLink,
                         startTime: args.startTime,
                     });
-                    console.log("[CREATE CALENDAR ASYNC] Sent Meet link email to:", attendee.email);
                 }
             }
 
@@ -79,7 +76,6 @@ export const updateAppointmentWithMeetLink = internalMutation({
         }
 
         await ctx.db.patch(args.appointmentId, updateData);
-        console.log("[UPDATE APPOINTMENT] Updated appointment with Google Meet link:", args.appointmentId);
     },
 });
 
@@ -93,8 +89,6 @@ export const sendMeetLinkEmail = internalAction({
         startTime: v.number(),
     },
     handler: async (ctx, args) => {
-        console.log("[SEND MEET LINK] Sending Google Meet link email to:", args.to);
-        console.log("[SEND MEET LINK] Google Meet Link:", args.meetingLink);
 
         try {
             // Send email with Google Meet link using the email service
@@ -106,7 +100,6 @@ export const sendMeetLinkEmail = internalAction({
                 appointmentDate: args.startTime,
             });
 
-            console.log("[SEND MEET LINK] Successfully sent Google Meet link email");
             return { success: true };
         } catch (error) {
             console.error("[SEND MEET LINK] Failed to send email:", error);

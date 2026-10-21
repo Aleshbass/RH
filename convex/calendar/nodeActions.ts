@@ -182,7 +182,6 @@ export const listCalendars = internalAction({
 
 // Helper: Get authenticated OAuth client for a user
 async function getClientForUser(ctx: any, userId: string) {
-  console.log("[GET CLIENT] Fetching credentials for user:", userId);
   let credentials = await ctx.runQuery(internal.calendar.oauth.getCredentialsInternal, { userId });
 
   if (!credentials) {
@@ -190,17 +189,14 @@ async function getClientForUser(ctx: any, userId: string) {
     throw new Error("Calendar credentials not found. Please connect your Google Calendar in Settings.");
   }
 
-  console.log("[GET CLIENT] Credentials found, expiry:", new Date(credentials.expiryDate).toISOString());
 
   // Refresh if expiring soon (5 min buffer)
   if (credentials.expiryDate < Date.now() + 5 * 60 * 1000) {
-    console.log("[GET CLIENT] Token expiring soon, refreshing...");
     await ctx.runAction(internal.calendar.oauth.refreshAccessToken, {
       userId,
     });
     credentials = await ctx.runQuery(internal.calendar.oauth.getCredentialsInternal, { userId });
     if (!credentials) throw new Error("Failed to refresh credentials");
-    console.log("[GET CLIENT] Token refreshed successfully");
   }
 
   const client = createOAuthClient();
@@ -209,7 +205,6 @@ async function getClientForUser(ctx: any, userId: string) {
     refresh_token: credentials.refreshToken,
   });
 
-  console.log("[GET CLIENT] OAuth client created successfully");
   return client;
 }
 
@@ -232,13 +227,9 @@ export const createEvent = internalAction({
     timeZone: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<{ eventId: string; meetLink?: string }> => {
-    console.log("[NODE ACTIONS] createEvent called");
-    console.log("[NODE ACTIONS] User ID:", args.userId);
-    console.log("[NODE ACTIONS] Create Meet Link:", args.createMeetLink);
 
     try {
       const client = await getClientForUser(ctx, args.userId);
-      console.log("[NODE ACTIONS] Got OAuth client successfully");
 
       const calendar = google.calendar({ version: "v3", auth: client });
 
@@ -288,9 +279,6 @@ export const createEvent = internalAction({
       const hangoutLink = response.data.hangoutLink;
       const htmlLink = response.data.htmlLink;
 
-      console.log("[NODE ACTIONS] Event created:", eventId);
-      console.log("[NODE ACTIONS] Hangout Link:", hangoutLink);
-      console.log("[NODE ACTIONS] Calendar Link:", htmlLink);
 
       // Save the meet link to the appointment
       if (hangoutLink) {

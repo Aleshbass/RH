@@ -19,8 +19,6 @@ export const updateAppointmentMeetLink = internalMutation({
         googleCalendarLink: v.optional(v.string()),
     },
     handler: async (ctx, args) => {
-        console.log("[MEET LINK] Saving Google Meet link to appointment:", args.appointmentId);
-        console.log("[MEET LINK] Meet Link:", args.googleMeetLink);
 
         await ctx.db.patch(args.appointmentId, {
             googleMeetLink: args.googleMeetLink,
@@ -29,7 +27,6 @@ export const updateAppointmentMeetLink = internalMutation({
             isOnline: true,
         } as any);
 
-        console.log("[MEET LINK] Successfully saved Google Meet link to appointment");
         return { success: true };
     },
 });

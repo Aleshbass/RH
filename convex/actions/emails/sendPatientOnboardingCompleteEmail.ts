@@ -27,20 +27,17 @@ export const sendPatientOnboardingCompleteEmail = internalAction({
       });
 
       if (result.success) {
-        console.log(
-          `Patient onboarding complete email sent to ${patientEmail}, messageId: ${result.messageId}`
-        );
         return { success: true, messageId: result.messageId } as const;
       }
 
       console.error(
-        `Failed to send patient onboarding complete email to ${patientEmail}:`,
+        "Failed to send patient onboarding complete email:",
         result.error
       );
       return { success: false, error: result.error } as const;
     } catch (error) {
       console.error(
-        `Exception sending patient onboarding complete email to ${patientEmail}:`,
+        "Exception sending patient onboarding complete email:",
         error
       );
       return { success: false, error: String(error) } as const;

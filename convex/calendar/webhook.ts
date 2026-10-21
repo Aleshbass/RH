@@ -38,12 +38,10 @@ export const calendarWebhook = httpAction(async (ctx, request) => {
   switch (resourceState) {
     case "sync":
       // Initial sync notification
-      console.log(`Initial sync for calendar ${watch.calendarId} of user ${watch.userId}`);
       break;
     
     case "exists":
       // Calendar event changed
-      console.log(`Calendar event changed for ${watch.calendarId}`);
       
       // Trigger sync
       await ctx.runMutation(api.calendar.sync.syncCalendarEvents, {
@@ -56,11 +54,9 @@ export const calendarWebhook = httpAction(async (ctx, request) => {
     
     case "not_exists":
       // Calendar event deleted
-      console.log(`Calendar event deleted for ${watch.calendarId}`);
       break;
     
     default:
-      console.log(`Unhandled resource state: ${resourceState}`);
   }
 
   return new Response("OK", { status: 200 });

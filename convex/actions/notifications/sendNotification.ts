@@ -42,7 +42,6 @@ export const sendNotificationWithFallback = internalAction({
     maxRetries: v.optional(v.number()),
   },
   handler: async (ctx, args): Promise<ActionResult> => {
-    console.log("sendNotificationWithFallback called with:", args);
     // Placeholder implementation
     try {
       // Call the public 'create' mutation from convex/notifications.ts
@@ -88,7 +87,6 @@ export const sendFormattedNotification = internalAction({
     maxRetries: v.optional(v.number()),
   },
   handler: async (ctx, args): Promise<ActionResult> => {
-    console.log("sendFormattedNotification called with:", args);
     // Placeholder implementation - you'll need to adapt this to your actual formatting logic
     // This is a simplified example. You'd typically call a formatting function from your notificationService
     const { userId, data, sendEmail, retryOnFailure, maxRetries } = args;

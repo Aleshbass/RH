@@ -73,7 +73,7 @@ export const sendVerificationBadgeConfirmation = internalAction({
             <p>Congratulations! Your verification badge purchase has been successfully processed, and your profile is now verified on RehabifyHealth.</p>
             
             <div class="badge-info">
-              <h3>✨ Badge Details</h3>
+              <h3>Badge Details</h3>
               <div class="details">
                 <strong>Plan:</strong> ${tierDisplay} Badge<br>
                 <strong>Amount Paid:</strong> ₦${(args.amount / 100).toLocaleString()}<br>
@@ -131,12 +131,11 @@ export const sendVerificationBadgeConfirmation = internalAction({
     });
     
     if (!response.ok) {
-      console.error("Failed to send verification badge email:", await response.text());
+      console.error("Failed to send verification badge email: HTTP", response.status);
       return { success: false };
     }
     
     const result = await response.json();
-    console.log("Verification badge email sent:", result);
     
     return { success: true, emailId: result.id };
   } catch (error) {

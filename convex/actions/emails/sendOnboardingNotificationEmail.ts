@@ -33,14 +33,13 @@ export const sendOnboardingNotificationEmail = internalAction({
       });
 
       if (result.success) {
-        console.log(`Admin approval required email sent successfully to ${adminEmail}, messageId: ${result.messageId}`);
         return { success: true, messageId: result.messageId };
       } else {
-        console.error(`Failed to send admin approval required email to ${adminEmail}:`, result.error);
+        console.error("Failed to send admin approval required email:", result.error);
         return { success: false, error: result.error };
       }
     } catch (error) {
-      console.error(`Exception sending admin approval required email to ${adminEmail}:`, error);
+      console.error("Exception sending admin approval required email:", error);
       return { success: false, error: String(error) };
     }
   },

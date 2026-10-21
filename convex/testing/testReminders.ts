@@ -14,20 +14,17 @@ import { internal } from "../_generated/api";
  */
 export const triggerAppointmentReminders = action({
   handler: async (ctx) => {
-    console.log("🔔 Manually triggering appointment reminders...");
     
     try {
       // Trigger the daily reminder
       const dailyResult = await ctx.runAction(
         internal.scheduled.appointment_reminders.sendDailyAppointmentReminders as any
       );
-      console.log("✅ Daily reminders result:", dailyResult);
 
       // Trigger the interval reminder
       const intervalResult = await ctx.runAction(
         internal.reminderSystem.sendAppointmentReminders
       );
-      console.log("✅ Interval reminders result:", intervalResult);
 
       return {
         success: true,
@@ -53,9 +50,6 @@ export const checkUpcomingAppointments = action({
     const now = new Date();
     const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
     
-    console.log("📅 Checking for appointments...");
-    console.log("Current time:", now.toISOString());
-    console.log("Tomorrow:", tomorrow.toISOString());
 
     const appointments = await ctx.runQuery(internal.reminderSystem.getUpcomingAppointments);
     

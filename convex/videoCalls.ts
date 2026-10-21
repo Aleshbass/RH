@@ -152,7 +152,6 @@ async function createStreamCallFor(ctx: ActionCtx, user: any, args: CreateVideoC
 
         if (participantUser) {
           try {
-            console.log('✅ Participant record created:', participantId)
             await ctx.runMutation(internal.videoCalls.createParticipantRecord, {
               callId,
               userId: participantId,
@@ -172,7 +171,6 @@ async function createStreamCallFor(ctx: ActionCtx, user: any, args: CreateVideoC
                   callTitle: args.title,
                   message: `You have been invited to join a video call${args.title ? `: ${args.title}` : ''}.`,
                 })
-                console.log('✅ Email invitation sent to:', participantUser.email)
               } catch (emailErr) {
                 console.error('❌ Failed to send email invitation:', {
                   error: emailErr instanceof Error ? emailErr.message : String(emailErr),
@@ -497,7 +495,6 @@ export const endVideoCall = mutation({
           await ctx.db.patch(call.appointmentId, {
             status: 'completed',
           })
-          console.log(`Marked appointment ${call.appointmentId} as completed after video call ended`)
         }
       } catch (error) {
         console.error('Failed to update appointment status after call end:', error)
@@ -1049,7 +1046,6 @@ export const getDailyRoomInfo = query({
     callId: v.id("videoCalls"),
   },
   handler: async (ctx, args) => {
-    console.log('🔍 getDailyRoomInfo called with:', args)
 
     const identity = await ctx.auth.getUserIdentity()
     if (!identity) {
@@ -1057,7 +1053,6 @@ export const getDailyRoomInfo = query({
       throw new Error("Unauthorized")
     }
 
-    console.log('👤 User identity:', { subject: identity.subject })
 
     const user = await ctx.db
       .query("users")
@@ -1069,7 +1064,6 @@ export const getDailyRoomInfo = query({
       throw new Error("User not found")
     }
 
-    console.log('✅ User found:', { userId: user._id, firstName: user.firstName, lastName: user.lastName, email: user.email })
 
     // Get the video call
     const call = await ctx.db.get(args.callId)
@@ -1078,25 +1072,11 @@ export const getDailyRoomInfo = query({
       throw new Error("Call not found")
     }
 
-    console.log('📞 Call found:', {
-      callId: call._id,
-      roomName: call.dailyRoomName,
-      roomUrl: call.dailyRoomUrl,
-      initiatorId: call.initiatorId,
-      participants: call.participants,
-      status: call.status
-    })
 
     // Check if user is authorized to access this call
     const isParticipant = call.participants.includes(user._id)
     const isInitiator = call.initiatorId === user._id
 
-    console.log('🔐 Authorization check:', {
-      userId: user._id,
-      isParticipant,
-      isInitiator,
-      authorized: isParticipant || isInitiator
-    })
 
     if (!isParticipant && !isInitiator) {
       console.error('❌ User not authorized to access call')
@@ -1109,11 +1089,6 @@ export const getDailyRoomInfo = query({
       .withIndex("by_call_and_user", (q) => q.eq("callId", args.callId).eq("userId", user._id))
       .unique()
 
-    console.log('👥 Participant record:', {
-      found: !!participant,
-      hasToken: !!participant?.dailyMeetingToken,
-      role: participant?.role
-    })
 
     const result = {
       dailyRoomName: call.dailyRoomName,
@@ -1126,7 +1101,6 @@ export const getDailyRoomInfo = query({
       participants: call.participants,
     }
 
-    console.log('📊 Returning room info:', result)
     return result
   },
 })
@@ -1215,15 +1189,12 @@ export const getCallByRoomId = query({
     roomId: v.string(),
   },
   handler: async (ctx, args) => {
-    console.log('🔍 getCallByRoomId called with roomId:', args.roomId)
 
     const identity = await ctx.auth.getUserIdentity()
     if (!identity) {
-      console.log('❌ No user identity, returning null')
       return null // Return null instead of throwing error for unauthorized access
     }
 
-    console.log('👤 User identity:', { subject: identity.subject })
 
     const user = await ctx.db
       .query("users")
@@ -1231,11 +1202,9 @@ export const getCallByRoomId = query({
       .unique()
 
     if (!user) {
-      console.log('❌ User not found, returning null')
       return null
     }
 
-    console.log('✅ User found:', { userId: user._id, firstName: user.firstName, lastName: user.lastName })
 
     // Find the call by room ID or Daily room name
     let call = await ctx.db
@@ -1243,7 +1212,6 @@ export const getCallByRoomId = query({
       .withIndex("by_room_id", (q) => q.eq("roomId", args.roomId))
       .unique()
 
-    console.log('🔍 Search by roomId result:', !!call)
 
     if (!call) {
       // Try to find by Daily room name
@@ -1252,36 +1220,19 @@ export const getCallByRoomId = query({
         .withIndex("by_daily_room_name", (q) => q.eq("dailyRoomName", args.roomId))
         .unique()
 
-      console.log('🔍 Search by dailyRoomName result:', !!call)
     }
 
     if (!call) {
-      console.log('❌ No call found for roomId:', args.roomId)
       return null
     }
 
-    console.log('📞 Call found:', {
-      callId: call._id,
-      roomName: call.dailyRoomName,
-      roomUrl: call.dailyRoomUrl,
-      initiatorId: call.initiatorId,
-      participants: call.participants,
-      status: call.status
-    })
 
     // Check if user is authorized to access this call
     const isParticipant = call.participants.includes(user._id)
     const isInitiator = call.initiatorId === user._id
 
-    console.log('🔐 Authorization check:', {
-      userId: user._id,
-      isParticipant,
-      isInitiator,
-      authorized: isParticipant || isInitiator
-    })
 
     if (!isParticipant && !isInitiator) {
-      console.log('❌ User not authorized, returning null')
       return null
     }
 
@@ -1291,11 +1242,6 @@ export const getCallByRoomId = query({
       .withIndex("by_call_and_user", (q) => q.eq("callId", call._id).eq("userId", user._id))
       .unique()
 
-    console.log('👥 Participant record:', {
-      found: !!participant,
-      hasToken: !!participant?.dailyMeetingToken,
-      role: participant?.role
-    })
 
     const result = {
       _id: call._id,
@@ -1309,7 +1255,6 @@ export const getCallByRoomId = query({
       participants: call.participants,
     }
 
-    console.log('📊 Returning call info:', result)
     return result
   },
 })

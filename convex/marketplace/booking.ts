@@ -780,7 +780,6 @@ export async function completeMarketplaceBookingCore(ctx: any, bookingId: any, o
                 const preferredPlatform = 'stream' as const;
 
                 // Log for debugging
-                console.log('Creating GetStream video call for online marketplace booking');
 
                 if (preferredPlatform === 'stream') {
                     // Create Stream video call
@@ -818,11 +817,6 @@ export async function completeMarketplaceBookingCore(ctx: any, bookingId: any, o
                         isOnline: true,
                     });
 
-                    console.log('Successfully created GetStream video call:', {
-                        callId,
-                        meetingLink,
-                        appointmentId,
-                    });
                 } else if (preferredPlatform === 'google_meet') {
                     // For Google Meet, schedule creation (link will be added later)
                     try {

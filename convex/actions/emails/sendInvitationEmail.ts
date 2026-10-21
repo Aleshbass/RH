@@ -26,30 +26,24 @@ export const sendPatientInvitationEmail = internalAction({
     expiresAt: v.number(),
   },
   handler: async (ctx, args) => {
-    console.log('[EMAIL ACTION] Starting to send patient invitation email');
-    console.log('[EMAIL ACTION] Recipient:', args.patientEmail);
-    console.log('[EMAIL ACTION] Invitation code:', args.invitationCode);
     
     try {
       // Check for Resend API key
       const RESEND_API_KEY = process.env.RESEND_API_KEY;
       if (!RESEND_API_KEY) {
         console.error('[EMAIL ACTION] RESEND_API_KEY not found in environment variables');
-        console.log('[EMAIL ACTION] Available env vars:', Object.keys(process.env).filter(k => k.includes('RESEND')));
         return {
           success: false,
           error: 'Email service not configured. RESEND_API_KEY missing.',
         };
       }
 
-      console.log('[EMAIL ACTION] RESEND_API_KEY found, initializing Resend client');
       const resend = new Resend(RESEND_API_KEY);
       
       // Use your verified domain email
       const fromEmail = 'info@physioaroundme.com';
       const fromName = process.env.FROM_NAME || 'Rehabify Health';
       
-      console.log('[EMAIL ACTION] Using email:', `${fromName} <${fromEmail}>`);
       
       // Normalize invitation link to production domain regardless of input
       const PRODUCTION_BASE = 'https://physioaroundme.com';
@@ -103,7 +97,6 @@ export const sendPatientInvitationEmail = internalAction({
         </html>
       `;
       
-      console.log('[EMAIL ACTION] Attempting to send email via Resend API');
       
       const { data, error } = await resend.emails.send({
         from: `${fromName} <${fromEmail}>`,
@@ -120,8 +113,6 @@ export const sendPatientInvitationEmail = internalAction({
         };
       }
       
-      console.log('[EMAIL ACTION] Email sent successfully!');
-      console.log('[EMAIL ACTION] Message ID:', data?.id);
       
       return {
         success: true,
@@ -165,7 +156,6 @@ export const previewNormalizedPatientInvitationLink = internalAction({
     }
 
     const isProduction = normalizedLink.startsWith(PRODUCTION_BASE);
-    console.log('[EMAIL ACTION][PREVIEW] Normalized invitation link:', normalizedLink, 'isProduction:', isProduction);
     return { normalizedLink, isProduction };
   }
 });
@@ -183,7 +173,6 @@ export const sendInvitationReminderEmail = internalAction({
     expiresAt: v.number(),
   },
   handler: async (ctx, args) => {
-    console.log('[EMAIL ACTION] Sending reminder email');
     
     try {
       // Check for Resend API key
@@ -262,7 +251,6 @@ export const sendInvitationReminderEmail = internalAction({
         };
       }
       
-      console.log('[EMAIL ACTION] Reminder email sent successfully!');
       return {
         success: true,
         messageId: data?.id,
