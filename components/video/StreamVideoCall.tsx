@@ -72,8 +72,10 @@ export default function StreamVideoCall({
 
     const prepare = async () => {
       try {
-        const res = await getStreamToken({ userId: user.id, userName: displayName, userImage: displayImage })
-        const streamClient = StreamVideoClient.getOrCreateInstance({
+        // The token only works for this call, so each call page gets its own client
+        // (a cached client would still hold the token for a previous call)
+        const res = await getStreamToken({ userId: user.id, userName: displayName, userImage: displayImage, callId, callType })
+        const streamClient = new StreamVideoClient({
           apiKey: res.apiKey,
           user: { id: user.id, name: displayName, image: displayImage },
           token: res.token,

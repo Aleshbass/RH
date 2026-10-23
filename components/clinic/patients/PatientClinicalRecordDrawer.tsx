@@ -25,17 +25,16 @@ import { toast } from 'sonner'
 import { FileText, Loader2, Plus, Trash2, UserRound } from '@/components/icons'
 import { differenceInYears, format, isValid } from 'date-fns'
 import { cn } from '@/lib/utils'
-import { useClinicPreview } from '@/components/clinic/ClinicPreviewContext'
+import { useClinicAccess } from '@/components/clinic/ClinicAccessContext'
 import { EmptyState, StatusBadge, primaryButtonClass } from '@/components/clinic/ui'
 import {
   fieldClass,
   friendlyError,
-  isPreviewId,
+  isMissingId,
   labelClass,
   useClinicianOptions,
 } from './patient-record-shared'
 import { ClinicianPickerDialog, EditPatientDetailsDialog } from './PatientRecordDialogs'
-import { samplePatientRecord } from './sample-patient-record'
 import { RehabifyId } from '@/components/shared/RehabifyId'
 import { ExerciseProgramsPanel } from '@/components/exercise-programs/ExerciseProgramsPanel'
 
@@ -45,7 +44,6 @@ type TreatmentPlan = PatientRecord['treatmentPlans'][number]
 type Clinicians = ReturnType<typeof useClinicianOptions>
 
 interface PatientClinicalRecordDrawerProps {
-  /** A real patient id, or a preview id such as "prev_p1" (shown as a sample notice). */
   patientId: Id<'users'> | string | null
   isOpen: boolean
   onClose: () => void
@@ -65,7 +63,6 @@ export default function PatientClinicalRecordDrawer({
   onClose,
 }: PatientClinicalRecordDrawerProps) {
   if (!patientId) return null
-  const isSample = String(patientId).startsWith('prev_')
 
   return (
     <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
@@ -82,8 +79,7 @@ export default function PatientClinicalRecordDrawer({
             />
           }
         >
-          {/* Sample patients show a read-only example record; every action asks to finish setup */}
-          <PatientRecord patientId={patientId as Id<'users'>} isSample={isSample} />
+          <PatientRecord patientId={patientId as Id<'users'>} />
         </ErrorBoundary>
       </SheetContent>
     </Sheet>
@@ -134,11 +130,10 @@ const CARE_STATUS: Record<PatientRecord['careStatus'], { label: string; tone: 'g
 
 const GENDER_LABELS: Record<string, string> = { male: 'Male', female: 'Female', other: 'Other' }
 
-function PatientRecord({ patientId, isSample }: { patientId: Id<'users'>; isSample: boolean }) {
-  const liveRecord = useQuery(api.clinicTools.getClinicPatientFullRecord, isSample ? 'skip' : { patientId })
-  const record = isSample ? samplePatientRecord(String(patientId)) : liveRecord
+function PatientRecord({ patientId }: { patientId: Id<'users'> }) {
+  const record = useQuery(api.clinicTools.getClinicPatientFullRecord, { patientId })
   const [tab, setTab] = useState('timeline')
-  const { requireFullAccess } = useClinicPreview()
+  const { requireFullAccess } = useClinicAccess()
   const clinicians = useClinicianOptions()
   const reopenCare = useMutation(api.clinicTools.reopenPatientCare)
   const reassignPatient = useMutation(api.patients.reassignPatient)
@@ -164,7 +159,7 @@ function PatientRecord({ patientId, isSample }: { patientId: Id<'users'>; isSamp
   /** Email the "your clinic added you" link again (patients who haven't created their account) */
   const handleResendInvite = async () => {
     if (!requireFullAccess('Resend invite')) return
-    if (isPreviewId(patient._id)) return
+    if (isMissingId(patient._id)) return
     setSendingInvite(true)
     try {
       const result = await resendInvite({ patientId: patientId })
@@ -219,7 +214,7 @@ function PatientRecord({ patientId, isSample }: { patientId: Id<'users'>; isSamp
 
   const handleReopen = async (clinicianId: string) => {
     if (!requireFullAccess('Reopen care')) return
-    if (isPreviewId(clinicianId)) return
+    if (isMissingId(clinicianId)) return
     try {
       await reopenCare({
         patientId,
@@ -234,7 +229,7 @@ function PatientRecord({ patientId, isSample }: { patientId: Id<'users'>; isSamp
 
   const handleChangeClinician = async (clinicianId: string) => {
     if (!requireFullAccess('Change clinician')) return
-    if (!primary || isPreviewId(clinicianId) || isPreviewId(primary._id)) return
+    if (!primary || isMissingId(clinicianId) || isMissingId(primary._id)) return
     try {
       await reassignPatient({
         patientId,
@@ -375,18 +370,14 @@ function PatientRecord({ patientId, isSample }: { patientId: Id<'users'>; isSamp
             </TabsContent>
             <TabsContent value="programme" className="mt-0 space-y-6">
               {/* Programmes first; "New programme" and "Send exercises" open the builder */}
-              {isSample ? (
-                <SampleProgrammeNotice />
-              ) : (
-                <ExerciseProgramsPanel
-                  patientId={patientId}
-                  patientName={patient.firstName || 'this patient'}
-                  hasPhone={Boolean(patient.phoneNumber?.replace(/\D/g, '').length)}
-                  // Prescribing is for the patient's own clinician; others can read the programmes
-                  canWrite={isActive && (!primary?._id || !me || me._id === primary._id)}
-                />
-              )}
-              <EarlierProgrammes plans={record.treatmentPlans} isSample={isSample} />
+              <ExerciseProgramsPanel
+                patientId={patientId}
+                patientName={patient.firstName || 'this patient'}
+                hasPhone={Boolean(patient.phoneNumber?.replace(/\D/g, '').length)}
+                // Prescribing is for the patient's own clinician; others can read the programmes
+                canWrite={isActive && (!primary?._id || !me || me._id === primary._id)}
+              />
+              <EarlierProgrammes plans={record.treatmentPlans} />
             </TabsContent>
             <TabsContent value="documents" className="mt-0">
               <DocumentsTab patientId={patientId} documents={record.documents} />
@@ -630,7 +621,7 @@ function NotesTab({
   clinicians: Clinicians
   primaryClinicianId: string | null
 }) {
-  const { requireFullAccess } = useClinicPreview()
+  const { requireFullAccess } = useClinicAccess()
   const saveClinicalNote = useMutation(api.clinicTools.saveClinicalNote)
   const [noteType, setNoteType] = useState<NoteType>('treatment_note')
   const [values, setValues] = useState<Record<NoteField, string>>(EMPTY_NOTE)
@@ -640,8 +631,8 @@ function NotesTab({
   const fields = NOTE_FIELDS[noteType]
   const { options } = clinicians
   // Only the patient's own clinician writes notes; everyone else with access reads them.
-  // While loading (or in the preview, which has sample ids) the form stays usable.
-  const isTreatingClinician = !me || !primaryClinicianId || isPreviewId(primaryClinicianId) || me._id === primaryClinicianId
+  // While loading the form stays usable.
+  const isTreatingClinician = !me || !primaryClinicianId || isMissingId(primaryClinicianId) || me._id === primaryClinicianId
   const treatingName = options.find((o) => o.id === primaryClinicianId)?.label
 
   const handleSubmit = async (e: FormEvent) => {
@@ -893,8 +884,8 @@ function GoalsEditor({ goals, onChange }: { goals: GoalRow[]; onChange: (goals: 
  * New programmes are built from the exercise library above; these stay visible to the patient
  * and can still be edited, paused, resumed or completed here.
  */
-function EarlierProgrammes({ plans, isSample }: { plans: TreatmentPlan[]; isSample: boolean }) {
-  const { requireFullAccess } = useClinicPreview()
+function EarlierProgrammes({ plans }: { plans: TreatmentPlan[] }) {
+  const { requireFullAccess } = useClinicAccess()
   const updateProgramme = useMutation(api.clinicTools.updateHomeProgramme)
 
   const [editingPlanId, setEditingPlanId] = useState<Id<'treatmentPlans'> | null>(null)
@@ -987,12 +978,10 @@ function EarlierProgrammes({ plans, isSample }: { plans: TreatmentPlan[]; isSamp
   return (
     <div className="space-y-3">
       <div>
-        <SectionHeading>{isSample ? 'Programmes' : 'Earlier programmes'}</SectionHeading>
-        {!isSample && (
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">
-            Made before programmes used the exercise library. The patient still sees these in their app.
-          </p>
-        )}
+        <SectionHeading>Earlier programmes</SectionHeading>
+        <p className="text-xs text-neutral-500 dark:text-neutral-400">
+          Made before programmes used the exercise library. The patient still sees these in their app.
+        </p>
       </div>
 
       {editingPlanId && (
@@ -1212,29 +1201,6 @@ function EarlierProgrammes({ plans, isSample }: { plans: TreatmentPlan[]; isSamp
   )
 }
 
-/** Sample patients: how the Home programme tab works, without touching the backend. */
-function SampleProgrammeNotice() {
-  const { requireFullAccess } = useClinicPreview()
-  return (
-    <ListCard className="flex flex-wrap items-center justify-between gap-3">
-      <div className="min-w-0">
-        <p className="text-sm font-medium text-neutral-900 dark:text-neutral-100">Home programmes</p>
-        <p className="text-xs text-neutral-500 dark:text-neutral-400">
-          Pick exercises from the 3D library or add your own, add education, set the dose and send it to the patient&apos;s app.
-        </p>
-      </div>
-      <Button
-        type="button"
-        size="sm"
-        className={cn(primaryButtonClass, subtleButtonClass)}
-        onClick={() => requireFullAccess('Give home programme')}
-      >
-        <Plus className="mr-1 h-4 w-4" />
-        New programme
-      </Button>
-    </ListCard>
-  )
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Documents
@@ -1256,7 +1222,7 @@ function formatFileSize(bytes: number | undefined) {
 }
 
 function DocumentsTab({ patientId, documents }: { patientId: Id<'users'>; documents: any[] }) {
-  const { requireFullAccess } = useClinicPreview()
+  const { requireFullAccess } = useClinicAccess()
   const generateUploadUrl = useMutation(api.files.generateUploadUrl)
   const attachDocument = useMutation(api.clinicTools.attachPatientDocument)
   const [docType, setDocType] = useState<DocumentType>('medicalRecord')
@@ -1505,7 +1471,7 @@ function CheckInsTab({
   checkIns: SessionLog[]
   nextCheckInAt: number | null
 }) {
-  const { requireFullAccess } = useClinicPreview()
+  const { requireFullAccess } = useClinicAccess()
   const logFollowUp = useMutation(api.clinicTools.logPatientFollowUp)
   const [outcome, setOutcome] = useState<CheckInOutcome>('continuing_care')
   const [notes, setNotes] = useState('')
@@ -1544,7 +1510,7 @@ function CheckInsTab({
 
   return (
     <div className="space-y-6">
-      {!isPreviewId(patientId) && <PatientReports patientId={patientId} />}
+      {!isMissingId(patientId) && <PatientReports patientId={patientId} />}
       <FormCard onSubmit={handleSubmit}>
         <div className="flex min-w-0 flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
           <SectionHeading>Log a check-in</SectionHeading>

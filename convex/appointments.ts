@@ -528,6 +528,10 @@ export const updateAppointmentStatus = mutation({
     if (args.status === "confirmed" && appointment.endTime < Date.now()) {
       throw new ConvexError("This visit's time has passed. Propose another time instead.");
     }
+    // Completing (or marking a no-show) only once the visit has started: completion releases the payout
+    if ((args.status === "completed" || args.status === "no_show") && appointment.startTime > Date.now()) {
+      throw new ConvexError("This visit hasn't started yet, so it can't be marked as done.");
+    }
     // A visit the patient paid for on Rehabify needs a refund or rebooking, which support handles
     if (args.status === "cancelled_by_therapist") {
       const paidBooking = await ctx.db
@@ -687,8 +691,10 @@ export const updateAppointmentStatus = mutation({
                 invoices.find((inv) => inv.relatedAppointmentIds?.includes(args.appointmentId))
               );
 
-      // Paystack already sent the provider's share straight to their bank: nothing to pay out
-      if (invoice && invoice.payoutRoute !== "split_to_provider") {
+      // Only money Rehabify holds is paid out: marketplace bookings, Paystack payments that weren't
+      // split straight to the provider, and MediLoan. Cash or transfers the provider took directly
+      // (no payoutRoute) are already theirs.
+      if (invoice && invoice.payoutRoute === "held_by_platform") {
         // Check if payout already exists for this invoice to prevent duplicates
         const existingPayout = await ctx.db
           .query("payouts")

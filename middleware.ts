@@ -2,7 +2,17 @@ import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 import { NextResponse, type NextRequest } from "next/server";
 import { ADMIN_HOST, LEARN_HOST } from "@/lib/site-hosts";
 
-const isProtectedRoute = createRouteMatcher(["/server"]);
+// Signed-in areas: every dashboard (including the clinic portal) and the onboarding steps.
+// Pages still check roles themselves; this stops signed-out visitors before anything renders.
+const isProtectedRoute = createRouteMatcher([
+  "/dashboard(.*)",
+  "/role-selection",
+  "/onboarding-complete",
+  "/physiotherapist",
+  "/doctor",
+  "/clinic-owner",
+  "/patient/(.*)",
+]);
 
 // Rehabify Learn pages served at the root of learn.* (/register -> /learn/register).
 const LEARN_PAGES = /^\/(?:register|confirmation)(?:\/|$)/;

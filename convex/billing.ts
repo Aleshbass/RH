@@ -370,9 +370,11 @@ export const sendPaymentReminders = mutation({
     if (!identity) throw new Error("Not authenticated");
 
     let count = 0;
-    for (const id of args.invoiceIds) {
+    for (const id of args.invoiceIds.slice(0, 100)) {
       const invoice = await ctx.db.get(id);
       if (!invoice || invoice.status === "paid") continue;
+      // Only someone on the invoice (its physio/clinic, or an admin) can send its reminder
+      if (!(await isInvoiceParty(ctx, invoice))) continue;
 
       await ctx.db.insert("notifications", {
         userId: invoice.patientId,
@@ -1169,18 +1171,13 @@ export const recordPayment = mutation({
       .query("users")
       .withIndex("by_clerk_id", (q: any) => q.eq("clerkId", identity.subject))
       .unique();
-    if (!user || user.role !== "physiotherapist") {
-      throw new Error("Only physiotherapists can record payments");
-    }
+    if (!user) throw new Error("User not found");
 
     const invoice = await ctx.db.get(args.invoiceId);
     if (!invoice) throw new Error("Invoice not found");
-
-    // Optionally ensure this invoice belongs to the physiotherapist or their clinic
-    if (invoice.physiotherapistId && invoice.physiotherapistId !== user._id) {
-      // If invoice tracked physiotherapistId, enforce match
-      throw new Error("You do not have permission to modify this invoice");
-    }
+    if (invoice.status === "paid") throw new ConvexError("This invoice is already paid.");
+    // Same rule as every hand-recorded payment: the issuing physio, their clinic, or an admin
+    await assertCanRecordManualPayment(ctx, user, invoice);
 
     const ref = args.paymentReference || `REC-${Date.now()}`;
     const alreadyPaid = invoice.paidAmount || 0;
@@ -1197,6 +1194,17 @@ export const recordPayment = mutation({
       status: isFullPayment ? "paid" : "partial_payment",
     };
     await ctx.db.patch(args.invoiceId, updates);
+    if (isFullPayment) {
+      // Paid by hand: the online link must not collect again, and a referrer's commission waits
+      // for an admin's approval
+      await closeInvoicePaymentLinks(ctx, args.invoiceId);
+      await recordInvoicePartnerCommission(ctx, {
+        invoice,
+        paidKobo: invoice.subtotalAmount > 0 ? invoice.subtotalAmount : invoice.totalAmount,
+        paymentReference: `manual:${args.invoiceId}`,
+        verified: false,
+      });
+    }
 
     // Notifications
     const patient = await ctx.db.get(invoice.patientId);

@@ -2,7 +2,7 @@ import { ConvexError, v } from "convex/values";
 import { action, internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { Doc, Id } from "./_generated/dataModel";
-import { ensureClinicApproved, getOwnerClinic, getOwnerClinicOrPreview, requireClinicWrite } from "./clinicTools";
+import { ensureClinicApproved, getOwnerClinic, getClinicMemberOrNull, requireClinicWrite } from "./clinicTools";
 import { getAuthenticatedUser } from "./auth";
 import { publicAppUrl } from "./helpers/appUrl";
 import { activePaymentLink, closeInvoicePaymentLinks, PAYMENT_LINK_TTL_MS } from "./helpers/paymentLinks";
@@ -64,7 +64,7 @@ export async function paystackRequest(path: string, init: RequestInit = {}) {
 export const getClinicPayoutAccount = query({
   args: {},
   handler: async (ctx) => {
-    const auth = await getOwnerClinicOrPreview(ctx);
+    const auth = await getClinicMemberOrNull(ctx);
     if (!auth) return null;
     const account = await ctx.db
       .query("clinicPayoutAccounts")

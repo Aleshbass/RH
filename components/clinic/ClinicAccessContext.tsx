@@ -31,9 +31,15 @@ export const CLINIC_AREA_LABELS: Record<ClinicArea, string> = {
   settings: 'Clinic settings',
 }
 
-interface ClinicPreviewContextType {
-  /** True while loading, for preview visitors, and until the clinic is approved */
-  isPreviewMode: boolean
+/** api.clinicTools.getMyClinicAccess for someone who isn't a clinic owner or team member. */
+export type NonMemberAccess = { mode: 'none'; signedIn: boolean; role: string | null }
+
+interface ClinicAccessContextType {
+  /**
+   * The clinic can't take changes yet: still loading, set-up unfinished, waiting for Rehabify's
+   * approval, declined, or the member's access was paused. Pages stay readable; actions ask first.
+   */
+  isReadOnly: boolean
   isPendingApproval: boolean
   isOnboardingIncomplete: boolean
   isDeclined: boolean
@@ -41,7 +47,7 @@ interface ClinicPreviewContextType {
   isOwner: boolean
   /** Signed in as a clinic team member (clinician or front desk) */
   isStaff: boolean
-  /** owner, clinician or front desk; null for preview visitors */
+  /** owner, clinician or front desk; null until access has loaded */
   staffKind: ClinicStaffKind | null
   /** A clinician on the team (not the owner): gets a personal home instead of the clinic overview */
   isClinician: boolean
@@ -54,55 +60,53 @@ interface ClinicPreviewContextType {
   /** The whole clinic was suspended by Rehabify: records stay readable, changes are refused */
   isClinicSuspended: boolean
   clinicSuspendedReason: string | null
-  /** Whether the signed-in owner/member can use a page. Preview visitors can look at everything. */
+  /** Whether the signed-in owner/member can use a page */
   canUse: (area: ClinicArea) => boolean
   clinicName: string | null
   logoUrl: string | null
   roleName: string | null
   /** False until access has loaded */
   isLoaded: boolean
+  /** Signed in, but not a clinic owner or team member (the portal sends them elsewhere) */
+  nonMember: NonMemberAccess | null
   requireFullAccess: (actionName?: string, callback?: () => void) => boolean
   openOnboardingWizard: () => void
 }
 
-const ClinicPreviewContext = createContext<ClinicPreviewContextType | undefined>(undefined)
+const ClinicAccessContext = createContext<ClinicAccessContextType | undefined>(undefined)
 
-export function ClinicPreviewProvider({ children }: { children: ReactNode }) {
+export function ClinicAccessProvider({ children }: { children: ReactNode }) {
   const router = useRouter()
   const access = useQuery(api.clinicTools.getMyClinicAccess)
-  const currentUser = useQuery(api.users.getMyUser)
 
   const [isModalOpen, setIsModalOpen] = useState(false)
-  const [attemptedAction, setAttemptedAction] = useState<string>('Live Action')
+  const [attemptedAction, setAttemptedAction] = useState<string>('This action')
 
   const isLoaded = access !== undefined
-  const member = access && access.mode !== 'preview' ? access : null
+  const member = access && access.mode !== 'none' ? access : null
+  const nonMember = access && access.mode === 'none' ? (access as NonMemberAccess) : null
   const isOwner = member?.mode === 'owner'
   const isStaff = member?.mode === 'staff'
   const staffKind = (member?.staffKind ?? null) as ClinicStaffKind | null
   const isClinician = staffKind === 'clinician'
-  const firstName = (member?.firstName as string | null | undefined) ?? currentUser?.firstName?.trim() ?? null
+  const firstName = (member?.firstName as string | null | undefined) ?? null
   const hasOwnPhysioPortal = Boolean(member?.hasOwnPhysioPortal)
 
   const isDeclined = member?.approvalStatus === 'declined'
-  // A skip always leaves onboarded=false, so a stale onboardingSkipped flag on an onboarded account is ignored.
-  // Signed-in visitors who aren't a clinic member yet (e.g. mid-onboarding) count as not finished too.
-  const isOnboardingIncomplete = member
-    ? !member.ownerOnboarded
-    : Boolean(currentUser && !currentUser.onboarded)
+  const isOnboardingIncomplete = Boolean(member && !member.ownerOnboarded)
   // The backend only allows changes once approved, so anything short of that waits for approval
   const isPendingApproval = Boolean(
     member && member.ownerOnboarded && member.approvalStatus !== 'approved' && !isDeclined
   )
   const isSuspended = Boolean(member?.suspended)
-  // Not part of preview mode: a suspended clinic still sees its real records
+  // A suspended clinic still sees its real records; changes are refused by the backend
   const isClinicSuspended = Boolean(member?.clinicSuspended)
   const clinicSuspendedReason = member?.clinicSuspendedReason ?? null
 
-  const isPreviewMode = !member || isOnboardingIncomplete || isPendingApproval || isDeclined || isSuspended
+  const isReadOnly = !member || isOnboardingIncomplete || isPendingApproval || isDeclined || isSuspended
 
   const canUse = (area: ClinicArea) => {
-    if (!member) return true
+    if (!member) return false
     return member.permissions === 'all' || member.permissions.includes(area)
   }
 
@@ -112,15 +116,12 @@ export function ClinicPreviewProvider({ children }: { children: ReactNode }) {
   }
 
   const requireFullAccess = (actionName = 'This action', callback?: () => void): boolean => {
-    if (isPreviewMode || isClinicSuspended) {
+    if (isReadOnly || isClinicSuspended) {
       setAttemptedAction(actionName)
       setIsModalOpen(true)
       return false
     }
-
-    if (callback) {
-      callback()
-    }
+    if (callback) callback()
     return true
   }
 
@@ -128,9 +129,9 @@ export function ClinicPreviewProvider({ children }: { children: ReactNode }) {
   const canFinishSetup = !isPendingApproval && !isStaff && !isClinicSuspended
 
   return (
-    <ClinicPreviewContext.Provider
+    <ClinicAccessContext.Provider
       value={{
-        isPreviewMode,
+        isReadOnly,
         isPendingApproval,
         isOnboardingIncomplete,
         isDeclined,
@@ -148,13 +149,14 @@ export function ClinicPreviewProvider({ children }: { children: ReactNode }) {
         logoUrl: member?.logoUrl ?? null,
         roleName: member?.roleName ?? null,
         isLoaded,
+        nonMember,
         requireFullAccess,
         openOnboardingWizard,
       }}
     >
       {children}
 
-      {/* Shown when a live action is attempted in preview */}
+      {/* Shown when an action is attempted before the clinic can take changes */}
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader className="text-left">
@@ -199,17 +201,14 @@ export function ClinicPreviewProvider({ children }: { children: ReactNode }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </ClinicPreviewContext.Provider>
+    </ClinicAccessContext.Provider>
   )
 }
 
-export function useClinicPreview() {
-  const context = useContext(ClinicPreviewContext)
+export function useClinicAccess() {
+  const context = useContext(ClinicAccessContext)
   if (!context) {
-    throw new Error('useClinicPreview must be used within a ClinicPreviewProvider')
+    throw new Error('useClinicAccess must be used within a ClinicAccessProvider')
   }
   return context
 }
-
-/** Same context; the name reads better where it's about access rather than preview. */
-export const useClinicAccess = useClinicPreview

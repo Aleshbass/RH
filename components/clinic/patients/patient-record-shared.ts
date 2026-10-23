@@ -22,8 +22,8 @@ export function friendlyError(err: unknown, fallback: string) {
 export const fieldClass = 'text-sm bg-white dark:bg-neutral-950 border-neutral-200 dark:border-neutral-800'
 export const labelClass = 'text-xs font-medium text-neutral-700 dark:text-neutral-300'
 
-/** Preview/sample ids are never sent to the backend. */
-export const isPreviewId = (id: string | null | undefined) => !id || String(id).startsWith('prev_')
+/** No id to send to the backend (nothing chosen yet). */
+export const isMissingId = (id: string | null | undefined) => !id
 
 export interface ClinicianOption {
   id: string
@@ -51,12 +51,12 @@ export function useClinicianOptions() {
     ...list
       .filter((c) => !c.isMe)
       .map((c) => ({ id: c.id as string, label: c.isOwner ? `${c.name} (owner)` : c.name })),
-  ].filter((o) => !isPreviewId(o.id))
+  ].filter((o) => !isMissingId(o.id))
 
   const defaultId = me?.id ?? owner?.id ?? null
   return {
-    ownerId: defaultId && !isPreviewId(defaultId) ? (defaultId as string) : null,
-    meId: me && !isPreviewId(me.id) ? (me.id as string) : null,
+    ownerId: defaultId && !isMissingId(defaultId) ? (defaultId as string) : null,
+    meId: me && !isMissingId(me.id) ? (me.id as string) : null,
     options,
     loading: clinicians === undefined,
   }

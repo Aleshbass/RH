@@ -19,7 +19,7 @@ import {
 import { useClerk, useUser } from '@clerk/nextjs'
 import { ClinicThemeToggle } from '@/components/clinic/ClinicTheme'
 import { ClinicBrand, PoweredByRehabify } from '@/components/clinic/ClinicBrand'
-import { useClinicAccess, type ClinicArea } from '@/components/clinic/ClinicPreviewContext'
+import { useClinicAccess, type ClinicArea } from '@/components/clinic/ClinicAccessContext'
 import {
   Users,
   Calendar,
@@ -155,8 +155,8 @@ export default function ClinicSidebar({ className, onNavigate, collapsible = tru
   const pathname = usePathname()
   const [isCollapsed, setIsCollapsed] = useState(false)
   const navCounts = useQuery(api.clinicTools.getClinicNavCounts, {})
-  const { isPreviewMode } = useClinicAccess()
-  const unreadMessages = useQuery(api.chat.getUnreadCount, isPreviewMode ? 'skip' : {}) as number | undefined
+  const { isReadOnly } = useClinicAccess()
+  const unreadMessages = useQuery(api.chat.getUnreadCount, isReadOnly ? 'skip' : {}) as number | undefined
   const counts = navCounts ? { ...navCounts, unreadMessages: unreadMessages ?? 0 } : undefined
   const collapsed = collapsible && isCollapsed
   const { canUse } = useClinicAccess()

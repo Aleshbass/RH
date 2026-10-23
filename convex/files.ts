@@ -43,9 +43,11 @@ export const getFileUrl = query({
   },
   returns: v.union(v.string(), v.null()),
   handler: async (ctx, args) => {
-    // Check if file exists
-    const exists = await ctx.storage.getUrl(args.storageId);
-    return exists;
+    // Stored files include licences, IDs and patient documents: never hand them out signed out.
+    // (Only signed-in screens use this: chat attachments, treatment-plan media.)
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return null;
+    return await ctx.storage.getUrl(args.storageId);
   },
 });
 

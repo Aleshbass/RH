@@ -311,10 +311,15 @@ export const storeUserFromClerk = mutation({
       .withIndex("by_clerk_id", (q) => q.eq("clerkId", args.clerkId))
       .unique();
 
+    // The email comes from Clerk's signed token, not from the browser: staff invitations and
+    // email lookups trust users.email. Only a token without an email claim falls back to the argument.
+    const tokenEmail = typeof identity.email === "string" ? identity.email.trim() : undefined;
+    const trustedEmail = tokenEmail ? tokenEmail : args.email;
+
     if (existingUser) {
       const updates: Partial<Doc<"users">> = {};
-      if (args.email && existingUser.email !== args.email) {
-        updates.email = args.email;
+      if (trustedEmail && existingUser.email !== trustedEmail) {
+        updates.email = trustedEmail;
       }
       if (args.firstName && existingUser.firstName !== args.firstName) {
         updates.firstName = args.firstName;
@@ -370,7 +375,7 @@ export const storeUserFromClerk = mutation({
       // User does not exist, create a new one
       const newUserId = await ctx.db.insert("users", {
         clerkId: args.clerkId,
-        email: args.email,
+        email: trustedEmail,
         firstName: args.firstName,
         lastName: args.lastName,
         imageUrl: args.imageUrl,

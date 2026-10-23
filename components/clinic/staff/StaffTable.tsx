@@ -31,7 +31,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { AvailabilityScheduler, type OperatingHours } from '@/components/onboarding/common/AvailabilityScheduler'
 import { EmptyState, StatusBadge, primaryButtonClass } from '@/components/clinic/ui'
-import { useClinicPreview } from '@/components/clinic/ClinicPreviewContext'
+import { useClinicAccess } from '@/components/clinic/ClinicAccessContext'
 import { MemberRoleSelect } from './MemberRoleSelect'
 import { teamError, type ClinicRole } from './team-shared'
 
@@ -93,7 +93,7 @@ interface StaffTableProps {
 }
 
 export default function StaffTable({ staff, roles, onInvite }: StaffTableProps) {
-    const { requireFullAccess, isStaff } = useClinicPreview()
+    const { requireFullAccess, isStaff } = useClinicAccess()
     const [searchTerm, setSearchTerm] = useState('')
     const [availabilityFor, setAvailabilityFor] = useState<TeamMember | null>(null)
     const [patientsFor, setPatientsFor] = useState<TeamMember | null>(null)
@@ -296,11 +296,7 @@ export default function StaffTable({ staff, roles, onInvite }: StaffTableProps) 
                                                     Working hours
                                                 </DropdownMenuItem>
                                                 <DropdownMenuItem
-                                                    onClick={() =>
-                                                        String(member.userId).startsWith('prev_')
-                                                            ? requireFullAccess('View clinician patients')
-                                                            : setPatientsFor(member)
-                                                    }
+                                                    onClick={() => setPatientsFor(member)}
                                                 >
                                                     <Users className="mr-2 h-4 w-4 text-neutral-500" />
                                                     View patients

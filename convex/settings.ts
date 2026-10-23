@@ -247,7 +247,12 @@ export const updateClinicSettings = mutation({
     })),
   },
   handler: async (ctx, { clinicId, ...settings }) => {
-    await ensureUserRole(ctx, ["clinic_owner", "admin"]);
+    const caller = await ensureUserRole(ctx, ["clinic_owner", "admin"]);
+    // A clinic owner may change only their own clinic's settings
+    if (caller.role !== "admin") {
+      const clinic = await ctx.db.get(clinicId);
+      if (!clinic || clinic.ownerId !== caller._id) throw new Error("You don't have permission to manage this clinic");
+    }
 
     // Check if settings exist
     const existing = await ctx.db

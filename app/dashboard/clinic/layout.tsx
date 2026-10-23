@@ -1,20 +1,20 @@
 'use client'
 
-import { useAuth } from '@clerk/nextjs'
+import { useAuth, useClerk } from '@clerk/nextjs'
 import { usePathname, useRouter } from 'next/navigation'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Skeleton } from '@/components/ui/skeleton'
 import { AlertCircle, Lock, Menu, Settings } from '@/components/icons'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetTrigger, SheetTitle, SheetHeader } from '@/components/ui/sheet'
 import ClinicSidebar from '@/components/clinic/ClinicSidebar'
-import ClinicPreviewBanner from '@/components/clinic/ClinicPreviewBanner'
+import ClinicStatusBanner from '@/components/clinic/ClinicStatusBanner'
 import {
   CLINIC_AREA_LABELS,
-  ClinicPreviewProvider,
+  ClinicAccessProvider,
   useClinicAccess,
   type ClinicArea,
-} from '@/components/clinic/ClinicPreviewContext'
+} from '@/components/clinic/ClinicAccessContext'
 import { ClinicThemeProvider, ClinicThemeToggle } from '@/components/clinic/ClinicTheme'
 import { ClinicBrand, PoweredByRehabify } from '@/components/clinic/ClinicBrand'
 import { EmptyState } from '@/components/clinic/ui'
@@ -24,9 +24,9 @@ import Link from 'next/link'
 export default function ClinicLayout({ children }: { children: React.ReactNode }) {
   return (
     <ClinicThemeProvider>
-      <ClinicPreviewProvider>
+      <ClinicAccessProvider>
         <ClinicPortal>{children}</ClinicPortal>
-      </ClinicPreviewProvider>
+      </ClinicAccessProvider>
     </ClinicThemeProvider>
   )
 }
@@ -71,14 +71,71 @@ function PortalSkeleton() {
   )
 }
 
+/**
+ * Where someone who isn't a clinic owner or team member belongs. Null for clinic staff who were
+ * removed from their clinic: /dashboard would send them straight back here.
+ */
+function nonMemberHome(role: string | null): string | null {
+  switch (role) {
+    case null:
+    case 'clinic_owner':
+      return '/clinic-owner' // set up a clinic (asks them to sign in first if needed)
+    case 'physiotherapist':
+      return '/dashboard/physiotherapist'
+    case 'patient':
+    case 'family_member':
+      return '/dashboard/patient'
+    case 'admin':
+      return '/dashboard/admin'
+    case 'doctor':
+    case 'partner':
+      return '/partners/portal'
+    default:
+      return null
+  }
+}
+
 function ClinicPortal({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const pathname = usePathname()
-  const { isLoaded: authLoaded } = useAuth()
-  const { isLoaded, isPreviewMode, isDeclined, isOwner, canUse, isClinicSuspended } = useClinicAccess()
+  const { isLoaded: authLoaded, isSignedIn } = useAuth()
+  const { signOut } = useClerk()
+  const { isLoaded, isReadOnly, isDeclined, isOwner, canUse, isClinicSuspended, nonMember } = useClinicAccess()
+  const nonMemberDestination = nonMember ? nonMemberHome(nonMember.role) : null
+
+  // The clinic portal is for clinic owners and their teams only
+  useEffect(() => {
+    if (!authLoaded) return
+    if (!isSignedIn) {
+      router.replace(`/sign-in?redirect_url=${encodeURIComponent(pathname || '/dashboard/clinic')}`)
+    } else if (nonMemberDestination) {
+      router.replace(nonMemberDestination)
+    }
+  }, [authLoaded, isSignedIn, nonMemberDestination, pathname, router])
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
 
-  if (!authLoaded || !isLoaded) {
+  if (nonMember && !nonMemberDestination) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-neutral-50 dark:bg-neutral-950 p-4">
+        <div className="max-w-md w-full bg-white dark:bg-neutral-900 p-8 rounded-xl border border-neutral-200 dark:border-neutral-800 shadow-sm text-center space-y-4">
+          <div className="w-12 h-12 rounded-2xl bg-neutral-100 text-neutral-500 mx-auto flex items-center justify-center dark:bg-white/[0.06] dark:text-neutral-400">
+            <Lock className="w-6 h-6" />
+          </div>
+          <div>
+            <h2 className="text-xl font-semibold tracking-tight text-neutral-950 dark:text-white">You're not part of a clinic team</h2>
+            <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-1 leading-relaxed">
+              Ask the clinic owner to invite you again, or sign in with a different account.
+            </p>
+          </div>
+          <Button variant="outline" onClick={() => signOut({ redirectUrl: '/sign-in' })} className="w-full">
+            Sign out
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
+  if (!authLoaded || !isLoaded || !isSignedIn || nonMember) {
     return <PortalSkeleton />
   }
 
@@ -155,14 +212,14 @@ function ClinicPortal({ children }: { children: React.ReactNode }) {
               <span className="rounded-md bg-rose-50 px-1.5 py-0.5 text-[11px] font-medium text-rose-700 dark:bg-rose-500/10 dark:text-rose-300">
                 Suspended
               </span>
-            ) : isPreviewMode ? (
+            ) : isReadOnly ? (
               <span className="rounded-md bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-800 dark:bg-amber-500/10 dark:text-amber-400">
-                Preview
+                Not live yet
               </span>
             ) : null}
 
             <ClinicThemeToggle />
-            {!isPreviewMode && <PhysioNotifications portal="clinic" />}
+            {!isReadOnly && <PhysioNotifications portal="clinic" />}
 
             {canUse('settings') && (
               <Link
@@ -177,14 +234,14 @@ function ClinicPortal({ children }: { children: React.ReactNode }) {
         </header>
 
         {/* Desktop: notifications (patient check-ins, pain alerts, payments) */}
-        {!isPreviewMode && (
+        {!isReadOnly && (
           <div className="hidden md:flex justify-end px-6 pt-3">
             <PhysioNotifications portal="clinic" />
           </div>
         )}
 
-        {/* Preview / verification status */}
-        <ClinicPreviewBanner />
+        {/* Set-up / verification / suspension status */}
+        <ClinicStatusBanner />
 
         <main className="flex-1 w-full min-w-0">
           {blocked && area ? (

@@ -24,7 +24,7 @@ import { Users } from '@/components/icons'
 import { toast } from 'sonner'
 import { Id } from '@/convex/_generated/dataModel'
 import { EmptyState, StatusBadge, primaryButtonClass } from '@/components/clinic/ui'
-import { useClinicPreview } from '@/components/clinic/ClinicPreviewContext'
+import { useClinicAccess } from '@/components/clinic/ClinicAccessContext'
 
 /** Accepts both getClinicCliniciansWithCaseload rows and getClinicStaff rows. */
 interface StaffOption {
@@ -59,7 +59,7 @@ export default function PatientListModal({
     physiotherapistName,
     allStaff
 }: PatientListModalProps) {
-    const { requireFullAccess } = useClinicPreview()
+    const { requireFullAccess } = useClinicAccess()
     const [reassigningPatientId, setReassigningPatientId] = useState<string | null>(null)
     const [targetPhysioId, setTargetPhysioId] = useState<string>('')
     const [saving, setSaving] = useState(false)

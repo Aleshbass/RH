@@ -3,7 +3,7 @@ import { mutation, query, internalQuery, type MutationCtx } from "./_generated/s
 import { Doc, Id } from "./_generated/dataModel";
 import { api } from "./_generated/api";
 import { getAuthenticatedUser, ensureClinicOwner, ensureUserRole, ensureIsClinicOwner } from "./auth";
-import { assertClinicNotSuspended, getClinicMember, getClinicMemberOrPreview, getOwnerClinic, getOwnerClinicOrPreview } from "./clinicTools";
+import { assertClinicNotSuspended, getClinicMember, getClinicMemberOrNull, getOwnerClinic } from "./clinicTools";
 import { ensureClinicNumber, ensureUserNumbers } from "./helpers/rehabifyIds";
 import { CLINIC_INVITE_APPROVAL_NOTE } from "./helpers/clinicApproval";
 
@@ -529,8 +529,8 @@ export const getClinicStaff = query({
   // No strict `returns` validator: physiotherapist profiles carry many optional fields
   // (marketplace settings etc.) and a strict object validator would reject them.
   handler: async (ctx) => {
-    // Any clinic member (used for clinician pickers); empty for preview visitors
-    const member = await getClinicMemberOrPreview(ctx);
+    // Any clinic member (used for clinician pickers); empty for anyone else
+    const member = await getClinicMemberOrNull(ctx);
     if (!member) {
       return [];
     }
@@ -819,16 +819,16 @@ export const getClinicDashboardStats = query({
 export const getClinicRevenue = query({
   args: {},
   handler: async (ctx) => {
-    // Sample numbers only for genuine preview viewers; a real owner gets real data or the error
-    const clinic = (await getClinicMemberOrPreview(ctx, "reports"))?.clinic ?? null;
+    // Zeros for anyone who isn't in a clinic; a real member gets real data or the error
+    const clinic = (await getClinicMemberOrNull(ctx, "reports"))?.clinic ?? null;
 
     if (!clinic) {
       return {
-        thisMonth: 4200000,
-        lastMonth: 3650000,
-        growth: 15,
-        totalRevenue: 28450000,
-        pendingPayments: 245000,
+        thisMonth: 0,
+        lastMonth: 0,
+        growth: 0,
+        totalRevenue: 0,
+        pendingPayments: 0,
       };
     }
 
@@ -1297,17 +1297,17 @@ export const getClinicPatientsLegacy = query({
 export const getClinicPatientStats = internalQuery({
   args: {},
   handler: async (ctx) => {
-    // Sample data only for genuine preview viewers; a real owner gets real data or the error
-    const auth = await getOwnerClinicOrPreview(ctx);
+    // Zeros for anyone who isn't in a clinic; a real member gets real data or the error
+    const auth = await getClinicMemberOrNull(ctx);
     const user: any = auth?.user ?? null;
     const clinic: any = auth?.clinic ?? null;
 
     if (!clinic) {
       return {
-        totalPatients: 48,
-        activePatients: 42,
-        newThisMonth: 12,
-        appointmentsToday: 6,
+        totalPatients: 0,
+        activePatients: 0,
+        newThisMonth: 0,
+        appointmentsToday: 0,
       };
     }
 
@@ -1411,18 +1411,18 @@ export const getClinicAppointmentsLegacy = query({
 export const getClinicAppointmentStats = query({
   args: {},
   handler: async (ctx) => {
-    // Sample data only for genuine preview viewers; a real owner gets real data or the error
-    const auth = await getClinicMemberOrPreview(ctx, "reports");
+    // Zeros for anyone who isn't in a clinic; a real member gets real data or the error
+    const auth = await getClinicMemberOrNull(ctx, "reports");
     const user: any = auth?.user ?? null;
     const clinic: any = auth?.clinic ?? null;
 
     if (!clinic) {
       return {
-        total: 58,
-        completed: 51,
-        cancelled: 4,
-        noShows: 3,
-        completionRate: 94.4,
+        total: 0,
+        completed: 0,
+        cancelled: 0,
+        noShows: 0,
+        completionRate: 0,
       };
     }
 
@@ -1465,19 +1465,19 @@ export const getClinicAppointmentStats = query({
 export const getStaffMetrics = query({
   args: {},
   handler: async (ctx) => {
-    // Sample data only for genuine preview viewers; a real owner gets real data or the error
-    const auth = await getClinicMemberOrPreview(ctx, "reports");
+    // Zeros for anyone who isn't in a clinic; a real member gets real data or the error
+    const auth = await getClinicMemberOrNull(ctx, "reports");
     const user: any = auth?.user ?? null;
     const clinic: any = auth?.clinic ?? null;
 
     if (!clinic) {
       return {
-        total: 6,
-        active: 5,
-        pending: 1,
+        total: 0,
+        active: 0,
+        pending: 0,
         inactive: 0,
-        newThisMonth: 1,
-        utilization: 82,
+        newThisMonth: 0,
+        utilization: 0,
       };
     }
 
@@ -1957,24 +1957,24 @@ export const getClinicAuditLogs = query({
 export const getOwnerAnalytics = query({
   args: {},
   handler: async (ctx) => {
-    // Sample data only for genuine preview viewers; a real owner gets real data or the error
-    const auth = await getClinicMemberOrPreview(ctx, "reports");
+    // Zeros for anyone who isn't in a clinic; a real member gets real data or the error
+    const auth = await getClinicMemberOrNull(ctx, "reports");
     const user: any = auth?.user ?? null;
     const clinic: any = auth?.clinic ?? null;
 
     if (!clinic) {
       return {
         telehealth: {
-          totalMinutes: 1440,
-          sessionsCount: 24,
-          averageSessionLength: 60,
-          growth: 18.5,
+          totalMinutes: 0,
+          sessionsCount: 0,
+          averageSessionLength: 0,
+          growth: 0,
         },
         patients: {
-          total: 48,
-          active: 42,
-          newThisMonth: 12,
-          retention: 87.5,
+          total: 0,
+          active: 0,
+          newThisMonth: 0,
+          retention: 0,
         },
       };
     }
@@ -2129,66 +2129,10 @@ export const getClinicPatients = query({
     offset: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const member = await getOwnerClinicOrPreview(ctx);
+    const member = await getClinicMemberOrNull(ctx);
     const clinic = member?.clinic ?? null;
 
-    if (!clinic) {
-      return [
-        {
-          _id: "prev_p1",
-          firstName: "Folake",
-          lastName: "Adebayo",
-          email: "folake.adebayo@example.com",
-          phoneNumber: "+234 803 123 4567",
-          patientNumber: "RH-P-SAMPLE",
-          status: "active",
-          gender: "female",
-          initialDiagnosis: "Post-Op Right ACL Reconstruction",
-          totalSessions: 8,
-          relationshipCreatedAt: Date.now() - 14 * 86400000,
-          primaryPhysiotherapist: {
-            _id: "prev_doc1",
-            firstName: "Kunle",
-            lastName: "Balogun",
-          },
-        },
-        {
-          _id: "prev_p2",
-          firstName: "Chukwudi",
-          lastName: "Eze",
-          email: "chukwudi.eze@example.com",
-          phoneNumber: "+234 802 987 6543",
-          patientNumber: "RH-P-SAMPLE",
-          status: "active",
-          gender: "male",
-          initialDiagnosis: "Lumbar Disc Herniation (L4-L5)",
-          totalSessions: 12,
-          relationshipCreatedAt: Date.now() - 30 * 86400000,
-          primaryPhysiotherapist: {
-            _id: "prev_doc2",
-            firstName: "Amara",
-            lastName: "Okafor",
-          },
-        },
-        {
-          _id: "prev_p3",
-          firstName: "Fatima",
-          lastName: "Aliyu",
-          email: "fatima.aliyu@example.com",
-          phoneNumber: "+234 814 555 1212",
-          status: "active",
-          gender: "female",
-          initialDiagnosis: "Cervicogenic Headache & Neck Spasm",
-          totalSessions: 4,
-          relationshipCreatedAt: Date.now() - 5 * 86400000,
-          primaryPhysiotherapist: {
-            _id: "prev_doc1",
-            firstName: "Kunle",
-            lastName: "Balogun",
-          },
-        },
-      ];
-    }
+    if (!clinic) return [];
 
     // Get all physiotherapists in this clinic
     const physiotherapistProfiles = await ctx.db
@@ -2312,81 +2256,9 @@ export const getClinicAppointments = query({
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const clinic = (await getOwnerClinicOrPreview(ctx))?.clinic ?? null;
+    const clinic = (await getClinicMemberOrNull(ctx))?.clinic ?? null;
 
-    if (!clinic) {
-      return [
-        {
-          _id: "prev_apt_1",
-          startTime: Date.now() + 2 * 60 * 60 * 1000,
-          endTime: Date.now() + 3 * 60 * 60 * 1000,
-          appointmentType: "in-person",
-          status: "scheduled",
-          patientId: "prev_p1",
-          physiotherapistId: "prev_doc1",
-          patient: {
-            _id: "prev_p1",
-            firstName: "Folake",
-            lastName: "Adebayo",
-            email: "folake.adebayo@example.com",
-            imageUrl: undefined,
-          },
-          physiotherapist: {
-            _id: "prev_doc1",
-            firstName: "Kunle",
-            lastName: "Balogun",
-            email: "dr.kunle@rehabify.ng",
-            imageUrl: undefined,
-          },
-        },
-        {
-          _id: "prev_apt_2",
-          startTime: Date.now() + 4 * 60 * 60 * 1000,
-          endTime: Date.now() + 5 * 60 * 60 * 1000,
-          appointmentType: "telehealth",
-          status: "scheduled",
-          patientId: "prev_p2",
-          physiotherapistId: "prev_doc2",
-          patient: {
-            _id: "prev_p2",
-            firstName: "Chukwudi",
-            lastName: "Eze",
-            email: "chukwudi.eze@example.com",
-            imageUrl: undefined,
-          },
-          physiotherapist: {
-            _id: "prev_doc2",
-            firstName: "Amara",
-            lastName: "Okafor",
-            email: "dr.amara@rehabify.ng",
-            imageUrl: undefined,
-          },
-        },
-        {
-          _id: "prev_apt_3",
-          startTime: Date.now() - 2 * 60 * 60 * 1000,
-          endTime: Date.now() - 1 * 60 * 60 * 1000,
-          appointmentType: "in-person",
-          status: "completed",
-          patientId: "prev_p3",
-          physiotherapistId: "prev_doc1",
-          patient: {
-            _id: "prev_p3",
-            firstName: "Fatima",
-            lastName: "Aliyu",
-            email: "fatima.aliyu@example.com",
-            imageUrl: undefined,
-          },
-          physiotherapist: {
-            _id: "prev_doc1",
-            firstName: "Kunle",
-            lastName: "Balogun",
-            email: "dr.kunle@rehabify.ng",
-            imageUrl: undefined,
-          },
-        },
-      ];
-    }
+    if (!clinic) return [];
 
     // Get all physiotherapists in this clinic
     const physiotherapistProfiles = await ctx.db

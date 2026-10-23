@@ -11,14 +11,12 @@ import {
   Share2,
   ShieldCheck,
   ArrowRight,
-  Eye,
   FileText,
   Clock,
   Zap,
   ChevronRight,
   Check,
   Lock,
-  ArrowUpRight
 } from '@/components/icons'
 import { Button } from '@/components/ui/button'
 
@@ -217,16 +215,6 @@ export function ClinicOnboardingSection() {
                   </Link>
                 </Button>
 
-                <Button
-                  asChild
-                  variant="outline"
-                  className="h-12 px-6 rounded-full text-xs font-medium bg-neutral-100/80 hover:bg-neutral-200/80 dark:bg-neutral-800/70 dark:hover:bg-neutral-800 text-neutral-800 dark:text-neutral-200 border-black/[0.08] dark:border-white/[0.1] active:scale-[0.97] transition-all duration-100"
-                >
-                  <Link href="/dashboard/clinic" className="inline-flex items-center justify-center gap-2">
-                    <Eye className="w-4 h-4 text-neutral-500 dark:text-neutral-400" />
-                    <span>Preview Clinic Dashboard</span>
-                  </Link>
-                </Button>
               </div>
             </div>
 
@@ -373,16 +361,6 @@ export function ClinicOnboardingSection() {
                   </AnimatePresence>
                 </div>
 
-                {/* Footer preview direct link */}
-                <div className="mt-3 text-center">
-                  <Link
-                    href="/dashboard/clinic"
-                    className="inline-flex items-center gap-1.5 text-[11px] font-medium text-[#005b57] dark:text-[#38b2ac] hover:underline"
-                  >
-                    <span>Click to open full clinic dashboard preview</span>
-                    <ArrowUpRight className="w-3 h-3" />
-                  </Link>
-                </div>
               </div>
             </div>
           </div>

@@ -26,12 +26,12 @@ import { toast } from 'sonner'
 import { Loader2 } from '@/components/icons'
 import { format, isValid } from 'date-fns'
 import { cn } from '@/lib/utils'
-import { useClinicPreview } from '@/components/clinic/ClinicPreviewContext'
+import { useClinicAccess } from '@/components/clinic/ClinicAccessContext'
 import { primaryButtonClass } from '@/components/clinic/ui'
 import {
   fieldClass,
   friendlyError,
-  isPreviewId,
+  isMissingId,
   labelClass,
   type ClinicianOption,
 } from './patient-record-shared'
@@ -116,7 +116,7 @@ export function EditPatientDetailsDialog({
 }
 
 function EditDetailsForm({ record, onDone }: { record: PatientRecord; onDone: () => void }) {
-  const { requireFullAccess } = useClinicPreview()
+  const { requireFullAccess } = useClinicAccess()
   const updateDetails = useMutation(api.clinicTools.updateClinicPatientDetails)
   const resendInvite = useMutation(api.clinicTools.resendClinicPatientInvite)
   const { patient, profile } = record
@@ -144,7 +144,7 @@ function EditDetailsForm({ record, onDone }: { record: PatientRecord; onDone: ()
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
     if (!requireFullAccess('Edit patient details')) return
-    if (isPreviewId(patient._id)) return
+    if (isMissingId(patient._id)) return
     if (!form.firstName.trim() || !form.lastName.trim()) {
       toast.error('Enter a first and last name')
       return
@@ -442,7 +442,7 @@ function ClinicianPickerForm({
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
-    if (!value || isPreviewId(value)) return
+    if (!value || isMissingId(value)) return
     setSaving(true)
     try {
       await onConfirm(value)

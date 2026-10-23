@@ -19,28 +19,28 @@ import {
   type StaffInvitation,
 } from '@/components/clinic/staff/team-shared'
 import { TourGuide } from '@/components/shared/TourGuide'
-import { useClinicPreview } from '@/components/clinic/ClinicPreviewContext'
+import { useClinicAccess } from '@/components/clinic/ClinicAccessContext'
 import { PageShell, Panel, StatTile, StatusBadge, primaryButtonClass } from '@/components/clinic/ui'
 
 const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? '' : 's'}`
 
 export default function StaffManagementPage() {
-  const { requireFullAccess, isPreviewMode } = useClinicPreview()
+  const { requireFullAccess, isReadOnly } = useClinicAccess()
   const router = useRouter()
   const searchParams = useSearchParams()
   const pathname = usePathname()
   const [inviteOpen, setInviteOpen] = useState(false)
   const [resendingId, setResendingId] = useState<string | null>(null)
 
-  // Preview mode reads as true while the user is still loading, so wait for the user first.
+  // Read-only mode reads as true while access is still loading, so wait for the user first.
   const me = useQuery(api.users.getMyUser)
   const userLoading = me === undefined
 
   // The team is clinicians only; an administrator signs in with the owner's account.
-  // Team and roles return samples for preview visitors; invitations throw for them, so skip.
+  // Invitations need a clinic that can take changes, so skip them while read-only.
   const teamQuery = useQuery(api.clinicTools.getClinicCliniciansWithCaseload, {})
   const roles = useQuery(api.clinicTools.listClinicRoles, {}) as ClinicRole[] | undefined
-  const invitationsQuery = useQuery(api.clinics.getClinicInvitations, isPreviewMode ? 'skip' : {}) as
+  const invitationsQuery = useQuery(api.clinics.getClinicInvitations, isReadOnly ? 'skip' : {}) as
     | StaffInvitation[]
     | undefined
 
@@ -50,7 +50,7 @@ export default function StaffManagementPage() {
   const revokeStaffInvitation = useMutation(api.clinics.revokeClinicStaffInvitation)
 
   const team = teamQuery as TeamMember[] | undefined
-  const invitations: StaffInvitation[] | undefined = isPreviewMode ? [] : invitationsQuery
+  const invitations: StaffInvitation[] | undefined = isReadOnly ? [] : invitationsQuery
 
   const openInvite = () => requireFullAccess('Invite clinician', () => setInviteOpen(true))
 

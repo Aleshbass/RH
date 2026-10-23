@@ -142,11 +142,11 @@ export async function getOwnerClinic(ctx: QueryCtx): Promise<ClinicMember> {
 }
 
 /**
- * Like getClinicMember, but returns null for genuine preview viewers (signed out, or not a
- * clinic owner/team member yet) so sandbox data can be shown. A real owner or team member
- * whose access fails gets the real error, never fake data.
+ * Like getClinicMember, but returns null for people who aren't in a clinic (signed out, or not
+ * a clinic owner/team member yet), so queries return nothing instead of erroring. A real owner
+ * or team member whose access fails gets the real error. Never used to show sample data.
  */
-export async function getClinicMemberOrPreview(ctx: QueryCtx, area?: ClinicArea): Promise<ClinicMember | null> {
+export async function getClinicMemberOrNull(ctx: QueryCtx, area?: ClinicArea): Promise<ClinicMember | null> {
   try {
     return await getClinicMember(ctx, area);
   } catch (err) {
@@ -162,9 +162,6 @@ export async function getClinicMemberOrPreview(ctx: QueryCtx, area?: ClinicArea)
     return null;
   }
 }
-
-/** Existing callers: any clinic member, or preview. */
-export const getOwnerClinicOrPreview = (ctx: QueryCtx) => getClinicMemberOrPreview(ctx);
 
 /** Who a record is attributed to by default: the acting clinician, or the owner for front-desk staff. */
 export function defaultClinicianId(member: ClinicMember): Id<"users"> {
@@ -1660,23 +1657,10 @@ export const updateHomeProgramme = mutation({
 export const getClinicFollowUpQueue = query({
   args: {},
   handler: async (ctx) => {
-    const auth = await getOwnerClinicOrPreview(ctx);
+    const auth = await getClinicMemberOrNull(ctx);
     const now = Date.now();
     const DAY = 24 * 60 * 60 * 1000;
-    if (!auth) {
-      // Sample row so preview visitors can see how check-ins work
-      return [
-        {
-          patientId: "prev_p2" as Id<"users">,
-          patientName: "Chukwudi Eze",
-          phone: "+234 802 987 6543",
-          lastVisitAt: now - 9 * DAY,
-          daysSinceLastVisit: 9,
-          lastVisitStatus: "completed",
-          checkInDueAt: null,
-        },
-      ];
-    }
+    if (!auth) return [];
     const { clinic } = auth;
     let patientIds = await getActiveClinicPatientIds(ctx, clinic);
     // Clinicians follow up their own patients (same rule as the Patients list)
@@ -1970,65 +1954,21 @@ export const createClinicPaymentRequest = mutation({
 export const getClinicBillingSummary = query({
   args: {},
   handler: async (ctx) => {
-    const clinic = (await getClinicMemberOrPreview(ctx, "billing"))?.clinic ?? null;
+    const clinic = (await getClinicMemberOrNull(ctx, "billing"))?.clinic ?? null;
     const DAY = 86400000;
 
     if (!clinic) {
+      // Not a member of a clinic: nothing to show (the portal sends them to sign-in or sign-up)
       return {
-        isPreview: true,
-        unpaidNaira: 35000,
-        unpaidCount: 1,
-        paidThisMonthNaira: 210000,
-        netThisMonthNaira: 166350,
-        feesThisMonthNaira: 41600,
-        processingFeesThisMonthNaira: 2050,
+        unpaidNaira: 0,
+        unpaidCount: 0,
+        paidThisMonthNaira: 0,
+        netThisMonthNaira: 0,
+        feesThisMonthNaira: 0,
+        processingFeesThisMonthNaira: 0,
         payoutAccount: null,
-        priceList: [
-          { name: "Initial assessment", priceNaira: 25000, durationMinutes: 60 },
-          { name: "Follow-up session", priceNaira: 15000, durationMinutes: 45 },
-        ],
-        invoices: [
-          {
-            _id: "prev_inv_1",
-            invoiceNumber: "INV-2026-081",
-            payoutStatus: "sent_to_bank" as const,
-            patientName: "Folake Adebayo",
-            patientPhone: "+234 803 123 4567",
-            serviceName: "Package of 6 sessions",
-            totalAmountNaira: 150000,
-            rehabifyFeeNaira: 29600,
-            paystackFeeNaira: 2000,
-            stampDutyNaira: 50,
-            clinicNetNaira: 118350,
-            rehabifySharePercent: 20,
-            status: "paid",
-            paymentMethod: "paystack",
-            paymentLink: null,
-            paidAt: Date.now() - 2 * DAY,
-            dueDate: Date.now() + 7 * DAY,
-            createdAt: Date.now() - 3 * DAY,
-          },
-          {
-            _id: "prev_inv_2",
-            invoiceNumber: "INV-2026-082",
-            payoutStatus: null,
-            patientName: "Chukwudi Eze",
-            patientPhone: "+234 802 987 6543",
-            serviceName: "Follow-up session",
-            totalAmountNaira: 35000,
-            rehabifyFeeNaira: 6875,
-            paystackFeeNaira: 625,
-            stampDutyNaira: 50,
-            clinicNetNaira: 27450,
-            rehabifySharePercent: 20,
-            status: "sent",
-            paymentMethod: null,
-            paymentLink: null,
-            paidAt: null,
-            dueDate: Date.now() + 3 * DAY,
-            createdAt: Date.now() - 1 * DAY,
-          },
-        ],
+        priceList: [],
+        invoices: [],
       };
     }
 
@@ -2133,7 +2073,6 @@ export const getClinicBillingSummary = query({
     );
 
     return {
-      isPreview: false,
       unpaidNaira: Math.round(unpaidKobo / 100),
       unpaidCount: invoices.filter((inv) => isUnpaid(inv.status)).length,
       paidThisMonthNaira: Math.round(paidThisMonthKobo / 100),
@@ -2237,52 +2176,8 @@ export const removeClinician = mutation({
 export const getClinicCliniciansWithCaseload = query({
   args: {},
   handler: async (ctx) => {
-    const auth = await getClinicMemberOrPreview(ctx, "team");
-    if (!auth) {
-      // Sample team for preview visitors (actions on them are blocked in the UI)
-      const weekdays = Object.fromEntries(
-        ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"].map((day, i) => [
-          day,
-          { isOpen: i < 5, slots: [{ start: "09:00", end: "17:00" }] },
-        ])
-      );
-      return [
-        {
-          profileId: "prev_prof1",
-          userId: "prev_doc1" as Id<"users">,
-          firstName: "Kunle",
-          lastName: "Balogun",
-          email: "kunle@example.com",
-          phoneNumber: "",
-          imageUrl: undefined,
-          role: "physiotherapist",
-          status: "active",
-          specializations: ["Sports rehabilitation"],
-          licenseNumber: null,
-          availabilitySchedule: weekdays,
-          activeCaseload: 2,
-          monthlyAppointmentsCount: 14,
-          clinicRoleId: null,
-        },
-        {
-          profileId: "prev_prof2",
-          userId: "prev_doc2" as Id<"users">,
-          firstName: "Amara",
-          lastName: "Okafor",
-          email: "amara@example.com",
-          phoneNumber: "",
-          imageUrl: undefined,
-          role: "physiotherapist",
-          status: "active",
-          specializations: ["Spinal therapy"],
-          licenseNumber: null,
-          availabilitySchedule: weekdays,
-          activeCaseload: 1,
-          monthlyAppointmentsCount: 9,
-          clinicRoleId: null,
-        },
-      ];
-    }
+    const auth = await getClinicMemberOrNull(ctx, "team");
+    if (!auth) return [];
     const { clinic } = auth;
 
     const profiles = await ctx.db
@@ -2397,44 +2292,10 @@ export const updateClinicianAvailability = mutation({
 export const getClinicSetupDetails = query({
   args: {},
   handler: async (ctx) => {
-    const auth = await getOwnerClinicOrPreview(ctx);
+    const auth = await getClinicMemberOrNull(ctx);
     const clinic = auth?.clinic ?? null;
 
-    if (!clinic || !auth) {
-      return {
-        _id: "prev_clinic_1",
-        name: "Victoria Island Physiotherapy Center",
-        clinicNumber: "RH-CL-SAMPLE",
-        contactEmail: "admin@viphysio.ng",
-        contactPhone: "+234 803 555 1200",
-        address: "Plot 14B, Bishop Oluwole Street, Victoria Island",
-        city: "Lagos",
-        country: "Nigeria",
-        description: "Specialized physical rehabilitation clinic offering evidence-based musculoskeletal, post-operative, and neurological physiotherapy.",
-        website: "https://viphysio.ng",
-        specializations: ["Orthopedics", "Sports Rehabilitation", "Spinal Therapy", "Neurology"],
-        services: ["Musculoskeletal physiotherapy", "Post-surgery rehabilitation", "Sports injury care"],
-        facilities: ["Exercise gym", "Treatment rooms", "Parking"],
-        logoUrl: null,
-        workingHours: {
-          monday: { open: "08:00", close: "17:00", active: true },
-          tuesday: { open: "08:00", close: "17:00", active: true },
-          wednesday: { open: "08:00", close: "17:00", active: true },
-          thursday: { open: "08:00", close: "17:00", active: true },
-          friday: { open: "08:00", close: "17:00", active: true },
-          saturday: { open: "09:00", close: "14:00", active: true },
-          sunday: { open: "00:00", close: "00:00", active: false },
-        },
-        verificationStatus: "Preview",
-        approvalStatus: "preview",
-        state: "Lagos",
-        priceList: [
-          { name: "Initial assessment", priceNaira: 25000, durationMinutes: 60 },
-          { name: "Follow-up session", priceNaira: 15000, durationMinutes: 45 },
-          { name: "Package of 6 sessions", priceNaira: 80000 },
-        ],
-      };
-    }
+    if (!clinic || !auth) return null;
 
     return {
       _id: clinic._id,
@@ -2632,46 +2493,9 @@ export const updateClinicLogo = mutation({
 export const getClinicRehabifyReferrals = query({
   args: {},
   handler: async (ctx) => {
-    const clinic = (await getClinicMemberOrPreview(ctx, "referrals"))?.clinic ?? null;
+    const clinic = (await getClinicMemberOrNull(ctx, "referrals"))?.clinic ?? null;
 
-    if (!clinic) {
-      return [
-        {
-          _id: "prev_ref_1",
-          trackingCode: "RHB-94201",
-          patientName: "Oluwaseun Bakare",
-          patientPhone: "+234 803 555 0192",
-          patientEmail: "o.bakare@example.com",
-          condition: "Post-Surgical Meniscal Tear Repair",
-          clinicalNotes: "Patient was discharged from Lagoon Hospital yesterday. Weight bearing as tolerated.",
-          priority: "urgent",
-          status: "received",
-          city: "Lagos",
-          partnerSource: "Lagoon Hospital Orthopedics",
-          createdAt: Date.now() - 4 * 3600000,
-          assignedPhysiotherapistId: null,
-          patientId: null,
-          isRehabifyReferral: true,
-        },
-        {
-          _id: "prev_ref_2",
-          trackingCode: "RHB-83114",
-          patientName: "Grace Danjuma",
-          patientPhone: "+234 812 444 8821",
-          patientEmail: "grace.d@example.com",
-          condition: "Chronic Cervical Radiculopathy",
-          clinicalNotes: "Referred by Dr. Alabi. Requires cervical traction and ergonomic re-training.",
-          priority: "standard",
-          status: "accepted",
-          city: "Lagos",
-          partnerSource: "First Cardiology Clinic Network",
-          createdAt: Date.now() - 28 * 3600000,
-          assignedPhysiotherapistId: "prev_doc1",
-          patientId: "prev_p2",
-          isRehabifyReferral: true,
-        },
-      ];
-    }
+    if (!clinic) return [];
 
     // Only referrals a Rehabify admin has explicitly routed to this clinic
     const matched = await ctx.db
@@ -2869,31 +2693,10 @@ export const respondToRehabifyReferral = mutation({
 export const getClinicConsolidatedDashboard = query({
   args: {},
   handler: async (ctx) => {
-    const auth = await getOwnerClinicOrPreview(ctx);
+    const auth = await getClinicMemberOrNull(ctx);
     const HOUR = 3600000;
 
-    if (!auth) {
-      const at = (hours: number) => Date.now() + hours * HOUR;
-      return {
-        isPreview: true,
-        clinicName: "Your clinic",
-        patientsInCare: 48,
-        todayCount: 3,
-        upcomingWeekCount: 14,
-        unpaidCount: 2,
-        unpaidNaira: 145000,
-        newReferralsCount: 1,
-        activeProgrammesCount: 21,
-        today: [
-          { _id: "preview_1", patientId: "prev_p1", startTime: at(1), endTime: at(2), appointmentType: "in-person", status: "scheduled", patientName: "Folake Adebayo", clinicianName: "Kunle Balogun" },
-          { _id: "preview_2", patientId: "prev_p2", startTime: at(3), endTime: at(4), appointmentType: "telehealth", status: "confirmed", patientName: "Chukwudi Eze", clinicianName: "Amara Okafor" },
-        ],
-        recentActivity: [
-          { id: "act_1", kind: "payment", title: "Payment received", description: "Folake Adebayo · ₦150,000", timestamp: Date.now() - 2 * HOUR },
-          { id: "act_2", kind: "note", title: "Treatment note", description: "Chukwudi Eze", timestamp: Date.now() - 5 * HOUR },
-        ],
-      };
-    }
+    if (!auth) return null;
 
     const { clinic } = auth;
     // Money and referral figures only for those whose role includes those pages
@@ -3027,7 +2830,6 @@ export const getClinicConsolidatedDashboard = query({
     activity.sort((a, b) => b.timestamp - a.timestamp);
 
     return {
-      isPreview: false,
       clinicName: clinic.name,
       patientsInCare: patientIds.length,
       todayCount: today.length,
@@ -3053,7 +2855,7 @@ export const getClinicConsolidatedDashboard = query({
 export const getClinicPatientReports = query({
   args: { patientId: v.id("users") },
   handler: async (ctx, args) => {
-    const member = await getClinicMemberOrPreview(ctx, "patients");
+    const member = await getClinicMemberOrNull(ctx, "patients");
     if (!member) return { checkIns: [], exerciseLogs: [] };
     await assertPatientInClinic(ctx, member.clinic, args.patientId);
     const staffIds = await getClinicStaffUserIds(ctx, member.clinic);
@@ -3112,7 +2914,7 @@ export const getClinicPatientReports = query({
 export const getClinicNavCounts = query({
   args: {},
   handler: async (ctx) => {
-    const auth = await getOwnerClinicOrPreview(ctx);
+    const auth = await getClinicMemberOrNull(ctx);
     if (!auth || !canUseArea(auth, "referrals")) return { newReferrals: 0 };
     const referrals = await ctx.db
       .query("inboundReferrals")
@@ -3126,7 +2928,7 @@ export const getClinicNavCounts = query({
 
 /**
  * A clinician's own home in the clinic portal: their visits today, their patients and their
- * check-ins, instead of the clinic-wide overview the owner sees. Null for preview visitors,
+ * check-ins, instead of the clinic-wide overview the owner sees. Null for people outside a clinic,
  * the owner and front-desk staff.
  */
 export const getMyClinicianHome = query({
@@ -3134,7 +2936,7 @@ export const getMyClinicianHome = query({
   handler: async (ctx) => {
     let member: ClinicMember | null;
     try {
-      member = await getClinicMemberOrPreview(ctx);
+      member = await getClinicMemberOrNull(ctx);
     } catch {
       // e.g. the owner paused this clinician: the home explains that instead of erroring
       return null;
@@ -3272,20 +3074,21 @@ export const getMyClinicianHome = query({
 
 /**
  * Who is using the clinic dashboard and what they can see. Drives the sidebar,
- * page access, the clinic name/logo header and preview mode.
+ * page access and the clinic name/logo header. Anyone who isn't a clinic owner or team
+ * member gets mode "none" (with their role) so the portal can send them to the right place.
  */
 export const getMyClinicAccess = query({
   args: {},
   handler: async (ctx) => {
     const identity = await ctx.auth.getUserIdentity();
-    if (!identity) return { mode: "preview" as const, signedIn: false };
+    if (!identity) return { mode: "none" as const, signedIn: false, role: null };
     const user = await ctx.db
       .query("users")
       .withIndex("by_clerk_id", (q: any) => q.eq("clerkId", identity.subject))
       .unique();
-    if (!user) return { mode: "preview" as const, signedIn: true };
+    if (!user) return { mode: "none" as const, signedIn: true, role: null };
     const member = await resolveClinicMember(ctx, user);
-    if (!member) return { mode: "preview" as const, signedIn: true };
+    if (!member) return { mode: "none" as const, signedIn: true, role: user.role ?? null };
 
     const owner = member.isOwner ? user : await ctx.db.get(member.clinic.ownerId);
     const approvalStatus = (await getApprovalStatus(ctx, member.clinic.ownerId)) ?? "not_submitted";
@@ -3326,14 +3129,8 @@ export const getMyClinicAccess = query({
 export const listClinicRoles = query({
   args: {},
   handler: async (ctx) => {
-    const member = await getClinicMemberOrPreview(ctx);
-    if (!member) {
-      // Sample roles for preview visitors
-      return [
-        { _id: "prev_role1" as Id<"clinicRoles">, name: "Clinician", permissions: ["appointments", "patients", "referrals"] as ClinicArea[], memberCount: 1 },
-        { _id: "prev_role2" as Id<"clinicRoles">, name: "Lead clinician", permissions: ["appointments", "patients", "referrals", "team", "reports"] as ClinicArea[], memberCount: 1 },
-      ];
-    }
+    const member = await getClinicMemberOrNull(ctx);
+    if (!member) return [];
     const [roles, members] = await Promise.all([
       ctx.db.query("clinicRoles").withIndex("by_clinic", (q: any) => q.eq("clinicId", member.clinic._id)).collect(),
       ctx.db.query("users").withIndex("by_clinic_id", (q: any) => q.eq("clinicId", member.clinic._id)).collect(),
@@ -3440,20 +3237,8 @@ export const setMemberClinicRole = mutation({
 export const getClinicFrontDeskStaff = query({
   args: {},
   handler: async (ctx) => {
-    const member = await getClinicMemberOrPreview(ctx, "team");
-    if (!member) {
-      return [
-        {
-          userId: "prev_staff1" as Id<"users">,
-          firstName: "Ngozi",
-          lastName: "Obi",
-          email: "ngozi@example.com",
-          status: "active",
-          clinicRoleId: "prev_role1" as Id<"clinicRoles"> | null,
-          joinedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
-        },
-      ];
-    }
+    const member = await getClinicMemberOrNull(ctx, "team");
+    if (!member) return [];
     const users = await ctx.db
       .query("users")
       .withIndex("by_clinic_id", (q: any) => q.eq("clinicId", member.clinic._id))
@@ -3490,7 +3275,7 @@ export const removeFrontDeskStaff = mutation({
 export const getClinicSetupProgress = query({
   args: {},
   handler: async (ctx) => {
-    const member = await getClinicMemberOrPreview(ctx);
+    const member = await getClinicMemberOrNull(ctx);
     if (!member) return null;
     const { clinic } = member;
     const [payout, patientRel, clinician, invitation] = await Promise.all([
@@ -3518,7 +3303,7 @@ export const getClinicSetupProgress = query({
 export const getClinicClinicianOptions = query({
   args: {},
   handler: async (ctx) => {
-    const member = await getClinicMemberOrPreview(ctx);
+    const member = await getClinicMemberOrNull(ctx);
     if (!member) return [];
     const { clinic, user: me } = member;
     const fullName = (u: Doc<"users">) => `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() || u.email || "Clinician";

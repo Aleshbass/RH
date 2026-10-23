@@ -19,7 +19,7 @@ import {
   isWaitingReferral,
   type ClinicReferral,
 } from '@/components/clinic/patients/ReferralInbox'
-import { useClinicPreview } from '@/components/clinic/ClinicPreviewContext'
+import { useClinicAccess } from '@/components/clinic/ClinicAccessContext'
 import { EmptyState, PageShell, Panel, StatusBadge, primaryButtonClass } from '@/components/clinic/ui'
 import { RehabifyId } from '@/components/shared/RehabifyId'
 import { matchesRehabifyId } from '@/convex/helpers/rehabifyIdFormat'
@@ -126,7 +126,7 @@ export default function ClinicPatientsPage() {
 }
 
 function ClinicPatients() {
-  const { requireFullAccess, canUse } = useClinicPreview()
+  const { requireFullAccess, canUse } = useClinicAccess()
   const searchParams = useSearchParams()
   const urlFilter = parseFilter(searchParams.get('filter'))
   const urlPatient = searchParams.get('patient')
@@ -193,7 +193,7 @@ function ClinicPatients() {
         referralStatus: referral?.status ?? null,
         // lastSessionDate can be a future booking, so only past visits count as "last visit"
         lastVisit: lastSession && lastSession <= now ? lastSession : null,
-        // Preview sample rows have no careStatus; they are all in care
+        // Patients without a care status are in care
         careStatus: p.careStatus === 'paused' || p.careStatus === 'discharged' ? p.careStatus : 'active',
       }
     })

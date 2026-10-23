@@ -23,9 +23,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { useClinicAccess } from '@/components/clinic/ClinicPreviewContext'
+import { useClinicAccess } from '@/components/clinic/ClinicAccessContext'
 import { EmptyState, StatusBadge } from '@/components/clinic/ui'
-import { isPreviewId } from '@/components/clinic/patients/patient-record-shared'
+import { isMissingId } from '@/components/clinic/patients/patient-record-shared'
 import { MemberRoleSelect } from './MemberRoleSelect'
 import { teamError, type ClinicRole, type FrontDeskMember } from './team-shared'
 
@@ -48,7 +48,7 @@ export default function FrontDeskList({
   roles: ClinicRole[] | undefined
   onInvite?: () => void
 }) {
-  const { isOwner, isStaff, isLoaded, requireFullAccess } = useClinicAccess()
+  const { isOwner, requireFullAccess } = useClinicAccess()
   const updateStaffStatus = useMutation(api.clinics.updateStaffStatus)
   const removeFrontDesk = useMutation(api.clinicTools.removeFrontDeskStaff)
 
@@ -56,12 +56,11 @@ export default function FrontDeskList({
   const [removeFor, setRemoveFor] = useState<FrontDeskMember | null>(null)
   const [busy, setBusy] = useState(false)
 
-  // Suspend and remove are owner-only. Preview visitors see the menu, which opens the setup prompt.
-  const isVisitor = isLoaded && !isOwner && !isStaff
-  const showMenu = isOwner || isVisitor
+  // Suspend and remove are owner-only
+  const showMenu = isOwner
 
   const ownerAction = (member: FrontDeskMember, actionName: string, open: () => void) => {
-    if (!isOwner || isPreviewId(member.userId)) {
+    if (!isOwner || isMissingId(member.userId)) {
       requireFullAccess(actionName)
       return
     }

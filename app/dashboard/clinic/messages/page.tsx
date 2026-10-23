@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/clinic/ui'
-import { useClinicPreview } from '@/components/clinic/ClinicPreviewContext'
+import { useClinicAccess } from '@/components/clinic/ClinicAccessContext'
 import { cn } from '@/lib/utils'
 
 type Conversation = {
@@ -37,11 +37,10 @@ const initials = (p?: { firstName?: string; lastName?: string }) =>
 export default function ClinicMessagesPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const { isPreviewMode } = useClinicPreview()
-  const conversations = useQuery(api.chat.getMyConversations, isPreviewMode ? 'skip' : {}) as Conversation[] | undefined
-  const clinicPatients = useQuery(api.clinics.getClinicPatients, isPreviewMode ? 'skip' : {}) as ClinicPatient[] | undefined
-  // Sample rows (preview ids) can't be messaged
-  const patients = useMemo(() => (clinicPatients ?? []).filter((p) => !p._id.startsWith('prev_')), [clinicPatients])
+  const { isReadOnly } = useClinicAccess()
+  const conversations = useQuery(api.chat.getMyConversations, isReadOnly ? 'skip' : {}) as Conversation[] | undefined
+  const clinicPatients = useQuery(api.clinics.getClinicPatients, isReadOnly ? 'skip' : {}) as ClinicPatient[] | undefined
+  const patients = useMemo(() => clinicPatients ?? [], [clinicPatients])
 
   const [recipientId, setRecipientId] = useState<Id<'users'> | null>(null)
   const [pickerOpen, setPickerOpen] = useState(false)
@@ -71,7 +70,7 @@ export default function ClinicMessagesPage() {
     if (searchParams.get('with')) router.replace('/dashboard/clinic/messages')
   }
 
-  if (isPreviewMode) {
+  if (isReadOnly) {
     return (
       <div className="mx-auto w-full max-w-6xl px-4 py-16 sm:px-6">
         <EmptyState

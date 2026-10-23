@@ -9,12 +9,18 @@ import type { Doc, Id } from './_generated/dataModel'
 import { assertServerCaller } from "./helpers/serverSecret"
 import { StreamChat } from 'stream-chat'
 
-// Stream token generation action - securely generates tokens server-side
+/** How long video and chat tokens last. A session that runs longer fetches a new one on rejoin. */
+const TOKEN_TTL_SECONDS = 4 * 60 * 60
+
+// Stream token generation action - securely generates tokens server-side.
+// With `callId`, the video token only works for that call (and only for people on it).
 export const getStreamToken = action({
   args: {
     userId: v.string(),
     userName: v.string(),
     userImage: v.optional(v.string()),
+    callId: v.optional(v.string()),
+    callType: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity()
@@ -27,10 +33,16 @@ export const getStreamToken = action({
       throw new Error("User ID mismatch")
     }
 
+    if (args.callId) {
+      const access = await ctx.runQuery(internal.stream_mutations.getCallAccess, { callId: args.callId, clerkId: identity.subject })
+      // A room with no record yet is a new one this user is about to host
+      if (access.exists && !access.canJoin) throw new Error("You're not on this call")
+    }
+
     // Get Stream credentials from environment
     const apiKey = process.env.STREAM_API_KEY
     const apiSecret = process.env.STREAM_SECRET
-    
+
     if (!apiKey || !apiSecret) {
       throw new Error("Stream credentials not configured")
     }
@@ -38,12 +50,18 @@ export const getStreamToken = action({
     try {
       // Initialize Stream client (Video)
       const client = new StreamClient(apiKey, apiSecret)
-      
-      // Generate token for the user
-      const token = client.generateUserToken({
-        user_id: args.userId,
-        validity_in_seconds: 24 * 60 * 60, // 24 hours
-      })
+      const exp = Math.floor(Date.now() / 1000) + TOKEN_TTL_SECONDS
+
+      const token = args.callId
+        ? client.generateCallToken({
+            user_id: args.userId,
+            call_cids: [`${args.callType || 'default'}:${args.callId}`],
+            exp,
+          })
+        : client.generateUserToken({
+            user_id: args.userId,
+            validity_in_seconds: TOKEN_TTL_SECONDS,
+          })
 
 
       // Optionally update/create user in Stream (Video)
@@ -54,16 +72,16 @@ export const getStreamToken = action({
         role: 'user',
       }])
 
-      // Generate Chat token with the same credentials
+      // Generate Chat token with the same credentials (expires with the video token)
       let chatToken: string | undefined
       try {
         const chatServer = StreamChat.getInstance(apiKey, apiSecret)
-        chatToken = chatServer.createToken(args.userId)
+        chatToken = chatServer.createToken(args.userId, exp)
       } catch (e) {
         console.warn('Failed to create Stream Chat token, falling back to video token for chat auth')
       }
 
-      return { 
+      return {
         token,
         apiKey,
         userId: args.userId,
@@ -76,7 +94,9 @@ export const getStreamToken = action({
   },
 })
 
-// Create or get a Stream call
+// Create or get a Stream call. Members and settings come from our records (planStreamCall);
+// `participants` are only requests, honoured for people the caller may invite, and `settings`
+// can only shorten the call.
 export const createStreamCall = action({
   args: {
     callId: v.string(),
@@ -105,8 +125,12 @@ export const createStreamCall = action({
       throw new Error("Unauthorized")
     }
 
-    const access = await ctx.runQuery(internal.stream_mutations.getCallAccess, { callId: args.callId, clerkId: identity.subject })
-    if (!access.canJoin) {
+    const plan = await ctx.runQuery(internal.stream_mutations.planStreamCall, {
+      callId: args.callId,
+      clerkId: identity.subject,
+      requested: args.participants.map((p) => p.userId),
+    })
+    if (!plan.canJoin) {
       throw new Error("You're not on this call")
     }
 
@@ -123,29 +147,9 @@ export const createStreamCall = action({
       // Create call with specified type
       const callType = args.callType || 'default'
       const call = client.video.call(callType, args.callId)
-      
-      // Helper to ensure video/chat user IDs are Clerk IDs (Stream expects those)
-      const toStreamUserId = async (maybeId: string): Promise<string> => {
-        // If it's already a Clerk user id, pass through
-        if (typeof maybeId === 'string' && maybeId.startsWith('user_')) return maybeId
-        // Otherwise treat it as Convex users._id and convert to clerkId via a query
-        try {
-          const asConvexId = maybeId as unknown as Id<"users">
-          const userDoc = await ctx.runQuery(internal.users.getUserById, { userId: asConvexId })
-          if (userDoc?.clerkId) return userDoc.clerkId as string
-        } catch {}
-        // Fallback to original if lookup fails
-        return maybeId
-      }
 
-      // Build Stream user id list (host + participants)
-      const streamUserIdsSet = new Set<string>()
-      streamUserIdsSet.add(identity.subject)
-      for (const p of args.participants) {
-        const sid = await toStreamUserId(p.userId)
-        streamUserIdsSet.add(sid)
-      }
-      const streamUserIds = Array.from(streamUserIdsSet)
+      const streamUserIds = Array.from(new Set([identity.subject, ...plan.memberClerkIds]))
+      const maxDuration = Math.min(Math.max(Number(args.settings?.maxDuration) || 7200, 600), 4 * 60 * 60)
 
       // Get or create the call
       const response = await call.getOrCreate({
@@ -157,23 +161,31 @@ export const createStreamCall = action({
           })),
           settings_override: {
             recording: {
-              mode: args.settings?.recordingEnabled ? 'available' : 'disabled',
+              mode: plan.recordingEnabled ? 'available' : 'disabled',
               audio_only: false,
               quality: '720p',
             },
             transcription: {
-              mode: args.settings?.transcriptionEnabled ? 'available' : 'disabled',
+              mode: 'disabled',
             },
             limits: {
-              max_duration_seconds: args.settings?.maxDuration || 7200, // 2 hours default
-              max_participants: 50,
-            },
-            geofencing: {
-              names: args.settings?.geoFencing ? ['european_union', 'united_states'] : [],
+              max_duration_seconds: maxDuration,
+              max_participants: plan.maxParticipants,
             },
           },
         },
       })
+
+      // Members added after the call was first created (e.g. someone newly invited)
+      if (!response.created && plan.memberClerkIds.length > 0) {
+        try {
+          await call.updateCallMembers({
+            update_members: plan.memberClerkIds.map((uid) => ({ user_id: uid })),
+          })
+        } catch (e) {
+          console.warn("Failed to update Stream call members", args.callId)
+        }
+      }
 
       // Create/ensure a Chat channel for this call with same members
       try {
@@ -195,7 +207,7 @@ export const createStreamCall = action({
           }
         }
       } catch (e) {
-        console.warn("Failed to upsert chat channel for call", args.callId, e)
+        console.warn("Failed to upsert chat channel for call", args.callId)
       }
 
       // Store call metadata in Convex
@@ -204,7 +216,7 @@ export const createStreamCall = action({
         callType,
         createdBy: identity.subject,
         participants: streamUserIds,
-        settings: args.settings || {},
+        settings: { recordingEnabled: plan.recordingEnabled, transcriptionEnabled: false, maxDuration },
         streamResponse: {
           id: response.call.id,
           cid: response.call.cid,

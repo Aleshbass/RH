@@ -24,7 +24,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { useClinicAccess } from '@/components/clinic/ClinicPreviewContext'
+import { useClinicAccess } from '@/components/clinic/ClinicAccessContext'
 import { BankLogo } from '@/components/clinic/BankLogo'
 import { HowPayoutsWork } from '@/components/clinic/FeeBreakdown'
 import { PageShell, Panel, StatusBadge, primaryButtonClass } from '@/components/clinic/ui'
@@ -57,7 +57,6 @@ const approvalBadge: Record<string, { label: string; tone: 'green' | 'amber' | '
   pending_review: { label: 'Under review', tone: 'amber' },
   declined: { label: 'Not approved', tone: 'red' },
   not_submitted: { label: 'Not submitted', tone: 'neutral' },
-  preview: { label: 'Preview', tone: 'neutral' },
 }
 
 const LOGO_TYPES = ['image/png', 'image/jpeg', 'image/webp']
@@ -123,7 +122,8 @@ export default function ClinicSettingsPage() {
     }
   }, [form !== null]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (setup === undefined || form === null) {
+  // setup is null only for someone outside a clinic, whom the portal is already sending elsewhere
+  if (!setup || form === null) {
     return (
       <PageShell title="Clinic settings">
         <Skeleton className="h-28 rounded-xl" />
@@ -132,9 +132,6 @@ export default function ClinicSettingsPage() {
       </PageShell>
     )
   }
-
-  // Sample data for preview visitors: never send it to a mutation
-  const isSample = String(setup._id).startsWith('prev_')
 
   const update = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm((prev) => (prev ? { ...prev, [key]: value } : prev))
@@ -150,7 +147,7 @@ export default function ClinicSettingsPage() {
     )
 
   const save = async (section: string) => {
-    if (!requireFullAccess('Save clinic settings') || isSample) return
+    if (!requireFullAccess('Save clinic settings')) return
     if (!form.name.trim()) {
       toast.error('Clinic name is required')
       return
@@ -211,7 +208,7 @@ export default function ClinicSettingsPage() {
 
   return (
     <PageShell title="Clinic settings" description="What patients see, when you're open, what you charge and where you get paid.">
-      <LogoSection logoUrl={setup.logoUrl ?? null} isSample={isSample} />
+      <LogoSection logoUrl={setup.logoUrl ?? null} />
 
       <Panel
         title="Verification"
@@ -395,7 +392,7 @@ export default function ClinicSettingsPage() {
         </div>
       </Panel>
 
-      <PayoutSection disabled={setup.approvalStatus === 'preview' || isSample} />
+      <PayoutSection />
     </PageShell>
   )
 }
@@ -500,7 +497,7 @@ function TagListInput({
 }
 
 /** Upload, replace or remove the logo shown at the top of the clinic dashboard. Saves straight away. */
-function LogoSection({ logoUrl, isSample }: { logoUrl: string | null; isSample: boolean }) {
+function LogoSection({ logoUrl }: { logoUrl: string | null }) {
   const { requireFullAccess } = useClinicAccess()
   const generateUploadUrl = useMutation(api.files.generateUploadUrl)
   const updateLogo = useMutation(api.clinicTools.updateClinicLogo)
@@ -510,7 +507,7 @@ function LogoSection({ logoUrl, isSample }: { logoUrl: string | null; isSample: 
 
   const choose = () =>
     requireFullAccess('Upload logo', () => {
-      if (!isSample) fileInput.current?.click()
+      fileInput.current?.click()
     })
 
   const upload = async (file: File) => {
@@ -543,7 +540,6 @@ function LogoSection({ logoUrl, isSample }: { logoUrl: string | null; isSample: 
 
   const remove = () =>
     requireFullAccess('Remove logo', async () => {
-      if (isSample) return
       setBusy('remove')
       try {
         await updateLogo({ storageId: null })
@@ -621,7 +617,7 @@ type Bank = { name: string; code: string; slug: string | null }
  * Connect a bank account as a Paystack subaccount so the clinic's share settles to it directly.
  * Only the owner can connect, change or remove it; team members see which account is connected.
  */
-function PayoutSection({ disabled }: { disabled: boolean }) {
+function PayoutSection() {
   const { requireFullAccess, isOwner } = useClinicAccess()
   const account = useQuery(api.clinicBilling.getClinicPayoutAccount, {})
   const listBanks = useAction(api.clinicBilling.listBanks)
@@ -639,7 +635,7 @@ function PayoutSection({ disabled }: { disabled: boolean }) {
   const [busy, setBusy] = useState<'verify' | 'connect' | 'remove' | null>(null)
   const [confirmRemove, setConfirmRemove] = useState(false)
 
-  const showForm = isOwner && !disabled && account !== undefined && (editing || account === null)
+  const showForm = isOwner && account !== undefined && (editing || account === null)
 
   useEffect(() => {
     if (!showForm || banks !== null) return
@@ -757,8 +753,6 @@ function PayoutSection({ disabled }: { disabled: boolean }) {
               <p className="text-xs text-neutral-500 dark:text-neutral-400">Only the clinic owner can change this.</p>
             )}
           </div>
-        ) : disabled ? (
-          <p className="text-sm text-neutral-500 dark:text-neutral-400">Finish clinic setup to connect a bank account.</p>
         ) : !isOwner ? (
           <p className="text-sm text-neutral-500 dark:text-neutral-400">
             No bank account is connected. Only the clinic owner can connect one.
@@ -841,7 +835,7 @@ function PayoutSection({ disabled }: { disabled: boolean }) {
           </div>
         )}
 
-        {account !== undefined && <HowPayoutsWork account={disabled ? undefined : account} />}
+        {account !== undefined && <HowPayoutsWork account={account} />}
       </div>
 
       <AlertDialog open={confirmRemove} onOpenChange={(open) => !open && busy !== 'remove' && setConfirmRemove(false)}>

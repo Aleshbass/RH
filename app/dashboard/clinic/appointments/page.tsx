@@ -53,7 +53,7 @@ import {
 } from 'date-fns'
 import { cn } from '@/lib/utils'
 import { playSound } from '@/lib/sounds'
-import { useClinicPreview } from '@/components/clinic/ClinicPreviewContext'
+import { useClinicAccess } from '@/components/clinic/ClinicAccessContext'
 import {
   EmptyState,
   PageShell,
@@ -153,7 +153,7 @@ const fieldClass = 'h-9 text-sm'
 // ─── Page ────────────────────────────────────────────────────────────────────
 
 export default function ClinicAppointmentsPage() {
-  const { requireFullAccess } = useClinicPreview()
+  const { requireFullAccess } = useClinicAccess()
 
   const appointmentsRaw = useQuery(api.clinics.getClinicAppointments, {})
   const patientsRaw = useQuery(api.clinics.getClinicPatients, {})
@@ -677,7 +677,7 @@ function BookDialog({
   services: ServiceOption[]
   workingHours?: Record<string, DayHours>
 }) {
-  const { requireFullAccess } = useClinicPreview()
+  const { requireFullAccess } = useClinicAccess()
   const bookAppointment = useMutation(api.clinicTools.bookClinicAppointment)
 
   const empty = {
@@ -1002,7 +1002,7 @@ function RescheduleForm({
   workingHours?: Record<string, DayHours>
   clinicians: ClinicianOption[]
 }) {
-  const { requireFullAccess } = useClinicPreview()
+  const { requireFullAccess } = useClinicAccess()
   const reschedule = useMutation(api.clinicTools.rescheduleClinicAppointment)
   const currentLength = Math.max(5, Math.round((apt.endTime - apt.startTime) / 60000))
   const currentClinicianId = clinicianIdOf(apt)

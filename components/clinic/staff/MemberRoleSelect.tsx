@@ -7,8 +7,8 @@ import { api } from '@/convex/_generated/api'
 import type { Id } from '@/convex/_generated/dataModel'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
-import { useClinicAccess } from '@/components/clinic/ClinicPreviewContext'
-import { fieldClass, isPreviewId } from '@/components/clinic/patients/patient-record-shared'
+import { useClinicAccess } from '@/components/clinic/ClinicAccessContext'
+import { fieldClass, isMissingId } from '@/components/clinic/patients/patient-record-shared'
 import {
   FULL_ACCESS,
   defaultAccessDescription,
@@ -57,13 +57,13 @@ export function MemberRoleSelect({
 
   const handleChange = async (value: string) => {
     if (value === current) return
-    // Preview visitors (sample team) see the setup prompt instead
-    if (!isOwner || isPreviewId(memberId)) {
+    // Only the owner changes roles; anyone else gets the explanation
+    if (!isOwner || isMissingId(memberId)) {
       requireFullAccess('Change role')
       return
     }
     const nextRoleId = value === FULL_ACCESS ? null : (value as Id<'clinicRoles'>)
-    if (nextRoleId && isPreviewId(nextRoleId)) return
+    if (nextRoleId && isMissingId(nextRoleId)) return
     setSaving(true)
     try {
       await setMemberRole({ memberId, roleId: nextRoleId })

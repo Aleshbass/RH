@@ -988,13 +988,15 @@ export const getPaymentHistory = query({
         .withIndex("by_user_id", (q: any) => q.eq("userId", targetUserId))
         .order("desc")
         .take(args.limit || 50);
-    } else if (user.role === "physiotherapist") {
+    } else if (user.role === "admin" && !args.userId) {
+      // Platform-wide history is for admins only
       payments = await ctx.db.query("payments")
-        .withIndex("by_user_id", (q: any) => q.eq("userId", targetUserId))
         .order("desc")
         .take(args.limit || 50);
     } else {
+      // Everyone else (and an admin looking at one user) sees that user's own payments
       payments = await ctx.db.query("payments")
+        .withIndex("by_user_id", (q: any) => q.eq("userId", targetUserId))
         .order("desc")
         .take(args.limit || 50);
     }

@@ -5,7 +5,7 @@ import { useQuery } from 'convex/react'
 import { api } from '@/convex/_generated/api'
 import { Skeleton } from '@/components/ui/skeleton'
 import { TourGuide } from '@/components/shared/TourGuide'
-import { useClinicPreview } from '@/components/clinic/ClinicPreviewContext'
+import { useClinicAccess } from '@/components/clinic/ClinicAccessContext'
 import { PageShell, Panel, StatTile, formatNaira } from '@/components/clinic/ui'
 
 const pct = (value: number) => `${Number(value || 0).toFixed(1)}%`
@@ -35,14 +35,14 @@ function Row({ label, value, strong }: { label: string; value: ReactNode; strong
 }
 
 export default function OwnerAnalyticsPage() {
-  const { isPreviewMode } = useClinicPreview()
+  const { isReadOnly } = useClinicAccess()
   const analyticsData = useQuery(api.clinics.getOwnerAnalytics)
   const revenueData = useQuery(api.clinics.getClinicRevenue)
   const staffMetrics = useQuery(api.clinics.getStaffMetrics)
   const appointmentStats = useQuery(api.clinics.getClinicAppointmentStats)
 
-  const description = isPreviewMode
-    ? 'Sample figures are shown until your clinic is set up.'
+  const description = isReadOnly
+    ? 'Figures fill in once your clinic is set up and approved.'
     : 'How your clinic is doing this month.'
 
   if (

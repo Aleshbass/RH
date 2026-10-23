@@ -35,19 +35,19 @@ export const getPhysioRetentionStats = query({
         physiotherapistId: v.optional(v.id("users")),
     },
     handler: async (ctx, args) => {
+        // A physio's own stats, or any physio's for an admin
+        const identity = await ctx.auth.getUserIdentity();
+        if (!identity) return null;
+        const user = await ctx.db
+            .query("users")
+            .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+            .first();
+        if (!user) return null;
+
         let physioId = args.physiotherapistId;
-
-        // If no physio specified, get current user
+        if (physioId && physioId !== user._id && user.role !== "admin") return null;
         if (!physioId) {
-            const identity = await ctx.auth.getUserIdentity();
-            if (!identity) return null;
-
-            const user = await ctx.db
-                .query("users")
-                .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
-                .first();
-
-            if (!user || user.role !== "physiotherapist") return null;
+            if (user.role !== "physiotherapist") return null;
             physioId = user._id;
         }
 

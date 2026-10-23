@@ -400,6 +400,15 @@ export const resolveBookingSlug = query({
 export const ensureBookingSlug = mutation({
   args: { userId: v.id("users") },
   handler: async (ctx, args) => {
+    // Only the physio themselves (or an admin) can set their booking link
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return null;
+    const caller = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .unique();
+    if (!caller || (caller._id !== args.userId && caller.role !== "admin")) return null;
+
     const profile = await ctx.db
       .query("physiotherapistProfiles")
       .withIndex("by_user_id", (q) => q.eq("userId", args.userId))

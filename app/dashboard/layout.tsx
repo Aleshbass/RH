@@ -12,7 +12,8 @@ export default async function DashboardLayout({
   const headerList = await headers()
   const pathname = headerList.get('x-pathname') || ''
 
-  // /dashboard/clinic is a self-contained clinic portal with its own layout, preview sandbox, and auth rules
+  // /dashboard/clinic is a self-contained clinic portal with its own layout and access rules
+  // (middleware.ts already requires sign-in for every /dashboard path)
   if (pathname.startsWith('/dashboard/clinic')) {
     return <>{children}</>
   }

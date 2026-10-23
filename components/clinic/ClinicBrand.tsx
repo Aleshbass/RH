@@ -3,11 +3,10 @@
 import { useState } from 'react'
 import { Building2 } from '@/components/icons'
 import { cn } from '@/lib/utils'
-import { useClinicAccess } from '@/components/clinic/ClinicPreviewContext'
+import { useClinicAccess } from '@/components/clinic/ClinicAccessContext'
 
 /**
- * The clinic's logo (or initials) and name. Falls back to "Rehabify Clinic"
- * for preview visitors.
+ * The clinic's logo (or initials) and name. Falls back to "Rehabify Clinic" while loading.
  */
 export function ClinicBrand({ compact = false, className }: { compact?: boolean; className?: string }) {
   const { clinicName, logoUrl } = useClinicAccess()

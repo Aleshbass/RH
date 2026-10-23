@@ -30,7 +30,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { useClinicAccess } from '@/components/clinic/ClinicPreviewContext'
+import { useClinicAccess } from '@/components/clinic/ClinicAccessContext'
 import { FeeBreakdown, HowPayoutsWork } from '@/components/clinic/FeeBreakdown'
 import {
   EmptyState,
@@ -179,11 +179,8 @@ export default function ClinicBillingPage() {
     return paymentLink
   }
 
-  // Sample invoices (ids starting "prev_") must never reach a mutation
-  const isSample = (id: string) => billing.isPreview || id.startsWith('prev_')
-
   const handleCopyLink = async (inv: (typeof billing.invoices)[number]) => {
-    if (!requireFullAccess('Copy payment link') || isSample(inv._id)) return
+    if (!requireFullAccess('Copy payment link')) return
     setBusyInvoice(inv._id)
     try {
       const link = inv.paymentLink ?? (await getLink(inv._id))
@@ -197,7 +194,7 @@ export default function ClinicBillingPage() {
   }
 
   const handleWhatsApp = async (inv: (typeof billing.invoices)[number]) => {
-    if (!requireFullAccess('Send payment link') || isSample(inv._id)) return
+    if (!requireFullAccess('Send payment link')) return
     // Open the window synchronously so mobile browsers don't block it as a popup
     const win = window.open('', '_blank')
     setBusyInvoice(inv._id)
@@ -215,7 +212,7 @@ export default function ClinicBillingPage() {
   }
 
   const confirmMarkPaid = async () => {
-    if (!markPaidFor || isSample(markPaidFor.id)) return
+    if (!markPaidFor) return
     setBusyInvoice(markPaidFor.id)
     try {
       await markInvoicePaid({ invoiceId: markPaidFor.id as Id<'invoices'>, method: offlineMethod })
@@ -229,7 +226,7 @@ export default function ClinicBillingPage() {
   }
 
   const confirmCancel = async () => {
-    if (!cancelFor || isSample(cancelFor.id)) return
+    if (!cancelFor) return
     setBusyInvoice(cancelFor.id)
     try {
       await voidInvoice({ invoiceId: cancelFor.id as Id<'invoices'> })
@@ -259,7 +256,7 @@ export default function ClinicBillingPage() {
     >
       <PaystackTestModeBanner />
 
-      {!billing.isPreview && !billing.payoutAccount && (
+      {!billing.payoutAccount && (
         <div className="flex flex-col gap-3 rounded-xl border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900 sm:flex-row sm:items-center">
           <Landmark className="h-5 w-5 shrink-0 text-neutral-400 dark:text-neutral-500" />
           <p className="min-w-0 flex-1 text-sm text-neutral-600 dark:text-neutral-300">
@@ -442,7 +439,7 @@ export default function ClinicBillingPage() {
         )}
       </Panel>
 
-      <HowPayoutsWork account={billing.isPreview ? undefined : billing.payoutAccount} />
+      <HowPayoutsWork account={billing.payoutAccount} />
 
       <RequestPaymentDialog
         open={requestOpen}

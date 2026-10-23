@@ -34,9 +34,9 @@ import {
   CLINIC_AREA_LABELS,
   useClinicAccess,
   type ClinicArea,
-} from '@/components/clinic/ClinicPreviewContext'
+} from '@/components/clinic/ClinicAccessContext'
 import { Panel, primaryButtonClass } from '@/components/clinic/ui'
-import { fieldClass, isPreviewId, labelClass } from '@/components/clinic/patients/patient-record-shared'
+import { fieldClass, isMissingId, labelClass } from '@/components/clinic/patients/patient-record-shared'
 import {
   ROLE_TEMPLATES,
   checkboxClass,
@@ -62,7 +62,7 @@ const chipClass =
  * Only the owner can change them; team members see the list read-only.
  */
 export default function RolesPanel({ roles }: { roles: ClinicRole[] | undefined }) {
-  const { isOwner, isStaff, isLoaded, requireFullAccess } = useClinicAccess()
+  const { isOwner, requireFullAccess } = useClinicAccess()
   const saveRole = useMutation(api.clinicTools.saveClinicRole)
   const deleteRole = useMutation(api.clinicTools.deleteClinicRole)
 
@@ -72,13 +72,11 @@ export default function RolesPanel({ roles }: { roles: ClinicRole[] | undefined 
   const [deleteFor, setDeleteFor] = useState<ClinicRole | null>(null)
   const [deleting, setDeleting] = useState(false)
 
-  // Owners manage roles (even before approval). Preview visitors get the controls,
-  // which open the setup prompt. Team members only read.
-  const isVisitor = isLoaded && !isOwner && !isStaff
-  const canManage = isOwner || isVisitor
+  // Owners manage roles (even before approval). Team members only read.
+  const canManage = isOwner
 
   const openEditor = (next: RoleDraft, actionName: string) => {
-    if (!isOwner || (next.roleId && isPreviewId(next.roleId))) {
+    if (!isOwner || (next.roleId && isMissingId(next.roleId))) {
       requireFullAccess(actionName)
       return
     }
@@ -100,7 +98,7 @@ export default function RolesPanel({ roles }: { roles: ClinicRole[] | undefined 
   }
 
   const askDelete = (role: ClinicRole) => {
-    if (!isOwner || isPreviewId(role._id)) {
+    if (!isOwner || isMissingId(role._id)) {
       requireFullAccess('Delete role')
       return
     }

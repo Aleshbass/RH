@@ -14,7 +14,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 import { primaryButtonClass } from '@/components/clinic/ui'
-import { fieldClass, isPreviewId, labelClass } from '@/components/clinic/patients/patient-record-shared'
+import { fieldClass, isMissingId, labelClass } from '@/components/clinic/patients/patient-record-shared'
 import { FULL_ACCESS, roleSummary, teamError, type ClinicRole } from '@/components/clinic/staff/team-shared'
 
 interface EnhancedClinicStaffInviteModalProps {
@@ -107,7 +107,7 @@ function InviteForm({
     setSubmitting(true)
     try {
       const clinicRoleId =
-        roleId !== FULL_ACCESS && !isPreviewId(roleId) ? (roleId as Id<'clinicRoles'>) : undefined
+        roleId !== FULL_ACCESS && !isMissingId(roleId) ? (roleId as Id<'clinicRoles'>) : undefined
       const res = await createStaffInvite({
         inviteeEmail: email,
         inviteeName: form.name.trim() || undefined,

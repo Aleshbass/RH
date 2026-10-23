@@ -90,27 +90,30 @@ export const getUserStreamCalls = query({
       throw new Error("User not found")
     }
 
-    const limit = args.limit || 20
+    const limit = Math.min(Math.max(args.limit || 20, 1), 100)
 
-    // Get Stream calls where user is a participant
-    const calls = await ctx.db
+    // Stream calls the user hosted or was on, by index (not a scan of every call)
+    const byId = new Map()
+    const hosted = await ctx.db
       .query("videoCalls")
-      .filter(q => 
-        q.and(
-          q.eq(q.field("platform"), "stream"),
-          q.or(
-            q.eq(q.field("initiatorId"), user._id),
-            // Note: This won't work with array contains, need to fetch all and filter
-          )
-        )
-      )
+      .withIndex("by_initiator", (q) => q.eq("initiatorId", user._id))
       .order("desc")
       .take(limit)
-
-    // Filter calls where user is actually a participant
-    const userCalls = calls.filter(call => 
-      call.participants.includes(user._id) || call.initiatorId === user._id
-    )
+    for (const call of hosted) byId.set(call._id, call)
+    const joined = await ctx.db
+      .query("videoCallParticipants")
+      .withIndex("by_user_id", (q) => q.eq("userId", user._id))
+      .order("desc")
+      .take(limit)
+    for (const row of joined) {
+      if (byId.has(row.callId)) continue
+      const call = await ctx.db.get(row.callId)
+      if (call) byId.set(call._id, call)
+    }
+    const userCalls = [...byId.values()]
+      .filter((call) => call.platform === "stream")
+      .sort((x, y) => (y.startTime || y.scheduledAt || y._creationTime) - (x.startTime || x.scheduledAt || x._creationTime))
+      .slice(0, limit)
 
     // Get participant details
     const callsWithDetails = await Promise.all(

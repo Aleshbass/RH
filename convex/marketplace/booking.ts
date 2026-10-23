@@ -30,6 +30,7 @@ import { adoptGuestPatientNumber, ensureUserNumbers } from "../helpers/rehabifyI
 import { getService, isBookableServiceId } from "../../lib/rehabify-services";
 import type { Doc, Id } from "../_generated/dataModel";
 import { lagosDateTime, lagosTimeRange } from "../helpers/lagosTime";
+import { assertServerCaller } from "../helpers/serverSecret";
 
 const MIN_NOTICE_MS = 30 * 60 * 1000;
 
@@ -294,8 +295,12 @@ export const refreshMarketplaceHold = mutation({
         bookingId: v.id("marketplaceBookings"),
         // The MKT_ reference about to be sent to Paystack, kept so a missed webhook can be reconciled
         checkoutReference: v.optional(v.string()),
+        serverSecret: v.optional(v.string()),
     },
     handler: async (ctx, args) => {
+        // Only our checkout route (app/api/payments/marketplace) holds slots and records references:
+        // a reference attached by anyone else could be used to confirm a booking with another payment
+        assertServerCaller(args.serverSecret);
         const booking = await ctx.db.get(args.bookingId);
         if (!booking || booking.sourceSystem === "joy_ai") return { ok: false as const, reason: "not_found" as const };
         if (booking.paymentStatus === "completed") return { ok: false as const, reason: "already_paid" as const };
@@ -482,6 +487,15 @@ export async function completeMarketplaceBookingCore(ctx: any, bookingId: any, o
         }
         if (!booking.physiotherapistId) {
             throw new Error("Booking has no physiotherapist assigned");
+        }
+        // One payment confirms one booking: a reference already used elsewhere is refused
+        const usedElsewhere = await ctx.db
+            .query("marketplaceBookings")
+            .withIndex("by_payment_reference", (q: any) => q.eq("paymentReference", args.paymentReference))
+            .first();
+        if (usedElsewhere && usedElsewhere._id !== booking._id) {
+            console.error("marketplace_payment_reference_reused", { bookingId: String(bookingId) });
+            return { success: false, reason: "reference_already_used" as const };
         }
         if (options.paymentMethod !== "free" && options.paidAmountKobo < booking.serviceAmount) {
             console.error("marketplace_payment_amount_mismatch", {

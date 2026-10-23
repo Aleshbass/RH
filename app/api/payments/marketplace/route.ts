@@ -5,6 +5,7 @@ import { getConvexClient } from '@/lib/convex-client';
 import { api } from '@/convex/_generated/api';
 import { Id } from '@/convex/_generated/dataModel';
 import { publicAppUrl } from '@/lib/public-app-url';
+import { convexServerSecret } from '@/lib/convex-server-secret';
 
 /**
  * Initialises Paystack checkout for a marketplace booking.
@@ -51,6 +52,7 @@ export async function POST(request: NextRequest) {
     const hold = await getConvexClient().mutation(api.marketplace.booking.refreshMarketplaceHold, {
       bookingId: bookingId as Id<'marketplaceBookings'>,
       checkoutReference: txRef,
+      serverSecret: convexServerSecret(),
     });
     if (!hold.ok) {
       const message =

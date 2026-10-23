@@ -29,7 +29,7 @@ import {
   primaryButtonClass,
 } from '@/components/clinic/ui'
 import { cn } from '@/lib/utils'
-import { useClinicAccess, type ClinicStaffKind } from '@/components/clinic/ClinicPreviewContext'
+import { useClinicAccess, type ClinicStaffKind } from '@/components/clinic/ClinicAccessContext'
 import { PHYSIO_PORTAL_HOME } from '@/components/clinic/clinician-routing'
 import { APPOINTMENT_STATUS_LABELS, appointmentStatusTone } from '@/convex/helpers/appointmentStatus'
 
@@ -59,8 +59,8 @@ function personalGreeting(firstName: string | null) {
 }
 
 /** Who you are at this clinic: "Owner · Mary Physiotherapy", "Clinician at Mary Physiotherapy". */
-function affiliation(kind: ClinicStaffKind | null, roleName: string | null, clinicName: string, isPreview: boolean) {
-  if (isPreview || !kind) return 'Sample clinic'
+function affiliation(kind: ClinicStaffKind | null, roleName: string | null, clinicName: string) {
+  if (!kind) return clinicName
   if (kind === 'owner') return `Owner · ${clinicName}`
   if (kind === 'clinician') return `${roleName ?? 'Clinician'} at ${clinicName}`
   return `${roleName ?? 'Front desk'} · ${clinicName}`
@@ -98,7 +98,8 @@ function ClinicOverview() {
   const { isOwner, canUse, firstName, staffKind, roleName } = useClinicAccess()
   const title = personalGreeting(firstName)
 
-  if (dashboard === undefined) return <HomeSkeleton title={title} />
+  // Null only for someone outside a clinic, whom the portal is already sending elsewhere
+  if (!dashboard) return <HomeSkeleton title={title} />
 
   const checkInsDue = followUps?.length ?? 0
   const attentionItems = [
@@ -122,7 +123,7 @@ function ClinicOverview() {
   return (
     <PageShell
       title={title}
-      description={`${affiliation(staffKind, roleName, dashboard.clinicName, dashboard.isPreview)} · ${today()}`}
+      description={`${affiliation(staffKind, roleName, dashboard.clinicName)} · ${today()}`}
       actions={
         <>
           {canUse('patients') && (
@@ -144,7 +145,7 @@ function ClinicOverview() {
         </>
       }
     >
-      {!dashboard.isPreview && isOwner && <SetupChecklist />}
+      {isOwner && <SetupChecklist />}
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {canUse('appointments') && (
@@ -392,7 +393,7 @@ function ClinicianHome() {
   const home = useQuery(api.clinicTools.getMyClinicianHome, {}) as ClinicianHomeData | null | undefined
   const { canUse, firstName, roleName, clinicName, hasOwnPhysioPortal, isSuspended } = useClinicAccess()
   const title = personalGreeting(firstName)
-  const description = `${affiliation('clinician', roleName, clinicName ?? home?.clinicName ?? 'your clinic', false)} · ${today()}`
+  const description = `${affiliation('clinician', roleName, clinicName ?? home?.clinicName ?? 'your clinic')} · ${today()}`
 
   const actions = (
     <>

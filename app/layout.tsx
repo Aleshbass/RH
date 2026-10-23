@@ -141,7 +141,8 @@ export default async function RootLayout({
     isClinicPortal =
       pathname.startsWith("/dashboard/clinic") ||
       pathname.startsWith("/dashboard/physiotherapist") ||
-      pathname.startsWith("/dashboard/admin");
+      pathname.startsWith("/dashboard/admin") ||
+      pathname.startsWith("/dashboard/patient");
     const host = (headersList.get("host") || "").toLowerCase();
     const isSubdomainHeader = headersList.get("x-is-b2b-subdomain") === "true";
     isSubdomainHost =

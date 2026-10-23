@@ -13,7 +13,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
-import { useClinicPreview } from '@/components/clinic/ClinicPreviewContext'
+import { useClinicAccess } from '@/components/clinic/ClinicAccessContext'
 import { Panel, StatusBadge, primaryButtonClass } from '@/components/clinic/ui'
 import { friendlyError, useClinicianOptions } from '@/components/clinic/patients/patient-record-shared'
 
@@ -100,7 +100,7 @@ export function ReferralInbox({
   waiting: ClinicReferral[]
   others?: ClinicReferral[]
 }) {
-  const { requireFullAccess } = useClinicPreview()
+  const { requireFullAccess } = useClinicAccess()
   const [acceptTarget, setAcceptTarget] = useState<ClinicReferral | null>(null)
   const [declineTarget, setDeclineTarget] = useState<ClinicReferral | null>(null)
 
@@ -297,7 +297,7 @@ function AcceptForm({
   clinicians: ClinicianOption[]
   onClose: () => void
 }) {
-  const { requireFullAccess } = useClinicPreview()
+  const { requireFullAccess } = useClinicAccess()
   const respond = useMutation(api.clinicTools.respondToRehabifyReferral)
   const [clinicianId, setClinicianId] = useState(clinicians.length === 1 ? clinicians[0].id : '')
   const [note, setNote] = useState('')
@@ -379,7 +379,7 @@ function AcceptForm({
 }
 
 function DeclineForm({ referral, onClose }: { referral: ClinicReferral; onClose: () => void }) {
-  const { requireFullAccess } = useClinicPreview()
+  const { requireFullAccess } = useClinicAccess()
   const respond = useMutation(api.clinicTools.respondToRehabifyReferral)
   const [reason, setReason] = useState('')
   const [saving, setSaving] = useState(false)

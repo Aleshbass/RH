@@ -134,6 +134,11 @@ export const reconcilePaystackPayments = internalAction({
             });
             break;
           case "marketplace":
+            // The payment must have been started for this booking (our checkout puts its id in metadata)
+            if ((tx.metadata as { bookingId?: unknown } | undefined)?.bookingId !== check.bookingId) {
+              console.error("reconcile_marketplace_booking_mismatch", { reference: check.reference });
+              break;
+            }
             await ctx.runMutation(internal.marketplace.booking.completeVerifiedMarketplacePayment, {
               bookingId: check.bookingId, reference: check.reference, amountKobo, currency,
               feesKobo: typeof tx.fees === "number" ? tx.fees : undefined,

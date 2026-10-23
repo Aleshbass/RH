@@ -1,11 +1,12 @@
 // @ts-nocheck
-import { v } from "convex/values"
+import { ConvexError, v } from "convex/values"
 import { mutation, query, action, internalAction, internalMutation, internalQuery } from "./_generated/server"
 import { api, internal } from "./_generated/api"
 import { type ActionCtx, type MutationCtx, type QueryCtx } from './_generated/server';
 import type { Doc, Id } from './_generated/dataModel';
 import { publicAppUrl } from './helpers/appUrl';
-import { canJoinVideoCall } from './helpers/callAccess';
+import { canJoinVideoCall, mayInviteToCall, staffClinicId } from './helpers/callAccess';
+import { isOpenAppointment } from './helpers/appointmentStatus';
 // Stream video imports will be handled in the action
 
 // Hosts a physiotherapist may use as an external meeting link (Google Meet / Zoom).
@@ -94,6 +95,14 @@ export const createVideoCall = action({
     if (!user) {
       throw new Error("User not found")
     }
+
+    // The caller must be on the appointment, and may only bring in people they can reach
+    const check = await ctx.runQuery(internal.videoCalls.authorizeCreateVideoCall, {
+      callerId: user._id,
+      participants: args.participants,
+      appointmentId: args.appointmentId,
+    })
+    if (!check.allowed) throw new ConvexError(check.reason)
 
     return await createStreamCallFor(ctx, user, args)
   },
@@ -491,7 +500,8 @@ export const endVideoCall = mutation({
     if (call.appointmentId) {
       try {
         const appointment = await ctx.db.get(call.appointmentId)
-        if (appointment && appointment.status !== 'completed' && appointment.status !== 'cancelled') {
+        // Only a visit that is still going ahead and has started becomes completed
+        if (appointment && isOpenAppointment(appointment.status) && appointment.startTime <= Date.now()) {
           await ctx.db.patch(call.appointmentId, {
             status: 'completed',
           })
@@ -701,6 +711,15 @@ export const scheduleVideoCall = mutation({
 
     if (!user) {
       throw new Error("User not found")
+    }
+
+    // Only for someone the caller looks after (their patient, or a patient of their clinic)
+    const invitee = await ctx.db.get(args.patientId)
+    if (!invitee || !(await mayInviteToCall(ctx, user, invitee))) {
+      throw new ConvexError("You can only schedule calls with your own patients.")
+    }
+    if (args.clinicId && user.role !== "admin" && (await staffClinicId(ctx, user)) !== args.clinicId) {
+      throw new ConvexError("You can only schedule calls for your own clinic.")
     }
 
     // Extract roomId from meetingLink if provided, otherwise generate one
@@ -1041,6 +1060,45 @@ export const authorizeVideoCallInvitation = internalQuery({
   },
 })
 
+/**
+ * Whether a signed-in user may start a call (createVideoCall). With an appointment, the caller
+ * must be on it (its patient or physio, a team member of its clinic, or an admin). Everyone
+ * invited must be on that appointment or someone the caller may reach (mayInviteToCall).
+ */
+export const authorizeCreateVideoCall = internalQuery({
+  args: {
+    callerId: v.id("users"),
+    participants: v.array(v.id("users")),
+    appointmentId: v.optional(v.id("appointments")),
+  },
+  handler: async (ctx, args): Promise<{ allowed: true } | { allowed: false; reason: string }> => {
+    const caller = await ctx.db.get(args.callerId)
+    if (!caller) return { allowed: false, reason: "Your account was not found." }
+    const isAdmin = caller.role === "admin"
+
+    let appointmentParties = new Set<string>()
+    if (args.appointmentId) {
+      const appointment = await ctx.db.get(args.appointmentId)
+      if (!appointment) return { allowed: false, reason: "That appointment was not found." }
+      appointmentParties = new Set([appointment.patientId, appointment.physiotherapistId])
+      const onAppointment =
+        isAdmin ||
+        appointmentParties.has(caller._id) ||
+        Boolean(appointment.clinicId && (await staffClinicId(ctx, caller)) === appointment.clinicId)
+      if (!onAppointment) return { allowed: false, reason: "You can only start a call for your own appointments." }
+    }
+
+    for (const participantId of args.participants) {
+      if (participantId === caller._id || appointmentParties.has(participantId)) continue
+      const participant = await ctx.db.get(participantId)
+      if (!participant || !(await mayInviteToCall(ctx, caller, participant))) {
+        return { allowed: false, reason: "You can only invite your own patients or physiotherapist to a call." }
+      }
+    }
+    return { allowed: true }
+  },
+})
+
 export const getDailyRoomInfo = query({
   args: {
     callId: v.id("videoCalls"),
@@ -1268,12 +1326,20 @@ export const getClinicVideoCalls = query({
     if (!identity) {
       throw new Error("Unauthorized");
     }
+    const viewer = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .unique();
+    // Only that clinic's owner and team (or an admin) see its calls
+    if (!viewer || (viewer.role !== "admin" && (await staffClinicId(ctx, viewer)) !== args.clinicId)) {
+      throw new ConvexError("You're not part of this clinic.");
+    }
 
     const videoCalls = await ctx.db
       .query("videoCalls")
       .withIndex("by_clinic_id_and_scheduled", (q) => q.eq("clinicId", args.clinicId))
       .order("desc")
-      .collect();
+      .take(200);
 
     // Enrich with participant details
     const enrichedCalls = await Promise.all(

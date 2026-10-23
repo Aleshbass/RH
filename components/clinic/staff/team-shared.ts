@@ -2,7 +2,7 @@
 
 import { ConvexError } from 'convex/values'
 import type { Id } from '@/convex/_generated/dataModel'
-import { CLINIC_AREAS, CLINIC_AREA_LABELS, type ClinicArea } from '@/components/clinic/ClinicPreviewContext'
+import { CLINIC_AREAS, CLINIC_AREA_LABELS, type ClinicArea } from '@/components/clinic/ClinicAccessContext'
 import { friendlyError } from '@/components/clinic/patients/patient-record-shared'
 
 // Written out (rather than inferred from the api) because the clinic query types can resolve to `any`.

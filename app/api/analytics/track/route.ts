@@ -3,6 +3,7 @@ import { api } from '@/convex/_generated/api'
 import { ConvexHttpClient } from 'convex/browser'
 import { convexServerSecret } from '@/lib/convex-server-secret'
 import { log } from '@/lib/monitoring/logger'
+import { guardAnalyticsRequest } from '@/lib/analytics-guard'
 
 let convexClient: ConvexHttpClient | null = null
 
@@ -19,11 +20,11 @@ function getConvexClient(): ConvexHttpClient {
 
 export async function POST(request: NextRequest) {
   try {
-    const text = await request.text()
-    if (!text || !text.trim()) {
-      return NextResponse.json({ success: true })
-    }
-    const { type, data = {} } = JSON.parse(text)
+    const guard = await guardAnalyticsRequest(request)
+    if (!guard.ok) return guard.response
+    const { type } = guard.body
+    // The signed-in user from the session; a userId in the body is ignored
+    const data = { ...(guard.body.data ?? {}), userId: guard.userId }
     const serverSecret = convexServerSecret()
 
     // Log the analytics event

@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { Doc, Id } from "./_generated/dataModel";
 
 // Simple, flat types to avoid deep instantiation issues
@@ -22,6 +22,26 @@ export interface ResourceBooking {
   status: 'confirmed' | 'pending' | 'cancelled';
 }
 
+/**
+ * The signed-in user if they may use this clinic's resources: an admin, the clinic's owner, or a
+ * member of its team (staff or clinician). `manage` (create, update, delete) needs the owner or an admin.
+ */
+async function requireClinicAccess(ctx: QueryCtx | MutationCtx, clinicId: Id<"clinics">, options: { manage?: boolean } = {}) {
+  const identity = await ctx.auth.getUserIdentity();
+  if (!identity) throw new Error("Not authenticated");
+  const user = await ctx.db
+    .query("users")
+    .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+    .unique();
+  if (!user) throw new Error("User not found");
+  if (user.role === "admin") return user;
+  const clinic = await ctx.db.get(clinicId);
+  if (!clinic) throw new Error("Clinic not found");
+  if (clinic.ownerId === user._id) return user;
+  if (!options.manage && user.clinicId === clinicId) return user;
+  throw new Error("You don't have access to this clinic's resources");
+}
+
 // Resource Management Queries
 export const getResources = query({
   args: {
@@ -35,8 +55,7 @@ export const getResources = query({
     isActive: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Not authenticated");
+    await requireClinicAccess(ctx, args.clinicId);
 
     let resourcesQuery = ctx.db
       .query("resources")
@@ -63,6 +82,7 @@ export const getResourceById = query({
 
     const resource = await ctx.db.get(args.resourceId);
     if (!resource) throw new Error("Resource not found");
+    await requireClinicAccess(ctx, resource.clinicId);
 
     return resource;
   },
@@ -80,6 +100,7 @@ export const getResourceAvailability = query({
 
     const resource = await ctx.db.get(args.resourceId);
     if (!resource) throw new Error("Resource not found");
+    await requireClinicAccess(ctx, resource.clinicId);
 
     // Get existing bookings for the date range
     const bookings = await ctx.db
@@ -120,6 +141,20 @@ export const getResourceBookings = query({
     let bookings: Doc<"resourceBookings">[];
 
     if (args.resourceId) {
+      const resource = await ctx.db.get(args.resourceId);
+      if (!resource) throw new Error("Resource not found");
+      await requireClinicAccess(ctx, resource.clinicId);
+    } else if (args.clinicId) {
+      await requireClinicAccess(ctx, args.clinicId);
+    } else if (args.appointmentId) {
+      const appointment = await ctx.db.get(args.appointmentId);
+      if (!appointment?.clinicId) return [];
+      await requireClinicAccess(ctx, appointment.clinicId);
+    } else {
+      throw new Error("Choose a resource, clinic or appointment");
+    }
+
+    if (args.resourceId) {
       bookings = await ctx.db.query("resourceBookings")
         .withIndex("by_resource_date", (q) =>
           q.eq("resourceId", args.resourceId!)
@@ -132,8 +167,17 @@ export const getResourceBookings = query({
         )
         .collect();
     } else {
-      bookings = await ctx.db.query("resourceBookings")
-        .collect();
+      // A clinic's bookings: through its resources (filtered below)
+      const resourceIds = (
+        await ctx.db.query("resources").withIndex("by_clinic", (q) => q.eq("clinicId", args.clinicId!)).collect()
+      ).map((r) => r._id);
+      bookings = (
+        await Promise.all(
+          resourceIds.map((resourceId) =>
+            ctx.db.query("resourceBookings").withIndex("by_resource_date", (q) => q.eq("resourceId", resourceId)).collect()
+          )
+        )
+      ).flat();
     }
 
     // Filter by date range if provided
@@ -214,10 +258,7 @@ export const createResource = mutation({
     const clinic = await ctx.db.get(args.clinicId);
     if (!clinic) throw new Error("Clinic not found");
 
-    // Check permissions
-    if (user.role !== 'admin' && user.role !== 'clinic_owner' && clinic.ownerId !== user._id) {
-      throw new Error("Insufficient permissions to create resources");
-    }
+    await requireClinicAccess(ctx, args.clinicId, { manage: true });
 
     const resourceId = await ctx.db.insert("resources", {
       ...args,
@@ -282,10 +323,7 @@ export const updateResource = mutation({
     const clinic = await ctx.db.get(resource.clinicId);
     if (!clinic) throw new Error("Clinic not found");
 
-    // Check permissions
-    if (user.role !== 'admin' && user.role !== 'clinic_owner' && clinic.ownerId !== user._id) {
-      throw new Error("Insufficient permissions to update resource");
-    }
+    await requireClinicAccess(ctx, resource.clinicId, { manage: true });
 
     await ctx.db.patch(args.resourceId, {
       ...args.updates,
@@ -313,6 +351,8 @@ export const bookResource = mutation({
 
     const appointment = await ctx.db.get(args.appointmentId);
     if (!appointment) throw new Error("Appointment not found");
+    await requireClinicAccess(ctx, resource.clinicId);
+    if (appointment.clinicId && appointment.clinicId !== resource.clinicId) throw new Error("That appointment belongs to another clinic");
 
     // Check for conflicts
     const conflicts = await ctx.db
@@ -371,6 +411,9 @@ export const cancelResourceBooking = mutation({
 
     const booking = await ctx.db.get(args.bookingId);
     if (!booking) throw new Error("Booking not found");
+    const bookedResource = await ctx.db.get(booking.resourceId);
+    if (!bookedResource) throw new Error("Resource not found");
+    await requireClinicAccess(ctx, bookedResource.clinicId);
 
     await ctx.db.patch(args.bookingId, {
       status: "cancelled",
@@ -402,10 +445,7 @@ export const deleteResource = mutation({
     const clinic = await ctx.db.get(resource.clinicId);
     if (!clinic) throw new Error("Clinic not found");
 
-    // Check permissions
-    if (user.role !== 'admin' && user.role !== 'clinic_owner' && clinic.ownerId !== user._id) {
-      throw new Error("Insufficient permissions to delete resource");
-    }
+    await requireClinicAccess(ctx, resource.clinicId, { manage: true });
 
     // Check for active bookings
     const activeBookings = await ctx.db
