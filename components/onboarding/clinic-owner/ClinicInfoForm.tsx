@@ -4,7 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useOnboardingStore } from "@/stores/onboardingStore";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { ChevronRight, ChevronLeft } from "lucide-react";
+import { ChevronRight, ChevronLeft, ChevronDown } from "@/components/icons";
 
 // Form schema
 const clinicInfoSchema = z.object({
@@ -187,9 +187,7 @@ export default function ClinicInfoForm({ onNext, onBack }: ClinicInfoFormProps) 
                 Clinic Type
               </label>
               <div className="absolute inset-y-0 right-0 flex items-center px-4 pointer-events-none">
-                <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
-                </svg>
+                <ChevronDown className="w-4 h-4 text-gray-500" />
               </div>
             </div>
             {errors.clinicType && (
@@ -216,9 +214,7 @@ export default function ClinicInfoForm({ onNext, onBack }: ClinicInfoFormProps) 
                 Year Established
               </label>
               <div className="absolute inset-y-0 right-0 flex items-center px-4 pointer-events-none">
-                <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
-                </svg>
+                <ChevronDown className="w-4 h-4 text-gray-500" />
               </div>
             </div>
             {errors.yearEstablished && (

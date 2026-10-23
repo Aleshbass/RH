@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useMutation } from 'convex/react'
 import type { FunctionReturnType } from 'convex/server'
-import { Loader2, ShieldAlert } from 'lucide-react'
+import { Loader2, ShieldAlert } from '@/components/icons'
 import { toast } from 'sonner'
 import { api } from '@/convex/_generated/api'
 import { Button } from '@/components/ui/button'
@@ -38,7 +38,11 @@ export function usePartnerReview() {
       await reviewApplication({ partnerId: partner._id, action, reason })
       if (action === 'approve') {
         playSound('approve')
-        toast.success('Partner approved. Sandbox access is active; live access needs a separate go-live approval.')
+        toast.success(
+          partner.type === 'doctor'
+            ? `${partner.name} is approved and live. They can refer patients now.`
+            : 'Partner approved. Sandbox access is active; live access needs a separate go-live approval.'
+        )
       } else {
         playSound('reject')
         toast.info('Partner access declined. The partner has been emailed the reason.')
@@ -149,7 +153,11 @@ export function ReasonDialog({
                 rows={4}
                 maxLength={500}
                 className={textareaClass}
-                placeholder="e.g. Webhook endpoint is still failing signature verification in sandbox."
+                placeholder={
+                  request.partner.type === 'doctor'
+                    ? "e.g. We couldn't find this folio number on the MDCN register."
+                    : 'e.g. Webhook endpoint is still failing signature verification in sandbox.'
+                }
               />
               {request.kind === 'production' && request.action === 'suspend' && (
                 <p className="text-[11px] text-rose-700 dark:text-rose-300">

@@ -7,8 +7,8 @@ import {
   Settings,
   ShieldAlert,
   UserRound,
-  type LucideIcon,
-} from 'lucide-react'
+  type IconComponent,
+} from '@/components/icons'
 import type { Tone } from '@/components/admin/ui'
 
 /** Categories returned by api.admin.getUserActivityLogs (see ACTIVITY_CATEGORIES in convex/admin.ts). */
@@ -47,7 +47,7 @@ export type CountedValue = { count: number; capped: boolean }
 /** Shape of api.admin.getUserRoleCounts. */
 export type RoleCountsResult = { byRole: Record<string, CountedValue>; total: CountedValue; cap: number }
 
-export const ACTIVITY_META: Record<ActivityCategory, { label: string; icon: LucideIcon; tone: Tone }> = {
+export const ACTIVITY_META: Record<ActivityCategory, { label: string; icon: IconComponent; tone: Tone }> = {
   security: { label: 'Security', icon: ShieldAlert, tone: 'rose' },
   admin: { label: 'Admin', icon: Settings, tone: 'teal' },
   account: { label: 'Accounts', icon: UserRound, tone: 'mint' },

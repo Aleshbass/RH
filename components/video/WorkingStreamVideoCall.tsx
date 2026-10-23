@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react'
 import { useUser } from '@clerk/nextjs'
 import { Button } from '@/components/ui/button'
-import { Loader2, Copy, PhoneOff, Video, VideoOff, Mic, MicOff, Monitor, X } from 'lucide-react'
+import { Loader2, Copy, PhoneOff, Video, VideoOff, Mic, MicOff, Monitor, X } from '@/components/icons'
 import { toast } from 'sonner'
 
 interface WorkingStreamVideoCallProps {

@@ -4,7 +4,7 @@ import { useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useMutation, useQuery } from 'convex/react';
-import { Dumbbell, Edit, MoreVertical, Plus, Search, Trash2 } from 'lucide-react';
+import { Dumbbell, Edit, MoreVertical, Plus, Search, Trash2 } from '@/components/icons';
 import { toast } from 'sonner';
 import { api } from '@/convex/_generated/api';
 import type { Id } from '@/convex/_generated/dataModel';

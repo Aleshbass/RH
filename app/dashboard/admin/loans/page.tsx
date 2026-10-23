@@ -1,10 +1,11 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useMutation, useQuery } from 'convex/react'
 import type { FunctionReturnType } from 'convex/server'
 import { format } from 'date-fns'
-import { Banknote, CheckCircle2, ChevronRight, Clock, Loader2, Mail, Phone, User, WalletCards, XCircle } from 'lucide-react'
+import { Banknote, CheckCircle2, ChevronRight, Clock, Copy, Loader2, Mail, Phone, RefreshCw, User, WalletCards, WhatsApp, XCircle } from '@/components/icons'
+import { mediLoanWhatsAppUrl } from '@/lib/myitura/share'
 import { toast } from 'sonner'
 import { api } from '@/convex/_generated/api'
 import { Button } from '@/components/ui/button'
@@ -38,13 +39,56 @@ type Tone = 'neutral' | 'teal' | 'green' | 'amber' | 'red'
 
 const LOAN_STATUS: Record<string, { label: string; tone: Tone }> = {
   initiated: { label: 'SMS sent', tone: 'neutral' },
-  pending: { label: 'Applying', tone: 'amber' },
+  pending: { label: 'Applied', tone: 'amber' },
   approved: { label: 'Approved', tone: 'teal' },
-  disbursed: { label: 'Disbursed', tone: 'green' },
+  offer_accepted: { label: 'Terms accepted', tone: 'teal' },
+  disbursed: { label: 'Paid out', tone: 'green' },
   declined: { label: 'Declined', tone: 'red' },
   expired: { label: 'Expired', tone: 'neutral' },
+  cancelled: { label: 'Cancelled', tone: 'neutral' },
+  defaulted: { label: 'In default', tone: 'red' },
   failed: { label: 'Failed', tone: 'red' },
   repaid: { label: 'Fully repaid', tone: 'green' },
+}
+
+/** Loans an admin can still cancel at MyItura. */
+const CANCELLABLE = new Set(['initiated', 'pending', 'approved', 'offer_accepted'])
+
+type QuoteOption = { tenorMonths: number; monthlyRepaymentKobo: number; totalRepayableKobo: number }
+
+/** Indicative monthly repayments for an amount (GET /api/myitura/quote). */
+function QuoteHint({ amountKobo }: { amountKobo: number }) {
+  const [state, setState] = useState<{ amount: number; options?: QuoteOption[]; error?: string } | null>(null)
+
+  useEffect(() => {
+    if (!amountKobo || amountKobo <= 0) return
+    const timer = window.setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/myitura/quote?amountKobo=${amountKobo}`)
+        const data = (await res.json().catch(() => ({}))) as { options?: QuoteOption[]; error?: string }
+        setState({ amount: amountKobo, options: res.ok ? data.options : undefined, error: res.ok ? undefined : data.error })
+      } catch {
+        setState({ amount: amountKobo, error: 'Estimate unavailable' })
+      }
+    }, 500)
+    return () => window.clearTimeout(timer)
+  }, [amountKobo])
+
+  if (!amountKobo || state?.amount !== amountKobo) return null
+  if (state.error) return <p className={hintClass}>Repayment estimate unavailable: {state.error}</p>
+  if (!state.options?.length) return <p className={hintClass}>MyItura has no priced term for this amount.</p>
+  return (
+    <p className={hintClass}>
+      About{' '}
+      {state.options.map((o, i) => (
+        <span key={o.tenorMonths}>
+          {i > 0 && ' · '}
+          <strong className="tabular-nums">{formatKobo(o.monthlyRepaymentKobo)}</strong>/month for {o.tenorMonths} months
+        </span>
+      ))}
+      . Final terms are set inside MediLoan.
+    </p>
+  )
 }
 
 const REQUEST_STATUS: Record<string, { label: string; tone: Tone }> = {
@@ -92,10 +136,18 @@ function InitiateLoanDialog({ request, onClose, onInitiated }: { request: LoanRe
           treatmentAmount: amountKobo,
         }),
       })
-      const data = (await res.json().catch(() => ({}))) as { success?: boolean; error?: string }
+      const data = (await res.json().catch(() => ({}))) as {
+        success?: boolean
+        error?: string
+        data?: { message?: string; whatsappUrl?: string | null }
+      }
       if (!res.ok || !data.success) throw new Error(data.error || 'Failed to initiate loan.')
       playSound('success')
-      toast.success(`MediLoan started. ${request.patientFirstName} will get an SMS from MyItura.`)
+      const whatsappUrl = data.data?.whatsappUrl
+      toast.success(data.data?.message ?? 'MediLoan started.', {
+        duration: 15000,
+        action: whatsappUrl ? { label: 'Send on WhatsApp', onClick: () => window.open(whatsappUrl, '_blank', 'noopener,noreferrer') } : undefined,
+      })
       onInitiated(request._id)
       setAmount('')
       onClose()
@@ -155,6 +207,7 @@ function InitiateLoanDialog({ request, onClose, onInitiated }: { request: LoanRe
                 />
               </div>
               <p className={hintClass}>The full treatment amount in Naira.</p>
+              <QuoteHint amountKobo={amount && !isNaN(parseFloat(amount)) ? Math.round(parseFloat(amount) * 100) : 0} />
             </div>
 
             {error && <Callout tone="danger">{error}</Callout>}
@@ -187,14 +240,48 @@ export default function AdminLoansPage() {
   const requests = useQuery(api.mediloan.getAllLoanRequests, {})
   const loans = useQuery(api.mediloan.getAllLoans)
 
+  const [busyLoan, setBusyLoan] = useState<string | null>(null)
+  const [cancelling, setCancelling] = useState<LoanApplication | null>(null)
+  const [cancelReason, setCancelReason] = useState('')
+
   const isLoading = requests === undefined || loans === undefined
   const pendingCount = requests?.filter((r: LoanRequest) => r.status === 'pending').length ?? 0
   const totalLoans = loans?.length ?? 0
-  const approvedLoans = loans?.filter((l: LoanApplication) => l.status === 'approved' || l.status === 'disbursed').length ?? 0
+  const approvedLoans =
+    loans?.filter((l: LoanApplication) => ['approved', 'offer_accepted', 'disbursed', 'repaid', 'defaulted'].includes(l.status)).length ?? 0
   const disbursedValue =
     loans
-      ?.filter((l: LoanApplication) => l.status === 'disbursed' || l.status === 'repaid')
-      .reduce((s: number, l: LoanApplication) => s + l.amount, 0) ?? 0
+      ?.filter((l: LoanApplication) => ['disbursed', 'repaid', 'defaulted'].includes(l.status))
+      .reduce((s: number, l: LoanApplication) => s + (l.amountApproved ?? l.amount), 0) ?? 0
+
+  /** Refresh (ask MyItura) or cancel one loan through /api/myitura/loans/{id}. */
+  const loanAction = async (loan: LoanApplication, action: 'refresh' | 'cancel', reason?: string) => {
+    setBusyLoan(loan._id)
+    try {
+      const res = await fetch(`/api/myitura/loans/${loan._id}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, reason }),
+      })
+      const data = (await res.json().catch(() => ({}))) as { error?: string; result?: string; status?: string }
+      if (!res.ok) throw new Error(data.error || 'MyItura request failed')
+      if (action === 'cancel') {
+        playSound('reject')
+        toast.success('Loan cancelled')
+      } else {
+        playSound('success')
+        const label = data.status ? LOAN_STATUS[data.status]?.label ?? data.status : null
+        toast.success(data.result === 'updated' ? `Updated: ${label}` : `No change${label ? `: ${label}` : ''}`)
+      }
+      return true
+    } catch (error) {
+      playSound('error')
+      toast.error(errorMessage(error, 'MyItura request failed'))
+      return false
+    } finally {
+      setBusyLoan(null)
+    }
+  }
 
   const dismiss = async () => {
     if (!dismissing) return
@@ -314,7 +401,10 @@ export default function AdminLoansPage() {
         </TabsContent>
 
         <TabsContent value="applications" className="mt-0">
-          <Panel title="Initiated loan applications" description="Loans submitted to MyItura. Status updates arrive automatically by webhook.">
+          <Panel
+            title="Initiated loan applications"
+            description="Loans submitted to MyItura. Updates arrive by webhook; use Refresh if one looks stuck. A paid-out loan marks its invoice paid."
+          >
             {loans === undefined ? (
               <LoadingBlock />
             ) : loans.length === 0 ? (
@@ -328,8 +418,9 @@ export default function AdminLoansPage() {
                       <TableHead>Treatment</TableHead>
                       <TableHead className="text-right">Amount</TableHead>
                       <TableHead>Status</TableHead>
-                      <TableHead>SDK ref</TableHead>
+                      <TableHead>References</TableHead>
                       <TableHead>Initiated</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -344,14 +435,82 @@ export default function AdminLoansPage() {
                             <div className="text-xs text-neutral-500 dark:text-neutral-400">{loan.patientPhone}</div>
                           </TableCell>
                           <TableCell className="max-w-[220px] truncate text-sm text-neutral-600 dark:text-neutral-300">{loan.treatment}</TableCell>
-                          <TableCell className="text-right font-semibold tabular-nums text-rh-night dark:text-white">{formatKobo(loan.amount)}</TableCell>
+                          <TableCell className="text-right font-semibold tabular-nums text-rh-night dark:text-white">
+                            {formatKobo(loan.amount)}
+                            {loan.amountApproved !== undefined && loan.amountApproved !== loan.amount && (
+                              <div className="text-xs font-normal text-neutral-500 dark:text-neutral-400">Approved {formatKobo(loan.amountApproved)}</div>
+                            )}
+                          </TableCell>
                           <TableCell>
                             <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
                             {loan.repaymentStatus && <div className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">Repayment: {loan.repaymentStatus}</div>}
+                            {loan.lastEventAt && (
+                              <div className="mt-0.5 text-[11px] text-neutral-400">Last update {format(loan.lastEventAt, 'd MMM, h:mm a')}</div>
+                            )}
                           </TableCell>
-                          <TableCell className="font-mono text-xs text-neutral-500 dark:text-neutral-400">{loan.myituraSdkRef || '—'}</TableCell>
+                          <TableCell className="font-mono text-xs text-neutral-500 dark:text-neutral-400">
+                            <div>{loan.myituraSdkRef || '—'}</div>
+                            {loan.invoiceReference && <div className="font-sans">Invoice {loan.invoiceReference}</div>}
+                          </TableCell>
                           <TableCell className="whitespace-nowrap text-xs text-neutral-500 dark:text-neutral-400">
                             {loan.createdAt ? format(loan.createdAt, 'd MMM yyyy') : '—'}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex flex-wrap items-center justify-end gap-1.5">
+                              {loan.applicationUrl && (loan.status === 'initiated' || loan.status === 'pending') && (
+                                <>
+                                  {mediLoanWhatsAppUrl(loan.patientPhone, loan.patientFirstName, loan.applicationUrl) && (
+                                    <Button asChild size="sm" className={cn(primaryButtonClass, 'h-8 text-xs')}>
+                                      <a
+                                        href={mediLoanWhatsAppUrl(loan.patientPhone, loan.patientFirstName, loan.applicationUrl)!}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        title="Send the application link on WhatsApp"
+                                      >
+                                        <WhatsApp className="mr-1 h-3.5 w-3.5" /> WhatsApp
+                                      </a>
+                                    </Button>
+                                  )}
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={() => {
+                                      navigator.clipboard
+                                        .writeText(loan.applicationUrl!)
+                                        .then(() => toast.success('Application link copied'))
+                                        .catch(() => toast.error('Could not copy the link'))
+                                    }}
+                                    className={cn(softButtonClass, 'h-8 text-xs')}
+                                  >
+                                    <Copy className="mr-1 h-3.5 w-3.5" /> Copy link
+                                  </Button>
+                                </>
+                              )}
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                disabled={busyLoan === loan._id}
+                                onClick={() => loanAction(loan, 'refresh')}
+                                className={cn(softButtonClass, 'h-8 text-xs')}
+                              >
+                                {busyLoan === loan._id ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="mr-1 h-3.5 w-3.5" />}
+                                Refresh
+                              </Button>
+                              {CANCELLABLE.has(loan.status) && (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  disabled={busyLoan === loan._id}
+                                  onClick={() => {
+                                    setCancelReason('')
+                                    setCancelling(loan)
+                                  }}
+                                  className="h-8 rounded-xl text-xs text-neutral-500 hover:bg-rh-blush hover:text-rose-700 dark:text-neutral-400 dark:hover:bg-rose-400/10 dark:hover:text-rose-300"
+                                >
+                                  <XCircle className="mr-1 h-3.5 w-3.5" /> Cancel
+                                </Button>
+                              )}
+                            </div>
                           </TableCell>
                         </TableRow>
                       )
@@ -378,6 +537,52 @@ export default function AdminLoansPage() {
         destructive
         onConfirm={dismiss}
       />
+      <Dialog open={!!cancelling} onOpenChange={(open) => !open && busyLoan === null && setCancelling(null)}>
+        <DialogContent className={`${dialogClass} sm:max-w-md`}>
+          {cancelling && (
+            <>
+              <DialogHeader>
+                <DialogTitle className={dialogTitleClass}>
+                  <XCircle className="h-5 w-5 text-rose-600" />
+                  Cancel this MediLoan?
+                </DialogTitle>
+                <DialogDescription>
+                  {cancelling.patientFirstName} {cancelling.patientLastName}&apos;s application for {formatKobo(cancelling.amount)} is cancelled at MyItura. This
+                  only works before the loan pays out.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-1.5">
+                <label htmlFor="cancel-reason" className={labelClass}>
+                  Reason <span className="text-rose-500">*</span>
+                </label>
+                <Input
+                  id="cancel-reason"
+                  value={cancelReason}
+                  onChange={(e) => setCancelReason(e.target.value)}
+                  placeholder="e.g. Patient paid another way"
+                  className={inputClass}
+                  autoFocus
+                />
+              </div>
+              <DialogFooter className="gap-2">
+                <Button variant="ghost" onClick={() => setCancelling(null)} disabled={busyLoan !== null} className={softButtonClass}>
+                  Keep it
+                </Button>
+                <Button
+                  disabled={busyLoan !== null || cancelReason.trim().length < 3}
+                  onClick={async () => {
+                    if (await loanAction(cancelling, 'cancel', cancelReason.trim())) setCancelling(null)
+                  }}
+                  className="rounded-xl bg-rose-600 text-white hover:bg-rose-700"
+                >
+                  {busyLoan !== null && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Cancel loan
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
     </AdminPage>
   )
 }

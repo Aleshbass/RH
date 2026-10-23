@@ -16,7 +16,7 @@ import {
   AlertCircle,
   Calendar,
   Eye
-} from 'lucide-react';
+} from '@/components/icons';
 import { format } from 'date-fns';
 import Link from 'next/link';
 import LoadingSpinner from '@/components/ui/loading-spinner';

@@ -13,8 +13,8 @@ import {
     Star,
     ChevronRight,
     MapPin
-} from 'lucide-react';
-import { IconBrandWhatsapp } from '@tabler/icons-react';
+} from '@/components/icons';
+import { WhatsApp } from '@/components/icons';
 
 const WHATSAPP_URL = `https://wa.me/2348061525811?text=${encodeURIComponent("Hi Joy! 👋🏾 I need help with my recovery.")}`;
 
@@ -325,7 +325,7 @@ export function HowItWorks() {
                             rel="noopener noreferrer"
                             className="group inline-flex items-center gap-3 bg-[#005b57] hover:bg-[#004744] text-white font-semibold text-base sm:text-lg py-4 px-8 sm:px-10 rounded-full transition-all duration-300 shadow-xl shadow-[#005b57]/25 hover:shadow-2xl hover:shadow-[#005b57]/35 transform hover:-translate-y-0.5 active:scale-98"
                         >
-                            <IconBrandWhatsapp className="w-6 h-6 text-white" />
+                            <WhatsApp className="w-6 h-6 text-white" />
                             <span>Get Matched With a Physio on WhatsApp</span>
                             <ArrowRight className="w-5 h-5 transition-transform duration-300 group-hover:translate-x-1.5" />
                         </a>

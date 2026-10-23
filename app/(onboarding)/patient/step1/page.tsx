@@ -7,7 +7,7 @@ import PersonalInfoForm, { PatientInfoValues } from '@/components/onboarding/pat
 import { useValidateInvitationCode } from '@/lib/api/patientInvitations';
 import { useMutation, useQuery } from 'convex/react';
 import { api } from '@/convex/_generated/api';
-import { Loader2 } from 'lucide-react';
+import { Loader2 } from '@/components/icons';
 import { toast } from 'sonner';
 import { programError } from '@/components/exercise-programs/errors';
 
@@ -133,6 +133,8 @@ function PatientStep1Content() {
     lastName: data.patientData.lastName || currentUser?.lastName || '',
     email: data.patientData.email || currentUser?.email || '',
     // Phone might not be in currentUser depending on schema, but if it is, add it here
+    // "Family / caregiver" in Get started lands here with ?for=family
+    therapyFor: data.patientData.therapyFor || (searchParams?.get('for') === 'family' ? 'family_member' : ''),
   };
 
   return (

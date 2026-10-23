@@ -13,12 +13,13 @@ export function hasOwnPortalShell(pathname: string) {
   return (
     pathname.startsWith('/dashboard/clinic') ||
     pathname.startsWith('/dashboard/physiotherapist') ||
-    pathname.startsWith('/dashboard/admin')
+    pathname.startsWith('/dashboard/admin') ||
+    pathname.startsWith('/dashboard/patient')
   )
 }
 
 /**
- * The shared header + sidebar used by the patient, doctor and admin dashboards.
+ * The shared header + sidebar used by the doctor dashboard and the other shared /dashboard pages.
  *
  * This reads the pathname on the client because the /dashboard layout is not re-rendered on
  * client-side navigation (e.g. /dashboard redirecting to /dashboard/physiotherapist), so a

@@ -1,405 +1,439 @@
 'use client'
 
+import { useCallback } from 'react'
+import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { useQuery } from 'convex/react'
+import { toast } from 'sonner'
 import { api } from '@/convex/_generated/api'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { ScrollArea } from '@/components/ui/scroll-area'
-import { 
-  Calendar, 
-  Clock, 
-  User, 
-  MapPin, 
-  FileText, 
-  Phone, 
-  Mail, 
-  Stethoscope,
-  Target,
-  Activity,
-  MessageSquare,
+import type { Id } from '@/convex/_generated/dataModel'
+import {
+  Building2,
+  CalendarClock,
+  CheckCircle2,
+  ClipboardList,
+  Copy,
+  FileText,
+  MapPin,
+  MessageCircle,
+  NotebookPen,
   Star,
-  X,
-  CheckCircle,
-  AlertCircle
-} from 'lucide-react'
-import Image from 'next/image'
-import { format } from 'date-fns'
-import { Id } from '@/convex/_generated/dataModel'
+  Video,
+  XCircle,
+} from '@/components/icons'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { Button } from '@/components/ui/button'
+import {
+  appointmentStatusLabel,
+  awaitingConfirmationFrom,
+  hasPendingProposal,
+  isOpenAppointment,
+  type AppointmentStatusFields,
+} from '@/convex/helpers/appointmentStatus'
+import { formatLagos, lagosDate, lagosTimeRange } from '@/convex/helpers/lagosTime'
+import { isVideoVisit, meetingLinkOf } from '@/components/appointments/appointment-ui'
+import {
+  DetailRow,
+  PatientDrawer,
+  SectionLabel,
+  StatusBadge,
+  accentButtonClass,
+  initials,
+  primaryButtonClass,
+  secondaryButtonClass,
+  type Tone,
+} from '@/components/patient/ui'
+import { cn } from '@/lib/utils'
 
-interface AppointmentDetailsModalProps {
-  isOpen: boolean
-  onClose: () => void
-  appointmentId: string | null
+/* ---------------------------------------------------------------------------------------------- */
+/* Shared appointment helpers for the patient portal                                              */
+/* ---------------------------------------------------------------------------------------------- */
+
+/** A row from api.appointments.getPatientAppointments. */
+export type PatientAppointment = AppointmentStatusFields & {
+  _id: string
+  physiotherapistId: string
+  startTime: number
+  endTime: number
+  status: string
+  serviceType?: string
+  appointmentType?: string
+  isOnline?: boolean
+  location?: string
+  meetingLink?: string
+  streamMeetingLink?: string
+  googleMeetLink?: string
+  manualMeetingLink?: string
+  notesForPatient?: string
+  cancellationReason?: string
+  feedbackSubmitted?: boolean
+  physiotherapistName?: string
+  proposedStartTime?: number
+  proposedEndTime?: number
+  proposalNote?: string
 }
 
-const getStatusIcon = (status: string) => {
-  switch (status) {
-    case 'scheduled':
-      return <Clock className="h-4 w-4" />
-    case 'confirmed':
-      return <CheckCircle className="h-4 w-4" />
+export const MESSAGES_HREF = '/dashboard/patient/messages'
+
+/** Booked and not over yet. */
+export function isLiveAppointment(apt: PatientAppointment, now = Date.now()) {
+  return isOpenAppointment(apt.status) && apt.endTime > now
+}
+
+export function isCancelled(apt: PatientAppointment) {
+  return apt.status === 'cancelled_by_patient' || apt.status === 'cancelled_by_therapist'
+}
+
+/** Needs the patient's answer: a new time the physio proposed, or a visit the physio booked. */
+export function needsPatientAnswer(apt: PatientAppointment) {
+  return isLiveAppointment(apt) && (hasPendingProposal(apt) || awaitingConfirmationFrom(apt) === 'patient')
+}
+
+/** A confirmed video visit with a link that hasn't ended. */
+export function canJoinVisit(apt: PatientAppointment, now = Date.now()) {
+  return isVideoVisit(apt) && apt.status === 'confirmed' && !!meetingLinkOf(apt) && apt.endTime > now
+}
+
+/** True from 15 minutes before the start until the end. */
+export function isJoinTime(apt: PatientAppointment, now = Date.now()) {
+  return now >= apt.startTime - 15 * 60 * 1000 && now < apt.endTime
+}
+
+export function durationMinutes(apt: Pick<PatientAppointment, 'startTime' | 'endTime'>) {
+  return Math.max(15, Math.round((apt.endTime - apt.startTime) / 60000))
+}
+
+export function placeLabel(apt: PatientAppointment) {
+  return isVideoVisit(apt) ? 'Video call' : 'In person'
+}
+
+/** Label, colour and a plain explanation of where a visit stands, from the patient's side. */
+export function patientStatus(apt: PatientAppointment, now = Date.now()): { label: string; tone: Tone; explain: string } {
+  const label = appointmentStatusLabel(apt, 'patient')
+  if (isOpenAppointment(apt.status)) {
+    if (apt.endTime <= now) {
+      return { label, tone: 'neutral', explain: 'The time for this visit has passed. Your physio will update it.' }
+    }
+    if (hasPendingProposal(apt, now)) {
+      return { label, tone: 'amber', explain: 'Your physio suggested another time. Accept it, or keep the time you had.' }
+    }
+    const waitingOn = awaitingConfirmationFrom(apt)
+    if (waitingOn === 'patient') {
+      return { label, tone: 'amber', explain: 'Your physio booked this visit for you. Confirm it so they know you’re coming.' }
+    }
+    if (waitingOn === 'provider') {
+      return {
+        label,
+        tone: 'neutral',
+        explain: 'You asked for this time. Your physio will confirm it or suggest another, and we’ll let you know.',
+      }
+    }
+    return { label, tone: 'green', explain: 'Your physio has confirmed this visit.' }
+  }
+  switch (apt.status) {
     case 'completed':
-      return <CheckCircle className="h-4 w-4" />
+      return { label, tone: 'blue', explain: 'This visit has taken place.' }
     case 'cancelled_by_patient':
+      return { label: 'Cancelled by you', tone: 'rose', explain: 'You cancelled this visit.' }
     case 'cancelled_by_therapist':
-      return <X className="h-4 w-4" />
+      return { label, tone: 'rose', explain: 'Your physio cancelled this visit.' }
     case 'no_show':
-      return <AlertCircle className="h-4 w-4" />
+      return { label: 'Missed', tone: 'amber', explain: 'This visit was marked as missed.' }
     default:
-      return <Clock className="h-4 w-4" />
+      return { label, tone: 'neutral', explain: label }
   }
 }
 
-const getStatusColor = (status: string) => {
-  switch (status) {
-    case 'scheduled':
-      return 'bg-blue-100 text-blue-800'
-    case 'confirmed':
-      return 'bg-green-100 text-green-800'
-    case 'completed':
-      return 'bg-gray-100 text-gray-800'
-    case 'cancelled_by_patient':
-    case 'cancelled_by_therapist':
-      return 'bg-red-100 text-red-800'
-    case 'no_show':
-      return 'bg-orange-100 text-orange-800'
-    default:
-      return 'bg-gray-100 text-gray-800'
-  }
-}
-
-const getStatusLabel = (status: string) => {
-  switch (status) {
-    case 'scheduled':
-      return 'Scheduled'
-    case 'confirmed':
-      return 'Confirmed'
-    case 'completed':
-      return 'Completed'
-    case 'cancelled_by_patient':
-      return 'Cancelled by You'
-    case 'cancelled_by_therapist':
-      return 'Cancelled by Therapist'
-    case 'no_show':
-      return 'No Show'
-    default:
-      return 'Unknown'
-  }
-}
-
-export function AppointmentDetailsModal({
-  isOpen,
-  onClose,
-  appointmentId,
-}: AppointmentDetailsModalProps) {
-  // Get detailed appointment information
-  const appointmentDetails = useQuery(
-    api.appointments.getPatientAppointmentDetails,
-    appointmentId ? { appointmentId: appointmentId as Id<'appointments'> } : 'skip'
+/** Opens a visit's video room: our own call page in the app, anything else in a new tab. */
+export function useJoinVisit() {
+  const router = useRouter()
+  return useCallback(
+    (link: string | undefined | null) => {
+      if (!link) return
+      try {
+        const url = new URL(link, window.location.origin)
+        if (url.origin === window.location.origin && url.pathname.startsWith('/video-call/')) {
+          router.push(`${url.pathname}${url.search}`)
+          return
+        }
+      } catch {
+        // Not a URL we can parse; open it as-is
+      }
+      window.open(link, '_blank', 'noopener,noreferrer')
+    },
+    [router]
   )
+}
 
-  if (!appointmentId || !appointmentDetails) return null
+/* ---------------------------------------------------------------------------------------------- */
+/* Details drawer                                                                                 */
+/* ---------------------------------------------------------------------------------------------- */
 
-  const { appointment, physiotherapist, clinic, sessionLog } = appointmentDetails
+/** api.appointments.getPatientAppointmentDetails */
+type AppointmentExtras = {
+  physiotherapist: { _id: string; firstName?: string; lastName?: string; imageUrl?: string; specializations?: string[] } | null
+  clinic: { _id: string; name?: string; address?: string; contactPhone?: string } | null
+  sessionLog: {
+    subjectiveAssessment?: string
+    objectiveAssessment?: string
+    treatmentAdministered?: string
+    planForNextSession?: string
+  } | null
+}
 
-  return (
-    <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden">
-        <DialogHeader>
-          <DialogTitle className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Calendar className="h-5 w-5 text-blue-600" />
-              Appointment Details
-            </div>
-            <Badge className={getStatusColor(appointment.status)}>
-              <div className="flex items-center gap-1">
-                {getStatusIcon(appointment.status)}
-                {getStatusLabel(appointment.status)}
-              </div>
-            </Badge>
-          </DialogTitle>
-        </DialogHeader>
+export type AppointmentActionHandlers = {
+  onConfirm: (apt: PatientAppointment) => void
+  onReschedule: (apt: PatientAppointment) => void
+  onCancel: (apt: PatientAppointment) => void
+  onRespondToProposal: (apt: PatientAppointment, accept: boolean) => void
+  onRateVisit: (apt: PatientAppointment) => void
+}
 
-        <ScrollArea className="max-h-[calc(90vh-120px)]">
-          <div className="space-y-6 pr-4">
-            {/* Appointment Overview */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Calendar className="h-5 w-5" />
-                  Appointment Overview
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-2">
-                      <Calendar className="h-4 w-4 text-gray-500" />
-                      <div>
-                        <p className="text-sm text-gray-500">Date</p>
-                        <p className="font-medium">
-                          {format(new Date(appointment.startTime), 'EEEE, MMMM do, yyyy')}
-                        </p>
-                      </div>
-                    </div>
-                    
-                    <div className="flex items-center gap-2">
-                      <Clock className="h-4 w-4 text-gray-500" />
-                      <div>
-                        <p className="text-sm text-gray-500">Time</p>
-                        <p className="font-medium">
-                          {format(new Date(appointment.startTime), 'h:mm a')} -{' '}
-                          {format(new Date(appointment.endTime), 'h:mm a')}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
+/**
+ * Everything about one visit, with the actions that make sense for it right now. Actions hand the
+ * visit back to the page, which closes this drawer and opens the matching one.
+ */
+export function AppointmentDetailsDrawer({
+  appointment,
+  open,
+  onOpenChange,
+  onConfirm,
+  onReschedule,
+  onCancel,
+  onRespondToProposal,
+  onRateVisit,
+}: {
+  appointment: PatientAppointment | null
+  open: boolean
+  onOpenChange: (open: boolean) => void
+} & AppointmentActionHandlers) {
+  const join = useJoinVisit()
+  const extras = useQuery(
+    api.appointments.getPatientAppointmentDetails,
+    open && appointment ? { appointmentId: appointment._id as Id<'appointments'> } : 'skip'
+  ) as AppointmentExtras | undefined
 
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-2">
-                      <Activity className="h-4 w-4 text-gray-500" />
-                      <div>
-                        <p className="text-sm text-gray-500">Service Type</p>
-                        <p className="font-medium">{appointment.serviceType}</p>
-                      </div>
-                    </div>
-                    
-                    <div className="flex items-center gap-2">
-                      <Target className="h-4 w-4 text-gray-500" />
-                      <div>
-                        <p className="text-sm text-gray-500">Duration</p>
-                        <p className="font-medium">
-                          {Math.round((appointment.endTime - appointment.startTime) / (1000 * 60))} minutes
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+  if (!appointment) return null
 
-            {/* Physiotherapist Information */}
-            {physiotherapist && (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <User className="h-5 w-5" />
-                    Your Physiotherapist
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex items-start gap-4">
-                    <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center">
-                      {physiotherapist.imageUrl ? (
-                        <Image
-                          src={physiotherapist.imageUrl}
-                          alt={`${physiotherapist.firstName} ${physiotherapist.lastName}`}
-                          width={64}
-                          height={64}
-                          unoptimized
-                          className="w-16 h-16 rounded-full object-cover"
-                        />
-                      ) : (
-                        <User className="h-8 w-8 text-blue-600" />
-                      )}
-                    </div>
-                    <div className="flex-1 space-y-2">
-                      <h3 className="font-semibold text-lg">
-                        {physiotherapist.firstName} {physiotherapist.lastName}
-                      </h3>
-                      
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                        <div className="flex items-center gap-2">
-                          <Mail className="h-4 w-4 text-gray-500" />
-                          <span>{physiotherapist.email}</span>
-                        </div>
-                        
-                        {physiotherapist.specializations && physiotherapist.specializations.length > 0 && (
-                          <div className="flex items-center gap-2">
-                            <Stethoscope className="h-4 w-4 text-gray-500" />
-                            <span>{physiotherapist.specializations.join(', ')}</span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
+  const apt = appointment
+  const now = Date.now()
+  const status = patientStatus(apt, now)
+  const live = isLiveAppointment(apt, now)
+  const proposal = hasPendingProposal(apt, now)
+  const needsConfirm = live && !proposal && awaitingConfirmationFrom(apt) === 'patient'
+  const waitingOnPhysio = live && awaitingConfirmationFrom(apt) === 'provider'
+  const video = isVideoVisit(apt)
+  const link = meetingLinkOf(apt)
+  const joinable = canJoinVisit(apt, now)
+  const physioName =
+    apt.physiotherapistName ||
+    [extras?.physiotherapist?.firstName, extras?.physiotherapist?.lastName].filter(Boolean).join(' ') ||
+    'Your physiotherapist'
+  const canRate = apt.status === 'completed' && !apt.feedbackSubmitted
+  const summary = extras?.sessionLog
+  const summaryParts = summary
+    ? ([
+        ['What you told your physio', summary.subjectiveAssessment],
+        ['What your physio found', summary.objectiveAssessment],
+        ['Treatment', summary.treatmentAdministered],
+        ['Plan for next time', summary.planForNextSession],
+      ] as const).filter(([, text]) => typeof text === 'string' && text.trim())
+    : []
 
-            {/* Clinic Information */}
-            {clinic && (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <MapPin className="h-5 w-5" />
-                    Clinic Information
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3">
-                    <h3 className="font-semibold">{clinic.name}</h3>
-                    
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                      {clinic.address && (
-                        <div className="flex items-start gap-2">
-                          <MapPin className="h-4 w-4 text-gray-500 mt-0.5" />
-                          <span>{clinic.address}</span>
-                        </div>
-                      )}
-                      
-                      {clinic.contactPhone && (
-                        <div className="flex items-center gap-2">
-                          <Phone className="h-4 w-4 text-gray-500" />
-                          <span>{clinic.contactPhone}</span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
+  const copyLink = async () => {
+    if (!link) return
+    try {
+      await navigator.clipboard.writeText(link)
+      toast.success('Link copied')
+    } catch {
+      toast.error('Could not copy the link')
+    }
+  }
 
-            {/* Appointment Notes */}
-            {(appointment.notesForPatient || appointment.notesForTherapist) && (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <MessageSquare className="h-5 w-5" />
-                    Notes
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {appointment.notesForPatient && (
-                    <div className="p-3 bg-blue-50 rounded-lg">
-                      <h4 className="font-medium text-blue-800 mb-2">Notes from your therapist:</h4>
-                      <p className="text-blue-700 text-sm">{appointment.notesForPatient}</p>
-                    </div>
-                  )}
-                  
-                  {appointment.notesForTherapist && (
-                    <div className="p-3 bg-gray-50 rounded-lg">
-                      <h4 className="font-medium text-gray-800 mb-2">Your notes:</h4>
-                      <p className="text-gray-700 text-sm">{appointment.notesForTherapist}</p>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            )}
-
-            {/* Session Log (if appointment is completed) */}
-            {sessionLog && (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <FileText className="h-5 w-5" />
-                    Session Summary
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {sessionLog.subjectiveAssessment && (
-                    <div>
-                      <h4 className="font-medium text-gray-800 mb-2">Patient Feedback (Subjective)</h4>
-                      <p className="text-gray-700 text-sm bg-gray-50 p-3 rounded-lg">
-                        {sessionLog.subjectiveAssessment}
-                      </p>
-                    </div>
-                  )}
-                  
-                  {sessionLog.objectiveAssessment && (
-                    <div>
-                      <h4 className="font-medium text-gray-800 mb-2">Assessment (Objective)</h4>
-                      <p className="text-gray-700 text-sm bg-gray-50 p-3 rounded-lg">
-                        {sessionLog.objectiveAssessment}
-                      </p>
-                    </div>
-                  )}
-                  
-                  {sessionLog.treatmentAdministered && (
-                    <div>
-                      <h4 className="font-medium text-gray-800 mb-2">Treatment Provided</h4>
-                      <p className="text-gray-700 text-sm bg-green-50 p-3 rounded-lg">
-                        {sessionLog.treatmentAdministered}
-                      </p>
-                    </div>
-                  )}
-                  
-                  {sessionLog.planForNextSession && (
-                    <div>
-                      <h4 className="font-medium text-gray-800 mb-2">Plan for Next Session</h4>
-                      <p className="text-gray-700 text-sm bg-blue-50 p-3 rounded-lg">
-                        {sessionLog.planForNextSession}
-                      </p>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            )}
-
-            {/* Cancellation Reason */}
-            {appointment.cancellationReason && (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-red-600">
-                    <AlertCircle className="h-5 w-5" />
-                    Cancellation Details
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="p-3 bg-red-50 rounded-lg">
-                    <p className="text-red-700 text-sm">{appointment.cancellationReason}</p>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-
-            {/* Pre-appointment Information */}
-            {appointment.status === 'scheduled' || appointment.status === 'confirmed' ? (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Star className="h-5 w-5" />
-                    Prepare for Your Appointment
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3 text-sm">
-                    <div className="p-3 bg-blue-50 rounded-lg">
-                      <h4 className="font-medium text-blue-800 mb-2">Before your appointment:</h4>
-                      <ul className="text-blue-700 space-y-1 list-disc list-inside">
-                        <li>Arrive 10-15 minutes early for check-in</li>
-                        <li>Bring comfortable clothing suitable for movement</li>
-                        <li>Bring any relevant medical documents or imaging</li>
-                        <li>Prepare a list of current symptoms or concerns</li>
-                        <li>Stay hydrated and avoid heavy meals beforehand</li>
-                      </ul>
-                    </div>
-                    
-                    <div className="p-3 bg-green-50 rounded-lg">
-                      <h4 className="font-medium text-green-800 mb-2">What to expect:</h4>
-                      <ul className="text-green-700 space-y-1 list-disc list-inside">
-                        <li>Initial assessment and discussion of your condition</li>
-                        <li>Physical examination and movement tests</li>
-                        <li>Treatment session tailored to your needs</li>
-                        <li>Exercise recommendations and home care instructions</li>
-                        <li>Discussion of your treatment plan and next steps</li>
-                      </ul>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ) : null}
-          </div>
-        </ScrollArea>
-
-        <div className="flex justify-end pt-4 border-t">
-          <Button onClick={onClose} variant="outline">
-            Close
+  const footer = (
+    <div className="space-y-2">
+      {proposal && (
+        <div className="grid grid-cols-2 gap-2">
+          <Button className={cn(secondaryButtonClass, 'h-11')} onClick={() => onRespondToProposal(apt, false)}>
+            Keep my time
+          </Button>
+          <Button className={cn(primaryButtonClass, 'h-11')} onClick={() => onRespondToProposal(apt, true)}>
+            <CheckCircle2 className="mr-2 h-4 w-4" />
+            Accept new time
           </Button>
         </div>
-      </DialogContent>
-    </Dialog>
+      )}
+      {needsConfirm && (
+        <Button className={cn(primaryButtonClass, 'h-11 w-full')} onClick={() => onConfirm(apt)}>
+          <CheckCircle2 className="mr-2 h-4 w-4" />
+          Confirm this visit
+        </Button>
+      )}
+      {joinable && (
+        <Button className={cn(accentButtonClass, 'h-12 w-full text-[15px]')} onClick={() => join(link)}>
+          <Video className="mr-2 h-4 w-4" />
+          Join video call
+        </Button>
+      )}
+      {live && (
+        <div className="grid grid-cols-2 gap-2">
+          {!proposal && (
+            <Button className={cn(secondaryButtonClass, 'h-11')} onClick={() => onReschedule(apt)}>
+              <CalendarClock className="mr-2 h-4 w-4" />
+              Reschedule
+            </Button>
+          )}
+          <Button
+            className={cn(secondaryButtonClass, 'h-11 text-pt-rose-fg hover:bg-pt-rose-bg', proposal && 'col-span-2')}
+            onClick={() => onCancel(apt)}
+          >
+            <XCircle className="mr-2 h-4 w-4" />
+            {waitingOnPhysio ? 'Cancel request' : 'Cancel visit'}
+          </Button>
+        </div>
+      )}
+      {canRate && (
+        <Button className={cn(primaryButtonClass, 'h-11 w-full')} onClick={() => onRateVisit(apt)}>
+          <Star className="mr-2 h-4 w-4" />
+          Rate this visit
+        </Button>
+      )}
+      {apt.physiotherapistId && (
+        <Button asChild variant="ghost" className="h-10 w-full rounded-xl text-pt-muted hover:bg-pt-hover hover:text-pt-ink">
+          <Link href={`${MESSAGES_HREF}?with=${apt.physiotherapistId}`}>
+            <MessageCircle className="mr-2 h-4 w-4" />
+            Message {physioName.split(' ')[0] || 'your physio'}
+          </Link>
+        </Button>
+      )}
+    </div>
   )
-} 
+
+  return (
+    <PatientDrawer
+      open={open}
+      onOpenChange={onOpenChange}
+      title={apt.serviceType || 'Appointment'}
+      description={`${placeLabel(apt)} with ${physioName}`}
+      footer={footer}
+    >
+      <div className="space-y-5">
+        <div className="rounded-2xl bg-pt-sunken p-4">
+          <StatusBadge tone={status.tone} dot>
+            {status.label}
+          </StatusBadge>
+          <p className="mt-3 text-xl font-semibold tracking-tight text-pt-ink">
+            {formatLagos(apt.startTime, { weekday: 'long', day: 'numeric', month: 'long' }, 'en-NG')}
+          </p>
+          <p className="mt-0.5 text-sm text-pt-muted">
+            {lagosTimeRange(apt.startTime, apt.endTime)} · {durationMinutes(apt)} min · Lagos time
+          </p>
+          <p className="mt-3 text-sm leading-relaxed text-pt-muted">{status.explain}</p>
+        </div>
+
+        {proposal && apt.proposedStartTime && apt.proposedEndTime && (
+          <div className="rounded-2xl bg-pt-amber-bg p-4 text-sm text-pt-amber-fg">
+            <p className="font-semibold">Suggested new time</p>
+            <p className="mt-1">{lagosDate(apt.proposedStartTime)}</p>
+            <p>{lagosTimeRange(apt.proposedStartTime, apt.proposedEndTime)} (Lagos time)</p>
+            {apt.proposalNote && <p className="mt-2 italic">&ldquo;{apt.proposalNote}&rdquo;</p>}
+          </div>
+        )}
+
+        <div className="flex items-center gap-3">
+          <Avatar className="h-11 w-11 rounded-2xl">
+            <AvatarImage src={extras?.physiotherapist?.imageUrl} alt="" />
+            <AvatarFallback className="rounded-2xl bg-pt-sun-bg text-sm font-semibold text-pt-sun-fg">{initials(physioName)}</AvatarFallback>
+          </Avatar>
+          <div className="min-w-0">
+            <p className="truncate text-[15px] font-semibold text-pt-ink">{physioName}</p>
+            <p className="truncate text-xs text-pt-muted">
+              {extras?.physiotherapist?.specializations?.length ? extras.physiotherapist.specializations.join(', ') : 'Physiotherapist'}
+            </p>
+          </div>
+        </div>
+
+        <div className="divide-y divide-pt-line rounded-2xl border border-pt-line px-3">
+          <DetailRow icon={video ? Video : MapPin} label="Where">
+            {video ? (
+              link && live ? (
+                <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <span>Video call · your link is ready</span>
+                  <button type="button" onClick={copyLink} className="inline-flex items-center gap-1 text-xs font-semibold text-pt-muted hover:text-pt-ink">
+                    <Copy className="h-3 w-3" />
+                    Copy link
+                  </button>
+                </span>
+              ) : live ? (
+                apt.status === 'confirmed' ? (
+                  'Video call · your link will appear here before the session'
+                ) : (
+                  'Video call · the link arrives once your physio confirms'
+                )
+              ) : (
+                'Video call'
+              )
+            ) : apt.location ? (
+              <a
+                href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(apt.location)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline decoration-pt-line-strong underline-offset-2 hover:decoration-pt-ink"
+              >
+                {apt.location}
+              </a>
+            ) : (
+              'In person'
+            )}
+          </DetailRow>
+          {apt.serviceType && (
+            <DetailRow icon={ClipboardList} label="Service">
+              {apt.serviceType}
+            </DetailRow>
+          )}
+          {extras?.clinic?.name && (
+            <DetailRow icon={Building2} label="Clinic">
+              <span className="block">{extras.clinic.name}</span>
+              {extras.clinic.address && <span className="block text-pt-muted">{extras.clinic.address}</span>}
+              {extras.clinic.contactPhone && (
+                <a href={`tel:${extras.clinic.contactPhone}`} className="block text-pt-muted underline-offset-2 hover:underline">
+                  {extras.clinic.contactPhone}
+                </a>
+              )}
+            </DetailRow>
+          )}
+          {apt.notesForPatient && (
+            <DetailRow icon={NotebookPen} label="Note from your physio">
+              <span className="whitespace-pre-line">{apt.notesForPatient}</span>
+            </DetailRow>
+          )}
+          {isCancelled(apt) && apt.cancellationReason && (
+            <DetailRow icon={XCircle} label="Reason">
+              {apt.cancellationReason}
+            </DetailRow>
+          )}
+        </div>
+
+        {summaryParts.length > 0 && (
+          <div className="space-y-3">
+            <SectionLabel>Visit summary</SectionLabel>
+            <div className="space-y-3 rounded-2xl border border-pt-line p-4">
+              {summaryParts.map(([heading, text]) => (
+                <div key={heading}>
+                  <p className="flex items-center gap-1.5 text-xs font-semibold text-pt-faint">
+                    <FileText className="h-3 w-3" />
+                    {heading}
+                  </p>
+                  <p className="mt-1 whitespace-pre-line text-sm leading-relaxed text-pt-ink">{text}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </PatientDrawer>
+  )
+}
+
+/** Older name, kept so existing imports keep working. */
+export const AppointmentDetailsModal = AppointmentDetailsDrawer

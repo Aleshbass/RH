@@ -1,29 +1,56 @@
-'use client';
+'use client'
 
-import { useEffect, useState } from 'react';
-import { useUser } from '@clerk/nextjs';
-import { useConvex, useMutation, useQuery } from 'convex/react';
-import { api } from '@/convex/_generated/api';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Skeleton } from '@/components/ui/skeleton';
-import { toast } from 'sonner';
+import { useEffect, useRef, useState, type ChangeEvent, type ComponentType, type ReactNode } from 'react'
+import { useClerk, useUser } from '@clerk/nextjs'
+import { isJoyLoginEmail } from '@/lib/auth/joyLoginEmail'
+import { useConvex, useMutation, useQuery } from 'convex/react'
+import { toast } from 'sonner'
+import { api } from '@/convex/_generated/api'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Skeleton } from '@/components/ui/skeleton'
+import {
+  Bell,
+  Calendar,
+  CheckCircle2,
+  Download,
+  Loader2,
+  Mail,
+  Moon,
+  Play,
+  Shield,
+  Sun,
+  Trash2,
+  User,
+  Volume2,
+  VolumeX,
+} from '@/components/icons'
+import { CalendarConnectionStatus } from '@/components/settings/CalendarConnectionStatus'
+import { ProfilePhotoUploader } from '@/components/dashboard/shared/ProfilePhotoUploader'
+import { RehabifyId } from '@/components/shared/RehabifyId'
+import { useClinicTheme } from '@/components/clinic/ClinicTheme'
+import { useSoundSetting } from '@/components/patient/shell/PatientControls'
+import { playSound } from '@/lib/sounds'
+import { cn } from '@/lib/utils'
+import {
+  IconChip,
+  InfoTip,
+  PageContainer,
+  PageHeader,
+  Panel,
+  StatusBadge,
+  dangerButtonClass,
+  fieldClass,
+  primaryButtonClass,
+  secondaryButtonClass,
+} from '@/components/patient/ui'
 
-import { CalendarConnectionStatus } from '@/components/settings/CalendarConnectionStatus';
-import { ProfilePhotoUploader } from '@/components/dashboard/shared/ProfilePhotoUploader';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Download, Loader2, Mail, Trash2 } from 'lucide-react';
-import { TourGuide } from '@/components/shared/TourGuide';
-import { RehabifyId } from '@/components/shared/RehabifyId';
-import { PageContainer, PageHeader, Panel, primaryButtonClass, softButtonClass } from '@/components/physio/ui';
+type Gender = 'male' | 'female' | 'other' | 'prefer_not_to_say'
 
-type Gender = 'male' | 'female' | 'other' | 'prefer_not_to_say';
-
-const SUPPORT_EMAIL = 'hello@myrehabifyhealth.com';
+const SUPPORT_EMAIL = 'hello@myrehabifyhealth.com'
 
 const EMPTY_FORM = {
   firstName: '',
@@ -36,32 +63,97 @@ const EMPTY_FORM = {
   emergencyName: '',
   emergencyRelationship: '',
   emergencyPhone: '',
-};
+}
+
+const SECTIONS = [
+  { id: 'profile', label: 'Profile', icon: User },
+  { id: 'reminders', label: 'Reminders', icon: Bell },
+  { id: 'display', label: 'Display & sound', icon: Sun },
+  { id: 'privacy', label: 'Privacy & data', icon: Shield },
+  { id: 'calendar', label: 'Calendar', icon: Calendar },
+] as const
+
+/** Older links use ?tab=notifications for reminders */
+const TAB_ALIASES: Record<string, string> = { notifications: 'reminders' }
 
 function readableError(error: unknown, fallback: string) {
-  const raw = error instanceof Error ? error.message : '';
-  const match = raw.match(/(?:Uncaught Error|ConvexError):\s*(.+?)(?:\n|\s+at\s|$)/);
-  return match?.[1] || fallback;
+  const raw = error instanceof Error ? error.message : ''
+  const match = raw.match(/(?:Uncaught Error|ConvexError):\s*(.+?)(?:\n|\s+at\s|$)/)
+  return match?.[1] || fallback
+}
+
+const inputClass = cn(fieldClass, 'h-11 dark:bg-pt-sunken')
+
+function Field({ label, htmlFor, info, hint, children }: { label: string; htmlFor?: string; info?: ReactNode; hint?: ReactNode; children: ReactNode }) {
+  return (
+    <div className="space-y-1.5">
+      <Label htmlFor={htmlFor} className="flex items-center gap-1 text-sm font-medium text-pt-ink">
+        {label}
+        {info && <InfoTip>{info}</InfoTip>}
+      </Label>
+      {children}
+      {hint && <p className="text-xs text-pt-muted">{hint}</p>}
+    </div>
+  )
+}
+
+/** A setting with its explanation on the left and the control on the right. */
+function SettingRow({
+  icon,
+  title,
+  info,
+  description,
+  control,
+}: {
+  icon: ComponentType<{ className?: string }>
+  title: ReactNode
+  info?: ReactNode
+  description?: ReactNode
+  control: ReactNode
+}) {
+  return (
+    <div className="flex items-start gap-3 py-3">
+      <IconChip icon={icon} tone="neutral" size="sm" />
+      <div className="min-w-0 flex-1">
+        <p className="flex items-center gap-1 text-sm font-semibold text-pt-ink">
+          {title}
+          {info && <InfoTip>{info}</InfoTip>}
+        </p>
+        {description && <p className="mt-0.5 text-[13px] text-pt-muted">{description}</p>}
+      </div>
+      <div className="shrink-0 pt-0.5">{control}</div>
+    </div>
+  )
 }
 
 export default function PatientSettingsPage() {
-  const { user: clerkUser } = useUser();
-  const convex = useConvex();
-  const patient = useQuery(api.patients.getPatientByUserId, {});
-  const currentUser = useQuery(api.users.getMyUser);
-  const updateProfile = useMutation(api.patients.updateMyPatientProfile);
-  const updateNotificationPreferences = useMutation(api.users.updateNotificationPreferences);
+  const { user: clerkUser } = useUser()
+  const { openUserProfile } = useClerk()
+  const convex = useConvex()
+  const patient = useQuery(api.patients.getPatientByUserId, {})
+  const currentUser = useQuery(api.users.getMyUser)
+  const calendarCredentials = useQuery(
+    api.calendar.oauth.getCredentials,
+    currentUser ? { userId: currentUser._id } : 'skip'
+  ) as { connected: true; updatedAt?: number } | null | undefined
+  const updateProfile = useMutation(api.patients.updateMyPatientProfile)
+  const updateNotificationPreferences = useMutation(api.users.updateNotificationPreferences)
+  const { theme, toggleTheme } = useClinicTheme()
+  const [soundsOn, setSoundsOn] = useSoundSetting()
+  const themeRowRef = useRef<HTMLDivElement>(null)
 
-  const [form, setForm] = useState(EMPTY_FORM);
-  const [formLoaded, setFormLoaded] = useState(false);
-  const [savingProfile, setSavingProfile] = useState(false);
-  const [exporting, setExporting] = useState(false);
-  const [calendarNotice, setCalendarNotice] = useState<'success' | 'access_denied' | 'error' | null>(null);
+  const [form, setForm] = useState(EMPTY_FORM)
+  const [formLoaded, setFormLoaded] = useState(false)
+  const [savingProfile, setSavingProfile] = useState(false)
+  const [savingReminders, setSavingReminders] = useState(false)
+  const [exporting, setExporting] = useState(false)
+  const [calendarNotice, setCalendarNotice] = useState<'success' | 'access_denied' | 'error' | null>(null)
+  const [activeSection, setActiveSection] = useState<string>('profile')
 
   // Fill the form once the saved details arrive (not on every live update, so typing isn't overwritten)
   useEffect(() => {
-    if (!patient || formLoaded) return;
-    const profile = patient.profile;
+    if (!patient || formLoaded) return
+    const profile = patient.profile
     setForm({
       firstName: patient.firstName ?? '',
       lastName: patient.lastName ?? '',
@@ -73,37 +165,52 @@ export default function PatientSettingsPage() {
       emergencyName: profile?.emergencyContact?.name ?? '',
       emergencyRelationship: profile?.emergencyContact?.relationship ?? '',
       emergencyPhone: profile?.emergencyContact?.phone ?? '',
-    });
-    setFormLoaded(true);
-  }, [patient, formLoaded]);
+    })
+    setFormLoaded(true)
+  }, [patient, formLoaded])
 
+  // Calendar sign-in results and ?tab= links (e.g. from the "connect your calendar" prompt)
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('calendar_success')) setCalendarNotice('success');
-    else if (params.get('calendar_error')) setCalendarNotice(params.get('calendar_error') === 'access_denied' ? 'access_denied' : 'error');
-  }, []);
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('calendar_success')) setCalendarNotice('success')
+    else if (params.get('calendar_error')) setCalendarNotice(params.get('calendar_error') === 'access_denied' ? 'access_denied' : 'error')
 
-  const set = (key: keyof typeof EMPTY_FORM) => (e: React.ChangeEvent<HTMLInputElement>) =>
-    setForm((f) => ({ ...f, [key]: e.target.value }));
+    const tab = params.get('tab')
+    const target = tab ? TAB_ALIASES[tab] ?? tab : params.get('calendar_success') || params.get('calendar_error') ? 'calendar' : null
+    if (target && SECTIONS.some((s) => s.id === target)) {
+      setActiveSection(target)
+      // Wait a frame so the page has its full height before scrolling
+      requestAnimationFrame(() => document.getElementById(target)?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
+    }
+  }, [])
+
+  const goTo = (id: string) => {
+    setActiveSection(id)
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    document.getElementById(id)?.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' })
+  }
+
+  const set = (key: keyof typeof EMPTY_FORM) => (e: ChangeEvent<HTMLInputElement>) =>
+    setForm((f) => ({ ...f, [key]: e.target.value }))
 
   const handleProfileUpdate = async () => {
     if (!form.firstName.trim() || !form.lastName.trim()) {
-      toast.error('Please enter your first and last name');
-      return;
+      toast.error('Please enter your first and last name')
+      return
     }
-    const hasEmergency = form.emergencyName.trim() || form.emergencyPhone.trim();
+    const hasEmergency = form.emergencyName.trim() || form.emergencyPhone.trim()
     if (hasEmergency && (!form.emergencyName.trim() || !form.emergencyPhone.trim())) {
-      toast.error("Please add both your emergency contact's name and phone number");
-      return;
+      toast.error("Please add both your emergency contact's name and phone number")
+      return
     }
-    setSavingProfile(true);
+    setSavingProfile(true)
     try {
       // Clerk holds the sign-in name; keep it in step so the next sign-in doesn't revert it
       if (clerkUser && (clerkUser.firstName !== form.firstName.trim() || clerkUser.lastName !== form.lastName.trim())) {
         try {
-          await clerkUser.update({ firstName: form.firstName.trim(), lastName: form.lastName.trim() });
+          await clerkUser.update({ firstName: form.firstName.trim(), lastName: form.lastName.trim() })
         } catch (error) {
-          console.warn('Could not update the name on the sign-in account:', error);
+          console.warn('Could not update the name on the sign-in account:', error)
         }
       }
       await updateProfile({
@@ -121,258 +228,361 @@ export default function PatientSettingsPage() {
               phone: form.emergencyPhone.trim(),
             }
           : undefined,
-      });
-      toast.success('Profile saved');
+      })
+      playSound('success')
+      toast.success('Profile saved')
     } catch (error) {
-      toast.error(readableError(error, "We couldn't save your profile. Please try again."));
+      playSound('error')
+      toast.error(readableError(error, "We couldn't save your profile. Please try again."))
     } finally {
-      setSavingProfile(false);
+      setSavingProfile(false)
     }
-  };
+  }
 
-  const remindersOn = patient?.notificationPreferences?.appointmentReminders !== false;
+  const remindersOn = patient?.notificationPreferences?.appointmentReminders !== false
   const handleRemindersChange = async (checked: boolean) => {
+    setSavingReminders(true)
     try {
-      await updateNotificationPreferences({ notificationPreferences: { appointmentReminders: checked } });
-      toast.success(checked ? 'Reminders on' : 'Reminders off');
+      await updateNotificationPreferences({ notificationPreferences: { appointmentReminders: checked } })
+      toast.success(checked ? 'Reminders on' : 'Reminders off')
     } catch (error) {
-      toast.error(readableError(error, "We couldn't update your reminders."));
+      toast.error(readableError(error, "We couldn't update your reminders."))
+    } finally {
+      setSavingReminders(false)
     }
-  };
+  }
+
+  const handleThemeChange = () => {
+    const rect = themeRowRef.current?.getBoundingClientRect()
+    toggleTheme(rect ? { x: rect.right - 32, y: rect.top + rect.height / 2 } : undefined)
+  }
 
   const handleExport = async () => {
-    setExporting(true);
+    setExporting(true)
     try {
-      const data = await convex.query(api.patients.exportMyData, {});
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `rehabify-my-data-${new Date().toISOString().slice(0, 10)}.json`;
-      link.click();
-      URL.revokeObjectURL(url);
+      const data = await convex.query(api.patients.exportMyData, {})
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `rehabify-my-data-${new Date().toISOString().slice(0, 10)}.json`
+      link.click()
+      URL.revokeObjectURL(url)
+      toast.success('Your data is downloading')
     } catch (error) {
-      toast.error(readableError(error, "We couldn't prepare your data. Please try again."));
+      toast.error(readableError(error, "We couldn't prepare your data. Please try again."))
     } finally {
-      setExporting(false);
+      setExporting(false)
     }
-  };
+  }
 
   const deletionMailto = `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent('Delete my Rehabify account')}&body=${encodeURIComponent(
-    `Please delete my Rehabify account.\n\nAccount email: ${patient?.email ?? ''}\nName: ${patient?.firstName ?? ''} ${patient?.lastName ?? ''}`
-  )}`;
+    `Please delete my Rehabify account.\n\nAccount email: ${patient?.email ?? ''}\nPatient ID: ${currentUser?.patientNumber ?? ''}\nName: ${patient?.firstName ?? ''} ${patient?.lastName ?? ''}`
+  )}`
+
+  const isDark = theme === 'dark'
+  // Patients who joined through Joy sign in with a placeholder address; don't show it as theirs
+  const signInEmail = patient?.email && !isJoyLoginEmail(patient.email) ? (patient.email as string) : null
 
   return (
-    <PageContainer className="max-w-4xl">
-      <div id="settings-header">
-        <PageHeader eyebrow="Account" title="Settings" description="Your details, reminders and data" />
-      </div>
+    <PageContainer className="max-w-3xl">
+      <PageHeader title="Settings" description="Your details, reminders, display and data." />
 
-      <Tabs defaultValue="profile" className="space-y-5">
-        <TabsList id="settings-tabs" className="grid h-auto w-full grid-cols-2 gap-1 rounded-2xl bg-white p-1 shadow-soft sm:grid-cols-4">
-          <TabsTrigger id="tab-profile" value="profile" className="rounded-xl py-2 data-[state=active]:bg-rh-teal data-[state=active]:text-white">Profile</TabsTrigger>
-          <TabsTrigger id="tab-notifications" value="notifications" className="rounded-xl py-2 data-[state=active]:bg-rh-teal data-[state=active]:text-white">Reminders</TabsTrigger>
-          <TabsTrigger id="tab-privacy" value="privacy" className="rounded-xl py-2 data-[state=active]:bg-rh-teal data-[state=active]:text-white">Privacy &amp; data</TabsTrigger>
-          <TabsTrigger id="tab-calendar" value="calendar" className="rounded-xl py-2 data-[state=active]:bg-rh-teal data-[state=active]:text-white">
-            Calendar <span className="ml-1 text-[10px] font-medium uppercase tracking-wide opacity-70">Soon</span>
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="profile" className="space-y-5">
-          <Panel bodyClassName="p-5">
-            <ProfilePhotoUploader currentImageUrl={currentUser?.imageUrl} size="md" />
-          </Panel>
-
-          <Panel title="Personal details" description="Your physiotherapist sees these details" bodyClassName="space-y-4 p-5">
-            {!formLoaded ? (
-              <div className="space-y-3">
-                <Skeleton className="h-10 w-full" />
-                <Skeleton className="h-10 w-full" />
-                <Skeleton className="h-10 w-full" />
-              </div>
-            ) : (
-              <>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="firstName">First name</Label>
-                    <Input id="firstName" value={form.firstName} onChange={set('firstName')} autoComplete="given-name" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="lastName">Last name</Label>
-                    <Input id="lastName" value={form.lastName} onChange={set('lastName')} autoComplete="family-name" />
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="email">Email</Label>
-                  <Input id="email" type="email" value={patient?.email ?? ''} disabled />
-                  <p className="text-xs text-neutral-500">This is the email you sign in with.</p>
-                </div>
-
-                {currentUser?.patientNumber && (
-                  <div className="space-y-2">
-                    <Label>Patient ID</Label>
-                    <div>
-                      <RehabifyId value={currentUser.patientNumber} className="text-xs" />
-                    </div>
-                    <p className="text-xs text-neutral-500">Your permanent Rehabify number. Quote it when you contact a clinic or support.</p>
-                  </div>
+      {/* Jump to a section */}
+      <nav aria-label="Settings sections" className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
+        <div className="flex w-max gap-1 rounded-2xl bg-pt-sunken p-1">
+          {SECTIONS.map((section) => {
+            const Icon = section.icon
+            const active = activeSection === section.id
+            return (
+              <button
+                key={section.id}
+                type="button"
+                onClick={() => goTo(section.id)}
+                aria-current={active ? 'true' : undefined}
+                className={cn(
+                  'inline-flex items-center gap-1.5 whitespace-nowrap rounded-xl px-3 py-2 text-sm font-medium transition',
+                  active ? 'bg-pt-surface text-pt-ink shadow-pt dark:shadow-none' : 'text-pt-muted hover:text-pt-ink'
                 )}
+              >
+                <Icon className="h-3.5 w-3.5" />
+                {section.label}
+              </button>
+            )
+          })}
+        </div>
+      </nav>
 
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="phone">Phone number</Label>
-                    <Input id="phone" type="tel" value={form.phone} onChange={set('phone')} autoComplete="tel" placeholder="+234…" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="dateOfBirth">Date of birth</Label>
-                    <Input id="dateOfBirth" type="date" value={form.dateOfBirth} onChange={set('dateOfBirth')} max={new Date().toISOString().slice(0, 10)} />
-                  </div>
-                </div>
+      {/* Profile */}
+      <Panel
+        id="profile"
+        className="scroll-mt-20"
+        title="Profile"
+        description="Your physiotherapist sees these details"
+        info="Keeping these up to date helps your physio contact you and plan home visits."
+      >
+        <div className="space-y-5">
+          <div className="rounded-2xl bg-pt-sunken p-4">
+            <ProfilePhotoUploader currentImageUrl={currentUser?.imageUrl} size="md" />
+          </div>
 
-                <div className="space-y-2">
-                  <Label>Gender</Label>
-                  <Select value={form.gender} onValueChange={(value) => setForm((f) => ({ ...f, gender: value as Gender }))}>
-                    <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="female">Female</SelectItem>
-                      <SelectItem value="male">Male</SelectItem>
-                      <SelectItem value="other">Other</SelectItem>
-                      <SelectItem value="prefer_not_to_say">Prefer not to say</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-[2fr_1fr]">
-                  <div className="space-y-2">
-                    <Label htmlFor="address">Home address</Label>
-                    <Input id="address" value={form.address} onChange={set('address')} autoComplete="street-address" placeholder="Used for home visits" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="city">City</Label>
-                    <Input id="city" value={form.city} onChange={set('city')} autoComplete="address-level2" />
-                  </div>
-                </div>
-
-                <div className="space-y-3 rounded-2xl bg-rh-canvas p-4">
-                  <p className="text-sm font-medium text-rh-night">Emergency contact</p>
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                    <Input aria-label="Emergency contact name" placeholder="Name" value={form.emergencyName} onChange={set('emergencyName')} className="bg-white" />
-                    <Input aria-label="Relationship" placeholder="Relationship" value={form.emergencyRelationship} onChange={set('emergencyRelationship')} className="bg-white" />
-                    <Input aria-label="Emergency contact phone" type="tel" placeholder="Phone" value={form.emergencyPhone} onChange={set('emergencyPhone')} className="bg-white" />
-                  </div>
-                </div>
-
-                <Button onClick={handleProfileUpdate} disabled={savingProfile} className={`${primaryButtonClass} h-11 w-full sm:w-auto sm:px-8`}>
-                  {savingProfile ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Saving…</> : 'Save profile'}
-                </Button>
-              </>
-            )}
-          </Panel>
-        </TabsContent>
-
-        <TabsContent value="notifications">
-          <Panel title="Reminders" bodyClassName="space-y-4 p-5">
-            <div className="flex items-center justify-between gap-4">
-              <div className="space-y-0.5">
-                <Label htmlFor="appointment-reminders">Appointment and exercise reminders</Label>
-                <p className="text-sm text-neutral-500">An email and dashboard reminder before each visit, and a morning reminder in your dashboard when you have home exercises</p>
+          {!formLoaded ? (
+            <div className="space-y-3">
+              {[0, 1, 2].map((i) => (
+                <Skeleton key={i} className="h-11 w-full rounded-xl bg-pt-sunken" />
+              ))}
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <Field label="First name" htmlFor="firstName">
+                  <Input id="firstName" value={form.firstName} onChange={set('firstName')} autoComplete="given-name" className={inputClass} />
+                </Field>
+                <Field label="Last name" htmlFor="lastName">
+                  <Input id="lastName" value={form.lastName} onChange={set('lastName')} autoComplete="family-name" className={inputClass} />
+                </Field>
               </div>
+
+              {signInEmail ? (
+                <Field label="Email" htmlFor="email" hint="The email you sign in with.">
+                  <Input id="email" type="email" value={signInEmail} disabled className={inputClass} />
+                </Field>
+              ) : (
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-pt-sun-bg px-4 py-3">
+                  <p className="text-sm text-pt-sun-fg">Add an email so you can sign in any time, without waiting for a link.</p>
+                  <Button onClick={() => openUserProfile()} className={cn(primaryButtonClass, 'h-9 px-4')}>
+                    Add email
+                  </Button>
+                </div>
+              )}
+
+              {currentUser?.patientNumber && (
+                <Field
+                  label="Patient ID"
+                  info="Your permanent Rehabify number. Quote it when you contact a clinic or our support team."
+                >
+                  <div>
+                    <RehabifyId value={currentUser.patientNumber} className="text-xs" />
+                  </div>
+                </Field>
+              )}
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <Field label="Phone number" htmlFor="phone" info="So your physio can call you about a visit if they need to.">
+                  <Input id="phone" type="tel" value={form.phone} onChange={set('phone')} autoComplete="tel" placeholder="+234…" className={inputClass} />
+                </Field>
+                <Field label="Date of birth" htmlFor="dateOfBirth">
+                  <Input
+                    id="dateOfBirth"
+                    type="date"
+                    value={form.dateOfBirth}
+                    onChange={set('dateOfBirth')}
+                    max={new Date().toISOString().slice(0, 10)}
+                    className={inputClass}
+                  />
+                </Field>
+              </div>
+
+              <Field label="Gender">
+                <Select value={form.gender} onValueChange={(value) => setForm((f) => ({ ...f, gender: value as Gender }))}>
+                  <SelectTrigger className={cn(inputClass, 'w-full')} aria-label="Gender">
+                    <SelectValue placeholder="Select" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="female">Female</SelectItem>
+                    <SelectItem value="male">Male</SelectItem>
+                    <SelectItem value="other">Other</SelectItem>
+                    <SelectItem value="prefer_not_to_say">Prefer not to say</SelectItem>
+                  </SelectContent>
+                </Select>
+              </Field>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-[2fr_1fr]">
+                <Field label="Home address" htmlFor="address" info="Used for home visits, so your physio can find you.">
+                  <Input id="address" value={form.address} onChange={set('address')} autoComplete="street-address" className={inputClass} />
+                </Field>
+                <Field label="City" htmlFor="city">
+                  <Input id="city" value={form.city} onChange={set('city')} autoComplete="address-level2" className={inputClass} />
+                </Field>
+              </div>
+
+              <div className="space-y-3 rounded-2xl bg-pt-sunken p-4">
+                <p className="flex items-center gap-1 text-sm font-semibold text-pt-ink">
+                  Emergency contact
+                  <InfoTip>Someone your physio can call if something happens during a session. Add a name and a phone number.</InfoTip>
+                </p>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <Input aria-label="Emergency contact name" placeholder="Name" value={form.emergencyName} onChange={set('emergencyName')} className={inputClass} />
+                  <Input
+                    aria-label="Relationship"
+                    placeholder="Relationship, e.g. sister"
+                    value={form.emergencyRelationship}
+                    onChange={set('emergencyRelationship')}
+                    className={inputClass}
+                  />
+                  <Input aria-label="Emergency contact phone" type="tel" placeholder="Phone" value={form.emergencyPhone} onChange={set('emergencyPhone')} className={inputClass} />
+                </div>
+              </div>
+
+              <Button onClick={handleProfileUpdate} disabled={savingProfile} className={cn(primaryButtonClass, 'h-11 w-full sm:w-auto sm:px-8')}>
+                {savingProfile ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Saving…
+                  </>
+                ) : (
+                  'Save profile'
+                )}
+              </Button>
+            </>
+          )}
+        </div>
+      </Panel>
+
+      {/* Reminders */}
+      <Panel id="reminders" className="scroll-mt-20" title="Reminders">
+        <div className="divide-y divide-pt-line">
+          <SettingRow
+            icon={Bell}
+            title="Visit and exercise reminders"
+            info="Turn this off if you’d rather not be reminded. You’ll still get messages about bookings, changes and invoices."
+            description="An email and dashboard reminder before each visit, and a morning nudge when you have home exercises."
+            control={
               <Switch
                 id="appointment-reminders"
                 checked={remindersOn}
-                disabled={patient === undefined}
+                disabled={patient === undefined || savingReminders}
                 onCheckedChange={handleRemindersChange}
+                aria-label="Visit and exercise reminders"
+                className="data-[state=checked]:bg-pt-accent"
               />
+            }
+          />
+        </div>
+        <p className="mt-2 rounded-2xl bg-pt-sunken p-3 text-xs text-pt-muted">
+          Messages about your care, such as booking confirmations, changes and invoices, are always sent.
+        </p>
+      </Panel>
+
+      {/* Display & sound */}
+      <Panel
+        id="display"
+        className="scroll-mt-20"
+        title="Display & sound"
+        info="These are saved on this device, so you can choose differently on your phone and your laptop."
+      >
+        <div className="divide-y divide-pt-line">
+          <div ref={themeRowRef}>
+            <SettingRow
+              icon={isDark ? Moon : Sun}
+              title="Dark mode"
+              info="Easier on the eyes at night. Your choice is shared with the other Rehabify dashboards on this device."
+              description={isDark ? 'Dark colours are on.' : 'Light colours are on.'}
+              control={
+                <Switch
+                  checked={isDark}
+                  onCheckedChange={handleThemeChange}
+                  aria-label="Dark mode"
+                  className="data-[state=checked]:bg-pt-accent"
+                />
+              }
+            />
+          </div>
+          <SettingRow
+            icon={soundsOn ? Volume2 : VolumeX}
+            title="Sounds"
+            info="Short, quiet sounds when something happens, like a booking going through or a message arriving."
+            description={soundsOn ? 'Sounds are on.' : 'Sounds are off.'}
+            control={
+              <Switch checked={soundsOn} onCheckedChange={setSoundsOn} aria-label="Sounds" className="data-[state=checked]:bg-pt-accent" />
+            }
+          />
+        </div>
+        <Button
+          onClick={() => playSound('booked')}
+          disabled={!soundsOn}
+          className={cn(secondaryButtonClass, 'mt-3 h-10')}
+        >
+          <Play className="mr-2 h-3.5 w-3.5" />
+          Play a test sound
+        </Button>
+      </Panel>
+
+      {/* Privacy & data */}
+      <Panel id="privacy" className="scroll-mt-20" title="Privacy & data">
+        <div className="divide-y divide-pt-line">
+          <SettingRow
+            icon={Download}
+            title="Download your data"
+            info="A file with a copy of your profile, visits, check-ins, exercise logs, invoices and list of documents."
+            description="Get a copy of everything we hold about you."
+            control={
+              <Button onClick={handleExport} disabled={exporting} className={cn(secondaryButtonClass, 'h-9 px-3')}>
+                {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Download'}
+              </Button>
+            }
+          />
+          <div className="py-3">
+            <div className="flex items-start gap-3">
+              <IconChip icon={Trash2} tone="rose" size="sm" />
+              <div className="min-w-0 flex-1">
+                <p className="flex items-center gap-1 text-sm font-semibold text-pt-ink">
+                  Delete your account
+                  <InfoTip>
+                    Some clinical records must be kept for the time the law requires. We’ll tell you what is deleted and what is kept.
+                  </InfoTip>
+                </p>
+                <p className="mt-0.5 text-[13px] text-pt-muted">Email us and we’ll close your account.</p>
+                <div className="mt-3 flex flex-wrap items-center gap-3">
+                  <Button asChild className={cn(dangerButtonClass, 'h-9 px-3')}>
+                    <a href={deletionMailto}>
+                      <Trash2 className="mr-2 h-3.5 w-3.5" />
+                      Request deletion
+                    </a>
+                  </Button>
+                  <span className="flex items-center gap-1.5 text-xs text-pt-muted">
+                    <Mail className="h-3.5 w-3.5" /> {SUPPORT_EMAIL}
+                  </span>
+                </div>
+              </div>
             </div>
-            <p className="rounded-xl bg-rh-canvas p-3 text-xs text-neutral-600">
-              Messages about your care, such as booking confirmations, changes and invoices, are always sent.
-            </p>
-          </Panel>
-        </TabsContent>
+          </div>
+        </div>
+      </Panel>
 
-        <TabsContent value="privacy" className="space-y-5">
-          <Panel title="Download your data" description="A copy of your profile, appointments, check-ins, exercise logs, invoices and document list" bodyClassName="p-5">
-            <Button onClick={handleExport} disabled={exporting} className={`${softButtonClass} h-11`}>
-              {exporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
-              Download my data
-            </Button>
-          </Panel>
-
-          <Panel title="Delete your account" bodyClassName="space-y-3 p-5">
-            <p className="text-sm text-neutral-600">
-              Email us to close your account. Some clinical records must be kept for the period the law requires; we&apos;ll
-              confirm what is deleted and what is kept.
+      {/* Calendar */}
+      <Panel id="calendar" className="scroll-mt-20" title="Calendar">
+        <div className="space-y-3">
+          {calendarNotice === 'success' && (
+            <p className="flex items-center gap-2 rounded-2xl bg-pt-green-bg px-4 py-3 text-sm text-pt-green-fg">
+              <CheckCircle2 className="h-4 w-4 shrink-0" />
+              Google Calendar connected.
             </p>
-            <Button asChild variant="outline" className="h-11 rounded-xl border-rose-200 text-rose-700 hover:bg-rose-50 hover:text-rose-800">
-              <a href={deletionMailto}>
-                <Trash2 className="mr-2 h-4 w-4" />
-                Request account deletion
-              </a>
-            </Button>
-            <p className="flex items-center gap-1.5 text-xs text-neutral-500">
-              <Mail className="h-3.5 w-3.5" /> {SUPPORT_EMAIL}
+          )}
+          {(calendarNotice === 'access_denied' || calendarNotice === 'error') && (
+            <p className="rounded-2xl bg-pt-rose-bg px-4 py-3 text-sm text-pt-rose-fg">
+              Couldn’t connect your calendar: {calendarNotice === 'access_denied' ? 'access was denied' : 'something went wrong'}.
             </p>
-          </Panel>
-        </TabsContent>
+          )}
 
-        <TabsContent value="calendar">
-          <Panel
-            title="Calendar"
-            description="Adding your visits to Google Calendar is coming soon."
-            bodyClassName="space-y-4 p-5"
-          >
-            {calendarNotice === 'success' && (
-              <Alert className="border-green-200 bg-green-50 text-green-800">
-                <AlertDescription>Google Calendar connected.</AlertDescription>
-              </Alert>
-            )}
-            {(calendarNotice === 'access_denied' || calendarNotice === 'error') && (
-              <Alert variant="destructive">
-                <AlertDescription>
-                  Couldn&apos;t connect your calendar: {calendarNotice === 'access_denied' ? 'access was denied' : 'something went wrong'}.
-                </AlertDescription>
-              </Alert>
-            )}
+          {calendarCredentials ? (
+            // Already connected from before: keep the option to disconnect
             <CalendarConnectionStatus currentUser={currentUser} />
-          </Panel>
-        </TabsContent>
-      </Tabs>
-      <TourGuide
-        tourId="patient-settings-tour"
-        steps={[
-          {
-            target: "#settings-header",
-            title: "Account Settings",
-            content: "Manage your personal information, reminders and data.",
-            position: "bottom",
-          },
-          {
-            target: "#tab-profile",
-            title: "Profile",
-            content: "Update your contact details and emergency contact.",
-            position: "bottom",
-          },
-          {
-            target: "#tab-notifications",
-            title: "Reminders",
-            content: "Choose whether we remind you before appointments and about your home exercises.",
-            position: "bottom",
-          },
-          {
-            target: "#tab-privacy",
-            title: "Privacy & data",
-            content: "Download a copy of your data or ask us to close your account.",
-            position: "bottom",
-          },
-          {
-            target: "#tab-calendar",
-            title: "Calendar Integration",
-            content: "Adding your visits to Google Calendar is coming soon.",
-            position: "bottom",
-          },
-        ]}
-      />
+          ) : (
+            <SettingRow
+              icon={Calendar}
+              title={
+                <span className="flex items-center gap-2">
+                  Google Calendar
+                  <StatusBadge tone="sun">Coming soon</StatusBadge>
+                </span>
+              }
+              info="We’ll soon add your visits to Google Calendar for you. Until then, your visits and video links are here and in your emails."
+              description="Your visits will appear in your calendar automatically."
+              control={null}
+            />
+          )}
+        </div>
+      </Panel>
     </PageContainer>
-  );
+  )
 }

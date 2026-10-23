@@ -4,7 +4,7 @@ import { useCallback, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useMutation, useQuery } from 'convex/react';
 import { format } from 'date-fns';
-import { Download, Plus, Receipt, Search } from 'lucide-react';
+import { Download, Plus, Receipt, Search } from '@/components/icons';
 import { toast } from 'sonner';
 import { playSound } from '@/lib/sounds';
 import { api } from '@/convex/_generated/api';
@@ -159,32 +159,31 @@ export default function BillingPage() {
     async (invoice: InvoiceFromQuery) => {
       setIsInitiatingLoan(true);
       try {
+        // The server takes the patient and the amount owed from the invoice itself; the phone
+        // here is only used if the patient's account has none
         const patient = patients?.find((p) => {
           const full = `${p.firstName ?? ''} ${p.lastName ?? ''}`.trim().toLowerCase();
           return full.length > 0 && full === invoice.patientName.trim().toLowerCase();
         });
-        const phoneNumber = invoice.patientPhone || patient?.phoneNumber || '';
-        if (!phoneNumber) {
-          toast.error('Add the patient’s phone number first. MediLoan sends them a text to continue.');
-          return;
-        }
         const response = await fetch('/api/myitura/initiate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            patientId: patient?._id,
-            firstName: patient?.firstName || invoice.patientName.split(' ')[0],
-            lastName: patient?.lastName || invoice.patientName.split(' ').slice(1).join(' ') || 'Patient',
-            email: invoice.patientEmail || patient?.email,
-            phoneNumber,
-            treatment: `Invoice ${invoice.invoiceNumber}`,
-            treatmentAmount: invoice.totalAmount,
-            invoiceReference: invoice.invoiceNumber,
+            invoiceId: invoice._id,
+            phoneNumber: invoice.patientPhone || patient?.phoneNumber || undefined,
           }),
         });
         const data = await response.json();
         if (!response.ok || !data.success) throw new Error(data.error || 'MediLoan request failed');
-        toast.success('MediLoan started. We’ve texted the patient the next steps.', { duration: 6000 });
+        playSound('success');
+        const whatsappUrl: string | null = data.data?.whatsappUrl ?? null;
+        toast.success(data.data?.message ?? 'MediLoan started.', {
+          description: 'The invoice is marked paid when the loan pays out.',
+          duration: 15000,
+          action: whatsappUrl
+            ? { label: 'Send on WhatsApp', onClick: () => window.open(whatsappUrl, '_blank', 'noopener,noreferrer') }
+            : undefined,
+        });
       } catch (error) {
         toast.error((error as Error).message || 'Couldn’t start MediLoan');
       } finally {

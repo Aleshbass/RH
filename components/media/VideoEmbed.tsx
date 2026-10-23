@@ -1,5 +1,6 @@
 "use client";
 
+import { Play } from '@/components/icons'
 import React, { useEffect, useRef, useState } from "react";
 
 interface VideoEmbedProps {
@@ -101,9 +102,7 @@ function YouTubePlayer({ videoId, poster, onReady, onPlay }: { videoId: string; 
         <div className="absolute inset-0 bg-black/20 group-hover:bg-black/30 transition-colors" />
         <div className="absolute inset-0 flex items-center justify-center">
           <div className="h-16 w-16 rounded-full bg-white/80 group-hover:bg-white shadow flex items-center justify-center">
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor" className="text-black translate-x-[1px]">
-              <path d="M8 5v14l11-7z" />
-            </svg>
+            <Play className="text-black translate-x-[1px]" size={28} />
           </div>
         </div>
       </button>

@@ -1,6 +1,6 @@
 import React from 'react';
-import { Bell, Eye, LineChart, MessageCircle } from 'lucide-react';
-import { IconBrandWhatsapp } from '@tabler/icons-react';
+import { Bell, Eye, LineChart, MessageCircle } from '@/components/icons';
+import { WhatsApp } from '@/components/icons';
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
@@ -46,7 +46,7 @@ export default function MeetJoyPage() {
                   <span className="text-gray-900 font-medium text-lg">Direct line to your physiotherapist and care team</span>
                 </li>
                 <li className="flex items-start">
-                  <IconBrandWhatsapp className="w-6 h-6 text-[#008069] mt-0.5 mr-4 flex-shrink-0" strokeWidth={2.5} />
+                  <WhatsApp className="w-6 h-6 text-[#008069] mt-0.5 mr-4 flex-shrink-0" strokeWidth={2.5} />
                   <span className="text-gray-900 font-medium text-lg">No new app. Works entirely on WhatsApp</span>
                 </li>
               </ul>
@@ -57,7 +57,7 @@ export default function MeetJoyPage() {
                 rel="noopener noreferrer"
                 className="group inline-flex items-center gap-3 bg-[#008069] hover:bg-[#006653] text-white font-bold text-lg py-4 px-10 rounded-full transition-all duration-300 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
               >
-                <IconBrandWhatsapp className="w-6 h-6" />
+                <WhatsApp className="w-6 h-6" />
                 Talk to Joy Now
               </a>
             </div>

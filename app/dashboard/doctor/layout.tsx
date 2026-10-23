@@ -1,10 +1,6 @@
-import React from 'react'
-import DoctorGuard from '@/components/auth/DoctorGuard'
+import { redirect } from "next/navigation";
 
-export default function DoctorLayout({ children }: { children: React.ReactNode }) {
-    return (
-        <DoctorGuard>
-            {children}
-        </DoctorGuard>
-    )
+/** Referring doctors now work from the partner portal (referrals, referral link, commissions). */
+export default function DoctorLayout() {
+  redirect("/partners/portal");
 }

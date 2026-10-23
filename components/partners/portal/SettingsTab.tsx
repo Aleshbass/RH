@@ -5,7 +5,7 @@ import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { toast } from "sonner";
-import { Building2, ImageIcon, Trash2, UploadCloud } from "lucide-react";
+import { Building2, ImageIcon, Trash2, UploadCloud, UserRound } from "@/components/icons";
 import { Busy, PARTNER_SUPPORT_EMAIL, btnDanger, btnPrimary, btnSecondary, cardCls, errorMessage, inputCls, labelCls, type PortalContext } from "./shared";
 
 const MAX_LOGO_BYTES = 5 * 1024 * 1024;
@@ -61,19 +61,29 @@ export function SettingsTab({ ctx }: { ctx: PortalContext }) {
     e.preventDefault();
     setSaving(true);
     try {
-      await updateBranding({
-        partnerCode: ctx.partnerCode,
-        name: form.name,
-        website: form.website,
-        contactName: form.contactName,
-        contactEmail: form.contactEmail,
-        contactPhone: form.contactPhone,
-        technicalContactEmail: form.technicalContactEmail,
-        financeContactEmail: form.financeContactEmail,
-        coverageStates: list(form.coverageStates),
-        coverageCities: list(form.coverageCities),
-      });
-      toast.success("Organisation details saved");
+      await updateBranding(
+        ctx.isDoctor
+          ? {
+              partnerCode: ctx.partnerCode,
+              name: form.name,
+              contactName: form.name,
+              contactEmail: form.contactEmail,
+              contactPhone: form.contactPhone,
+            }
+          : {
+              partnerCode: ctx.partnerCode,
+              name: form.name,
+              website: form.website,
+              contactName: form.contactName,
+              contactEmail: form.contactEmail,
+              contactPhone: form.contactPhone,
+              technicalContactEmail: form.technicalContactEmail,
+              financeContactEmail: form.financeContactEmail,
+              coverageStates: list(form.coverageStates),
+              coverageCities: list(form.coverageCities),
+            }
+      );
+      toast.success(ctx.isDoctor ? "Your details are saved" : "Organisation details saved");
     } catch (err) {
       toast.error(errorMessage(err, "Could not save your changes"));
     } finally {
@@ -84,8 +94,10 @@ export function SettingsTab({ ctx }: { ctx: PortalContext }) {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
       <div className={`${cardCls} p-6 space-y-4`}>
-        <h3 className="text-sm font-semibold">Logo</h3>
-        <p className="text-xs text-[#52706e]">Shown on your co-branded referral landing pages and in this portal.</p>
+        <h3 className="text-sm font-semibold">{ctx.isDoctor ? "Photo or practice logo" : "Logo"}</h3>
+        <p className="text-xs text-[#52706e]">
+          {ctx.isDoctor ? "Shown on your referral link page, so patients know the link is from you." : "Shown on your co-branded referral landing pages and in this portal."}
+        </p>
         <div
           onDragOver={(e) => {
             e.preventDefault();
@@ -134,11 +146,18 @@ export function SettingsTab({ ctx }: { ctx: PortalContext }) {
         </div>
         <div className="text-[11px] text-[#52706e] space-y-1 pt-2 border-t border-[#002e2c]/10">
           <p>
-            Partner code: <span className="font-mono font-semibold text-[#002e2c]">{ctx.partnerCode}</span>
+            {ctx.isDoctor ? "Referral code" : "Partner code"}: <span className="font-mono font-semibold text-[#002e2c]">{ctx.partnerCode}</span>
           </p>
           <p>
-            Organisation type: <span className="font-semibold text-[#002e2c] uppercase">{info.type}</span>
+            {ctx.isDoctor ? (
+              <>Account: <span className="font-semibold text-[#002e2c]">Referring doctor</span></>
+            ) : (
+              <>
+                Organisation type: <span className="font-semibold text-[#002e2c] uppercase">{info.type}</span>
+              </>
+            )}
           </p>
+          {ctx.isDoctor && <p>Your payout bank account is under Earnings &amp; payouts.</p>}
           <p>
             To change the account owner email, contact{" "}
             <a className="underline" href={`mailto:${PARTNER_SUPPORT_EMAIL}`}>
@@ -151,9 +170,22 @@ export function SettingsTab({ ctx }: { ctx: PortalContext }) {
 
       <form onSubmit={save} className={`${cardCls} p-6 space-y-5 lg:col-span-2`}>
         <div className="flex items-center gap-2">
-          <Building2 className="w-4 h-4 text-[#005b57]" />
-          <h3 className="text-sm font-semibold">Organisation details</h3>
+          {ctx.isDoctor ? <UserRound className="w-4 h-4 text-[#005b57]" /> : <Building2 className="w-4 h-4 text-[#005b57]" />}
+          <h3 className="text-sm font-semibold">{ctx.isDoctor ? "Your details" : "Organisation details"}</h3>
         </div>
+        {ctx.isDoctor ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Field label="Name patients see" hint="As it appears on your referral link page">
+              <input required value={form.name} onChange={(e) => set("name", e.target.value)} className={inputCls} maxLength={120} />
+            </Field>
+            <Field label="Email" hint="Referral updates and payout statements go here">
+              <input type="email" required value={form.contactEmail} onChange={(e) => set("contactEmail", e.target.value)} className={inputCls} />
+            </Field>
+            <Field label="Phone">
+              <input value={form.contactPhone} onChange={(e) => set("contactPhone", e.target.value)} className={inputCls} />
+            </Field>
+          </div>
+        ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Field label="Organisation name">
             <input required value={form.name} onChange={(e) => set("name", e.target.value)} className={inputCls} maxLength={120} />
@@ -183,6 +215,7 @@ export function SettingsTab({ ctx }: { ctx: PortalContext }) {
             <input value={form.coverageCities} onChange={(e) => set("coverageCities", e.target.value)} className={inputCls} />
           </Field>
         </div>
+        )}
         <div className="flex justify-end gap-2 pt-2 border-t border-[#002e2c]/10">
           <button type="button" className={btnSecondary} onClick={() => setForm(initial())}>
             Reset

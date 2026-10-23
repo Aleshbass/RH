@@ -12,10 +12,11 @@ import {
 } from 'react'
 import { flushSync } from 'react-dom'
 import { AnimatePresence, motion } from 'framer-motion'
-import { Moon, Sun } from 'lucide-react'
+import { Moon, Sun } from '@/components/icons'
 import { Toaster } from 'sonner'
 import { cn } from '@/lib/utils'
 import { CLINIC_THEME_STORAGE_KEY as STORAGE_KEY } from '@/lib/clinic-theme'
+import { soundsEnabled } from '@/lib/sounds'
 
 type Theme = 'light' | 'dark'
 
@@ -96,7 +97,7 @@ export function ClinicThemeProvider({ children }: { children: ReactNode }) {
       const next: Theme = theme === 'dark' ? 'light' : 'dark'
 
       const audio = audioRef.current
-      if (audio) {
+      if (audio && soundsEnabled()) {
         audio.currentTime = 0
         audio.play().catch(() => {
           // Autoplay blocked or file missing: the switch still happens

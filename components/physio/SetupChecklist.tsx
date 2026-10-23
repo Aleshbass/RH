@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { Check, ChevronRight } from 'lucide-react'
+import { Check, ChevronRight } from '@/components/icons'
 import { cn } from '@/lib/utils'
 
 export type SetupItem = {

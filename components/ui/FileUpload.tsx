@@ -1,3 +1,4 @@
+import { FileText, X } from '@/components/icons'
 import { ChangeEvent, useRef, useState } from 'react';
 
 interface FileUploadProps {
@@ -205,9 +206,7 @@ export default function FileUpload({
             value.map((file, index) => (
               <li key={`${file.name}-${index}`} className="flex items-center justify-between bg-gray-50 p-2 rounded-md">
                 <div className="flex items-center">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-[#005b57] mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
+                  <FileText className="h-4 w-4 text-[#005b57] mr-2" />
                   <span className="text-sm truncate max-w-xs">{file.name}</span>
                   <span className="text-xs text-gray-500 ml-2">({formatFileSize(file.size)})</span>
                 </div>
@@ -217,18 +216,14 @@ export default function FileUpload({
                   className="text-gray-500 hover:text-red-500 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-1 rounded-full p-1"
                   aria-label={`Remove file ${file.name}`}
                 >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
+                  <X className="h-4 w-4" />
                 </button>
               </li>
             ))
           ) : (
             <li className="flex items-center justify-between bg-gray-50 p-2 rounded-md">
               <div className="flex items-center">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-[#005b57] mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
+                <FileText className="h-4 w-4 text-[#005b57] mr-2" />
                 <span className="text-sm truncate max-w-xs">{(value as File).name}</span>
                 <span className="text-xs text-gray-500 ml-2">({formatFileSize((value as File).size)})</span>
               </div>
@@ -238,9 +233,7 @@ export default function FileUpload({
                 className="text-gray-500 hover:text-red-500 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-1 rounded-full p-1"
                 aria-label={`Remove file ${(value as File).name}`}
               >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
+                <X className="h-4 w-4" />
               </button>
             </li>
           )}

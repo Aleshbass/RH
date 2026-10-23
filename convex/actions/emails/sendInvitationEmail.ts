@@ -4,6 +4,7 @@ import { v } from "convex/values";
 import { internalAction } from "../../_generated/server";
 import { Resend } from 'resend';
 import { escapeHtml } from "../../helpers/escapeHtml";
+import { actions, button, emailDate, greeting, linkFallback, paragraph, qrCode, renderEmail } from "../../../lib/email/layout";
 
 /**
  * Patient invitation emails. These are internal actions: they are run by
@@ -62,40 +63,21 @@ export const sendPatientInvitationEmail = internalAction({
       const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(
         normalizedInvitationLink
       )}`;
-      const emailHtml = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <meta charset="utf-8">
-          <title>Invitation to Rehabify Health</title>
-        </head>
-        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
-          <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
-            <h1 style="color: #10b981;">You're invited to Rehabify Health</h1>
-            <p>Hello ${escapeHtml(args.patientName || args.patientEmail.split('@')[0] || 'there')},</p>
-            <p>${escapeHtml(args.physiotherapistName)} has invited you to join Rehabify Health as their patient.</p>
-            <div style="text-align: center; margin: 24px 0;">
-              <p style="margin: 0 0 8px; font-weight: 600;">Scan to begin</p>
-              <img src="${qrUrl}" alt="Invitation QR Code" width="240" height="240" style="display:inline-block; border: 8px solid #f3f4f6; border-radius: 12px;" />
-            </div>
-            <p style="text-align: center; margin: 12px 0; color: #555;">or</p>
-            <div style="text-align: center; margin: 16px 0 28px;">
-              <a href="${escapeHtml(normalizedInvitationLink)}" style="display: inline-block; background-color: #10b981; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none;">
-                Complete Registration
-              </a>
-            </div>
-            <div style="background-color: #f9fafb; border: 1px solid #e5e7eb; padding: 12px; border-radius: 8px; word-break: break-all;">
-              <p style="margin: 0 0 6px; font-size: 12px; color: #555;">Direct link:</p>
-              <a href="${escapeHtml(normalizedInvitationLink)}" style="color: #065f46; text-decoration: underline;">${escapeHtml(normalizedInvitationLink)}</a>
-            </div>
-            <p style="margin-top: 16px;">This invitation will expire on ${new Date(args.expiresAt).toLocaleDateString()}.</p>
-            <p>If you have any questions, please contact your physiotherapist directly.</p>
-            <hr style="margin: 30px 0; border: none; border-top: 1px solid #e5e5e5;">
-            <p style="font-size: 12px; color: #666;">If you didn't expect this invitation, you can safely ignore this email.</p>
-          </div>
-        </body>
-        </html>
-      `;
+      const link = escapeHtml(normalizedInvitationLink);
+      const emailHtml = renderEmail({
+        eyebrow: 'Invitation',
+        title: 'You are invited to Rehabify',
+        preheader: `${args.physiotherapistName} invited you to join Rehabify Health.`,
+        body: [
+          greeting(escapeHtml(args.patientName || args.patientEmail.split('@')[0] || 'there')),
+          paragraph(`<strong>${escapeHtml(args.physiotherapistName)}</strong> has invited you to join Rehabify Health as their patient.`),
+          actions(button('Complete registration', link)),
+          qrCode(escapeHtml(qrUrl), 'Or scan to begin'),
+          linkFallback(link),
+          paragraph(`This invitation expires on <strong>${emailDate(args.expiresAt)}</strong>. If you have any questions, please contact your physiotherapist directly.`, { muted: true, size: 15 }),
+        ].join(''),
+        footerNote: "If you didn't expect this invitation, you can safely ignore this email.",
+      });
       
       
       const { data, error } = await resend.emails.send({
@@ -204,37 +186,21 @@ export const sendInvitationReminderEmail = internalAction({
       const reminderQrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(
         normalizedInvitationLink
       )}`;
-      const emailHtml = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <meta charset="utf-8">
-          <title>Reminder: Complete Your Registration</title>
-        </head>
-        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
-          <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
-            <h1 style="color: #10b981;">Reminder: Your Invitation is Waiting</h1>
-            <p>Hello ${escapeHtml(args.patientName || args.patientEmail.split('@')[0] || 'there')},</p>
-            <p>This is a friendly reminder that ${escapeHtml(args.physiotherapistName)} has invited you to join Rehabify Health as their patient.</p>
-            <div style="text-align: center; margin: 24px 0;">
-              <p style="margin: 0 0 8px; font-weight: 600;">Scan to continue</p>
-              <img src="${reminderQrUrl}" alt="Invitation QR Code" width="240" height="240" style="display:inline-block; border: 8px solid #f3f4f6; border-radius: 12px;" />
-            </div>
-            <p style="text-align: center; margin: 12px 0; color: #555;">or</p>
-            <div style="text-align: center; margin: 16px 0 28px;">
-              <a href="${escapeHtml(normalizedInvitationLink)}" style="display: inline-block; background-color: #10b981; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none;">
-                Complete Registration Now
-              </a>
-            </div>
-            <div style="background-color: #f9fafb; border: 1px solid #e5e7eb; padding: 12px; border-radius: 8px; word-break: break-all;">
-              <p style="margin: 0 0 6px; font-size: 12px; color: #555;">Direct link:</p>
-              <a href="${escapeHtml(normalizedInvitationLink)}" style="color: #065f46; text-decoration: underline;">${escapeHtml(normalizedInvitationLink)}</a>
-            </div>
-            <p style="margin-top: 16px;">This invitation will expire on ${new Date(args.expiresAt).toLocaleDateString()}.</p>
-          </div>
-        </body>
-        </html>
-      `;
+      const link = escapeHtml(normalizedInvitationLink);
+      const emailHtml = renderEmail({
+        eyebrow: 'Reminder',
+        title: 'Your invitation is waiting',
+        preheader: `${args.physiotherapistName} is waiting for you on Rehabify Health.`,
+        body: [
+          greeting(escapeHtml(args.patientName || args.patientEmail.split('@')[0] || 'there')),
+          paragraph(`A friendly reminder that <strong>${escapeHtml(args.physiotherapistName)}</strong> has invited you to join Rehabify Health as their patient.`),
+          actions(button('Complete registration now', link)),
+          qrCode(escapeHtml(reminderQrUrl), 'Or scan to continue'),
+          linkFallback(link),
+          paragraph(`This invitation expires on <strong>${emailDate(args.expiresAt)}</strong>.`, { muted: true, size: 15 }),
+        ].join(''),
+        footerNote: "If you didn't expect this invitation, you can safely ignore this email.",
+      });
       
       const { data, error } = await resend.emails.send({
         from: `${fromName} <${fromEmail}>`,

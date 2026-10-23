@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Play, ChevronRight, PlayCircle } from 'lucide-react';
+import { X, Play, ChevronRight, PlayCircle } from '@/components/icons';
 
 const STORAGE_KEY = 'rehabify_physio_guide_video_seen';
 const GUIDE_VIDEO_EMBED_URL =
@@ -123,34 +123,16 @@ export function PhysioGuideVideoModal({
                   {/* Content */}
                   <div className="relative z-10 flex flex-col items-center gap-5 select-none px-4 text-center">
 
-                    {/* Pulsing glow ring behind play button */}
                     <div className="relative flex items-center justify-center">
-                      <motion.div
-                        animate={{ scale: [1, 1.55, 1], opacity: [0.25, 0.55, 0.25] }}
-                        transition={{ duration: 2.6, repeat: Infinity, ease: 'easeInOut' }}
-                        className="absolute h-36 w-36 rounded-full"
-                        style={{ background: 'radial-gradient(circle, rgba(0,210,190,0.45) 0%, transparent 70%)' }}
-                      />
-                      <motion.div
-                        animate={{ scale: [1, 1.25, 1], opacity: [0.35, 0.6, 0.35] }}
-                        transition={{ duration: 2.6, repeat: Infinity, ease: 'easeInOut', delay: 0.4 }}
-                        className="absolute h-24 w-24 rounded-full"
-                        style={{ background: 'radial-gradient(circle, rgba(0,200,185,0.5) 0%, transparent 70%)' }}
-                      />
-
                       {/* Play button */}
                       <motion.button
-                        whileHover={{ scale: 1.12 }}
-                        whileTap={{ scale: 0.93 }}
+                        whileHover={{ scale: 1.06 }}
+                        whileTap={{ scale: 0.95 }}
                         onClick={() => setVideoStarted(true)}
                         aria-label="Play platform guide video"
-                        className="relative h-20 w-20 rounded-full flex items-center justify-center cursor-pointer focus:outline-none focus-visible:ring-4 focus-visible:ring-teal-300"
-                        style={{
-                          background: 'linear-gradient(135deg, #00d4c2 0%, #005b57 100%)',
-                          boxShadow: '0 0 0 6px rgba(0,212,194,0.18), 0 24px 60px rgba(0,91,87,0.65)',
-                        }}
+                        className="relative h-20 w-20 rounded-full bg-rh-teal hover:bg-rh-teal-deep flex items-center justify-center cursor-pointer focus:outline-none focus-visible:ring-4 focus-visible:ring-teal-300"
                       >
-                        <Play className="h-9 w-9 text-white ml-1.5" fill="white" />
+                        <Play className="h-9 w-9 text-white ml-1" />
                       </motion.button>
                     </div>
 

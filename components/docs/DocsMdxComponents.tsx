@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
-import { Check, Copy, Info, AlertTriangle, Lightbulb, ArrowUpRight } from "lucide-react";
+import { Check, Copy, Info, AlertTriangle, Lightbulb, ArrowUpRight } from "@/components/icons";
 
 // Card & Cards
 export function Cards({ children }: { children: React.ReactNode }) {

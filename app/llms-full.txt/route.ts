@@ -222,7 +222,7 @@ This is the long version of ${base}/llms.txt, written for AI assistants and sear
 ## What Rehabify Health does
 
 - Physiotherapy marketplace: patients search physiotherapists, view their profiles (experience, specialties, languages, location, session types, patient reviews) and book online. ${base}/find-a-physio
-- Finding the right care: at ${base}/pricing patients answer a few questions (whether they have been assessed by Rehabify, video or home, and their area) to see the right service and its full price, then book it at ${base}/get-care. They can also message Joy on WhatsApp.
+- Finding the right care: at ${base}/pricing patients answer a few questions (whether they have been assessed by Rehabify, video or home, and their area) to see the right service, then book it with Joy on WhatsApp. New patients start with the Recovery Consultation.
 - Session types: online video sessions through a secure video link, and home visits.
 - Between sessions: physiotherapists can give patients home exercise programmes with exercise demonstrations; patients can message their physiotherapist and track progress.
 - Joy: Rehabify's WhatsApp assistant (${org.supportPhone}). Joy collects information to route patients to an appropriate physiotherapist and sends exercise reminders between sessions. Joy does not diagnose medical conditions, replace an examination by a qualified clinician, or provide emergency care. ${base}/meet-joy
@@ -247,7 +247,7 @@ ${zonesLine(live.zones)}
 
 ## How booking works
 
-1. Choose a service at ${base}/get-care (or find the right one at ${base}/pricing), or message Joy on WhatsApp.
+1. Find the right service at ${base}/pricing, then message Joy on WhatsApp to book it.
 2. Choose a physiotherapist and a time from their availability. For a home visit, give your city and area.
 3. Pay through Paystack. The total shown before payment, including any travel charge, is what the patient pays.
 4. The time is held while the patient pays, and the booking is confirmed once Rehabify has verified the payment.

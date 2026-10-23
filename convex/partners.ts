@@ -52,7 +52,8 @@ const partnerTypeV = v.union(
   v.literal("telemedicine"),
   v.literal("pharmacy"),
   v.literal("employer"),
-  v.literal("digital_health")
+  v.literal("digital_health"),
+  v.literal("doctor")
 );
 
 async function logPortalActivity(
@@ -563,6 +564,91 @@ export const createSandboxReferral = mutation({
       },
     });
     if (!result.ok) throw new ConvexError(result.message);
+    return result.referral;
+  },
+});
+
+/** Referrals that are still open (not finished, cancelled or turned away). */
+const CLOSED_PUBLIC_STATUSES = new Set(["completed", "not_suitable", "cancelled", "closed"]);
+const DUPLICATE_WINDOW_MS = 90 * 24 * 60 * 60 * 1000;
+
+/**
+ * A real (live) referral typed into the portal: how referring doctors refer, and a manual
+ * option for partner organisations. Same pipeline as the API: tracking code, consent record,
+ * care-team outreach, admin alert, Joy WhatsApp intake link, attribution and commissions.
+ */
+export const createPortalReferral = mutation({
+  args: {
+    partnerCode: v.string(),
+    firstName: v.string(),
+    lastName: v.optional(v.string()),
+    phone: v.string(),
+    email: v.optional(v.string()),
+    city: v.optional(v.string()),
+    condition: v.optional(v.string()),
+    notes: v.optional(v.string()),
+    priority: v.optional(v.union(v.literal("standard"), v.literal("urgent"))),
+    recommendedSessions: v.optional(v.number()),
+    preferredMode: v.optional(v.union(v.literal("remote"), v.literal("in_person"), v.literal("patient_choice"))),
+    consentGranted: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    const { partner, actor } = await requirePartnerAccess(ctx, args.partnerCode, { requireApproved: true, requireProduction: true });
+    if (!args.firstName.trim()) throw new ConvexError("Enter the patient's first name.");
+    if (!args.consentGranted) throw new ConvexError("Confirm the patient agreed to be contacted by Rehabify.");
+    const email = args.email?.trim().toLowerCase();
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new ConvexError("That email address doesn't look right.");
+    const phone = normalizePhone(args.phone);
+    if (!phone) throw new ConvexError("Enter the patient's phone number with country code, e.g. +2348012345678.");
+
+    // The same patient referred again while their first referral is still open
+    const earlier = await ctx.db
+      .query("inboundReferrals")
+      .withIndex("by_partner_and_phone", (q) => q.eq("partnerId", partner.code).eq("patientPhoneNormalized", phone))
+      .order("desc")
+      .take(5);
+    const open = earlier.find(
+      (r) => referralEnv(r) === "live" && r.createdAt > Date.now() - DUPLICATE_WINDOW_MS && !CLOSED_PUBLIC_STATUSES.has(toPublicStatus(r.status))
+    );
+    if (open) {
+      throw new ConvexError(`You already referred this patient (${open.trackingCode ?? "open referral"}). Follow it in your referrals.`);
+    }
+
+    const isDoctor = partner.type === "doctor";
+    const owner =
+      isDoctor && partner.ownerClerkId
+        ? await ctx.db
+            .query("users")
+            .withIndex("by_clerk_id", (q) => q.eq("clerkId", partner.ownerClerkId!))
+            .first()
+        : null;
+    const profile = owner?.doctorProfileId ? await ctx.db.get(owner.doctorProfileId) : null;
+
+    const result = await createReferralCore(ctx, {
+      partnerCode: partner.code,
+      environment: "live",
+      source: isDoctor ? "doctor" : "portal",
+      referringDoctorId: owner?._id,
+      input: {
+        patient: { firstName: args.firstName, lastName: args.lastName, phone, email, city: args.city },
+        clinical: {
+          condition: args.condition,
+          notes: args.notes,
+          priority: args.priority,
+          recommendedSessions: args.recommendedSessions,
+          referringClinician: isDoctor
+            ? [partner.name, profile?.hospitalAffiliation].filter(Boolean).join(", ")
+            : undefined,
+        },
+        care: { preferredMode: args.preferredMode },
+        consent: { granted: true, method: isDoctor ? "doctor_attested" : "partner_portal_attested", capturedAt: Date.now() },
+      },
+    });
+    if (!result.ok) throw new ConvexError(result.message);
+    await logPortalActivity(ctx, partner, "live", "referral.created_in_portal", {
+      actor,
+      trackingCode: (result.referral as { tracking_code?: string }).tracking_code,
+    });
     return result.referral;
   },
 });

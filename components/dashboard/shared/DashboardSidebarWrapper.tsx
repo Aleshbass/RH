@@ -21,7 +21,7 @@ import {
   Receipt,
   UserPlus,
   Dumbbell
-} from 'lucide-react'
+} from '@/components/icons'
 
 // Navigation configuration for physiotherapists
 const physiotherapistNavItems = [
@@ -82,30 +82,12 @@ const clinicOwnerNavItems = [
   },
 ]
 
-// Navigation configuration for referring doctors
+// Referring doctors work in the Partner Portal (referrals, referral link, commissions, payouts)
 const doctorNavItems = [
   {
-    title: 'Overview',
-    href: '/dashboard/doctor',
-    icon: LayoutDashboard,
-    roles: ['doctor']
-  },
-  {
-    title: 'Refer a Patient',
-    href: '/dashboard/doctor/referrals/new',
+    title: 'Referral portal',
+    href: '/partners/portal',
     icon: UserPlus,
-    roles: ['doctor']
-  },
-  {
-    title: 'My Referrals',
-    href: '/dashboard/doctor/referrals',
-    icon: Users,
-    roles: ['doctor']
-  },
-  {
-    title: 'Earnings',
-    href: '/dashboard/doctor/earnings',
-    icon: Receipt,
     roles: ['doctor']
   },
 ]

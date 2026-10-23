@@ -14,7 +14,7 @@ import {
   User,
   Phone,
   Mail
-} from "lucide-react";
+} from "@/components/icons";
 
 const STEPS = [
   {

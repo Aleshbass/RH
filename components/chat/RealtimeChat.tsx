@@ -29,7 +29,7 @@ import {
   Mic,
   MicOff,
   Smile
-} from 'lucide-react'
+} from '@/components/icons'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -67,9 +67,12 @@ type ChatProps = {
   className?: string;
   /** Fill the parent (e.g. the Messages page pane) with no card or header of its own */
   embedded?: boolean;
+  /** "patient" uses the patient portal's ink + lime colours; the default keeps the clinician look */
+  variant?: 'default' | 'patient';
 };
 
-const RealtimeChat = ({ recipientId, className, embedded = false }: ChatProps) => {
+const RealtimeChat = ({ recipientId, className, embedded = false, variant = 'default' }: ChatProps) => {
+  const isPatient = variant === 'patient'
   // Access Convex API modules via unknown-indexers to avoid deep generic instantiation
   const apiUntyped = api as unknown as Record<string, unknown>
   const usersModule = apiUntyped['users'] as Record<string, unknown>
@@ -644,8 +647,12 @@ const RealtimeChat = ({ recipientId, className, embedded = false }: ChatProps) =
                       className={cn(
                         "relative rounded-2xl px-4 py-2 cursor-pointer transition-all duration-200",
                         isOwnMessage
-                          ? "bg-rh-teal text-white rounded-br-md dark:bg-rh-aqua dark:text-rh-night"
-                          : "bg-rh-canvas text-rh-night rounded-bl-md dark:bg-white/[0.06] dark:text-neutral-100",
+                          ? isPatient
+                            ? "bg-pt-primary text-pt-on-primary rounded-br-md"
+                            : "bg-rh-teal text-white rounded-br-md dark:bg-rh-aqua dark:text-rh-night"
+                          : isPatient
+                            ? "bg-pt-sunken text-pt-ink rounded-bl-md"
+                            : "bg-rh-canvas text-rh-night rounded-bl-md dark:bg-white/[0.06] dark:text-neutral-100",
                         isSelected && "ring-2 ring-primary/50 shadow-lg scale-[1.02]",
                         "hover:shadow-md"
                       )}
@@ -792,7 +799,9 @@ const RealtimeChat = ({ recipientId, className, embedded = false }: ChatProps) =
                       "rounded-2xl rounded-br-md px-4 py-2",
                       item.status === 'failed'
                         ? "border border-rose-300 bg-rose-50 text-rose-900 dark:border-rose-400/40 dark:bg-rose-400/10 dark:text-rose-100"
-                        : "bg-rh-teal/70 text-white dark:bg-rh-aqua/70 dark:text-rh-night"
+                        : isPatient
+                          ? "bg-pt-primary/70 text-pt-on-primary"
+                          : "bg-rh-teal/70 text-white dark:bg-rh-aqua/70 dark:text-rh-night"
                     )}
                   >
                     <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">{item.content}</p>
@@ -850,7 +859,12 @@ const RealtimeChat = ({ recipientId, className, embedded = false }: ChatProps) =
           <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 z-10">
             <Button
               onClick={scrollToBottom}
-              className="bg-rh-teal text-white shadow-lg hover:shadow-xl transition-all duration-200 rounded-full px-4 py-2 text-sm"
+              className={cn(
+                "rounded-full px-4 py-2 text-sm transition-all duration-200",
+                isPatient
+                  ? "bg-pt-primary text-pt-on-primary shadow-pt-lift hover:bg-pt-primary-hover"
+                  : "bg-rh-teal text-white shadow-lg hover:shadow-xl"
+              )}
               size="sm"
             >
               ↓ New messages
@@ -917,13 +931,16 @@ const RealtimeChat = ({ recipientId, className, embedded = false }: ChatProps) =
                     handleSendMessage();
                   }
                 }}
-                className="rounded-full border-2 focus:border-primary transition-colors"
+                className={cn(
+                  "rounded-full border-2 transition-colors",
+                  isPatient ? "border-pt-line-strong bg-pt-surface text-pt-ink placeholder:text-pt-faint focus:border-pt-ink" : "focus:border-primary"
+                )}
               />
             </div>
             <Button
               variant="default"
               size="icon"
-              className="shrink-0 rounded-full"
+              className={cn("shrink-0 rounded-full", isPatient && "bg-pt-primary text-pt-on-primary hover:bg-pt-primary-hover")}
               onClick={handleSendMessage}
               aria-label={sending ? 'Sending' : 'Send'}
               disabled={!newMessage.trim() || !conversationId || sending || isUploading || isRecording}

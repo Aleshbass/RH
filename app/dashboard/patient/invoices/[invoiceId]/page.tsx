@@ -1,287 +1,209 @@
 'use client'
 
-import { useEffect } from 'react'
-import { useParams, useRouter } from 'next/navigation'
-import { useAuth } from '@clerk/nextjs'
-import { useQuery } from 'convex/react'
-import { api } from '@/convex/_generated/api'
-import { Id } from '@/convex/_generated/dataModel'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Separator } from '@/components/ui/separator'
+import { useState } from 'react'
+import Link from 'next/link'
+import { useParams } from 'next/navigation'
+import { useMutation, useQuery } from 'convex/react'
 import { toast } from 'sonner'
+import { api } from '@/convex/_generated/api'
+import type { Id } from '@/convex/_generated/dataModel'
+import { Button } from '@/components/ui/button'
 import { usePaystackCheckout } from '@/components/billing/PaystackCheckout'
 import { PaystackTestModeBanner } from '@/components/billing/PaystackTestModeBanner'
+import { Calendar, CalendarCheck, Clock, Copy, Download, Loader2, Lock, Receipt } from '@/components/icons'
+import { cn } from '@/lib/utils'
 import {
-  Receipt,
-  AlertTriangle,
-  CheckCircle2,
-  Loader2,
-  CreditCard,
-  ArrowLeft,
-} from 'lucide-react'
+  DetailRow,
+  EmptyState,
+  PageContainer,
+  PageHeader,
+  PageSkeleton,
+  Panel,
+  accentButtonClass,
+  secondaryButtonClass,
+  softButtonClass,
+} from '@/components/patient/ui'
+import {
+  InvoiceBreakdown,
+  InvoiceStatus,
+  STATE_META,
+  invoiceState,
+  lastAttemptFailed,
+  money,
+  payableOf,
+  paymentProcessing,
+  safeDate,
+  type PatientInvoice,
+} from '../invoice-ui'
 
-interface PatientInvoice {
-  _id: Id<'invoices'>
-  invoiceNumber: string
-  clinicName?: string
-  items: Array<{ description: string; quantity: number; unitPrice: number; totalPrice: number }>
-  subtotalAmount: number
-  discountAmount?: number
-  platformFeeAmount: number
-  totalAmount: number
-  status: string
-  issueDate: number
-  dueDate: number
-  notes?: string
-  isOverdue: boolean
-  canPay: boolean
-  currency: string
-  paymentMethod?: string
-  paymentDate?: number
-  payableAmount?: number
-  patientFees?: { label: string; amount: number }[]
-  lastPaymentStatus?: string
-  paymentReference?: string
-}
+const BACK = { href: '/dashboard/patient/invoices', label: 'Invoices' }
 
 export default function PatientInvoiceDetailPage() {
-  const router = useRouter()
   const params = useParams()
   const invoiceId = params.invoiceId as string
-  const { isLoaded, isSignedIn } = useAuth()
   const { initializePayment } = usePaystackCheckout()
+  const generateInvoicePDF = useMutation(api.billing.generateInvoicePDF)
+  const [paying, setPaying] = useState(false)
+  const [downloading, setDownloading] = useState(false)
 
-  // Fetch invoice details for the authenticated patient
   const invoice = useQuery(
     api.billing.getInvoiceForPatient,
     invoiceId ? { invoiceId: invoiceId as Id<'invoices'> } : 'skip'
   ) as PatientInvoice | null | undefined
 
-  // Redirect unauthenticated users to sign-in
-  useEffect(() => {
-    if (isLoaded && !isSignedIn) {
-      const redirectPath = encodeURIComponent(`/dashboard/patient/invoices/${invoiceId}`)
-      router.push(`/sign-in?redirect_url=${redirectPath}`)
-    }
-  }, [isLoaded, isSignedIn, invoiceId, router])
+  if (invoice === undefined) return <PageSkeleton />
 
-  const formatCurrency = (amount: number, currency: string = 'NGN') => {
-    return new Intl.NumberFormat('en-NG', {
-      style: 'currency',
-      currency,
-    }).format((amount || 0) / 100)
-  }
-
-  const statusBadge = (status?: string, isOverdue?: boolean) => {
-    if (!status) return null
-    if (status === 'paid') return <Badge className="bg-green-100 text-green-800">Paid</Badge>
-    if (status === 'void') return <Badge className="bg-gray-100 text-gray-700">Cancelled</Badge>
-    if (isOverdue && status !== 'paid') return <Badge className="bg-red-100 text-red-800">Overdue</Badge>
-    if (status === 'pending' || status === 'sent') return <Badge className="bg-blue-100 text-blue-800">Pending</Badge>
-    return <Badge className="bg-gray-100 text-gray-800">{status}</Badge>
-  }
-
-  const handlePayNow = async () => {
-    if (!invoice) return
-    try {
-      await initializePayment(invoice._id)
-      // Redirect handled by hook
-    } catch (err) {
-      console.error('Payment init error:', err)
-      toast.error('Failed to initialize payment')
-    }
-  }
-
-  // Loading state
-  if (!isLoaded || invoice === undefined) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="text-center">
-          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-gray-400" />
-          <p className="text-gray-600">Loading invoice...</p>
-        </div>
-      </div>
-    )
-  }
-
-  // Not found or no access
   if (invoice === null) {
     return (
-      <div className="p-6 space-y-6">
-        <Button variant="outline" onClick={() => router.push('/dashboard/patient/invoices')}>
-          <ArrowLeft className="h-4 w-4 mr-2" />
-          Back to Invoices
-        </Button>
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center space-x-2 text-red-600">
-              <AlertTriangle className="h-5 w-5" />
-              <span>Invoice not found</span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-gray-700">This invoice either does not exist or you do not have access.</p>
-          </CardContent>
-        </Card>
-      </div>
+      <PageContainer className="max-w-3xl">
+        <PageHeader title="Invoice" back={BACK} />
+        <Panel>
+          <EmptyState
+            icon={Receipt}
+            title="We couldn’t find this invoice"
+            description="It may have been removed, or it belongs to a different account."
+            action={
+              <Button asChild className={softButtonClass}>
+                <Link href={BACK.href}>See all invoices</Link>
+              </Button>
+            }
+          />
+        </Panel>
+      </PageContainer>
     )
   }
 
-  // The server works out what checkout charges; the page only shows it
-  const payable = invoice.payableAmount ?? invoice.totalAmount
-  const lastAttemptFailed =
-    invoice.canPay && (invoice.lastPaymentStatus === 'failed' || invoice.lastPaymentStatus === 'cancelled')
-  const paymentProcessing = invoice.canPay && (invoice.lastPaymentStatus === 'pending' || invoice.lastPaymentStatus === 'processing')
+  const payable = payableOf(invoice)
+  const failed = lastAttemptFailed(invoice)
+  const state = invoiceState(invoice)
+
+  const handlePayNow = async () => {
+    setPaying(true)
+    try {
+      await initializePayment(invoice._id)
+      // Paystack takes over from here
+    } catch (err) {
+      console.error('Payment init error:', err)
+      toast.error('We couldn’t start the payment. Please try again.')
+      setPaying(false)
+    }
+  }
+
+  const downloadPdf = async () => {
+    setDownloading(true)
+    try {
+      const result = await generateInvoicePDF({ invoiceId: invoice._id })
+      if (result.pdfUrl) window.open(result.pdfUrl, '_blank', 'noopener,noreferrer')
+    } catch {
+      toast.error('We couldn’t create the PDF. Please try again.')
+    } finally {
+      setDownloading(false)
+    }
+  }
+
+  const copyShareLink = async () => {
+    const shareUrl = `${window.location.origin}/invoices/shared/${invoice._id}`
+    try {
+      await navigator.clipboard.writeText(shareUrl)
+      toast.success('Link copied', { description: 'Anyone with this link can view the invoice.' })
+    } catch {
+      toast.error('Couldn’t copy the link', { description: shareUrl })
+    }
+  }
 
   return (
-    <div className="p-6 space-y-6">
-      <PaystackTestModeBanner />
-      <div className="flex items-center justify-between">
-        <Button variant="outline" onClick={() => router.push('/dashboard/patient/invoices')}>
-          <ArrowLeft className="h-4 w-4 mr-2" />
-          Back to Invoices
-        </Button>
-        <div className="flex items-center space-x-3">
-          {statusBadge(invoice.status, invoice.isOverdue)}
-        </div>
-      </div>
+    <PageContainer className="max-w-5xl">
+      <PaystackTestModeBanner className="rounded-2xl" />
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center justify-between">
-            <span className="flex items-center space-x-2">
-              <Receipt className="h-5 w-5" />
-              <span>Invoice #{invoice.invoiceNumber}</span>
-            </span>
-            <span className="text-gray-500">{invoice.clinicName}</span>
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          {/* Services */}
-          <div>
-            <h3 className="font-medium text-gray-900 mb-3">Services</h3>
-            <div className="border rounded-lg overflow-hidden">
-              <table className="w-full">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Qty</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Rate</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Amount</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200">
-                  {invoice.items?.map((item, i) => (
-                    <tr key={i}>
-                      <td className="px-4 py-3 text-sm text-gray-900">{item.description}</td>
-                      <td className="px-4 py-3 text-sm text-gray-900 text-right">{item.quantity}</td>
-                      <td className="px-4 py-3 text-sm text-gray-900 text-right">{formatCurrency(item.unitPrice, invoice.currency)}</td>
-                      <td className="px-4 py-3 text-sm text-gray-900 text-right">{formatCurrency(item.totalPrice, invoice.currency)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
+      <PageHeader
+        back={BACK}
+        title={`Invoice #${invoice.invoiceNumber}`}
+        description={`${invoice.clinicName || 'Rehabify'} · Issued ${safeDate(invoice.issueDate, 'd MMMM yyyy')}`}
+      />
 
-          {/* Summary */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="space-y-2">
-              <div className="flex justify-between text-sm">
-                <span>Subtotal:</span>
-                <span>{formatCurrency(invoice.subtotalAmount, invoice.currency)}</span>
-              </div>
-              {invoice.discountAmount && invoice.discountAmount > 0 && (
-                <div className="flex justify-between text-sm text-green-600">
-                  <span>Discount:</span>
-                  <span>-{formatCurrency(invoice.discountAmount, invoice.currency)}</span>
-                </div>
-              )}
-              {(invoice.patientFees ?? []).map((fee) => (
-                <div key={fee.label} className="flex justify-between text-sm">
-                  <span>{fee.label}:</span>
-                  <span>{formatCurrency(fee.amount, invoice.currency)}</span>
-                </div>
-              ))}
-              <Separator className="my-2" />
-              <div className="flex justify-between text-lg font-bold">
-                <span>{invoice.status === 'paid' ? 'Total paid:' : 'Total payable:'}</span>
-                <span className="text-green-600">{formatCurrency(payable, invoice.currency)}</span>
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <div className="flex items-center justify-between text-sm">
-                  <span>Issued On:</span>
-                  <span>{new Date(invoice.issueDate).toLocaleString()}</span>
-                </div>
-                <div className="flex items-center justify-between text-sm">
-                  <span>Due Date:</span>
-                  <span className={invoice.isOverdue ? 'text-red-600 font-medium' : ''}>{new Date(invoice.dueDate).toLocaleString()}</span>
-                </div>
-                {invoice.paymentDate && (
-                  <div className="flex items-center justify-between text-sm">
-                    <span>Paid On:</span>
-                    <span className="text-green-600">{new Date(invoice.paymentDate).toLocaleString()}</span>
-                  </div>
-                )}
-              </div>
-
-              {lastAttemptFailed && (
-                <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
-                  Your last payment attempt didn&apos;t go through, so nothing was charged. You can try again.
-                </p>
-              )}
-              {paymentProcessing && (
-                <p className="rounded-lg bg-blue-50 px-3 py-2 text-sm text-blue-700">
-                  A payment was started and is being confirmed. If you completed it, this page updates on its own.
-                </p>
-              )}
-
-              {invoice.canPay && (
-                <Button
-                  onClick={handlePayNow}
-                  className="w-full bg-green-600 hover:bg-green-700"
-                >
-                  <CreditCard className="h-4 w-4 mr-2" />
-                  {lastAttemptFailed ? 'Try again' : 'Pay'} {formatCurrency(payable, invoice.currency)}
-                </Button>
-              )}
-
-              {!invoice.canPay && invoice.status === 'paid' && (
-                <div className="space-y-2">
-                  <div className="flex items-center text-green-600 text-sm">
-                    <CheckCircle2 className="h-4 w-4 mr-2" />
-                    This invoice has been paid.
-                  </div>
-                  <Button
-                    variant="outline"
-                    className="w-full"
-                    onClick={() => router.push(`/dashboard/patient/invoices/${invoice._id}/receipt`)}
-                  >
-                    <Receipt className="h-4 w-4 mr-2" />
-                    View receipt
-                  </Button>
-                </div>
-              )}
-
-              {invoice.status === 'void' && (
-                <p className="text-sm text-gray-600">This invoice was cancelled, so there is nothing to pay.</p>
-              )}
-            </div>
-          </div>
+      <div className="grid gap-5 lg:grid-cols-[1fr_340px] lg:items-start">
+        <div className="space-y-5">
+          <Panel title="What it’s for" info="Each service on this invoice, with any discount and extra charges. Amounts are in naira.">
+            <InvoiceBreakdown invoice={invoice} />
+          </Panel>
 
           {invoice.notes && (
-            <div>
-              <h4 className="font-medium text-gray-900 mb-2">Notes</h4>
-              <p className="text-sm text-gray-600 bg-gray-50 p-3 rounded-lg">{invoice.notes}</p>
-            </div>
+            <Panel title="Note from your clinic">
+              <p className="text-sm leading-relaxed text-pt-ink">{invoice.notes}</p>
+            </Panel>
           )}
-        </CardContent>
-      </Card>
-    </div>
+        </div>
+
+        <Panel className="lg:sticky lg:top-20" bodyClassName="p-5 sm:p-6">
+          <div className="space-y-5">
+            <div>
+              <InvoiceStatus invoice={invoice} withInfo />
+              <p className="mt-3 text-sm text-pt-muted">{invoice.status === 'paid' ? 'Total paid' : 'Total to pay'}</p>
+              <p className="text-3xl font-semibold tabular-nums tracking-tight text-pt-ink">{money(payable, invoice.currency)}</p>
+              <p className="mt-1 text-xs text-pt-muted">{STATE_META[state].explain}</p>
+            </div>
+
+            <div className="divide-y divide-pt-line border-y border-pt-line">
+              <DetailRow icon={Calendar} label="Issued">
+                {safeDate(invoice.issueDate, 'd MMMM yyyy')}
+              </DetailRow>
+              {invoice.status !== 'paid' && invoice.status !== 'void' && (
+                <DetailRow icon={Clock} label="Due">
+                  <span className={cn(invoice.isOverdue && 'font-semibold text-pt-rose-fg')}>
+                    {safeDate(invoice.dueDate, 'd MMMM yyyy')}
+                  </span>
+                </DetailRow>
+              )}
+              {invoice.paymentDate && (
+                <DetailRow icon={CalendarCheck} label="Paid on">
+                  {safeDate(invoice.paymentDate, 'd MMMM yyyy, h:mm a')}
+                </DetailRow>
+              )}
+            </div>
+
+            {failed && (
+              <p className="rounded-2xl bg-pt-rose-bg px-4 py-3 text-sm text-pt-rose-fg">
+                Your last payment didn’t go through, so nothing was charged. You can try again.
+              </p>
+            )}
+            {paymentProcessing(invoice) && (
+              <p className="rounded-2xl bg-pt-blue-bg px-4 py-3 text-sm text-pt-blue-fg">
+                A payment was started and is being confirmed. If you finished it, this page updates on its own.
+              </p>
+            )}
+
+            <div className="space-y-2">
+              {invoice.canPay && (
+                <Button onClick={handlePayNow} disabled={paying} className={cn(accentButtonClass, 'h-12 w-full text-base')}>
+                  {paying ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Lock className="mr-2 h-4 w-4" />}
+                  {failed ? 'Try again' : 'Pay'} {money(payable, invoice.currency)}
+                </Button>
+              )}
+              {invoice.status === 'paid' ? (
+                <Button asChild className={cn(secondaryButtonClass, 'h-11 w-full')}>
+                  <Link href={`/dashboard/patient/invoices/${invoice._id}/receipt`}>
+                    <Receipt className="mr-2 h-4 w-4" />
+                    View receipt
+                  </Link>
+                </Button>
+              ) : (
+                <Button onClick={downloadPdf} disabled={downloading} className={cn(secondaryButtonClass, 'h-11 w-full')}>
+                  {downloading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
+                  Download PDF
+                </Button>
+              )}
+              <button
+                type="button"
+                onClick={copyShareLink}
+                className="flex w-full items-center justify-center gap-2 rounded-xl py-2 text-sm font-medium text-pt-muted hover:bg-pt-hover hover:text-pt-ink"
+              >
+                <Copy className="h-3.5 w-3.5" />
+                Copy a link to share
+              </button>
+            </div>
+          </div>
+        </Panel>
+      </div>
+    </PageContainer>
   )
 }

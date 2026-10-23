@@ -15,7 +15,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
-import { Loader2, FileText } from 'lucide-react'
+import { Loader2, FileText } from '@/components/icons'
 import { toast as sonner } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { NoteMediaControls, useNoteMedia } from '@/components/physio/NoteMedia'

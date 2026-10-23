@@ -3,10 +3,10 @@
 import React, { useMemo } from 'react'
 
 // Lightweight confetti without external deps
-// Renders N emoji particles that fall with CSS animation for a short burst
+// Renders N brand-coloured pieces that fall with CSS animation for a short burst
 export default function Confetti({ count = 80, durationMs = 2000 }: { count?: number; durationMs?: number }) {
   const particles = useMemo(() => Array.from({ length: count }), [count])
-  const emojis = ['🎉', '✨', '🎊', '💚', '💙', '💜']
+  const colors = ['#005b57', '#00cd0f', '#2dd4bf', '#e8a54f', '#ffe682', '#ffcfdc']
 
   return (
     <div className="fixed inset-0 pointer-events-none z-[1000]">
@@ -20,8 +20,8 @@ export default function Confetti({ count = 80, durationMs = 2000 }: { count?: nu
       {particles.map((_, i) => {
         const left = Math.random() * 100
         const delay = Math.random() * 0.6
-        const size = 16 + Math.random() * 12
-        const emoji = emojis[Math.floor(Math.random() * emojis.length)]
+        const size = 6 + Math.random() * 6
+        const color = colors[Math.floor(Math.random() * colors.length)]
         const maxDuration = Math.max(0.6, durationMs / 1000)
         const duration = 0.6 + Math.random() * (maxDuration - 0.6) // seconds
         return (
@@ -32,14 +32,14 @@ export default function Confetti({ count = 80, durationMs = 2000 }: { count?: nu
               position: 'absolute',
               left: `${left}%`,
               top: '-10%',
-              fontSize: `${size}px`,
+              width: `${size}px`,
+              height: `${size * 0.6}px`,
+              borderRadius: '2px',
+              background: color,
               animation: `confetti-fall ${duration}s ease-in forwards`,
               animationDelay: `${delay}s`,
-              filter: 'drop-shadow(0 1px 0 rgba(0,0,0,0.15))',
             }}
-          >
-            {emoji}
-          </span>
+          />
         )
       })}
     </div>

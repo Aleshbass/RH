@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { Video, Loader2 } from 'lucide-react'
+import { Video, Loader2 } from '@/components/icons'
 import { useUser } from '@clerk/nextjs'
 import { useAction } from 'convex/react'
 import { api } from '@/convex/_generated/api'

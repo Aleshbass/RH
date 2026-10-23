@@ -5,6 +5,19 @@ import {
   getClientIp,
   createRateLimitResponse,
 } from "@/lib/rate-limiter";
+import {
+  actions,
+  button,
+  checklist,
+  details,
+  escapeEmailText,
+  greeting,
+  heading,
+  link,
+  paragraph,
+  quote,
+  renderEmail,
+} from "@/lib/email/layout";
 
 export async function POST(request: Request) {
   const resend = new Resend(process.env.RESEND_API_KEY);
@@ -34,6 +47,15 @@ export async function POST(request: Request) {
       );
     }
 
+    // Everything below comes from a public form, so it is escaped before going into HTML.
+    const safe = {
+      name: escapeEmailText(name),
+      email: escapeEmailText(email),
+      phone: phone ? escapeEmailText(phone) : undefined,
+      clinicName: clinicName ? escapeEmailText(clinicName) : undefined,
+      message: message ? escapeEmailText(message) : undefined,
+    };
+
     // Use a valid from address (fallback to onboarding@resend.dev in non-prod or when not configured)
     const fromAddress = process.env.RESEND_FROM_EMAIL ||
       (process.env.NODE_ENV === "production"
@@ -46,53 +68,26 @@ export async function POST(request: Request) {
       to: process.env.DEMO_REQUEST_EMAIL || "support@physioaroundme.com",
       replyTo: email,
       subject: `New Demo Request from ${name}`,
-      html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9f9f9;">
-          <div style="background-color: #002e2c; padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
-            <h1 style="color: white; margin: 0;">New Demo Request</h1>
-          </div>
-          
-          <div style="background-color: white; padding: 30px; border-radius: 0 0 10px 10px;">
-            <h2 style="color: #002e2c; margin-top: 0;">Contact Information</h2>
-            
-            <div style="margin-bottom: 20px;">
-              <strong style="color: #005b57;">Name:</strong>
-              <p style="margin: 5px 0;">${name}</p>
-            </div>
-            
-            <div style="margin-bottom: 20px;">
-              <strong style="color: #005b57;">Email:</strong>
-              <p style="margin: 5px 0;"><a href="mailto:${email}" style="color: #005b57;">${email}</a></p>
-            </div>
-            
-            ${phone ? `
-              <div style="margin-bottom: 20px;">
-                <strong style="color: #005b57;">Phone:</strong>
-                <p style="margin: 5px 0;">${phone}</p>
-              </div>
-            ` : ''}
-            
-            ${clinicName ? `
-              <div style="margin-bottom: 20px;">
-                <strong style="color: #005b57;">Clinic/Practice Name:</strong>
-                <p style="margin: 5px 0;">${clinicName}</p>
-              </div>
-            ` : ''}
-            
-            ${message ? `
-              <div style="margin-bottom: 20px;">
-                <strong style="color: #005b57;">Message:</strong>
-                <p style="margin: 5px 0; padding: 15px; background-color: #f5f5f5; border-radius: 5px;">${message}</p>
-              </div>
-            ` : ''}
-            
-            <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee; color: #666; font-size: 12px;">
-              <p>This demo request was submitted from the Rehabify landing page.</p>
-              <p>Please respond within 24 hours.</p>
-            </div>
-          </div>
-        </div>
-      `,
+      html: renderEmail({
+        eyebrow: "Demo request",
+        tone: "warning",
+        title: "New demo request",
+        preheader: `${name} asked for a demo of Rehabify.`,
+        body: [
+          paragraph(`<strong>${safe.name}</strong> asked for a demo from the Rehabify landing page. Please respond within 24 hours.`),
+          details([
+            ["Name", safe.name],
+            ["Email", link(safe.email, `mailto:${safe.email}`)],
+            ["Phone", safe.phone],
+            ["Clinic or practice", safe.clinicName],
+          ]),
+          safe.message ? heading("Message") + quote(`<span style="white-space: pre-wrap;">${safe.message}</span>`) : "",
+          actions(button(`Reply to ${safe.name}`, `mailto:${safe.email}`)),
+        ].join(""),
+        signOff: false,
+        safetyNote: false,
+        footerNote: "Internal notification for the Rehabify team.",
+      }),
     });
 
     // Send confirmation email to the requester
@@ -100,49 +95,26 @@ export async function POST(request: Request) {
       from: fromAddress,
       to: email,
       subject: "Demo Request Received - Rehabify",
-      html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9f9f9;">
-          <div style="background-color: #002e2c; padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
-            <h1 style="color: white; margin: 0;">Thank You for Your Interest!</h1>
-          </div>
-          
-          <div style="background-color: white; padding: 30px; border-radius: 0 0 10px 10px;">
-            <p style="font-size: 16px; line-height: 1.6;">Hi ${name},</p>
-            
-            <p style="font-size: 16px; line-height: 1.6;">
-              Thank you for requesting a demo of Rehabify! We're excited to show you how our platform can transform your physiotherapy practice.
-            </p>
-            
-            <p style="font-size: 16px; line-height: 1.6;">
-              Our team will review your request and contact you within 24 hours to schedule a personalized demo at your convenience.
-            </p>
-            
-            <div style="background-color: #f0f9ff; padding: 20px; border-left: 4px solid #005b57; margin: 20px 0;">
-              <h3 style="color: #002e2c; margin-top: 0;">What to Expect:</h3>
-              <ul style="line-height: 1.8; color: #333;">
-                <li>30-minute personalized walkthrough</li>
-                <li>See key features relevant to your practice</li>
-                <li>Q&A session with our product experts</li>
-                <li>Custom pricing discussion</li>
-              </ul>
-            </div>
-            
-            <p style="font-size: 16px; line-height: 1.6;">
-              In the meantime, feel free to explore our learning resources at
-              <a href="https://www.rehabifylearn.com/" style="color: #005b57; text-decoration: none;"> rehabifylearn.com</a>.
-            </p>
-            
-            <p style="font-size: 16px; line-height: 1.6;">
-              Best regards,<br>
-              <strong>The Rehabify Team</strong>
-            </p>
-            
-            <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee; color: #666; font-size: 12px; text-align: center;">
-              <p>If you have any urgent questions, please contact us at <a href="mailto:support@physioaroundme.com" style="color: #005b57;">support@physioaroundme.com</a></p>
-            </div>
-          </div>
-        </div>
-      `,
+      html: renderEmail({
+        eyebrow: "Demo request received",
+        tone: "success",
+        title: "Thank you for your interest!",
+        preheader: "Our team will contact you within 24 hours to schedule your demo.",
+        body: [
+          greeting(safe.name),
+          paragraph("Thank you for requesting a demo of Rehabify! We're excited to show you how the platform can transform your physiotherapy practice."),
+          paragraph("Our team will review your request and contact you within 24 hours to schedule a personalised demo at a time that suits you."),
+          heading("What to expect"),
+          checklist([
+            "A 30-minute personalised walkthrough",
+            "The features most relevant to your practice",
+            "Q&amp;A with our product experts",
+            "A custom pricing discussion",
+          ]),
+          paragraph(`In the meantime, explore our learning resources at ${link("rehabifylearn.com", "https://www.rehabifylearn.com/")}.`),
+        ].join(""),
+        footerNote: "You're receiving this because you asked for a Rehabify demo.",
+      }),
     });
 
     return NextResponse.json({

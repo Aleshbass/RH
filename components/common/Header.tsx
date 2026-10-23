@@ -12,6 +12,7 @@ import {
   MobileNavToggle,
 } from "@/components/ui/resizable-navbar";
 import { LearnAnnouncementBar } from "@/components/learn/LearnAnnouncementBar";
+import { DashboardButton, GetStartedList, GetStartedMenu } from "@/components/auth/GetStartedMenu";
 import {
   ChevronDown,
   ChevronRight,
@@ -33,8 +34,8 @@ import {
   ArrowRight,
   Stethoscope,
   ExternalLink,
-  Sparkles,
-} from "lucide-react";
+  WhatsApp,
+} from "@/components/icons";
 
 // Logo component for Rehabify Health
 const RehabifyLogo = () => (
@@ -71,13 +72,15 @@ interface NavItem {
 interface NavItemProps {
   item: NavItem;
   isActive: boolean;
+  // The last menu opens leftwards so it never runs past the right edge of the screen
+  alignEnd?: boolean;
   onClick: () => void;
   onMouseEnter: () => void;
   onMouseLeave: (fromItem?: string) => void;
 }
 
 // Desktop Navigation Item Component
-const NavItemComponent = ({ item, isActive, onClick, onMouseEnter, onMouseLeave }: NavItemProps) => {
+const NavItemComponent = ({ item, isActive, alignEnd, onClick, onMouseEnter, onMouseLeave }: NavItemProps) => {
   const dropdownRef = useRef<HTMLDivElement>(null);
   // Track hover state using refs to avoid stale closures and unnecessary re-renders
   const hoveringRef = useRef(false);
@@ -109,7 +112,7 @@ const NavItemComponent = ({ item, isActive, onClick, onMouseEnter, onMouseLeave 
     return (
       <Link
         href={item.href || '#'}
-        className="px-4 py-2 text-sm font-medium text-[#002e2c] hover:text-gray-500 transition-colors font-sans"
+        className="whitespace-nowrap px-3 py-2 text-sm font-medium text-[#002e2c] hover:text-gray-500 transition-colors font-sans"
         onClick={onClick}
         onMouseEnter={onMouseEnter}
         onMouseLeave={() => onMouseLeave(item.name)}
@@ -138,25 +141,12 @@ const NavItemComponent = ({ item, isActive, onClick, onMouseEnter, onMouseLeave 
       onMouseLeave={handleItemMouseLeave}
     >
       <button
-        className="px-4 py-2 text-sm font-medium text-[#002e2c] hover:text-gray-500 transition-colors flex items-center gap-1 font-sans"
+        className="whitespace-nowrap px-3 py-2 text-sm font-medium text-[#002e2c] hover:text-gray-500 transition-colors flex items-center gap-1 font-sans"
         onClick={onClick}
       >
         {item.name}
 
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          className={`ml-1 h-3 w-3 transition-transform duration-200 ${isActive ? 'rotate-180' : ''}`}
-        >
-          <polyline points="6 9 12 15 18 9"></polyline>
-        </svg>
+        <ChevronDown className={`ml-1 h-3 w-3 transition-transform duration-200 ${isActive ? 'rotate-180' : ''}`} />
       </button>
 
       {isActive && (
@@ -165,7 +155,10 @@ const NavItemComponent = ({ item, isActive, onClick, onMouseEnter, onMouseLeave 
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: 10 }}
           transition={{ type: "spring", stiffness: 400, damping: 25 }}
-          className="absolute left-1/2 z-50 mt-2 w-[520px] -translate-x-1/2 rounded-2xl bg-white p-0 shadow-[0_16px_48px_rgba(0,0,0,0.12)] border border-gray-100 overflow-hidden focus:outline-none"
+          className={cn(
+            "absolute z-50 mt-2 w-[520px] rounded-2xl bg-white p-0 shadow-[0_16px_48px_rgba(0,0,0,0.12)] border border-gray-100 overflow-hidden focus:outline-none",
+            alignEnd ? "right-0" : "left-1/2 -translate-x-1/2",
+          )}
           ref={dropdownRef}
           onMouseEnter={() => {
             clearCloseTimeout();
@@ -186,7 +179,7 @@ const NavItemComponent = ({ item, isActive, onClick, onMouseEnter, onMouseLeave 
                   <>
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 rounded-lg bg-[#e6f0ef] flex items-center justify-center shrink-0">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#005b57" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
+                        <ChevronRight className="text-rh-teal" size={14} />
                       </div>
                       <div className="min-w-0">
                         <div className="text-sm font-semibold text-gray-900 whitespace-nowrap">{subItem.name}</div>
@@ -357,7 +350,7 @@ const navLinks: NavItem[] = [
         name: "Meet Joy",
         href: "/meet-joy",
         subtitle: "Your AI WhatsApp recovery companion",
-        icon: Sparkles,
+        icon: WhatsApp,
         badge: "AI",
       },
       {
@@ -496,8 +489,8 @@ export default function Header() {
           duration: 0.3,
         }}
         className={cn(
-          "relative z-[60] mx-auto hidden w-[95%] max-w-[1100px] mt-2 flex-row items-center justify-between px-4 py-2 lg:flex text-[#002e2c] font-sans rounded-2xl",
-          "sm:px-6 md:px-8",
+          // Seven menus plus Sign in and Get started only fit on one line from xl; below that the compact bar is used
+          "relative z-[60] mx-auto hidden w-[95%] max-w-[1240px] mt-2 flex-row items-center justify-between px-6 py-2 xl:flex text-[#002e2c] font-sans rounded-2xl",
           "bg-white/70 backdrop-blur-xl border border-white/20 shadow-[0_4px_30px_rgba(0,0,0,0.06)]",
         )}
       >
@@ -511,6 +504,7 @@ export default function Header() {
               key={idx}
               item={item}
               isActive={activeItem === item.name}
+              alignEnd={idx === navLinks.length - 1}
               onClick={handleCloseDropdowns}
               onMouseEnter={() =>
                 item.type === 'dropdown'
@@ -522,11 +516,18 @@ export default function Header() {
           ))}
         </nav>
 
-        <div className="flex items-center justify-end space-x-2 sm:space-x-4 flex-shrink-0">
+        <div className="flex items-center justify-end gap-2 flex-shrink-0">
           {isLoaded && isSignedIn ? (
-            <UserButton />
+            <>
+              <DashboardButton />
+              <UserButton />
+            </>
           ) : (
-            <NavbarButton href="/sign-in" className="text-sm px-3 py-1.5 sm:px-4 sm:py-2">Sign In</NavbarButton>
+            <>
+              {/* Returning users go to their own dashboard by role; new ones say who they are first */}
+              <NavbarButton href="/sign-in" variant="secondary" className="text-sm px-3 py-2">Sign in</NavbarButton>
+              <GetStartedMenu />
+            </>
           )}
         </div>
       </motion.div>
@@ -543,7 +544,8 @@ export default function Header() {
           duration: 0.3,
         }}
         className={cn(
-          "relative z-[60] mx-auto flex w-[95%] max-w-md flex-row items-center justify-between px-4 mt-2 py-1.5 lg:hidden text-[#002e2c] font-sans rounded-xl",
+          // Phones get a narrow pill; tablets (iPad) get the full-width bar so it lines up with the page
+          "relative z-[60] mx-auto flex w-[95%] max-w-md md:max-w-[1100px] flex-row items-center justify-between px-4 md:px-6 mt-2 py-1.5 md:py-2 xl:hidden text-[#002e2c] font-sans rounded-xl md:rounded-2xl",
           "bg-white/70 backdrop-blur-xl border border-white/20 shadow-[0_4px_30px_rgba(0,0,0,0.06)]",
         )}
       >
@@ -553,7 +555,10 @@ export default function Header() {
 
         <div className="flex items-center space-x-2">
           {isLoaded && isSignedIn ? (
-            <UserButton />
+            <>
+              <DashboardButton />
+              <UserButton />
+            </>
           ) : (
             <NavbarButton href="/sign-in" className="text-xs py-1.5 px-3">Sign In</NavbarButton>
           )}
@@ -579,7 +584,7 @@ export default function Header() {
               exit={{ opacity: 0 }}
               transition={{ duration: 0.25 }}
               onClick={() => setIsMobileMenuOpen(false)}
-              className="fixed inset-0 z-[70] bg-slate-950/60 backdrop-blur-md lg:hidden"
+              className="fixed inset-0 z-[70] bg-slate-950/60 backdrop-blur-md xl:hidden"
             />
 
             {/* Mobile Sheet Modal */}
@@ -588,7 +593,7 @@ export default function Header() {
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: -20, scale: 0.96 }}
               transition={{ type: "spring", stiffness: 380, damping: 32 }}
-              className="fixed top-3 inset-x-3 sm:inset-x-6 sm:max-w-lg sm:mx-auto z-[80] max-h-[90vh] flex flex-col bg-white/95 backdrop-blur-2xl rounded-3xl shadow-[0_25px_60px_-15px_rgba(0,0,0,0.3)] border border-gray-100 overflow-hidden lg:hidden"
+              className="fixed top-3 inset-x-3 sm:inset-x-6 sm:max-w-lg sm:mx-auto z-[80] max-h-[90vh] flex flex-col bg-white/95 backdrop-blur-2xl rounded-3xl shadow-[0_25px_60px_-15px_rgba(0,0,0,0.3)] border border-gray-100 overflow-hidden xl:hidden"
             >
               {/* Sheet Header */}
               <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100/80 bg-gray-50/50">
@@ -635,6 +640,16 @@ export default function Header() {
                   {/* Subtle Background Glow */}
                   <div className="absolute -bottom-8 -right-8 w-28 h-28 bg-white/10 rounded-full blur-xl pointer-events-none" />
                 </div>
+
+                {/* New visitors say who they are, so sign-up opens the right onboarding */}
+                {isLoaded && !isSignedIn && (
+                  <div className="rounded-2xl border border-gray-100 bg-white p-2">
+                    <p className="text-[11px] font-bold uppercase tracking-wider text-gray-400 px-3 py-1">
+                      Get started
+                    </p>
+                    <GetStartedList onPick={() => setIsMobileMenuOpen(false)} />
+                  </div>
+                )}
 
                 {/* Main Navigation Items */}
                 <div className="space-y-1.5">
@@ -800,7 +815,7 @@ export default function Header() {
                 {isLoaded && isSignedIn ? (
                   <div className="flex items-center gap-3">
                     <UserButton />
-                    <span className="text-xs font-semibold text-gray-700">Account Active</span>
+                    <DashboardButton onClick={() => setIsMobileMenuOpen(false)} />
                   </div>
                 ) : (
                   <Link

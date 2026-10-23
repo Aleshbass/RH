@@ -23,7 +23,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { toast } from 'sonner'
-import { Loader2 } from 'lucide-react'
+import { Loader2 } from '@/components/icons'
 import { format, isValid } from 'date-fns'
 import { cn } from '@/lib/utils'
 import { useClinicPreview } from '@/components/clinic/ClinicPreviewContext'

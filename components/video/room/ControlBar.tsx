@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useCallStateHooks } from '@stream-io/video-react-sdk'
-import { Check, ChevronUp, MessageSquare, Mic, MicOff, MonitorUp, PhoneOff, SwitchCamera, Video, VideoOff } from 'lucide-react'
+import { Check, ChevronUp, MessageSquare, Mic, MicOff, MonitorUp, PhoneOff, SwitchCamera, Video, VideoOff } from '@/components/icons'
 import { toast } from 'sonner'
 import {
   DropdownMenu,

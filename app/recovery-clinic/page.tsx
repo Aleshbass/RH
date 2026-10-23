@@ -11,6 +11,9 @@ import {
     MapPin,
     Users,
     Activity,
+    Award,
+    Crown,
+    Check,
     Brain,
     Heart,
     Bone,
@@ -19,7 +22,7 @@ import {
     ChevronDown,
     Plus,
     Minus,
-} from "lucide-react";
+} from "@/components/icons";
 import Link from "next/link";
 
 // ── Fade-in wrapper ──────────────────────────────
@@ -111,8 +114,8 @@ const steps = [
 const verificationTiers = [
     {
         level: "Verified",
-        color: "bg-green-100 text-green-700",
-        badge: "✓",
+        color: "bg-rh-mint text-rh-teal",
+        badge: Check,
         requirements: [
             "MRTBN Licensed",
             "University degree verified",
@@ -122,8 +125,8 @@ const verificationTiers = [
     },
     {
         level: "Elite",
-        color: "bg-blue-100 text-blue-700",
-        badge: "★",
+        color: "bg-rh-peach text-rh-amber",
+        badge: Award,
         requirements: [
             "All Verified requirements",
             "150+ sessions, 4.5+ rating",
@@ -133,8 +136,8 @@ const verificationTiers = [
     },
     {
         level: "Master Clinician",
-        color: "bg-purple-100 text-purple-700",
-        badge: "♛",
+        color: "bg-rh-teal text-white",
+        badge: Crown,
         requirements: [
             "All Elite requirements",
             "400+ sessions, 4.8+ rating",
@@ -370,9 +373,9 @@ export default function RecoveryClinicPage() {
                                 <div className="bg-white border border-gray-200 rounded-2xl p-6 h-full">
                                     <div className="flex items-center gap-3 mb-4">
                                         <span
-                                            className={`w-10 h-10 rounded-full ${tier.color} flex items-center justify-center text-lg font-bold`}
+                                            className={`w-10 h-10 rounded-full ${tier.color} flex items-center justify-center`}
                                         >
-                                            {tier.badge}
+                                            <tier.badge className="h-4 w-4" />
                                         </span>
                                         <h3 className="font-bold text-gray-900">{tier.level}</h3>
                                     </div>

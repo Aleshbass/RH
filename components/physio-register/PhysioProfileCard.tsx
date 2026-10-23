@@ -4,7 +4,7 @@ import React from 'react';
 import Link from 'next/link';
 import {
   Award, MapPin, GraduationCap, Globe, Star, Users, ShieldCheck, ArrowUpRight,
-} from 'lucide-react';
+} from '@/components/icons';
 import { cn } from '@/lib/utils';
 
 export interface PhysioProfileCardData {

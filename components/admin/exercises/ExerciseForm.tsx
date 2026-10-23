@@ -10,7 +10,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { ImageKitUpload } from './ImageKitUpload';
-import { ArrowLeft, Loader2, Plus, Save, Trash2 } from 'lucide-react';
+import { ArrowLeft, Loader2, Plus, Save, Trash2 } from '@/components/icons';
 import { useRouter } from 'next/navigation';
 import { useMutation } from 'convex/react';
 import { api } from '@/convex/_generated/api';

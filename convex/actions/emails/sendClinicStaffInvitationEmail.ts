@@ -4,6 +4,7 @@ import { v } from "convex/values";
 import { internalAction } from "../../_generated/server";
 import { Resend } from 'resend';
 import { escapeHtml, plainSubject } from "../../helpers/escapeHtml";
+import { actions, button, emailDate, greeting, highlight, linkFallback, paragraph, qrCode, quote, renderEmail } from "../../../lib/email/layout";
 
 /**
  * Clinic staff invitation emails. Internal actions: they are only run by the
@@ -54,44 +55,21 @@ export const sendClinicStaffInvitationEmail = internalAction({
       const link = escapeHtml(args.invitationLink);
 
       // Build email HTML
-      const emailHtml = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <meta charset="utf-8">
-          <title>Clinic Staff Invitation</title>
-        </head>
-        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
-          <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
-            <h1 style="color: #10b981;">You've been invited to join ${clinicName || 'a clinic'}</h1>
-            <p>Hello ${greetingName},</p>
-            <p>${ownerName} has invited you to join ${clinicName || 'their clinic'} as a physiotherapist on Rehabify Health.</p>
-            ${args.message ? `<div style="background-color: #f9fafb; border-left: 4px solid #10b981; padding: 12px; margin: 20px 0;"><p style="margin: 0; font-style: italic;">"${escapeHtml(args.message)}"</p></div>` : ''}
-            <div style="text-align: center; margin: 24px 0;">
-              <p style="margin: 0 0 8px; font-weight: 600;">Scan to accept</p>
-              <img src="${escapeHtml(qrUrl)}" alt="Invitation QR Code" width="240" height="240" style="display:inline-block; border: 8px solid #f3f4f6; border-radius: 12px;" />
-            </div>
-            <p style="text-align: center; margin: 12px 0; color: #555;">or</p>
-            <div style="text-align: center; margin: 16px 0 28px;">
-              <a href="${link}" style="display: inline-block; background-color: #10b981; color: white; padding: 14px 28px; border-radius: 6px; text-decoration: none; font-weight: 600;">
-                Accept Invitation
-              </a>
-            </div>
-            <div style="background-color: #f9fafb; border: 1px solid #e5e7eb; padding: 12px; border-radius: 8px;">
-              <p style="margin: 0 0 6px; font-size: 13px; font-weight: 600; color: #374151;">Invitation Code:</p>
-              <p style="margin: 0; font-family: 'Courier New', monospace; font-size: 18px; color: #10b981; letter-spacing: 2px;">${escapeHtml(args.invitationCode)}</p>
-            </div>
-            <div style="background-color: #f9fafb; border: 1px solid #e5e7eb; padding: 12px; border-radius: 8px; margin-top: 12px; word-break: break-all;">
-              <p style="margin: 0 0 6px; font-size: 12px; color: #555;">Direct link:</p>
-              <a href="${link}" style="color: #065f46; text-decoration: underline; font-size: 13px;">${link}</a>
-            </div>
-            <p style="margin-top: 20px; color: #6b7280;">This invitation will expire on <strong>${new Date(args.expiresAt).toLocaleDateString()}</strong>.</p>
-            <hr style="margin: 30px 0; border: none; border-top: 1px solid #e5e5e5;">
-            <p style="font-size: 12px; color: #9ca3af;">If you didn't expect this invitation, you can safely ignore this email.</p>
-          </div>
-        </body>
-        </html>
-      `;
+      const emailHtml = renderEmail({
+        eyebrow: 'Team invitation',
+        title: `Join ${clinicName || 'the team'} on Rehabify`,
+        preheader: `${args.clinicOwnerName} invited you to join their clinic on Rehabify Health.`,
+        body: [
+          greeting(greetingName),
+          paragraph(`<strong>${ownerName}</strong> has invited you to join <strong>${clinicName || 'their clinic'}</strong> as a physiotherapist on Rehabify Health.`),
+          args.message ? quote(escapeHtml(args.message), ownerName) : '',
+          highlight({ label: 'Invitation code', value: escapeHtml(args.invitationCode), mono: true, sub: `Expires ${emailDate(args.expiresAt)}` }),
+          actions(button('Accept invitation', link)),
+          qrCode(escapeHtml(qrUrl), 'Or scan to accept'),
+          linkFallback(link),
+        ].join(''),
+        footerNote: "If you didn't expect this invitation, you can safely ignore this email.",
+      });
 
 
       const { data, error } = await resend.emails.send({
@@ -161,43 +139,20 @@ export const sendClinicStaffInvitationReminderEmail = internalAction({
       const ownerName = escapeHtml(args.clinicOwnerName);
       const link = escapeHtml(args.invitationLink);
 
-      const emailHtml = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <meta charset="utf-8">
-          <title>Reminder: Clinic Staff Invitation</title>
-        </head>
-        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
-          <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
-            <h1 style="color: #10b981;">Reminder: Join ${clinicName || 'the clinic'}</h1>
-            <p>Hello ${greetingName},</p>
-            <p>This is a friendly reminder that ${ownerName} has invited you to join ${clinicName || 'their clinic'} as a physiotherapist on Rehabify Health.</p>
-            <div style="text-align: center; margin: 24px 0;">
-              <p style="margin: 0 0 8px; font-weight: 600;">Scan to accept</p>
-              <img src="${escapeHtml(qrUrl)}" alt="Invitation QR Code" width="240" height="240" style="display:inline-block; border: 8px solid #f3f4f6; border-radius: 12px;" />
-            </div>
-            <p style="text-align: center; margin: 12px 0; color: #555;">or</p>
-            <div style="text-align: center; margin: 16px 0 28px;">
-              <a href="${link}" style="display: inline-block; background-color: #10b981; color: white; padding: 14px 28px; border-radius: 6px; text-decoration: none; font-weight: 600;">
-                Accept Invitation
-              </a>
-            </div>
-            <div style="background-color: #f9fafb; border: 1px solid #e5e7eb; padding: 12px; border-radius: 8px;">
-              <p style="margin: 0 0 6px; font-size: 13px; font-weight: 600; color: #374151;">Invitation Code:</p>
-              <p style="margin: 0; font-family: 'Courier New', monospace; font-size: 18px; color: #10b981; letter-spacing: 2px;">${escapeHtml(args.invitationCode)}</p>
-            </div>
-            <div style="background-color: #f9fafb; border: 1px solid #e5e7eb; padding: 12px; border-radius: 8px; margin-top: 12px; word-break: break-all;">
-              <p style="margin: 0 0 6px; font-size: 12px; color: #555;">Direct link:</p>
-              <a href="${link}" style="color: #065f46; text-decoration: underline; font-size: 13px;">${link}</a>
-            </div>
-            <p style="margin-top: 20px; color: #6b7280;">This invitation will expire on <strong>${new Date(args.expiresAt).toLocaleDateString()}</strong>. Don't miss out!</p>
-            <hr style="margin: 30px 0; border: none; border-top: 1px solid #e5e5e5;">
-            <p style="font-size: 12px; color: #9ca3af;">If you didn't expect this invitation, you can safely ignore this email.</p>
-          </div>
-        </body>
-        </html>
-      `;
+      const emailHtml = renderEmail({
+        eyebrow: 'Reminder',
+        title: `Join ${clinicName || 'the team'} on Rehabify`,
+        preheader: `Your invitation from ${args.clinicOwnerName} is still waiting.`,
+        body: [
+          greeting(greetingName),
+          paragraph(`A friendly reminder that <strong>${ownerName}</strong> has invited you to join <strong>${clinicName || 'their clinic'}</strong> as a physiotherapist on Rehabify Health.`),
+          highlight({ label: 'Invitation code', value: escapeHtml(args.invitationCode), mono: true, sub: `Expires ${emailDate(args.expiresAt)}` }),
+          actions(button('Accept invitation', link)),
+          qrCode(escapeHtml(qrUrl), 'Or scan to accept'),
+          linkFallback(link),
+        ].join(''),
+        footerNote: "If you didn't expect this invitation, you can safely ignore this email.",
+      });
 
       const { data, error } = await resend.emails.send({
         from: `${fromName} <${fromEmail}>`,

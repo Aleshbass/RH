@@ -5,7 +5,7 @@ import { useAction, useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { toast } from "sonner";
-import { Eye, Key, ListChecks, Plus, RefreshCw, Send, Terminal, Trash2, Webhook } from "lucide-react";
+import { Eye, Key, ListChecks, Plus, RefreshCw, Send, Terminal, Trash2, Webhook } from "@/components/icons";
 import {
   API_BASE_URL,
   Busy,

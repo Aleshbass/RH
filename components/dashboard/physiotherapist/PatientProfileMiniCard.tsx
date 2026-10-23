@@ -5,7 +5,7 @@ import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Card, CardContent } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Calendar, Phone } from "lucide-react";
+import { Calendar, Phone } from "@/components/icons";
 import { Id } from "@/convex/_generated/dataModel";
 
 type Details = {

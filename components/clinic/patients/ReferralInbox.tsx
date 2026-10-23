@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react'
 import { useMutation } from 'convex/react'
 import { format, formatDistanceToNow } from 'date-fns'
 import { toast } from 'sonner'
-import { Inbox, Loader2, Mail, MapPin, Phone } from 'lucide-react'
+import { Inbox, Loader2, Mail, MapPin, Phone } from '@/components/icons'
 import { api } from '@/convex/_generated/api'
 import type { Id } from '@/convex/_generated/dataModel'
 import { Button } from '@/components/ui/button'
@@ -44,7 +44,8 @@ export type ClinicReferral = {
 
 type ClinicianOption = { id: string; name: string }
 
-const WAITING = new Set(['received', 'pending'])
+// Before booking, including ones Rehabify has already contacted (convex/clinicTools.ts CLINIC_ACCEPTABLE_REFERRAL)
+const WAITING = new Set(['received', 'pending', 'consent_pending', 'contacted', 'intake_started', 'intake_completed', 'qualified'])
 
 export const isWaitingReferral = (referral: ClinicReferral) => WAITING.has(referral.status)
 

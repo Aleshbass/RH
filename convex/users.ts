@@ -13,6 +13,8 @@ import { logSecurityEvent } from "./helpers/securityLog";
 import { ensureClinicNumber, ensureUserNumbers, findUserByRehabifyId } from "./helpers/rehabifyIds";
 import { matchesRehabifyId, parseRehabifyId } from "./helpers/rehabifyIdFormat";
 import { isClinicInviteApproval } from "./helpers/clinicApproval";
+import { assertSelfRoleChangeAllowed } from "./helpers/roleLock";
+import { claimJoyRecordWithLink } from "./joyAccounts";
 
 // ==== QUERIES ====
 
@@ -281,6 +283,8 @@ export const storeUserFromClerk = mutation({
     imageUrl: v.optional(v.string()),
     referredByPartnerCode: v.optional(v.string()),
     referralPublicCode: v.optional(v.string()),
+    // A /go/<code> dashboard link opened before signing up (Joy patients without a login)
+    claimCode: v.optional(v.string()),
   },
   async handler(ctx, args) {
     const identity = await ctx.auth.getUserIdentity();
@@ -335,7 +339,18 @@ export const storeUserFromClerk = mutation({
       return existingUser._id;
     } else {
       // Only Clerk's verified email is trusted here, never the client argument.
-      const claimedId = await claimPlaceholderPatient(ctx, {
+      const verifiedEmail = identity.emailVerified && typeof identity.email === "string" ? identity.email.toLowerCase().trim() : undefined;
+      const claimedByLink = args.claimCode
+        ? await claimJoyRecordWithLink(ctx, {
+            code: args.claimCode,
+            clerkId: args.clerkId,
+            firstName: args.firstName,
+            lastName: args.lastName,
+            imageUrl: args.imageUrl,
+            email: verifiedEmail,
+          })
+        : null;
+      const claimedId = claimedByLink ?? await claimPlaceholderPatient(ctx, {
         clerkId: args.clerkId,
         verifiedEmail: identity.emailVerified && typeof identity.email === "string" ? identity.email : null,
         // Needs phone_number and phone_number_verified in Clerk's "convex" JWT template
@@ -509,12 +524,7 @@ export const completeUserProfile = mutation({
       throw new Error("User record not found. Please try signing out and in again.");
     }
 
-    if (user.onboarded && user.role && user.role !== args.role) {
-      console.error(`[completeUserProfile] Error: Role change from ${user.role} to ${args.role} is not permitted.`);
-      throw new Error(
-        `Role change from ${user.role} to ${args.role} is not permitted through this flow.`
-      );
-    }
+    assertSelfRoleChangeAllowed(user, args.role);
 
     const userUpdatePayload: Partial<Doc<"users">> = {
       role: args.role,
@@ -830,6 +840,7 @@ export const updateUserRole = mutation({
     if (!user) {
       throw new Error("User record not found. Please try signing out and in again.");
     }
+    assertSelfRoleChangeAllowed(user, args.role);
 
     // Admin Settings can pause new registrations per role (convex/platformSettings.ts)
     if (user.role !== args.role) {

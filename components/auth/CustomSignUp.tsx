@@ -14,8 +14,19 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth, useSignUp } from "@clerk/nextjs";
 import { useReducedMotion } from "framer-motion";
 import { toSafeInternalPath } from "@/lib/auth/ssoRedirect";
+import {
+  afterSignUpPathFor,
+  intentForPath,
+  parseIntent,
+  readRememberedIntent,
+  rememberIntent,
+  SIGNUP_INTENTS,
+  signUpHrefFor,
+  type SignupIntent,
+} from "@/lib/auth/signupIntent";
 import { cn } from "@/lib/utils";
 import { AuthShell } from "./AuthShell";
+import { IntentPicker } from "./IntentPicker";
 import {
   AuthField,
   AuthSteps,
@@ -68,10 +79,25 @@ export default function CustomSignUp({
   const reduceMotion = useReducedMotion();
   const routes = authRoutes(audience, partnersHost);
   const copy = AUTH_COPY[audience].signUp;
+  const isPartner = audience === "partner";
+  const explicitRedirect = searchParams?.get("redirect") || searchParams?.get("redirect_url");
+  // ?as= from "Get started" (or the older ?role=), else what the page they're returning to is for
+  // (e.g. /clinic-owner); failing both, the visitor's remembered choice
+  const pageIntent = intentForPath(explicitRedirect?.split("?")[0]);
+  const urlIntent = isPartner
+    ? null
+    : (parseIntent(searchParams?.get("as")) ??
+      parseIntent(searchParams?.get("role")) ??
+      (pageIntent === "partner" ? null : pageIntent));
+  const [intent, setIntent] = useState<SignupIntent | null>(urlIntent);
+  // The intent rides in the redirect, so it survives Google's round trip as well as email sign-up.
+  // A page's own redirect wins, unless it's another role's onboarding and the person picked differently.
+  const keepRedirect = !pageIntent || isPartner || pageIntent === intent;
   const redirectTarget = toSafeInternalPath(
-    searchParams?.get("redirect") || searchParams?.get("redirect_url"),
-    routes.defaultRedirect.signUp,
+    keepRedirect ? explicitRedirect : null,
+    isPartner ? routes.defaultRedirect.signUp : afterSignUpPathFor(intent),
   );
+  const heading = intent ? SIGNUP_INTENTS[intent] : copy;
 
   const [step, setStep] = useState<Step>("details");
   const [direction, setDirection] = useState<1 | -1>(1);
@@ -87,6 +113,22 @@ export default function CustomSignUp({
   const [notice, setNotice] = useState<string | null>(null);
   const cooldown = useCooldown();
   const google = useGoogleAuth(redirectTarget, setError);
+
+  useEffect(() => {
+    if (isPartner) return;
+    if (urlIntent) rememberIntent(urlIntent);
+    else setIntent((current) => current ?? readRememberedIntent());
+  }, [isPartner, urlIntent]);
+
+  const pickIntent = (next: SignupIntent) => {
+    rememberIntent(next);
+    // Partners apply through the partner portal's own sign-up
+    if (next === "partner") {
+      router.push(signUpHrefFor("partner"));
+      return;
+    }
+    setIntent(next);
+  };
 
   // Already signed in (or just finished): go to the destination
   useEffect(() => {
@@ -121,7 +163,8 @@ export default function CustomSignUp({
   };
 
   const busy = pending !== null || google.loading;
-  const signInHref = authHref(routes.signIn, redirectTarget, routes.defaultRedirect.signUp);
+  // Returning users go to their own dashboard; only a page's explicit redirect carries over
+  const signInHref = explicitRedirect ? authHref(routes.signIn, redirectTarget, routes.defaultRedirect.signUp) : routes.signIn;
 
   const clearFieldError = (field: FieldName) => {
     if (fieldErrors[field]) setFieldErrors((current) => ({ ...current, [field]: undefined }));
@@ -166,7 +209,7 @@ export default function CustomSignUp({
       await signUp.create({
         emailAddress: email.trim(),
         password,
-        unsafeMetadata: { firstName: firstName.trim(), lastName: lastName.trim() },
+        unsafeMetadata: { firstName: firstName.trim(), lastName: lastName.trim(), ...(intent ? { signupIntent: intent } : {}) },
       });
       try {
         await signUp.update({ firstName: firstName.trim(), lastName: lastName.trim() });
@@ -266,7 +309,12 @@ export default function CustomSignUp({
       <AuthSteps stepKey={step} direction={direction}>
         {step === "details" ? (
           <>
-            <StepHeading eyebrow={copy.eyebrow} title={copy.title} subtitle={copy.subtitle} optionalSubtitle />
+            <StepHeading eyebrow={copy.eyebrow} title={heading.title} subtitle={heading.subtitle} optionalSubtitle />
+            {!isPartner && (
+              <div className={SPACE.section}>
+                <IntentPicker value={intent} onChange={pickIntent} disabled={busy} />
+              </div>
+            )}
             <div className={SPACE.section}>
               <GoogleButton onClick={google.start} loading={google.loading} disabled={!google.ready || pending !== null} />
             </div>

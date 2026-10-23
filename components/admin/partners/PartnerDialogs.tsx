@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useMutation } from 'convex/react'
-import { Check, Copy, ExternalLink, Link2, Loader2, Plus } from 'lucide-react'
+import { Check, Copy, ExternalLink, Link2, Loader2, Plus } from '@/components/icons'
 import { toast } from 'sonner'
 import { api } from '@/convex/_generated/api'
 import { Button } from '@/components/ui/button'
@@ -15,6 +15,8 @@ import { cn } from '@/lib/utils'
 import type { PartnerApplication } from './PartnerReview'
 import { Callout, dialogClass, dialogTitleClass, errorMessage, hintClass, labelClass, linkClass, selectContentClass } from './shared'
 
+// Referring doctors ('doctor') sign up themselves so they can give their licence number;
+// the admin approves them in Applications, so they aren't created here.
 type PartnerType = 'hospital' | 'hmo' | 'corporate' | 'employer' | 'gym' | 'telemedicine' | 'pharmacy' | 'digital_health'
 
 const PARTNER_TYPE_OPTIONS: { value: PartnerType; label: string }[] = [

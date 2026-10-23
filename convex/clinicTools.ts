@@ -20,6 +20,8 @@ import {
   visitPlace,
 } from "./helpers/appointmentNotify";
 import { lagosDateTime, lagosTimeRange } from "./helpers/lagosTime";
+import { transitionReferral } from "./helpers/partnerEvents";
+import { attributeUserToReferral } from "./helpers/partnerAttribution";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Clinic access: the owner, and team members (clinicians and front-desk staff)
@@ -365,6 +367,20 @@ async function closeCareEpisode(
   }
 }
 
+/**
+ * Referrals a clinic can still accept or decline: anything before booking, including ones
+ * Rehabify (or Joy) has already been in touch about. Mirrored in components/clinic/patients/ReferralInbox.tsx.
+ */
+const CLINIC_ACCEPTABLE_REFERRAL = new Set<string>([
+  "received",
+  "pending",
+  "consent_pending",
+  "contacted",
+  "intake_started",
+  "intake_completed",
+  "qualified",
+]);
+
 // A Rehabify referral moves forward with the clinic's work, never backwards.
 const REFERRAL_PROGRESS = ["booked", "attended", "treatment_active", "completed"] as const;
 type ReferralProgress = (typeof REFERRAL_PROGRESS)[number];
@@ -385,7 +401,12 @@ async function advanceClinicReferral(
     if (referral.assignedClinicId !== clinic._id) continue;
     const current = REFERRAL_PROGRESS.indexOf(referral.status as ReferralProgress);
     if (current === -1 || current >= REFERRAL_PROGRESS.indexOf(next)) continue;
-    await ctx.db.patch(referral._id, { status: next, updatedAt: now });
+    // The shared lifecycle keeps milestones, partner webhooks and referring-doctor updates in step
+    await transitionReferral(ctx, referral._id, next, {
+      actorType: "clinic_owner",
+      actorId: String(actorId),
+      metadata: { clinicId: clinic._id },
+    });
     await ctx.db.insert("referralEvents", {
       referralId: referral._id,
       eventName: `clinic.${next}`,
@@ -2698,7 +2719,7 @@ export const respondToRehabifyReferral = mutation({
     if (!referral || referral.assignedClinicId !== clinic._id) {
       throw new ConvexError("Referral not found");
     }
-    if (referral.status !== "received" && referral.status !== "pending") {
+    if (!CLINIC_ACCEPTABLE_REFERRAL.has(referral.status)) {
       throw new ConvexError("This referral has already been responded to");
     }
 
@@ -2789,12 +2810,16 @@ export const respondToRehabifyReferral = mutation({
         await ctx.db.patch(existingRel._id, { status: "active", clinicId: clinic._id, source: "rehabify_referral" });
       }
 
-      await ctx.db.patch(args.referralId, {
-        status: "booked",
-        assignedPhysiotherapistId: clinicianId,
-        patientId: patientUserId,
-        updatedAt: now,
+      await transitionReferral(ctx, args.referralId, "booked", {
+        actorType: "clinic_owner",
+        actorId: String(user._id),
+        metadata: { clinicId: clinic._id },
+        extraPatch: { assignedPhysiotherapistId: clinicianId, patientId: patientUserId },
       });
+      // The patient now belongs to whoever referred them, so their clinic invoices earn the
+      // partner's (or referring doctor's) commission. First partner wins.
+      const accepted = await ctx.db.get(args.referralId);
+      if (accepted) await attributeUserToReferral(ctx, patientUserId, accepted);
 
       await ctx.db.insert("referralEvents", {
         referralId: args.referralId,
@@ -2938,7 +2963,7 @@ export const getClinicConsolidatedDashboard = query({
             .query("inboundReferrals")
             .withIndex("by_assigned_clinic", (q: any) => q.eq("assignedClinicId", clinic._id))
             .collect()
-        ).filter((ref) => ref.status === "received" || ref.status === "pending").length
+        ).filter((ref) => CLINIC_ACCEPTABLE_REFERRAL.has(ref.status)).length
       : 0;
 
     const activeProgrammesCount = (
@@ -3094,7 +3119,7 @@ export const getClinicNavCounts = query({
       .withIndex("by_assigned_clinic", (q: any) => q.eq("assignedClinicId", auth.clinic._id))
       .collect();
     return {
-      newReferrals: referrals.filter((ref) => ref.status === "received" || ref.status === "pending").length,
+      newReferrals: referrals.filter((ref) => CLINIC_ACCEPTABLE_REFERRAL.has(ref.status)).length,
     };
   },
 });

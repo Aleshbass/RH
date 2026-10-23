@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronRight, ChevronLeft, Loader2, Twitter, Instagram, Linkedin, Globe, Users, Search as SearchIcon, Sparkles } from 'lucide-react';
+import { ChevronRight, ChevronLeft, Loader2, Twitter, Instagram, Linkedin, Globe, Users, Search as SearchIcon, Eye } from '@/components/icons';
 import { useOnboardingStore } from '@/stores/onboardingStore';
 import { useMutation, useQuery } from 'convex/react';
 import { ConvexError } from 'convex/values';
@@ -987,7 +987,7 @@ export default function ClinicOwnerOnboardingWizard() {
                 <DialogContent className="sm:max-w-md rounded-3xl p-6 bg-white dark:bg-[#1C1C1E] border border-black/[0.08] dark:border-white/[0.08]">
                     <DialogHeader className="text-left space-y-2">
                         <div className="w-10 h-10 rounded-2xl bg-teal-50 dark:bg-teal-950/40 text-[#005b57] flex items-center justify-center">
-                            <Sparkles className="w-5 h-5" />
+                            <Eye className="w-5 h-5" />
                         </div>
                         <DialogTitle className="text-lg font-semibold tracking-tight text-neutral-950 dark:text-white">
                             Explore Clinic OS in Preview Mode?
@@ -1019,7 +1019,7 @@ export default function ClinicOwnerOnboardingWizard() {
                             {isSkipping ? (
                                 <Loader2 className="w-4 h-4 animate-spin mr-1.5" />
                             ) : (
-                                <Sparkles className="w-3.5 h-3.5 mr-1.5" />
+                                <Eye className="w-3.5 h-3.5 mr-1.5" />
                             )}
                             Enter Preview Mode
                         </Button>

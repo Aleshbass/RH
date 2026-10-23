@@ -3,7 +3,7 @@
 import { useRef, useState, type ChangeEvent, type DragEvent } from 'react';
 import Image from 'next/image';
 import { useAction } from 'convex/react';
-import { ImageUp, Loader2, Upload, X } from 'lucide-react';
+import { ImageUp, Loader2, Upload, X } from '@/components/icons';
 import { toast } from 'sonner';
 import { api } from '@/convex/_generated/api';
 import { Button } from '@/components/ui/button';

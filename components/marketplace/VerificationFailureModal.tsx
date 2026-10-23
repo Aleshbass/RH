@@ -8,7 +8,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { AlertCircle, RefreshCw, HelpCircle } from "lucide-react";
+import { AlertCircle, RefreshCw, HelpCircle } from "@/components/icons";
 
 interface VerificationFailureModalProps {
   isOpen: boolean;
@@ -29,7 +29,6 @@ export default function VerificationFailureModal({
         <DialogHeader>
           <div className="flex justify-center mb-4">
             <div className="relative">
-              <div className="absolute inset-0 bg-red-500 rounded-full blur-xl opacity-30 animate-pulse"></div>
               <div className="relative bg-red-100 p-6 rounded-full">
                 <AlertCircle className="h-16 w-16 text-red-600" />
               </div>

@@ -25,8 +25,8 @@ import {
   UserRound,
   Users,
   Video,
-  type LucideIcon,
-} from 'lucide-react'
+  type IconComponent,
+} from '@/components/icons'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -45,7 +45,7 @@ import { CLINIC_PORTAL_HOME } from '@/components/clinic/clinician-routing'
 
 export const PHYSIO_HOME = '/dashboard/physiotherapist'
 
-type NavItem = { title: string; href: string; icon: LucideIcon }
+type NavItem = { title: string; href: string; icon: IconComponent }
 type NavGroup = { label?: string; items: NavItem[] }
 
 /** Daily work first, clinical tools second, money last. */

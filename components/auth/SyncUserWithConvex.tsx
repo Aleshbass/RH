@@ -5,6 +5,7 @@ import { useAuth, useUser } from "@clerk/nextjs";
 import { useMutation, useQuery } from "convex/react";
 import { useEffect, useRef } from "react";
 import { clearPartnerReferralCookie, getReferralPublicCode } from "@/lib/referralCookie";
+import { clearDashboardClaim, readDashboardClaim } from "@/lib/auth/dashboardClaim";
 
 export default function SyncUserWithConvex() {
   const { user, isLoaded } = useUser();
@@ -67,7 +68,9 @@ export default function SyncUserWithConvex() {
           imageUrl: user.imageUrl ?? undefined,
           // Only the referral-link code is sent; the partner is resolved server-side.
           referralPublicCode: getReferralPublicCode(),
+          claimCode: readDashboardClaim(),
         });
+        clearDashboardClaim();
         retryCountRef.current = 0;
       } catch (error) {
         console.error("Error syncing user with Convex:", {

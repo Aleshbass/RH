@@ -36,7 +36,7 @@ import {
   Search,
   Wifi,
   XCircle,
-} from 'lucide-react';
+} from '@/components/icons';
 import { cn } from '@/lib/utils';
 import { playSound } from '@/lib/sounds';
 import { RehabifyId } from '@/components/shared/RehabifyId';

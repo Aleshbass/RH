@@ -11,7 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { toast } from "sonner"
-import { Bell, CheckCircle2, Trash2, ArrowUpRight } from "lucide-react"
+import { Bell, CheckCircle2, Trash2, ArrowUpRight } from "@/components/icons"
 
 interface NotificationDoc {
   _id: Id<"notifications">

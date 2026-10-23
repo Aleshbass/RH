@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useAction, useMutation, useQuery } from 'convex/react'
 import { format } from 'date-fns'
 import { toast } from 'sonner'
-import { ArrowLeft, Loader2, Mail, Trash2, UserX } from 'lucide-react'
+import { ArrowLeft, Loader2, Mail, Trash2, UserX } from '@/components/icons'
 
 import { api } from '@/convex/_generated/api'
 import type { Id } from '@/convex/_generated/dataModel'

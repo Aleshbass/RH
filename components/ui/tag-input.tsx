@@ -1,5 +1,5 @@
 import React, { useState, KeyboardEvent } from 'react';
-import { X } from 'lucide-react';
+import { X } from '@/components/icons';
 import { Input } from './input';
 import { Button } from './button';
 import { cn } from '@/lib/utils';

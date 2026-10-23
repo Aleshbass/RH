@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Sparkles, ArrowRight, Stethoscope } from 'lucide-react';
+import { X, ArrowRight, Stethoscope, UserPlus } from '@/components/icons';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
 
@@ -47,7 +47,7 @@ export default function RehabifyConversionPopup({ isOpen, onClose, slug }: Rehab
               </div>
 
               <div className="w-16 h-16 bg-white/20 rounded-2xl flex items-center justify-center mx-auto mb-4 backdrop-blur-sm">
-                <Sparkles className="w-8 h-8 text-white" />
+                <UserPlus className="w-8 h-8 text-white" />
               </div>
               <h2 className="text-2xl font-bold text-white mb-2">
                 Join RehabifyHealth

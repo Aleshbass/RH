@@ -2,6 +2,7 @@ import type { MetadataRoute } from 'next';
 import { api } from '@/convex/_generated/api';
 import { getConvexClient } from '@/lib/convex-client';
 import { SITE_CONFIG } from '@/lib/seo/config';
+import { LEARN_URL } from '@/lib/site-hosts';
 
 /**
  * sitemap.xml — the only sitemap source (next-sitemap is no longer run after the build).
@@ -27,7 +28,6 @@ type StaticRoute = {
 const STATIC_ROUTES: StaticRoute[] = [
   { path: '', changeFrequency: 'daily', priority: 1.0 },
   { path: '/find-a-physio', changeFrequency: 'daily', priority: 0.9 },
-  { path: '/get-care', changeFrequency: 'monthly', priority: 0.8 },
   { path: '/pricing', changeFrequency: 'monthly', priority: 0.8 },
   { path: '/rehabify-access', changeFrequency: 'monthly', priority: 0.6 },
   { path: '/about', changeFrequency: 'monthly', priority: 0.7 },
@@ -73,7 +73,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const baseUrl = SITE_CONFIG.url;
 
   const staticEntries: MetadataRoute.Sitemap = STATIC_ROUTES.map((route) => ({
-    url: `${baseUrl}${route.path}`,
+    // Learn has its own host once NEXT_PUBLIC_LEARN_URL is set
+    url: route.path === '/learn' && LEARN_URL ? `${LEARN_URL}/` : `${baseUrl}${route.path}`,
     changeFrequency: route.changeFrequency,
     priority: route.priority,
     ...(route.lastModified && { lastModified: new Date(route.lastModified) }),

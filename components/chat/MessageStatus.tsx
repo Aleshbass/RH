@@ -3,7 +3,7 @@
 'use client'
 
 import React from 'react'
-import { CheckCheck, Check } from 'lucide-react'
+import { CheckCheck, Check } from '@/components/icons'
 import { cn } from '@/lib/utils'
 
 interface MessageStatusProps {

@@ -430,6 +430,17 @@ export const recordJourneyEvent = httpAction(async (ctx, request) => {
   return Response.json(await ctx.runMutation((internal as any).joyHandoff.recordJoyJourneyEventFromJoy, { payload: parsed.data }));
 });
 
+// A fresh dashboard link when the patient asks Joy for one. Only the patient's own
+// WhatsApp number can get it, since the link signs them in (actions/joyDashboard.ts).
+export const issueDashboardLink = httpAction(async (ctx, request) => {
+  const parsed = await readJson(request, "/joy-integration/issue_dashboard_link");
+  if (parsed instanceof Response) return parsed;
+  if (!(await reserveNonce(ctx, parsed.nonce))) return new Response("Replay detected", { status: 409 });
+  const { patient_id, sender_phone } = parsed.data;
+  if (typeof patient_id !== "string" || typeof sender_phone !== "string") return new Response("Invalid payload", { status: 400 });
+  return Response.json(await ctx.runAction((internal as any).actions.joyDashboard.provisionJoyDashboard, { patientId: patient_id, senderPhone: sender_phone, notifyJoy: false }));
+});
+
 export const enqueueEvent = httpAction(async (ctx, request) => {
   const parsed = await readJson(request, "/joy-integration/enqueue_event");
   if (parsed instanceof Response) return parsed;

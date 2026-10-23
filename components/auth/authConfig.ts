@@ -66,7 +66,7 @@ export const AUTH_COPY: Record<
     signUp: {
       eyebrow: "Rehabify Health",
       title: "Create your account",
-      subtitle: "For patients and physiotherapists. It takes a minute.",
+      subtitle: "Tell us who you are and we'll set up the right account.",
     },
     panel: {
       badge: "Physio Around Me by Rehabify",

@@ -1,7 +1,8 @@
 /**
  * Partner commercial contracts (admin-managed) and the partner-facing commission views.
- * Commissions themselves are written only by helpers/partnerLedger.ts from verified
- * payments — there is no public mutation that can create one.
+ * Commissions themselves are written only by helpers/partnerLedger.ts from payments — there
+ * is no public mutation that can create one. Admins only approve or cancel the ones that
+ * wait for review (invoice payments recorded by hand).
  */
 import { ConvexError, v } from "convex/values";
 import { mutation, query } from "./_generated/server";
@@ -268,6 +269,8 @@ function commissionRow(c: Doc<"partnerCommissions">) {
     commissionAmount: c.commissionAmount,
     netPayable: c.netPayable,
     careMode: c.careMode ?? null,
+    /** marketplace | joy | bank_transfer | invoice | invoice_manual | refund */
+    source: c.source ?? null,
     physiotherapistName: c.physiotherapistName ?? null,
     paymentMethod: c.paymentMethod ?? null,
     paymentReference: c.paymentReference ?? null,
@@ -315,10 +318,16 @@ export const getPartnerCommercialSummary = query({
     let inPayoutKobo = 0; // transfer initiated, awaiting confirmation
     let paidOutKobo = 0;
     let reversedKobo = 0;
+    let pendingApprovalKobo = 0; // recorded by hand, waiting for an admin; not payable yet
     for (const c of commissions) {
       const status = publicCommissionStatus(c);
       if (status === "reversed" || status === "cancelled") {
         reversedKobo += Math.abs(c.netPayable);
+        continue;
+      }
+      // Not earned until an admin approves it
+      if (status === "pending") {
+        pendingApprovalKobo += c.netPayable;
         continue;
       }
       totalEarnedKobo += c.netPayable;
@@ -338,6 +347,7 @@ export const getPartnerCommercialSummary = query({
       availablePayoutKobo,
       pendingReviewKobo: inPayoutKobo,
       inPayoutKobo,
+      pendingApprovalKobo,
       paidOutKobo,
       reversedKobo,
       // Formatted
@@ -357,5 +367,89 @@ export const getPartnerCommercialSummary = query({
         .slice(0, 10)
         .map(commissionRow),
     };
+  },
+});
+
+// ─── Admin: commissions waiting for approval ─────────────────────────────────
+
+/**
+ * Commissions on invoice payments a clinic or physio recorded by hand (cash, POS, transfer to
+ * them). Rehabify didn't see that money arrive, so an admin approves each one before it can be
+ * paid out. Oldest first.
+ */
+export const adminListPendingCommissions = query({
+  args: { limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx);
+    const limit = Math.min(Math.max(Math.floor(args.limit ?? 100), 1), 500);
+    const rows = await ctx.db
+      .query("partnerCommissions")
+      .withIndex("by_status", (q) => q.eq("status", "pending_approval"))
+      .order("asc")
+      .take(limit);
+    const partnerNames = new Map<string, { name: string; type: string } | null>();
+    const result = [];
+    for (const c of rows) {
+      if (c.environment === "sandbox") continue;
+      if (!partnerNames.has(c.partnerId)) {
+        const partner = await ctx.db
+          .query("partners")
+          .withIndex("by_code", (q) => q.eq("code", c.partnerId))
+          .first();
+        partnerNames.set(c.partnerId, partner ? { name: partner.name, type: partner.type } : null);
+      }
+      const partner = partnerNames.get(c.partnerId);
+      // The invoice behind it, so the admin can check with the clinic
+      const invoiceId = c.idempotencyKey?.startsWith("invoice:") ? c.idempotencyKey.split(":")[1] : null;
+      const normalizedInvoiceId = invoiceId ? ctx.db.normalizeId("invoices", invoiceId) : null;
+      const invoice = normalizedInvoiceId ? await ctx.db.get(normalizedInvoiceId) : null;
+      const clinic = invoice?.clinicId ? await ctx.db.get(invoice.clinicId) : null;
+      result.push({
+        ...commissionRow(c),
+        partnerCode: c.partnerId,
+        partnerName: partner?.name ?? c.partnerId,
+        partnerType: partner?.type ?? null,
+        invoiceNumber: invoice?.invoiceNumber ?? null,
+        invoicePaymentMethod: invoice?.paymentMethod ?? null,
+        clinicName: clinic?.name ?? null,
+      });
+    }
+    return result;
+  },
+});
+
+/** Approve (payable from the next payout) or cancel a commission that is waiting for approval. */
+export const adminReviewCommission = mutation({
+  args: {
+    commissionId: v.id("partnerCommissions"),
+    action: v.union(v.literal("approve"), v.literal("cancel")),
+    reason: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const admin = await requireAdmin(ctx);
+    const commission = await ctx.db.get(args.commissionId);
+    if (!commission) throw new ConvexError("Commission not found.");
+    if (commission.status !== "pending_approval") throw new ConvexError("This commission has already been reviewed.");
+    const reviewer = adminDisplayName(admin.user);
+    const reason = args.reason?.trim();
+    if (args.action === "cancel" && !reason) throw new ConvexError("Give a reason for cancelling this commission.");
+    const now = Date.now();
+    const note = args.action === "approve" ? `Approved by ${reviewer}` : `Cancelled by ${reviewer}: ${reason}`;
+    await ctx.db.patch(commission._id, {
+      status: args.action === "approve" ? "approved" : "cancelled",
+      notes: [commission.notes, note].filter(Boolean).join(" · "),
+      ...(args.action === "cancel" ? { reversedAt: now, reversalReason: reason } : {}),
+    });
+    if (commission.referralId) {
+      await ctx.db.insert("referralEvents", {
+        referralId: commission.referralId,
+        eventName: args.action === "approve" ? "commission.approved" : "commission.cancelled",
+        occurredAt: now,
+        actorType: "admin",
+        actorId: String(admin.user._id),
+        metadata: { commissionId: commission._id, reason },
+      });
+    }
+    return { success: true };
   },
 });

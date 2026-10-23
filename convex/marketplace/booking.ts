@@ -724,7 +724,8 @@ export async function completeMarketplaceBookingCore(ctx: any, bookingId: any, o
         // Auto-onboard patient if necessary (ensure dashboard access)
         if (!booking.isGuestBooking) {
             const patientUser = await ctx.db.get(booking.patientId);
-            if (patientUser && patientUser.role !== "patient") {
+            // Only an account without a role becomes a patient; a physio or clinic booking care keeps theirs
+            if (patientUser && !patientUser.role) {
                 await ctx.db.patch(booking.patientId, {
                     role: "patient",
                     onboarded: true,
@@ -1336,7 +1337,8 @@ export const claimGuestBookings = internalMutation({
 
         if (claimedCount > 0) {
             const user = await ctx.db.get(args.userId);
-            if (user && user.role !== "patient") {
+            // Never overwrite a staff role (physio, clinic, doctor) that shares the guest's email
+            if (user && !user.role) {
                 await ctx.db.patch(args.userId, {
                     role: "patient",
                     onboarded: true,

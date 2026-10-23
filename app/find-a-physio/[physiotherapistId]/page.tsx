@@ -25,10 +25,9 @@ import {
   CreditCard,
   Globe,
   Heart,
-  Sparkles,
   ChevronRight,
   Check,
-} from "lucide-react";
+} from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import BookingWidget from "@/components/marketplace/BookingWidget";
@@ -104,7 +103,6 @@ export default function PhysiotherapistProfilePage() {
           <div className="w-16 h-16 rounded-full bg-teal-50 flex items-center justify-center">
             <Loader2 className="h-8 w-8 animate-spin text-[#005b57]" />
           </div>
-          <Sparkles className="absolute -top-1 -right-1 h-5 w-5 text-amber-400 animate-pulse" />
         </div>
         <p className="text-gray-500 mt-4 font-medium">Loading profile...</p>
       </div>

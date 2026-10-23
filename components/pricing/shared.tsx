@@ -11,6 +11,7 @@ import { useQuery } from 'convex/react'
 import { motion, useReducedMotion } from 'framer-motion'
 import { api } from '@/convex/_generated/api'
 import { cn } from '@/lib/utils'
+import { joyWhatsAppUrl } from '@/lib/joyWhatsApp'
 import { REHABIFY_SERVICES, defaultTariffs, formatKobo, isBookableServiceId } from '@/lib/rehabify-services'
 import type { Catalogue, CatalogueService } from '@/lib/rehabify-api-types'
 
@@ -63,17 +64,18 @@ export function servicePrice(service: CatalogueService): string {
   return service.travelApplies ? `From ${formatKobo(service.priceKobo)}` : formatKobo(service.priceKobo)
 }
 
-export function modeLabel(service: Pick<CatalogueService, 'mode'>): string {
-  return service.mode === 'home' ? 'At home' : 'By video'
+/** The pricing page shows the consultation price (and the free screening); every other price appears when the patient books. */
+export function showsPrice(service: Pick<CatalogueService, 'id' | 'kind'>): boolean {
+  return service.id === 'recovery_consultation' || service.kind === 'screening'
 }
 
-export function getCareHref(params: { service: string; zone?: string; area?: string; access?: string }): string {
-  const query = new URLSearchParams()
-  for (const [key, value] of Object.entries(params)) if (value) query.set(key, value)
-  return `/get-care?${query.toString()}`
+/** Bookings from the pricing page go through Joy on WhatsApp. */
+export function bookWithJoyUrl(service?: Pick<CatalogueService, 'name'>, area?: string): string {
+  if (!service) return joyWhatsAppUrl("Hi Joy! I'd like to book physiotherapy with Rehabify.")
+  return joyWhatsAppUrl(`Hi Joy! I'd like to book the ${service.name}${area ? ` in ${area}` : ''}.`)
 }
 
-export const WHATSAPP_HELP_URL = `https://wa.me/2348061525811?text=${encodeURIComponent('Hi Joy! I have a question about booking physiotherapy with Rehabify.')}`
+export const WHATSAPP_HELP_URL = joyWhatsAppUrl('Hi Joy! I have a question about booking physiotherapy with Rehabify.')
 
 export function SectionHeading({
   eyebrow,
@@ -82,7 +84,7 @@ export function SectionHeading({
   center = false,
   onDark = false,
 }: {
-  eyebrow: string
+  eyebrow?: string
   title: string
   description?: ReactNode
   center?: boolean
@@ -90,12 +92,24 @@ export function SectionHeading({
 }) {
   return (
     <div className={cn('max-w-2xl', center && 'mx-auto text-center')}>
-      <p className={cn('text-xs font-semibold uppercase tracking-[0.16em]', onDark ? 'text-rh-mint' : 'text-rh-teal')}>{eyebrow}</p>
-      <h2 className={cn('mt-3 text-[30px] leading-[1.1] tracking-tight sm:text-[42px]', onDark ? 'text-white' : 'text-rh-night')}>{title}</h2>
+      {eyebrow && (
+        <p className={cn('mb-3 text-xs font-semibold uppercase tracking-[0.16em]', onDark ? 'text-rh-mint' : 'text-rh-teal')}>{eyebrow}</p>
+      )}
+      <h2 className={cn('text-[30px] leading-[1.1] tracking-tight sm:text-[42px]', onDark ? 'text-white' : 'text-rh-night')}>{title}</h2>
       {description && (
-        <p className={cn('mt-4 text-lg leading-relaxed', onDark ? 'text-white/75' : 'text-rh-night/65')}>{description}</p>
+        <p className={cn('mt-4 text-lg font-medium leading-relaxed', onDark ? 'text-white' : 'text-rh-night/85')}>{description}</p>
       )}
     </div>
+  )
+}
+
+/** A plain bulleted line. */
+export function ListItem({ children, onDark = false }: { children: ReactNode; onDark?: boolean }) {
+  return (
+    <li className="flex items-start gap-3">
+      <span aria-hidden className={cn('mt-[9px] h-1.5 w-1.5 shrink-0 rounded-full', onDark ? 'bg-rh-lime' : 'bg-rh-teal')} />
+      <span className={cn('text-[15px] font-medium leading-6', onDark ? 'text-white' : 'text-rh-night')}>{children}</span>
+    </li>
   )
 }
 
@@ -120,14 +134,11 @@ export function FaqItem({ question, children }: { question: string; children: Re
     <details className="group border-b border-rh-night/10 py-5">
       <summary className="flex cursor-pointer list-none items-start justify-between gap-4 text-left text-[17px] font-semibold text-rh-night [&::-webkit-details-marker]:hidden">
         {question}
-        <span
-          aria-hidden
-          className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-rh-mint text-lg leading-none text-rh-teal transition group-open:rotate-45"
-        >
+        <span aria-hidden className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center text-2xl leading-none text-rh-teal transition group-open:rotate-45">
           +
         </span>
       </summary>
-      <div className="pt-3 text-[15px] leading-7 text-rh-night/70">{children}</div>
+      <div className="pt-3 text-[15px] font-medium leading-7 text-rh-night/80">{children}</div>
     </details>
   )
 }

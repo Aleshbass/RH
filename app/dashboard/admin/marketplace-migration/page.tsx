@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { useMutation } from "convex/react";
-import { ArrowUpRight, CheckCircle2, Loader2, Store, XCircle } from "lucide-react";
+import { ArrowUpRight, CheckCircle2, Loader2, Store, XCircle } from "@/components/icons";
 import { api } from "@/convex/_generated/api";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";

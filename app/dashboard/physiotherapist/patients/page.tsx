@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useQuery } from 'convex/react';
 import { format, formatDistanceToNow } from 'date-fns';
-import { ChevronRight, Search, Star, UserPlus, Users } from 'lucide-react';
+import { ChevronRight, Search, Star, UserPlus, Users } from '@/components/icons';
 import { api } from '@/convex/_generated/api';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';

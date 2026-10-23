@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronRight, ChevronLeft, Check, Plus, X, Loader2, Upload, ShieldCheck, Share2, Copy, UserPlus, ArrowRight, Award } from 'lucide-react';
+import { ChevronRight, ChevronLeft, Check, Plus, X, Loader2, Upload, ShieldCheck, Share2, Copy, UserPlus, ArrowRight, Award } from '@/components/icons';
 import { useMutation, useConvexAuth } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import { toast } from 'sonner';

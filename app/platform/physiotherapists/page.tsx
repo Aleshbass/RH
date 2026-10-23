@@ -1,7 +1,7 @@
 "use client";
 
 import PlatformPageLayout from "@/components/platform/PlatformPageLayout";
-import { Activity, Video, MessageSquare, FileText, Award, Smartphone, ArrowRight } from "lucide-react";
+import { Activity, Video, MessageSquare, FileText, Award, Smartphone, ArrowRight } from "@/components/icons";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 
@@ -53,7 +53,7 @@ export default function PhysiotherapistsPage() {
             variant="secondary"
             className="w-full sm:w-auto bg-white text-teal-900 hover:bg-gray-100 whitespace-nowrap shadow-sm group"
           >
-            <Link href="/sign-up?redirect=/physiotherapist">
+            <Link href="/sign-up?as=physiotherapist">
               Apply to Join
               <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
             </Link>
@@ -67,7 +67,7 @@ export default function PhysiotherapistsPage() {
         description="Focus on what you do best—treating patients. We handle the administrative burden and provide you with cutting-edge tools to deliver better outcomes."
         features={features}
         ctaText="Join as a Physio"
-        ctaLink="/sign-up?redirect=/physiotherapist"
+        ctaLink="/sign-up?as=physiotherapist"
       />
     </div>
   );

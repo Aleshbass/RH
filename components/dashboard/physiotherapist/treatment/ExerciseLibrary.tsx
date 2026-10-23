@@ -8,9 +8,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Search, Plus, Dumbbell, Play } from 'lucide-react';
+import { Search, Plus, Dumbbell, Play } from '@/components/icons';
 import { Exercise as AssessmentExercise } from '@/types/assessments';
-import { Loader2 } from 'lucide-react';
+import { Loader2 } from '@/components/icons';
 import { CreateExerciseDialog } from './CreateExerciseDialog';
 
 interface ExerciseLibraryProps {

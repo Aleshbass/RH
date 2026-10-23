@@ -4,13 +4,24 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { useMutation, useQuery } from 'convex/react'
-import { Check, Loader2, Star } from 'lucide-react'
+import { Check, Loader2, Phone, Star } from '@/components/icons'
 import { toast } from 'sonner'
 import { api } from '@/convex/_generated/api'
 import type { Id } from '@/convex/_generated/dataModel'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Textarea } from '@/components/ui/textarea'
+import {
+  EmptyState,
+  InfoTip,
+  LoadingBlocks,
+  PageContainer,
+  PageHeader,
+  Panel,
+  fieldClass,
+  primaryButtonClass,
+  secondaryButtonClass,
+} from '@/components/patient/ui'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
 
@@ -23,6 +34,10 @@ const RECOVERY: { value: Recovery; label: string }[] = [
   { value: 'no_change', label: 'About the same' },
   { value: 'worse', label: 'Worse' },
 ]
+
+const RATING_WORDS = ['', 'Poor', 'Fair', 'Good', 'Very good', 'Excellent']
+
+const HOME = '/dashboard/patient'
 
 /** Rehabify's after-care question, about two weeks after a physio completes treatment. */
 export default function FollowUpPage() {
@@ -57,49 +72,63 @@ export default function FollowUpPage() {
 
   if (done) {
     return (
-      <div className="mx-auto max-w-lg px-4 py-12 text-center">
-        <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-[#d4fae8] text-[#005b57]">
-          <Check className="h-7 w-7" strokeWidth={3} />
-        </span>
-        <h1 className="mt-5 text-2xl font-semibold tracking-tight text-[#002e2c]">Thank you</h1>
-        <p className="mt-2 text-sm text-neutral-600">
-          {wantsCall ? 'Someone from the Rehabify team will call you soon.' : 'Your answer helps us look after you and every patient after you.'}
-        </p>
-        <Button asChild className="mt-6 rounded-2xl bg-[#005b57] text-white hover:bg-[#00443e]">
-          <Link href="/dashboard/patient">Back to home</Link>
-        </Button>
-      </div>
+      <PageContainer className="max-w-lg">
+        <section className="flex flex-col items-center rounded-3xl bg-pt-green-bg px-6 py-12 text-center">
+          <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-pt-surface text-pt-green-fg">
+            <Check className="h-6 w-6" />
+          </span>
+          <h1 className="mt-5 text-2xl font-semibold tracking-tight text-pt-ink">Thank you</h1>
+          <p className="mt-2 max-w-sm text-sm text-pt-muted">
+            {wantsCall ? 'Someone from the Rehabify team will call you soon.' : 'Your answer helps us look after you and every patient after you.'}
+          </p>
+          <Button asChild className={cn(primaryButtonClass, 'mt-6 h-11 px-6')}>
+            <Link href={HOME}>Back to home</Link>
+          </Button>
+        </section>
+      </PageContainer>
     )
   }
 
   if (pending === undefined) {
-    return <div className="mx-auto max-w-lg px-4 py-12 text-center text-sm text-neutral-500">Loading…</div>
+    return (
+      <PageContainer className="max-w-lg">
+        <LoadingBlocks rows={4} />
+      </PageContainer>
+    )
   }
 
   if (!entry) {
     return (
-      <div className="mx-auto max-w-lg px-4 py-12 text-center">
-        <h1 className="text-xl font-semibold text-[#002e2c]">Nothing to answer here</h1>
-        <p className="mt-2 text-sm text-neutral-600">You may already have told us how it went. Thank you!</p>
-        <Button asChild variant="outline" className="mt-6 rounded-2xl">
-          <Link href="/dashboard/patient">Back to home</Link>
-        </Button>
-      </div>
+      <PageContainer className="max-w-lg">
+        <Panel>
+          <EmptyState
+            icon={Check}
+            title="Nothing to answer here"
+            description="You may already have told us how it went. Thank you!"
+            action={
+              <Button asChild className={cn(secondaryButtonClass, 'h-11 px-5')}>
+                <Link href={HOME}>Back to home</Link>
+              </Button>
+            }
+          />
+        </Panel>
+      </PageContainer>
     )
   }
 
   return (
-    <div className="mx-auto max-w-lg space-y-6 px-4 py-8">
-      <div>
-        <p className="text-xs font-semibold uppercase tracking-wider text-[#005b57]">Rehabify follow-up</p>
-        <h1 className="mt-2 text-2xl font-semibold tracking-tight text-[#002e2c]">How are you getting on?</h1>
-        <p className="mt-1 text-sm text-neutral-600">Since finishing your treatment with {entry.physioName}.</p>
-      </div>
+    <PageContainer className="max-w-lg">
+      <PageHeader
+        back={{ href: HOME, label: 'Home' }}
+        title="How are you getting on?"
+        description={`Since finishing your treatment with ${entry.physioName}. It takes about a minute.`}
+        info="Rehabify checks in a little while after treatment ends, to make sure you’re still doing well. Your answers go to the Rehabify care team."
+      />
 
-      <section className="space-y-6 rounded-3xl bg-white p-6 shadow-[0_10px_30px_-14px_rgba(0,46,44,0.18)]">
+      <Panel bodyClassName="space-y-7 p-5 sm:p-6">
         <div>
-          <p className="text-sm font-medium text-[#002e2c]">How happy were you with your care?</p>
-          <div className="mt-2 flex gap-1" role="radiogroup" aria-label="Rating out of 5">
+          <p className="text-sm font-semibold text-pt-ink">How happy were you with your care?</p>
+          <div className="mt-2 flex items-center gap-1" role="radiogroup" aria-label="Rating out of 5">
             {[1, 2, 3, 4, 5].map((value) => (
               <button
                 key={value}
@@ -108,16 +137,17 @@ export default function FollowUpPage() {
                 aria-checked={rating === value}
                 aria-label={`${value} star${value === 1 ? '' : 's'}`}
                 onClick={() => setRating(value)}
-                className="rounded-lg p-1 transition-transform active:scale-90"
+                className="rounded-xl p-1.5 transition-transform hover:bg-pt-hover active:scale-90"
               >
-                <Star className={cn('h-9 w-9', value <= rating ? 'fill-[#e8a54f] text-[#e8a54f]' : 'text-neutral-300')} />
+                <Star className={cn('h-8 w-8', value <= rating ? 'text-[#e8a54f]' : 'text-pt-line-strong')} />
               </button>
             ))}
+            {rating > 0 && <span className="ml-2 text-sm font-medium text-pt-muted">{RATING_WORDS[rating]}</span>}
           </div>
         </div>
 
         <div>
-          <p className="text-sm font-medium text-[#002e2c]">How is your recovery going?</p>
+          <p className="text-sm font-semibold text-pt-ink">How is your recovery going?</p>
           <div className="mt-2 flex flex-wrap gap-2" role="radiogroup" aria-label="Recovery">
             {RECOVERY.map((option) => (
               <button
@@ -127,8 +157,10 @@ export default function FollowUpPage() {
                 aria-checked={recovery === option.value}
                 onClick={() => setRecovery(option.value)}
                 className={cn(
-                  'rounded-full border px-3.5 py-1.5 text-sm transition-all active:scale-95',
-                  recovery === option.value ? 'border-[#005b57] bg-[#005b57] font-medium text-white' : 'border-black/[0.08] hover:bg-[#e6f0ef]'
+                  'rounded-full border px-3.5 py-2 text-sm transition-all active:scale-95',
+                  recovery === option.value
+                    ? 'border-pt-primary bg-pt-primary font-medium text-pt-on-primary'
+                    : 'border-pt-line bg-pt-surface text-pt-ink hover:bg-pt-hover'
                 )}
               >
                 {option.label}
@@ -141,21 +173,29 @@ export default function FollowUpPage() {
           value={comment}
           onChange={(e) => setComment(e.target.value)}
           rows={3}
-          className="resize-none rounded-2xl"
+          className={cn(fieldClass, 'resize-none rounded-2xl')}
           placeholder="Anything you’d like to tell us? (optional)"
           aria-label="Comments"
         />
 
-        <label className="flex cursor-pointer items-start gap-3 rounded-2xl bg-rh-canvas p-3">
-          <Checkbox checked={wantsCall} onCheckedChange={(checked) => setWantsCall(Boolean(checked))} className="mt-0.5" />
-          <span className="text-sm text-[#002e2c]">I’d like someone from Rehabify to call me</span>
+        <label className="flex cursor-pointer items-start gap-3 rounded-2xl bg-pt-sunken p-4">
+          <Checkbox
+            checked={wantsCall}
+            onCheckedChange={(checked) => setWantsCall(Boolean(checked))}
+            className="mt-0.5 border-pt-line-strong data-[state=checked]:border-pt-primary data-[state=checked]:bg-pt-primary data-[state=checked]:text-pt-on-primary"
+          />
+          <span className="flex flex-1 items-start gap-2 text-sm text-pt-ink">
+            <Phone className="mt-0.5 h-3.5 w-3.5 shrink-0 text-pt-muted" />
+            <span className="flex-1">I’d like someone from Rehabify to call me</span>
+            <InfoTip>Tick this if something isn’t right or you’d rather talk it through. The Rehabify care team will call you.</InfoTip>
+          </span>
         </label>
 
-        <Button onClick={submit} disabled={saving} className="h-11 w-full rounded-2xl bg-[#005b57] text-white hover:bg-[#00443e]">
+        <Button onClick={submit} disabled={saving} className={cn(primaryButtonClass, 'h-11 w-full')}>
           {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
           Send
         </Button>
-      </section>
-    </div>
+      </Panel>
+    </PageContainer>
   )
 }

@@ -6,7 +6,7 @@ import { useUser } from '@clerk/nextjs'
 import StreamVideoCall from '@/components/video/StreamVideoCall'
 import { useQuery } from 'convex/react'
 import { api } from '@/convex/_generated/api'
-import { Loader2 } from 'lucide-react'
+import { Loader2 } from '@/components/icons'
 
 export default function VideoCallPage() {
   const params = useParams()

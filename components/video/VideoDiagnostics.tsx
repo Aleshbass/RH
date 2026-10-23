@@ -12,7 +12,7 @@ import {
   Camera, 
   Settings,
   RefreshCw
-} from 'lucide-react'
+} from '@/components/icons'
 
 interface DiagnosticResult {
   name: string

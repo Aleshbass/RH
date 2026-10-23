@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { ShieldAlert } from 'lucide-react'
+import { ShieldAlert } from '@/components/icons'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { ExerciseViewer } from '@/components/exercise3d/ExerciseViewer'
 import { StatusBadge } from '@/components/physio/ui'

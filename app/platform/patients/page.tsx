@@ -1,7 +1,7 @@
 "use client";
 
 import PlatformPageLayout from "@/components/platform/PlatformPageLayout";
-import { Heart, PlayCircle, MessageCircle, CalendarCheck, TrendingUp, Shield } from "lucide-react";
+import { Heart, PlayCircle, MessageCircle, CalendarCheck, TrendingUp, Shield } from "@/components/icons";
 
 export default function PatientsPage() {
   const features = [

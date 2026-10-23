@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery } from 'convex/react';
-import { CalendarDays, Plus, Repeat, Search } from 'lucide-react';
+import { CalendarDays, Plus, Repeat, Search } from '@/components/icons';
 import { api } from '@/convex/_generated/api';
 import type { Id } from '@/convex/_generated/dataModel';
 import { Button } from '@/components/ui/button';

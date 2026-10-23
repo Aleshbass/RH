@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useQuery } from 'convex/react'
-import { ChevronLeft, MessageSquare, Plus } from 'lucide-react'
+import { ChevronLeft, MessageSquare, Plus } from '@/components/icons'
 import { api } from '@/convex/_generated/api'
 import type { Id } from '@/convex/_generated/dataModel'
 import RealtimeChat from '@/components/chat/RealtimeChat'

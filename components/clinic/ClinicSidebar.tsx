@@ -34,8 +34,8 @@ import {
   MessageSquare,
   LogIn,
   LogOut,
-  type LucideIcon,
-} from 'lucide-react'
+  type IconComponent,
+} from '@/components/icons'
 
 interface SidebarProps {
   className?: string
@@ -46,7 +46,7 @@ interface SidebarProps {
 type NavItem = {
   title: string
   href: string
-  icon: LucideIcon
+  icon: IconComponent
   badgeKey?: 'newReferrals' | 'unreadMessages'
   /** Page permission needed; Home has none */
   area?: ClinicArea

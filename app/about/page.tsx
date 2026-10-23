@@ -17,7 +17,7 @@ import {
     Phone,
     Clock,
     Send,
-} from "lucide-react";
+} from "@/components/icons";
 import Link from "next/link";
 import Image from "next/image";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
@@ -453,7 +453,7 @@ export default function AboutPage() {
                                         </div>
                                     </div>
                                 ))}
-                                <Link href="/sign-up" className="inline-flex items-center gap-2 text-[#005b57] font-semibold text-sm mt-2 hover:underline">
+                                <Link href="/partners/sign-up" className="inline-flex items-center gap-2 text-[#005b57] font-semibold text-sm mt-2 hover:underline">
                                     Become a Partner <ArrowRight className="w-4 h-4" />
                                 </Link>
                             </div>
@@ -478,9 +478,14 @@ export default function AboutPage() {
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                         <FadeIn>
                             <div className="bg-white border border-gray-200 rounded-2xl p-6 text-center">
-                                <div className="w-14 h-14 bg-blue-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                                    <Zap className="w-7 h-7 text-blue-600" />
-                                </div>
+                                <Image
+                                    src="https://www.awadoc.com/_next/image?url=%2Fawadoc.png&w=256&q=75"
+                                    alt="AwaDoc"
+                                    width={128}
+                                    height={56}
+                                    unoptimized
+                                    className="h-14 w-auto mx-auto mb-4 object-contain"
+                                />
                                 <h3 className="font-bold text-gray-900">AwaDOC</h3>
                                 <p className="text-sm text-gray-500 mt-1">Telemedicine Platform</p>
                                 <p className="text-sm text-gray-600 mt-3">
@@ -563,7 +568,7 @@ export default function AboutPage() {
                                     Join Our Network
                                 </Link>
                                 <Link
-                                    href="/sign-up"
+                                    href="/partners/sign-up"
                                     className="bg-white text-[#005b57] font-semibold py-3 px-6 rounded-full border-2 border-[#005b57] hover:bg-[#005b57] hover:text-white transition-all"
                                 >
                                     Become a Partner

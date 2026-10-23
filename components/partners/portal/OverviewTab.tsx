@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { ResponsiveContainer, AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, Legend } from "recharts";
-import { Activity, CheckCircle2, Clock, HeartPulse, Users, Webhook } from "lucide-react";
+import { Activity, CheckCircle2, Clock, HeartPulse, Users, Webhook } from "@/components/icons";
 import {
   DASH,
   EmptyState,

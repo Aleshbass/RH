@@ -15,14 +15,14 @@ import {
   ChevronLeft,
   ChevronRight,
   X,
-} from 'lucide-react'
-import { LucideIcon } from 'lucide-react'
+} from '@/components/icons'
+import { IconComponent } from '@/components/icons'
 import { useSidebarStore } from '@/stores/sidebarStore'
 
 interface NavItem {
   title: string
   href: string
-  icon: LucideIcon
+  icon: IconComponent
   badge?: number
   roles: string[]
 }

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import Image from 'next/image'
 import { useMutation } from 'convex/react'
-import { ImagePlus, Loader2, RefreshCw, Trash2 } from 'lucide-react'
+import { ImagePlus, Loader2, RefreshCw, Trash2 } from '@/components/icons'
 import { api } from '@/convex/_generated/api'
 import type { Id } from '@/convex/_generated/dataModel'
 import { Button } from '@/components/ui/button'

@@ -8,7 +8,7 @@ import { useOnboardingStore } from '@/stores/onboardingStore';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { ChevronRight, ChevronLeft } from 'lucide-react';
+import { ChevronRight, ChevronLeft } from '@/components/icons';
 
 // Validation schema
 const servicesAndFacilitiesSchema = z.object({

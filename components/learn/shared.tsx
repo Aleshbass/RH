@@ -12,7 +12,7 @@
 
 import { Component, useState, type ComponentType, type ReactNode } from 'react'
 import { useMutation, useQuery } from 'convex/react'
-import { Check, Loader2 } from 'lucide-react'
+import { Check, Loader2 } from '@/components/icons'
 import { api } from '@/convex/_generated/api'
 import type { PublicCohort } from '@/convex/learn'
 import { errorMessage } from '@/components/partners/portal/shared'

@@ -1,159 +1,94 @@
 /**
- * MyItura MediLoan — Webhook Receiver
+ * MyItura MediLoan webhook receiver.
  *
  * POST /api/myitura/webhook
  *
- * Receives status updates from MyItura about loan applications:
- *  - loan.approved    → Patient's loan was approved
- *  - loan.declined    → Patient's loan was denied
- *  - loan.disbursed   → Funds released to Rehabify
- *  - loan.expired     → Application window lapsed
- *  - loan.repaid      → Patient fully repaid
+ * Register this URL in the MyItura dashboard (Api Key → webhook) for each environment, and put
+ * that environment's signing secret (whsec_test_… / whsec_live_…) in MYITURA_WEBHOOK_SECRET.
+ * Every delivery is verified (lib/myitura/webhook.ts): X-MyItura-Signature-V2 over
+ * "<timestamp>.<raw body>", with the timestamp within five minutes. A ?token=… on the URL is
+ * optional (checked against MYITURA_WEBHOOK_TOKEN when present). With no secret configured,
+ * every request is refused.
  *
- * Security (all configured checks must pass; with neither secret set, every request is refused):
- *  - MYITURA_WEBHOOK_TOKEN: a long random secret in the webhook URL registered with MyItura
- *    (https://physioaroundme.com/api/myitura/webhook?token=…) or an X-Webhook-Token header.
- *    The public key alone is not a secret, so it can't authenticate a webhook.
- *  - MYITURA_WEBHOOK_SECRET: when MyItura issues a signing secret, the HMAC of the raw body
- *    (hex SHA-256 or SHA-512, optional "sha256=" prefix) in X-MyItura-Signature / X-Signature.
- *  - The X-API-Public-Key header must still match MYITURA_PUBLIC_KEY.
+ * Register: https://physioaroundme.com/api/myitura/webhook
+ *
+ * Events and how they change our loan: convex/helpers/mediloanStatus.ts. On loan.disbursed the
+ * invoice the loan pays for is marked paid (convex/mediloan.ts).
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { createHmac, timingSafeEqual } from "crypto";
+import { timingSafeEqual } from "crypto";
 import { api } from "@/convex/_generated/api";
 import { getConvexClient } from "@/lib/convex-client";
 import { convexServerSecret } from "@/lib/convex-server-secret";
-
-// Map MyItura event types to our internal statuses
-const EVENT_STATUS_MAP: Record<string, string> = {
-    "loan.approved": "approved",
-    "loan.declined": "declined",
-    "loan.disbursed": "disbursed",
-    "loan.expired": "expired",
-    "loan.repaid": "repaid",
-    "loan.pending": "pending",
-    "loan.failed": "failed",
-};
-
-function safeEqual(a: string, b: string): boolean {
-    const left = Buffer.from(a);
-    const right = Buffer.from(b);
-    return left.length === right.length && timingSafeEqual(left, right);
-}
-
-/** Whether the HMAC header matches the raw body (SHA-256 or SHA-512, hex). */
-function hasValidSignature(request: NextRequest, rawBody: string, secret: string): boolean {
-    const header = (request.headers.get("x-myitura-signature") || request.headers.get("x-signature") || "").trim();
-    if (!header) return false;
-    const signature = header.replace(/^sha(256|512)=/i, "").toLowerCase();
-    const algorithm = signature.length === 128 ? "sha512" : "sha256";
-    const expected = createHmac(algorithm, secret).update(rawBody, "utf8").digest("hex");
-    return safeEqual(expected, signature);
-}
+import { verifyMyIturaWebhook, webhookReferences } from "@/lib/myitura/webhook";
 
 /**
- * Validates that the incoming webhook request is genuinely from MyItura (see the security notes
- * above). Fails closed: a missing configuration rejects every request.
+ * The signature is what authenticates a delivery. A ?token=… on the URL is optional (older
+ * registrations used one); when one is sent it must still be the right one.
  */
-function isAuthorizedWebhook(request: NextRequest, rawBody: string): boolean {
-    const expectedPublicKey = process.env.MYITURA_PUBLIC_KEY;
+function tokenMatches(request: NextRequest): boolean {
     const token = process.env.MYITURA_WEBHOOK_TOKEN;
-    const signingSecret = process.env.MYITURA_WEBHOOK_SECRET;
-    if (!expectedPublicKey || (!token && !signingSecret)) {
-        console.error("[MyItura Webhook] Set MYITURA_PUBLIC_KEY and MYITURA_WEBHOOK_TOKEN (or MYITURA_WEBHOOK_SECRET) — rejecting all incoming webhooks.");
-        return false;
-    }
-
-    const incomingPublicKey = request.headers.get("x-api-public-key") || "";
-    if (!safeEqual(expectedPublicKey, incomingPublicKey)) return false;
-
-    if (token) {
-        const incomingToken = request.nextUrl.searchParams.get("token") || request.headers.get("x-webhook-token") || "";
-        if (!safeEqual(token, incomingToken)) return false;
-    }
-    if (signingSecret && !hasValidSignature(request, rawBody, signingSecret)) return false;
-    return true;
+    const provided = request.nextUrl.searchParams.get("token") || request.headers.get("x-webhook-token") || "";
+    if (!token || !provided) return true;
+    const a = Buffer.from(token);
+    const b = Buffer.from(provided);
+    return a.length === b.length && timingSafeEqual(a, b);
 }
 
 export async function POST(request: NextRequest) {
-    const convex = getConvexClient();
-
-    // --- Security Check (needs the raw body for the signature) ---
     const rawBody = await request.text();
-    if (!isAuthorizedWebhook(request, rawBody)) {
-        console.warn("[MyItura Webhook] Unauthorized request — token, signature or API key header did not match.");
+
+    const verification = verifyMyIturaWebhook({
+        rawBody,
+        headers: request.headers,
+        secret: process.env.MYITURA_WEBHOOK_SECRET,
+    });
+    if (!verification.ok || !tokenMatches(request)) {
+        const reason = verification.ok ? "bad_token" : verification.reason;
+        if (reason === "not_configured") console.error("[MyItura Webhook] MYITURA_WEBHOOK_SECRET is not set; refusing all deliveries.");
+        else console.warn(`[MyItura Webhook] Rejected delivery: ${reason}`);
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    let body: any;
+    let body: Record<string, any>;
     try {
         body = JSON.parse(rawBody);
     } catch {
         return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
     }
 
-    // Log only non-sensitive fields to avoid PII exposure
-    console.log(`[MyItura Webhook] Event received:`, {
-        event: body.event || body.type || body.eventType,
-        sdkReference: body.sdkReference || body.data?.sdkReference,
-        clientReference: body.clientReference || body.data?.clientReference,
-    });
+    const refs = webhookReferences(body);
+    const event = refs.event || request.headers.get("x-myitura-event") || "";
+    const deliveryId = request.headers.get("x-myitura-delivery-id") || undefined;
+    if (!refs.sdkReference && !refs.clientReference && !refs.loanId) {
+        // Nothing to match it to; acknowledge so MyItura doesn't retry forever
+        console.warn(`[MyItura Webhook] ${event} without a loan reference; ignored.`);
+        return NextResponse.json({ received: true, ignored: "no_reference" });
+    }
 
     try {
-        // Extract fields — normalized from common MyItura payload shapes
-        const eventType: string = body.event || body.type || body.eventType || "";
-        const sdkReference: string =
-            body.sdkReference || body.data?.sdkReference || body.data?.sdkRef || "";
-        const clientReference: string =
-            body.clientReference || body.data?.clientReference || "";
-        const loanStatus = EVENT_STATUS_MAP[eventType];
-
-        if (!loanStatus) {
-            console.warn(`[MyItura Webhook] Unknown event type: "${eventType}" — acknowledged without action.`);
-            // Still return 200 so MyItura doesn't endlessly retry unknown events
-            return NextResponse.json({ received: true, warning: `Unknown event type: ${eventType}` });
-        }
-
-        if (!sdkReference && !clientReference) {
-            console.error(`[MyItura Webhook] No reference found in payload`);
-            return NextResponse.json({ error: "Missing sdkReference or clientReference" }, { status: 400 });
-        }
-
-        // Update loan status in our database
-        await convex.mutation(api.mediloan.updateLoanFromWebhook, {
-            sdkReference: sdkReference || undefined,
-            clientReference: clientReference || undefined,
-            status: loanStatus,
-            disbursedAt: loanStatus === "disbursed" ? Date.now() : undefined,
-            repaymentStatus: loanStatus === "repaid" ? "completed" : undefined,
-            lastWebhookPayload: JSON.stringify(body),
+        const result = await getConvexClient().mutation(api.mediloan.applyMediLoanUpdate, {
+            sdkReference: refs.sdkReference,
+            clientReference: refs.clientReference,
+            myituraLoanId: refs.loanId,
+            event,
+            deliveryId,
+            amountApprovedKobo: refs.amountApprovedKobo,
+            payload: rawBody,
             serverSecret: convexServerSecret(),
         });
-
-        console.log(
-            `[MyItura Webhook] ✅ Processed "${eventType}" → status "${loanStatus}" for ref: ${sdkReference || clientReference}`
-        );
-
-        return NextResponse.json({
-            received: true,
-            eventType,
-            status: loanStatus,
-        });
-    } catch (error: any) {
-        console.error(`[MyItura Webhook] Processing error:`, error);
-        return NextResponse.json(
-            { error: "Internal processing error" },
-            { status: 500 }
-        );
+        // References and statuses only: no patient details in the logs
+        console.log(`[MyItura Webhook] ${event} (${verification.scheme}) → ${JSON.stringify(result)}`);
+        return NextResponse.json({ received: true, ...result });
+    } catch (error) {
+        console.error(`[MyItura Webhook] Processing ${event} failed:`, (error as Error).message);
+        // A 5xx makes MyItura retry with backoff
+        return NextResponse.json({ error: "Internal processing error" }, { status: 500 });
     }
 }
 
-// Health check — MyItura may ping this to verify the endpoint is live
+/** Lets MyItura (or us) check the endpoint is up. */
 export async function GET() {
-    return NextResponse.json({
-        status: "ok",
-        service: "rehabify-myitura-webhook",
-        timestamp: new Date().toISOString(),
-    });
+    return NextResponse.json({ status: "ok", service: "rehabify-myitura-webhook", timestamp: new Date().toISOString() });
 }

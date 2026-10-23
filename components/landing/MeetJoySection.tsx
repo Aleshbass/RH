@@ -1,6 +1,6 @@
 import React from 'react';
-import { Bell, Eye, LineChart, MessageCircle, ArrowDown } from 'lucide-react';
-import { IconBrandWhatsapp } from '@tabler/icons-react';
+import { Bell, Eye, LineChart, MessageCircle, ArrowDown } from '@/components/icons';
+import { WhatsApp } from '@/components/icons';
 
 const WHATSAPP_PRE_MESSAGE = "Hi Joy! 👋🏾 I need help with my recovery.";
 const WHATSAPP_URL = `https://wa.me/2348061525811?text=${encodeURIComponent(WHATSAPP_PRE_MESSAGE)}`;
@@ -38,7 +38,7 @@ export function MeetJoySection() {
                 <span className="text-gray-900 font-medium text-lg">Direct line to your physiotherapist and care team</span>
               </li>
               <li className="flex items-start">
-                <IconBrandWhatsapp className="w-6 h-6 text-[#008069] mt-0.5 mr-4 flex-shrink-0" strokeWidth={2.5} />
+                <WhatsApp className="w-6 h-6 text-[#008069] mt-0.5 mr-4 flex-shrink-0" strokeWidth={2.5} />
                 <span className="text-gray-900 font-medium text-lg">No new app — works entirely on WhatsApp</span>
               </li>
             </ul>

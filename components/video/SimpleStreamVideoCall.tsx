@@ -12,7 +12,7 @@ import {
 import '@stream-io/video-react-sdk/dist/css/styles.css'
 import { useUser } from '@clerk/nextjs'
 import { Button } from '@/components/ui/button'
-import { Loader2, Copy, X } from 'lucide-react'
+import { Loader2, Copy, X } from '@/components/icons'
 import { toast } from 'sonner'
 
 interface SimpleStreamVideoCallProps {

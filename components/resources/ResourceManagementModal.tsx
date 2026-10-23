@@ -21,7 +21,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { X, Plus } from "lucide-react";
+import { X, Plus } from "@/components/icons";
 import { toast } from "sonner";
 import { useResourceManagement, CreateResourceParams, UpdateResourceParams } from "@/hooks/useResourceManagement";
 import { Id } from "@/convex/_generated/dataModel";

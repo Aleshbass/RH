@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from 'react';
-import { Mail, CheckCircle2, Loader2 } from 'lucide-react';
+import { Mail, CheckCircle2, Loader2 } from '@/components/icons';
 import { useMutation } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import {

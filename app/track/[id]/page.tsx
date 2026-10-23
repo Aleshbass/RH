@@ -4,7 +4,7 @@ import React, { use } from "react";
 import Link from "next/link";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { ArrowLeft, Check, Copy, MessageSquare } from "lucide-react";
+import { ArrowLeft, Check, Copy, MessageSquare } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 
 type TrackStep = { key: string; label: string; done: boolean; at: number | null };

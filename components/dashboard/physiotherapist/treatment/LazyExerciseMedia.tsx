@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Play } from 'lucide-react';
+import { Play } from '@/components/icons';
 
 interface ExerciseDetail {
   id: string;

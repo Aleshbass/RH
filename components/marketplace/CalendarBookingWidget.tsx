@@ -16,7 +16,7 @@ import {
     Loader2,
     MapPin,
     Video,
-} from "lucide-react";
+} from "@/components/icons";
 import { cn } from "@/lib/utils";
 import { LAGOS_TIME_ZONE, zonedDateKey, zonedDateTimeToUtc } from "@/convex/helpers/lagosTime";
 import { useGoogleBusyRefresh } from "@/lib/hooks/useGoogleBusyRefresh";

@@ -49,7 +49,7 @@ import {
   Car,
   Building,
   Stethoscope,
-} from "lucide-react";
+} from "@/components/icons";
 import { toast } from "sonner";
 import { useResourceManagement, resourceUtils, type CreateResourceParams } from "@/hooks/useResourceManagement";
 import { ResourceManagementModal } from "./ResourceManagementModal";

@@ -16,7 +16,8 @@ const nextConfig = {
   // Bundle optimization
   experimental: {
     optimizePackageImports: [
-      'lucide-react',
+      '@fortawesome/free-solid-svg-icons',
+      '@fortawesome/free-brands-svg-icons',
       '@radix-ui/react-dialog',
       '@radix-ui/react-dropdown-menu',
       '@radix-ui/react-select',

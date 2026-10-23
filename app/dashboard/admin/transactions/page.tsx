@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react'
 import { usePaginatedQuery } from 'convex/react'
 import { format } from 'date-fns'
-import { Building2, Download, Globe, Loader2, MapPin, ReceiptText, Search, Wifi } from 'lucide-react'
+import { Building2, Download, Globe, Loader2, MapPin, ReceiptText, Search, Wifi } from '@/components/icons'
 import { api } from '@/convex/_generated/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'

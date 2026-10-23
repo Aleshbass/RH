@@ -1,7 +1,7 @@
 'use client'
 
 import { format, formatDistanceToNow, isPast } from 'date-fns'
-import { AlertTriangle, CalendarClock, ClipboardList, HeartPulse, Pencil, ShieldAlert, Star, Video } from 'lucide-react'
+import { AlertTriangle, CalendarClock, ClipboardList, HeartPulse, Pencil, ShieldAlert, Star, Video } from '@/components/icons'
 import { Button } from '@/components/ui/button'
 import { IconChip, Panel, StatusBadge } from '@/components/physio/ui'
 import {

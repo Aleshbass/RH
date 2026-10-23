@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { FileText, ImageIcon, Loader2, Mic, Paperclip, Square, Trash2, X } from 'lucide-react'
+import { FileText, ImageIcon, Loader2, Mic, Paperclip, Square, Trash2, X } from '@/components/icons'
 import { toast } from 'sonner'
 import type { Id } from '@/convex/_generated/dataModel'
 import { useFileUpload } from '@/lib/hooks/useFileUpload'

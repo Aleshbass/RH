@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { Calendar, Clock, User, AlertCircle } from 'lucide-react';
+import { Calendar, Clock, User, AlertCircle, Video, Check, ExternalLink } from '@/components/icons';
 import { format, addMinutes } from 'date-fns';
 import { toast } from 'sonner';
 import { api } from '@/convex/_generated/api';
@@ -310,9 +310,7 @@ export const AppointmentBookingModal: React.FC<AppointmentBookingModalProps> = (
                             onClick={() => setFormData(prev => ({ ...prev, manualMeetingLink: '' }))}
                           >
                             <div className="bg-white p-2 rounded-full shadow-sm">
-                              <svg className="w-6 h-6 text-brand" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                              </svg>
+                              <Video className="w-6 h-6 text-brand" />
                             </div>
                             <span className="font-medium text-sm">Rehabify Video</span>
                           </div>
@@ -499,9 +497,7 @@ export const AppointmentBookingModal: React.FC<AppointmentBookingModalProps> = (
               // SUCCESS STEP
               <div className="flex flex-col h-full bg-white text-gray-900 items-center justify-center p-8 text-center">
                 <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mb-6">
-                  <svg className="w-8 h-8 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
+                  <Check className="w-8 h-8 text-green-600" />
                 </div>
 
                 <h2 className="text-2xl font-bold mb-2">Meeting Scheduled</h2>
@@ -537,9 +533,7 @@ export const AppointmentBookingModal: React.FC<AppointmentBookingModalProps> = (
                       <span className="font-medium text-gray-900">Where</span>
                       <div className="flex items-center gap-1 text-gray-600">
                         <span>Google Meet</span>
-                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                        </svg>
+                        <ExternalLink className="w-4 h-4" />
                       </div>
                     </div>
                   )}

@@ -1,30 +1,95 @@
 'use client'
 
-import { useAuth } from '@clerk/nextjs'
-import { useRouter } from 'next/navigation'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
+import Image from 'next/image'
 import { useMutation, useQuery } from 'convex/react'
+import { format } from 'date-fns'
+import { toast } from 'sonner'
 import { api } from '@/convex/_generated/api'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import type { Id } from '@/convex/_generated/dataModel'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Badge } from '@/components/ui/badge'
-import { Skeleton } from '@/components/ui/skeleton'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import FileUpload from '@/components/ui/FileUpload'
-import { usePatientDocuments, type PatientDocument, type PatientDocumentType } from '@/lib/hooks/usePatientDocuments'
-import { format } from 'date-fns'
-import { Download, FileText, Filter, Loader2, Upload as UploadIcon, Search, FolderOpen } from 'lucide-react'
-import { toast } from 'sonner'
-import type { Id } from '@/convex/_generated/dataModel'
 import { Switch } from '@/components/ui/switch'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import {
+  ChevronRight,
+  CreditCard,
+  Download,
+  ExternalLink,
+  File as FileIcon,
+  FileHeart,
+  FileSignature,
+  FileText,
+  FolderOpen,
+  ImageIcon,
+  Loader2,
+  Lock,
+  Search,
+  UploadCloud,
+  X,
+} from '@/components/icons'
+import { usePatientDocuments, type PatientDocument, type PatientDocumentType } from '@/lib/hooks/usePatientDocuments'
 import { programError } from '@/components/exercise-programs/errors'
+import { playSound } from '@/lib/sounds'
+import { cn } from '@/lib/utils'
+import {
+  DetailRow,
+  EmptyState,
+  IconChip,
+  InfoTip,
+  LoadingBlocks,
+  PageContainer,
+  PageHeader,
+  PageSkeleton,
+  Panel,
+  PatientDrawer,
+  StatusBadge,
+  fieldClass,
+  primaryButtonClass,
+  secondaryButtonClass,
+  softButtonClass,
+  type Tone,
+} from '@/components/patient/ui'
+
+/** Same limits as convex/files.ts savePatientDocument */
+const ACCEPTED_TYPES = ['application/pdf', 'application/x-pdf', 'image/jpeg', 'image/jpg', 'image/png', 'image/webp']
+const ACCEPT_ATTR = 'application/pdf,image/jpeg,image/png,image/webp'
+const ACCEPTED_EXTENSIONS = /\.(pdf|jpe?g|png|webp)$/i
+const MAX_BYTES = 10 * 1024 * 1024
+
+const DOCUMENT_TYPES: { value: PatientDocumentType; label: string; icon: typeof FileText; tone: Tone }[] = [
+  { value: 'medicalRecord', label: 'Medical record', icon: FileHeart, tone: 'blue' },
+  { value: 'referralLetter', label: 'Referral letter', icon: FileSignature, tone: 'violet' },
+  { value: 'insuranceCard', label: 'Insurance card', icon: CreditCard, tone: 'green' },
+  { value: 'otherDocument', label: 'Other', icon: FileIcon, tone: 'neutral' },
+]
+
+function typeInfo(type: string) {
+  return DOCUMENT_TYPES.find((t) => t.value === type) ?? DOCUMENT_TYPES[DOCUMENT_TYPES.length - 1]
+}
+
+function formatBytes(bytes: number) {
+  if (!bytes) return '0 KB'
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+/** Older documents have no sharing flag; the server treats them as shared. */
+const isShared = (doc: PatientDocument) => doc.sharedWithPhysiotherapist !== false
+
+const isImage = (doc: PatientDocument) => doc.contentType?.startsWith('image/')
+
+function checkFile(file: File): string | null {
+  const typeOk = ACCEPTED_TYPES.includes(file.type) || (!file.type && ACCEPTED_EXTENSIONS.test(file.name))
+  if (!typeOk) return 'That file type isn’t supported. Choose a PDF, JPG, PNG or WebP file.'
+  if (file.size > MAX_BYTES) return 'That file is bigger than 10 MB. Try a smaller copy or a photo of it.'
+  return null
+}
 
 export default function PatientRecordsPage() {
-  const router = useRouter()
-  const { isLoaded, isSignedIn } = useAuth()
-  const user = useQuery(api.users.getMyUser) as (null | { role?: string; patientProfileId?: Id<'patientProfiles'> } | undefined)
-  const patientProfileId = user?.patientProfileId as Id<'patientProfiles'> | undefined
+  const user = useQuery(api.users.getMyUser) as null | { role?: string; patientProfileId?: Id<'patientProfiles'> } | undefined
+  const patientProfileId = user?.patientProfileId
 
   // Patients who came through a booking or Joy may not have their profile linked yet
   const ensureMyPatientProfile = useMutation(api.patients.ensureMyPatientProfile)
@@ -42,7 +107,6 @@ export default function PatientRecordsPage() {
     uploadPatientDocument,
     isUploadingPatientDocument,
     uploadProgress,
-    uploadError,
     toggleSharing,
     isTogglingSharing,
   } = usePatientDocuments({ patientProfileId })
@@ -52,378 +116,411 @@ export default function PatientRecordsPage() {
   const [sortOrder, setSortOrder] = useState<'newest' | 'oldest' | 'name'>('newest')
   const [selectedType, setSelectedType] = useState<PatientDocumentType>('medicalRecord')
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
-  const isUploadingRef = useRef(false)
+  const [dragging, setDragging] = useState(false)
+  const [openId, setOpenId] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
+  const allDocs = documents as PatientDocument[]
   const filteredDocs = useMemo(() => {
-    let list = (documents as PatientDocument[]) || []
-    if (typeFilter !== 'all') {
-      list = list.filter(d => d.documentType === typeFilter)
-    }
+    let list = allDocs
+    if (typeFilter !== 'all') list = list.filter((d) => d.documentType === typeFilter)
     if (search.trim()) {
       const q = search.toLowerCase()
-      list = list.filter(d => d.fileName.toLowerCase().includes(q))
+      list = list.filter((d) => d.fileName.toLowerCase().includes(q))
     }
-    switch (sortOrder) {
-      case 'newest':
-        list = [...list].sort((a, b) => (b.uploadedAt || 0) - (a.uploadedAt || 0))
-        break
-      case 'oldest':
-        list = [...list].sort((a, b) => (a.uploadedAt || 0) - (b.uploadedAt || 0))
-        break
-      case 'name':
-        list = [...list].sort((a, b) => a.fileName.localeCompare(b.fileName))
-        break
-    }
+    if (sortOrder === 'newest') list = [...list].sort((a, b) => (b.uploadedAt || 0) - (a.uploadedAt || 0))
+    if (sortOrder === 'oldest') list = [...list].sort((a, b) => (a.uploadedAt || 0) - (b.uploadedAt || 0))
+    if (sortOrder === 'name') list = [...list].sort((a, b) => a.fileName.localeCompare(b.fileName))
     return list
-  }, [documents, typeFilter, search, sortOrder])
+  }, [allDocs, typeFilter, search, sortOrder])
 
-  useEffect(() => {
-    if (!isLoaded) return
-    if (!isSignedIn) {
-      router.push('/sign-in')
+  const openDoc = allDocs.find((d) => String(d._id) === openId) ?? null
+  const sharedCount = allDocs.filter(isShared).length
+
+  if (user === undefined) return <PageSkeleton />
+
+  const chooseFile = (file: File | null | undefined) => {
+    if (!file) return
+    const problem = checkFile(file)
+    if (problem) {
+      playSound('error')
+      toast.error(problem)
       return
     }
-  }, [isLoaded, isSignedIn, router])
-
-  useEffect(() => {
-    if (!user) return
-    if (user && user.role !== 'patient') {
-      router.push('/dashboard')
-    }
-  }, [user, router])
-
-  if (!isLoaded || user === undefined) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-gray-400" />
-          <p className="text-gray-600">Preparing your records...</p>
-        </div>
-      </div>
-    )
+    setSelectedFile(file)
   }
 
-  if (user === null) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <p className="text-red-600">User not found. Please try signing in again.</p>
-      </div>
-    )
-  }
-
-  const formatBytes = (bytes: number) => {
-    if (bytes < 1024) return `${bytes} B`
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+  const onDrop = (event: DragEvent<HTMLLabelElement>) => {
+    event.preventDefault()
+    setDragging(false)
+    chooseFile(event.dataTransfer.files?.[0])
   }
 
   const handleUpload = async () => {
     if (!patientProfileId) {
-      toast.error('Your patient profile is not available. Please try again later.')
+      toast.error('Your patient profile is still being set up. Refresh the page and try again.')
       return
     }
-    if (!selectedFile) {
-      toast.error('Please select a file to upload')
-      return
-    }
+    if (!selectedFile) return
     try {
-      isUploadingRef.current = true
       await uploadPatientDocument(selectedFile, selectedType, patientProfileId)
-      toast.success('Document uploaded successfully')
+      playSound('success')
+      toast.success('Uploaded', { description: `${selectedFile.name} is in your records.` })
       setSelectedFile(null)
+      if (fileInputRef.current) fileInputRef.current.value = ''
     } catch (e: unknown) {
-      toast.error(programError(e, 'Failed to upload document'))
-    } finally {
-      isUploadingRef.current = false
+      playSound('error')
+      toast.error(programError(e, 'The upload didn’t finish. Check your connection and try again.'))
     }
   }
 
-  const getDocumentTypeColor = (type: string) => {
-    switch (type) {
-      case 'medicalRecord':
-        return 'bg-blue-100 text-blue-700 border-blue-200'
-      case 'referralLetter':
-        return 'bg-purple-100 text-purple-700 border-purple-200'
-      case 'insuranceCard':
-        return 'bg-green-100 text-green-700 border-green-200'
-      default:
-        return 'bg-gray-100 text-gray-700 border-gray-200'
+  const setSharing = async (doc: PatientDocument, shared: boolean) => {
+    try {
+      await toggleSharing({ documentId: doc._id, shared })
+      toast.success(shared ? 'Shared with your physio' : 'Now private to you')
+    } catch {
+      toast.error('We couldn’t change who can see this file. Please try again.')
     }
   }
+
+  const filtersActive = Boolean(search.trim()) || typeFilter !== 'all'
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-6xl mx-auto px-3 sm:px-4 lg:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
+    <PageContainer>
+      <PageHeader
+        title="Records"
+        description="Keep scans, reports and letters in one place, so your physio has what they need."
+        info="Upload anything that helps with your care: scan results, a doctor’s letter, discharge notes or an insurance card. You decide which files your physio can open."
+      />
 
-        {/* Header */}
-        <div className="bg-white border border-brand/20 rounded-2xl p-6 sm:p-8 shadow-sm">
-          <div className="flex items-start justify-between">
-            <div>
-              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">
-                Health Records
-              </h1>
-              <p className="text-gray-600 text-sm sm:text-base">
-                Securely upload, manage, and access your medical documents
-              </p>
-            </div>
-            <div className="hidden sm:block p-3 bg-brand/10 rounded-xl">
-              <FolderOpen className="h-8 w-8 text-brand" />
+      {/* Upload */}
+      <Panel
+        title="Add a file"
+        description="PDF, JPG, PNG or WebP, up to 10 MB"
+        info="New files are shared with the physiotherapists treating you. You can make any file private afterwards."
+      >
+        <div className="space-y-4">
+          <div>
+            <p className="mb-2 text-sm font-medium text-pt-ink">What is it?</p>
+            <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Type of file">
+              {DOCUMENT_TYPES.map((type) => {
+                const selected = selectedType === type.value
+                const Icon = type.icon
+                return (
+                  <button
+                    key={type.value}
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    onClick={() => setSelectedType(type.value)}
+                    className={cn(
+                      'inline-flex items-center gap-2 rounded-full border px-3.5 py-2 text-sm transition-all active:scale-95',
+                      selected
+                        ? 'border-pt-primary bg-pt-primary font-medium text-pt-on-primary'
+                        : 'border-pt-line-strong bg-pt-surface text-pt-ink hover:bg-pt-hover'
+                    )}
+                  >
+                    <Icon className="h-3.5 w-3.5" />
+                    {type.label}
+                  </button>
+                )
+              })}
             </div>
           </div>
 
-          {/* Stats */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4 mt-6">
-            <div className="bg-gray-50 rounded-xl p-3 sm:p-4">
-              <p className="text-xs sm:text-sm text-gray-500">Total Documents</p>
-              <p className="text-xl sm:text-2xl font-bold text-gray-900 mt-1">{documents.length}</p>
-            </div>
-            <div className="bg-gray-50 rounded-xl p-3 sm:p-4">
-              <p className="text-xs sm:text-sm text-gray-500">This Month</p>
-              <p className="text-xl sm:text-2xl font-bold text-gray-900 mt-1">
-                {documents.filter(d => {
-                  const uploadDate = new Date(d.uploadedAt)
-                  const now = new Date()
-                  return uploadDate.getMonth() === now.getMonth() && uploadDate.getFullYear() === now.getFullYear()
-                }).length}
-              </p>
-            </div>
-            <div className="bg-gray-50 rounded-xl p-3 sm:p-4 col-span-2 sm:col-span-1">
-              <p className="text-xs sm:text-sm text-gray-500">Storage Used</p>
-              <p className="text-xl sm:text-2xl font-bold text-gray-900 mt-1">
-                {formatBytes(documents.reduce((sum, d) => sum + d.fileSize, 0))}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Upload Section */}
-        <Card className="border-2 border-dashed border-gray-200 hover:border-brand/50 transition-colors shadow-sm">
-          <CardHeader className="pb-3 px-4 sm:px-6">
-            <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
-              <UploadIcon className="h-5 w-5 text-brand" />
-              Upload New Document
-            </CardTitle>
-            <CardDescription className="text-xs sm:text-sm">
-              Accepted formats: PDF, JPG, PNG (Max 10MB)
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3 sm:space-y-4 px-4 sm:px-6">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-700">Document Type</label>
-                <Select value={selectedType} onValueChange={(v) => setSelectedType(v as PatientDocumentType)}>
-                  <SelectTrigger className="h-11">
-                    <SelectValue placeholder="Select type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="medicalRecord">Medical Record</SelectItem>
-                    <SelectItem value="referralLetter">Referral Letter</SelectItem>
-                    <SelectItem value="insuranceCard">Insurance Card</SelectItem>
-                    <SelectItem value="otherDocument">Other Document</SelectItem>
-                  </SelectContent>
-                </Select>
+          {selectedFile ? (
+            <div className="space-y-3 rounded-2xl bg-pt-sunken p-4">
+              <div className="flex items-center gap-3">
+                <IconChip icon={selectedFile.type.startsWith('image/') ? ImageIcon : FileText} tone={typeInfo(selectedType).tone} />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold text-pt-ink">{selectedFile.name}</p>
+                  <p className="text-xs text-pt-muted">
+                    {formatBytes(selectedFile.size)} · {typeInfo(selectedType).label}
+                  </p>
+                </div>
+                {!isUploadingPatientDocument && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedFile(null)
+                      if (fileInputRef.current) fileInputRef.current.value = ''
+                    }}
+                    aria-label="Remove this file"
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-pt-muted hover:bg-pt-hover hover:text-pt-ink"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
               </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-700">Choose File</label>
-                <FileUpload
-                  id="patient-record-upload"
-                  label="Select file"
-                  accept="application/pdf,image/jpeg,image/jpg,image/png,image/webp"
-                  onChange={(f) => setSelectedFile((Array.isArray(f) ? f[0] : f) || null)}
-                  maxSizeInMB={10}
+              {isUploadingPatientDocument && (
+                <div className="h-1.5 overflow-hidden rounded-full bg-pt-line" aria-hidden>
+                  <div
+                    className="h-full rounded-full bg-pt-accent transition-[width] duration-300"
+                    style={{ width: `${Math.max(6, Math.round(uploadProgress || 0))}%` }}
+                  />
+                </div>
+              )}
+              <Button
+                onClick={handleUpload}
+                disabled={isUploadingPatientDocument}
+                className={cn(primaryButtonClass, 'h-11 w-full sm:w-auto sm:px-6')}
+              >
+                {isUploadingPatientDocument ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Uploading… {Math.round(uploadProgress || 0)}%
+                  </>
+                ) : (
+                  <>
+                    <UploadCloud className="mr-2 h-4 w-4" />
+                    Upload file
+                  </>
+                )}
+              </Button>
+            </div>
+          ) : (
+            <label
+              htmlFor="patient-record-upload"
+              onDragOver={(event) => {
+                event.preventDefault()
+                setDragging(true)
+              }}
+              onDragLeave={() => setDragging(false)}
+              onDrop={onDrop}
+              className={cn(
+                'flex cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed px-6 py-8 text-center transition-colors',
+                dragging ? 'border-pt-accent bg-pt-accent-soft' : 'border-pt-line-strong bg-pt-sunken hover:bg-pt-hover'
+              )}
+            >
+              <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-pt-surface text-pt-ink">
+                <UploadCloud className="h-5 w-5" />
+              </span>
+              <span className="text-sm font-semibold text-pt-ink">
+                <span className="hidden sm:inline">Drop a file here, or </span>
+                <span className="underline underline-offset-4 sm:no-underline">choose a file</span>
+              </span>
+              <span className="text-xs text-pt-muted">PDF, JPG, PNG or WebP · up to 10 MB</span>
+            </label>
+          )}
+          <input
+            ref={fileInputRef}
+            id="patient-record-upload"
+            type="file"
+            accept={ACCEPT_ATTR}
+            className="sr-only"
+            onChange={(event) => chooseFile(event.target.files?.[0])}
+          />
+        </div>
+      </Panel>
+
+      {/* Documents */}
+      <Panel
+        title="Your files"
+        description={
+          allDocs.length === 0
+            ? 'Nothing here yet'
+            : `${allDocs.length} ${allDocs.length === 1 ? 'file' : 'files'} · ${sharedCount} shared with your physio`
+        }
+        info="“Shared” files can be opened by the physiotherapists treating you. “Private” files are only visible to you."
+      >
+        {allDocs.length > 0 && (
+          <div className="mb-4 flex flex-col gap-2 sm:flex-row">
+            <div className="relative flex-1">
+              <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-pt-faint" />
+              <Input
+                placeholder="Search by file name"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className={cn(fieldClass, 'h-11 pl-10 dark:bg-pt-sunken')}
+                aria-label="Search files"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-2 sm:flex">
+              <Select value={typeFilter} onValueChange={(v) => setTypeFilter(v as 'all' | PatientDocumentType)}>
+                <SelectTrigger className={cn(fieldClass, 'h-11 w-full sm:w-44 dark:bg-pt-sunken')} aria-label="Show type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All types</SelectItem>
+                  {DOCUMENT_TYPES.map((type) => (
+                    <SelectItem key={type.value} value={type.value}>
+                      {type.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={sortOrder} onValueChange={(v) => setSortOrder(v as 'newest' | 'oldest' | 'name')}>
+                <SelectTrigger className={cn(fieldClass, 'h-11 w-full sm:w-36 dark:bg-pt-sunken')} aria-label="Sort">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="newest">Newest first</SelectItem>
+                  <SelectItem value="oldest">Oldest first</SelectItem>
+                  <SelectItem value="name">A to Z</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        )}
+
+        {isLoadingDocuments ? (
+          <LoadingBlocks rows={3} />
+        ) : documentsError ? (
+          <div className="rounded-2xl bg-pt-rose-bg p-5 text-center">
+            <p className="text-sm font-semibold text-pt-rose-fg">We couldn’t load your files</p>
+            <p className="mt-1 text-sm text-pt-rose-fg/80">Refresh the page, or try again in a minute.</p>
+          </div>
+        ) : filteredDocs.length === 0 ? (
+          <EmptyState
+            icon={FolderOpen}
+            title={filtersActive ? 'No files match' : 'No files yet'}
+            description={
+              filtersActive
+                ? 'Try a different search or type.'
+                : 'Add a scan result, a doctor’s letter or anything else your physio should see.'
+            }
+            action={
+              filtersActive ? (
+                <Button
+                  className={softButtonClass}
+                  onClick={() => {
+                    setSearch('')
+                    setTypeFilter('all')
+                  }}
+                >
+                  Clear filters
+                </Button>
+              ) : (
+                <Button className={primaryButtonClass} onClick={() => fileInputRef.current?.click()}>
+                  <UploadCloud className="mr-2 h-4 w-4" />
+                  Choose a file
+                </Button>
+              )
+            }
+          />
+        ) : (
+          <ul className="-mx-2 divide-y divide-pt-line">
+            {filteredDocs.map((doc) => {
+              const info = typeInfo(doc.documentType)
+              const shared = isShared(doc)
+              return (
+                <li key={String(doc._id)} className="flex flex-col gap-2 py-1 sm:flex-row sm:items-center">
+                  <button
+                    type="button"
+                    onClick={() => setOpenId(String(doc._id))}
+                    className="flex min-w-0 flex-1 items-center gap-3 rounded-2xl px-2 py-2.5 text-left transition-colors hover:bg-pt-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pt-accent/50"
+                  >
+                    <IconChip icon={isImage(doc) ? ImageIcon : info.icon} tone={info.tone} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-semibold text-pt-ink">{doc.fileName}</span>
+                      <span className="block truncate text-xs text-pt-muted">
+                        {info.label} · {format(new Date(doc.uploadedAt), 'd MMM yyyy')} · {formatBytes(doc.fileSize)}
+                      </span>
+                    </span>
+                    <ChevronRight className="h-3.5 w-3.5 shrink-0 text-pt-faint sm:hidden" />
+                  </button>
+                  <div className="flex items-center justify-between gap-2 px-2 pb-2 sm:justify-end sm:pb-0">
+                    <label className="flex cursor-pointer items-center gap-2 rounded-xl bg-pt-sunken px-3 py-1.5">
+                      <Switch
+                        checked={shared}
+                        disabled={isTogglingSharing}
+                        onCheckedChange={(checked) => setSharing(doc, checked)}
+                        aria-label={`Share ${doc.fileName} with my physio`}
+                        className="data-[state=checked]:bg-pt-accent"
+                      />
+                      <span className={cn('w-14 text-xs font-semibold', shared ? 'text-pt-accent-ink' : 'text-pt-muted')}>
+                        {shared ? 'Shared' : 'Private'}
+                      </span>
+                    </label>
+                    <Button asChild variant="ghost" size="sm" className="h-9 w-9 rounded-xl p-0 text-pt-muted hover:bg-pt-hover hover:text-pt-ink">
+                      <a href={doc.downloadUrl} target="_blank" rel="noopener noreferrer" aria-label={`Open ${doc.fileName}`}>
+                        <Download className="h-4 w-4" />
+                      </a>
+                    </Button>
+                  </div>
+                </li>
+              )
+            })}
+          </ul>
+        )}
+      </Panel>
+
+      <div className="flex items-start gap-3 rounded-3xl bg-pt-sunken p-4 sm:p-5">
+        <IconChip icon={Lock} tone="neutral" size="sm" className="bg-pt-surface" />
+        <p className="text-sm text-pt-muted">
+          Your files are stored securely. Shared files can be opened by the physiotherapists treating you; private files only by
+          you.
+        </p>
+      </div>
+
+      <PatientDrawer
+        open={!!openDoc}
+        onOpenChange={(open) => !open && setOpenId(null)}
+        title={openDoc?.fileName ?? 'File'}
+        description={openDoc ? typeInfo(openDoc.documentType).label : undefined}
+        footer={
+          openDoc ? (
+            <div className="grid grid-cols-2 gap-2">
+              <Button asChild className={cn(primaryButtonClass, 'h-11')}>
+                <a href={openDoc.downloadUrl} target="_blank" rel="noopener noreferrer">
+                  <ExternalLink className="mr-2 h-4 w-4" />
+                  Open
+                </a>
+              </Button>
+              <Button asChild className={cn(secondaryButtonClass, 'h-11')}>
+                <a href={openDoc.downloadUrl} download={openDoc.fileName} target="_blank" rel="noopener noreferrer">
+                  <Download className="mr-2 h-4 w-4" />
+                  Download
+                </a>
+              </Button>
+            </div>
+          ) : undefined
+        }
+      >
+        {openDoc && (
+          <div className="space-y-4">
+            {isImage(openDoc) ? (
+              <div className="relative aspect-[4/3] overflow-hidden rounded-2xl bg-pt-sunken">
+                <Image src={openDoc.downloadUrl} alt={openDoc.fileName} fill sizes="448px" className="object-contain" unoptimized />
+              </div>
+            ) : (
+              <div className="flex flex-col items-center gap-2 rounded-2xl bg-pt-sunken px-6 py-8 text-center">
+                <IconChip icon={typeInfo(openDoc.documentType).icon} tone={typeInfo(openDoc.documentType).tone} size="lg" />
+                <p className="text-sm text-pt-muted">Open the file to read it.</p>
+              </div>
+            )}
+
+            <div className="divide-y divide-pt-line">
+              <DetailRow label="Added">{format(new Date(openDoc.uploadedAt), 'EEEE d MMMM yyyy, h:mm a')}</DetailRow>
+              <DetailRow label="Size">{formatBytes(openDoc.fileSize)}</DetailRow>
+            </div>
+
+            <div className="flex items-start justify-between gap-4 rounded-2xl border border-pt-line p-4">
+              <div className="min-w-0">
+                <p className="flex items-center gap-1 text-sm font-semibold text-pt-ink">
+                  Share with my physio
+                  <InfoTip>
+                    When this is on, the physiotherapists treating you can open this file. Turn it off and only you can see it.
+                  </InfoTip>
+                </p>
+                <p className="mt-0.5 text-xs text-pt-muted">
+                  {isShared(openDoc) ? 'Your physio can open this file.' : 'Only you can see this file.'}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <StatusBadge tone={isShared(openDoc) ? 'green' : 'neutral'}>{isShared(openDoc) ? 'Shared' : 'Private'}</StatusBadge>
+                <Switch
+                  checked={isShared(openDoc)}
+                  disabled={isTogglingSharing}
+                  onCheckedChange={(checked) => setSharing(openDoc, checked)}
+                  aria-label="Share with my physio"
+                  className="data-[state=checked]:bg-pt-accent"
                 />
               </div>
             </div>
-
-            {selectedFile && (
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-center justify-between">
-                <div className="flex items-center gap-2 flex-1 min-w-0">
-                  <FileText className="h-4 w-4 text-blue-600 shrink-0" />
-                  <span className="text-sm text-blue-900 truncate">{selectedFile.name}</span>
-                </div>
-                <span className="text-xs text-blue-700 ml-2 shrink-0">{formatBytes(selectedFile.size)}</span>
-              </div>
-            )}
-
-            <Button
-              onClick={handleUpload}
-              disabled={!selectedFile || isUploadingPatientDocument}
-              className="w-full bg-brand hover:bg-brand-dark text-white h-11"
-            >
-              {isUploadingPatientDocument ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Uploading... {Math.round(uploadProgress || 0)}%
-                </>
-              ) : (
-                <>
-                  <UploadIcon className="h-4 w-4 mr-2" />
-                  Upload Document
-                </>
-              )}
-            </Button>
-            {uploadError && (
-              <p className="text-sm text-red-600">{String(uploadError)}</p>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Filters & Search */}
-        <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
-          <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
-            <Select value={typeFilter} onValueChange={(v) => setTypeFilter(v as 'all' | PatientDocumentType)}>
-              <SelectTrigger className="w-full sm:w-[180px] h-10">
-                <Filter className="h-4 w-4 mr-2" />
-                <SelectValue placeholder="Filter by type" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Types</SelectItem>
-                <SelectItem value="medicalRecord">Medical Record</SelectItem>
-                <SelectItem value="referralLetter">Referral Letter</SelectItem>
-                <SelectItem value="insuranceCard">Insurance Card</SelectItem>
-                <SelectItem value="otherDocument">Other Document</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={sortOrder} onValueChange={(v) => setSortOrder(v as 'newest' | 'oldest' | 'name')}>
-              <SelectTrigger className="w-full sm:w-[140px] h-10">
-                <SelectValue placeholder="Sort by" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="newest">Newest First</SelectItem>
-                <SelectItem value="oldest">Oldest First</SelectItem>
-                <SelectItem value="name">By Name</SelectItem>
-              </SelectContent>
-            </Select>
           </div>
-          <div className="relative w-full sm:w-80">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-            <Input
-              placeholder="Search documents..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-9 h-10"
-            />
-          </div>
-        </div>
-
-        {/* Documents List */}
-        <Card className="shadow-sm">
-          <CardHeader className="px-4 sm:px-6">
-            <CardTitle className="text-base sm:text-lg">My Documents</CardTitle>
-            <CardDescription className="text-xs sm:text-sm">
-              {filteredDocs.length} {filteredDocs.length === 1 ? 'document' : 'documents'} found
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="px-4 sm:px-6">
-            {isLoadingDocuments ? (
-              <div className="space-y-3">
-                {[...Array(3)].map((_, i) => (
-                  <div key={i} className="flex items-center justify-between p-4 border rounded-xl">
-                    <div className="flex items-center gap-3 flex-1">
-                      <Skeleton className="h-12 w-12 rounded-xl" />
-                      <div className="space-y-2 flex-1">
-                        <Skeleton className="h-4 w-3/4" />
-                        <Skeleton className="h-3 w-1/2" />
-                      </div>
-                    </div>
-                    <Skeleton className="h-9 w-24" />
-                  </div>
-                ))}
-              </div>
-            ) : documentsError ? (
-              <div className="p-6 bg-red-50 border border-red-200 rounded-xl text-center">
-                <p className="text-red-700 font-medium">Failed to load documents</p>
-                <p className="text-sm text-red-600 mt-1">Please refresh the page or try again later</p>
-              </div>
-            ) : filteredDocs.length === 0 ? (
-              <div className="text-center py-12">
-                <div className="inline-flex p-4 bg-gray-100 rounded-full mb-4">
-                  <FileText className="h-10 w-10 text-gray-400" />
-                </div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">No Documents Found</h3>
-                <p className="text-sm text-gray-500 mb-6">
-                  {search || typeFilter !== 'all'
-                    ? 'Try adjusting your filters or search query'
-                    : 'Upload your first document to get started'}
-                </p>
-                {!search && typeFilter === 'all' && (
-                  <Button
-                    onClick={() => document.getElementById('patient-record-upload')?.click()}
-                    className="bg-brand hover:bg-brand-dark text-white"
-                  >
-                    <UploadIcon className="h-4 w-4 mr-2" />
-                    Upload Document
-                  </Button>
-                )}
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {filteredDocs.map((doc) => (
-                  <div
-                    key={String(doc._id)}
-                    className="flex flex-col sm:flex-row sm:items-center sm:justify-between p-4 border border-gray-200 rounded-xl hover:border-brand/50 hover:shadow-md transition-all group"
-                  >
-                    <div className="flex items-start gap-3 flex-1 min-w-0 mb-3 sm:mb-0">
-                      <div className="p-3 bg-brand/10 rounded-xl shrink-0 group-hover:bg-brand/20 transition-colors">
-                        <FileText className="h-5 w-5 text-brand" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-semibold text-gray-900 truncate text-sm sm:text-base">{doc.fileName}</p>
-                        <div className="flex flex-wrap items-center gap-2 mt-2">
-                          <Badge
-                            variant="outline"
-                            className={`text-xs capitalize ${getDocumentTypeColor(doc.documentType)}`}
-                          >
-                            {doc.documentType.replace(/([A-Z])/g, ' $1').trim()}
-                          </Badge>
-                          <span className="text-xs text-gray-500">{format(new Date(doc.uploadedAt), 'MMM d, yyyy')}</span>
-                          <span className="text-xs text-gray-400">•</span>
-                          <span className="text-xs text-gray-500">{formatBytes(doc.fileSize)}</span>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 w-full sm:w-auto">
-                      <div className="flex items-center gap-3 bg-gray-50 rounded-lg px-3 py-2 border border-gray-200">
-                        <span className="text-xs font-medium text-gray-700">
-                          Share with Physio
-                        </span>
-                        <Switch
-                          checked={doc.sharedWithPhysiotherapist !== false}
-                          onCheckedChange={async (checked) => {
-                            try {
-                              await toggleSharing({ documentId: doc._id, shared: checked })
-                              toast.success(checked ? 'Document shared with physiotherapist' : 'Document made private')
-                            } catch (error) {
-                              toast.error('Failed to update sharing settings')
-                            }
-                          }}
-                          disabled={isTogglingSharing}
-                          className="data-[state=checked]:bg-brand scale-125"
-                        />
-                        <span className="text-xs font-semibold" style={{ color: doc.sharedWithPhysiotherapist !== false ? '#005b57' : '#6b7280' }}>
-                          {doc.sharedWithPhysiotherapist !== false ? '✓ Shared' : 'Private'}
-                        </span>
-                      </div>
-                      <Button asChild variant="outline" size="sm">
-                        <a href={doc.downloadUrl} target="_blank" rel="noopener noreferrer">
-                          <Download className="h-4 w-4 mr-2" /> Download
-                        </a>
-                      </Button>
-                    </div>
-                  </div>))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Privacy Notice */}
-        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
-          <p className="text-xs sm:text-sm text-blue-900">
-            <span className="font-semibold">🔒 Secure & Private:</span> Your documents are encrypted and stored securely.
-            Only you and authorized healthcare professionals with active treatment relationships can access your records.
-          </p>
-        </div>
-      </div>
-    </div>
+        )}
+      </PatientDrawer>
+    </PageContainer>
   )
 }

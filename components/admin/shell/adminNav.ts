@@ -33,8 +33,8 @@ import {
   UserX,
   Users,
   WalletCards,
-  type LucideIcon,
-} from 'lucide-react'
+  type IconComponent,
+} from '@/components/icons'
 
 export const ADMIN_HOME = '/dashboard/admin'
 
@@ -44,7 +44,7 @@ export type AdminBadgeKey = 'approvals' | 'partnerApplications' | 'openReports' 
 export type AdminNavItem = {
   title: string
   href: string
-  icon: LucideIcon
+  icon: IconComponent
   badgeKey?: AdminBadgeKey
   /** Extra words the command palette matches on. */
   keywords?: string[]
@@ -53,7 +53,7 @@ export type AdminNavItem = {
 export type AdminNavSection = {
   id: string
   label: string
-  icon: LucideIcon
+  icon: IconComponent
   items: AdminNavItem[]
   /** Only shown in development or when NEXT_PUBLIC_ADMIN_DEV_TOOLS=true. */
   devOnly?: boolean

@@ -3,7 +3,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { useQuery } from 'convex/react'
 import { format } from 'date-fns'
-import { Calendar, Check, ExternalLink, FileText, Languages, Loader2, Mail, MapPin, Phone, X } from 'lucide-react'
+import { Calendar, Check, ExternalLink, FileText, Languages, Loader2, Mail, MapPin, Phone, X } from '@/components/icons'
 
 import { api } from '@/convex/_generated/api'
 import type { Id } from '@/convex/_generated/dataModel'

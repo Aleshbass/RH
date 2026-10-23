@@ -4,7 +4,7 @@ import { useState } from "react";
 import Map, { Marker, Popup, NavigationControl } from "react-map-gl/mapbox";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { User, Clock } from "lucide-react";
+import { User, Clock } from "@/components/icons";
 import { formatDistanceToNow } from "date-fns";
 import { NIGERIA_CENTER } from "@/lib/nigeria-locations";
 import { Panel, StatusBadge } from "@/components/admin/ui";

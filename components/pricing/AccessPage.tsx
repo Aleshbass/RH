@@ -2,8 +2,8 @@
 
 import type { ComponentType } from 'react'
 import Link from 'next/link'
-import { ArrowRight, BadgeCheck, ClipboardCheck, FileText, HeartHandshake, Lock, Scale, Search, Stethoscope, Users } from 'lucide-react'
-import { CheckItem, pillGhostOnDark, pillLime } from '@/components/learn/shared'
+import { ArrowRight, BadgeCheck, ClipboardCheck, FileText, HeartHandshake, Lock, Scale, Search, Stethoscope, Users } from '@/components/icons'
+import { CheckItem, pillOutline, pillTeal } from '@/components/learn/shared'
 import { cn } from '@/lib/utils'
 import { AccessApplication } from './AccessApplication'
 import { FadeUp, FaqItem, SectionHeading } from './shared'
@@ -218,27 +218,26 @@ export function AccessPage() {
 function Hero() {
   return (
     <section className="px-4 pb-16 pt-24 sm:px-6 sm:pt-28 lg:pb-20">
-      <div className="relative mx-auto max-w-6xl overflow-hidden rounded-[2rem] bg-[linear-gradient(140deg,#005b57_0%,#005b57_58%,#003f3c_100%)] text-white sm:rounded-[2.5rem]">
-        <div aria-hidden className="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full bg-rh-aqua/10 blur-3xl" />
-        <div className="relative grid gap-12 px-6 py-12 sm:px-10 sm:py-16 lg:grid-cols-[1.15fr_0.85fr] lg:items-center lg:gap-14 lg:px-16 lg:py-20">
+      <div className="mx-auto max-w-6xl">
+        <div className="grid gap-12 py-4 sm:py-8 lg:grid-cols-[1.15fr_0.85fr] lg:items-center lg:gap-14">
           <div>
-            <span className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3.5 py-1.5 text-xs font-semibold tracking-wide text-rh-mint ring-1 ring-inset ring-white/15">
+            <span className="inline-flex items-center gap-2 rounded-full bg-white px-3.5 py-1.5 text-xs font-semibold tracking-wide text-rh-teal ring-1 ring-inset ring-rh-night/10">
               <span className="h-1.5 w-1.5 rounded-full bg-rh-lime" />
               Rehabify Access · Assisted care
             </span>
-            <h1 className="mt-6 text-[38px] leading-[1.05] tracking-tight text-white sm:text-[52px] lg:text-[56px]">
+            <h1 className="mt-6 text-[38px] leading-[1.05] tracking-tight text-rh-night sm:text-[52px] lg:text-[56px]">
               Cost shouldn&apos;t stand between you and recovery
             </h1>
-            <p className="mt-6 max-w-xl text-lg leading-relaxed text-white/80">
+            <p className="mt-6 max-w-xl text-lg leading-relaxed text-rh-night/70">
               Financial circumstances shouldn&apos;t prevent appropriate recovery care. If you need rehabilitation but are
               worried about the cost, apply for Rehabify Access. Eligible patients may get reduced-fee physiotherapy or a
               flexible arrangement.
             </p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-              <a href="#apply" className={cn(pillLime, 'h-12 px-7 text-[15px]')}>
+              <a href="#apply" className={cn(pillTeal, 'h-12 px-7 text-[15px]')}>
                 Apply for Assisted Care <ArrowRight className="h-4 w-4" />
               </a>
-              <Link href="/pricing" className={cn(pillGhostOnDark, 'h-12 px-7 text-[15px]')}>
+              <Link href="/pricing" className={cn(pillOutline, 'h-12 px-7 text-[15px]')}>
                 See our standard prices
               </Link>
             </div>
@@ -250,13 +249,13 @@ function Hero() {
               { icon: Scale, title: 'Fair and consistent', body: 'Every application reviewed individually, against the same criteria.' },
               { icon: Lock, title: 'Only what we need', body: 'Income in ranges, no documents up front.' },
             ].map((item) => (
-              <li key={item.title} className="flex items-start gap-3.5 rounded-[1.5rem] bg-white/[0.07] p-5 ring-1 ring-inset ring-white/10">
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white/10 text-rh-lime">
+              <li key={item.title} className="flex items-start gap-3.5 rounded-[1.5rem] bg-white p-5 shadow-soft">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-rh-honeydew text-rh-teal">
                   <item.icon className="h-[18px] w-[18px]" />
                 </span>
                 <div className="min-w-0">
-                  <p className="text-[15px] font-semibold leading-snug text-white">{item.title}</p>
-                  <p className="mt-1 text-sm leading-5 text-white/70">{item.body}</p>
+                  <p className="text-[15px] font-semibold leading-snug text-rh-night">{item.title}</p>
+                  <p className="mt-1 text-sm leading-5 text-rh-night/60">{item.body}</p>
                 </div>
               </li>
             ))}

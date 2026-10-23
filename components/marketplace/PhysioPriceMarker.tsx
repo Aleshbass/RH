@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { Star, Stethoscope } from "lucide-react";
+import { Star, Stethoscope } from "@/components/icons";
 
 interface PhysioPriceMarkerProps {
     price?: number;

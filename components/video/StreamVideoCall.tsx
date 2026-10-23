@@ -4,7 +4,7 @@ import { StreamVideo, StreamVideoClient, StreamCall, StreamTheme, CallingState }
 import '@stream-io/video-react-sdk/dist/css/styles.css'
 import { useUser } from '@clerk/nextjs'
 import { api } from '@/convex/_generated/api'
-import { Loader2, PhoneOff } from 'lucide-react'
+import { Loader2, PhoneOff } from '@/components/icons'
 import { toast } from 'sonner'
 import { StreamChat } from 'stream-chat'
 import { useAction, useMutation, useQuery } from 'convex/react'

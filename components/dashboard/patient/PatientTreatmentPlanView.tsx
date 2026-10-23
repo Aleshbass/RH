@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Bell, CheckCircle, AlertCircle, Target, Activity, Clock } from "lucide-react";
+import { Bell, CheckCircle, AlertCircle, Target, Activity, Clock } from "@/components/icons";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -15,7 +15,7 @@ import { VideoEmbed } from "@/components/media/VideoEmbed";
 import { StorageImage } from "@/components/media/StorageImage";
 import { ExerciseCompletionModal } from "./treatment/ExerciseCompletionModal";
 import { Button } from "@/components/ui/button";
-import { CheckCircle2, Play, CalendarDays, TrendingUp, Upload } from "lucide-react";
+import { CheckCircle2, Play, CalendarDays, TrendingUp, Upload } from "@/components/icons";
 import { useToast } from "@/components/ui/use-toast";
 
 import { Id } from "@/convex/_generated/dataModel";

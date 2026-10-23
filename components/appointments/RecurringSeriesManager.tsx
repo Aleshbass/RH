@@ -15,7 +15,7 @@ import {
   Trash2, 
   CheckCircle,
   XCircle 
-} from 'lucide-react'
+} from '@/components/icons'
 import { useRecurringAppointments, useSeriesAppointments, recurringAppointmentUtils } from '@/hooks/useRecurringAppointments'
 import { Id } from '@/convex/_generated/dataModel'
 import type { DayOfWeek } from '@/lib/types/recurring-appointments'

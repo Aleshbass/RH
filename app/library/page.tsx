@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import Image from 'next/image'
 import { useQuery } from 'convex/react'
-import { Loader2, Rotate3d } from 'lucide-react'
+import { Loader2, Rotate3d } from '@/components/icons'
 import { api } from '@/convex/_generated/api'
 import { ExercisePreviewDialog } from '@/components/exercise-programs/ExercisePreviewDialog'
 import { LibraryPicker } from '@/components/exercise-programs/LibraryPicker'

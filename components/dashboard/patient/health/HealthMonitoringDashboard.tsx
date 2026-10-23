@@ -16,7 +16,7 @@ import {
   Target,
   AlertCircle,
   CheckCircle2
-} from 'lucide-react'
+} from '@/components/icons'
 import { VitalSignsCard } from './VitalSignsCard'
 import { MedicationTracker } from './MedicationTracker'
 import { SymptomLogger } from './SymptomLogger'

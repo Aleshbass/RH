@@ -6,6 +6,7 @@ import { ensureClinicApproved, getOwnerClinic, getOwnerClinicOrPreview, requireC
 import { getAuthenticatedUser } from "./auth";
 import { publicAppUrl } from "./helpers/appUrl";
 import { activePaymentLink, closeInvoicePaymentLinks, PAYMENT_LINK_TTL_MS } from "./helpers/paymentLinks";
+import { recordInvoicePartnerCommission } from "./helpers/partnerLedger";
 import { currentPaystackMode, usableSubaccount } from "./helpers/paystackMode";
 
 /**
@@ -424,6 +425,14 @@ export const markInvoicePaid = mutation({
     });
     // Paid in person: the online link must not collect a second time
     await closeInvoicePaymentLinks(ctx, args.invoiceId);
+    // A referred patient's partner or doctor earns on this too, once an admin approves it
+    // (Rehabify didn't see the money arrive)
+    await recordInvoicePartnerCommission(ctx, {
+      invoice,
+      paidKobo: invoice.subtotalAmount > 0 ? invoice.subtotalAmount : invoice.totalAmount,
+      paymentReference: `manual:${args.invoiceId}`,
+      verified: false,
+    });
     return { success: true };
   },
 });

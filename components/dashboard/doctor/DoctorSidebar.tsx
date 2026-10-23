@@ -8,7 +8,7 @@ import {
     UserPlus,
     Users,
     Wallet
-} from 'lucide-react'
+} from '@/components/icons'
 
 const navigation = [
     { name: 'Overview', href: '/dashboard/doctor', icon: LayoutDashboard },

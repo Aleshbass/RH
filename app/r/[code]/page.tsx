@@ -21,7 +21,7 @@ import {
   Timer,
   UserCheck,
   Wifi,
-} from "lucide-react";
+} from "@/components/icons";
 import { toast } from "sonner";
 import { rememberReferralCode } from "@/lib/referralCookie";
 

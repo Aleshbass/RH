@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { ChevronDown, Loader2, MapPin } from "lucide-react";
+import { ChevronDown, Loader2, MapPin } from "@/components/icons";
 import { cn } from "@/lib/utils";
 import { cityAreas, zoneCities, type TravelZone } from "./booking-shared";
 

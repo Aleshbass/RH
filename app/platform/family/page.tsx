@@ -1,7 +1,7 @@
 "use client";
 
 import PlatformPageLayout from "@/components/platform/PlatformPageLayout";
-import { Users2, BellRing, HeartHandshake, FileHeart, Phone, Clock } from "lucide-react";
+import { Users2, BellRing, HeartHandshake, FileHeart, Phone, Clock } from "@/components/icons";
 
 export default function FamilyPage() {
   const features = [
@@ -39,8 +39,8 @@ export default function FamilyPage() {
       subtitle="Support your loved one's recovery"
       description="Recovery is a team effort. We provide family members with the visibility and tools they need to be an active, supportive part of the rehabilitation journey."
       features={features}
-      ctaText="Learn More"
-      ctaLink="/contact"
+      ctaText="Get Started"
+      ctaLink="/sign-up?as=family"
     />
   );
 }

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useMutation, useQuery } from 'convex/react';
 import { format, isToday, isTomorrow } from 'date-fns';
-import { Copy, Loader2, Plus, Video } from 'lucide-react';
+import { Copy, Loader2, Plus, Video } from '@/components/icons';
 import { toast } from 'sonner';
 import { playSound } from '@/lib/sounds';
 import { api } from '@/convex/_generated/api';

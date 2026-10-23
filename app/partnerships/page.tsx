@@ -28,7 +28,7 @@ import {
   Users,
   TrendingUp,
   Handshake,
-} from "lucide-react";
+} from "@/components/icons";
 
 // ── Fade-in wrapper ──────────────────────────────
 function FadeIn({

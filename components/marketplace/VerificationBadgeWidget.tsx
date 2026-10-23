@@ -5,7 +5,7 @@ import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { BadgeCheck, Check, Clock } from "lucide-react";
+import { BadgeCheck, Check, Clock } from "@/components/icons";
 import { toast } from "sonner";
 import VerificationSuccessModal from "./VerificationSuccessModal";
 import VerificationFailureModal from "./VerificationFailureModal";

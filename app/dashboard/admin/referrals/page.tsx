@@ -4,7 +4,7 @@ import { Suspense, useEffect, useMemo, useState } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useQuery } from 'convex/react'
 import { format } from 'date-fns'
-import { Building2, ExternalLink, Inbox, Loader2, Search, Settings2, Stethoscope, UserCheck, X } from 'lucide-react'
+import { Building2, ExternalLink, Inbox, Loader2, Search, Settings2, Stethoscope, UserCheck, X } from '@/components/icons'
 import { api } from '@/convex/_generated/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -265,9 +265,15 @@ function ReferralsContent() {
                     <TableCell className="max-w-[200px]">
                       {r.partnerName || r.partnerCode ? (
                         <div className="flex items-center gap-1.5 text-xs font-medium text-rh-night dark:text-neutral-200">
-                          <Building2 className="h-3.5 w-3.5 shrink-0 text-rh-teal dark:text-rh-aqua" />
+                          {r.partnerType === 'doctor' ? (
+                            <Stethoscope className="h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-300" />
+                          ) : (
+                            <Building2 className="h-3.5 w-3.5 shrink-0 text-rh-teal dark:text-rh-aqua" />
+                          )}
                           <span className="truncate">{r.partnerName || r.partnerCode}</span>
-                          {r.partnerType && <span className="text-[10px] uppercase text-neutral-400">{r.partnerType}</span>}
+                          {r.partnerType && (
+                            <span className="shrink-0 text-[10px] uppercase text-neutral-400">{r.partnerType === 'doctor' ? 'Doctor referral' : r.partnerType}</span>
+                          )}
                         </div>
                       ) : (
                         <div className="flex items-center gap-1.5 text-xs text-rh-night dark:text-neutral-200">

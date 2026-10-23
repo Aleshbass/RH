@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Map } from "lucide-react";
+import { Map } from "@/components/icons";
 
 /**
  * Dynamically imported PhysioMapView component.

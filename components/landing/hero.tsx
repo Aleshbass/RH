@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowRight, ArrowUp, Check } from 'lucide-react';
+import { ArrowRight, ArrowUp, Check } from '@/components/icons';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useQuery } from 'convex/react';

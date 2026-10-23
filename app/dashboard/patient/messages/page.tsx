@@ -1,41 +1,56 @@
 'use client'
 
-import { useQuery, useMutation } from 'convex/react'
-import { api } from '@/convex/_generated/api'
-import RealtimeChat from '@/components/chat/RealtimeChat'
-import { Card, CardContent } from '@/components/ui/card'
-import { MessageSquare, Users, Plus, Search, ChevronLeft } from 'lucide-react'
-import { useState, useMemo, useEffect } from 'react'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
+import { useMutation, useQuery } from 'convex/react'
+import { formatDistanceToNowStrict } from 'date-fns'
 import { toast } from 'sonner'
+import { ChevronLeft, ChevronRight, Loader2, MessageSquare, Plus, Search, Stethoscope } from '@/components/icons'
+import { api } from '@/convex/_generated/api'
+import type { Id } from '@/convex/_generated/dataModel'
+import RealtimeChat from '@/components/chat/RealtimeChat'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { Id } from '@/convex/_generated/dataModel'
-import { motion, AnimatePresence } from 'framer-motion'
-import { cn } from '@/lib/utils'
-import { formatDistanceToNow } from 'date-fns'
+import {
+  EmptyState,
+  InfoTip,
+  LoadingBlocks,
+  PatientDrawer,
+  fieldClass,
+  primaryButtonClass,
+} from '@/components/patient/ui'
+import { PhysioPhoto } from '@/components/patient/PhysioPhoto'
 import { programError } from '@/components/exercise-programs/errors'
+import { cn } from '@/lib/utils'
 
 // Shape returned by api.chat.getMyConversations
 interface ConversationWithParticipant {
-  _id: Id<"conversations">;
+  _id: Id<'conversations'>
   otherParticipant: {
-    _id: Id<"users">;
-    firstName?: string;
-    lastName?: string;
-    role?: string;
-    imageUrl?: string;
-    isOnline?: boolean;
-  };
+    _id: Id<'users'>
+    firstName?: string
+    lastName?: string
+    role?: string
+    imageUrl?: string
+    isOnline?: boolean
+  }
   lastMessage?: {
-    content: string;
-    timestamp: number;
-    senderName: string;
-  };
-  unreadCount: number;
-  updatedAt: number;
+    content: string
+    timestamp: number
+    senderName: string
+  }
+  unreadCount: number
+  updatedAt: number
+}
+
+// Shape returned by api.patientInvitations.getMyPhysiotherapists (only the fields used here)
+type MyPhysiotherapist = {
+  _id: Id<'users'>
+  firstName?: string
+  lastName?: string
+  imageUrl?: string
+  clinic?: { name?: string } | null
 }
 
 const ROLE_LABELS: Record<string, string> = {
@@ -45,300 +60,328 @@ const ROLE_LABELS: Record<string, string> = {
   admin: 'Rehabify support',
 }
 
-// Shape returned by api.patientInvitations.getMyPhysiotherapists (only the fields used here)
-type MyPhysiotherapist = { _id: Id<"users">; firstName?: string; lastName?: string; clinic?: { name?: string } | null }
+const fullName = (p: { firstName?: string; lastName?: string }) =>
+  [p.firstName, p.lastName].filter(Boolean).join(' ') || 'Your physiotherapist'
 
-export default function PatientMessagesPage() {
-  const [selectedConversationId, setSelectedConversationId] = useState<Id<"conversations"> | null>(null)
-  const [isNewConversationOpen, setIsNewConversationOpen] = useState(false)
-  const [newConversationPtId, setNewConversationPtId] = useState<Id<"users"> | ''>('')
-  const [searchTerm, setSearchTerm] = useState('')
+/**
+ * Card height: the screen minus the top bar and the page padding (and the tab bar on phones),
+ * so the conversation scrolls inside the card and the message box stays in view.
+ */
+const PANE_HEIGHT = 'h-[calc(100dvh_-_10.5rem_-_env(safe-area-inset-bottom))] min-h-[420px] lg:h-[calc(100dvh_-_9rem)]'
+
+function MessagesPage() {
+  const searchParams = useSearchParams()
+  const withParam = searchParams.get('with')
+
+  const [selectedId, setSelectedId] = useState<Id<'conversations'> | null>(null)
+  const [newOpen, setNewOpen] = useState(false)
+  const [starting, setStarting] = useState<string | null>(null)
+  const [search, setSearch] = useState('')
   const [mobileView, setMobileView] = useState<'list' | 'chat'>('list')
 
-  // Current user
-  const currentUser = useQuery(api.users.getMyUser)
-
-  // Conversations
-  const conversations = useQuery(
-    api.chat.getMyConversations,
-    currentUser ? {} : 'skip'
-  ) as ConversationWithParticipant[] | undefined
-
-  // The patient's physiotherapists (the query is patients only, so wait for the account)
+  const currentUser = useQuery(api.users.getMyUser) as { _id: Id<'users'>; role?: string } | null | undefined
+  const conversations = useQuery(api.chat.getMyConversations, currentUser ? {} : 'skip') as
+    | ConversationWithParticipant[]
+    | undefined
   const myPhysiotherapists = useQuery(
     api.patientInvitations.getMyPhysiotherapists,
     currentUser?.role === 'patient' ? {} : 'skip'
   ) as MyPhysiotherapist[] | undefined
-  const physiotherapists = useMemo(
-    () =>
-      (myPhysiotherapists ?? []).map((p) => ({
-        physiotherapistId: p._id,
-        name: [p.firstName, p.lastName].filter(Boolean).join(' ') || 'Your physiotherapist',
-        clinicName: p.clinic?.name ?? null,
-      })),
-    [myPhysiotherapists]
-  )
-
   const getOrCreateConversation = useMutation(api.chat.getOrCreateConversation)
 
-  // Get the selected recipient's ID
-  const selectedRecipientId = useMemo(() => {
-    if (!selectedConversationId || !conversations) return null;
-    const conversation = conversations.find(c => c._id === selectedConversationId);
-    return conversation?.otherParticipant._id;
-  }, [selectedConversationId, conversations]);
+  const selected = useMemo(
+    () => conversations?.find((c) => c._id === selectedId) ?? null,
+    [conversations, selectedId]
+  )
 
-  // Get selected conversation details
-  const selectedConversation = useMemo(() => {
-    if (!selectedConversationId || !conversations) return null;
-    return conversations.find(c => c._id === selectedConversationId);
-  }, [selectedConversationId, conversations]);
+  const filtered = useMemo(() => {
+    if (!conversations) return []
+    const term = search.trim().toLowerCase()
+    if (!term) return conversations
+    return conversations.filter(
+      (c) =>
+        fullName(c.otherParticipant).toLowerCase().includes(term) ||
+        c.lastMessage?.content.toLowerCase().includes(term)
+    )
+  }, [conversations, search])
 
-  // Filter conversations
-  const filteredConversations = useMemo(() => {
-    if (!conversations) return [];
-    if (!searchTerm) return conversations;
-    return conversations.filter(c =>
-      c.otherParticipant.firstName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      c.otherParticipant.lastName?.toLowerCase().includes(searchTerm.toLowerCase())
-    );
-  }, [conversations, searchTerm]);
+  // Physios the patient can message who don't have a conversation yet
+  const notYetMessaged = useMemo(() => {
+    const talking = new Set((conversations ?? []).map((c) => c.otherParticipant._id))
+    return (myPhysiotherapists ?? []).filter((p) => !talking.has(p._id))
+  }, [conversations, myPhysiotherapists])
 
-  // Handle back button on mobile
-  const handleBackToList = () => {
-    setMobileView('list');
-    // Optional: clear selection if you want to reset state completely
-    // setSelectedConversationId(null); 
-  };
+  const openConversation = (id: Id<'conversations'>) => {
+    setSelectedId(id)
+    setMobileView('chat')
+  }
 
-  // Handle conversation selection
-  const handleSelectConversation = (id: Id<"conversations">) => {
-    setSelectedConversationId(id);
-    setMobileView('chat');
-  };
+  const startWith = async (physiotherapistId: Id<'users'>) => {
+    const existing = conversations?.find((c) => c.otherParticipant._id === physiotherapistId)
+    if (existing) {
+      openConversation(existing._id)
+      setNewOpen(false)
+      return
+    }
+    setStarting(physiotherapistId)
+    try {
+      const res = await getOrCreateConversation({ participantId: physiotherapistId })
+      openConversation(res.conversationId)
+      setNewOpen(false)
+    } catch (err) {
+      toast.error(programError(err, 'Couldn’t start the conversation. Please try again.'))
+    } finally {
+      setStarting(null)
+    }
+  }
 
-  if (!currentUser) return (
-    <div className="flex items-center justify-center h-[calc(100vh-100px)]">
-      <div className="animate-pulse flex flex-col items-center">
-        <div className="h-12 w-12 bg-gray-200 rounded-full mb-4"></div>
-        <div className="h-4 w-32 bg-gray-200 rounded"></div>
-      </div>
-    </div>
-  );
+  // ?with=<physio user id> (from My physiotherapist): open or start that chat once everything has loaded
+  const handledWith = useRef(false)
+  useEffect(() => {
+    if (!withParam || handledWith.current || conversations === undefined || myPhysiotherapists === undefined) return
+    handledWith.current = true
+    const existing = conversations.find((c) => c.otherParticipant._id === withParam)
+    if (existing) {
+      openConversation(existing._id)
+      return
+    }
+    if (myPhysiotherapists.some((p) => p._id === withParam)) void startWith(withParam as Id<'users'>)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [withParam, conversations, myPhysiotherapists])
+
+  const loading = currentUser === undefined || (currentUser && conversations === undefined)
+  const canMessageSomeone = (myPhysiotherapists?.length ?? 0) > 0
 
   return (
-    <div className="h-[calc(100vh-6rem)] md:h-[calc(100vh-8rem)] max-w-6xl mx-auto md:p-4 overflow-hidden">
-      <div className="bg-white md:rounded-2xl shadow-sm border border-gray-200 h-full flex overflow-hidden relative">
-
-        {/* Left Sidebar (Conversation List) */}
-        <div className={cn(
-          "w-full md:w-80 lg:w-96 flex flex-col border-r border-gray-100 bg-white absolute md:relative z-10 h-full transition-transform duration-300 ease-in-out",
-          mobileView === 'chat' ? "-translate-x-full md:translate-x-0" : "translate-x-0"
-        )}>
-          {/* Header */}
-          <div className="p-3 md:p-4 border-b border-gray-100 flex justify-between items-center bg-white sticky top-0 z-20">
-            <h1 className="text-lg md:text-xl font-bold text-gray-900">Messages</h1>
-            <Dialog open={isNewConversationOpen} onOpenChange={setIsNewConversationOpen}>
-              <DialogTrigger asChild>
-                <Button size="icon" className="rounded-full h-8 w-8 bg-gray-900 hover:bg-black text-white shadow-sm">
-                  <Plus className="h-4 w-4" />
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="sm:max-w-[400px] rounded-2xl">
-                <DialogHeader>
-                  <DialogTitle>New Message</DialogTitle>
-                </DialogHeader>
-                <div className="grid gap-4 py-4">
-                  {myPhysiotherapists !== undefined && physiotherapists.length === 0 ? (
-                    <p className="text-sm text-gray-500">
-                      You can message a physiotherapist once you&apos;re under their care. Book a session or accept your physio&apos;s invitation first.
-                    </p>
-                  ) : (
-                    <Select value={newConversationPtId || undefined} onValueChange={(value) => setNewConversationPtId(value as Id<"users">)}>
-                      <SelectTrigger className="w-full rounded-xl">
-                        <SelectValue placeholder={myPhysiotherapists === undefined ? 'Loading…' : 'Select a physiotherapist'} />
-                      </SelectTrigger>
-                      <SelectContent className="rounded-xl">
-                        {physiotherapists.map((p) => (
-                          <SelectItem key={p.physiotherapistId} value={p.physiotherapistId}>
-                            {p.name}
-                            {p.clinicName ? ` · ${p.clinicName}` : ''}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  )}
-                </div>
-                <Button
-                  disabled={!newConversationPtId}
-                  onClick={async () => {
-                    if (!newConversationPtId) return;
-                    try {
-                      const res = await getOrCreateConversation({ participantId: newConversationPtId })
-                      handleSelectConversation(res.conversationId)
-                      toast.success('Conversation started')
-                      setIsNewConversationOpen(false)
-                      setNewConversationPtId('')
-                    } catch (err) {
-                      toast.error(programError(err, 'Couldn’t start the conversation. Please try again.'))
-                      console.error(err)
-                    }
-                  }}
-                  className="w-full rounded-xl bg-gray-900 text-white"
-                >
-                  Start Chat
-                </Button>
-              </DialogContent>
-            </Dialog>
+    <div className="mx-auto w-full max-w-6xl">
+      <div className={cn('flex overflow-hidden rounded-3xl border border-pt-line bg-pt-surface shadow-pt dark:shadow-none', PANE_HEIGHT)}>
+        {/* Conversation list */}
+        <aside
+          className={cn(
+            'w-full min-w-0 flex-col border-pt-line md:flex md:w-80 md:border-r lg:w-96',
+            mobileView === 'chat' ? 'hidden' : 'flex'
+          )}
+        >
+          <div className="flex items-center justify-between gap-2 px-4 pb-3 pt-4">
+            <h1 className="flex items-center gap-1.5 text-xl font-semibold tracking-tight text-pt-ink">
+              Messages
+              <InfoTip>
+                Private messages with the physiotherapists looking after you. They usually reply within a working day. For anything urgent, call
+                your clinic or seek medical help.
+              </InfoTip>
+            </h1>
+            <Button size="sm" className={cn(primaryButtonClass, 'h-9 px-3')} onClick={() => setNewOpen(true)}>
+              <Plus className="mr-1.5 h-3.5 w-3.5" />
+              New
+            </Button>
           </div>
 
-          {/* Search */}
-          <div className="p-2 md:p-3">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-              <Input
-                placeholder="Search messages..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-9 bg-gray-50 border-transparent focus:bg-white transition-all rounded-xl h-9 md:h-10"
-              />
-            </div>
-          </div>
-
-          {/* List */}
-          <div className="flex-1 overflow-y-auto scrollbar-hide">
-            {filteredConversations.length === 0 ? (
-              <div className="p-8 text-center text-gray-500">
-                <div className="bg-gray-50 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <MessageSquare className="h-8 w-8 text-gray-300" />
-                </div>
-                <p className="font-medium text-gray-900">No messages</p>
-                <p className="text-sm mt-1">Start a conversation with your physiotherapist.</p>
+          {(conversations?.length ?? 0) > 3 && (
+            <div className="px-4 pb-3">
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-pt-faint" />
+                <Input
+                  placeholder="Search messages"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className={cn(fieldClass, 'h-10 pl-9')}
+                  aria-label="Search messages"
+                />
               </div>
+            </div>
+          )}
+
+          <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+            {loading ? (
+              <LoadingBlocks rows={4} className="px-2" />
+            ) : filtered.length === 0 && search ? (
+              <p className="px-4 py-8 text-center text-sm text-pt-muted">No conversations match “{search}”.</p>
+            ) : filtered.length === 0 ? (
+              <EmptyState
+                icon={MessageSquare}
+                title="No messages yet"
+                description={
+                  canMessageSomeone
+                    ? 'Ask your physio a question about your exercises, your plan or your next visit.'
+                    : 'You can message a physiotherapist once you’re under their care: after you book a session or accept their invitation.'
+                }
+                action={
+                  canMessageSomeone ? (
+                    <Button className={primaryButtonClass} onClick={() => setNewOpen(true)}>
+                      Start a conversation
+                    </Button>
+                  ) : (
+                    <Button asChild className={primaryButtonClass}>
+                      <Link href="/find-a-physio">Find a physio</Link>
+                    </Button>
+                  )
+                }
+              />
             ) : (
-              <div className="divide-y divide-gray-50">
-                {filteredConversations.map((conversation) => {
+              <ul className="space-y-0.5">
+                {filtered.map((conversation) => {
                   const other = conversation.otherParticipant
-                  const isSelected = selectedConversationId === conversation._id
-
+                  const isSelected = selectedId === conversation._id
+                  const unread = conversation.unreadCount > 0
                   return (
-                    <motion.div
-                      key={conversation._id}
-                      initial={{ opacity: 0, y: 5 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      onClick={() => handleSelectConversation(conversation._id)}
-                      className={cn(
-                        "p-3 md:p-4 cursor-pointer hover:bg-gray-50 transition-colors flex gap-3 items-start",
-                        isSelected && "bg-blue-50/50 hover:bg-blue-50/70"
-                      )}
-                    >
-                      <div className="relative shrink-0">
-                        <Avatar className="h-12 w-12 border border-gray-100">
-                          <AvatarImage src={other.imageUrl} />
-                          <AvatarFallback className="bg-brand/10 text-brand font-medium">
-                            {other.firstName?.[0]}{other.lastName?.[0]}
-                          </AvatarFallback>
-                        </Avatar>
-                        {other.isOnline && (
-                          <span className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></span>
+                    <li key={conversation._id}>
+                      <button
+                        type="button"
+                        onClick={() => openConversation(conversation._id)}
+                        aria-current={isSelected ? 'true' : undefined}
+                        className={cn(
+                          'flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pt-accent/50',
+                          isSelected ? 'bg-pt-sunken' : 'hover:bg-pt-hover'
                         )}
-                      </div>
-
-                      <div className="flex-1 min-w-0">
-                        <div className="flex justify-between items-baseline mb-1">
-                          <h3 className={cn("font-semibold truncate text-sm", isSelected ? "text-blue-900" : "text-gray-900")}>
-                            {other.firstName} {other.lastName}
-                          </h3>
-                          {conversation.lastMessage?.timestamp && (
-                            <span className="text-[10px] text-gray-400 shrink-0 ml-2">
-                              {formatDistanceToNow(conversation.lastMessage.timestamp, { addSuffix: false })}
-                            </span>
+                      >
+                        <span className="relative">
+                          <PhysioPhoto name={fullName(other)} imageUrl={other.imageUrl} size={44} />
+                          {other.isOnline && (
+                            <span
+                              className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-pt-surface bg-pt-accent"
+                              aria-label="Online"
+                            />
                           )}
-                        </div>
-                        <div className="flex justify-between items-center">
-                          <p className={cn("text-sm truncate pr-2", conversation.unreadCount > 0 ? "font-medium text-gray-900" : "text-gray-500")}>
-                            {conversation.lastMessage?.content || "No messages yet"}
-                          </p>
-                          {conversation.unreadCount > 0 && (
-                            <span className="bg-brand text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[1.25rem] text-center shrink-0">
-                              {conversation.unreadCount}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="flex items-baseline justify-between gap-2">
+                            <span className={cn('truncate text-sm text-pt-ink', unread ? 'font-bold' : 'font-semibold')}>
+                              {fullName(other)}
                             </span>
-                          )}
-                        </div>
-                      </div>
-                    </motion.div>
+                            {conversation.lastMessage?.timestamp && (
+                              <span className="shrink-0 text-[11px] text-pt-faint">
+                                {formatDistanceToNowStrict(conversation.lastMessage.timestamp)}
+                              </span>
+                            )}
+                          </span>
+                          <span className="mt-0.5 flex items-center justify-between gap-2">
+                            <span className={cn('truncate text-[13px]', unread ? 'font-medium text-pt-ink' : 'text-pt-muted')}>
+                              {conversation.lastMessage?.content || 'No messages yet'}
+                            </span>
+                            {unread && (
+                              <span className="min-w-[20px] shrink-0 rounded-full bg-pt-accent px-1.5 text-center text-[11px] font-bold leading-5 text-[#06210a]">
+                                {conversation.unreadCount}
+                              </span>
+                            )}
+                          </span>
+                        </span>
+                      </button>
+                    </li>
                   )
                 })}
-              </div>
+              </ul>
             )}
           </div>
-        </div>
+        </aside>
 
-        {/* Right Chat Area */}
-        <div className={cn(
-          "flex-1 flex flex-col bg-white absolute md:relative w-full h-full transition-transform duration-300 ease-in-out z-20",
-          mobileView === 'chat' ? "translate-x-0" : "translate-x-full md:translate-x-0"
-        )}>
-          {selectedConversationId && selectedRecipientId ? (
+        {/* Conversation */}
+        <section className={cn('min-w-0 flex-1 flex-col md:flex', mobileView === 'chat' ? 'flex' : 'hidden')}>
+          {selected ? (
             <>
-              {/* Chat Header */}
-              <div className="h-16 border-b border-gray-100 flex items-center justify-between px-4 bg-white shrink-0">
-                <div className="flex items-center gap-3">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="md:hidden -ml-2 text-gray-500"
-                    onClick={handleBackToList}
-                  >
-                    <ChevronLeft className="h-6 w-6" />
-                  </Button>
-
-                  <div className="flex items-center gap-3">
-                    <Avatar className="h-9 w-9 border border-gray-100">
-                      <AvatarImage src={selectedConversation?.otherParticipant.imageUrl} />
-                      <AvatarFallback className="bg-brand/10 text-brand text-xs">
-                        {selectedConversation?.otherParticipant.firstName?.[0]}
-                        {selectedConversation?.otherParticipant.lastName?.[0]}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div>
-                      <h2 className="font-semibold text-sm text-gray-900">
-                        {selectedConversation?.otherParticipant.firstName} {selectedConversation?.otherParticipant.lastName}
-                      </h2>
-                      {selectedConversation?.otherParticipant.role && (
-                        <p className="text-xs text-gray-500">
-                          {ROLE_LABELS[selectedConversation.otherParticipant.role] ?? 'Care team'}
-                        </p>
-                      )}
-                    </div>
-                  </div>
+              <div className="flex h-16 shrink-0 items-center gap-3 border-b border-pt-line px-3 sm:px-4">
+                <button
+                  type="button"
+                  onClick={() => setMobileView('list')}
+                  aria-label="Back to all messages"
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-pt-muted hover:bg-pt-hover hover:text-pt-ink md:hidden"
+                >
+                  <ChevronLeft className="h-5 w-5" />
+                </button>
+                <PhysioPhoto name={fullName(selected.otherParticipant)} imageUrl={selected.otherParticipant.imageUrl} size={38} className="rounded-xl" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold text-pt-ink">{fullName(selected.otherParticipant)}</p>
+                  <p className="text-xs text-pt-muted">
+                    {selected.otherParticipant.isOnline
+                      ? 'Online now'
+                      : (selected.otherParticipant.role && ROLE_LABELS[selected.otherParticipant.role]) || 'Care team'}
+                  </p>
                 </div>
+                {selected.otherParticipant.role === 'physiotherapist' && (
+                  <Link
+                    href={`/dashboard/patient/my-physiotherapist/${selected.otherParticipant._id}`}
+                    className="hidden items-center gap-1 rounded-xl px-3 py-2 text-sm font-medium text-pt-muted hover:bg-pt-hover hover:text-pt-ink sm:inline-flex"
+                  >
+                    View profile
+                    <ChevronRight className="h-3.5 w-3.5" />
+                  </Link>
+                )}
               </div>
-
-              {/* Chat Messages */}
-              <div className="flex-1 min-h-0 overflow-hidden bg-gray-50/30 relative">
-                <RealtimeChat key={selectedRecipientId} recipientId={selectedRecipientId} embedded />
+              <div className="relative min-h-0 flex-1 overflow-hidden">
+                <RealtimeChat key={selected.otherParticipant._id} recipientId={selected.otherParticipant._id} embedded variant="patient" />
               </div>
             </>
           ) : (
-            <div className="flex-1 flex flex-col items-center justify-center bg-gray-50/30 text-center p-8">
-              <div className="bg-white p-6 rounded-full shadow-sm mb-6">
-                <MessageSquare className="h-12 w-12 text-brand/40" />
-              </div>
-              <h3 className="text-xl font-bold text-gray-900 mb-2">Your Messages</h3>
-              <p className="text-gray-500 max-w-xs mx-auto mb-8">
-                Select a conversation from the list to start chatting with your physiotherapist.
-              </p>
-              <Button
-                onClick={() => setIsNewConversationOpen(true)}
-                className="md:hidden rounded-xl bg-gray-900 text-white"
-              >
-                Start New Conversation
-              </Button>
+            <div className="flex flex-1 flex-col items-center justify-center p-8 text-center">
+              <span className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-pt-sunken text-pt-muted">
+                <MessageSquare className="h-6 w-6" />
+              </span>
+              <p className="text-base font-semibold text-pt-ink">Pick a conversation</p>
+              <p className="mt-1 max-w-xs text-sm text-pt-muted">Choose someone on the left, or start a new message to your physio.</p>
             </div>
           )}
-        </div>
+        </section>
       </div>
+
+      {/* New message */}
+      <PatientDrawer
+        open={newOpen}
+        onOpenChange={setNewOpen}
+        title="New message"
+        description="Who would you like to message?"
+      >
+        {myPhysiotherapists === undefined ? (
+          <LoadingBlocks rows={2} />
+        ) : myPhysiotherapists.length === 0 ? (
+          <EmptyState
+            icon={Stethoscope}
+            title="No physiotherapist yet"
+            description="You can message a physiotherapist once you’re under their care: after you book a session or accept their invitation."
+            action={
+              <Button asChild className={primaryButtonClass}>
+                <Link href="/find-a-physio">Find a physio</Link>
+              </Button>
+            }
+          />
+        ) : (
+          <ul className="-mx-2 space-y-1">
+            {[...notYetMessaged, ...myPhysiotherapists.filter((p) => !notYetMessaged.includes(p))].map((p) => (
+              <li key={p._id}>
+                <button
+                  type="button"
+                  disabled={starting !== null}
+                  onClick={() => startWith(p._id)}
+                  className="flex w-full items-center gap-3 rounded-2xl px-2 py-2.5 text-left transition-colors hover:bg-pt-hover disabled:opacity-60"
+                >
+                  <PhysioPhoto name={fullName(p)} imageUrl={p.imageUrl} size={44} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-semibold text-pt-ink">{fullName(p)}</span>
+                    <span className="block truncate text-xs text-pt-muted">{p.clinic?.name ?? 'Physiotherapist'}</span>
+                  </span>
+                  {starting === p._id ? (
+                    <Loader2 className="h-4 w-4 animate-spin text-pt-muted" />
+                  ) : (
+                    <ChevronRight className="h-4 w-4 text-pt-faint" />
+                  )}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </PatientDrawer>
     </div>
+  )
+}
+
+export default function PatientMessagesPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="mx-auto w-full max-w-6xl">
+          <LoadingBlocks rows={4} />
+        </div>
+      }
+    >
+      <MessagesPage />
+    </Suspense>
   )
 }

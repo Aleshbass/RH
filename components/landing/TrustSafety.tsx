@@ -1,7 +1,7 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { ShieldCheck, Lock, CreditCard, Headphones } from 'lucide-react';
+import { ShieldCheck, Lock, CreditCard, Headphones } from '@/components/icons';
 
 const features = [
     {

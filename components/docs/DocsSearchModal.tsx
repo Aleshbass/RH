@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useMemo, Fragment } from "react";
 import { useRouter } from "next/navigation";
-import { Search, FileText, Hash, AlignLeft, CornerDownLeft, Loader2 } from "lucide-react";
+import { Search, FileText, Hash, AlignLeft, CornerDownLeft, Loader2 } from "@/components/icons";
 import { ALL_DOCS_FLAT, DocNavItem } from "./DocsNav";
 
 interface DocsSearchModalProps {

@@ -3,7 +3,7 @@
 import { useState, type ReactNode } from 'react'
 import Image from 'next/image'
 import { useMutation } from 'convex/react'
-import { CalendarDays, Clock3, Loader2, MonitorPlay, Video } from 'lucide-react'
+import { CalendarDays, Clock3, Loader2, MonitorPlay, Video } from '@/components/icons'
 import { toast } from 'sonner'
 import { api } from '@/convex/_generated/api'
 import type { Id } from '@/convex/_generated/dataModel'

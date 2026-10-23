@@ -3,7 +3,7 @@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Calendar, CheckCircle2, ExternalLink, Video } from 'lucide-react';
+import { Calendar, CheckCircle2, ExternalLink, Video } from '@/components/icons';
 
 interface GoogleCalendarRequiredModalProps {
     isOpen: boolean;

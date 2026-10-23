@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { MapPin, Star, BadgeCheck, Video, Users } from "lucide-react";
+import { MapPin, Star, BadgeCheck, Video, Users } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useMutation } from "convex/react";

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Video, MessageCircle, FileText, ExternalLink } from "lucide-react";
+import { Video, MessageCircle, FileText, ExternalLink } from "@/components/icons";
 import { toast } from "sonner";
 import { useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";

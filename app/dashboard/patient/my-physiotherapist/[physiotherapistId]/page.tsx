@@ -1,488 +1,511 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
+import { useParams } from 'next/navigation'
 import { useQuery } from 'convex/react'
-import { api } from '@/convex/_generated/api'
-import { Id } from '@/convex/_generated/dataModel'
-import { useParams, useRouter } from 'next/navigation'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
-import { Activity, Video, MessageSquare, CreditCard, FileText, Calendar, Plus, ArrowLeft, Download, Clock, CheckCircle, XCircle } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { MyPhysiotherapistCard } from '@/components/dashboard/patient/MyPhysiotherapistCard'
-import { Loader2 } from 'lucide-react'
 import { format } from 'date-fns'
-import { Badge } from '@/components/ui/badge'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import {
+  ArrowRight,
+  Calendar,
+  CalendarPlus,
+  ClipboardList,
+  Clock,
+  Download,
+  FileText,
+  Languages,
+  MapPin,
+  MessageSquare,
+  Phone,
+  Receipt,
+  Star,
+  Stethoscope,
+  Video,
+} from '@/components/icons'
+import { api } from '@/convex/_generated/api'
+import type { Id } from '@/convex/_generated/dataModel'
+import { appointmentStatusLabel, type AppointmentStatusFields } from '@/convex/helpers/appointmentStatus'
+import { Button } from '@/components/ui/button'
+import {
+  EmptyState,
+  InfoTip,
+  LoadingBlocks,
+  PageContainer,
+  PageHeader,
+  Panel,
+  StatusBadge,
+  listRowClass,
+  primaryButtonClass,
+  secondaryButtonClass,
+  type Tone,
+} from '@/components/patient/ui'
+import { PhysioPhoto } from '@/components/patient/PhysioPhoto'
+import { messageHref, physioName, type CareTeamMember } from '@/components/patient/careTeam'
 import { PatientAppointmentBookingModal } from '@/components/patient/PatientAppointmentBookingModal'
-import { TourGuide } from '@/components/shared/TourGuide'
+import { formatKobo } from '@/lib/rehabify-services'
+import { cn } from '@/lib/utils'
+
+/** api.appointments.getPatientAppointments (the fields used here) */
+type PatientAppointment = AppointmentStatusFields & {
+  _id: string
+  physiotherapistId: string
+  startTime: number
+  endTime: number
+  serviceType?: string
+  appointmentType?: string
+  isOnline?: boolean
+}
+
+/** api.billing.getPatientInvoices (the fields used here) */
+type PatientInvoice = {
+  _id: string
+  invoiceNumber: string
+  clinicName?: string
+  totalAmount: number
+  payableAmount: number
+  status: string
+  issueDate: number
+  isOverdue: boolean
+  canPay: boolean
+}
+
+/** api.treatmentPlans.getPatientTreatmentPlans (the fields used here) */
+type PlanSummary = {
+  _id: string
+  physiotherapistId: string
+  title: string
+  description?: string
+  status: string
+  startDate: number
+  endDate?: number
+}
+
+/** api.files.getPatientDocuments */
+type PatientDocument = {
+  _id: string
+  documentType: string
+  fileName: string
+  fileSize: number
+  uploadedAt: number
+  sharedWithPhysiotherapist?: boolean
+  downloadUrl: string
+}
+
+const PLAN_STATUS: Record<string, { label: string; tone: Tone }> = {
+  active: { label: 'Active', tone: 'green' },
+  completed: { label: 'Finished', tone: 'neutral' },
+  on_hold: { label: 'Paused', tone: 'amber' },
+  draft: { label: 'Being prepared', tone: 'neutral' },
+  cancelled: { label: 'Stopped', tone: 'neutral' },
+}
+
+const DOCUMENT_TYPES: Record<string, string> = {
+  referralLetter: 'Referral letter',
+  medicalRecord: 'Medical record',
+  insuranceCard: 'Insurance card',
+  otherDocument: 'Document',
+}
+
+function appointmentTone(status: string): Tone {
+  if (status === 'confirmed') return 'green'
+  if (status === 'completed') return 'neutral'
+  if (status.startsWith('cancelled') || status === 'no_show') return 'rose'
+  return 'amber'
+}
+
+function invoiceBadge(invoice: PatientInvoice): { label: string; tone: Tone } {
+  if (invoice.status === 'paid') return { label: 'Paid', tone: 'green' }
+  if (invoice.status === 'void') return { label: 'Cancelled', tone: 'neutral' }
+  if (invoice.isOverdue) return { label: 'Overdue', tone: 'rose' }
+  return { label: 'To pay', tone: 'amber' }
+}
+
+function isOnlineVisit(a: PatientAppointment) {
+  return a.appointmentType === 'telehealth' || a.isOnline === true
+}
 
 export default function DynamicMyPhysiotherapistPage() {
-    const router = useRouter()
-    const params = useParams()
-    const physiotherapistId = params.physiotherapistId as Id<'users'>
+  const params = useParams()
+  const physiotherapistId = params.physiotherapistId as Id<'users'>
+  const [bookingOpen, setBookingOpen] = useState(false)
+  const [showFullBio, setShowFullBio] = useState(false)
 
-    // Modal state
-    const [isBookingModalOpen, setIsBookingModalOpen] = useState(false)
+  const careTeam = useQuery(api.patients.getPatientCareTeam) as CareTeamMember[] | undefined
+  const member = careTeam?.find((m) => m.physiotherapist._id === physiotherapistId)
+  const user = useQuery(api.users.getMyUser) as { _id: Id<'users'>; patientProfileId?: Id<'patientProfiles'> } | null | undefined
 
-    // Fetch physiotherapist details
-    const careTeam = useQuery(api.patients.getPatientCareTeam)
-    const physiotherapist = careTeam?.find(
-        (member: any) => member.physiotherapist?._id === physiotherapistId
-    )
+  const appointments = useQuery(api.appointments.getPatientAppointments, {}) as PatientAppointment[] | undefined
+  const invoices = useQuery(api.billing.getPatientInvoices, {}) as PatientInvoice[] | undefined
+  const plans = useQuery(api.treatmentPlans.getPatientTreatmentPlans, user ? { patientId: user._id } : 'skip') as
+    | PlanSummary[]
+    | undefined
+  const documents = useQuery(
+    api.files.getPatientDocuments,
+    user?.patientProfileId ? { patientProfileId: user.patientProfileId } : 'skip'
+  ) as PatientDocument[] | undefined
 
-    // Fetch current user to get patient ID and profile ID
-    const user = useQuery(api.users.getMyUser)
-
-    // Fetch patient data specific to this physiotherapist
-    // Note: We're using existing queries but filtering client-side for now.
-    // Ideally, we should have specific backend queries for efficiency  // Fetch data using correct patient-facing queries
-    const appointments = useQuery(api.appointments.getPatientAppointments, {
-        status: undefined // Fetch all statuses
-    });
-
-    const invoices = useQuery(api.billing.getPatientInvoices, {});
-
-    const treatmentPlans = useQuery(api.treatmentPlans.getPatientTreatmentPlans,
-        user ? { patientId: user._id } : "skip"
-    );
-
-    const documents = useQuery(api.files.getPatientDocuments,
-        user?.patientProfileId ? { patientProfileId: user.patientProfileId } : "skip"
-    );
-
-    // Filter data for this specific physiotherapist
-    // Note: This assumes the data objects have a physiotherapistId field or similar
-    // If not, we might need to adjust the backend or schema.
-    // For MVP, we'll display all data but in a real app we'd filter.
-
-    const physioAppointments = appointments?.filter((a: any) => a.physiotherapistId === physiotherapistId) || []
-    const physioInvoices = invoices?.filter((i: any) => i.physiotherapistId === physiotherapistId) || []
-    const physioPlans = treatmentPlans?.filter((p: any) => p.physiotherapistId === physiotherapistId) || []
-    // Documents might not have physio ID directly if uploaded by patient, but we can show all for now
-
-    if (careTeam === undefined) {
-        return (
-            <div className="flex items-center justify-center min-h-screen">
-                <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
-            </div>
-        )
-    }
-
-    if (!physiotherapist) {
-        return (
-            <div className="flex flex-col items-center justify-center min-h-[50vh] space-y-4">
-                <h2 className="text-xl font-semibold text-gray-900">Physiotherapist Not Found</h2>
-                <p className="text-gray-600">The requested physiotherapist could not be found in your care team.</p>
-                <Button onClick={() => router.push('/dashboard/patient/my-physiotherapist')}>
-                    Back to Overview
-                </Button>
-            </div>
-        )
-    }
-
-    const getStatusColor = (status: string) => {
-        switch (status) {
-            case 'confirmed': return 'bg-green-100 text-green-800'
-            case 'pending': return 'bg-yellow-100 text-yellow-800'
-            case 'cancelled': return 'bg-red-100 text-red-800'
-            case 'completed': return 'bg-gray-100 text-gray-800'
-            default: return 'bg-gray-100 text-gray-800'
-        }
-    }
-
+  if (careTeam === undefined) {
     return (
-        <div className="space-y-6">
-            {/* Header */}
-            <div className="flex items-center gap-4">
-                <Button variant="ghost" size="icon" onClick={() => router.push('/dashboard/patient/my-physiotherapist')}>
-                    <ArrowLeft className="h-4 w-4" />
-                </Button>
-                <div id="physio-detail-header">
-                    <h1 className="text-2xl font-bold tracking-tight text-gray-900">
-                        {physiotherapist.physiotherapist?.firstName} {physiotherapist.physiotherapist?.lastName}
-                    </h1>
-                    <p className="text-gray-600">
-                        Manage your care with this physiotherapist
-                    </p>
-                </div>
+      <PageContainer>
+        <LoadingBlocks rows={4} />
+      </PageContainer>
+    )
+  }
+
+  const backLink = { href: '/dashboard/patient/my-physiotherapist', label: 'My physiotherapists' }
+
+  if (!member) {
+    return (
+      <PageContainer>
+        <PageHeader title="Physiotherapist" back={backLink} />
+        <Panel>
+          <EmptyState
+            icon={Stethoscope}
+            title="Not in your care team"
+            description="This physiotherapist isn't looking after you at the moment, or the link is out of date."
+            action={
+              <Button asChild className={primaryButtonClass}>
+                <Link href={backLink.href}>See my physiotherapists</Link>
+              </Button>
+            }
+          />
+        </Panel>
+      </PageContainer>
+    )
+  }
+
+  const name = physioName(member)
+  const firstName = member.physiotherapist.firstName || 'your physio'
+  const profile = member.profile
+  const now = Date.now()
+
+  const withThisPhysio = (appointments ?? []).filter((a) => a.physiotherapistId === physiotherapistId)
+  const upcoming = withThisPhysio
+    .filter((a) => a.endTime > now && !a.status.startsWith('cancelled') && a.status !== 'no_show')
+    .sort((a, b) => a.startTime - b.startTime)
+  const physioPlans = (plans ?? []).filter((p) => p.physiotherapistId === physiotherapistId)
+  const sharedDocuments = (documents ?? []).filter((d) => d.sharedWithPhysiotherapist)
+  const recentInvoices = (invoices ?? []).slice(0, 3)
+
+  const modes = [
+    profile?.offersOnlineSessions && 'Video calls',
+    profile?.offersInPersonSessions && 'In person',
+  ].filter(Boolean) as string[]
+  const bio = profile?.bio?.trim()
+  const longBio = (bio?.length ?? 0) > 220
+
+  return (
+    <PageContainer>
+      <PageHeader
+        title="My physiotherapist"
+        back={careTeam.length > 1 ? backLink : undefined}
+        info="Everything with this physiotherapist in one place: your visits, your plan, and the documents you've shared with them."
+      />
+
+      {/* Profile */}
+      <section className="rounded-3xl border border-pt-line bg-pt-surface p-5 shadow-pt dark:shadow-none sm:p-6">
+        <div className="flex flex-col gap-5 sm:flex-row sm:items-start">
+          <PhysioPhoto name={name} imageUrl={member.physiotherapist.imageUrl} size={88} className="rounded-3xl" />
+          <div className="min-w-0 flex-1 space-y-3">
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-xl font-semibold tracking-tight text-pt-ink sm:text-2xl">{name}</h2>
+                {member.relationship.isPrimary && (
+                  <span className="inline-flex items-center gap-1">
+                    <StatusBadge tone="green">Main physio</StatusBadge>
+                    <InfoTip>Your main physio leads your treatment and writes your plan. Others in your care team can still see you.</InfoTip>
+                  </span>
+                )}
+              </div>
+              <p className="mt-0.5 text-sm text-pt-muted">
+                {member.clinic?.name ?? 'Independent physiotherapist'}
+                {member.relationship.startDate ? ` · Seeing you since ${format(member.relationship.startDate, 'MMM yyyy')}` : ''}
+              </p>
             </div>
 
-            {/* Physiotherapist Card */}
-            <Card id="physio-profile-card">
-                <CardContent className="pt-6">
-                    <div className="flex flex-col sm:flex-row items-start gap-6">
-                        <Avatar className="h-20 w-20">
-                            <AvatarImage src={physiotherapist.physiotherapist?.imageUrl} />
-                            <AvatarFallback className="text-lg">
-                                {physiotherapist.physiotherapist?.firstName?.[0]}{physiotherapist.physiotherapist?.lastName?.[0]}
-                            </AvatarFallback>
-                        </Avatar>
-                        <div className="space-y-2 flex-1">
-                            <div className="flex justify-between items-start">
-                                <div>
-                                    <h2 className="text-xl font-semibold">
-                                        {physiotherapist.physiotherapist?.firstName} {physiotherapist.physiotherapist?.lastName}
-                                    </h2>
-                                    <p className="text-gray-600">{physiotherapist.clinic?.name}</p>
-                                </div>
-                                <div className="flex gap-2">
-                                    <Button variant="outline" size="sm" onClick={() => router.push('/dashboard/patient/messages')}>
-                                        <MessageSquare className="h-4 w-4 mr-2" />
-                                        Message
-                                    </Button>
-                                    <Button size="sm" className="bg-[#005b57] hover:bg-[#00443e]" onClick={() => setIsBookingModalOpen(true)}>
-                                        <Calendar className="h-4 w-4 mr-2" />
-                                        Book
-                                    </Button>
-                                </div>
-                            </div>
-                            <div className="flex gap-4 text-sm text-gray-600">
-                                <div className="flex items-center gap-1">
-                                    <Activity className="h-4 w-4" />
-                                    <span>Physiotherapist</span>
-                                </div>
-                                {physiotherapist.relationship?.isPrimary && (
-                                    <Badge variant="secondary" className="bg-green-100 text-green-800 hover:bg-green-100">
-                                        Primary Care Provider
-                                    </Badge>
-                                )}
-                            </div>
-                        </div>
-                    </div>
-                </CardContent>
-            </Card>
+            <div className="flex flex-wrap gap-x-4 gap-y-1.5 text-sm text-pt-muted">
+              {typeof profile?.averageRating === 'number' && (profile.reviewCount ?? 0) > 0 && (
+                <span className="inline-flex items-center gap-1.5">
+                  <Star className="h-3.5 w-3.5 text-pt-amber-fg" />
+                  <span className="font-medium text-pt-ink">{profile.averageRating.toFixed(1)}</span>
+                  ({profile.reviewCount} review{profile.reviewCount === 1 ? '' : 's'})
+                </span>
+              )}
+              {profile?.yearsOfExperience ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <Clock className="h-3.5 w-3.5" />
+                  {profile.yearsOfExperience} years’ experience
+                </span>
+              ) : null}
+              {(profile?.location || member.clinic?.city) && (
+                <span className="inline-flex items-center gap-1.5">
+                  <MapPin className="h-3.5 w-3.5" />
+                  {profile?.location || member.clinic?.city}
+                </span>
+              )}
+              {(profile?.languagesSpoken?.length ?? 0) > 0 && (
+                <span className="inline-flex items-center gap-1.5">
+                  <Languages className="h-3.5 w-3.5" />
+                  {profile?.languagesSpoken?.join(', ')}
+                </span>
+              )}
+              {modes.length > 0 && (
+                <span className="inline-flex items-center gap-1.5">
+                  <Video className="h-3.5 w-3.5" />
+                  {modes.join(' · ')}
+                </span>
+              )}
+            </div>
 
-            {/* Tab-based Navigation */}
-            <Tabs defaultValue="treatment" className="space-y-4">
-                <TabsList className="grid w-full grid-cols-3 lg:grid-cols-5 bg-gray-100/50 p-1 rounded-xl h-auto gap-1">
-                    <TabsTrigger id="physio-tabs-treatment" value="treatment" className="rounded-lg data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-[#005b57]">
-                        <Activity className="h-4 w-4 mr-2" />
-                        Treatment
-                    </TabsTrigger>
-                    <TabsTrigger id="physio-tabs-communication" value="communication" className="rounded-lg data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-[#005b57]">
-                        <MessageSquare className="h-4 w-4 mr-2" />
-                        Communication
-                    </TabsTrigger>
-                    <TabsTrigger id="physio-tabs-appointments" value="appointments" className="rounded-lg data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-[#005b57]">
-                        <Calendar className="h-4 w-4 mr-2" />
-                        Appointments
-                    </TabsTrigger>
-                    <TabsTrigger id="physio-tabs-billing" value="billing" className="rounded-lg data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-[#005b57]">
-                        <CreditCard className="h-4 w-4 mr-2" />
-                        Billing
-                    </TabsTrigger>
-                    <TabsTrigger id="physio-tabs-documents" value="documents" className="rounded-lg data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-[#005b57]">
-                        <FileText className="h-4 w-4 mr-2" />
-                        Documents
-                    </TabsTrigger>
-                </TabsList>
+            {(profile?.specializations?.length ?? 0) > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {profile?.specializations?.map((s) => (
+                  <StatusBadge key={s} tone="violet">
+                    {s}
+                  </StatusBadge>
+                ))}
+              </div>
+            )}
 
-                {/* Treatment Tab */}
-                <TabsContent value="treatment" className="space-y-6">
-                    <Tabs defaultValue="plans" className="w-full">
-                        <div className="flex items-center justify-between mb-4">
-                            <TabsList className="bg-transparent p-0 gap-4 border-b w-full justify-start rounded-none h-auto">
-                                <TabsTrigger value="plans" className="bg-transparent border-b-2 border-transparent data-[state=active]:border-[#005b57] data-[state=active]:shadow-none rounded-none px-1 pb-2 data-[state=active]:text-[#005b57]">Active Plans</TabsTrigger>
-                            </TabsList>
-                        </div>
-
-                        <TabsContent value="plans" className="space-y-4">
-                            <div className="flex justify-between items-center">
-                                <h3 className="text-lg font-semibold text-gray-900">Your Treatment Plans</h3>
-                                <Button
-                                    className="bg-[#005b57] hover:bg-[#00443e]"
-                                    onClick={() => router.push('/dashboard/patient/treatment-plans')}
-                                >
-                                    View All Plans
-                                </Button>
-                            </div>
-
-                            {physioPlans.length > 0 ? (
-                                <div className="grid gap-4">
-                                    {physioPlans.map((plan: any) => (
-                                        <Card key={plan._id}>
-                                            <CardHeader>
-                                                <CardTitle>{plan.title}</CardTitle>
-                                                <CardDescription>{plan.description}</CardDescription>
-                                            </CardHeader>
-                                            <CardContent>
-                                                <div className="flex justify-between items-center">
-                                                    <Badge>{plan.status}</Badge>
-                                                    <Button variant="outline" size="sm" onClick={() => router.push(`/dashboard/patient/treatment-plans/${plan._id}`)}>
-                                                        View Details
-                                                    </Button>
-                                                </div>
-                                            </CardContent>
-                                        </Card>
-                                    ))}
-                                </div>
-                            ) : (
-                                <div className="text-center py-12 bg-gray-50 rounded-xl border-2 border-dashed">
-                                    <Activity className="h-10 w-10 mx-auto text-gray-300 mb-3" />
-                                    <p className="text-gray-500">No active treatment plans</p>
-                                    <p className="text-xs text-gray-400 mt-1">Your physiotherapist will create personalized treatment plans for you.</p>
-                                </div>
-                            )}
-                        </TabsContent>
-                    </Tabs>
-                </TabsContent>
-
-                {/* Communication Tab */}
-                <TabsContent value="communication" className="space-y-6">
-                    <Tabs defaultValue="messages" className="w-full">
-                        <div className="flex items-center justify-between mb-4">
-                            <TabsList className="bg-transparent p-0 gap-4 border-b w-full justify-start rounded-none h-auto">
-                                <TabsTrigger value="messages" className="bg-transparent border-b-2 border-transparent data-[state=active]:border-[#005b57] data-[state=active]:shadow-none rounded-none px-1 pb-2 data-[state=active]:text-[#005b57]">Messages</TabsTrigger>
-                                <TabsTrigger value="video" className="bg-transparent border-b-2 border-transparent data-[state=active]:border-[#005b57] data-[state=active]:shadow-none rounded-none px-1 pb-2 data-[state=active]:text-[#005b57]">Video Calls</TabsTrigger>
-                            </TabsList>
-                        </div>
-
-                        <TabsContent value="messages" className="space-y-4">
-                            <div className="flex justify-between items-center">
-                                <h3 className="text-lg font-semibold text-gray-900">Secure Messaging</h3>
-                                <Button
-                                    className="bg-[#005b57] hover:bg-[#00443e]"
-                                    onClick={() => router.push('/dashboard/patient/messages')}
-                                >
-                                    <MessageSquare className="h-4 w-4 mr-2" />
-                                    Open Messages
-                                </Button>
-                            </div>
-                            <div className="text-center py-12 bg-gray-50 rounded-xl border-2 border-dashed">
-                                <MessageSquare className="h-10 w-10 mx-auto text-gray-300 mb-3" />
-                                <p className="text-gray-500">No messages yet</p>
-                                <p className="text-xs text-gray-400 mt-1">Send secure messages to your physiotherapist.</p>
-                            </div>
-                        </TabsContent>
-
-                        <TabsContent value="video" className="space-y-4">
-                            <div className="flex justify-between items-center">
-                                <h3 className="text-lg font-semibold text-gray-900">Telehealth Sessions</h3>
-                                <Button
-                                    className="bg-[#005b57] hover:bg-[#00443e]"
-                                    onClick={() => setIsBookingModalOpen(true)}
-                                >
-                                    <Video className="h-4 w-4 mr-2" />
-                                    Book Video Call
-                                </Button>
-                            </div>
-                            <div className="text-center py-12 bg-gray-50 rounded-xl border-2 border-dashed">
-                                <Video className="h-10 w-10 mx-auto text-gray-300 mb-3" />
-                                <p className="text-gray-500">No past video sessions</p>
-                                <p className="text-xs text-gray-400 mt-1">Join scheduled video consultations with your physiotherapist.</p>
-                            </div>
-                        </TabsContent>
-                    </Tabs>
-                </TabsContent>
-
-                {/* Appointments Tab */}
-                <TabsContent value="appointments" className="space-y-4">
-                    <div className="flex justify-between items-center">
-                        <h3 className="text-lg font-semibold text-gray-900">Upcoming Appointments</h3>
-                        <Button
-                            className="bg-[#005b57] hover:bg-[#00443e]"
-                            onClick={() => setIsBookingModalOpen(true)}
-                        >
-                            <Plus className="h-4 w-4 mr-2" />
-                            Book Appointment
-                        </Button>
-                    </div>
-
-                    {physioAppointments.length > 0 ? (
-                        <div className="space-y-3">
-                            {physioAppointments.map((appointment: any) => (
-                                <Card key={appointment._id} className="border-l-4 border-l-[#005b57]">
-                                    <CardContent className="pt-4">
-                                        <div className="flex justify-between items-start">
-                                            <div>
-                                                <div className="flex items-center gap-3 mb-2">
-                                                    <p className="font-semibold text-gray-900">
-                                                        {format(new Date(appointment.startTime), 'PPP')}
-                                                    </p>
-                                                    <Badge className={getStatusColor(appointment.status)}>
-                                                        {appointment.status}
-                                                    </Badge>
-                                                </div>
-                                                <p className="text-sm text-gray-600">
-                                                    {format(new Date(appointment.startTime), 'p')} - {format(new Date(appointment.endTime), 'p')}
-                                                </p>
-                                                <p className="text-sm text-gray-600 mt-1">{appointment.serviceType}</p>
-                                            </div>
-                                            <div className="flex gap-2">
-                                                {appointment.status !== 'cancelled' && (
-                                                    <Button variant="outline" size="sm" className="text-red-600 hover:text-red-700 hover:bg-red-50">
-                                                        Cancel
-                                                    </Button>
-                                                )}
-                                                <Button variant="outline" size="sm">
-                                                    Reschedule
-                                                </Button>
-                                            </div>
-                                        </div>
-                                    </CardContent>
-                                </Card>
-                            ))}
-                        </div>
-                    ) : (
-                        <div className="text-center py-12 bg-gray-50 rounded-xl border-2 border-dashed">
-                            <Calendar className="h-10 w-10 mx-auto text-gray-300 mb-3" />
-                            <p className="text-gray-500">No upcoming appointments</p>
-                            <p className="text-xs text-gray-400 mt-1">Book an appointment with your physiotherapist.</p>
-                        </div>
-                    )}
-                </TabsContent>
-
-                {/* Billing Tab */}
-                <TabsContent value="billing" className="space-y-4">
-                    <div className="flex justify-between items-center">
-                        <h3 className="text-lg font-semibold text-gray-900">Billing & Invoices</h3>
-                        <Button
-                            className="bg-[#005b57] hover:bg-[#00443e]"
-                            onClick={() => router.push('/dashboard/patient/invoices')}
-                        >
-                            View All Invoices
-                        </Button>
-                    </div>
-
-                    {physioInvoices.length > 0 ? (
-                        <div className="space-y-3">
-                            {physioInvoices.map((invoice: any) => (
-                                <Card key={invoice._id}>
-                                    <CardContent className="pt-4 flex justify-between items-center">
-                                        <div>
-                                            <p className="font-semibold">Invoice #{invoice.invoiceNumber}</p>
-                                            <p className="text-sm text-gray-600">{format(new Date(invoice.createdAt), 'PPP')}</p>
-                                            <p className="font-medium mt-1">${invoice.amount.toFixed(2)}</p>
-                                        </div>
-                                        <div className="flex items-center gap-3">
-                                            <Badge variant={invoice.status === 'paid' ? 'default' : 'destructive'}>
-                                                {invoice.status}
-                                            </Badge>
-                                            {invoice.status !== 'paid' && (
-                                                <Button size="sm">Pay Now</Button>
-                                            )}
-                                            <Button variant="ghost" size="icon">
-                                                <Download className="h-4 w-4" />
-                                            </Button>
-                                        </div>
-                                    </CardContent>
-                                </Card>
-                            ))}
-                        </div>
-                    ) : (
-                        <div className="text-center py-12 bg-gray-50 rounded-xl border-2 border-dashed">
-                            <CreditCard className="h-10 w-10 mx-auto text-gray-300 mb-3" />
-                            <p className="text-gray-500">No invoices found</p>
-                            <p className="text-xs text-gray-400 mt-1">View and manage your billing and payments.</p>
-                        </div>
-                    )}
-                </TabsContent>
-
-                {/* Documents Tab */}
-                <TabsContent value="documents" className="space-y-4">
-                    <Card>
-                        <CardHeader className="flex flex-row items-center justify-between">
-                            <CardTitle className="text-base">Health Records</CardTitle>
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => router.push('/dashboard/patient/records')}
-                            >
-                                <Plus className="h-4 w-4 mr-2" /> Upload Document
-                            </Button>
-                        </CardHeader>
-                        <CardContent>
-                            {documents && documents.length > 0 ? (
-                                <ul className="space-y-2">
-                                    {documents.map((doc: any) => (
-                                        <li key={doc._id} className="flex items-center justify-between p-3 rounded-lg border hover:bg-gray-50 transition-colors">
-                                            <div className="flex items-center gap-3">
-                                                <div className="p-2 bg-blue-50 rounded-lg">
-                                                    <FileText className="h-5 w-5 text-blue-600" />
-                                                </div>
-                                                <div>
-                                                    <p className="text-sm font-medium text-gray-900">{doc.fileName}</p>
-                                                    <p className="text-xs text-gray-500">{doc.documentType} • {(doc.fileSize / 1024).toFixed(2)} KB</p>
-                                                </div>
-                                            </div>
-                                            <a href={doc.downloadUrl} target="_blank" rel="noopener noreferrer">
-                                                <Button variant="ghost" size="sm">
-                                                    <Download className="h-4 w-4" />
-                                                </Button>
-                                            </a>
-                                        </li>
-                                    ))}
-                                </ul>
-                            ) : (
-                                <div className="text-center py-8">
-                                    <FileText className="h-10 w-10 mx-auto text-gray-300 mb-3" />
-                                    <p className="text-sm text-gray-500">No documents uploaded</p>
-                                    <p className="text-xs text-gray-400 mt-1">Your health records and documents will appear here.</p>
-                                </div>
-                            )}
-                        </CardContent>
-                    </Card>
-                </TabsContent>
-            </Tabs>
-
-            {/* Appointment Booking Modal */}
-            <PatientAppointmentBookingModal
-                isOpen={isBookingModalOpen}
-                onClose={() => setIsBookingModalOpen(false)}
-                preselectedPhysiotherapistId={physiotherapistId}
-                onAppointmentBooked={() => {
-                    // Refresh data after booking
-                    setIsBookingModalOpen(false)
-                }}
-            />
-            <TourGuide
-                tourId="patient-physio-detail-tour"
-                steps={[
-                    {
-                        target: "#physio-detail-header",
-                        title: "Physiotherapist Profile",
-                        content: "View your physiotherapist's details and clinic information.",
-                        position: "bottom",
-                    },
-                    {
-                        target: "#physio-profile-card",
-                        title: "Quick Contact",
-                        content: "Easily message or book an appointment with your physiotherapist.",
-                        position: "bottom",
-                    },
-                    {
-                        target: "#physio-tabs-treatment",
-                        title: "Treatment Plans",
-                        content: "Access your active treatment plans and progress.",
-                        position: "bottom",
-                    },
-                    {
-                        target: "#physio-tabs-communication",
-                        title: "Communication",
-                        content: "Secure messaging and video calls with your provider.",
-                        position: "bottom",
-                    },
-                    {
-                        target: "#physio-tabs-appointments",
-                        title: "Appointments",
-                        content: "Manage upcoming sessions and view past history.",
-                        position: "bottom",
-                    },
-                    {
-                        target: "#physio-tabs-billing",
-                        title: "Billing",
-                        content: "View invoices and manage payments.",
-                        position: "bottom",
-                    },
-                    {
-                        target: "#physio-tabs-documents",
-                        title: "Documents",
-                        content: "Access shared medical records and files.",
-                        position: "bottom",
-                    },
-                ]}
-            />
+            {bio && (
+              <div>
+                <p className={cn('whitespace-pre-line text-sm leading-relaxed text-pt-muted', !showFullBio && longBio && 'line-clamp-3')}>{bio}</p>
+                {longBio && (
+                  <button
+                    type="button"
+                    onClick={() => setShowFullBio((v) => !v)}
+                    className="mt-1 text-sm font-medium text-pt-ink underline-offset-4 hover:underline"
+                  >
+                    {showFullBio ? 'Show less' : 'Read more'}
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
         </div>
-    )
+
+        <div className="mt-5 grid grid-cols-1 gap-2 border-t border-pt-line pt-5 sm:flex sm:flex-wrap">
+          <Button className={cn(primaryButtonClass, 'h-11')} onClick={() => setBookingOpen(true)}>
+            <CalendarPlus className="mr-2 h-4 w-4" />
+            Book a session
+          </Button>
+          <Button asChild className={cn(secondaryButtonClass, 'h-11')}>
+            <Link href={messageHref(physiotherapistId)}>
+              <MessageSquare className="mr-2 h-4 w-4" />
+              Message {firstName}
+            </Link>
+          </Button>
+          {member.clinic?.contactPhone && (
+            <Button asChild className={cn(secondaryButtonClass, 'h-11')}>
+              <a href={`tel:${member.clinic.contactPhone.replace(/\s+/g, '')}`}>
+                <Phone className="mr-2 h-4 w-4" />
+                Call the clinic
+              </a>
+            </Button>
+          )}
+        </div>
+      </section>
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        {/* Visits */}
+        <Panel
+          title="Upcoming visits"
+          info={`Sessions booked with ${firstName}. Open Appointments to reschedule, cancel or join a video call.`}
+          actions={
+            <Link href="/dashboard/patient/appointments" className="text-sm font-medium text-pt-muted hover:text-pt-ink">
+              All visits
+            </Link>
+          }
+          bodyClassName="px-3 pb-3 pt-2"
+        >
+          {appointments === undefined ? (
+            <LoadingBlocks rows={2} className="px-2" />
+          ) : upcoming.length === 0 ? (
+            <EmptyState
+              icon={Calendar}
+              title="Nothing booked"
+              description={`Book your next session with ${firstName} when you're ready.`}
+              className="py-8"
+            />
+          ) : (
+            <ul>
+              {upcoming.slice(0, 4).map((a) => (
+                <li key={a._id}>
+                  <Link href="/dashboard/patient/appointments" className={listRowClass}>
+                    <span className="flex h-11 w-11 shrink-0 flex-col items-center justify-center rounded-xl bg-pt-sunken leading-none">
+                      <span className="text-[10px] font-semibold uppercase text-pt-faint">{format(a.startTime, 'MMM')}</span>
+                      <span className="text-base font-semibold tabular-nums text-pt-ink">{format(a.startTime, 'd')}</span>
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-semibold text-pt-ink">{a.serviceType || 'Physiotherapy session'}</span>
+                      <span className="block text-xs text-pt-muted">
+                        {format(a.startTime, 'EEE, h:mm a')} · {isOnlineVisit(a) ? 'Video call' : 'In person'}
+                      </span>
+                    </span>
+                    <StatusBadge tone={appointmentTone(a.status)}>{appointmentStatusLabel(a, 'patient')}</StatusBadge>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Panel>
+
+        {/* Treatment plans */}
+        <Panel
+          title="Treatment plans"
+          info={`Plans ${firstName} wrote for you: your goals, the stages of your recovery and your home exercises.`}
+          actions={
+            <Link href="/dashboard/patient/treatment-plans" className="text-sm font-medium text-pt-muted hover:text-pt-ink">
+              Open my plan
+            </Link>
+          }
+          bodyClassName="px-3 pb-3 pt-2"
+        >
+          {plans === undefined ? (
+            <LoadingBlocks rows={2} className="px-2" />
+          ) : physioPlans.length === 0 ? (
+            <EmptyState
+              icon={ClipboardList}
+              title="No plan yet"
+              description={`${firstName} will add your plan after your assessment.`}
+              className="py-8"
+            />
+          ) : (
+            <ul>
+              {physioPlans.map((plan) => {
+                const status = PLAN_STATUS[plan.status] ?? { label: plan.status, tone: 'neutral' as Tone }
+                return (
+                  <li key={plan._id}>
+                    <Link href={`/dashboard/patient/treatment-plans/${plan._id}`} className={listRowClass}>
+                      <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-pt-green-bg text-pt-green-fg">
+                        <ClipboardList className="h-[18px] w-[18px]" />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-semibold text-pt-ink">{plan.title}</span>
+                        <span className="block text-xs text-pt-muted">
+                          From {format(plan.startDate, 'd MMM yyyy')}
+                          {plan.endDate ? ` to ${format(plan.endDate, 'd MMM yyyy')}` : ''}
+                        </span>
+                      </span>
+                      <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
+                    </Link>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </Panel>
+
+        {/* Shared documents */}
+        <Panel
+          title="Shared documents"
+          info="Documents you've chosen to share with your physiotherapists. Only shared files are visible to them; the rest stay private to you."
+          actions={
+            <Link href="/dashboard/patient/records" className="text-sm font-medium text-pt-muted hover:text-pt-ink">
+              Manage records
+            </Link>
+          }
+          bodyClassName="px-3 pb-3 pt-2"
+        >
+          {user?.patientProfileId && documents === undefined ? (
+            <LoadingBlocks rows={2} className="px-2" />
+          ) : sharedDocuments.length === 0 ? (
+            <EmptyState
+              icon={FileText}
+              title="Nothing shared yet"
+              description="Share scans, reports or referral letters from Records so your physio can see them."
+              className="py-8"
+            />
+          ) : (
+            <ul>
+              {sharedDocuments.map((doc) => (
+                <li key={doc._id} className="flex items-center gap-3 rounded-2xl px-3 py-3">
+                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-pt-blue-bg text-pt-blue-fg">
+                    <FileText className="h-[18px] w-[18px]" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-semibold text-pt-ink">{doc.fileName}</span>
+                    <span className="block text-xs text-pt-muted">
+                      {DOCUMENT_TYPES[doc.documentType] ?? 'Document'} · {format(doc.uploadedAt, 'd MMM yyyy')}
+                    </span>
+                  </span>
+                  {doc.downloadUrl && (
+                    <a
+                      href={doc.downloadUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      aria-label={`Open ${doc.fileName}`}
+                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-pt-muted transition-colors hover:bg-pt-hover hover:text-pt-ink"
+                    >
+                      <Download className="h-4 w-4" />
+                    </a>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </Panel>
+
+        {/* Invoices */}
+        <Panel
+          title="Recent invoices"
+          info="Your latest bills across all your care, newest first. Open Invoices to pay or download a receipt."
+          actions={
+            <Link href="/dashboard/patient/invoices" className="text-sm font-medium text-pt-muted hover:text-pt-ink">
+              All invoices
+            </Link>
+          }
+          bodyClassName="px-3 pb-3 pt-2"
+        >
+          {invoices === undefined ? (
+            <LoadingBlocks rows={2} className="px-2" />
+          ) : recentInvoices.length === 0 ? (
+            <EmptyState icon={Receipt} title="No invoices" description="Bills for your sessions will show here." className="py-8" />
+          ) : (
+            <ul>
+              {recentInvoices.map((invoice) => {
+                const badge = invoiceBadge(invoice)
+                return (
+                  <li key={invoice._id}>
+                    <Link href={`/dashboard/patient/invoices/${invoice._id}`} className={listRowClass}>
+                      <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-pt-amber-bg text-pt-amber-fg">
+                        <Receipt className="h-[18px] w-[18px]" />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-semibold text-pt-ink">
+                          {formatKobo(invoice.canPay ? invoice.payableAmount : invoice.totalAmount)}
+                        </span>
+                        <span className="block truncate text-xs text-pt-muted">
+                          #{invoice.invoiceNumber} · {format(invoice.issueDate, 'd MMM yyyy')}
+                        </span>
+                      </span>
+                      <StatusBadge tone={badge.tone}>{badge.label}</StatusBadge>
+                    </Link>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </Panel>
+      </div>
+
+      <Link
+        href="/dashboard/patient/video-calls"
+        className="flex items-center justify-between gap-3 rounded-3xl bg-pt-sunken px-5 py-4 text-sm text-pt-muted transition-colors hover:bg-pt-hover hover:text-pt-ink"
+      >
+        <span className="flex items-center gap-3">
+          <Video className="h-4 w-4" />
+          Looking for a video session with {firstName}? Your calls are under Video calls.
+        </span>
+        <ArrowRight className="h-4 w-4 shrink-0" />
+      </Link>
+
+      <PatientAppointmentBookingModal
+        isOpen={bookingOpen}
+        onClose={() => setBookingOpen(false)}
+        preselectedPhysiotherapistId={physiotherapistId}
+        onAppointmentBooked={() => setBookingOpen(false)}
+      />
+    </PageContainer>
+  )
 }

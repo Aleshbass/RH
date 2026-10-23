@@ -1,16 +1,15 @@
 'use client'
 
 import { useId, useMemo, useState, type ComponentType, type ReactNode } from 'react'
-import Link from 'next/link'
 import { useQuery } from 'convex/react'
 import { motion, useReducedMotion } from 'framer-motion'
-import { ArrowRight, Check, ChevronDown, ClipboardList, House, Info, MapPinOff, Repeat, Sparkles, Video } from 'lucide-react'
+import { ArrowRight, Check, ChevronDown, ClipboardCheck, ClipboardList, House, Info, MapPinOff, Repeat, Video } from '@/components/icons'
 import { api } from '@/convex/_generated/api'
-import { CheckItem, displayFont, fieldClass, pillOutline, pillTeal } from '@/components/learn/shared'
+import { displayFont, fieldClass, pillOutline, pillTeal } from '@/components/learn/shared'
 import { formatKobo } from '@/lib/rehabify-services'
 import { cn } from '@/lib/utils'
 import type { ServiceQuote, TravelZone } from '@/lib/rehabify-api-types'
-import { findService, getCareHref, modeLabel, WHATSAPP_HELP_URL, type Catalogue, type CatalogueService } from './shared'
+import { bookWithJoyUrl, findService, ListItem, showsPrice, WHATSAPP_HELP_URL, type Catalogue, type CatalogueService } from './shared'
 
 type Assessed = 'no' | 'yes'
 type Mode = 'virtual' | 'home'
@@ -19,10 +18,9 @@ type AreaOption = { key: string; area: string; zoneId: Zone['id']; zoneName: str
 
 const OTHER = '__other'
 
-const SERVICE_FOR: Record<Assessed, Record<Mode, string>> = {
-  no: { virtual: 'virtual_assessment', home: 'home_assessment' },
-  yes: { virtual: 'virtual_treatment', home: 'home_treatment' },
-}
+/** New patients start with the Recovery Consultation (as Joy does); assessed patients pick treatment by video or at home. */
+const FIRST_STEP = 'recovery_consultation'
+const TREATMENT_FOR: Record<Mode, string> = { virtual: 'virtual_treatment', home: 'home_treatment' }
 
 export function CareChooser({ catalogue }: { catalogue: Catalogue }) {
   const [assessed, setAssessed] = useState<Assessed | null>(null)
@@ -49,19 +47,20 @@ export function CareChooser({ catalogue }: { catalogue: Catalogue }) {
 
   const selectedArea = areaOptions.find((option) => option.key === areaKey) ?? null
   const noZones = zones !== undefined && zones.length === 0
-  const areaUnknown = mode === 'home' && (noZones || city === OTHER || areaKey === OTHER)
-  const serviceId = assessed && mode ? SERVICE_FOR[assessed][mode] : null
-  const ready = Boolean(serviceId && (mode === 'virtual' || selectedArea))
+  const atHome = assessed === 'yes' && mode === 'home'
+  const areaUnknown = atHome && (noZones || city === OTHER || areaKey === OTHER)
+  const serviceId = assessed === 'no' ? FIRST_STEP : assessed === 'yes' && mode ? TREATMENT_FOR[mode] : null
+  const ready = Boolean(serviceId && (!atHome || selectedArea))
 
   const quote = useQuery(
     api.marketplace.booking.getServiceQuote,
-    ready && serviceId ? { serviceId, zoneId: mode === 'home' ? selectedArea?.zoneId : undefined } : 'skip'
+    ready && serviceId ? { serviceId, zoneId: atHome ? selectedArea?.zoneId : undefined } : 'skip'
   ) as Quote
 
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_0.95fr] lg:items-start lg:gap-8">
       <div className="space-y-4">
-        <Step number={1} title="Have you been assessed by Rehabify?" hint="An assessment comes first, then treatment.">
+        <Step number={1} title="Have you been assessed by Rehabify?" hint="New patients start with a Recovery Consultation.">
           <Choice
             name="assessed"
             value="no"
@@ -69,7 +68,7 @@ export function CareChooser({ catalogue }: { catalogue: Catalogue }) {
             onSelect={() => setAssessed('no')}
             icon={ClipboardList}
             title="No, not yet"
-            body="Start with a full assessment"
+            body="Start with a Recovery Consultation"
           />
           <Choice
             name="assessed"
@@ -82,7 +81,7 @@ export function CareChooser({ catalogue }: { catalogue: Catalogue }) {
           />
         </Step>
 
-        {assessed && (
+        {assessed === 'yes' && (
           <Reveal>
             <Step number={2} title="Video or at home?" hint="Both are with a qualified physiotherapist.">
               <Choice
@@ -107,7 +106,7 @@ export function CareChooser({ catalogue }: { catalogue: Catalogue }) {
           </Reveal>
         )}
 
-        {mode === 'home' && (
+        {atHome && (
           <Reveal>
             <AreaStep
               zones={zones}
@@ -134,7 +133,6 @@ export function CareChooser({ catalogue }: { catalogue: Catalogue }) {
         ) : ready && serviceId && assessed ? (
           <Recommendation
             service={findService(catalogue, serviceId)}
-            consultation={findService(catalogue, 'recovery_consultation')}
             assessed={assessed}
             quote={quote}
             area={selectedArea}
@@ -171,7 +169,7 @@ function StepShell({ number, title, hint, labelId, children }: { number: number;
           <h3 id={labelId} className="text-lg leading-snug text-rh-night">
             {title}
           </h3>
-          {hint && <p className="mt-0.5 text-sm text-rh-night/55">{hint}</p>}
+          {hint && <p className="mt-0.5 text-sm font-medium text-rh-night/75">{hint}</p>}
         </div>
       </div>
       <div className="mt-4">{children}</div>
@@ -225,7 +223,7 @@ function Choice({
       </span>
       <span className="min-w-0 pr-5">
         <span className="block text-[15px] font-semibold text-rh-night">{title}</span>
-        <span className="mt-0.5 block text-sm leading-5 text-rh-night/60">{body}</span>
+        <span className="mt-0.5 block text-sm font-medium leading-5 text-rh-night/75">{body}</span>
       </span>
       {checked && <Check aria-hidden className="absolute right-4 top-4 h-4 w-4 text-rh-teal" strokeWidth={3} />}
     </label>
@@ -334,11 +332,11 @@ function Placeholder() {
   return (
     <div className="rounded-[1.75rem] border border-dashed border-rh-night/15 bg-white/60 p-7 text-center sm:p-9">
       <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-rh-mint text-rh-teal">
-        <Sparkles className="h-5 w-5" />
+        <ClipboardCheck className="h-5 w-5" />
       </span>
       <h3 className="mt-5 text-xl text-rh-night">Your recommendation</h3>
-      <p className="mx-auto mt-2 max-w-xs text-[15px] leading-6 text-rh-night/60">
-        Answer the questions and we&apos;ll show you the right session, what&apos;s included and the full price.
+      <p className="mx-auto mt-2 max-w-xs text-[15px] font-medium leading-6 text-rh-night/75">
+        Answer the questions and we&apos;ll show you the right session and what&apos;s included.
       </p>
     </div>
   )
@@ -373,20 +371,17 @@ type Quote = ServiceQuote | undefined
 
 function Recommendation({
   service,
-  consultation,
   assessed,
   quote,
   area,
 }: {
   service: CatalogueService
-  consultation: CatalogueService
   assessed: Assessed
   quote: Quote
   area: AreaOption | null
 }) {
   const failure = quote && !quote.ok ? quote.message : null
   const priced = quote?.ok ? quote : null
-  const href = getCareHref({ service: service.id, zone: area?.zoneId, area: area?.area })
 
   return (
     <article className="relative overflow-hidden rounded-[1.75rem] bg-white shadow-lift ring-1 ring-rh-night/[0.06]">
@@ -395,88 +390,65 @@ function Recommendation({
           Recommended for you
         </span>
         <h3 className="mt-3 text-[24px] leading-tight text-white">{service.name}</h3>
-        <p className="mt-1 text-sm text-white/75">
-          {service.durationLabel} · {modeLabel(service)}
+        <p className="mt-1 text-sm font-medium text-white/90">
+          {service.durationLabel}
           {area ? ` · ${area.area}` : ''}
         </p>
       </div>
 
       <div className="px-6 py-6 sm:px-7">
         {failure ? (
-          <p className="flex gap-2.5 rounded-2xl bg-rh-peach p-4 text-sm leading-6 text-rh-night">
+          <p className="mb-6 flex gap-2.5 rounded-2xl bg-rh-peach p-4 text-sm font-medium leading-6 text-rh-night">
             <Info className="mt-0.5 h-4 w-4 shrink-0" />
             {failure}
           </p>
-        ) : (
-          <dl className="space-y-2.5 text-[15px]">
-            <PriceRow label={service.shortName} value={formatKobo(priced?.basePriceKobo ?? service.priceKobo)} />
-            {service.mode === 'home' && (
-              <PriceRow
-                label={`Travel${priced?.zoneName ? ` (${priced.zoneName})` : ''}`}
-                value={priced ? (priced.travelSurchargeKobo > 0 ? formatKobo(priced.travelSurchargeKobo) : 'Included') : null}
-              />
-            )}
-            <div className="flex items-end justify-between gap-4 border-t border-rh-night/[0.08] pt-3">
-              <dt className="font-semibold text-rh-night">You pay</dt>
-              <dd className={cn('text-[30px] leading-none tracking-tight text-rh-night', displayFont)}>
-                {priced ? formatKobo(priced.chargeKobo) : <span className="inline-block h-7 w-28 animate-pulse rounded-lg bg-rh-night/[0.07] align-middle" />}
-              </dd>
-            </div>
-            <p className="text-right text-xs text-rh-night/50">All-inclusive. Nothing is added at checkout.</p>
-          </dl>
-        )}
+        ) : showsPrice(service) ? (
+          <div className="mb-6 flex items-end justify-between gap-4 border-b border-rh-night/[0.08] pb-5">
+            <p className="font-semibold text-rh-night">You pay</p>
+            <p className={cn('text-[30px] leading-none tracking-tight text-rh-night', displayFont)}>
+              {formatKobo(priced?.chargeKobo ?? service.priceKobo)}
+            </p>
+          </div>
+        ) : null}
 
-        <p className="mt-6 text-[15px] leading-6 text-rh-night/75">{service.summary}</p>
+        <p className="text-[15px] font-medium leading-6 text-rh-night/85">{service.summary}</p>
 
-        <p className="mt-5 text-xs font-semibold uppercase tracking-[0.14em] text-rh-night/45">What happens</p>
-        <ul className="mt-3 space-y-2.5">
+        <ul className="mt-5 space-y-2.5">
           {service.whatHappens.map((item) => (
-            <CheckItem key={item}>{item}</CheckItem>
+            <ListItem key={item}>{item}</ListItem>
           ))}
         </ul>
 
-        <p className="mt-5 rounded-2xl bg-rh-honeydew p-4 text-sm leading-6 text-rh-night/80">
-          <span className="font-semibold text-rh-night">You receive: </span>
+        <p className="mt-5 rounded-2xl bg-rh-honeydew p-4 text-sm font-medium leading-6 text-rh-night">
+          <span className="font-semibold">You receive: </span>
           {service.youReceive}
         </p>
-        {service.notIncluded && <p className="mt-3 text-sm leading-6 text-rh-night/55">{service.notIncluded}</p>}
+        {service.notIncluded && <p className="mt-3 text-sm font-medium leading-6 text-rh-night/75">{service.notIncluded}</p>}
 
         {failure ? (
           <a href={WHATSAPP_HELP_URL} target="_blank" rel="noopener noreferrer" className={cn(pillOutline, 'mt-6 h-12 w-full text-[15px]')}>
             Ask us on WhatsApp
           </a>
         ) : (
-          <Link href={href} className={cn(pillTeal, 'mt-6 h-12 w-full text-[15px]')}>
-            Book now <ArrowRight className="h-4 w-4" />
-          </Link>
+          <>
+            <a
+              href={bookWithJoyUrl(service, area?.area)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={cn(pillTeal, 'mt-6 h-12 w-full text-[15px]')}
+            >
+              Book now <ArrowRight className="h-4 w-4" />
+            </a>
+            <p className="mt-3 text-center text-xs font-medium text-rh-night/70">Opens WhatsApp, where Joy books your session.</p>
+          </>
         )}
-        <p className="mt-3 text-center text-xs text-rh-night/50">Pick a time from your physiotherapist&apos;s availability. Confirmed once paid.</p>
 
-        {assessed === 'no' ? (
-          <p className="mt-5 border-t border-rh-night/[0.08] pt-5 text-sm leading-6 text-rh-night/65">
-            Not sure you need a full assessment?{' '}
-            <Link href={getCareHref({ service: consultation.id })} className="font-semibold text-rh-teal underline-offset-4 hover:underline">
-              Start with a {consultation.durationLabel} Recovery Consultation for {formatKobo(consultation.priceKobo)}
-            </Link>
-            .
-          </p>
-        ) : (
-          <p className="mt-5 border-t border-rh-night/[0.08] pt-5 text-sm leading-6 text-rh-night/65">
+        {assessed === 'yes' && (
+          <p className="mt-5 border-t border-rh-night/[0.08] pt-5 text-sm font-medium leading-6 text-rh-night/75">
             Treatment sessions follow your Rehabify assessment. If you haven&apos;t had one yet, choose &ldquo;No, not yet&rdquo; above.
           </p>
         )}
       </div>
     </article>
-  )
-}
-
-function PriceRow({ label, value }: { label: string; value: string | null }) {
-  return (
-    <div className="flex items-center justify-between gap-4">
-      <dt className="text-rh-night/65">{label}</dt>
-      <dd className="font-semibold tabular-nums text-rh-night">
-        {value ?? <span className="inline-block h-4 w-16 animate-pulse rounded bg-rh-night/[0.07] align-middle" />}
-      </dd>
-    </div>
   )
 }

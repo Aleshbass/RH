@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Image from "next/image";
-import { BadgeCheck, Briefcase, MapPin, Star } from "lucide-react";
+import { BadgeCheck, Briefcase, MapPin, Star } from "@/components/icons";
 import { cn } from "@/lib/utils";
 import { initialsOf, type BookingProfile } from "./booking-shared";
 

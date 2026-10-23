@@ -5,15 +5,25 @@ import { useEffect, useState } from 'react'
 import { useMutation, useQuery } from 'convex/react'
 import { useUser } from '@clerk/nextjs'
 import { format } from 'date-fns'
-import { CalendarClock, Home, Loader2, Lock, Video } from 'lucide-react'
+import { CalendarClock, Clock, Home, Loader2, Lock, Video } from '@/components/icons'
 import { toast } from 'sonner'
 import { api } from '@/convex/_generated/api'
 import type { Id } from '@/convex/_generated/dataModel'
 import { Button } from '@/components/ui/button'
-import { Panel, StatusBadge, primaryButtonClass, softButtonClass } from '@/components/physio/ui'
+import {
+  InfoTip,
+  Panel,
+  StatusBadge,
+  accentButtonClass,
+  dangerButtonClass,
+  primaryButtonClass,
+  softButtonClass,
+} from '@/components/patient/ui'
 import { formatKobo } from '@/lib/rehabify-services'
 import { convexErrorMessage, queryString, startMarketplaceCheckout } from '@/components/booking/booking-shared'
 import { playSound } from '@/lib/sounds'
+import { usableEmail } from '@/lib/auth/joyLoginEmail'
+import { cn } from '@/lib/utils'
 
 /** api.marketplace.booking.getMyOpenBookings */
 type OpenBooking = {
@@ -56,9 +66,10 @@ export function OpenBookingsCard() {
   if (!bookings || bookings.length === 0) return null
 
   const payNow = async (booking: OpenBooking) => {
-    const email = user?.primaryEmailAddress?.emailAddress
+    // Patients from Joy have only a placeholder login address until they add their own
+    const email = usableEmail(user)
     if (!email) {
-      toast.error('No email address found on your account.')
+      toast.error('Add an email address to your account first, so we can send your receipt.')
       return
     }
     setBusyId(booking.id)
@@ -100,8 +111,13 @@ export function OpenBookingsCard() {
       : `/get-care${queryString({ service: booking.serviceId })}`
 
   return (
-    <Panel title="Your scheduled bookings" description="A booking is confirmed once it's paid">
-      <ul className="space-y-3 px-5 pb-5 pt-3">
+    <Panel
+      title="Waiting for payment"
+      description="A booking is confirmed once it’s paid"
+      info="When you book, we hold the time for you for a short while. Pay before the hold ends to confirm the visit. After that, someone else may book the same time."
+      className="ring-1 ring-inset ring-pt-amber-bg"
+    >
+      <ul className="space-y-3">
         {bookings.map((booking) => {
           const paid = booking.status === 'needs_new_time'
           const holdLive = booking.status === 'held' && (booking.holdExpiresAt ?? 0) > now
@@ -110,66 +126,75 @@ export function OpenBookingsCard() {
           const takenMessage = newTimeNeeded[booking.id]
 
           return (
-            <li key={booking.id} className="space-y-3 rounded-2xl bg-rh-canvas p-4">
+            <li key={booking.id} className="space-y-3 rounded-2xl bg-pt-sunken p-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0 space-y-1">
                   <div className="flex flex-wrap items-center gap-1.5">
-                    <StatusBadge tone={paid ? 'green' : 'amber'}>{paid ? 'Paid' : 'Scheduled — pay to confirm'}</StatusBadge>
-                    {booking.isAccess && <StatusBadge tone="teal">Rehabify Access</StatusBadge>}
+                    <StatusBadge tone={paid ? 'green' : 'amber'} dot>
+                      {paid ? 'Paid' : 'Pay to confirm'}
+                    </StatusBadge>
+                    {booking.isAccess && <StatusBadge tone="violet">Rehabify Access</StatusBadge>}
                   </div>
-                  <p className="text-[15px] font-semibold text-rh-night">{booking.serviceName}</p>
-                  <p className="text-sm text-neutral-600">
+                  <p className="text-[15px] font-semibold text-pt-ink">{booking.serviceName}</p>
+                  <p className="text-sm text-pt-muted">
                     {booking.physiotherapistName ? `With ${booking.physiotherapistName}` : 'With your physiotherapist'}
                     {booking.sessionDate ? ` · ${format(booking.sessionDate, 'EEE d MMM, h:mm a')}` : ''}
                   </p>
-                  <p className="flex items-center gap-1.5 text-xs text-neutral-500">
+                  <p className="flex items-center gap-1.5 text-xs text-pt-muted">
                     <ModeIcon className="h-3.5 w-3.5" aria-hidden />
                     {booking.isOnline ? 'Video call' : `Home visit${booking.travelZoneName ? ` · ${booking.travelZoneName}` : ''}`}
                     {` · ${booking.durationMinutes} min`}
                   </p>
                 </div>
-                <p className="text-lg font-semibold tabular-nums text-rh-night">{formatKobo(booking.chargeKobo)}</p>
+                <p className="text-lg font-semibold tabular-nums text-pt-ink">{formatKobo(booking.chargeKobo)}</p>
               </div>
 
               {paid ? (
-                <p className="text-sm text-neutral-700">Paid — we&apos;ll contact you to agree a new time.</p>
+                <p className="text-sm text-pt-ink">Paid. We&apos;ll contact you to agree a new time.</p>
               ) : takenMessage ? (
                 <div className="space-y-2">
-                  <p className="text-sm text-neutral-700">{takenMessage}</p>
+                  <p className="text-sm text-pt-ink">{takenMessage}</p>
                   <div className="flex flex-wrap gap-2">
-                    <Button asChild size="sm" className={primaryButtonClass}>
+                    <Button asChild size="sm" className={cn(primaryButtonClass, 'h-10')}>
                       <Link href={newTimeHref(booking)}>
                         <CalendarClock className="mr-1.5 h-4 w-4" aria-hidden />
                         Pick a new time
                       </Link>
                     </Button>
-                    <Button size="sm" variant="ghost" disabled={busy} onClick={() => cancel(booking)}>
+                    <Button size="sm" className={cn(softButtonClass, 'h-10')} disabled={busy} onClick={() => cancel(booking)}>
                       Cancel this booking
                     </Button>
                   </div>
                 </div>
               ) : (
                 <>
-                  <p className="text-xs text-neutral-500">
+                  <p className="flex items-center gap-1.5 text-xs text-pt-muted">
+                    <Clock className="h-3.5 w-3.5 shrink-0" aria-hidden />
                     {booking.scheduledBy === 'physiotherapist'
                       ? 'Your physiotherapist scheduled this. Pay to confirm it.'
                       : holdLive && booking.holdExpiresAt
                         ? `Your time is held until ${format(booking.holdExpiresAt, 'HH:mm')}.`
                         : 'The hold on this time has ended. Pay now and we’ll keep it if it’s still free.'}
+                    {booking.scheduledBy !== 'physiotherapist' && (
+                      <InfoTip label="What is a hold?">
+                        We keep this time for you while you pay. If the hold ends, you can still pay, and we&apos;ll keep the time
+                        if nobody else has booked it.
+                      </InfoTip>
+                    )}
                   </p>
                   {confirmCancelId === booking.id ? (
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-sm text-neutral-700">Cancel this booking?</span>
-                      <Button size="sm" variant="destructive" disabled={busy} onClick={() => cancel(booking)}>
+                      <span className="text-sm text-pt-ink">Cancel this booking?</span>
+                      <Button size="sm" className={cn(dangerButtonClass, 'h-10')} disabled={busy} onClick={() => cancel(booking)}>
                         {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : 'Yes, cancel'}
                       </Button>
-                      <Button size="sm" variant="ghost" disabled={busy} onClick={() => setConfirmCancelId(null)}>
+                      <Button size="sm" className={cn(softButtonClass, 'h-10')} disabled={busy} onClick={() => setConfirmCancelId(null)}>
                         Keep it
                       </Button>
                     </div>
                   ) : (
                     <div className="flex flex-wrap gap-2">
-                      <Button size="sm" className={primaryButtonClass} disabled={busy} onClick={() => payNow(booking)}>
+                      <Button size="sm" className={cn(accentButtonClass, 'h-10 px-4')} disabled={busy} onClick={() => payNow(booking)}>
                         {busy ? (
                           <Loader2 className="mr-1.5 h-4 w-4 animate-spin" aria-hidden />
                         ) : (
@@ -177,7 +202,7 @@ export function OpenBookingsCard() {
                         )}
                         Pay now {formatKobo(booking.chargeKobo)}
                       </Button>
-                      <Button size="sm" className={softButtonClass} disabled={busy} onClick={() => setConfirmCancelId(booking.id)}>
+                      <Button size="sm" className={cn(softButtonClass, 'h-10')} disabled={busy} onClick={() => setConfirmCancelId(booking.id)}>
                         Cancel
                       </Button>
                     </div>

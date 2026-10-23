@@ -1,14 +1,7 @@
-import type { Metadata } from 'next';
-import { pageMetadata } from '@/lib/seo/utils';
+import { redirect } from 'next/navigation';
+import { joyWhatsAppUrl } from '@/lib/joyWhatsApp';
 
-// Metadata only: the page is a client component and cannot export it.
-export const metadata: Metadata = pageMetadata({
-  title: 'Book Physiotherapy',
-  description:
-    'Choose a physiotherapy service at Rehabify’s standard price, then a physiotherapist: video consultations, assessments, treatment and home visits in Nigeria. The price you see is the price you pay.',
-  path: '/get-care',
-});
-
-export default function GetCareLayout({ children }: { children: React.ReactNode }) {
-  return children;
+// Booking now goes through Joy on WhatsApp, so this page is no longer shown (page.tsx is kept for now).
+export default function GetCareLayout() {
+  redirect(joyWhatsAppUrl("Hi Joy! I'd like to book physiotherapy with Rehabify."));
 }

@@ -11,8 +11,8 @@ import {
   FileText, GraduationCap, Briefcase, Clock, ArrowLeft, ExternalLink,
   Pencil, Loader2, Check, Stethoscope, ArrowRight, ChevronDown, ChevronUp,
   MessageSquare, UserCheck,
-} from 'lucide-react';
-import { IconBrandWhatsapp } from '@tabler/icons-react';
+} from '@/components/icons';
+import { WhatsApp } from '@/components/icons';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -177,7 +177,7 @@ export default function PhysioProfilePage() {
               rel="noopener noreferrer"
               className="inline-flex items-center gap-1.5 font-bold text-[#005b57] hover:underline transition-colors"
             >
-              <IconBrandWhatsapp className="w-4 h-4 text-[#25D366]" />
+              <WhatsApp className="w-4 h-4 text-[#25D366]" />
               Chat with Joy on WhatsApp to book a session <ArrowRight className="w-3.5 h-3.5" />
             </a>
           </div>

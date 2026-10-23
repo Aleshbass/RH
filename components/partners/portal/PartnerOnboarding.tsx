@@ -35,7 +35,7 @@ import {
   UploadCloud,
   Users,
   X,
-} from "lucide-react";
+} from "@/components/icons";
 
 type PartnerSummaryLite = {
   name?: string;
@@ -1134,6 +1134,7 @@ export function PartnerApplicationForm() {
 /** Application submitted, awaiting Rehabify review. */
 export function PartnerPendingScreen({ partner }: { partner: PartnerSummaryLite }) {
   const pendingPartner = partner;
+  if (pendingPartner?.type === "doctor") return <DoctorPendingScreen partner={pendingPartner} />;
     return (
       <div className="max-w-2xl mx-auto py-16 px-4 sm:px-6">
         <div className="bg-white rounded-3xl border border-[#002e2c]/10 p-8 sm:p-10 shadow-[0_8px_30px_rgba(0,46,44,0.04)] text-center space-y-6">
@@ -1204,19 +1205,92 @@ export function PartnerPendingScreen({ partner }: { partner: PartnerSummaryLite 
     );
 }
 
+/** A referring doctor waiting for Rehabify to verify their licence. */
+function DoctorPendingScreen({ partner }: { partner: NonNullable<PartnerSummaryLite> }) {
+  return (
+    <div className="max-w-xl mx-auto py-16 px-4 sm:px-6">
+      <div className="bg-white rounded-3xl border border-[#002e2c]/10 p-8 sm:p-10 shadow-xs space-y-6">
+        <div className="flex items-center justify-between border-b border-[#002e2c]/10 pb-4">
+          <Link href="/" className="shrink-0">
+            <NextImage src="/logos/MainRehabify.svg" alt="Rehabify Health" width={120} height={32} className="h-7 w-auto object-contain" />
+          </Link>
+          <UserButton afterSignOutUrl="/partners/portal" />
+        </div>
+
+        <div className="text-center space-y-3">
+          <div className="w-14 h-14 rounded-2xl bg-amber-50 border border-amber-200 text-amber-600 flex items-center justify-center mx-auto">
+            <Clock className="w-7 h-7" />
+          </div>
+          <h1 className="text-2xl font-bold text-[#002e2c] tracking-tight">We&apos;re verifying your licence</h1>
+          <p className="text-sm text-[#52706e] max-w-md mx-auto leading-relaxed">
+            Thanks{partner.name ? `, ${partner.name}` : ""}. Our clinical team checks every referring doctor&apos;s licence before they can refer
+            patients. We&apos;ll email you at <strong className="text-[#002e2c]">{partner.contactEmail}</strong> as soon as you&apos;re approved.
+          </p>
+        </div>
+
+        <ol className="space-y-3 text-left">
+          {[
+            ["Licence check", "We confirm your MDCN registration."],
+            ["You're approved", "Your referral portal opens: refer patients and get your referral link."],
+            ["Add your bank account", "So we can pay your commissions each month."],
+          ].map(([title, body], i) => (
+            <li key={title} className="flex gap-3 p-3 rounded-2xl bg-[#FAF6E7]/70 border border-[#002e2c]/10">
+              <span className="w-6 h-6 rounded-full bg-[#002e2c] text-[#FAF6E7] text-[11px] font-bold flex items-center justify-center shrink-0">{i + 1}</span>
+              <span>
+                <span className="block text-xs font-semibold text-[#002e2c]">{title}</span>
+                <span className="block text-xs text-[#52706e]">{body}</span>
+              </span>
+            </li>
+          ))}
+        </ol>
+
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-3 text-xs">
+          <Link href="/doctor" className="font-semibold text-[#005b57] hover:underline">
+            Update your details
+          </Link>
+          <span className="hidden sm:inline text-[#52706e]">·</span>
+          <a href="mailto:partners@physioaroundme.com" className="font-semibold text-[#005b57] hover:underline">
+            partners@physioaroundme.com
+          </a>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** Application declined. */
-export function PartnerRejectedScreen({ rejectionReason }: { rejectionReason?: string | null }) {
+export function PartnerRejectedScreen({ rejectionReason, partnerType }: { rejectionReason?: string | null; partnerType?: string | null }) {
+  const isDoctor = partnerType === "doctor";
     return (
       <div className="max-w-md mx-auto py-16 px-4">
         <div className="bg-white rounded-3xl border border-red-200 p-8 text-center space-y-5 shadow-xs">
           <div className="w-14 h-14 rounded-2xl bg-red-50 text-red-600 flex items-center justify-center mx-auto border border-red-200">
             <AlertCircle className="w-7 h-7" />
           </div>
-          <h2 className="text-xl font-bold text-[#002e2c]">Application Not Approved</h2>
+          <h2 className="text-xl font-bold text-[#002e2c]">{isDoctor ? "We couldn't verify your account" : "Application Not Approved"}</h2>
           <p className="text-sm text-[#52706e]">
             {rejectionReason ||
-              "Your partner registration could not be verified according to our clinical onboarding guidelines."}
+              (isDoctor
+                ? "We couldn't confirm your licence details."
+                : "Your partner registration could not be verified according to our clinical onboarding guidelines.")}
           </p>
+          {isDoctor && (
+            <>
+              <a
+                href="/doctor"
+                className="inline-flex items-center justify-center rounded-xl bg-[#002e2c] px-5 py-2.5 text-sm font-semibold text-[#FAF6E7] hover:opacity-90"
+              >
+                Correct my details and resubmit
+              </a>
+              <p className="text-xs text-[#52706e]">
+                Or email{" "}
+                <a href="mailto:partners@physioaroundme.com" className="font-semibold text-[#005b57] hover:underline">
+                  partners@physioaroundme.com
+                </a>{" "}
+                with your MDCN folio number and we&apos;ll take another look.
+              </p>
+            </>
+          )}
           <div className="pt-2">
             <UserButton afterSignOutUrl="/partners/portal" />
           </div>

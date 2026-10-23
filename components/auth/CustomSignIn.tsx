@@ -10,6 +10,8 @@ import { useEffect, useState, type FormEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth, useSignIn } from "@clerk/nextjs";
 import { toSafeInternalPath } from "@/lib/auth/ssoRedirect";
+import { PRIMARY_INTENTS, rememberIntent, SIGNUP_INTENTS, signUpHrefFor } from "@/lib/auth/signupIntent";
+import { DASHBOARD_LINK_REQUEST_URL } from "@/lib/joyWhatsApp";
 import { cn } from "@/lib/utils";
 import { AuthShell } from "./AuthShell";
 import {
@@ -418,12 +420,44 @@ export default function CustomSignIn({
                 Continue
               </PrimaryButton>
             </form>
-            <p className={cn("text-center text-sm text-rh-night/65", SPACE.section)}>
-              {audience === "partner" ? "New partner? " : "New to Rehabify? "}
-              <Link href={signUpHref} className="font-semibold text-rh-teal underline-offset-4 hover:underline">
-                {audience === "partner" ? "Apply for access" : "Create an account"}
-              </Link>
-            </p>
+            {audience === "partner" || signUpHref !== routes.signUp ? (
+              <p className={cn("text-center text-sm text-rh-night/65", SPACE.section)}>
+                {audience === "partner" ? "New partner? " : "New to Rehabify? "}
+                <Link href={signUpHref} className="font-semibold text-rh-teal underline-offset-4 hover:underline">
+                  {audience === "partner" ? "Apply for access" : "Create an account"}
+                </Link>
+              </p>
+            ) : (
+              // No page-specific destination: ask who they are, so sign-up opens the right onboarding
+              <div className={cn("space-y-1.5 text-center text-sm text-rh-night/65", SPACE.section)}>
+                <p>
+                  New to Rehabify? Join as a{" "}
+                  {PRIMARY_INTENTS.map((intent, index) => (
+                    <span key={intent}>
+                      {index > 0 && (index === PRIMARY_INTENTS.length - 1 ? " or " : ", ")}
+                      <Link
+                        href={signUpHrefFor(intent)}
+                        onClick={() => rememberIntent(intent)}
+                        className="font-semibold text-rh-teal underline-offset-4 hover:underline"
+                      >
+                        {SIGNUP_INTENTS[intent].chip.toLowerCase()}
+                      </Link>
+                    </span>
+                  ))}
+                </p>
+                <p className="text-[13px]">
+                  Booked with Joy on WhatsApp?{" "}
+                  <a
+                    href={DASHBOARD_LINK_REQUEST_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-semibold text-rh-teal underline-offset-4 hover:underline"
+                  >
+                    Get a sign-in link
+                  </a>
+                </p>
+              </div>
+            )}
           </>
         )}
 

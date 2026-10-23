@@ -4,7 +4,7 @@ import { Suspense, useEffect, useState } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useQuery } from 'convex/react'
 import { format } from 'date-fns'
-import { Banknote, Inbox, Rocket, ShieldCheck } from 'lucide-react'
+import { Banknote, Inbox, Rocket, ShieldCheck } from '@/components/icons'
 import { api } from '@/convex/_generated/api'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { AdminPage, PageHeader, Stagger, StaggerItem, StatTile, tabsListClass } from '@/components/admin/ui'
@@ -12,6 +12,7 @@ import { ApplicationsTab } from '@/components/admin/partners/ApplicationsTab'
 import { GoLiveTab } from '@/components/admin/partners/GoLiveTab'
 import { InquiriesTab } from '@/components/admin/partners/InquiriesTab'
 import { PartnerPayoutsTab } from '@/components/admin/partners/PartnerPayoutsTab'
+import { type PendingCommission, PendingCommissionsPanel } from '@/components/admin/partners/PendingCommissionsPanel'
 import { type PartnerApplication, ReasonDialog, type ReasonRequest, usePartnerReview } from '@/components/admin/partners/PartnerReview'
 import { RevenueSettingsTab } from '@/components/admin/partners/RevenueSettingsTab'
 import { formatKobo, LoadingBlock } from '@/components/admin/partners/shared'
@@ -61,6 +62,8 @@ function PartnershipsContent() {
   const inquiries = useQuery(api.adminPartnerships.getPartnershipInquiries)
   const [billingPeriod, setBillingPeriod] = useState(() => format(new Date(), 'yyyy-MM'))
   const payoutSummary = useQuery(api.monthlySettlements.getMonthlyBulkPayoutSummary, { billingPeriod })
+  const pendingCommissions = useQuery(api.commercialTerms.adminListPendingCommissions, {}) as PendingCommission[] | undefined
+  const awaitingApproval = pendingCommissions?.length ?? 0
 
   const review = usePartnerReview()
   const [reasonRequest, setReasonRequest] = useState<ReasonRequest | null>(null)
@@ -75,7 +78,7 @@ function PartnershipsContent() {
       <PageHeader
         eyebrow="Partners"
         title="Partners & revenue"
-        description="Partner applications, go-live reviews, website inquiries, monthly partner payouts and the platform revenue split."
+        description="Partner and referring-doctor applications, go-live reviews, website inquiries, monthly payouts and the platform revenue split."
       />
 
       <Stagger className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -113,9 +116,15 @@ function PartnershipsContent() {
           <StatTile
             label="Partner payable now"
             value={payoutSummary ? formatKobo(payoutSummary.totals.totalPartnerCommission) : '…'}
-            hint={payoutSummary ? `Up to ${payoutSummary.billingPeriodLabel}` : undefined}
+            hint={
+              awaitingApproval > 0
+                ? `${awaitingApproval} commission${awaitingApproval === 1 ? '' : 's'} awaiting approval`
+                : payoutSummary
+                  ? `Up to ${payoutSummary.billingPeriodLabel}`
+                  : undefined
+            }
             icon={Banknote}
-            tone="mint"
+            tone={awaitingApproval > 0 ? 'attention' : 'mint'}
             href={`${BASE_PATH}?tab=bulk_payouts`}
           />
         </StaggerItem>
@@ -135,7 +144,10 @@ function PartnershipsContent() {
             Inquiries
             <TabCount value={newInquiries} />
           </TabsTrigger>
-          <TabsTrigger value="bulk_payouts">Partner payouts</TabsTrigger>
+          <TabsTrigger value="bulk_payouts">
+            Partner payouts
+            <TabCount value={awaitingApproval} tone="attention" />
+          </TabsTrigger>
           <TabsTrigger value="revenue">Revenue settings</TabsTrigger>
         </TabsList>
 
@@ -148,7 +160,9 @@ function PartnershipsContent() {
         <TabsContent value="inquiries" className="mt-0">
           <InquiriesTab inquiries={inquiries} />
         </TabsContent>
-        <TabsContent value="bulk_payouts" className="mt-0">
+        <TabsContent value="bulk_payouts" className="mt-0 space-y-5">
+          {/* Approved ones join the payouts below */}
+          <PendingCommissionsPanel rows={pendingCommissions} />
           <PartnerPayoutsTab summary={payoutSummary} billingPeriod={billingPeriod} onBillingPeriodChange={setBillingPeriod} />
         </TabsContent>
         <TabsContent value="revenue" className="mt-0">

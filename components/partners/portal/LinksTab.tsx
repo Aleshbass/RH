@@ -5,7 +5,7 @@ import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { toast } from "sonner";
-import { ExternalLink, Link2, Plus } from "lucide-react";
+import { ExternalLink, Link2, Plus } from "@/components/icons";
 import {
   Busy,
   CopyButton,
@@ -72,11 +72,20 @@ export function LinksTab({ ctx }: { ctx: PortalContext }) {
     <div className="space-y-4">
       <div className={`${cardCls} p-5 flex flex-col md:flex-row md:items-center justify-between gap-4`}>
         <div className="space-y-1">
-          <h3 className="text-sm font-semibold">No-code referral links</h3>
+          <h3 className="text-sm font-semibold">{ctx.isDoctor ? "Your referral link" : "No-code referral links"}</h3>
           <p className="text-xs text-[#52706e] leading-relaxed max-w-2xl">
-            Share a link by email, SMS, WhatsApp or QR code. Patients land on a co-branded page, give consent and request care. Anyone who signs up or
-            books on physioaroundme.com within 30 days of opening your link is attributed to you (first partner wins).
-            {ctx.environment === "sandbox" && " Sandbox links create test referrals only and never attribute real patients."}
+            {ctx.isDoctor ? (
+              <>
+                Give patients your link on WhatsApp, by SMS or as a QR code in your consulting room. They land on a page with your name, agree to be
+                contacted and ask for care. Anyone who signs up or books within 30 days of opening it is linked to you, so you earn on their care.
+              </>
+            ) : (
+              <>
+                Share a link by email, SMS, WhatsApp or QR code. Patients land on a co-branded page, give consent and request care. Anyone who signs up or
+                books on physioaroundme.com within 30 days of opening your link is attributed to you (first partner wins).
+                {ctx.environment === "sandbox" && " Sandbox links create test referrals only and never attribute real patients."}
+              </>
+            )}
           </p>
         </div>
         <button type="button" className={btnPrimary} onClick={() => setCreateOpen(true)} disabled={!ctx.envWritable} title={!ctx.envWritable ? "Requires production access" : undefined}>
@@ -89,13 +98,17 @@ export function LinksTab({ ctx }: { ctx: PortalContext }) {
         {links === undefined ? (
           <LoadingBlock />
         ) : links.length === 0 ? (
-          <EmptyState icon={<Link2 className="w-8 h-8" />} title={`No ${ctx.environment} links yet`} body="Create your first link to start receiving referrals without any integration work." />
+          <EmptyState
+            icon={<Link2 className="w-8 h-8" />}
+            title={ctx.isDoctor ? "No referral link yet" : `No ${ctx.environment} links yet`}
+            body={ctx.isDoctor ? "Create your link, then share it with patients you want to send to Rehabify." : "Create your first link to start receiving referrals without any integration work."}
+          />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-xs text-left">
               <thead className="text-[#52706e] bg-[#FAF6E7]/60">
                 <tr>
-                  <th className={thCls}>Campaign</th>
+                  <th className={thCls}>{ctx.isDoctor ? "Name" : "Campaign"}</th>
                   <th className={thCls}>Link</th>
                   <th className={thCls}>Status</th>
                   <th className={`${thCls} text-right`}>Clicks</th>
@@ -111,7 +124,7 @@ export function LinksTab({ ctx }: { ctx: PortalContext }) {
                 {links.map((link) => (
                   <tr key={link.id}>
                     <td className={tdCls}>
-                      <div className="font-medium">{link.campaign_name || "Untitled campaign"}</div>
+                      <div className="font-medium">{link.campaign_name || (ctx.isDoctor ? "Referral link" : "Untitled campaign")}</div>
                       <div className="text-[#52706e]">Created {fmtDate(link.created_at)}</div>
                     </td>
                     <td className={tdCls}>
@@ -202,7 +215,7 @@ function CreateLinkModal({ ctx, open, onClose }: { ctx: PortalContext; open: boo
     <Modal
       open={open}
       onClose={close}
-      title={created ? "Your referral link" : `Create a ${ctx.environment} referral link`}
+      title={created ? "Your referral link" : ctx.isDoctor ? "Create your referral link" : `Create a ${ctx.environment} referral link`}
       footer={
         created ? (
           <button type="button" className={btnPrimary} onClick={close}>
@@ -231,8 +244,8 @@ function CreateLinkModal({ ctx, open, onClose }: { ctx: PortalContext; open: boo
       ) : (
         <form id="create-link" onSubmit={submit} className="space-y-4">
           <div>
-            <label className={labelCls}>Campaign name</label>
-            <input value={form.campaignName} onChange={(e) => setForm((f) => ({ ...f, campaignName: e.target.value }))} placeholder="e.g. Staff wellness Q4" className={inputCls} maxLength={120} />
+            <label className={labelCls}>{ctx.isDoctor ? "Name (optional, e.g. clinic or hospital)" : "Campaign name"}</label>
+            <input value={form.campaignName} onChange={(e) => setForm((f) => ({ ...f, campaignName: e.target.value }))} placeholder={ctx.isDoctor ? "e.g. LUTH orthopaedic clinic" : "e.g. Staff wellness Q4"} className={inputCls} maxLength={120} />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>

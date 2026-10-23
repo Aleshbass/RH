@@ -378,8 +378,9 @@ export const linkTrackingCodeToWhatsAppInternal = internalMutation({
 // gateway (/joy-integration/link_referral → linkTrackingCodeToWhatsAppInternal).
 
 /**
- * Joy may provision a minimal patient record, but never a Clerk account. The
- * normalized WhatsApp number is the idempotency key for this integration path.
+ * Joy may provision a minimal patient record, but never a Clerk account (Rehabify
+ * creates that after payment, in actions/joyDashboard.ts). The normalized WhatsApp
+ * number is the idempotency key for this integration path.
  */
 export const resolveOrCreatePatientByPhone = internalMutation({
   args: {
@@ -1134,6 +1135,13 @@ async function creditPartnerForJoyPayment(ctx: any, booking: Doc<"marketplaceBoo
   await bumpLinkCounter(ctx, booking.referralLinkId, "payments");
 }
 
+/** Once a Joy patient has paid, give them a login and send Joy their dashboard link. */
+async function scheduleJoyDashboard(ctx: MutationCtx, booking: Doc<"marketplaceBookings">) {
+  await ctx.scheduler.runAfter(0, internal.actions.joyDashboard.provisionJoyDashboard, {
+    patientId: booking.patientId, bookingId: booking._id, notifyJoy: true,
+  });
+}
+
 /** Webhook-only payment evidence. It deliberately does not confirm an appointment. */
 export const recordJoyPaymentWebhook = internalMutation({
   args: { reference: v.string(), amountKobo: v.number(), currency: v.string(), paystackEventId: v.string() },
@@ -1180,6 +1188,7 @@ export const recordJoyPaymentWebhook = internalMutation({
       await queueJoyEvent(ctx, `pay-${args.reference}`, "booking.payment_confirmed", {
         booking_id: booking._id, patient_id: booking.patientId, payment_reference: args.reference,
       });
+      await scheduleJoyDashboard(ctx, booking);
       return {
         handled: true,
         duplicate: false,
@@ -1200,6 +1209,7 @@ export const recordJoyPaymentWebhook = internalMutation({
     };
     await queueJoyEvent(ctx, `pay-${args.reference}`, "booking.payment_confirmed", eventData);
     await queueJoyEvent(ctx, `provider-response-${booking._id}`, "booking.provider_response_requested", eventData);
+    await scheduleJoyDashboard(ctx, booking);
 
     return { handled: true, duplicate: false, booking_id: booking._id, patient_id: booking.patientId, physiotherapist_id: booking.physiotherapistId, provider_response_due_at: now + 5 * HOUR_MS, event_id: args.paystackEventId };
   },

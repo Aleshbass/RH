@@ -4,7 +4,7 @@ import { Component, useEffect, type ReactNode } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useConvexAuth, useQuery } from 'convex/react'
-import { CalendarOff, Wrench } from 'lucide-react'
+import { CalendarOff, Wrench } from '@/components/icons'
 import { api } from '@/convex/_generated/api'
 
 /**

@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { Loader2 } from 'lucide-react';
+import { Loader2 } from '@/components/icons';
 
 /**
  * Older invitation links used /clinic-invite. Every clinic invitation is now handled

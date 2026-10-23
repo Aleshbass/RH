@@ -9,7 +9,7 @@ import {
   Target, 
   Calendar,
   Plus
-} from 'lucide-react'
+} from '@/components/icons'
 import { format, addDays } from 'date-fns'
 
 type Props = object;

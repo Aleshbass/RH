@@ -4,7 +4,7 @@ import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Calendar, CheckCircle, AlertCircle, RefreshCw } from "lucide-react";
+import { Calendar, CheckCircle, AlertCircle, RefreshCw } from "@/components/icons";
 import { formatDistanceToNow } from "date-fns";
 
 interface CalendarSyncStatusProps {

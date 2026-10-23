@@ -4,6 +4,7 @@ import { api } from "./_generated/api";
 import { Doc, Id } from "./_generated/dataModel";
 import { publicAppUrl } from "./helpers/appUrl";
 import { closeInvoicePaymentLinks } from "./helpers/paymentLinks";
+import { recordInvoicePartnerCommission } from "./helpers/partnerLedger";
 import { getAuthenticatedUser } from "./auth";
 import { isServerCaller } from "./helpers/serverSecret";
 import { insertClinicInvoice } from "./clinicTools";
@@ -607,6 +608,13 @@ export const processPayment = mutation({
     });
     // Recorded by hand: the online payment link must not collect a second time
     await closeInvoicePaymentLinks(ctx, args.invoiceId);
+    // A referred patient's partner or doctor earns on this too, once an admin approves it
+    await recordInvoicePartnerCommission(ctx, {
+      invoice,
+      paidKobo: invoice.subtotalAmount > 0 ? invoice.subtotalAmount : invoice.totalAmount,
+      paymentReference: `manual:${args.invoiceId}`,
+      verified: false,
+    });
 
     // Create payment confirmation notification
     await ctx.db.insert("notifications", {

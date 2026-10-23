@@ -31,8 +31,8 @@ import {
   Settings,
   X,
   Building2,
-} from 'lucide-react'
-import { Menu } from 'lucide-react'
+} from '@/components/icons'
+import { Menu } from '@/components/icons'
 import { format } from 'date-fns'
 import Link from 'next/link'
 import { toast } from 'sonner'

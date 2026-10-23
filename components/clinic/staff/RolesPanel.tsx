@@ -3,7 +3,7 @@
 import { useState, type FormEvent } from 'react'
 import { useMutation } from 'convex/react'
 import { toast } from 'sonner'
-import { Loader2, MoreHorizontal, Plus } from 'lucide-react'
+import { Loader2, MoreHorizontal, Plus } from '@/components/icons'
 import { api } from '@/convex/_generated/api'
 import type { Id } from '@/convex/_generated/dataModel'
 import { Button } from '@/components/ui/button'

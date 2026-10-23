@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Loader2, CheckCircle, AlertCircle, Building2, Trash2 } from 'lucide-react'
+import { Loader2, CheckCircle, AlertCircle, Building2, Trash2 } from '@/components/icons'
 import { toast } from 'sonner'
 import { Id } from '@/convex/_generated/dataModel'
 

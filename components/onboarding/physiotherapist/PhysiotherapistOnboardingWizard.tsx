@@ -19,7 +19,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@clerk/nextjs';
 import { useMutation, useQuery } from 'convex/react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Check, ChevronLeft, Loader2 } from 'lucide-react';
+import { Check, ChevronLeft, Loader2 } from '@/components/icons';
 import { toast } from 'sonner';
 import { api } from '@/convex/_generated/api';
 import { Button } from '@/components/ui/button';

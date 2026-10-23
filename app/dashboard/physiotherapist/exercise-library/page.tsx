@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import { useQuery } from 'convex/react'
-import { Loader2, Rotate3d, Search, Send } from 'lucide-react'
+import { Loader2, Rotate3d, Search, Send } from '@/components/icons'
 import { api } from '@/convex/_generated/api'
 import type { Id } from '@/convex/_generated/dataModel'
 import { Button } from '@/components/ui/button'

@@ -13,7 +13,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import { ArrowRight, Lock, Clock } from 'lucide-react'
+import { ArrowRight, Lock, Clock } from '@/components/icons'
 
 /** Pages a clinic role can be given (matches CLINIC_AREAS in convex/clinicTools.ts). Home is always available. */
 export const CLINIC_AREAS = ['appointments', 'patients', 'referrals', 'billing', 'team', 'reports', 'settings'] as const

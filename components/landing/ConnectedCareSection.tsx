@@ -1,7 +1,7 @@
 "use client";
 import React from "react";
 import Image from "next/image";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight } from "@/components/icons";
 import { WobbleCard } from "../ui/wobble-card";
 import { NavbarButton } from "../ui/resizable-navbar";
 

@@ -5,7 +5,7 @@ import { api } from '@/convex/_generated/api'
 import { ReactNode } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Shield, RefreshCw } from 'lucide-react'
+import { Shield, RefreshCw } from '@/components/icons'
 
 interface DoctorGuardProps {
     children: ReactNode

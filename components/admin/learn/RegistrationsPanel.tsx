@@ -19,7 +19,7 @@ import {
   Search,
   Stethoscope,
   Users,
-} from 'lucide-react'
+} from '@/components/icons'
 import { toast } from 'sonner'
 import { api } from '@/convex/_generated/api'
 import { Button } from '@/components/ui/button'

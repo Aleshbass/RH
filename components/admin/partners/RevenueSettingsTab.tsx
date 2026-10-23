@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useMutation, useQuery } from 'convex/react'
 import { format } from 'date-fns'
-import { Clock, Save, ShieldCheck, Sparkles } from 'lucide-react'
+import { Clock, Eye, Save, ShieldCheck } from '@/components/icons'
 import { toast } from 'sonner'
 import { api } from '@/convex/_generated/api'
 import { Button } from '@/components/ui/button'
@@ -256,7 +256,7 @@ export function RevenueSettingsTab() {
           <div className={cn(cardClass, 'space-y-3 bg-rh-cream/60 p-5 dark:bg-rh-ink-2')}>
             <div className="flex items-center justify-between">
               <h3 className="flex items-center gap-2 text-[15px] font-semibold text-rh-night dark:text-white">
-                <Sparkles className="h-4 w-4 text-rh-teal dark:text-rh-aqua" /> Live preview
+                <Eye className="h-4 w-4 text-rh-teal dark:text-rh-aqua" /> Live preview
               </h3>
               <span className="text-[11px] text-neutral-500 dark:text-neutral-400">Updates as you type</span>
             </div>

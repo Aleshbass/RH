@@ -38,7 +38,24 @@ export const getPartnerApplications = query({
   handler: async (ctx, args) => {
     await requireAdmin(ctx);
     const partners = await ctx.db.query("partners").order("desc").collect();
-    const formatted = partners.map((p) => ({
+    // For referring doctors, what the admin checks before approving (e.g. the MDCN folio)
+    const doctorDetailsFor = async (p: (typeof partners)[number]) => {
+      if (p.type !== "doctor" || !p.ownerClerkId) return null;
+      const owner = await ctx.db
+        .query("users")
+        .withIndex("by_clerk_id", (q) => q.eq("clerkId", p.ownerClerkId!))
+        .first();
+      const profile = owner?.doctorProfileId ? await ctx.db.get(owner.doctorProfileId) : null;
+      if (!profile) return null;
+      return {
+        title: profile.title ?? null,
+        medicalLicenseNumber: profile.medicalLicenseNumber ?? null,
+        specialty: profile.specialty ?? null,
+        hospitalAffiliation: profile.hospitalAffiliation ?? null,
+        bio: profile.bio ?? null,
+      };
+    };
+    const formatted = await Promise.all(partners.map(async (p) => ({
       _id: p._id,
       name: p.name,
       code: p.code,
@@ -63,7 +80,8 @@ export const getPartnerApplications = query({
       productionReviewedBy: p.productionReviewedBy,
       productionRejectionReason: p.productionRejectionReason,
       createdAt: p.createdAt,
-    }));
+      doctorDetails: await doctorDetailsFor(p),
+    })));
     if (args.status && args.status !== "all") return formatted.filter((p) => p.approvalStatus === args.status);
     return formatted;
   },
@@ -90,22 +108,28 @@ export const reviewPartnerApplication = mutation({
     const recipientEmail = partner.contactEmail || partner.ownerEmail;
 
     if (args.action === "approve") {
+      // A referring doctor has no API integration to test, so approval is also go-live:
+      // their referrals and referral links are real from day one.
+      const isDoctor = partner.type === "doctor";
       await ctx.db.patch(partner._id, {
         approvalStatus: "approved",
         isActive: true,
         rejectionReason: undefined,
-        productionStatus: partner.productionStatus ?? "not_requested",
+        productionStatus: isDoctor ? "approved" : partner.productionStatus ?? "not_requested",
+        ...(isDoctor ? { productionReviewedAt: now, productionReviewedBy: adminName } : {}),
         approvedAt: now,
         approvedBy: adminName,
         updatedAt: now,
       });
       if (ownerUser) {
-        if (!ownerUser.role || ownerUser.role === "patient") await ctx.db.patch(ownerUser._id, { role: "partner" });
+        if (!ownerUser.role || ownerUser.role === "patient") await ctx.db.patch(ownerUser._id, { role: isDoctor ? "doctor" : "partner" });
         await ctx.db.insert("notifications", {
           userId: ownerUser._id,
           type: "system_alert",
-          title: "Partner application approved",
-          message: `"${partner.name}" is approved. Your sandbox is ready: create test keys in the Partner Portal, then request production access when you are ready to go live.`,
+          title: isDoctor ? "You're approved to refer patients" : "Partner application approved",
+          message: isDoctor
+            ? "Your Rehabify referral account is approved. Refer patients, share your referral link and track commissions in the portal."
+            : `"${partner.name}" is approved. Your sandbox is ready: create test keys in the Partner Portal, then request production access when you are ready to go live.`,
           data: { partnerId: partner._id, partnerCode: partner.code, status: "approved" },
           status: "pending",
           priority: "high",

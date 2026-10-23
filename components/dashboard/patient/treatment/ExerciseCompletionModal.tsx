@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Slider } from '@/components/ui/slider';
-import { Loader2, CheckCircle2, Frown, Meh, Smile } from 'lucide-react';
+import { Loader2, CheckCircle2, Frown, Meh, Smile } from '@/components/icons';
 import { toast } from 'sonner';
 
 interface ExerciseCompletionModalProps {

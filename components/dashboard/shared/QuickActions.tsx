@@ -2,7 +2,7 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { UserPlus, Calendar, FileTextIcon, Users, Dumbbell, ClipboardList, BookOpen } from 'lucide-react'
+import { UserPlus, Calendar, FileTextIcon, Users, Dumbbell, ClipboardList, BookOpen } from '@/components/icons'
 
 interface QuickActionsProps {
   onInvitePatient: () => void

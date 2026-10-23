@@ -1,24 +1,66 @@
 // /Users/ella/rehabifyhealth/app/(onboarding)/role-selection/page.tsx
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import { FileText, User, Building2, Heart, HeartHandshake } from '@/components/icons'
+import React, { useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { useAuth } from '@clerk/nextjs';
 import { useOnboardingStore, UserRole } from '@/stores/onboardingStore';
 // Add this type that excludes 'admin' from UserRole
 type OnboardingRole = Exclude<UserRole, 'admin'>;
-import { Button } from '@/components/ui/button';
 import { useMutation } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import { useQuery } from 'convex/react';
+import { programError } from '@/components/exercise-programs/errors';
+import {
+  forgetIntent,
+  onboardingPathFor,
+  parseIntent,
+  readRememberedIntent,
+  roleForIntent,
+  type SignupIntent,
+} from '@/lib/auth/signupIntent';
 
 // A simple way to generate a unique ID for the onboarding session
 const generateOnboardingId = () => `onboarding_${new Date().getTime()}_${Math.random().toString(36).substring(2, 10)}`;
 
+type CardIntent = Exclude<SignupIntent, 'partner'>;
+
+const SETTING_UP_LABELS: Record<CardIntent, string> = {
+  patient: 'patient',
+  physiotherapist: 'physiotherapist',
+  clinic_owner: 'clinic',
+  doctor: 'referring doctor',
+  family: 'caregiver',
+};
+
+const DASHBOARD_ROLES = new Set(['physiotherapist', 'clinic_owner', 'patient', 'doctor', 'admin', 'clinic_staff']);
+
+const CARDS: { intent: CardIntent; title: string; body: string; icon: React.ComponentType<{ className?: string }>; tone: string }[] = [
+  { intent: 'patient', title: 'Patient', body: 'I need care or have an invitation link.', icon: Heart, tone: 'blue' },
+  { intent: 'physiotherapist', title: 'Physiotherapist', body: 'I treat patients and want to manage my practice.', icon: User, tone: 'teal' },
+  { intent: 'clinic_owner', title: 'Clinic Owner', body: 'I run a facility and manage multiple staff.', icon: Building2, tone: 'emerald' },
+  { intent: 'doctor', title: 'Referring Doctor', body: 'I want to refer my patients for physio.', icon: FileText, tone: 'green' },
+  { intent: 'family', title: 'Family / Caregiver', body: 'I want to arrange care for someone I look after.', icon: HeartHandshake, tone: 'rose' },
+];
+
+// Full class names so Tailwind keeps them
+const TONES: Record<string, { idle: string; active: string; icon: string }> = {
+  blue: { idle: 'border-blue-100 hover:border-blue-500', active: 'border-blue-500 ring-2 ring-blue-200', icon: 'bg-blue-50 text-blue-600 group-hover:bg-blue-500' },
+  teal: { idle: 'border-teal-100 hover:border-teal-500', active: 'border-teal-500 ring-2 ring-teal-200', icon: 'bg-teal-50 text-teal-600 group-hover:bg-teal-500' },
+  emerald: { idle: 'border-emerald-100 hover:border-emerald-500', active: 'border-emerald-500 ring-2 ring-emerald-200', icon: 'bg-emerald-50 text-emerald-600 group-hover:bg-emerald-500' },
+  green: { idle: 'border-green-100 hover:border-green-500', active: 'border-green-500 ring-2 ring-green-200', icon: 'bg-green-50 text-green-600 group-hover:bg-green-500' },
+  rose: { idle: 'border-rose-100 hover:border-rose-400', active: 'border-rose-400 ring-2 ring-rose-200', icon: 'bg-rose-50 text-rose-500 group-hover:bg-rose-400' },
+};
+
 function RoleSelectionContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const { isLoaded: authLoaded, isSignedIn } = useAuth();
   const { setRoleAndStep, setCurrentOnboardingId, setActualClinicId } = useOnboardingStore();
   const updateUserRole = useMutation(api.users.updateUserRole);
-  const [loadingRole, setLoadingRole] = useState<OnboardingRole | null>(null);
+  const [loadingIntent, setLoadingIntent] = useState<CardIntent | null>(null);
   const currentUser = useQuery(api.users.getMyUser);
   // Admins can pause new registrations per role (/dashboard/admin/system); the server enforces it too
   const platform = useQuery(api.platformSettings.getPublicPlatformStatus);
@@ -29,6 +71,14 @@ function RoleSelectionContent() {
     if (role === 'clinic_owner') return !platform.allowClinicSignups;
     return false;
   };
+
+  // Chosen before sign-up ("Get started", the sign-up page, or ?role= on older links)
+  const urlIntent = parseIntent(searchParams.get('as')) ?? parseIntent(searchParams.get('role'));
+  const [suggested, setSuggested] = useState<SignupIntent | null>(urlIntent);
+  useEffect(() => {
+    if (!urlIntent) setSuggested(readRememberedIntent());
+  }, [urlIntent]);
+  const autoAppliedRef = useRef(false);
 
   // If user already completed onboarding, check their approval status
   useEffect(() => {
@@ -43,42 +93,42 @@ function RoleSelectionContent() {
       return
     }
 
-    if (currentUser && currentUser.onboarded) {
-      // Only redirect if the user also has a role assigned
-      // This prevents an infinite loop where DashboardAuthGuard redirects to /role-selection
-      // because role is missing, but this page redirects back to /dashboard because onboarded is true
-      if (currentUser.role) {
-        // For roles that require approval, check status before redirecting
-        if (currentUser.role === 'physiotherapist' || currentUser.role === 'clinic_owner') {
-          // Let DashboardAuthGuard handle the approval status check
-          router.replace('/dashboard');
-        } else {
-          // Admin can go directly to dashboard
-          if (currentUser.role === 'admin') {
-            router.replace('/dashboard');
-          } else if (currentUser.role === 'patient') {
-            // Patient goes to step 1 if they are here (meaning they might need to complete profile)
-            // But if they are fully onboarded, maybe they should go to dashboard?
-            // The user said: "not a long onboarding step immediately they are done onboarding we save that to database then we send the to find my physio page"
-            // So if they are already onboarded, they should probably go to dashboard or find-a-physio.
-            // Let's assume if they are here, they might want to update or we just send them to dashboard if onboarded.
-            router.replace('/dashboard');
-          }
-        }
-      }
-      // If role is missing but onboarded is true, stay here so they can select a role
+    // A finished account never picks again; the dashboard routes it by role (and checks approval).
+    // Only roles /dashboard knows, or it would send the user straight back here.
+    if (currentUser && currentUser.onboarded && currentUser.role) {
+      if (currentUser.role === 'partner') router.replace('/partners/portal');
+      else if (DASHBOARD_ROLES.has(currentUser.role)) router.replace('/dashboard');
+      return;
     }
-  }, [currentUser, router]);
 
-  const handleRoleSelect = async (role: OnboardingRole) => {
+    // Arriving signed out (an old link): sign up first, keeping the choice
+    if (authLoaded && !isSignedIn && urlIntent) {
+      router.replace(`/sign-up?as=${urlIntent}`);
+      return;
+    }
+
+    // They already said who they are before signing up: set it up without asking again
+    if (!urlIntent || autoAppliedRef.current || !currentUser || platform === undefined) return;
+    autoAppliedRef.current = true;
+    if (urlIntent === 'partner') {
+      router.replace(onboardingPathFor('partner'));
+      return;
+    }
+    const role = roleForIntent(urlIntent) as OnboardingRole;
+    if (!isPaused(role)) void handleSelect(urlIntent);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs once the user and platform status have loaded
+  }, [currentUser, router, authLoaded, isSignedIn, urlIntent, platform]);
+
+  const handleSelect = async (intent: CardIntent) => {
+    const role = roleForIntent(intent) as OnboardingRole;
     if (isPaused(role)) {
       import('sonner').then(({ toast }) => toast.error('New registrations for this account type are paused right now.'));
       return;
     }
     try {
-      setLoadingRole(role);
+      setLoadingIntent(intent);
 
-      // Update the role in the database
+      // Update the role in the database (refused once the account is set up as something else)
       await updateUserRole({ role });
 
       // Update the client-side store
@@ -86,39 +136,18 @@ function RoleSelectionContent() {
       setCurrentOnboardingId(newOnboardingId); // Store the unique ID for this onboarding attempt
       setActualClinicId(undefined); // Clear any previous clinic ID to prevent auth errors
       setRoleAndStep(role, 1); // Set role and start at step 1
+      forgetIntent();
 
       // Navigate to the first step of the respective onboarding flow
-      switch (role) {
-        case 'physiotherapist':
-          // Redirect to the main physiotherapist onboarding page (wizard)
-          router.push('/physiotherapist');
-          break;
-        case 'clinic_owner':
-          // Redirect to the main clinic owner onboarding page (wizard)
-          router.push('/clinic-owner');
-          break;
-        case 'patient':
-          router.push('/patient/step1');
-          break;
-        case 'doctor':
-          router.push('/doctor');
-          break;
-        default:
-          console.error('Unknown role selected');
-          // Optionally, navigate to an error page or back to role selection
-          break;
-      }
-    } catch (error: any) {
+      router.push(onboardingPathFor(intent));
+    } catch (error) {
       console.error('Error updating user role:', error);
-      import('sonner').then(({ toast }) => toast.error(error.message || 'Failed to update role. Please try again.'));
-    } finally {
-      setLoadingRole(null);
+      import('sonner').then(({ toast }) => toast.error(programError(error, 'Failed to update role. Please try again.')));
+      setLoadingIntent(null);
     }
   };
 
-  const searchParams = useSearchParams();
-  const targetRole = searchParams.get('role');
-  const hideOthers = targetRole === 'doctor';
+  const settingUp = loadingIntent ? SETTING_UP_LABELS[loadingIntent] : null;
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen p-4 bg-gradient-to-br from-emerald-50 to-teal-100">
@@ -127,82 +156,44 @@ function RoleSelectionContent() {
           <h1 className="text-3xl font-semibold text-teal-800">
             Welcome to Rehabify Health!
           </h1>
-          <p className="text-lg text-teal-700 pt-2">
-            Please select your role to get started.
+          <p className="text-lg text-teal-700 pt-2" role="status">
+            {settingUp ? `Setting up your ${settingUp} account…` : 'Please select your role to get started.'}
           </p>
         </div>
-        <div className={`grid gap-4 mt-8 ${hideOthers ? 'sm:grid-cols-1 max-w-sm mx-auto' : 'sm:grid-cols-2'}`}>
-          {/* Doctor Card */}
-          <button
-            onClick={() => handleRoleSelect('doctor')}
-            disabled={loadingRole !== null}
-            className={`p-6 bg-white border-2 rounded-2xl text-left transition-all duration-200 group relative overflow-hidden ${loadingRole === 'doctor' ? 'border-green-500 ring-2 ring-green-200 opacity-80' : 'border-green-100 hover:border-green-500 hover:shadow-md'
-              }`}
-          >
-            <div className="w-12 h-12 bg-green-50 text-green-600 rounded-xl flex items-center justify-center mb-4 group-hover:bg-green-500 group-hover:text-white transition-colors">
-              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-            </div>
-            <h3 className="text-xl font-bold text-gray-900 mb-1">Referring Doctor</h3>
-            <p className="text-sm text-gray-500">I want to refer my patients for physio.</p>
-          </button>
-
-          {!hideOthers && (
-            <>
-              {/* Physiotherapist Card */}
+        <div className="grid gap-4 mt-8 sm:grid-cols-2">
+          {CARDS.map(({ intent, title, body, icon: Icon, tone }) => {
+            const role = roleForIntent(intent) as OnboardingRole;
+            const paused = isPaused(role);
+            const styles = TONES[tone];
+            const isSuggested = suggested === intent && !loadingIntent;
+            return (
               <button
-                onClick={() => handleRoleSelect('physiotherapist')}
-                disabled={loadingRole !== null || isPaused('physiotherapist')}
-                className={`p-6 bg-white border-2 rounded-2xl text-left transition-all duration-200 group relative overflow-hidden ${loadingRole === 'physiotherapist' ? 'border-teal-500 ring-2 ring-teal-200 opacity-80' : 'border-teal-100 hover:border-teal-500 hover:shadow-md'
-                  }`}
+                key={intent}
+                onClick={() => void handleSelect(intent)}
+                disabled={loadingIntent !== null || paused}
+                className={`p-6 bg-white border-2 rounded-2xl text-left transition-all duration-200 group relative overflow-hidden ${
+                  loadingIntent === intent ? `${styles.active} opacity-80` : isSuggested ? `${styles.active} hover:shadow-md` : `${styles.idle} hover:shadow-md`
+                }`}
               >
-                <div className="w-12 h-12 bg-teal-50 text-teal-600 rounded-xl flex items-center justify-center mb-4 group-hover:bg-teal-500 group-hover:text-white transition-colors">
-                  <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                  </svg>
+                {isSuggested && (
+                  <span className="absolute right-4 top-4 rounded-full bg-teal-700 px-2 py-0.5 text-[10px] font-bold text-white">Your choice</span>
+                )}
+                <div className={`w-12 h-12 rounded-xl flex items-center justify-center mb-4 group-hover:text-white transition-colors ${styles.icon}`}>
+                  <Icon className="w-6 h-6" />
                 </div>
-                <h3 className="text-xl font-bold text-gray-900 mb-1">Physiotherapist</h3>
-                <p className="text-sm text-gray-500">I treat patients and want to manage my practice.</p>
-                {isPaused('physiotherapist') && <p className="mt-2 text-xs font-medium text-amber-700">New registrations are paused</p>}
+                <h3 className="text-xl font-bold text-gray-900 mb-1">{title}</h3>
+                <p className="text-sm text-gray-500">{body}</p>
+                {paused && <p className="mt-2 text-xs font-medium text-amber-700">New registrations are paused</p>}
               </button>
-
-              {/* Clinic Owner Card */}
-              <button
-                onClick={() => handleRoleSelect('clinic_owner')}
-                disabled={loadingRole !== null || isPaused('clinic_owner')}
-                className={`p-6 bg-white border-2 rounded-2xl text-left transition-all duration-200 group relative overflow-hidden ${loadingRole === 'clinic_owner' ? 'border-emerald-500 ring-2 ring-emerald-200 opacity-80' : 'border-emerald-100 hover:border-emerald-500 hover:shadow-md'
-                  }`}
-              >
-                <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center mb-4 group-hover:bg-emerald-500 group-hover:text-white transition-colors">
-                  <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-                  </svg>
-                </div>
-                <h3 className="text-xl font-bold text-gray-900 mb-1">Clinic Owner</h3>
-                <p className="text-sm text-gray-500">I run a facility and manage multiple staff.</p>
-                {isPaused('clinic_owner') && <p className="mt-2 text-xs font-medium text-amber-700">New registrations are paused</p>}
-              </button>
-
-              {/* Patient Card */}
-              <button
-                onClick={() => handleRoleSelect('patient')}
-                disabled={loadingRole !== null || isPaused('patient')}
-                className={`p-6 bg-white border-2 rounded-2xl text-left transition-all duration-200 group relative overflow-hidden ${loadingRole === 'patient' ? 'border-blue-500 ring-2 ring-blue-200 opacity-80' : 'border-blue-100 hover:border-blue-500 hover:shadow-md'
-                  }`}
-              >
-                <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center mb-4 group-hover:bg-blue-500 group-hover:text-white transition-colors">
-                  <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-                  </svg>
-                </div>
-                <h3 className="text-xl font-bold text-gray-900 mb-1">Patient</h3>
-                <p className="text-sm text-gray-500">I need care or have an invitation link.</p>
-                {isPaused('patient') && <p className="mt-2 text-xs font-medium text-amber-700">New registrations are paused</p>}
-              </button>
-            </>
-          )}
+            );
+          })}
         </div>
+        <p className="mt-6 text-center text-sm text-gray-600">
+          Representing an HMO, insurer or employer?{' '}
+          <Link href={onboardingPathFor('partner')} className="font-semibold text-teal-700 hover:underline">
+            Apply for partner access
+          </Link>
+        </p>
       </div>
       <p className="mt-8 text-sm text-gray-600">
         Rehabify Health © {new Date().getFullYear()}

@@ -20,7 +20,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Users } from 'lucide-react'
+import { Users } from '@/components/icons'
 import { toast } from 'sonner'
 import { Id } from '@/convex/_generated/dataModel'
 import { EmptyState, StatusBadge, primaryButtonClass } from '@/components/clinic/ui'

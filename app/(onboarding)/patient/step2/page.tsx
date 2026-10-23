@@ -6,7 +6,7 @@ import { useOnboardingStore } from '@/stores/onboardingStore';
 import HealthInfoForm, { PatientHealthInfoValues } from '@/components/onboarding/patient/HealthInfoForm';
 import { useCompletePatientOnboarding } from '@/lib/api/patientInvitations';
 import { toast } from 'sonner';
-import { Loader2 } from 'lucide-react';
+import { Loader2 } from '@/components/icons';
 
 function PatientStep2Content() {
   const router = useRouter();

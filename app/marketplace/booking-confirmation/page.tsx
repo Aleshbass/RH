@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Check } from "lucide-react";
+import { Check } from "@/components/icons";
 import BackBreadcrumb from "@/components/common/BackBreadcrumb";
 import { BookedSound } from "@/components/booking/BookedSound";
 

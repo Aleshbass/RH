@@ -3,7 +3,7 @@
 import { useState, type ComponentType } from 'react';
 import { notFound } from 'next/navigation';
 import { useAction } from 'convex/react';
-import { AlertTriangle, Bell, Calendar, CheckCircle2, Database, FileText, Loader2, Play, XCircle } from 'lucide-react';
+import { AlertTriangle, Bell, Calendar, CheckCircle2, Database, FileText, Loader2, Play, XCircle } from '@/components/icons';
 import { api } from '@/convex/_generated/api';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';

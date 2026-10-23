@@ -18,7 +18,7 @@ import {
   LogIn,
   MonitorPlay,
   Video,
-} from 'lucide-react'
+} from '@/components/icons'
 import { api } from '@/convex/_generated/api'
 import { errorMessage } from '@/components/partners/portal/shared'
 import { cn } from '@/lib/utils'

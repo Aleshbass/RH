@@ -1,239 +1,425 @@
-
-
 'use client'
 
-import { useAuth } from '@clerk/nextjs'
-import { useRouter } from 'next/navigation'
-import { useEffect, useState, useMemo } from 'react'
+import { Suspense, useEffect, useMemo, useState, type KeyboardEvent } from 'react'
+import Link from 'next/link'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useQuery } from 'convex/react'
 import { api } from '@/convex/_generated/api'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import type { Id } from '@/convex/_generated/dataModel'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Calendar, CalendarPlus, CalendarX, ChevronRight, History, MapPin, Search, Video } from '@/components/icons'
+import { formatLagos, lagosTime, zonedDateKey } from '@/convex/helpers/lagosTime'
+import { isVideoVisit, meetingLinkOf } from '@/components/appointments/appointment-ui'
+import { cn } from '@/lib/utils'
 import {
-  Loader2,
-  Plus
-} from 'lucide-react'
-import { format } from 'date-fns'
-import { User as UserType } from '@/app/types'
+  EmptyState,
+  IconChip,
+  InfoTip,
+  PageContainer,
+  PageHeader,
+  PageSkeleton,
+  Panel,
+  StatusBadge,
+  accentButtonClass,
+  listRowClass,
+  primaryButtonClass,
+  secondaryButtonClass,
+  tabsListClass,
+  tabsTriggerClass,
+} from '@/components/patient/ui'
 import { PatientAppointmentBookingModal } from '@/components/patient/PatientAppointmentBookingModal'
 import {
   CancelAppointmentModal,
   ConfirmAppointmentModal,
   RescheduleAppointmentModal,
-  RespondToProposalModal
+  RespondToProposalModal,
 } from '@/components/patient/AppointmentActionModals'
 import { AppointmentFeedbackModal } from '@/components/patient/AppointmentFeedbackModal'
-import { Id } from '@/convex/_generated/dataModel'
-import { PatientAppointmentDashboard } from '@/components/appointments/PatientAppointmentDashboard'
+import {
+  AppointmentDetailsDrawer,
+  canJoinVisit,
+  durationMinutes,
+  isCancelled,
+  isJoinTime,
+  isLiveAppointment,
+  needsPatientAnswer,
+  patientStatus,
+  placeLabel,
+  useJoinVisit,
+  type PatientAppointment,
+} from '@/components/patient/AppointmentDetailsModal'
 import { OpenBookingsCard } from '@/components/patient/OpenBookingsCard'
 
-interface Appointment {
-  _id: string
-  patientId: string
-  physiotherapistId: string
-  clinicId?: string
-  startTime: number
-  endTime: number
-  serviceType: string
-  status: 'scheduled' | 'confirmed' | 'completed' | 'cancelled_by_patient' | 'cancelled_by_therapist' | 'no_show'
-  notesForPatient?: string
-  notesForTherapist?: string
-  cancellationReason?: string
-  feedbackSubmitted?: boolean
-  physiotherapistName?: string
-  googleMeetLink?: string
-  streamMeetingLink?: string
-  videoCallId?: string
-  appointmentType?: 'in-person' | 'telehealth'
-  location?: string
-  meetingLink?: string
-  // Another time the physio proposed, waiting for the patient's answer
-  proposedStartTime?: number
-  proposedEndTime?: number
-  proposalNote?: string
+const DAY_MS = 24 * 60 * 60 * 1000
+
+type Tab = 'upcoming' | 'past' | 'cancelled'
+type DayGroup = { key: string; label: string; date: string; items: PatientAppointment[] }
+
+/** Visits grouped by Lagos day, with "Today" / "Tomorrow" where it applies. */
+function groupByDay(list: PatientAppointment[], now: number): DayGroup[] {
+  const today = zonedDateKey(now)
+  const tomorrow = zonedDateKey(now + DAY_MS)
+  const yesterday = zonedDateKey(now - DAY_MS)
+  const thisYear = formatLagos(now, { year: 'numeric' })
+  const groups: DayGroup[] = []
+  for (const apt of list) {
+    const key = zonedDateKey(apt.startTime)
+    let group = groups[groups.length - 1]
+    if (!group || group.key !== key) {
+      const sameYear = formatLagos(apt.startTime, { year: 'numeric' }) === thisYear
+      const date = formatLagos(
+        apt.startTime,
+        sameYear ? { weekday: 'short', day: 'numeric', month: 'short' } : { day: 'numeric', month: 'short', year: 'numeric' },
+        'en-NG'
+      )
+      const label = key === today ? 'Today' : key === tomorrow ? 'Tomorrow' : key === yesterday ? 'Yesterday' : date
+      group = { key, label, date: label === date ? '' : date, items: [] }
+      groups.push(group)
+    }
+    group.items.push(apt)
+  }
+  return groups
 }
 
+function AppointmentRow({
+  apt,
+  now,
+  onOpen,
+  onJoin,
+}: {
+  apt: PatientAppointment
+  now: number
+  onOpen: (apt: PatientAppointment) => void
+  onJoin: (apt: PatientAppointment) => void
+}) {
+  const status = patientStatus(apt, now)
+  const video = isVideoVisit(apt)
+  const showJoin = canJoinVisit(apt, now) && isJoinTime(apt, now)
+  const askToRate = apt.status === 'completed' && !apt.feedbackSubmitted
 
-export default function PatientAppointmentsPage() {
+  const badges = (
+    <span className="flex flex-wrap items-center gap-1">
+      <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
+      <InfoTip label="What does this status mean?">{status.explain}</InfoTip>
+      {askToRate && <StatusBadge tone="sun">Rate this visit</StatusBadge>}
+    </span>
+  )
+
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={(event) => {
+        // Clicks inside the status tip's popover bubble here through the portal; ignore them
+        if (!event.currentTarget.contains(event.target as Node)) return
+        onOpen(apt)
+      }}
+      onKeyDown={(event: KeyboardEvent<HTMLDivElement>) => {
+        if (event.target !== event.currentTarget) return
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          onOpen(apt)
+        }
+      }}
+      className={cn(listRowClass, 'cursor-pointer items-start sm:items-center')}
+    >
+      <div className="w-[72px] shrink-0 pt-0.5 sm:pt-0">
+        <p className="text-sm font-semibold tabular-nums text-pt-ink">{lagosTime(apt.startTime)}</p>
+        <p className="text-xs text-pt-faint">{durationMinutes(apt)} min</p>
+      </div>
+      <IconChip icon={video ? Video : MapPin} tone={video ? 'violet' : 'sun'} size="sm" className="hidden sm:flex" />
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-semibold text-pt-ink">{apt.serviceType || 'Appointment'}</p>
+        <p className="truncate text-xs text-pt-muted">
+          {apt.physiotherapistName || 'Your physiotherapist'} · {placeLabel(apt)}
+        </p>
+        <div className="mt-1.5 md:hidden">{badges}</div>
+      </div>
+      <div className="hidden shrink-0 md:block">{badges}</div>
+      {showJoin && (
+        <Button
+          size="sm"
+          className={cn(accentButtonClass, 'h-9 shrink-0 px-3')}
+          onClick={(event) => {
+            event.stopPropagation()
+            onJoin(apt)
+          }}
+        >
+          <Video className="mr-1.5 h-3.5 w-3.5" />
+          Join
+        </Button>
+      )}
+      <ChevronRight className="mt-1 h-3.5 w-3.5 shrink-0 text-pt-faint sm:mt-0" />
+    </div>
+  )
+}
+
+function DayGroups({
+  groups,
+  now,
+  onOpen,
+  onJoin,
+}: {
+  groups: DayGroup[]
+  now: number
+  onOpen: (apt: PatientAppointment) => void
+  onJoin: (apt: PatientAppointment) => void
+}) {
+  return (
+    <div className="space-y-4">
+      {groups.map((group) => (
+        <section key={group.key} aria-label={group.date || group.label}>
+          <div className="flex items-center gap-2 px-3 pb-1">
+            <span
+              className={cn(
+                'rounded-full px-2.5 py-1 text-xs font-semibold',
+                group.label === 'Today' ? 'bg-pt-primary text-pt-on-primary' : 'bg-pt-sunken text-pt-ink'
+              )}
+            >
+              {group.label}
+            </span>
+            {group.date && <span className="text-xs text-pt-faint">{group.date}</span>}
+          </div>
+          <div className="space-y-0.5">
+            {group.items.map((apt) => (
+              <AppointmentRow key={apt._id} apt={apt} now={now} onOpen={onOpen} onJoin={onJoin} />
+            ))}
+          </div>
+        </section>
+      ))}
+    </div>
+  )
+}
+
+function AppointmentsView() {
   const router = useRouter()
-  const { isLoaded, isSignedIn } = useAuth()
-  const [activeTab, setActiveTab] = useState('upcoming')
+  const pathname = usePathname() ?? '/dashboard/patient/appointments'
+  const searchParams = useSearchParams()
+  const join = useJoinVisit()
 
-  // Modal states
-  const [isBookingModalOpen, setIsBookingModalOpen] = useState(false)
-  const [isCancelModalOpen, setIsCancelModalOpen] = useState(false)
-  const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false)
-  const [isRescheduleModalOpen, setIsRescheduleModalOpen] = useState(false)
-  const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null)
-  const [proposalAnswer, setProposalAnswer] = useState<{ appointment: Appointment; accept: boolean } | null>(null)
+  const appointments = useQuery(api.appointments.getPatientAppointments, { limit: 100 }) as PatientAppointment[] | undefined
 
-  const user = useQuery(api.users.getMyUser) as UserType | null | undefined
-  const allAppointments = useQuery(api.appointments.getPatientAppointments, {
-    limit: 100,
-  })
+  const [tab, setTab] = useState<Tab>('upcoming')
+  const [bookingOpen, setBookingOpen] = useState(false)
+  const [detailsId, setDetailsId] = useState<string | null>(null)
+  const [detailsOpen, setDetailsOpen] = useState(false)
+  const [cancelTarget, setCancelTarget] = useState<PatientAppointment | null>(null)
+  const [confirmTarget, setConfirmTarget] = useState<PatientAppointment | null>(null)
+  const [rescheduleTarget, setRescheduleTarget] = useState<PatientAppointment | null>(null)
+  const [proposalAnswer, setProposalAnswer] = useState<{ appointment: PatientAppointment; accept: boolean } | null>(null)
+  const [feedbackTarget, setFeedbackTarget] = useState<PatientAppointment | null>(null)
 
-  // Stable filtering with useMemo
-  const { upcoming, past } = useMemo(() => {
-    if (!allAppointments) return { upcoming: [], past: [] }
-
-    const now = Date.now()
-    const upcomingList = allAppointments.filter((apt: { startTime: number; status: string }) =>
-      apt.startTime >= now && ['scheduled', 'confirmed'].includes(apt.status)
-    ).sort((a: { startTime: number }, b: { startTime: number }) => a.startTime - b.startTime)
-
-    const pastList = allAppointments.filter((apt: { startTime: number; status: string }) =>
-      apt.startTime < now || ['completed', 'cancelled_by_patient', 'cancelled_by_therapist', 'no_show'].includes(apt.status)
-    ).sort((a: { startTime: number }, b: { startTime: number }) => b.startTime - a.startTime)
-
-    return { upcoming: upcomingList, past: pastList }
-  }, [allAppointments])
-
-  // Stable redirect logic
+  // "Book a session" anywhere in the portal lands here with ?book=1
+  const wantsBooking = searchParams?.get('book') === '1'
   useEffect(() => {
-    if (!isLoaded) return
+    if (wantsBooking) setBookingOpen(true)
+  }, [wantsBooking])
+  const closeBooking = () => {
+    setBookingOpen(false)
+    if (wantsBooking) router.replace(pathname, { scroll: false })
+  }
 
-    if (!isSignedIn) {
-      router.push('/sign-in')
-      return
+  // Visits move from upcoming to past (and Join appears) on the clock, not only when data changes
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 60_000)
+    return () => window.clearInterval(timer)
+  }, [])
+
+  const lists = useMemo(() => {
+    const all = appointments ?? []
+    const needsAnswer = all.filter((a) => needsPatientAnswer(a)).sort((a, b) => a.startTime - b.startTime)
+    const upcoming = all
+      .filter((a) => isLiveAppointment(a, now) && !needsAnswer.includes(a))
+      .sort((a, b) => a.startTime - b.startTime)
+    const past = all.filter((a) => !isLiveAppointment(a, now) && !isCancelled(a)).sort((a, b) => b.startTime - a.startTime)
+    const cancelled = all.filter((a) => isCancelled(a)).sort((a, b) => b.startTime - a.startTime)
+    return { needsAnswer, upcoming, past, cancelled }
+  }, [appointments, now])
+
+  if (appointments === undefined) return <PageSkeleton />
+
+  // The open drawer follows live data, so a confirmation elsewhere updates it in place
+  const detailsAppointment = appointments.find((a) => a._id === detailsId) ?? null
+  const openDetails = (apt: PatientAppointment) => {
+    setDetailsId(apt._id)
+    setDetailsOpen(true)
+  }
+  // Actions close the details drawer and open their own
+  const fromDetails =
+    <T,>(open: (value: T) => void) =>
+    (value: T) => {
+      setDetailsOpen(false)
+      open(value)
     }
+  const joinVisit = (apt: PatientAppointment) => join(meetingLinkOf(apt))
 
-    if (user && user.role !== 'patient') {
-      router.push('/dashboard')
-    }
-  }, [isLoaded, isSignedIn, user, router])
-
-  // Modal handlers
-  const handleBookingComplete = () => {
-    // Appointments will refresh automatically due to Convex reactivity
-  }
-
-  const handleCancel = (appointment: Appointment) => {
-    setSelectedAppointment(appointment)
-    setIsCancelModalOpen(true)
-  }
-
-  const handleReschedule = (appointment: Appointment) => {
-    setSelectedAppointment(appointment)
-    setIsRescheduleModalOpen(true)
-  }
-
-  const handleConfirm = (appointment: Appointment) => {
-    setSelectedAppointment(appointment)
-    setIsConfirmModalOpen(true)
-  }
-
-  const handleActionComplete = () => {
-    // Appointments will refresh automatically due to Convex reactivity
-    setSelectedAppointment(null)
-  }
-
-  // Add state for feedback modal
-  const [feedbackModal, setFeedbackModal] = useState<{
-    isOpen: boolean
-    appointment: Appointment | null
-  }>({
-    isOpen: false,
-    appointment: null
-  })
-
-
-
-  if (!isLoaded || user === undefined || allAppointments === undefined) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-gray-400" />
-          <p className="text-gray-500">Loading your appointments...</p>
-        </div>
-      </div>
-    )
-  }
-
-  if (user === null) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <p className="text-red-600">User not found. Please try signing in again.</p>
-      </div>
-    )
+  const groups = {
+    upcoming: groupByDay(lists.upcoming, now),
+    past: groupByDay(lists.past, now),
+    cancelled: groupByDay(lists.cancelled, now),
   }
 
   return (
-    <div className="container mx-auto p-6 max-w-7xl">
+    <PageContainer>
+      <PageHeader
+        title="Appointments"
+        description="Book, change or join your visits."
+        info="All times are Lagos time (WAT). A visit you ask for waits for your physio to confirm it. A visit your physio books for you needs your confirmation."
+        actions={
+          <Button className={cn(primaryButtonClass, 'h-11 px-5')} onClick={() => setBookingOpen(true)}>
+            <CalendarPlus className="mr-2 h-4 w-4" />
+            Book a session
+          </Button>
+        }
+      />
+
       {/* Scheduled bookings waiting for payment (renders nothing when there are none) */}
-      <div className="mb-6 empty:hidden">
-        <OpenBookingsCard />
-      </div>
+      <OpenBookingsCard />
 
-      {/* Appointment Booking Modal */}
-      <PatientAppointmentBookingModal
-        isOpen={isBookingModalOpen}
-        onClose={() => setIsBookingModalOpen(false)}
-        onAppointmentBooked={handleBookingComplete}
+      {lists.needsAnswer.length > 0 && (
+        <Panel
+          title={
+            <span className="flex items-center gap-2">
+              Needs your answer
+              <StatusBadge tone="amber">{lists.needsAnswer.length}</StatusBadge>
+            </span>
+          }
+          description="Your physio is waiting to hear from you. Tap a visit to answer."
+          bodyClassName="px-2 pb-2 pt-2 sm:px-3 sm:pb-3"
+          className="ring-1 ring-inset ring-pt-amber-fg/20"
+        >
+          <DayGroups groups={groupByDay(lists.needsAnswer, now)} now={now} onOpen={openDetails} onJoin={joinVisit} />
+        </Panel>
+      )}
+
+      <Tabs value={tab} onValueChange={(value) => setTab(value as Tab)} className="space-y-4">
+        <TabsList className={tabsListClass}>
+          <TabsTrigger value="upcoming" className={tabsTriggerClass}>
+            Upcoming
+            {lists.upcoming.length > 0 && (
+              <span className="ml-1.5 rounded-full bg-pt-neutral-bg px-1.5 text-[11px] font-semibold tabular-nums text-pt-neutral-fg">
+                {lists.upcoming.length}
+              </span>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="past" className={tabsTriggerClass}>
+            Past
+          </TabsTrigger>
+          <TabsTrigger value="cancelled" className={tabsTriggerClass}>
+            Cancelled
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="upcoming" className="mt-0 focus-visible:outline-none">
+          <Panel bodyClassName="p-2 sm:p-3">
+            {groups.upcoming.length > 0 ? (
+              <DayGroups groups={groups.upcoming} now={now} onOpen={openDetails} onJoin={joinVisit} />
+            ) : (
+              <EmptyState
+                icon={Calendar}
+                title={lists.needsAnswer.length > 0 ? 'Nothing else booked yet' : 'No upcoming visits'}
+                description="Regular sessions help you recover faster. Book your next one when you’re ready."
+                action={
+                  <div className="flex flex-wrap justify-center gap-2">
+                    <Button className={cn(primaryButtonClass, 'h-10 px-4')} onClick={() => setBookingOpen(true)}>
+                      <CalendarPlus className="mr-2 h-4 w-4" />
+                      Book a session
+                    </Button>
+                    <Button asChild className={cn(secondaryButtonClass, 'h-10 px-4')}>
+                      <Link href="/find-a-physio">
+                        <Search className="mr-2 h-4 w-4" />
+                        Find a physio
+                      </Link>
+                    </Button>
+                  </div>
+                }
+              />
+            )}
+          </Panel>
+        </TabsContent>
+
+        <TabsContent value="past" className="mt-0 focus-visible:outline-none">
+          <Panel bodyClassName="p-2 sm:p-3">
+            {groups.past.length > 0 ? (
+              <DayGroups groups={groups.past} now={now} onOpen={openDetails} onJoin={joinVisit} />
+            ) : (
+              <EmptyState icon={History} title="No past visits yet" description="Visits you’ve had will show here, with any summary from your physio." />
+            )}
+          </Panel>
+        </TabsContent>
+
+        <TabsContent value="cancelled" className="mt-0 focus-visible:outline-none">
+          <Panel bodyClassName="p-2 sm:p-3">
+            {groups.cancelled.length > 0 ? (
+              <DayGroups groups={groups.cancelled} now={now} onOpen={openDetails} onJoin={joinVisit} />
+            ) : (
+              <EmptyState icon={CalendarX} title="Nothing cancelled" description="Visits that you or your physio cancel will show here." />
+            )}
+          </Panel>
+        </TabsContent>
+      </Tabs>
+
+      <AppointmentDetailsDrawer
+        appointment={detailsAppointment}
+        open={detailsOpen && detailsAppointment !== null}
+        onOpenChange={setDetailsOpen}
+        onConfirm={fromDetails(setConfirmTarget)}
+        onReschedule={fromDetails(setRescheduleTarget)}
+        onCancel={fromDetails(setCancelTarget)}
+        onRespondToProposal={(apt, accept) => {
+          setDetailsOpen(false)
+          setProposalAnswer({ appointment: apt, accept })
+        }}
+        onRateVisit={fromDetails(setFeedbackTarget)}
       />
 
-      {/* Cancel Appointment Modal */}
+      <PatientAppointmentBookingModal isOpen={bookingOpen} onClose={closeBooking} />
+
       <CancelAppointmentModal
-        isOpen={isCancelModalOpen}
-        onClose={() => {
-          setIsCancelModalOpen(false)
-          setSelectedAppointment(null)
-        }}
-        appointment={selectedAppointment}
-        onAppointmentCancelled={handleActionComplete}
+        isOpen={cancelTarget !== null}
+        onClose={() => setCancelTarget(null)}
+        appointment={cancelTarget}
+        onAppointmentCancelled={() => setCancelTarget(null)}
       />
-
-      {/* Confirm Appointment Modal */}
       <ConfirmAppointmentModal
-        isOpen={isConfirmModalOpen}
-        onClose={() => {
-          setIsConfirmModalOpen(false)
-          setSelectedAppointment(null)
-        }}
-        appointment={selectedAppointment}
-        onAppointmentConfirmed={handleActionComplete}
+        isOpen={confirmTarget !== null}
+        onClose={() => setConfirmTarget(null)}
+        appointment={confirmTarget}
+        onAppointmentConfirmed={() => setConfirmTarget(null)}
       />
-
-      {/* Reschedule Appointment Modal */}
       <RescheduleAppointmentModal
-        isOpen={isRescheduleModalOpen}
-        onClose={() => {
-          setIsRescheduleModalOpen(false)
-          setSelectedAppointment(null)
-        }}
-        appointment={selectedAppointment}
-        onAppointmentRescheduled={handleActionComplete}
+        isOpen={rescheduleTarget !== null}
+        onClose={() => setRescheduleTarget(null)}
+        appointment={rescheduleTarget}
+        onAppointmentRescheduled={() => setRescheduleTarget(null)}
       />
-
-      {/* Answer the physio's proposed time */}
       <RespondToProposalModal
         isOpen={proposalAnswer !== null}
         onClose={() => setProposalAnswer(null)}
         appointment={proposalAnswer?.appointment ?? null}
         accept={proposalAnswer?.accept ?? true}
       />
-
-      {/* Feedback Modal */}
-      {feedbackModal.appointment && (
+      {feedbackTarget && (
         <AppointmentFeedbackModal
-          isOpen={feedbackModal.isOpen}
-          onClose={() => setFeedbackModal({ isOpen: false, appointment: null })}
-          appointmentId={feedbackModal.appointment._id as Id<"appointments">}
-          physiotherapistName={feedbackModal.appointment.physiotherapistName ?? ''}
-          appointmentDate={feedbackModal.appointment.startTime.toString()}
-          serviceType={feedbackModal.appointment.serviceType}
+          isOpen
+          onClose={() => setFeedbackTarget(null)}
+          appointmentId={feedbackTarget._id as Id<'appointments'>}
+          physiotherapistName={feedbackTarget.physiotherapistName ?? ''}
+          appointmentDate={String(feedbackTarget.startTime)}
+          serviceType={feedbackTarget.serviceType ?? 'Appointment'}
         />
       )}
+    </PageContainer>
+  )
+}
 
-      <PatientAppointmentDashboard
-        appointments={allAppointments || []}
-        onNewAppointment={() => setIsBookingModalOpen(true)}
-        onCancel={handleCancel}
-        onReschedule={handleReschedule}
-        onConfirm={handleConfirm}
-        onRateVisit={(apt) => setFeedbackModal({ isOpen: true, appointment: apt })}
-        onRespondToProposal={(apt, accept) => setProposalAnswer({ appointment: apt, accept })}
-      />
-    </div>
+export default function PatientAppointmentsPage() {
+  // useSearchParams needs a Suspense boundary
+  return (
+    <Suspense fallback={<PageSkeleton />}>
+      <AppointmentsView />
+    </Suspense>
   )
 }

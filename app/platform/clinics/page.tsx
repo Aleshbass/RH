@@ -1,7 +1,7 @@
 "use client";
 
 import PlatformPageLayout from "@/components/platform/PlatformPageLayout";
-import { Building2, Users, Calendar, BarChart3, ShieldCheck, Stethoscope } from "lucide-react";
+import { Building2, Users, Calendar, BarChart3, ShieldCheck, Stethoscope } from "@/components/icons";
 
 export default function ClinicsPage() {
   const features = [
@@ -44,7 +44,7 @@ export default function ClinicsPage() {
       description="Empower your clinic with the tools you need to scale. From solo practitioners to multi-location networks, Rehabify Health provides the infrastructure for modern physiotherapy practices."
       features={features}
       ctaText="Register Your Clinic"
-      ctaLink="/sign-up?role=clinic_owner"
+      ctaLink="/sign-up?as=clinic_owner"
     />
   );
 }

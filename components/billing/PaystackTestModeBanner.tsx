@@ -1,7 +1,7 @@
 'use client'
 
 import { useQuery } from 'convex/react'
-import { FlaskConical } from 'lucide-react'
+import { FlaskConical } from '@/components/icons'
 import { api } from '@/convex/_generated/api'
 import { cn } from '@/lib/utils'
 

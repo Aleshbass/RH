@@ -18,7 +18,7 @@ import {
   Clock,
   UserPlus,
   Shield
-} from 'lucide-react'
+} from '@/components/icons'
 import { format } from 'date-fns'
 import { toast } from 'sonner'
 import { useAuth } from '@clerk/nextjs'

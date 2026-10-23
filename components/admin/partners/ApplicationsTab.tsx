@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { format } from 'date-fns'
-import { Building2, CheckCircle2, ExternalLink, FileText, Link2, Mail, Phone, Plus, Rocket, Search, XCircle } from 'lucide-react'
+import { Building2, CheckCircle2, ExternalLink, FileText, Link2, Mail, Phone, Plus, Rocket, Search, Stethoscope, XCircle } from '@/components/icons'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -20,9 +20,53 @@ import {
 import { cn } from '@/lib/utils'
 import { CreatePartnerDialog, ReferralLinkDialog } from './PartnerDialogs'
 import { type PartnerApplication, type PartnerReview, type ReasonRequest } from './PartnerReview'
-import { Callout, LoadingBlock, PartnerAvatar, ProductionStatusBadge, linkClass } from './shared'
+import { Callout, insetClass, LoadingBlock, PartnerAvatar, PartnerTypeBadge, ProductionStatusBadge, linkClass } from './shared'
 
 type ApprovalFilter = 'all' | 'pending' | 'approved' | 'rejected'
+type KindFilter = 'all' | 'organisations' | 'doctors'
+
+const isKind = (partner: PartnerApplication, k: KindFilter) =>
+  k === 'all' || (k === 'doctors' ? partner.type === 'doctor' : partner.type !== 'doctor')
+
+/** What an admin checks before approving a referring doctor. */
+function DoctorDetails({ partner }: { partner: PartnerApplication }) {
+  const details = partner.doctorDetails
+  if (!details) {
+    return (
+      <Callout tone="warning" title="No doctor profile found">
+        This doctor hasn&apos;t finished their profile, so there is no licence number to check yet.
+      </Callout>
+    )
+  }
+  return (
+    <div className={cn(insetClass, 'space-y-2.5 text-xs')}>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+        <span className="text-neutral-500 dark:text-neutral-400">MDCN folio / licence</span>
+        <span className="font-mono text-sm font-semibold text-rh-night dark:text-white">{details.medicalLicenseNumber || 'Not given'}</span>
+      </div>
+      <dl className="grid gap-x-4 gap-y-1 sm:grid-cols-2">
+        {details.specialty && (
+          <div>
+            <dt className="text-neutral-500 dark:text-neutral-400">Specialty</dt>
+            <dd className="font-medium text-rh-night dark:text-white">{details.specialty}</dd>
+          </div>
+        )}
+        {details.hospitalAffiliation && (
+          <div>
+            <dt className="text-neutral-500 dark:text-neutral-400">Hospital / practice</dt>
+            <dd className="font-medium text-rh-night dark:text-white">{details.hospitalAffiliation}</dd>
+          </div>
+        )}
+      </dl>
+      {details.bio && <p className="leading-relaxed text-neutral-600 dark:text-neutral-300">{details.bio}</p>}
+      {partner.approvalStatus === 'pending' && (
+        <p className="flex items-center gap-1.5 font-medium text-amber-700 dark:text-amber-300">
+          <Stethoscope className="h-3.5 w-3.5" /> Verify the folio on the MDCN register before approving.
+        </p>
+      )}
+    </div>
+  )
+}
 
 function ApprovalBadge({ status }: { status: string }) {
   if (status === 'approved') return <StatusBadge tone="green">Approved</StatusBadge>
@@ -46,29 +90,37 @@ export function ApplicationsTab({
 }) {
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<ApprovalFilter>('all')
+  const [kind, setKind] = useState<KindFilter>('all')
   const [createOpen, setCreateOpen] = useState(false)
   const [linkPartner, setLinkPartner] = useState<PartnerApplication | null>(null)
   const [confirm, setConfirm] = useState<{ partner: PartnerApplication; kind: 'approve' | 'reapprove' | 'grant_live' } | null>(null)
 
   const counts = useMemo(() => {
-    const rows = applications ?? []
+    const all = applications ?? []
+    const rows = all.filter((p) => isKind(p, kind))
     return {
       all: rows.length,
       pending: rows.filter((p) => p.approvalStatus === 'pending').length,
       approved: rows.filter((p) => p.approvalStatus === 'approved').length,
       rejected: rows.filter((p) => p.approvalStatus === 'rejected').length,
+      kinds: {
+        all: all.length,
+        organisations: all.filter((p) => p.type !== 'doctor').length,
+        doctors: all.filter((p) => p.type === 'doctor').length,
+      },
     }
-  }, [applications])
+  }, [applications, kind])
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
     return (applications ?? []).filter((partner) => {
+      if (!isKind(partner, kind)) return false
       if (filter !== 'all' && partner.approvalStatus !== filter) return false
       if (!q) return true
       const email = (partner.contactEmail || partner.ownerEmail || '').toLowerCase()
       return partner.name.toLowerCase().includes(q) || partner.code.toLowerCase().includes(q) || email.includes(q)
     })
-  }, [applications, filter, search])
+  }, [applications, filter, kind, search])
 
   const runConfirm = async () => {
     if (!confirm) return
@@ -80,16 +132,27 @@ export function ApplicationsTab({
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <FilterChips
-          value={filter}
-          onChange={setFilter}
-          options={[
-            { value: 'all', label: 'All', count: counts.all },
-            { value: 'pending', label: 'Pending', count: counts.pending },
-            { value: 'approved', label: 'Approved', count: counts.approved },
-            { value: 'rejected', label: 'Declined', count: counts.rejected },
-          ]}
-        />
+        <div className="flex flex-col gap-2">
+          <FilterChips
+            value={kind}
+            onChange={setKind}
+            options={[
+              { value: 'all', label: 'Everyone', count: counts.kinds.all },
+              { value: 'organisations', label: 'Organisations', count: counts.kinds.organisations },
+              { value: 'doctors', label: 'Doctors', count: counts.kinds.doctors },
+            ]}
+          />
+          <FilterChips
+            value={filter}
+            onChange={setFilter}
+            options={[
+              { value: 'all', label: 'All', count: counts.all },
+              { value: 'pending', label: 'Pending', count: counts.pending },
+              { value: 'approved', label: 'Approved', count: counts.approved },
+              { value: 'rejected', label: 'Declined', count: counts.rejected },
+            ]}
+          />
+        </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
@@ -107,8 +170,8 @@ export function ApplicationsTab({
       </div>
 
       <Callout tone="info">
-        Approving an application gives the partner <strong>sandbox</strong> access only. Live keys, webhooks and links are unlocked separately under{' '}
-        <strong>Go-live</strong>.
+        Approving an organisation gives it <strong>sandbox</strong> access only. Live keys, webhooks and links are unlocked separately under{' '}
+        <strong>Go-live</strong>. Referring <strong>doctors</strong> are live as soon as you approve them, so check their licence first.
       </Callout>
 
       {applications === undefined ? (
@@ -129,6 +192,7 @@ export function ApplicationsTab({
         <div className="space-y-3">
           {filtered.map((partner) => {
             const busy = review.busyId === partner._id
+            const isDoctor = partner.type === 'doctor'
             return (
               <div key={partner._id} className={cn(cardClass, 'flex flex-col overflow-hidden md:flex-row')}>
                 <div className="min-w-0 flex-1 space-y-4 p-5">
@@ -139,19 +203,19 @@ export function ApplicationsTab({
                         logo={
                           partner.logoUrl ? (
                             <Image src={partner.logoUrl} alt={partner.name} width={44} height={44} unoptimized className="h-full w-full bg-white object-contain p-1" />
+                          ) : isDoctor ? (
+                            <Stethoscope className="h-5 w-5" />
                           ) : undefined
                         }
                       />
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
                           <h3 className="truncate text-base font-semibold text-rh-night dark:text-white">{partner.name}</h3>
-                          <StatusBadge tone="teal" className="uppercase">
-                            {partner.type}
-                          </StatusBadge>
+                          <PartnerTypeBadge type={partner.type} />
                           <span className="font-mono text-xs text-neutral-400">{partner.code}</span>
                         </div>
                         <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">
-                          Applied {format(partner.createdAt, "d MMM yyyy 'at' h:mm a")}
+                          {isDoctor ? 'Signed up' : 'Applied'} {format(partner.createdAt, "d MMM yyyy 'at' h:mm a")}
                         </p>
                       </div>
                     </div>
@@ -171,13 +235,24 @@ export function ApplicationsTab({
                     )}
                   </div>
 
+                  {isDoctor && <DoctorDetails partner={partner} />}
+
                   {partner.approvedAt && (
                     <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
                       Approved {format(partner.approvedAt, 'd MMM yyyy')} by {partner.approvedBy || 'Admin'}
                     </p>
                   )}
 
-                  {partner.approvalStatus === 'approved' && (
+                  {isDoctor ? (
+                    <div className="flex flex-wrap items-center gap-2 text-[11px] text-neutral-500 dark:text-neutral-400">
+                      <span>Referrals</span>
+                      {partner.approvalStatus === 'approved' ? (
+                        <ProductionStatusBadge status={partner.productionStatus} />
+                      ) : (
+                        <StatusBadge tone="neutral">Live on approval</StatusBadge>
+                      )}
+                    </div>
+                  ) : partner.approvalStatus === 'approved' && (
                     <div className="flex flex-wrap items-center gap-2 text-[11px] text-neutral-500 dark:text-neutral-400">
                       <span>Production access</span>
                       <ProductionStatusBadge status={partner.productionStatus} />
@@ -206,7 +281,7 @@ export function ApplicationsTab({
                   {partner.approvalStatus === 'pending' ? (
                     <>
                       <Button disabled={busy} onClick={() => setConfirm({ partner, kind: 'approve' })} className={primaryButtonClass}>
-                        <CheckCircle2 className="mr-1.5 h-4 w-4" /> Approve partner
+                        <CheckCircle2 className="mr-1.5 h-4 w-4" /> {isDoctor ? 'Approve doctor' : 'Approve partner'}
                       </Button>
                       <Button
                         variant="ghost"
@@ -224,7 +299,7 @@ export function ApplicationsTab({
                   ) : (
                     <>
                       <p className="flex items-center gap-1 text-xs font-medium text-emerald-700 dark:text-emerald-300">
-                        <CheckCircle2 className="h-3.5 w-3.5" /> Portal access active
+                        <CheckCircle2 className="h-3.5 w-3.5" /> {isDoctor ? 'Referring live' : 'Portal access active'}
                       </p>
                       <button type="button" onClick={() => setLinkPartner(partner)} className={actionLinkClass}>
                         <Link2 className="h-3.5 w-3.5" /> Generate referral link
@@ -242,7 +317,7 @@ export function ApplicationsTab({
                         onClick={() => onRequestReason({ kind: 'application', partner })}
                         className="h-8 rounded-xl text-xs text-rose-600 hover:bg-rh-blush hover:text-rose-700 dark:text-rose-300 dark:hover:bg-rose-400/10"
                       >
-                        Revoke partner access
+                        {isDoctor ? 'Revoke doctor access' : 'Revoke partner access'}
                       </Button>
                     </>
                   )}
@@ -266,7 +341,9 @@ export function ApplicationsTab({
         description={
           confirm?.kind === 'grant_live'
             ? 'This skips the go-live request. Live keys, webhooks and links start working, and real patients are contacted for live referrals.'
-            : 'The partner gets sandbox access and is emailed. Live access still needs a separate go-live approval.'
+            : confirm?.partner.type === 'doctor'
+              ? 'They can refer real patients straight away, and their referrals and referral link earn commission under their contract (or the platform default share). They are emailed.'
+              : 'The partner gets sandbox access and is emailed. Live access still needs a separate go-live approval.'
         }
         confirmLabel={confirm?.kind === 'grant_live' ? 'Grant live access' : 'Approve'}
         onConfirm={runConfirm}

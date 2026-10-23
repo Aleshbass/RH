@@ -46,7 +46,7 @@ import {
     CreditCard,
     MoreVertical,
     Mail
-} from 'lucide-react'
+} from '@/components/icons'
 import { format } from 'date-fns'
 import {
     DropdownMenu,

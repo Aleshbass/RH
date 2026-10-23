@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useParams, useSearchParams } from 'next/navigation'
 import { StreamCall, StreamTheme, StreamVideo, StreamVideoClient } from '@stream-io/video-react-sdk'
 import '@stream-io/video-react-sdk/dist/css/styles.css'
-import { Loader2, PhoneOff, Shield, XOctagon } from 'lucide-react'
+import { Loader2, PhoneOff, Shield, XOctagon } from '@/components/icons'
 import { CallLobby, CallRoom, CallStatusScreen } from '@/components/video/room'
 
 type StreamCallHandle = ReturnType<StreamVideoClient['call']>

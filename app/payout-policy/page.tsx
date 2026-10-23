@@ -1,6 +1,6 @@
 import { Metadata } from 'next';
 import Link from 'next/link';
-import { ArrowLeft, Check } from 'lucide-react';
+import { ArrowLeft, Check } from '@/components/icons';
 
 export const metadata: Metadata = {
     title: 'Payout Policy | Rehabify Health',
@@ -180,7 +180,7 @@ export default function PayoutPolicyPage() {
                     </p>
                     <div className="mt-6">
                         <Link
-                            href="/sign-up"
+                            href="/sign-up?as=physiotherapist"
                             className="inline-flex items-center justify-center rounded-lg bg-[#005b57] px-6 py-3 text-sm font-semibold text-white hover:bg-[#004a47] transition-colors"
                         >
                             Get Started Today

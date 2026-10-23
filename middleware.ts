@@ -1,7 +1,11 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 import { NextResponse, type NextRequest } from "next/server";
+import { ADMIN_HOST, LEARN_HOST } from "@/lib/site-hosts";
 
 const isProtectedRoute = createRouteMatcher(["/server"]);
+
+// Rehabify Learn pages served at the root of learn.* (/register -> /learn/register).
+const LEARN_PAGES = /^\/(?:register|confirmation)(?:\/|$)/;
 
 // Partner referral-link attribution (documented: 30-day first-party cookie for
 // physioaroundme.com and all its subdomains; first partner wins at sign-up/booking).
@@ -15,9 +19,9 @@ function parentCookieDomain(host: string): string | undefined {
   return host === "physioaroundme.com" || host.endsWith(".physioaroundme.com") ? ".physioaroundme.com" : undefined;
 }
 
-/** Strips docs./partners./api./www. so referral links always land on the main site. */
+/** Strips docs./partners./api./learn./admin./www. so referral links always land on the main site. */
 function apexHost(host: string): string {
-  return host.replace(/^(docs|partners|api|www)\./, "");
+  return host.replace(/^(docs|partners|api|learn|admin|www)\./, "");
 }
 
 function protocolFor(req: NextRequest, host: string): string {
@@ -164,6 +168,74 @@ export default clerkMiddleware(async (auth, req) => {
     });
     for (const [key, value] of Object.entries(corsHeaders)) response.headers.set(key, value);
     return response;
+  }
+
+  // 4. Subdomain: learn.physioaroundme.com (or learn.localhost) serves Rehabify Learn
+  if (currentHost.startsWith("learn.")) {
+    requestHeaders.set("x-subdomain-type", "learn");
+    if (
+      url.pathname.startsWith("/api") ||
+      url.pathname === "/learn" ||
+      url.pathname.startsWith("/learn/") ||
+      url.pathname.startsWith("/sign-in") ||
+      url.pathname.startsWith("/sign-up") ||
+      url.pathname.startsWith("/sso-callback") ||
+      url.pathname.includes(".") // robots.txt, manifest.json, ...
+    ) {
+      return NextResponse.next({ request: { headers: requestHeaders } });
+    }
+    if (url.pathname === "/" || LEARN_PAGES.test(url.pathname)) {
+      const pathname = url.pathname === "/" ? "/learn" : `/learn${url.pathname}`;
+      return NextResponse.rewrite(new URL(`${pathname}${url.search}`, req.url), {
+        request: { headers: requestHeaders },
+      });
+    }
+    // Every other page (pricing, find a physio, dashboards...) lives on the main site
+    const mainHost = hostname.toLowerCase().replace(/^learn\./, "");
+    return NextResponse.redirect(new URL(`${url.pathname}${url.search}`, `${protocolFor(req, currentHost)}://${mainHost}`));
+  }
+
+  // Main site: /learn moves to the Learn host once NEXT_PUBLIC_LEARN_URL is set
+  if (
+    LEARN_HOST &&
+    (url.pathname === "/learn" || url.pathname.startsWith("/learn/")) &&
+    apexHost(currentHost) === apexHost(LEARN_HOST)
+  ) {
+    const learnPath = url.pathname.replace(/^\/learn/, "") || "/";
+    return NextResponse.redirect(new URL(`${learnPath}${url.search}`, `https://${LEARN_HOST}`), 308);
+  }
+
+  // 5. Subdomain: admin.physioaroundme.com (or admin.localhost) serves the admin dashboard.
+  // Admin pages keep their /dashboard/admin paths so every existing link works here.
+  if (currentHost.startsWith("admin.")) {
+    requestHeaders.set("x-subdomain-type", "admin");
+    // A redirect, not a rewrite: the dashboard shell reads the browser path
+    if (url.pathname === "/") {
+      return NextResponse.redirect(new URL(`/dashboard/admin${url.search}`, req.url));
+    }
+    if (
+      url.pathname.startsWith("/api") ||
+      url.pathname === "/dashboard/admin" ||
+      url.pathname.startsWith("/dashboard/admin/") ||
+      url.pathname.startsWith("/sign-in") ||
+      url.pathname.startsWith("/sign-up") ||
+      url.pathname.startsWith("/sso-callback") ||
+      url.pathname.includes(".")
+    ) {
+      return NextResponse.next({ request: { headers: requestHeaders } });
+    }
+    // Everything that isn't the admin dashboard lives on the main site
+    const mainHost = hostname.toLowerCase().replace(/^admin\./, "");
+    return NextResponse.redirect(new URL(`${url.pathname}${url.search}`, `${protocolFor(req, currentHost)}://${mainHost}`));
+  }
+
+  // Main site: the admin dashboard moves to the admin host once NEXT_PUBLIC_ADMIN_URL is set
+  if (
+    ADMIN_HOST &&
+    (url.pathname === "/dashboard/admin" || url.pathname.startsWith("/dashboard/admin/")) &&
+    apexHost(currentHost) === apexHost(ADMIN_HOST)
+  ) {
+    return NextResponse.redirect(new URL(`${url.pathname}${url.search}`, `https://${ADMIN_HOST}`), 308);
   }
 
   // Backwards-compatibility: /dashboard/partner redirects to /partners/portal

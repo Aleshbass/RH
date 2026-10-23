@@ -22,7 +22,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { toast } from 'sonner'
-import { UserPlus, Loader2 } from 'lucide-react'
+import { UserPlus, Loader2 } from '@/components/icons'
 import { primaryButtonClass } from '@/components/clinic/ui'
 import { friendlyError, useClinicianOptions } from './patient-record-shared'
 

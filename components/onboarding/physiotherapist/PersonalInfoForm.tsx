@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useOnboardingStore } from "@/stores/onboardingStore";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, ChevronDown } from "@/components/icons";
 
 // Form schema
 const personalInfoSchema = z.object({
@@ -197,9 +197,7 @@ export default function PersonalInfoForm({ onNext }: PersonalInfoFormProps) {
                 Gender
               </label>
               <div className="absolute inset-y-0 right-0 flex items-center px-4 pointer-events-none">
-                <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
-                </svg>
+                <ChevronDown className="w-4 h-4 text-gray-500" />
               </div>
             </div>
           </div>

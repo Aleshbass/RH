@@ -10,7 +10,7 @@ import { usePhysiotherapistDocuments } from '@/lib/hooks/usePhysiotherapistDocum
 
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '@/convex/_generated/api';
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight, ChevronDown } from '@/components/icons';
 
 // Form schema - removed file validation since files are handled separately
 const licenseCredentialsSchema = z.object({
@@ -433,9 +433,7 @@ export default function LicenseCredentialsForm({ onComplete, onPrev }: LicenseCr
                 Certification Year
               </label>
               <div className="absolute inset-y-0 right-0 flex items-center px-4 pointer-events-none">
-                <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
-                </svg>
+                <ChevronDown className="w-4 h-4 text-gray-500" />
               </div>
             </div>
             {errors.certificationYear && (
@@ -562,9 +560,7 @@ export default function LicenseCredentialsForm({ onComplete, onPrev }: LicenseCr
               How did you hear about us? *
             </label>
             <div className="absolute inset-y-0 right-0 flex items-center px-4 pointer-events-none">
-              <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
-              </svg>
+              <ChevronDown className="w-4 h-4 text-gray-500" />
             </div>
           </div>
           {errors.referralSource && (

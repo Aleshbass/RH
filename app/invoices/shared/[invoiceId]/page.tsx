@@ -16,7 +16,7 @@ import {
   AlertTriangle,
   CheckCircle,
   Clock
-} from 'lucide-react'
+} from '@/components/icons'
 import { format } from 'date-fns'
 
 // Types for invoice data

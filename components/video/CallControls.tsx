@@ -11,7 +11,7 @@ import {
   MessageSquare,
   Volume2,
   VolumeX,
-} from 'lucide-react'
+} from '@/components/icons'
 
 interface CallControlsProps {
   isVideoEnabled: boolean

@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, X } from 'lucide-react';
+import { ArrowLeft, X } from '@/components/icons';
 import { PhysiotherapistSelectionStep } from './PhysiotherapistSelectionStep';
 import { PatientSelectionStep } from './PatientSelectionStep';
 import { DateSelectionStep } from './DateSelectionStep';

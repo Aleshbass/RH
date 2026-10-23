@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import Image from 'next/image'
-import { Check, Dumbbell, Eye, Rotate3d, Search } from 'lucide-react'
+import { Check, Dumbbell, Eye, Rotate3d, Search } from '@/components/icons'
 import { Input } from '@/components/ui/input'
 import { StatusBadge } from '@/components/physio/ui'
 import { posterUrl } from '@/convex/exerciseLibraryCatalog'

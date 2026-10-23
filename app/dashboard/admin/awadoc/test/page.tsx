@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { useQuery } from 'convex/react'
-import { ArrowLeft, Building2, CheckCircle2, Clock, FlaskConical, Loader2, MapPin, Monitor, Play, Star, User, XCircle, Zap } from 'lucide-react'
+import { ArrowLeft, Building2, CheckCircle2, Clock, FlaskConical, Loader2, MapPin, Monitor, Play, Star, User, XCircle, Zap } from '@/components/icons'
 import { api } from '@/convex/_generated/api'
 import { Button } from '@/components/ui/button'
 import { AdminPage, cardClass, EmptyState, PageHeader, Panel, primaryButtonClass, softButtonClass, StatusBadge } from '@/components/admin/ui'

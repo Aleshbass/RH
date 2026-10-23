@@ -4,6 +4,7 @@ import { log } from '@/lib/monitoring/logger'
 import { ErrorTracker } from '@/lib/monitoring/sentry'
 import { escapeHtml, isServerOrAdmin } from '../_auth'
 import { platformAdminEmails } from '@/lib/email/adminRecipients'
+import { details, highlight, paragraph, renderEmail, statusPill } from '@/lib/email/layout'
 
 export const dynamic = 'force-dynamic'
 
@@ -87,47 +88,26 @@ function createAdminEmail(paymentType: string, reference: string, amount?: numbe
   return {
     to: platformAdminEmails(),
     subject: `Payment ${isSuccess ? 'Successful' : 'Failed'} - ${reference}`,
-    html: `
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <meta charset="utf-8">
-          <title>Payment Notification</title>
-          <style>
-            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-            .header { background: ${isSuccess ? '#10b981' : '#ef4444'}; color: white; padding: 20px; text-align: center; }
-            .content { padding: 20px; background: #f9f9f9; }
-            .details { background: white; padding: 15px; margin: 10px 0; border-radius: 5px; }
-            .footer { text-align: center; padding: 20px; color: #666; font-size: 12px; }
-          </style>
-        </head>
-        <body>
-          <div class="container">
-            <div class="header">
-              <h1>Payment ${isSuccess ? 'Successful' : 'Failed'}</h1>
-            </div>
-            <div class="content">
-              <h2>Payment Notification</h2>
-              <div class="details">
-                <p><strong>Status:</strong> ${isSuccess ? 'SUCCESS' : 'FAILED'}</p>
-                <p><strong>Reference:</strong> ${safeReference}</p>
-                <p><strong>Amount:</strong> ${amountFormatted}</p>
-                <p><strong>Invoice ID:</strong> ${escapeHtml(metadata?.invoiceId || 'N/A')}</p>
-                <p><strong>Patient ID:</strong> ${escapeHtml(metadata?.patientId || 'N/A')}</p>
-                <p><strong>Timestamp:</strong> ${new Date().toLocaleString()}</p>
-              </div>
-              ${isSuccess ?
-                '<p>The payment has been processed successfully. Platform fee and physiotherapist payout will be handled automatically.</p>' :
-                '<p>The payment failed. Please review the transaction and contact the patient if necessary.</p>'
-              }
-            </div>
-            <div class="footer">
-              <p>RehabifyHealth Platform - Automated Payment Notification</p>
-            </div>
-          </div>
-        </body>
-      </html>
-    `,
+    html: renderEmail({
+      eyebrow: isSuccess ? 'Payment successful' : 'Payment failed',
+      tone: isSuccess ? 'success' : 'danger',
+      title: isSuccess ? 'A payment came through' : 'A payment failed',
+      preheader: `${amountFormatted} · ${reference}`,
+      body: [
+        highlight({ label: 'Amount', value: amountFormatted, sub: statusPill(isSuccess ? 'Success' : 'Failed', isSuccess ? 'success' : 'danger') }),
+        details([
+          ['Reference', safeReference],
+          ['Invoice ID', escapeHtml(metadata?.invoiceId || 'N/A')],
+          ['Patient ID', escapeHtml(metadata?.patientId || 'N/A')],
+          ['Time', new Date().toLocaleString('en-NG', { timeZone: 'Africa/Lagos' }) + ' WAT'],
+        ]),
+        paragraph(isSuccess
+          ? 'The payment was processed successfully. The platform fee and physiotherapist payout are handled automatically.'
+          : 'The payment failed. Please review the transaction and contact the patient if necessary.'),
+      ].join(''),
+      signOff: false,
+      safetyNote: false,
+      footerNote: 'Automated payment notification for the Rehabify team.',
+    }),
   }
 }

@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useMutation, useQuery } from 'convex/react'
 import { formatDistanceToNow } from 'date-fns'
-import { Check, Loader2, Megaphone, Send } from 'lucide-react'
+import { Check, Loader2, Megaphone, Send } from '@/components/icons'
 import { toast } from 'sonner'
 import { api } from '@/convex/_generated/api'
 import { Button } from '@/components/ui/button'

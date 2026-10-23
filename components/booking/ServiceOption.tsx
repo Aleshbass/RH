@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 import { motion, useReducedMotion } from "framer-motion";
-import { ArrowRight, Check, Clock, Home, Loader2, Video } from "lucide-react";
+import { ArrowRight, Check, Clock, Home, Loader2, Video } from "@/components/icons";
 import { cn } from "@/lib/utils";
 import { servicePriceLabel, type CatalogueService } from "./booking-shared";
 

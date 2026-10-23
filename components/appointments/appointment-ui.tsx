@@ -9,7 +9,7 @@
 import { useEffect, useMemo, useState, type MouseEvent, type ReactNode } from 'react';
 import { useMutation, useQuery } from 'convex/react';
 import { ConvexError } from 'convex/values';
-import { CalendarClock, Check, CheckCircle2, Loader2, MapPin, UserX, Video, X } from 'lucide-react';
+import { CalendarClock, Check, CheckCircle2, Loader2, MapPin, UserX, Video, X } from '@/components/icons';
 import { toast } from 'sonner';
 import { api } from '@/convex/_generated/api';
 import type { Id } from '@/convex/_generated/dataModel';

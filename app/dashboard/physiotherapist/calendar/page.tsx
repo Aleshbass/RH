@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useMutation, useQuery } from 'convex/react';
 import { addDays, addWeeks, endOfDay, endOfWeek, format, startOfDay, startOfWeek } from 'date-fns';
-import { ChevronLeft, ChevronRight, List, Plus } from 'lucide-react';
+import { ChevronLeft, ChevronRight, List, Plus } from '@/components/icons';
 import { api } from '@/convex/_generated/api';
 import type { Id } from '@/convex/_generated/dataModel';
 import { Button } from '@/components/ui/button';

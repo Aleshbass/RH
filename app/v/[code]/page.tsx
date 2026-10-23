@@ -6,10 +6,11 @@ import { useAction, useQuery } from 'convex/react'
 import { StreamCall, StreamTheme, StreamVideo, StreamVideoClient } from '@stream-io/video-react-sdk'
 import '@stream-io/video-react-sdk/dist/css/styles.css'
 import Link from 'next/link'
-import { CalendarCheck, CalendarClock, CalendarX, CreditCard, Hourglass, Link2Off, Loader2, PhoneOff, UserSearch, WifiOff } from 'lucide-react'
+import { CalendarCheck, CalendarClock, CalendarX, CreditCard, Hourglass, Link2Off, Loader2, PhoneOff, UserSearch, WifiOff } from '@/components/icons'
 import { api } from '@/convex/_generated/api'
 import { CallLobby, CallRoom, CallStatusScreen } from '@/components/video/room'
 import { SERVICE_MODE, type JoyBookingState, type JoyServiceMode } from '@/lib/joyJourney'
+import { DASHBOARD_LINK_REQUEST_URL } from '@/lib/joyWhatsApp'
 
 // Short patient join link sent by Joy on WhatsApp: /v/<booking code>.
 // Joy patients have no login; the code is checked server-side before a
@@ -244,14 +245,22 @@ export default function PatientJoinPage() {
   return <CallStatusScreen icon={<Loader2 className="h-6 w-6 animate-spin text-brand" />} title="Getting your appointment ready" />
 }
 
-/** Signing up links these WhatsApp bookings to a full Rehabify account (claimed by verified phone or email). */
+/**
+ * Joy sends a one-tap dashboard link (/go/<code>) on WhatsApp. The booking code here is a
+ * weaker credential than that link, so this page never signs anyone in; it points to Joy.
+ */
 function AccountPrompt() {
   return (
     <div className="space-y-2">
-      <Link href="/sign-up" className={primaryButton}>
-        Create your Rehabify account
-      </Link>
-      <p className="text-xs text-neutral-500">Use this WhatsApp number to see your bookings, exercises and what you shared with Joy.</p>
+      <a href={DASHBOARD_LINK_REQUEST_URL} target="_blank" rel="noopener noreferrer" className={primaryButton}>
+        Get my dashboard link from Joy
+      </a>
+      <p className="text-xs text-neutral-500">
+        See your bookings, exercises and what you shared with Joy.{' '}
+        <Link href="/sign-in?redirect=%2Fdashboard%2Fpatient" className="font-medium text-brand hover:underline">
+          Already have an account? Sign in
+        </Link>
+      </p>
     </div>
   )
 }

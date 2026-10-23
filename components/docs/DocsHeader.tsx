@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { Search, Menu, X, ArrowUpRight } from "lucide-react";
+import { Search, Menu, X, ArrowUpRight } from "@/components/icons";
 import DocsSearchModal from "./DocsSearchModal";
 
 interface DocsHeaderProps {

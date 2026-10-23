@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Clock, AlertCircle, ArrowRight, ShieldCheck, CreditCard, ChevronRight } from 'lucide-react';
+import { Clock, AlertCircle, ArrowRight, ShieldCheck, CreditCard, ChevronRight } from '@/components/icons';
 import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';

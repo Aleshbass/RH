@@ -1,3 +1,4 @@
+import { Download, ArrowLeft } from '@/components/icons'
 import { Metadata } from 'next';
 import Link from 'next/link';
 import { MedicalWebPageSchema } from '@/components/seo/StructuredData';
@@ -40,9 +41,7 @@ export default function TermsAndConditionsPage() {
                 download
                 className="inline-flex items-center gap-2 text-[#005b57] hover:text-[#00877e] transition-colors"
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
+                <Download className="w-5 h-5" />
                 Download as Word Document
               </a>
             </div>
@@ -265,9 +264,7 @@ export default function TermsAndConditionsPage() {
             {/* Back to home link */}
             <div className="mt-12 pt-8 border-t border-gray-200 text-center">
               <Link href="/" className="inline-flex items-center gap-2 text-[#005b57] hover:text-[#00877e] font-semibold transition-colors">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-                </svg>
+                <ArrowLeft className="w-5 h-5" />
                 Back to Homepage
               </Link>
             </div>

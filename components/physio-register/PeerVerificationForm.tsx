@@ -6,7 +6,7 @@ import { api } from '@/convex/_generated/api';
 import { Id } from '@/convex/_generated/dataModel';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Users, Star, Briefcase, GraduationCap, Handshake, MessageSquare, X, Check, Loader2 } from 'lucide-react';
+import { Users, Star, Briefcase, GraduationCap, Handshake, MessageSquare, X, Check, Loader2 } from '@/components/icons';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';

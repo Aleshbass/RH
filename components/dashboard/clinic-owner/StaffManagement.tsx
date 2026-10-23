@@ -46,7 +46,7 @@ import {
   Copy,
   ExternalLink,
   Loader2
-} from 'lucide-react';
+} from '@/components/icons';
 import { toast } from 'sonner';
 
 export function StaffManagement() {

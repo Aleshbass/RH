@@ -1,153 +1,152 @@
-'use client';
+'use client'
 
-import { useState } from 'react';
-import { useQuery } from 'convex/react';
-import { api } from '@/convex/_generated/api';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
+import { useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
+import { useQuery } from 'convex/react'
+import { toast } from 'sonner'
+import { api } from '@/convex/_generated/api'
+import type { Id } from '@/convex/_generated/dataModel'
+import { Button } from '@/components/ui/button'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { Camera, CalendarPlus, ChevronRight, Headphones, History, Video, Wifi } from '@/components/icons'
+import StreamVideoCallManager from '@/components/video/StreamVideoCallManager'
+import { formatLagos, lagosTime, lagosTimeRange } from '@/convex/helpers/lagosTime'
+import { isVideoVisit, meetingLinkOf } from '@/components/appointments/appointment-ui'
+import { cn } from '@/lib/utils'
 import {
-  Video,
-  Calendar,
-  Clock,
-  Copy,
-  Users,
-  PlayCircle,
-  CheckCircle2,
-  ExternalLink,
-  Search,
-  Filter,
-  MoreHorizontal,
-  MonitorPlay
-} from 'lucide-react';
-import { format } from 'date-fns';
-import { toast } from 'sonner';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Id } from '@/convex/_generated/dataModel';
-import StreamVideoCallManager from '@/components/video/StreamVideoCallManager';
-import { motion } from 'framer-motion';
-import { cn } from '@/lib/utils';
+  EmptyState,
+  IconChip,
+  InfoTip,
+  PageContainer,
+  PageHeader,
+  PageSkeleton,
+  Panel,
+  StatusBadge,
+  accentButtonClass,
+  initials,
+  listRowClass,
+  primaryButtonClass,
+  secondaryButtonClass,
+  type Tone,
+} from '@/components/patient/ui'
+import { PatientAppointmentBookingModal } from '@/components/patient/PatientAppointmentBookingModal'
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { PatientAppointmentBookingModal } from '@/components/patient/PatientAppointmentBookingModal';
+  canJoinVisit,
+  durationMinutes,
+  isJoinTime,
+  isLiveAppointment,
+  patientStatus,
+  useJoinVisit,
+  type PatientAppointment,
+} from '@/components/patient/AppointmentDetailsModal'
+
+const APPOINTMENTS_HREF = '/dashboard/patient/appointments'
 
 // Type definition for video calls
 type VideoCall = {
-  _id: Id<"videoCalls">;
-  roomId: string;
-  title?: string;
-  patientId?: Id<"users">;
-  physiotherapistId?: Id<"users">;
-  scheduledAt?: number;
-  startTime: number;
-  endTime?: number;
-  status: "scheduled" | "active" | "ended" | "cancelled" | "missed";
-  callType: "appointment" | "consultation" | "emergency";
-  duration?: number;
-  participants: Id<"users">[];
-  physiotherapist?: { firstName?: string; lastName?: string; imageUrl?: string };
-  appointmentId?: Id<"appointments">;
-  platform?: string;
-  meetingLink?: string;
-};
+  _id: Id<'videoCalls'>
+  roomId: string
+  title?: string
+  patientId?: Id<'users'>
+  physiotherapistId?: Id<'users'>
+  scheduledAt?: number
+  startTime: number
+  endTime?: number
+  status: 'scheduled' | 'active' | 'ended' | 'cancelled' | 'missed'
+  callType: 'appointment' | 'consultation' | 'emergency'
+  duration?: number
+  participants: Id<'users'>[]
+  physiotherapist?: { firstName?: string; lastName?: string; imageUrl?: string }
+  appointmentId?: Id<'appointments'>
+  platform?: string
+  meetingLink?: string
+}
+
+const PAST_CALL_STATUS: Record<string, { label: string; tone: Tone }> = {
+  ended: { label: 'Ended', tone: 'neutral' },
+  missed: { label: 'Missed', tone: 'amber' },
+  cancelled: { label: 'Cancelled', tone: 'rose' },
+}
+
+const CHECKLIST: { icon: typeof Camera; tone: Tone; title: string; tip: string }[] = [
+  {
+    icon: Camera,
+    tone: 'violet',
+    title: 'Allow your camera and microphone',
+    tip: 'When your browser asks, tap Allow. If you said no by mistake, tap the lock icon next to the web address to change it.',
+  },
+  {
+    icon: Headphones,
+    tone: 'sun',
+    title: 'Find a quiet, private spot',
+    tip: 'Earphones help you hear clearly. Wear comfortable clothes and leave room to move, as your physio may ask you to show a movement.',
+  },
+  {
+    icon: Wifi,
+    tone: 'green',
+    title: 'Use a steady connection',
+    tip: 'Wi-Fi is best. If the picture freezes, pause other downloads or move closer to your router.',
+  },
+]
+
+function physioNameOf(call: VideoCall) {
+  return [call.physiotherapist?.firstName, call.physiotherapist?.lastName].filter(Boolean).join(' ')
+}
+
+// Within the pre-join window (default: 10 minutes before start)
+function isWithinJoinWindow(scheduledAt?: number, minutes = 10) {
+  if (!scheduledAt) return false
+  return Date.now() >= scheduledAt - minutes * 60 * 1000
+}
 
 export default function PatientVideoCallsPage() {
-  const [showVideoManager, setShowVideoManager] = useState(false);
-  const [isBookingModalOpen, setIsBookingModalOpen] = useState(false);
-  const [selectedCall, setSelectedCall] = useState<VideoCall | null>(null);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [showVideoManager, setShowVideoManager] = useState(false)
+  const [isBookingModalOpen, setIsBookingModalOpen] = useState(false)
+  const [selectedCall, setSelectedCall] = useState<VideoCall | null>(null)
+  const joinVisit = useJoinVisit()
 
-  // Fetch current user data
-  const currentUser = useQuery(api.users.getMyUser);
+  const currentUser = useQuery(api.users.getMyUser)
+  const allVideoCalls = useQuery(api.videoCalls.getMyVideoCalls, {}) as VideoCall[] | undefined
+  const appointments = useQuery(api.appointments.getPatientAppointments, { limit: 100 }) as PatientAppointment[] | undefined
 
-  // Fetch patient's video calls
-  const allVideoCalls = useQuery(api.videoCalls.getMyVideoCalls, {});
+  // Join buttons appear on the clock, not only when data changes
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 30_000)
+    return () => window.clearInterval(timer)
+  }, [])
 
-  if (!currentUser) {
-    return (
-      <div className="max-w-5xl mx-auto p-4 md:p-6 space-y-8">
-        <div className="flex justify-between items-center">
-          <Skeleton className="h-10 w-48 rounded-xl" />
-        </div>
-        <div className="flex gap-4 overflow-hidden">
-          <Skeleton className="h-32 w-48 rounded-2xl shrink-0" />
-          <Skeleton className="h-32 w-48 rounded-2xl shrink-0" />
-          <Skeleton className="h-32 w-48 rounded-2xl shrink-0" />
-        </div>
-        <div className="space-y-4">
-          <Skeleton className="h-40 w-full rounded-2xl" />
-          <Skeleton className="h-40 w-full rounded-2xl" />
-        </div>
-      </div>
-    );
-  }
+  const { liveCalls, onlineVisits, otherScheduled, pastCalls } = useMemo(() => {
+    const calls = allVideoCalls ?? []
+    const visits = (appointments ?? [])
+      .filter((a) => isVideoVisit(a) && isLiveAppointment(a, now))
+      .sort((a, b) => a.startTime - b.startTime)
+    const visitIds = new Set(visits.map((v) => v._id))
+    return {
+      liveCalls: calls.filter((call) => call.status === 'active'),
+      onlineVisits: visits,
+      // Calls not tied to a visit already listed (e.g. a consultation the physio started)
+      otherScheduled: calls.filter((call) => call.status === 'scheduled' && !(call.appointmentId && visitIds.has(call.appointmentId))),
+      pastCalls: calls
+        .filter((call) => ['ended', 'cancelled', 'missed'].includes(call.status))
+        .sort((a, b) => (b.scheduledAt ?? b.startTime) - (a.scheduledAt ?? a.startTime))
+        .slice(0, 10),
+    }
+  }, [allVideoCalls, appointments, now])
 
-  const videoCalls = allVideoCalls || [];
-
-  // Filter video calls based on search and status
-  const filteredCalls = videoCalls.filter((call: any) => {
-    const matchesSearch = !searchTerm ||
-      call.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      call.physiotherapist?.firstName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      call.physiotherapist?.lastName?.toLowerCase().includes(searchTerm.toLowerCase());
-
-    const matchesStatus = statusFilter === 'all' || call.status === statusFilter;
-
-    return matchesSearch && matchesStatus;
-  });
-
-  // Separate calls by status for better organization
-  const upcomingCalls = filteredCalls.filter((call: any) => call.status === 'scheduled');
-  const activeCalls = filteredCalls.filter((call: any) => call.status === 'active');
-  const pastCalls = filteredCalls.filter((call: any) => ['ended', 'cancelled', 'missed'].includes(call.status));
+  if (!currentUser || allVideoCalls === undefined || appointments === undefined) return <PageSkeleton />
 
   const handleJoinCall = (call: VideoCall) => {
-    // Check if it's a Google Meet call
-    const isGoogleMeet = call.platform === 'google_meet' || (call.meetingLink && call.meetingLink.includes('meet.google.com'));
-
+    // Google Meet opens in a new tab; Rehabify calls open here
+    const isGoogleMeet = call.platform === 'google_meet' || (call.meetingLink && call.meetingLink.includes('meet.google.com'))
     if (isGoogleMeet && call.meetingLink) {
-      window.open(call.meetingLink, '_blank');
-      toast.success('Opening Google Meet in a new tab');
+      window.open(call.meetingLink, '_blank')
+      toast.success('Opening Google Meet in a new tab')
     } else {
-      // Default to Stream
-      setSelectedCall(call);
-      setShowVideoManager(true);
+      setSelectedCall(call)
+      setShowVideoManager(true)
     }
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'active': return 'bg-green-100 text-green-700 border-green-200';
-      case 'scheduled': return 'bg-blue-100 text-blue-700 border-blue-200';
-      case 'ended': return 'bg-gray-100 text-gray-700 border-gray-200';
-      case 'cancelled': return 'bg-red-100 text-red-700 border-red-200';
-      case 'missed': return 'bg-amber-100 text-amber-700 border-amber-200';
-      default: return 'bg-gray-100 text-gray-700 border-gray-200';
-    }
-  };
-
-  const getTypeColor = (type: string) => {
-    switch (type) {
-      case 'appointment': return 'bg-brand/10 text-brand border-brand/20';
-      case 'consultation': return 'bg-purple-100 text-purple-700 border-purple-200';
-      case 'emergency': return 'bg-red-100 text-red-700 border-red-200';
-      default: return 'bg-gray-100 text-gray-700 border-gray-200';
-    }
-  };
-
-  // Determine if we're within the pre-join window (default: 10 minutes before start)
-  const isWithinJoinWindow = (scheduledAt?: number, minutes = 10) => {
-    if (!scheduledAt) return false;
-    const now = Date.now();
-    const windowMs = minutes * 60 * 1000;
-    return now >= (scheduledAt - windowMs);
-  };
+  }
 
   if (showVideoManager && selectedCall) {
     return (
@@ -155,267 +154,261 @@ export default function PatientVideoCallsPage() {
         appointmentId={selectedCall.appointmentId}
         defaultParticipants={selectedCall.participants}
         onCallEnd={() => {
-          setShowVideoManager(false);
-          setSelectedCall(null);
+          setShowVideoManager(false)
+          setSelectedCall(null)
         }}
       />
-    );
+    )
   }
 
-  const StatCard = ({ title, value, icon: Icon, colorClass, bgClass }: any) => (
-    <div className="min-w-[200px] md:min-w-0 bg-white p-5 rounded-2xl border border-gray-100 shadow-sm flex items-center gap-4 transition-all hover:shadow-md snap-center">
-      <div className={cn("h-12 w-12 rounded-full flex items-center justify-center shrink-0", bgClass)}>
-        <Icon className={cn("h-6 w-6", colorClass)} />
-      </div>
-      <div>
-        <p className="text-sm font-medium text-gray-500">{title}</p>
-        <p className="text-2xl font-bold text-gray-900">{value}</p>
-      </div>
-    </div>
-  )
-
-  const CallCard = ({ call, isActive = false }: { call: VideoCall, isActive?: boolean }) => {
-    const isGoogleMeet = call.platform === 'google_meet' || (call.meetingLink && call.meetingLink.includes('meet.google.com'));
-
-    return (
-      <motion.div
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        className={cn(
-          "bg-white p-5 rounded-2xl border transition-all hover:shadow-lg group relative overflow-hidden",
-          isActive ? "border-green-200 shadow-green-100" : "border-gray-100 shadow-sm"
-        )}
-      >
-        {isActive && (
-          <div className="absolute top-0 left-0 w-1 h-full bg-green-500" />
-        )}
-
-        <div className="flex justify-between items-start mb-4 pl-2">
-          <div className="flex gap-2">
-            <Badge variant="outline" className={cn("capitalize font-medium", getStatusColor(call.status))}>
-              {isActive && <span className="w-2 h-2 rounded-full bg-green-500 mr-2 animate-pulse" />}
-              {call.status}
-            </Badge>
-            <Badge variant="outline" className={cn("capitalize font-medium", getTypeColor(call.callType))}>
-              {call.callType}
-            </Badge>
-          </div>
-
-          {isGoogleMeet ? (
-            <div className="bg-white border border-gray-200 rounded-full p-1.5 shadow-sm" title="Google Meet">
-              <Video className="h-4 w-4 text-gray-600" />
-            </div>
-          ) : (
-            <div className="bg-brand/10 rounded-full p-1.5" title="Rehabify Video">
-              <MonitorPlay className="h-4 w-4 text-brand" />
-            </div>
-          )}
-        </div>
-
-        <div className="pl-2 space-y-4">
-          <div>
-            <h3 className="text-lg font-bold text-gray-900 leading-tight mb-1">
-              {call.title || `${call.callType} Call`}
-            </h3>
-            {call.physiotherapist && (
-              <div className="flex items-center text-sm text-gray-500">
-                <Users className="h-4 w-4 mr-2" />
-                Dr. {call.physiotherapist.firstName} {call.physiotherapist.lastName}
-              </div>
-            )}
-          </div>
-
-          <div className="flex items-center gap-4 text-sm bg-gray-50 p-3 rounded-xl">
-            <div className="flex items-center gap-2 text-gray-700 font-medium">
-              <Calendar className="h-4 w-4 text-gray-400" />
-              {call.scheduledAt ? format(new Date(call.scheduledAt), 'MMM d') : 'TBD'}
-            </div>
-            <div className="w-px h-4 bg-gray-200" />
-            <div className="flex items-center gap-2 text-gray-700 font-medium">
-              <Clock className="h-4 w-4 text-gray-400" />
-              {call.scheduledAt ? format(new Date(call.scheduledAt), 'h:mm a') : 'TBD'}
-            </div>
-          </div>
-
-          <div className="flex gap-2 pt-2">
-            {(isActive || call.status === 'scheduled') && (
-              <Button
-                className={cn(
-                  "flex-1 rounded-xl font-medium shadow-lg transition-all hover:scale-[1.02]",
-                  isActive ? "bg-green-600 hover:bg-green-700 text-white shadow-green-200" : "bg-gray-900 hover:bg-black text-white shadow-gray-200"
-                )}
-                onClick={() => handleJoinCall(call)}
-                disabled={!isActive && !isWithinJoinWindow(call.scheduledAt, 15)}
-              >
-                {isGoogleMeet ? <ExternalLink className="h-4 w-4 mr-2" /> : <Video className="h-4 w-4 mr-2" />}
-                {isActive ? 'Join Now' : isWithinJoinWindow(call.scheduledAt, 15) ? 'Join Call' : 'Not Started'}
-              </Button>
-            )}
-
-            <Button
-              variant="outline"
-              size="icon"
-              className="rounded-xl border-gray-200 shrink-0"
-              onClick={() => {
-                const link = call.meetingLink || call.roomId;
-                navigator.clipboard.writeText(link);
-                toast.success('Link copied to clipboard');
-              }}
-            >
-              <Copy className="h-4 w-4 text-gray-500" />
-            </Button>
-          </div>
-        </div>
-      </motion.div>
-    );
-  };
+  const next = onlineVisits[0]
+  const laterVisits = onlineVisits.slice(1)
+  const nothingUpcoming = liveCalls.length === 0 && onlineVisits.length === 0 && otherScheduled.length === 0
 
   return (
-    <div className="max-w-5xl mx-auto space-y-8 p-4 md:p-6 pb-20">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl md:text-3xl font-bold text-gray-900 tracking-tight">Video Sessions</h1>
-          <p className="text-gray-500">Join your telehealth appointments</p>
-        </div>
-
-        <div className="flex gap-2">
-          <Button
-            className="bg-[#005b57] hover:bg-[#00443e] rounded-full"
-            onClick={() => setIsBookingModalOpen(true)}
-          >
-            <Video className="h-4 w-4 mr-2" />
-            Book Video Call
+    <PageContainer>
+      <PageHeader
+        title="Video calls"
+        description="Join your online sessions with your physio."
+        info="Video visits open in your browser on a phone or laptop. The Join button appears once your physio has confirmed the visit and its link is ready."
+        actions={
+          <Button className={cn(primaryButtonClass, 'h-11 px-5')} onClick={() => setIsBookingModalOpen(true)}>
+            <CalendarPlus className="mr-2 h-4 w-4" />
+            Book a session
           </Button>
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-            <Input
-              placeholder="Search..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-9 rounded-full bg-white border-gray-200 w-full md:w-64"
-            />
-          </div>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="icon" className="rounded-full shrink-0">
-                <Filter className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="rounded-xl">
-              <DropdownMenuItem onClick={() => setStatusFilter('all')}>All Calls</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setStatusFilter('scheduled')}>Scheduled</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setStatusFilter('ended')}>Past</DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </div>
+        }
+      />
 
-      {/* Stats Section - Horizontal Scroll on Mobile */}
-      <div className="flex overflow-x-auto pb-4 -mx-4 px-4 md:grid md:grid-cols-4 md:gap-4 md:overflow-visible md:pb-0 md:mx-0 md:px-0 scrollbar-hide snap-x">
-        <div className="snap-center pr-4 md:pr-0">
-          <StatCard
-            title="Total Calls"
-            value={videoCalls.length}
-            icon={Video}
-            colorClass="text-brand"
-            bgClass="bg-brand/10"
-          />
-        </div>
-        <div className="snap-center pr-4 md:pr-0">
-          <StatCard
-            title="Active Now"
-            value={activeCalls.length}
-            icon={PlayCircle}
-            colorClass="text-green-600"
-            bgClass="bg-green-50"
-          />
-        </div>
-        <div className="snap-center pr-4 md:pr-0">
-          <StatCard
-            title="Upcoming"
-            value={upcomingCalls.length}
-            icon={Calendar}
-            colorClass="text-blue-600"
-            bgClass="bg-blue-50"
-          />
-        </div>
-        <div className="snap-center">
-          <StatCard
-            title="Completed"
-            value={pastCalls.length}
-            icon={CheckCircle2}
-            colorClass="text-gray-600"
-            bgClass="bg-gray-100"
-          />
-        </div>
-      </div>
+      <div className="grid gap-6 lg:grid-cols-3">
+        <div className="space-y-6 lg:col-span-2">
+          {/* Calls happening right now */}
+          {liveCalls.map((call) => {
+            const name = physioNameOf(call)
+            return (
+              <section key={call._id} className="rounded-3xl bg-pt-primary p-5 text-pt-on-primary sm:p-6">
+                <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider">
+                  <span className="h-2 w-2 rounded-full bg-pt-accent" aria-hidden />
+                  Live now
+                </p>
+                <p className="mt-3 text-xl font-semibold tracking-tight">{call.title || 'Video session'}</p>
+                {name && <p className="mt-0.5 text-sm opacity-75">With {name}</p>}
+                <Button className={cn(accentButtonClass, 'mt-5 h-12 w-full text-[15px] sm:w-auto sm:px-8')} onClick={() => handleJoinCall(call)}>
+                  <Video className="mr-2 h-4 w-4" />
+                  Join now
+                </Button>
+              </section>
+            )
+          })}
 
-      {/* Active Calls */}
-      {activeCalls.length > 0 && (
-        <div className="space-y-4">
-          <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-            <span className="relative flex h-3 w-3">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
-            </span>
-            Live Now
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {activeCalls.map((call: VideoCall) => (
-              <CallCard key={call._id} call={call} isActive={true} />
-            ))}
-          </div>
-        </div>
-      )}
+          {/* The next online visit, front and centre */}
+          {next ? (
+            <NextVisitCard apt={next} now={now} onJoin={() => joinVisit(meetingLinkOf(next))} />
+          ) : (
+            liveCalls.length === 0 && (
+              <Panel>
+                <EmptyState
+                  icon={Video}
+                  title="No video visits booked"
+                  description="Book a session and choose “Video call” to see your physio from home."
+                  action={
+                    <Button className={cn(primaryButtonClass, 'h-10 px-4')} onClick={() => setIsBookingModalOpen(true)}>
+                      <CalendarPlus className="mr-2 h-4 w-4" />
+                      Book a video visit
+                    </Button>
+                  }
+                />
+              </Panel>
+            )
+          )}
 
-      {/* Upcoming Calls */}
-      <div className="space-y-4">
-        <h2 className="text-lg font-semibold text-gray-900">Upcoming Sessions</h2>
-        {upcomingCalls.length === 0 ? (
-          <div className="text-center py-12 bg-gray-50/50 rounded-3xl border border-dashed border-gray-200">
-            <div className="bg-white p-4 rounded-full shadow-sm inline-block mb-4">
-              <Calendar className="h-8 w-8 text-gray-300" />
-            </div>
-            <h3 className="text-lg font-semibold text-gray-900">No upcoming calls</h3>
-            <p className="text-gray-500 max-w-xs mx-auto mt-2">
-              Your scheduled video sessions will appear here.
-            </p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {upcomingCalls.map((call: VideoCall) => (
-              <CallCard key={call._id} call={call} />
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Past Calls */}
-      {pastCalls.length > 0 && (
-        <div className="space-y-4 pt-4 border-t border-gray-100">
-          <h2 className="text-lg font-semibold text-gray-500">History</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 opacity-80">
-            {pastCalls.slice(0, 6).map((call: VideoCall) => (
-              <div key={call._id} className="bg-gray-50 p-4 rounded-2xl border border-gray-100 flex justify-between items-center">
-                <div>
-                  <p className="font-medium text-gray-900">{call.title || 'Video Call'}</p>
-                  <p className="text-xs text-gray-500">{format(new Date(call.startTime), 'MMM d, yyyy')}</p>
-                </div>
-                <Badge variant="secondary" className="bg-white text-gray-500 border-gray-200">
-                  {call.status}
-                </Badge>
+          {(laterVisits.length > 0 || otherScheduled.length > 0) && (
+            <Panel title="Coming up" description="Your other online sessions" bodyClassName="p-2 sm:p-3">
+              <div className="space-y-0.5">
+                {laterVisits.map((apt) => {
+                  const joinable = canJoinVisit(apt, now) && isJoinTime(apt, now)
+                  const status = patientStatus(apt, now)
+                  return (
+                    <div key={apt._id} className={cn(listRowClass, 'items-start sm:items-center')}>
+                      <div className="w-[72px] shrink-0">
+                        <p className="text-sm font-semibold tabular-nums text-pt-ink">{lagosTime(apt.startTime)}</p>
+                        <p className="text-xs text-pt-faint">{formatLagos(apt.startTime, { weekday: 'short', day: 'numeric', month: 'short' }, 'en-NG')}</p>
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold text-pt-ink">{apt.serviceType || 'Video visit'}</p>
+                        <p className="truncate text-xs text-pt-muted">{apt.physiotherapistName || 'Your physiotherapist'}</p>
+                        <span className="mt-1.5 flex items-center gap-1">
+                          <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
+                          <InfoTip label="What does this status mean?">{status.explain}</InfoTip>
+                        </span>
+                      </div>
+                      {joinable ? (
+                        <Button size="sm" className={cn(accentButtonClass, 'h-9 shrink-0 px-3')} onClick={() => joinVisit(meetingLinkOf(apt))}>
+                          <Video className="mr-1.5 h-3.5 w-3.5" />
+                          Join
+                        </Button>
+                      ) : (
+                        <Link
+                          href={APPOINTMENTS_HREF}
+                          className="flex shrink-0 items-center gap-0.5 rounded-lg px-2 py-1.5 text-xs font-semibold text-pt-muted hover:bg-pt-hover hover:text-pt-ink"
+                        >
+                          Manage
+                          <ChevronRight className="h-3 w-3" />
+                        </Link>
+                      )}
+                    </div>
+                  )
+                })}
+                {otherScheduled.map((call) => {
+                  const ready = isWithinJoinWindow(call.scheduledAt, 15)
+                  const name = physioNameOf(call)
+                  return (
+                    <div key={call._id} className={cn(listRowClass, 'items-start sm:items-center')}>
+                      <div className="w-[72px] shrink-0">
+                        <p className="text-sm font-semibold tabular-nums text-pt-ink">{call.scheduledAt ? lagosTime(call.scheduledAt) : 'To be set'}</p>
+                        {call.scheduledAt && (
+                          <p className="text-xs text-pt-faint">{formatLagos(call.scheduledAt, { weekday: 'short', day: 'numeric', month: 'short' }, 'en-NG')}</p>
+                        )}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold text-pt-ink">{call.title || 'Video session'}</p>
+                        {name && <p className="truncate text-xs text-pt-muted">{name}</p>}
+                      </div>
+                      <Button
+                        size="sm"
+                        className={cn(ready ? accentButtonClass : secondaryButtonClass, 'h-9 shrink-0 px-3')}
+                        disabled={!ready}
+                        onClick={() => handleJoinCall(call)}
+                      >
+                        <Video className="mr-1.5 h-3.5 w-3.5" />
+                        {ready ? 'Join' : 'Not started'}
+                      </Button>
+                    </div>
+                  )
+                })}
               </div>
-            ))}
-          </div>
+            </Panel>
+          )}
+
+          <Panel
+            title="Past calls"
+            info="Calls that have ended, were missed or were cancelled. Any notes from your physio are on the visit in Appointments."
+            bodyClassName="p-2 sm:p-3"
+          >
+            {pastCalls.length === 0 ? (
+              <EmptyState icon={History} title="No past calls yet" description="Your finished video sessions will show here." className="py-8" />
+            ) : (
+              <div className="space-y-0.5">
+                {pastCalls.map((call) => {
+                  const status = PAST_CALL_STATUS[call.status] ?? { label: call.status, tone: 'neutral' as Tone }
+                  const when = call.scheduledAt ?? call.startTime
+                  const name = physioNameOf(call)
+                  return (
+                    <div key={call._id} className={cn(listRowClass, 'hover:bg-transparent')}>
+                      <Avatar className="h-9 w-9 rounded-xl">
+                        <AvatarFallback className="rounded-xl bg-pt-sunken text-xs font-semibold text-pt-muted">
+                          {name ? initials(name) : <Video className="h-4 w-4" />}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold text-pt-ink">{call.title || 'Video session'}</p>
+                        <p className="truncate text-xs text-pt-muted">
+                          {formatLagos(when, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }, 'en-NG')}
+                          {name ? ` · ${name}` : ''}
+                        </p>
+                      </div>
+                      <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </Panel>
         </div>
-      )}
-      {/* Booking Modal */}
+
+        <aside className="space-y-6">
+          <Panel
+            title="Before your call"
+            info="A minute of setup means more time with your physio. Tap the i next to each step for tips."
+          >
+            <ul className="space-y-3">
+              {CHECKLIST.map((item) => (
+                <li key={item.title} className="flex items-center gap-3">
+                  <IconChip icon={item.icon} tone={item.tone} size="sm" />
+                  <span className="min-w-0 flex-1 text-sm text-pt-ink">{item.title}</span>
+                  <InfoTip label={`Tips: ${item.title}`}>{item.tip}</InfoTip>
+                </li>
+              ))}
+            </ul>
+            {nothingUpcoming && (
+              <p className="mt-4 rounded-2xl bg-pt-sunken p-3 text-xs text-pt-muted">
+                Your physio may also start a quick call with you. When they do, it shows at the top of this page.
+              </p>
+            )}
+          </Panel>
+        </aside>
+      </div>
+
       <PatientAppointmentBookingModal
         isOpen={isBookingModalOpen}
         onClose={() => setIsBookingModalOpen(false)}
-        onAppointmentBooked={() => setIsBookingModalOpen(false)}
       />
-    </div>
-  );
-} 
+    </PageContainer>
+  )
+}
+
+/** The next online visit: when, who, and a big Join button once it can be joined. */
+function NextVisitCard({ apt, now, onJoin }: { apt: PatientAppointment; now: number; onJoin: () => void }) {
+  const status = patientStatus(apt, now)
+  const joinable = canJoinVisit(apt, now)
+  const joinTime = isJoinTime(apt, now)
+  const startsIn = Math.round((apt.startTime - now) / 60000)
+
+  let hint: string
+  if (joinable && joinTime) hint = startsIn > 0 ? `Starts in ${startsIn} min. You can join now and wait for your physio.` : 'Your session is on now.'
+  else if (joinable) hint = 'Your link is ready. You can join from 15 minutes before the start.'
+  else if (apt.status === 'confirmed') hint = 'Your video link will appear here before the session.'
+  else hint = 'The video link arrives once your physio confirms this visit.'
+
+  return (
+    <section className="rounded-3xl border border-pt-line bg-pt-surface p-5 shadow-pt dark:shadow-none sm:p-6">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-[11px] font-semibold uppercase tracking-wider text-pt-faint">Next video visit</p>
+        <span className="flex items-center gap-1">
+          <StatusBadge tone={status.tone} dot>
+            {status.label}
+          </StatusBadge>
+          <InfoTip label="What does this status mean?">{status.explain}</InfoTip>
+        </span>
+      </div>
+      <div className="mt-4 flex items-start gap-4">
+        <div className="flex w-16 shrink-0 flex-col items-center rounded-2xl bg-pt-sunken py-2.5">
+          <span className="text-[11px] font-semibold uppercase text-pt-muted">{formatLagos(apt.startTime, { month: 'short' }, 'en-NG')}</span>
+          <span className="text-2xl font-semibold leading-tight tabular-nums text-pt-ink">
+            {formatLagos(apt.startTime, { day: 'numeric' }, 'en-NG')}
+          </span>
+          <span className="text-[11px] text-pt-muted">{formatLagos(apt.startTime, { weekday: 'short' }, 'en-NG')}</span>
+        </div>
+        <div className="min-w-0">
+          <p className="text-lg font-semibold tracking-tight text-pt-ink">{apt.serviceType || 'Video visit'}</p>
+          <p className="text-sm text-pt-muted">
+            {lagosTimeRange(apt.startTime, apt.endTime)} · {durationMinutes(apt)} min
+          </p>
+          <p className="mt-0.5 text-sm text-pt-muted">With {apt.physiotherapistName || 'your physiotherapist'}</p>
+        </div>
+      </div>
+      <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:items-center">
+        {joinable ? (
+          <Button className={cn(accentButtonClass, 'h-12 px-8 text-[15px]')} onClick={onJoin}>
+            <Video className="mr-2 h-4 w-4" />
+            Join video call
+          </Button>
+        ) : (
+          <Button asChild className={cn(secondaryButtonClass, 'h-11 px-5')}>
+            <Link href={APPOINTMENTS_HREF}>See visit details</Link>
+          </Button>
+        )}
+        <p className="text-sm text-pt-muted sm:ml-2">{hint}</p>
+      </div>
+    </section>
+  )
+}

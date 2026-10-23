@@ -4,6 +4,7 @@ import { v } from "convex/values";
 import { internalAction } from "../../_generated/server";
 import { publicAppUrl } from "../../helpers/appUrl";
 import { escapeHtml } from "../../helpers/escapeHtml";
+import { actions, button, checklist, details, emailDate, greeting, heading, highlight, paragraph, renderEmail } from "../../../lib/email/layout";
 
 /**
  * Verification badge confirmation email. Internal: scheduled by
@@ -30,89 +31,35 @@ export const sendVerificationBadgeConfirmation = internalAction({
   const tierDisplay = tier === "12_month" ? "12-Month" : 
                      tier === "monthly" ? "Monthly" : "Yearly";
   
-  const expiryDate = new Date(expiresAt).toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
+  const expiryDate = emailDate(expiresAt);
+
+  const emailHtml = renderEmail({
+    eyebrow: "Badge activated",
+    tone: "success",
+    title: "Your profile is now verified",
+    preheader: `Your ${tierDisplay} verification badge is live until ${expiryDate}.`,
+    body: [
+      greeting(escapeHtml(userName || "Valued Professional")),
+      paragraph("Congratulations! Your verification badge payment went through, and your profile now carries the verified badge on Rehabify."),
+      highlight({ label: "Amount paid", value: `₦${(args.amount / 100).toLocaleString("en-NG")}`, sub: `${tierDisplay} badge` }),
+      details([
+        ["Plan", `${tierDisplay} badge`],
+        ["Payment reference", escapeHtml(args.paymentReference)],
+        ["Valid until", expiryDate],
+      ]),
+      heading("What you get"),
+      checklist([
+        "Verified badge displayed on your profile",
+        "Rank first in marketplace search results",
+        "Build trust with potential patients",
+        "More profile views and bookings",
+        "Priority support from our team",
+      ]),
+      actions(button("View your profile", `${publicAppUrl()}/dashboard/physiotherapist/marketplace`)),
+      paragraph(`Your badge expires on <strong>${expiryDate}</strong>. We'll remind you before then so you can renew and keep your verified status.`, { muted: true, size: 15 }),
+    ].join(""),
+    footerNote: "You're receiving this because you bought a verification badge on Rehabify.",
   });
-  
-  // Email template
-  const emailHtml = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <style>
-          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-          .header { background: linear-gradient(135deg, #FF69B4, #9333EA); padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
-          .header h1 { color: white; margin: 0; font-size: 28px; }
-          .badge-icon { font-size: 60px; margin: 10px 0; }
-          .content { background: #ffffff; padding: 30px; border: 1px solid #e0e0e0; border-top: none; }
-          .badge-info { background: linear-gradient(135deg, #FFF0F5, #F3E8FF); padding: 20px; border-radius: 8px; margin: 20px 0; border: 2px solid #FFB6C1; }
-          .badge-info h3 { color: #9333EA; margin-top: 0; }
-          .details { margin: 15px 0; }
-          .details strong { color: #005b57; }
-          .benefits { background: #f9f9f9; padding: 20px; border-radius: 8px; margin: 20px 0; }
-          .benefit { padding: 8px 0; }
-          .benefit::before { content: "✓"; color: #10b981; font-weight: bold; margin-right: 10px; }
-          .button { display: inline-block; background: linear-gradient(135deg, #005b57, #FF69B4); color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; margin: 20px 0; font-weight: bold; }
-          .footer { text-align: center; padding: 20px; color: #666; font-size: 12px; }
-        </style>
-      </head>
-      <body>
-        <div class="container">
-          <div class="header">
-            <div class="badge-icon">🎉</div>
-            <h1>Verification Badge Activated!</h1>
-            <p style="color: white; margin: 10px 0;">Your profile is now verified</p>
-          </div>
-          
-          <div class="content">
-            <p>Dear ${escapeHtml(userName || "Valued Professional")},</p>
-            
-            <p>Congratulations! Your verification badge purchase has been successfully processed, and your profile is now verified on RehabifyHealth.</p>
-            
-            <div class="badge-info">
-              <h3>Badge Details</h3>
-              <div class="details">
-                <strong>Plan:</strong> ${tierDisplay} Badge<br>
-                <strong>Amount Paid:</strong> ₦${(args.amount / 100).toLocaleString()}<br>
-                <strong>Payment Reference:</strong> ${escapeHtml(args.paymentReference)}<br>
-                <strong>Expires:</strong> ${expiryDate}
-              </div>
-            </div>
-            
-            <div class="benefits">
-              <h3 style="color: #005b57; margin-top: 0;">What You Get:</h3>
-              <div class="benefit">Verified badge displayed on your profile</div>
-              <div class="benefit">Rank first in marketplace search results</div>
-              <div class="benefit">Build trust with potential patients</div>
-              <div class="benefit">Increased profile views and bookings</div>
-              <div class="benefit">Priority support from our team</div>
-            </div>
-            
-            <p>Your verified badge is now live and patients can see it when they view your profile. You'll automatically appear at the top of search results in the marketplace.</p>
-            
-            <center>
-              <a href="${publicAppUrl()}/dashboard/physiotherapist/marketplace" class="button">
-                View Your Profile
-              </a>
-            </center>
-            
-            <p style="margin-top: 30px; font-size: 14px; color: #666;">
-              Your badge will automatically expire on <strong>${expiryDate}</strong>. We'll send you a reminder before it expires so you can renew and maintain your verified status.
-            </p>
-          </div>
-          
-          <div class="footer">
-            <p>Thank you for choosing RehabifyHealth!</p>
-            <p>Need help? Contact us at <a href="mailto:support@physioaroundme.com">support@physioaroundme.com</a></p>
-            <p>&copy; ${new Date().getFullYear()} RehabifyHealth. All rights reserved.</p>
-          </div>
-        </div>
-      </body>
-      </html>
-  `;
   
   try {
     // Send email using Resend

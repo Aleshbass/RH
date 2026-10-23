@@ -18,7 +18,7 @@ import {
   Trash2,
   Undo2,
   Users,
-} from 'lucide-react'
+} from '@/components/icons'
 import { toast } from 'sonner'
 import { api } from '@/convex/_generated/api'
 import type { Id } from '@/convex/_generated/dataModel'

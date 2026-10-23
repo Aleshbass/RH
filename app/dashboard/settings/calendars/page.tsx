@@ -2,7 +2,7 @@
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Calendar } from "lucide-react";
+import { Calendar } from "@/components/icons";
 
 export default function CalendarSettingsPage() {
   return (

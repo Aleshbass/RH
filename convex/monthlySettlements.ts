@@ -42,6 +42,11 @@ function assertPeriod(period: string) {
 }
 
 const isLive = (c: Doc<"partnerCommissions">) => c.environment !== "sandbox";
+/** In a period's totals: not reversed or cancelled, and not still waiting for approval. */
+const isCounted = (c: Doc<"partnerCommissions">) =>
+  c.status !== "reversed" && c.status !== "cancelled" && c.status !== "pending_approval";
+/** Payments a clinic recorded by hand went through neither Paystack nor a Rehabify bank transfer. */
+const paidViaPaystack = (c: Doc<"partnerCommissions">) => c.paymentMethod !== "bank_transfer" && c.source !== "invoice_manual";
 
 /** Commissions that can be paid out now for a partner, up to and including `period`. */
 async function payableCommissions(ctx: QueryCtx | MutationCtx, partnerCode: string, period: string) {
@@ -90,7 +95,8 @@ export const getMonthlyBulkPayoutSummary = query({
 
     const partnerSummaries = [];
     for (const partner of partners) {
-      const inPeriod = periodCommissions.filter((c) => c.partnerId === partner.code && c.status !== "reversed" && c.status !== "cancelled");
+      // Commissions still waiting for an admin's approval are listed on their own, not counted here
+      const inPeriod = periodCommissions.filter((c) => c.partnerId === partner.code && isCounted(c));
       const payable = await payableCommissions(ctx, partner.code, period);
       const payableKobo = payable.reduce((s, c) => s + c.netPayable, 0);
       const transfer = await activeTransfer(ctx, partner.code);
@@ -130,7 +136,7 @@ export const getMonthlyBulkPayoutSummary = query({
         // Amount that a payout would send now (includes carry-over and refund adjustments)
         totalPartnerKobo: payableKobo,
         totalPartnerCommission: payableKobo,
-        paystackCount: inPeriod.filter((c) => c.paymentMethod !== "bank_transfer").length,
+        paystackCount: inPeriod.filter(paidViaPaystack).length,
         bankTransferCount: inPeriod.filter((c) => c.paymentMethod === "bank_transfer").length,
         payoutStatus,
         bulkPayoutStatus: payoutStatus,
@@ -160,7 +166,7 @@ export const getMonthlyBulkPayoutSummary = query({
       }),
       { totalReferredPatients: 0, totalSessions: 0, totalGrossKobo: 0, totalPhysioKobo: 0, totalRehabifyKobo: 0, totalPartnerKobo: 0 }
     );
-    const live = periodCommissions.filter((c) => c.status !== "reversed" && c.status !== "cancelled");
+    const live = periodCommissions.filter(isCounted);
     return {
       billingPeriod: period,
       billingPeriodLabel: formatBillingPeriod(period),
@@ -181,7 +187,7 @@ export const getMonthlyBulkPayoutSummary = query({
         totalPhysiotherapistShare: totals.totalPhysioKobo,
         totalRehabifyShare: totals.totalRehabifyKobo,
         totalPartnerCommission: totals.totalPartnerKobo,
-        paystackTotal: live.filter((c) => c.paymentMethod !== "bank_transfer").reduce((s, c) => s + c.grossTransactionAmount, 0),
+        paystackTotal: live.filter(paidViaPaystack).reduce((s, c) => s + c.grossTransactionAmount, 0),
         bankTransferTotal: live.filter((c) => c.paymentMethod === "bank_transfer").reduce((s, c) => s + c.grossTransactionAmount, 0),
       },
     };

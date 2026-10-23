@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Building2 } from 'lucide-react'
+import { Building2 } from '@/components/icons'
 import { cn } from '@/lib/utils'
 import { useClinicAccess } from '@/components/clinic/ClinicPreviewContext'
 

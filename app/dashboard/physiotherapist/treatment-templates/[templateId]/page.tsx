@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import Link from "next/link";
-import { ArrowLeft, Edit, PlayCircle } from "lucide-react";
+import { ArrowLeft, Edit, PlayCircle } from "@/components/icons";
 import { VideoEmbed } from "@/components/media/VideoEmbed";
 
 export default function TreatmentTemplateDetailPage() {

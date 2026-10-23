@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Calendar, Clock, MapPin, User, Wrench, AlertTriangle, CheckCircle } from 'lucide-react';
+import { Calendar, Clock, MapPin, User, Wrench, AlertTriangle, CheckCircle } from '@/components/icons';
 import { format, startOfWeek, endOfWeek, eachDayOfInterval } from 'date-fns';
 import { useResourceManagement } from '@/hooks/useResourceManagement';
 import { useQuery } from 'convex/react';

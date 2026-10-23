@@ -3,6 +3,7 @@ import { fetchQuery } from 'convex/nextjs'
 import { api } from '@/convex/_generated/api'
 import type { PublicCohort } from '@/convex/learn'
 import { MskProgramPage } from '@/components/learn/MskProgramPage'
+import { learnUrl } from '@/lib/site-hosts'
 
 export const revalidate = 60
 
@@ -12,11 +13,11 @@ const description =
 export const metadata: Metadata = {
   title: 'MSK Specialist Program — Rehabify Learn',
   description,
-  alternates: { canonical: '/learn' },
+  alternates: { canonical: learnUrl() },
   openGraph: {
     title: 'Rehabify MSK Specialist Program',
     description,
-    url: '/learn',
+    url: learnUrl(),
     type: 'website',
   },
   twitter: {

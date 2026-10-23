@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery } from 'convex/react';
-import { Loader2 } from 'lucide-react';
+import { Loader2 } from '@/components/icons';
 import { toast } from 'sonner';
 import { api } from '@/convex/_generated/api';
 import { Button } from '@/components/ui/button';

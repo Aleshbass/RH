@@ -16,7 +16,7 @@ import {
   Mail,
   Phone,
   WalletCards
-} from 'lucide-react';
+} from '@/components/icons';
 
 // Types used in this modal
 interface InvoiceItem {

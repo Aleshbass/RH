@@ -9,6 +9,7 @@
 import type { MutationCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
 import { makeFunctionReference } from "convex/server";
+import { notifyReferringDoctor } from "./doctorReferralUpdates";
 
 const deliverPartnerWebhookRef = makeFunctionReference<"action", { deliveryId: Id<"partnerWebhookDeliveries"> }>(
   "actions/partners/dispatchWebhook:deliverPartnerWebhook"
@@ -172,6 +173,8 @@ export async function transitionReferral(
 
   if (fromPublic !== toPublic && toPublic !== "received") {
     await emitReferralEvent(ctx, referralId, `referral.${toPublic}` as WebhookEventType, fromPublic);
+    // Referring doctors have no webhook; they get an email instead
+    await notifyReferringDoctor(ctx, referralId, toPublic);
   }
   return { from: fromPublic, to: toPublic };
 }

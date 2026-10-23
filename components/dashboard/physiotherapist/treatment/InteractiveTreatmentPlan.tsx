@@ -11,7 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { Plus, Target, Dumbbell, Calendar, TrendingUp, ChevronDown, ChevronUp, Info, Trash2 } from 'lucide-react';
+import { Plus, Target, Dumbbell, Calendar, TrendingUp, ChevronDown, ChevronUp, Info, Trash2 } from '@/components/icons';
 import { format } from 'date-fns';
 import { InteractiveTreatmentPlan as TreatmentPlanType } from '@/types/assessments';
 import { ExerciseLibrary } from './ExerciseLibrary';

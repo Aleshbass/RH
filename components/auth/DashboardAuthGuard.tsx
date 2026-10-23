@@ -9,12 +9,14 @@ import PendingApprovalPage from '@/components/dashboard/shared/PendingApprovalPa
 
 interface DashboardAuthGuardProps {
   children: React.ReactNode
+  /** Shown while the account loads or redirects; defaults to a plain spinner. */
+  loadingFallback?: React.ReactNode
 }
 
 // A brand-new Clerk account gets its Convex record from SyncUserWithConvex a moment after sign-up
 const NEW_ACCOUNT_SYNC_WAIT_MS = 10_000
 
-export default function DashboardAuthGuard({ children }: DashboardAuthGuardProps) {
+export default function DashboardAuthGuard({ children, loadingFallback }: DashboardAuthGuardProps) {
   const router = useRouter()
   const { isSignedIn } = useAuth()
   const currentUser = useQuery(api.users.getMyUser)
@@ -168,6 +170,7 @@ export default function DashboardAuthGuard({ children }: DashboardAuthGuardProps
   // Show loading state while checking authentication or redirecting
   if (isRedirecting || currentUser === undefined || (currentUser === null && isSignedIn && !syncWaitOver) ||
     (currentUser?.role === 'physiotherapist' || currentUser?.role === 'clinic_owner') && approvalStatus === undefined) {
+    if (loadingFallback) return <>{loadingFallback}</>
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">

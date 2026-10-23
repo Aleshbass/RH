@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useMutation, useQuery } from 'convex/react'
 import { format, formatDistanceToNow } from 'date-fns'
-import { HeartPulse, Loader2, Mail, Phone, PhoneCall, Star } from 'lucide-react'
+import { HeartPulse, Loader2, Mail, Phone, PhoneCall, Star } from '@/components/icons'
 import { toast } from 'sonner'
 import { api } from '@/convex/_generated/api'
 import type { Id } from '@/convex/_generated/dataModel'

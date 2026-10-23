@@ -20,7 +20,7 @@ import {
   MonitorPlay,
   PlayCircle,
   Video,
-} from 'lucide-react'
+} from '@/components/icons'
 import { api } from '@/convex/_generated/api'
 import { cn } from '@/lib/utils'
 import {
@@ -32,8 +32,8 @@ import {
   InterestForm,
   naira,
   PairingShapes,
-  pillGhostOnDark,
   pillLime,
+  pillOutline,
   pillTeal,
   PROGRAM,
   titleCase,
@@ -136,7 +136,7 @@ function CohortCard({ cohort, compact = false }: { cohort: PublicCohort | null |
   return (
     <div
       className={cn(
-        'relative rounded-[1.75rem] bg-white text-rh-night shadow-[0_40px_80px_-40px_rgba(0,46,44,0.75)]',
+        'relative rounded-[1.75rem] bg-white text-rh-night shadow-soft',
         compact ? 'p-5 sm:p-6' : 'p-6 sm:p-8'
       )}
     >
@@ -190,19 +190,18 @@ function Hero({ cohort }: { cohort: PublicCohort | null | undefined }) {
   const duration = cohort?.duration || DEFAULT_DURATION
   return (
     <section className="bg-rh-cream px-4 pb-16 pt-24 sm:px-6 sm:pt-28 lg:pb-24">
-      <div className="relative mx-auto max-w-6xl overflow-hidden rounded-[2rem] bg-[linear-gradient(140deg,#005b57_0%,#005b57_58%,#003f3c_100%)] text-white sm:rounded-[2.5rem]">
-        <div aria-hidden className="pointer-events-none absolute -left-24 -top-24 h-72 w-72 rounded-full bg-rh-aqua/10 blur-3xl" />
-        <div className="relative grid gap-14 px-6 py-12 sm:px-10 sm:py-16 lg:grid-cols-[1.12fr_0.88fr] lg:items-center lg:gap-16 lg:px-16 lg:py-20">
+      <div className="mx-auto max-w-6xl">
+        <div className="grid gap-14 py-4 sm:py-8 lg:grid-cols-[1.12fr_0.88fr] lg:items-center lg:gap-16">
           <motion.div
             initial={reduce ? false : { opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
           >
-            <span className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3.5 py-1.5 text-xs font-semibold tracking-wide text-rh-mint ring-1 ring-inset ring-white/15">
+            <span className="inline-flex items-center gap-2 rounded-full bg-white px-3.5 py-1.5 text-xs font-semibold tracking-wide text-rh-teal ring-1 ring-inset ring-rh-night/10">
               <span className="h-1.5 w-1.5 rounded-full bg-rh-lime" />
               Rehabify Learn · MSK Specialist Program
             </span>
-            <h1 className="mt-6 text-[40px] leading-[1.04] tracking-tight text-white sm:text-[56px] lg:text-[62px]">
+            <h1 className="mt-6 text-[40px] leading-[1.04] tracking-tight text-rh-night sm:text-[56px] lg:text-[62px]">
               Become a Rehabify Certified{' '}
               <span className="relative inline-block">
                 MSK Specialist
@@ -210,24 +209,24 @@ function Hero({ cohort }: { cohort: PublicCohort | null | undefined }) {
               </span>{' '}
               in {titleCase(duration)}
             </h1>
-            <p className="mt-7 max-w-xl text-lg leading-relaxed text-white/80">{PROGRAM.summary}</p>
+            <p className="mt-7 max-w-xl text-lg leading-relaxed text-rh-night/70">{PROGRAM.summary}</p>
             <div className="mt-9 flex flex-col gap-3 sm:flex-row">
-              <a href="#register" className={cn(pillLime, 'h-12 px-7 text-[15px]')}>
+              <a href="#register" className={cn(pillTeal, 'h-12 px-7 text-[15px]')}>
                 Register now <ArrowRight className="h-4 w-4" />
               </a>
-              <a href="#how-it-works" className={cn(pillGhostOnDark, 'h-12 px-7 text-[15px]')}>
+              <a href="#how-it-works" className={cn(pillOutline, 'h-12 px-7 text-[15px]')}>
                 How it works
               </a>
             </div>
-            <ul className="mt-9 flex flex-wrap gap-x-6 gap-y-3 text-sm text-white/75">
+            <ul className="mt-9 flex flex-wrap gap-x-6 gap-y-3 text-sm text-rh-night/70">
               <li className="inline-flex items-center gap-2">
-                <Award className="h-4 w-4 text-rh-lime" /> Certificate on completion
+                <Award className="h-4 w-4 text-rh-teal" /> Certificate on completion
               </li>
               <li className="inline-flex items-center gap-2">
-                <PlayCircle className="h-4 w-4 text-rh-lime" /> Every session recorded
+                <PlayCircle className="h-4 w-4 text-rh-teal" /> Every session recorded
               </li>
               <li className="inline-flex items-center gap-2">
-                <BadgeCheck className="h-4 w-4 text-rh-lime" /> Case-based learning
+                <BadgeCheck className="h-4 w-4 text-rh-teal" /> Case-based learning
               </li>
             </ul>
           </motion.div>
@@ -243,7 +242,7 @@ function Hero({ cohort }: { cohort: PublicCohort | null | undefined }) {
             <div aria-hidden className="absolute -bottom-5 -right-3 h-28 w-28 rounded-[1.75rem] bg-rh-lime sm:-bottom-8 sm:-right-8 sm:h-36 sm:w-36" />
             {cohort?.imageUrl ? (
               <>
-                <div className="relative aspect-[4/3] overflow-hidden rounded-[1.75rem] bg-rh-night/40 ring-1 ring-white/10">
+                <div className="relative aspect-[4/3] overflow-hidden rounded-[1.75rem] bg-rh-night/40 ring-1 ring-rh-night/10">
                   <Image
                     src={cohort.imageUrl}
                     alt={cohort.imageAlt || PROGRAM.title}

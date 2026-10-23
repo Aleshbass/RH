@@ -2,7 +2,7 @@
 
 import { useQuery } from 'convex/react'
 import { format, formatDistanceToNow } from 'date-fns'
-import { AlertTriangle, EyeOff, MapPin, MessageCircle, Video } from 'lucide-react'
+import { AlertTriangle, EyeOff, MapPin, MessageCircle, Video } from '@/components/icons'
 import { api } from '@/convex/_generated/api'
 import type { Id } from '@/convex/_generated/dataModel'
 import type { getJoyHandoffForPhysio } from '@/convex/joyHandoff'

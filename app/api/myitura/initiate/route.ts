@@ -1,164 +1,197 @@
 /**
- * MyItura MediLoan — Admin Loan Initiation Route
+ * MyItura MediLoan: start a loan application.
  *
  * POST /api/myitura/initiate
  *
- * Called by Rehabify admin from the loans dashboard to formally initiate a
- * MediLoan with MyItura on behalf of a patient who submitted a loan request.
- * Can also be called directly from the physiotherapist billing page.
+ *  - Physiotherapists: { invoiceId } for one of their own unpaid invoices. The patient, phone
+ *    and amount come from the invoice (what's still owed), never from the request. A
+ *    `phoneNumber` is only used when the patient's account has none.
+ *  - Admins: the same with an invoiceId, or { loanRequestId, treatmentAmount } for a patient's
+ *    MediLoan request from a booking page (amount in kobo, chosen by the admin).
  *
- * Flow:
- *  1. Authenticate caller (must be signed-in admin or physio)
- *  2. Call MyItura SDK with patient details + Rehabify's API keys
- *  3. MyItura auto-sends an SMS to the patient's phone with an application link
- *  4. Log the resulting loanApplication in Convex
- *  5. Link back to the original loanRequest (if provided) and mark it "initiated"
+ * MyItura creates the application link (valid 7 days) and texts it to the patient. We also
+ * return a WhatsApp link the caller can use as a backup. Updates arrive at
+ * /api/myitura/webhook; when the loan disburses, the invoice is marked paid.
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
 import { getConvexClient } from "@/lib/convex-client";
-import { initiateMediLoan } from "@/lib/myitura/myitura";
+import { MyIturaError, initiateMediLoan } from "@/lib/myitura/myitura";
 import { getServerViewer } from "@/lib/auth/serverViewer";
 import { convexServerSecret } from "@/lib/convex-server-secret";
+import { mediLoanWhatsAppUrl } from "@/lib/myitura/share";
 
-// Callers: the admin loans page and the physiotherapist billing page.
 const ALLOWED_ROLES = ["admin", "physiotherapist"];
 
+type InvoiceForLoan = {
+    invoiceId: Id<"invoices">;
+    invoiceNumber: string;
+    outstandingKobo: number;
+    patient: { id: Id<"users">; firstName: string; lastName: string; email?: string; phone?: string };
+};
+
+function convexMessage(error: unknown, fallback: string) {
+    const data = (error as { data?: unknown })?.data;
+    if (typeof data === "string" && data) return data;
+    return (error as Error)?.message?.replace(/^.*Uncaught ConvexError: /, "").split("\n")[0] || fallback;
+}
+
 export async function POST(request: NextRequest) {
+    const { userId } = await auth();
+    if (!userId) return NextResponse.json({ error: "Please sign in." }, { status: 401 });
+    const viewer = await getServerViewer();
+    if (!viewer?.role || !ALLOWED_ROLES.includes(viewer.role)) {
+        return NextResponse.json({ error: "Only Rehabify admins and physiotherapists can start a MediLoan." }, { status: 403 });
+    }
+    const isAdmin = viewer.role === "admin";
+
+    let body: Record<string, unknown>;
     try {
-        const convex = getConvexClient();
+        body = await request.json();
+    } catch {
+        return NextResponse.json({ error: "Invalid request." }, { status: 400 });
+    }
 
-        // 1. Must be authenticated — only Rehabify admin or physio can call MyItura SDK
-        const { userId } = await auth();
-        if (!userId) {
-            return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
-        }
-        const viewer = await getServerViewer();
-        if (!viewer?.role || !ALLOWED_ROLES.includes(viewer.role)) {
-            return NextResponse.json({ error: "Only Rehabify admins and physiotherapists can start a MediLoan." }, { status: 403 });
-        }
+    const convex = getConvexClient();
+    const serverSecret = convexServerSecret();
+    const str = (value: unknown) => (typeof value === "string" ? value.trim() : "");
 
-        // 2. Parse & validate body
-        const body = await request.json();
-        const {
-            loanRequestId,    // optional — the Convex loanRequest ID this originated from
-            patientId,        // optional — Convex user ID of the patient
-            firstName,
-            lastName,
-            email,
+    let loan: {
+        invoiceId?: Id<"invoices">;
+        loanRequestId?: Id<"loanRequests">;
+        patientId?: Id<"users">;
+        firstName: string;
+        lastName: string;
+        email?: string;
+        phoneNumber: string;
+        treatment: string;
+        treatmentAmount: number;
+        invoiceReference?: string;
+    };
+
+    if (str(body.invoiceId)) {
+        let invoice: InvoiceForLoan;
+        try {
+            invoice = (await convex.query(api.mediloan.getInvoiceForMediLoan, {
+                invoiceId: str(body.invoiceId) as Id<"invoices">,
+                callerClerkId: userId,
+                serverSecret,
+            })) as InvoiceForLoan;
+        } catch (error) {
+            return NextResponse.json({ error: convexMessage(error, "This invoice can't be financed.") }, { status: 400 });
+        }
+        const phoneNumber = invoice.patient.phone || str(body.phoneNumber);
+        if (!phoneNumber) {
+            return NextResponse.json({ error: "Add the patient's phone number first. MediLoan texts them the next steps." }, { status: 400 });
+        }
+        loan = {
+            invoiceId: invoice.invoiceId,
+            patientId: invoice.patient.id,
+            firstName: invoice.patient.firstName || "Patient",
+            lastName: invoice.patient.lastName || "",
+            email: invoice.patient.email,
             phoneNumber,
-            gender,
-            treatment,
-            treatmentAmount,  // in Kobo
-            invoiceReference,
-        } = body;
-
-        if (!firstName || !lastName || !phoneNumber || !treatment || !treatmentAmount) {
-            return NextResponse.json(
-                { error: "Missing required fields: firstName, lastName, phoneNumber, treatment, treatmentAmount" },
-                { status: 400 }
-            );
+            treatment: `Physiotherapy (invoice ${invoice.invoiceNumber})`,
+            treatmentAmount: invoice.outstandingKobo,
+            invoiceReference: invoice.invoiceNumber,
+        };
+    } else if (isAdmin && str(body.loanRequestId)) {
+        const amount = Number(body.treatmentAmount);
+        if (!Number.isInteger(amount) || amount <= 0) {
+            return NextResponse.json({ error: "Enter the treatment amount." }, { status: 400 });
         }
-
-        if (typeof treatmentAmount !== "number" || treatmentAmount <= 0) {
-            return NextResponse.json(
-                { error: "treatmentAmount must be a positive number (in kobo)" },
-                { status: 400 }
-            );
+        if (!str(body.firstName) || !str(body.phoneNumber) || !str(body.treatment)) {
+            return NextResponse.json({ error: "The request is missing the patient's name, phone or treatment." }, { status: 400 });
         }
-
-        // 3. Generate a unique client reference (must be unique per Rehabify account)
-        const clientReference = `RH-LOAN-${Date.now()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
-
-        // 4. Call MyItura SDK — Rehabify's Public + Secret keys are used here
-        let myituraData;
-        try {
-            myituraData = await initiateMediLoan({
-                clientReference,
-                invoiceReference: invoiceReference || undefined,
-                firstName,
-                lastName,
-                email: email || undefined,
-                phoneNumber,
-                gender: gender || undefined,
-                treatment,
-                treatmentAmount,
-            });
-        } catch (sdkError: any) {
-            const cause = sdkError?.cause?.message || sdkError?.cause?.code || "";
-            console.error("[MyItura Initiate] SDK call failed:", sdkError.message, "| cause:", cause);
-
-            if (sdkError.name === "AbortError" || sdkError.message?.includes("timed out")) {
-                return NextResponse.json(
-                    { error: "MyItura API request timed out. Please try again." },
-                    { status: 504 }
-                );
-            }
-
-            return NextResponse.json(
-                { error: `MyItura SDK error: ${sdkError.message}${cause ? ` (${cause})` : ""}` },
-                { status: 502 }
-            );
-        }
-
-        // 5. Validate SDK response
-        if (!myituraData.data?.sdkReference || !myituraData.data?.applicationUrl) {
-            console.error("[MyItura Initiate] Unexpected response shape:", myituraData);
-            return NextResponse.json(
-                { error: "MyItura returned an incomplete response. Please try again." },
-                { status: 502 }
-            );
-        }
-
-        // 6. Log the loan in Convex + link back to the loanRequest if provided
-        let loanId;
-        try {
-            loanId = await convex.mutation(api.mediloan.logInitiatedLoan, {
-                loanRequestId: loanRequestId || undefined,
-                patientId: patientId || undefined,
-                initiatorClerkId: userId,
-                clientReference,
-                invoiceReference: invoiceReference || undefined,
-                myituraSdkRef: myituraData.data.sdkReference,
-                treatment,
-                amount: treatmentAmount,
-                patientFirstName: firstName,
-                patientLastName: lastName,
-                patientPhone: phoneNumber,
-                patientEmail: email || undefined,
-                applicationUrl: myituraData.data.applicationUrl,
-                expiresAt: myituraData.data.expiresAt ?? "",
-                serverSecret: convexServerSecret(),
-            });
-        } catch (convexError: any) {
-            console.error("[MyItura Initiate] Convex mutation failed:", convexError.message);
-            return NextResponse.json(
-                { error: `Failed to save loan record: ${convexError.message}` },
-                { status: 500 }
-            );
-        }
-
-        return NextResponse.json({
-            success: true,
-            data: {
-                loanId,
-                clientReference,
-                sdkReference: myituraData.data.sdkReference,
-                applicationUrl: myituraData.data.applicationUrl,
-                expiresAt: myituraData.data.expiresAt,
-                message: `MediLoan initiated. SMS sent to ${phoneNumber} with the application link.`,
-            },
-        });
-
-    } catch (error: any) {
-        const cause = error?.cause?.message || error?.cause?.code || "";
-        console.error("[MyItura Initiate] Unexpected error:", error.message, "| cause:", cause);
-
+        loan = {
+            loanRequestId: str(body.loanRequestId) as Id<"loanRequests">,
+            firstName: str(body.firstName),
+            lastName: str(body.lastName),
+            email: str(body.email) || undefined,
+            phoneNumber: str(body.phoneNumber),
+            treatment: str(body.treatment),
+            treatmentAmount: amount,
+        };
+    } else {
         return NextResponse.json(
-            { error: error.message || "Internal server error" },
-            { status: 500 }
+            { error: isAdmin ? "Choose an invoice or a patient's loan request." : "Choose one of your unpaid invoices." },
+            { status: 400 }
         );
     }
+
+    // Unique per Rehabify account; also our idempotency key with MyItura
+    const clientReference = `RH-LOAN-${Date.now()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+
+    let created;
+    try {
+        created = await initiateMediLoan({
+            clientReference,
+            invoiceReference: loan.invoiceReference,
+            firstName: loan.firstName,
+            lastName: loan.lastName,
+            email: loan.email,
+            phoneNumber: loan.phoneNumber,
+            treatment: loan.treatment,
+            treatmentAmount: loan.treatmentAmount,
+        });
+    } catch (error) {
+        const status = error instanceof MyIturaError ? error.httpStatus : 502;
+        const code = error instanceof MyIturaError && error.code ? ` (${error.code})` : "";
+        console.error("[MyItura Initiate] failed", { status, code });
+        return NextResponse.json(
+            { error: `MediLoan couldn't start this application: ${(error as Error).message}${code}` },
+            { status: status === 504 ? 504 : 502 }
+        );
+    }
+
+    const data = created.data;
+    if (!data?.sdkReference || !data.applicationUrl) {
+        return NextResponse.json({ error: "MediLoan returned an incomplete response. Please try again." }, { status: 502 });
+    }
+
+    let loanId;
+    try {
+        loanId = await convex.mutation(api.mediloan.logInitiatedLoan, {
+            loanRequestId: loan.loanRequestId,
+            invoiceId: loan.invoiceId,
+            patientId: loan.patientId,
+            initiatorClerkId: userId,
+            clientReference,
+            invoiceReference: loan.invoiceReference,
+            myituraSdkRef: data.sdkReference,
+            treatment: loan.treatment,
+            amount: loan.treatmentAmount,
+            patientFirstName: loan.firstName,
+            patientLastName: loan.lastName,
+            patientPhone: loan.phoneNumber,
+            patientEmail: loan.email,
+            applicationUrl: data.applicationUrl,
+            expiresAt: data.expiresAt ?? "",
+            serverSecret,
+        });
+    } catch (error) {
+        // MyItura already has the application; the reference lets the team match it up by hand
+        console.error("[MyItura Initiate] saving the loan failed", { clientReference });
+        return NextResponse.json({ error: `The loan started but couldn't be saved here: ${convexMessage(error, "unknown error")}` }, { status: 500 });
+    }
+
+    // MyItura texts the patient the link; the WhatsApp link is a backup the caller can send
+    const whatsappUrl = mediLoanWhatsAppUrl(loan.phoneNumber, loan.firstName, data.applicationUrl);
+
+    return NextResponse.json({
+        success: true,
+        data: {
+            loanId,
+            clientReference,
+            sdkReference: data.sdkReference,
+            applicationUrl: data.applicationUrl,
+            whatsappUrl,
+            expiresAt: data.expiresAt,
+            amountKobo: loan.treatmentAmount,
+            message: `MediLoan started. MyItura is texting ${loan.firstName} the application link.`,
+        },
+    });
 }

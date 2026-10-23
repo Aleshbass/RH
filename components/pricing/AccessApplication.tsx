@@ -3,7 +3,7 @@
 import { useId, useState, type FormEvent, type ReactNode } from 'react'
 import Link from 'next/link'
 import { useConvexAuth, useMutation, useQuery } from 'convex/react'
-import { ArrowRight, CalendarClock, Check, ChevronDown, Clock, HeartHandshake, Info, Loader2 } from 'lucide-react'
+import { ArrowRight, CalendarClock, Check, ChevronDown, Clock, HeartHandshake, Info, Loader2 } from '@/components/icons'
 import { api } from '@/convex/_generated/api'
 import { CheckItem, displayFont, fieldClass, pillOutline, pillTeal } from '@/components/learn/shared'
 import { errorMessage } from '@/components/partners/portal/shared'

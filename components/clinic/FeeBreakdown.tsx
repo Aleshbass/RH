@@ -1,7 +1,7 @@
 'use client'
 
 import { useQuery } from 'convex/react'
-import { ChevronRight } from 'lucide-react'
+import { ChevronRight } from '@/components/icons'
 import { api } from '@/convex/_generated/api'
 import {
   DEFAULT_CLINIC_FEE_CONFIG,

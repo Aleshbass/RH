@@ -3,7 +3,7 @@
 import { useQuery } from 'convex/react'
 import type { FunctionReturnType } from 'convex/server'
 import { format } from 'date-fns'
-import { CheckCircle2, Clock, Download, Eye, Printer, Receipt, ShieldCheck } from 'lucide-react'
+import { CheckCircle2, Clock, Download, Eye, Printer, Receipt, ShieldCheck } from '@/components/icons'
 import { toast } from 'sonner'
 import { api } from '@/convex/_generated/api'
 import { Button } from '@/components/ui/button'
@@ -12,7 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { downloadCsv, primaryButtonClass, softButtonClass, StatusBadge, tableWrapClass } from '@/components/admin/ui'
 import { cn } from '@/lib/utils'
 import type { PayoutPartner } from './PayoutDialogs'
-import { dialogClass, dialogTitleClass, formatKobo, LoadingBlock } from './shared'
+import { commissionSourceLabel, dialogClass, dialogTitleClass, formatKobo, LoadingBlock } from './shared'
 
 type SplitPercents = { physiotherapistPercent: number; rehabifyPercent: number }
 type Commission = PayoutPartner['commissions'][number]
@@ -73,7 +73,7 @@ export function PartnerLedgerDialog({
                     <TableHead className="text-right">{physioLabel}</TableHead>
                     <TableHead className="text-right">{rehabifyLabel}</TableHead>
                     <TableHead className="text-right">Partner (net)</TableHead>
-                    <TableHead className="text-center">Channel</TableHead>
+                    <TableHead className="text-center">Source</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -93,6 +93,11 @@ export function PartnerLedgerDialog({
                               Bonus
                             </StatusBadge>
                           )}
+                          {c.status === 'pending_approval' && (
+                            <StatusBadge tone="amber" className="ml-1.5">
+                              Awaiting approval
+                            </StatusBadge>
+                          )}
                         </TableCell>
                         <TableCell>
                           <StatusBadge tone="neutral">{c.careMode === 'in_person' ? 'In-person' : c.careMode === 'virtual' ? 'Virtual' : '—'}</StatusBadge>
@@ -102,8 +107,8 @@ export function PartnerLedgerDialog({
                         <TableCell className="text-right tabular-nums">{formatKobo(c.rehabifyAmount ?? 0)}</TableCell>
                         <TableCell className="text-right font-semibold tabular-nums text-rh-teal dark:text-rh-aqua">{formatKobo(c.netPayable)}</TableCell>
                         <TableCell className="text-center">
-                          <StatusBadge tone={c.paymentMethod === 'bank_transfer' ? 'amber' : 'teal'}>
-                            {c.paymentMethod === 'bank_transfer' ? 'Bank transfer' : 'Paystack'}
+                          <StatusBadge tone={c.source === 'invoice_manual' || c.paymentMethod === 'bank_transfer' ? 'amber' : 'teal'}>
+                            {commissionSourceLabel(c.source, c.paymentMethod)}
                           </StatusBadge>
                         </TableCell>
                       </TableRow>

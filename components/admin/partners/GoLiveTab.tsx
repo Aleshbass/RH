@@ -3,13 +3,13 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { format } from 'date-fns'
-import { FileText, Rocket, XCircle } from 'lucide-react'
+import { FileText, Rocket, XCircle } from '@/components/icons'
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { cardClass, ConfirmDialog, EmptyState, Panel, primaryButtonClass, StatusBadge, tableWrapClass } from '@/components/admin/ui'
+import { cardClass, ConfirmDialog, EmptyState, Panel, primaryButtonClass, tableWrapClass } from '@/components/admin/ui'
 import { cn } from '@/lib/utils'
 import { type PartnerApplication, type PartnerReview, type ReasonRequest } from './PartnerReview'
-import { Callout, insetClass, linkClass, LoadingBlock, ProductionStatusBadge } from './shared'
+import { Callout, insetClass, linkClass, LoadingBlock, PartnerTypeBadge, ProductionStatusBadge } from './shared'
 
 export function GoLiveTab({
   applications,
@@ -28,7 +28,8 @@ export function GoLiveTab({
     <div className="space-y-6">
       <Callout tone="info" title="Production (go-live) access">
         Approved partners start in sandbox. Live API keys, the live webhook endpoint and live referral links only work after you approve production
-        access here. Suspending production disables live keys immediately; sandbox keeps working.
+        access here. Suspending production disables live keys immediately; sandbox keeps working. Referring doctors go live when you approve them,
+        so they never appear as requests.
       </Callout>
 
       <section className="space-y-3">
@@ -49,9 +50,7 @@ export function GoLiveTab({
                 <div className="min-w-0 flex-1 space-y-2 text-xs">
                   <div className="flex flex-wrap items-center gap-2">
                     <h4 className="text-base font-semibold text-rh-night dark:text-white">{partner.name}</h4>
-                    <StatusBadge tone="teal" className="uppercase">
-                      {partner.type}
-                    </StatusBadge>
+                    <PartnerTypeBadge type={partner.type} />
                     <span className="font-mono text-neutral-400">{partner.code}</span>
                   </div>
                   <p className="text-neutral-500 dark:text-neutral-400">

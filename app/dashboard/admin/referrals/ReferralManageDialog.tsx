@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery } from 'convex/react'
 import type { FunctionReturnType } from 'convex/server'
-import { Building2, Check, Loader2, MapPin, Monitor, Search, Stethoscope } from 'lucide-react'
+import { Building2, Check, Loader2, MapPin, Monitor, Search, Stethoscope } from '@/components/icons'
 import { toast } from 'sonner'
 import { api } from '@/convex/_generated/api'
 import type { Id } from '@/convex/_generated/dataModel'
@@ -193,7 +193,10 @@ function ManageForm({ referral, onClose, onBusyChange }: { referral: ReferralRow
           <StatusBadge tone={statusTone(referral.status)}>{STATUS_LABEL[referral.status]}</StatusBadge>
           {referral.trackingCode && <span className="font-mono text-xs">{referral.trackingCode}</span>}
           {isSandbox && <StatusBadge tone="neutral">Sandbox</StatusBadge>}
-          <span className="text-xs">· {referral.partnerName || referral.doctorName}</span>
+          <span className="text-xs">
+            · {referral.partnerName || referral.doctorName}
+            {referral.partnerType === 'doctor' ? ' (doctor referral)' : ''}
+          </span>
         </DialogDescription>
       </DialogHeader>
 
@@ -368,21 +371,13 @@ function ManageForm({ referral, onClose, onBusyChange }: { referral: ReferralRow
           )}
         </section>
 
-        {referral.referringDoctorId &&
-          (referral.doctorBankAccount ? (
-            <div className={cn(insetClass, 'space-y-1 text-xs')}>
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">Referring doctor payout details</p>
-              <p className="text-rh-night dark:text-neutral-200">
-                {referral.doctorBankAccount.bankName} · {referral.doctorBankAccount.accountNumber} · {referral.doctorBankAccount.accountName}
-              </p>
-              <p className="font-mono text-[11px] text-neutral-500 dark:text-neutral-400">Subaccount {referral.doctorBankAccount.subaccountCode}</p>
-              {referral.commissionEarned ? <p className="text-neutral-500 dark:text-neutral-400">Commission recorded: {formatKobo(referral.commissionEarned)}</p> : null}
-            </div>
-          ) : (
-            <Callout tone="warning" title="Missing payout details">
-              The referring doctor has not connected a verified bank account yet, so automatic split payments will fail.
-            </Callout>
-          ))}
+        {(referral.referringDoctorId || referral.partnerType === 'doctor') && (
+          <Callout tone="info" title="Referring doctor">
+            The doctor earns commission when this patient pays (bookings and clinic invoices), under their contract. It is paid with the monthly
+            partner payouts to the bank account in their portal.
+            {referral.commissionEarned ? ` Paid by hand before payouts moved to partner payouts: ${formatKobo(referral.commissionEarned)}.` : ''}
+          </Callout>
+        )}
       </div>
 
       <DialogFooter className="gap-2">

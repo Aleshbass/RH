@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { DOCS_NAV_GROUPS } from "./DocsNav";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight } from "@/components/icons";
 
 interface DocsSidebarProps {
   onItemClick?: () => void;

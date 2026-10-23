@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Checkbox } from '@/components/ui/checkbox'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
-import { CalendarDays, Clock, Repeat, Users } from 'lucide-react'
+import { CalendarDays, Clock, Repeat, Users } from '@/components/icons'
 import { useRecurringAppointments, recurringAppointmentUtils } from '@/hooks/useRecurringAppointments'
 import { Id } from '@/convex/_generated/dataModel'
 // Local lightweight type to avoid deep type instantiation and export resolution issues

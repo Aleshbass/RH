@@ -1,26 +1,27 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import Link from 'next/link'
 import { useMutation, useQuery } from 'convex/react'
 import { formatDistanceToNow } from 'date-fns'
-import { AlertTriangle, ArrowRight, Check, HeartPulse, Loader2 } from 'lucide-react'
+import { AlertTriangle, ArrowRight, Check, Frown, HeartPulse, Loader2, Meh, Smile } from '@/components/icons'
 import { toast } from 'sonner'
 import { api } from '@/convex/_generated/api'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { programError } from '@/components/exercise-programs/errors'
+import { IconChip, InfoTip, cardClass, fieldClass, primaryButtonClass } from '@/components/patient/ui'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
 
 type Mood = 'great' | 'good' | 'okay' | 'low'
 type Exercises = 'all' | 'some' | 'none'
 
-const MOODS: { value: Mood; label: string }[] = [
-  { value: 'great', label: 'Great' },
-  { value: 'good', label: 'Good' },
-  { value: 'okay', label: 'Okay' },
-  { value: 'low', label: 'Low' },
+const MOODS: { value: Mood; label: string; icon: typeof Smile }[] = [
+  { value: 'great', label: 'Great', icon: Smile },
+  { value: 'good', label: 'Good', icon: Smile },
+  { value: 'okay', label: 'Okay', icon: Meh },
+  { value: 'low', label: 'Low', icon: Frown },
 ]
 const EXERCISES: { value: Exercises; label: string }[] = [
   { value: 'all', label: 'All of them' },
@@ -28,32 +29,68 @@ const EXERCISES: { value: Exercises; label: string }[] = [
   { value: 'none', label: 'Not today' },
 ]
 
-function painColour(score: number, selected: boolean) {
-  if (!selected) return 'bg-white text-neutral-600 hover:bg-rh-canvas border-black/[0.08]'
-  if (score >= 7) return 'bg-[#be3a5f] text-white border-[#be3a5f]'
-  if (score >= 4) return 'bg-[#e8a54f] text-white border-[#e8a54f]'
-  return 'bg-[#005b57] text-white border-[#005b57]'
+/** Mild, moderate and severe pain in the patient tints. */
+function painClass(score: number, selected: boolean) {
+  if (!selected) return 'border-pt-line bg-pt-surface text-pt-muted hover:bg-pt-hover hover:text-pt-ink'
+  if (score >= 7) return 'border-transparent bg-pt-rose-fg text-pt-surface'
+  if (score >= 4) return 'border-transparent bg-pt-amber-fg text-pt-surface'
+  return 'border-transparent bg-pt-green-fg text-pt-surface'
 }
 
-function Chips<T extends string>({ options, value, onChange, label }: { options: { value: T; label: string }[]; value: T | null; onChange: (v: T) => void; label: string }) {
+function painWord(score: number) {
+  if (score === 0) return 'No pain'
+  if (score <= 3) return 'Mild'
+  if (score <= 6) return 'Moderate'
+  return 'Severe'
+}
+
+const chipClass = (selected: boolean) =>
+  cn(
+    'inline-flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-sm transition-all active:scale-95',
+    selected
+      ? 'border-pt-primary bg-pt-primary font-medium text-pt-on-primary'
+      : 'border-pt-line bg-pt-surface text-pt-ink hover:bg-pt-hover'
+  )
+
+function Chips<T extends string>({
+  options,
+  value,
+  onChange,
+  label,
+}: {
+  options: { value: T; label: string; icon?: typeof Smile }[]
+  value: T | null
+  onChange: (v: T) => void
+  label: string
+}) {
   return (
     <div className="flex flex-wrap gap-2" role="radiogroup" aria-label={label}>
-      {options.map((option) => (
-        <button
-          key={option.value}
-          type="button"
-          role="radio"
-          aria-checked={value === option.value}
-          onClick={() => onChange(option.value)}
-          className={cn(
-            'rounded-full border px-3.5 py-1.5 text-sm transition-all active:scale-95',
-            value === option.value ? 'border-[#005b57] bg-[#005b57] font-medium text-white' : 'border-black/[0.08] bg-white text-neutral-700 hover:bg-[#e6f0ef]'
-          )}
-        >
-          {option.label}
-        </button>
-      ))}
+      {options.map((option) => {
+        const Icon = option.icon
+        return (
+          <button
+            key={option.value}
+            type="button"
+            role="radio"
+            aria-checked={value === option.value}
+            onClick={() => onChange(option.value)}
+            className={chipClass(value === option.value)}
+          >
+            {Icon && <Icon className="h-3.5 w-3.5" />}
+            {option.label}
+          </button>
+        )
+      })}
     </div>
+  )
+}
+
+function FieldLabel({ children, info }: { children: ReactNode; info?: ReactNode }) {
+  return (
+    <p className="flex items-center gap-1 text-sm font-semibold text-pt-ink">
+      {children}
+      {info && <InfoTip>{info}</InfoTip>}
+    </p>
   )
 }
 
@@ -76,13 +113,13 @@ export function PatientCheckInCard() {
 
   if (data.checkedInToday || justSent) {
     return (
-      <section className="flex items-center gap-4 rounded-3xl bg-[#d4fae8] p-5 text-[#003d38]">
-        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white text-[#005b57]">
-          <Check className="h-5 w-5" strokeWidth={3} />
+      <section data-tour="check-in" className="flex h-full items-center gap-4 rounded-3xl bg-pt-green-bg p-5 sm:p-6">
+        <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-pt-surface text-pt-green-fg">
+          <Check className="h-5 w-5" />
         </span>
         <div className="min-w-0">
-          <p className="font-semibold">Thanks for checking in today</p>
-          <p className="text-sm text-[#003d38]/75">
+          <p className="font-semibold text-pt-ink">Thanks for checking in today</p>
+          <p className="text-sm text-pt-muted">
             {last ? `Pain ${last.painScore}/10 · ` : ''}
             {physio} can see how you’re doing. Check in again tomorrow.
           </p>
@@ -118,42 +155,58 @@ export function PatientCheckInCard() {
   }
 
   return (
-    <section className="space-y-5 rounded-3xl border border-black/[0.04] bg-white p-5 shadow-[0_10px_30px_-14px_rgba(0,46,44,0.18)] sm:p-6">
+    <section data-tour="check-in" className={cn(cardClass, 'h-full space-y-6 p-5 sm:p-6')}>
       <div className="flex items-start gap-3">
-        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#fff0f4] text-[#be3a5f]">
-          <HeartPulse className="h-5 w-5" />
-        </span>
+        <IconChip icon={HeartPulse} tone="rose" />
         <div className="min-w-0">
-          <h2 className="text-lg font-semibold tracking-tight text-[#002e2c]">How are you today?</h2>
-          <p className="text-sm text-neutral-500">
-            A quick check-in for {physio}.{last ? ` Last time: pain ${last.painScore}/10, ${formatDistanceToNow(last.createdAt, { addSuffix: true })}.` : ''}
+          <h2 className="flex items-center gap-1 text-base font-semibold tracking-tight text-pt-ink">
+            How are you today?
+            <InfoTip>
+              A 20-second daily check-in. {physio === 'your physiotherapist' ? 'Your physio' : physio} sees your answers and can adjust your
+              plan between visits.
+            </InfoTip>
+          </h2>
+          <p className="text-[13px] text-pt-muted">
+            A quick check-in for {physio}.
+            {last ? ` Last time: pain ${last.painScore}/10, ${formatDistanceToNow(last.createdAt, { addSuffix: true })}.` : ''}
           </p>
         </div>
       </div>
 
       <div>
-        <p className="text-sm font-medium text-[#002e2c]">Pain right now</p>
-        <p className="text-xs text-neutral-500">0 is no pain, 10 is the worst you can imagine</p>
-        <div className="mt-2 grid grid-cols-11 gap-1" role="radiogroup" aria-label="Pain score">
+        <div className="flex items-baseline justify-between gap-3">
+          <FieldLabel info="0 means no pain at all and 10 is the worst pain you can imagine. Pick how it feels right now, not on your worst day.">
+            Pain right now
+          </FieldLabel>
+          {pain !== null && <span className="text-sm font-semibold text-pt-muted">{painWord(pain)}</span>}
+        </div>
+        <div className="mt-2 grid grid-cols-11 gap-1" role="radiogroup" aria-label="Pain score from 0 to 10">
           {Array.from({ length: 11 }, (_, score) => (
             <button
               key={score}
               type="button"
               role="radio"
               aria-checked={pain === score}
+              aria-label={`${score}, ${painWord(score).toLowerCase()}`}
               onClick={() => setPain(score)}
-              className={cn('h-10 rounded-xl border text-sm font-semibold tabular-nums transition-all active:scale-90', painColour(score, pain === score))}
+              className={cn('h-10 rounded-xl border text-sm font-semibold tabular-nums transition-all active:scale-90', painClass(score, pain === score))}
             >
               {score}
             </button>
           ))}
         </div>
+        <div className="mt-1.5 flex justify-between text-[11px] text-pt-faint">
+          <span>No pain</span>
+          <span>Worst imaginable</span>
+        </div>
       </div>
 
       <div>
-        <div className="flex items-baseline justify-between">
-          <p className="text-sm font-medium text-[#002e2c]">How much can you do day to day?</p>
-          <span className="text-sm font-semibold tabular-nums text-[#005b57]">{fn}/10</span>
+        <div className="flex items-baseline justify-between gap-3">
+          <FieldLabel info="Think of everyday things like walking, stairs, work and sleep. 10 means you can do everything as normal; 0 means you can hardly do anything.">
+            How much can you do day to day?
+          </FieldLabel>
+          <span className="rounded-full bg-pt-accent-soft px-2.5 py-0.5 text-sm font-semibold tabular-nums text-pt-accent-ink">{fn}/10</span>
         </div>
         <input
           type="range"
@@ -162,49 +215,55 @@ export function PatientCheckInCard() {
           step={1}
           value={fn}
           onChange={(e) => setFn(Number(e.target.value))}
-          className="mt-2 w-full accent-[#005b57]"
+          className="mt-3 h-2 w-full cursor-pointer accent-[#00cd0f]"
           aria-label="Daily activities, 0 nothing to 10 everything as normal"
         />
-        <div className="flex justify-between text-[11px] text-neutral-400">
+        <div className="flex justify-between text-[11px] text-pt-faint">
           <span>Very little</span>
           <span>Everything as normal</span>
         </div>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div>
-          <p className="mb-2 text-sm font-medium text-[#002e2c]">Mood</p>
+      <div className="grid gap-5 sm:grid-cols-2">
+        <div className="space-y-2">
+          <FieldLabel>Mood</FieldLabel>
           <Chips options={MOODS} value={mood} onChange={setMood} label="Mood" />
         </div>
-        <div>
-          <p className="mb-2 text-sm font-medium text-[#002e2c]">Did your exercises?</p>
+        <div className="space-y-2">
+          <FieldLabel info="The home exercises your physio gave you. Be honest: it helps them pitch your programme right.">
+            Did your exercises?
+          </FieldLabel>
           <Chips options={EXERCISES} value={exercises} onChange={setExercises} label="Exercises done" />
         </div>
       </div>
 
-      <Textarea
-        value={note}
-        onChange={(e) => setNote(e.target.value)}
-        rows={2}
-        className="resize-none rounded-2xl"
-        placeholder={`Anything ${physio === 'your physiotherapist' ? 'they' : physio.split(' ')[0]} should know? (optional)`}
-        aria-label="Note for your physiotherapist"
-      />
-      <button
-        type="button"
-        role="checkbox"
-        aria-checked={concern}
-        onClick={() => setConcern((c) => !c)}
-        className={cn(
-          'inline-flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-sm transition-all active:scale-95',
-          concern ? 'border-[#be3a5f] bg-[#fff0f4] font-medium text-[#be3a5f]' : 'border-black/[0.08] bg-white text-neutral-700 hover:bg-[#fff0f4]'
-        )}
-      >
-        <AlertTriangle className="h-4 w-4" />
-        I&apos;m worried about something
-      </button>
+      <div className="space-y-3">
+        <Textarea
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          rows={2}
+          className={cn(fieldClass, 'resize-none rounded-2xl')}
+          placeholder={`Anything ${physio === 'your physiotherapist' ? 'they' : physio.split(' ')[0]} should know? (optional)`}
+          aria-label="Note for your physiotherapist"
+        />
+        <button
+          type="button"
+          role="checkbox"
+          aria-checked={concern}
+          onClick={() => setConcern((c) => !c)}
+          className={cn(
+            'inline-flex items-center gap-2 rounded-full border px-3.5 py-2 text-sm transition-all active:scale-95',
+            concern
+              ? 'border-transparent bg-pt-rose-bg font-medium text-pt-rose-fg'
+              : 'border-pt-line bg-pt-surface text-pt-ink hover:bg-pt-rose-bg hover:text-pt-rose-fg'
+          )}
+        >
+          <AlertTriangle className="h-4 w-4" />
+          I&apos;m worried about something
+        </button>
+      </div>
 
-      <Button onClick={send} disabled={saving} className="h-11 w-full rounded-2xl bg-[#005b57] text-white hover:bg-[#00443e] active:scale-[0.98] sm:w-auto">
+      <Button onClick={send} disabled={saving} className={cn(primaryButtonClass, 'h-11 w-full sm:w-auto sm:px-6')}>
         {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
         Send check-in
       </Button>
@@ -220,13 +279,17 @@ export function PatientFollowUpBanner() {
   return (
     <Link
       href={`/dashboard/patient/follow-up/${next.episodeId}`}
-      className="group flex items-center gap-4 rounded-3xl bg-[#005b57] p-5 text-white shadow-[0_18px_40px_-16px_rgba(0,46,44,0.4)] transition-transform hover:-translate-y-0.5"
+      className="group flex items-center gap-4 rounded-3xl bg-pt-primary p-5 text-pt-on-primary transition-transform hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pt-accent/60"
     >
       <div className="min-w-0 flex-1">
         <p className="font-semibold">How are you getting on?</p>
-        <p className="text-sm text-white/75">It’s been a little while since you finished treatment with {next.physioName}. Tell us how it went.</p>
+        <p className="text-sm opacity-75">
+          It’s been a little while since you finished treatment with {next.physioName}. Tell us how it went. It takes a minute.
+        </p>
       </div>
-      <ArrowRight className="h-5 w-5 shrink-0 transition-transform group-hover:translate-x-1" />
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-pt-accent text-[#06210a]">
+        <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+      </span>
     </Link>
   )
 }

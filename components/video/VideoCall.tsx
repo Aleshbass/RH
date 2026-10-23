@@ -35,7 +35,7 @@ import {
   Copy,
   Phone,
   Loader2,
-} from 'lucide-react'
+} from '@/components/icons'
 import type { DailyCall } from '@daily-co/daily-js'
 
 import { toast } from 'sonner'

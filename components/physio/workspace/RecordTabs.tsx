@@ -3,7 +3,7 @@
 import { useMemo, useRef, useState } from 'react'
 import { useAction, useMutation, useQuery } from 'convex/react'
 import { format, formatDistanceToNow } from 'date-fns'
-import { AlertTriangle, CheckCircle2, Copy, Download, FileText, HeartPulse, Loader2, Mail, NotebookPen, Plus, Receipt, Upload } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Copy, Download, FileText, HeartPulse, Loader2, Mail, NotebookPen, Plus, Receipt, Upload } from '@/components/icons'
 import { toast } from 'sonner'
 import { api } from '@/convex/_generated/api'
 import type { Id } from '@/convex/_generated/dataModel'

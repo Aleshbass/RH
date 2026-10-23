@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useAction, useMutation, useQuery } from 'convex/react';
 import { formatDistanceToNow } from 'date-fns';
-import { Copy, Mail, X } from 'lucide-react';
+import { Copy, Mail, X } from '@/components/icons';
 import { toast } from 'sonner';
 import { api } from '@/convex/_generated/api';
 import type { Id } from '@/convex/_generated/dataModel';

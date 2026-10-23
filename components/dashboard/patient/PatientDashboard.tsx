@@ -1,41 +1,57 @@
 'use client'
-import React, { useState } from 'react'
-import { useQuery as useQueryUntyped } from 'convex/react'
-import { api } from '@/convex/_generated/api'
-import { Id } from '@/convex/_generated/dataModel'
-import type { Appointment } from '@/app/types'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { Skeleton } from '@/components/ui/skeleton'
-import {
-  Calendar,
-  Clock,
-  FileText,
-  Video,
-  Download,
-  Plus,
-  Upload,
-  ChevronRight,
-  MapPin,
-  Phone,
-  Mail,
-  Send,
-  Share2,
-  Check
-} from 'lucide-react'
-import { format } from 'date-fns'
+
+import { useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import { useQuery } from 'convex/react'
+import { differenceInCalendarDays, format, isToday, isTomorrow } from 'date-fns'
+import {
+  ArrowRight,
+  Calendar,
+  CalendarPlus,
+  CheckCircle2,
+  ChevronRight,
+  Clock,
+  Dumbbell,
+  FileText,
+  Home,
+  MapPin,
+  MessageSquare,
+  Stethoscope,
+  Upload,
+  Video,
+} from '@/components/icons'
+import { api } from '@/convex/_generated/api'
+import type { Id } from '@/convex/_generated/dataModel'
+import type { Appointment } from '@/app/types'
 import { appointmentStatusLabel, type AppointmentStatusFields } from '@/convex/helpers/appointmentStatus'
-import { usePatientDocuments, PatientDocument } from '@/lib/hooks/usePatientDocuments'
-import FileUpload from '@/components/ui/FileUpload'
-import { TourGuide } from '@/components/shared/TourGuide'
-import { InsightsSidebar } from '@/components/dashboard/shared/InsightsSidebar'
+import { usePatientDocuments } from '@/lib/hooks/usePatientDocuments'
+import { Button } from '@/components/ui/button'
+import {
+  DetailRow,
+  IconChip,
+  InfoTip,
+  PageContainer,
+  PageSkeleton,
+  Panel,
+  PatientDrawer,
+  SectionLabel,
+  StatTile,
+  StatusBadge,
+  accentButtonClass,
+  cardClass,
+  listRowClass,
+  primaryButtonClass,
+  secondaryButtonClass,
+  type Tone,
+} from '@/components/patient/ui'
+import { BOOK_SESSION_HREF } from '@/components/patient/shell/PatientShell'
+import { NAV } from '@/components/patient/shell/navItems'
 import { PatientCheckInCard, PatientFollowUpBanner } from '@/components/patient/PatientCheckInCard'
 import { JoyJourneyCard } from '@/components/patient/JoyJourneyCard'
 import { OpenBookingsCard } from '@/components/patient/OpenBookingsCard'
 import { AccessAwardCard } from '@/components/patient/AccessAwardCard'
+import { cn } from '@/lib/utils'
 
 interface PatientDashboardProps {
   initialUser?: any;
@@ -43,58 +59,330 @@ interface PatientDashboardProps {
   initialStats?: any;
 }
 
-export function PatientDashboard({ initialUser, initialAppointments, initialStats }: PatientDashboardProps) {
-  const router = useRouter()
-  const [activeTab, setActiveTab] = useState('home')
+/** The appointment fields Home reads, beyond the shared Appointment type. */
+type HomeAppointment = Appointment & {
+  meetingLink?: string
+  streamMeetingLink?: string
+  manualMeetingLink?: string
+  googleMeetLink?: string
+  isOnline?: boolean
+  location?: string
+  physiotherapistName?: string
+}
 
-  // Fetch patient data with real-time updates, falling back to initial cached data
-  const liveUser = useQueryUntyped(api.users.getMyUser)
-  const user = liveUser || initialUser
+type PatientStats = { sessions?: { completed?: number } } | null | undefined
 
-  const liveAppointments = useQueryUntyped(api.appointments.getPatientAppointments, {})
-  const appointments = (liveAppointments || initialAppointments) as unknown as Appointment[] | undefined
+function greeting() {
+  const hour = new Date().getHours()
+  if (hour < 12) return 'Good morning'
+  if (hour < 17) return 'Good afternoon'
+  return 'Good evening'
+}
 
-  const liveStats = useQueryUntyped(api.analytics.getPatientStats);
-  const patientStats = liveStats || initialStats;
+const isCancelled = (a: HomeAppointment) => String(a.status).startsWith('cancelled') || String(a.status) === 'no_show'
 
-  // Get patient profile ID
-  const patientProfileId = user?.patientProfileId
+const isOnlineVisit = (a: HomeAppointment) => a.appointmentType === 'telehealth' || a.isOnline === true
 
-  const {
-    documents,
-    uploadPatientDocument,
-    isLoadingDocuments,
-    toggleSharing,
-    isTogglingSharing
-  } = usePatientDocuments({ patientProfileId: patientProfileId as Id<"patientProfiles"> | undefined })
+// The real room for an online visit: our Stream call, the physio's own link, or Google Meet
+const meetingLinkFor = (a: HomeAppointment) =>
+  a.meetingLink || a.streamMeetingLink || a.manualMeetingLink || a.googleMeetLink || null
 
-  // Loading state
-  if (!user) {
+/** A confirmed online visit with a room, that hasn't ended. */
+const canJoin = (a: HomeAppointment) =>
+  isOnlineVisit(a) && a.status === 'confirmed' && Boolean(meetingLinkFor(a)) && new Date(a.endTime) > new Date()
+
+const statusLabel = (a: HomeAppointment) => appointmentStatusLabel(a as unknown as AppointmentStatusFields, 'patient')
+
+function statusTone(a: HomeAppointment): Tone {
+  const label = statusLabel(a)
+  if (label === 'Please confirm' || label === 'New time proposed') return 'sun'
+  if (a.status === 'confirmed') return 'green'
+  if (a.status === 'completed') return 'blue'
+  if (isCancelled(a)) return 'rose'
+  return 'amber'
+}
+
+function statusHelp(a: HomeAppointment) {
+  const label = statusLabel(a)
+  if (label === 'New time proposed') return 'Your physio has suggested a different time. Open it in Appointments to accept or decline.'
+  if (label === 'Please confirm') return 'Your physio set this time. Open it in Appointments and confirm that it works for you.'
+  if (a.status === 'scheduled') return 'Your physio hasn’t confirmed this time yet. We’ll let you know as soon as they do.'
+  if (a.status === 'confirmed') return 'All set. Your physio has confirmed this time.'
+  if (a.status === 'completed') return 'This visit has happened.'
+  return 'This visit won’t go ahead. You can book another time in Appointments.'
+}
+
+function whenLabel(startTime: number) {
+  const date = new Date(startTime)
+  if (date <= new Date()) return 'Happening now'
+  if (isToday(date)) return 'Today'
+  if (isTomorrow(date)) return 'Tomorrow'
+  const days = differenceInCalendarDays(date, new Date())
+  return days < 7 ? `In ${days} days` : format(date, 'EEEE')
+}
+
+function timeRange(a: HomeAppointment) {
+  const minutes = Math.round((a.endTime - a.startTime) / 60000)
+  return `${format(a.startTime, 'h:mm a')} – ${format(a.endTime, 'h:mm a')}${minutes > 0 ? ` (${minutes} min)` : ''}`
+}
+
+/** Month and day in a little calendar tile. */
+function DateTile({ time, size = 'md' }: { time: number; size?: 'sm' | 'md' }) {
+  return (
+    <span
+      className={cn(
+        'flex shrink-0 flex-col items-center justify-center rounded-2xl bg-pt-sunken text-pt-ink',
+        size === 'md' ? 'h-16 w-16' : 'h-11 w-11 rounded-xl'
+      )}
+      aria-hidden
+    >
+      <span className={cn('font-semibold uppercase text-pt-muted', size === 'md' ? 'text-[11px]' : 'text-[9px]')}>{format(time, 'MMM')}</span>
+      <span className={cn('font-semibold leading-none tabular-nums', size === 'md' ? 'text-2xl' : 'text-base')}>{format(time, 'd')}</span>
+    </span>
+  )
+}
+
+function ModeChip({ appointment }: { appointment: HomeAppointment }) {
+  const online = isOnlineVisit(appointment)
+  const Icon = online ? Video : Home
+  return (
+    <span className={cn('inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium', online ? 'bg-pt-blue-bg text-pt-blue-fg' : 'bg-pt-amber-bg text-pt-amber-fg')}>
+      <Icon className="h-3.5 w-3.5" />
+      {online ? 'Video call' : 'In person'}
+    </span>
+  )
+}
+
+/** The next visit, front and centre, with its Join button. */
+function NextVisitCard({
+  appointment,
+  onOpen,
+  onJoin,
+}: {
+  appointment?: HomeAppointment
+  onOpen: (a: HomeAppointment) => void
+  onJoin: (a: HomeAppointment) => void
+}) {
+  if (!appointment) {
     return (
-      <div className="p-4 sm:p-6 max-w-7xl mx-auto">
-        <div className="space-y-4">
-          <Skeleton className="h-8 w-48" />
-          <Skeleton className="h-32" />
-          <Skeleton className="h-64" />
+      <section data-tour="next-visit" className={cn(cardClass, 'flex h-full flex-col justify-center')}>
+        <div className="flex flex-col items-center px-6 py-10 text-center">
+          <IconChip icon={CalendarPlus} tone="green" size="lg" className="mb-4" />
+          <p className="text-lg font-semibold tracking-tight text-pt-ink">No visits booked</p>
+          <p className="mt-1 max-w-xs text-sm text-pt-muted">Book a session with a physiotherapist. It takes about a minute.</p>
+          <Button asChild className={cn(primaryButtonClass, 'mt-5 h-11 px-5')}>
+            <Link href={BOOK_SESSION_HREF}>
+              <CalendarPlus className="mr-2 h-4 w-4" />
+              Book a session
+            </Link>
+          </Button>
         </div>
-      </div>
+      </section>
     )
   }
 
-  const isCancelled = (a: Appointment) => String(a.status).startsWith('cancelled') || String(a.status) === 'no_show'
-  // A visit stays "next" until it ends, so a call in progress can still be joined
-  const upcomingAppointments = appointments?.filter((a: Appointment) => new Date(a.endTime || a.startTime) > new Date() && !isCancelled(a)).sort((a, b) => a.startTime - b.startTime) || []
-  const nextAppointment = upcomingAppointments[0]
-  const pastAppointments = appointments?.filter((a: Appointment) => String(a.status) === 'completed') || []
+  const online = isOnlineVisit(appointment)
+  const joinable = canJoin(appointment)
 
-  // The real room for an online visit: our Stream call, Google Meet or the physio's own link
-  const meetingLinkFor = (a: Appointment) => {
-    const links = a as Appointment & { meetingLink?: string; streamMeetingLink?: string; googleMeetLink?: string }
-    return links.meetingLink || links.streamMeetingLink || links.googleMeetLink || null
-  }
-  const isOnlineVisit = (a: Appointment) =>
-    a.appointmentType === 'telehealth' || (a as Appointment & { isOnline?: boolean }).isOnline === true
-  const joinCall = (a: Appointment) => {
+  return (
+    <section data-tour="next-visit" className={cn(cardClass, 'flex h-full flex-col p-5 sm:p-6')}>
+      <div className="flex items-center justify-between gap-3">
+        <SectionLabel>Next visit</SectionLabel>
+        <span className="flex items-center gap-1">
+          <StatusBadge tone={statusTone(appointment)} dot>
+            {statusLabel(appointment)}
+          </StatusBadge>
+          <InfoTip label="What does this status mean?">{statusHelp(appointment)}</InfoTip>
+        </span>
+      </div>
+
+      <button
+        type="button"
+        onClick={() => onOpen(appointment)}
+        className="-mx-2 mt-3 flex items-center gap-4 rounded-2xl p-2 text-left transition-colors hover:bg-pt-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pt-accent/50"
+      >
+        <DateTile time={appointment.startTime} />
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-medium text-pt-accent-ink">{whenLabel(appointment.startTime)}</span>
+          <span className="block text-xl font-semibold tracking-tight text-pt-ink sm:text-2xl">
+            {format(appointment.startTime, 'EEEE, d MMM')}
+          </span>
+          <span className="mt-0.5 block text-sm text-pt-muted">{timeRange(appointment)}</span>
+        </span>
+        <ChevronRight className="h-4 w-4 shrink-0 text-pt-faint" />
+      </button>
+
+      <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-pt-muted">
+        <ModeChip appointment={appointment} />
+        <span className="inline-flex min-w-0 items-center gap-1.5">
+          <Stethoscope className="h-3.5 w-3.5 shrink-0" />
+          <span className="truncate">
+            {appointment.serviceType}
+            {appointment.physiotherapistName ? ` with ${appointment.physiotherapistName}` : ''}
+          </span>
+        </span>
+      </div>
+
+      <div className="mt-auto pt-5">
+        {online ? (
+          joinable ? (
+            <Button className={cn(accentButtonClass, 'h-11 w-full sm:w-auto sm:px-6')} onClick={() => onJoin(appointment)}>
+              <Video className="mr-2 h-4 w-4" />
+              Join call
+            </Button>
+          ) : (
+            <p className="rounded-2xl bg-pt-sunken px-4 py-3 text-sm text-pt-muted">
+              {appointment.status === 'confirmed'
+                ? 'Your video link will appear here before the session.'
+                : 'Your video link will appear here once your physio confirms.'}
+            </p>
+          )
+        ) : (
+          <Button className={cn(secondaryButtonClass, 'h-11 w-full sm:w-auto sm:px-5')} onClick={() => onOpen(appointment)}>
+            See visit details
+          </Button>
+        )}
+      </div>
+    </section>
+  )
+}
+
+const QUICK_ACTIONS: { title: string; hint: string; href: string; icon: typeof Calendar; tone: Tone }[] = [
+  { title: 'Book a session', hint: 'Pick a time that suits you', href: BOOK_SESSION_HREF, icon: CalendarPlus, tone: 'green' },
+  { title: 'Message my physio', hint: 'Ask a question', href: NAV.messages.href, icon: MessageSquare, tone: 'blue' },
+  { title: 'My exercises', hint: 'Today’s home programme', href: NAV.exercises.href, icon: Dumbbell, tone: 'violet' },
+  { title: 'Upload a record', hint: 'Scans, reports, letters', href: NAV.records.href, icon: Upload, tone: 'amber' },
+]
+
+function QuickActions() {
+  return (
+    <Panel data-tour="quick-actions" title="Quick actions" className="h-full" bodyClassName="px-3 pb-3 pt-2 sm:px-4 sm:pb-4">
+      <div className="grid grid-cols-2 gap-2">
+        {QUICK_ACTIONS.map((action) => (
+          <Link
+            key={action.title}
+            href={action.href}
+            className="group flex min-h-[112px] flex-col justify-between gap-3 rounded-2xl bg-pt-sunken p-3.5 transition-colors hover:bg-pt-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pt-accent/50 active:scale-[0.98]"
+          >
+            <IconChip icon={action.icon} tone={action.tone} />
+            <span>
+              <span className="block text-sm font-semibold leading-snug text-pt-ink">{action.title}</span>
+              <span className="block text-xs text-pt-muted">{action.hint}</span>
+            </span>
+          </Link>
+        ))}
+      </div>
+    </Panel>
+  )
+}
+
+/** Full details of one visit, in a drawer so Home stays put. */
+function VisitDrawer({
+  appointment,
+  onClose,
+  onJoin,
+}: {
+  appointment: HomeAppointment | null
+  onClose: () => void
+  onJoin: (a: HomeAppointment) => void
+}) {
+  const a = appointment
+  return (
+    <PatientDrawer
+      open={Boolean(a)}
+      onOpenChange={(open) => !open && onClose()}
+      title={a?.serviceType ?? 'Visit'}
+      description={a ? format(a.startTime, 'EEEE d MMMM yyyy') : undefined}
+      footer={
+        a && (
+          <div className="flex flex-col gap-2 sm:flex-row">
+            {canJoin(a) && (
+              <Button className={cn(accentButtonClass, 'h-11 flex-1')} onClick={() => onJoin(a)}>
+                <Video className="mr-2 h-4 w-4" />
+                Join call
+              </Button>
+            )}
+            <Button asChild className={cn(secondaryButtonClass, 'h-11 flex-1')}>
+              <Link href={NAV.appointments.href}>Open in Appointments</Link>
+            </Button>
+          </div>
+        )
+      }
+    >
+      {a && (
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <StatusBadge tone={statusTone(a)} dot>
+              {statusLabel(a)}
+            </StatusBadge>
+            <ModeChip appointment={a} />
+          </div>
+          <p className="rounded-2xl bg-pt-sunken px-4 py-3 text-sm text-pt-muted">{statusHelp(a)}</p>
+
+          <div className="divide-y divide-pt-line">
+            <DetailRow icon={Calendar} label="Date">
+              {format(a.startTime, 'EEEE d MMMM yyyy')}
+            </DetailRow>
+            <DetailRow icon={Clock} label="Time">
+              {timeRange(a)}
+            </DetailRow>
+            {a.physiotherapistName && (
+              <DetailRow icon={Stethoscope} label="Physiotherapist">
+                {a.physiotherapistName}
+              </DetailRow>
+            )}
+            <DetailRow icon={isOnlineVisit(a) ? Video : MapPin} label="Where">
+              {isOnlineVisit(a)
+                ? canJoin(a)
+                  ? 'Video call. Tap Join call when it’s time.'
+                  : 'Video call. The link appears here once it’s ready.'
+                : a.location || 'In person. Your physio will confirm the address.'}
+            </DetailRow>
+            {a.notesForPatient && (
+              <DetailRow icon={FileText} label="Note from your physio">
+                <span className="whitespace-pre-line">{a.notesForPatient}</span>
+              </DetailRow>
+            )}
+          </div>
+
+          {!isCancelled(a) && a.status !== 'completed' && (
+            <p className="text-xs text-pt-faint">To reschedule or cancel, open this visit in Appointments.</p>
+          )}
+        </div>
+      )}
+    </PatientDrawer>
+  )
+}
+
+export function PatientDashboard({ initialUser, initialAppointments, initialStats }: PatientDashboardProps) {
+  const router = useRouter()
+  const [selected, setSelected] = useState<HomeAppointment | null>(null)
+
+  // Live data, falling back to the server's cached copy while it loads
+  const liveUser = useQuery(api.users.getMyUser)
+  const user = liveUser || initialUser
+
+  const liveAppointments = useQuery(api.appointments.getPatientAppointments, {})
+  const appointments = (liveAppointments || initialAppointments) as unknown as HomeAppointment[] | undefined
+
+  const liveStats = useQuery(api.analytics.getPatientStats)
+  const patientStats = (liveStats || initialStats) as PatientStats
+
+  const patientProfileId = user?.patientProfileId as Id<'patientProfiles'> | undefined
+  const { documents } = usePatientDocuments({ patientProfileId })
+
+  if (!user) return <PageSkeleton />
+
+  // A visit stays "next" until it ends, so a call in progress can still be joined
+  const upcoming = (appointments ?? [])
+    .filter((a) => new Date(a.endTime || a.startTime) > new Date() && !isCancelled(a))
+    .sort((a, b) => a.startTime - b.startTime)
+  const nextVisit = upcoming[0]
+  const later = upcoming.slice(1, 4)
+  const completedCount =
+    patientStats?.sessions?.completed ?? (appointments ?? []).filter((a) => String(a.status) === 'completed').length
+
+  const joinCall = (a: HomeAppointment) => {
     const link = meetingLinkFor(a)
     if (!link) return
     try {
@@ -103,469 +391,115 @@ export function PatientDashboard({ initialUser, initialAppointments, initialStat
         router.push(url.pathname)
         return
       }
-    } catch { /* not a URL we can parse; open as-is */ }
+    } catch {
+      /* not a URL we can parse; open as-is */
+    }
     window.open(link, '_blank', 'noopener,noreferrer')
   }
 
-  const handleUploadDocument = async (files: File | File[] | null) => {
-    if (patientProfileId && uploadPatientDocument && files) {
-      try {
-        const fileToUpload = Array.isArray(files) ? files[0] : files
-        if (fileToUpload) {
-          await uploadPatientDocument(fileToUpload, 'otherDocument', patientProfileId)
-        }
-      } catch (error) {
-        console.error('Error uploading document:', error)
-      }
-    }
-  }
-
   return (
-    <div className="min-h-screen bg-gray-50 flex gap-6">
-      <div className="flex-1 min-w-0 max-w-7xl mx-auto px-3 sm:px-4 lg:px-6 py-3 sm:py-4 lg:py-6 space-y-3 sm:space-y-4 lg:space-y-6">
-
-        {/* Hero Section - Welcome */}
-        <div id="patient-dashboard-welcome" className="bg-white border-2 border-brand/20 rounded-2xl p-4 sm:p-6 lg:p-8 shadow-lg">
-          <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold mb-1 sm:mb-2 text-gray-900">
-            Welcome back, {user.firstName}!
-          </h1>
-          <p className="text-gray-600 text-xs sm:text-sm lg:text-base">
-            Track your recovery journey and stay connected with your physiotherapist
-          </p>
-        </div>
-
-        {/* Scheduled bookings waiting for payment, then any Rehabify Access rate */}
-        <OpenBookingsCard />
-        <AccessAwardCard />
-
-        {/* After-care follow-up, then today's check-in for the physio */}
-        <PatientFollowUpBanner />
-        <PatientCheckInCard />
-
-        {/* Patients who booked through Joy on WhatsApp */}
-        <JoyJourneyCard />
-
-        {/* Next Appointment Hero Card */}
-        {nextAppointment && (
-          <Card id="patient-next-appointment" className="border-2 border-brand/20 shadow-md hover:shadow-lg transition-shadow">
-            <CardContent className="p-4 sm:p-6">
-              <div className="flex items-start justify-between mb-4">
-                <div className="flex items-center gap-3">
-                  <div className="p-3 bg-brand/10 rounded-xl">
-                    <Calendar className="h-6 w-6 text-brand" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-gray-500">Next Appointment</p>
-                    <h3 className="text-lg sm:text-xl font-bold text-gray-900">
-                      {format(new Date(nextAppointment.startTime), 'EEEE, MMM d')}
-                    </h3>
-                  </div>
-                </div>
-                <Badge className="bg-green-100 text-green-800 border-green-200">
-                  {appointmentStatusLabel(nextAppointment as unknown as AppointmentStatusFields, 'patient')}
-                </Badge>
-              </div>
-
-              <div className="space-y-3 mb-4">
-                <div className="flex items-center gap-3 text-sm text-gray-600">
-                  <Clock className="h-4 w-4" />
-                  <span>{format(new Date(nextAppointment.startTime), 'h:mm a')}</span>
-                </div>
-                <div className="flex items-center gap-3 text-sm text-gray-600">
-                  <FileText className="h-4 w-4" />
-                  <span>{nextAppointment.serviceType}</span>
-                </div>
-              </div>
-
-              {isOnlineVisit(nextAppointment) && (
-                meetingLinkFor(nextAppointment) && nextAppointment.status === 'confirmed' ? (
-                  <Button
-                    className="w-full bg-brand hover:bg-brand-dark text-white"
-                    onClick={() => joinCall(nextAppointment)}
-                  >
-                    <Video className="h-4 w-4 mr-2" />
-                    Join Video Call
-                  </Button>
-                ) : (
-                  <p className="rounded-lg bg-rh-canvas px-3 py-2 text-center text-sm text-gray-600">
-                    {nextAppointment.status === 'confirmed'
-                      ? 'Your video link will appear here before the session.'
-                      : 'Your video link will appear here once your physio confirms.'}
-                  </p>
-                )
-              )}
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Quick Stats */}
-        <div id="patient-quick-stats" className="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-3 lg:gap-4">
-          <Card className="hover:shadow-md transition-shadow">
-            <CardContent className="p-4 sm:p-6">
-              <div className="flex flex-col">
-                <Calendar className="h-5 w-5 sm:h-6 sm:w-6 text-brand mb-2" />
-                <p className="text-2xl sm:text-3xl font-bold text-gray-900">{upcomingAppointments.length}</p>
-                <p className="text-xs sm:text-sm text-gray-500 mt-1">Upcoming</p>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="hover:shadow-md transition-shadow">
-            <CardContent className="p-4 sm:p-6">
-              <div className="flex flex-col">
-                <FileText className="h-5 w-5 sm:h-6 sm:w-6 text-blue-600 mb-2" />
-                <p className="text-2xl sm:text-3xl font-bold text-gray-900">{documents?.length || 0}</p>
-                <p className="text-xs sm:text-sm text-gray-500 mt-1">Documents</p>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="hover:shadow-md transition-shadow col-span-2 sm:col-span-1">
-            <CardContent className="p-4 sm:p-6">
-              <div className="flex flex-col">
-                <Clock className="h-5 w-5 sm:h-6 sm:w-6 text-green-600 mb-2" />
-                <p className="text-2xl sm:text-3xl font-bold text-gray-900">{pastAppointments.length}</p>
-                <p className="text-xs sm:text-sm text-gray-500 mt-1">Completed Sessions</p>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Quick Actions */}
-        <Card id="patient-quick-actions">
-          <CardHeader className="pb-2 sm:pb-3 px-4 sm:px-6 pt-4 sm:pt-6">
-            <CardTitle className="text-sm sm:text-base lg:text-lg">Quick Actions</CardTitle>
-          </CardHeader>
-          <CardContent className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3 px-4 sm:px-6 pb-4 sm:pb-6">
-            <Button
-              variant="outline"
-              className="h-auto py-3 sm:py-4 flex-col gap-1.5 sm:gap-2 hover:bg-brand/5 hover:border-brand"
-              onClick={() => router.push('/dashboard/patient/appointments')}
-            >
-              <div className="p-2 bg-brand/10 rounded-lg">
-                <Plus className="h-5 w-5 text-brand" />
-              </div>
-              <span className="text-sm font-medium">Book Appointment</span>
-            </Button>
-
-            <Button
-              variant="outline"
-              className="h-auto py-4 flex-col gap-2 hover:bg-blue-50 hover:border-blue-500"
-              onClick={() => setActiveTab('documents')}
-            >
-              <div className="p-2 bg-blue-100 rounded-lg">
-                <Upload className="h-5 w-5 text-blue-600" />
-              </div>
-              <span className="text-sm font-medium">Upload Document</span>
-            </Button>
-
-            <Button
-              variant="outline"
-              className="h-auto py-4 flex-col gap-2 hover:bg-purple-50 hover:border-purple-500"
-              onClick={() => router.push('/dashboard/patient/settings')}
-            >
-              <div className="p-2 bg-purple-100 rounded-lg">
-                <FileText className="h-5 w-5 text-purple-600" />
-              </div>
-              <span className="text-sm font-medium">View Settings</span>
-            </Button>
-          </CardContent>
-        </Card>
-
-        {/* Main Content Tabs */}
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList id="patient-dashboard-tabs" className="w-full grid grid-cols-3 bg-white border rounded-lg p-1">
-            <TabsTrigger value="home" className="data-[state=active]:bg-brand data-[state=active]:text-white">
-              Home
-            </TabsTrigger>
-            <TabsTrigger value="appointments" className="data-[state=active]:bg-brand data-[state=active]:text-white">
-              Appointments
-            </TabsTrigger>
-            <TabsTrigger value="documents" className="data-[state=active]:bg-brand data-[state=active]:text-white">
-              Documents
-            </TabsTrigger>
-          </TabsList>
-
-          {/* Home Tab */}
-          <TabsContent value="home" className="space-y-4 mt-4">
-            {/* Upcoming Appointments List */}
-            {upcomingAppointments.length > 0 && (
-              <Card>
-                <CardHeader className="pb-3">
-                  <div className="flex items-center justify-between">
-                    <CardTitle className="text-base sm:text-lg">Upcoming Appointments</CardTitle>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setActiveTab('appointments')}
-                      className="text-brand hover:text-brand-dark"
-                    >
-                      View All
-                      <ChevronRight className="h-4 w-4 ml-1" />
-                    </Button>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  {upcomingAppointments.slice(1, 4).map((appointment: Appointment) => (
-                    <div
-                      key={appointment._id}
-                      className="flex items-center justify-between p-3 sm:p-4 border rounded-lg hover:bg-gray-50 transition-colors"
-                    >
-                      <div className="flex items-center gap-3 flex-1 min-w-0">
-                        <div className="p-2 bg-gray-100 rounded-lg shrink-0">
-                          <Calendar className="h-4 w-4 text-gray-600" />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="font-medium text-sm sm:text-base text-gray-900 truncate">
-                            {appointment.serviceType}
-                          </p>
-                          <p className="text-xs sm:text-sm text-gray-500">
-                            {format(new Date(appointment.startTime), 'MMM d, h:mm a')}
-                          </p>
-                        </div>
-                      </div>
-                      <Badge variant="secondary" className="ml-2 shrink-0 text-xs">
-                        {appointmentStatusLabel(appointment as unknown as AppointmentStatusFields, 'patient')}
-                      </Badge>
-                    </div>
-                  ))}
-                </CardContent>
-              </Card>
-            )}
-
-            {/* No Appointments State */}
-            {upcomingAppointments.length === 0 && (
-              <Card>
-                <CardContent className="py-12 text-center">
-                  <div className="p-4 bg-gray-100 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center">
-                    <Calendar className="h-8 w-8 text-gray-400" />
-                  </div>
-                  <h3 className="text-lg font-semibold mb-2">No Upcoming Appointments</h3>
-                  <p className="text-gray-600 mb-4 text-sm">
-                    Book your next session with your physiotherapist
-                  </p>
-                  <Button
-                    className="bg-brand hover:bg-brand-dark text-white"
-                    onClick={() => router.push('/dashboard/patient/appointments')}
-                  >
-                    <Plus className="h-4 w-4 mr-2" />
-                    Book Appointment
-                  </Button>
-                </CardContent>
-              </Card>
-            )}
-          </TabsContent>
-
-          {/* Appointments Tab */}
-          <TabsContent value="appointments" className="space-y-4 mt-4">
-            <Card>
-              <CardHeader>
-                <CardTitle>All Appointments</CardTitle>
-                <CardDescription>View and manage your appointments</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {appointments && appointments.length > 0 ? (
-                  appointments.map((appointment: Appointment) => (
-                    <div
-                      key={appointment._id}
-                      className="flex flex-col sm:flex-row sm:items-center sm:justify-between p-4 border rounded-lg gap-3 hover:bg-gray-50 transition-colors"
-                    >
-                      <div className="flex items-start gap-3 flex-1">
-                        <div className="p-2 bg-brand/10 rounded-lg shrink-0">
-                          <Calendar className="h-5 w-5 text-brand" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-semibold text-gray-900">{appointment.serviceType}</p>
-                          <p className="text-sm text-gray-600 mt-1">
-                            {format(new Date(appointment.startTime), 'EEEE, MMMM d, yyyy')}
-                          </p>
-                          <p className="text-sm text-gray-500">
-                            {format(new Date(appointment.startTime), 'h:mm a')} - {format(new Date(appointment.endTime), 'h:mm a')}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2 sm:flex-col sm:items-end">
-                        <Badge
-                          variant={appointment.status === 'confirmed' ? 'default' : 'secondary'}
-                          className="shrink-0"
-                        >
-                          {appointmentStatusLabel(appointment as unknown as AppointmentStatusFields, 'patient')}
-                        </Badge>
-                        {isOnlineVisit(appointment) && appointment.status === 'confirmed' && meetingLinkFor(appointment) && new Date(appointment.endTime) > new Date() && (
-                          <Button
-                            size="sm"
-                            className="bg-brand hover:bg-brand-dark text-white shrink-0"
-                            onClick={() => joinCall(appointment)}
-                          >
-                            <Video className="h-4 w-4 sm:mr-2" />
-                            <span className="hidden sm:inline">Join</span>
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="text-center py-8">
-                    <p className="text-gray-500">No appointments found</p>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* Documents Tab */}
-          <TabsContent value="documents" className="space-y-4 mt-4">
-            <Card>
-              <CardHeader>
-                <CardTitle>Medical Documents</CardTitle>
-                <CardDescription>Upload and manage your medical records</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {/* Upload Section */}
-                <div className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center bg-gray-50 hover:bg-gray-100 transition-colors">
-                  <FileUpload
-                    id="document-upload"
-                    label="Upload Document"
-                    accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
-                    onChange={handleUploadDocument}
-                    maxSizeInMB={5}
-                  />
-                  <p className="mt-3 text-sm text-gray-500">
-                    Supports: PDF, DOC, DOCX, JPG, PNG (Max 5MB)
-                  </p>
-                </div>
-
-                {/* Documents List */}
-                <div className="space-y-3">
-                  <h4 className="font-semibold text-sm text-gray-700">Your Documents</h4>
-                  {isLoadingDocuments ? (
-                    <div className="space-y-2">
-                      <Skeleton className="h-20 w-full" />
-                      <Skeleton className="h-20 w-full" />
-                    </div>
-                  ) : documents && documents.length > 0 ? (
-                    documents.map((doc: PatientDocument) => (
-                      <div
-                        key={doc._id}
-                        className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 transition-colors"
-                      >
-                        <div className="flex items-center gap-3 flex-1 min-w-0">
-                          <div className={`p-2 rounded-lg shrink-0 ${doc.sharedWithPhysiotherapist ? 'bg-green-100' : 'bg-blue-100'}`}>
-                            <FileText className={`h-5 w-5 ${doc.sharedWithPhysiotherapist ? 'text-green-600' : 'text-blue-600'}`} />
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2">
-                              <p className="font-medium text-gray-900 truncate">{doc.fileName}</p>
-                              {doc.sharedWithPhysiotherapist && (
-                                <Badge className="bg-green-100 text-green-700 text-xs">
-                                  <Check className="h-3 w-3 mr-1" />
-                                  Sent
-                                </Badge>
-                              )}
-                            </div>
-                            <p className="text-sm text-gray-500">
-                              {format(new Date(doc.uploadedAt), 'MMM d, yyyy')}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2 ml-2 shrink-0">
-                          <Button
-                            variant={doc.sharedWithPhysiotherapist ? "outline" : "default"}
-                            size="sm"
-                            onClick={() => toggleSharing({ documentId: doc._id, shared: !doc.sharedWithPhysiotherapist })}
-                            disabled={isTogglingSharing}
-                            className={doc.sharedWithPhysiotherapist ? "" : "bg-brand hover:bg-brand-dark text-white"}
-                            title={doc.sharedWithPhysiotherapist ? "Unshare from physiotherapist" : "Send to physiotherapist"}
-                          >
-                            {doc.sharedWithPhysiotherapist ? (
-                              <Share2 className="h-4 w-4" />
-                            ) : (
-                              <>
-                                <Send className="h-4 w-4 mr-1" />
-                                Send
-                              </>
-                            )}
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => doc.downloadUrl && window.open(doc.downloadUrl, '_blank')}
-                          >
-                            <Download className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="text-center py-8 text-gray-500">
-                      <FileText className="h-12 w-12 mx-auto mb-3 text-gray-300" />
-                      <p className="text-sm">No documents uploaded yet</p>
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-        </Tabs>
+    <PageContainer className="space-y-5">
+      <div>
+        <h1 className="text-[26px] font-semibold leading-tight tracking-tight text-pt-ink sm:text-[30px]">
+          {greeting()}
+          {user.firstName ? `, ${user.firstName}` : ''}
+        </h1>
+        <p className="mt-1 text-sm text-pt-muted sm:text-[15px]">Here’s what’s next for your recovery.</p>
       </div>
-      <TourGuide
-        tourId="patient-dashboard-tour"
-        steps={[
-          {
-            target: "#patient-dashboard-welcome",
-            title: "Welcome Home",
-            content: "This is your personal recovery dashboard. Track your progress and stay updated.",
-            position: "bottom",
-          },
-          {
-            target: "#nav-item-find-a-physio",
-            title: "Find a Physio",
-            content: "Browse and connect with qualified physiotherapists for your needs.",
-            position: "right",
-          },
-          {
-            target: "#nav-item-appointments",
-            title: "Appointments",
-            content: "Manage your schedule, view upcoming sessions, and join video calls.",
-            position: "right",
-          },
-          {
-            target: "#nav-item-my-physiotherapist",
-            title: "My Physiotherapist",
-            content: "Access your treatment plans, clinical records, and communicate with your physio.",
-            position: "right",
-          },
-          {
-            target: "#patient-next-appointment",
-            title: "Next Session",
-            content: "Quickly see when your next appointment is and join if it's a video call.",
-            position: "bottom",
-          },
-          {
-            target: "#patient-quick-stats",
-            title: "At a Glance",
-            content: "See your upcoming appointments, documents, and completed sessions.",
-            position: "top",
-          },
-          {
-            target: "#patient-quick-actions",
-            title: "Quick Actions",
-            content: "Fast access to common tasks like booking appointments or uploading documents.",
-            position: "top",
-          },
-          {
-            target: "#nav-item-settings",
-            title: "Settings",
-            content: "Manage your profile, preferences, and account settings.",
-            position: "right",
-          },
-        ]}
-      />
-      <InsightsSidebar
-        role="patient"
-        stats={patientStats}
-        className="border-l border-gray-200 h-[calc(100vh-4rem)] sticky top-0"
-      />
-    </div>
+
+      {/* Things waiting on the patient come first */}
+      <OpenBookingsCard />
+      <PatientFollowUpBanner />
+
+      <div className="grid gap-5 lg:grid-cols-5">
+        <div className="lg:col-span-3">
+          <NextVisitCard appointment={nextVisit} onOpen={setSelected} onJoin={joinCall} />
+        </div>
+        <div className="lg:col-span-2">
+          <QuickActions />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <StatTile
+          label="Upcoming visits"
+          value={upcoming.length}
+          icon={Calendar}
+          tone="blue"
+          href={NAV.appointments.href}
+        />
+        <StatTile
+          label="Sessions done"
+          value={completedCount}
+          icon={CheckCircle2}
+          tone="green"
+          info="Visits your physio has marked as completed."
+        />
+        <div className="col-span-2 sm:col-span-1">
+          <StatTile
+            label="Your records"
+            value={documents?.length ?? 0}
+            icon={FileText}
+            tone="amber"
+            href={NAV.records.href}
+            info="Scans, reports and letters you’ve uploaded. Only you can see them unless you share one with your physio."
+          />
+        </div>
+      </div>
+
+      <div className="grid gap-5 lg:grid-cols-5">
+        <div className="lg:col-span-3">
+          <PatientCheckInCard />
+        </div>
+        <div className="lg:col-span-2">
+          <Panel
+            title="Coming up"
+            actions={
+              <Link href={NAV.appointments.href} className="inline-flex items-center gap-1 text-sm font-medium text-pt-muted hover:text-pt-ink">
+                See all
+                <ArrowRight className="h-3.5 w-3.5" />
+              </Link>
+            }
+            className="h-full"
+            bodyClassName="px-2 pb-3 pt-1 sm:px-3"
+          >
+            {later.length === 0 ? (
+              <div className="px-3 py-6 text-center">
+                <p className="text-sm text-pt-muted">{nextVisit ? 'Nothing else booked yet.' : 'No visits booked yet.'}</p>
+                <Link href={BOOK_SESSION_HREF} className="mt-2 inline-flex items-center gap-1 text-sm font-semibold text-pt-ink hover:underline">
+                  Book a session
+                  <ArrowRight className="h-3.5 w-3.5" />
+                </Link>
+              </div>
+            ) : (
+              <ul className="space-y-0.5">
+                {later.map((appointment) => (
+                  <li key={appointment._id}>
+                    <button type="button" onClick={() => setSelected(appointment)} className={listRowClass}>
+                      <DateTile time={appointment.startTime} size="sm" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-semibold text-pt-ink">{appointment.serviceType}</span>
+                        <span className="block text-xs text-pt-muted">
+                          {format(appointment.startTime, 'EEE d MMM, h:mm a')} · {isOnlineVisit(appointment) ? 'Video' : 'In person'}
+                        </span>
+                      </span>
+                      <StatusBadge tone={statusTone(appointment)} className="hidden sm:inline-flex">
+                        {statusLabel(appointment)}
+                      </StatusBadge>
+                      <ChevronRight className="h-3.5 w-3.5 shrink-0 text-pt-faint" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Panel>
+        </div>
+      </div>
+
+      <AccessAwardCard />
+      <JoyJourneyCard />
+
+      <VisitDrawer appointment={selected} onClose={() => setSelected(null)} onJoin={joinCall} />
+    </PageContainer>
   )
 }

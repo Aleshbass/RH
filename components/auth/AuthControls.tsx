@@ -8,7 +8,7 @@
 import { useEffect, useState, type InputHTMLAttributes, type ReactNode } from "react";
 import { useSignIn } from "@clerk/nextjs";
 import { AnimatePresence, motion, useReducedMotion, type Variants } from "framer-motion";
-import { AlertCircle, ArrowRight, Eye, EyeOff, Info, Loader2 } from "lucide-react";
+import { AlertCircle, ArrowRight, Eye, EyeOff, Info, Loader2 } from "@/components/icons";
 import { buildSsoRedirectUrls } from "@/lib/auth/ssoRedirect";
 import { cn } from "@/lib/utils";
 import { parseAuthError, type AuthError } from "./authConfig";

@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useMutation } from 'convex/react'
 import { toast } from 'sonner'
-import { Calendar, MessageSquare, MoreHorizontal, Search, Users } from 'lucide-react'
+import { Calendar, MessageSquare, MoreHorizontal, Search, Users } from '@/components/icons'
 import { api } from '@/convex/_generated/api'
 import type { Id } from '@/convex/_generated/dataModel'
 import PatientListModal from './PatientListModal'

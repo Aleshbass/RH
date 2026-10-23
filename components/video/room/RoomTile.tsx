@@ -8,7 +8,7 @@ import {
   type StreamVideoParticipant,
   type VideoPlaceholderProps,
 } from '@stream-io/video-react-sdk'
-import { MicOff, MonitorUp } from 'lucide-react'
+import { MicOff, MonitorUp } from '@/components/icons'
 import { cn } from '@/lib/utils'
 
 export function participantName(p: StreamVideoParticipant) {

@@ -1,8 +1,9 @@
 /**
  * The single partner commission ledger.
  *
- * Commissions are earned ONLY from verified payments (Paystack webhook / verification,
- * or an admin-confirmed bank transfer) by patients attributed to a partner. Amounts
+ * Commissions are earned from verified payments (Paystack webhook / verification, or an
+ * admin-confirmed bank transfer) by patients attributed to a partner. An invoice payment a
+ * clinic recorded by hand also earns one, but it waits for an admin's approval. Amounts
  * come from the partner's active contract, or the platform default partner share.
  * Sandbox never earns. Every earning is idempotent on its payment reference, and
  * refunds reverse (or, if already paid out, offset) the commission.
@@ -10,7 +11,8 @@
 import type { MutationCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
 import { DEFAULT_REVENUE_SETTINGS, calculateSplit } from "../platformSettings";
-import type { PartnerEnv } from "./partnerShared";
+import { type PartnerEnv, referralEnv } from "./partnerShared";
+import { attributeUserToReferral } from "./partnerAttribution";
 
 export function billingPeriodOf(timestamp: number = Date.now()): string {
   const d = new Date(timestamp);
@@ -43,9 +45,15 @@ export type CommissionInput = {
   environment: PartnerEnv;
   idempotencyKey: string; // e.g. "payment:<paystack reference>"
   grossKobo: number; // verified service amount (excluding processing fees)
-  paymentMethod: "paystack" | "bank_transfer";
+  /** Missing for invoice payments a clinic or physio recorded by hand (cash, transfer to them). */
+  paymentMethod?: "paystack" | "bank_transfer";
   paymentReference?: string;
-  source: "marketplace" | "joy" | "bank_transfer";
+  source: "marketplace" | "joy" | "bank_transfer" | "invoice" | "invoice_manual";
+  /**
+   * "pending_approval" when the money wasn't verified by Rehabify (a payment recorded by
+   * hand): an admin approves it before it can be paid out. Default "approved".
+   */
+  initialStatus?: "approved" | "pending_approval";
   referralId?: Id<"inboundReferrals">;
   bookingId?: Id<"marketplaceBookings">;
   linkId?: Id<"partnerReferralLinks">;
@@ -186,7 +194,7 @@ export async function recordPartnerCommission(
     paymentReference: input.paymentReference,
     billingPeriod: billingPeriodOf(earnedAt),
     bulkPayoutStatus: "accrued",
-    status: "approved",
+    status: input.initialStatus ?? "approved",
     notes: notes.join(" · "),
     earnedAt,
   });
@@ -266,6 +274,76 @@ export async function reverseCommissionsForPayment(
     adjusted++;
   }
   return { reversed, adjusted };
+}
+
+/**
+ * Commission on a paid clinic or physiotherapist invoice, for a patient a partner (or a
+ * referring doctor) sent us. Covers referrals routed to a clinic, where the patient pays the
+ * clinic's invoice rather than a marketplace booking.
+ *
+ * - `verified`: the payment was confirmed by Paystack, so the commission is approved.
+ *   Otherwise (recorded by hand) it waits for an admin to approve it.
+ * - Invoices that belong to a marketplace or Joy booking are skipped: that payment already
+ *   earned its commission when the booking was paid.
+ * - Attribution follows the usual rule (first partner wins). A patient not attributed yet is
+ *   attributed here from their live partner referral, if they have one.
+ */
+export async function recordInvoicePartnerCommission(
+  ctx: MutationCtx,
+  args: { invoice: Doc<"invoices">; paidKobo: number; paymentReference: string; verified: boolean }
+) {
+  const { invoice } = args;
+  if (invoice.invoiceNumber.startsWith("INV-MKT-")) return { skipped: "marketplace_invoice" as const };
+  // The same money already earned a commission (e.g. through its booking)
+  const earned = await ctx.db
+    .query("partnerCommissions")
+    .withIndex("by_payment_reference", (q) => q.eq("paymentReference", args.paymentReference))
+    .first();
+  if (earned && !earned.idempotencyKey?.startsWith(`invoice:${invoice._id}:`)) return { skipped: "already_earned" as const };
+  const patient = await ctx.db.get(invoice.patientId);
+  if (!patient) return { skipped: "no_patient" as const };
+
+  const referrals = await ctx.db
+    .query("inboundReferrals")
+    .withIndex("by_patient", (q) => q.eq("patientId", patient._id))
+    .take(20);
+  const liveReferrals = referrals.filter((r) => r.partnerId && referralEnv(r) === "live");
+
+  let partnerCode = patient.referredByPartnerCode;
+  if (!partnerCode) {
+    const earliest = liveReferrals.sort((a, b) => a.createdAt - b.createdAt)[0];
+    if (!earliest) return { skipped: "not_attributed" as const };
+    await attributeUserToReferral(ctx, patient._id, earliest);
+    partnerCode = earliest.partnerId;
+  }
+  if (!partnerCode) return { skipped: "not_attributed" as const };
+
+  let referral = patient.linkedReferralId ? await ctx.db.get(patient.linkedReferralId) : null;
+  if (!referral || referral.partnerId !== partnerCode || referralEnv(referral) !== "live") {
+    referral = liveReferrals.find((r) => r.partnerId === partnerCode) ?? null;
+  }
+
+  const physio = invoice.physiotherapistId ? await ctx.db.get(invoice.physiotherapistId) : null;
+  const name = (u: Doc<"users"> | null) => (u ? `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() : "");
+  const providerShare = typeof invoice.physiotherapistShare === "number" ? Math.round(invoice.physiotherapistShare) : undefined;
+
+  return recordPartnerCommission(ctx, {
+    partnerCode,
+    environment: "live",
+    idempotencyKey: `invoice:${invoice._id}:${args.paymentReference}`,
+    grossKobo: Math.round(args.paidKobo),
+    physiotherapistKobo: providerShare !== undefined && providerShare <= args.paidKobo ? providerShare : undefined,
+    paymentMethod: args.verified ? "paystack" : undefined,
+    paymentReference: args.paymentReference,
+    source: args.verified ? "invoice" : "invoice_manual",
+    initialStatus: args.verified ? "approved" : "pending_approval",
+    referralId: referral?._id,
+    trackingCode: referral?.trackingCode,
+    patientUserId: patient._id,
+    patientName: name(patient) || referral?.patientFirstName || "Patient",
+    physiotherapistId: physio?._id,
+    physiotherapistName: name(physio) || undefined,
+  });
 }
 
 /** Public commission status shown to partners. */

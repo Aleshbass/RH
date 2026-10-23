@@ -15,7 +15,7 @@ import {
   AlertTriangle,
   Plus,
   Calendar
-} from 'lucide-react'
+} from '@/components/icons'
 import { format } from 'date-fns'
 
 type MedicationTrackerProps = object;

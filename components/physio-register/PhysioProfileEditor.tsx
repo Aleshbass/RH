@@ -7,7 +7,7 @@ import { Id } from '@/convex/_generated/dataModel';
 import { useParams, useRouter } from 'next/navigation';
 import { useUser } from '@clerk/nextjs';
 import { toast } from 'sonner';
-import { ArrowLeft, Loader2, Save, Upload, Trash2, Camera, ShieldCheck, FileText } from 'lucide-react';
+import { ArrowLeft, Loader2, Save, Upload, Trash2, Camera, ShieldCheck, FileText } from '@/components/icons';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';

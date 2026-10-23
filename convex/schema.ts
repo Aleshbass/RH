@@ -1398,15 +1398,25 @@ export default defineSchema({
     expiresAt: v.optional(v.string()),
 
     status: v.union(
-      v.literal("initiated"),   // SDK called, SMS sent
-      v.literal("pending"),     // Patient started their application
-      v.literal("approved"),    // Loan approved by MyItura
-      v.literal("disbursed"),   // Funds released to Rehabify
-      v.literal("declined"),    // Loan application rejected
-      v.literal("expired"),     // 7-day window lapsed
-      v.literal("failed"),      // API or system error
-      v.literal("repaid")       // Patient fully repaid the loan
+      v.literal("initiated"),      // SDK called, SMS sent
+      v.literal("pending"),        // Patient submitted their application
+      v.literal("approved"),       // Loan approved by MyItura / offer issued
+      v.literal("offer_accepted"), // Patient accepted the loan terms
+      v.literal("disbursed"),      // Funds released to Rehabify (the invoice is then marked paid)
+      v.literal("declined"),       // Application rejected, or the patient declined the terms
+      v.literal("expired"),        // 7-day application window lapsed
+      v.literal("cancelled"),      // Cancelled before disbursement
+      v.literal("defaulted"),      // Patient stopped repaying MyItura
+      v.literal("failed"),         // API or system error
+      v.literal("repaid")          // Patient fully repaid the loan
     ),
+
+    // The invoice this loan pays for (physio billing); it's marked paid when the loan disburses
+    invoiceId: v.optional(v.id("invoices")),
+    myituraLoanId: v.optional(v.string()), // MyItura's loanId, from webhooks or a status lookup
+    amountApproved: v.optional(v.number()), // kobo
+    lastEvent: v.optional(v.string()),
+    lastEventAt: v.optional(v.number()),
 
     // Post-loan tracking
     disbursedAt: v.optional(v.number()),
@@ -1421,7 +1431,17 @@ export default defineSchema({
     .index("by_myituraSdkRef", ["myituraSdkRef"])
     .index("by_status", ["status"])
     .index("by_loanRequest", ["loanRequestId"])
-    .index("by_createdAt", ["createdAt"]),
+    .index("by_createdAt", ["createdAt"])
+    .index("by_invoice", ["invoiceId"])
+    .index("by_myituraLoanId", ["myituraLoanId"]),
+
+  // MediLoan webhook deliveries already handled (X-MyItura-Delivery-Id), so retries are no-ops
+  mediloanWebhookDeliveries: defineTable({
+    deliveryId: v.string(),
+    event: v.string(),
+    loanApplicationId: v.optional(v.id("loanApplications")),
+    receivedAt: v.number(),
+  }).index("by_delivery_id", ["deliveryId"]),
 
   // Referrals to other healthcare providers
   referrals: defineTable({
@@ -3101,6 +3121,22 @@ export default defineSchema({
     .index("by_booking", ["bookingId", "occurredAt"])
     .index("by_event_key", ["eventKey"]),
 
+  // Joy sends these as /go/<code> on WhatsApp. Opening one signs the patient into the
+  // Clerk account Rehabify created for them (or lets them create one and claim the
+  // record). The code is the only credential, so each link works once and expires.
+  dashboardAccessLinks: defineTable({
+    code: v.string(),
+    userId: v.id("users"),
+    // The Clerk user created for this patient; a link only ever signs into that account
+    clerkUserId: v.optional(v.string()),
+    bookingId: v.optional(v.id("marketplaceBookings")),
+    createdAt: v.number(),
+    expiresAt: v.number(),
+    usedAt: v.optional(v.number()),
+  })
+    .index("by_code", ["code"])
+    .index("by_user", ["userId", "createdAt"]),
+
   // Paid five-minute AMBER review. This is deliberately separate from a
   // marketplace booking: a reviewer is allocated only after verified payment,
   // never fabricated merely to create a payment link.
@@ -3389,7 +3425,8 @@ export default defineSchema({
       v.literal("telemedicine"),
       v.literal("pharmacy"),
       v.literal("employer"),
-      v.literal("digital_health")
+      v.literal("digital_health"),
+      v.literal("doctor") // An individual referring doctor (convex/doctors.ts); live as soon as approved
     ),
     // Identity & Branding
     logoUrl: v.optional(v.string()),          // Partner logo for branded landing pages

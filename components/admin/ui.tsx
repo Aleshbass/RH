@@ -10,7 +10,7 @@
 import { useId, useState, type ComponentType, type ReactNode } from 'react'
 import Link from 'next/link'
 import { motion, useReducedMotion, type Variants } from 'framer-motion'
-import { Loader2 } from 'lucide-react'
+import { Loader2 } from '@/components/icons'
 import { cn } from '@/lib/utils'
 import {
   AlertDialog,

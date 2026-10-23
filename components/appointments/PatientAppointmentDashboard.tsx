@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Calendar, Clock, AlertCircle, CheckCircle2, History, Repeat, Video, MessageCircle, FileText, XCircle, Star, TrendingUp, Activity, CalendarDays, ChevronRight, Copy, ExternalLink } from 'lucide-react';
+import { Calendar, Clock, AlertCircle, CheckCircle2, History, Repeat, Video, MessageCircle, FileText, XCircle, Star, TrendingUp, Activity, CalendarDays, ChevronRight, Copy, ExternalLink } from '@/components/icons';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';

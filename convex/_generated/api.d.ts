@@ -43,6 +43,7 @@ import type * as actions_emails_sendReferralCreatedEmails from "../actions/email
 import type * as actions_emails_sendVerificationBadgeEmail from "../actions/emails/sendVerificationBadgeEmail.js";
 import type * as actions_emails_sendVideoCallInvitation from "../actions/emails/sendVideoCallInvitation.js";
 import type * as actions_index from "../actions/index.js";
+import type * as actions_joyDashboard from "../actions/joyDashboard.js";
 import type * as actions_notifications_cleanupDuplicates from "../actions/notifications/cleanupDuplicates.js";
 import type * as actions_notifications_index from "../actions/notifications/index.js";
 import type * as actions_notifications_sendNotification from "../actions/notifications/sendNotification.js";
@@ -114,6 +115,7 @@ import type * as helpers_appointmentStatus from "../helpers/appointmentStatus.js
 import type * as helpers_callAccess from "../helpers/callAccess.js";
 import type * as helpers_careAccess from "../helpers/careAccess.js";
 import type * as helpers_clinicApproval from "../helpers/clinicApproval.js";
+import type * as helpers_doctorReferralUpdates from "../helpers/doctorReferralUpdates.js";
 import type * as helpers_escapeHtml from "../helpers/escapeHtml.js";
 import type * as helpers_exerciseAccess from "../helpers/exerciseAccess.js";
 import type * as helpers_exerciseCrypto from "../helpers/exerciseCrypto.js";
@@ -121,6 +123,7 @@ import type * as helpers_joyPricing from "../helpers/joyPricing.js";
 import type * as helpers_lagosTime from "../helpers/lagosTime.js";
 import type * as helpers_learnFormat from "../helpers/learnFormat.js";
 import type * as helpers_marketplaceInvoices from "../helpers/marketplaceInvoices.js";
+import type * as helpers_mediloanStatus from "../helpers/mediloanStatus.js";
 import type * as helpers_partnerAccess from "../helpers/partnerAccess.js";
 import type * as helpers_partnerAttribution from "../helpers/partnerAttribution.js";
 import type * as helpers_partnerEvents from "../helpers/partnerEvents.js";
@@ -134,12 +137,14 @@ import type * as helpers_paystackSignature from "../helpers/paystackSignature.js
 import type * as helpers_rehabifyIdFormat from "../helpers/rehabifyIdFormat.js";
 import type * as helpers_rehabifyIds from "../helpers/rehabifyIds.js";
 import type * as helpers_rehabifyPricing from "../helpers/rehabifyPricing.js";
+import type * as helpers_roleLock from "../helpers/roleLock.js";
 import type * as helpers_securityLog from "../helpers/securityLog.js";
 import type * as helpers_serverSecret from "../helpers/serverSecret.js";
 import type * as helpers_slotHolds from "../helpers/slotHolds.js";
 import type * as helpers_triggerRetryProcessing from "../helpers/triggerRetryProcessing.js";
 import type * as http from "../http.js";
 import type * as imagekit from "../imagekit.js";
+import type * as joyAccounts from "../joyAccounts.js";
 import type * as joyGateway from "../joyGateway.js";
 import type * as joyHandoff from "../joyHandoff.js";
 import type * as joyIntegration from "../joyIntegration.js";
@@ -271,6 +276,7 @@ declare const fullApi: ApiFromModules<{
   "actions/emails/sendVerificationBadgeEmail": typeof actions_emails_sendVerificationBadgeEmail;
   "actions/emails/sendVideoCallInvitation": typeof actions_emails_sendVideoCallInvitation;
   "actions/index": typeof actions_index;
+  "actions/joyDashboard": typeof actions_joyDashboard;
   "actions/notifications/cleanupDuplicates": typeof actions_notifications_cleanupDuplicates;
   "actions/notifications/index": typeof actions_notifications_index;
   "actions/notifications/sendNotification": typeof actions_notifications_sendNotification;
@@ -342,6 +348,7 @@ declare const fullApi: ApiFromModules<{
   "helpers/callAccess": typeof helpers_callAccess;
   "helpers/careAccess": typeof helpers_careAccess;
   "helpers/clinicApproval": typeof helpers_clinicApproval;
+  "helpers/doctorReferralUpdates": typeof helpers_doctorReferralUpdates;
   "helpers/escapeHtml": typeof helpers_escapeHtml;
   "helpers/exerciseAccess": typeof helpers_exerciseAccess;
   "helpers/exerciseCrypto": typeof helpers_exerciseCrypto;
@@ -349,6 +356,7 @@ declare const fullApi: ApiFromModules<{
   "helpers/lagosTime": typeof helpers_lagosTime;
   "helpers/learnFormat": typeof helpers_learnFormat;
   "helpers/marketplaceInvoices": typeof helpers_marketplaceInvoices;
+  "helpers/mediloanStatus": typeof helpers_mediloanStatus;
   "helpers/partnerAccess": typeof helpers_partnerAccess;
   "helpers/partnerAttribution": typeof helpers_partnerAttribution;
   "helpers/partnerEvents": typeof helpers_partnerEvents;
@@ -362,12 +370,14 @@ declare const fullApi: ApiFromModules<{
   "helpers/rehabifyIdFormat": typeof helpers_rehabifyIdFormat;
   "helpers/rehabifyIds": typeof helpers_rehabifyIds;
   "helpers/rehabifyPricing": typeof helpers_rehabifyPricing;
+  "helpers/roleLock": typeof helpers_roleLock;
   "helpers/securityLog": typeof helpers_securityLog;
   "helpers/serverSecret": typeof helpers_serverSecret;
   "helpers/slotHolds": typeof helpers_slotHolds;
   "helpers/triggerRetryProcessing": typeof helpers_triggerRetryProcessing;
   http: typeof http;
   imagekit: typeof imagekit;
+  joyAccounts: typeof joyAccounts;
   joyGateway: typeof joyGateway;
   joyHandoff: typeof joyHandoff;
   joyIntegration: typeof joyIntegration;

@@ -1,7 +1,7 @@
 'use client'
 
 import { DashboardSidebar } from '@/components/dashboard/shared/DashboardSidebar'
-import { LayoutDashboard, Calendar, Settings, Search, Stethoscope } from 'lucide-react'
+import { LayoutDashboard, Calendar, Settings, Search, Stethoscope } from '@/components/icons'
 
 // Navigation configuration for patients
 const navItems = [

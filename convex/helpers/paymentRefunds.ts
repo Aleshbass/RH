@@ -6,7 +6,8 @@
  * is undone:
  *  - marketplace / Joy booking: cancelled, its invoice voided, any unpaid payout dropped, the
  *    partner commission reversed and a Rehabify Access session given back;
- *  - invoice (INV_/CLN_/PHY_): payment cancelled, invoice voided, unpaid payout dropped;
+ *  - invoice (INV_/CLN_/PHY_): payment cancelled, invoice voided, unpaid payout dropped and
+ *    any partner commission reversed;
  *  - Learn registration: marked refunded;
  *  - verification badge: transaction refunded and the badge it bought switched off;
  *  - Joy specialist review: marked refunded and cancelled unless already done.
@@ -160,6 +161,8 @@ export async function applyPaystackRefund(ctx: MutationCtx, data: any): Promise<
       });
       if (full) {
         await voidInvoiceForRefund(ctx, invoice, total, reference);
+        // Any partner or referring-doctor commission earned on this invoice
+        await reverseCommissionsForPayment(ctx, reference, "Patient payment refunded");
       } else {
         await ctx.db.patch(invoice._id, {
           refundedAmount: total,

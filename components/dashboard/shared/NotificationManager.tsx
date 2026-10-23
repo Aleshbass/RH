@@ -9,7 +9,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useState } from "react"
 import { toast } from "sonner"
-import { Bell, AlertCircle, Clock, XCircle, Trash2, RefreshCw } from "lucide-react"
+import { Bell, AlertCircle, Clock, XCircle, Trash2, RefreshCw } from "@/components/icons"
 
 export function NotificationManager() {
   const [isLoading, setIsLoading] = useState(false)

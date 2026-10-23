@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react'
 import { useQuery } from 'convex/react'
 import { format, formatDistanceToNow, isToday, isYesterday } from 'date-fns'
-import { Download, KeyRound, Search, Settings, ShieldAlert, ShieldCheck, Clock } from 'lucide-react'
+import { Download, KeyRound, Search, Settings, ShieldAlert, ShieldCheck, Clock } from '@/components/icons'
 import { api } from '@/convex/_generated/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'

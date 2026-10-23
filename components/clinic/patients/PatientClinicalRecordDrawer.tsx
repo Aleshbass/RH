@@ -22,7 +22,7 @@ import {
 } from '@/components/ui/select'
 import ErrorBoundary from '@/components/ui/error-boundary'
 import { toast } from 'sonner'
-import { FileText, Loader2, Plus, Trash2, UserRound } from 'lucide-react'
+import { FileText, Loader2, Plus, Trash2, UserRound } from '@/components/icons'
 import { differenceInYears, format, isValid } from 'date-fns'
 import { cn } from '@/lib/utils'
 import { useClinicPreview } from '@/components/clinic/ClinicPreviewContext'

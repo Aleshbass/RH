@@ -14,13 +14,12 @@ import {
   Eye,
   FileText,
   Clock,
-  Sparkles,
   Zap,
   ChevronRight,
   Check,
   Lock,
   ArrowUpRight
-} from 'lucide-react'
+} from '@/components/icons'
 import { Button } from '@/components/ui/button'
 
 export function ClinicOnboardingSection() {

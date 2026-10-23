@@ -1,0 +1,205 @@
+/*
+ * Patient portal colours. Warm off-white canvas, white cards, ink for text and the main
+ * action, Rehabify lime as the accent, and soft tints (green, amber, rose, blue, violet)
+ * to tell things apart. No teal and no gradients.
+ *
+ * Every token switches on its own in dark mode, so `bg-pt-surface text-pt-ink` needs no
+ * `dark:` twin. The `dark` class on <html> comes from ClinicThemeProvider.
+ */
+:root {
+  --pt-canvas: #f5f3ee;
+  --pt-surface: #ffffff;
+  --pt-sunken: #f5f3ee;
+  --pt-hover: #efece6;
+  --pt-line: rgb(22 24 28 / 0.08);
+  --pt-line-strong: rgb(22 24 28 / 0.15);
+  --pt-ink: #16181c;
+  --pt-muted: #5f636b;
+  --pt-faint: #8e9199;
+  --pt-primary: #16181c;
+  --pt-primary-hover: #2c2f35;
+  --pt-on-primary: #ffffff;
+  --pt-accent: #00cd0f;
+  --pt-accent-soft: #e6f9e3;
+  --pt-accent-ink: #0f6e1a;
+  --pt-green-bg: #e6f9e3;
+  --pt-green-fg: #12701d;
+  --pt-amber-bg: #fdf0dc;
+  --pt-amber-fg: #94560a;
+  --pt-rose-bg: #ffeef3;
+  --pt-rose-fg: #b8345b;
+  --pt-blue-bg: #e9f0fe;
+  --pt-blue-fg: #2a55c4;
+  --pt-violet-bg: #f0ebfe;
+  --pt-violet-fg: #6539cc;
+  --pt-neutral-bg: #f0eee9;
+  --pt-neutral-fg: #4a4d54;
+  --pt-sun-bg: #fff6cc;
+  --pt-sun-fg: #6b5300;
+}
+
+.dark {
+  --pt-canvas: #0c0d0f;
+  --pt-surface: #151619;
+  --pt-sunken: #1c1d21;
+  --pt-hover: #232429;
+  --pt-line: rgb(255 255 255 / 0.07);
+  --pt-line-strong: rgb(255 255 255 / 0.13);
+  --pt-ink: #f3f3f1;
+  --pt-muted: #a1a4ab;
+  --pt-faint: #6e7178;
+  --pt-primary: #f3f3f1;
+  --pt-primary-hover: #ffffff;
+  --pt-on-primary: #16181c;
+  --pt-accent-soft: rgb(0 205 15 / 0.14);
+  --pt-accent-ink: #74e07f;
+  --pt-green-bg: rgb(0 205 15 / 0.13);
+  --pt-green-fg: #7fe08a;
+  --pt-amber-bg: rgb(232 165 79 / 0.15);
+  --pt-amber-fg: #f0bf7a;
+  --pt-rose-bg: rgb(244 114 152 / 0.15);
+  --pt-rose-fg: #f5a0b8;
+  --pt-blue-bg: rgb(96 145 255 / 0.15);
+  --pt-blue-fg: #a3bfff;
+  --pt-violet-bg: rgb(160 120 255 / 0.16);
+  --pt-violet-fg: #c6b0ff;
+  --pt-neutral-bg: rgb(255 255 255 / 0.07);
+  --pt-neutral-fg: #cdd0d5;
+  --pt-sun-bg: rgb(255 230 130 / 0.12);
+  --pt-sun-fg: #ffe07a;
+}
+
+@theme inline {
+  --color-pt-canvas: var(--pt-canvas);
+  --color-pt-surface: var(--pt-surface);
+  --color-pt-sunken: var(--pt-sunken);
+  --color-pt-hover: var(--pt-hover);
+  --color-pt-line: var(--pt-line);
+  --color-pt-line-strong: var(--pt-line-strong);
+  --color-pt-ink: var(--pt-ink);
+  --color-pt-muted: var(--pt-muted);
+  --color-pt-faint: var(--pt-faint);
+  --color-pt-primary: var(--pt-primary);
+  --color-pt-primary-hover: var(--pt-primary-hover);
+  --color-pt-on-primary: var(--pt-on-primary);
+  --color-pt-accent: var(--pt-accent);
+  --color-pt-accent-soft: var(--pt-accent-soft);
+  --color-pt-accent-ink: var(--pt-accent-ink);
+  --color-pt-green-bg: var(--pt-green-bg);
+  --color-pt-green-fg: var(--pt-green-fg);
+  --color-pt-amber-bg: var(--pt-amber-bg);
+  --color-pt-amber-fg: var(--pt-amber-fg);
+  --color-pt-rose-bg: var(--pt-rose-bg);
+  --color-pt-rose-fg: var(--pt-rose-fg);
+  --color-pt-blue-bg: var(--pt-blue-bg);
+  --color-pt-blue-fg: var(--pt-blue-fg);
+  --color-pt-violet-bg: var(--pt-violet-bg);
+  --color-pt-violet-fg: var(--pt-violet-fg);
+  --color-pt-neutral-bg: var(--pt-neutral-bg);
+  --color-pt-neutral-fg: var(--pt-neutral-fg);
+  --color-pt-sun-bg: var(--pt-sun-bg);
+  --color-pt-sun-fg: var(--pt-sun-fg);
+  --shadow-pt: 0 1px 2px rgb(16 18 22 / 0.04), 0 8px 24px -12px rgb(16 18 22 / 0.12);
+  --shadow-pt-lift: 0 2px 4px rgb(16 18 22 / 0.05), 0 18px 40px -18px rgb(16 18 22 / 0.24);
+}
+
+/*
+ * No teal in the patient portal. Shared components it shows (the exercise player, video and
+ * booking pieces) use the brand teal tokens; while the portal is open those tokens point at
+ * the patient colours instead. Tailwind utilities read these variables, so bg-rh-teal,
+ * text-rh-teal/70, hover:bg-brand, border-teal-600 and the rest all follow.
+ */
+html[data-portal='patient'] {
+  /* Teal is always paired with white text, so its stand-in stays dark in both modes */
+  --pt-solid: #16181c;
+  --pt-solid-hover: #2c2f35;
+  --color-rh-teal: var(--pt-solid);
+  --color-rh-teal-deep: var(--pt-solid-hover);
+  --color-rh-teal-soft: var(--pt-solid-hover);
+  /* Aqua is teal's dark-mode partner, paired with dark text */
+  --color-rh-aqua: var(--pt-primary);
+  --color-rh-night: #16181c;
+  --color-rh-mint: var(--pt-accent-soft);
+  --color-rh-mist: var(--pt-sunken);
+  --color-rh-ink: #0c0d0f;
+  --color-rh-ink-2: #151619;
+  --color-rh-ink-3: #1c1d21;
+  --color-brand: var(--pt-solid);
+  --color-brand-dark: var(--pt-solid-hover);
+  --color-brand-light: var(--pt-solid-hover);
+  --color-teal-dark: #16181c;
+  --color-teal-50: #fafafa;
+  --color-teal-100: #f5f5f5;
+  --color-teal-200: #e5e5e5;
+  --color-teal-300: #d4d4d4;
+  --color-teal-400: #a3a3a3;
+  --color-teal-500: #737373;
+  --color-teal-600: #525252;
+  --color-teal-700: #404040;
+  --color-teal-800: #262626;
+  --color-teal-900: #171717;
+  --color-teal-950: #0a0a0a;
+  --shadow-soft: 0 1px 2px rgb(16 18 22 / 0.04), 0 8px 24px -12px rgb(16 18 22 / 0.12);
+  --shadow-lift: 0 2px 4px rgb(16 18 22 / 0.05), 0 18px 40px -18px rgb(16 18 22 / 0.24);
+}
+html[data-portal='patient'].dark {
+  --pt-solid: #3a3d44;
+  --pt-solid-hover: #474a52;
+}
+
+/* Teal written as literal hex classes can't follow the variables above, so remap the common ones */
+html[data-portal='patient'] body .bg-\[\#005b57\],
+html[data-portal='patient'] body .bg-\[\#005B57\],
+html[data-portal='patient'] body .bg-\[\#002e2c\],
+html[data-portal='patient'] body .bg-\[\#2dd4bf\] {
+  background-color: var(--pt-primary);
+  color: var(--pt-on-primary);
+}
+html[data-portal='patient'] body .hover\:bg-\[\#00443e\]:hover,
+html[data-portal='patient'] body .hover\:bg-\[\#004a46\]:hover {
+  background-color: var(--pt-primary-hover);
+}
+html[data-portal='patient'] body .text-\[\#005b57\],
+html[data-portal='patient'] body .text-\[\#005B57\],
+html[data-portal='patient'] body .text-\[\#002e2c\],
+html[data-portal='patient'] body .text-\[\#00443e\],
+html[data-portal='patient'] body .text-\[\#2dd4bf\] {
+  color: var(--pt-ink);
+}
+html[data-portal='patient'] body .border-\[\#005b57\],
+html[data-portal='patient'] body .border-\[\#005B57\] {
+  border-color: var(--pt-primary);
+}
+html[data-portal='patient'] body .bg-\[\#e6f0ef\],
+html[data-portal='patient'] body .bg-\[\#d4fae8\],
+html[data-portal='patient'] body .bg-\[\#f0f8f7\] {
+  background-color: var(--pt-sunken);
+}
+
+/*
+ * Shared components inside the patient portal (dialogs, chat, booking) were written for
+ * light mode. portal-dark.css darkens them with teal-tinted surfaces; while the patient
+ * portal is open (<html data-portal="patient">) they get the neutral patient surfaces
+ * instead. Same specificity as portal-dark.css and later in the file, so this wins there
+ * and explicit `dark:` styles still win over both.
+ */
+@layer utilities {
+  :where(html[data-portal='patient'].dark) body .bg-white,
+  :where(html[data-portal='patient'].dark) body .bg-white\/95,
+  :where(html[data-portal='patient'].dark) body .bg-white\/90,
+  :where(html[data-portal='patient'].dark) body .bg-white\/80 {
+    background-color: var(--pt-surface);
+  }
+  :where(html[data-portal='patient'].dark) body .from-white,
+  :where(html[data-portal='patient'].dark) body .via-white {
+    --tw-gradient-from: var(--pt-surface);
+  }
+  :where(html[data-portal='patient'].dark) body .to-white {
+    --tw-gradient-to: var(--pt-surface);
+  }
+  :where(html[data-portal='patient'].dark) body .text-brand,
+  :where(html[data-portal='patient'].dark) body .text-\[\#005b57\],
+  :where(html[data-portal='patient'].dark) body .text-\[\#005B57\] {
+    color: var(--pt-ink);
+  }
+}

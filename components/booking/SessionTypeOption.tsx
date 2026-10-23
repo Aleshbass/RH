@@ -1,7 +1,7 @@
 "use client";
 
 import { motion, useReducedMotion } from "framer-motion";
-import { ArrowRight, Check, Clock, Loader2, MapPin, Video } from "lucide-react";
+import { ArrowRight, Check, Clock, Loader2, MapPin, Video } from "@/components/icons";
 import { cn } from "@/lib/utils";
 import type { SessionType } from "./booking-shared";
 

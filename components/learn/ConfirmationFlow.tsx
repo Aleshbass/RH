@@ -10,6 +10,7 @@ import {
   ArrowRight,
   BadgeCheck,
   CalendarDays,
+  Check,
   Clock3,
   Hourglass,
   Loader2,
@@ -19,11 +20,11 @@ import {
   SearchX,
   Users,
   Video,
-} from 'lucide-react'
+} from '@/components/icons'
 import { api } from '@/convex/_generated/api'
 import type { VerifyResult } from '@/convex/learn'
 import { cn } from '@/lib/utils'
-import { Fact, naira, pillLime, pillOutline, pillTeal, pillWhite, PROGRAM } from './shared'
+import { Fact, naira, pillOutline, pillTeal, pillWhite, PROGRAM } from './shared'
 
 const DRAFT_KEY = 'rh-learn-register-draft'
 const PENDING_RETRIES = 8
@@ -113,7 +114,7 @@ function Success({ result, reference }: { result: Paid; reference: string }) {
   const summary = result.registration
   return (
     <Frame>
-      <div className="relative overflow-hidden rounded-[2rem] bg-[linear-gradient(150deg,#005b57_0%,#005b57_60%,#003f3c_100%)] px-6 py-12 text-center text-white shadow-lift sm:rounded-[2.5rem] sm:px-12 sm:py-14">
+      <div className="relative overflow-hidden rounded-[2rem] bg-white px-6 py-12 text-center shadow-soft sm:rounded-[2.5rem] sm:px-12 sm:py-14">
         <Celebration />
         <motion.span
           className="relative mx-auto flex h-20 w-20 items-center justify-center rounded-[1.6rem] bg-rh-lime text-rh-night"
@@ -121,14 +122,7 @@ function Success({ result, reference }: { result: Paid; reference: string }) {
           animate={{ scale: 1, rotate: 0, opacity: 1 }}
           transition={{ type: 'spring', stiffness: 260, damping: 16 }}
         >
-          <svg viewBox="0 0 24 24" className="h-9 w-9" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round">
-            <motion.path
-              d="M5 12.5l4.5 4.5L19 7.5"
-              initial={reduce ? false : { pathLength: 0 }}
-              animate={{ pathLength: 1 }}
-              transition={{ duration: 0.45, delay: 0.25, ease: 'easeOut' }}
-            />
-          </svg>
+          <Check className="h-9 w-9" />
         </motion.span>
         <motion.div
           initial={reduce ? false : { opacity: 0, y: 10 }}
@@ -136,15 +130,15 @@ function Success({ result, reference }: { result: Paid; reference: string }) {
           transition={{ duration: 0.5, delay: 0.3 }}
           className="relative"
         >
-          <h1 className="mt-7 text-[34px] leading-tight tracking-tight text-white sm:text-[44px]">
+          <h1 className="mt-7 text-[34px] leading-tight tracking-tight text-rh-night sm:text-[44px]">
             You&apos;re in{summary?.firstName ? `, ${summary.firstName}` : ''}!
           </h1>
-          <p className="mx-auto mt-3 max-w-md text-[17px] leading-7 text-white/80">
+          <p className="mx-auto mt-3 max-w-md text-[17px] leading-7 text-rh-night/70">
             Your place in the {summary?.cohort.cohortLabel ?? PROGRAM.shortTitle} is confirmed.
             {summary?.email ? ` We've emailed your confirmation to ${summary.email}.` : ' Your confirmation email is on its way.'}
           </p>
           {summary?.cohort.communityLink && (
-            <a href={summary.cohort.communityLink} target="_blank" rel="noopener noreferrer" className={cn(pillLime, 'mt-8 h-12 px-7')}>
+            <a href={summary.cohort.communityLink} target="_blank" rel="noopener noreferrer" className={cn(pillTeal, 'mt-8 h-12 px-7')}>
               <Users className="h-4 w-4" /> Join the cohort group
             </a>
           )}

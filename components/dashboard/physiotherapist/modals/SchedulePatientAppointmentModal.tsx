@@ -17,7 +17,7 @@ import { playSound } from "@/lib/sounds";
 import { formatKobo, getService, type ServiceMode } from "@/lib/rehabify-services";
 import { cn } from "@/lib/utils";
 import type { CareBillingMode, MarketplaceSettings, PayoutSchedule, ServiceQuote, TravelZone } from "@/lib/rehabify-api-types";
-import { ArrowLeft, ArrowRight, CalendarDays, Check, Clock, Home, Loader2, MapPin, Video, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, CalendarDays, Check, Clock, Home, Loader2, MapPin, Video, X } from "@/components/icons";
 
 interface SchedulePatientAppointmentModalProps {
     open: boolean;

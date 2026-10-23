@@ -27,7 +27,7 @@ import {
   MapPin,
   Phone,
   Shield,
-  Sparkles,
+  GraduationCap,
   Star,
   Stethoscope,
   Trash2,
@@ -37,7 +37,7 @@ import {
   Video,
   Wallet,
   XCircle,
-} from 'lucide-react'
+} from '@/components/icons'
 
 import { api } from '@/convex/_generated/api'
 import type { Id } from '@/convex/_generated/dataModel'
@@ -546,7 +546,7 @@ export default function AdminUserDetailPage() {
                       <Field icon={Calendar} label="Licence expiry">
                         {physioProfile?.licenseExpiryDate || 'Not set'}
                       </Field>
-                      <Field icon={Sparkles} label="CPD points">
+                      <Field icon={GraduationCap} label="CPD points">
                         {physioProfile?.cpdPoints !== undefined ? `${physioProfile.cpdPoints} points` : '—'}
                       </Field>
                     </div>

@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react'
 import { VideoPreview, useCall, useCallStateHooks } from '@stream-io/video-react-sdk'
-import { Loader2, VideoOff } from 'lucide-react'
+import { Loader2, VideoOff } from '@/components/icons'
 import { CallBackdrop, CallBrandMark } from './CallBackdrop'
 import { CameraControl, MicControl } from './ControlBar'
 

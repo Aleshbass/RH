@@ -2,7 +2,7 @@
 
 import React, { ChangeEvent, DragEvent, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Upload, X, FileText, CheckCircle2, AlertCircle } from "lucide-react";
+import { Upload, X, FileText, CheckCircle2, AlertCircle } from "@/components/icons";
 
 export interface FileUploadProps {
   id: string;

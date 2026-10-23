@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import { log } from '@/lib/monitoring/logger'
 import { ErrorTracker } from '@/lib/monitoring/sentry'
-import { isServerOrAdmin } from '../_auth'
+import { escapeHtml, isServerOrAdmin } from '../_auth'
+import { actions, bulletList, button, callout, details, heading, paragraph, renderEmail } from '@/lib/email/layout'
 
 export const dynamic = 'force-dynamic'
 
@@ -39,84 +40,31 @@ export async function POST(request: NextRequest) {
       from: `RehabifyHealth <${process.env.FROM_EMAIL || 'info@physioaroundme.com'}>`,
       to: physiotherapistEmail,
       subject: 'Bank Account Connected Successfully',
-      html: `
-        <!DOCTYPE html>
-        <html>
-          <head>
-            <meta charset="utf-8">
-            <title>Bank Account Connected</title>
-            <style>
-              body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-              .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-              .header { background: #10b981; color: white; padding: 20px; text-align: center; }
-              .content { padding: 20px; }
-              .success-box { background: #ecfdf5; border: 1px solid #10b981; padding: 20px; margin: 20px 0; border-radius: 8px; }
-              .details { background: #f9f9f9; padding: 15px; margin: 15px 0; border-radius: 5px; }
-              .warning { background: #fef3c7; border: 1px solid #f59e0b; padding: 15px; margin: 15px 0; border-radius: 5px; }
-              .button { display: inline-block; padding: 12px 24px; background: #3b82f6; color: white; text-decoration: none; border-radius: 5px; margin: 10px 0; }
-              .footer { text-align: center; padding: 20px; color: #666; font-size: 12px; }
-            </style>
-          </head>
-          <body>
-            <div class="container">
-              <div class="header">
-                <h1>🎉 Bank Account Connected!</h1>
-              </div>
-              <div class="content">
-                <div class="success-box">
-                  <h2>✅ Connection Successful</h2>
-                  <p>Your bank account has been successfully connected to your RehabifyHealth account. You can now receive payments directly to your bank account.</p>
-                </div>
-                
-                <div class="details">
-                  <h3>Connected Account Details:</h3>
-                  <p><strong>Account Name:</strong> ${accountName}</p>
-                  <p><strong>Bank:</strong> ${bankName}</p>
-                  <p><strong>Account Number:</strong> ${accountNumber}</p>
-                  <p><strong>Status:</strong> Active</p>
-                  <p><strong>Connected:</strong> ${new Date().toLocaleDateString()}</p>
-                </div>
-
-                <h3>💰 How Payments Work:</h3>
-                <ul>
-                  <li><strong>Automatic Transfers:</strong> Payments are automatically transferred to your account within 24 hours</li>
-                  <li><strong>Platform Fee:</strong> ₦1,000 platform fee per transaction</li>
-                  <li><strong>Payment Processing:</strong> Paystack fees (1.5% + ₦100) are deducted</li>
-                  <li><strong>Your Share:</strong> You receive the remaining amount after fees</li>
-                </ul>
-
-                <div class="warning">
-                  <h4>⚠️ Important Security Notes:</h4>
-                  <ul>
-                    <li>Never share your account details with unauthorized persons</li>
-                    <li>Monitor your account regularly for any unusual activity</li>
-                    <li>Contact support immediately if you notice any discrepancies</li>
-                    <li>You can update your bank account anytime from your dashboard</li>
-                  </ul>
-                </div>
-
-                <h3>📊 Track Your Earnings:</h3>
-                <p>Visit your billing dashboard to:</p>
-                <ul>
-                  <li>View payment history and earnings</li>
-                  <li>Generate financial reports</li>
-                  <li>Update bank account details</li>
-                  <li>Monitor transaction status</li>
-                </ul>
-
-                <a href="${process.env.NEXT_PUBLIC_APP_URL}/dashboard/physiotherapist/billing" class="button">
-                  View Billing Dashboard
-                </a>
-              </div>
-              <div class="footer">
-                <p>RehabifyHealth - Empowering Healthcare Professionals</p>
-                <p>Need help? Contact us at support@physioaroundme.com or call +234-XXX-XXXX</p>
-                <p>This is an automated message. Please do not reply to this email.</p>
-              </div>
-            </div>
-          </body>
-        </html>
-      `
+      html: renderEmail({
+        eyebrow: 'Payouts ready',
+        tone: 'success',
+        title: 'Your bank account is connected',
+        preheader: 'You can now receive payments straight to your bank account.',
+        body: [
+          paragraph('Your bank account is now connected to your Rehabify account, so payments for your sessions can go straight to your bank.'),
+          details([
+            ['Account name', escapeHtml(accountName)],
+            ['Bank', escapeHtml(bankName)],
+            ['Account number', escapeHtml(accountNumber)],
+            ['Status', 'Active'],
+            ['Connected', new Date().toLocaleDateString('en-NG', { timeZone: 'Africa/Lagos', day: 'numeric', month: 'long', year: 'numeric' })],
+          ]),
+          heading('How payments work'),
+          bulletList([
+            '<strong>Automatic transfers:</strong> payments reach your account within 24 hours',
+            '<strong>Fees:</strong> your billing dashboard shows the breakdown for every payment',
+            '<strong>Changes:</strong> you can update your bank account from your dashboard at any time',
+          ]),
+          callout('warning', 'Keep your account safe', 'Never share your account details with anyone you don\'t trust, check your account regularly, and contact support straight away if anything looks wrong.'),
+          actions(button('View billing dashboard', `${process.env.NEXT_PUBLIC_APP_URL}/dashboard/physiotherapist/billing`)),
+        ].join(''),
+        footerNote: 'This is an automated message. Please do not reply to this email.',
+      }),
     })
 
     log.info('Bank connection email sent', {
@@ -135,7 +83,7 @@ export async function POST(request: NextRequest) {
       userId,
       action: 'bank_connection_email_failed'
     })
-    
+
     return NextResponse.json(
       { error: 'Failed to send confirmation email' },
       { status: 500 }

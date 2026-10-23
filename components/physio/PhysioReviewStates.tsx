@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useClerk } from '@clerk/nextjs'
-import { Clock, FileText } from 'lucide-react'
+import { Clock, FileText } from '@/components/icons'
 import { Button } from '@/components/ui/button'
 import { primaryButtonClass } from '@/components/clinic/ui'
 import { PageContainer } from '@/components/physio/ui'

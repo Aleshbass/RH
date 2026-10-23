@@ -23,11 +23,12 @@ import {
     Phone,
     User,
     Video,
-} from "lucide-react";
+} from "@/components/icons";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { getReferralPublicCode } from "@/lib/referralCookie";
 import { playSound } from "@/lib/sounds";
+import { usableEmail } from "@/lib/auth/joyLoginEmail";
 import { formatKobo, getService, isBookableServiceId, type BookableServiceId } from "@/lib/rehabify-services";
 import CalendarBookingWidget, { type AvailableSlot } from "@/components/marketplace/CalendarBookingWidget";
 import { BookingShell, PoweredBy } from "@/components/booking/BookingShell";
@@ -521,9 +522,10 @@ function BookingFlow() {
 
     const handleBooking = async () => {
         if (isSignedIn) {
-            const email = user?.primaryEmailAddress?.emailAddress;
+            // Patients from Joy have only a placeholder login address until they add their own
+            const email = usableEmail(user);
             if (!email) {
-                toast.error("No email address found on your account.");
+                toast.error("Add an email address to your account first, so we can send your receipt.");
                 return;
             }
             await processBookingAndPay(email, user?.primaryPhoneNumber?.phoneNumber || undefined, user?.fullName || user?.firstName || undefined);

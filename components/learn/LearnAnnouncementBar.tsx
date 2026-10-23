@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
-import { ArrowRight, X } from 'lucide-react'
+import { ArrowRight, X } from '@/components/icons'
 import { isPromoted, PROGRAM, QuietBoundary, usePublicCohort } from './shared'
 
 /**
@@ -45,7 +45,9 @@ function useAnnouncement() {
     Boolean(cohort) &&
     isPromoted(cohort, 'banner') &&
     dismissedId !== cohort?.id &&
-    !pathname.startsWith('/learn')
+    !pathname.startsWith('/learn') &&
+    // learn.* serves the program at / (the browser path, not /learn)
+    !window.location.hostname.startsWith('learn.')
 
   const dismiss = useCallback(() => {
     if (!cohort) return

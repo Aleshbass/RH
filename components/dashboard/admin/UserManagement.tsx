@@ -27,7 +27,7 @@ import {
   Briefcase,
   Handshake,
   HelpCircle,
-} from 'lucide-react'
+} from '@/components/icons'
 
 import { api } from '@/convex/_generated/api'
 import type { Id } from '@/convex/_generated/dataModel'

@@ -17,7 +17,7 @@ import {
     Phone,
     User,
     X,
-} from "lucide-react";
+} from "@/components/icons";
 import { PhysioHostCard } from "@/components/booking/PhysioHostCard";
 import { BookingShell, PoweredBy } from "@/components/booking/BookingShell";
 import { ServiceOption } from "@/components/booking/ServiceOption";

@@ -4,6 +4,7 @@ import { Id, Doc } from "./_generated/dataModel";
 import { api } from "./_generated/api";
 import { internal } from "./_generated/api";
 import { closeInvoicePaymentLinks } from "./helpers/paymentLinks";
+import { recordInvoicePartnerCommission } from "./helpers/partnerLedger";
 
 // Payment status enum (aligned with schema.payments.status)
 const paymentStatus = v.union(
@@ -647,6 +648,14 @@ async function applyPaymentStatus(
   // Any other open link for this invoice must not collect again
   await closeInvoicePaymentLinks(ctx, invoice._id, { keepReference: args.paystackReference });
   await applyPatientBalanceUpdate(ctx, { invoiceId: invoice._id, amountPaid: paidKobo });
+  // A patient a partner or referring doctor sent us earns them a commission here too (e.g. a
+  // referral routed to a clinic, paid on the clinic's invoice). Charged on the service, not fees.
+  await recordInvoicePartnerCommission(ctx, {
+    invoice,
+    paidKobo: invoice.subtotalAmount > 0 ? Math.min(paidKobo, invoice.subtotalAmount) : paidKobo,
+    paymentReference: args.paystackReference,
+    verified: true,
+  });
 
   if (invoice.physiotherapistId) {
     await ctx.db.insert("notifications", {

@@ -28,7 +28,7 @@ import {
   Loader2,
   CheckCircle2,
   Shield
-} from 'lucide-react'
+} from '@/components/icons'
 import { format } from 'date-fns'
 
 interface InvoicePaymentModalProps {

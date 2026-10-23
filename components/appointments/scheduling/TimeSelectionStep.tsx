@@ -7,7 +7,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useQueryUntyped } from '@/lib/convexUntyped';
 import { api } from '@/convex/_generated/api';
-import { Loader2 } from 'lucide-react';
+import { Loader2 } from '@/components/icons';
 import { zonedDateTimeToUtc } from '@/convex/helpers/lagosTime';
 
 interface TimeSelectionStepProps {

@@ -124,10 +124,22 @@ export async function findDuplicateReference(ctx: QueryCtx | MutationCtx, partne
     .first();
 }
 
-/** Creates a partner referral (API or portal). Validation of shapes happens in the caller. */
+const CONVERSION_SOURCE = { api: "api", portal: "partner_portal", doctor: "doctor_referral" } as const;
+
+/**
+ * Creates a partner referral (API, partner portal, or a referring doctor's portal).
+ * Validation of shapes happens in the caller. `referringDoctorId` is the doctor's user for
+ * referrals from a "doctor" partner.
+ */
 export async function createReferralCore(
   ctx: MutationCtx,
-  args: { partnerCode: string; environment: PartnerEnv; input: ReferralInput; source: "api" | "portal" }
+  args: {
+    partnerCode: string;
+    environment: PartnerEnv;
+    input: ReferralInput;
+    source: "api" | "portal" | "doctor";
+    referringDoctorId?: Id<"users">;
+  }
 ): Promise<{ ok: true; referral: Record<string, unknown> } | CoreError> {
   const partner = await partnerByCode(ctx, args.partnerCode);
   if (!partner || !isPartnerApproved(partner)) return fail(403, "partner_inactive", "This partner organisation is not active.");
@@ -160,7 +172,8 @@ export async function createReferralCore(
     partnerId: partner.code,
     partnerExternalId: reference,
     trackingCode,
-    conversionSource: args.source === "api" ? "api" : "partner_portal",
+    conversionSource: CONVERSION_SOURCE[args.source],
+    referringDoctorId: args.referringDoctorId,
     patientFirstName: input.patient.firstName.trim(),
     patientLastName: (input.patient.lastName ?? "").trim(),
     patientPhone: phone,

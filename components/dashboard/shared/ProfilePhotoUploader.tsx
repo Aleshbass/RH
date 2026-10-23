@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { UploadDropzone } from "@/components/ui/UploadDropzone";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { Loader2, Upload } from "lucide-react";
+import { Loader2, Upload } from "@/components/icons";
 import { api } from "@/convex/_generated/api";
 import { useFileUpload } from "@/lib/hooks/useFileUpload";
 import { useMutationUntyped } from "@/lib/convexUntyped";

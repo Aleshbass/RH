@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useMutation, useQuery } from 'convex/react'
 import { ConvexError } from 'convex/values'
 import { format } from 'date-fns'
-import { Building2, Loader2, RotateCcw } from 'lucide-react'
+import { Building2, Loader2, RotateCcw } from '@/components/icons'
 import { toast } from 'sonner'
 import { api } from '@/convex/_generated/api'
 import {

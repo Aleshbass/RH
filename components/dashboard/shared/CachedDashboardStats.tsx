@@ -8,7 +8,7 @@ import { useCachedUser } from '@/hooks/useCachedQueries'
 import { useSession } from '@/hooks/useSession'
 import { UserSession } from '@/lib/redis/sessionManager'
 
-import { Calendar, Users, Clock, CheckCircle } from 'lucide-react'
+import { Calendar, Users, Clock, CheckCircle } from '@/components/icons'
 
 interface DashboardStatsData {
   totalAppointments: number

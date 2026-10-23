@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { WizardData } from '@/components/appointments/scheduling/SchedulingWizard';
 import { format } from 'date-fns';
-import { Calendar, Clock, User, CheckCircle2, Video } from 'lucide-react';
+import { Calendar, Clock, User, CheckCircle2, Video } from '@/components/icons';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';

@@ -3,7 +3,7 @@
 import Image from 'next/image'
 import Link from 'next/link'
 import { motion, useReducedMotion } from 'framer-motion'
-import { ArrowRight, CalendarDays, Clock3, Video } from 'lucide-react'
+import { ArrowRight, CalendarDays, Clock3, Video } from '@/components/icons'
 import { cn } from '@/lib/utils'
 import {
   displayFont,

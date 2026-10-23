@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Send } from 'lucide-react'
+import { Send } from '@/components/icons'
 import { toast } from 'sonner'
 
 interface PatientInviteModalProps {

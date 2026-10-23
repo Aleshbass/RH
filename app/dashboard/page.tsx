@@ -4,7 +4,7 @@ import { useAuth } from '@clerk/nextjs'
 import { useQuery } from 'convex/react'
 import { api } from '@/convex/_generated/api'
 import { useRouter } from 'next/navigation'
-import { Loader2 } from 'lucide-react'
+import { Loader2 } from '@/components/icons'
 import { useEffect, useState } from 'react'
 import { User } from '@/app/types'
 import PendingApprovalPage from '@/components/dashboard/shared/PendingApprovalPage'
@@ -17,7 +17,7 @@ import {
   isClinicFrontDesk,
 } from '@/components/clinic/clinician-routing'
 
-type UserRole = 'physiotherapist' | 'clinic_owner' | 'patient' | 'family_member' | 'doctor' | 'admin';
+type UserRole = 'physiotherapist' | 'clinic_owner' | 'patient' | 'family_member' | 'doctor' | 'admin' | 'partner';
 
 export default function DashboardPage() {
   const { isLoaded, isSignedIn } = useAuth()
@@ -92,6 +92,12 @@ export default function DashboardPage() {
         router.replace('/dashboard/patient')
         return
       }
+      // Referring doctors finish a short profile, then work from the partner portal
+      if (effectiveRole === 'doctor') {
+        if (!isRedirecting) setIsRedirecting(true)
+        router.replace(user.doctorProfileId ? '/partners/portal' : '/doctor')
+        return
+      }
       return // Will show onboarding message below for others
     }
 
@@ -126,10 +132,14 @@ export default function DashboardPage() {
           router.replace('/dashboard/patient')
           break
         case 'doctor':
-          router.replace('/dashboard/doctor')
+          // Referring doctors use the partner portal (referrals, referral link, commissions)
+          router.replace('/partners/portal')
           break
         case 'admin':
           router.replace('/dashboard/admin')
+          break
+        case 'partner':
+          router.replace('/partners/portal')
           break
         default:
           // If no role assigned, redirect to role selection

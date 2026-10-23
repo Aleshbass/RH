@@ -15,7 +15,7 @@ import {
   Plus,
   Users,
   Video,
-} from 'lucide-react'
+} from '@/components/icons'
 import { api } from '@/convex/_generated/api'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'

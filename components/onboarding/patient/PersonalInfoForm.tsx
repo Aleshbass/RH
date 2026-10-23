@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronRight, ChevronLeft, Check, Loader2 } from 'lucide-react';
+import { ChevronRight, ChevronLeft, Check, Loader2 } from '@/components/icons';
 import LocationSearch from '@/components/marketplace/LocationSearch';
 
 import { Button } from '@/components/ui/button';

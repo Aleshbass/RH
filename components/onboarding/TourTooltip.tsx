@@ -2,7 +2,7 @@ import React from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import { X } from "lucide-react";
+import { X } from "@/components/icons";
 
 interface TourTooltipProps {
     stepIndex: number;

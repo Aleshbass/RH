@@ -15,7 +15,7 @@ import {
   MapPin,
   Clock,
   Activity
-} from 'lucide-react'
+} from '@/components/icons'
 import { format } from 'date-fns'
 
 type SymptomLoggerProps = object; // Use 'object' type for any object, not empty interface

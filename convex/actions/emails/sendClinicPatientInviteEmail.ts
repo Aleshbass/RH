@@ -4,6 +4,7 @@ import { v } from "convex/values";
 import { internalAction } from "../../_generated/server";
 import { Resend } from "resend";
 import { publicAppUrl } from "../../helpers/appUrl";
+import { actions, button, greeting, linkFallback, paragraph, renderEmail } from "../../../lib/email/layout";
 
 /** Names and clinic details are typed by people, so never put them in HTML raw. */
 const escapeHtml = (value: string) =>
@@ -52,27 +53,20 @@ export const sendClinicPatientInviteEmail = internalAction({
       ? `Sign in with <strong>${email}</strong> to see them.`
       : `Create your free account with <strong>${email}</strong> (use this exact email address) and everything ${clinic} adds will be there.`;
 
-    const html = `<!DOCTYPE html>
-<html>
-<head><meta charset="utf-8"><title>${clinic} added you on Rehabify Health</title></head>
-<body style="margin:0;padding:0;background:#f5f5f5;font-family:Arial,Helvetica,sans-serif;color:#1f2937;line-height:1.6;">
-  <div style="max-width:560px;margin:0 auto;padding:24px 16px;">
-    <div style="background:#ffffff;border:1px solid #e5e7eb;border-radius:12px;padding:28px 24px;">
-      <h1 style="margin:0 0 16px;font-size:20px;color:#005b57;">${clinic} added you on Rehabify Health</h1>
-      <p style="margin:0 0 12px;">Hello ${greetingName},</p>
-      <p style="margin:0 0 12px;">${clinic} uses Rehabify Health for your physiotherapy. Your appointments, home exercises and progress notes from the clinic will appear in your Rehabify account.</p>
-      <p style="margin:0 0 24px;">${instruction}</p>
-      <p style="margin:0 0 24px;text-align:center;">
-        <a href="${link}" style="display:inline-block;background:#005b57;color:#ffffff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;">${actionText}</a>
-      </p>
-      <p style="margin:0 0 6px;font-size:12px;color:#6b7280;">Or open this link:</p>
-      <p style="margin:0 0 20px;font-size:12px;word-break:break-all;"><a href="${link}" style="color:#005b57;">${link}</a></p>
-      <p style="margin:0;font-size:13px;color:#4b5563;">${contactLine}</p>
-    </div>
-    <p style="margin:16px 0 0;font-size:11px;color:#9ca3af;text-align:center;">If you aren't a patient at ${clinic}, you can ignore this email.<br>Powered by Rehabify Health</p>
-  </div>
-</body>
-</html>`;
+    const html = renderEmail({
+      eyebrow: "Your clinic",
+      title: `${clinic} added you on Rehabify`,
+      preheader: `${args.clinicName} uses Rehabify Health for your physiotherapy.`,
+      body: [
+        greeting(greetingName),
+        paragraph(`<strong>${clinic}</strong> uses Rehabify Health for your physiotherapy. Your appointments, home exercises and progress notes from the clinic will appear in your Rehabify account.`),
+        paragraph(instruction),
+        actions(button(actionText, link)),
+        linkFallback(link),
+        paragraph(contactLine, { muted: true, size: 15 }),
+      ].join(""),
+      footerNote: `If you aren't a patient at ${clinic}, you can ignore this email.`,
+    });
 
     const text = [
       `Hello ${args.patientFirstName?.trim() || "there"},`,

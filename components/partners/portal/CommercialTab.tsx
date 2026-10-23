@@ -5,10 +5,12 @@ import { useAction, useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { toast } from "sonner";
-import { Download, Landmark, Plus, Printer, Receipt, Trash2, Wallet } from "lucide-react";
+import { Clock, Download, Landmark, Plus, Printer, Receipt, Trash2, Wallet } from "@/components/icons";
 import { PartnerStatementBody, exportStatementCsv, type PartnerStatementData } from "../PartnerStatement";
 import {
   Busy,
+  COMMISSION_STATUS_LABELS,
+  commissionSourceLabel,
   DASH,
   EmptyState,
   KpiCard,
@@ -39,6 +41,7 @@ type Summary = {
   inPayoutKobo: number;
   paidOutKobo: number;
   reversedKobo: number;
+  pendingApprovalKobo?: number;
   performance: { liveReferrals: number; paidPatients: number };
 };
 
@@ -53,6 +56,7 @@ type CommissionRow = {
   careMode: string | null;
   paymentMethod: string | null;
   paymentReference: string | null;
+  source: string | null;
   billingPeriod: string | null;
   status: "pending" | "approved" | "paid" | "reversed" | "cancelled";
   earnedAt: number;
@@ -99,6 +103,19 @@ export function CommercialTab({ ctx }: { ctx: PortalContext }) {
         <KpiCard label="Paid out" value={summary ? formatKobo(summary.paidOutKobo) : DASH} hint={summary && summary.reversedKobo ? `${formatKobo(summary.reversedKobo)} reversed (refunds)` : "To your verified account"} />
       </div>
 
+      {summary && (summary.pendingApprovalKobo ?? 0) > 0 && (
+        <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 flex items-start gap-3">
+          <Clock className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+          <div className="text-xs text-amber-950 leading-relaxed">
+            <p className="font-semibold">{formatKobo(summary.pendingApprovalKobo)} awaiting approval</p>
+            <p className="text-amber-900/80">
+              Some {ctx.isDoctor ? "of your patients" : "patients"} paid a clinic directly (cash, POS or transfer) and the clinic recorded it. Rehabify checks
+              these payments first; once approved they count towards your next payout. Filter the ledger by &quot;Awaiting approval&quot; to see them.
+            </p>
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className={`${cardCls} p-5 space-y-3`}>
           <h3 className="text-sm font-semibold">Commercial terms</h3>
@@ -117,7 +134,7 @@ export function CommercialTab({ ctx }: { ctx: PortalContext }) {
             </dl>
           )}
           <p className="text-[11px] text-[#52706e] leading-relaxed">
-            Commissions are earned on verified paid bookings by patients attributed to you. Refunds reverse the commission (or are deducted from the next
+            Commissions are earned on paid bookings and clinic invoices by patients attributed to you. Refunds reverse the commission (or are deducted from the next
             payout if already paid).
           </p>
         </div>
@@ -128,7 +145,7 @@ export function CommercialTab({ ctx }: { ctx: PortalContext }) {
         <div className="p-5 flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-[#002e2c]/10">
           <div>
             <h3 className="text-sm font-semibold">Commission ledger</h3>
-            <p className="text-[11px] text-[#52706e]">One line per verified payment (refund adjustments show as negative lines).</p>
+            <p className="text-[11px] text-[#52706e]">One line per payment by a patient attributed to you (refund adjustments show as negative lines).</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <select value={status} onChange={(e) => setStatus(e.target.value)} className={selectCls} aria-label="Status">
@@ -136,7 +153,7 @@ export function CommercialTab({ ctx }: { ctx: PortalContext }) {
               <option value="approved">Approved (awaiting payout)</option>
               <option value="paid">Paid</option>
               <option value="reversed">Reversed</option>
-              <option value="pending">Pending review</option>
+              <option value="pending">Awaiting approval</option>
             </select>
             <input type="month" value={period} onChange={(e) => setPeriod(e.target.value)} className={selectCls} aria-label="Billing period" />
             <button
@@ -146,11 +163,11 @@ export function CommercialTab({ ctx }: { ctx: PortalContext }) {
               onClick={() =>
                 downloadCsv(
                   `rehabify-commissions-${ctx.partnerCode}${period ? `-${period}` : ""}.csv`,
-                  ["Earned", "Tracking code", "Type", "Gross (NGN)", "Commission (NGN)", "Net payable (NGN)", "Status", "Billing period", "Payment reference", "Paid"],
+                  ["Earned", "Tracking code", "Source", "Gross (NGN)", "Commission (NGN)", "Net payable (NGN)", "Status", "Billing period", "Payment reference", "Paid"],
                   (commissions ?? []).map((c) => [
                     fmtDate(c.earnedAt),
                     c.trackingCode,
-                    c.eventType,
+                    commissionSourceLabel(c.source, c.eventType),
                     (c.grossTransactionAmount / 100).toFixed(2),
                     (c.commissionAmount / 100).toFixed(2),
                     (c.netPayable / 100).toFixed(2),
@@ -180,7 +197,7 @@ export function CommercialTab({ ctx }: { ctx: PortalContext }) {
                 <tr>
                   <th className={thCls}>Earned</th>
                   <th className={thCls}>Tracking code</th>
-                  <th className={thCls}>Type</th>
+                  <th className={thCls}>Source</th>
                   <th className={`${thCls} text-right`}>Gross</th>
                   <th className={`${thCls} text-right`}>Commission</th>
                   <th className={`${thCls} text-right`}>Net payable</th>
@@ -193,12 +210,12 @@ export function CommercialTab({ ctx }: { ctx: PortalContext }) {
                   <tr key={c._id}>
                     <td className={`${tdCls} whitespace-nowrap`}>{fmtDate(c.earnedAt)}</td>
                     <td className={`${tdCls} font-mono`}>{c.trackingCode ?? DASH}</td>
-                    <td className={tdCls}>{c.eventType === "refund_adjustment" ? "Refund adjustment" : c.eventType === "payment" ? "Payment" : c.eventType.replace(/_/g, " ")}</td>
+                    <td className={tdCls}>{commissionSourceLabel(c.source, c.eventType)}</td>
                     <td className={`${tdCls} text-right`}>{formatKobo(c.grossTransactionAmount)}</td>
                     <td className={`${tdCls} text-right`}>{formatKobo(c.commissionAmount)}</td>
                     <td className={`${tdCls} text-right font-semibold`}>{formatKobo(c.netPayable)}</td>
                     <td className={tdCls}>
-                      <Pill tone={STATUS_TONE[c.status]}>{c.status}</Pill>
+                      <Pill tone={STATUS_TONE[c.status]}>{COMMISSION_STATUS_LABELS[c.status] ?? c.status}</Pill>
                     </td>
                     <td className={tdCls}>{c.billingPeriod ?? DASH}</td>
                   </tr>

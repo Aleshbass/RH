@@ -2,8 +2,8 @@
 
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Minus, Send, Mail } from 'lucide-react';
-import { IconBrandWhatsapp } from '@tabler/icons-react';
+import { Plus, Minus, Send, Mail } from '@/components/icons';
+import { WhatsApp } from '@/components/icons';
 
 const faqData = [
   {
@@ -150,7 +150,7 @@ const FAQ = () => {
                   type="submit"
                   className="inline-flex items-center justify-center gap-2 bg-[#008069] hover:bg-[#006653] text-white font-semibold px-6 py-3 rounded-xl text-sm transition-colors cursor-pointer shadow-sm"
                 >
-                  <IconBrandWhatsapp className="w-4 h-4" />
+                  <WhatsApp className="w-4 h-4" />
                   Ask on WhatsApp
                 </button>
                 <button

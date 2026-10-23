@@ -6,7 +6,7 @@ import { api } from "@/convex/_generated/api";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { Stethoscope } from "lucide-react";
+import { Stethoscope } from "@/components/icons";
 
 export function MyPhysiotherapistCard() {
   const careTeam = useQuery(api.patients.getPatientCareTeam) as Array<{

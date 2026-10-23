@@ -12,8 +12,8 @@ import {
     ShieldCheck, 
     Stethoscope, 
     Building2 
-} from "lucide-react";
-import { IconBrandWhatsapp } from "@tabler/icons-react";
+} from "@/components/icons";
+import { WhatsApp } from "@/components/icons";
 import Link from "next/link";
 
 const WHATSAPP_REFERRAL_URL = `https://wa.me/2348061525811?text=${encodeURIComponent("Hi Joy! 👋🏾 I'd like to refer a patient through Rehabify.")}`;
@@ -210,7 +210,7 @@ export function DoctorsClinicsSection() {
                         rel="noopener noreferrer"
                         className="group inline-flex items-center gap-2.5 bg-[#005b57] hover:bg-[#00443e] text-white font-semibold py-4 px-8 rounded-full transition-all duration-300 shadow-lg shadow-[#005b57]/20 transform hover:-translate-y-0.5"
                     >
-                        <IconBrandWhatsapp className="w-5 h-5" />
+                        <WhatsApp className="w-5 h-5" />
                         <span>Refer a Patient on WhatsApp</span>
                         <ArrowRight className="w-4 h-4 transition-transform duration-300 group-hover:translate-x-1" />
                     </a>

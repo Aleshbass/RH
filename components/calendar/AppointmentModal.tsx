@@ -14,7 +14,7 @@ import {
   User, 
   FileText,
   Video
-} from 'lucide-react'
+} from '@/components/icons'
 import { toast } from 'sonner'
 import { Id } from '@/convex/_generated/dataModel'
 import { PatientProfileMiniCard } from '@/components/dashboard/physiotherapist/PatientProfileMiniCard'

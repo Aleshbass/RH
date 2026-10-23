@@ -16,7 +16,7 @@ import {
   RefreshCw,
   CheckCircle2,
   TrendingUp
-} from 'lucide-react'
+} from '@/components/icons'
 import { format } from 'date-fns'
 
 type Props = object;

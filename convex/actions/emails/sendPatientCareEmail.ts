@@ -3,6 +3,7 @@
 import { v } from "convex/values";
 import { internalAction } from "../../_generated/server";
 import { Resend } from "resend";
+import { actions, button, greeting, paragraph, renderEmail } from "../../../lib/email/layout";
 
 /** Everything here is typed by people (names, notes), so it never goes into HTML raw. */
 const escapeHtml = (value: string) =>
@@ -36,29 +37,23 @@ export const sendPatientCareEmail = internalAction({
       return { success: false };
     }
 
-    const button =
+    const cta =
       args.buttonLabel && args.buttonUrl && /^https:\/\//.test(args.buttonUrl)
-        ? `<p style="margin:28px 0 8px;"><a href="${escapeHtml(args.buttonUrl)}" style="display:inline-block;background:#005b57;color:#ffffff;text-decoration:none;font-weight:600;padding:12px 22px;border-radius:12px;">${escapeHtml(args.buttonLabel)}</a></p>`
+        ? actions(button(escapeHtml(args.buttonLabel), escapeHtml(args.buttonUrl)))
         : "";
 
-    const html = `<!DOCTYPE html>
-<html>
-<head><meta charset="utf-8"><title>${escapeHtml(args.subject)}</title></head>
-<body style="margin:0;padding:0;background:#f7f5ef;font-family:Arial,Helvetica,sans-serif;color:#1f2937;line-height:1.6;">
-  <div style="max-width:560px;margin:0 auto;padding:28px 16px;">
-    <p style="margin:0 0 16px;font-size:13px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:#005b57;">Rehabify Health</p>
-    <div style="background:#ffffff;border-radius:20px;padding:30px 26px;box-shadow:0 10px 30px -14px rgba(0,46,44,0.2);">
-      <h1 style="margin:0 0 14px;font-size:22px;line-height:1.3;color:#002e2c;">${escapeHtml(args.heading)}</h1>
-      <p style="margin:0 0 12px;">Hi ${escapeHtml(args.greetingName?.trim() || "there")},</p>
-      ${args.paragraphs.map((text) => `<p style="margin:0 0 12px;">${escapeHtml(text)}</p>`).join("\n      ")}
-      ${button}
-    </div>
-    <p style="margin:18px 4px 0;font-size:12px;color:#6b7280;">${escapeHtml(
-      args.footnote ?? "You're receiving this because you're a patient on Rehabify Health. Questions? Write to support@rehabify.ng."
-    )}</p>
-  </div>
-</body>
-</html>`;
+    const html = renderEmail({
+      title: escapeHtml(args.heading),
+      preheader: args.paragraphs[0],
+      body: [
+        greeting(args.greetingName?.trim() ? escapeHtml(args.greetingName.trim()) : undefined),
+        ...args.paragraphs.map((text) => paragraph(escapeHtml(text))),
+        cta,
+      ].join(""),
+      footerNote: escapeHtml(
+        args.footnote ?? "You're receiving this because you're a patient on Rehabify Health. Questions? Write to support@rehabify.ng."
+      ),
+    });
 
     try {
       const resend = new Resend(apiKey);

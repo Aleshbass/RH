@@ -1,265 +1,208 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import Image from 'next/image';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useMutation } from 'convex/react';
-import { api } from '@/convex/_generated/api';
-import { useOnboardingStore } from '@/stores/onboardingStore';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
+import { useUser } from '@clerk/nextjs';
+import { useMutation, useQuery } from 'convex/react';
 import { toast } from 'sonner';
-import { Loader2 } from 'lucide-react';
+import { api } from '@/convex/_generated/api';
+import { ArrowRight, Loader2, ShieldCheck, Stethoscope, UserPlus, Wallet } from '@/components/icons';
+import { errorMessage, inputCls, labelCls } from '@/components/partners/portal/shared';
 
+type DoctorProfile = {
+    profile: {
+        title?: string;
+        specialty?: string;
+        medicalLicenseNumber?: string;
+        hospitalAffiliation?: string;
+        bio?: string;
+    } | null;
+} | null;
+
+const TITLES = ['Dr.', 'Prof.', 'Mr.', 'Mrs.', 'Ms.'];
+
+/**
+ * Referring doctor sign-up: a short professional profile. Saving it creates the doctor's
+ * referral account (a partner of type "doctor"), which an admin approves after checking the
+ * licence. Everything after that happens in the partner portal.
+ */
 export default function DoctorOnboardingPage() {
     const router = useRouter();
-    const { data: storeData, updateDoctorData, completeOnboarding } = useOnboardingStore();
-    const { doctorData } = storeData;
-    const [isSubmitting, setIsSubmitting] = useState(false);
-    
-    const [banks, setBanks] = useState<{name: string, code: string}[]>([]);
-    const [bankCode, setBankCode] = useState('');
-    const [isResolving, setIsResolving] = useState(false);
-    const [resolveError, setResolveError] = useState('');
-
-    useEffect(() => {
-        fetch('/api/paystack/banks')
-            .then(res => res.json())
-            .then(data => {
-                if (data.status) setBanks(data.data);
-            })
-            .catch(err => console.error("Failed to load banks", err));
-    }, []);
-
-    useEffect(() => {
-        if (doctorData?.accountNumber?.length === 10 && bankCode) {
-            setIsResolving(true);
-            setResolveError('');
-            fetch(`/api/paystack/resolve-account?account_number=${doctorData.accountNumber}&bank_code=${bankCode}`)
-                .then(res => res.json())
-                .then(data => {
-                    if (data.status) {
-                        updateDoctorData({ accountName: data.data.account_name });
-                        setResolveError('');
-                    } else {
-                        updateDoctorData({ accountName: '' });
-                        setResolveError(data.message || 'Could not resolve account');
-                    }
-                })
-                .catch(err => {
-                    updateDoctorData({ accountName: '' });
-                    setResolveError('Failed to resolve account');
-                })
-                .finally(() => setIsResolving(false));
-        }
-    }, [doctorData?.accountNumber, bankCode, updateDoctorData]);
-
+    const { user } = useUser();
+    const existing = useQuery(api.doctors.getMyDoctorProfile) as DoctorProfile | undefined;
     const setupDoctorProfile = useMutation(api.doctors.setupDoctorProfile);
+    const [form, setForm] = useState({ title: 'Dr.', specialty: '', medicalLicenseNumber: '', hospitalAffiliation: '', bio: '' });
+    const [prefilled, setPrefilled] = useState(false);
+    const [submitting, setSubmitting] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    // Someone coming back to update their details sees what they sent before
+    useEffect(() => {
+        if (prefilled || !existing?.profile) return;
+        const p = existing.profile;
+        setForm({
+            title: p.title || 'Dr.',
+            specialty: p.specialty ?? '',
+            medicalLicenseNumber: p.medicalLicenseNumber ?? '',
+            hospitalAffiliation: p.hospitalAffiliation ?? '',
+            bio: p.bio ?? '',
+        });
+        setPrefilled(true);
+    }, [existing, prefilled]);
+
+    const set = (key: keyof typeof form, value: string) => setForm((f) => ({ ...f, [key]: value }));
+    const name = [user?.firstName, user?.lastName].filter(Boolean).join(' ');
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-
+        setError(null);
+        if (!form.medicalLicenseNumber.trim()) {
+            setError('Enter your MDCN folio or licence number so we can verify you.');
+            return;
+        }
+        setSubmitting(true);
         try {
-            setIsSubmitting(true);
-
-            // Call convex mutation
             await setupDoctorProfile({
-                title: doctorData.title,
-                medicalLicenseNumber: doctorData.medicalLicenseNumber,
-                specialty: doctorData.specialty,
-                hospitalAffiliation: doctorData.hospitalAffiliation,
-                bio: doctorData.bio,
-                bankName: doctorData.bankName,
-                accountNumber: doctorData.accountNumber,
-                accountName: doctorData.accountName,
+                title: form.title.trim() || undefined,
+                specialty: form.specialty.trim() || undefined,
+                medicalLicenseNumber: form.medicalLicenseNumber.trim(),
+                hospitalAffiliation: form.hospitalAffiliation.trim() || undefined,
+                bio: form.bio.trim() || undefined,
             });
-
-            // Update local store state
-            completeOnboarding();
-
-            toast.success("Profile setup complete!");
-
-            // Redirect to dashboard
-            router.push('/dashboard');
-        } catch (error: unknown) {
-            const message = error instanceof Error ? error.message : 'An unexpected error occurred';
-            console.error("Failed to setup doctor profile:", message);
-            toast.error(message || "Failed to save profile. Please try again.");
+            toast.success('Thanks. We\'re verifying your details.');
+            router.replace('/partners/portal');
+        } catch (err) {
+            setError(errorMessage(err, 'We couldn\'t save your details. Please try again.'));
         } finally {
-            setIsSubmitting(false);
+            setSubmitting(false);
         }
     };
 
-    const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-        const { name, value } = e.target;
-        updateDoctorData({ [name]: value });
-    };
-
     return (
-        <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8 flex items-center justify-center">
-            <div className="max-w-2xl w-full bg-white rounded-xl shadow-lg p-8">
-                <div className="text-center mb-10">
-                    <h2 className="text-3xl font-bold text-gray-900">Partner Profile Setup</h2>
-                    <p className="mt-2 text-sm text-gray-600">
-                        Complete your profile to start referring patients and tracking your referral commissions.
-                    </p>
+        <div className="min-h-screen bg-[#FAF6E7] text-[#002e2c] px-4 py-10 sm:py-14">
+            <div className="max-w-2xl mx-auto space-y-6">
+                <div className="flex items-center justify-between">
+                    <Link href="/" aria-label="Rehabify home">
+                        <Image src="/logos/MainRehabify.svg" alt="Rehabify" width={120} height={32} className="h-7 w-auto" priority />
+                    </Link>
+                    <span className="text-xs font-semibold text-[#52706e]">Referring doctors</span>
                 </div>
 
-                <form onSubmit={handleSubmit} className="space-y-6">
-                    <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-                        <div className="sm:col-span-2">
-                            <label htmlFor="title" className="block text-sm font-medium text-gray-700">
-                                Title
-                            </label>
-                            <Input
-                                id="title"
-                                name="title"
-                                value={doctorData?.title || ''}
-                                onChange={handleChange}
-                                placeholder="e.g., Dr., Prof."
-                                className="mt-1"
-                            />
-                        </div>
-
-                        <div>
-                            <label htmlFor="specialty" className="block text-sm font-medium text-gray-700">
-                                Specialty
-                            </label>
-                            <Input
-                                id="specialty"
-                                name="specialty"
-                                value={doctorData?.specialty || ''}
-                                onChange={handleChange}
-                                placeholder="e.g., Orthopedic Surgeon"
-                                required
-                                className="mt-1"
-                            />
-                        </div>
-
-                        <div>
-                            <label htmlFor="medicalLicenseNumber" className="block text-sm font-medium text-gray-700">
-                                Medical License Number
-                            </label>
-                            <Input
-                                id="medicalLicenseNumber"
-                                name="medicalLicenseNumber"
-                                value={doctorData?.medicalLicenseNumber || ''}
-                                onChange={handleChange}
-                                placeholder="MDCN-12345"
-                                className="mt-1"
-                            />
-                        </div>
-
-                        <div className="sm:col-span-2">
-                            <label htmlFor="hospitalAffiliation" className="block text-sm font-medium text-gray-700">
-                                Primary Hospital Affiliation
-                            </label>
-                            <Input
-                                id="hospitalAffiliation"
-                                name="hospitalAffiliation"
-                                value={doctorData?.hospitalAffiliation || ''}
-                                onChange={handleChange}
-                                placeholder="Where do you practice?"
-                                required
-                                className="mt-1"
-                            />
-                        </div>
-
-                        <div className="sm:col-span-2">
-                            <label htmlFor="bio" className="block text-sm font-medium text-gray-700">
-                                Professional Bio
-                            </label>
-                            <Textarea
-                                id="bio"
-                                name="bio"
-                                value={doctorData?.bio || ''}
-                                onChange={handleChange}
-                                rows={3}
-                                placeholder="Brief summary of your practice and expertise"
-                                className="mt-1"
-                            />
-                        </div>
+                <div className="bg-white rounded-3xl border border-[#002e2c]/10 p-6 sm:p-8 shadow-xs space-y-6">
+                    <div className="space-y-2">
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#FAF6E7] border border-[#002e2c]/10 text-[11px] font-semibold uppercase tracking-wider text-[#52706e]">
+                            <Stethoscope className="w-3.5 h-3.5" />
+                            Step 1 of 1
+                        </span>
+                        <h1 className="text-2xl font-semibold tracking-tight">
+                            {name ? `Welcome, ${name}` : 'Set up your referral account'}
+                        </h1>
+                        <p className="text-sm text-[#52706e] leading-relaxed">
+                            Tell us a little about your practice. We check your licence, then you can refer patients for physiotherapy and earn a
+                            commission on their care.
+                        </p>
                     </div>
 
-                    <div className="pt-6 border-t border-gray-200">
-                        <h3 className="text-lg font-medium text-gray-900 mb-4">Payout Details</h3>
-                        <p className="text-sm text-gray-500 mb-4">
-                            We need your bank details to process your referral commissions.
-                        </p>
-                        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-                            <div className="sm:col-span-2">
-                                <label htmlFor="bankCode" className="block text-sm font-medium text-gray-700">
-                                    Bank Name
-                                </label>
+                    <form onSubmit={handleSubmit} className="space-y-5">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                            <div>
+                                <label className={labelCls} htmlFor="title">Title</label>
                                 <select
-                                    id="bankCode"
-                                    value={bankCode}
-                                    onChange={(e) => {
-                                        setBankCode(e.target.value);
-                                        const selectedBank = banks.find(b => b.code === e.target.value);
-                                        if (selectedBank) {
-                                            updateDoctorData({ bankName: selectedBank.name });
-                                        }
-                                    }}
-                                    required
-                                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-[#005b57] focus:ring focus:ring-[#005b57] focus:ring-opacity-50 py-2 px-3 border bg-white"
+                                    id="title"
+                                    value={TITLES.includes(form.title) ? form.title : 'Dr.'}
+                                    onChange={(e) => set('title', e.target.value)}
+                                    className={inputCls}
                                 >
-                                    <option value="" disabled>Select your bank</option>
-                                    {banks.map(bank => (
-                                        <option key={bank.code} value={bank.code}>{bank.name}</option>
+                                    {TITLES.map((t) => (
+                                        <option key={t} value={t}>{t}</option>
                                     ))}
                                 </select>
                             </div>
-                            <div>
-                                <label htmlFor="accountNumber" className="block text-sm font-medium text-gray-700">
-                                    Account Number
-                                </label>
-                                <div className="relative">
-                                    <Input
-                                        id="accountNumber"
-                                        name="accountNumber"
-                                        value={doctorData?.accountNumber || ''}
-                                        onChange={handleChange}
-                                        placeholder="0123456789"
-                                        required
-                                        maxLength={10}
-                                        className="mt-1"
-                                    />
-                                    {isResolving && (
-                                        <div className="absolute right-3 top-3">
-                                            <Loader2 className="w-4 h-4 animate-spin text-[#005b57]" />
-                                        </div>
-                                    )}
-                                </div>
-                                {resolveError && <p className="mt-1 text-xs text-red-500">{resolveError}</p>}
-                            </div>
-                            <div>
-                                <label htmlFor="accountName" className="block text-sm font-medium text-gray-700">
-                                    Account Name
-                                </label>
-                                <Input
-                                    id="accountName"
-                                    name="accountName"
-                                    value={doctorData?.accountName || ''}
-                                    readOnly
-                                    placeholder="Auto-filled from account number"
+                            <div className="sm:col-span-2">
+                                <label className={labelCls} htmlFor="specialty">Specialty</label>
+                                <input
+                                    id="specialty"
                                     required
-                                    className="mt-1 bg-gray-50 text-gray-500"
+                                    value={form.specialty}
+                                    onChange={(e) => set('specialty', e.target.value)}
+                                    placeholder="e.g. Orthopaedic surgery, General practice"
+                                    className={inputCls}
                                 />
                             </div>
                         </div>
-                    </div>
 
-                    <div className="pt-6 flex justify-end">
-                        <Button
+                        <div>
+                            <label className={labelCls} htmlFor="licence">MDCN folio or licence number</label>
+                            <input
+                                id="licence"
+                                required
+                                value={form.medicalLicenseNumber}
+                                onChange={(e) => set('medicalLicenseNumber', e.target.value)}
+                                placeholder="e.g. MDCN/R/12345"
+                                className={`${inputCls} font-mono`}
+                            />
+                            <p className="mt-1.5 flex items-start gap-1.5 text-[11px] text-[#52706e] leading-relaxed">
+                                <ShieldCheck className="w-3.5 h-3.5 text-emerald-700 shrink-0 mt-px" />
+                                We use it only to confirm you&apos;re a registered doctor. Patients never see it.
+                            </p>
+                        </div>
+
+                        <div>
+                            <label className={labelCls} htmlFor="hospital">Hospital or clinic</label>
+                            <input
+                                id="hospital"
+                                required
+                                value={form.hospitalAffiliation}
+                                onChange={(e) => set('hospitalAffiliation', e.target.value)}
+                                placeholder="Where you see patients"
+                                className={inputCls}
+                            />
+                        </div>
+
+                        <div>
+                            <label className={labelCls} htmlFor="bio">About you (optional)</label>
+                            <textarea
+                                id="bio"
+                                rows={3}
+                                value={form.bio}
+                                onChange={(e) => set('bio', e.target.value)}
+                                placeholder="A line or two for our clinical team"
+                                className={`${inputCls} resize-none`}
+                            />
+                        </div>
+
+                        {error && (
+                            <p role="alert" className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-xl px-3.5 py-2.5">
+                                {error}
+                            </p>
+                        )}
+
+                        <button
                             type="submit"
-                            disabled={isSubmitting || !doctorData?.accountName || !!resolveError}
-                            className="w-full sm:w-auto px-8 bg-[#005b57] hover:bg-[#004a46] text-white transition-colors"
+                            disabled={submitting}
+                            className="w-full inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-[#002e2c] text-[#FAF6E7] text-sm font-semibold hover:bg-[#004744] transition active:scale-[0.99] disabled:opacity-60"
                         >
-                            {isSubmitting ? "Saving..." : "Complete Setup"}
-                        </Button>
-                    </div>
-                </form>
+                            {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
+                            {submitting ? 'Saving…' : prefilled ? 'Save my details' : 'Send for verification'}
+                        </button>
+                    </form>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    {[
+                        { icon: ShieldCheck, title: 'We verify you', body: 'Our clinical team checks your licence.' },
+                        { icon: UserPlus, title: 'You refer', body: 'Send patients in a minute, or share your link.' },
+                        { icon: Wallet, title: 'You earn', body: 'Commission on their care, paid monthly.' },
+                    ].map(({ icon: Icon, title, body }) => (
+                        <div key={title} className="p-4 rounded-2xl bg-white border border-[#002e2c]/10">
+                            <Icon className="w-4 h-4 text-[#005b57]" />
+                            <p className="mt-2 text-xs font-semibold">{title}</p>
+                            <p className="text-xs text-[#52706e] leading-relaxed">{body}</p>
+                        </div>
+                    ))}
+                </div>
             </div>
         </div>
     );

@@ -13,7 +13,7 @@ import {
   Activity,
   Plus,
   TrendingDown
-} from 'lucide-react'
+} from '@/components/icons'
 import { format } from 'date-fns'
 
 type VitalSignsCardProps = object; // Use 'object' type for any object, not empty interface

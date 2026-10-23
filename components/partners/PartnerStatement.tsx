@@ -1,7 +1,7 @@
 "use client";
 
 import type { FunctionReturnType } from "convex/server";
-import { AlertCircle, CheckCircle2, Clock, ShieldCheck } from "lucide-react";
+import { AlertCircle, CheckCircle2, Clock, ShieldCheck } from "@/components/icons";
 import type { api } from "@/convex/_generated/api";
 
 export type PartnerStatementData = FunctionReturnType<typeof api.monthlySettlements.generatePartnerInvoice>;

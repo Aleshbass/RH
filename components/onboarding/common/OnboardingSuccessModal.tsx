@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { motion } from 'framer-motion';
-import { CheckCircle2, ArrowRight, ShieldCheck, FileText, CreditCard } from 'lucide-react';
+import { CheckCircle2, ArrowRight, ShieldCheck, FileText, CreditCard } from '@/components/icons';
 import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/navigation';
 

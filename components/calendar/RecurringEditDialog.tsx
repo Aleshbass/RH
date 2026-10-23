@@ -10,7 +10,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import { Calendar, CalendarDays, CalendarRange, Info } from 'lucide-react'
+import { Calendar, CalendarDays, CalendarRange, Info } from '@/components/icons'
 
 export type RecurringEditScope = 'instance' | 'future' | 'series'
 

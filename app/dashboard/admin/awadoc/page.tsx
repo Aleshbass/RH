@@ -3,7 +3,7 @@
 import { useState, type ReactNode } from 'react'
 import Link from 'next/link'
 import { useQuery } from 'convex/react'
-import { Activity, AlertTriangle, ArrowUpRight, Banknote, CheckCircle2, Clock, ExternalLink, FlaskConical } from 'lucide-react'
+import { Activity, AlertTriangle, ArrowUpRight, Banknote, CheckCircle2, Clock, ExternalLink, FlaskConical } from '@/components/icons'
 import { api } from '@/convex/_generated/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'

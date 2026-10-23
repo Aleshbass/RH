@@ -9,7 +9,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { BadgeCheck, Sparkles, Star } from "lucide-react";
+import { BadgeCheck } from "@/components/icons";
 
 interface VerificationSuccessModalProps {
   isOpen: boolean;
@@ -107,17 +107,14 @@ export default function VerificationSuccessModal({
         <DialogHeader>
           <div className="flex justify-center mb-4">
             <div className="relative">
-              <div className="absolute inset-0 bg-gradient-to-r from-pink-500 to-purple-500 rounded-full blur-xl opacity-50 animate-pulse"></div>
-              <div className="relative bg-gradient-to-r from-pink-500 to-purple-500 p-6 rounded-full">
+              <div className="relative bg-rh-teal p-6 rounded-full">
                 <BadgeCheck className="h-16 w-16 text-white" />
               </div>
-              <Sparkles className="absolute -top-2 -right-2 h-8 w-8 text-yellow-400 animate-bounce" />
-              <Star className="absolute -bottom-1 -left-1 h-6 w-6 text-yellow-400 animate-pulse" />
             </div>
           </div>
           
-          <DialogTitle className="text-center text-2xl font-bold bg-gradient-to-r from-pink-600 to-purple-600 bg-clip-text text-transparent">
-            🎉 Congratulations! 🎉
+          <DialogTitle className="text-center text-2xl font-bold text-rh-night">
+            Congratulations!
           </DialogTitle>
           
           <DialogDescription asChild>
@@ -158,7 +155,7 @@ export default function VerificationSuccessModal({
               <div className="pt-4">
                 <Button
                   onClick={onClose}
-                  className="w-full bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 text-white h-11 text-base font-semibold shadow-lg"
+                  className="w-full bg-rh-teal hover:bg-rh-teal-deep text-white h-11 text-base font-semibold"
                 >
                   Continue to Dashboard
                 </Button>

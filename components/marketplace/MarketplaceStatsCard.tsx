@@ -1,12 +1,12 @@
 "use client";
 
-import { LucideIcon } from "lucide-react";
+import { IconComponent } from "@/components/icons";
 import { Card, CardContent } from "@/components/ui/card";
 
 interface MarketplaceStatsCardProps {
   title: string;
   value: string | number;
-  icon: LucideIcon;
+  icon: IconComponent;
   trend?: string;
 }
 

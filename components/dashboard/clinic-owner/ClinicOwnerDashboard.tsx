@@ -106,7 +106,7 @@ import {
   XCircle,
   AlertTriangle,
   TrendingDown
-} from 'lucide-react'
+} from '@/components/icons'
 import { format } from 'date-fns'
 import React from 'react'
 import { StaffManagement } from './StaffManagement'

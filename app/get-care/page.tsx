@@ -7,7 +7,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useQuery } from "convex/react";
 import { useUser } from "@clerk/nextjs";
 import { motion, useReducedMotion } from "framer-motion";
-import { AlertCircle, ArrowLeft, ArrowRight, BadgeCheck, Briefcase, Clock, Home, Loader2, MapPin, Star, Video } from "lucide-react";
+import { AlertCircle, ArrowLeft, ArrowRight, BadgeCheck, Briefcase, Clock, Home, Loader2, MapPin, Star, Video } from "@/components/icons";
 import { api } from "@/convex/_generated/api";
 import { cn } from "@/lib/utils";
 import { formatKobo, getService, isBookableServiceId, type BookableServiceId } from "@/lib/rehabify-services";

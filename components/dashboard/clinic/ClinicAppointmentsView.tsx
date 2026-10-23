@@ -20,7 +20,7 @@ import {
     AlertCircle,
     Users,
     Video
-} from 'lucide-react'
+} from '@/components/icons'
 import { format, isToday } from 'date-fns'
 import ClinicVideoCallsList from './ClinicVideoCallsList'
 import { SchedulingWizard } from '@/components/appointments/scheduling/SchedulingWizard'

@@ -11,7 +11,7 @@ import {
   CardTitle,
   CardFooter,
 } from '@/components/ui/card'
-import { Heart, Shield, Loader2 } from 'lucide-react'
+import { Heart, Shield, Loader2 } from '@/components/icons'
 import { toast } from 'sonner'
 import { useValidateInvitationCode } from '@/lib/api/patientInvitations'
 import { usePatientOnboardingAction } from '@/lib/onboardingHelpers'

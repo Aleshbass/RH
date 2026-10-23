@@ -79,7 +79,7 @@ export function AuthModalExample() {
               </p>
             </div>
             <div className="bg-white rounded-lg p-6 shadow-md">
-              <h3 className="font-semibold text-[#002e2c] mb-2">✨ Smooth Transitions</h3>
+              <h3 className="font-semibold text-[#002e2c] mb-2">Smooth Transitions</h3>
               <p className="text-gray-600">
                 Fade and scale animations instead of jarring collapse effects
               </p>

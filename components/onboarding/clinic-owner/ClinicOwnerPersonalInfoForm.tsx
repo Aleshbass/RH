@@ -9,7 +9,7 @@ import { useState } from "react";
 import { UploadDropzone } from "@/components/ui/UploadDropzone";
 import { api } from "@/convex/_generated/api";
 import { useMutationUntyped } from "@/lib/convexUntyped";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight } from "@/components/icons";
 
 // Form schema for Clinic Owner Personal Info
 const clinicOwnerPersonalInfoSchema = z.object({

@@ -6,7 +6,7 @@ import { useMutation } from 'convex/react'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { format } from 'date-fns'
 import { toast } from 'sonner'
-import { AlertCircle, Download, Eye, Phone, Search, Stethoscope, Trash2, Users, XCircle } from 'lucide-react'
+import { AlertCircle, Download, Eye, Phone, Search, Stethoscope, Trash2, Users, XCircle } from '@/components/icons'
 
 import { api } from '@/convex/_generated/api'
 import type { Id } from '@/convex/_generated/dataModel'

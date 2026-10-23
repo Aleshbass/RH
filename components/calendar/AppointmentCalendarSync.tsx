@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Loader2, Calendar, Video } from "lucide-react";
+import { Loader2, Calendar, Video } from "@/components/icons";
 
 interface AppointmentCalendarSyncProps {
   appointmentId: Id<"appointments">;

@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import Map, { Marker, NavigationControl } from 'react-map-gl/mapbox';
-import { MapPin, Search, Loader2, X, LocateFixed } from 'lucide-react';
+import { MapPin, Search, Loader2, X, LocateFixed } from '@/components/icons';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';

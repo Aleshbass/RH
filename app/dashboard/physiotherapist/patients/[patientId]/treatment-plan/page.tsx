@@ -5,7 +5,7 @@ import { useParams } from 'next/navigation';
 import { InteractiveTreatmentPlan } from '@/components/dashboard/physiotherapist/treatment/InteractiveTreatmentPlan';
 // Card components not used in this component
 import { Button } from '@/components/ui/button';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft } from '@/components/icons';
 import Link from 'next/link';
 
 export default function TreatmentPlanPage() {

@@ -18,6 +18,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Resend } from "resend";
 import { platformAdminEmails } from "@/lib/email/adminRecipients";
+import {
+    actions,
+    button,
+    callout,
+    details,
+    escapeEmailText,
+    highlight,
+    paragraph,
+    renderEmail,
+} from "@/lib/email/layout";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
 import {
@@ -93,7 +103,8 @@ export async function POST(request: NextRequest) {
             patientPhone: cleanPhone,
             patientEmail: email?.trim() || undefined,
             treatment: treatment.trim(),
-            treatmentAmount: treatmentAmount ? Math.round(treatmentAmount * 100) : 100, // convert ₦ to kobo
+            // ₦ to kobo; 0 when the patient didn't give one (the admin sets it before starting the loan)
+            treatmentAmount: treatmentAmount ? Math.round(treatmentAmount * 100) : 0,
         });
 
         // ── Send admin notification email via Resend ──────────────────────────
@@ -103,121 +114,43 @@ export async function POST(request: NextRequest) {
 
         const adminDashboardUrl = `${APP_URL}/dashboard/admin/loans`;
 
+        // The form is public, so everything the patient typed is escaped before going into HTML.
+        const safe = {
+            firstName: escapeEmailText(firstName.trim()),
+            lastName: escapeEmailText(lastName.trim()),
+            phone: escapeEmailText(cleanPhone),
+            email: email?.trim() ? escapeEmailText(email.trim()) : undefined,
+            treatment: escapeEmailText(treatment.trim()),
+            physiotherapistName: physiotherapistName ? escapeEmailText(physiotherapistName) : undefined,
+        };
+
         await resend.emails.send({
             from: `Rehabify Health Notifications <${FROM_EMAIL}>`,
             to: ADMIN_EMAILS,
             subject: `🏦 New MediLoan Request — ${firstName} ${lastName}`,
-            html: `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-</head>
-<body style="margin:0;padding:0;background:#f9fafb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f9fafb;padding:40px 20px;">
-    <tr>
-      <td align="center">
-        <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
-
-          <!-- Header -->
-          <tr>
-            <td style="background:linear-gradient(135deg,#065f46,#047857);padding:32px 40px;">
-              <p style="margin:0;font-size:12px;color:#6ee7b7;text-transform:uppercase;letter-spacing:1px;font-weight:600;">Rehabify Health</p>
-              <h1 style="margin:8px 0 0;font-size:24px;font-weight:700;color:#ffffff;">New MediLoan Request</h1>
-              <p style="margin:8px 0 0;font-size:14px;color:#a7f3d0;">A patient has requested loan financing for their physiotherapy treatment.</p>
-            </td>
-          </tr>
-
-          <!-- Body -->
-          <tr>
-            <td style="padding:32px 40px;">
-
-              <!-- Patient Info -->
-              <h2 style="margin:0 0 16px;font-size:16px;font-weight:600;color:#111827;">Patient Details</h2>
-              <table width="100%" cellpadding="0" cellspacing="0" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;margin-bottom:24px;">
-                <tr>
-                  <td style="padding:12px 16px;border-bottom:1px solid #e2e8f0;">
-                    <span style="font-size:12px;color:#6b7280;display:block;margin-bottom:2px;">Full Name</span>
-                    <span style="font-size:15px;font-weight:600;color:#111827;">${firstName} ${lastName}</span>
-                  </td>
-                </tr>
-                <tr>
-                  <td style="padding:12px 16px;border-bottom:1px solid #e2e8f0;">
-                    <span style="font-size:12px;color:#6b7280;display:block;margin-bottom:2px;">Phone Number</span>
-                    <span style="font-size:15px;font-weight:600;color:#111827;">${cleanPhone}</span>
-                  </td>
-                </tr>
-                ${email ? `
-                <tr>
-                  <td style="padding:12px 16px;border-bottom:1px solid #e2e8f0;">
-                    <span style="font-size:12px;color:#6b7280;display:block;margin-bottom:2px;">Email Address</span>
-                    <span style="font-size:15px;font-weight:600;color:#111827;">${email}</span>
-                  </td>
-                </tr>` : ""}
-                <tr>
-                  <td style="padding:12px 16px;border-bottom:1px solid #e2e8f0;">
-                    <span style="font-size:12px;color:#6b7280;display:block;margin-bottom:2px;">Treatment</span>
-                    <span style="font-size:15px;font-weight:600;color:#111827;">${treatment}</span>
-                  </td>
-                </tr>
-                ${physiotherapistName ? `
-                <tr>
-                  <td style="padding:12px 16px;border-bottom:1px solid #e2e8f0;">
-                    <span style="font-size:12px;color:#6b7280;display:block;margin-bottom:2px;">Physiotherapist</span>
-                    <span style="font-size:15px;font-weight:600;color:#111827;">${physiotherapistName}</span>
-                  </td>
-                </tr>` : ""}
-                <tr>
-                  <td style="padding:12px 16px;">
-                    <span style="font-size:12px;color:#6b7280;display:block;margin-bottom:2px;">Estimated Amount</span>
-                    <span style="font-size:18px;font-weight:700;color:#065f46;">${amountDisplay}</span>
-                  </td>
-                </tr>
-              </table>
-
-              <!-- Instructions -->
-              <div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:16px;margin-bottom:24px;">
-                <p style="margin:0;font-size:14px;color:#92400e;font-weight:600;">⚡ Action Required</p>
-                <p style="margin:8px 0 0;font-size:13px;color:#78350f;line-height:1.6;">
-                  This patient is awaiting a MediLoan initiation. Log into the admin dashboard to review their details and initiate the loan via the MyItura SDK. The patient will automatically receive an SMS with their application link once you initiate.
-                </p>
-              </div>
-
-              <!-- CTA -->
-              <table width="100%" cellpadding="0" cellspacing="0">
-                <tr>
-                  <td align="center">
-                    <a href="${adminDashboardUrl}" style="display:inline-block;background:#047857;color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:14px 32px;border-radius:8px;">
-                      Review in Admin Dashboard →
-                    </a>
-                  </td>
-                </tr>
-              </table>
-
-              <!-- Request ID -->
-              <p style="margin:24px 0 0;font-size:11px;color:#9ca3af;text-align:center;">
-                Request ID: ${requestId} · Submitted at ${new Date().toLocaleString("en-NG", { timeZone: "Africa/Lagos" })} WAT
-              </p>
-            </td>
-          </tr>
-
-          <!-- Footer -->
-          <tr>
-            <td style="background:#f8fafc;padding:20px 40px;border-top:1px solid #e2e8f0;">
-              <p style="margin:0;font-size:12px;color:#6b7280;text-align:center;">
-                Rehabify Health · MediLoan is powered by MyItura (an independent third party)
-              </p>
-            </td>
-          </tr>
-
-        </table>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>
-            `,
+            html: renderEmail({
+                eyebrow: "Action required",
+                tone: "warning",
+                title: "New MediLoan request",
+                preheader: `${firstName} ${lastName} asked for MediLoan financing.`,
+                body: [
+                    paragraph("A patient has asked for loan financing for their physiotherapy treatment."),
+                    highlight({ label: "Estimated amount", value: amountDisplay, sub: safe.treatment }),
+                    details([
+                        ["Full name", `${safe.firstName} ${safe.lastName}`],
+                        ["Phone number", safe.phone],
+                        ["Email address", safe.email],
+                        ["Treatment", safe.treatment],
+                        ["Physiotherapist", safe.physiotherapistName],
+                    ]),
+                    callout("warning", "What to do", "This patient is waiting for a MediLoan to be started. Review their details in the admin dashboard and initiate the loan through MyItura. The patient gets an SMS with their application link as soon as you do."),
+                    actions(button("Review in admin dashboard", adminDashboardUrl)),
+                    paragraph(`Request ID: ${escapeEmailText(requestId)} &middot; Submitted ${new Date().toLocaleString("en-NG", { timeZone: "Africa/Lagos" })} WAT`, { muted: true, size: 13, center: true }),
+                ].join(""),
+                signOff: false,
+                safetyNote: false,
+                footerNote: "MediLoan is powered by MyItura, an independent third party.",
+            }),
         });
 
         return NextResponse.json({

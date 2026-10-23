@@ -6,8 +6,8 @@ import { api } from '@/convex/_generated/api';
 import {
   Search, UserPlus, ArrowRight, Loader2, BookOpen,
   TrendingUp, Users, Stethoscope,
-} from 'lucide-react';
-import { IconBrandWhatsapp } from '@tabler/icons-react';
+} from '@/components/icons';
+import { WhatsApp } from '@/components/icons';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
@@ -108,7 +108,7 @@ export default function PhysioRegisterDirectoryPage() {
             rel="noopener noreferrer"
             className="inline-flex items-center gap-1.5 font-bold text-[#005b57] hover:text-teal-700 hover:underline transition-colors"
           >
-            <IconBrandWhatsapp className="w-4 h-4 text-[#25D366]" />
+            <WhatsApp className="w-4 h-4 text-[#25D366]" />
             Chat with Joy on WhatsApp to book a session <ArrowRight className="w-3.5 h-3.5" />
           </a>
         </div>

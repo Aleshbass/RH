@@ -3,7 +3,7 @@
 import React from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { AlertTriangle, Calendar, Clock, User, X } from 'lucide-react';
+import { AlertTriangle, Calendar, Clock, User, X } from '@/components/icons';
 import { format } from 'date-fns';
 
 interface ConflictingAppointment {

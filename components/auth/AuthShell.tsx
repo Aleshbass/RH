@@ -10,7 +10,7 @@ import type { ReactNode } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { motion, useReducedMotion } from "framer-motion";
-import { Check, Loader2 } from "lucide-react";
+import { Check, Loader2 } from "@/components/icons";
 import { AUTH_COPY, authRoutes, type AuthAudience } from "./authConfig";
 import { EASE } from "./AuthControls";
 

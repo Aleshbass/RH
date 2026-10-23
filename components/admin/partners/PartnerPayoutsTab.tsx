@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useAction } from 'convex/react'
 import { format } from 'date-fns'
-import { AlertCircle, Building2, Check, CheckCircle2, Eye, Loader2, Receipt, RefreshCw, Send, Wallet } from 'lucide-react'
+import { AlertCircle, Building2, Check, CheckCircle2, Eye, Loader2, Receipt, RefreshCw, Send, Wallet } from '@/components/icons'
 import { api } from '@/convex/_generated/api'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Image from 'next/image'
 import { format } from 'date-fns'
-import { BookOpen, Check, ChevronRight, Dumbbell, ExternalLink, Loader2, Mic, PartyPopper, Play, ShieldAlert, Sparkles, Timer, X } from 'lucide-react'
+import { BookOpen, Check, CheckCircle2, ChevronRight, Dumbbell, ExternalLink, Loader2, Mic, PartyPopper, Play, ShieldAlert, Timer, X } from '@/components/icons'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -295,7 +295,7 @@ export function ProgramPlayer({
           </div>
           {exerciseItems.length > 0 && (
             <div className="flex items-center gap-2 rounded-2xl bg-rh-canvas px-3 py-2 dark:bg-white/[0.04]">
-              <Sparkles className="h-4 w-4 text-rh-lime" />
+              <CheckCircle2 className="h-4 w-4 text-rh-lime" />
               <span className="text-sm font-medium tabular-nums text-rh-night dark:text-white">
                 {doneCount} of {exerciseItems.length} done today
               </span>

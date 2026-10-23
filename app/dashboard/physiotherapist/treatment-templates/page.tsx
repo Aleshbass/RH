@@ -3,7 +3,7 @@
 import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, BookOpen, Plus, Users, Activity } from 'lucide-react';
+import { ArrowLeft, BookOpen, Plus, Users, Activity } from '@/components/icons';
 import Link from 'next/link';
 import { Badge } from '@/components/ui/badge';
 import { useQuery } from 'convex/react';

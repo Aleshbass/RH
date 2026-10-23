@@ -6,7 +6,7 @@
  */
 
 import type { ReactNode } from 'react'
-import { AlertCircle, CheckCircle2, Info, Loader2, ShieldAlert } from 'lucide-react'
+import { AlertCircle, CheckCircle2, Info, Loader2, ShieldAlert } from '@/components/icons'
 import { cn } from '@/lib/utils'
 import { formatNaira, StatusBadge } from '@/components/admin/ui'
 
@@ -91,6 +91,47 @@ const PRODUCTION_STATUS: Record<string, { label: string; tone: 'neutral' | 'ambe
 export function ProductionStatusBadge({ status }: { status?: string }) {
   const style = PRODUCTION_STATUS[status ?? 'not_requested'] ?? PRODUCTION_STATUS.not_requested
   return <StatusBadge tone={style.tone}>{style.label}</StatusBadge>
+}
+
+export const PARTNER_TYPE_LABELS: Record<string, string> = {
+  hospital: 'Hospital / Clinic',
+  hmo: 'HMO / Insurer',
+  corporate: 'Corporate',
+  employer: 'Employer',
+  gym: 'Gym / Fitness',
+  telemedicine: 'Telemedicine',
+  pharmacy: 'Pharmacy',
+  digital_health: 'Digital health',
+  doctor: 'Doctor',
+}
+
+/** Partner type as a small badge. Referring doctors stand out from organisations. */
+export function PartnerTypeBadge({ type, className }: { type: string; className?: string }) {
+  return (
+    <StatusBadge tone={type === 'doctor' ? 'amber' : 'teal'} className={className}>
+      {PARTNER_TYPE_LABELS[type] ?? type}
+    </StatusBadge>
+  )
+}
+
+/** Where a commission's money came from, in plain words. */
+export function commissionSourceLabel(source?: string | null, paymentMethod?: string | null) {
+  switch (source) {
+    case 'marketplace':
+      return 'Online booking'
+    case 'joy':
+      return 'Joy booking'
+    case 'invoice':
+      return 'Clinic invoice'
+    case 'invoice_manual':
+      return 'Clinic invoice (recorded by clinic)'
+    case 'bank_transfer':
+      return 'Bank transfer'
+    case 'refund':
+      return 'Refund adjustment'
+    default:
+      return paymentMethod === 'bank_transfer' ? 'Bank transfer' : 'Paystack'
+  }
 }
 
 /** Shows a partner's logo, or its initial when there is none. */

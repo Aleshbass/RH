@@ -4,9 +4,12 @@ import { useState } from "react";
 import { useMutation, usePaginatedQuery, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
-import { FlaskConical, Plus, Search, Users } from "lucide-react";
+import { FlaskConical, Plus, Search, UserPlus, Users, WhatsApp } from "@/components/icons";
+import { ReferPatientModal } from "./ReferPatientForm";
 import {
   Busy,
+  CopyButton,
+  referralSourceLabel,
   DASH,
   Drawer,
   EmptyState,
@@ -53,6 +56,9 @@ export function ReferralsTab({ ctx }: { ctx: PortalContext }) {
   const [query, setQuery] = useState("");
   const [detailId, setDetailId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [referOpen, setReferOpen] = useState(false);
+  // Real referrals typed in here: doctors always; organisations once they're live
+  const canReferLive = ctx.environment === "live" && ctx.info.productionStatus === "approved";
 
   const paged = usePaginatedQuery(
     api.partners.listPartnerReferrals,
@@ -85,7 +91,7 @@ export function ReferralsTab({ ctx }: { ctx: PortalContext }) {
                 setTerm(e.target.value);
                 if (!e.target.value.trim()) setQuery("");
               }}
-              placeholder="Search tracking code, your reference, patient name or phone"
+              placeholder={ctx.isDoctor ? "Search tracking code, patient name or phone" : "Search tracking code, your reference, patient name or phone"}
               className={`${inputCls} pl-9`}
               aria-label="Search referrals"
             />
@@ -103,6 +109,12 @@ export function ReferralsTab({ ctx }: { ctx: PortalContext }) {
               </option>
             ))}
           </select>
+          {canReferLive && (
+            <button type="button" className={ctx.isDoctor ? btnPrimary : btnSecondary} onClick={() => setReferOpen(true)}>
+              <UserPlus className="w-3.5 h-3.5" />
+              {ctx.isDoctor ? "Refer a patient" : "Add a referral"}
+            </button>
+          )}
           {ctx.environment === "sandbox" && (
             <button type="button" className={btnPrimary} onClick={() => setCreateOpen(true)}>
               <Plus className="w-3.5 h-3.5" />
@@ -124,7 +136,9 @@ export function ReferralsTab({ ctx }: { ctx: PortalContext }) {
                 ? "Try the full tracking code (RHB-…), your own reference, or part of the patient's name."
                 : ctx.environment === "sandbox"
                   ? "Create a test referral here or with POST /v1/partners/referrals and a sandbox key."
-                  : "Referrals you send through the API or your referral links appear here."
+                  : ctx.isDoctor
+                    ? "Patients you refer, or who use your referral link, appear here with where their care is up to."
+                    : "Referrals you send through the API or your referral links appear here."
             }
           />
         ) : (
@@ -133,7 +147,7 @@ export function ReferralsTab({ ctx }: { ctx: PortalContext }) {
               <thead className="text-[#52706e] bg-[#FAF6E7]/60">
                 <tr>
                   <th className={thCls}>Tracking code</th>
-                  <th className={thCls}>Your reference</th>
+                  {!ctx.isDoctor && <th className={thCls}>Your reference</th>}
                   <th className={thCls}>Patient</th>
                   <th className={thCls}>Condition</th>
                   <th className={thCls}>Source</th>
@@ -145,14 +159,14 @@ export function ReferralsTab({ ctx }: { ctx: PortalContext }) {
                 {rows.map((r) => (
                   <tr key={r.referralId} className="hover:bg-[#FAF6E7]/40 cursor-pointer" onClick={() => setDetailId(r.referralId)}>
                     <td className={`${tdCls} font-mono font-semibold text-[#005b57]`}>{r.trackingCode || DASH}</td>
-                    <td className={`${tdCls} font-mono`}>{r.partnerExternalId || DASH}</td>
+                    {!ctx.isDoctor && <td className={`${tdCls} font-mono`}>{r.partnerExternalId || DASH}</td>}
                     <td className={tdCls}>
                       <div className="font-medium">{r.patientName || DASH}</div>
                       <div className="text-[#52706e]">{r.phone || DASH}</div>
                     </td>
                     <td className={`${tdCls} max-w-[180px] truncate`}>{r.condition || DASH}</td>
                     <td className={tdCls}>
-                      <Pill tone={r.source === "partner_link" ? "purple" : r.source === "api" ? "blue" : "gray"}>{humanize(r.source)}</Pill>
+                      <Pill tone={r.source === "partner_link" ? "purple" : r.source === "api" ? "blue" : "gray"}>{referralSourceLabel(r.source, ctx.isDoctor)}</Pill>
                     </td>
                     <td className={tdCls}>
                       <StatusBadge status={r.status} />
@@ -176,6 +190,7 @@ export function ReferralsTab({ ctx }: { ctx: PortalContext }) {
 
       <ReferralDetailDrawer ctx={ctx} referralId={detailId} onClose={() => setDetailId(null)} />
       {ctx.environment === "sandbox" && <CreateTestReferralModal ctx={ctx} open={createOpen} onClose={() => setCreateOpen(false)} onCreated={(id) => setDetailId(id)} />}
+      {canReferLive && <ReferPatientModal ctx={ctx} open={referOpen} onClose={() => setReferOpen(false)} />}
     </div>
   );
 }
@@ -355,7 +370,7 @@ function ReferralDetailDrawer({ ctx, referralId, onClose }: { ctx: PortalContext
         <>
           <section className="grid grid-cols-2 gap-3">
             <Field label="Status" value={<StatusBadge status={referral.status} />} />
-            <Field label="Your reference" value={<span className="font-mono">{referral.partner_reference ?? DASH}</span>} />
+            {!ctx.isDoctor && <Field label="Your reference" value={<span className="font-mono">{referral.partner_reference ?? DASH}</span>} />}
             <Field label="Phone" value={referral.patient?.phone ?? DASH} />
             <Field label="Email" value={referral.patient?.email ?? DASH} />
             <Field label="Condition" value={referral.clinical?.condition ?? DASH} />
@@ -411,24 +426,42 @@ function ReferralDetailDrawer({ ctx, referralId, onClose }: { ctx: PortalContext
             </ul>
           </section>
 
-          <section>
-            <h4 className="text-xs font-semibold uppercase tracking-wider text-[#52706e] mb-2">Webhook events for this referral</h4>
-            {(detail.webhookDeliveries ?? []).length === 0 ? (
-              <p className="text-[#52706e]">No events yet.</p>
-            ) : (
-              <ul className="divide-y divide-[#002e2c]/5">
-                {detail.webhookDeliveries.map((d: any) => (
-                  <li key={d._id} className="py-2 flex items-center justify-between gap-3">
-                    <span className="font-mono">{d.eventType}</span>
-                    <span className="flex items-center gap-2">
-                      <Pill tone={d.status === "succeeded" ? "green" : d.status === "failed" ? "red" : d.status === "skipped" ? "gray" : "amber"}>{d.status}</Pill>
-                      <span className="text-[#52706e]">{fmtDateTime(d.createdAt)}</span>
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
+          {referral.links?.whatsapp_intake_url && (referral.status === "received" || referral.status === "contacted") && (
+            <section className="p-4 rounded-2xl bg-[#FAF6E7]/70 border border-[#002e2c]/10 space-y-2">
+              <h4 className="text-xs font-semibold text-[#002e2c]">Help them get started</h4>
+              <p className="text-[#52706e] leading-relaxed">
+                Send the patient this link. It opens WhatsApp with Joy, our care assistant, already holding their referral.
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <a href={referral.links.whatsapp_intake_url} target="_blank" rel="noopener noreferrer" className={btnPrimary}>
+                  <WhatsApp className="w-3.5 h-3.5" />
+                  Open the WhatsApp link
+                </a>
+                <CopyButton text={referral.links.whatsapp_intake_url} label="WhatsApp link" className="border border-[#002e2c]/15 bg-white" />
+              </div>
+            </section>
+          )}
+
+          {!ctx.isDoctor && (
+            <section>
+              <h4 className="text-xs font-semibold uppercase tracking-wider text-[#52706e] mb-2">Webhook events for this referral</h4>
+              {(detail.webhookDeliveries ?? []).length === 0 ? (
+                <p className="text-[#52706e]">No events yet.</p>
+              ) : (
+                <ul className="divide-y divide-[#002e2c]/5">
+                  {detail.webhookDeliveries.map((d: any) => (
+                    <li key={d._id} className="py-2 flex items-center justify-between gap-3">
+                      <span className="font-mono">{d.eventType}</span>
+                      <span className="flex items-center gap-2">
+                        <Pill tone={d.status === "succeeded" ? "green" : d.status === "failed" ? "red" : d.status === "skipped" ? "gray" : "amber"}>{d.status}</Pill>
+                        <span className="text-[#52706e]">{fmtDateTime(d.createdAt)}</span>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          )}
         </>
       )}
     </Drawer>

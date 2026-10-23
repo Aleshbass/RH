@@ -20,7 +20,7 @@ import {
   UserCheck,
   UserRound,
   Users,
-} from 'lucide-react'
+} from '@/components/icons'
 import { api } from '@/convex/_generated/api'
 import { Skeleton } from '@/components/ui/skeleton'
 import {

@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
-import { CheckCircle2, Circle, Clock, Rocket, ShieldAlert, XCircle } from "lucide-react";
+import { CheckCircle2, Circle, Clock, Rocket, ShieldAlert, XCircle } from "@/components/icons";
 import { Busy, LoadingBlock, PARTNER_SUPPORT_EMAIL, btnPrimary, cardCls, errorMessage, fmtDateTime, inputCls, labelCls, type PortalContext } from "./shared";
 
 type Checklist = {

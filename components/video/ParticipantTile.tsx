@@ -12,7 +12,7 @@ if (typeof window !== 'undefined' && process.env.NODE_ENV !== 'production') {
 }
 import React, { useEffect, useRef } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
-import { User, MicOff, Monitor } from 'lucide-react'
+import { User, MicOff, Monitor } from '@/components/icons'
 import { useParticipant } from '@daily-co/daily-react'
 
 interface ParticipantTileProps {

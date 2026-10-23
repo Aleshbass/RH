@@ -41,7 +41,7 @@ import {
   MoreHorizontal,
   Plus,
   Video,
-} from 'lucide-react'
+} from '@/components/icons'
 import {
   addDays,
   addWeeks,

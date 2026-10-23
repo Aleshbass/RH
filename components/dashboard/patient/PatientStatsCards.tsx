@@ -1,5 +1,5 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Calendar, Heart, Activity, CheckCircle } from 'lucide-react';
+import { Calendar, Heart, Activity, CheckCircle } from '@/components/icons';
 import { format } from 'date-fns';
 
 interface PatientStatsCardsProps {

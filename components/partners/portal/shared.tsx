@@ -5,7 +5,7 @@ import { ConvexError } from "convex/values";
 import type { FunctionReturnType } from "convex/server";
 import { format } from "date-fns";
 import { toast } from "sonner";
-import { AlertTriangle, Check, Copy, Loader2, X } from "lucide-react";
+import { AlertTriangle, Check, Copy, Loader2, X } from "@/components/icons";
 import type { api } from "@/convex/_generated/api";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -25,7 +25,54 @@ export type PortalContext = {
   isAdmin: boolean;
   /** True when the signed-in viewer may create keys / webhooks / links / test data in this environment. */
   envWritable: boolean;
+  /**
+   * A referring doctor (partner type "doctor"): always live, no API, webhooks or sandbox,
+   * plain wording about "your patients" instead of an organisation.
+   */
+  isDoctor: boolean;
 };
+
+/** Where a commission came from, in plain words. */
+export const COMMISSION_SOURCE_LABELS: Record<string, string> = {
+  marketplace: "Online booking",
+  joy: "Joy booking",
+  bank_transfer: "Bank transfer",
+  invoice: "Clinic invoice",
+  invoice_manual: "Clinic invoice (recorded by clinic)",
+  refund: "Refund adjustment",
+};
+
+export function commissionSourceLabel(source: string | null | undefined, eventType?: string): string {
+  if (eventType === "refund_adjustment") return COMMISSION_SOURCE_LABELS.refund;
+  if (source && COMMISSION_SOURCE_LABELS[source]) return COMMISSION_SOURCE_LABELS[source];
+  if (eventType === "payment") return "Payment";
+  return humanize(eventType ?? source ?? "");
+}
+
+/** Commission status labels; "pending" waits for Rehabify to approve it. */
+export const COMMISSION_STATUS_LABELS: Record<string, string> = {
+  pending: "Awaiting approval",
+  approved: "Approved",
+  paid: "Paid",
+  reversed: "Reversed",
+  cancelled: "Cancelled",
+};
+
+/** How a referral reached us, in plain words. */
+export function referralSourceLabel(source: string | null | undefined, isDoctor: boolean): string {
+  switch (source) {
+    case "doctor_referral":
+      return isDoctor ? "Referred by you" : "Doctor referral";
+    case "partner_link":
+      return isDoctor ? "Your referral link" : "Referral link";
+    case "partner_portal":
+      return "Portal";
+    case "api":
+      return "API";
+    default:
+      return humanize(source ?? "");
+  }
+}
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 

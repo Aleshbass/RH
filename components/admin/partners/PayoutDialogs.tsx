@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useAction, useMutation } from 'convex/react'
 import type { FunctionReturnType } from 'convex/server'
-import { CheckCircle2, Landmark, Loader2, Send, ShieldCheck, Wallet } from 'lucide-react'
+import { CheckCircle2, Landmark, Loader2, Send, ShieldCheck, Wallet } from '@/components/icons'
 import { toast } from 'sonner'
 import { api } from '@/convex/_generated/api'
 import { Button } from '@/components/ui/button'

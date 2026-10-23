@@ -5,7 +5,7 @@ import { useQuery } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, X } from 'lucide-react';
+import { ArrowLeft, X } from '@/components/icons';
 import { DateSelectionStep } from '@/components/appointments/scheduling/DateSelectionStep';
 import { TimeSelectionStep } from '@/components/appointments/scheduling/TimeSelectionStep';
 import { VideoCallConfirmationStep } from './VideoCallConfirmationStep';

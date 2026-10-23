@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useClinicPreview } from './ClinicPreviewContext'
-import { Clock, Eye, AlertCircle, ShieldOff } from 'lucide-react'
+import { Clock, Eye, AlertCircle, ShieldOff } from '@/components/icons'
 
 /**
  * One calm line explaining why live actions are disabled, with a single next step.

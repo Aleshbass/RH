@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useAction } from 'convex/react'
 import { format } from 'date-fns'
-import { Check, Copy, KeyRound, Link2, Loader2, MessageCircle, ShieldCheck } from 'lucide-react'
+import { Check, Copy, KeyRound, Link2, Loader2, MessageCircle, ShieldCheck } from '@/components/icons'
 import { toast } from 'sonner'
 import { api } from '@/convex/_generated/api'
 import type { Id } from '@/convex/_generated/dataModel'

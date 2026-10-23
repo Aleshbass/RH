@@ -16,7 +16,7 @@ import {
   X,
   Loader2,
   CreditCard
-} from 'lucide-react'
+} from '@/components/icons'
 import { toast } from 'sonner'
 import { Id } from '@/convex/_generated/dataModel'
 
