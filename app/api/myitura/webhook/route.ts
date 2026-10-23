@@ -3,12 +3,13 @@
  *
  * POST /api/myitura/webhook
  *
- * Register this URL in the MyItura dashboard (Api Key → webhook) for each environment, and put
- * that environment's signing secret (whsec_test_… / whsec_live_…) in MYITURA_WEBHOOK_SECRET.
- * Every delivery is verified (lib/myitura/webhook.ts): X-MyItura-Signature-V2 over
- * "<timestamp>.<raw body>", with the timestamp within five minutes. A ?token=… on the URL is
- * optional (checked against MYITURA_WEBHOOK_TOKEN when present). With no secret configured,
- * every request is refused.
+ * Two ways to trust a delivery:
+ *  - With MYITURA_WEBHOOK_SECRET (the whsec_test_… / whsec_live_… signing secret from the
+ *    MyItura dashboard, Api Key): X-MyItura-Signature-V2 over "<timestamp>.<raw body>", within
+ *    five minutes (lib/myitura/webhook.ts), and the event is applied as sent.
+ *  - Without it: the delivery is only a nudge. We fetch the loan from MyItura's API with our
+ *    own keys and apply the status MyItura reports, so a forged request can't change anything.
+ * A ?token=… on the URL is optional (checked against MYITURA_WEBHOOK_TOKEN when present).
  *
  * Register: https://physioaroundme.com/api/myitura/webhook
  *
@@ -22,6 +23,7 @@ import { api } from "@/convex/_generated/api";
 import { getConvexClient } from "@/lib/convex-client";
 import { convexServerSecret } from "@/lib/convex-server-secret";
 import { verifyMyIturaWebhook, webhookReferences } from "@/lib/myitura/webhook";
+import { MyIturaError, findMediLoansByClientReference, getMediLoan, mediLoanId, type MediLoanRecord } from "@/lib/myitura/myitura";
 
 /**
  * The signature is what authenticates a delivery. A ?token=… on the URL is optional (older
@@ -38,27 +40,34 @@ function tokenMatches(request: NextRequest): boolean {
 
 export async function POST(request: NextRequest) {
     const rawBody = await request.text();
-
-    const verification = verifyMyIturaWebhook({
-        rawBody,
-        headers: request.headers,
-        secret: process.env.MYITURA_WEBHOOK_SECRET,
-    });
-    if (!verification.ok || !tokenMatches(request)) {
-        const reason = verification.ok ? "bad_token" : verification.reason;
-        if (reason === "not_configured") console.error("[MyItura Webhook] MYITURA_WEBHOOK_SECRET is not set; refusing all deliveries.");
-        else console.warn(`[MyItura Webhook] Rejected delivery: ${reason}`);
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const secret = process.env.MYITURA_WEBHOOK_SECRET;
 
     let body: Record<string, any>;
-    try {
-        body = JSON.parse(rawBody);
-    } catch {
-        return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    const parse = () => {
+        try {
+            body = JSON.parse(rawBody);
+            return true;
+        } catch {
+            return false;
+        }
+    };
+
+    if (!secret) {
+        // No signing secret on file: the delivery is only a nudge. We read the loan's real
+        // status from MyItura's API with our own keys, so a forged request can't change anything.
+        if (!tokenMatches(request)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        if (!parse()) return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+        return applyByLookup(webhookReferences(body!), request.headers.get("x-myitura-event") || "");
     }
 
-    const refs = webhookReferences(body);
+    const verification = verifyMyIturaWebhook({ rawBody, headers: request.headers, secret });
+    if (!verification.ok || !tokenMatches(request)) {
+        console.warn(`[MyItura Webhook] Rejected delivery: ${verification.ok ? "bad_token" : verification.reason}`);
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    if (!parse()) return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+
+    const refs = webhookReferences(body!);
     const event = refs.event || request.headers.get("x-myitura-event") || "";
     const deliveryId = request.headers.get("x-myitura-delivery-id") || undefined;
     if (!refs.sdkReference && !refs.clientReference && !refs.loanId) {
@@ -84,6 +93,47 @@ export async function POST(request: NextRequest) {
     } catch (error) {
         console.error(`[MyItura Webhook] Processing ${event} failed:`, (error as Error).message);
         // A 5xx makes MyItura retry with backoff
+        return NextResponse.json({ error: "Internal processing error" }, { status: 500 });
+    }
+}
+
+/**
+ * Unsigned mode: look the loan up at MyItura and apply the status MyItura reports. Only
+ * references from MyItura's own record are used to find our loan, never the request's.
+ */
+async function applyByLookup(refs: ReturnType<typeof webhookReferences>, headerEvent: string) {
+    const event = refs.event || headerEvent;
+    try {
+        let record: MediLoanRecord | null = null;
+        if (refs.loanId) {
+            record = await getMediLoan(refs.loanId).catch((error) => {
+                if (error instanceof MyIturaError && error.httpStatus === 404) return null;
+                throw error;
+            });
+        }
+        if (!record && refs.clientReference) {
+            const matches = await findMediLoansByClientReference(refs.clientReference);
+            record = matches.find((m) => m.clientReference === refs.clientReference) ?? null;
+        }
+        const clientReference = typeof record?.clientReference === "string" ? record.clientReference : undefined;
+        const sdkReference = typeof record?.sdkReference === "string" ? record.sdkReference : undefined;
+        if (!record || (!clientReference && !sdkReference)) {
+            // Usually loan.initiated: the patient hasn't applied, so MyItura has no loan yet
+            console.log(`[MyItura Webhook] ${event} (lookup) → no loan at MyItura yet`);
+            return NextResponse.json({ received: true, verified: "lookup", result: "no_loan_yet" });
+        }
+        const result = await getConvexClient().mutation(api.mediloan.applyMediLoanUpdate, {
+            clientReference,
+            sdkReference,
+            myituraLoanId: mediLoanId(record),
+            myituraStatus: typeof record.status === "string" ? record.status : undefined,
+            amountApprovedKobo: typeof record.amountApproved === "number" ? record.amountApproved : undefined,
+            serverSecret: convexServerSecret(),
+        });
+        console.log(`[MyItura Webhook] ${event} (lookup: ${record.status}) → ${JSON.stringify(result)}`);
+        return NextResponse.json({ received: true, verified: "lookup", ...result });
+    } catch (error) {
+        console.error(`[MyItura Webhook] Lookup for ${event} failed:`, (error as Error).message);
         return NextResponse.json({ error: "Internal processing error" }, { status: 500 });
     }
 }
