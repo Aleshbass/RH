@@ -1,11 +1,6 @@
-import { getCachedPhysiotherapistStats } from '@/actions/get-cached-stats';
 import InsightsClient from './insights-client';
 
-export default async function PhysiotherapistInsightsPage() {
-    // Fetch cached stats on the server (Redis first, then Convex)
-    const stats = await getCachedPhysiotherapistStats();
-
-    return <InsightsClient initialStats={stats} />;
+// The page renders straight away; the live Convex query fills it in (no server round trip first)
+export default function PhysiotherapistInsightsPage() {
+    return <InsightsClient initialStats={null} />;
 }
-
-
