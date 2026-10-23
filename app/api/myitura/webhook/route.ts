@@ -134,7 +134,12 @@ async function applyByLookup(refs: ReturnType<typeof webhookReferences>, headerE
         return NextResponse.json({ received: true, verified: "lookup", ...result });
     } catch (error) {
         console.error(`[MyItura Webhook] Lookup for ${event} failed:`, (error as Error).message);
-        return NextResponse.json({ error: "Internal processing error" }, { status: 500 });
+        // MyItura's own error (status, code, message) helps fix configuration; it holds no secrets
+        const detail =
+            error instanceof MyIturaError
+                ? { source: "myitura", httpStatus: error.httpStatus, code: error.code ?? null, message: error.message }
+                : { source: "server", message: (error as Error).message?.split("\n")[0]?.slice(0, 200) ?? "unknown" };
+        return NextResponse.json({ error: "Internal processing error", detail }, { status: 500 });
     }
 }
 
