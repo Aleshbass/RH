@@ -25,16 +25,21 @@ import {
 } from '@/components/patient/ui'
 import {
   InvoiceBreakdown,
+  InvoiceMediLoanNote,
   InvoiceStatus,
   STATE_META,
   invoiceState,
   lastAttemptFailed,
+  loanForInvoice,
+  loanIsOpen,
   money,
+  paidByMediLoan,
   payableOf,
   paymentProcessing,
   safeDate,
   type PatientInvoice,
 } from '../invoice-ui'
+import { PayWithMediLoan, type MyLoan } from '@/components/patient/MediLoanCard'
 
 const BACK = { href: '/dashboard/patient/invoices', label: 'Invoices' }
 
@@ -50,6 +55,7 @@ export default function PatientInvoiceDetailPage() {
     api.billing.getInvoiceForPatient,
     invoiceId ? { invoiceId: invoiceId as Id<'invoices'> } : 'skip'
   ) as PatientInvoice | null | undefined
+  const loans = useQuery(api.mediloan.getMyLoans) as MyLoan[] | undefined
 
   if (invoice === undefined) return <PageSkeleton />
 
@@ -76,6 +82,9 @@ export default function PatientInvoiceDetailPage() {
   const payable = payableOf(invoice)
   const failed = lastAttemptFailed(invoice)
   const state = invoiceState(invoice)
+  const loan = loanForInvoice(loans, invoice._id)
+  // While a MediLoan is deciding this invoice, card payment steps aside so nobody pays twice
+  const canPayNow = invoice.canPay && !loanIsOpen(loan)
 
   const handlePayNow = async () => {
     setPaying(true)
@@ -157,9 +166,12 @@ export default function PatientInvoiceDetailPage() {
               {invoice.paymentDate && (
                 <DetailRow icon={CalendarCheck} label="Paid on">
                   {safeDate(invoice.paymentDate, 'd MMMM yyyy, h:mm a')}
+                  {paidByMediLoan(invoice) && <span className="text-pt-muted"> · by MediLoan</span>}
                 </DetailRow>
               )}
             </div>
+
+            <InvoiceMediLoanNote invoice={invoice} loan={loan} />
 
             {failed && (
               <p className="rounded-2xl bg-pt-rose-bg px-4 py-3 text-sm text-pt-rose-fg">
@@ -173,11 +185,19 @@ export default function PatientInvoiceDetailPage() {
             )}
 
             <div className="space-y-2">
-              {invoice.canPay && (
+              {canPayNow && (
                 <Button onClick={handlePayNow} disabled={paying} className={cn(accentButtonClass, 'h-12 w-full text-base')}>
                   {paying ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Lock className="mr-2 h-4 w-4" />}
                   {failed ? 'Try again' : 'Pay'} {money(payable, invoice.currency)}
                 </Button>
+              )}
+              {canPayNow && (
+                <PayWithMediLoan
+                  target={{ invoiceId: invoice._id }}
+                  amountKobo={invoice.totalAmount}
+                  what={`invoice #${invoice.invoiceNumber}`}
+                  className="h-11 w-full"
+                />
               )}
               {invoice.status === 'paid' ? (
                 <Button asChild className={cn(secondaryButtonClass, 'h-11 w-full')}>

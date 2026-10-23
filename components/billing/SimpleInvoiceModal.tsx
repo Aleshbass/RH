@@ -61,7 +61,19 @@ interface SimpleInvoiceModalProps {
   onDownload: () => void;
   onInitiateMediLoan?: (invoice: Invoice) => void;
   isInitiatingLoan?: boolean;
+  /** Status of the MediLoan already started for this invoice, if any. */
+  mediloanStatus?: string | null;
 }
+
+/** A MediLoan in these states may still pay the invoice, so another can't be started. */
+const MEDILOAN_OPEN = new Set(['initiated', 'pending', 'approved', 'offer_accepted', 'disbursed']);
+const MEDILOAN_LABEL: Record<string, string> = {
+  initiated: 'link sent to patient',
+  pending: 'patient applied',
+  approved: 'approved',
+  offer_accepted: 'terms accepted',
+  disbursed: 'paid out',
+};
 
 export function SimpleInvoiceModal({
   isOpen,
@@ -71,7 +83,8 @@ export function SimpleInvoiceModal({
   onRecordPayment,
   onDownload,
   onInitiateMediLoan,
-  isInitiatingLoan
+  isInitiatingLoan,
+  mediloanStatus
 }: SimpleInvoiceModalProps) {
   if (!selectedInvoice) return null;
 
@@ -208,9 +221,14 @@ export function SimpleInvoiceModal({
               </Button>
             )}
 
-            {(selectedInvoice.status === 'pending' || selectedInvoice.status === 'sent' || selectedInvoice.status === 'overdue') && (
+            {(selectedInvoice.status === 'pending' || selectedInvoice.status === 'sent' || selectedInvoice.status === 'overdue' || selectedInvoice.status === 'partial_payment') && (
               <>
-                {onInitiateMediLoan && (
+                {onInitiateMediLoan && mediloanStatus && MEDILOAN_OPEN.has(mediloanStatus) ? (
+                  <span className="inline-flex items-center gap-2 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm font-medium text-green-800 dark:border-green-400/20 dark:bg-green-400/10 dark:text-green-300">
+                    <WalletCards className="h-4 w-4" />
+                    MediLoan: {MEDILOAN_LABEL[mediloanStatus] ?? mediloanStatus}
+                  </span>
+                ) : onInitiateMediLoan && (
                   <Button
                     variant="outline"
                     className="border-green-600 text-green-700 hover:bg-green-50"

@@ -1,17 +1,18 @@
 /**
- * MyItura MediLoan: start a loan application.
+ * MyItura MediLoan: start a loan application for an unpaid invoice or booking.
  *
- * POST /api/myitura/initiate
+ * POST /api/myitura/initiate   { invoiceId } | { bookingId }   (+ loanRequestId, phoneNumber)
  *
- *  - Physiotherapists: { invoiceId } for one of their own unpaid invoices. The patient, phone
- *    and amount come from the invoice (what's still owed), never from the request. A
- *    `phoneNumber` is only used when the patient's account has none.
- *  - Admins: the same with an invoiceId, or { loanRequestId, treatmentAmount } for a patient's
- *    MediLoan request from a booking page (amount in kobo, chosen by the admin).
+ *  - Patients: their own unpaid invoice or marketplace booking ("Pay with MediLoan").
+ *  - Physiotherapists: their own unpaid invoices.
+ *  - Admins: any, usually from a patient's MediLoan request (loanRequestId links it).
+ * The patient and the amount (what's still owed) come from the invoice or booking, never from
+ * the request. `phoneNumber` is only used when the patient's account has none.
  *
  * MyItura creates the application link (valid 7 days) and texts it to the patient. We also
  * return a WhatsApp link the caller can use as a backup. Updates arrive at
- * /api/myitura/webhook; when the loan disburses, the invoice is marked paid.
+ * /api/myitura/webhook; when the loan pays out, the invoice is marked paid or the booking
+ * confirmed (convex/mediloan.ts).
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -24,12 +25,16 @@ import { getServerViewer } from "@/lib/auth/serverViewer";
 import { convexServerSecret } from "@/lib/convex-server-secret";
 import { mediLoanWhatsAppUrl } from "@/lib/myitura/share";
 
-const ALLOWED_ROLES = ["admin", "physiotherapist"];
+const ALLOWED_ROLES = ["admin", "physiotherapist", "patient"];
 
-type InvoiceForLoan = {
-    invoiceId: Id<"invoices">;
-    invoiceNumber: string;
+type Financing = {
+    kind: "invoice" | "booking";
+    invoiceId?: Id<"invoices">;
+    bookingId?: Id<"marketplaceBookings">;
+    reference: string;
+    treatment: string;
     outstandingKobo: number;
+    physiotherapistId?: Id<"users">;
     patient: { id: Id<"users">; firstName: string; lastName: string; email?: string; phone?: string };
 };
 
@@ -43,10 +48,12 @@ export async function POST(request: NextRequest) {
     const { userId } = await auth();
     if (!userId) return NextResponse.json({ error: "Please sign in." }, { status: 401 });
     const viewer = await getServerViewer();
-    if (!viewer?.role || !ALLOWED_ROLES.includes(viewer.role)) {
-        return NextResponse.json({ error: "Only Rehabify admins and physiotherapists can start a MediLoan." }, { status: 403 });
+    // Accounts without a role yet are patients (e.g. guests who booked, then signed up)
+    const role = viewer?.role ?? (viewer ? "patient" : undefined);
+    if (!role || !ALLOWED_ROLES.includes(role)) {
+        return NextResponse.json({ error: "MediLoan isn't available for this account." }, { status: 403 });
     }
-    const isAdmin = viewer.role === "admin";
+    const isAdmin = role === "admin";
 
     let body: Record<string, unknown>;
     try {
@@ -59,68 +66,46 @@ export async function POST(request: NextRequest) {
     const serverSecret = convexServerSecret();
     const str = (value: unknown) => (typeof value === "string" ? value.trim() : "");
 
-    let loan: {
-        invoiceId?: Id<"invoices">;
-        loanRequestId?: Id<"loanRequests">;
-        patientId?: Id<"users">;
-        firstName: string;
-        lastName: string;
-        email?: string;
-        phoneNumber: string;
-        treatment: string;
-        treatmentAmount: number;
-        invoiceReference?: string;
-    };
+    const invoiceId = str(body.invoiceId) || undefined;
+    const bookingId = str(body.bookingId) || undefined;
+    if (!invoiceId && !bookingId) {
+        return NextResponse.json({ error: "Choose the invoice or booking to pay with MediLoan." }, { status: 400 });
+    }
 
-    if (str(body.invoiceId)) {
-        let invoice: InvoiceForLoan;
-        try {
-            invoice = (await convex.query(api.mediloan.getInvoiceForMediLoan, {
-                invoiceId: str(body.invoiceId) as Id<"invoices">,
-                callerClerkId: userId,
-                serverSecret,
-            })) as InvoiceForLoan;
-        } catch (error) {
-            return NextResponse.json({ error: convexMessage(error, "This invoice can't be financed.") }, { status: 400 });
-        }
-        const phoneNumber = invoice.patient.phone || str(body.phoneNumber);
-        if (!phoneNumber) {
-            return NextResponse.json({ error: "Add the patient's phone number first. MediLoan texts them the next steps." }, { status: 400 });
-        }
-        loan = {
-            invoiceId: invoice.invoiceId,
-            patientId: invoice.patient.id,
-            firstName: invoice.patient.firstName || "Patient",
-            lastName: invoice.patient.lastName || "",
-            email: invoice.patient.email,
-            phoneNumber,
-            treatment: `Physiotherapy (invoice ${invoice.invoiceNumber})`,
-            treatmentAmount: invoice.outstandingKobo,
-            invoiceReference: invoice.invoiceNumber,
-        };
-    } else if (isAdmin && str(body.loanRequestId)) {
-        const amount = Number(body.treatmentAmount);
-        if (!Number.isInteger(amount) || amount <= 0) {
-            return NextResponse.json({ error: "Enter the treatment amount." }, { status: 400 });
-        }
-        if (!str(body.firstName) || !str(body.phoneNumber) || !str(body.treatment)) {
-            return NextResponse.json({ error: "The request is missing the patient's name, phone or treatment." }, { status: 400 });
-        }
-        loan = {
-            loanRequestId: str(body.loanRequestId) as Id<"loanRequests">,
-            firstName: str(body.firstName),
-            lastName: str(body.lastName),
-            email: str(body.email) || undefined,
-            phoneNumber: str(body.phoneNumber),
-            treatment: str(body.treatment),
-            treatmentAmount: amount,
-        };
-    } else {
+    let financing: Financing;
+    try {
+        financing = (await convex.query(api.mediloan.getFinancingForServer, {
+            invoiceId: invoiceId as Id<"invoices"> | undefined,
+            bookingId: invoiceId ? undefined : (bookingId as Id<"marketplaceBookings"> | undefined),
+            callerClerkId: userId,
+            serverSecret,
+        })) as Financing;
+    } catch (error) {
+        return NextResponse.json({ error: convexMessage(error, "This can't be paid with MediLoan.") }, { status: 400 });
+    }
+
+    const phoneNumber = financing.patient.phone || str(body.phoneNumber);
+    if (!phoneNumber) {
         return NextResponse.json(
-            { error: isAdmin ? "Choose an invoice or a patient's loan request." : "Choose one of your unpaid invoices." },
+            { error: role === "patient" ? "Add your phone number in Settings first. MediLoan texts you the next steps." : "Add the patient's phone number first. MediLoan texts them the next steps." },
             { status: 400 }
         );
     }
+
+    const loan = {
+        invoiceId: financing.invoiceId,
+        bookingId: financing.bookingId,
+        physiotherapistId: financing.physiotherapistId,
+        loanRequestId: isAdmin && str(body.loanRequestId) ? (str(body.loanRequestId) as Id<"loanRequests">) : undefined,
+        patientId: financing.patient.id,
+        firstName: financing.patient.firstName || "Patient",
+        lastName: financing.patient.lastName || "",
+        email: financing.patient.email,
+        phoneNumber,
+        treatment: financing.treatment,
+        treatmentAmount: financing.outstandingKobo,
+        invoiceReference: financing.reference,
+    };
 
     // Unique per Rehabify account; also our idempotency key with MyItura
     const clientReference = `RH-LOAN-${Date.now()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
@@ -157,6 +142,8 @@ export async function POST(request: NextRequest) {
         loanId = await convex.mutation(api.mediloan.logInitiatedLoan, {
             loanRequestId: loan.loanRequestId,
             invoiceId: loan.invoiceId,
+            bookingId: loan.bookingId,
+            physiotherapistId: loan.physiotherapistId,
             patientId: loan.patientId,
             initiatorClerkId: userId,
             clientReference,
@@ -191,7 +178,10 @@ export async function POST(request: NextRequest) {
             whatsappUrl,
             expiresAt: data.expiresAt,
             amountKobo: loan.treatmentAmount,
-            message: `MediLoan started. MyItura is texting ${loan.firstName} the application link.`,
+            message:
+                role === "patient"
+                    ? "MediLoan started. MyItura is texting you the application link."
+                    : `MediLoan started. MyItura is texting ${loan.firstName} the application link.`,
         },
     });
 }

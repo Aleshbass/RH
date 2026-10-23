@@ -57,6 +57,21 @@ function formatKobo(amount: number, currency = 'NGN') {
   return (amount / 100).toLocaleString('en-NG', { style: 'currency', currency, maximumFractionDigits: 0 });
 }
 
+/** Where a MediLoan on an invoice stands, in the physio's words. */
+const LOAN_LABEL: Record<string, string> = {
+  initiated: 'link sent',
+  pending: 'patient applied',
+  approved: 'approved',
+  offer_accepted: 'terms accepted',
+  disbursed: 'paid out',
+  repaid: 'paid out',
+  defaulted: 'paid out',
+  declined: 'not approved',
+  expired: 'link expired',
+  cancelled: 'cancelled',
+  failed: 'failed',
+};
+
 function invoiceStatus(invoice: InvoiceFromQuery) {
   if (invoice.isOverdue && invoice.status !== 'paid' && invoice.status !== 'void') return <StatusBadge tone="red">Overdue</StatusBadge>;
   switch (invoice.status) {
@@ -91,6 +106,11 @@ export default function BillingPage() {
   const [selected, setSelected] = useState<InvoiceFromQuery | null>(null);
   const [creating, setCreating] = useState(false);
   const [isInitiatingLoan, setIsInitiatingLoan] = useState(false);
+  // MediLoans on this physio's invoices, so each row shows where its loan stands
+  const invoiceLoans = useQuery(api.mediloan.getMyInvoiceLoans, {}) as
+    | Array<{ invoiceId: string; status: string; updatedAt: number }>
+    | undefined;
+  const loanByInvoice = useMemo(() => new Map((invoiceLoans ?? []).map((loan) => [loan.invoiceId, loan])), [invoiceLoans]);
 
   const filtered = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
@@ -297,6 +317,11 @@ export default function BillingPage() {
                   <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
                     <p className="truncate text-sm font-medium text-neutral-900 dark:text-white">{invoice.patientName}</p>
                     {invoiceStatus(invoice)}
+                    {loanByInvoice.get(invoice._id) && (
+                      <StatusBadge tone={loanByInvoice.get(invoice._id)!.status === 'disbursed' ? 'green' : 'teal'}>
+                        MediLoan · {LOAN_LABEL[loanByInvoice.get(invoice._id)!.status] ?? loanByInvoice.get(invoice._id)!.status}
+                      </StatusBadge>
+                    )}
                     {invoice.status !== 'paid' && invoice.status !== 'void' &&
                       (invoice.lastPaymentStatus === 'failed' || invoice.lastPaymentStatus === 'cancelled') && (
                         <StatusBadge tone="red">Payment failed</StatusBadge>
@@ -352,6 +377,7 @@ export default function BillingPage() {
           onDownload={() => handleDownload(selected._id)}
           onInitiateMediLoan={handleInitiateMediLoan as never}
           isInitiatingLoan={isInitiatingLoan}
+          mediloanStatus={loanByInvoice.get(selected._id)?.status ?? null}
         />
       )}
     </PageContainer>

@@ -24,6 +24,7 @@ import { convexErrorMessage, queryString, startMarketplaceCheckout } from '@/com
 import { playSound } from '@/lib/sounds'
 import { usableEmail } from '@/lib/auth/joyLoginEmail'
 import { cn } from '@/lib/utils'
+import { CLOSED_UNPAID_MEDILOAN, MediLoanStatusBadge, OPEN_MEDILOAN, PayWithMediLoan, mediLoanMeta, type MediLoanStatus } from '@/components/patient/MediLoanCard'
 
 /** api.marketplace.booking.getMyOpenBookings */
 type OpenBooking = {
@@ -42,6 +43,8 @@ type OpenBooking = {
   holdExpiresAt: number | null
   scheduledBy: 'patient' | 'physiotherapist'
   isAccess: boolean
+  /** The latest MediLoan for this booking, if the patient chose to pay with one */
+  mediloan: { status: string; updatedAt: number } | null
 }
 
 /**
@@ -124,6 +127,9 @@ export function OpenBookingsCard() {
           const ModeIcon = booking.isOnline ? Video : Home
           const busy = busyId === booking.id
           const takenMessage = newTimeNeeded[booking.id]
+          const loanStatus = booking.mediloan?.status as MediLoanStatus | undefined
+          const loanOpen = Boolean(loanStatus && OPEN_MEDILOAN.has(loanStatus))
+          const loanEnded = Boolean(loanStatus && CLOSED_UNPAID_MEDILOAN.has(loanStatus))
 
           return (
             <li key={booking.id} className="space-y-3 rounded-2xl bg-pt-sunken p-4">
@@ -166,8 +172,25 @@ export function OpenBookingsCard() {
                     </Button>
                   </div>
                 </div>
+              ) : loanOpen && loanStatus ? (
+                // Paying with MediLoan: the loan decides, so Pay and Cancel step aside
+                <div className="space-y-1.5">
+                  <MediLoanStatusBadge status={loanStatus} />
+                  <p className="text-xs leading-relaxed text-pt-muted">
+                    {loanStatus === 'initiated'
+                      ? 'MyItura has texted you a link to apply. Your booking is confirmed when the loan pays out.'
+                      : loanStatus === 'approved'
+                        ? 'Approved. Accept the terms in MediLoan so it can pay for this booking.'
+                        : `${mediLoanMeta(loanStatus).explain} We keep this booking open meanwhile.`}
+                  </p>
+                </div>
               ) : (
                 <>
+                  {loanEnded && loanStatus && (
+                    <p className="rounded-xl bg-pt-neutral-bg px-3 py-2 text-xs text-pt-neutral-fg">
+                      Your MediLoan for this booking: {mediLoanMeta(loanStatus).label.toLowerCase()}. You can pay now instead.
+                    </p>
+                  )}
                   <p className="flex items-center gap-1.5 text-xs text-pt-muted">
                     <Clock className="h-3.5 w-3.5 shrink-0" aria-hidden />
                     {booking.scheduledBy === 'physiotherapist'
@@ -202,6 +225,7 @@ export function OpenBookingsCard() {
                         )}
                         Pay now {formatKobo(booking.chargeKobo)}
                       </Button>
+                      <PayWithMediLoan target={{ bookingId: booking.id }} amountKobo={booking.chargeKobo} what="this booking" />
                       <Button size="sm" className={cn(softButtonClass, 'h-10')} disabled={busy} onClick={() => setConfirmCancelId(booking.id)}>
                         Cancel
                       </Button>

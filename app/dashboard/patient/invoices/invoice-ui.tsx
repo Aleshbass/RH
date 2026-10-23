@@ -3,6 +3,13 @@
 import { format } from 'date-fns'
 import type { Id } from '@/convex/_generated/dataModel'
 import { InfoTip, StatusBadge, type Tone } from '@/components/patient/ui'
+import {
+  CLOSED_UNPAID_MEDILOAN,
+  MediLoanStatusBadge,
+  OPEN_MEDILOAN,
+  mediLoanMeta,
+  type MyLoan,
+} from '@/components/patient/MediLoanCard'
 
 /** api.billing.getPatientInvoices / getInvoiceForPatient. Amounts are in kobo. */
 export interface PatientInvoice {
@@ -132,4 +139,58 @@ export function InvoiceBreakdown({ invoice }: { invoice: PatientInvoice }) {
       </div>
     </div>
   )
+}
+
+/** The latest MediLoan for an invoice (getMyLoans is newest first). */
+export function loanForInvoice(loans: MyLoan[] | undefined, invoiceId: string): MyLoan | null {
+  return loans?.find((loan) => loan.invoiceId === invoiceId) ?? null
+}
+
+/** A MediLoan is deciding this invoice: card payment steps aside so nobody pays twice. */
+export function loanIsOpen(loan: MyLoan | null): boolean {
+  return Boolean(loan && OPEN_MEDILOAN.has(loan.status))
+}
+
+export const paidByMediLoan = (invoice: PatientInvoice) => invoice.status === 'paid' && invoice.paymentMethod === 'mediloan'
+
+/** Where MediLoan stands for this invoice, when it's involved. Renders nothing otherwise. */
+export function InvoiceMediLoanNote({ invoice, loan }: { invoice: PatientInvoice; loan: MyLoan | null }) {
+  if (paidByMediLoan(invoice)) {
+    return (
+      <p className="rounded-2xl bg-pt-green-bg px-4 py-3 text-sm text-pt-green-fg">
+        Paid by MediLoan. MyItura paid this invoice; you repay MyItura on the schedule you agreed.
+      </p>
+    )
+  }
+  if (!loan) return null
+  if (loanIsOpen(loan)) {
+    return (
+      <div className="space-y-1.5 rounded-2xl bg-pt-sunken px-4 py-3">
+        <MediLoanStatusBadge status={loan.status} />
+        <p className="text-sm text-pt-muted">
+          {loan.status === 'approved'
+            ? 'Approved. Accept the terms in MediLoan so it can pay this invoice.'
+            : 'You’re paying this invoice with MediLoan. It’s marked paid when the loan pays out.'}
+        </p>
+        {loan.applicationUrl && (
+          <a
+            href={loan.applicationUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex text-sm font-semibold text-pt-ink underline underline-offset-2"
+          >
+            {loan.status === 'initiated' ? 'Start your application' : 'Continue your application'}
+          </a>
+        )}
+      </div>
+    )
+  }
+  if (CLOSED_UNPAID_MEDILOAN.has(loan.status) && invoice.canPay) {
+    return (
+      <p className="rounded-2xl bg-pt-neutral-bg px-4 py-3 text-sm text-pt-neutral-fg">
+        Your MediLoan for this invoice: {mediLoanMeta(loan.status).label.toLowerCase()}. You can pay it another way.
+      </p>
+    )
+  }
+  return null
 }

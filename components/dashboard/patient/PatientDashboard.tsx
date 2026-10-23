@@ -50,6 +50,7 @@ import { NAV } from '@/components/patient/shell/navItems'
 import { PatientCheckInCard, PatientFollowUpBanner } from '@/components/patient/PatientCheckInCard'
 import { JoyJourneyCard } from '@/components/patient/JoyJourneyCard'
 import { OpenBookingsCard } from '@/components/patient/OpenBookingsCard'
+import { MediLoanCard } from '@/components/patient/MediLoanCard'
 import { AccessAwardCard } from '@/components/patient/AccessAwardCard'
 import { cn } from '@/lib/utils'
 
@@ -409,6 +410,7 @@ export function PatientDashboard({ initialUser, initialAppointments, initialStat
 
       {/* Things waiting on the patient come first */}
       <OpenBookingsCard />
+      <MediLoanCard />
       <PatientFollowUpBanner />
 
       <div className="grid gap-5 lg:grid-cols-5">

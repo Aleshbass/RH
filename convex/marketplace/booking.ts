@@ -345,7 +345,12 @@ export const getMyOpenBookings = query({
         return Promise.all(
             open.map(async (b) => {
                 const physio = b.physiotherapistId ? await ctx.db.get(b.physiotherapistId) : null;
+                const loan = (
+                    await ctx.db.query("loanApplications").withIndex("by_booking", (q: any) => q.eq("bookingId", b._id)).order("desc").take(1)
+                )[0];
                 return {
+                    /** The latest MediLoan for this booking, if the patient chose to pay with one. */
+                    mediloan: loan ? { status: loan.status, updatedAt: loan.updatedAt } : null,
                     id: b._id,
                     serviceId: b.serviceId ?? null,
                     serviceName: b.serviceId ? getService(b.serviceId)?.name ?? "Physiotherapy session" : "Physiotherapy session",
@@ -377,6 +382,9 @@ export const cancelUnpaidMarketplaceBooking = mutation({
         if (booking.patientId !== user._id && booking.physiotherapistId !== user._id) throw new ConvexError("Booking not found.");
         if (booking.paymentStatus === "completed") throw new ConvexError("This booking is paid. Cancel it from your appointments.");
         if (booking.bookingStatus !== "pending_payment") return { success: true };
+        if (await hasOpenMediLoan(ctx, booking._id)) {
+            throw new ConvexError("A MediLoan is being decided for this booking. Contact Rehabify to cancel it.");
+        }
         await ctx.db.patch(booking._id, {
             bookingStatus: "cancelled",
             cancellationReason: user._id === booking.patientId ? "Cancelled by patient before payment" : "Withdrawn by physiotherapist before payment",
@@ -386,6 +394,15 @@ export const cancelUnpaidMarketplaceBooking = mutation({
         return { success: true };
     },
 });
+
+/** A MediLoan that may still pay for this booking. */
+async function hasOpenMediLoan(ctx: any, bookingId: Id<"marketplaceBookings">) {
+    const loans = await ctx.db
+        .query("loanApplications")
+        .withIndex("by_booking", (q: any) => q.eq("bookingId", bookingId))
+        .collect();
+    return loans.some((loan: Doc<"loanApplications">) => ["initiated", "pending", "approved", "offer_accepted"].includes(loan.status));
+}
 
 /** Hourly: closes web bookings left unpaid for a day (Joy manages its own holds). */
 export const expireUnpaidBookings = internalMutation({
@@ -402,6 +419,8 @@ export const expireUnpaidBookings = internalMutation({
             const holdLapsed = (booking.holdExpiresAt ?? booking.createdAt) < Date.now();
             const stale = booking.createdAt < cutoff || (booking.sessionDate !== undefined && booking.sessionDate < Date.now());
             if (holdLapsed && stale) {
+                // A MediLoan is being decided for it: the payout will complete (or flag) the booking
+                if (await hasOpenMediLoan(ctx, booking._id)) continue;
                 await ctx.db.patch(booking._id, { bookingStatus: "cancelled", cancellationReason: "Not paid in time", updatedAt: Date.now() });
                 expired++;
             }

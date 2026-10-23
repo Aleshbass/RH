@@ -16,6 +16,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@clerk/nextjs/server";
 import { Resend } from "resend";
 import { platformAdminEmails } from "@/lib/email/adminRecipients";
 import {
@@ -37,7 +38,6 @@ import {
 } from "@/lib/rate-limiter";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
-const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
 
 const ADMIN_EMAILS = platformAdminEmails();
 const FROM_EMAIL  = process.env.FROM_EMAIL || "noreply@physioaroundme.com";
@@ -68,6 +68,7 @@ export async function POST(request: NextRequest) {
             treatment,
             treatmentAmount,
             physiotherapistName,
+            physiotherapistId,
         } = body;
 
         // ── Validation ────────────────────────────────────────────────────────
@@ -96,15 +97,21 @@ export async function POST(request: NextRequest) {
         }
 
         // ── Save to Convex ────────────────────────────────────────────────────
-        // Use the HTTP client without auth (public mutation)
+        // A client per request: a signed-in patient's token links the request to their account,
+        // so the admin sees their invoices and bookings when starting the loan
+        const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
+        const token = await (await auth()).getToken({ template: "convex" }).catch(() => null);
+        if (token) convex.setAuth(token);
         const requestId = await convex.mutation(api.mediloan.submitLoanRequest, {
             patientFirstName: firstName.trim(),
             patientLastName: lastName.trim(),
             patientPhone: cleanPhone,
             patientEmail: email?.trim() || undefined,
             treatment: treatment.trim(),
-            // ₦ to kobo; 0 when the patient didn't give one (the admin sets it before starting the loan)
+            // ₦ to kobo; 0 when the patient didn't give one (the loan uses the invoice or booking amount)
             treatmentAmount: treatmentAmount ? Math.round(treatmentAmount * 100) : 0,
+            // The physio whose booking page this came from (a Convex user id)
+            physiotherapistId: typeof physiotherapistId === "string" && /^[a-z0-9]{20,40}$/.test(physiotherapistId) ? physiotherapistId : undefined,
         });
 
         // ── Send admin notification email via Resend ──────────────────────────

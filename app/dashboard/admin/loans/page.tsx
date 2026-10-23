@@ -93,33 +93,50 @@ function QuoteHint({ amountKobo }: { amountKobo: number }) {
 
 const REQUEST_STATUS: Record<string, { label: string; tone: Tone }> = {
   pending: { label: 'Awaiting action', tone: 'amber' },
+  awaiting_invoice: { label: 'Waiting for invoice', tone: 'amber' },
   initiated: { label: 'Loan initiated', tone: 'green' },
   cancelled: { label: 'Dismissed', tone: 'neutral' },
 }
 
 const dateTime = (ts: number) => format(ts, 'd MMM yyyy, h:mm a')
 
-/** Calls the MyItura SDK through /api/myitura/initiate; the patient gets an SMS application link. */
+type FinancingOption = {
+  kind: 'invoice' | 'booking'
+  id: string
+  label: string
+  detail: string
+  amountKobo: number
+  physioName: string
+  matchesRequestPhysio: boolean
+  hasOpenLoan: boolean
+}
+type FinancingOptions = { patientFound: boolean; physio: { id: string; name: string } | null; options: FinancingOption[] } | null
+
+/**
+ * Starts a MediLoan for a patient's request. The loan always pays for something real: one of
+ * the patient's unpaid invoices or bookings (the amount is what's owed). With nothing to pay
+ * yet, the admin asks the physio to invoice the patient; the request is linked automatically
+ * when that MediLoan starts.
+ */
 function InitiateLoanDialog({ request, onClose, onInitiated }: { request: LoanRequest | null; onClose: () => void; onInitiated: (id: string) => void }) {
-  // Start from the amount the patient gave, when there is one (the parent remounts this per request)
-  const [amount, setAmount] = useState(request && request.treatmentAmount > 0 ? String(request.treatmentAmount / 100) : '')
+  const financing = useQuery(api.mediloan.getFinancingOptionsForRequest, request ? { requestId: request._id } : 'skip') as FinancingOptions | undefined
+  const askPhysio = useMutation(api.mediloan.askPhysioToInvoice)
+  const [selected, setSelected] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
+  const available = financing?.options.filter((o) => !o.hasOpenLoan) ?? []
+  const choice = available.find((o) => `${o.kind}:${o.id}` === selected) ?? (available.length === 1 ? available[0] : undefined)
+
   const close = () => {
     if (loading) return
-    setAmount('')
+    setSelected(null)
     setError('')
     onClose()
   }
 
   const initiate = async () => {
-    if (!request) return
-    const amountKobo = Math.round(parseFloat(amount) * 100)
-    if (!amount || isNaN(amountKobo) || amountKobo <= 0) {
-      setError('Enter a valid treatment amount in Naira.')
-      return
-    }
+    if (!request || !choice) return
     setLoading(true)
     setError('')
     try {
@@ -128,12 +145,8 @@ function InitiateLoanDialog({ request, onClose, onInitiated }: { request: LoanRe
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           loanRequestId: request._id,
-          firstName: request.patientFirstName,
-          lastName: request.patientLastName,
+          [choice.kind === 'invoice' ? 'invoiceId' : 'bookingId']: choice.id,
           phoneNumber: request.patientPhone,
-          email: request.patientEmail,
-          treatment: request.treatment,
-          treatmentAmount: amountKobo,
         }),
       })
       const data = (await res.json().catch(() => ({}))) as {
@@ -149,7 +162,6 @@ function InitiateLoanDialog({ request, onClose, onInitiated }: { request: LoanRe
         action: whatsappUrl ? { label: 'Send on WhatsApp', onClick: () => window.open(whatsappUrl, '_blank', 'noopener,noreferrer') } : undefined,
       })
       onInitiated(request._id)
-      setAmount('')
       onClose()
     } catch (err) {
       playSound('error')
@@ -159,9 +171,26 @@ function InitiateLoanDialog({ request, onClose, onInitiated }: { request: LoanRe
     }
   }
 
+  const requestInvoice = async () => {
+    if (!request) return
+    setLoading(true)
+    setError('')
+    try {
+      await askPhysio({ requestId: request._id })
+      playSound('success')
+      toast.success(`Asked ${financing?.physio?.name ?? 'the physiotherapist'} to send an invoice. The request is linked when MediLoan starts on it.`)
+      onClose()
+    } catch (err) {
+      playSound('error')
+      setError(errorMessage(err, 'Could not notify the physiotherapist.'))
+    } finally {
+      setLoading(false)
+    }
+  }
+
   return (
     <Dialog open={!!request} onOpenChange={(open) => !open && close()}>
-      <DialogContent className={`${dialogClass} sm:max-w-md`}>
+      <DialogContent className={`${dialogClass} sm:max-w-lg`}>
         {request && (
           <>
             <DialogHeader>
@@ -169,7 +198,10 @@ function InitiateLoanDialog({ request, onClose, onInitiated }: { request: LoanRe
                 <WalletCards className="h-5 w-5 text-rh-teal dark:text-rh-aqua" />
                 Initiate MediLoan
               </DialogTitle>
-              <DialogDescription>This calls the MyItura SDK. The patient automatically receives an SMS with the application link.</DialogDescription>
+              <DialogDescription>
+                Choose what the loan pays for. MyItura texts the patient the application link; when the loan pays out, the invoice is marked paid or
+                the booking confirmed.
+              </DialogDescription>
             </DialogHeader>
 
             <div className={cn(insetClass, 'space-y-1.5 text-sm')}>
@@ -187,41 +219,81 @@ function InitiateLoanDialog({ request, onClose, onInitiated }: { request: LoanRe
                   {request.patientEmail}
                 </p>
               )}
-              <p className="pl-6 text-xs text-neutral-500 dark:text-neutral-400">Treatment: {request.treatment}</p>
+              <p className="pl-6 text-xs text-neutral-500 dark:text-neutral-400">
+                {request.treatment}
+                {financing?.physio ? ` · chose ${financing.physio.name}` : ''}
+              </p>
             </div>
 
-            <div className="space-y-1.5">
-              <label htmlFor="loan-amount" className={labelClass}>
-                Treatment amount (₦) <span className="text-rose-500">*</span>
-              </label>
-              <div className="relative">
-                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm font-semibold text-neutral-400">₦</span>
-                <Input
-                  id="loan-amount"
-                  type="number"
-                  placeholder="e.g. 50000"
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                  className={cn(inputClass, 'pl-8')}
-                  autoFocus
-                />
+            {financing === undefined ? (
+              <LoadingBlock />
+            ) : !financing || financing.options.length === 0 ? (
+              <Callout tone="warning">
+                {financing?.patientFound
+                  ? 'This patient has no unpaid invoice or booking to pay with MediLoan yet.'
+                  : 'No Rehabify account matches this phone number yet, so there is no invoice or booking to pay.'}{' '}
+                {financing?.physio
+                  ? `Ask ${financing.physio.name} to invoice them; the request is linked automatically when MediLoan starts on it.`
+                  : 'Ask the patient to book a session first, then start MediLoan on that booking.'}
+              </Callout>
+            ) : (
+              <div className="space-y-2" role="radiogroup" aria-label="What the loan pays for">
+                <p className={labelClass}>Pays for</p>
+                {financing.options.map((option) => {
+                  const key = `${option.kind}:${option.id}`
+                  const isChosen = Boolean(choice && `${choice.kind}:${choice.id}` === key)
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      role="radio"
+                      aria-checked={isChosen}
+                      disabled={option.hasOpenLoan}
+                      onClick={() => setSelected(key)}
+                      className={cn(
+                        'flex w-full items-start justify-between gap-3 rounded-xl border p-3 text-left text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-60',
+                        isChosen
+                          ? 'border-rh-teal bg-rh-mist dark:border-rh-aqua dark:bg-rh-aqua/10'
+                          : 'border-black/10 hover:bg-neutral-50 dark:border-white/10 dark:hover:bg-white/[0.04]'
+                      )}
+                    >
+                      <span className="min-w-0">
+                        <span className="block font-semibold text-rh-night dark:text-white">
+                          {option.kind === 'booking' ? 'Booking: ' : ''}
+                          {option.label}
+                        </span>
+                        <span className="block text-xs text-neutral-500 dark:text-neutral-400">
+                          {option.physioName} · {option.detail}
+                          {option.matchesRequestPhysio ? ' · the physio they chose' : ''}
+                          {option.hasOpenLoan ? ' · MediLoan already started' : ''}
+                        </span>
+                      </span>
+                      <span className="shrink-0 font-semibold tabular-nums text-rh-night dark:text-white">{formatKobo(option.amountKobo)}</span>
+                    </button>
+                  )
+                })}
+                {choice && <QuoteHint amountKobo={choice.amountKobo} />}
               </div>
-              <p className={hintClass}>The full treatment amount in Naira.</p>
-              <QuoteHint amountKobo={amount && !isNaN(parseFloat(amount)) ? Math.round(parseFloat(amount) * 100) : 0} />
-            </div>
+            )}
 
             {error && <Callout tone="danger">{error}</Callout>}
-            <Callout tone="warning">This cannot be undone. Once initiated, MyItura texts the patient and the loan process begins.</Callout>
 
             <DialogFooter className="gap-2">
               <Button variant="ghost" onClick={close} disabled={loading} className={softButtonClass}>
                 Cancel
               </Button>
-              <Button onClick={initiate} disabled={loading || !amount} className={primaryButtonClass}>
-                {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                Initiate loan
-                {!loading && <ChevronRight className="ml-1 h-4 w-4" />}
-              </Button>
+              {financing && financing.options.length === 0 && financing.physio ? (
+                <Button onClick={requestInvoice} disabled={loading || request.status === 'awaiting_invoice'} className={primaryButtonClass}>
+                  {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                  {request.status === 'awaiting_invoice' ? 'Invoice already requested' : `Ask ${financing.physio.name} to invoice`}
+                </Button>
+              ) : (
+                <Button onClick={initiate} disabled={loading || !choice} className={primaryButtonClass}>
+                  {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                  Initiate loan{choice ? ` · ${formatKobo(choice.amountKobo)}` : ''}
+                  {!loading && <ChevronRight className="ml-1 h-4 w-4" />}
+                </Button>
+              )}
             </DialogFooter>
           </>
         )}
@@ -245,7 +317,7 @@ export default function AdminLoansPage() {
   const [cancelReason, setCancelReason] = useState('')
 
   const isLoading = requests === undefined || loans === undefined
-  const pendingCount = requests?.filter((r: LoanRequest) => r.status === 'pending').length ?? 0
+  const pendingCount = requests?.filter((r: LoanRequest) => r.status === 'pending' || r.status === 'awaiting_invoice').length ?? 0
   const totalLoans = loans?.length ?? 0
   const approvedLoans =
     loans?.filter((l: LoanApplication) => ['approved', 'offer_accepted', 'disbursed', 'repaid', 'defaulted'].includes(l.status)).length ?? 0
@@ -370,7 +442,7 @@ export default function AdminLoansPage() {
                             <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
                           </TableCell>
                           <TableCell className="text-right">
-                            {req.status === 'pending' && justInitiated !== req._id ? (
+                            {(req.status === 'pending' || req.status === 'awaiting_invoice') && justInitiated !== req._id ? (
                               <div className="flex items-center justify-end gap-2">
                                 <Button size="sm" onClick={() => setInitiating(req)} className={cn(primaryButtonClass, 'h-8 text-xs')}>
                                   <Banknote className="mr-1.5 h-3.5 w-3.5" /> Initiate loan
@@ -444,13 +516,21 @@ export default function AdminLoansPage() {
                           <TableCell>
                             <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
                             {loan.repaymentStatus && <div className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">Repayment: {loan.repaymentStatus}</div>}
+                            {loan.attentionReason && (
+                              <div className="mt-1 max-w-[260px] rounded-lg bg-rh-peach px-2 py-1 text-[11px] font-medium leading-snug text-[#94560a] dark:bg-amber-400/10 dark:text-amber-300">
+                                {loan.attentionReason}
+                              </div>
+                            )}
                             {loan.lastEventAt && (
                               <div className="mt-0.5 text-[11px] text-neutral-400">Last update {format(loan.lastEventAt, 'd MMM, h:mm a')}</div>
                             )}
                           </TableCell>
                           <TableCell className="font-mono text-xs text-neutral-500 dark:text-neutral-400">
                             <div>{loan.myituraSdkRef || '—'}</div>
-                            {loan.invoiceReference && <div className="font-sans">Invoice {loan.invoiceReference}</div>}
+                            {loan.invoiceReference && (
+                              <div className="font-sans">{loan.bookingId ? 'Booking' : loan.invoiceId ? 'Invoice' : 'Ref'} {loan.invoiceReference}</div>
+                            )}
+                            {!loan.invoiceId && !loan.bookingId && <div className="font-sans text-amber-700 dark:text-amber-300">Not linked</div>}
                           </TableCell>
                           <TableCell className="whitespace-nowrap text-xs text-neutral-500 dark:text-neutral-400">
                             {loan.createdAt ? format(loan.createdAt, 'd MMM yyyy') : '—'}

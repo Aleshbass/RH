@@ -27,21 +27,27 @@ import {
 } from '@/components/patient/ui'
 import {
   InvoiceBreakdown,
+  InvoiceMediLoanNote,
   InvoiceStatus,
   STATE_META,
   invoiceState,
   lastAttemptFailed,
+  loanForInvoice,
+  loanIsOpen,
   money,
+  paidByMediLoan,
   payableOf,
   paymentProcessing,
   safeDate,
   type PatientInvoice,
 } from './invoice-ui'
+import { MediLoanStatusBadge, PayWithMediLoan, type MyLoan } from '@/components/patient/MediLoanCard'
 
 type Filter = 'all' | 'to_pay' | 'paid'
 
 export default function PatientInvoicesPage() {
   const invoices = useQuery(api.billing.getPatientInvoices, { limit: 50 }) as PatientInvoice[] | undefined
+  const loans = useQuery(api.mediloan.getMyLoans) as MyLoan[] | undefined
   const generateInvoicePDF = useMutation(api.billing.generateInvoicePDF)
   const { initializePayment } = usePaystackCheckout()
 
@@ -74,6 +80,7 @@ export default function PatientInvoicesPage() {
   }, [invoices, filter])
 
   const openInvoice = (invoices ?? []).find((inv) => inv._id === openId) ?? null
+  const openLoan = openInvoice ? loanForInvoice(loans, openInvoice._id) : null
 
   const handlePayNow = async (invoice: PatientInvoice) => {
     setPayingId(invoice._id)
@@ -187,6 +194,8 @@ export default function PatientInvoicesPage() {
             {visible.map((invoice) => {
               const state = invoiceState(invoice)
               const paying = payingId === invoice._id
+              const loan = loanForInvoice(loans, invoice._id)
+              const loanOpen = loanIsOpen(loan)
               return (
                 <li key={invoice._id} className="flex flex-col gap-2 py-1 sm:flex-row sm:items-center">
                   <button
@@ -207,13 +216,19 @@ export default function PatientInvoicesPage() {
                       {lastAttemptFailed(invoice) && (
                         <span className="mt-0.5 block text-xs font-medium text-pt-rose-fg">Last payment didn’t go through</span>
                       )}
+                      {paidByMediLoan(invoice) && <span className="mt-0.5 block text-xs text-pt-green-fg">Paid by MediLoan</span>}
+                      {loanOpen && loan && (
+                        <span className="mt-1 block">
+                          <MediLoanStatusBadge status={loan.status} />
+                        </span>
+                      )}
                     </span>
                     <span className="shrink-0 text-right text-sm font-semibold tabular-nums text-pt-ink">
                       {money(payableOf(invoice), invoice.currency)}
                     </span>
                     <ChevronRight className="hidden h-3.5 w-3.5 shrink-0 text-pt-faint sm:block" />
                   </button>
-                  {invoice.canPay && (
+                  {invoice.canPay && !loanOpen && (
                     <div className="px-2 pb-2 sm:pb-0">
                       <Button
                         size="sm"
@@ -245,7 +260,7 @@ export default function PatientInvoicesPage() {
         footer={
           openInvoice ? (
             <div className="space-y-2">
-              {openInvoice.canPay && (
+              {openInvoice.canPay && !loanIsOpen(openLoan) && (
                 <Button
                   onClick={() => handlePayNow(openInvoice)}
                   disabled={payingId !== null}
@@ -258,6 +273,15 @@ export default function PatientInvoicesPage() {
                   )}
                   {lastAttemptFailed(openInvoice) ? 'Try again' : 'Pay'} {money(payableOf(openInvoice), openInvoice.currency)}
                 </Button>
+              )}
+              {openInvoice.canPay && !loanIsOpen(openLoan) && (
+                <PayWithMediLoan
+                  target={{ invoiceId: openInvoice._id }}
+                  // MediLoan covers what's owed; card fees don't apply
+                  amountKobo={openInvoice.totalAmount}
+                  what={`invoice #${openInvoice.invoiceNumber}`}
+                  className="h-11 w-full"
+                />
               )}
               <div className="grid grid-cols-2 gap-2">
                 <Button asChild className={cn(secondaryButtonClass, 'h-11')}>
@@ -315,6 +339,7 @@ export default function PatientInvoicesPage() {
               </p>
             </div>
 
+            <InvoiceMediLoanNote invoice={openInvoice} loan={openLoan} />
             {lastAttemptFailed(openInvoice) && (
               <p className="rounded-2xl bg-pt-rose-bg px-4 py-3 text-sm text-pt-rose-fg">
                 Your last payment didn’t go through, so nothing was charged. You can try again.

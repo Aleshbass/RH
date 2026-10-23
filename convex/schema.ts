@@ -1411,8 +1411,12 @@ export default defineSchema({
       v.literal("repaid")          // Patient fully repaid the loan
     ),
 
-    // The invoice this loan pays for (physio billing); it's marked paid when the loan disburses
+    // What the loan pays for: an invoice (marked paid when the loan disburses) or an unpaid
+    // marketplace booking (confirmed when it disburses). Every new loan has one of the two.
     invoiceId: v.optional(v.id("invoices")),
+    bookingId: v.optional(v.id("marketplaceBookings")),
+    physiotherapistId: v.optional(v.id("users")), // The provider being paid, for their billing view
+    attentionReason: v.optional(v.string()), // Set when a payout couldn't be applied automatically
     myituraLoanId: v.optional(v.string()), // MyItura's loanId, from webhooks or a status lookup
     amountApproved: v.optional(v.number()), // kobo
     lastEvent: v.optional(v.string()),
@@ -1433,6 +1437,8 @@ export default defineSchema({
     .index("by_loanRequest", ["loanRequestId"])
     .index("by_createdAt", ["createdAt"])
     .index("by_invoice", ["invoiceId"])
+    .index("by_booking", ["bookingId"])
+    .index("by_physiotherapist", ["physiotherapistId"])
     .index("by_myituraLoanId", ["myituraLoanId"]),
 
   // MediLoan webhook deliveries already handled (X-MyItura-Delivery-Id), so retries are no-ops
@@ -3512,10 +3518,12 @@ export default defineSchema({
 
     // Workflow status
     status: v.union(
-      v.literal("pending"),      // Submitted, awaiting admin review
-      v.literal("initiated"),    // Admin has called MyItura SDK
-      v.literal("cancelled"),    // Admin dismissed / patient withdrew
+      v.literal("pending"),          // Submitted, awaiting admin review
+      v.literal("awaiting_invoice"), // Admin asked the physio to invoice the patient first
+      v.literal("initiated"),        // A loan was started for it (linked below)
+      v.literal("cancelled"),        // Admin dismissed / patient withdrew
     ),
+    invoiceRequestedAt: v.optional(v.number()),
 
     // Populated when admin initiates with MyItura
     loanApplicationId: v.optional(v.id("loanApplications")), // link to the actual loan record

@@ -34,7 +34,7 @@ type LoanFormState = "idle" | "open" | "submitting" | "success" | "error";
 const loanField =
     "w-full rounded-xl border border-white/10 bg-white/[0.06] py-2.5 pl-9 pr-3 text-base text-white placeholder:text-white/40 sm:text-sm transition-colors focus:border-rh-lime/60 focus:outline-none focus:ring-2 focus:ring-rh-lime/25";
 
-function MediLoanWidget({ physiotherapistName }: { physiotherapistName: string }) {
+function MediLoanWidget({ physiotherapistName, physiotherapistId }: { physiotherapistName: string; physiotherapistId?: string }) {
     const [state, setState] = useState<LoanFormState>("idle");
     const [firstName, setFirstName] = useState("");
     const [lastName, setLastName] = useState("");
@@ -60,6 +60,7 @@ function MediLoanWidget({ physiotherapistName }: { physiotherapistName: string }
                     treatment: `Physiotherapy with ${physiotherapistName}`,
                     treatmentAmount: undefined, // patient doesn't specify amount here
                     physiotherapistName,
+                    physiotherapistId,
                 }),
             });
             const data = await res.json();
@@ -363,7 +364,7 @@ export default function PhysioBookingPage() {
                 </p>
             </section>
 
-            <MediLoanWidget physiotherapistName={profile.fullName} />
+            <MediLoanWidget physiotherapistName={profile.fullName} physiotherapistId={resolvedUserId ?? undefined} />
 
             <PoweredBy />
         </BookingShell>
