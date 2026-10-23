@@ -1,7 +1,6 @@
 @import "tailwindcss";
-@import "mapbox-gl/dist/mapbox-gl.css";
-@import "stream-chat-react/dist/css/v2/index.css";
-@import "react-day-picker/dist/style.css";
+/* Library stylesheets (mapbox-gl, stream-chat-react, react-day-picker) are imported by the
+   components that use them, so they only load on those pages. */
 @import "./portal-dark.css";
 @import "./patient-portal.css";
 /* @import "fumadocs-ui/css/neutral.css"; */

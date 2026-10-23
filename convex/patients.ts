@@ -146,14 +146,14 @@ export const getMyPatients = query({
           ? await ctx.db.get(patient.patientProfileId)
           : null;
 
-        // Get recent appointment count
+        // Visits with this physio, counted up to 100 so a long history doesn't make the list slow
         const appointmentCount = await ctx.db
           .query("appointments")
           .withIndex("by_patient_id_and_time", (q) =>
             q.eq("patientId", patient._id)
           )
           .filter((q) => q.eq(q.field("physiotherapistId"), physiotherapist._id))
-          .collect()
+          .take(100)
           .then(appointments => appointments.length);
 
         // Get latest session
@@ -203,6 +203,36 @@ export const getMyPatients = query({
     }
 
     return filteredPatients;
+  },
+});
+
+/**
+ * The physio's active patients for pickers (messages, video calls, invoices, scheduling):
+ * names and contact only, one read per patient. Use getMyPatients where stats are shown.
+ */
+export const getMyPatientOptions = query({
+  args: {},
+  handler: async (ctx) => {
+    const physiotherapist = await getAuthenticatedPhysiotherapist(ctx);
+    const relationships = await ctx.db
+      .query("patientPhysiotherapistRelationships")
+      .withIndex("by_physiotherapist", (q) => q.eq("physiotherapistId", physiotherapist._id))
+      .filter((q) => q.eq(q.field("status"), "active"))
+      .take(500);
+    const patientIds = [...new Set(relationships.map((r) => r.patientId))];
+    const patients = await Promise.all(patientIds.map((id) => ctx.db.get(id)));
+    return patients
+      .filter((p): p is NonNullable<typeof p> => p !== null)
+      .map((p) => ({
+        _id: p._id,
+        firstName: p.firstName,
+        lastName: p.lastName,
+        email: p.email,
+        phoneNumber: p.phoneNumber,
+        patientNumber: p.patientNumber,
+        imageUrl: p.imageUrl,
+      }))
+      .sort((a, b) => `${a.firstName ?? ""} ${a.lastName ?? ""}`.localeCompare(`${b.firstName ?? ""} ${b.lastName ?? ""}`));
   },
 });
 
@@ -540,9 +570,9 @@ export const getDashboardStats = query({
     const todaysAppointments = await ctx.db
       .query("appointments")
       .withIndex("by_physiotherapist_id_and_time", (q) =>
-        q.eq("physiotherapistId", physiotherapist._id).gte("startTime", startOfDay)
+        q.eq("physiotherapistId", physiotherapist._id).gte("startTime", startOfDay).lte("startTime", endOfDay)
       )
-      .filter((q) => q.and(q.lte(q.field("startTime"), endOfDay), q.neq(q.field("isRecordOnly"), true)))
+      .filter((q) => q.neq(q.field("isRecordOnly"), true))
       .collect();
 
     // Get this week's completed sessions (completed appointments)
@@ -552,15 +582,9 @@ export const getDashboardStats = query({
     const completedSessions = await ctx.db
       .query("appointments")
       .withIndex("by_physiotherapist_id_and_time", (q) =>
-        q.eq("physiotherapistId", physiotherapist._id).gte("startTime", startOfWeek)
+        q.eq("physiotherapistId", physiotherapist._id).gte("startTime", startOfWeek).lte("startTime", endOfWeek)
       )
-      .filter((q) =>
-        q.and(
-          q.lte(q.field("startTime"), endOfWeek),
-          q.eq(q.field("status"), "completed"),
-          q.neq(q.field("isRecordOnly"), true)
-        )
-      )
+      .filter((q) => q.and(q.eq(q.field("status"), "completed"), q.neq(q.field("isRecordOnly"), true)))
       .collect();
 
     // Get pending invitations

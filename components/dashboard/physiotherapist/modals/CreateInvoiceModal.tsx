@@ -33,7 +33,8 @@ export function CreateInvoiceModal({ isOpen, onClose, preselectedPatientId }: Cr
         notes: ''
     });
 
-    const patients = useQuery(api.patients.getMyPatients, { limit: 100 });
+    // Only loaded while the dialog is open
+    const patients = useQuery(api.patients.getMyPatientOptions, isOpen ? {} : 'skip');
     const createInvoice = useMutation(api.billing.createInvoice);
     // Optional: the visit this payment is for (recent and upcoming visits with the chosen patient)
     const [appointmentId, setAppointmentId] = useState('');

@@ -27,7 +27,8 @@ export function CreateVideoCallModal({ isOpen, onClose, preselectedPatientId }: 
         serviceType: 'Telehealth Consultation'
     });
 
-    const patients = useQuery(api.patients.getMyPatients, {}) as Patient[] | undefined;
+    // Only loaded while the dialog is open
+    const patients = useQuery(api.patients.getMyPatientOptions, isOpen ? {} : 'skip') as Patient[] | undefined;
     const me = useQuery(api.users.getMyUser);
 
     // Pre-fill patient data when modal opens or patientId changes

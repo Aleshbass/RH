@@ -90,6 +90,8 @@ const RealtimeChat = ({ recipientId, className, embedded = false, variant = 'def
   const fileInputRef = useRef<HTMLInputElement>(null)
   // Using this ref in a useEffect for typing indicators
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const typingSentAtRef = useRef(0)
+  const markedReadKeyRef = useRef<string | null>(null)
   // Map of messageId -> DOM node for scrolling/highlighting
   const messageRefs = useRef<Record<string, HTMLDivElement | null>>({})
   // Voice note recording
@@ -152,20 +154,6 @@ const RealtimeChat = ({ recipientId, className, embedded = false, variant = 'def
     newestSeenId.current = newest._id
   }, [messages?.items, currentUser?._id])
 
-  // Auto-mark messages as read when conversation is loaded and visible
-  useEffect(() => {
-    if (conversationId && messages?.items && messages.items.length > 0) {
-      // Mark messages as read after a short delay to simulate "viewing"
-      const timer = setTimeout(() => {
-        markMessagesAsRead({ conversationId })
-          .catch((error: unknown) => {
-            console.error('Failed to mark messages as read:', error)
-          });
-      }, 1000); // 1 second delay to simulate user viewing messages
-
-      return () => clearTimeout(timer);
-    }
-  }, [conversationId, messages?.items?.length, markMessagesAsRead, messages?.items]);
 
   // Memoize paginated messages to prevent unnecessary re-renders
   // Get recipient user information
@@ -300,6 +288,7 @@ const RealtimeChat = ({ recipientId, className, embedded = false, variant = 'def
         await editMessageMut({ messageId: editingMessage.id as Id<"messages">, newContent: newMessage.trim() })
         setEditingMessage(null)
         setNewMessage('')
+        typingSentAtRef.current = 0
         await setTypingStatus({ conversationId, isTyping: false })
       } catch (error) {
         console.error('Failed to edit message:', error)
@@ -325,6 +314,7 @@ const RealtimeChat = ({ recipientId, className, embedded = false, variant = 'def
     await deliver(item);
 
     // Clear typing status
+    typingSentAtRef.current = 0
     setTypingStatus({ conversationId, isTyping: false }).catch(() => {});
   };
 
@@ -435,13 +425,21 @@ const RealtimeChat = ({ recipientId, className, embedded = false, variant = 'def
       clearTimeout(typingTimeoutRef.current);
     }
 
-    // Set typing status to true
-    setTypingStatus({ conversationId, isTyping: true });
+    // "Typing" is sent at most every 3 s, not on every keystroke (each send is a write that
+    // queues ahead of the message itself)
+    const now = Date.now();
+    if (now - typingSentAtRef.current > 3000) {
+      typingSentAtRef.current = now;
+      setTypingStatus({ conversationId, isTyping: true }).catch(() => {});
+    }
 
-    // Set timeout to clear typing status
+    // 3 s after the last keystroke, say they've stopped (once)
     typingTimeoutRef.current = setTimeout(() => {
-      setTypingStatus({ conversationId, isTyping: false });
-    }, 3000); // Clear after 3 seconds of no typing
+      if (typingSentAtRef.current) {
+        typingSentAtRef.current = 0;
+        setTypingStatus({ conversationId, isTyping: false }).catch(() => {});
+      }
+    }, 3000);
 
     // Cleanup
     return () => {
@@ -505,14 +503,18 @@ const RealtimeChat = ({ recipientId, className, embedded = false, variant = 'def
   useEffect(() => {
     if (!conversationId || !paginatedMessages.items.length) return;
 
+    // Only when something from the other person is unread, and once per set of unread messages
     const unreadMessages = paginatedMessages.items.filter(
-      (msg: ChatMessage) => !msg.isReadByReceiver && msg.senderId === recipientId
+      (msg: ChatMessage) => !msg.isReadByReceiver && msg.senderId !== currentUser?._id
     );
-
-    if (unreadMessages.length > 0) {
-      markMessagesAsRead({ conversationId });
-    }
-  }, [conversationId, paginatedMessages, markMessagesAsRead, recipientId]);
+    if (unreadMessages.length === 0) return;
+    const key = `${conversationId}:${unreadMessages.map((m: ChatMessage) => m._id).join(',')}`;
+    if (markedReadKeyRef.current === key) return;
+    markedReadKeyRef.current = key;
+    markMessagesAsRead({ conversationId }).catch(() => {
+      markedReadKeyRef.current = null;
+    });
+  }, [conversationId, paginatedMessages, markMessagesAsRead, currentUser?._id]);
 
   // Scroll to bottom when new messages arrive
   useEffect(() => {

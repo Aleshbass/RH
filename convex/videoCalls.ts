@@ -1185,16 +1185,17 @@ export const getMyVideoCalls = query({
     // appointment calls from marketplace/Joy bookings list the patient only as a participant)
     const calls = new Map<string, Doc<"videoCalls">>()
     const add = (call: Doc<"videoCalls"> | null) => { if (call) calls.set(call._id, call) }
-    for (const call of await ctx.db.query("videoCalls").withIndex("by_initiator", (q) => q.eq("initiatorId", user._id)).collect()) add(call)
-    for (const call of await ctx.db.query("videoCalls").withIndex("by_patient_id_and_scheduled", (q) => q.eq("patientId", user._id)).collect()) add(call)
+    // Bounded to the most recent history, so the page stays fast for long-standing accounts
+    for (const call of await ctx.db.query("videoCalls").withIndex("by_initiator", (q) => q.eq("initiatorId", user._id)).order("desc").take(200)) add(call)
+    for (const call of await ctx.db.query("videoCalls").withIndex("by_patient_id_and_scheduled", (q) => q.eq("patientId", user._id)).order("desc").take(200)) add(call)
     const appointments = user.role === "physiotherapist"
-      ? await ctx.db.query("appointments").withIndex("by_physiotherapist_id_and_time", (q) => q.eq("physiotherapistId", user._id)).collect()
-      : await ctx.db.query("appointments").withIndex("by_patient_id_and_time", (q) => q.eq("patientId", user._id)).collect()
+      ? await ctx.db.query("appointments").withIndex("by_physiotherapist_id_and_time", (q) => q.eq("physiotherapistId", user._id)).order("desc").take(300)
+      : await ctx.db.query("appointments").withIndex("by_patient_id_and_time", (q) => q.eq("patientId", user._id)).order("desc").take(300)
     for (const appointment of appointments) {
       if (!appointment.videoCallId && !appointment.meetingLink) continue
       for (const call of await ctx.db.query("videoCalls").withIndex("by_appointment", (q) => q.eq("appointmentId", appointment._id)).collect()) add(call)
     }
-    for (const joined of await ctx.db.query("videoCallParticipants").withIndex("by_user_id", (q) => q.eq("userId", user._id)).collect()) {
+    for (const joined of await ctx.db.query("videoCallParticipants").withIndex("by_user_id", (q) => q.eq("userId", user._id)).order("desc").take(200)) {
       add(await ctx.db.get(joined.callId))
     }
     // Daily meeting tokens are per-participant secrets; never send them to the list

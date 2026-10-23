@@ -25,6 +25,19 @@ const STATUS_LABELS: Record<DutyStatus, string> = {
 
 /** Re-send position at least this often even when the device hasn't moved. */
 const HEARTBEAT_MS = 3 * 60 * 1000
+/** Between those, send at most this often, unless the physio moved at least MIN_MOVE_M. */
+const MIN_INTERVAL_MS = 30 * 1000
+const MIN_MOVE_M = 50
+
+/** Distance in metres between two points (haversine). */
+function metresBetween(a: { lat: number; lng: number }, b: { lat: number; lng: number }) {
+  const R = 6_371_000
+  const toRad = (d: number) => (d * Math.PI) / 180
+  const dLat = toRad(b.lat - a.lat)
+  const dLng = toRad(b.lng - a.lng)
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLng / 2) ** 2
+  return 2 * R * Math.asin(Math.sqrt(h))
+}
 
 /**
  * "On duty" switch for home visits. While on, the physio's position is shared with
@@ -43,9 +56,28 @@ export function PhysioDutySwitch({ className }: { className?: string }) {
   const watchIdRef = useRef<number | null>(null)
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const failedRef = useRef(false)
+  const lastSentRef = useRef<{ at: number; lat: number; lng: number; status: DutyStatus } | null>(null)
 
+  /**
+   * Sends the position. Phones report positions every second or so; each ping is a write that
+   * queues ahead of the physio's own actions, so only send when 30 s have passed, they moved
+   * 50 m, or their status changed (`force` for status changes and the heartbeat).
+   */
   const send = useCallback(
-    (position: GeolocationPosition) => {
+    (position: GeolocationPosition, force = false) => {
+      const here = { lat: position.coords.latitude, lng: position.coords.longitude }
+      const last = lastSentRef.current
+      const now = Date.now()
+      if (
+        !force &&
+        last &&
+        last.status === statusRef.current &&
+        now - last.at < MIN_INTERVAL_MS &&
+        metresBetween(last, here) < MIN_MOVE_M
+      ) {
+        return
+      }
+      lastSentRef.current = { at: now, ...here, status: statusRef.current }
       pingLocation({
         latitude: position.coords.latitude,
         longitude: position.coords.longitude,
@@ -81,14 +113,15 @@ export function PhysioDutySwitch({ className }: { className?: string }) {
       (position) => {
         setStarting(false)
         setOnDuty(true)
-        send(position)
-        watchIdRef.current = navigator.geolocation.watchPosition(send, () => undefined, {
-          enableHighAccuracy: true,
-          maximumAge: 10_000,
-          timeout: 10_000,
+        send(position, true)
+        // Network-level accuracy is enough for coordinating visits and saves battery
+        watchIdRef.current = navigator.geolocation.watchPosition((p) => send(p), () => undefined, {
+          enableHighAccuracy: false,
+          maximumAge: 30_000,
+          timeout: 20_000,
         })
         heartbeatRef.current = setInterval(() => {
-          navigator.geolocation.getCurrentPosition(send, () => undefined)
+          navigator.geolocation.getCurrentPosition((p) => send(p, true), () => undefined)
         }, HEARTBEAT_MS)
         toast.success('You’re on duty. Your location is shared while this tab is open.')
       },
@@ -113,7 +146,7 @@ export function PhysioDutySwitch({ className }: { className?: string }) {
   const changeStatus = (next: DutyStatus) => {
     statusRef.current = next
     setStatus(next)
-    navigator.geolocation.getCurrentPosition(send, () => undefined)
+    navigator.geolocation.getCurrentPosition((p) => send(p, true), () => undefined)
   }
 
   // Leaving the dashboard ends the shift

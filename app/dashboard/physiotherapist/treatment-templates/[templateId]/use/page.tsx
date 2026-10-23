@@ -21,7 +21,7 @@ export default function UseTreatmentTemplatePage() {
   const templateId = (params?.templateId as string) as Id<"treatmentTemplates">;
 
   const template = useQuery(api.treatmentPlans.getTreatmentTemplateById, { templateId });
-  const patients = useQuery(api.patients.getMyPatients, { limit: 100 });
+  const patients = useQuery(api.patients.getMyPatientOptions, {});
   const assignTemplate = useMutation(api.treatmentPlans.assignTemplateToPatient);
 
   const [patientId, setPatientId] = useState<Id<"users"> | "">("");

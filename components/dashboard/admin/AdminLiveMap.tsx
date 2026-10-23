@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Map, { Marker, Popup, NavigationControl } from "react-map-gl/mapbox";
+import "mapbox-gl/dist/mapbox-gl.css";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { User, Clock } from "@/components/icons";

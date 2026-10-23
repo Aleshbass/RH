@@ -51,7 +51,8 @@ type Access = 'loading' | 'redirecting' | 'declined' | 'review' | 'full'
 function usePhysioAccess(pathname: string) {
   const router = useRouter()
   const user = useQuery(api.users.getMyUser)
-  const setup = useQuery(api.physioSetup.getMySetupStatus, user ? {} : 'skip')
+  // Loaded alongside the user, not after it (it returns null for anyone who isn't a physio)
+  const setup = useQuery(api.physioSetup.getMySetupStatus, {})
 
   let redirectTo: string | null = null
   if (user === null) redirectTo = '/sign-in'

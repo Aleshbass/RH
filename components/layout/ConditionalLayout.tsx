@@ -1,8 +1,11 @@
 'use client'
 
+import dynamic from 'next/dynamic'
 import { usePathname } from 'next/navigation'
-import Header from "@/components/common/Header"
-import Footer from '@/components/landing/Footer'
+// Split out: still server-rendered on marketing pages, but dashboards (which never show them)
+// don't download the marketing header and footer code
+const Header = dynamic(() => import('@/components/common/Header'))
+const Footer = dynamic(() => import('@/components/landing/Footer'))
 import { LearnAnnouncementSpacer } from '@/components/learn/LearnAnnouncementBar'
 
 import { useState, useEffect } from 'react'

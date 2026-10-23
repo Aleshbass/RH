@@ -33,7 +33,7 @@ export default function PhysiotherapistMessagesPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const conversations = useQuery(api.chat.getMyConversations, {}) as Conversation[] | undefined;
-  const patients = useQuery(api.patients.getMyPatients, { limit: 200 }) as PatientLite[] | undefined;
+  const patients = useQuery(api.patients.getMyPatientOptions, {}) as PatientLite[] | undefined;
 
   // Who we're chatting with. Tracked directly so a brand-new conversation opens straight away.
   const [recipientId, setRecipientId] = useState<Id<'users'> | null>(null);

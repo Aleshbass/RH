@@ -20,7 +20,8 @@ export function StartConversationModal({ isOpen, onClose, preselectedPatientId }
     const [newConversationPatientId, setNewConversationPatientId] = useState<string | null>(preselectedPatientId || null);
     const router = useRouter();
 
-    const patients = useQuery(api.patients.getMyPatients, {});
+    // Only loaded while the dialog is open
+    const patients = useQuery(api.patients.getMyPatientOptions, isOpen ? {} : 'skip');
     const getOrCreateConversation = useMutation(api.chat.getOrCreateConversation);
 
     useEffect(() => {

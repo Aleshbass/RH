@@ -274,7 +274,7 @@ function ScheduleDialog({
 export default function VideoCallsPage() {
   const router = useRouter();
   const calls = useQuery(api.videoCalls.getMyVideoCalls, {}) as VideoCall[] | undefined;
-  const patients = useQuery(api.patients.getMyPatients, { limit: 200 }) as PatientLite[] | undefined;
+  const patients = useQuery(api.patients.getMyPatientOptions, {}) as PatientLite[] | undefined;
   const platformPreference = useQuery(api.physiotherapistProfiles.getVideoPlatformPreference) as string | null | undefined;
   const startVideoCall = useMutation(api.videoCalls.startVideoCall);
   const cancelVideoCall = useMutation(api.videoCalls.cancelVideoCall);

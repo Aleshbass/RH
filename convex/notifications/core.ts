@@ -381,12 +381,12 @@ export const getMyUnreadCount = query({
       .unique();
     if (!user) return 0;
 
-    const count = await ctx.db
+    // Unread only, straight from the index, counted up to 100 (the bell shows "9+" anyway)
+    const unread = await ctx.db
       .query("notifications")
-      .withIndex("by_user", (q)=> q.eq("userId", user._id))
-      .filter((q) => q.eq(q.field("readAt"), undefined))
-      .collect();
-    return count.length;
+      .withIndex("by_user_and_read", (q) => q.eq("userId", user._id).eq("readAt", undefined))
+      .take(100);
+    return unread.length;
   },
 });
 

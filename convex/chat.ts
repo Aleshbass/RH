@@ -495,17 +495,16 @@ export const getMyConversations = query({
       throw new Error("User not found");
     }
 
-    const conversations = await ctx.db
-      .query("conversations")
-      .filter((q: any) => 
-        q.or(
-          q.eq(q.field("participant1Id"), currentUser._id),
-          q.eq(q.field("participant2Id"), currentUser._id)
-        )
-      );
+    // Through the participant indexes: a scan of the whole conversations table re-ran for every
+    // user whenever anyone on the platform sent a message
+    const [asFirst, asSecond] = await Promise.all([
+      ctx.db.query("conversations").withIndex("by_participant1", (q: any) => q.eq("participant1Id", currentUser._id)).take(300),
+      ctx.db.query("conversations").withIndex("by_participant2", (q: any) => q.eq("participant2Id", currentUser._id)).take(300),
+    ]);
+    const conversations = [...asFirst, ...asSecond];
 
     const conversationsWithDetails = [];
-    for await (const conversation of conversations) {
+    for (const conversation of conversations) {
         // Get other participant
         const otherParticipantId = conversation.participant1Id === currentUser._id 
           ? conversation.participant2Id 
@@ -675,12 +674,16 @@ export const markMessagesAsRead = mutation({
       });
     }
 
-    // Reset unread count for this user
+    // Reset unread count for this user, only when there was something unread: a write here
+    // re-runs everyone's conversation and message queries
     const isParticipant1 = conversation.participant1Id === currentUser._id;
-    await ctx.db.patch(conversation._id, {
-      unreadCount1: isParticipant1 ? 0 : conversation.unreadCount1,
-      unreadCount2: isParticipant1 ? conversation.unreadCount2 : 0,
-    });
+    const myUnread = isParticipant1 ? conversation.unreadCount1 : conversation.unreadCount2;
+    if (myUnread > 0 || unreadMessages.length > 0) {
+      await ctx.db.patch(conversation._id, {
+        unreadCount1: isParticipant1 ? 0 : conversation.unreadCount1,
+        unreadCount2: isParticipant1 ? conversation.unreadCount2 : 0,
+      });
+    }
 
     return {
       success: true,
@@ -779,24 +782,29 @@ export const setTyping = mutation({
 
     // Store typing status in a separate table or update user status
     // For now, we'll store it temporarily with expiration
+    // One row per person per conversation, refreshed while they type (it used to add a row on
+    // every keystroke and never clean up)
+    const rows = await ctx.db
+      .query("typingStatus")
+      .withIndex("by_conversation_id_and_user", q => q.eq("conversationId", args.conversationId).eq("userId", currentUser._id))
+      .take(50);
+    const [current, ...leftovers] = rows;
+    for (const row of leftovers) await ctx.db.delete(row._id);
     if (args.isTyping) {
-      await ctx.db.insert("typingStatus", {
-        conversationId: args.conversationId,
-        userId: currentUser._id,
-        isTyping: true,
-        timestamp: Date.now(),
-        expiresAt: Date.now() + 5000, // 5 seconds
-      });
-    } else {
-      // Remove typing status
-      const existingStatus = await ctx.db
-        .query("typingStatus")
-        .withIndex("by_conversation_id_and_user", q => q.eq("conversationId", args.conversationId).eq("userId", currentUser._id))
-        .first();
-      
-      if (existingStatus) {
-        await ctx.db.delete(existingStatus._id);
+      const now = Date.now();
+      if (current) {
+        await ctx.db.patch(current._id, { isTyping: true, timestamp: now, expiresAt: now + 5000 });
+      } else {
+        await ctx.db.insert("typingStatus", {
+          conversationId: args.conversationId,
+          userId: currentUser._id,
+          isTyping: true,
+          timestamp: now,
+          expiresAt: now + 5000, // 5 seconds
+        });
       }
+    } else if (current) {
+      await ctx.db.delete(current._id);
     }
   },
 });
@@ -878,16 +886,12 @@ export const getUnreadCount = query({
     if (!currentUser) {
       throw new Error("User not found");
     }
-    // Sum unread counts in conversations where current user is participant1 or 2
-    const conversations = await ctx.db
-      .query("conversations")
-      .filter((q: any) =>
-        q.or(
-          q.eq(q.field("participant1Id"), currentUser._id),
-          q.eq(q.field("participant2Id"), currentUser._id)
-        )
-      )
-      .collect();
+    // Sum unread counts in conversations where current user is participant1 or 2 (by index)
+    const [asFirst, asSecond] = await Promise.all([
+      ctx.db.query("conversations").withIndex("by_participant1", (q: any) => q.eq("participant1Id", currentUser._id)).take(300),
+      ctx.db.query("conversations").withIndex("by_participant2", (q: any) => q.eq("participant2Id", currentUser._id)).take(300),
+    ]);
+    const conversations = [...asFirst, ...asSecond];
 
     let total = 0;
     conversations.forEach((conv: any) => {
@@ -977,18 +981,12 @@ export const getConversations = query({
       .first();
     if (!user) throw new Error("User not found");
 
-    const baseQuery = ctx.db
-      .query("conversations")
-      .filter((q) => 
-        q.or(
-          q.eq(q.field("participant1Id"), user._id),
-          q.eq(q.field("participant2Id"), user._id)
-        )
-      );
-
-    const conversations = args.limit 
-      ? await baseQuery.take(args.limit)
-      : await baseQuery.collect();
+    const cap = Math.min(Math.max(args.limit ?? 300, 1), 300);
+    const [asFirst, asSecond] = await Promise.all([
+      ctx.db.query("conversations").withIndex("by_participant1", (q) => q.eq("participant1Id", user._id)).take(cap),
+      ctx.db.query("conversations").withIndex("by_participant2", (q) => q.eq("participant2Id", user._id)).take(cap),
+    ]);
+    const conversations = [...asFirst, ...asSecond].slice(0, cap);
 
     // Get last message and other participant for each conversation
     const conversationsWithMessages = await Promise.all(

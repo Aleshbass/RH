@@ -92,7 +92,8 @@ function invoiceStatus(invoice: InvoiceFromQuery) {
 export default function BillingPage() {
   const invoices = useQuery(api.billing.getMyInvoices, { limit: 200 }) as InvoiceFromQuery[] | undefined;
   const stats = useQuery(api.billing.getBillingStats, {}) as BillingStats | undefined;
-  const patients = useQuery(api.patients.getMyPatients, { limit: 200 }) as
+  // Names and contacts only, for matching invoices to patients
+  const patients = useQuery(api.patients.getMyPatientOptions, {}) as
     | { _id: string; firstName?: string; lastName?: string; email?: string; phoneNumber?: string }[]
     | undefined;
   const bankAccounts = useQuery(api.paystack.getMyBankAccounts) as { accountName?: string; bankName?: string }[] | undefined;

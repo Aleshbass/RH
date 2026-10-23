@@ -179,9 +179,6 @@ export default async function RootLayout({
           </Providers>
         </ClerkProvider>
 
-        {/* Paystack Inline Script */}
-        <script src="https://js.paystack.co/v1/inline.js" async />
-
         {/* Umami Analytics */}
         <Script
           src="https://yoursiteanalytics.vercel.app/script.js"

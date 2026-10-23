@@ -644,18 +644,23 @@ export const processPayment = mutation({
 /**
  * Get invoices for a physiotherapist
  */
-/** Invoices a physiotherapist can see: their clinic's, or their own when independent. */
+/** Most invoices the billing list and stats read: the newest 1,000 keeps big clinics fast. */
+const INVOICE_SCOPE_CAP = 1000;
+
+/** Invoices a physiotherapist can see: their clinic's, or their own when independent (newest first). */
 async function myInvoiceScope(ctx: any, physiotherapistId: Id<"users">, clinicId?: Id<"clinics">): Promise<Doc<"invoices">[]> {
   if (clinicId) {
     return await ctx.db
       .query("invoices")
       .withIndex("by_clinic_id", (q: any) => q.eq("clinicId", clinicId))
-      .collect();
+      .order("desc")
+      .take(INVOICE_SCOPE_CAP);
   }
   return await ctx.db
     .query("invoices")
     .withIndex("by_physiotherapist_id", (q: any) => q.eq("physiotherapistId", physiotherapistId))
-    .collect();
+    .order("desc")
+    .take(INVOICE_SCOPE_CAP);
 }
 
 export const getMyInvoices = query({
@@ -668,6 +673,8 @@ export const getMyInvoices = query({
       v.literal("void")
     )),
     limit: v.optional(v.number()),
+    /** One patient's invoices (the patient record's Payments tab), still limited to this physio's scope */
+    patientId: v.optional(v.id("users")),
   },
   returns: v.array(v.object({
     _id: v.id("invoices"),
@@ -709,7 +716,18 @@ export const getMyInvoices = query({
 
     // Clinic physios see their clinic's invoices; independent physios own theirs directly
     // (they have no clinicId, so a clinic-only lookup returned nothing for them)
-    const scoped = await myInvoiceScope(ctx, physiotherapist._id, physiotherapistProfile?.clinicId);
+    const clinicId = physiotherapistProfile?.clinicId;
+    const scoped = args.patientId
+      ? (
+          await ctx.db
+            .query("invoices")
+            .withIndex("by_patient_id", (q: any) => q.eq("patientId", args.patientId))
+            .order("desc")
+            .take(200)
+        ).filter((invoice: Doc<"invoices">) =>
+          clinicId ? invoice.clinicId === clinicId : invoice.physiotherapistId === physiotherapist._id
+        )
+      : await myInvoiceScope(ctx, physiotherapist._id, clinicId);
     const now = Date.now();
     const invoices = scoped
       .filter((invoice) => {

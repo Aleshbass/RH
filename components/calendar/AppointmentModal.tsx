@@ -95,8 +95,9 @@ export function AppointmentModal({
   // Get current user's patients (avoid deep type instantiation by indexing api via unknown maps)
   const apiRoot = api as unknown as Record<string, unknown>
   const patientsModule = apiRoot['patients'] as Record<string, unknown>
-  const getMyPatientsQuery = patientsModule['getMyPatients']
-  const patients = useQueryUntyped(getMyPatientsQuery, { limit: 100 }) as PatientOption[] | undefined
+  const getMyPatientsQuery = patientsModule['getMyPatientOptions']
+  // Only loaded while the dialog is open (it stays mounted on the calendar)
+  const patients = useQueryUntyped(getMyPatientsQuery, isOpen ? {} : 'skip') as PatientOption[] | undefined
 
   // Get existing appointment details if editing (use untyped to avoid deep instantiation)
   const appointmentsModule = apiRoot['appointments'] as Record<string, unknown>

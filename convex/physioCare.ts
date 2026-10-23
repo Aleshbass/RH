@@ -376,15 +376,17 @@ export const getPatientWorkspace = query({
       await ctx.db
         .query("invoices")
         .withIndex("by_patient_id", (q) => q.eq("patientId", args.patientId))
-        .collect()
+        .order("desc")
+        .take(200)
     ).filter((i) => i.physiotherapistId === physio._id);
     const unpaid = invoices.filter((i) => i.status === "sent" || i.status === "partial_payment" || i.status === "overdue");
 
+    // Only the count and the latest date are shown here: read up to 200 notes, newest first
     const notes = await ctx.db
       .query("sessionLogs")
       .withIndex("by_patient_id_and_date", (q) => q.eq("patientId", args.patientId))
       .order("desc")
-      .collect();
+      .take(200);
     const myNotes = notes.filter((n) => n.physiotherapistId === physio._id);
 
     return {
@@ -576,11 +578,12 @@ export const getCarePlanHistory = query({
  * for confirmation and overdue invoices.
  */
 export const getNeedsAttention = query({
-  args: {},
-  handler: async (ctx) => {
+  // `now` comes from the screen, rounded to the hour, so the result can be cached between visits
+  args: { now: v.optional(v.number()) },
+  handler: async (ctx, args) => {
     const physio = await physioOrNull(ctx);
     if (!physio) return [];
-    const now = Date.now();
+    const now = args.now ?? Math.floor(Date.now() / 3_600_000) * 3_600_000;
     type Item = {
       key: string;
       kind: "check_in" | "exercise_pain" | "plan_review" | "no_booking" | "unconfirmed" | "overdue_invoice";
@@ -628,7 +631,8 @@ export const getNeedsAttention = query({
         .collect()
     ).filter((r) => r.status === "active");
 
-    for (const relationship of relationships.slice(0, 150)) {
+    // Patients are checked in parallel; one at a time this was hundreds of reads in a row
+    await Promise.all(relationships.slice(0, 150).map(async (relationship) => {
       const patientId = relationship.patientId;
 
       // High pain logged during home exercises and not yet reviewed: one item per patient
@@ -687,7 +691,7 @@ export const getNeedsAttention = query({
         .query("appointments")
         .withIndex("by_patient_id_and_time", (q) => q.eq("patientId", patientId).gte("startTime", now))
         .filter((q) => q.eq(q.field("physiotherapistId"), physio._id))
-        .collect();
+        .take(20);
       const hasNext = upcoming.some((a) => UPCOMING_STATUSES.has(a.status) && !a.isRecordOnly);
       if (!hasNext && relationship.startDate < now - 3 * DAY) {
         const past = await ctx.db
@@ -711,7 +715,7 @@ export const getNeedsAttention = query({
           });
         }
       }
-    }
+    }));
 
     // 4. Bookings in the next 3 days still waiting for confirmation
     const soon = await ctx.db
@@ -738,7 +742,8 @@ export const getNeedsAttention = query({
     const invoices = await ctx.db
       .query("invoices")
       .withIndex("by_physiotherapist_id", (q) => q.eq("physiotherapistId", physio._id))
-      .collect();
+      .order("desc")
+      .take(500);
     for (const invoice of invoices.filter(
       (i) => (i.status === "sent" || i.status === "partial_payment" || i.status === "overdue") && i.dueDate < now
     )) {

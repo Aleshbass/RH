@@ -81,21 +81,24 @@ export function ClinicThemeProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  useEffect(() => {
-    const audio = new Audio(SOUND_SRC)
-    audio.preload = 'auto'
-    audio.volume = 0.35
-    audioRef.current = audio
-    return () => {
-      audio.pause()
+  // The switch sound (~280 KB) is fetched the first time someone toggles, not on every page load
+  useEffect(
+    () => () => {
+      audioRef.current?.pause()
       audioRef.current = null
-    }
-  }, [])
+    },
+    []
+  )
 
   const toggleTheme = useCallback(
     (origin?: { x: number; y: number }) => {
       const next: Theme = theme === 'dark' ? 'light' : 'dark'
 
+      if (soundsEnabled() && !audioRef.current) {
+        const created = new Audio(SOUND_SRC)
+        created.volume = 0.35
+        audioRef.current = created
+      }
       const audio = audioRef.current
       if (audio && soundsEnabled()) {
         audio.currentTime = 0

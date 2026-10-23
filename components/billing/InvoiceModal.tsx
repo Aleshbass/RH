@@ -80,8 +80,9 @@ export function InvoiceModal({
 
   // Get patients for selection based on user role
   const currentUser = useQuery(api.users.getMyUser)
-  const clinicPatients = useQuery(api.clinics.getClinicPatients, {})
-  const myPatients = useQuery(api.patients.getMyPatients, { limit: 100 })
+  // Only the list this user can use, and only while the dialog is open
+  const clinicPatients = useQuery(api.clinics.getClinicPatients, isOpen && currentUser?.role === 'clinic_owner' ? {} : 'skip')
+  const myPatients = useQuery(api.patients.getMyPatientOptions, isOpen && currentUser?.role === 'physiotherapist' ? {} : 'skip')
   
   const patients = currentUser?.role === 'clinic_owner' 
     ? (clinicPatients || [])

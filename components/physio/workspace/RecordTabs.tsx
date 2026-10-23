@@ -488,7 +488,8 @@ function invoiceBadge(invoice: Invoice) {
 }
 
 export function PaymentsTab({ workspace }: { workspace: Workspace }) {
-  const invoices = useQuery(api.billing.getMyInvoices, { limit: 200 }) as Invoice[] | undefined
+  // Just this patient's invoices (not the physio's whole billing list)
+  const invoices = useQuery(api.billing.getMyInvoices, { patientId: workspace.patient._id, limit: 200 }) as Invoice[] | undefined
   const createLink = useAction(api.physioBilling.createPhysioPaymentLink)
   const [requesting, setRequesting] = useState(false)
   const [busyId, setBusyId] = useState<string | null>(null)

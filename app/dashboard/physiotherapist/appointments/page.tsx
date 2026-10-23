@@ -38,8 +38,8 @@ export default function AppointmentsPage() {
   const currentUser = useQuery(api.users.getMyUser);
   const appointments = useQuery(api.appointments.getMyAppointments, { limit: 100 }) as AppointmentLike[] | undefined;
   const patients = useQuery(
-    api.patients.getMyPatients,
-    preselectedPatientId ? { limit: 200 } : 'skip'
+    api.patients.getMyPatientOptions,
+    preselectedPatientId ? {} : 'skip'
   ) as PatientLite[] | undefined;
 
   const [searchTerm, setSearchTerm] = useState('');

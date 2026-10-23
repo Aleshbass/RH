@@ -432,8 +432,29 @@ function BookingLinkCard({ physioId, name }: { physioId: Id<'users'>; name?: str
   useEffect(() => {
     let active = true
     const base = publicAppUrl()
+    // The slug never changes once set: ask the server once per browser session, not every visit
+    const cacheKey = `rehabify:booking-slug:${physioId}`
+    let cached: string | null = null
+    try {
+      cached = sessionStorage.getItem(cacheKey)
+    } catch {
+      // Storage blocked: ask the server
+    }
+    if (cached) {
+      setUrl(`${base}/book/${cached}`)
+      return
+    }
     ensureSlug({ userId: physioId })
-      .then((slug) => active && setUrl(`${base}/book/${slug || physioId}`))
+      .then((slug) => {
+        if (slug) {
+          try {
+            sessionStorage.setItem(cacheKey, slug)
+          } catch {
+            // Fine: asked again next visit
+          }
+        }
+        if (active) setUrl(`${base}/book/${slug || physioId}`)
+      })
       .catch(() => active && setUrl(`${base}/book/${physioId}`))
     return () => {
       active = false
@@ -487,7 +508,9 @@ export function PhysioHome({ setup }: { setup: SetupStatus | null | undefined })
   const clinicInfo = useQuery(api.clinics.getMyClinicInfo) as { name?: string } | null | undefined
   const stats = useQuery(api.patients.getDashboardStats, {}) as Stats | undefined
   const patients = useQuery(api.patients.getMyPatients, { limit: 60 }) as PatientRow[] | undefined
-  const attention = useQuery(api.physioCare.getNeedsAttention, {}) as AttentionItem[] | undefined
+  // A fixed "now" (start of this hour) keeps the query's arguments stable, so Convex can cache it
+  const [attentionNow] = useState(() => Math.floor(Date.now() / 3_600_000) * 3_600_000)
+  const attention = useQuery(api.physioCare.getNeedsAttention, { now: attentionNow }) as AttentionItem[] | undefined
   const checkIns = useQuery(api.physioCare.getRecentCheckIns, { limit: 6 }) as RecentCheckIn[] | undefined
 
   const [range] = useState(() => {

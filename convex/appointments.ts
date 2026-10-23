@@ -366,24 +366,19 @@ export const getMyAppointments = query({
 
     if (user.role === "physiotherapist") {
       // For physiotherapists, get their own appointments
+      // The date range is part of the index lookup, so a day or week view reads only that range
+      // instead of the physio's whole appointment history
       let appointmentsQuery = ctx.db
         .query("appointments")
-        .withIndex("by_physiotherapist_id_and_time", (q) =>
-          q.eq("physiotherapistId", user._id)
-        );
-
-      // Apply date filters if provided
-      if (args.startDate) {
-        appointmentsQuery = appointmentsQuery.filter((q) =>
-          q.gte(q.field("startTime"), args.startDate!)
-        );
-      }
-
-      if (args.endDate) {
-        appointmentsQuery = appointmentsQuery.filter((q) =>
-          q.lte(q.field("startTime"), args.endDate!)
-        );
-      }
+        .withIndex("by_physiotherapist_id_and_time", (q) => {
+          const own = q.eq("physiotherapistId", user._id);
+          if (args.startDate !== undefined && args.endDate !== undefined) {
+            return own.gte("startTime", args.startDate).lte("startTime", args.endDate);
+          }
+          if (args.startDate !== undefined) return own.gte("startTime", args.startDate);
+          if (args.endDate !== undefined) return own.lte("startTime", args.endDate);
+          return own;
+        });
 
       // Apply status filter if provided
       if (args.status) {

@@ -456,6 +456,7 @@ export default defineSchema({
     data: v.optional(v.any()),
   })
     .index("by_user", ["userId"])
+    .index("by_user_and_read", ["userId", "readAt"]) // unread = readAt undefined, for the bell count
     .index("by_user_and_status", ["userId", "status"])
     .index("by_user_and_type", ["userId", "type"])
     .index("by_status", ["status"])

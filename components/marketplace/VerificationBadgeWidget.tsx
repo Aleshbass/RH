@@ -9,6 +9,7 @@ import { BadgeCheck, Check, Clock } from "@/components/icons";
 import { toast } from "sonner";
 import VerificationSuccessModal from "./VerificationSuccessModal";
 import VerificationFailureModal from "./VerificationFailureModal";
+import { loadPaystackInline } from "@/lib/paystack-inline";
 
 interface VerificationBadgeWidgetProps {
   currentStatus: {
@@ -65,7 +66,7 @@ export default function VerificationBadgeWidget({
     }
   };
 
-  const initializePaystack = (transactionId: string, amount: number) => {
+  const initializePaystack = async (transactionId: string, amount: number) => {
     const paystackKey = process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY;
 
     if (!paystackKey) {
@@ -79,7 +80,16 @@ export default function VerificationBadgeWidget({
     // Get user email from Clerk
     const userEmail = (window as any).Clerk?.user?.primaryEmailAddress?.emailAddress || "";
 
-    // @ts-ignore - Paystack is loaded via script tag
+    // Paystack's checkout script loads only when a payment starts
+    try {
+      await loadPaystackInline();
+    } catch (error) {
+      toast.error("Payment unavailable", { description: (error as Error).message });
+      setIsProcessing(false);
+      return;
+    }
+
+    // @ts-ignore - PaystackPop comes from the script loaded above
     const handler = PaystackPop.setup({
       key: paystackKey,
       email: userEmail,
