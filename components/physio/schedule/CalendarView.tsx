@@ -87,12 +87,18 @@ export type Entry =
   | { kind: 'visit'; id: string; start: number; end: number; visit: PhysioAppointment }
   | { kind: 'held'; id: string; start: number; end: number; held: HeldBooking }
 
-type Look = { tone: 'green' | 'amber' | 'rose' | 'blue' | 'neutral'; label: string; dashed: boolean; faded: boolean }
+/** ink = needs your answer (solid), outline = time passed and not closed yet. */
+type Look = { tone: 'green' | 'ink' | 'outline' | 'rose' | 'blue' | 'neutral'; label: string; dashed: boolean; faded: boolean }
 
 function lookOf(entry: Entry, now: number): Look {
   if (entry.kind === 'held') return { tone: 'neutral', label: 'Waiting for payment', dashed: true, faded: false }
   const status = visitStatus(entry.visit, now)
-  const tone = status.tone === 'green' || status.tone === 'amber' || status.tone === 'rose' || status.tone === 'blue' ? status.tone : 'neutral'
+  const tone =
+    status.label === 'Not closed'
+      ? 'outline'
+      : status.tone === 'green' || status.tone === 'ink' || status.tone === 'rose' || status.tone === 'blue'
+        ? status.tone
+        : 'neutral'
   return {
     tone,
     label: status.label,
@@ -103,16 +109,28 @@ function lookOf(entry: Entry, now: number): Look {
 
 const BLOCK_TONE: Record<Look['tone'], string> = {
   green: 'bg-pt-green-bg border-pt-green-fg/25 text-pt-green-fg',
-  amber: 'bg-pt-amber-bg border-pt-amber-fg/35 text-pt-amber-fg',
+  ink: 'bg-pt-primary border-pt-primary text-pt-on-primary/75',
+  outline: 'bg-pt-surface border-pt-ink/30 text-pt-ink',
   rose: 'bg-pt-rose-bg border-pt-rose-fg/25 text-pt-rose-fg',
   blue: 'bg-pt-blue-bg border-pt-blue-fg/40 text-pt-blue-fg',
   neutral: 'bg-pt-surface border-pt-line-strong text-pt-muted',
 }
 
+/** The patient's name on a session block. */
+const NAME_TONE: Record<Look['tone'], string> = {
+  green: 'text-pt-ink',
+  ink: 'text-pt-on-primary',
+  outline: 'text-pt-ink',
+  rose: 'text-pt-ink',
+  blue: 'text-pt-ink',
+  neutral: 'text-pt-ink',
+}
+
 /** The coloured bar down the left edge of a session. */
 const BAR_TONE: Record<Look['tone'], string> = {
   green: 'border-l-pt-green-fg',
-  amber: 'border-l-pt-amber-fg',
+  ink: 'border-l-pt-primary',
+  outline: 'border-l-pt-ink',
   rose: 'border-l-pt-rose-fg',
   blue: 'border-l-pt-blue-fg',
   neutral: 'border-l-pt-line-strong',
@@ -120,7 +138,8 @@ const BAR_TONE: Record<Look['tone'], string> = {
 
 const TEXT_TONE: Record<Look['tone'], string> = {
   green: 'text-pt-green-fg',
-  amber: 'text-pt-amber-fg',
+  ink: 'text-pt-ink',
+  outline: 'text-pt-ink',
   rose: 'text-pt-rose-fg',
   blue: 'text-pt-blue-fg',
   neutral: 'text-pt-muted',
@@ -275,7 +294,7 @@ function DayColumn({
             {height < 34 || columns > 2 ? (
               <span className="flex items-center gap-1 truncate text-[11px] leading-tight">
                 <span className="font-semibold tabular-nums">{lagosTime(entry.start).replace(' ', '')}</span>
-                <span className={cn('truncate font-semibold text-pt-ink', look.faded && entry.kind === 'visit' && isCancelledAppointment(entry.visit.status) && 'line-through')}>
+                <span className={cn('truncate font-semibold', NAME_TONE[look.tone], look.faded && entry.kind === 'visit' && isCancelledAppointment(entry.visit.status) && 'line-through')}>
                   {entryTitle(entry)}
                 </span>
               </span>
@@ -287,7 +306,8 @@ function DayColumn({
                 </span>
                 <span
                   className={cn(
-                    'mt-0.5 block truncate text-[12px] font-semibold leading-tight text-pt-ink',
+                    'mt-0.5 block truncate text-[12px] font-semibold leading-tight',
+                    NAME_TONE[look.tone],
                     entry.kind === 'visit' && isCancelledAppointment(entry.visit.status) && 'line-through'
                   )}
                 >
@@ -384,7 +404,7 @@ export function WeekGrid({
               >
                 {formatLagos(day, { day: 'numeric' })}
               </span>
-              <span className={cn('h-4 truncate text-[11px]', answers ? 'font-semibold text-pt-amber-fg' : 'text-pt-faint')}>
+              <span className={cn('h-4 truncate text-[11px]', answers ? 'font-semibold text-pt-ink' : 'text-pt-faint')}>
                 {answers ? `${answers} to answer` : active ? `${active} session${active === 1 ? '' : 's'}` : hours && hours.length === 0 ? 'Day off' : ''}
               </span>
             </button>
@@ -482,7 +502,7 @@ export function WeekStrip({
                   key={e.id}
                   className={cn(
                     'h-1.5 w-1.5 rounded-full',
-                    i < answers ? 'bg-pt-amber-fg' : selected ? 'bg-pt-on-primary/70' : 'bg-pt-faint'
+                    i < answers ? (selected ? 'bg-pt-accent' : 'bg-pt-ink') : selected ? 'bg-pt-on-primary/60' : 'bg-pt-faint'
                   )}
                 />
               ))}
@@ -555,7 +575,7 @@ export function DayAgenda({
           {active.length === 0 ? 'Nothing booked' : `${active.length} session${active.length === 1 ? '' : 's'}`}
         </span>
         {answers > 0 && (
-          <span className="rounded-full bg-pt-amber-bg px-2.5 py-1 text-xs font-semibold text-pt-amber-fg">{answers} to answer</span>
+          <span className="rounded-full bg-pt-primary px-2.5 py-1 text-xs font-semibold text-pt-on-primary">{answers} to answer</span>
         )}
         {freeMs > 0 && <span className="rounded-full bg-pt-green-bg px-2.5 py-1 text-xs font-medium text-pt-green-fg">{durationLabel(freeMs)} free</span>}
         {dayOff && <span className="rounded-full bg-pt-sunken px-2.5 py-1 text-xs font-medium text-pt-muted">Day off</span>}
@@ -875,7 +895,7 @@ export function CalendarView({ header }: { header: ReactNode }) {
                 <span className="block font-semibold">Reading the calendar</span>
                 <span className="mt-1.5 block">White is your working hours; shaded is outside them. Tap any empty time to book it.</span>
                 <span className="mt-1.5 block">
-                  <b className="text-pt-amber-fg">Amber</b> needs you: a request to answer or a session to close.
+                  <b>Black</b> needs your answer; <b>outlined</b> has passed and needs closing.
                 </span>
                 <span className="block">
                   <b className="text-pt-blue-fg">Blue, dashed</b> is waiting for the patient to accept.

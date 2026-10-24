@@ -171,14 +171,14 @@ export function StatTile({
   tone?: Tone | 'attention' | 'default'
   info?: ReactNode
 }) {
-  const chipTone: Tone = tone === 'attention' ? 'amber' : tone === 'default' ? 'teal' : tone
+  const chipTone: Tone = tone === 'attention' ? 'ink' : tone === 'default' ? 'teal' : tone
   const body = (
     <div
       className={cn(
         cardClass,
         'h-full p-4 transition-all sm:p-5',
         href && 'hover:-translate-y-0.5 hover:shadow-pt-lift',
-        tone === 'attention' && 'ring-1 ring-inset ring-pt-amber-fg/30'
+        tone === 'attention' && 'ring-1 ring-inset ring-pt-ink/20'
       )}
     >
       <div className="flex items-start justify-between gap-3">

@@ -30,7 +30,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import AddPatientModal from '@/components/dashboard/physiotherapist/AddPatientModal'
-import { accentButtonClass, EmptyState, IconChip, InfoTip, PageContainer, Panel, StatTile, StatusBadge, type Tone } from '@/components/physio/ui'
+import { accentButtonClass, cardClass, EmptyState, IconChip, InfoTip, PageContainer, Panel, StatTile, StatusBadge, type Tone } from '@/components/physio/ui'
 import { useBooking } from '@/components/physio/schedule/BookingDrawer'
 import { AppointmentDrawer } from '@/components/physio/schedule/AppointmentDrawer'
 import { joinLink, useNow, visitStatus, type PhysioAppointment } from '@/components/physio/schedule/shared'
@@ -86,16 +86,17 @@ const searchApi = (homeApi.marketplace as unknown as Record<string, Record<strin
 const CANCELLED = new Set(['cancelled_by_patient', 'cancelled_by_therapist'])
 
 /**
- * One meaning per colour, matching the Schedule: rose = the patient is hurting, amber = waiting
- * on your answer, blue = waiting on the patient, violet = care plan, sun = money, neutral = a nudge.
+ * One meaning per colour, matching the Schedule: rose = the patient is hurting, ink = waiting on
+ * your answer, blue = waiting on the patient (to confirm or to pay), violet = care plan,
+ * neutral = a nudge. No gold: it read as a warning.
  */
 const ATTENTION_STYLE: Record<AttentionItem['kind'], { icon: typeof HeartPulse; tone: Tone }> = {
   check_in: { icon: HeartPulse, tone: 'rose' },
   exercise_pain: { icon: Activity, tone: 'rose' },
   plan_review: { icon: ClipboardCheck, tone: 'violet' },
   no_booking: { icon: CalendarClock, tone: 'neutral' },
-  unconfirmed: { icon: CalendarDays, tone: 'amber' },
-  overdue_invoice: { icon: Receipt, tone: 'sun' },
+  unconfirmed: { icon: CalendarDays, tone: 'ink' },
+  overdue_invoice: { icon: Receipt, tone: 'blue' },
 }
 
 const FALLBACK_STYLE = { icon: CalendarDays, tone: 'neutral' as Tone }
@@ -140,7 +141,7 @@ function Hero({
   return (
     <section className="relative overflow-hidden rounded-3xl bg-rh-ink px-5 py-6 text-white dark:bg-rh-ink-2 sm:px-8 sm:py-8">
       {/* Flat brand shapes: no gradients, no glows */}
-      <span aria-hidden className="pointer-events-none absolute right-16 top-10 hidden h-16 w-16 rounded-2xl bg-rh-amber/80 sm:block" style={{ transform: 'rotate(14deg)' }} />
+      <span aria-hidden className="pointer-events-none absolute right-16 top-10 hidden h-16 w-16 rounded-2xl bg-rh-lime sm:block" style={{ transform: 'rotate(14deg)' }} />
       <span aria-hidden className="pointer-events-none absolute right-36 top-24 hidden h-7 w-7 rounded-full bg-rh-rose sm:block" />
 
       <div className="relative max-w-2xl">
@@ -177,7 +178,7 @@ function NeedsAttention({ items }: { items: AttentionItem[] | undefined }) {
     <Panel
       title="Needs your attention"
       info="Things to act on: high pain or flagged check-ins, booking requests, follow-ups and reviews that are due. Tap one to open the patient."
-      actions={items && items.length > 0 ? <StatusBadge tone="amber">{items.length}</StatusBadge> : undefined}
+      actions={items && items.length > 0 ? <StatusBadge tone="ink">{items.length}</StatusBadge> : undefined}
     >
       {items === undefined ? (
         <div className="space-y-2 p-5">
@@ -512,9 +513,9 @@ function BookingLinkCard({ physioId, name }: { physioId: Id<'users'>; name?: str
 
   return (
     <div data-tour="booking-link">
-      <section className="overflow-hidden rounded-2xl bg-rh-cream p-5 dark:bg-white/[0.04]">
+      <section className={cn(cardClass, 'overflow-hidden p-5')}>
         <div className="flex items-center gap-3">
-          <IconChip icon={CalendarClock} tone="peach" className="bg-white dark:bg-white/10" />
+          <IconChip icon={CalendarClock} tone="green" />
           <div className="min-w-0">
             <h2 className="flex items-center gap-1 text-[15px] font-semibold tracking-tight text-rh-ink dark:text-white">
               Your booking link
@@ -583,7 +584,7 @@ export function PhysioHome({ setup }: { setup: SetupStatus | null | undefined })
       <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
         <StatTile label="Today" value={stat(stats?.todaysAppointments)} hint="appointments" icon={CalendarDays} tone="mint" href={`${PHYSIO_HOME}/calendar`} info="Sessions booked for today, including any still waiting to be confirmed." />
         <StatTile label="This week" value={stat(stats?.completedSessionsThisWeek)} hint="sessions completed" icon={Activity} tone="teal" info="Sessions you’ve marked done since Monday." />
-        <StatTile label="Patients" value={stat(stats?.totalPatients)} hint="in treatment" icon={Users} tone="peach" href={`${PHYSIO_HOME}/patients`} info="Patients currently in your care. Finished courses are under Patients → Care completed." />
+        <StatTile label="Patients" value={stat(stats?.totalPatients)} hint="in treatment" icon={Users} tone="violet" href={`${PHYSIO_HOME}/patients`} info="Patients currently in your care. Finished courses are under Patients → Care completed." />
         <StatTile label="Invites" value={stat(stats?.pendingInvitations)} hint="waiting to join" icon={UserPlus} tone="rose" href={`${PHYSIO_HOME}/patients`} info="Patients you’ve invited who haven’t created their account yet. You can resend the invite from Patients." />
       </div>
 

@@ -74,7 +74,7 @@ export function needsMyAnswer(apt: PhysioAppointment, now = Date.now()) {
 export function visitStatus(apt: PhysioAppointment, now = Date.now()): { label: string; tone: Tone; explain: string } {
   const like = asLike(apt)
   if (apt.status === 'completed') return { label: 'Done', tone: 'green', explain: 'You marked this session as done.' }
-  if (apt.status === 'no_show') return { label: 'No-show', tone: 'amber', explain: 'The patient didn’t come. You can still change it to done.' }
+  if (apt.status === 'no_show') return { label: 'No-show', tone: 'neutral', explain: 'The patient didn’t come. You can still change it to done.' }
   if (apt.status === 'cancelled_by_patient') {
     return { label: 'Cancelled by patient', tone: 'rose', explain: 'The patient cancelled. The time is free again.' }
   }
@@ -82,14 +82,14 @@ export function visitStatus(apt: PhysioAppointment, now = Date.now()): { label: 
     return { label: 'Cancelled by you', tone: 'rose', explain: 'You cancelled or declined this visit. The patient was told.' }
   }
   if (apt.endTime < now) {
-    return { label: 'Not closed', tone: 'amber', explain: 'This session’s time has passed. Mark it done or a no-show so your records and payments stay right.' }
+    return { label: 'Not closed', tone: 'ink', explain: 'This session’s time has passed. Mark it done or a no-show so your records and payments stay right.' }
   }
   if (hasPendingProposal(like, now)) {
     return { label: 'New time sent', tone: 'blue', explain: 'You suggested another time. The patient can accept it or keep the original.' }
   }
   const waitingOn = awaitingConfirmationFrom(like)
   if (waitingOn === 'provider') {
-    return { label: 'Needs your answer', tone: 'amber', explain: 'The patient asked for this time. Accept it, decline it, or suggest another time.' }
+    return { label: 'Needs your answer', tone: 'ink', explain: 'The patient asked for this time. Accept it, decline it, or suggest another time.' }
   }
   if (waitingOn === 'patient') {
     return { label: 'Waiting for patient', tone: 'blue', explain: 'You booked this time. It’s confirmed once the patient accepts it.' }

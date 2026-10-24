@@ -309,7 +309,7 @@ export function ScheduleList({
             <Panel
               title={
                 <>
-                  Needs your answer <StatusBadge tone="amber">{answer.length}</StatusBadge>
+                  Needs your answer <StatusBadge tone="ink">{answer.length}</StatusBadge>
                 </>
               }
               info="Patients asked for these times. Accept, decline or suggest another time. They’re told straight away."
