@@ -373,7 +373,7 @@ export const getCompletionStreak = query({
         // Calculate current streak
         let currentStreak = 0;
         const today = new Date();
-        let checkDate = new Date(today);
+        const checkDate = new Date(today);
 
         while (true) {
             const dayKey = `${checkDate.getFullYear()}-${checkDate.getMonth()}-${checkDate.getDate()}`;

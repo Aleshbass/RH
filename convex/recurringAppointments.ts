@@ -308,7 +308,7 @@ export const getSeriesAppointments = query({
       throw new ConvexError("You don't have access to this series")
     }
 
-    let query = ctx.db
+    const query = ctx.db
       .query('appointments')
       .withIndex('by_series_id', (q: any) => q.eq('seriesId', args.seriesId))
 

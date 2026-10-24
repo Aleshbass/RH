@@ -629,7 +629,7 @@ export const joinVideoCall = mutation({
 
     if (existingParticipant) {
       // Update join time and ensure token if missing
-      let updates: any = {
+      const updates: any = {
         joinedAt: Date.now(),
         leftAt: undefined,
       }

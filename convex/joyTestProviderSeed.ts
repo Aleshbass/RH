@@ -75,7 +75,7 @@ export const seed = mutation({
 
     for (const [index, provider] of PROVIDERS.entries()) {
       const clerkId = `${TEST_PROVIDER_PREFIX}${provider.slug}`;
-      let user = await ctx.db.query("users").withIndex("by_clerk_id", (q) => q.eq("clerkId", clerkId)).unique();
+      const user = await ctx.db.query("users").withIndex("by_clerk_id", (q) => q.eq("clerkId", clerkId)).unique();
       let userId: Id<"users">;
 
       if (!user) {

@@ -386,7 +386,7 @@ export const getRegistryStats = query({
   args: {},
   handler: async (ctx) => {
     const all = await ctx.db.query("physioRegistry").collect();
-    let listed = all.filter(
+    const listed = all.filter(
       (e) => e.verificationStatus === "listed" || e.verificationStatus === "verified"
     );
     

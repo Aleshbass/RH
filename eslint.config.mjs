@@ -9,6 +9,7 @@ const compat = new FlatCompat({
   baseDirectory: __dirname,
 });
 
+// The only ESLint config (ESLint 9 flat config). `pnpm lint` fails on errors; warnings are advisory.
 const eslintConfig = [
   ...compat.extends("next/core-web-vitals", "next/typescript"),
   {
@@ -18,11 +19,23 @@ const eslintConfig = [
       '@typescript-eslint/no-unused-vars': 'warn',
       '@typescript-eslint/no-explicit-any': 'warn',
       '@typescript-eslint/ban-ts-comment': 'warn',
+      '@typescript-eslint/no-require-imports': 'warn',
+      '@next/next/no-assign-module-variable': 'warn',
+      '@next/next/no-img-element': 'warn',
+      'react-hooks/exhaustive-deps': 'warn',
       'react/no-unescaped-entities': 'warn',
     },
   },
   {
-    ignores: ['dist', 'node_modules', '.next', 'convex/_generated'],
+    // Convex helpers named use* (e.g. useAwardSession) are not React hooks
+    files: ['convex/**'],
+    rules: {
+      'react-hooks/rules-of-hooks': 'off',
+    },
+  },
+  {
+    // Generated: Next's route types and the fumadocs .source output
+    ignores: ['dist', 'node_modules', '.next', '.source', 'next-env.d.ts', 'convex/_generated', 'public', 'scripts/exercise-3d/out', 'test-results', 'playwright-report'],
   },
 ];
 

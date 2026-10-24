@@ -46,7 +46,7 @@ async function readReadOnlyJson(request: Request, path: string): Promise<{ data:
   try { return { data: JSON.parse(body) }; } catch { return new Response("Invalid JSON", { status: 400 }); }
 }
 
-async function reserveNonce(ctx: { runMutation: Function }, nonce: string): Promise<boolean> {
+async function reserveNonce(ctx: { runMutation: (reference: any, args: any) => Promise<any> }, nonce: string): Promise<boolean> {
   const result = await ctx.runMutation((internal as any).joyIntegration.recordGatewayNonce, { nonce, expiresAt: Date.now() + 5 * 60_000 });
   return result.accepted === true;
 }

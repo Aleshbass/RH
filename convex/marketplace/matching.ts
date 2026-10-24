@@ -110,10 +110,10 @@ export const getMatchedPhysiotherapists = query({
 
             let locationScore = 0;
             let specScore = 0;
-            let verifyScore = isVerified ? 15 : 0;
-            let ratingScore = Math.round(((p.averageRating || 0) / 5) * 10);
-            let onlineScore = p.offersOnlineSessions ? 5 : 0;
-            let expScore = Math.min(5, Math.round((p.yearsOfExperience || 0) / 4));
+            const verifyScore = isVerified ? 15 : 0;
+            const ratingScore = Math.round(((p.averageRating || 0) / 5) * 10);
+            const onlineScore = p.offersOnlineSessions ? 5 : 0;
+            const expScore = Math.min(5, Math.round((p.yearsOfExperience || 0) / 4));
             let tier = "nationwide";
             const matchReasons = [];
 
@@ -303,7 +303,7 @@ export const savePatientTreatmentPrefs = mutation({
         }
 
         // Find or create patient profile
-        let patientProfile = await ctx.db
+        const patientProfile = await ctx.db
             .query("patientProfiles")
             .withIndex("by_user_id", (q) => q.eq("userId", user._id))
             .first();

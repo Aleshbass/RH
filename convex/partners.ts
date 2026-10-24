@@ -342,7 +342,7 @@ export const adminCreatePartner = mutation({
     const admin = await requireAdmin(ctx);
     const email = args.ownerEmail.trim().toLowerCase();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new ConvexError("Enter a valid owner email.");
-    let baseCode = args.name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 24) || "partner";
+    const baseCode = args.name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 24) || "partner";
     let code = baseCode;
     for (let counter = 2; ; counter++) {
       const match = await ctx.db
