@@ -197,6 +197,23 @@ const nextConfig = {
     ];
   },
 
+  // Physiotherapist pages that were retired or merged (they used to be redirect-only pages)
+  async redirects() {
+    const physio = '/dashboard/physiotherapist';
+    return [
+      { source: `${physio}/exercises`, destination: `${physio}/exercise-library`, permanent: true },
+      { source: `${physio}/my-exercise-library`, destination: `${physio}/exercise-library`, permanent: true },
+      { source: `${physio}/templates`, destination: `${physio}/treatment-templates`, permanent: true },
+      { source: `${physio}/assessments`, destination: physio, permanent: true },
+      { source: `${physio}/patient-progress`, destination: `${physio}/patients`, permanent: true },
+      { source: `${physio}/test-reminders`, destination: physio, permanent: true },
+      { source: `${physio}/billing/payout-policy`, destination: '/payout-policy', permanent: true },
+      { source: `${physio}/settings/notifications`, destination: `${physio}/settings/profile`, permanent: true },
+      { source: `${physio}/settings/preferences`, destination: `${physio}/settings/profile`, permanent: true },
+      { source: `${physio}/settings/complete-onboarding`, destination: physio, permanent: true },
+    ];
+  },
+
   // Rewrites
   async rewrites() {
     return [

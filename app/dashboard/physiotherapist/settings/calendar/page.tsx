@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAction, useMutation, useQuery } from 'convex/react';
 import { Loader2 } from '@/components/icons';
 import { toast } from 'sonner';
@@ -19,6 +19,7 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { primaryButtonClass, StatusBadge } from '@/components/physio/ui';
 import { SettingsPageHeader, SettingsSection } from '@/components/physio/SettingsUI';
+import { playSound } from '@/lib/sounds';
 
 function GoogleCalendarMark() {
     return (
@@ -39,6 +40,19 @@ export default function CalendarSettingsPage() {
     const [connecting, setConnecting] = useState(false);
     const [disconnecting, setDisconnecting] = useState(false);
     const [confirmOpen, setConfirmOpen] = useState(false);
+
+    // Back from Google's sign-in: say whether connecting worked, then tidy the address bar
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('calendar_success')) {
+            toast.success('Google Calendar connected');
+            playSound('success');
+        } else if (params.get('calendar_error')) {
+            toast.error('Google Calendar didn’t connect. Please try again.');
+            playSound('error');
+        } else return;
+        window.history.replaceState(null, '', window.location.pathname);
+    }, []);
 
     const connect = async () => {
         if (!user) return;

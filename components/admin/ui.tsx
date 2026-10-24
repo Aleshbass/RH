@@ -37,7 +37,7 @@ export {
   StatTile,
   StatusBadge,
   type Tone,
-} from '@/components/physio/ui'
+} from './kit'
 
 /** Admin pages are data-heavy, so they get a wider column than the physio portal. */
 export function AdminPage({ children, className }: { children: ReactNode; className?: string }) {

@@ -1,40 +1,43 @@
 'use client'
 
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, type ReactNode } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useQuery } from 'convex/react'
-import { Menu } from '@/components/icons'
+import { CalendarPlus } from '@/components/icons'
 import { api } from '@/convex/_generated/api'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
-import { ClinicThemeToggle } from '@/components/clinic/ClinicTheme'
-import { PhysioBrand, PhysioSidebar, PHYSIO_HOME } from '@/components/physio/PhysioSidebar'
-import { PhysioNotifications } from '@/components/physio/PhysioNotifications'
+import { primaryButtonClass } from '@/components/patient/ui'
+import { PatientNotifications, PatientThemeToggle } from '@/components/patient/shell/PatientControls'
+import { PhysioBrand, PhysioMobileNav, PhysioSidebar, SectionTabs, PHYSIO_HOME } from '@/components/physio/PhysioSidebar'
+import { PhysioHelp } from '@/components/physio/shell/PhysioHelp'
 import { PhysioDutySwitch } from '@/components/physio/PhysioDutySwitch'
 import { PhysioDeclined, PhysioUnderReview } from '@/components/physio/PhysioReviewStates'
 import { CLINIC_PORTAL_HOME, clinicianBelongsInClinicPortal } from '@/components/clinic/clinician-routing'
 
+/** Opens a new appointment on the calendar. */
+export const NEW_APPOINTMENT_HREF = `${PHYSIO_HOME}/calendar?new=1`
+
 function ShellSkeleton() {
   return (
-    <div className="flex min-h-screen bg-rh-canvas dark:bg-rh-ink">
-      <div className="m-3 hidden w-64 rounded-3xl bg-rh-ink p-5 dark:bg-rh-ink-2 md:block">
-        <Skeleton className="mb-6 h-7 w-28 rounded-md" />
-        <div className="space-y-2">
+    <div className="flex min-h-screen bg-pt-canvas">
+      <div className="hidden p-3 pr-0 lg:block">
+        <div className="h-[calc(100vh-1.5rem)] w-64 space-y-3 rounded-3xl border border-pt-line bg-pt-surface p-5">
+          <Skeleton className="mb-6 h-6 w-28 rounded-lg bg-pt-sunken" />
           {[...Array(7)].map((_, i) => (
-            <Skeleton key={i} className="h-8 w-full rounded-lg" />
+            <Skeleton key={i} className="h-9 w-full rounded-xl bg-pt-sunken" />
           ))}
         </div>
       </div>
-      <div className="flex-1 space-y-6 p-6 sm:p-10">
-        <Skeleton className="h-8 w-64 rounded-lg" />
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="flex-1 space-y-6 p-4 pt-20 sm:p-8 sm:pt-20">
+        <Skeleton className="h-9 w-64 rounded-xl bg-pt-sunken" />
+        <Skeleton className="h-40 rounded-3xl bg-pt-sunken" />
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           {[...Array(4)].map((_, i) => (
-            <Skeleton key={i} className="h-28 rounded-2xl" />
+            <Skeleton key={i} className="h-28 rounded-3xl bg-pt-sunken" />
           ))}
         </div>
-        <Skeleton className="h-80 rounded-2xl" />
       </div>
     </div>
   )
@@ -82,74 +85,76 @@ function usePhysioAccess(pathname: string) {
     access = pathname.startsWith(`${PHYSIO_HOME}/settings`) ? 'full' : 'review'
   } else access = 'full'
 
-  return { access, user, setup, isUnderReview: setup?.approvalStatus === 'pending_review' }
+  return { access, setup, isUnderReview: setup?.approvalStatus === 'pending_review' }
 }
 
+/**
+ * The physiotherapist portal, built like the patient portal: a floating sidebar (desktop), a
+ * bottom tab bar (phones and tablets), a top bar with the main action, on-duty switch, help,
+ * theme and notifications, and tabs for sections made of several pages. Colours come from
+ * app/patient-portal.css; <html data-portal="physio"> lets older screens follow them.
+ */
 export function PhysioShell({ children }: { children: ReactNode }) {
   const pathname = usePathname() ?? ''
-  const [menuOpen, setMenuOpen] = useState(false)
   const { access, setup, isUnderReview } = usePhysioAccess(pathname)
+  const unreadMessages = useQuery(api.chat.getUnreadCount, access === 'full' ? {} : 'skip') as number | undefined
+
+  useEffect(() => {
+    const root = document.documentElement
+    root.dataset.portal = 'physio'
+    return () => {
+      if (root.dataset.portal === 'physio') delete root.dataset.portal
+    }
+  }, [])
 
   if (access === 'loading' || access === 'redirecting') return <ShellSkeleton />
   if (access === 'declined') return <PhysioDeclined reason={setup?.approvalComments ?? undefined} />
 
+  const onCalendar = pathname.startsWith(`${PHYSIO_HOME}/calendar`)
+
   return (
-    <div className="flex min-h-screen bg-rh-canvas text-rh-ink dark:bg-rh-ink dark:text-neutral-50">
-      {/* Floating teal sidebar on desktop */}
-      <div className="hidden shrink-0 p-3 pr-0 md:flex">
-        <PhysioSidebar className="sticky top-3 h-[calc(100vh-1.5rem)] rounded-3xl shadow-lift" limited={isUnderReview} />
+    <div className="flex min-h-screen bg-pt-canvas text-pt-ink">
+      <div className="hidden shrink-0 p-3 pr-0 lg:flex">
+        <PhysioSidebar className="sticky top-3 h-[calc(100vh-1.5rem)]" limited={isUnderReview} unreadMessages={unreadMessages} />
       </div>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-40 flex h-16 items-center justify-between gap-2 bg-rh-canvas/85 px-4 backdrop-blur-xl supports-[backdrop-filter]:bg-rh-canvas/70 dark:bg-rh-ink/85 dark:supports-[backdrop-filter]:bg-rh-ink/70 sm:px-6 lg:px-8">
-          <div className="flex min-w-0 items-center gap-2 md:hidden">
-            <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
-              <SheetTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  data-tour="navigation"
-                  className="h-10 w-10 shrink-0 rounded-xl bg-white p-0 text-rh-ink shadow-soft hover:bg-white dark:bg-rh-ink-2 dark:text-white"
-                  aria-label="Open menu"
-                >
-                  <Menu className="h-5 w-5" />
-                </Button>
-              </SheetTrigger>
-              <SheetContent
-                side="left"
-                className="w-72 border-0 bg-rh-ink p-0 dark:bg-rh-ink-2 [&>button]:text-white [&>button]:opacity-80"
-              >
-                <SheetHeader className="sr-only">
-                  <SheetTitle>Menu</SheetTitle>
-                </SheetHeader>
-                <PhysioSidebar
-                  className="w-full border-r-0"
-                  collapsible={false}
-                  limited={isUnderReview}
-                  onNavigate={() => setMenuOpen(false)}
-                />
-              </SheetContent>
-            </Sheet>
-            <Link href={PHYSIO_HOME} aria-label="Rehabify home">
-              <PhysioBrand />
-            </Link>
-          </div>
+        <header className="sticky top-0 z-30 flex h-16 items-center justify-between gap-2 bg-pt-canvas/90 px-4 backdrop-blur-xl sm:px-6 lg:px-8">
+          <Link href={PHYSIO_HOME} aria-label="Rehabify home" className="lg:hidden">
+            <PhysioBrand />
+          </Link>
+          <div className="hidden lg:block" />
 
-          {/* Keeps the right-hand controls right-aligned on desktop */}
-          <div className="hidden md:block" />
-
-          <div className="flex shrink-0 items-center gap-1.5">
+          <div className="flex shrink-0 items-center gap-2">
             {!isUnderReview && <PhysioDutySwitch />}
-            <ClinicThemeToggle className="h-10 w-10 rounded-xl bg-white shadow-soft hover:bg-white dark:bg-rh-ink-2 dark:hover:bg-rh-ink-3 md:hidden" />
-            <PhysioNotifications />
+            {!isUnderReview && !onCalendar && (
+              <Button asChild className={`${primaryButtonClass} hidden h-10 px-4 sm:inline-flex`}>
+                <Link href={NEW_APPOINTMENT_HREF}>
+                  <CalendarPlus className="mr-2 h-4 w-4" />
+                  New appointment
+                </Link>
+              </Button>
+            )}
+            <PhysioHelp />
+            <PatientThemeToggle className="hidden sm:flex" />
+            <PatientNotifications />
           </div>
         </header>
 
-        {/* Extra bottom room so the last card clears mobile browser bars and the home indicator */}
-        <main className="w-full min-w-0 flex-1 px-4 pb-[calc(4rem+env(safe-area-inset-bottom))] pt-6 sm:px-6 lg:px-8 lg:pb-16 lg:pt-8">
-          {access === 'review' ? <PhysioUnderReview setup={setup ?? null} /> : children}
+        {/* Bottom room so the last card clears the tab bar and the phone's home indicator */}
+        <main className="w-full min-w-0 flex-1 px-4 pb-[calc(6rem+env(safe-area-inset-bottom))] pt-2 sm:px-6 lg:px-8 lg:pb-16 lg:pt-4">
+          {access === 'review' ? (
+            <PhysioUnderReview setup={setup ?? null} />
+          ) : (
+            <>
+              <SectionTabs />
+              {children}
+            </>
+          )}
         </main>
       </div>
+
+      <PhysioMobileNav limited={isUnderReview} unreadMessages={unreadMessages} />
     </div>
   )
 }

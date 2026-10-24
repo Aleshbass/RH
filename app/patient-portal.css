@@ -203,3 +203,29 @@ html[data-portal='patient'] body .bg-\[\#f0f8f7\] {
     color: var(--pt-ink);
   }
 }
+
+/*
+ * Physiotherapist portal (<html data-portal="physio">, set by PhysioShell): it runs on the same
+ * design system as the patient portal. Older physio screens still use the brand tokens, so while
+ * it is open those point at the same neutral surfaces, darks and shadows. Rehabify green stays
+ * green; teal is already gone from the physio code.
+ */
+html[data-portal='physio'] {
+  --color-rh-ink: #0c0d0f;
+  --color-rh-ink-2: #151619;
+  --color-rh-ink-3: #1c1d21;
+  --color-rh-night: #16181c;
+  --color-rh-canvas: var(--pt-sunken);
+  --color-rh-honeydew: var(--pt-accent-soft);
+  --shadow-soft: 0 1px 2px rgb(16 18 22 / 0.04), 0 8px 24px -12px rgb(16 18 22 / 0.12);
+  --shadow-lift: 0 2px 4px rgb(16 18 22 / 0.05), 0 18px 40px -18px rgb(16 18 22 / 0.24);
+}
+
+@layer utilities {
+  :where(html[data-portal='physio'].dark) body .bg-white,
+  :where(html[data-portal='physio'].dark) body .bg-white\/95,
+  :where(html[data-portal='physio'].dark) body .bg-white\/90,
+  :where(html[data-portal='physio'].dark) body .bg-white\/80 {
+    background-color: var(--pt-surface);
+  }
+}

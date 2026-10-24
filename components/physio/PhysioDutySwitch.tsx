@@ -161,17 +161,13 @@ export function PhysioDutySwitch({ className }: { className?: string }) {
   )
 
   const pillClass = cn(
-    'inline-flex h-10 items-center gap-2 rounded-xl px-3.5 text-xs font-semibold shadow-soft transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-lime/40 active:scale-95',
+    'inline-flex h-10 items-center gap-2 rounded-xl border px-3.5 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pt-accent/50 active:scale-95',
     onDuty
-      ? 'bg-rh-honeydew text-[#047857] dark:bg-emerald-400/10 dark:text-emerald-300'
-      : 'bg-white text-neutral-600 hover:text-rh-ink dark:bg-rh-ink-2 dark:text-neutral-300',
+      ? 'border-transparent bg-pt-green-bg text-pt-green-fg'
+      : 'border-pt-line bg-pt-surface text-pt-muted hover:bg-pt-hover hover:text-pt-ink',
     className
   )
-  const dot = (
-    <span
-      className={cn('h-2 w-2 rounded-full', onDuty ? 'animate-pulse bg-emerald-500' : 'bg-neutral-300 dark:bg-neutral-600')}
-    />
-  )
+  const dot = <span className={cn('h-2 w-2 rounded-full', onDuty ? 'bg-pt-accent' : 'bg-pt-line-strong')} />
 
   if (!onDuty) {
     return (
@@ -204,7 +200,7 @@ export function PhysioDutySwitch({ className }: { className?: string }) {
         {(Object.keys(STATUS_LABELS) as DutyStatus[]).map((key) => (
           <DropdownMenuItem key={key} onClick={() => changeStatus(key)}>
             <span className="flex-1">{STATUS_LABELS[key]}</span>
-            {status === key && <Check className="h-4 w-4 text-rh-ink dark:text-rh-lime" />}
+            {status === key && <Check className="h-4 w-4 text-pt-accent-ink" />}
           </DropdownMenuItem>
         ))}
         <DropdownMenuSeparator />
