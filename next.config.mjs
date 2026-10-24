@@ -180,6 +180,15 @@ const nextConfig = {
           { key: 'X-Robots-Tag', value: 'noindex' },
         ],
       },
+      // Library PDF leaflets are shown in a frame inside our own pages (and nowhere else)
+      {
+        source: '/api/library/doc/:key',
+        headers: [
+          { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
+          { key: 'Content-Security-Policy', value: "frame-ancestors 'self'" },
+          { key: 'X-Robots-Tag', value: 'noindex' },
+        ],
+      },
       {
         source: '/vendor/draco/:path*',
         headers: [{ key: 'Cache-Control', value: 'public, max-age=2592000' }],

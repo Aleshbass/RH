@@ -15,6 +15,7 @@ import { posterUrl } from '@/convex/exerciseLibraryCatalog'
 import type { ViewerGrant } from '@/lib/exercise3d/useViewerGrant'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
+import { PdfViewer } from './PdfViewer'
 import { programError } from './errors'
 import { doseLabel, isLocalImage, sideLabel, type LogInput, type ProgramForPlayer, type ProgramItem } from './types'
 
@@ -189,8 +190,25 @@ function Guided({ item, rep, onFinish, onExit }: { item: ProgramItem & { sets: n
   )
 }
 
-/** Education picked from the Rehabify Library: its video, guide and link. */
+/** A hospital PDF leaflet from the library, read inside the app on request. */
+function Leaflet({ resource }: { resource: NonNullable<ProgramItem['resource']> }) {
+  const [open, setOpen] = useState(false)
+  return open ? (
+    <PdfViewer docKey={resource.key} sourceUrl={resource.url ?? null} sourceName={resource.source} />
+  ) : (
+    <button
+      type="button"
+      onClick={() => setOpen(true)}
+      className="inline-flex items-center gap-1.5 rounded-xl border border-black/[0.08] px-3 py-2 text-sm font-medium text-rh-ink transition hover:bg-rh-honeydew dark:border-white/10 dark:text-rh-lime dark:hover:bg-white/[0.05]"
+    >
+      <BookOpen className="h-4 w-4" /> Read the leaflet
+    </button>
+  )
+}
+
+/** Education picked from the Rehabify Library: its video, guide and link (leaflets open in the app). */
 function LibraryResource({ resource }: { resource: NonNullable<ProgramItem['resource']> }) {
+  const leaflet = resource.kind === 'link' && /\.pdf(?:$|[?#])/i.test(resource.url ?? '')
   return (
     <div className="mt-4 space-y-3">
       {resource.steps.length > 0 &&
@@ -209,12 +227,13 @@ function LibraryResource({ resource }: { resource: NonNullable<ProgramItem['reso
           </ol>
         ))}
       {resource.stop && (
-        <div className="flex gap-3 rounded-2xl bg-rh-peach p-3.5 text-sm text-[#7c4a0a] dark:bg-amber-400/10 dark:text-amber-200">
+        <div className="flex gap-3 rounded-2xl bg-pt-rose-bg p-3.5 text-sm text-pt-rose-fg">
           <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0" />
-          <p>{resource.stop}</p>
+          <p className="text-pt-ink">{resource.stop}</p>
         </div>
       )}
-      {resource.url && resource.kind !== 'youtube' && (
+      {leaflet && <Leaflet resource={resource} />}
+      {resource.url && resource.kind !== 'youtube' && !leaflet && (
         <a
           href={resource.url}
           target="_blank"

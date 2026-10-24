@@ -9,17 +9,12 @@ import {
   ArrowRight,
   ArrowUp,
   BookOpen,
-  Check,
   Dumbbell,
-  FileText,
-  Globe,
   Library,
   Loader2,
   Mic,
-  PlayCircle,
   Plus,
   Save,
-  Search,
   Send,
   Square,
   Trash2,
@@ -41,6 +36,7 @@ import { primaryButtonClass, useIsPhone } from '@/components/physio/ui'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
 import { programError } from './errors'
+import { EducationBrowser } from './EducationLibrary'
 import { ExercisePreviewDialog } from './ExercisePreviewDialog'
 import { LibraryPicker, entryPoster } from './LibraryPicker'
 import {
@@ -227,12 +223,12 @@ function GoalsEditor({ goals, onChange }: { goals: string[]; onChange: (goals: s
   )
 }
 
-const RESOURCE_KIND_ICON = { youtube: PlayCircle, link: Globe, guide: FileText } as const
 const RESOURCE_KIND_LABEL = { youtube: 'Video', link: 'Web page', guide: 'Written guide' } as const
 
 /**
- * Education from the Rehabify Library (NHS and hospital pages, videos, Rehabify's written guides),
- * searched by title or condition. Each pick becomes an education item that keeps its library key.
+ * Education from the Rehabify Library (videos, hospital leaflets and pages, Rehabify's written
+ * guides), browsed page by page. Every item can be watched or read before it's added; each pick
+ * becomes an education item that keeps its library key.
  */
 function ResourcePickerDialog({
   open,
@@ -245,72 +241,19 @@ function ResourcePickerDialog({
   added: Set<string>
   onAdd: (row: LibraryResourceRow) => void
 }) {
-  const rows = useQuery(api.libraryResources.listResources, open ? {} : 'skip') as LibraryResourceRow[] | null | undefined
-  const [search, setSearch] = useState('')
-  useEffect(() => {
-    if (open) setSearch('')
-  }, [open])
-
-  const results = useMemo(() => {
-    const words = search.toLowerCase().split(/\s+/).filter(Boolean)
-    const all = rows ?? []
-    const matching = words.length
-      ? all.filter((r) => {
-          const text = `${r.title} ${r.condition} ${r.source} ${r.region}`.toLowerCase()
-          return words.every((w) => text.includes(w))
-        })
-      : all
-    return { total: matching.length, shown: matching.slice(0, 60) }
-  }, [rows, search])
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[85vh] flex-col gap-0 overflow-hidden rounded-3xl p-0 sm:max-w-2xl">
-        <DialogHeader className="border-b border-black/[0.05] px-6 pb-4 pt-5 dark:border-white/[0.06]">
+      <DialogContent className="flex max-h-[92vh] flex-col gap-0 overflow-hidden rounded-3xl border-pt-line bg-pt-surface p-0 text-pt-ink sm:max-w-4xl">
+        <DialogHeader className="border-b border-pt-line px-6 pb-4 pt-5 text-left">
           <DialogTitle>Education from the Rehabify Library</DialogTitle>
-          <DialogDescription>Trusted pages, videos and written guides. The patient sees the guide, video or link in their programme.</DialogDescription>
-          <div className="relative mt-3">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
-            <Input autoFocus className="h-10 rounded-xl pl-9" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by title or condition, e.g. knee osteoarthritis" aria-label="Search the Rehabify Library" />
-          </div>
+          <DialogDescription>Watch or read anything before you add it. Your patient sees it in their programme.</DialogDescription>
         </DialogHeader>
-        <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
-          {rows === undefined ? (
-            <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-rh-ink" /></div>
-          ) : rows === null ? (
-            <p className="py-10 text-center text-sm text-neutral-500">The Rehabify Library isn&apos;t available to your account. You can still write your own education.</p>
-          ) : results.total === 0 ? (
-            <p className="py-10 text-center text-sm text-neutral-500">{rows.length === 0 ? 'The library is empty for now.' : 'Nothing matches that search. Try fewer words.'}</p>
-          ) : (
-            <ul className="space-y-1">
-              {results.shown.map((row) => {
-                const Icon = RESOURCE_KIND_ICON[row.kind]
-                const isAdded = added.has(row.key)
-                return (
-                  <li key={row.key} className="flex items-center gap-3 rounded-2xl px-3 py-2.5 hover:bg-rh-canvas dark:hover:bg-white/[0.03]">
-                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-pt-violet-bg text-pt-violet-fg">
-                      <Icon className="h-5 w-5" />
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium text-rh-ink dark:text-white">{row.title}</p>
-                      <p className="truncate text-xs text-neutral-500">
-                        {RESOURCE_KIND_LABEL[row.kind]} · {row.condition} · {row.source}
-                      </p>
-                    </div>
-                    <Button type="button" size="sm" variant={isAdded ? 'ghost' : 'outline'} className="h-8 shrink-0 rounded-full" disabled={isAdded} onClick={() => onAdd(row)}>
-                      {isAdded ? <><Check className="mr-1 h-3.5 w-3.5" /> Added</> : <><Plus className="mr-1 h-3.5 w-3.5" /> Add</>}
-                    </Button>
-                  </li>
-                )
-              })}
-            </ul>
-          )}
-          {results.total > results.shown.length && (
-            <p className="px-3 pt-2 text-center text-xs text-neutral-500">Showing {results.shown.length} of {results.total}. Search to narrow it down.</p>
-          )}
-        </div>
-        <div className="flex justify-end border-t border-black/[0.05] px-6 py-3 dark:border-white/[0.06]">
-          <Button className={primaryButtonClass} onClick={() => onOpenChange(false)}>Done</Button>
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">{open && <EducationBrowser mode="pick" added={added} onAdd={onAdd} />}</div>
+        <div className="flex items-center justify-between gap-3 border-t border-pt-line px-6 py-3">
+          <p className="text-sm text-pt-muted">{added.size === 0 ? 'Nothing added yet' : `${added.size} added`}</p>
+          <Button className={primaryButtonClass} onClick={() => onOpenChange(false)}>
+            Done
+          </Button>
         </div>
       </DialogContent>
     </Dialog>
@@ -335,6 +278,7 @@ export function SendProgramDialog({
   open,
   onOpenChange,
   initial,
+  initialResources,
   onSent,
   mode = 'send',
   program,
@@ -344,6 +288,8 @@ export function SendProgramDialog({
   open: boolean
   onOpenChange: (open: boolean) => void
   initial?: LibraryEntry[]
+  /** Education from the Rehabify Library to start with (e.g. "Send to a patient" in the Library). */
+  initialResources?: LibraryResourceRow[]
   /** Called after a new programme is created (e.g. to offer a WhatsApp link). */
   onSent?: (programId: Id<'exercisePrograms'>) => void
   mode?: ProgramDialogMode
@@ -382,8 +328,9 @@ export function SendProgramDialog({
       setNote(program.note ?? '')
       setKeepVoice(Boolean(program.voiceNoteUrl))
     } else {
-      setDrafts((initial ?? []).map(draftFor))
-      setStep(initial?.length ? 2 : 1)
+      const starting = [...(initial ?? []).map(draftFor), ...(initialResources ?? []).map(resourceDraft)]
+      setDrafts(starting)
+      setStep(starting.length ? 2 : 1)
       setTitle('')
       setGoals([])
       setNote('')

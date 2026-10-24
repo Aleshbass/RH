@@ -1,8 +1,26 @@
+'use client'
+
+import { useEffect } from 'react'
 import Image from 'next/image'
 import { cn } from '@/lib/utils'
 
+/**
+ * The call screens are designed light-only. Arriving from a dashboard in dark mode leaves `dark`
+ * on <html>, and the dashboards' dark fallbacks then turn the white call controls black; so dark
+ * mode is set aside while a call screen is open and restored when it closes.
+ */
+function useLightOnly() {
+  useEffect(() => {
+    const root = document.documentElement
+    if (!root.classList.contains('dark')) return
+    root.classList.remove('dark')
+    return () => root.classList.add('dark')
+  }, [])
+}
+
 /** Full-height light canvas every call screen sits on, with a faint Rehabify watermark. */
 export function CallBackdrop({ children, className }: { children: React.ReactNode; className?: string }) {
+  useLightOnly()
   return (
     <div className={cn('rh-call relative isolate flex h-[100dvh] w-full flex-col overflow-hidden bg-[#f5f6f5] font-sans text-neutral-900 antialiased', className)}>
       <div
