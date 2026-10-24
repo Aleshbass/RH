@@ -6,7 +6,8 @@
  * opens the visit in a drawer. Live: bookings, answers and cancellations appear by themselves.
  */
 
-import { Component, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
 import { CalendarDays, CalendarPlus, Check, ChevronRight, Hourglass, Inbox, Loader2, MapPin, Video } from '@/components/icons'
 import type { Id } from '@/convex/_generated/dataModel'
@@ -39,6 +40,7 @@ import {
   minutesOf,
   needsMyAnswer,
   patientName,
+  Quiet,
   readableError,
   scheduleApi,
   useNow,
@@ -217,16 +219,6 @@ function HeldPanel({ now }: { now: number }) {
   )
 }
 
-class Quiet extends Component<{ children: ReactNode }, { failed: boolean }> {
-  state = { failed: false }
-  static getDerivedStateFromError() {
-    return { failed: true }
-  }
-  render() {
-    return this.state.failed ? null : this.props.children
-  }
-}
-
 export function ScheduleList({
   repeating,
   extraActions,
@@ -257,6 +249,18 @@ export function ScheduleList({
     setSelectedId(apt._id)
     setDrawerOpen(true)
   }
+
+  // ?visit=<id> (from Needs your attention on Today) opens that visit once the list has loaded
+  const visitParam = useSearchParams().get('visit')
+  const [handledParam, setHandledParam] = useState<string | null>(null)
+  useEffect(() => {
+    if (!visitParam || handledParam === visitParam || !appointments) return
+    setHandledParam(visitParam)
+    if (appointments.some((apt) => apt._id === visitParam)) {
+      setSelectedId(visitParam)
+      setDrawerOpen(true)
+    }
+  }, [visitParam, handledParam, appointments])
 
   const accept = async (apt: PhysioAppointment) => {
     setAccepting(apt._id)
@@ -309,7 +313,6 @@ export function ScheduleList({
                 </>
               }
               info="Patients asked for these times. Accept, decline or suggest another time. They’re told straight away."
-              className="ring-1 ring-inset ring-pt-amber-fg/30"
               bodyClassName="p-2 sm:p-3"
             >
               {answer.map((apt) => (

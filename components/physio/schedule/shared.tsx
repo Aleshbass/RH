@@ -6,7 +6,7 @@
  * buttons honest.
  */
 
-import { useEffect, useState } from 'react'
+import { Component, useEffect, useState, type ReactNode } from 'react'
 import { api } from '@/convex/_generated/api'
 import type { getMyAppointments } from '@/convex/appointments'
 import type { getMyHeldBookingsAsPhysio } from '@/convex/marketplace/booking'
@@ -105,6 +105,20 @@ export function useNow(intervalMs = 60_000) {
     return () => window.clearInterval(id)
   }, [intervalMs])
   return now
+}
+
+/**
+ * Renders nothing if its children throw. Wraps queries on functions that may not be deployed
+ * yet, so the page keeps working while the backend catches up.
+ */
+export class Quiet extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false }
+  static getDerivedStateFromError() {
+    return { failed: true }
+  }
+  render() {
+    return this.state.failed ? null : this.props.children
+  }
 }
 
 /** The readable part of a Convex error. */

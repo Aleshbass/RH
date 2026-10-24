@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { useMutation, useQuery } from 'convex/react'
 import { format, formatDistanceToNow } from 'date-fns'
 import {
   Activity,
@@ -41,6 +40,7 @@ import { PainPill } from '@/components/physio/workspace/shared'
 import { RehabifyId } from '@/components/shared/RehabifyId'
 import { matchesRehabifyId } from '@/convex/helpers/rehabifyIdFormat'
 import { publicAppUrl } from '@/lib/public-app-url'
+import { useMutationUntyped, useQueryUntyped } from '@/lib/convexUntyped'
 import { cn } from '@/lib/utils'
 
 type Appointment = {
@@ -79,15 +79,31 @@ type AttentionItem = {
   at: number
 }
 
+/** The generated api types sit at TypeScript's depth limit, so Home reads its functions untyped. */
+const homeApi = api as unknown as Record<string, Record<string, unknown>>
+const searchApi = (homeApi.marketplace as unknown as Record<string, Record<string, unknown>>).search
+
 const CANCELLED = new Set(['cancelled_by_patient', 'cancelled_by_therapist'])
 
+/**
+ * One meaning per colour, matching the Schedule: rose = the patient is hurting, amber = waiting
+ * on your answer, blue = waiting on the patient, violet = care plan, sun = money, neutral = a nudge.
+ */
 const ATTENTION_STYLE: Record<AttentionItem['kind'], { icon: typeof HeartPulse; tone: Tone }> = {
   check_in: { icon: HeartPulse, tone: 'rose' },
   exercise_pain: { icon: Activity, tone: 'rose' },
-  plan_review: { icon: ClipboardCheck, tone: 'peach' },
-  no_booking: { icon: CalendarClock, tone: 'teal' },
-  unconfirmed: { icon: CalendarDays, tone: 'mint' },
-  overdue_invoice: { icon: Receipt, tone: 'peach' },
+  plan_review: { icon: ClipboardCheck, tone: 'violet' },
+  no_booking: { icon: CalendarClock, tone: 'neutral' },
+  unconfirmed: { icon: CalendarDays, tone: 'amber' },
+  overdue_invoice: { icon: Receipt, tone: 'sun' },
+}
+
+const FALLBACK_STYLE = { icon: CalendarDays, tone: 'neutral' as Tone }
+
+function attentionStyle(item: AttentionItem) {
+  // Bookings waiting on the patient (not on you) are low priority and blue
+  if (item.kind === 'unconfirmed' && item.severity === 'low') return { icon: CalendarDays, tone: 'blue' as Tone }
+  return ATTENTION_STYLE[item.kind] ?? FALLBACK_STYLE
 }
 
 function greeting(date: Date) {
@@ -172,25 +188,25 @@ function NeedsAttention({ items }: { items: AttentionItem[] | undefined }) {
       ) : items.length === 0 ? (
         <div className="flex items-center gap-3 px-5 pb-5 pt-3">
           <IconChip icon={Check} tone="mint" />
-          <p className="text-sm text-neutral-600 dark:text-neutral-300">All clear. Nothing needs you right now.</p>
+          <p className="text-sm text-pt-muted">All clear. Nothing needs you right now.</p>
         </div>
       ) : (
         <ul className="pb-2 pt-1">
           {items.map((item) => {
-            const style = ATTENTION_STYLE[item.kind]
+            const style = attentionStyle(item)
             return (
               <li key={item.key}>
-                <Link href={item.href} className="group flex items-center gap-3 px-5 py-2.5 transition-colors hover:bg-rh-canvas dark:hover:bg-white/[0.03]">
+                <Link href={item.href} className="group flex items-center gap-3 px-5 py-2.5 transition-colors hover:bg-pt-hover">
                   <IconChip icon={style.icon} tone={style.tone} />
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold text-rh-ink dark:text-white">{item.patientName}</p>
-                    <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">
+                    <p className="truncate text-sm font-semibold text-pt-ink">{item.patientName}</p>
+                    <p className="truncate text-xs text-pt-muted">
                       {item.title}
                       {item.detail ? ` · ${item.detail}` : ''}
                     </p>
                   </div>
-                  {item.severity === 'high' && <span className="h-2 w-2 shrink-0 rounded-full bg-rose-400" aria-label="Urgent" />}
-                  <ChevronRight className="h-4 w-4 shrink-0 text-neutral-300 transition-transform group-hover:translate-x-0.5 dark:text-neutral-600" />
+                  {item.severity === 'high' && <span className="h-2 w-2 shrink-0 rounded-full bg-pt-rose-fg" aria-label="Urgent" />}
+                  <ChevronRight className="h-4 w-4 shrink-0 text-pt-faint transition-transform group-hover:translate-x-0.5" />
                 </Link>
               </li>
             )
@@ -446,7 +462,7 @@ function OpenWorkspace({ patients }: { patients: PatientRow[] | undefined }) {
 }
 
 function BookingLinkCard({ physioId, name }: { physioId: Id<'users'>; name?: string }) {
-  const ensureSlug = useMutation(api.marketplace.search.ensureBookingSlug)
+  const ensureSlug = useMutationUntyped(searchApi.ensureBookingSlug) as (args: { userId: Id<'users'> }) => Promise<string | null>
   const [url, setUrl] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
 
@@ -528,14 +544,14 @@ function BookingLinkCard({ physioId, name }: { physioId: Id<'users'>; name?: str
 }
 
 export function PhysioHome({ setup }: { setup: SetupStatus | null | undefined }) {
-  const user = useQuery(api.users.getMyUser)
-  const clinicInfo = useQuery(api.clinics.getMyClinicInfo) as { name?: string } | null | undefined
-  const stats = useQuery(api.patients.getDashboardStats, {}) as Stats | undefined
-  const patients = useQuery(api.patients.getMyPatients, { limit: 60 }) as PatientRow[] | undefined
+  const user = useQueryUntyped(homeApi.users.getMyUser) as { _id: Id<'users'>; firstName?: string; lastName?: string } | null | undefined
+  const clinicInfo = useQueryUntyped(homeApi.clinics.getMyClinicInfo) as { name?: string } | null | undefined
+  const stats = useQueryUntyped(homeApi.patients.getDashboardStats, {}) as Stats | undefined
+  const patients = useQueryUntyped(homeApi.patients.getMyPatients, { limit: 60 }) as PatientRow[] | undefined
   // A fixed "now" (start of this hour) keeps the query's arguments stable, so Convex can cache it
   const [attentionNow] = useState(() => Math.floor(Date.now() / 3_600_000) * 3_600_000)
-  const attention = useQuery(api.physioCare.getNeedsAttention, { now: attentionNow }) as AttentionItem[] | undefined
-  const checkIns = useQuery(api.physioCare.getRecentCheckIns, { limit: 6 }) as RecentCheckIn[] | undefined
+  const attention = useQueryUntyped(homeApi.physioCare.getNeedsAttention, { now: attentionNow }) as AttentionItem[] | undefined
+  const checkIns = useQueryUntyped(homeApi.physioCare.getRecentCheckIns, { limit: 6 }) as RecentCheckIn[] | undefined
 
   const [range] = useState(() => {
     const start = new Date()
@@ -544,7 +560,7 @@ export function PhysioHome({ setup }: { setup: SetupStatus | null | undefined })
     end.setHours(23, 59, 59, 999)
     return { startDate: start.getTime(), endDate: end.getTime() }
   })
-  const today = useQuery(api.appointments.getMyAppointments, { ...range, limit: 50 }) as Appointment[] | undefined
+  const today = useQueryUntyped(homeApi.appointments.getMyAppointments, { ...range, limit: 50 }) as Appointment[] | undefined
   const todayActive = today?.filter((a) => !CANCELLED.has(a.status))
   const name = [user?.firstName, user?.lastName].filter(Boolean).join(' ')
   const stat = (value: number | undefined) => (stats === undefined ? '–' : value ?? 0)

@@ -14,6 +14,8 @@ import { internalMutation, mutation, query, type MutationCtx, type QueryCtx } fr
 import type { Doc, Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { publicAppUrl } from "./helpers/appUrl";
+import { awaitingConfirmationFrom, hasPendingProposal } from "./helpers/appointmentStatus";
+import { lagosDateTime } from "./helpers/lagosTime";
 import {
   currentUser,
   findRelationship,
@@ -725,15 +727,17 @@ export const getNeedsAttention = query({
       )
       .collect();
     for (const a of soon.filter((a) => a.status === "scheduled" && !a.isRecordOnly)) {
+      // A request waiting on the physio comes first; one waiting on the patient is only a nudge
+      const yours = awaitingConfirmationFrom(a) === "provider" && !hasPendingProposal(a, now);
       items.push({
         key: `unconfirmed-${a._id}`,
         kind: "unconfirmed",
-        severity: "medium",
+        severity: yours ? "medium" : "low",
         patientId: a.patientId,
         patientName: await nameOf(a.patientId),
-        title: "Booking not confirmed yet",
-        detail: a.serviceType,
-        href: "/dashboard/physiotherapist/appointments",
+        title: yours ? "Booking request: needs your answer" : "Waiting for the patient to confirm",
+        detail: [lagosDateTime(a.startTime), a.serviceType].filter(Boolean).join(" · "),
+        href: `/dashboard/physiotherapist/appointments?visit=${a._id}`,
         at: a.startTime,
       });
     }
