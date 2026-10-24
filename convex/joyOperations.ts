@@ -116,7 +116,7 @@ export const executeMutation = internalMutation({
       let grant: any;
       if (op === "family_grant") {
         const phone = String(data.family_phone ?? "").trim(); if (!phone) throw new Error("Family phone is required");
-        const found = await ctx.db.query("users").filter((q: any) => q.eq(q.field("phoneNumber"), phone)).collect();
+        const found = await ctx.db.query("users").withIndex("by_phone_number", (q: any) => q.eq("phoneNumber", phone)).collect();
         let family: any = found[0];
         if (!family) { const id = await ctx.db.insert("users", { clerkId: `joy-family:${phone}`, phoneNumber: phone, role: "family_member", onboarded: false }); family = await ctx.db.get(id); }
         grant = await ctx.db.query("familyAccessGrants").withIndex("by_patient_and_family_member", (q: any) => q.eq("patientUserId", patient._id).eq("familyMemberUserId", family._id)).first();
@@ -174,7 +174,7 @@ export const executeQuery = internalQuery({
       return { physiotherapist_id: profile._id, assigned_bookings: relevant.slice(0, 10).map((b: any) => ({ booking_id: b._id, patient_id: b.patientId, start_time: b.sessionDate, provider_response: b.providerResponse, response_due_at: b.providerResponseDueAt })) };
     }
     if (op === "family_resolve") {
-      const phone = String(data.family_phone ?? ""); const users: any[] = await ctx.db.query("users").filter((q: any) => q.eq(q.field("phoneNumber"), phone)).collect();
+      const phone = String(data.family_phone ?? ""); const users: any[] = await ctx.db.query("users").withIndex("by_phone_number", (q: any) => q.eq("phoneNumber", phone)).collect();
       if (users.length !== 1) return { resolution: "NO_GRANT" };
       const grants = await ctx.db.query("familyAccessGrants").withIndex("by_family_member_user_id", (q: any) => q.eq("familyMemberUserId", users[0]._id)).collect();
       const active = grants.filter((g: any) => g.status === "active" && (!g.expiresAt || g.expiresAt > Date.now()));

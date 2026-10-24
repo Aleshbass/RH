@@ -102,7 +102,7 @@ async function indicativeJoyAmountKobo(ctx: QueryCtx, mode: "home_visit" | "clin
 export const resolvePatientByPhone = internalQuery({
   args: { phone: v.string() },
   handler: async (ctx, { phone }) => {
-    const matches = await ctx.db.query("users").filter((q) => q.eq(q.field("phoneNumber"), phone)).collect();
+    const matches = await ctx.db.query("users").withIndex("by_phone_number", (q) => q.eq("phoneNumber", phone)).collect();
     const patients = matches.filter((user) => user.role === "patient");
     if (patients.length !== 1) return { resolution: patients.length ? "AMBIGUOUS" : "NOT_FOUND" };
     const user = patients[0];
@@ -222,7 +222,7 @@ async function linkTrackingCodeToWhatsAppInternalHandler(
   }
 
   // Resolve or provision patient user
-  const matches = await ctx.db.query("users").filter((q: any) => q.eq(q.field("phoneNumber"), phone)).collect();
+  const matches = await ctx.db.query("users").withIndex("by_phone_number", (q: any) => q.eq("phoneNumber", phone)).collect();
   const patients = matches.filter((user: any) => user.role === "patient");
 
   const [firstName, ...remainingNames] = (args.name || `${matched.patientFirstName || ""} ${matched.patientLastName || ""}`).trim().split(/\s+/).filter(Boolean);
@@ -393,7 +393,7 @@ export const resolveOrCreatePatientByPhone = internalMutation({
   },
   handler: async (ctx, args) => {
     const phone = args.phone.trim();
-    const matches = await ctx.db.query("users").filter((q) => q.eq(q.field("phoneNumber"), phone)).collect();
+    const matches = await ctx.db.query("users").withIndex("by_phone_number", (q) => q.eq("phoneNumber", phone)).collect();
     const patients = matches.filter((user) => user.role === "patient");
     if (patients.length > 1) return { resolution: "AMBIGUOUS" as const };
 
@@ -680,7 +680,7 @@ export const recordGatewayNonce = internalMutation({
 export const resolvePhysiotherapistByPhone = internalQuery({
   args: { phone: v.string() },
   handler: async (ctx, { phone }) => {
-    const matches = await ctx.db.query("users").filter((q) => q.eq(q.field("phoneNumber"), phone)).collect();
+    const matches = await ctx.db.query("users").withIndex("by_phone_number", (q) => q.eq("phoneNumber", phone)).collect();
     const providers = matches.filter((user) => user.role === "physiotherapist");
     if (providers.length !== 1) return { resolution: providers.length ? "AMBIGUOUS" : "NO_MATCH" };
     const user = providers[0];

@@ -1,21 +1,58 @@
 import { v } from "convex/values";
-import { internalMutation, internalQuery } from "./_generated/server";
-import { internal, api } from "./_generated/api";
+import { internalMutation } from "./_generated/server";
+import { internal } from "./_generated/api";
+
+const HOUR = 60 * 60 * 1000;
+const DAY = 24 * HOUR;
+
+/** Clinics that have an active resource with maintenance scheduled; only these need checking. */
+async function clinicsWithScheduledMaintenance(ctx: any) {
+  const resources = await ctx.db.query("resources").take(5000);
+  const clinicIds = new Set<string>();
+  for (const resource of resources) {
+    if (resource.isActive && resource.maintenanceSchedule?.nextMaintenance) clinicIds.add(resource.clinicId);
+  }
+  return [...clinicIds];
+}
+
+async function activeClinicResources(ctx: any, clinicId: any) {
+  const resources = await ctx.db
+    .query("resources")
+    .withIndex("by_clinic", (q: any) => q.eq("clinicId", clinicId))
+    .take(1000);
+  return resources.filter((resource: any) => resource.isActive);
+}
+
+/** Clinic admins and physiotherapists who receive resource alerts. */
+async function clinicAlertRecipients(ctx: any, clinicId: any) {
+  const users = await ctx.db
+    .query("users")
+    .withIndex("by_clinic_id", (q: any) => q.eq("clinicId", clinicId))
+    .take(500);
+  return users.filter((user: any) => user.role === "admin" || user.role === "physiotherapist");
+}
+
+/** True when this user already got a matching alert in the last day, so crons don't repeat it every run. */
+async function alertedToday(ctx: any, userId: any, type: string, matches: (data: any) => boolean) {
+  const recent = await ctx.db
+    .query("notifications")
+    .withIndex("by_user_and_type", (q: any) => q.eq("userId", userId).eq("type", type))
+    .order("desc")
+    .take(50);
+  const since = Date.now() - 20 * HOUR;
+  return recent.some((n: any) => n.createdAt >= since && matches(n.data ?? {}));
+}
 
 // Check maintenance for all clinics (called by daily cron job)
 export const checkAllClinicsMaintenanceDaily = internalMutation({
   args: {},
   handler: async (ctx) => {
     try {
-      // Get all active clinics
-      const clinics = await ctx.db.query("clinics").collect();
-      
-      for (const clinic of clinics) {
+      for (const clinicId of await clinicsWithScheduledMaintenance(ctx)) {
         await ctx.scheduler.runAfter(0, internal.resourceNotifications.checkClinicMaintenance, {
-          clinicId: clinic._id,
+          clinicId: clinicId as any,
         });
       }
-      
     } catch (error) {
       console.error("Error in daily maintenance check:", error);
     }
@@ -33,15 +70,12 @@ export const checkAllClinicsConflictsHourly = internalMutation({
         return;
       }
 
-      // Get all active clinics
-      const clinics = await ctx.db.query("clinics").collect();
-      
-      for (const clinic of clinics) {
+      // Conflicts here are appointments that overlap a resource's maintenance window
+      for (const clinicId of await clinicsWithScheduledMaintenance(ctx)) {
         await ctx.scheduler.runAfter(0, internal.resourceNotifications.checkClinicConflicts, {
-          clinicId: clinic._id,
+          clinicId: clinicId as any,
         });
       }
-      
     } catch (error) {
       console.error("Error in hourly conflict check:", error);
     }
@@ -55,19 +89,10 @@ export const checkClinicMaintenance = internalMutation({
   },
   handler: async (ctx, args) => {
     try {
-      // Get all active resources for this clinic
-      const resources = await ctx.db
-        .query("resources")
-        .filter((q) => 
-          q.and(
-            q.eq(q.field("clinicId"), args.clinicId),
-            q.eq(q.field("isActive"), true)
-          )
-        )
-        .collect();
+      const resources = await activeClinicResources(ctx, args.clinicId);
 
       const now = Date.now();
-      const oneWeekFromNow = now + (7 * 24 * 60 * 60 * 1000);
+      const oneWeekFromNow = now + 7 * DAY;
 
       for (const resource of resources) {
         if (!resource.maintenanceSchedule || !resource.maintenanceSchedule.nextMaintenance) {
@@ -77,7 +102,7 @@ export const checkClinicMaintenance = internalMutation({
         const maintenance = resource.maintenanceSchedule;
         if (maintenance.nextMaintenance) {
           const maintenanceTime = new Date(maintenance.nextMaintenance).getTime();
-          
+
           // Check for upcoming maintenance (within 1 week)
           if (maintenanceTime > now && maintenanceTime <= oneWeekFromNow) {
             await ctx.scheduler.runAfter(0, internal.resourceNotifications.sendMaintenanceAlert, {
@@ -116,32 +141,23 @@ export const checkClinicConflicts = internalMutation({
   },
   handler: async (ctx, args) => {
     try {
-      // Get upcoming appointments for the next 7 days
+      const resources = (await activeClinicResources(ctx, args.clinicId)).filter(
+        (resource: any) => resource.maintenanceSchedule?.nextMaintenance
+      );
+      if (resources.length === 0) return;
+
+      // Upcoming appointments for the next 7 days
       const startTime = Date.now();
-      const endTime = startTime + (7 * 24 * 60 * 60 * 1000);
+      const endTime = startTime + 7 * DAY;
 
-      const appointments = await ctx.db
-        .query("appointments")
-        .filter((q) => 
-          q.and(
-            q.eq(q.field("clinicId"), args.clinicId),
-            q.gte(q.field("startTime"), startTime),
-            q.lte(q.field("startTime"), endTime),
-            q.neq(q.field("status"), "cancelled")
+      const appointments = (
+        await ctx.db
+          .query("appointments")
+          .withIndex("by_clinic_id_and_time", (q) =>
+            q.eq("clinicId", args.clinicId).gte("startTime", startTime).lte("startTime", endTime)
           )
-        )
-        .collect();
-
-      // Get all active resources for this clinic
-      const resources = await ctx.db
-        .query("resources")
-        .filter((q) => 
-          q.and(
-            q.eq(q.field("clinicId"), args.clinicId),
-            q.eq(q.field("isActive"), true)
-          )
-        )
-        .collect();
+          .take(2000)
+      ).filter((a) => a.status !== "cancelled_by_patient" && a.status !== "cancelled_by_therapist");
 
       for (const appointment of appointments) {
         if (!appointment.selectedResources || appointment.selectedResources.length === 0) {
@@ -149,20 +165,14 @@ export const checkClinicConflicts = internalMutation({
         }
 
         for (const resourceId of appointment.selectedResources) {
-          const resource = resources.find(r => r._id === resourceId);
+          const resource = resources.find((r: any) => r._id === resourceId);
           if (!resource) continue;
 
-          // Check for maintenance conflicts
-          let hasMaintenanceConflict = false;
-          if (resource.maintenanceSchedule?.nextMaintenance) {
-            const maintenanceStart = new Date(resource.maintenanceSchedule.nextMaintenance).getTime();
-            // Assume 2 hour maintenance window
-            const maintenanceEnd = maintenanceStart + (2 * 60 * 60 * 1000);
-            hasMaintenanceConflict = (
-              appointment.startTime < maintenanceEnd &&
-              appointment.endTime > maintenanceStart
-            );
-          }
+          const maintenanceStart = new Date(resource.maintenanceSchedule.nextMaintenance).getTime();
+          // Assume 2 hour maintenance window
+          const maintenanceEnd = maintenanceStart + 2 * HOUR;
+          const hasMaintenanceConflict =
+            appointment.startTime < maintenanceEnd && appointment.endTime > maintenanceStart;
 
           if (hasMaintenanceConflict) {
             await ctx.scheduler.runAfter(0, internal.resourceNotifications.sendConflictAlert, {
@@ -193,22 +203,22 @@ export const sendMaintenanceAlert = internalMutation({
   },
   handler: async (ctx, args) => {
     try {
-      // Get clinic admin users
-      const clinicUsers = await ctx.db
-        .query("users")
-        .filter((q) => 
-          q.and(
-            q.eq(q.field("clinicId"), args.clinicId),
-            q.or(
-              q.eq(q.field("role"), "admin"),
-              q.eq(q.field("role"), "physiotherapist")
-            )
-          )
-        )
-        .collect();
+      const clinicUsers = await clinicAlertRecipients(ctx, args.clinicId);
+      let alerted = 0;
 
       // Create notifications for each admin/physiotherapist
       for (const user of clinicUsers) {
+        const repeat = await alertedToday(
+          ctx,
+          user._id,
+          "resource_maintenance",
+          (data) =>
+            data.resourceId === args.resourceId &&
+            data.maintenanceType === args.maintenanceType &&
+            data.scheduledDate === args.scheduledDate
+        );
+        if (repeat) continue;
+
         await ctx.db.insert("notifications", {
           userId: user._id,
           type: "resource_maintenance",
@@ -226,10 +236,11 @@ export const sendMaintenanceAlert = internalMutation({
           createdAt: Date.now(),
           updatedAt: Date.now(),
         });
+        alerted++;
       }
 
       // Send email for urgent/overdue maintenance
-      if (args.maintenanceType === "urgent" || args.maintenanceType === "overdue") {
+      if (alerted > 0 && (args.maintenanceType === "urgent" || args.maintenanceType === "overdue")) {
         await ctx.scheduler.runAfter(0, internal.resourceNotifications.sendMaintenanceEmail, {
           clinicId: args.clinicId,
           resourceName: args.resourceName,
@@ -238,7 +249,6 @@ export const sendMaintenanceAlert = internalMutation({
           description: args.description,
         });
       }
-
     } catch (error) {
       console.error("Error sending maintenance alert:", error);
     }
@@ -256,22 +266,22 @@ export const sendConflictAlert = internalMutation({
   },
   handler: async (ctx, args) => {
     try {
-      // Get clinic admin users
-      const clinicUsers = await ctx.db
-        .query("users")
-        .filter((q) => 
-          q.and(
-            q.eq(q.field("clinicId"), args.clinicId),
-            q.or(
-              q.eq(q.field("role"), "admin"),
-              q.eq(q.field("role"), "physiotherapist")
-            )
-          )
-        )
-        .collect();
+      const clinicUsers = await clinicAlertRecipients(ctx, args.clinicId);
+      const appointmentKey = [...args.affectedAppointments].sort().join(",");
 
       // Create notifications for each admin/physiotherapist
       for (const user of clinicUsers) {
+        const repeat = await alertedToday(
+          ctx,
+          user._id,
+          "resource_conflict",
+          (data) =>
+            data.resourceId === args.resourceId &&
+            data.conflictType === args.conflictType &&
+            [...(data.affectedAppointments ?? [])].sort().join(",") === appointmentKey
+        );
+        if (repeat) continue;
+
         await ctx.db.insert("notifications", {
           userId: user._id,
           type: "resource_conflict",
@@ -290,7 +300,6 @@ export const sendConflictAlert = internalMutation({
           updatedAt: Date.now(),
         });
       }
-
     } catch (error) {
       console.error("Error sending conflict alert:", error);
     }
@@ -336,24 +345,21 @@ export const sendMaintenanceReminders = internalMutation({
   args: {},
   handler: async (ctx) => {
     try {
-      // Get all active resources with upcoming maintenance (next 24 hours)
-      const resources = await ctx.db
-        .query("resources")
-        .filter((q) => q.eq(q.field("isActive"), true))
-        .collect();
+      // Active resources with maintenance in the next 24 hours
+      const resources = await ctx.db.query("resources").take(5000);
 
       const now = Date.now();
-      const next24Hours = now + (24 * 60 * 60 * 1000);
+      const next24Hours = now + DAY;
 
       for (const resource of resources) {
-        if (!resource.maintenanceSchedule || !resource.maintenanceSchedule.nextMaintenance) {
+        if (!resource.isActive || !resource.maintenanceSchedule || !resource.maintenanceSchedule.nextMaintenance) {
           continue;
         }
 
         const maintenance = resource.maintenanceSchedule;
         if (maintenance.nextMaintenance) {
           const maintenanceTime = new Date(maintenance.nextMaintenance).getTime();
-          
+
           // Send reminder for maintenance in next 24 hours
           if (maintenanceTime > now && maintenanceTime <= next24Hours) {
             await ctx.scheduler.runAfter(0, internal.resourceNotifications.sendMaintenanceAlert, {
@@ -373,33 +379,40 @@ export const sendMaintenanceReminders = internalMutation({
   },
 });
 
-// Cleanup old notifications (called by weekly cron job)
-export const cleanupOldNotifications = internalMutation({
-  args: {},
-  handler: async (ctx) => {
-    try {
-      const cutoffTime = Date.now() - (30 * 24 * 60 * 60 * 1000); // 30 days ago
-      
-      const oldNotifications = await ctx.db
-        .query("notifications")
-        .filter((q) => 
-          q.and(
-            q.or(
-              q.eq(q.field("type"), "resource_maintenance"),
-              q.eq(q.field("type"), "resource_conflict"),
-              q.eq(q.field("type"), "invoice_payment_reminder"),
-              q.eq(q.field("type"), "appointment_reminder"),
-              q.eq(q.field("type"), "daily_exercise_reminder")
-            ),
-            q.lt(q.field("createdAt"), cutoffTime)
-          )
-        )
-        .collect();
+const CLEANUP_TYPES = new Set([
+  "resource_maintenance",
+  "resource_conflict",
+  "invoice_payment_reminder",
+  "appointment_reminder",
+  "daily_exercise_reminder",
+]);
 
-      for (const notification of oldNotifications) {
-        await ctx.db.delete(notification._id);
+// Cleanup old notifications (called by weekly cron job). Works through the table a page at a time.
+export const cleanupOldNotifications = internalMutation({
+  args: {
+    cursor: v.optional(v.union(v.string(), v.null())),
+    cutoffTime: v.optional(v.number()),
+  },
+  // Explicit return type: it schedules itself, and an inferred one would be circular (TS2589)
+  handler: async (ctx, args): Promise<void> => {
+    try {
+      const cutoffTime = args.cutoffTime ?? Date.now() - 30 * DAY;
+
+      const page = await ctx.db
+        .query("notifications")
+        .withIndex("by_created", (q) => q.lt("createdAt", cutoffTime))
+        .paginate({ cursor: args.cursor ?? null, numItems: 500 });
+
+      for (const notification of page.page) {
+        if (CLEANUP_TYPES.has(notification.type)) await ctx.db.delete(notification._id);
       }
 
+      if (!page.isDone) {
+        await ctx.scheduler.runAfter(0, internal.resourceNotifications.cleanupOldNotifications, {
+          cursor: page.continueCursor,
+          cutoffTime,
+        });
+      }
     } catch (error) {
       console.error("Error cleaning up old notifications:", error);
     }
@@ -422,7 +435,7 @@ function getMaintenanceAlertTitle(maintenanceType: string, resourceName: string)
 
 function getMaintenanceAlertMessage(maintenanceType: string, resourceName: string, scheduledDate: number): string {
   const dateStr = new Date(scheduledDate).toLocaleDateString();
-  
+
   switch (maintenanceType) {
     case "scheduled":
       return `Scheduled maintenance for ${resourceName} is coming up on ${dateStr}. Please ensure the resource is available.`;

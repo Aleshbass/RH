@@ -812,24 +812,21 @@ export const getTreatmentTemplates = query({
       throw new Error("Only physiotherapists can access treatment templates");
     }
 
-    let q = ctx.db.query("treatmentTemplates")
-      .filter((f) =>
-        f.or(
-          f.eq(f.field("createdBy"), physiotherapist._id),
-          f.eq(f.field("isPublic"), true),
-          physiotherapist.clinicId ? f.eq(f.field("clinicId"), physiotherapist.clinicId) : f.eq(f.field("createdBy"), physiotherapist._id)
-        )
-      );
+    // Own, public and clinic templates, each read through its index
+    const clinicId = physiotherapist.clinicId;
+    const [own, shared, clinic] = await Promise.all([
+      ctx.db.query("treatmentTemplates").withIndex("by_created_by", (q) => q.eq("createdBy", physiotherapist._id)).take(500),
+      ctx.db.query("treatmentTemplates").withIndex("by_public", (q) => q.eq("isPublic", true)).take(500),
+      clinicId
+        ? ctx.db.query("treatmentTemplates").withIndex("by_clinic", (q) => q.eq("clinicId", clinicId)).take(500)
+        : Promise.resolve([]),
+    ]);
 
-    if (args.category) {
-      q = q.filter((f) => f.eq(f.field("category"), args.category));
-    }
-    if (args.difficulty) {
-      q = q.filter((f) => f.eq(f.field("difficulty"), args.difficulty));
-    }
-
-    const templates = await q.collect();
-    return templates;
+    const byId = new Map([...own, ...shared, ...clinic].map((t) => [t._id, t]));
+    return [...byId.values()]
+      .filter((t) => !args.category || t.category === args.category)
+      .filter((t) => !args.difficulty || t.difficulty === args.difficulty)
+      .sort((a, b) => a._creationTime - b._creationTime);
   },
 });
 

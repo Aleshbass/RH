@@ -192,9 +192,19 @@ export const listLibrary = query({
     const access = await libraryAccess(ctx);
     if (!access || access.kind === "patient") return null;
     const clinicId = access.user.clinicId;
-    const rows = (await ctx.db.query("exercises").collect()).filter(
-      (e) => e.isPublic || (clinicId && e.clinicId === clinicId)
-    );
+    const publicRows = await ctx.db
+      .query("exercises")
+      .withIndex("by_public", (q) => q.eq("isPublic", true))
+      .take(3000);
+    const clinicRows = clinicId
+      ? (
+          await ctx.db
+            .query("exercises")
+            .withIndex("by_clinic", (q) => q.eq("clinicId", clinicId))
+            .take(1000)
+        ).filter((e) => !e.isPublic)
+      : [];
+    const rows = [...publicRows, ...clinicRows];
     // Licensees only get the 3D library.
     const visible = access.kind === "licence" ? rows.filter((e) => e.animationSlug) : rows;
     const items = visible.map(libraryItem);

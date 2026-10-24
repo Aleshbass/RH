@@ -14,7 +14,7 @@
 import { v } from "convex/values";
 import { query, mutation } from "../_generated/server";
 import { ensureUserNumbers } from "../helpers/rehabifyIds";
-import { isPhysioNetworkEligible } from "../physioSetup";
+import { isPhysioNetworkEligible, servesRehabifyNetwork } from "../physioSetup";
 
 /**
  * Get matched physiotherapists for a patient based on their preferences.
@@ -33,11 +33,11 @@ export const getMatchedPhysiotherapists = query({
         const allPhysios = await ctx.db
             .query("physiotherapistProfiles")
             .filter((q) => q.eq(q.field("isAvailableOnMarketplace"), true))
-            .collect();
+            .take(2000);
 
-        // Enrich with user details + approval status
+        // Enrich with user details + approval status (clinic members are skipped before any reads)
         const enrichedPhysios = await Promise.all(
-            allPhysios.map(async (profile) => {
+            allPhysios.filter((profile) => servesRehabifyNetwork(profile)).map(async (profile) => {
                 const user = await ctx.db.get(profile.userId);
                 if (!user) return null;
 

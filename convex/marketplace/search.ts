@@ -10,7 +10,7 @@
 
 import { v } from "convex/values";
 import { query, mutation, internalQuery } from "../_generated/server";
-import { isPhysioNetworkEligible, offersServiceMode } from "../physioSetup";
+import { isPhysioNetworkEligible, offersServiceMode, recordProfileView, servesRehabifyNetwork } from "../physioSetup";
 import { BOOKABLE_SERVICE_IDS, getService, isBookableServiceId } from "../../lib/rehabify-services";
 
 /** The Rehabify services this physio offers (virtual ones, plus home ones if they visit). */
@@ -56,14 +56,62 @@ export const searchPhysiotherapists = query({
     // Get all physiotherapist profiles (including those without explicit marketplace toggle)
     const allPhysios = await ctx.db
       .query("physiotherapistProfiles")
-      .collect();
+      .take(2000);
+
+    // Profile-only checks first (opted out, clinic members, the filters below), so the
+    // eligibility reads only run for physios who could be shown
+    let candidates = allPhysios.filter(
+      (profile) => profile.isAvailableOnMarketplace !== false && servesRehabifyNetwork(profile)
+    );
+
+    if (args.specializations && args.specializations.length > 0) {
+      candidates = candidates.filter((p) => {
+        const physioSpecs = p.specializations || [];
+        return args.specializations.some((spec) =>
+          physioSpecs.some((pSpec) =>
+            pSpec.toLowerCase().includes(spec.toLowerCase())
+          )
+        );
+      });
+    }
+
+    if (args.location) {
+      candidates = candidates.filter(
+        (p) => p.location?.toLowerCase() === args.location.toLowerCase()
+      );
+    }
+
+    // minPrice / maxPrice are accepted for old clients but ignored: prices are standard.
+
+    if (args.verifiedOnly) {
+      candidates = candidates.filter(
+        (p) =>
+          p.verificationBadge?.status === "verified" ||
+          p.verificationBadge?.status === "pro_verified"
+      );
+    }
+
+    if (args.offersOnline !== undefined) {
+      candidates = candidates.filter(
+        (p) => p.offersOnlineSessions === args.offersOnline
+      );
+    }
+
+    if (args.offersInPerson !== undefined) {
+      candidates = candidates.filter(
+        (p) => p.offersInPersonSessions === args.offersInPerson
+      );
+    }
+
+    if (args.minYearsExperience !== undefined) {
+      candidates = candidates.filter(
+        (p) => (p.yearsOfExperience || 0) >= args.minYearsExperience
+      );
+    }
 
     // Get user details for each physiotherapist
     const physiosWithDetails = await Promise.all(
-      allPhysios.map(async (profile) => {
-        // Skip profiles that have explicitly opted OUT of marketplace
-        if (profile.isAvailableOnMarketplace === false) return null;
-
+      candidates.map(async (profile) => {
         const user = await ctx.db.get(profile.userId);
         if (!user) return null;
 
@@ -82,7 +130,7 @@ export const searchPhysiotherapists = query({
     // Filter out nulls
     let filteredPhysios = physiosWithDetails.filter((p) => p !== null);
 
-    // Apply filters
+    // The name lives on the user, so the text search runs after the lookup
     if (args.searchQuery) {
       const query = args.searchQuery.toLowerCase();
       filteredPhysios = filteredPhysios.filter((p) => {
@@ -96,51 +144,6 @@ export const searchPhysiotherapists = query({
           specs.includes(query)
         );
       });
-    }
-
-    if (args.specializations && args.specializations.length > 0) {
-      filteredPhysios = filteredPhysios.filter((p) => {
-        const physioSpecs = p.specializations || [];
-        return args.specializations.some((spec) =>
-          physioSpecs.some((pSpec) =>
-            pSpec.toLowerCase().includes(spec.toLowerCase())
-          )
-        );
-      });
-    }
-
-    if (args.location) {
-      filteredPhysios = filteredPhysios.filter(
-        (p) => p.location?.toLowerCase() === args.location.toLowerCase()
-      );
-    }
-
-    // minPrice / maxPrice are accepted for old clients but ignored: prices are standard.
-
-    if (args.verifiedOnly) {
-      filteredPhysios = filteredPhysios.filter(
-        (p) =>
-          p.verificationBadge?.status === "verified" ||
-          p.verificationBadge?.status === "pro_verified"
-      );
-    }
-
-    if (args.offersOnline !== undefined) {
-      filteredPhysios = filteredPhysios.filter(
-        (p) => p.offersOnlineSessions === args.offersOnline
-      );
-    }
-
-    if (args.offersInPerson !== undefined) {
-      filteredPhysios = filteredPhysios.filter(
-        (p) => p.offersInPersonSessions === args.offersInPerson
-      );
-    }
-
-    if (args.minYearsExperience !== undefined) {
-      filteredPhysios = filteredPhysios.filter(
-        (p) => (p.yearsOfExperience || 0) >= args.minYearsExperience
-      );
     }
 
     // Sorting
@@ -368,9 +371,7 @@ export const incrementProfileView = mutation({
       return { success: false };
     }
 
-    await ctx.db.patch(profile._id, {
-      profileViews: (profile.profileViews || 0) + 1,
-    });
+    await recordProfileView(ctx, args.physiotherapistId);
 
     return { success: true };
   },
@@ -462,7 +463,7 @@ export const findPhysiosForService = query({
     const zoneId = service.mode === "home" ? args.zoneId ?? null : null;
     if (service.mode === "home" && !zoneId) return [];
 
-    const profiles = await ctx.db.query("physiotherapistProfiles").collect();
+    const profiles = await ctx.db.query("physiotherapistProfiles").take(2000);
     const results = [];
     for (const profile of profiles) {
       // Cheap checks first; isPhysioNetworkEligible then confirms approval and setup

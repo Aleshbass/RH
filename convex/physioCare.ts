@@ -260,7 +260,7 @@ async function describeProgramLogs(ctx: Ctx, logs: Doc<"exerciseProgramLogs">[])
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const getPatientWorkspace = query({
-  args: { patientId: v.id("users") },
+  args: { patientId: v.id("users"), now: v.optional(v.number()) },
   handler: async (ctx, args) => {
     const physio = await physioOrNull(ctx);
     if (!physio) return null;
@@ -269,7 +269,7 @@ export const getPatientWorkspace = query({
     const patient = await ctx.db.get(args.patientId);
     if (!patient) return null;
 
-    const now = Date.now();
+    const now = args.now ?? Date.now();
     const profile = await ctx.db
       .query("patientProfiles")
       .withIndex("by_user_id", (q) => q.eq("userId", args.patientId))

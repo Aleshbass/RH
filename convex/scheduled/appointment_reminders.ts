@@ -19,17 +19,14 @@ export const sendDailyAppointmentReminders = internalMutation({
     const endOfTomorrowUTC = startOfTomorrowUTC + DAY - 1;
 
     // Query appointments scheduled for tomorrow that are not cancelled
-    const appointments = await ctx.db
-      .query("appointments")
-      .filter((q) =>
-        q.and(
-          q.gte(q.field("startTime"), startOfTomorrowUTC),
-          q.lte(q.field("startTime"), endOfTomorrowUTC),
-          q.neq(q.field("status"), "cancelled_by_patient"),
-          q.neq(q.field("status"), "cancelled_by_therapist")
+    const appointments = (
+      await ctx.db
+        .query("appointments")
+        .withIndex("by_start_time", (q) =>
+          q.gte("startTime", startOfTomorrowUTC).lte("startTime", endOfTomorrowUTC)
         )
-      )
-      .collect();
+        .take(2000)
+    ).filter((a) => a.status !== "cancelled_by_patient" && a.status !== "cancelled_by_therapist");
 
     const appUrl = publicAppUrl();
 

@@ -12,6 +12,7 @@ import { mutation, query } from "../_generated/server";
 import { NETWORK_TERMS_VERSION } from "../../lib/rehabify-network-terms";
 import { BOOKABLE_SERVICE_IDS, getService } from "../../lib/rehabify-services";
 import { loadTariffs } from "../helpers/rehabifyPricing";
+import { profileViewCount } from "../physioSetup";
 
 async function approvedPhysio(ctx: any) {
   const identity = await ctx.auth.getUserIdentity();
@@ -211,7 +212,7 @@ export const getMyMarketplaceSettings = query({
       verificationBadge: profile.verificationBadge || { status: "none" },
 
       // Stats
-      profileViews: profile.profileViews || 0,
+      profileViews: await profileViewCount(ctx, user._id, profile.profileViews),
       bookingsThroughMarketplace: totalBookings.length,
       totalMarketplaceEarnings:
         (profile.totalMarketplaceEarnings || 0) / 100,

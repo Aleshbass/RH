@@ -276,7 +276,7 @@ export default defineSchema({
     })),
 
     // Analytics
-    profileViews: v.optional(v.number()),
+    profileViews: v.optional(v.number()), // legacy: new views go to physioProfileViews
     bookingsThroughMarketplace: v.optional(v.number()),
     totalMarketplaceEarnings: v.optional(v.number()), // Total earned through marketplace
     averageRating: v.optional(v.number()), // Average rating from reviews
@@ -420,6 +420,12 @@ export default defineSchema({
   // Family Access Grants: Manages family member access to patient data
   // Documents uploaded by physiotherapists (licenses, certifications, etc.)
   // Notifications: System-wide notifications for all users
+  // Marketplace profile view counter, one row per physio (physioSetup.ts recordProfileView)
+  physioProfileViews: defineTable({
+    userId: v.id("users"),
+    count: v.number(),
+  }).index("by_user_id", ["userId"]),
+
   notifications: defineTable({
     userId: v.id("users"),
     type: v.string(),
@@ -1237,6 +1243,7 @@ export default defineSchema({
     .index("by_physiotherapist_id", ["physiotherapistId"])
     .index("by_clinic_id", ["clinicId"])
     .index("by_clinic_id_and_status", ["clinicId", "status"])
+    .index("by_status_and_due_date", ["status", "dueDate"])
     .index("by_clinic_id_and_invoice_number", ["clinicId", "invoiceNumber"])
     .index("by_payment_reference", ["paymentReference"]),
 

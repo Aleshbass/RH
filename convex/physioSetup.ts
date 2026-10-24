@@ -7,7 +7,7 @@
  * The dashboard checklist, the "finish setting up" popup and the marketplace gate all use this
  * file so they can never disagree.
  */
-import { query, type QueryCtx } from "./_generated/server";
+import { query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { getService, type BookableServiceId } from "../lib/rehabify-services";
 import { NETWORK_TERMS_VERSION } from "../lib/rehabify-network-terms";
@@ -313,3 +313,28 @@ export const getMySetupStatus = query({
     };
   },
 });
+
+// Profile views live in physioProfileViews, not on physiotherapistProfiles: marketplace search
+// reads every profile, so a counter there re-ran every open search on each view.
+
+/** All-time views: the old counter left on the profile plus the new table's count. */
+export async function profileViewCount(
+  ctx: QueryCtx,
+  physioUserId: Id<"users">,
+  legacyCount?: number
+): Promise<number> {
+  const row = await ctx.db
+    .query("physioProfileViews")
+    .withIndex("by_user_id", (q) => q.eq("userId", physioUserId))
+    .first();
+  return (legacyCount ?? 0) + (row?.count ?? 0);
+}
+
+export async function recordProfileView(ctx: MutationCtx, physioUserId: Id<"users">): Promise<void> {
+  const row = await ctx.db
+    .query("physioProfileViews")
+    .withIndex("by_user_id", (q) => q.eq("userId", physioUserId))
+    .first();
+  if (row) await ctx.db.patch(row._id, { count: row.count + 1 });
+  else await ctx.db.insert("physioProfileViews", { userId: physioUserId, count: 1 });
+}

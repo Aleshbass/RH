@@ -55,7 +55,9 @@ export default function PatientWorkspacePage() {
   const patientId = params.patientId as Id<'users'>;
 
   const currentUser = useQuery(api.users.getMyUser);
-  const workspace = useQuery(api.physioCare.getPatientWorkspace, patientId ? { patientId } : 'skip') as
+  // A fixed "now" (to 5 minutes) keeps the query's arguments stable, so Convex can cache it
+  const [workspaceNow] = useState(() => Math.floor(Date.now() / 300_000) * 300_000);
+  const workspace = useQuery(api.physioCare.getPatientWorkspace, patientId ? { patientId, now: workspaceNow } : 'skip') as
     | Workspace
     | null
     | undefined;

@@ -2,6 +2,18 @@
 import { internalQuery, internalAction } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
+import type { Doc } from "./_generated/dataModel";
+import { lagosDateTime, lagosTime } from "./helpers/lagosTime";
+
+// Note: typing this file fully (or reshaping the invoice functions) tips the Convex tsc over
+// TypeScript's instantiation depth limit elsewhere (TS2589), so it stays @ts-nocheck for now.
+
+const HOUR = 60 * 60 * 1000;
+
+const fullName = (user: any, fallback: string) =>
+  `${user?.firstName ?? ""} ${user?.lastName ?? ""}`.trim() || fallback;
+
+type ReminderRun = { success: boolean; remindersSent: number; remindersSkipped: number };
 
 /**
  * INVOICE PAYMENT REMINDERS
@@ -13,40 +25,33 @@ export const getUnpaidInvoices = internalQuery({
     const now = Date.now();
     const threeDaysAgo = now - 3 * 24 * 60 * 60 * 1000;
 
-    // Get invoices that are:
-    // 1. Status = 'sent' (not paid)
-    // 2. Due date has passed OR created more than 3 days ago
-    // 3. Not cancelled
-    const unpaidInvoices = await ctx.db
+    // Sent (not paid) invoices that are past due or were issued more than 3 days ago
+    const sent = await ctx.db
       .query("invoices")
-      .filter((q) =>
-        q.and(
-          q.eq(q.field("status"), "sent"),
-          q.or(
-            q.lt(q.field("dueDate"), now),
-            q.lt(q.field("createdAt"), threeDaysAgo)
-          )
-        )
-      )
-      .collect();
+      .withIndex("by_status_and_due_date", (q) => q.eq("status", "sent"))
+      .take(1000);
 
-    return unpaidInvoices;
+    return sent.filter(
+      (invoice) => invoice.dueDate < now || (invoice.issueDate ?? invoice._creationTime) < threeDaysAgo
+    );
   },
 });
 
 export const countInvoiceReminders = internalQuery({
   args: {
     invoiceId: v.id("invoices"),
+    patientId: v.id("users"),
   },
   handler: async (ctx, args) => {
     const reminders = await ctx.db
       .query("notifications")
       .withIndex("by_user_and_type", (q) =>
-        q.eq("userId", args.invoiceId as any).eq("type", "invoice_payment_reminder")
+        q.eq("userId", args.patientId).eq("type", "invoice_payment_reminder")
       )
-      .collect();
+      .order("desc")
+      .take(200);
 
-    return reminders.length;
+    return reminders.filter((n) => n.payload?.data?.invoiceId === String(args.invoiceId)).length;
   },
 });
 
@@ -60,6 +65,8 @@ export const sendInvoicePaymentReminders = internalAction({
 
     for (const invoice of unpaidInvoices) {
       try {
+        if (!invoice.patientId) continue;
+
         // Get patient details
         const patient = await ctx.runQuery(internal.reminderSystem.getUserById, {
           userId: invoice.patientId,
@@ -81,7 +88,7 @@ export const sendInvoicePaymentReminders = internalAction({
         // Check reminder count - MAX 3 reminders per invoice
         const reminderCount = await ctx.runQuery(
           internal.reminderSystem.countInvoiceReminders,
-          { invoiceId: invoice._id }
+          { invoiceId: invoice._id, patientId: invoice.patientId }
         );
 
         if (reminderCount >= 3) {
@@ -138,181 +145,156 @@ export const sendInvoicePaymentReminders = internalAction({
 
 /**
  * APPOINTMENT REMINDERS
- * Send reminders for upcoming appointments with smart timing
+ * Patients and physios get a "starting soon" reminder 1-2 hours before a visit, and physios a
+ * 24-hour one. The patient's day-ahead reminder is the daily email in
+ * scheduled/appointment_reminders.ts, so it isn't repeated here.
  */
 
+/** Scheduled or confirmed visits starting in [from, to). Defaults to the next 48 hours. */
 export const getUpcomingAppointments = internalQuery({
-  handler: async (ctx) => {
-    const now = Date.now();
-    const twentyFourHoursFromNow = now + 24 * 60 * 60 * 1000;
-    const fortyEightHoursFromNow = now + 48 * 60 * 60 * 1000;
+  args: { from: v.optional(v.number()), to: v.optional(v.number()) },
+  handler: async (ctx, args): Promise<Doc<"appointments">[]> => {
+    const from = args.from ?? Date.now();
+    const to = args.to ?? from + 48 * HOUR;
 
-    // Get appointments that are:
-    // 1. Status = 'scheduled' or 'confirmed'
-    // 2. Start time is within next 24-48 hours
-    const upcomingAppointments = await ctx.db
+    const appointments = await ctx.db
       .query("appointments")
-      .filter((q) =>
-        q.and(
-          q.or(
-            q.eq(q.field("status"), "scheduled"),
-            q.eq(q.field("status"), "confirmed")
-          ),
-          q.gte(q.field("startTime"), now),
-          q.lte(q.field("startTime"), fortyEightHoursFromNow)
-        )
-      )
-      .collect();
+      .withIndex("by_start_time", (q) => q.gte("startTime", from).lt("startTime", to))
+      .take(1000);
 
-    return upcomingAppointments;
+    return appointments.filter((a) => a.status === "scheduled" || a.status === "confirmed");
   },
 });
 
-export const countAppointmentReminders = internalQuery({
+/** Whether this user already has the `kind` reminder for this visit. */
+export const hasAppointmentReminder = internalQuery({
   args: {
     appointmentId: v.id("appointments"),
     userId: v.id("users"),
+    kind: v.string(),
   },
-  handler: async (ctx, args) => {
-    const today = new Date().toISOString().split("T")[0];
-    const startOfDay = new Date(today).setHours(0, 0, 0, 0);
-
-    const reminders = await ctx.db
+  handler: async (ctx, args): Promise<boolean> => {
+    const recent = await ctx.db
       .query("notifications")
       .withIndex("by_user_and_type", (q) =>
         q.eq("userId", args.userId).eq("type", "appointment_reminder")
       )
-      .filter((q) =>
-        q.and(
-          q.gte(q.field("createdAt"), startOfDay),
-          q.eq(
-            q.field("payload.data.appointmentId"),
-            String(args.appointmentId)
-          )
-        )
-      )
-      .collect();
+      .order("desc")
+      .take(50);
 
-    return reminders.length;
+    return recent.some(
+      (n) =>
+        n.payload?.data?.appointmentId === String(args.appointmentId) &&
+        n.payload?.data?.kind === args.kind
+    );
   },
 });
 
 export const sendAppointmentReminders = internalAction({
-  handler: async (ctx) => {
-    const upcomingAppointments = await ctx.runQuery(
-      internal.reminderSystem.getUpcomingAppointments
-    );
-    const today = new Date().toISOString().split("T")[0];
+  handler: async (ctx): Promise<ReminderRun & { totalUpcoming: number }> => {
+    const now = Date.now();
+    // Windows are a little wider than the hourly cron so no visit slips between two runs;
+    // hasAppointmentReminder stops the overlap sending twice.
+    const startingSoon = await ctx.runQuery(internal.reminderSystem.getUpcomingAppointments, {
+      from: now + HOUR,
+      to: now + 2 * HOUR + 5 * 60 * 1000,
+    });
+    const dayAhead = await ctx.runQuery(internal.reminderSystem.getUpcomingAppointments, {
+      from: now + 23 * HOUR,
+      to: now + 24 * HOUR + 5 * 60 * 1000,
+    });
 
     let remindersSent = 0;
     let remindersSkipped = 0;
 
-    for (const appointment of upcomingAppointments) {
+    const remind = async (
+      appointment: any,
+      userId: any,
+      kind: "soon" | "day",
+      title: string,
+      body: string,
+      link: string
+    ) => {
+      const already = await ctx.runQuery(internal.reminderSystem.hasAppointmentReminder, {
+        appointmentId: appointment._id,
+        userId,
+        kind,
+      });
+      if (already) {
+        remindersSkipped++;
+        return;
+      }
+      await ctx.runMutation(internal.notifications.core.createNotificationWithDeduplication, {
+        userId,
+        type: "appointment_reminder",
+        priority: kind === "soon" ? "high" : "medium",
+        payload: {
+          title,
+          body,
+          data: {
+            appointmentId: String(appointment._id),
+            kind,
+            appointmentType: appointment.appointmentType,
+          },
+          link,
+        },
+        deduplicationWindowMs: 12 * HOUR,
+      });
+      remindersSent++;
+    };
+
+    for (const appointment of startingSoon) {
       try {
-        const hoursUntilAppointment = Math.floor(
-          (appointment.startTime - Date.now()) / (60 * 60 * 1000)
-        );
-
-        // Send reminder at specific intervals:
-        // - 24 hours before
-        // - 2 hours before
-        const shouldSendReminder =
-          (hoursUntilAppointment <= 24 && hoursUntilAppointment >= 23) ||
-          (hoursUntilAppointment <= 2 && hoursUntilAppointment >= 1);
-
-        if (!shouldSendReminder) continue;
-
-        // Get patient and physiotherapist
         const patient = await ctx.runQuery(internal.reminderSystem.getUserById, {
           userId: appointment.patientId,
         });
-        
-        if (!patient) continue;
-        
         const physio = await ctx.runQuery(internal.reminderSystem.getUserById, {
           userId: appointment.physiotherapistId,
         });
+        if (!patient || !physio) continue;
 
-        if (!physio) continue;
-
-        // Check if reminder already sent today for this appointment - MAX 2 per day
-        const patientReminderCount = await ctx.runQuery(
-          internal.reminderSystem.countAppointmentReminders,
-          {
-            appointmentId: appointment._id,
-            userId: appointment.patientId,
-          }
-        );
-
-        const physioReminderCount = await ctx.runQuery(
-          internal.reminderSystem.countAppointmentReminders,
-          {
-            appointmentId: appointment._id,
-            userId: appointment.physiotherapistId,
-          }
-        );
-
-        // Send to patient (max 2 reminders per appointment), unless they switched reminders off
-        if (patientReminderCount < 2 && patient.notificationPreferences?.appointmentReminders !== false) {
-          await ctx.runMutation(
-            internal.notifications.core.createNotificationWithDeduplication,
-            {
-              userId: appointment.patientId,
-              type: "appointment_reminder",
-              priority: hoursUntilAppointment <= 2 ? "high" : "medium",
-              payload: {
-                title:
-                  hoursUntilAppointment <= 2
-                    ? "Appointment Starting Soon!"
-                    : "Appointment Reminder",
-                body: `Your appointment with ${physio?.firstName} ${physio?.lastName} is in ${hoursUntilAppointment} hours`,
-                data: {
-                  appointmentId: String(appointment._id),
-                  hoursUntil: hoursUntilAppointment,
-                  appointmentType: appointment.appointmentType,
-                  reminderDate: today,
-                },
-                link: `/dashboard/patient/appointments`,
-              },
-              deduplicationWindowMs: 12 * 60 * 60 * 1000, // 12 hours
-            }
+        const at = lagosTime(appointment.startTime);
+        // Patients can switch reminders off in their settings
+        if (patient.notificationPreferences?.appointmentReminders !== false) {
+          await remind(
+            appointment,
+            patient._id,
+            "soon",
+            "Appointment starting soon",
+            `Your appointment with ${fullName(physio, "your physiotherapist")} starts at ${at}.`,
+            "/dashboard/patient/appointments"
           );
-          remindersSent++;
         }
-
-        // Send to physiotherapist (max 2 reminders per appointment)
-        if (physioReminderCount < 2) {
-          await ctx.runMutation(
-            internal.notifications.core.createNotificationWithDeduplication,
-            {
-              userId: appointment.physiotherapistId,
-              type: "appointment_reminder",
-              priority: hoursUntilAppointment <= 2 ? "high" : "medium",
-              payload: {
-                title:
-                  hoursUntilAppointment <= 2
-                    ? "Appointment Starting Soon!"
-                    : "Appointment Reminder",
-                body: `Appointment with ${patient?.firstName} ${patient?.lastName} is in ${hoursUntilAppointment} hours`,
-                data: {
-                  appointmentId: String(appointment._id),
-                  hoursUntil: hoursUntilAppointment,
-                  appointmentType: appointment.appointmentType,
-                  reminderDate: today,
-                },
-                link: `/dashboard/physiotherapist/appointments`,
-              },
-              deduplicationWindowMs: 12 * 60 * 60 * 1000, // 12 hours
-            }
-          );
-          remindersSent++;
-        }
-
+        await remind(
+          appointment,
+          physio._id,
+          "soon",
+          "Appointment starting soon",
+          `Your appointment with ${fullName(patient, "your patient")} starts at ${at}.`,
+          "/dashboard/physiotherapist/appointments"
+        );
       } catch (e) {
-        console.error(
-          `Failed to send appointment reminder for ${appointment._id}:`,
-          e
+        console.error(`Failed to send appointment reminder for ${appointment._id}:`, e);
+      }
+    }
+
+    for (const appointment of dayAhead) {
+      try {
+        const patient = await ctx.runQuery(internal.reminderSystem.getUserById, {
+          userId: appointment.patientId,
+        });
+        if (!patient) continue;
+
+        await remind(
+          appointment,
+          appointment.physiotherapistId,
+          "day",
+          "Appointment in 24 hours",
+          `Your appointment with ${fullName(patient, "your patient")} is on ${lagosDateTime(appointment.startTime)}.`,
+          "/dashboard/physiotherapist/appointments"
         );
+      } catch (e) {
+        console.error(`Failed to send appointment reminder for ${appointment._id}:`, e);
       }
     }
 
@@ -320,7 +302,7 @@ export const sendAppointmentReminders = internalAction({
       success: true,
       remindersSent,
       remindersSkipped,
-      totalUpcoming: upcomingAppointments.length,
+      totalUpcoming: startingSoon.length + dayAhead.length,
     };
   },
 });
@@ -330,7 +312,7 @@ export const sendAppointmentReminders = internalAction({
  */
 export const getUserById = internalQuery({
   args: { userId: v.id("users") },
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<Doc<"users"> | null> => {
     return await ctx.db.get(args.userId);
   },
 });

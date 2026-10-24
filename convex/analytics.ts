@@ -3,6 +3,7 @@ import { v } from "convex/values"
 import { Id } from "./_generated/dataModel"
 import { ensureUserRole } from "./auth"
 import { assertServerCaller } from "./helpers/serverSecret"
+import { profileViewCount } from "./physioSetup"
 import { physioOutstandingKobo, physioPaidKobo } from "./billing"
 
 // Size caps for analytics rows written on behalf of the public /api/analytics/* routes
@@ -397,19 +398,10 @@ export const trackProfileView = mutation({
     physiotherapistId: v.id("users"), // The user ID of the physiotherapist being viewed
   },
   handler: async (ctx, { physiotherapistId }) => {
-    // 1. Increment the counter on the physiotherapist profile
-    const profile = await ctx.db
-      .query("physiotherapistProfiles")
-      .withIndex("by_user_id", (q) => q.eq("userId", physiotherapistId))
-      .unique();
+    // The view count is bumped once by the profile page (marketplace/search incrementProfileView),
+    // so a card click only logs the event.
 
-    if (profile) {
-      await ctx.db.patch(profile._id, {
-        profileViews: (profile.profileViews || 0) + 1,
-      });
-    }
-
-    // 2. Log the analytics event for time-series data
+    // Log the analytics event for time-series data
     // We try to get the viewer's ID if they are logged in, but it's not required
     const identity = await ctx.auth.getUserIdentity();
     let viewerId: Id<"users"> | undefined;
@@ -511,7 +503,7 @@ export const getPhysiotherapistStats = query({
         upcoming: upcomingAppointments,
         cancelled: cancelledAppointments,
       },
-      profileViews: profile?.profileViews || 0,
+      profileViews: await profileViewCount(ctx, user._id, profile?.profileViews),
     };
   },
 });
