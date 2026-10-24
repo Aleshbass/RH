@@ -10,6 +10,7 @@ import {
   ArrowRight,
   BadgeCheck,
   CalendarDays,
+  CalendarPlus,
   Check,
   Clock3,
   Hourglass,
@@ -18,13 +19,14 @@ import {
   Receipt,
   RefreshCw,
   SearchX,
-  Users,
   Video,
 } from '@/components/icons'
 import { api } from '@/convex/_generated/api'
 import type { VerifyResult } from '@/convex/learn'
+import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
-import { Fact, naira, pillOutline, pillTeal, pillWhite, PROGRAM } from './shared'
+import { downloadSessionsCalendar } from './course/calendar'
+import { Fact, naira, pillOutline, pillInk, pillWhite, PROGRAM } from './shared'
 
 const DRAFT_KEY = 'rh-learn-register-draft'
 const PENDING_RETRIES = 8
@@ -49,25 +51,25 @@ function StateCard({
   spin = false,
 }: {
   icon: typeof AlertCircle
-  tone: 'teal' | 'jasmine' | 'rose' | 'bone'
+  tone: 'calm' | 'jasmine' | 'rose' | 'bone'
   title: string
   children: ReactNode
   actions?: ReactNode
   spin?: boolean
 }) {
   const chip = {
-    teal: 'bg-rh-honeydew text-rh-teal',
-    jasmine: 'bg-rh-jasmine text-rh-night',
-    rose: 'bg-rh-rose text-rh-night',
-    bone: 'bg-rh-bone text-rh-night',
+    calm: 'bg-rh-honeydew text-rh-ink',
+    jasmine: 'bg-rh-jasmine text-rh-ink',
+    rose: 'bg-rh-rose text-rh-ink',
+    bone: 'bg-rh-bone text-rh-ink',
   }[tone]
   return (
     <div className="rounded-[2rem] bg-white p-8 text-center shadow-soft sm:p-12">
       <span className={cn('mx-auto flex h-16 w-16 items-center justify-center rounded-[1.25rem]', chip)}>
         <Icon className={cn('h-7 w-7', spin && 'animate-spin')} />
       </span>
-      <h1 className="mt-6 text-[28px] leading-tight tracking-tight text-rh-night sm:text-[34px]">{title}</h1>
-      <div className="mx-auto mt-3 max-w-md text-[15px] leading-7 text-rh-night/65">{children}</div>
+      <h1 className="mt-6 text-[28px] leading-tight tracking-tight text-rh-ink sm:text-[34px]">{title}</h1>
+      <div className="mx-auto mt-3 max-w-md text-[15px] leading-7 text-rh-ink/65">{children}</div>
       {actions && <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">{actions}</div>}
     </div>
   )
@@ -86,7 +88,7 @@ function Celebration() {
           y: Math.sin(angle) * distance * 0.7,
           size: 8 + (i % 4) * 4,
           rotate: (i % 2 ? 1 : -1) * (90 + i * 12),
-          color: ['bg-rh-lime', 'bg-rh-mint', 'bg-rh-jasmine', 'bg-rh-rose', 'bg-rh-honeydew'][i % 5],
+          color: ['bg-rh-lime', 'bg-rh-honeydew', 'bg-rh-jasmine', 'bg-rh-rose', 'bg-rh-honeydew'][i % 5],
           delay: (i % 6) * 0.03,
         }
       }),
@@ -112,12 +114,14 @@ function Celebration() {
 function Success({ result, reference }: { result: Paid; reference: string }) {
   const reduce = useReducedMotion()
   const summary = result.registration
+  useEffect(() => playSound('paid'), [])
+  const upcoming = (summary?.sessions ?? []).filter((s) => s.endsAt > Date.now())
   return (
     <Frame>
       <div className="relative overflow-hidden rounded-[2rem] bg-white px-6 py-12 text-center shadow-soft sm:rounded-[2.5rem] sm:px-12 sm:py-14">
         <Celebration />
         <motion.span
-          className="relative mx-auto flex h-20 w-20 items-center justify-center rounded-[1.6rem] bg-rh-lime text-rh-night"
+          className="relative mx-auto flex h-20 w-20 items-center justify-center rounded-[1.6rem] bg-rh-lime text-rh-ink"
           initial={reduce ? false : { scale: 0.4, rotate: -12, opacity: 0 }}
           animate={{ scale: 1, rotate: 0, opacity: 1 }}
           transition={{ type: 'spring', stiffness: 260, damping: 16 }}
@@ -130,18 +134,30 @@ function Success({ result, reference }: { result: Paid; reference: string }) {
           transition={{ duration: 0.5, delay: 0.3 }}
           className="relative"
         >
-          <h1 className="mt-7 text-[34px] leading-tight tracking-tight text-rh-night sm:text-[44px]">
+          <h1 className="mt-7 text-[34px] leading-tight tracking-tight text-rh-ink sm:text-[44px]">
             You&apos;re in{summary?.firstName ? `, ${summary.firstName}` : ''}!
           </h1>
-          <p className="mx-auto mt-3 max-w-md text-[17px] leading-7 text-rh-night/70">
+          <p className="mx-auto mt-3 max-w-md text-[17px] leading-7 text-rh-ink/70">
             Your place in the {summary?.cohort.cohortLabel ?? PROGRAM.shortTitle} is confirmed.
             {summary?.email ? ` We've emailed your confirmation to ${summary.email}.` : ' Your confirmation email is on its way.'}
           </p>
-          {summary?.cohort.communityLink && (
-            <a href={summary.cohort.communityLink} target="_blank" rel="noopener noreferrer" className={cn(pillTeal, 'mt-8 h-12 px-7')}>
-              <Users className="h-4 w-4" /> Join the cohort group
-            </a>
-          )}
+          <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
+            <Link href="/learn/course" className={cn(pillInk, 'h-12 px-7 text-[15px]')}>
+              Open my course <ArrowRight className="h-4 w-4" />
+            </Link>
+            {summary && upcoming.length > 0 && (
+              <button
+                type="button"
+                onClick={() => downloadSessionsCalendar(upcoming, summary.cohort.cohortLabel)}
+                className={cn(pillOutline, 'h-12 px-7 text-[15px]')}
+              >
+                <CalendarPlus className="h-4 w-4" /> Add to calendar
+              </button>
+            )}
+          </div>
+          <p className="mx-auto mt-4 max-w-sm text-sm text-rh-ink/55">
+            On another device? The email we sent has a link that signs you straight in.
+          </p>
         </motion.div>
       </div>
 
@@ -152,7 +168,7 @@ function Success({ result, reference }: { result: Paid; reference: string }) {
           transition={{ duration: 0.5, delay: 0.45 }}
           className="mt-4 rounded-[2rem] bg-white p-6 shadow-soft sm:p-9"
         >
-          <h2 className="text-[22px] leading-tight text-rh-night">Your program</h2>
+          <h2 className="text-[22px] leading-tight text-rh-ink">Your program</h2>
           <div className="mt-6 grid gap-5 sm:grid-cols-2">
             <Fact icon={CalendarDays} label="Dates" value={summary.cohort.dateRange} />
             <Fact icon={Video} label="Live sessions" value={summary.cohort.liveSessions} />
@@ -161,23 +177,23 @@ function Success({ result, reference }: { result: Paid; reference: string }) {
             <Fact icon={BadgeCheck} label="Registration" value={summary.trackLabel} />
             <Fact icon={Receipt} label="Paid" value={summary.amountPaid !== null ? naira(summary.amountPaid) : '—'} />
           </div>
-          <div className="mt-7 rounded-2xl bg-rh-honeydew p-5 text-sm leading-6 text-rh-night/75">
-            <p className="font-semibold text-rh-night">What happens next</p>
+          <div className="mt-7 rounded-2xl bg-rh-honeydew p-5 text-sm leading-6 text-rh-ink/75">
+            <p className="font-semibold text-rh-ink">What happens next</p>
             <p className="mt-1">
-              Joining details for the live sessions come by email before the program starts. Every session is recorded, so you can catch
-              up any time.
+              Your course page has the joining link for every live session, the recordings, each week&apos;s slides and exercises, and our 3D
+              exercise library. If a joining link changes, it changes there too.
             </p>
           </div>
-          <p className="mt-5 break-all text-xs text-rh-night/45">Payment reference: {reference}</p>
+          <p className="mt-5 break-all text-xs text-rh-ink/45">Payment reference: {reference}</p>
         </motion.div>
       )}
 
-      <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">
-        <Link href="/learn" className={cn(pillOutline, 'h-12')}>
+      <div className="mt-6 flex justify-center gap-6 text-sm font-semibold text-rh-ink/60">
+        <Link href="/learn" className="hover:text-rh-ink">
           Program details
         </Link>
-        <Link href="/" className={cn(pillTeal, 'h-12')}>
-          Back to Rehabify <ArrowRight className="h-4 w-4" />
+        <Link href="/" className="hover:text-rh-ink">
+          Back to Rehabify
         </Link>
       </div>
     </Frame>
@@ -187,7 +203,7 @@ function Success({ result, reference }: { result: Paid; reference: string }) {
 export function ConfirmationSkeleton() {
   return (
     <Frame>
-      <StateCard icon={Loader2} spin tone="teal" title="Confirming your payment…">
+      <StateCard icon={Loader2} spin tone="calm" title="Confirming your payment…">
         This usually takes a few seconds. Please keep this page open.
       </StateCard>
     </Frame>
@@ -243,7 +259,7 @@ export function ConfirmationFlow() {
   const support = (
     <a
       href={`mailto:${PROGRAM.supportEmail}?subject=${encodeURIComponent(`${PROGRAM.title} payment ${reference}`)}`}
-      className="font-semibold text-rh-teal underline-offset-4 hover:underline"
+      className="font-semibold text-rh-ink underline-offset-4 hover:underline"
     >
       {PROGRAM.supportEmail}
     </a>
@@ -257,7 +273,7 @@ export function ConfirmationFlow() {
           tone="bone"
           title="No payment to confirm"
           actions={
-            <Link href="/learn" className={cn(pillTeal, 'h-12')}>
+            <Link href="/learn" className={cn(pillInk, 'h-12')}>
               Go to the program
             </Link>
           }
@@ -277,7 +293,7 @@ export function ConfirmationFlow() {
           tone="jasmine"
           title="We couldn't check your payment just now"
           actions={
-            <button type="button" onClick={checkAgain} className={cn(pillTeal, 'h-12')}>
+            <button type="button" onClick={checkAgain} className={cn(pillInk, 'h-12')}>
               <RefreshCw className="h-4 w-4" /> Try again
             </button>
           }
@@ -301,7 +317,7 @@ export function ConfirmationFlow() {
             tone="jasmine"
             title="Your payment is still processing"
             actions={
-              <button type="button" onClick={checkAgain} className={cn(pillTeal, 'h-12')}>
+              <button type="button" onClick={checkAgain} className={cn(pillInk, 'h-12')}>
                 <RefreshCw className="h-4 w-4" /> Check again
               </button>
             }
@@ -321,7 +337,7 @@ export function ConfirmationFlow() {
             title={result.status === 'failed' ? "Your payment didn't go through" : 'Payment not completed'}
             actions={
               <>
-                <Link href="/learn/register" className={cn(pillTeal, 'h-12')}>
+                <Link href="/learn/register" className={cn(pillInk, 'h-12')}>
                   Try again <ArrowRight className="h-4 w-4" />
                 </Link>
                 <Link href="/learn" className={cn(pillOutline, 'h-12')}>
@@ -342,7 +358,7 @@ export function ConfirmationFlow() {
               We need to check one thing before confirming your place. Our team will be in touch by email, or you can contact {support} and
               quote this reference:
             </p>
-            <p className="mt-3 break-all rounded-xl bg-rh-canvas px-3 py-2 font-mono text-xs text-rh-night">{reference}</p>
+            <p className="mt-3 break-all rounded-xl bg-rh-canvas px-3 py-2 font-mono text-xs text-rh-ink">{reference}</p>
           </StateCard>
         </Frame>
       )
@@ -355,10 +371,10 @@ export function ConfirmationFlow() {
             title="We couldn't find this payment"
             actions={
               <>
-                <button type="button" onClick={checkAgain} className={cn(pillWhite, 'h-12 ring-1 ring-inset ring-rh-night/15')}>
+                <button type="button" onClick={checkAgain} className={cn(pillWhite, 'h-12 ring-1 ring-inset ring-rh-ink/15')}>
                   <RefreshCw className="h-4 w-4" /> Check again
                 </button>
-                <Link href="/learn/register" className={cn(pillTeal, 'h-12')}>
+                <Link href="/learn/register" className={cn(pillInk, 'h-12')}>
                   Register
                 </Link>
               </>

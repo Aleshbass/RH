@@ -143,10 +143,10 @@ function ReminderTests() {
             disabled={busy !== null}
             className={cn(
               cardClass,
-              'flex flex-col items-center gap-2 px-4 py-5 text-sm font-medium text-rh-night transition hover:-translate-y-0.5 hover:shadow-lift disabled:pointer-events-none disabled:opacity-60 dark:text-white'
+              'flex flex-col items-center gap-2 px-4 py-5 text-sm font-medium text-rh-ink transition hover:-translate-y-0.5 hover:shadow-lift disabled:pointer-events-none disabled:opacity-60 dark:text-white'
             )}
           >
-            {busy === id ? <Loader2 className="h-6 w-6 animate-spin text-rh-teal dark:text-rh-aqua" /> : <IconChip icon={Icon} />}
+            {busy === id ? <Loader2 className="h-6 w-6 animate-spin text-rh-ink dark:text-rh-lime" /> : <IconChip icon={Icon} />}
             {label}
           </button>
         ))}
@@ -168,7 +168,7 @@ function ReminderTests() {
               </div>
               {dataCheck.recommendations && dataCheck.recommendations.length > 0 && (
                 <div className="rounded-xl bg-rh-canvas px-4 py-3 dark:bg-white/[0.04]">
-                  <p className="mb-1.5 text-sm font-semibold text-rh-night dark:text-white">Recommendations</p>
+                  <p className="mb-1.5 text-sm font-semibold text-rh-ink dark:text-white">Recommendations</p>
                   <ul className="list-inside list-disc space-y-1 text-sm text-neutral-600 dark:text-neutral-300">
                     {dataCheck.recommendations.map((rec, i) => (
                       <li key={i}>{rec}</li>
@@ -211,7 +211,7 @@ function ReminderTests() {
                           <XCircle className="mt-0.5 h-5 w-5 shrink-0 text-rose-600 dark:text-rose-300" />
                         )}
                         <div className="min-w-0">
-                          <h4 className="font-semibold capitalize text-rh-night dark:text-white">{test.name}</h4>
+                          <h4 className="font-semibold capitalize text-rh-ink dark:text-white">{test.name}</h4>
                           {test.details !== undefined && test.details !== null && (
                             <pre className="mt-2 max-h-72 overflow-auto rounded-lg bg-rh-canvas p-2 text-xs text-neutral-700 dark:bg-rh-ink dark:text-neutral-300">
                               {JSON.stringify(test.details, null, 2)}
@@ -227,7 +227,7 @@ function ReminderTests() {
               </ul>
 
               {testResults.summary.failed === 0 ? (
-                <p className="flex items-center gap-2 rounded-xl bg-rh-mint px-3 py-2 text-sm text-[#047857] dark:bg-emerald-400/10 dark:text-emerald-300">
+                <p className="flex items-center gap-2 rounded-xl bg-rh-honeydew px-3 py-2 text-sm text-[#047857] dark:bg-emerald-400/10 dark:text-emerald-300">
                   <CheckCircle2 className="h-4 w-4 shrink-0" />
                   <span>
                     <strong>All tests passed.</strong> The reminder system is wired correctly.

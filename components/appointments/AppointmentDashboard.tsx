@@ -56,7 +56,7 @@ export function AppointmentDashboard({ appointments, onNewAppointment, onAppoint
                         <AvatarImage src={appointment.patient?.imageUrl} />
                         <AvatarFallback className={cn(
                             "text-sm font-medium",
-                            type === 'unconfirmed' ? "bg-amber-100 text-amber-700" : "bg-[#005b57]/5 text-[#005b57]"
+                            type === 'unconfirmed' ? "bg-amber-100 text-amber-700" : "bg-rh-lime/5 text-rh-ink"
                         )}>
                             {appointment.patient?.firstName?.[0]}{appointment.patient?.lastName?.[0]}
                         </AvatarFallback>
@@ -129,7 +129,7 @@ export function AppointmentDashboard({ appointments, onNewAppointment, onAppoint
             {/* Upcoming Section */}
             <section>
                 <div className="flex items-center gap-2 mb-4 px-1">
-                    <CheckCircle2 className="h-5 w-5 text-[#005b57]" />
+                    <CheckCircle2 className="h-5 w-5 text-rh-ink" />
                     <h3 className="text-lg font-bold text-gray-900">Upcoming</h3>
                 </div>
                 {upcoming.length === 0 ? (

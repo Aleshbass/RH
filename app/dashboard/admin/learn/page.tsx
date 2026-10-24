@@ -39,6 +39,7 @@ import {
 } from '@/components/admin/ui'
 import { Callout, errorMessage, LoadingBlock } from '@/components/admin/partners/shared'
 import { CohortForm } from '@/components/admin/learn/CohortForm'
+import { CoursePanel } from '@/components/admin/learn/CoursePanel'
 import { InterestPanel, RegistrationsPanel } from '@/components/admin/learn/RegistrationsPanel'
 import {
   AUTO_CLOSED,
@@ -63,7 +64,7 @@ function Visibility({ on, label, detail }: { on: boolean; label: string; detail:
         <Circle className="mt-0.5 h-4 w-4 shrink-0 text-neutral-300 dark:text-neutral-600" />
       )}
       <span className="min-w-0">
-        <span className={cn('block text-sm font-medium', on ? 'text-rh-night dark:text-white' : 'text-neutral-500 dark:text-neutral-400')}>
+        <span className={cn('block text-sm font-medium', on ? 'text-rh-ink dark:text-white' : 'text-neutral-500 dark:text-neutral-400')}>
           {label}
         </span>
         <span className="block text-xs text-neutral-500 dark:text-neutral-400">{detail}</span>
@@ -160,7 +161,7 @@ function PublishCard({ cohort, onDeleted }: { cohort: AdminCohort; onDeleted: ()
               Updated {formatDistanceToNow(cohort.updatedAt, { addSuffix: true })}
             </span>
           </div>
-          <h2 className="text-lg font-semibold tracking-tight text-rh-night dark:text-white">{headline}</h2>
+          <h2 className="text-lg font-semibold tracking-tight text-rh-ink dark:text-white">{headline}</h2>
           <p className="text-sm text-neutral-500 dark:text-neutral-400">
             {cohort.cohortLabel} · {cohort.dateRange} · {cohort.liveSessions}
           </p>
@@ -257,8 +258,8 @@ function CohortPicker({
             className={cn(
               'flex shrink-0 items-center gap-2 rounded-xl px-3.5 py-2 text-left text-sm transition',
               active
-                ? 'bg-rh-teal text-white shadow-soft dark:bg-rh-aqua dark:text-rh-night'
-                : 'bg-white text-rh-night shadow-soft hover:bg-rh-canvas dark:bg-rh-ink-2 dark:text-white dark:hover:bg-rh-ink-3'
+                ? 'bg-rh-lime text-rh-ink shadow-soft dark:bg-rh-lime dark:text-rh-ink'
+                : 'bg-white text-rh-ink shadow-soft hover:bg-rh-canvas dark:bg-rh-ink-2 dark:text-white dark:hover:bg-rh-ink-3'
             )}
           >
             <span
@@ -291,7 +292,7 @@ export default function AdminLearnPage() {
     <PageHeader
       eyebrow="Rehabify Learn"
       title="MSK Specialist Program"
-      description="Set each cohort's dates, live sessions and prices, publish it to the website, and see who has registered."
+      description="Set each cohort's dates and prices, publish it, add live session links and weekly materials, and see who has registered."
       actions={
         <>
           <Button asChild variant="ghost" className={softButtonClass}>
@@ -391,6 +392,7 @@ export default function AdminLearnPage() {
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList className={tabsListClass}>
           <TabsTrigger value="details">Cohort details</TabsTrigger>
+          <TabsTrigger value="course">Course</TabsTrigger>
           <TabsTrigger value="registrations">
             Registrations{selected.stats.paid + selected.stats.pending > 0 ? ` (${selected.stats.paid + selected.stats.pending})` : ''}
           </TabsTrigger>
@@ -405,6 +407,9 @@ export default function AdminLearnPage() {
             initial={draftFromCohort(selected)}
             initialImageUrl={selected.imageUrl}
           />
+        </TabsContent>
+        <TabsContent value="course" className="mt-4">
+          <CoursePanel key={selected.id} cohortId={selected.id} />
         </TabsContent>
         <TabsContent value="registrations" className="mt-4">
           <RegistrationsPanel cohort={selected} programUrl={overview.programUrl} />

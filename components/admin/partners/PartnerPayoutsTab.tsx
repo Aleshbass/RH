@@ -123,7 +123,7 @@ export function PartnerPayoutsTab({
           ].map((item) => (
             <div key={item.label} className={cn(cardClass, 'p-4')}>
               <p className="text-[13px] font-medium text-neutral-500 dark:text-neutral-400">{item.label}</p>
-              <p className="mt-1 text-xl font-semibold tabular-nums text-rh-night dark:text-white">{item.value}</p>
+              <p className="mt-1 text-xl font-semibold tabular-nums text-rh-ink dark:text-white">{item.value}</p>
               <p className="mt-0.5 truncate text-[11px] text-neutral-500 dark:text-neutral-400">{item.hint}</p>
             </div>
           ))}
@@ -131,10 +131,10 @@ export function PartnerPayoutsTab({
       )}
 
       {/* Paystack treasury */}
-      <div className="flex flex-col gap-3 rounded-2xl bg-rh-teal p-4 text-white shadow-soft dark:bg-rh-night sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3 rounded-2xl bg-rh-lime p-4 text-rh-ink shadow-soft dark:bg-rh-ink sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/10">
-            <Wallet className="h-5 w-5 text-rh-aqua" />
+            <Wallet className="h-5 w-5 text-rh-lime" />
           </span>
           <div>
             <p className="text-sm font-semibold">Paystack balance</p>
@@ -203,7 +203,7 @@ export function PartnerPayoutsTab({
                   return (
                     <TableRow key={p.partnerId}>
                       <TableCell>
-                        <div className="font-medium text-rh-night dark:text-white">{p.partnerName}</div>
+                        <div className="font-medium text-rh-ink dark:text-white">{p.partnerName}</div>
                         <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[10px] text-neutral-400">
                           <span className="uppercase">{p.partnerType}</span>
                           <span className="font-mono">{p.partnerId}</span>
@@ -218,20 +218,20 @@ export function PartnerPayoutsTab({
                           Physio {formatKobo(p.totalPhysiotherapistShare)} · Rehabify {formatKobo(p.totalRehabifyShare)}
                         </div>
                       </TableCell>
-                      <TableCell className="text-right font-semibold tabular-nums text-rh-night dark:text-white">{formatKobo(p.totalPartnerCommission)}</TableCell>
+                      <TableCell className="text-right font-semibold tabular-nums text-rh-ink dark:text-white">{formatKobo(p.totalPartnerCommission)}</TableCell>
                       <TableCell className="text-right tabular-nums">
                         <div>-{formatKobo(fee + duty)}</div>
                         <div className="text-[10px] text-neutral-400">
                           {formatKobo(fee)} fee + {formatKobo(duty)} duty
                         </div>
                       </TableCell>
-                      <TableCell className="text-right font-semibold tabular-nums text-rh-teal dark:text-rh-aqua">{formatKobo(netPayoutKobo(p))}</TableCell>
+                      <TableCell className="text-right font-semibold tabular-nums text-rh-ink dark:text-rh-lime">{formatKobo(netPayoutKobo(p))}</TableCell>
                       <TableCell>
                         {p.hasBankAccount ? (
                           <div className="flex items-center gap-1.5">
                             <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-300" />
                             <div className="leading-tight">
-                              <span className="block text-[11px] font-medium text-rh-night dark:text-white">{p.bankName}</span>
+                              <span className="block text-[11px] font-medium text-rh-ink dark:text-white">{p.bankName}</span>
                               <span className="font-mono text-[10px] text-neutral-400">{p.maskedAccountNumber}</span>
                             </div>
                           </div>

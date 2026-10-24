@@ -112,7 +112,7 @@ export function InquiriesTab({ inquiries }: { inquiries: Inquiry[] | undefined }
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="text-base font-semibold text-rh-night dark:text-white">
+                        <h3 className="text-base font-semibold text-rh-ink dark:text-white">
                           {inquiry.organization || inquiry.organizationName || 'Partner organisation'}
                         </h3>
                         {inquiry.organizationType && <StatusBadge tone="teal">{inquiry.organizationType}</StatusBadge>}
@@ -137,7 +137,7 @@ export function InquiriesTab({ inquiries }: { inquiries: Inquiry[] | undefined }
                   <div className="grid grid-cols-1 gap-3 text-xs sm:grid-cols-2">
                     <div>
                       <p className="text-neutral-500 dark:text-neutral-400">Contact person</p>
-                      <p className="text-sm font-medium text-rh-night dark:text-white">{inquiry.name || inquiry.contactName || 'Contact'}</p>
+                      <p className="text-sm font-medium text-rh-ink dark:text-white">{inquiry.name || inquiry.contactName || 'Contact'}</p>
                       <a href={`mailto:${inquiry.email}`} className={cn(linkClass, 'text-sm')}>
                         {inquiry.email}
                       </a>
@@ -157,7 +157,7 @@ export function InquiriesTab({ inquiries }: { inquiries: Inquiry[] | undefined }
                     </div>
                   </div>
 
-                  <p className={cn(insetClass, 'whitespace-pre-wrap text-sm text-rh-night dark:text-neutral-200')}>{inquiry.message}</p>
+                  <p className={cn(insetClass, 'whitespace-pre-wrap text-sm text-rh-ink dark:text-neutral-200')}>{inquiry.message}</p>
                 </div>
 
                 <div className="flex w-full flex-col justify-center gap-2 border-t border-black/[0.05] bg-rh-canvas/60 p-5 dark:border-white/[0.06] dark:bg-white/[0.02] md:w-56 md:border-l md:border-t-0">

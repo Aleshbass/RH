@@ -17,7 +17,7 @@ export function PatientRef({
   isGuest?: boolean
 }) {
   const label = patientNumber ?? (isGuest ? 'Guest' : 'No ID yet')
-  const className = 'font-mono text-xs font-medium text-rh-night dark:text-white'
+  const className = 'font-mono text-xs font-medium text-rh-ink dark:text-white'
   if (!userId) return <span className={className}>{label}</span>
   return (
     <Link href={`${ADMIN_HOME}/users/${userId}`} className={`${className} hover:underline`} title="Open patient to follow up">

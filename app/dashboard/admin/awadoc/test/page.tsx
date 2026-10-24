@@ -141,7 +141,7 @@ function AwadocTestTool() {
       <Panel
         title={
           <span className="flex items-center gap-2">
-            <User className="h-4 w-4 text-rh-teal dark:text-rh-aqua" /> Available physiotherapists
+            <User className="h-4 w-4 text-rh-ink dark:text-rh-lime" /> Available physiotherapists
           </span>
         }
         description="The physios AwaDoc sees when it queries your system."
@@ -160,12 +160,12 @@ function AwadocTestTool() {
             {physios.map((p) => (
               <div key={p.profileId} className={cn(insetClass, 'space-y-2')}>
                 <div className="flex items-center gap-2">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-rh-mist text-xs font-semibold text-rh-teal dark:bg-rh-aqua/10 dark:text-rh-aqua">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-rh-honeydew text-xs font-semibold text-rh-ink dark:bg-white/[0.06] dark:text-rh-lime">
                     {p.firstName?.[0]}
                     {p.lastName?.[0]}
                   </div>
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-rh-night dark:text-white">
+                    <p className="truncate text-sm font-medium text-rh-ink dark:text-white">
                       {p.firstName} {p.lastName}
                     </p>
                     <p className="flex items-center gap-1 text-xs text-neutral-500 dark:text-neutral-400">
@@ -204,13 +204,13 @@ function AwadocTestTool() {
 
       <div className="space-y-3">
         <div>
-          <h2 className="text-[15px] font-semibold text-rh-night dark:text-white">Webhook event simulation</h2>
+          <h2 className="text-[15px] font-semibold text-rh-ink dark:text-white">Webhook event simulation</h2>
           <p className="text-sm text-neutral-500 dark:text-neutral-400">Run them in order: availability, then request, then confirmed.</p>
         </div>
 
         {therapyId && (
           <p className={cn(insetClass, 'text-sm text-neutral-500 dark:text-neutral-400')}>
-            Active therapy ID <code className="font-mono text-rh-teal dark:text-rh-aqua">{therapyId}</code> (used for the follow-up tests)
+            Active therapy ID <code className="font-mono text-rh-ink dark:text-rh-lime">{therapyId}</code> (used for the follow-up tests)
           </p>
         )}
 
@@ -220,11 +220,11 @@ function AwadocTestTool() {
             <div key={event.id} className={cn(cardClass, 'space-y-3 p-4')}>
               <div className="flex items-center justify-between gap-3">
                 <div className="flex min-w-0 items-center gap-3">
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-rh-mist text-sm font-semibold text-rh-teal dark:bg-rh-aqua/10 dark:text-rh-aqua">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-rh-honeydew text-sm font-semibold text-rh-ink dark:bg-white/[0.06] dark:text-rh-lime">
                     {idx + 1}
                   </span>
                   <div className="min-w-0">
-                    <p className="text-sm font-semibold text-rh-night dark:text-white">{event.label}</p>
+                    <p className="text-sm font-semibold text-rh-ink dark:text-white">{event.label}</p>
                     <p className="text-xs text-neutral-500 dark:text-neutral-400">
                       <code>{event.event}</code> · {event.description}
                     </p>
@@ -255,7 +255,7 @@ function AwadocTestTool() {
               </div>
               {result?.error && <p className="text-sm text-rose-600 dark:text-rose-300">{result.error}</p>}
               {result?.response !== undefined && result?.response !== null && (
-                <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded-xl bg-rh-canvas p-3 font-mono text-xs text-rh-night dark:bg-white/[0.04] dark:text-neutral-200">
+                <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded-xl bg-rh-canvas p-3 font-mono text-xs text-rh-ink dark:bg-white/[0.04] dark:text-neutral-200">
                   {JSON.stringify(result.response, null, 2)}
                 </pre>
               )}

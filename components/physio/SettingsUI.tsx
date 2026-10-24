@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button'
 export function SettingsPageHeader({ title, description }: { title: string; description?: ReactNode }) {
   return (
     <div className="mb-6">
-      <h1 className="text-2xl font-semibold tracking-tight text-rh-night dark:text-white">{title}</h1>
+      <h1 className="text-2xl font-semibold tracking-tight text-rh-ink dark:text-white">{title}</h1>
       {description && <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">{description}</p>}
     </div>
   )
@@ -43,7 +43,7 @@ export function SettingsSection({
     >
       {(title || description) && (
         <div className="px-4 pb-1 pt-4 sm:px-6">
-          {title && <h2 className="text-[15px] font-semibold tracking-tight text-rh-night dark:text-white">{title}</h2>}
+          {title && <h2 className="text-[15px] font-semibold tracking-tight text-rh-ink dark:text-white">{title}</h2>}
           {description && <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">{description}</p>}
         </div>
       )}
@@ -108,8 +108,8 @@ export function SpecialisationPicker({
               className={cn(
                 'inline-flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-sm transition-all active:scale-95',
                 selected
-                  ? 'border-rh-teal bg-rh-teal text-white shadow-sm dark:border-rh-aqua dark:bg-rh-aqua dark:text-rh-night'
-                  : 'border-black/[0.08] bg-white text-neutral-700 hover:border-rh-teal/40 hover:bg-rh-mist dark:border-white/10 dark:bg-transparent dark:text-neutral-300 dark:hover:bg-white/[0.05]'
+                  ? 'border-rh-lime bg-rh-lime text-rh-ink shadow-sm dark:border-rh-lime dark:bg-rh-lime dark:text-rh-ink'
+                  : 'border-black/[0.08] bg-white text-neutral-700 hover:border-rh-lime/40 hover:bg-rh-honeydew dark:border-white/10 dark:bg-transparent dark:text-neutral-300 dark:hover:bg-white/[0.05]'
               )}
             >
               {item}

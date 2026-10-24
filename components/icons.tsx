@@ -3,7 +3,7 @@
  * inline SVG that paints with currentColor, so a text-* class (or the tone
  * prop) is all it takes to put it in a brand colour. No glows, no gradients.
  *
- *   <Calendar className="h-4 w-4 text-rh-teal" />
+ *   <Calendar className="h-4 w-4 text-rh-ink" />
  *   <Calendar tone="brand" className="h-4 w-4" />
  *   <Icon icon={faBone} tone="accent" />   // any other Font Awesome icon
  *
@@ -51,8 +51,8 @@ import { cn } from '@/lib/utils'
 
 /** Brand colour presets. Any text-* class works too and wins over the tone. */
 export const ICON_TONES = {
-  brand: 'text-rh-teal dark:text-rh-aqua',
-  deep: 'text-rh-night dark:text-rh-mint',
+  brand: 'text-rh-ink dark:text-rh-lime',
+  deep: 'text-rh-ink dark:text-rh-honeydew',
   accent: 'text-rh-lime',
   amber: 'text-rh-amber',
   muted: 'text-neutral-500 dark:text-neutral-400',

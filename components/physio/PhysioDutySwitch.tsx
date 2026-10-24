@@ -161,10 +161,10 @@ export function PhysioDutySwitch({ className }: { className?: string }) {
   )
 
   const pillClass = cn(
-    'inline-flex h-10 items-center gap-2 rounded-xl px-3.5 text-xs font-semibold shadow-soft transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-teal/40 active:scale-95',
+    'inline-flex h-10 items-center gap-2 rounded-xl px-3.5 text-xs font-semibold shadow-soft transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-lime/40 active:scale-95',
     onDuty
-      ? 'bg-rh-mint text-[#047857] dark:bg-emerald-400/10 dark:text-emerald-300'
-      : 'bg-white text-neutral-600 hover:text-rh-night dark:bg-rh-ink-2 dark:text-neutral-300',
+      ? 'bg-rh-honeydew text-[#047857] dark:bg-emerald-400/10 dark:text-emerald-300'
+      : 'bg-white text-neutral-600 hover:text-rh-ink dark:bg-rh-ink-2 dark:text-neutral-300',
     className
   )
   const dot = (
@@ -204,7 +204,7 @@ export function PhysioDutySwitch({ className }: { className?: string }) {
         {(Object.keys(STATUS_LABELS) as DutyStatus[]).map((key) => (
           <DropdownMenuItem key={key} onClick={() => changeStatus(key)}>
             <span className="flex-1">{STATUS_LABELS[key]}</span>
-            {status === key && <Check className="h-4 w-4 text-[#005b57] dark:text-[#2dd4bf]" />}
+            {status === key && <Check className="h-4 w-4 text-rh-ink dark:text-rh-lime" />}
           </DropdownMenuItem>
         ))}
         <DropdownMenuSeparator />

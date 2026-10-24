@@ -26,6 +26,22 @@ test('portals send signed-out visitors to sign-in', async ({ page }) => {
   }
 });
 
+test('Learn course page offers signed-out physios a one-tap email link', async ({ page }) => {
+  await page.goto('/learn/course');
+  await expect(page.getByRole('heading', { name: 'Open your course' })).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole('button', { name: /email me my course link/i })).toBeVisible();
+});
+
+test('unknown Learn course links say so', async ({ page }) => {
+  await page.goto('/learn/start/notarealcodenotarealcode1234');
+  await expect(page.getByRole('heading', { name: 'Link not recognised' })).toBeVisible({ timeout: 20_000 });
+});
+
+test('certificate check says when a number does not exist', async ({ page }) => {
+  await page.goto('/learn/verify/RHL-ZZZZ-ZZZZ');
+  await expect(page.getByText('No certificate with this number')).toBeVisible({ timeout: 20_000 });
+});
+
 test('debug routes are gone', async ({ request }) => {
   for (const path of ['/server', '/test/sentry']) {
     const response = await request.get(path, { maxRedirects: 0 });

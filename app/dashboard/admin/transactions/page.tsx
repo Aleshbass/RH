@@ -174,7 +174,7 @@ export default function AdminTransactionsPage() {
                   return (
                     <TableRow key={tx._id}>
                       <TableCell className="whitespace-nowrap pl-5 align-top">
-                        <div className="text-sm text-rh-night dark:text-white">{format(tx.issueDate, 'd MMM yyyy')}</div>
+                        <div className="text-sm text-rh-ink dark:text-white">{format(tx.issueDate, 'd MMM yyyy')}</div>
                         <div className="text-xs text-neutral-500 dark:text-neutral-400">{format(tx.issueDate, 'HH:mm')}</div>
                       </TableCell>
                       <TableCell className="align-top">
@@ -188,7 +188,7 @@ export default function AdminTransactionsPage() {
                         </div>
                       </TableCell>
                       <TableCell className="align-top">
-                        <div className="text-sm font-medium text-rh-night dark:text-white">{tx.physiotherapistName}</div>
+                        <div className="text-sm font-medium text-rh-ink dark:text-white">{tx.physiotherapistName}</div>
                         {tx.physiotherapistEmail && (
                           <div className="text-xs text-neutral-500 dark:text-neutral-400">{tx.physiotherapistEmail}</div>
                         )}
@@ -196,7 +196,7 @@ export default function AdminTransactionsPage() {
                           <div className="mt-1 flex flex-wrap items-center gap-1">
                             {tx.physioLocation && (
                               <span className="inline-flex items-center gap-0.5 text-[11px] text-neutral-500 dark:text-neutral-400">
-                                <MapPin className="h-3 w-3 text-rh-teal dark:text-rh-aqua" />
+                                <MapPin className="h-3 w-3 text-rh-ink dark:text-rh-lime" />
                                 {tx.physioLocation}
                               </span>
                             )}
@@ -214,7 +214,7 @@ export default function AdminTransactionsPage() {
                         )}
                       </TableCell>
                       <TableCell className="whitespace-nowrap text-right align-top tabular-nums">
-                        <div className="text-sm font-semibold text-rh-night dark:text-white">{money(tx.totalAmount, tx.currency)}</div>
+                        <div className="text-sm font-semibold text-rh-ink dark:text-white">{money(tx.totalAmount, tx.currency)}</div>
                         <div className="text-xs text-neutral-500 dark:text-neutral-400">Fee {money(tx.platformFeeAmount, tx.currency)}</div>
                       </TableCell>
                       <TableCell className="align-top">
@@ -224,7 +224,7 @@ export default function AdminTransactionsPage() {
                         </div>
                       </TableCell>
                       <TableCell className="max-w-[180px] pr-5 align-top">
-                        <div className="truncate text-xs font-medium text-rh-night dark:text-white">{tx.invoiceNumber}</div>
+                        <div className="truncate text-xs font-medium text-rh-ink dark:text-white">{tx.invoiceNumber}</div>
                         {tx.paymentReference && (
                           <div className="truncate font-mono text-[11px] text-neutral-500 dark:text-neutral-400" title={tx.paymentReference}>
                             {tx.paymentReference}

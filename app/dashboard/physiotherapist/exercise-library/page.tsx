@@ -37,7 +37,7 @@ function PatientChooser({ open, onOpenChange, onChoose }: { open: boolean; onOpe
         </div>
         <ul className="max-h-80 space-y-1 overflow-y-auto">
           {patients === undefined ? (
-            <li className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-rh-teal" /></li>
+            <li className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-rh-ink" /></li>
           ) : list.length === 0 ? (
             <li className="py-8 text-center text-sm text-neutral-500">No active patients found.</li>
           ) : (
@@ -46,13 +46,13 @@ function PatientChooser({ open, onOpenChange, onChoose }: { open: boolean; onOpe
                 <button
                   type="button"
                   onClick={() => onChoose(p)}
-                  className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition hover:bg-rh-mist dark:hover:bg-white/[0.05]"
+                  className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition hover:bg-rh-honeydew dark:hover:bg-white/[0.05]"
                 >
-                  <span className="flex h-9 w-9 items-center justify-center rounded-full bg-rh-teal text-sm font-semibold text-white">
+                  <span className="flex h-9 w-9 items-center justify-center rounded-full bg-rh-lime text-sm font-semibold text-rh-ink">
                     {(p.firstName?.[0] ?? 'P').toUpperCase()}
                   </span>
                   <span className="min-w-0">
-                    <span className="block truncate text-sm font-medium text-rh-night dark:text-white">{`${p.firstName ?? ''} ${p.lastName ?? ''}`.trim() || 'Patient'}</span>
+                    <span className="block truncate text-sm font-medium text-rh-ink dark:text-white">{`${p.firstName ?? ''} ${p.lastName ?? ''}`.trim() || 'Patient'}</span>
                     {p.email && <span className="block truncate text-xs text-neutral-500">{p.email}</span>}
                   </span>
                 </button>
@@ -80,7 +80,7 @@ export default function ExerciseLibraryPage() {
         title="3D exercise library"
         description="Every exercise is demonstrated in 3D by a Rehabify clinician. Preview it, then send it to a patient with your own dose and voice note."
         actions={
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-rh-mist px-3 py-1.5 text-sm font-medium text-rh-teal dark:bg-rh-aqua/10 dark:text-rh-aqua">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-rh-honeydew px-3 py-1.5 text-sm font-medium text-rh-ink dark:bg-white/[0.06] dark:text-rh-lime">
             <Rotate3d className="h-4 w-4" /> {count3d} in 3D
           </span>
         }
@@ -88,7 +88,7 @@ export default function ExerciseLibraryPage() {
 
       <Panel bodyClassName="p-5">
         {library === undefined ? (
-          <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-rh-teal" /></div>
+          <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-rh-ink" /></div>
         ) : !library ? (
           <p className="py-10 text-center text-sm text-neutral-500">The library opens once your account is approved.</p>
         ) : (

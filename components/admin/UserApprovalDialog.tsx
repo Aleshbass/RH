@@ -115,8 +115,8 @@ function Detail({ label, children, icon: Icon }: { label: string; children: Reac
   return (
     <div className="rounded-xl bg-rh-canvas p-3 dark:bg-white/[0.04]">
       <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400">{label}</p>
-      <p className="mt-0.5 flex items-center gap-1.5 break-words text-sm font-semibold text-rh-night dark:text-white">
-        {Icon && <Icon className="h-3.5 w-3.5 shrink-0 text-rh-teal dark:text-rh-aqua" />}
+      <p className="mt-0.5 flex items-center gap-1.5 break-words text-sm font-semibold text-rh-ink dark:text-white">
+        {Icon && <Icon className="h-3.5 w-3.5 shrink-0 text-rh-ink dark:text-rh-lime" />}
         {children}
       </p>
     </div>
@@ -259,7 +259,7 @@ export function UserApprovalDialog({ userId, isOpen, onClose, onApprove, onDecli
             <div className="flex items-center gap-3 pr-6">
               <UserAvatar user={user} className="h-12 w-12" />
               <div className="min-w-0 flex-1">
-                <p className="truncate text-base font-semibold text-rh-night dark:text-white">{displayName(user)}</p>
+                <p className="truncate text-base font-semibold text-rh-ink dark:text-white">{displayName(user)}</p>
                 <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">{user.email}</p>
                 <div className="mt-1.5 flex flex-wrap gap-1.5">
                   <RoleBadge role={user.role} />
@@ -316,7 +316,7 @@ export function UserApprovalDialog({ userId, isOpen, onClose, onApprove, onDecli
                         <div className="flex min-w-0 items-center gap-3">
                           <IconChip icon={FileText} />
                           <div className="min-w-0">
-                            <p className="truncate text-sm font-semibold text-rh-night dark:text-white">{doc.fileName || 'Untitled file'}</p>
+                            <p className="truncate text-sm font-semibold text-rh-ink dark:text-white">{doc.fileName || 'Untitled file'}</p>
                             <p className="flex flex-wrap items-center gap-x-2 text-xs text-neutral-500 dark:text-neutral-400">
                               <span>{documentLabel(doc.documentType)}</span>
                               {doc.fileSize ? <span>{formatFileSize(doc.fileSize)}</span> : null}
@@ -360,10 +360,10 @@ export function UserApprovalDialog({ userId, isOpen, onClose, onApprove, onDecli
             <div
               className={cn(
                 'mt-5 rounded-xl p-4',
-                action === 'approve' ? 'bg-rh-mint dark:bg-emerald-400/10' : 'bg-rh-blush dark:bg-rose-400/10'
+                action === 'approve' ? 'bg-rh-honeydew dark:bg-emerald-400/10' : 'bg-rh-blush dark:bg-rose-400/10'
               )}
             >
-              <label htmlFor="approval-comments" className="text-sm font-semibold text-rh-night dark:text-white">
+              <label htmlFor="approval-comments" className="text-sm font-semibold text-rh-ink dark:text-white">
                 {action === 'approve' ? 'Note for the applicant (optional)' : 'Reason for declining (required)'}
               </label>
               <p className="mb-2 text-xs text-neutral-600 dark:text-neutral-300">

@@ -42,19 +42,19 @@ function DoctorDetails({ partner }: { partner: PartnerApplication }) {
     <div className={cn(insetClass, 'space-y-2.5 text-xs')}>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
         <span className="text-neutral-500 dark:text-neutral-400">MDCN folio / licence</span>
-        <span className="font-mono text-sm font-semibold text-rh-night dark:text-white">{details.medicalLicenseNumber || 'Not given'}</span>
+        <span className="font-mono text-sm font-semibold text-rh-ink dark:text-white">{details.medicalLicenseNumber || 'Not given'}</span>
       </div>
       <dl className="grid gap-x-4 gap-y-1 sm:grid-cols-2">
         {details.specialty && (
           <div>
             <dt className="text-neutral-500 dark:text-neutral-400">Specialty</dt>
-            <dd className="font-medium text-rh-night dark:text-white">{details.specialty}</dd>
+            <dd className="font-medium text-rh-ink dark:text-white">{details.specialty}</dd>
           </div>
         )}
         {details.hospitalAffiliation && (
           <div>
             <dt className="text-neutral-500 dark:text-neutral-400">Hospital / practice</dt>
-            <dd className="font-medium text-rh-night dark:text-white">{details.hospitalAffiliation}</dd>
+            <dd className="font-medium text-rh-ink dark:text-white">{details.hospitalAffiliation}</dd>
           </div>
         )}
       </dl>
@@ -75,7 +75,7 @@ function ApprovalBadge({ status }: { status: string }) {
 }
 
 const actionLinkClass =
-  'flex w-full items-center justify-center gap-1.5 rounded-xl bg-white px-3 py-2 text-xs font-medium text-rh-night shadow-soft transition hover:text-rh-teal dark:bg-rh-ink-3 dark:text-neutral-200 dark:shadow-none dark:hover:text-rh-aqua'
+  'flex w-full items-center justify-center gap-1.5 rounded-xl bg-white px-3 py-2 text-xs font-medium text-rh-ink shadow-soft transition hover:text-rh-ink dark:bg-rh-ink-3 dark:text-neutral-200 dark:shadow-none dark:hover:text-rh-lime'
 
 export function ApplicationsTab({
   applications,
@@ -210,7 +210,7 @@ export function ApplicationsTab({
                       />
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
-                          <h3 className="truncate text-base font-semibold text-rh-night dark:text-white">{partner.name}</h3>
+                          <h3 className="truncate text-base font-semibold text-rh-ink dark:text-white">{partner.name}</h3>
                           <PartnerTypeBadge type={partner.type} />
                           <span className="font-mono text-xs text-neutral-400">{partner.code}</span>
                         </div>

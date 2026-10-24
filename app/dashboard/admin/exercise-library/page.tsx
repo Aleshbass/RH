@@ -88,7 +88,7 @@ function SignOff() {
   if (status === undefined) {
     return (
       <div className="flex justify-center py-16">
-        <Loader2 className="h-6 w-6 animate-spin text-rh-teal dark:text-rh-aqua" />
+        <Loader2 className="h-6 w-6 animate-spin text-rh-ink dark:text-rh-lime" />
       </div>
     )
   }
@@ -145,11 +145,11 @@ function SignOff() {
                 const clipId = item.sided ? `${item.slug}-left` : item.slug
                 return (
                   <li key={item.slug} className={cn(cardClass, 'flex gap-3 p-3', approved && 'ring-1 ring-emerald-300/70 dark:ring-emerald-500/30')}>
-                    <div className="relative h-24 w-24 shrink-0 overflow-hidden rounded-xl bg-rh-mist dark:bg-white/[0.05]">
+                    <div className="relative h-24 w-24 shrink-0 overflow-hidden rounded-xl bg-rh-honeydew dark:bg-white/[0.05]">
                       <Image src={posterUrl(clipId)} alt={item.name} fill sizes="96px" className="object-contain" />
                     </div>
                     <div className="min-w-0 flex-1 space-y-1.5">
-                      <p className="font-semibold text-rh-night dark:text-white">{item.name}</p>
+                      <p className="font-semibold text-rh-ink dark:text-white">{item.name}</p>
                       <div className="flex flex-wrap gap-1">
                         {!ex ? (
                           <StatusBadge>Not synced</StatusBadge>
@@ -301,7 +301,7 @@ function Licences() {
 
       {licences === undefined ? (
         <div className="flex justify-center py-10">
-          <Loader2 className="h-6 w-6 animate-spin text-rh-teal dark:text-rh-aqua" />
+          <Loader2 className="h-6 w-6 animate-spin text-rh-ink dark:text-rh-lime" />
         </div>
       ) : licences.length === 0 ? (
         <Panel>
@@ -336,7 +336,7 @@ function Licences() {
                 {l.members.map((m) => (
                   <li key={m._id} className={listRowClass}>
                     <span className="min-w-0 flex-1 text-sm">
-                      <span className="font-medium text-rh-night dark:text-white">{m.name}</span>{' '}
+                      <span className="font-medium text-rh-ink dark:text-white">{m.name}</span>{' '}
                       <span className="text-neutral-500 dark:text-neutral-400">{m.email}</span>
                     </span>
                     <Button size="icon" variant="ghost" className="h-8 w-8 text-neutral-400 hover:text-rose-600" onClick={() => setRemoving({ licence: l, member: m })} aria-label={`Remove ${m.name}`}>

@@ -154,8 +154,8 @@ const EARNINGS_PAGE = 20;
 
 /** Chart ink per theme: one brand hue for data, quiet neutrals for everything else. */
 const CHART = {
-  light: { data: "#005b57", grid: "#ebe8df", axis: "#737373", surface: "#ffffff", border: "#e5e5e5", text: "#002e2c" },
-  dark: { data: "#2dd4bf", grid: "#24302f", axis: "#a3a3a3", surface: "#1b2827", border: "#2c3a39", text: "#fafafa" },
+  light: { data: "#00cd0f", grid: "#ebe8df", axis: "#737373", surface: "#ffffff", border: "#e5e5e5", text: "#0b1312" },
+  dark: { data: "#00cd0f", grid: "#24302f", axis: "#a3a3a3", surface: "#1b2827", border: "#2c3a39", text: "#fafafa" },
 };
 
 function useChartInk() {
@@ -252,7 +252,7 @@ function PhysioAvatar({ name, imageUrl, size = 36 }: { name: string; imageUrl?: 
     .toUpperCase();
   return (
     <span
-      className="relative flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-rh-mist text-xs font-semibold text-rh-teal dark:bg-rh-aqua/10 dark:text-rh-aqua"
+      className="relative flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-rh-honeydew text-xs font-semibold text-rh-ink dark:bg-white/[0.06] dark:text-rh-lime"
       style={{ width: size, height: size }}
     >
       {imageUrl ? <Image src={imageUrl} alt="" fill sizes={`${size}px`} className="object-cover" unoptimized /> : initials || "?"}
@@ -262,7 +262,7 @@ function PhysioAvatar({ name, imageUrl, size = 36 }: { name: string; imageUrl?: 
 
 function Rating({ value, count }: { value: number; count?: number }) {
   return (
-    <span className="inline-flex items-center gap-1 text-sm tabular-nums text-rh-night dark:text-neutral-100">
+    <span className="inline-flex items-center gap-1 text-sm tabular-nums text-rh-ink dark:text-neutral-100">
       <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
       {value.toFixed(1)}
       {count !== undefined && <span className="text-xs text-neutral-500 dark:text-neutral-400">({count})</span>}
@@ -277,12 +277,12 @@ function ShareRow({ label, value, total, hint }: { label: string; value: number;
     <div className="space-y-1.5">
       <div className="flex items-baseline justify-between gap-3">
         <p className="text-sm text-neutral-600 dark:text-neutral-300">{label}</p>
-        <p className="text-sm font-semibold tabular-nums text-rh-night dark:text-white">
+        <p className="text-sm font-semibold tabular-nums text-rh-ink dark:text-white">
           {formatNaira(value)} <span className="text-xs font-normal text-neutral-500 dark:text-neutral-400">{pct}%</span>
         </p>
       </div>
       <div className="h-1.5 overflow-hidden rounded-full bg-black/[0.05] dark:bg-white/[0.06]">
-        <div className="h-full rounded-full bg-rh-teal dark:bg-rh-aqua" style={{ width: `${pct}%` }} />
+        <div className="h-full rounded-full bg-rh-lime dark:bg-rh-lime" style={{ width: `${pct}%` }} />
       </div>
       {hint && <p className="text-[11px] text-neutral-500 dark:text-neutral-400">{hint}</p>}
     </div>
@@ -349,7 +349,7 @@ function PhysioEarningsSheet({
             <SheetHeader className="flex-row items-center gap-3 p-0 pr-8">
               <PhysioAvatar name={detail.physiotherapist.name} imageUrl={detail.physiotherapist.imageUrl} size={48} />
               <div className="min-w-0 text-left">
-                <SheetTitle className="truncate text-lg text-rh-night dark:text-white">{detail.physiotherapist.name}</SheetTitle>
+                <SheetTitle className="truncate text-lg text-rh-ink dark:text-white">{detail.physiotherapist.name}</SheetTitle>
                 <SheetDescription className="truncate">
                   {[detail.physiotherapist.email, detail.physiotherapist.location].filter(Boolean).join(" · ")}
                 </SheetDescription>
@@ -398,7 +398,7 @@ function PhysioEarningsSheet({
                   {detail.patients.slice(0, 8).map((p) => (
                     <li key={p.id} className="flex items-center gap-3 px-5 py-2.5">
                       <div className="min-w-0 flex-1">
-                        <p className="flex items-center gap-1.5 truncate text-sm font-medium text-rh-night dark:text-white">
+                        <p className="flex items-center gap-1.5 truncate text-sm font-medium text-rh-ink dark:text-white">
                           <PatientRef userId={p.id} patientNumber={p.patientNumber} isGuest={p.isGuest} />
                           {p.isGuest && <StatusBadge tone="amber">Guest</StatusBadge>}
                         </p>
@@ -406,7 +406,7 @@ function PhysioEarningsSheet({
                           {p.totalBookings} booking{p.totalBookings === 1 ? "" : "s"} · last {format(p.lastBookingDate, "d MMM yyyy")}
                         </p>
                       </div>
-                      <p className="shrink-0 text-sm font-semibold tabular-nums text-rh-night dark:text-white">{formatNaira(p.totalSpent)}</p>
+                      <p className="shrink-0 text-sm font-semibold tabular-nums text-rh-ink dark:text-white">{formatNaira(p.totalSpent)}</p>
                     </li>
                   ))}
                 </ul>
@@ -429,7 +429,7 @@ function PhysioEarningsSheet({
                         </p>
                       </div>
                       <div className="shrink-0 text-right">
-                        <p className="text-sm font-semibold tabular-nums text-rh-night dark:text-white">{formatNaira(b.totalAmount)}</p>
+                        <p className="text-sm font-semibold tabular-nums text-rh-ink dark:text-white">{formatNaira(b.totalAmount)}</p>
                         <StatusBadge tone={paymentTone(b.paymentStatus)} className="capitalize">
                           {b.paymentStatus}
                         </StatusBadge>
@@ -572,7 +572,7 @@ export default function AdminMarketplaceAnalyticsPage() {
           <TabsTrigger value="reports">
             Patient reports
             {pendingReports > 0 && (
-              <span className="ml-1.5 rounded-full bg-rh-amber px-1.5 text-[11px] font-semibold tabular-nums text-rh-night">{pendingReports}</span>
+              <span className="ml-1.5 rounded-full bg-rh-amber px-1.5 text-[11px] font-semibold tabular-nums text-rh-ink">{pendingReports}</span>
             )}
           </TabsTrigger>
         </TabsList>
@@ -611,12 +611,12 @@ export default function AdminMarketplaceAnalyticsPage() {
                       <button type="button" onClick={() => openPhysio(physio.physiotherapistId)} className={cn(listRowClass, "w-full text-left")}>
                         <PhysioAvatar name={physio.name} imageUrl={physio.imageUrl} />
                         <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-semibold text-rh-night dark:text-white">{physio.name}</p>
+                          <p className="truncate text-sm font-semibold text-rh-ink dark:text-white">{physio.name}</p>
                           <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">
                             {physio.totalBookings} bookings · {physio.totalPatients} patients
                           </p>
                         </div>
-                        <p className="shrink-0 text-sm font-semibold tabular-nums text-rh-night dark:text-white">{formatNaira(physio.totalEarnings)}</p>
+                        <p className="shrink-0 text-sm font-semibold tabular-nums text-rh-ink dark:text-white">{formatNaira(physio.totalEarnings)}</p>
                         <ChevronRight className="h-4 w-4 shrink-0 text-neutral-400" />
                       </button>
                     </li>
@@ -650,13 +650,13 @@ export default function AdminMarketplaceAnalyticsPage() {
                               openPhysio(physio.physiotherapistId);
                             }
                           }}
-                          className="cursor-pointer focus:outline-none focus-visible:bg-rh-mist dark:focus-visible:bg-white/[0.05]"
+                          className="cursor-pointer focus:outline-none focus-visible:bg-rh-honeydew dark:focus-visible:bg-white/[0.05]"
                         >
                           <TableCell className="pl-5">
                             <div className="flex items-center gap-3">
                               <PhysioAvatar name={physio.name} imageUrl={physio.imageUrl} />
                               <div className="min-w-0">
-                                <p className="flex items-center gap-1.5 font-medium text-rh-night dark:text-white">
+                                <p className="flex items-center gap-1.5 font-medium text-rh-ink dark:text-white">
                                   {physio.name}
                                   {!physio.isAvailable && <StatusBadge>Hidden</StatusBadge>}
                                 </p>
@@ -672,7 +672,7 @@ export default function AdminMarketplaceAnalyticsPage() {
                           <TableCell>
                             <Rating value={physio.averageRating} count={physio.reviewCount} />
                           </TableCell>
-                          <TableCell className="text-right font-semibold tabular-nums text-rh-night dark:text-white">{formatNaira(physio.totalEarnings)}</TableCell>
+                          <TableCell className="text-right font-semibold tabular-nums text-rh-ink dark:text-white">{formatNaira(physio.totalEarnings)}</TableCell>
                           <TableCell className="pr-5">
                             <ChevronRight className="h-4 w-4 text-neutral-400" />
                           </TableCell>
@@ -739,12 +739,12 @@ export default function AdminMarketplaceAnalyticsPage() {
                           <TableCell>
                             <div className="flex items-center gap-2">
                               <div className="h-1.5 w-20 overflow-hidden rounded-full bg-black/[0.06] dark:bg-white/[0.08]">
-                                <div className="h-full rounded-full bg-rh-teal dark:bg-rh-aqua" style={{ width: `${done}%` }} />
+                                <div className="h-full rounded-full bg-rh-lime dark:bg-rh-lime" style={{ width: `${done}%` }} />
                               </div>
                               <span className="text-xs tabular-nums text-neutral-500 dark:text-neutral-400">{pkg.sessionsRemaining} left</span>
                             </div>
                           </TableCell>
-                          <TableCell className="pr-5 text-right font-semibold tabular-nums text-rh-night dark:text-white">{formatNaira(pkg.totalAmount)}</TableCell>
+                          <TableCell className="pr-5 text-right font-semibold tabular-nums text-rh-ink dark:text-white">{formatNaira(pkg.totalAmount)}</TableCell>
                         </TableRow>
                       );
                     })}
@@ -782,7 +782,7 @@ export default function AdminMarketplaceAnalyticsPage() {
                   {reports.reports.map((report) => (
                     <li key={report._id} className="space-y-1 px-5 py-3">
                       <div className="flex items-center justify-between gap-2">
-                        <p className="truncate text-sm font-semibold text-rh-night dark:text-white">{report.physiotherapist?.name || "Unknown"}</p>
+                        <p className="truncate text-sm font-semibold text-rh-ink dark:text-white">{report.physiotherapist?.name || "Unknown"}</p>
                         <StatusBadge tone={reportTone(report.status)} className="capitalize">
                           {report.status.replace(/_/g, " ")}
                         </StatusBadge>
@@ -808,9 +808,9 @@ export default function AdminMarketplaceAnalyticsPage() {
                     <TableBody>
                       {reports.reports.map((report) => (
                         <TableRow key={report._id}>
-                          <TableCell className="pl-5 font-medium text-rh-night dark:text-white">{report.physiotherapist?.name || "Unknown"}</TableCell>
+                          <TableCell className="pl-5 font-medium text-rh-ink dark:text-white">{report.physiotherapist?.name || "Unknown"}</TableCell>
                           <TableCell>
-                            <p className="font-medium text-rh-night dark:text-white">{report.reporter?.name || "Unknown"}</p>
+                            <p className="font-medium text-rh-ink dark:text-white">{report.reporter?.name || "Unknown"}</p>
                             <p className="text-xs capitalize text-neutral-500 dark:text-neutral-400">{report.reporter?.role}</p>
                           </TableCell>
                           <TableCell className="text-sm capitalize text-neutral-600 dark:text-neutral-300">{report.reason.replace(/_/g, " ")}</TableCell>

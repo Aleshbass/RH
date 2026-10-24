@@ -272,11 +272,11 @@ function NeedsAttention({
               <Link href={item.href} className={cn(listRowClass, 'group')}>
                 <IconChip icon={item.icon} tone="peach" />
                 <span className="min-w-0 flex-1">
-                  <span className="block text-sm font-medium text-rh-night dark:text-white">{item.title}</span>
+                  <span className="block text-sm font-medium text-rh-ink dark:text-white">{item.title}</span>
                   <span className="block truncate text-xs text-neutral-500 dark:text-neutral-400">{item.description}</span>
                 </span>
-                <span className="rounded-full bg-rh-amber px-2.5 py-0.5 text-xs font-semibold tabular-nums text-rh-night">{item.count}</span>
-                <ArrowRight className="h-4 w-4 shrink-0 text-neutral-300 transition group-hover:translate-x-0.5 group-hover:text-rh-teal dark:text-neutral-600 dark:group-hover:text-rh-aqua" />
+                <span className="rounded-full bg-rh-amber px-2.5 py-0.5 text-xs font-semibold tabular-nums text-rh-ink">{item.count}</span>
+                <ArrowRight className="h-4 w-4 shrink-0 text-neutral-300 transition group-hover:translate-x-0.5 group-hover:text-rh-ink dark:text-neutral-600 dark:group-hover:text-rh-lime" />
               </Link>
             </li>
           ))}
@@ -333,7 +333,7 @@ function TodayPanel({
             <span className="min-w-0 flex-1 text-sm text-neutral-600 dark:text-neutral-300">{row.label}</span>
             {row.value ? (
               <>
-                <span className="text-lg font-semibold tabular-nums text-rh-night dark:text-white">
+                <span className="text-lg font-semibold tabular-nums text-rh-ink dark:text-white">
                   {row.value.today.toLocaleString()}
                   {row.value.capped ? '+' : ''}
                 </span>
@@ -396,7 +396,7 @@ function PlatformStatus({ health }: { health: { status: HealthCheck['status']; c
                 <span className={cn('mt-1.5 h-2 w-2 shrink-0 self-start rounded-full', style.dot)} aria-label={style.label} />
                 <span className="min-w-0 flex-1">
                   <span className="flex items-baseline justify-between gap-2">
-                    <span className="truncate text-sm font-medium text-rh-night dark:text-white">{check.label}</span>
+                    <span className="truncate text-sm font-medium text-rh-ink dark:text-white">{check.label}</span>
                     <span className="shrink-0 text-xs tabular-nums text-neutral-500 dark:text-neutral-400">{check.value}</span>
                   </span>
                   <span className="block text-xs text-neutral-500 dark:text-neutral-400">
@@ -441,7 +441,7 @@ function RecentActivity({ items, className }: { items: ActivityItem[] | undefine
       description="Latest events across the platform"
       className={className}
       actions={
-        <Link href="/dashboard/admin/activity" className="text-xs font-medium text-rh-teal hover:underline dark:text-rh-aqua">
+        <Link href="/dashboard/admin/activity" className="text-xs font-medium text-rh-ink hover:underline dark:text-rh-lime">
           View all
         </Link>
       }
@@ -463,7 +463,7 @@ function RecentActivity({ items, className }: { items: ActivityItem[] | undefine
               <li key={item._id} className="flex items-center gap-3 px-5 py-3">
                 <IconChip icon={meta.icon} tone={meta.tone} />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-medium text-rh-night dark:text-white">{item.activity}</span>
+                  <span className="block truncate text-sm font-medium text-rh-ink dark:text-white">{item.activity}</span>
                   <span className="block truncate text-xs text-neutral-500 dark:text-neutral-400">
                     {item.userName}
                     {item.userRole !== 'system' ? ` · ${roleLabel(item.userRole)}` : ''}
@@ -487,7 +487,7 @@ function QuickLinks({ badges }: { badges: Badges | undefined }) {
   const countFor = (key?: AdminBadgeKey) => (key && badges ? badges[key] : 0)
   return (
     <section className="space-y-3">
-      <h2 className="text-[15px] font-semibold tracking-tight text-rh-night dark:text-white">Jump to</h2>
+      <h2 className="text-[15px] font-semibold tracking-tight text-rh-ink dark:text-white">Jump to</h2>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {sections.map((section) => (
           <QuickLink

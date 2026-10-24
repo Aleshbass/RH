@@ -13,8 +13,9 @@
  *   approve  – an application or request was approved (warm rising fifth)
  *   reject   – something was declined or removed (soft falling tone)
  *   error    – an action failed (low double tap)
+ *   certified – a big achievement, e.g. a Rehabify Learn certificate (short fanfare)
  */
-export type SoundName = 'send' | 'receive' | 'booked' | 'paid' | 'success' | 'approve' | 'reject' | 'error'
+export type SoundName = 'send' | 'receive' | 'booked' | 'paid' | 'success' | 'approve' | 'reject' | 'error' | 'certified'
 
 const STORAGE_KEY = 'rehabify:sounds'
 export const SOUND_SETTING_EVENT = 'rehabify:sounds-changed'
@@ -137,6 +138,17 @@ export function playSound(name: SoundName) {
     case 'error':
       note(ctx, 220, t, 0.12, 0.06, 'triangle') // A3
       note(ctx, 207.65, t + 0.13, 0.18, 0.06, 'triangle') // G#3
+      break
+    case 'certified':
+      // Quick rising C major run into a held chord, with two sparkles on top
+      note(ctx, 523.25, t, 0.16, 0.045, 'triangle') // C5
+      note(ctx, 659.25, t + 0.08, 0.16, 0.045, 'triangle') // E5
+      note(ctx, 783.99, t + 0.16, 0.18, 0.045, 'triangle') // G5
+      note(ctx, 1046.5, t + 0.27, 0.9, 0.05) // C6
+      note(ctx, 1318.51, t + 0.27, 0.9, 0.035) // E6
+      note(ctx, 1567.98, t + 0.27, 1.0, 0.03) // G6
+      note(ctx, 2093.0, t + 0.45, 0.45, 0.018) // C7
+      note(ctx, 2637.02, t + 0.56, 0.4, 0.013) // E7
       break
   }
 }

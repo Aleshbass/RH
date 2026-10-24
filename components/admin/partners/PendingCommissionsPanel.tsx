@@ -97,7 +97,7 @@ export function PendingCommissionsPanel({ rows }: { rows: PendingCommission[] | 
         <span className="flex items-center gap-2">
           Commissions awaiting approval
           {rows && rows.length > 0 && (
-            <span className="rounded-full bg-rh-amber px-1.5 text-[11px] font-semibold tabular-nums text-rh-night">{rows.length}</span>
+            <span className="rounded-full bg-rh-amber px-1.5 text-[11px] font-semibold tabular-nums text-rh-ink">{rows.length}</span>
           )}
         </span>
       }
@@ -132,7 +132,7 @@ export function PendingCommissionsPanel({ rows }: { rows: PendingCommission[] | 
                 return (
                   <TableRow key={row._id}>
                     <TableCell>
-                      <div className="flex items-center gap-1.5 font-medium text-rh-night dark:text-white">
+                      <div className="flex items-center gap-1.5 font-medium text-rh-ink dark:text-white">
                         {row.partnerType === 'doctor' && <Stethoscope className="h-3.5 w-3.5 text-amber-600 dark:text-amber-300" />}
                         {row.partnerName}
                       </div>
@@ -142,11 +142,11 @@ export function PendingCommissionsPanel({ rows }: { rows: PendingCommission[] | 
                       </div>
                     </TableCell>
                     <TableCell>
-                      <div className="font-medium text-rh-night dark:text-white">{row.patientName || 'Referred patient'}</div>
+                      <div className="font-medium text-rh-ink dark:text-white">{row.patientName || 'Referred patient'}</div>
                       {row.trackingCode && <div className="font-mono text-[10px] text-neutral-400">{row.trackingCode}</div>}
                     </TableCell>
                     <TableCell>
-                      <div className="text-rh-night dark:text-white">{row.clinicName || row.physiotherapistName || 'Provider'}</div>
+                      <div className="text-rh-ink dark:text-white">{row.clinicName || row.physiotherapistName || 'Provider'}</div>
                       <div className="text-[10px] text-neutral-500 dark:text-neutral-400">
                         {[row.invoiceNumber, row.invoicePaymentMethod ? PAID_BY[row.invoicePaymentMethod] ?? row.invoicePaymentMethod : null]
                           .filter(Boolean)
@@ -155,7 +155,7 @@ export function PendingCommissionsPanel({ rows }: { rows: PendingCommission[] | 
                     </TableCell>
                     <TableCell className="text-right tabular-nums">{formatKobo(row.grossTransactionAmount)}</TableCell>
                     <TableCell className="text-right tabular-nums">{formatKobo(row.commissionAmount)}</TableCell>
-                    <TableCell className="text-right font-semibold tabular-nums text-rh-night dark:text-white">{formatKobo(row.netPayable)}</TableCell>
+                    <TableCell className="text-right font-semibold tabular-nums text-rh-ink dark:text-white">{formatKobo(row.netPayable)}</TableCell>
                     <TableCell className="whitespace-nowrap text-neutral-500 dark:text-neutral-400">
                       <span className="inline-flex items-center gap-1">
                         <Clock className="h-3 w-3" />
@@ -200,7 +200,7 @@ export function PendingCommissionsPanel({ rows }: { rows: PendingCommission[] | 
                   Cancel this commission?
                 </DialogTitle>
                 <DialogDescription>
-                  {formatKobo(cancelling.netPayable)} for <strong className="text-rh-night dark:text-white">{cancelling.partnerName}</strong> won&apos;t be
+                  {formatKobo(cancelling.netPayable)} for <strong className="text-rh-ink dark:text-white">{cancelling.partnerName}</strong> won&apos;t be
                   paid out. The reason is kept on the referral&apos;s record.
                 </DialogDescription>
               </DialogHeader>

@@ -96,7 +96,7 @@ function CarePlanForm({ workspace, onDone }: { workspace: Workspace; onDone: () 
               type="button"
               variant="ghost"
               size="sm"
-              className="h-8 rounded-lg text-rh-teal dark:text-rh-aqua"
+              className="h-8 rounded-lg text-rh-ink dark:text-rh-lime"
               onClick={() => setGoals((g) => [...g, { description: '', targetValue: '', timeline: '' }])}
             >
               <Plus className="mr-1 h-4 w-4" />
@@ -142,8 +142,8 @@ function CarePlanForm({ workspace, onDone }: { workspace: Workspace; onDone: () 
                   className={cn(
                     'rounded-full border px-3 py-1.5 text-sm transition-all active:scale-95',
                     frequency === option
-                      ? 'border-rh-teal bg-rh-teal text-white dark:border-rh-aqua dark:bg-rh-aqua dark:text-rh-night'
-                      : 'border-black/[0.08] hover:bg-rh-mist dark:border-white/10 dark:hover:bg-white/[0.05]'
+                      ? 'border-rh-lime bg-rh-lime text-rh-ink dark:border-rh-lime dark:bg-rh-lime dark:text-rh-ink'
+                      : 'border-black/[0.08] hover:bg-rh-honeydew dark:border-white/10 dark:hover:bg-white/[0.05]'
                   )}
                 >
                   {option}
@@ -227,14 +227,14 @@ function GoalRow({ goal, index, planId, editable }: { goal: Goal; index: number;
         className={cn(
           'mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 transition-all active:scale-90',
           goal.achieved
-            ? 'border-rh-teal bg-rh-teal text-white dark:border-rh-aqua dark:bg-rh-aqua dark:text-rh-night'
-            : 'border-neutral-300 hover:border-rh-teal dark:border-neutral-600'
+            ? 'border-rh-lime bg-rh-lime text-rh-ink dark:border-rh-lime dark:bg-rh-lime dark:text-rh-ink'
+            : 'border-neutral-300 hover:border-rh-lime dark:border-neutral-600'
         )}
       >
         {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : goal.achieved && <Check className="h-3.5 w-3.5" strokeWidth={3} />}
       </button>
       <div className="min-w-0">
-        <p className={cn('text-sm font-medium text-rh-night dark:text-white', goal.achieved && 'text-neutral-400 line-through dark:text-neutral-500')}>
+        <p className={cn('text-sm font-medium text-rh-ink dark:text-white', goal.achieved && 'text-neutral-400 line-through dark:text-neutral-500')}>
           {goal.description}
         </p>
         {(goal.targetValue || goal.timeline) && (
@@ -289,13 +289,13 @@ export function CarePlanTab({ workspace }: { workspace: Workspace }) {
             {plan.changeReason && (
               <div className="rounded-2xl bg-rh-canvas p-4 text-sm dark:bg-white/[0.03]">
                 <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">Reason for this version</p>
-                <p className="mt-1 text-rh-night dark:text-neutral-200">{plan.changeReason}</p>
+                <p className="mt-1 text-rh-ink dark:text-neutral-200">{plan.changeReason}</p>
               </div>
             )}
           </div>
           <div className="border-t border-black/[0.04] dark:border-white/[0.06]">
             <div className="flex items-center justify-between gap-3 px-5 pt-4">
-              <p className="text-sm font-semibold text-rh-night dark:text-white">Functional goals</p>
+              <p className="text-sm font-semibold text-rh-ink dark:text-white">Functional goals</p>
               <span className="text-xs tabular-nums text-neutral-500">
                 {plan.goalsAchieved} of {plan.goals.length} met
               </span>
@@ -336,7 +336,7 @@ export function CarePlanTab({ workspace }: { workspace: Workspace }) {
 
       {plan && plan.totalExercises > 0 && (
         <section className="space-y-3">
-          <h3 className="px-1 text-[15px] font-semibold tracking-tight text-rh-night dark:text-white">Exercises in the care plan</h3>
+          <h3 className="px-1 text-[15px] font-semibold tracking-tight text-rh-ink dark:text-white">Exercises in the care plan</h3>
           <InteractiveTreatmentPlan patientId={workspace.patient._id} variant="exercises" />
         </section>
       )}
@@ -346,11 +346,11 @@ export function CarePlanTab({ workspace }: { workspace: Workspace }) {
           <ol className="relative space-y-4 px-5 pb-5 pt-3">
             {history.map((entry) => (
               <li key={`${entry.planId}-${entry.version}`} className="flex gap-3">
-                <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-rh-mist text-rh-teal dark:bg-rh-aqua/10 dark:text-rh-aqua">
+                <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-rh-honeydew text-rh-ink dark:bg-white/[0.06] dark:text-rh-lime">
                   <History className="h-3.5 w-3.5" />
                 </span>
                 <div className="min-w-0">
-                  <p className="text-sm font-medium text-rh-night dark:text-white">
+                  <p className="text-sm font-medium text-rh-ink dark:text-white">
                     {entry.planTitle} <StatusBadge className="ml-1">v{entry.version}</StatusBadge>
                   </p>
                   <p className="text-sm text-neutral-600 dark:text-neutral-300">{entry.reason}</p>

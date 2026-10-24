@@ -155,10 +155,10 @@ export function ReferralsTab({ ctx }: { ctx: PortalContext }) {
                   <th className={thCls}>Created</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#002e2c]/5">
+              <tbody className="divide-y divide-rh-ink/5">
                 {rows.map((r) => (
                   <tr key={r.referralId} className="hover:bg-[#FAF6E7]/40 cursor-pointer" onClick={() => setDetailId(r.referralId)}>
-                    <td className={`${tdCls} font-mono font-semibold text-[#005b57]`}>{r.trackingCode || DASH}</td>
+                    <td className={`${tdCls} font-mono font-semibold text-rh-ink`}>{r.trackingCode || DASH}</td>
                     {!ctx.isDoctor && <td className={`${tdCls} font-mono`}>{r.partnerExternalId || DASH}</td>}
                     <td className={tdCls}>
                       <div className="font-medium">{r.patientName || DASH}</div>
@@ -179,7 +179,7 @@ export function ReferralsTab({ ctx }: { ctx: PortalContext }) {
           </div>
         )}
         {!query && paged.status === "CanLoadMore" && (
-          <div className="p-4 border-t border-[#002e2c]/10 flex justify-center">
+          <div className="p-4 border-t border-rh-ink/10 flex justify-center">
             <button type="button" className={btnSecondary} onClick={() => paged.loadMore(25)}>
               Load more
             </button>
@@ -400,7 +400,7 @@ function ReferralDetailDrawer({ ctx, referralId, onClose }: { ctx: PortalContext
             {(detail.sessions ?? []).length === 0 ? (
               <p className="text-[#52706e]">No sessions yet.</p>
             ) : (
-              <ul className="divide-y divide-[#002e2c]/5">
+              <ul className="divide-y divide-rh-ink/5">
                 {detail.sessions.map((s: any) => (
                   <li key={s.id} className="py-2 flex items-center justify-between gap-3">
                     <span>
@@ -427,8 +427,8 @@ function ReferralDetailDrawer({ ctx, referralId, onClose }: { ctx: PortalContext
           </section>
 
           {referral.links?.whatsapp_intake_url && (referral.status === "received" || referral.status === "contacted") && (
-            <section className="p-4 rounded-2xl bg-[#FAF6E7]/70 border border-[#002e2c]/10 space-y-2">
-              <h4 className="text-xs font-semibold text-[#002e2c]">Help them get started</h4>
+            <section className="p-4 rounded-2xl bg-[#FAF6E7]/70 border border-rh-ink/10 space-y-2">
+              <h4 className="text-xs font-semibold text-rh-ink">Help them get started</h4>
               <p className="text-[#52706e] leading-relaxed">
                 Send the patient this link. It opens WhatsApp with Joy, our care assistant, already holding their referral.
               </p>
@@ -437,7 +437,7 @@ function ReferralDetailDrawer({ ctx, referralId, onClose }: { ctx: PortalContext
                   <WhatsApp className="w-3.5 h-3.5" />
                   Open the WhatsApp link
                 </a>
-                <CopyButton text={referral.links.whatsapp_intake_url} label="WhatsApp link" className="border border-[#002e2c]/15 bg-white" />
+                <CopyButton text={referral.links.whatsapp_intake_url} label="WhatsApp link" className="border border-rh-ink/15 bg-white" />
               </div>
             </section>
           )}
@@ -448,7 +448,7 @@ function ReferralDetailDrawer({ ctx, referralId, onClose }: { ctx: PortalContext
               {(detail.webhookDeliveries ?? []).length === 0 ? (
                 <p className="text-[#52706e]">No events yet.</p>
               ) : (
-                <ul className="divide-y divide-[#002e2c]/5">
+                <ul className="divide-y divide-rh-ink/5">
                   {detail.webhookDeliveries.map((d: any) => (
                     <li key={d._id} className="py-2 flex items-center justify-between gap-3">
                       <span className="font-mono">{d.eventType}</span>
@@ -472,7 +472,7 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="min-w-0">
       <div className="text-[10px] uppercase tracking-wider font-semibold text-[#52706e]">{label}</div>
-      <div className="mt-0.5 text-[#002e2c] break-words">{value}</div>
+      <div className="mt-0.5 text-rh-ink break-words">{value}</div>
     </div>
   );
 }

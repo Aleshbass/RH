@@ -182,7 +182,7 @@ export default function CreateTreatmentTemplatePage() {
             </Button>
             <Button
               type="submit"
-              className="w-full sm:w-auto bg-[#005b57] hover:bg-[#00443e]"
+              className="w-full sm:w-auto bg-rh-lime hover:bg-rh-lime-deep"
               disabled={isSubmitting}
             >
               {isSubmitting ? 'Creating...' : 'Continue to Add Exercises'}

@@ -151,7 +151,7 @@ export default function AdminSettingsPage() {
               tone="warning"
             />
             <div className="space-y-1.5 px-5 py-4">
-              <Label htmlFor="maintenance-message" className="text-sm font-medium text-rh-night dark:text-white">
+              <Label htmlFor="maintenance-message" className="text-sm font-medium text-rh-ink dark:text-white">
                 Message for visitors
               </Label>
               <Textarea
@@ -208,7 +208,7 @@ export default function AdminSettingsPage() {
 
           <SettingsGroup icon={Mail} title="Support" description="Where the team can be reached.">
             <div className="space-y-1.5 px-5 py-4">
-              <Label htmlFor="support-email" className="text-sm font-medium text-rh-night dark:text-white">
+              <Label htmlFor="support-email" className="text-sm font-medium text-rh-ink dark:text-white">
                 Support email
               </Label>
               <Input
@@ -237,7 +237,7 @@ export default function AdminSettingsPage() {
             transition={{ duration: 0.2, ease: 'easeOut' }}
             className="sticky bottom-4 z-30"
           >
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-rh-night px-4 py-3 text-white shadow-lift dark:bg-rh-ink-3 dark:ring-1 dark:ring-white/10">
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-rh-ink px-4 py-3 text-white shadow-lift dark:bg-rh-ink-3 dark:ring-1 dark:ring-white/10">
               <p className="text-sm">
                 You have unsaved changes
                 {(emailInvalid || messageTooLong) && <span className="ml-2 text-amber-300">Fix the highlighted fields first.</span>}
@@ -254,7 +254,7 @@ export default function AdminSettingsPage() {
                 </Button>
                 <Button
                   size="sm"
-                  className={cn(primaryButtonClass, 'bg-rh-aqua text-rh-night hover:bg-[#5eead4]')}
+                  className={cn(primaryButtonClass, 'bg-rh-lime text-rh-ink hover:bg-rh-lime-deep')}
                   onClick={requestSave}
                   disabled={saving || emailInvalid || messageTooLong}
                 >
@@ -324,7 +324,7 @@ function SwitchRow({
   return (
     <div className="flex items-start justify-between gap-4 px-5 py-4">
       <div className="min-w-0">
-        <label htmlFor={id} className="flex cursor-pointer items-center gap-2 text-sm font-medium text-rh-night dark:text-white">
+        <label htmlFor={id} className="flex cursor-pointer items-center gap-2 text-sm font-medium text-rh-ink dark:text-white">
           {label}
           {tone === 'warning' && checked && <StatusBadge tone="amber">On</StatusBadge>}
         </label>
@@ -335,7 +335,7 @@ function SwitchRow({
         checked={checked}
         onCheckedChange={onChange}
         className={cn(
-          'mt-0.5 data-[state=checked]:bg-rh-teal data-[state=unchecked]:bg-neutral-200 dark:data-[state=checked]:bg-rh-aqua dark:data-[state=unchecked]:bg-white/15',
+          'mt-0.5 data-[state=checked]:bg-rh-lime data-[state=unchecked]:bg-neutral-200 dark:data-[state=checked]:bg-rh-lime dark:data-[state=unchecked]:bg-white/15',
           tone === 'warning' && 'data-[state=checked]:bg-amber-500 dark:data-[state=checked]:bg-amber-400'
         )}
       />

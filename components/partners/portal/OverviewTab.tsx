@@ -113,12 +113,12 @@ export function OverviewTab({
             <div className="h-64">
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={analytics.timeseries} margin={{ top: 4, right: 8, bottom: 0, left: -18 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#002e2c14" />
+                  <CartesianGrid strokeDasharray="3 3" stroke="#0b131214" />
                   <XAxis dataKey="date" tickFormatter={(d: string) => d.slice(5)} tick={{ fontSize: 10, fill: "#52706e" }} />
                   <YAxis allowDecimals={false} tick={{ fontSize: 10, fill: "#52706e" }} />
                   <Tooltip contentStyle={{ fontSize: 11, borderRadius: 12 }} />
                   <Legend wrapperStyle={{ fontSize: 11 }} />
-                  <Area type="monotone" dataKey="referrals" name="Referrals" stroke="#005b57" fill="#005b5722" />
+                  <Area type="monotone" dataKey="referrals" name="Referrals" stroke="#00cd0f" fill="#00cd0f22" />
                   <Area type="monotone" dataKey="booked" name="Booked" stroke="#F59E0B" fill="#F59E0B22" />
                   <Area type="monotone" dataKey="completed" name="Completed" stroke="#10B981" fill="#10B98122" />
                 </AreaChart>
@@ -139,7 +139,7 @@ export function OverviewTab({
                   <XAxis type="number" allowDecimals={false} hide />
                   <YAxis type="category" dataKey="stage" width={90} tick={{ fontSize: 10, fill: "#52706e" }} />
                   <Tooltip contentStyle={{ fontSize: 11, borderRadius: 12 }} />
-                  <Bar dataKey="count" name="Referrals" fill="#005b57" radius={[0, 6, 6, 0]} />
+                  <Bar dataKey="count" name="Referrals" fill="#00cd0f" radius={[0, 6, 6, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -153,7 +153,7 @@ export function OverviewTab({
             <h3 className="text-sm font-semibold">Integration health (last 24 h)</h3>
             <p className="text-[11px] text-[#52706e]">Measured from your real API requests and webhook deliveries</p>
           </div>
-          <button type="button" onClick={() => onNavigate("developers")} className="text-xs font-semibold text-[#005b57] hover:underline">
+          <button type="button" onClick={() => onNavigate("developers")} className="text-xs font-semibold text-rh-ink hover:underline">
             Developer tools →
           </button>
         </div>
@@ -180,9 +180,9 @@ export function OverviewTab({
       </div>
 
       <div className={`${cardCls} overflow-hidden`}>
-        <div className="p-5 flex items-center justify-between gap-3 border-b border-[#002e2c]/10">
+        <div className="p-5 flex items-center justify-between gap-3 border-b border-rh-ink/10">
           <h3 className="text-sm font-semibold">Recent referrals</h3>
-          <button type="button" onClick={() => onNavigate("referrals")} className="text-xs font-semibold text-[#005b57] hover:underline">
+          <button type="button" onClick={() => onNavigate("referrals")} className="text-xs font-semibold text-rh-ink hover:underline">
             View all →
           </button>
         </div>
@@ -200,7 +200,7 @@ export function OverviewTab({
                   <th className={thCls}>Created</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#002e2c]/5">
+              <tbody className="divide-y divide-rh-ink/5">
                 {overview.recentReferrals.map((r: any) => (
                   <tr key={r.referralId}>
                     <td className={`${tdCls} font-mono font-semibold`}>{r.trackingCode || DASH}</td>

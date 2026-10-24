@@ -74,7 +74,7 @@ export function ExerciseLibrary({ onExerciseSelect, selectedExercises = [] }: Ex
             <div className="flex items-center gap-2">
               <CreateExerciseDialog onSuccess={() => setRefreshKey(k => k + 1)} />
               {isStandalone && (
-                <div className="text-sm text-muted-foreground bg-[#005b57]/5 text-[#005b57] px-3 py-1 rounded-full">
+                <div className="text-sm text-muted-foreground bg-rh-lime/5 text-rh-ink px-3 py-1 rounded-full">
                   Browse Mode
                 </div>
               )}

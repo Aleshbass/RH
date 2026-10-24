@@ -56,7 +56,7 @@ export default function TreatmentTemplatesPage() {
             Create and manage reusable treatment plans
           </p>
         </div>
-        <Button asChild className="w-full sm:w-auto bg-[#005b57] hover:bg-[#00443e]">
+        <Button asChild className="w-full sm:w-auto bg-rh-lime hover:bg-rh-lime-deep">
           <Link href="/dashboard/physiotherapist/treatment-templates/create">
             <Plus className="h-4 w-4 mr-2" />
             New Template
@@ -73,14 +73,14 @@ export default function TreatmentTemplatesPage() {
         </div>
       ) : templates.length === 0 ? (
         <div className="text-center py-16 sm:py-20">
-          <div className="w-16 h-16 mx-auto rounded-full bg-[#005b57]/10 flex items-center justify-center mb-4">
-            <Activity className="h-8 w-8 text-[#005b57]" />
+          <div className="w-16 h-16 mx-auto rounded-full bg-rh-lime/10 flex items-center justify-center mb-4">
+            <Activity className="h-8 w-8 text-rh-ink" />
           </div>
           <h3 className="text-lg sm:text-xl font-semibold text-gray-900 mb-2">No templates yet</h3>
           <p className="text-sm sm:text-base text-gray-600 max-w-md mx-auto mb-6">
             Create your first treatment template to get started
           </p>
-          <Button asChild size="lg" className="bg-[#005b57] hover:bg-[#00443e]">
+          <Button asChild size="lg" className="bg-rh-lime hover:bg-rh-lime-deep">
             <Link href="/dashboard/physiotherapist/treatment-templates/create">
               <Plus className="h-5 w-5 mr-2" />
               Create Template
@@ -122,7 +122,7 @@ export default function TreatmentTemplatesPage() {
 
                 {/* Actions */}
                 <div className="flex gap-2 pt-2">
-                  <Button size="sm" className="flex-1 bg-[#005b57] hover:bg-[#00443e]" asChild>
+                  <Button size="sm" className="flex-1 bg-rh-lime hover:bg-rh-lime-deep" asChild>
                     <Link href={`/dashboard/physiotherapist/treatment-templates/${template._id}/use`}>
                       <Users className="h-3.5 w-3.5 mr-1.5" />
                       Assign

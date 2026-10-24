@@ -21,7 +21,7 @@ import {
 } from "./helpers/exerciseAccess";
 
 const HOUR = 3_600_000;
-const GRANT_LIMITS = { staff: 300, licence: 200, patient: 120, link: 120 } as const;
+const GRANT_LIMITS = { staff: 300, licence: 200, learner: 200, patient: 120, link: 120 } as const;
 const MAX_CLIPS_PER_GRANT = 30;
 
 type ClipView = { id: string; side: "L" | "R" | null; seconds: number; poster: string };
@@ -205,8 +205,8 @@ export const listLibrary = query({
         ).filter((e) => !e.isPublic)
       : [];
     const rows = [...publicRows, ...clinicRows];
-    // Licensees only get the 3D library.
-    const visible = access.kind === "licence" ? rows.filter((e) => e.animationSlug) : rows;
+    // Licensees and Rehabify Learn physios only get the 3D library.
+    const visible = access.kind === "licence" || access.kind === "learner" ? rows.filter((e) => e.animationSlug) : rows;
     const items = visible.map(libraryItem);
     items.sort((a, b) => Number(Boolean(b.animation)) - Number(Boolean(a.animation)) || a.name.localeCompare(b.name));
     return { version: EXERCISE_CATALOG.version, access: access.kind, label: access.label, items };
@@ -226,8 +226,8 @@ async function programLabel(ctx: { db: any }, program: Doc<"exercisePrograms">) 
 }
 
 /**
- * Keys to decrypt the character and the requested clips. Signed-in staff and licensees may watch
- * any clip; a patient only clips in their own programme; a share-link session only that link's
+ * Keys to decrypt the character and the requested clips. Signed-in staff, licensees and Rehabify
+ * Learn physios may watch any clip; a patient only clips in their own programme; a share-link session only that link's
  * programme. Patients and links only get clips a physiotherapist has approved.
  */
 export const requestViewerGrant = mutation({
@@ -277,7 +277,7 @@ export const requestViewerGrant = mutation({
       } else {
         access = viewer.kind;
         allowed = "all";
-        watermark = viewer.kind === "licence" ? viewer.label : `${viewer.label} · Preview`;
+        watermark = viewer.kind === "staff" ? `${viewer.label} · Preview` : viewer.label;
         if (viewer.kind === "licence") licenceId = viewer.licence._id;
       }
     }

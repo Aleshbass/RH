@@ -383,9 +383,9 @@ export function AppointmentModal({
 
           {/* Appointment Summary */}
           {formData.patientId && formData.date && formData.startTime && formData.endTime && (
-            <div className="p-4 bg-[#005b57]/5 rounded-lg">
-              <h4 className="font-medium text-[#00443e] mb-2">Appointment Summary</h4>
-              <div className="text-sm text-[#00443e] space-y-1">
+            <div className="p-4 bg-rh-lime/5 rounded-lg">
+              <h4 className="font-medium text-rh-ink mb-2">Appointment Summary</h4>
+              <div className="text-sm text-rh-ink space-y-1">
                                  <p>
                    <strong>Patient:</strong>{' '}
                    {(() => {
@@ -481,7 +481,7 @@ function ExistingAppointmentDetails({
         <AppointmentStatusBadge appointment={apt} viewer="provider" />
       </div>
 
-      <div className="space-y-2 rounded-lg bg-[#005b57]/5 p-4 text-sm text-[#00443e] dark:text-neutral-200">
+      <div className="space-y-2 rounded-lg bg-rh-lime/5 p-4 text-sm text-rh-ink dark:text-neutral-200">
         <p className="flex items-center gap-2">
           <Calendar className="h-4 w-4 shrink-0" />
           {lagosDate(apt.startTime)}

@@ -29,7 +29,7 @@ import {
   InterestForm,
   naira,
   pillOutline,
-  pillTeal,
+  pillInk,
   PROGRAM,
   TRACKS,
   usePublicCohort,
@@ -122,9 +122,9 @@ function Field({
 }) {
   return (
     <div className={className}>
-      <label htmlFor={htmlFor} className="mb-1.5 flex items-baseline justify-between gap-2 text-sm font-semibold text-rh-night">
+      <label htmlFor={htmlFor} className="mb-1.5 flex items-baseline justify-between gap-2 text-sm font-semibold text-rh-ink">
         {label}
-        {optional && <span className="text-xs font-normal text-rh-night/45">Optional</span>}
+        {optional && <span className="text-xs font-normal text-rh-ink/45">Optional</span>}
       </label>
       {children}
       {error ? (
@@ -132,7 +132,7 @@ function Field({
           {error}
         </p>
       ) : hint ? (
-        <p className="mt-1.5 text-xs text-rh-night/50">{hint}</p>
+        <p className="mt-1.5 text-xs text-rh-ink/50">{hint}</p>
       ) : null}
     </div>
   )
@@ -141,7 +141,7 @@ function Field({
 function SummaryRow({ icon: Icon, label, value }: { icon: typeof CalendarDays; label: string; value: string }) {
   return (
     <div className="flex items-start gap-3">
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/10 text-rh-mint">
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/10 text-rh-lime">
         <Icon className="h-4 w-4" />
       </span>
       <div className="min-w-0">
@@ -155,10 +155,10 @@ function SummaryRow({ icon: Icon, label, value }: { icon: typeof CalendarDays; l
 function OrderSummary({ cohort, track }: { cohort: PublicCohort; track: Track }) {
   const price = cohort.prices[track]
   return (
-    <aside className="relative overflow-hidden rounded-[2rem] bg-rh-teal p-6 text-white shadow-lift sm:p-8 lg:sticky lg:top-28">
-      <div aria-hidden className="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-[2rem] bg-rh-night/40" />
+    <aside className="relative overflow-hidden rounded-[2rem] bg-rh-ink p-6 text-white shadow-lift sm:p-8 lg:sticky lg:top-28">
+      <div aria-hidden className="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-[2rem] bg-rh-ink/40" />
       <div aria-hidden className="pointer-events-none absolute -right-2 top-12 h-12 w-12 rounded-2xl bg-rh-lime" />
-      <p className="relative text-xs font-semibold uppercase tracking-[0.14em] text-rh-mint">Your registration</p>
+      <p className="relative text-xs font-semibold uppercase tracking-[0.14em] text-rh-lime">Your registration</p>
       <h2 className="relative mt-2 max-w-[15rem] text-[24px] leading-tight text-white">{PROGRAM.title}</h2>
       <p className="relative mt-1 text-sm text-white/65">{cohort.cohortLabel}</p>
 
@@ -223,40 +223,40 @@ function TrackOption({
   return (
     <label
       className={cn(
-        'relative flex cursor-pointer flex-col rounded-2xl border-2 p-4 transition has-[:focus-visible]:ring-4 has-[:focus-visible]:ring-rh-teal/15 sm:p-5',
-        selected ? 'border-rh-teal bg-rh-honeydew' : 'border-rh-night/10 bg-white hover:border-rh-night/25'
+        'relative flex cursor-pointer flex-col rounded-2xl border-2 p-4 transition has-[:focus-visible]:ring-4 has-[:focus-visible]:ring-rh-ink/15 sm:p-5',
+        selected ? 'border-rh-ink bg-rh-cream' : 'border-rh-ink/10 bg-white hover:border-rh-ink/25'
       )}
     >
       <input type="radio" name="track" value={track} checked={selected} onChange={onSelect} className="sr-only" />
       <span className="flex items-start justify-between gap-3">
-        <span className="text-[15px] font-semibold leading-snug text-rh-night">{TRACKS[track].label}</span>
+        <span className="text-[15px] font-semibold leading-snug text-rh-ink">{TRACKS[track].label}</span>
         <span
           aria-hidden
           className={cn(
             'mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition',
-            selected ? 'border-rh-teal bg-rh-teal' : 'border-rh-night/20'
+            selected ? 'border-rh-ink bg-rh-ink' : 'border-rh-ink/20'
           )}
         >
           {selected && <span className="h-2 w-2 rounded-full bg-white" />}
         </span>
       </span>
-      <span className={cn('mt-2 text-[28px] leading-none text-rh-night', displayFont)}>{naira(price)}</span>
-      <span className="mt-2 text-xs leading-5 text-rh-night/60">{TRACKS[track].audience}</span>
+      <span className={cn('mt-2 text-[28px] leading-none text-rh-ink', displayFont)}>{naira(price)}</span>
+      <span className="mt-2 text-xs leading-5 text-rh-ink/60">{TRACKS[track].audience}</span>
     </label>
   )
 }
 
-function Panel({ tone, icon: Icon, title, children }: { tone: 'mint' | 'jasmine' | 'rose'; icon: typeof Info; title: string; children: ReactNode }) {
-  const tones = { mint: 'bg-rh-honeydew', jasmine: 'bg-rh-jasmine/45', rose: 'bg-rh-rose/45' }
+function Panel({ tone, icon: Icon, title, children }: { tone: 'calm' | 'jasmine' | 'rose'; icon: typeof Info; title: string; children: ReactNode }) {
+  const tones = { calm: 'bg-rh-honeydew', jasmine: 'bg-rh-jasmine/45', rose: 'bg-rh-rose/45' }
   return (
     <div className={cn('rounded-2xl p-5', tones[tone])}>
       <div className="flex gap-3">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-rh-teal">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-rh-ink">
           <Icon className="h-4 w-4" />
         </span>
         <div className="min-w-0 flex-1">
-          <p className="font-semibold text-rh-night">{title}</p>
-          <div className="mt-1 text-sm leading-6 text-rh-night/70">{children}</div>
+          <p className="font-semibold text-rh-ink">{title}</p>
+          <div className="mt-1 text-sm leading-6 text-rh-ink/70">{children}</div>
         </div>
       </div>
     </div>
@@ -269,7 +269,7 @@ function PageFrame({ children, aside }: { children: ReactNode; aside?: ReactNode
       <div className="mx-auto max-w-6xl">
         <Link
           href="/learn"
-          className="inline-flex items-center gap-2 rounded-full text-sm font-semibold text-rh-teal underline-offset-4 hover:underline"
+          className="inline-flex items-center gap-2 rounded-full text-sm font-semibold text-rh-ink underline-offset-4 hover:underline"
         >
           <ArrowLeft className="h-4 w-4" /> Program details
         </Link>
@@ -286,14 +286,14 @@ export function RegisterSkeleton() {
   return (
     <PageFrame>
       <div className="space-y-4">
-        <div className="h-4 w-24 animate-pulse rounded-full bg-rh-night/[0.07]" />
-        <div className="h-10 w-2/3 animate-pulse rounded-2xl bg-rh-night/[0.07]" />
+        <div className="h-4 w-24 animate-pulse rounded-full bg-rh-ink/[0.07]" />
+        <div className="h-10 w-2/3 animate-pulse rounded-2xl bg-rh-ink/[0.07]" />
         <div className="grid gap-3 pt-4 sm:grid-cols-2">
-          <div className="h-32 animate-pulse rounded-2xl bg-rh-night/[0.05]" />
-          <div className="h-32 animate-pulse rounded-2xl bg-rh-night/[0.05]" />
+          <div className="h-32 animate-pulse rounded-2xl bg-rh-ink/[0.05]" />
+          <div className="h-32 animate-pulse rounded-2xl bg-rh-ink/[0.05]" />
         </div>
-        <div className="h-12 animate-pulse rounded-2xl bg-rh-night/[0.05]" />
-        <div className="h-12 animate-pulse rounded-2xl bg-rh-night/[0.05]" />
+        <div className="h-12 animate-pulse rounded-2xl bg-rh-ink/[0.05]" />
+        <div className="h-12 animate-pulse rounded-2xl bg-rh-ink/[0.05]" />
       </div>
     </PageFrame>
   )
@@ -364,11 +364,11 @@ export function RegisterFlow() {
   if (!cohort || !cohort.isOpen) {
     return (
       <PageFrame>
-        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-rh-teal">Registration</p>
-        <h1 className="mt-2 text-[32px] leading-tight tracking-tight text-rh-night sm:text-[40px]">
+        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-rh-ink">Registration</p>
+        <h1 className="mt-2 text-[32px] leading-tight tracking-tight text-rh-ink sm:text-[40px]">
           {cohort ? CLOSED_COPY[cohort.closedReason ?? 'closed'] : "Registration isn't open yet"}
         </h1>
-        <p className="mt-3 max-w-xl text-rh-night/65">
+        <p className="mt-3 max-w-xl text-rh-ink/65">
           Leave your email and we&apos;ll let you know as soon as registration for the next cohort of the {PROGRAM.shortTitle} opens.
         </p>
         <InterestForm className="mt-8 max-w-lg" />
@@ -429,9 +429,9 @@ export function RegisterFlow() {
 
   return (
     <PageFrame aside={<OrderSummary cohort={cohort} track={track} />}>
-      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-rh-teal">Registration</p>
-      <h1 className="mt-2 text-[32px] leading-tight tracking-tight text-rh-night sm:text-[40px]">Save your place</h1>
-      <p className="mt-2 text-rh-night/65">It takes about two minutes. You&apos;ll pay securely on Paystack next.</p>
+      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-rh-ink">Registration</p>
+      <h1 className="mt-2 text-[32px] leading-tight tracking-tight text-rh-ink sm:text-[40px]">Save your place</h1>
+      <p className="mt-2 text-rh-ink/65">It takes about two minutes. You&apos;ll pay securely on Paystack next.</p>
 
       {cancelled && !submitting && (
         <div className="mt-6">
@@ -442,7 +442,7 @@ export function RegisterFlow() {
       )}
 
       <fieldset className="mt-8">
-        <legend className="mb-3 text-sm font-semibold text-rh-night">Registration type</legend>
+        <legend className="mb-3 text-sm font-semibold text-rh-ink">Registration type</legend>
         <div className="grid gap-3 sm:grid-cols-2">
           {(['rehabify', 'external'] as const).map((t) => (
             <TrackOption key={t} track={t} price={cohort.prices[t]} selected={track === t} onSelect={() => setTrack(t)} />
@@ -452,21 +452,21 @@ export function RegisterFlow() {
 
       <div className="mt-6">
         {alreadyRegistered && (
-          <Panel tone="mint" icon={BadgeCheck} title={`You're already registered for the ${cohort.cohortLabel}`}>
+          <Panel tone="calm" icon={BadgeCheck} title={`You're already registered for the ${cohort.cohortLabel}`}>
             Your confirmation email has everything you need. See you on {cohort.startsOn}!
           </Panel>
         )}
 
-        {!alreadyRegistered && authPending && <div className="h-28 animate-pulse rounded-2xl bg-rh-night/[0.05]" />}
+        {!alreadyRegistered && authPending && <div className="h-28 animate-pulse rounded-2xl bg-rh-ink/[0.05]" />}
 
         {!alreadyRegistered && needsSignIn && (
-          <Panel tone="mint" icon={LogIn} title="Sign in to use the Rehabify rate">
+          <Panel tone="calm" icon={LogIn} title="Sign in to use the Rehabify rate">
             <p>
               The {naira(cohort.prices.rehabify)} rate is for physiotherapists currently practising with Rehabify. Sign in with your
               Rehabify account and we&apos;ll fill in your details.
             </p>
             <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center">
-              <Link href={signInHref} className={cn(pillTeal, 'h-11')}>
+              <Link href={signInHref} className={cn(pillInk, 'h-11')}>
                 Sign in <ArrowRight className="h-4 w-4" />
               </Link>
               <button type="button" onClick={() => setTrack('external')} className={cn(pillOutline, 'h-11')}>
@@ -492,8 +492,8 @@ export function RegisterFlow() {
       {showForm && (
         <form onSubmit={submit} noValidate className="mt-2">
           {track === 'rehabify' && context?.isRehabifyPhysio && (
-            <p className="mb-6 flex items-center gap-2 rounded-2xl bg-rh-honeydew px-4 py-3 text-sm text-rh-night">
-              <BadgeCheck className="h-4 w-4 shrink-0 text-rh-teal" />
+            <p className="mb-6 flex items-center gap-2 rounded-2xl bg-rh-honeydew px-4 py-3 text-sm text-rh-ink">
+              <BadgeCheck className="h-4 w-4 shrink-0 text-rh-ink" />
               Rehabify physiotherapist account confirmed. Your rate is applied.
             </p>
           )}
@@ -551,7 +551,7 @@ export function RegisterFlow() {
 
           {track === 'external' && (
             <div className="mt-6">
-              <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-rh-night/10 p-4 transition hover:border-rh-night/20">
+              <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-rh-ink/10 p-4 transition hover:border-rh-ink/20">
                 <input
                   id="learn-confirm"
                   type="checkbox"
@@ -560,9 +560,9 @@ export function RegisterFlow() {
                     setConfirmedLicensed(e.target.checked)
                     if (errors.confirm) setErrors((current) => ({ ...current, confirm: undefined }))
                   }}
-                  className="mt-0.5 h-5 w-5 shrink-0 rounded-md border-rh-night/30 accent-[#005b57]"
+                  className="mt-0.5 h-5 w-5 shrink-0 rounded-md border-rh-ink/30 accent-[#0b1312]"
                 />
-                <span className="text-sm leading-6 text-rh-night/75">I confirm I&apos;m a licensed physiotherapist.</span>
+                <span className="text-sm leading-6 text-rh-ink/75">I confirm I&apos;m a licensed physiotherapist.</span>
               </label>
               {errors.confirm && <p className="mt-1.5 text-xs font-medium text-rose-600">{errors.confirm}</p>}
             </div>
@@ -576,7 +576,7 @@ export function RegisterFlow() {
             </div>
           )}
 
-          <button type="submit" disabled={submitting} className={cn(pillTeal, 'mt-8 h-14 w-full text-base')}>
+          <button type="submit" disabled={submitting} className={cn(pillInk, 'mt-8 h-14 w-full text-base')}>
             {submitting ? (
               <>
                 <Loader2 className="h-5 w-5 animate-spin" /> Taking you to Paystack…
@@ -587,7 +587,7 @@ export function RegisterFlow() {
               </>
             )}
           </button>
-          <p className="mt-4 text-center text-xs leading-5 text-rh-night/50">{PROGRAM.certificationNote}</p>
+          <p className="mt-4 text-center text-xs leading-5 text-rh-ink/50">{PROGRAM.certificationNote}</p>
         </form>
       )}
     </PageFrame>

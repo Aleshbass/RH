@@ -58,13 +58,13 @@ function BadgeCount({ value, cap, collapsed }: { value?: number; cap?: number; c
   if (!value) return null
   const label = cap && value >= cap ? `${cap}+` : value > 99 ? '99+' : String(value)
   if (collapsed) {
-    return <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-rh-amber ring-2 ring-rh-teal dark:ring-rh-night" />
+    return <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-rh-amber ring-2 ring-rh-lime dark:ring-rh-ink" />
   }
   return (
     <motion.span
       initial={{ scale: 0.6, opacity: 0 }}
       animate={{ scale: 1, opacity: 1 }}
-      className="ml-auto rounded-full bg-rh-amber px-1.5 py-px text-[10px] font-semibold leading-4 text-rh-night tabular-nums"
+      className="ml-auto rounded-full bg-rh-amber px-1.5 py-px text-[10px] font-semibold leading-4 text-rh-ink tabular-nums"
     >
       {label}
     </motion.span>
@@ -114,7 +114,7 @@ function AccountMenu({ collapsed }: { collapsed: boolean }) {
         >
           <Avatar className="h-8 w-8 shrink-0 ring-2 ring-white/20">
             <AvatarImage src={user.imageUrl} alt="" />
-            <AvatarFallback className="bg-rh-mint text-xs font-semibold text-rh-teal">{name[0]?.toUpperCase()}</AvatarFallback>
+            <AvatarFallback className="bg-rh-honeydew text-xs font-semibold text-rh-ink">{name[0]?.toUpperCase()}</AvatarFallback>
           </Avatar>
           {!collapsed && (
             <span className="min-w-0 flex-1">
@@ -213,17 +213,17 @@ export function AdminSidebar({
         aria-current={isActive ? 'page' : undefined}
         className={cn(
           'group relative flex items-center gap-3 rounded-xl px-3 py-[7px] text-[13.5px] transition-colors active:scale-[0.98]',
-          isActive ? 'font-semibold text-rh-teal dark:text-rh-night' : 'text-white/75 hover:bg-white/10 hover:text-white'
+          isActive ? 'font-semibold text-rh-ink' : 'text-white/75 hover:bg-white/10 hover:text-white'
         )}
       >
         {isActive && (
           <motion.span
             layoutId={`admin-nav-pill-${instance}`}
             transition={reduceMotion ? { duration: 0 } : { type: 'spring', stiffness: 500, damping: 38 }}
-            className="absolute inset-0 rounded-xl bg-white shadow-sm"
+            className="absolute inset-0 rounded-xl bg-rh-lime"
           />
         )}
-        <Icon className={cn('relative h-4 w-4 shrink-0', isActive ? 'text-rh-teal dark:text-rh-night' : 'text-white/60')} />
+        <Icon className={cn('relative h-4 w-4 shrink-0', isActive ? 'text-rh-ink' : 'text-white/60')} />
         <span className="relative flex-1 truncate">{item.title}</span>
         {item.badgeKey && (
           <span className="relative">
@@ -246,7 +246,7 @@ export function AdminSidebar({
             title={section.label}
             className={cn(
               'relative mx-auto flex h-10 w-10 items-center justify-center rounded-xl transition-colors',
-              isActive ? 'bg-white text-rh-teal dark:text-rh-night' : 'text-white/70 hover:bg-white/10 hover:text-white'
+              isActive ? 'bg-white text-rh-ink dark:text-rh-ink' : 'text-white/70 hover:bg-white/10 hover:text-white'
             )}
           >
             <Icon className="h-[18px] w-[18px]" />
@@ -260,7 +260,7 @@ export function AdminSidebar({
             const count = item.badgeKey ? badges?.[item.badgeKey] : undefined
             return (
               <DropdownMenuItem key={item.href} asChild>
-                <Link href={item.href} onClick={onNavigate} className={cn(item.href === activeHref && 'font-semibold text-rh-teal')}>
+                <Link href={item.href} onClick={onNavigate} className={cn(item.href === activeHref && 'font-semibold text-rh-ink')}>
                   <ItemIcon className="mr-2 h-4 w-4 text-neutral-500" />
                   <span className="flex-1">{item.title}</span>
                   {count ? <span className="text-xs tabular-nums text-amber-600">{count}</span> : null}
@@ -323,7 +323,7 @@ export function AdminSidebar({
   return (
     <aside
       className={cn(
-        'flex h-full flex-col bg-rh-teal text-white transition-[width] duration-200 dark:bg-rh-night',
+        'flex h-full flex-col bg-rh-ink text-white transition-[width] duration-200 dark:bg-rh-ink-2',
         collapsed ? 'w-[72px]' : 'w-[17rem]',
         className
       )}

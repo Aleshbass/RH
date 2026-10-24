@@ -352,14 +352,14 @@ function ClinicPatients() {
                   className={cn(
                     'shrink-0 rounded-lg border px-3 py-1.5 text-sm transition-colors',
                     active
-                      ? 'border-[#005b57] bg-[#005b57]/10 font-medium text-[#005b57] dark:border-[#2dd4bf] dark:bg-[#2dd4bf]/10 dark:text-[#2dd4bf]'
+                      ? 'border-rh-lime bg-rh-lime/10 font-medium text-rh-ink dark:border-rh-lime dark:bg-white/[0.06] dark:text-rh-lime'
                       : 'border-neutral-200 bg-white text-neutral-600 hover:border-neutral-300 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:border-neutral-700'
                   )}
                 >
                   {f.label}
                   {f.value === 'referred' && waitingReferrals.length > 0 && (
                     <span
-                      className="ml-1.5 inline-block min-w-5 rounded-full bg-[#005b57] px-1.5 text-center text-[11px] font-medium leading-5 text-white dark:bg-[#2dd4bf] dark:text-neutral-950"
+                      className="ml-1.5 inline-block min-w-5 rounded-full bg-rh-lime px-1.5 text-center text-[11px] font-medium leading-5 text-rh-ink dark:bg-rh-lime dark:text-neutral-950"
                       aria-label={`${waitingReferrals.length} new`}
                     >
                       {waitingReferrals.length}

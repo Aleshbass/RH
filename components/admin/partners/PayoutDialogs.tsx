@@ -144,7 +144,7 @@ function PayoutForm({
       disabled={!!pendingOtp}
       className={cn(
         'flex items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition disabled:opacity-50',
-        mode === value ? 'bg-white text-rh-teal shadow-soft dark:bg-rh-ink-3 dark:text-rh-aqua' : 'text-neutral-500 hover:text-rh-night dark:text-neutral-400 dark:hover:text-white'
+        mode === value ? 'bg-white text-rh-ink shadow-soft dark:bg-rh-ink-3 dark:text-rh-lime' : 'text-neutral-500 hover:text-rh-ink dark:text-neutral-400 dark:hover:text-white'
       )}
     >
       <Icon className="h-3.5 w-3.5" />
@@ -156,12 +156,12 @@ function PayoutForm({
     <>
       <DialogHeader>
         <DialogTitle className={dialogTitleClass}>
-          <Wallet className="h-5 w-5 text-rh-teal dark:text-rh-aqua" />
+          <Wallet className="h-5 w-5 text-rh-ink dark:text-rh-lime" />
           Pay partner commission
         </DialogTitle>
         <DialogDescription>
-          Pays every approved, unpaid commission for <strong className="text-rh-night dark:text-white">{partner.partnerName}</strong> up to and
-          including <strong className="text-rh-night dark:text-white">{billingPeriod}</strong>.
+          Pays every approved, unpaid commission for <strong className="text-rh-ink dark:text-white">{partner.partnerName}</strong> up to and
+          including <strong className="text-rh-ink dark:text-white">{billingPeriod}</strong>.
         </DialogDescription>
       </DialogHeader>
 
@@ -171,10 +171,10 @@ function PayoutForm({
           {modeButton('manual', 'Manual wire', Landmark)}
         </div>
 
-        <div className="space-y-2 rounded-xl bg-rh-mist p-3.5 dark:bg-rh-aqua/[0.08]">
+        <div className="space-y-2 rounded-xl bg-rh-honeydew p-3.5 dark:bg-white/[0.06]">
           <SummaryRow label="Payable commission" value={formatKobo(partner.totalPartnerCommission)} />
           <SummaryRow label="Transfer fee + stamp duty" value={<span className="text-rose-600 dark:text-rose-300">-{formatKobo(feesKobo(partner))}</span>} />
-          <div className="border-t border-rh-teal/10 pt-2 dark:border-white/10">
+          <div className="border-t border-rh-lime/10 pt-2 dark:border-white/10">
             <SummaryRow label="Net amount" value={formatKobo(netPayoutKobo(partner))} strong />
           </div>
         </div>
@@ -189,7 +189,7 @@ function PayoutForm({
                   </span>
                   <span className="text-[11px] text-neutral-500 dark:text-neutral-400">{partner.bankName}</span>
                 </div>
-                <p className="font-medium text-rh-night dark:text-white">{partner.bankAccountName}</p>
+                <p className="font-medium text-rh-ink dark:text-white">{partner.bankAccountName}</p>
                 <p className="font-mono text-neutral-500 dark:text-neutral-400">{partner.maskedAccountNumber}</p>
               </div>
             ) : (
@@ -324,19 +324,19 @@ export function BulkPayoutDialog({
       <DialogContent className={`${dialogClass} sm:max-w-[480px]`}>
         <DialogHeader>
           <DialogTitle className={dialogTitleClass}>
-            <Send className="h-5 w-5 text-rh-teal dark:text-rh-aqua" />
+            <Send className="h-5 w-5 text-rh-ink dark:text-rh-lime" />
             Pay all partners
           </DialogTitle>
           <DialogDescription>
-            Sends one Paystack bulk transfer for everything payable up to <strong className="text-rh-night dark:text-white">{billingPeriod}</strong>.
+            Sends one Paystack bulk transfer for everything payable up to <strong className="text-rh-ink dark:text-white">{billingPeriod}</strong>.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-3">
-          <div className="space-y-2 rounded-xl bg-rh-mist p-4 dark:bg-rh-aqua/[0.08]">
+          <div className="space-y-2 rounded-xl bg-rh-honeydew p-4 dark:bg-white/[0.06]">
             <SummaryRow label="Partners included" value={`${eligible.length}`} />
             <SummaryRow label="Total net transfer" value={formatKobo(totalKobo)} strong />
-            <div className="border-t border-rh-teal/10 pt-2 dark:border-white/10">
+            <div className="border-t border-rh-lime/10 pt-2 dark:border-white/10">
               <SummaryRow label="Paystack balance" value={balance ? formatKobo(balance.balanceKobo) : 'Checking…'} />
             </div>
           </div>

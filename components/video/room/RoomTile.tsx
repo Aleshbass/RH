@@ -33,7 +33,7 @@ const TilePlaceholder = forwardRef<HTMLDivElement, VideoPlaceholderProps>(functi
         // eslint-disable-next-line @next/next/no-img-element
         <img src={participant.image} alt="" className="aspect-square w-[26%] min-w-12 max-w-32 rounded-full object-cover shadow-md ring-4 ring-white" />
       ) : (
-        <span className="flex aspect-square w-[26%] min-w-12 max-w-32 items-center justify-center rounded-full bg-brand text-[clamp(1rem,4vw,2.5rem)] font-medium text-white shadow-md ring-4 ring-white">
+        <span className="flex aspect-square w-[26%] min-w-12 max-w-32 items-center justify-center rounded-full bg-rh-lime text-[clamp(1rem,4vw,2.5rem)] font-medium text-rh-ink shadow-md ring-4 ring-white">
           {initials(name)}
         </span>
       )}

@@ -39,12 +39,12 @@ export function PartnerLedgerDialog({
           <>
             <DialogHeader>
               <DialogTitle className={dialogTitleClass}>
-                <Eye className="h-5 w-5 text-rh-teal dark:text-rh-aqua" />
+                <Eye className="h-5 w-5 text-rh-ink dark:text-rh-lime" />
                 Ledger: {partner.partnerName}
               </DialogTitle>
               <DialogDescription>
                 Live commission entries (payments, bonuses and refund adjustments) earned in{' '}
-                <strong className="text-rh-night dark:text-white">{billingPeriod}</strong>.
+                <strong className="text-rh-ink dark:text-white">{billingPeriod}</strong>.
               </DialogDescription>
             </DialogHeader>
 
@@ -57,7 +57,7 @@ export function PartnerLedgerDialog({
               ].map((item) => (
                 <div key={item.label}>
                   <p className="text-neutral-500 dark:text-neutral-400">{item.label}</p>
-                  <p className="text-sm font-semibold tabular-nums text-rh-night dark:text-white">{item.value}</p>
+                  <p className="text-sm font-semibold tabular-nums text-rh-ink dark:text-white">{item.value}</p>
                 </div>
               ))}
             </div>
@@ -81,7 +81,7 @@ export function PartnerLedgerDialog({
                     partner.commissions.map((c: Commission) => (
                       <TableRow key={c._id}>
                         <TableCell className="whitespace-nowrap text-neutral-500 dark:text-neutral-400">{format(c.earnedAt, 'd MMM yyyy')}</TableCell>
-                        <TableCell className="font-medium text-rh-night dark:text-white">
+                        <TableCell className="font-medium text-rh-ink dark:text-white">
                           {c.patientName || c.trackingCode || 'Referred patient'}
                           {c.eventType === 'refund_adjustment' && (
                             <StatusBadge tone="red" className="ml-1.5">
@@ -105,7 +105,7 @@ export function PartnerLedgerDialog({
                         <TableCell className="text-right tabular-nums">{formatKobo(c.grossTransactionAmount)}</TableCell>
                         <TableCell className="text-right tabular-nums">{formatKobo(c.physiotherapistAmount ?? 0)}</TableCell>
                         <TableCell className="text-right tabular-nums">{formatKobo(c.rehabifyAmount ?? 0)}</TableCell>
-                        <TableCell className="text-right font-semibold tabular-nums text-rh-teal dark:text-rh-aqua">{formatKobo(c.netPayable)}</TableCell>
+                        <TableCell className="text-right font-semibold tabular-nums text-rh-ink dark:text-rh-lime">{formatKobo(c.netPayable)}</TableCell>
                         <TableCell className="text-center">
                           <StatusBadge tone={c.source === 'invoice_manual' || c.paymentMethod === 'bank_transfer' ? 'amber' : 'teal'}>
                             {commissionSourceLabel(c.source, c.paymentMethod)}
@@ -182,7 +182,7 @@ export function PartnerInvoiceDialog({
         <DialogHeader>
           <div className="flex flex-wrap items-center justify-between gap-2 pr-6">
             <DialogTitle className={dialogTitleClass}>
-              <Receipt className="h-5 w-5 text-rh-teal dark:text-rh-aqua" />
+              <Receipt className="h-5 w-5 text-rh-ink dark:text-rh-lime" />
               Settlement invoice
             </DialogTitle>
             <div className="flex items-center gap-2">
@@ -206,7 +206,7 @@ export function PartnerInvoiceDialog({
             <div className="flex flex-col justify-between gap-6 rounded-xl bg-gray-50 p-5 md:flex-row">
               <div>
                 <div className="flex items-center gap-2">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-rh-teal text-sm font-bold text-white">RH</div>
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-rh-lime text-sm font-bold text-rh-ink">RH</div>
                   <div>
                     <h2 className="text-base font-bold leading-tight">{invoice.issuer.name}</h2>
                     <p className="text-xs text-gray-500">{invoice.issuer.address}</p>
@@ -222,7 +222,7 @@ export function PartnerInvoiceDialog({
                 </div>
               </div>
               <div className="space-y-1 text-xs md:text-right">
-                <span className="inline-block rounded bg-rh-mist px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider text-rh-teal">
+                <span className="inline-block rounded bg-rh-honeydew px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider text-rh-ink">
                   Settlement invoice
                 </span>
                 <p className="pt-1 font-mono text-sm font-bold">{invoice.invoiceNumber}</p>
@@ -250,7 +250,7 @@ export function PartnerInvoiceDialog({
                 <h3 className="text-sm font-bold">{invoice.recipient.name}</h3>
                 <div className="space-y-1 text-xs text-gray-600">
                   <p>
-                    Partner code: <span className="font-mono font-semibold text-rh-teal">{invoice.recipient.code}</span>
+                    Partner code: <span className="font-mono font-semibold text-rh-ink">{invoice.recipient.code}</span>
                   </p>
                   <p>
                     Type: <span className="capitalize">{invoice.recipient.type}</span>
@@ -284,13 +284,13 @@ export function PartnerInvoiceDialog({
               </div>
             </div>
 
-            <div className="flex flex-col justify-between gap-2 rounded-xl bg-rh-mist/70 p-3 text-xs text-rh-night sm:flex-row sm:items-center">
+            <div className="flex flex-col justify-between gap-2 rounded-xl bg-rh-honeydew/70 p-3 text-xs text-rh-ink sm:flex-row sm:items-center">
               <div>
                 <span className="font-bold">Platform split:</span> {invoice.splitConfig.physiotherapistPercent}% clinician ·{' '}
                 {invoice.splitConfig.rehabifyPercent}% platform · {invoice.splitConfig.partnerPercent}% referring partner
-                <span className="text-rh-teal"> (a signed partner contract overrides the default)</span>
+                <span className="text-rh-ink"> (a signed partner contract overrides the default)</span>
               </div>
-              <div className="font-medium text-rh-teal">Paid by end-of-month consolidated transfer</div>
+              <div className="font-medium text-rh-ink">Paid by end-of-month consolidated transfer</div>
             </div>
 
             <div className="overflow-hidden rounded-xl border border-gray-200">
@@ -324,7 +324,7 @@ export function PartnerInvoiceDialog({
                         <td className="px-3 py-2 text-right tabular-nums">{formatKobo(item.grossAmountKobo)}</td>
                         <td className="px-3 py-2 text-right tabular-nums">{formatKobo(item.physioShareKobo)}</td>
                         <td className="px-3 py-2 text-right tabular-nums">{formatKobo(item.rehabifyShareKobo)}</td>
-                        <td className="px-3 py-2 text-right font-bold tabular-nums text-rh-teal">{formatKobo(item.partnerShareKobo)}</td>
+                        <td className="px-3 py-2 text-right font-bold tabular-nums text-rh-ink">{formatKobo(item.partnerShareKobo)}</td>
                         <td className="px-3 py-2 text-center text-[10px] text-gray-500">{item.paymentMethod}</td>
                       </tr>
                     ))}
@@ -347,7 +347,7 @@ export function PartnerInvoiceDialog({
                 <div className="space-y-1 text-[11px] text-gray-500">
                   <p>
                     Questions about this invoice:{' '}
-                    <a href="mailto:finance@physioaroundme.com" className="font-medium text-rh-teal">
+                    <a href="mailto:finance@physioaroundme.com" className="font-medium text-rh-ink">
                       finance@physioaroundme.com
                     </a>
                   </p>
@@ -363,7 +363,7 @@ export function PartnerInvoiceDialog({
                   <span>Gross care value</span>
                   <span className="font-semibold text-gray-900">{formatKobo(invoice.summary.totalGrossKobo)}</span>
                 </div>
-                <div className="flex justify-between border-t border-gray-200 pt-2 text-sm font-bold text-rh-teal">
+                <div className="flex justify-between border-t border-gray-200 pt-2 text-sm font-bold text-rh-ink">
                   <span>Gross partner commission</span>
                   <span>{formatKobo(invoice.summary.totalPartnerShareKobo)}</span>
                 </div>
@@ -381,7 +381,7 @@ export function PartnerInvoiceDialog({
                     <span>- {formatKobo(invoice.summary.totalStampDutyKobo)}</span>
                   </div>
                 </div>
-                <div className="flex items-center justify-between border-t-2 border-rh-teal pt-2 text-sm font-bold text-rh-teal">
+                <div className="flex items-center justify-between border-t-2 border-rh-lime pt-2 text-sm font-bold text-rh-ink">
                   <span>Net amount payable</span>
                   <span className="text-base">{formatKobo(invoice.summary.totalNetPayableKobo)}</span>
                 </div>

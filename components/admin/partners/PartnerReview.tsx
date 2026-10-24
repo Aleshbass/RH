@@ -138,7 +138,7 @@ export function ReasonDialog({
                 {reasonTitle(request)}
               </DialogTitle>
               <DialogDescription>
-                <strong className="text-rh-night dark:text-white">{request.partner.name}</strong> will see this reason in their email and in the
+                <strong className="text-rh-ink dark:text-white">{request.partner.name}</strong> will see this reason in their email and in the
                 Partner Portal.
               </DialogDescription>
             </DialogHeader>

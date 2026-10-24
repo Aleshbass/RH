@@ -77,7 +77,7 @@ export function CreatePartnerDialog({ open, onOpenChange }: { open: boolean; onO
       <DialogContent className={`${dialogClass} sm:max-w-[480px]`}>
         <DialogHeader>
           <DialogTitle className={dialogTitleClass}>
-            <Plus className="h-5 w-5 text-rh-teal dark:text-rh-aqua" />
+            <Plus className="h-5 w-5 text-rh-ink dark:text-rh-lime" />
             Create partner organisation
           </DialogTitle>
           <DialogDescription>
@@ -241,21 +241,21 @@ function ReferralLinkForm({ partner, onClose }: { partner: PartnerApplication; o
     <>
       <DialogHeader>
         <DialogTitle className={dialogTitleClass}>
-          <Link2 className="h-5 w-5 text-rh-teal dark:text-rh-aqua" />
+          <Link2 className="h-5 w-5 text-rh-ink dark:text-rh-lime" />
           Generate referral link
         </DialogTitle>
         <DialogDescription>
-          Create a trackable referral URL for <strong className="text-rh-night dark:text-white">{partner.name}</strong>. Leads submitted through
+          Create a trackable referral URL for <strong className="text-rh-ink dark:text-white">{partner.name}</strong>. Leads submitted through
           this link are attributed to this partner.
         </DialogDescription>
       </DialogHeader>
 
       {result ? (
         <div className="space-y-4">
-          <div className="space-y-2 rounded-xl bg-rh-mist p-4 dark:bg-rh-aqua/[0.08]">
+          <div className="space-y-2 rounded-xl bg-rh-honeydew p-4 dark:bg-white/[0.06]">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-rh-night dark:text-white">Your trackable link</span>
-              <span className="rounded-md bg-white px-2 py-0.5 font-mono text-xs text-rh-teal dark:bg-rh-ink-3 dark:text-rh-aqua">{result.publicCode}</span>
+              <span className="text-xs font-semibold text-rh-ink dark:text-white">Your trackable link</span>
+              <span className="rounded-md bg-white px-2 py-0.5 font-mono text-xs text-rh-ink dark:bg-rh-ink-3 dark:text-rh-lime">{result.publicCode}</span>
             </div>
             <div className="flex items-center gap-2">
               <Input readOnly value={result.url} className={cn(inputClass, 'font-mono text-xs')} onFocus={(e) => e.currentTarget.select()} />

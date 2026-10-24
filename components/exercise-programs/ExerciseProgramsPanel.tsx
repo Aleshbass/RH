@@ -64,7 +64,7 @@ function LinksList({ program, canWrite }: { program: CareTeamProgram; canWrite: 
     <ul className="space-y-1.5">
       {program.links.map((link) => (
         <li key={link._id} className="flex flex-wrap items-center gap-2 rounded-xl bg-rh-canvas px-3 py-2 text-xs dark:bg-white/[0.03]">
-          <Link2 className="h-3.5 w-3.5 text-rh-teal dark:text-rh-aqua" />
+          <Link2 className="h-3.5 w-3.5 text-rh-ink dark:text-rh-lime" />
           <span className="text-neutral-600 dark:text-neutral-300">
             Sent {format(link.createdAt, 'd MMM')} · {link.state === 'active' ? `works until ${format(link.expiresAt, 'd MMM')}` : link.state}
             {link.openCount > 0 && ` · opened ${link.lastOpenedAt ? formatDistanceToNow(link.lastOpenedAt, { addSuffix: true }) : ''}`}
@@ -74,7 +74,7 @@ function LinksList({ program, canWrite }: { program: CareTeamProgram; canWrite: 
             <span className="ml-auto flex gap-1">
               <button
                 type="button"
-                className="rounded-lg px-2 py-1 font-medium text-rh-teal hover:bg-white dark:text-rh-aqua dark:hover:bg-white/10"
+                className="rounded-lg px-2 py-1 font-medium text-rh-ink hover:bg-white dark:text-rh-lime dark:hover:bg-white/10"
                 onClick={() => extend({ linkId: link._id, days: 30 }).then(() => toast.success('Link extended by 30 days')).catch(fail('Couldn’t extend the link.'))}
               >
                 +30 days
@@ -102,7 +102,7 @@ function ItemThumb({ item }: { item: CareTeamProgram['items'][number] }) {
       <div
         className={cn(
           'relative flex h-20 w-20 items-center justify-center overflow-hidden rounded-xl',
-          item.kind === 'education' ? 'bg-rh-cream dark:bg-amber-400/10' : 'bg-rh-mist dark:bg-white/[0.05]'
+          item.kind === 'education' ? 'bg-rh-cream dark:bg-amber-400/10' : 'bg-rh-honeydew dark:bg-white/[0.05]'
         )}
       >
         {item.clipId ? (
@@ -110,7 +110,7 @@ function ItemThumb({ item }: { item: CareTeamProgram['items'][number] }) {
         ) : item.kind === 'education' ? (
           <BookOpen className="h-6 w-6 text-[#b4690e] dark:text-amber-300" />
         ) : (
-          <Dumbbell className="h-6 w-6 text-rh-teal/50 dark:text-rh-aqua/60" />
+          <Dumbbell className="h-6 w-6 text-rh-ink/50 dark:text-rh-lime/60" />
         )}
       </div>
       <p className="mt-1 line-clamp-2 text-[11px] leading-tight text-neutral-600 dark:text-neutral-300">{item.name}</p>
@@ -149,14 +149,14 @@ function ProgramCard({
     <li className={cn('space-y-3 px-5 py-4', archived && 'opacity-60')}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="font-semibold text-rh-night dark:text-white">
+          <p className="font-semibold text-rh-ink dark:text-white">
             {program.title} {archived && <StatusBadge className="ml-1">Archived</StatusBadge>}
           </p>
           <p className="text-xs text-neutral-500 dark:text-neutral-400">
             {itemsSummary(program.items)} · sent {format(program.createdAt, 'd MMM yyyy')} by {program.senderName}
             {edited && ` · updated ${formatDistanceToNow(program.updatedAt, { addSuffix: true })}`}
             {program.voiceNoteUrl && (
-              <span className="ml-1 inline-flex items-center gap-0.5 text-rh-teal dark:text-rh-aqua"><Mic className="h-3 w-3" /> voice note</span>
+              <span className="ml-1 inline-flex items-center gap-0.5 text-rh-ink dark:text-rh-lime"><Mic className="h-3 w-3" /> voice note</span>
             )}
           </p>
         </div>
@@ -203,7 +203,7 @@ function ProgramCard({
 
       {a.recent.length > 0 && (
         <details className="rounded-xl bg-rh-canvas px-3 py-2 text-xs dark:bg-white/[0.03]">
-          <summary className="cursor-pointer font-medium text-rh-night dark:text-white">Recent logs</summary>
+          <summary className="cursor-pointer font-medium text-rh-ink dark:text-white">Recent logs</summary>
           <ul className="mt-2 space-y-1">
             {a.recent.map((log, i) => (
               <li key={i} className="text-neutral-600 dark:text-neutral-300">
@@ -281,7 +281,7 @@ export function ExerciseProgramsPanel({
         }
       >
         {programs === undefined ? (
-          <div className="flex justify-center py-10"><Loader2 className="h-5 w-5 animate-spin text-rh-teal" /></div>
+          <div className="flex justify-center py-10"><Loader2 className="h-5 w-5 animate-spin text-rh-ink" /></div>
         ) : programs === null ? (
           <p className="px-5 pb-5 text-sm text-neutral-500">You can&apos;t see this patient&apos;s programmes.</p>
         ) : visible.length === 0 ? (

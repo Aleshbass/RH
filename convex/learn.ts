@@ -12,6 +12,7 @@
 import { ConvexError, v } from "convex/values";
 import {
   action,
+  internalAction,
   internalMutation,
   internalQuery,
   mutation,
@@ -22,7 +23,12 @@ import {
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { paystackRequest } from "./clinicBilling";
+import { libraryItem } from "./exerciseLibrary";
+import { listRow } from "./libraryResources";
 import { appLink, publicAppUrl } from "./helpers/appUrl";
+import { LEARNER_ACCESS_DAYS, learnerAccessOpen, paidLearnRegistrations, verifiedIdentityEmail } from "./helpers/exerciseAccess";
+import { randomToken, sha256Hex } from "./helpers/exerciseCrypto";
+import { lagosDateTime, lagosShortDate, lagosTime, zonedDateKey, zonedDateTimeToUtc, zonedTimeKey } from "./helpers/lagosTime";
 import { getViewer, requireAdmin } from "./helpers/partnerAccess";
 import { verifyPaystackSignature } from "./helpers/paystackSignature";
 import {
@@ -455,36 +461,14 @@ type Completion =
   | { success: true; alreadyCompleted: boolean }
   | { success: false; reason: string };
 
+/**
+ * The confirmation email carries a one-tap "Open my course" link. The link's code is made in an
+ * action (real randomness), so the mutation only schedules it.
+ */
 async function scheduleConfirmationEmail(ctx: MutationCtx, registrationId: Id<"learnRegistrations">) {
   const registration = await ctx.db.get(registrationId);
   if (!registration || registration.status !== "paid") return;
-  const cohort = await ctx.db.get(registration.cohortId);
-  if (!cohort) return;
-
-  const paragraphs = [
-    `Thank you for registering for the ${PROGRAM_TITLE}. We've received your payment of ${formatNairaFromKobo(
-      registration.paidAmountKobo ?? registration.amountKobo
-    )}.`,
-    `Program dates: ${formatCohortRange(cohort.startDate, cohort.endDate)}`,
-    `Live sessions: ${cohort.liveSessions}`,
-    `Duration: ${cohort.duration}. Format: ${cohort.format}.`,
-    ...(cohort.welcomeNote ? [cohort.welcomeNote] : []),
-    "Can't make a live session? Every session is recorded, so you can watch it later.",
-    `Registration: ${TRACK_LABEL[registration.track]}. Payment reference: ${registration.paidReference ?? "—"}.`,
-  ];
-
-  await ctx.scheduler.runAfter(0, internal.actions.emails.sendPatientCareEmail.sendPatientCareEmail, {
-    to: registration.email,
-    subject: `You're registered: ${PROGRAM_TITLE}`,
-    greetingName: registration.firstName,
-    heading: `Your place in the ${cohort.cohortLabel} is confirmed`,
-    paragraphs,
-    buttonLabel: cohort.communityLink ? "Join the cohort group" : "View the program",
-    buttonUrl: cohort.communityLink ?? appLink("/learn"),
-    footnote:
-      "You're receiving this because you registered for a Rehabify Learn program. Questions? Write to support@physioaroundme.com.",
-  });
-  await ctx.db.patch(registration._id, { confirmationEmailSentAt: Date.now() });
+  await ctx.scheduler.runAfter(0, internal.learn.sendConfirmationEmail, { registrationId });
 }
 
 /**
@@ -588,8 +572,9 @@ export type RegistrationSummary = {
     liveSessions: string;
     duration: string;
     format: string;
-    communityLink: string | null;
   };
+  /** Session times for "Add to calendar" (joining links live on the course page, never here). */
+  sessions: { startsAt: number; endsAt: number; title: string }[];
 };
 
 /** What the confirmation page shows for a reference. Only the payer has the reference. */
@@ -616,8 +601,14 @@ export const registrationSummary = internalQuery({
         liveSessions: cohort.liveSessions,
         duration: cohort.duration,
         format: cohort.format,
-        communityLink: isPaid ? cohort.communityLink ?? null : null,
       },
+      sessions: isPaid
+        ? (await cohortSessions(ctx, cohort._id)).map((s) => ({
+            startsAt: s.startsAt,
+            endsAt: s.endsAt,
+            title: s.title ?? `${PROGRAM_TITLE}: live session`,
+          }))
+        : [],
     };
   },
 });
@@ -1113,5 +1104,1150 @@ export const adminListInterest = query({
     return rows
       .sort((a, b) => b.createdAt - a.createdAt)
       .map((r) => ({ id: r._id, email: r.email, name: r.name ?? "", createdAt: r.createdAt }));
+  },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The physio's course: sessions, links and weekly materials
+// ─────────────────────────────────────────────────────────────────────────────
+
+const DAY_MS = 86_400_000;
+const COURSE_LINK_TTL_MS = 30 * DAY_MS;
+// A fresh sign-in link at most this often per registration, so the form can't be used to spam
+const COURSE_LINK_RESEND_GAP_MS = 2 * 60 * 1000;
+const MAX_FILE_BYTES = 25 * 1024 * 1024;
+const FILE_TYPES = new Set([
+  "application/pdf",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  "application/vnd.ms-powerpoint",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/msword",
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+]);
+const HTTPS_URL = /^https:\/\/[^\s]+$/i;
+
+async function cohortSessions(ctx: Ctx, cohortId: Id<"learnCohorts">) {
+  return await ctx.db
+    .query("learnSessions")
+    .withIndex("by_cohort", (q) => q.eq("cohortId", cohortId))
+    .take(200);
+}
+
+async function cohortWeeks(ctx: Ctx, cohortId: Id<"learnCohorts">) {
+  return await ctx.db
+    .query("learnModules")
+    .withIndex("by_cohort_week", (q) => q.eq("cohortId", cohortId))
+    .take(60);
+}
+
+/** The cohort's named links; cohorts made before links existed show their single group link. */
+function courseLinksFor(cohort: Doc<"learnCohorts">) {
+  if (cohort.links) return cohort.links;
+  return cohort.communityLink ? [{ id: "group", label: "Cohort group", url: cohort.communityLink }] : [];
+}
+
+function sessionView(s: Doc<"learnSessions">) {
+  return {
+    id: s._id,
+    startsAt: s.startsAt,
+    endsAt: s.endsAt,
+    title: s.title ?? null,
+    meetingUrl: s.meetingUrl ?? null,
+    recordingUrl: s.recordingUrl ?? null,
+    linkChangedAt: s.linkChangedAt ?? null,
+  };
+}
+
+async function weekView(ctx: Ctx, week: Doc<"learnModules">) {
+  const exercises = [];
+  for (const id of week.exerciseIds) {
+    const exercise = await ctx.db.get(id);
+    if (exercise) exercises.push(libraryItem(exercise));
+  }
+  const resources = [];
+  for (const key of week.resourceKeys) {
+    const row = await ctx.db
+      .query("libraryResources")
+      .withIndex("by_key", (q) => q.eq("key", key))
+      .first();
+    if (row) resources.push(listRow(row));
+  }
+  return {
+    id: week._id,
+    week: week.week,
+    title: week.title,
+    summary: week.summary ?? null,
+    recordingUrl: week.recordingUrl ?? null,
+    files: await Promise.all(
+      week.files.map(async (f) => ({ ...f, url: await ctx.storage.getUrl(f.storageId) }))
+    ),
+    exercises,
+    resources,
+    updatedAt: week.updatedAt,
+  };
+}
+
+/**
+ * Everything on the signed-in physio's "My course" page. Matched by account or verified email,
+ * so a physio who paid before having an account sees their course as soon as they sign in.
+ */
+export const getMyCourse = query({
+  args: { cohortId: v.optional(v.id("learnCohorts")) },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return { state: "signed_out" as const };
+    const viewer = await getViewer(ctx);
+    const email = await verifiedIdentityEmail(ctx);
+    const courses = await paidLearnRegistrations(ctx, viewer?.user ?? null, email);
+    if (courses.length === 0) {
+      return { state: "not_registered" as const, email: typeof identity.email === "string" ? identity.email : null };
+    }
+
+    const chosen =
+      courses.find((c) => c.cohort._id === args.cohortId) ??
+      courses.find((c) => learnerAccessOpen(c.cohort)) ??
+      courses[0];
+    const { registration, cohort } = chosen;
+    const ended = endOfLagosDay(cohort.endDate);
+    const base = {
+      learner: { firstName: registration.firstName, trackLabel: TRACK_LABEL[registration.track] },
+      cohort: {
+        id: cohort._id,
+        cohortLabel: cohort.cohortLabel,
+        startDate: cohort.startDate,
+        endDate: cohort.endDate,
+        dateRange: formatCohortRange(cohort.startDate, cohort.endDate),
+        startsOn: formatCohortDay(cohort.startDate),
+        liveSessions: cohort.liveSessions,
+        duration: cohort.duration,
+        format: cohort.format,
+        welcomeNote: cohort.welcomeNote ?? null,
+      },
+      accessUntil: ended === null ? null : ended + LEARNER_ACCESS_DAYS * DAY_MS,
+      otherCohorts: courses
+        .filter((c) => c.cohort._id !== cohort._id)
+        .map((c) => ({ id: c.cohort._id, cohortLabel: c.cohort.cohortLabel })),
+    };
+    if (!learnerAccessOpen(cohort)) return { state: "ended" as const, ...base };
+
+    const sessionDocs = await cohortSessions(ctx, cohort._id);
+    const weeks = await Promise.all((await cohortWeeks(ctx, cohort._id)).map((w) => weekView(ctx, w)));
+    return {
+      state: "ok" as const,
+      ...base,
+      links: courseLinksFor(cohort),
+      sessions: sessionDocs.map(sessionView),
+      weeks,
+      progress: await progressView(ctx, registration, cohort, sessionDocs),
+    };
+  },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// One-tap "Open my course" links (sent by email only: the inbox proves the address)
+// ─────────────────────────────────────────────────────────────────────────────
+
+type CourseEmailKind = "confirmation" | "sign_in";
+type CourseEmail = {
+  to: string;
+  subject: string;
+  greetingName: string;
+  heading: string;
+  paragraphs: string[];
+  footnote: string;
+};
+
+const LEARN_FOOTNOTE =
+  "You're receiving this because you registered for a Rehabify Learn program. Questions? Write to support@physioaroundme.com.";
+
+/** Stores a new link (replacing any earlier one) and returns the email to send with it. */
+export const issueCourseLink = internalMutation({
+  args: {
+    registrationId: v.id("learnRegistrations"),
+    codeHash: v.string(),
+    kind: v.union(v.literal("confirmation"), v.literal("sign_in")),
+  },
+  handler: async (ctx, args): Promise<CourseEmail | null> => {
+    const registration = await ctx.db.get(args.registrationId);
+    if (!registration || registration.status !== "paid") return null;
+    const cohort = await ctx.db.get(registration.cohortId);
+    if (!cohort) return null;
+    const now = Date.now();
+    await ctx.db.patch(registration._id, {
+      courseLinkHash: args.codeHash,
+      courseLinkExpiresAt: now + COURSE_LINK_TTL_MS,
+      courseLinkUsedAt: undefined,
+      ...(args.kind === "confirmation" ? { confirmationEmailSentAt: now } : {}),
+      updatedAt: now,
+    });
+
+    if (args.kind === "sign_in") {
+      return {
+        to: registration.email,
+        subject: `Your link to the ${PROGRAM_TITLE}`,
+        greetingName: registration.firstName,
+        heading: "Open your course",
+        paragraphs: [
+          `Here's your link to the ${cohort.cohortLabel}: the live session links, recordings, weekly materials and the exercise library.`,
+          "The button signs you in, no password needed. It works once, within 30 days. If you didn't ask for it, you can ignore this email.",
+        ],
+        footnote: LEARN_FOOTNOTE,
+      };
+    }
+    return {
+      to: registration.email,
+      subject: `You're registered: ${PROGRAM_TITLE}`,
+      greetingName: registration.firstName,
+      heading: `Your place in the ${cohort.cohortLabel} is confirmed`,
+      paragraphs: [
+        `Thank you for registering for the ${PROGRAM_TITLE}. We've received your payment of ${formatNairaFromKobo(
+          registration.paidAmountKobo ?? registration.amountKobo
+        )}.`,
+        `Program dates: ${formatCohortRange(cohort.startDate, cohort.endDate)}`,
+        `Live sessions: ${cohort.liveSessions}`,
+        ...(cohort.welcomeNote ? [cohort.welcomeNote] : []),
+        "Your course page has everything in one place: the joining link for each live session, recordings, weekly materials and the 3D exercise library.",
+        "The button below signs you straight in, no password needed. It works once, within 30 days; after that, open the course page and we'll email you a fresh link.",
+        `Registration: ${TRACK_LABEL[registration.track]}. Payment reference: ${registration.paidReference ?? "—"}.`,
+      ],
+      footnote: LEARN_FOOTNOTE,
+    };
+  },
+});
+
+async function sendCourseLinkEmail(ctx: any, registrationId: Id<"learnRegistrations">, kind: CourseEmailKind): Promise<void> {
+  const code = randomToken(32);
+  const email: CourseEmail | null = await ctx.runMutation(internal.learn.issueCourseLink, {
+    registrationId,
+    codeHash: await sha256Hex(code),
+    kind,
+  });
+  if (!email) return;
+  await ctx.scheduler.runAfter(0, internal.actions.emails.sendPatientCareEmail.sendPatientCareEmail, {
+    ...email,
+    buttonLabel: "Open my course",
+    buttonUrl: appLink(`/learn/start/${code}`),
+  });
+}
+
+/** Confirmation email after payment (and the admin's "resend"). */
+export const sendConfirmationEmail = internalAction({
+  args: { registrationId: v.id("learnRegistrations") },
+  handler: async (ctx, args): Promise<void> => {
+    await sendCourseLinkEmail(ctx, args.registrationId, "confirmation");
+  },
+});
+
+/** The latest paid registration for this email whose course is still open, unless a link just went out. */
+export const courseLinkTarget = internalQuery({
+  args: { email: v.string() },
+  handler: async (ctx, args): Promise<Id<"learnRegistrations"> | null> => {
+    const courses = await paidLearnRegistrations(ctx, null, args.email);
+    const open = courses.find((c) => learnerAccessOpen(c.cohort));
+    if (!open) return null;
+    const issuedAt = (open.registration.courseLinkExpiresAt ?? 0) - COURSE_LINK_TTL_MS;
+    if (Date.now() - issuedAt < COURSE_LINK_RESEND_GAP_MS) return null;
+    return open.registration._id;
+  },
+});
+
+/**
+ * "Email me my course link" on the signed-out course page. Always answers the same way, so it
+ * never reveals who has registered.
+ */
+export const requestCourseLink = action({
+  args: { email: v.string() },
+  handler: async (ctx, args): Promise<{ ok: true }> => {
+    const email = clean(args.email, 120).toLowerCase();
+    if (!EMAIL.test(email)) throw new ConvexError("Enter a valid email address.");
+    const registrationId: Id<"learnRegistrations"> | null = await ctx.runQuery(internal.learn.courseLinkTarget, { email });
+    if (registrationId) await sendCourseLinkEmail(ctx, registrationId, "sign_in");
+    return { ok: true };
+  },
+});
+
+async function courseLinkRow(ctx: Ctx, code: string) {
+  if (!/^[A-Za-z0-9]{24,64}$/.test(code)) return null;
+  const hash = await sha256Hex(code);
+  return await ctx.db
+    .query("learnRegistrations")
+    .withIndex("by_course_link", (q) => q.eq("courseLinkHash", hash))
+    .first();
+}
+
+/** What /learn/start/<code> shows before the tap. */
+export const peekCourseLink = query({
+  args: { code: v.string() },
+  handler: async (ctx, args) => {
+    const registration = await courseLinkRow(ctx, args.code.trim());
+    if (!registration || registration.status !== "paid") return { state: "not_found" as const };
+    const viewer = await getViewer(ctx);
+    const email = await verifiedIdentityEmail(ctx);
+    if ((viewer?.user && registration.userId === viewer.user._id) || email === registration.email) {
+      return { state: "signed_in" as const, firstName: registration.firstName };
+    }
+    const state = registration.courseLinkUsedAt
+      ? ("used" as const)
+      : (registration.courseLinkExpiresAt ?? 0) <= Date.now()
+        ? ("expired" as const)
+        : ("ok" as const);
+    return { state, firstName: registration.firstName, maskedEmail: maskEmail(registration.email) };
+  },
+});
+
+type ConsumedLink =
+  | { ok: true; registrationId: Id<"learnRegistrations">; email: string; firstName: string; lastName: string }
+  | { ok: false; reason: "not_found" | "used" | "expired" };
+
+export const consumeCourseLink = internalMutation({
+  args: { code: v.string() },
+  handler: async (ctx, args): Promise<ConsumedLink> => {
+    const registration = await courseLinkRow(ctx, args.code);
+    if (!registration || registration.status !== "paid") return { ok: false, reason: "not_found" };
+    if (registration.courseLinkUsedAt) return { ok: false, reason: "used" };
+    if ((registration.courseLinkExpiresAt ?? 0) <= Date.now()) return { ok: false, reason: "expired" };
+    await ctx.db.patch(registration._id, { courseLinkUsedAt: Date.now() });
+    return {
+      ok: true,
+      registrationId: registration._id,
+      email: registration.email,
+      firstName: registration.firstName,
+      lastName: registration.lastName,
+    };
+  },
+});
+
+export const releaseCourseLink = internalMutation({
+  args: { registrationId: v.id("learnRegistrations") },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.registrationId, { courseLinkUsedAt: undefined });
+  },
+});
+
+/** Clerk's Backend API. Errors carry only Clerk's code, never the email. */
+async function clerkApi(path: string, method = "GET", body?: unknown): Promise<any> {
+  const secret = process.env.CLERK_SECRET_KEY;
+  if (!secret) throw new Error("clerk_not_configured");
+  const response = await fetch(`https://api.clerk.com/v1${path}`, {
+    method,
+    headers: { Authorization: `Bearer ${secret}`, "Content-Type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const data: any = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(`clerk_${response.status}_${data?.errors?.[0]?.code ?? "error"}`);
+  return data;
+}
+
+/**
+ * The tap on /learn/start/<code>: signs the physio in to the account for the email they paid with
+ * (creating it the first time). Opening the email proved they own the address.
+ */
+export const redeemCourseLink = action({
+  args: { code: v.string() },
+  handler: async (ctx, args): Promise<{ ok: true; ticket: string } | { ok: false; reason: string }> => {
+    const consumed: ConsumedLink = await ctx.runMutation(internal.learn.consumeCourseLink, { code: args.code.trim() });
+    if (!consumed.ok) return consumed;
+    try {
+      const found = await clerkApi(`/users?email_address=${encodeURIComponent(consumed.email)}&limit=1`);
+      const userId: string =
+        Array.isArray(found) && found[0]?.id
+          ? found[0].id
+          : (
+              await clerkApi("/users", "POST", {
+                email_address: [consumed.email],
+                first_name: consumed.firstName,
+                last_name: consumed.lastName,
+                skip_password_requirement: true,
+                public_metadata: { source: "rehabify_learn" },
+              })
+            ).id;
+      const token = await clerkApi("/sign_in_tokens", "POST", { user_id: userId, expires_in_seconds: 600 });
+      return { ok: true, ticket: String(token.token) };
+    } catch (error) {
+      console.error("learn_course_link_failed", { reason: error instanceof Error ? error.message.slice(0, 80) : "unknown" });
+      await ctx.runMutation(internal.learn.releaseCourseLink, { registrationId: consumed.registrationId });
+      return { ok: false, reason: "unavailable" };
+    }
+  },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Admin: sessions, course links and weekly materials
+// ─────────────────────────────────────────────────────────────────────────────
+
+function httpsUrl(value: string | undefined, label: string) {
+  const url = clean(value, 500);
+  if (url && !HTTPS_URL.test(url)) throw new ConvexError(`${label} must start with https://`);
+  return url || undefined;
+}
+
+/** Sessions, links and weeks of one cohort, for the admin's Course tab. */
+export const adminCourseContent = query({
+  args: { cohortId: v.id("learnCohorts") },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx);
+    const cohort = await ctx.db.get(args.cohortId);
+    if (!cohort) return null;
+    const paid = await ctx.db
+      .query("learnRegistrations")
+      .withIndex("by_cohort_status", (q) => q.eq("cohortId", cohort._id).eq("status", "paid"))
+      .take(1000);
+    const sessions = (await cohortSessions(ctx, cohort._id))
+      .sort((a, b) => a.startsAt - b.startsAt)
+      .map((s) => ({
+        ...sessionView(s),
+        date: zonedDateKey(s.startsAt),
+        startTime: zonedTimeKey(s.startsAt),
+        endTime: zonedTimeKey(s.endsAt),
+        label: lagosDateTime(s.startsAt),
+      }));
+    const weeks = await Promise.all((await cohortWeeks(ctx, cohort._id)).map((w) => weekView(ctx, w)));
+    return {
+      cohortId: cohort._id,
+      cohortLabel: cohort.cohortLabel,
+      startDate: cohort.startDate,
+      learners: paid.length,
+      links: courseLinksFor(cohort),
+      sessions,
+      weeks: weeks.sort((a, b) => a.week - b.week),
+    };
+  },
+});
+
+/** Add or change a live session. With `notifyLearners`, a changed link is emailed to every paid physio. */
+export const adminSaveSession = mutation({
+  args: {
+    cohortId: v.id("learnCohorts"),
+    sessionId: v.optional(v.id("learnSessions")),
+    date: v.string(),
+    startTime: v.string(),
+    endTime: v.string(),
+    title: v.optional(v.string()),
+    meetingUrl: v.optional(v.string()),
+    recordingUrl: v.optional(v.string()),
+    notifyLearners: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx);
+    const cohort = await ctx.db.get(args.cohortId);
+    if (!cohort) throw new ConvexError("Cohort not found.");
+    if (!isCalendarDate(args.date)) throw new ConvexError("Choose the session date.");
+    const time = /^([01]\d|2[0-3]):[0-5]\d$/;
+    if (!time.test(args.startTime) || !time.test(args.endTime)) throw new ConvexError("Choose a start and end time.");
+    const startsAt = zonedDateTimeToUtc(args.date, args.startTime);
+    const endsAt = zonedDateTimeToUtc(args.date, args.endTime);
+    if (endsAt <= startsAt) throw new ConvexError("The session must end after it starts.");
+    const meetingUrl = httpsUrl(args.meetingUrl, "The meeting link");
+    const recordingUrl = httpsUrl(args.recordingUrl, "The recording link");
+    const title = clean(args.title, 120) || undefined;
+    const now = Date.now();
+
+    let sessionId = args.sessionId;
+    let linkChanged = false;
+    if (sessionId) {
+      const existing = await ctx.db.get(sessionId);
+      if (!existing || existing.cohortId !== cohort._id) throw new ConvexError("Session not found.");
+      linkChanged = (existing.meetingUrl ?? "") !== (meetingUrl ?? "") && Boolean(meetingUrl);
+      // A new time gets its own reminders
+      const moved = existing.startsAt !== startsAt;
+      await ctx.db.patch(sessionId, {
+        startsAt,
+        endsAt,
+        ...(moved ? { remindedDayAt: undefined, remindedHourAt: undefined } : {}),
+        title,
+        meetingUrl,
+        recordingUrl,
+        ...(linkChanged ? { linkChangedAt: now } : {}),
+        updatedAt: now,
+      });
+    } else {
+      sessionId = await ctx.db.insert("learnSessions", {
+        cohortId: cohort._id,
+        startsAt,
+        endsAt,
+        title,
+        meetingUrl,
+        recordingUrl,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+
+    let notified = 0;
+    if (args.notifyLearners && meetingUrl && (linkChanged || !args.sessionId)) {
+      const paid = await ctx.db
+        .query("learnRegistrations")
+        .withIndex("by_cohort_status", (q) => q.eq("cohortId", cohort._id).eq("status", "paid"))
+        .take(1000);
+      const when = lagosDateTime(startsAt);
+      for (const [i, registration] of paid.entries()) {
+        await ctx.scheduler.runAfter(i * 1500, internal.actions.emails.sendPatientCareEmail.sendPatientCareEmail, {
+          to: registration.email,
+          subject: linkChanged ? `New joining link: ${title ?? "live session"} on ${when}` : `Joining link: ${title ?? "live session"} on ${when}`,
+          greetingName: registration.firstName,
+          heading: linkChanged ? "The joining link has changed" : "Your joining link is ready",
+          paragraphs: [
+            `${title ?? `The ${cohort.cohortLabel} live session`} is on ${when}.`,
+            linkChanged
+              ? "Please use the new link on your course page. The old link won't work."
+              : "The link is on your course page, where it's always kept up to date.",
+          ],
+          buttonLabel: "Open my course",
+          buttonUrl: appLink("/learn/course"),
+          footnote: LEARN_FOOTNOTE,
+        });
+      }
+      notified = paid.length;
+    }
+    return { sessionId, notified };
+  },
+});
+
+export const adminDeleteSession = mutation({
+  args: { sessionId: v.id("learnSessions") },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx);
+    await ctx.db.delete(args.sessionId);
+  },
+});
+
+/** Replace the cohort's course links (they show on every learner's course page at once). */
+export const adminSaveCourseLinks = mutation({
+  args: { cohortId: v.id("learnCohorts"), links: v.array(v.object({ id: v.optional(v.string()), label: v.string(), url: v.string() })) },
+  handler: async (ctx, args) => {
+    const { user } = await requireAdmin(ctx);
+    const cohort = await ctx.db.get(args.cohortId);
+    if (!cohort) throw new ConvexError("Cohort not found.");
+    if (args.links.length > 12) throw new ConvexError("Add at most 12 links.");
+    const links = args.links.map((link, i) => {
+      const label = clean(link.label, 60);
+      if (!label) throw new ConvexError(`Give link ${i + 1} a name.`);
+      const url = httpsUrl(link.url, `The link "${label}"`);
+      if (!url) throw new ConvexError(`Add the address for "${label}".`);
+      return { id: clean(link.id, 40) || `l${Date.now().toString(36)}${i}`, label, url };
+    });
+    // The single legacy group link becomes one of these
+    await ctx.db.patch(cohort._id, { links, communityLink: undefined, updatedBy: user._id, updatedAt: Date.now() });
+  },
+});
+
+async function assertCourseFile(ctx: MutationCtx, storageId: Id<"_storage">) {
+  const file = await ctx.db.system.get(storageId);
+  if (!file) throw new ConvexError("A file didn't finish uploading. Please add it again.");
+  if (file.size > MAX_FILE_BYTES) throw new ConvexError("Files can be up to 25 MB.");
+  if (!file.contentType || !FILE_TYPES.has(file.contentType)) {
+    throw new ConvexError("Upload PDFs, slides (PowerPoint), Word documents or images.");
+  }
+  return file;
+}
+
+/** Create or update a week of materials. Files removed from the week are deleted from storage. */
+export const adminSaveWeek = mutation({
+  args: {
+    cohortId: v.id("learnCohorts"),
+    moduleId: v.optional(v.id("learnModules")),
+    week: v.number(),
+    title: v.string(),
+    summary: v.optional(v.string()),
+    recordingUrl: v.optional(v.string()),
+    files: v.array(v.object({ storageId: v.id("_storage"), name: v.string() })),
+    exerciseIds: v.array(v.id("exercises")),
+    resourceKeys: v.array(v.string()),
+  },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx);
+    const cohort = await ctx.db.get(args.cohortId);
+    if (!cohort) throw new ConvexError("Cohort not found.");
+    if (!Number.isInteger(args.week) || args.week < 1 || args.week > 20) throw new ConvexError("Choose a week between 1 and 20.");
+    const title = clean(args.title, 120);
+    if (!title) throw new ConvexError("Give the week a title, e.g. \"MSK assessment\".");
+    if (args.files.length > 10) throw new ConvexError("Add at most 10 files to a week.");
+    if (args.exerciseIds.length > 30 || args.resourceKeys.length > 30) throw new ConvexError("Add at most 30 exercises and 30 resources to a week.");
+
+    const files = [];
+    for (const f of args.files) {
+      const meta = await assertCourseFile(ctx, f.storageId);
+      files.push({ storageId: f.storageId, name: clean(f.name, 120) || "Handout", size: meta.size, contentType: meta.contentType ?? "" });
+    }
+    for (const id of args.exerciseIds) {
+      if (!(await ctx.db.get(id))) throw new ConvexError("One of the exercises no longer exists.");
+    }
+    const resourceKeys = [...new Set(args.resourceKeys.map((k) => clean(k, 80)).filter(Boolean))];
+
+    const fields = {
+      week: args.week,
+      title,
+      summary: clean(args.summary, 1000) || undefined,
+      recordingUrl: httpsUrl(args.recordingUrl, "The recording link"),
+      files,
+      exerciseIds: [...new Set(args.exerciseIds)],
+      resourceKeys,
+      updatedAt: Date.now(),
+    };
+    if (args.moduleId) {
+      const existing = await ctx.db.get(args.moduleId);
+      if (!existing || existing.cohortId !== cohort._id) throw new ConvexError("Week not found.");
+      const kept = new Set(files.map((f) => f.storageId));
+      for (const old of existing.files) if (!kept.has(old.storageId)) await ctx.storage.delete(old.storageId);
+      await ctx.db.patch(existing._id, fields);
+      return existing._id;
+    }
+    return await ctx.db.insert("learnModules", { cohortId: cohort._id, ...fields, createdAt: fields.updatedAt });
+  },
+});
+
+export const adminDeleteWeek = mutation({
+  args: { moduleId: v.id("learnModules") },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx);
+    const week = await ctx.db.get(args.moduleId);
+    if (!week) return;
+    for (const f of week.files) await ctx.storage.delete(f.storageId);
+    await ctx.db.delete(week._id);
+  },
+});
+
+/** Upload target for a handout or slides (the browser posts the file straight to storage). */
+export const adminGenerateFileUploadUrl = mutation({
+  args: {},
+  handler: async (ctx) => {
+    await requireAdmin(ctx);
+    return await ctx.storage.generateUploadUrl();
+  },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Progress, final assessment and certificates
+// ─────────────────────────────────────────────────────────────────────────────
+
+const JOIN_WINDOW_MS = 30 * 60 * 1000;
+// No 0/O/1/I, so a code read off paper is never ambiguous
+const CERT_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
+const CERTIFICATE_NOTE =
+  "Professional development certificate. It does not replace professional licensure or specialist accreditation by a regulatory body.";
+
+async function cohortAssessment(ctx: Ctx, cohortId: Id<"learnCohorts">) {
+  return await ctx.db
+    .query("learnAssessments")
+    .withIndex("by_cohort", (q) => q.eq("cohortId", cohortId))
+    .first();
+}
+
+async function registrationAttempts(ctx: Ctx, registrationId: Id<"learnRegistrations">) {
+  return await ctx.db
+    .query("learnAttempts")
+    .withIndex("by_registration", (q) => q.eq("registrationId", registrationId))
+    .take(50);
+}
+
+/** The signed-in physio's paid registration for this cohort; throws if they don't have one. */
+async function learnerRegistration(ctx: Ctx, cohortId: Id<"learnCohorts">) {
+  const viewer = await getViewer(ctx);
+  const email = await verifiedIdentityEmail(ctx);
+  if (!viewer) throw new ConvexError("Sign in to continue.");
+  const courses = await paidLearnRegistrations(ctx, viewer.user ?? null, email);
+  const found = courses.find((c) => c.cohort._id === cohortId);
+  if (!found) throw new ConvexError("This course isn't on your account.");
+  if (!learnerAccessOpen(found.cohort)) throw new ConvexError("This course has closed.");
+  return found;
+}
+
+function certificateView(registration: Doc<"learnRegistrations">) {
+  return registration.certificateCode && !registration.certificateRevokedAt
+    ? {
+        code: registration.certificateCode,
+        name: registration.certificateName ?? `${registration.firstName} ${registration.lastName}`,
+        issuedAt: registration.certificateIssuedAt ?? registration.updatedAt,
+      }
+    : null;
+}
+
+/** Certificate details everything that draws a certificate needs (course page and verify page). */
+function certificateCohort(cohort: Doc<"learnCohorts">, assessment: Doc<"learnAssessments"> | null) {
+  return {
+    programTitle: PROGRAM_TITLE,
+    cohortLabel: cohort.cohortLabel,
+    dateRange: formatCohortRange(cohort.startDate, cohort.endDate),
+    duration: cohort.duration,
+    signatoryName: assessment?.signatoryName ?? null,
+    signatoryTitle: assessment?.signatoryTitle ?? null,
+    note: CERTIFICATE_NOTE,
+  };
+}
+
+/** Where a physio is on the way to their certificate (part of getMyCourse). */
+async function progressView(
+  ctx: Ctx,
+  registration: Doc<"learnRegistrations">,
+  cohort: Doc<"learnCohorts">,
+  sessions: Doc<"learnSessions">[]
+) {
+  const assessment = await cohortAssessment(ctx, cohort._id);
+  const attempts = await registrationAttempts(ctx, registration._id);
+  const sessionIds = new Set(sessions.map((s) => s._id));
+  const attendedSessionIds = (registration.attendedSessionIds ?? []).filter((id) => sessionIds.has(id));
+  // Never ask for more sessions than the cohort actually has
+  const minSessions = Math.min(assessment?.minSessions ?? 0, sessions.length);
+  const passed = attempts.some((a) => a.passed);
+  const best = attempts.reduce<Doc<"learnAttempts"> | null>((b, a) => (!b || a.scorePct > b.scorePct ? a : b), null);
+  const certificate = certificateView(registration);
+  const live = assessment && assessment.status !== "draft" && assessment.questions.length > 0 ? assessment : null;
+  return {
+    attendedSessionIds,
+    weeksDone: registration.weeksDone ?? [],
+    attended: attendedSessionIds.length,
+    minSessions,
+    assessment: live
+      ? {
+          status: live.status as "open" | "closed",
+          passMark: live.passMark,
+          questions: live.questions.length,
+          maxAttempts: live.maxAttempts,
+          attemptsUsed: attempts.length,
+          bestScore: best?.scorePct ?? null,
+        }
+      : null,
+    passed,
+    certificate,
+    canClaim: !certificate && passed && attendedSessionIds.length >= minSessions,
+    suggestedName: `${registration.firstName} ${registration.lastName}`.trim(),
+    certificateCohort: certificateCohort(cohort, assessment),
+  };
+}
+
+/** "Join live" on the course page: counts as attending when it's tapped around the session. */
+export const recordJoin = mutation({
+  args: { sessionId: v.id("learnSessions") },
+  handler: async (ctx, args) => {
+    const session = await ctx.db.get(args.sessionId);
+    if (!session) return;
+    const now = Date.now();
+    if (now < session.startsAt - JOIN_WINDOW_MS || now > session.endsAt + JOIN_WINDOW_MS) return;
+    const { registration } = await learnerRegistration(ctx, session.cohortId);
+    const attended = registration.attendedSessionIds ?? [];
+    if (attended.includes(session._id)) return;
+    await ctx.db.patch(registration._id, { attendedSessionIds: [...attended, session._id], updatedAt: now });
+  },
+});
+
+/** The physio ticks a week off (their own tracking; not needed for the certificate). */
+export const setWeekDone = mutation({
+  args: { moduleId: v.id("learnModules"), done: v.boolean() },
+  handler: async (ctx, args) => {
+    const week = await ctx.db.get(args.moduleId);
+    if (!week) throw new ConvexError("This week no longer exists.");
+    const { registration } = await learnerRegistration(ctx, week.cohortId);
+    const current = (registration.weeksDone ?? []).filter((id) => id !== week._id);
+    await ctx.db.patch(registration._id, {
+      weeksDone: args.done ? [...current, week._id] : current,
+      updatedAt: Date.now(),
+    });
+  },
+});
+
+/** The questions (never the answers) while the assessment is open and the physio has tries left. */
+export const getMyAssessment = query({
+  args: { cohortId: v.id("learnCohorts") },
+  handler: async (ctx, args) => {
+    let registration: Doc<"learnRegistrations">;
+    try {
+      registration = (await learnerRegistration(ctx, args.cohortId)).registration;
+    } catch {
+      return null;
+    }
+    const assessment = await cohortAssessment(ctx, args.cohortId);
+    if (!assessment || assessment.status !== "open" || assessment.questions.length === 0) return null;
+    const attempts = await registrationAttempts(ctx, registration._id);
+    return {
+      passMark: assessment.passMark,
+      maxAttempts: assessment.maxAttempts,
+      attemptsUsed: attempts.length,
+      passed: attempts.some((a) => a.passed),
+      questions: assessment.questions.map((q) => ({ id: q.id, prompt: q.prompt, options: q.options })),
+    };
+  },
+});
+
+export type AssessmentResult = {
+  correct: number;
+  total: number;
+  scorePct: number;
+  passed: boolean;
+  passMark: number;
+  attemptsLeft: number;
+  /** Answers and explanations, only once the physio has passed or used every try. */
+  review: { prompt: string; options: string[]; chosen: number; answer: number; explanation: string | null }[] | null;
+};
+
+export const submitAssessment = mutation({
+  args: { cohortId: v.id("learnCohorts"), answers: v.array(v.number()) },
+  handler: async (ctx, args): Promise<AssessmentResult> => {
+    const { registration } = await learnerRegistration(ctx, args.cohortId);
+    const assessment = await cohortAssessment(ctx, args.cohortId);
+    if (!assessment || assessment.status !== "open") throw new ConvexError("The assessment isn't open.");
+    const attempts = await registrationAttempts(ctx, registration._id);
+    if (attempts.some((a) => a.passed)) throw new ConvexError("You've already passed.");
+    if (attempts.length >= assessment.maxAttempts) throw new ConvexError("You've used all your attempts.");
+    const questions = assessment.questions;
+    if (args.answers.length !== questions.length) throw new ConvexError("Answer every question before you submit.");
+    args.answers.forEach((a, i) => {
+      if (!Number.isInteger(a) || a < 0 || a >= questions[i].options.length) throw new ConvexError("Answer every question before you submit.");
+    });
+
+    const correct = questions.filter((q, i) => q.answer === args.answers[i]).length;
+    const scorePct = Math.round((correct / questions.length) * 100);
+    const passed = scorePct >= assessment.passMark;
+    await ctx.db.insert("learnAttempts", {
+      registrationId: registration._id,
+      cohortId: args.cohortId,
+      answers: args.answers,
+      correct,
+      total: questions.length,
+      scorePct,
+      passed,
+      submittedAt: Date.now(),
+    });
+    const attemptsLeft = passed ? 0 : assessment.maxAttempts - attempts.length - 1;
+    return {
+      correct,
+      total: questions.length,
+      scorePct,
+      passed,
+      passMark: assessment.passMark,
+      attemptsLeft,
+      review:
+        passed || attemptsLeft === 0
+          ? questions.map((q, i) => ({
+              prompt: q.prompt,
+              options: q.options,
+              chosen: args.answers[i],
+              answer: q.answer,
+              explanation: q.explanation ?? null,
+            }))
+          : null,
+    };
+  },
+});
+
+async function newCertificateCode(ctx: MutationCtx) {
+  for (let tries = 0; tries < 10; tries++) {
+    let raw = "";
+    for (let i = 0; i < 8; i++) raw += CERT_ALPHABET[Math.floor(Math.random() * CERT_ALPHABET.length)];
+    const code = `RHL-${raw.slice(0, 4)}-${raw.slice(4)}`;
+    const taken = await ctx.db
+      .query("learnRegistrations")
+      .withIndex("by_certificate", (q) => q.eq("certificateCode", code))
+      .first();
+    if (!taken) return code;
+  }
+  throw new ConvexError("Couldn't create a certificate number. Please try again.");
+}
+
+function certificateName(raw: string) {
+  const name = clean(raw, 80).replace(/\s+/g, " ");
+  if (name.length < 3) throw new ConvexError("Enter your full name as it should appear on the certificate.");
+  return name;
+}
+
+/** The physio claims their certificate once they've attended enough sessions and passed. */
+export const claimCertificate = mutation({
+  args: { cohortId: v.id("learnCohorts"), name: v.string() },
+  handler: async (ctx, args) => {
+    const { registration, cohort } = await learnerRegistration(ctx, args.cohortId);
+    if (certificateView(registration)) return registration.certificateCode!;
+    const sessions = await cohortSessions(ctx, cohort._id);
+    const progress = await progressView(ctx, registration, cohort, sessions);
+    if (!progress.passed) throw new ConvexError("Pass the final assessment first.");
+    if (progress.attended < progress.minSessions) {
+      throw new ConvexError(`Attend at least ${progress.minSessions} live sessions first. Ask the team if your attendance is missing.`);
+    }
+    const code = await newCertificateCode(ctx);
+    const now = Date.now();
+    await ctx.db.patch(registration._id, {
+      certificateCode: code,
+      certificateName: certificateName(args.name),
+      certificateIssuedAt: now,
+      certificateRevokedAt: undefined,
+      updatedAt: now,
+    });
+    return code;
+  },
+});
+
+/** Public check of a certificate number (the link printed on every certificate). */
+export const verifyCertificate = query({
+  args: { code: v.string() },
+  handler: async (ctx, args) => {
+    const code = args.code.trim().toUpperCase();
+    if (!/^RHL-[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(code)) return { state: "not_found" as const };
+    const registration = await ctx.db
+      .query("learnRegistrations")
+      .withIndex("by_certificate", (q) => q.eq("certificateCode", code))
+      .first();
+    const cohort = registration ? await ctx.db.get(registration.cohortId) : null;
+    if (!registration || !cohort) return { state: "not_found" as const };
+    if (registration.certificateRevokedAt) return { state: "revoked" as const, code };
+    return {
+      state: "valid" as const,
+      code,
+      name: registration.certificateName ?? `${registration.firstName} ${registration.lastName}`,
+      issuedAt: registration.certificateIssuedAt ?? registration.updatedAt,
+      ...certificateCohort(cohort, await cohortAssessment(ctx, cohort._id)),
+    };
+  },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Session reminders (cron): the day before and an hour before
+// ─────────────────────────────────────────────────────────────────────────────
+
+function dayWord(startsAt: number, now: number) {
+  const day = zonedDateKey(startsAt);
+  if (day === zonedDateKey(now)) return "today";
+  if (day === zonedDateKey(now + DAY_MS)) return "tomorrow";
+  return `on ${lagosShortDate(startsAt)}`;
+}
+
+export const sendSessionReminders = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const now = Date.now();
+    const soon = await ctx.db
+      .query("learnSessions")
+      .withIndex("by_start", (q) => q.gt("startsAt", now).lte("startsAt", now + DAY_MS))
+      .take(50);
+    let emails = 0;
+    for (const session of soon) {
+      const untilStart = session.startsAt - now;
+      const kind =
+        untilStart <= 70 * 60 * 1000 && !session.remindedHourAt
+          ? "hour"
+          : untilStart > 3 * HOUR_MS && !session.remindedDayAt && !session.remindedHourAt
+            ? "day"
+            : null;
+      if (!kind) continue;
+      await ctx.db.patch(session._id, kind === "hour" ? { remindedHourAt: now, remindedDayAt: session.remindedDayAt ?? now } : { remindedDayAt: now });
+
+      const cohort = await ctx.db.get(session.cohortId);
+      if (!cohort) continue;
+      const paid = await ctx.db
+        .query("learnRegistrations")
+        .withIndex("by_cohort_status", (q) => q.eq("cohortId", cohort._id).eq("status", "paid"))
+        .take(1000);
+      const name = session.title ?? `${cohort.cohortLabel} live session`;
+      const when = `${dayWord(session.startsAt, now)} at ${lagosTime(session.startsAt)}`;
+      for (const registration of paid) {
+        await ctx.scheduler.runAfter(emails * 1500, internal.actions.emails.sendPatientCareEmail.sendPatientCareEmail, {
+          to: registration.email,
+          subject: kind === "hour" ? `Starting soon: ${name}` : `${name}, ${when}`,
+          greetingName: registration.firstName,
+          heading: kind === "hour" ? "Your live session starts in an hour" : `Live session ${when}`,
+          paragraphs: [
+            `${name} runs ${when} (Lagos time), until ${lagosTime(session.endsAt)}.`,
+            "Join from your course page: the button turns green 15 minutes before it starts, and the link there is always the current one.",
+          ],
+          buttonLabel: "Open my course",
+          buttonUrl: appLink("/learn/course"),
+          footnote: LEARN_FOOTNOTE,
+        });
+        emails++;
+      }
+    }
+    return { emails };
+  },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Admin: assessment, learner progress and certificates
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const adminAssessment = query({
+  args: { cohortId: v.id("learnCohorts") },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx);
+    const assessment = await cohortAssessment(ctx, args.cohortId);
+    const attempts = assessment
+      ? await ctx.db
+          .query("learnAttempts")
+          .withIndex("by_cohort", (q) => q.eq("cohortId", args.cohortId))
+          .take(2000)
+      : [];
+    return assessment
+      ? {
+          status: assessment.status,
+          passMark: assessment.passMark,
+          maxAttempts: assessment.maxAttempts,
+          minSessions: assessment.minSessions,
+          signatoryName: assessment.signatoryName ?? "",
+          signatoryTitle: assessment.signatoryTitle ?? "",
+          questions: assessment.questions.map((q) => ({ ...q, explanation: q.explanation ?? "" })),
+          attempts: attempts.length,
+          updatedAt: assessment.updatedAt,
+        }
+      : null;
+  },
+});
+
+export const adminSaveAssessment = mutation({
+  args: {
+    cohortId: v.id("learnCohorts"),
+    status: v.union(v.literal("draft"), v.literal("open"), v.literal("closed")),
+    passMark: v.number(),
+    maxAttempts: v.number(),
+    minSessions: v.number(),
+    signatoryName: v.optional(v.string()),
+    signatoryTitle: v.optional(v.string()),
+    questions: v.array(
+      v.object({
+        id: v.optional(v.string()),
+        prompt: v.string(),
+        options: v.array(v.string()),
+        answer: v.number(),
+        explanation: v.optional(v.string()),
+      })
+    ),
+  },
+  handler: async (ctx, args) => {
+    const { user } = await requireAdmin(ctx);
+    const cohort = await ctx.db.get(args.cohortId);
+    if (!cohort) throw new ConvexError("Cohort not found.");
+    if (!Number.isInteger(args.passMark) || args.passMark < 1 || args.passMark > 100) throw new ConvexError("Set a pass mark between 1% and 100%.");
+    if (!Number.isInteger(args.maxAttempts) || args.maxAttempts < 1 || args.maxAttempts > 10) throw new ConvexError("Allow between 1 and 10 attempts.");
+    if (!Number.isInteger(args.minSessions) || args.minSessions < 0 || args.minSessions > 50) throw new ConvexError("Set the sessions to attend between 0 and 50.");
+    if (args.questions.length > 60) throw new ConvexError("Add at most 60 questions.");
+
+    const existing = await cohortAssessment(ctx, cohort._id);
+    const questions = args.questions.map((q, i) => {
+      const prompt = clean(q.prompt, 600);
+      if (!prompt) throw new ConvexError(`Question ${i + 1} needs a question.`);
+      const options = q.options.map((o) => clean(o, 240));
+      if (options.length < 2 || options.length > 6) throw new ConvexError(`Question ${i + 1} needs 2 to 6 answers.`);
+      if (options.some((o) => !o)) throw new ConvexError(`Question ${i + 1} has an empty answer.`);
+      if (!Number.isInteger(q.answer) || q.answer < 0 || q.answer >= options.length) {
+        throw new ConvexError(`Choose the correct answer for question ${i + 1}.`);
+      }
+      return {
+        id: clean(q.id, 40) || `q${Date.now().toString(36)}${i}`,
+        prompt,
+        options,
+        answer: q.answer,
+        explanation: clean(q.explanation, 600) || undefined,
+      };
+    });
+    if (args.status === "open" && questions.length === 0) throw new ConvexError("Add at least one question before opening the assessment.");
+    if (existing && existing.questions.length !== questions.length) {
+      const taken = await ctx.db
+        .query("learnAttempts")
+        .withIndex("by_cohort", (q) => q.eq("cohortId", cohort._id))
+        .first();
+      // Answers are stored by position, so the questions can't change shape once people have sat it
+      if (taken) {
+        throw new ConvexError("Physios have already taken this assessment, so you can't add or remove questions. You can still fix wording.");
+      }
+    }
+
+    const now = Date.now();
+    const fields = {
+      status: args.status,
+      passMark: args.passMark,
+      maxAttempts: args.maxAttempts,
+      minSessions: args.minSessions,
+      signatoryName: clean(args.signatoryName, 80) || undefined,
+      signatoryTitle: clean(args.signatoryTitle, 80) || undefined,
+      questions,
+      updatedBy: user._id,
+      updatedAt: now,
+    };
+    if (existing) await ctx.db.patch(existing._id, fields);
+    else await ctx.db.insert("learnAssessments", { cohortId: cohort._id, ...fields, createdAt: now });
+  },
+});
+
+/** Every paid physio's attendance, assessment and certificate, for the admin's Learners list. */
+export const adminLearnerProgress = query({
+  args: { cohortId: v.id("learnCohorts") },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx);
+    const assessment = await cohortAssessment(ctx, args.cohortId);
+    const sessions = await cohortSessions(ctx, args.cohortId);
+    const sessionIds = new Set(sessions.map((s) => s._id));
+    const paid = await ctx.db
+      .query("learnRegistrations")
+      .withIndex("by_cohort_status", (q) => q.eq("cohortId", args.cohortId).eq("status", "paid"))
+      .take(1000);
+    const rows = [];
+    for (const r of paid) {
+      const attempts = await registrationAttempts(ctx, r._id);
+      rows.push({
+        registrationId: r._id,
+        name: `${r.firstName} ${r.lastName}`.trim(),
+        email: r.email,
+        track: TRACK_LABEL[r.track],
+        attendedSessionIds: (r.attendedSessionIds ?? []).filter((id) => sessionIds.has(id)),
+        weeksDone: (r.weeksDone ?? []).length,
+        attempts: attempts.length,
+        bestScore: attempts.length ? Math.max(...attempts.map((a) => a.scorePct)) : null,
+        passed: attempts.some((a) => a.passed),
+        certificate: r.certificateCode
+          ? {
+              code: r.certificateCode,
+              name: r.certificateName ?? `${r.firstName} ${r.lastName}`,
+              issuedAt: r.certificateIssuedAt ?? null,
+              revoked: Boolean(r.certificateRevokedAt),
+            }
+          : null,
+      });
+    }
+    return {
+      minSessions: Math.min(assessment?.minSessions ?? 0, sessions.length),
+      sessions: sessions.map((s) => ({ id: s._id, label: lagosDateTime(s.startsAt), title: s.title ?? null, past: s.endsAt < Date.now() })),
+      learners: rows.sort((a, b) => a.name.localeCompare(b.name)),
+    };
+  },
+});
+
+export const adminSetAttendance = mutation({
+  args: { registrationId: v.id("learnRegistrations"), sessionId: v.id("learnSessions"), attended: v.boolean() },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx);
+    const registration = await ctx.db.get(args.registrationId);
+    const session = await ctx.db.get(args.sessionId);
+    if (!registration || !session || session.cohortId !== registration.cohortId) throw new ConvexError("Session not found.");
+    const current = (registration.attendedSessionIds ?? []).filter((id) => id !== session._id);
+    await ctx.db.patch(registration._id, {
+      attendedSessionIds: args.attended ? [...current, session._id] : current,
+      updatedAt: Date.now(),
+    });
+  },
+});
+
+/** Issue (or correct the name on) a certificate, whatever the physio's progress. */
+export const adminIssueCertificate = mutation({
+  args: { registrationId: v.id("learnRegistrations"), name: v.string() },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx);
+    const registration = await ctx.db.get(args.registrationId);
+    if (!registration || registration.status !== "paid") throw new ConvexError("Only paid registrations get a certificate.");
+    const keep = registration.certificateCode && !registration.certificateRevokedAt;
+    const now = Date.now();
+    await ctx.db.patch(registration._id, {
+      certificateCode: keep ? registration.certificateCode : await newCertificateCode(ctx),
+      certificateName: certificateName(args.name),
+      certificateIssuedAt: keep ? registration.certificateIssuedAt ?? now : now,
+      certificateRevokedAt: undefined,
+      updatedAt: now,
+    });
+  },
+});
+
+export const adminRevokeCertificate = mutation({
+  args: { registrationId: v.id("learnRegistrations") },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx);
+    const registration = await ctx.db.get(args.registrationId);
+    if (!registration?.certificateCode) return;
+    await ctx.db.patch(registration._id, { certificateRevokedAt: Date.now(), updatedAt: Date.now() });
   },
 });

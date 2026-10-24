@@ -30,7 +30,7 @@ const NoCameraPreview = () => (
 
 const StartingPreview = () => (
   <PreviewMessage>
-    <Loader2 className="h-7 w-7 animate-spin text-brand" />
+    <Loader2 className="h-7 w-7 animate-spin text-rh-ink" />
     <span className="text-sm font-medium">Starting camera…</span>
   </PreviewMessage>
 )
@@ -90,14 +90,14 @@ export function CallLobby({
           </div>
 
           <div className="text-center lg:text-left">
-            {eyebrow && <p className="text-sm font-medium text-brand">{eyebrow}</p>}
+            {eyebrow && <p className="text-sm font-medium text-rh-ink">{eyebrow}</p>}
             <h1 className="mt-1 text-[28px] font-semibold leading-tight tracking-tight sm:text-4xl">{title}</h1>
             {details && <div className="mt-4 space-y-1.5 text-[15px] text-neutral-600">{details}</div>}
             <button
               type="button"
               onClick={onJoin}
               disabled={joining}
-              className="mt-8 inline-flex h-12 w-full items-center justify-center gap-2 rounded-full bg-brand px-10 text-[15px] font-medium text-white shadow-[0_12px_30px_-12px_rgba(0,91,87,0.7)] transition-all hover:bg-brand-dark active:scale-[0.98] disabled:opacity-70 sm:w-auto"
+              className="mt-8 inline-flex h-12 w-full items-center justify-center gap-2 rounded-full bg-rh-lime px-10 text-[15px] font-medium text-rh-ink shadow-sm transition-all hover:bg-rh-lime-deep active:scale-[0.98] disabled:opacity-70 sm:w-auto"
             >
               {joining && <Loader2 className="h-4 w-4 animate-spin" />}
               {joining ? 'Joining…' : joinLabel}

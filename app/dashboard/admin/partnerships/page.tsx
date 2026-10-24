@@ -32,7 +32,7 @@ function TabCount({ value, tone = 'neutral' }: { value: number; tone?: 'neutral'
     <span
       className={
         tone === 'attention'
-          ? 'ml-1.5 rounded-full bg-rh-amber px-1.5 text-[10px] font-semibold tabular-nums text-rh-night'
+          ? 'ml-1.5 rounded-full bg-rh-amber px-1.5 text-[10px] font-semibold tabular-nums text-rh-ink'
           : 'ml-1.5 rounded-full bg-black/[0.06] px-1.5 text-[10px] font-semibold tabular-nums dark:bg-white/10'
       }
     >

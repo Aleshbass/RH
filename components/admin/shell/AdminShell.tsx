@@ -19,7 +19,7 @@ import { adminBreadcrumbs } from './adminNav'
 function ShellSkeleton() {
   return (
     <div className="flex min-h-screen bg-rh-canvas dark:bg-rh-ink">
-      <div className="m-3 hidden w-[17rem] rounded-3xl bg-rh-teal p-5 dark:bg-rh-night md:block">
+      <div className="m-3 hidden w-[17rem] rounded-3xl bg-rh-ink p-5 dark:bg-rh-ink-2 md:block">
         <Skeleton className="mb-6 h-7 w-28 rounded-md bg-white/15" />
         <div className="space-y-2">
           {[...Array(9)].map((_, i) => (
@@ -47,11 +47,11 @@ function AccessDenied() {
         <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-rh-blush text-rose-600 dark:bg-rose-400/10 dark:text-rose-300">
           <ShieldAlert className="h-6 w-6" />
         </div>
-        <h1 className="text-lg font-semibold text-rh-night dark:text-white">Admins only</h1>
+        <h1 className="text-lg font-semibold text-rh-ink dark:text-white">Admins only</h1>
         <p className="mt-2 text-sm text-neutral-500 dark:text-neutral-400">
           This area needs administrator access. If you were just given access, sign out and back in.
         </p>
-        <Button asChild className="mt-6 w-full rounded-xl bg-rh-teal hover:bg-rh-teal-deep">
+        <Button asChild className="mt-6 w-full rounded-xl bg-rh-lime hover:bg-rh-lime-deep">
           <Link href="/dashboard">Back to my dashboard</Link>
         </Button>
       </div>
@@ -71,11 +71,11 @@ function Breadcrumbs() {
           <Fragment key={`${crumb.label}-${i}`}>
             {i > 0 && <ChevronRight className="h-3.5 w-3.5 shrink-0 text-neutral-300 dark:text-neutral-600" />}
             {crumb.href && !last ? (
-              <Link href={crumb.href} className="truncate text-neutral-500 transition-colors hover:text-rh-teal dark:text-neutral-400 dark:hover:text-rh-aqua">
+              <Link href={crumb.href} className="truncate text-neutral-500 transition-colors hover:text-rh-ink dark:text-neutral-400 dark:hover:text-rh-lime">
                 {crumb.label}
               </Link>
             ) : (
-              <span className={last ? 'truncate font-medium text-rh-night dark:text-white' : 'truncate text-neutral-500 dark:text-neutral-400'}>
+              <span className={last ? 'truncate font-medium text-rh-ink dark:text-white' : 'truncate text-neutral-500 dark:text-neutral-400'}>
                 {crumb.label}
               </span>
             )}
@@ -93,7 +93,7 @@ function SearchButton() {
     <button
       type="button"
       onClick={() => window.dispatchEvent(new Event(OPEN_ADMIN_PALETTE_EVENT))}
-      className="flex h-10 items-center gap-2 rounded-xl bg-white px-3 text-sm text-neutral-500 shadow-soft transition hover:text-rh-night dark:bg-rh-ink-2 dark:text-neutral-400 dark:hover:text-white sm:w-64"
+      className="flex h-10 items-center gap-2 rounded-xl bg-white px-3 text-sm text-neutral-500 shadow-soft transition hover:text-rh-ink dark:bg-rh-ink-2 dark:text-neutral-400 dark:hover:text-white sm:w-64"
       aria-label="Search"
     >
       <Search className="h-4 w-4" />
@@ -125,7 +125,7 @@ function ShellFrame({ children }: { children: ReactNode }) {
   useEffect(() => setMenuOpen(false), [pathname])
 
   return (
-    <div className="flex min-h-screen bg-rh-canvas text-rh-night dark:bg-rh-ink dark:text-neutral-50">
+    <div className="flex min-h-screen bg-rh-canvas text-rh-ink dark:bg-rh-ink dark:text-neutral-50">
       {/* Floating teal rail on desktop */}
       <div className="hidden shrink-0 p-3 pr-0 md:flex">
         <AdminSidebar className="sticky top-3 h-[calc(100vh-1.5rem)] rounded-3xl shadow-lift" />
@@ -139,13 +139,13 @@ function ShellFrame({ children }: { children: ReactNode }) {
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-10 w-10 shrink-0 rounded-xl bg-white p-0 text-rh-night shadow-soft hover:bg-white dark:bg-rh-ink-2 dark:text-white md:hidden"
+                className="h-10 w-10 shrink-0 rounded-xl bg-white p-0 text-rh-ink shadow-soft hover:bg-white dark:bg-rh-ink-2 dark:text-white md:hidden"
                 aria-label="Open menu"
               >
                 <Menu className="h-5 w-5" />
               </Button>
             </SheetTrigger>
-            <SheetContent side="left" className="w-[17rem] border-0 bg-rh-teal p-0 dark:bg-rh-night [&>button]:text-white [&>button]:opacity-80">
+            <SheetContent side="left" className="w-[17rem] border-0 bg-rh-ink p-0 dark:bg-rh-ink-2 [&>button]:text-white [&>button]:opacity-80">
               <SheetHeader className="sr-only">
                 <SheetTitle>Admin menu</SheetTitle>
               </SheetHeader>

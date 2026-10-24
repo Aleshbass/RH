@@ -107,7 +107,7 @@ function InfoLine({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="flex flex-wrap gap-x-2 text-sm">
       <span className="text-neutral-500 dark:text-neutral-400">{label}</span>
-      <span className="font-medium text-rh-night dark:text-white">{children}</span>
+      <span className="font-medium text-rh-ink dark:text-white">{children}</span>
     </div>
   )
 }
@@ -273,15 +273,15 @@ export default function PhysioRegistryAdminPage() {
                   width={64}
                   height={64}
                   unoptimized
-                  className="h-16 w-16 rounded-full object-cover ring-2 ring-rh-mist dark:ring-white/10"
+                  className="h-16 w-16 rounded-full object-cover ring-2 ring-rh-honeydew dark:ring-white/10"
                 />
               ) : (
-                <span className="flex h-16 w-16 items-center justify-center rounded-full bg-rh-mist text-rh-teal dark:bg-rh-aqua/10 dark:text-rh-aqua">
+                <span className="flex h-16 w-16 items-center justify-center rounded-full bg-rh-honeydew text-rh-ink dark:bg-white/[0.06] dark:text-rh-lime">
                   <User className="h-7 w-7" />
                 </span>
               )}
               <div className="min-w-0">
-                <h1 className="text-xl font-semibold tracking-tight text-rh-night dark:text-white">{selectedEntry.fullName}</h1>
+                <h1 className="text-xl font-semibold tracking-tight text-rh-ink dark:text-white">{selectedEntry.fullName}</h1>
                 <p className="text-sm text-neutral-500 dark:text-neutral-400">
                   {selectedEntry.email} · {selectedEntry.phone}
                 </p>
@@ -321,7 +321,7 @@ export default function PhysioRegistryAdminPage() {
 
           <div className="mt-6 grid grid-cols-1 gap-6 sm:grid-cols-2">
             <div className="space-y-2">
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-rh-teal dark:text-rh-aqua">Personal</p>
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-rh-ink dark:text-rh-lime">Personal</p>
               <InfoLine label="Full name">{selectedEntry.fullName}</InfoLine>
               <InfoLine label="Email">{selectedEntry.email}</InfoLine>
               <InfoLine label="Phone">{selectedEntry.phone}</InfoLine>
@@ -330,14 +330,14 @@ export default function PhysioRegistryAdminPage() {
               <InfoLine label="Experience">{selectedEntry.yearsOfExperience} years</InfoLine>
               {selectedEntry.websiteUrl && (
                 <InfoLine label="Website">
-                  <a href={selectedEntry.websiteUrl} target="_blank" rel="noopener noreferrer" className="text-rh-teal hover:underline dark:text-rh-aqua">
+                  <a href={selectedEntry.websiteUrl} target="_blank" rel="noopener noreferrer" className="text-rh-ink hover:underline dark:text-rh-lime">
                     {selectedEntry.websiteUrl}
                   </a>
                 </InfoLine>
               )}
             </div>
             <div className="space-y-2">
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-rh-teal dark:text-rh-aqua">Licence</p>
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-rh-ink dark:text-rh-lime">Licence</p>
               <InfoLine label="Licence #">
                 <span className="font-mono">{selectedEntry.licenseNumber}</span>
               </InfoLine>
@@ -351,7 +351,7 @@ export default function PhysioRegistryAdminPage() {
             <div className="mt-6 space-y-3">
               {selectedEntry.specialties.length > 0 && (
                 <div>
-                  <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-rh-teal dark:text-rh-aqua">Specialties</p>
+                  <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-rh-ink dark:text-rh-lime">Specialties</p>
                   <div className="flex flex-wrap gap-1.5">
                     {selectedEntry.specialties.map((s) => (
                       <StatusBadge key={s} tone="teal">
@@ -363,7 +363,7 @@ export default function PhysioRegistryAdminPage() {
               )}
               {selectedEntry.languages.length > 0 && (
                 <div>
-                  <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-rh-teal dark:text-rh-aqua">Languages</p>
+                  <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-rh-ink dark:text-rh-lime">Languages</p>
                   <p className="text-sm text-neutral-600 dark:text-neutral-300">{selectedEntry.languages.join(', ')}</p>
                 </div>
               )}
@@ -372,13 +372,13 @@ export default function PhysioRegistryAdminPage() {
 
           {selectedEntry.bio && (
             <div className="mt-6">
-              <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-rh-teal dark:text-rh-aqua">Bio</p>
+              <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-rh-ink dark:text-rh-lime">Bio</p>
               <p className="whitespace-pre-wrap text-sm leading-relaxed text-neutral-600 dark:text-neutral-300">{selectedEntry.bio}</p>
             </div>
           )}
 
           <div className="mt-6">
-            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-rh-teal dark:text-rh-aqua">Documents</p>
+            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-rh-ink dark:text-rh-lime">Documents</p>
             {docs.length === 0 ? (
               <p className="text-sm text-neutral-500 dark:text-neutral-400">No documents could be loaded.</p>
             ) : (
@@ -389,11 +389,11 @@ export default function PhysioRegistryAdminPage() {
                     href={d.url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex items-center gap-3 rounded-xl bg-rh-canvas p-3 transition-colors hover:bg-rh-mist dark:bg-white/[0.04] dark:hover:bg-white/[0.07]"
+                    className="flex items-center gap-3 rounded-xl bg-rh-canvas p-3 transition-colors hover:bg-rh-honeydew dark:bg-white/[0.04] dark:hover:bg-white/[0.07]"
                   >
                     <IconChip icon={FileText} />
                     <span className="min-w-0 flex-1">
-                      <span className="block text-sm font-medium text-rh-night dark:text-white">{d.label}</span>
+                      <span className="block text-sm font-medium text-rh-ink dark:text-white">{d.label}</span>
                       <span className="block text-xs text-neutral-500 dark:text-neutral-400">Opens in a new tab</span>
                     </span>
                     <ExternalLink className="h-4 w-4 text-neutral-400" />
@@ -505,7 +505,7 @@ export default function PhysioRegistryAdminPage() {
                       onClick={() => setSelectedId(reg._id)}
                     >
                       <td className="px-5 py-3">
-                        <p className="font-medium text-rh-night dark:text-white">{reg.fullName}</p>
+                        <p className="font-medium text-rh-ink dark:text-white">{reg.fullName}</p>
                         <p className="text-xs text-neutral-500 dark:text-neutral-400">{reg.email}</p>
                       </td>
                       <td className="px-3 py-3 font-mono text-xs text-neutral-700 dark:text-neutral-300">{reg.licenseNumber}</td>

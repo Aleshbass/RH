@@ -192,7 +192,7 @@ export function ClinicAccessProvider({ children }: { children: ReactNode }) {
               <Button
                 type="button"
                 onClick={openOnboardingWizard}
-                className="bg-[#005b57] text-white hover:bg-[#00443e]"
+                className="bg-rh-lime text-rh-ink hover:bg-rh-lime-deep"
               >
                 Finish setup
                 <ArrowRight className="ml-1.5 h-4 w-4" />

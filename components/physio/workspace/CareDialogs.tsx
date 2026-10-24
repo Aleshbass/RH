@@ -45,11 +45,11 @@ function ChoiceGrid<T extends string>({
             className={cn(
               'rounded-2xl border p-3 text-left transition-all active:scale-[0.98]',
               selected
-                ? 'border-rh-teal bg-rh-mist ring-1 ring-rh-teal dark:border-rh-aqua dark:bg-rh-aqua/10 dark:ring-rh-aqua'
-                : 'border-black/[0.08] hover:border-rh-teal/40 hover:bg-rh-canvas dark:border-white/10 dark:hover:bg-white/[0.04]'
+                ? 'border-rh-lime bg-rh-honeydew ring-1 ring-rh-lime dark:border-rh-lime dark:bg-white/[0.06] dark:ring-rh-lime'
+                : 'border-black/[0.08] hover:border-rh-lime/40 hover:bg-rh-canvas dark:border-white/10 dark:hover:bg-white/[0.04]'
             )}
           >
-            <span className="block text-sm font-semibold text-rh-night dark:text-white">{option.label}</span>
+            <span className="block text-sm font-semibold text-rh-ink dark:text-white">{option.label}</span>
             {option.hint && <span className="block text-xs text-neutral-500 dark:text-neutral-400">{option.hint}</span>}
           </button>
         )
@@ -273,7 +273,7 @@ export function CompleteCareDialog({
           </div>
           <label className="flex cursor-pointer items-start gap-3 rounded-2xl bg-rh-canvas p-3 dark:bg-white/[0.04]">
             <Checkbox checked={cancelUpcoming} onCheckedChange={(checked) => setCancelUpcoming(Boolean(checked))} className="mt-0.5" />
-            <span className="text-sm text-rh-night dark:text-neutral-200">
+            <span className="text-sm text-rh-ink dark:text-neutral-200">
               Cancel any upcoming bookings with {name}
               {workspace.nextAppointment ? '' : <span className="text-neutral-500"> (none booked)</span>}
             </span>
@@ -291,8 +291,8 @@ export function CompleteCareDialog({
                   className={cn(
                     'rounded-lg px-3.5 py-1.5 text-sm transition-all',
                     followUp === option.value
-                      ? 'bg-white font-semibold text-rh-teal shadow-sm dark:bg-rh-ink-3 dark:text-rh-aqua'
-                      : 'text-neutral-600 hover:text-rh-night dark:text-neutral-400 dark:hover:text-white'
+                      ? 'bg-white font-semibold text-rh-ink shadow-sm dark:bg-rh-ink-3 dark:text-rh-lime'
+                      : 'text-neutral-600 hover:text-rh-ink dark:text-neutral-400 dark:hover:text-white'
                   )}
                 >
                   {option.label}

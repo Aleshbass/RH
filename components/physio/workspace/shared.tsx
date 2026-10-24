@@ -171,7 +171,7 @@ export function fullName(person?: { firstName?: string; lastName?: string } | nu
 export function painTone(score: number) {
   if (score >= 7) return 'bg-rh-blush text-[#be123c] dark:bg-rose-400/10 dark:text-rose-300'
   if (score >= 4) return 'bg-rh-peach text-[#b4690e] dark:bg-amber-400/10 dark:text-amber-300'
-  return 'bg-rh-mint text-[#047857] dark:bg-emerald-400/10 dark:text-emerald-300'
+  return 'bg-rh-honeydew text-[#047857] dark:bg-emerald-400/10 dark:text-emerald-300'
 }
 
 export function PainPill({ score, className }: { score: number; className?: string }) {
@@ -185,11 +185,11 @@ export function PainPill({ score, className }: { score: number; className?: stri
 export function Meter({ value, max, className, tone = 'teal' }: { value: number; max: number; className?: string; tone?: 'teal' | 'amber' }) {
   const pct = max > 0 ? Math.min(100, Math.round((value / max) * 100)) : 0
   return (
-    <div className={cn('h-2 w-full overflow-hidden rounded-full bg-rh-mist dark:bg-white/[0.06]', className)} role="progressbar" aria-valuenow={value} aria-valuemax={max}>
+    <div className={cn('h-2 w-full overflow-hidden rounded-full bg-rh-honeydew dark:bg-white/[0.06]', className)} role="progressbar" aria-valuenow={value} aria-valuemax={max}>
       <div
         className={cn(
           'h-full rounded-full transition-[width] duration-700 ease-out',
-          tone === 'amber' ? 'bg-rh-amber' : 'bg-rh-teal dark:bg-rh-aqua'
+          tone === 'amber' ? 'bg-rh-amber' : 'bg-rh-lime dark:bg-rh-lime'
         )}
         style={{ width: `${pct}%` }}
       />
@@ -202,7 +202,7 @@ export function Fact({ label, children }: { label: string; children: ReactNode }
   return (
     <div className="min-w-0">
       <dt className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">{label}</dt>
-      <dd className="mt-0.5 break-words text-sm text-rh-night dark:text-neutral-100">{children}</dd>
+      <dd className="mt-0.5 break-words text-sm text-rh-ink dark:text-neutral-100">{children}</dd>
     </div>
   )
 }

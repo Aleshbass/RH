@@ -32,7 +32,7 @@ export function ClinicBrand({ compact = false, className }: { compact?: boolean;
           className="h-7 w-7 shrink-0 rounded-md border border-neutral-200 bg-white object-cover dark:border-neutral-800"
         />
       ) : (
-        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-[#005b57] text-[11px] font-semibold text-white">
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-rh-lime text-[11px] font-semibold text-rh-ink">
           {initials || <Building2 className="h-3.5 w-3.5" />}
         </span>
       )}
@@ -54,7 +54,7 @@ export function PoweredByRehabify({ className }: { className?: string }) {
         href="https://physioaroundme.com"
         target="_blank"
         rel="noopener noreferrer"
-        className="font-medium text-neutral-500 hover:text-[#005b57] dark:text-neutral-400 dark:hover:text-[#2dd4bf]"
+        className="font-medium text-neutral-500 hover:text-rh-ink dark:text-neutral-400 dark:hover:text-rh-lime"
       >
         Rehabify Health
       </a>

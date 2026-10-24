@@ -89,7 +89,7 @@ export function CreateVideoCallModal({ isOpen, onClose, preselectedPatientId }: 
                 {/* Progress Bar */}
                 <div className="h-1 bg-gray-100 w-full">
                     <div
-                        className="h-full bg-[#005b57] transition-all duration-300 ease-in-out"
+                        className="h-full bg-rh-lime transition-all duration-300 ease-in-out"
                         style={{ width: `${(step / 3) * 100}%` }}
                     />
                 </div>

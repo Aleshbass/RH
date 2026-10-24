@@ -148,7 +148,7 @@ export function VideoCallConfirmationStep({ data, onUpdate, onSuccess }: VideoCa
                                         href={googleMeetLink}
                                         target="_blank"
                                         rel="noopener noreferrer"
-                                        className="inline-flex items-center gap-2 text-[#005b57] hover:text-[#00443e] hover:underline font-medium"
+                                        className="inline-flex items-center gap-2 text-rh-ink hover:text-rh-ink hover:underline font-medium"
                                     >
                                         <Video className="w-4 h-4" />
                                         <span>Join Google Meet</span>
@@ -170,7 +170,7 @@ export function VideoCallConfirmationStep({ data, onUpdate, onSuccess }: VideoCa
                                     href={googleCalendarLink}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="text-sm text-[#005b57] hover:underline inline-flex items-center gap-1"
+                                    className="text-sm text-rh-ink hover:underline inline-flex items-center gap-1"
                                 >
                                     <Calendar className="w-3 h-3" />
                                     View in Google Calendar
@@ -195,21 +195,21 @@ export function VideoCallConfirmationStep({ data, onUpdate, onSuccess }: VideoCa
 
     return (
         <div className="space-y-6 h-full flex flex-col">
-            <div className="bg-[#005b57]/5 p-4 rounded-lg space-y-3">
-                <h3 className="font-semibold text-[#00443e] flex items-center gap-2">
+            <div className="bg-rh-lime/5 p-4 rounded-lg space-y-3">
+                <h3 className="font-semibold text-rh-ink flex items-center gap-2">
                     <CheckCircle2 className="h-5 w-5" />
                     Confirm Details
                 </h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-                    <div className="flex items-center gap-2 text-[#00443e]">
+                    <div className="flex items-center gap-2 text-rh-ink">
                         <User className="h-4 w-4 opacity-70" />
                         <span>{data.patientName}</span>
                     </div>
-                    <div className="flex items-center gap-2 text-[#00443e]">
+                    <div className="flex items-center gap-2 text-rh-ink">
                         <Calendar className="h-4 w-4 opacity-70" />
                         <span>{data.date && format(data.date, 'MMMM d, yyyy')}</span>
                     </div>
-                    <div className="flex items-center gap-2 text-[#00443e]">
+                    <div className="flex items-center gap-2 text-rh-ink">
                         <Clock className="h-4 w-4 opacity-70" />
                         <span>{data.time && format(new Date(`2000-01-01T${data.time}`), 'h:mm a')} ({data.duration} min)</span>
                     </div>
@@ -240,22 +240,22 @@ export function VideoCallConfirmationStep({ data, onUpdate, onSuccess }: VideoCa
                     </Label>
                     <div className="grid grid-cols-2 gap-3">
                         <div
-                            className={`cursor-pointer border rounded-lg p-3 flex flex-col items-center gap-2 transition-all ${!data.manualMeetingLink ? 'border-[#005b57] bg-[#005b57]/5 ring-1 ring-[#005b57]' : 'border-gray-200 hover:border-gray-300'}`}
+                            className={`cursor-pointer border rounded-lg p-3 flex flex-col items-center gap-2 transition-all ${!data.manualMeetingLink ? 'border-[#00cd0f] bg-rh-lime/5 ring-1 ring-[#00cd0f]' : 'border-gray-200 hover:border-gray-300'}`}
                             onClick={() => onUpdate({ manualMeetingLink: '' })}
                         >
                             <div className="bg-white p-1.5 rounded-full shadow-sm">
-                                <Video className="w-5 h-5 text-[#005b57]" />
+                                <Video className="w-5 h-5 text-rh-ink" />
                             </div>
                             <div className="flex flex-col items-center gap-1">
                                 <span className="font-medium text-xs">Rehabify Video</span>
-                                <Badge variant="secondary" className="text-[10px] h-4 px-1.5 bg-[#005b57]/10 text-[#005b57] font-medium">
+                                <Badge variant="secondary" className="text-[10px] h-4 px-1.5 bg-rh-lime/10 text-rh-ink font-medium">
                                     Beta
                                 </Badge>
                             </div>
                         </div>
 
                         <div
-                            className={`cursor-pointer border rounded-lg p-3 flex flex-col items-center gap-2 transition-all ${data.manualMeetingLink === 'google_meet' ? 'border-[#005b57] bg-[#005b57]/5 ring-1 ring-[#005b57]' : 'border-gray-200 hover:border-gray-300'}`}
+                            className={`cursor-pointer border rounded-lg p-3 flex flex-col items-center gap-2 transition-all ${data.manualMeetingLink === 'google_meet' ? 'border-[#00cd0f] bg-rh-lime/5 ring-1 ring-[#00cd0f]' : 'border-gray-200 hover:border-gray-300'}`}
                             onClick={() => onUpdate({ manualMeetingLink: 'google_meet' })}
                         >
                             <div className="bg-white p-1.5 rounded-full shadow-sm">
@@ -288,7 +288,7 @@ export function VideoCallConfirmationStep({ data, onUpdate, onSuccess }: VideoCa
             </div>
 
             <Button
-                className="w-full bg-[#005b57] hover:bg-[#00443e] text-lg py-6"
+                className="w-full bg-rh-lime hover:bg-rh-lime-deep text-lg py-6"
                 onClick={handleConfirm}
                 disabled={isSubmitting || !data.serviceType}
             >

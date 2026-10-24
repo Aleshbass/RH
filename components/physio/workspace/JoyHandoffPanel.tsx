@@ -72,7 +72,7 @@ export function JoyHandoffPanel({ patientId }: { patientId: Id<'users'> }) {
               </div>
 
               {intake.chiefComplaint && (
-                <p className="text-[15px] font-semibold leading-snug text-rh-night dark:text-white">{intake.chiefComplaint}</p>
+                <p className="text-[15px] font-semibold leading-snug text-rh-ink dark:text-white">{intake.chiefComplaint}</p>
               )}
 
               {flaggedRedFlags.length > 0 && (
@@ -112,14 +112,14 @@ export function JoyHandoffPanel({ patientId }: { patientId: Id<'users'> }) {
 
               {(intake.answers.length > 0 || intake.redFlags.length > flaggedRedFlags.length) && (
                 <details className="group rounded-2xl border border-black/[0.06] p-3 dark:border-white/[0.08]">
-                  <summary className="cursor-pointer text-sm font-medium text-rh-teal dark:text-rh-aqua">
+                  <summary className="cursor-pointer text-sm font-medium text-rh-ink dark:text-rh-lime">
                     Everything the patient told Joy
                   </summary>
                   <dl className="mt-3 space-y-2.5">
                     {[...intake.redFlags, ...intake.answers].map((row, i) => (
                       <div key={`${row.question}-${i}`}>
                         <dt className="text-xs text-neutral-500 dark:text-neutral-400">{row.question}</dt>
-                        <dd className="text-sm text-rh-night dark:text-neutral-100">{row.answer}</dd>
+                        <dd className="text-sm text-rh-ink dark:text-neutral-100">{row.answer}</dd>
                       </div>
                     ))}
                   </dl>
@@ -141,7 +141,7 @@ export function JoyHandoffPanel({ patientId }: { patientId: Id<'users'> }) {
                     <StatusBadge>{SERVICE_MODE[b.mode]}</StatusBadge>
                   </div>
                   {b.startTime && (
-                    <p className="text-sm font-medium text-rh-night dark:text-white">
+                    <p className="text-sm font-medium text-rh-ink dark:text-white">
                       {format(b.startTime, 'EEE d MMM · h:mm a')} · {b.durationMinutes} min
                     </p>
                   )}
@@ -171,17 +171,17 @@ export function JoyHandoffPanel({ patientId }: { patientId: Id<'users'> }) {
             {timeline.length === 0 ? (
               <p className="text-sm text-neutral-500 dark:text-neutral-400">No journey recorded yet.</p>
             ) : (
-              <ol className="relative space-y-3 border-l border-rh-teal/20 pl-4 dark:border-rh-aqua/20">
+              <ol className="relative space-y-3 border-l border-rh-lime/20 pl-4 dark:border-white/10">
                 {timeline.map((event, i) => (
                   <li key={event._id} className="relative">
                     <span
                       className={
                         i === 0
-                          ? 'absolute -left-[21px] top-1 h-2.5 w-2.5 rounded-full bg-rh-teal ring-4 ring-rh-mint dark:bg-rh-aqua dark:ring-rh-aqua/20'
+                          ? 'absolute -left-[21px] top-1 h-2.5 w-2.5 rounded-full bg-rh-lime ring-2 ring-white dark:ring-rh-ink-2'
                           : 'absolute -left-[20px] top-1.5 h-2 w-2 rounded-full bg-neutral-300 dark:bg-neutral-600'
                       }
                     />
-                    <p className={i === 0 ? 'text-sm font-semibold text-rh-night dark:text-white' : 'text-sm text-neutral-600 dark:text-neutral-300'}>
+                    <p className={i === 0 ? 'text-sm font-semibold text-rh-ink dark:text-white' : 'text-sm text-neutral-600 dark:text-neutral-300'}>
                       {stageLabel(event.stage)}
                     </p>
                     <p className="text-xs text-neutral-400">

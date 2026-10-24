@@ -62,7 +62,7 @@ export function PayoutScheduleTable({
                         </div>
                         <div className="sm:text-right">
                             <p className={cellLabel}>You earn</p>
-                            <p className="text-sm font-semibold tabular-nums text-rh-night dark:text-white">
+                            <p className="text-sm font-semibold tabular-nums text-rh-ink dark:text-white">
                                 {confirmed ? formatKobo(service.payoutKobo) : 'Being confirmed'}
                             </p>
                             {confirmed && service.travelApplies && (

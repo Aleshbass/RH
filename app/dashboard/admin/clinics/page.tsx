@@ -202,7 +202,7 @@ export default function AdminClinicsPage() {
                       <ClinicAvatar id={row._id} name={row.name} logoUrl={row.logoUrl} />
                       <div className="min-w-0">
                         <div className="flex min-w-0 items-center gap-2">
-                          <p className="truncate text-sm font-semibold text-rh-night dark:text-white">{row.name}</p>
+                          <p className="truncate text-sm font-semibold text-rh-ink dark:text-white">{row.name}</p>
                           <RehabifyId value={row.clinicNumber} copyable={false} />
                         </div>
                         <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">
@@ -216,13 +216,13 @@ export default function AdminClinicsPage() {
                       </div>
                     </div>
                     <div className="hidden min-w-0 md:block">
-                      <p className="truncate text-sm text-rh-night dark:text-white">{row.owner?.name ?? 'No owner'}</p>
+                      <p className="truncate text-sm text-rh-ink dark:text-white">{row.owner?.name ?? 'No owner'}</p>
                       <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">{row.owner?.email ?? ''}</p>
                     </div>
-                    <p className="hidden text-right text-sm tabular-nums text-rh-night dark:text-white md:block">
+                    <p className="hidden text-right text-sm tabular-nums text-rh-ink dark:text-white md:block">
                       {countLabel(row.staffCount, row.staffCapped)}
                     </p>
-                    <p className="hidden text-right text-sm tabular-nums text-rh-night dark:text-white md:block">
+                    <p className="hidden text-right text-sm tabular-nums text-rh-ink dark:text-white md:block">
                       {countLabel(row.patientCount, row.patientsCapped)}
                     </p>
                     <div className="flex shrink-0 flex-col items-end gap-1 md:items-start">

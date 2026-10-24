@@ -140,4 +140,12 @@ crons.interval(
   {}
 );
 
+// Rehabify Learn: email physios the day before and an hour before each live session.
+crons.interval(
+  "learn-session-reminders",
+  { minutes: 10 },
+  internal.learn.sendSessionReminders,
+  {}
+);
+
 export default crons;

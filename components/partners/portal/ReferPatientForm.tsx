@@ -86,16 +86,16 @@ export function ReferPatientForm({ ctx, onDone, compact = false }: { ctx: Portal
             <p>Our care team will contact them on WhatsApp. You&apos;ll get an email as their care moves forward.</p>
           </div>
         </div>
-        <div className="p-4 rounded-2xl bg-[#FAF6E7]/70 border border-[#002e2c]/10 flex items-center justify-between gap-3">
+        <div className="p-4 rounded-2xl bg-[#FAF6E7]/70 border border-rh-ink/10 flex items-center justify-between gap-3">
           <div>
             <p className="text-[10px] uppercase tracking-wider font-semibold text-[#52706e]">Tracking code</p>
-            <p className="font-mono text-base font-bold text-[#002e2c]">{referral.tracking_code}</p>
+            <p className="font-mono text-base font-bold text-rh-ink">{referral.tracking_code}</p>
           </div>
           <CopyButton text={referral.tracking_code} label="Tracking code" />
         </div>
         {whatsapp && (
           <div className="space-y-2">
-            <p className="text-xs font-semibold text-[#002e2c]">Want them to start now?</p>
+            <p className="text-xs font-semibold text-rh-ink">Want them to start now?</p>
             <p className="text-xs text-[#52706e] leading-relaxed">
               Send your patient this link. It opens WhatsApp with Joy, our care assistant, already holding their referral.
             </p>
@@ -104,7 +104,7 @@ export function ReferPatientForm({ ctx, onDone, compact = false }: { ctx: Portal
                 <WhatsApp className="w-3.5 h-3.5" />
                 Open the WhatsApp link
               </a>
-              <CopyButton text={whatsapp} label="WhatsApp link" className="border border-[#002e2c]/15 bg-white" />
+              <CopyButton text={whatsapp} label="WhatsApp link" className="border border-rh-ink/15 bg-white" />
               {tracking && (
                 <a href={tracking} target="_blank" rel="noopener noreferrer" className={btnSecondary}>
                   <ExternalLink className="w-3.5 h-3.5" />
@@ -114,7 +114,7 @@ export function ReferPatientForm({ ctx, onDone, compact = false }: { ctx: Portal
             </div>
           </div>
         )}
-        <div className="flex flex-wrap justify-end gap-2 pt-2 border-t border-[#002e2c]/10">
+        <div className="flex flex-wrap justify-end gap-2 pt-2 border-t border-rh-ink/10">
           {onDone && (
             <button type="button" className={btnSecondary} onClick={onDone}>
               Done
@@ -220,14 +220,14 @@ export function ReferPatientForm({ ctx, onDone, compact = false }: { ctx: Portal
         </div>
       </div>
 
-      <label className="flex items-start gap-3 p-3.5 rounded-2xl bg-[#FAF6E7]/70 border border-[#002e2c]/10 cursor-pointer">
+      <label className="flex items-start gap-3 p-3.5 rounded-2xl bg-[#FAF6E7]/70 border border-rh-ink/10 cursor-pointer">
         <input
           type="checkbox"
           checked={form.consent}
           onChange={(e) => set("consent", e.target.checked)}
-          className="mt-0.5 h-4 w-4 rounded accent-[#002e2c] shrink-0"
+          className="mt-0.5 h-4 w-4 rounded accent-rh-ink shrink-0"
         />
-        <span className="text-xs text-[#002e2c] leading-relaxed">
+        <span className="text-xs text-rh-ink leading-relaxed">
           <span className="font-semibold">The patient agreed to be contacted by Rehabify</span>
           <span className="block text-[#52706e]">We record this consent with the referral, as data protection law requires.</span>
         </span>
@@ -289,9 +289,9 @@ export function HowItWorks({ ctx }: { ctx: PortalContext }) {
       <ol className="mt-4 space-y-3.5">
         {steps.map(([title, body], i) => (
           <li key={title} className="flex gap-3">
-            <span className="w-6 h-6 rounded-full bg-[#002e2c] text-[#FAF6E7] text-[11px] font-bold flex items-center justify-center shrink-0">{i + 1}</span>
+            <span className="w-6 h-6 rounded-full bg-rh-ink text-[#FAF6E7] text-[11px] font-bold flex items-center justify-center shrink-0">{i + 1}</span>
             <span className="min-w-0">
-              <span className="block text-xs font-semibold text-[#002e2c]">{title}</span>
+              <span className="block text-xs font-semibold text-rh-ink">{title}</span>
               <span className="block text-xs text-[#52706e] leading-relaxed">{body}</span>
             </span>
           </li>

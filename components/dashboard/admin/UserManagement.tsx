@@ -124,7 +124,7 @@ export function UserAvatar({
   return (
     <Avatar className={cn('h-9 w-9', className)}>
       {user?.imageUrl ? <AvatarImage src={user.imageUrl} alt="" className="object-cover" /> : null}
-      <AvatarFallback className="bg-rh-mist text-xs font-semibold text-rh-teal dark:bg-rh-aqua/10 dark:text-rh-aqua">
+      <AvatarFallback className="bg-rh-honeydew text-xs font-semibold text-rh-ink dark:bg-white/[0.06] dark:text-rh-lime">
         {initial}
       </AvatarFallback>
     </Avatar>
@@ -193,7 +193,7 @@ export function RoleChangeDialog({
             <div className="flex items-center gap-3 rounded-xl bg-rh-canvas p-3 dark:bg-white/[0.04]">
               <UserAvatar user={user} className="h-10 w-10" />
               <div className="min-w-0">
-                <p className="truncate text-sm font-semibold text-rh-night dark:text-white">{displayName(user)}</p>
+                <p className="truncate text-sm font-semibold text-rh-ink dark:text-white">{displayName(user)}</p>
                 <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">{user.email}</p>
               </div>
               <div className="ml-auto">
@@ -555,7 +555,7 @@ export function UserManagement() {
                           <div className="flex min-w-0 items-center gap-3">
                             <UserAvatar user={u} />
                             <div className="min-w-0">
-                              <p className="truncate font-medium text-rh-night dark:text-white">
+                              <p className="truncate font-medium text-rh-ink dark:text-white">
                                 {displayName(u)}
                                 {isMe && <span className="ml-1.5 text-xs font-normal text-neutral-400">(you)</span>}
                               </p>

@@ -7,10 +7,10 @@ import { cn } from '@/lib/utils'
 /**
  * Building blocks for the physiotherapist dashboard.
  *
- * Visual language: warm cream canvas, white cards with soft teal-tinted shadows and generous
- * rounding, Rehabify teal for primary actions, and small touches of the secondary brand tints
- * (mint, peach, rose, mist) to tell things apart. Brand tokens live in app/globals.css
- * (`bg-rh-teal`, `bg-rh-mint`, …).
+ * Visual language: warm cream canvas, white cards with soft neutral shadows and generous
+ * rounding, Rehabify green (#00cd0f, with ink text) for primary actions, ink for large surfaces,
+ * and small touches of the secondary brand tints (honeydew, peach, rose) to tell things apart.
+ * Flat: no teal, no gradients, no glows. Brand tokens live in app/globals.css.
  */
 
 export function formatNaira(amount: number) {
@@ -19,11 +19,11 @@ export function formatNaira(amount: number) {
 
 /** The one main action on a screen. */
 export const primaryButtonClass =
-  'rounded-xl bg-rh-teal text-white shadow-sm hover:bg-rh-teal-deep active:scale-[0.98] transition dark:bg-rh-aqua dark:text-rh-night dark:hover:bg-[#5eead4]'
+  'rounded-xl bg-rh-lime text-rh-ink shadow-sm hover:bg-rh-lime-deep active:scale-[0.98] transition dark:bg-rh-lime dark:text-rh-ink dark:hover:bg-rh-lime-deep'
 
 /** Secondary actions next to a primary one. */
 export const softButtonClass =
-  'rounded-xl border-0 bg-rh-mist text-rh-teal hover:bg-[#d6e8e6] active:scale-[0.98] transition dark:bg-white/[0.06] dark:text-white dark:hover:bg-white/[0.1]'
+  'rounded-xl border-0 bg-rh-honeydew text-rh-ink hover:bg-[#e2f7d8] active:scale-[0.98] transition dark:bg-white/[0.06] dark:text-white dark:hover:bg-white/[0.1]'
 
 export const cardClass =
   'rounded-2xl border border-black/[0.04] bg-white shadow-soft dark:border-white/[0.06] dark:bg-rh-ink-2 dark:shadow-none'
@@ -48,9 +48,9 @@ export function PageHeader({
     <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
       <div className="min-w-0">
         {eyebrow && (
-          <p className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-rh-teal dark:text-rh-aqua">{eyebrow}</p>
+          <p className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-rh-ink dark:text-rh-lime">{eyebrow}</p>
         )}
-        <h1 className="text-2xl font-semibold tracking-tight text-rh-night dark:text-white sm:text-[28px]">{title}</h1>
+        <h1 className="text-2xl font-semibold tracking-tight text-rh-ink dark:text-white sm:text-[28px]">{title}</h1>
         {description && <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">{description}</p>}
       </div>
       {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
@@ -78,7 +78,7 @@ export function Panel({
       {(title || actions) && (
         <div className="flex flex-wrap items-center justify-between gap-2 px-5 pb-1 pt-4">
           <div className="min-w-0">
-            {title && <h2 className="text-[15px] font-semibold tracking-tight text-rh-night dark:text-white">{title}</h2>}
+            {title && <h2 className="text-[15px] font-semibold tracking-tight text-rh-ink dark:text-white">{title}</h2>}
             {description && <p className="text-xs text-neutral-500 dark:text-neutral-400">{description}</p>}
           </div>
           {actions && <div className="flex items-center gap-2">{actions}</div>}
@@ -90,10 +90,10 @@ export function Panel({
 }
 
 const toneChip = {
-  teal: 'bg-rh-mist text-rh-teal dark:bg-rh-aqua/10 dark:text-rh-aqua',
-  mint: 'bg-rh-mint text-[#047857] dark:bg-emerald-400/10 dark:text-emerald-300',
-  peach: 'bg-rh-peach text-[#b4690e] dark:bg-amber-400/10 dark:text-amber-300',
-  rose: 'bg-rh-blush text-[#be3a5f] dark:bg-rose-400/10 dark:text-rose-300',
+  teal: 'bg-rh-honeydew text-rh-ink dark:bg-white/[0.06] dark:text-rh-lime',
+  mint: 'bg-rh-honeydew text-[#047857] dark:bg-white/[0.06] dark:text-rh-lime',
+  peach: 'bg-rh-peach text-[#b4690e] dark:bg-white/[0.06] dark:text-amber-300',
+  rose: 'bg-rh-blush text-[#be3a5f] dark:bg-white/[0.06] dark:text-rose-300',
   neutral: 'bg-neutral-100 text-neutral-600 dark:bg-white/[0.06] dark:text-neutral-300',
 } as const
 
@@ -137,14 +137,14 @@ export function StatTile({
         <p className="text-[13px] font-medium text-neutral-500 dark:text-neutral-400">{label}</p>
         {icon && <IconChip icon={icon} tone={chipTone} className="h-8 w-8 rounded-lg" />}
       </div>
-      <p className="mt-2 break-words text-2xl font-semibold tabular-nums tracking-tight text-rh-night dark:text-white sm:text-[28px]">
+      <p className="mt-2 break-words text-2xl font-semibold tabular-nums tracking-tight text-rh-ink dark:text-white sm:text-[28px]">
         {value}
       </p>
       {hint && <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">{hint}</p>}
     </div>
   )
   return href ? (
-    <Link href={href} className="block rounded-2xl focus:outline-none focus-visible:ring-2 focus-visible:ring-rh-teal">
+    <Link href={href} className="block rounded-2xl focus:outline-none focus-visible:ring-2 focus-visible:ring-rh-lime">
       {body}
     </Link>
   ) : (
@@ -154,10 +154,10 @@ export function StatTile({
 
 const badgeTones = {
   neutral: 'bg-neutral-100 text-neutral-700 dark:bg-white/[0.07] dark:text-neutral-300',
-  teal: 'bg-rh-mist text-rh-teal dark:bg-rh-aqua/10 dark:text-rh-aqua',
-  green: 'bg-rh-mint text-[#047857] dark:bg-emerald-400/10 dark:text-emerald-300',
-  amber: 'bg-rh-peach text-[#b4690e] dark:bg-amber-400/10 dark:text-amber-300',
-  red: 'bg-rh-blush text-[#be123c] dark:bg-rose-400/10 dark:text-rose-300',
+  teal: 'bg-rh-honeydew text-rh-ink dark:bg-white/[0.06] dark:text-rh-lime',
+  green: 'bg-rh-honeydew text-[#047857] dark:bg-white/[0.06] dark:text-rh-lime',
+  amber: 'bg-rh-peach text-[#b4690e] dark:bg-white/[0.06] dark:text-amber-300',
+  red: 'bg-rh-blush text-[#be123c] dark:bg-white/[0.06] dark:text-rose-300',
 } as const
 
 export function StatusBadge({
@@ -196,11 +196,11 @@ export function EmptyState({
   return (
     <div className="flex flex-col items-center px-6 py-10 text-center">
       {icon && (
-        <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-rh-cream text-rh-teal dark:bg-white/[0.05] dark:text-rh-aqua [&_svg]:h-6 [&_svg]:w-6">
+        <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-rh-cream text-rh-ink dark:bg-white/[0.05] dark:text-rh-lime [&_svg]:h-6 [&_svg]:w-6">
           {icon}
         </div>
       )}
-      <p className="text-sm font-semibold text-rh-night dark:text-white">{title}</p>
+      <p className="text-sm font-semibold text-rh-ink dark:text-white">{title}</p>
       {description && <p className="mt-1 max-w-sm text-sm text-neutral-500 dark:text-neutral-400">{description}</p>}
       {action && <div className="mt-4">{action}</div>}
     </div>

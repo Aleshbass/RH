@@ -474,7 +474,7 @@ export default function ClinicAppointmentsPage() {
                       className={cn(
                         'inline-flex h-6 min-w-6 items-center justify-center rounded-md px-1 text-sm font-semibold tabular-nums',
                         today
-                          ? 'bg-[#005b57] text-white dark:bg-[#2dd4bf] dark:text-neutral-950'
+                          ? 'bg-rh-lime text-rh-ink dark:bg-rh-lime dark:text-neutral-950'
                           : 'text-neutral-900 dark:text-white'
                       )}
                     >
@@ -502,7 +502,7 @@ export default function ClinicAppointmentsPage() {
                               className={cn(
                                 'w-full min-w-0 rounded-lg border px-2 py-1.5 text-left transition-colors hover:border-neutral-300 dark:hover:border-neutral-700',
                                 OPEN_STATUSES.has(apt.status)
-                                  ? 'border-l-2 border-neutral-200 border-l-[#005b57] bg-white dark:border-neutral-800 dark:border-l-[#2dd4bf] dark:bg-neutral-900'
+                                  ? 'border-l-2 border-neutral-200 border-l-rh-lime bg-white dark:border-neutral-800 dark:border-l-rh-lime dark:bg-neutral-900'
                                   : 'border-neutral-200 bg-neutral-50 dark:border-neutral-800 dark:bg-neutral-950',
                                 inactive && 'opacity-60'
                               )}
@@ -761,7 +761,7 @@ function BookDialog({
             {!patientsLoading && patients.length === 0 ? (
               <p className="rounded-lg border border-neutral-200 px-3 py-2 text-sm text-neutral-600 dark:border-neutral-800 dark:text-neutral-400">
                 You have no patients yet.{' '}
-                <Link href="/dashboard/clinic/patients" className="font-medium text-[#005b57] underline dark:text-[#2dd4bf]">
+                <Link href="/dashboard/clinic/patients" className="font-medium text-rh-ink underline dark:text-rh-lime">
                   Add a patient
                 </Link>{' '}
                 first.
@@ -914,7 +914,7 @@ function BookDialog({
                     className={cn(
                       'h-9 rounded-lg border text-sm font-medium transition-colors',
                       active
-                        ? 'border-[#005b57] bg-[#005b57]/5 text-[#005b57] dark:border-[#2dd4bf] dark:bg-[#2dd4bf]/10 dark:text-[#2dd4bf]'
+                        ? 'border-rh-lime bg-rh-lime/5 text-rh-ink dark:border-rh-lime dark:bg-white/[0.06] dark:text-rh-lime'
                         : 'border-neutral-200 text-neutral-700 hover:border-neutral-300 dark:border-neutral-800 dark:text-neutral-300'
                     )}
                   >

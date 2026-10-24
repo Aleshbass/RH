@@ -98,7 +98,7 @@ export function TimeSelectionStep({ selectedDate, selectedTime, duration, physio
                             <Button
                                 key={time}
                                 variant={selectedTime === time ? 'default' : 'outline'}
-                                className={selectedTime === time ? 'bg-[#005b57] hover:bg-[#00443e]' : 'hover:border-[#005b57]/30 hover:text-[#005b57]'}
+                                className={selectedTime === time ? 'bg-rh-lime hover:bg-rh-lime-deep' : 'hover:border-rh-lime/30 hover:text-rh-ink'}
                                 onClick={() => onSelect(time)}
                             >
                                 {format(new Date(`2000-01-01T${time}`), 'h:mm a')}

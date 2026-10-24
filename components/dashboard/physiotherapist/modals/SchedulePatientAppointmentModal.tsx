@@ -49,18 +49,18 @@ type ScheduleService = {
 type HomeVisit = { zoneId: Id<"travelZones">; area: string };
 
 const primaryButton =
-    "inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-rh-lime px-5 text-[15px] font-semibold text-rh-night shadow-[0_10px_24px_-12px_rgba(0,205,15,0.9)] transition-[filter,transform] hover:brightness-95 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-night focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:focus-visible:ring-white dark:focus-visible:ring-offset-rh-ink";
+    "inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-rh-lime px-5 text-[15px] font-semibold text-rh-ink shadow-sm transition-[filter,transform] hover:brightness-95 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-ink focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:focus-visible:ring-white dark:focus-visible:ring-offset-rh-ink";
 
 const secondaryButton =
-    "inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-rh-night/15 bg-white px-5 text-[15px] font-semibold text-rh-night transition-colors hover:bg-rh-night/[0.04] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-lime dark:border-white/15 dark:bg-transparent dark:text-white dark:hover:bg-white/[0.06]";
+    "inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-rh-ink/15 bg-white px-5 text-[15px] font-semibold text-rh-ink transition-colors hover:bg-rh-ink/[0.04] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-lime dark:border-white/15 dark:bg-transparent dark:text-white dark:hover:bg-white/[0.06]";
 
 const iconButton =
-    "flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-rh-night/70 transition-colors hover:bg-rh-night/[0.06] hover:text-rh-night focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-lime dark:text-white/70 dark:hover:bg-white/10 dark:hover:text-white";
+    "flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-rh-ink/70 transition-colors hover:bg-rh-ink/[0.06] hover:text-rh-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-lime dark:text-white/70 dark:hover:bg-white/10 dark:hover:text-white";
 
 const fieldClass =
-    "w-full rounded-xl border border-rh-night/15 bg-white px-3.5 py-2.5 text-base text-rh-night placeholder:text-rh-night/40 transition-[border-color,box-shadow] focus:border-rh-night focus:outline-none focus:ring-4 focus:ring-rh-lime/25 sm:text-sm dark:border-white/15 dark:bg-rh-ink-2 dark:text-white dark:placeholder:text-white/40 dark:focus:border-white/50";
+    "w-full rounded-xl border border-rh-ink/15 bg-white px-3.5 py-2.5 text-base text-rh-ink placeholder:text-rh-ink/40 transition-[border-color,box-shadow] focus:border-rh-ink focus:outline-none focus:ring-4 focus:ring-rh-lime/25 sm:text-sm dark:border-white/15 dark:bg-rh-ink-2 dark:text-white dark:placeholder:text-white/40 dark:focus:border-white/50";
 
-const chipClass = "inline-flex items-center gap-1 rounded-full bg-rh-night/[0.05] px-2.5 py-1 dark:bg-white/[0.07]";
+const chipClass = "inline-flex items-center gap-1 rounded-full bg-rh-ink/[0.05] px-2.5 py-1 dark:bg-white/[0.07]";
 
 /** The readable reason from a ConvexError, else the error's message. */
 function errorMessage(error: unknown) {
@@ -93,7 +93,7 @@ function ServiceChoice({
                 "w-full rounded-2xl border p-4 text-left transition-[background-color,border-color,box-shadow,opacity] duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-lime sm:p-5",
                 selected
                     ? "border-rh-lime bg-rh-honeydew shadow-[0_0_0_1px_#00cd0f] dark:bg-rh-lime/10"
-                    : "border-rh-night/10 bg-white hover:border-rh-night/30 dark:border-white/10 dark:bg-rh-ink-2 dark:hover:border-white/30",
+                    : "border-rh-ink/10 bg-white hover:border-rh-ink/30 dark:border-white/10 dark:bg-rh-ink-2 dark:hover:border-white/30",
                 busy && !selected && "opacity-50"
             )}
         >
@@ -103,7 +103,7 @@ function ServiceChoice({
                         {service.name}
                         {selected && <Check className="h-4 w-4 shrink-0 text-rh-lime" strokeWidth={3} aria-hidden />}
                     </h3>
-                    <ul className="mt-2 flex flex-wrap gap-1.5 text-xs font-medium text-rh-night/70 dark:text-white/70">
+                    <ul className="mt-2 flex flex-wrap gap-1.5 text-xs font-medium text-rh-ink/70 dark:text-white/70">
                         <li className={chipClass}>
                             <Clock className="h-3.5 w-3.5" aria-hidden /> {service.durationLabel}
                         </li>
@@ -117,7 +117,7 @@ function ServiceChoice({
                         {service.travelApplies ? "From " : ""}
                         {formatKobo(service.priceKobo)}
                     </p>
-                    <p className="text-xs tabular-nums text-rh-night/55 dark:text-white/55">You earn {formatKobo(service.payoutKobo)}</p>
+                    <p className="text-xs tabular-nums text-rh-ink/55 dark:text-white/55">You earn {formatKobo(service.payoutKobo)}</p>
                 </div>
             </div>
         </motion.button>
@@ -389,7 +389,7 @@ export default function SchedulePatientAppointmentModal({
                     <DialogPrimitive.Portal forceMount>
                         <DialogPrimitive.Overlay asChild forceMount>
                             <motion.div
-                                className="fixed inset-0 z-50 bg-rh-night/45 backdrop-blur-[2px] dark:bg-black/60"
+                                className="fixed inset-0 z-50 bg-rh-ink/45 backdrop-blur-[2px] dark:bg-black/60"
                                 initial={{ opacity: 0 }}
                                 animate={{ opacity: 1 }}
                                 exit={{ opacity: 0 }}
@@ -400,7 +400,7 @@ export default function SchedulePatientAppointmentModal({
                             <DialogPrimitive.Content asChild forceMount aria-describedby={undefined}>
                                 <motion.div
                                     className={cn(
-                                        "pointer-events-auto relative flex max-h-[94dvh] w-full flex-col overflow-hidden rounded-t-[28px] bg-rh-canvas text-rh-night shadow-[0_-20px_60px_-20px_rgba(0,0,0,0.5)] outline-none",
+                                        "pointer-events-auto relative flex max-h-[94dvh] w-full flex-col overflow-hidden rounded-t-[28px] bg-rh-canvas text-rh-ink shadow-[0_-20px_60px_-20px_rgba(0,0,0,0.5)] outline-none",
                                         "sm:max-h-[90dvh] sm:rounded-[28px] sm:shadow-[0_40px_100px_-30px_rgba(0,0,0,0.6)]",
                                         "dark:bg-rh-ink dark:text-white dark:ring-1 dark:ring-white/10",
                                         step === "select-time" ? "sm:max-w-5xl" : "sm:max-w-xl"
@@ -411,8 +411,8 @@ export default function SchedulePatientAppointmentModal({
                                     transition={reduceMotion ? { duration: 0.15 } : { type: "spring", stiffness: 380, damping: 36 }}
                                 >
                                     {/* Header */}
-                                    <div className="flex shrink-0 items-center gap-2 border-b border-rh-night/10 px-4 pb-3 pt-2 sm:px-6 sm:pt-4 dark:border-white/10">
-                                        <div className="absolute left-1/2 top-2 h-1.5 w-10 -translate-x-1/2 rounded-full bg-rh-night/15 sm:hidden dark:bg-white/20" aria-hidden />
+                                    <div className="flex shrink-0 items-center gap-2 border-b border-rh-ink/10 px-4 pb-3 pt-2 sm:px-6 sm:pt-4 dark:border-white/10">
+                                        <div className="absolute left-1/2 top-2 h-1.5 w-10 -translate-x-1/2 rounded-full bg-rh-ink/15 sm:hidden dark:bg-white/20" aria-hidden />
                                         {canGoBack ? (
                                             <button type="button" onClick={goBack} className={iconButton} aria-label="Back">
                                                 <ArrowLeft className="h-5 w-5" />
@@ -423,7 +423,7 @@ export default function SchedulePatientAppointmentModal({
                                         <div className="min-w-0 flex-1 pt-3 sm:pt-0">
                                             <DialogPrimitive.Title className="truncate text-lg font-semibold tracking-tight">{title}</DialogPrimitive.Title>
                                             {step !== "select-type" && step !== "confirm" && (
-                                                <p className="truncate text-sm text-rh-night/60 dark:text-white/60">
+                                                <p className="truncate text-sm text-rh-ink/60 dark:text-white/60">
                                                     {sessionTitle} · {sessionMinutes} min · {patientName}
                                                 </p>
                                             )}
@@ -436,23 +436,23 @@ export default function SchedulePatientAppointmentModal({
                                     {/* Body */}
                                     <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-5 sm:px-6 sm:py-6">
                                         {step === "select-type" && (billing === undefined || servicesLoading) && (
-                                            <div className="flex items-center justify-center gap-2 py-12 text-sm text-rh-night/60 dark:text-white/60">
+                                            <div className="flex items-center justify-center gap-2 py-12 text-sm text-rh-ink/60 dark:text-white/60">
                                                 <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> Loading…
                                             </div>
                                         )}
 
                                         {step === "select-type" && isRehabify && !servicesLoading && (
                                             <div>
-                                                <p className="mb-4 rounded-2xl bg-white p-4 text-sm text-rh-night/70 ring-1 ring-rh-night/[0.08] dark:bg-rh-ink-2 dark:text-white/70 dark:ring-white/10">
+                                                <p className="mb-4 rounded-2xl bg-white p-4 text-sm text-rh-ink/70 ring-1 ring-rh-ink/[0.08] dark:bg-rh-ink-2 dark:text-white/70 dark:ring-white/10">
                                                     {patientName} came to you through Rehabify, so each session is paid at the standard Rehabify price.
                                                     They’ll have 24 hours to pay and confirm.
                                                 </p>
                                                 {services.length === 0 ? (
-                                                    <p className="text-sm text-rh-night/60 dark:text-white/60">
+                                                    <p className="text-sm text-rh-ink/60 dark:text-white/60">
                                                         You don’t offer any Rehabify services yet. Turn on video sessions or home visits in{" "}
                                                         <Link
                                                             href="/dashboard/physiotherapist/settings/marketplace"
-                                                            className="font-semibold text-rh-night underline-offset-2 hover:underline dark:text-white"
+                                                            className="font-semibold text-rh-ink underline-offset-2 hover:underline dark:text-white"
                                                         >
                                                             Services &amp; coverage
                                                         </Link>
@@ -460,7 +460,7 @@ export default function SchedulePatientAppointmentModal({
                                                     </p>
                                                 ) : (
                                                     <>
-                                                        <p className="mb-3 text-sm text-rh-night/60 dark:text-white/60">Which service is this?</p>
+                                                        <p className="mb-3 text-sm text-rh-ink/60 dark:text-white/60">Which service is this?</p>
                                                         <div className="space-y-2.5">
                                                             {services.map((option) => (
                                                                 <ServiceChoice
@@ -479,7 +479,7 @@ export default function SchedulePatientAppointmentModal({
 
                                         {step === "select-type" && billing !== undefined && !isRehabify && (
                                             <div>
-                                                <p className="mb-4 text-sm text-rh-night/60 dark:text-white/60">What kind of session is this?</p>
+                                                <p className="mb-4 text-sm text-rh-ink/60 dark:text-white/60">What kind of session is this?</p>
                                                 <div className="space-y-2.5">
                                                     {SESSION_TYPES.map((session) => (
                                                         <SessionTypeOption
@@ -532,12 +532,12 @@ export default function SchedulePatientAppointmentModal({
 
                                         {step === "details" && selectedSlot && (
                                             <div className="space-y-6" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
-                                                <div className="rounded-2xl bg-white p-4 ring-1 ring-rh-night/[0.08] dark:bg-rh-ink-2 dark:ring-white/10">
-                                                    <p className="text-sm text-rh-night/60 dark:text-white/60">
+                                                <div className="rounded-2xl bg-white p-4 ring-1 ring-rh-ink/[0.08] dark:bg-rh-ink-2 dark:ring-white/10">
+                                                    <p className="text-sm text-rh-ink/60 dark:text-white/60">
                                                         {isRehabify && service ? `${service.name} with ${patientName}` : `Appointment with ${patientName}`}
                                                     </p>
                                                     <p className="mt-1.5 flex items-center gap-1.5 text-sm font-medium">
-                                                        <CalendarDays className="h-4 w-4 shrink-0 text-rh-night/45 dark:text-white/45" aria-hidden />
+                                                        <CalendarDays className="h-4 w-4 shrink-0 text-rh-ink/45 dark:text-white/45" aria-hidden />
                                                         {formatDate(selectedSlot.start)}
                                                     </p>
                                                     <p className="mt-0.5 pl-[22px] text-base font-semibold tabular-nums">
@@ -571,7 +571,7 @@ export default function SchedulePatientAppointmentModal({
                                                                     </optgroup>
                                                                 ))}
                                                             </select>
-                                                            <p className="mt-1.5 text-xs text-rh-night/55 dark:text-white/55">
+                                                            <p className="mt-1.5 text-xs text-rh-ink/55 dark:text-white/55">
                                                                 Only the areas you cover are listed. Change them in Services &amp; coverage.
                                                             </p>
                                                         </div>
@@ -602,11 +602,11 @@ export default function SchedulePatientAppointmentModal({
                                                                   : `The patient pays ${formatKobo(service.priceKobo)} to confirm`}
                                                         </p>
                                                         {quote?.ok && quote.travelSurchargeKobo > 0 && (
-                                                            <p className="mt-0.5 text-xs tabular-nums text-rh-night/60 dark:text-white/60">
+                                                            <p className="mt-0.5 text-xs tabular-nums text-rh-ink/60 dark:text-white/60">
                                                                 Includes a {formatKobo(quote.travelSurchargeKobo)} travel charge for {quote.zoneName ?? "this area"}.
                                                             </p>
                                                         )}
-                                                        <p className="mt-2 text-sm text-rh-night/70 dark:text-white/70">
+                                                        <p className="mt-2 text-sm text-rh-ink/70 dark:text-white/70">
                                                             They’re asked to pay within 24 hours, and the time is held until then. You earn{" "}
                                                             {formatKobo(service.payoutKobo)}
                                                             {service.travelApplies ? " plus your share of travel" : ""} once the session is completed.
@@ -633,15 +633,15 @@ export default function SchedulePatientAppointmentModal({
                                                                         "flex min-h-14 items-center gap-3 rounded-2xl border p-4 text-left transition-[background-color,border-color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-lime",
                                                                         selected
                                                                             ? "border-rh-lime bg-rh-honeydew shadow-[0_0_0_1px_#00cd0f] dark:bg-rh-lime/10"
-                                                                            : "border-rh-night/10 bg-white hover:border-rh-night/30 dark:border-white/10 dark:bg-rh-ink-2 dark:hover:border-white/30"
+                                                                            : "border-rh-ink/10 bg-white hover:border-rh-ink/30 dark:border-white/10 dark:bg-rh-ink-2 dark:hover:border-white/30"
                                                                     )}
                                                                 >
                                                                     <span
                                                                         className={cn(
                                                                             "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl",
                                                                             selected
-                                                                                ? "bg-rh-night text-rh-lime"
-                                                                                : "bg-rh-night/[0.06] text-rh-night/70 dark:bg-white/[0.08] dark:text-white/70"
+                                                                                ? "bg-rh-ink text-rh-lime"
+                                                                                : "bg-rh-ink/[0.06] text-rh-ink/70 dark:bg-white/[0.08] dark:text-white/70"
                                                                         )}
                                                                     >
                                                                         <Icon className="h-4 w-4" aria-hidden />
@@ -653,7 +653,7 @@ export default function SchedulePatientAppointmentModal({
                                                                         aria-hidden
                                                                         className={cn(
                                                                             "flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2",
-                                                                            selected ? "border-rh-lime bg-rh-lime text-rh-night" : "border-rh-night/20 dark:border-white/25"
+                                                                            selected ? "border-rh-lime bg-rh-lime text-rh-ink" : "border-rh-ink/20 dark:border-white/25"
                                                                         )}
                                                                     >
                                                                         {selected && <Check className="h-3 w-3" strokeWidth={3} />}
@@ -667,7 +667,7 @@ export default function SchedulePatientAppointmentModal({
 
                                                 <div>
                                                     <label htmlFor="schedule-notes" className="mb-1.5 block text-sm font-semibold">
-                                                        Notes <span className="font-normal text-rh-night/50 dark:text-white/50">(optional)</span>
+                                                        Notes <span className="font-normal text-rh-ink/50 dark:text-white/50">(optional)</span>
                                                     </label>
                                                     <textarea
                                                         id="schedule-notes"
@@ -704,23 +704,23 @@ export default function SchedulePatientAppointmentModal({
                                                     initial={reduceMotion ? false : { scale: 0.6, opacity: 0 }}
                                                     animate={{ scale: 1, opacity: 1 }}
                                                     transition={reduceMotion ? { duration: 0 } : { type: "spring", stiffness: 380, damping: 18 }}
-                                                    className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-rh-lime shadow-[0_14px_30px_-12px_rgba(0,205,15,0.9)]"
+                                                    className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-rh-lime"
                                                 >
-                                                    <Check className="h-8 w-8 text-rh-night" strokeWidth={3} />
+                                                    <Check className="h-8 w-8 text-rh-ink" strokeWidth={3} />
                                                 </motion.div>
                                                 <h2 className="text-2xl font-semibold tracking-tight">
                                                     {isRehabify ? `Scheduled for ${patientName}` : `${patientName} is booked in`}
                                                 </h2>
                                                 {isRehabify && scheduled && (
-                                                    <p className="mt-2 text-sm text-rh-night/70 dark:text-white/70">
+                                                    <p className="mt-2 text-sm text-rh-ink/70 dark:text-white/70">
                                                         They pay {formatKobo(scheduled.chargeKobo)} to confirm. We’ll hold the time until{" "}
                                                         {formatTime(scheduled.holdExpiresAt)} on{" "}
                                                         {new Date(scheduled.holdExpiresAt).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}.
                                                     </p>
                                                 )}
                                                 {selectedSlot && (
-                                                    <div className="mt-5 rounded-2xl bg-white p-4 text-left ring-1 ring-rh-night/[0.08] dark:bg-rh-ink-2 dark:ring-white/10">
-                                                        <p className="text-sm text-rh-night/60 dark:text-white/60">
+                                                    <div className="mt-5 rounded-2xl bg-white p-4 text-left ring-1 ring-rh-ink/[0.08] dark:bg-rh-ink-2 dark:ring-white/10">
+                                                        <p className="text-sm text-rh-ink/60 dark:text-white/60">
                                                             {isRehabify && service
                                                                 ? `${service.name} · ${service.mode === "home" ? "Home visit" : "Video call"}`
                                                                 : `${selectedSessionType.title} · ${sessionMode === "telehealth" ? "Video call" : "In person"}`}
@@ -731,7 +731,7 @@ export default function SchedulePatientAppointmentModal({
                                                         </p>
                                                     </div>
                                                 )}
-                                                <p className="mt-5 text-sm text-rh-night/60 dark:text-white/60">
+                                                <p className="mt-5 text-sm text-rh-ink/60 dark:text-white/60">
                                                     {isRehabify
                                                         ? "The patient has been asked to pay. The session is confirmed once they do; if they don’t, the time is released."
                                                         : "The patient will get a notification with the session details."}
@@ -748,7 +748,7 @@ export default function SchedulePatientAppointmentModal({
                                         <BookingBottomSheet open={Boolean(selectedSlot)} label="Selected time" placement="sticky" className="shrink-0">
                                             {selectedSlot && (
                                                 <div>
-                                                    <p className="text-[11px] font-semibold uppercase tracking-wider text-rh-night/50 dark:text-white/50">
+                                                    <p className="text-[11px] font-semibold uppercase tracking-wider text-rh-ink/50 dark:text-white/50">
                                                         {sessionTitle} · {sessionMinutes} min
                                                     </p>
                                                     <p className="mt-1 text-base font-semibold">

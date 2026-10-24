@@ -120,7 +120,7 @@ export function LinksTab({ ctx }: { ctx: PortalContext }) {
                   <th className={thCls} />
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#002e2c]/5">
+              <tbody className="divide-y divide-rh-ink/5">
                 {links.map((link) => (
                   <tr key={link.id}>
                     <td className={tdCls}>
@@ -131,7 +131,7 @@ export function LinksTab({ ctx }: { ctx: PortalContext }) {
                       <div className="flex items-center gap-1 max-w-[260px]">
                         <span className="font-mono truncate">{link.url}</span>
                         <CopyButton text={link.url} label="Link" />
-                        <a href={link.url} target="_blank" rel="noreferrer" className="p-1.5 text-[#52706e] hover:text-[#002e2c]" aria-label="Open link">
+                        <a href={link.url} target="_blank" rel="noreferrer" className="p-1.5 text-[#52706e] hover:text-rh-ink" aria-label="Open link">
                           <ExternalLink className="w-3.5 h-3.5" />
                         </a>
                       </div>
@@ -166,7 +166,7 @@ export function LinksTab({ ctx }: { ctx: PortalContext }) {
             </table>
           </div>
         )}
-        <p className="px-5 py-3 text-[11px] text-[#52706e] border-t border-[#002e2c]/10">
+        <p className="px-5 py-3 text-[11px] text-[#52706e] border-t border-rh-ink/10">
           Clicks are unique visitors (once per visitor per 30 minutes; bots and link previews excluded). Bookings and payments count attributed patients.
         </p>
       </div>
@@ -235,7 +235,7 @@ function CreateLinkModal({ ctx, open, onClose }: { ctx: PortalContext; open: boo
     >
       {created ? (
         <div className="space-y-3">
-          <div className="flex items-center gap-2 p-3 rounded-xl bg-[#FAF6E7] border border-[#002e2c]/10">
+          <div className="flex items-center gap-2 p-3 rounded-xl bg-[#FAF6E7] border border-rh-ink/10">
             <span className="font-mono text-xs truncate flex-1">{created.url}</span>
             <CopyButton text={created.url} label="Link" />
           </div>
@@ -282,7 +282,7 @@ function LinkLeadsDrawer({ ctx, link, onClose }: { ctx: PortalContext; link: Lin
       ) : leads.length === 0 ? (
         <EmptyState title="No leads from this link yet" />
       ) : (
-        <ul className="divide-y divide-[#002e2c]/5">
+        <ul className="divide-y divide-rh-ink/5">
           {leads.map((lead) => (
             <li key={lead.referralId} className="py-2.5 flex items-center justify-between gap-3">
               <div className="min-w-0">

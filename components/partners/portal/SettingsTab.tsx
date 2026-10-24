@@ -111,7 +111,7 @@ export function SettingsTab({ ctx }: { ctx: PortalContext }) {
             if (file) void uploadLogo(file);
           }}
           className={`rounded-2xl border-2 border-dashed p-6 flex flex-col items-center justify-center gap-3 text-center transition ${
-            dragging ? "border-[#005b57] bg-[#005b57]/5" : "border-[#002e2c]/15 bg-[#FAF6E7]/50"
+            dragging ? "border-[#00cd0f] bg-[#00cd0f]/5" : "border-[#0b1312]/15 bg-[#FAF6E7]/50"
           }`}
         >
           {info.logoUrl ? (
@@ -144,16 +144,16 @@ export function SettingsTab({ ctx }: { ctx: PortalContext }) {
             )}
           </div>
         </div>
-        <div className="text-[11px] text-[#52706e] space-y-1 pt-2 border-t border-[#002e2c]/10">
+        <div className="text-[11px] text-[#52706e] space-y-1 pt-2 border-t border-rh-ink/10">
           <p>
-            {ctx.isDoctor ? "Referral code" : "Partner code"}: <span className="font-mono font-semibold text-[#002e2c]">{ctx.partnerCode}</span>
+            {ctx.isDoctor ? "Referral code" : "Partner code"}: <span className="font-mono font-semibold text-rh-ink">{ctx.partnerCode}</span>
           </p>
           <p>
             {ctx.isDoctor ? (
-              <>Account: <span className="font-semibold text-[#002e2c]">Referring doctor</span></>
+              <>Account: <span className="font-semibold text-rh-ink">Referring doctor</span></>
             ) : (
               <>
-                Organisation type: <span className="font-semibold text-[#002e2c] uppercase">{info.type}</span>
+                Organisation type: <span className="font-semibold text-rh-ink uppercase">{info.type}</span>
               </>
             )}
           </p>
@@ -170,7 +170,7 @@ export function SettingsTab({ ctx }: { ctx: PortalContext }) {
 
       <form onSubmit={save} className={`${cardCls} p-6 space-y-5 lg:col-span-2`}>
         <div className="flex items-center gap-2">
-          {ctx.isDoctor ? <UserRound className="w-4 h-4 text-[#005b57]" /> : <Building2 className="w-4 h-4 text-[#005b57]" />}
+          {ctx.isDoctor ? <UserRound className="w-4 h-4 text-rh-ink" /> : <Building2 className="w-4 h-4 text-rh-ink" />}
           <h3 className="text-sm font-semibold">{ctx.isDoctor ? "Your details" : "Organisation details"}</h3>
         </div>
         {ctx.isDoctor ? (
@@ -216,7 +216,7 @@ export function SettingsTab({ ctx }: { ctx: PortalContext }) {
           </Field>
         </div>
         )}
-        <div className="flex justify-end gap-2 pt-2 border-t border-[#002e2c]/10">
+        <div className="flex justify-end gap-2 pt-2 border-t border-rh-ink/10">
           <button type="button" className={btnSecondary} onClick={() => setForm(initial())}>
             Reset
           </button>

@@ -175,7 +175,7 @@ export function ClinicThemeToggle({ className, withLabel = false }: { className?
       aria-label={`Switch to ${label.toLowerCase()}`}
       title={withLabel ? undefined : label}
       className={cn(
-        'relative flex items-center gap-3 rounded-lg text-sm text-neutral-600 transition-colors hover:bg-neutral-100/70 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#005b57]/40 dark:text-neutral-400 dark:hover:bg-neutral-800/60 dark:hover:text-white',
+        'relative flex items-center gap-3 rounded-lg text-sm text-neutral-600 transition-colors hover:bg-neutral-100/70 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-lime/40 dark:text-neutral-400 dark:hover:bg-neutral-800/60 dark:hover:text-white',
         withLabel ? 'w-full px-3 py-2' : 'h-9 w-9 justify-center',
         className
       )}
@@ -191,7 +191,7 @@ export function ClinicThemeToggle({ className, withLabel = false }: { className?
             className="absolute inset-0 flex items-center justify-center"
           >
             {isDark ? (
-              <Moon className="h-4 w-4 text-[#2dd4bf]" />
+              <Moon className="h-4 w-4 text-rh-ink" />
             ) : (
               <Sun className="h-4 w-4 text-amber-500" />
             )}

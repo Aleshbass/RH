@@ -98,9 +98,9 @@ export function PartnerStatementBody({ statement }: { statement: PartnerStatemen
       <div className="p-5 bg-[#FAF6E7]/40 rounded-2xl border border-amber-200/60 flex flex-col sm:flex-row justify-between gap-5">
         <div>
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-[#005b57] text-white flex items-center justify-center font-bold text-sm">RH</div>
+            <div className="w-8 h-8 rounded-lg bg-rh-lime text-rh-ink flex items-center justify-center font-bold text-sm">RH</div>
             <div>
-              <h2 className="text-base font-bold text-[#002e2c]">{statement.issuer.name}</h2>
+              <h2 className="text-base font-bold text-[#0b1312]">{statement.issuer.name}</h2>
               <p className="text-xs text-gray-500">{statement.issuer.address}</p>
             </div>
           </div>
@@ -114,10 +114,10 @@ export function PartnerStatementBody({ statement }: { statement: PartnerStatemen
           </div>
         </div>
         <div className="sm:text-right text-xs space-y-1">
-          <span className="inline-block px-2.5 py-0.5 rounded-full bg-teal-100 text-teal-900 font-bold text-[10px] uppercase tracking-wider">
+          <span className="inline-block px-2.5 py-0.5 rounded-full bg-rh-honeydew text-rh-ink font-bold text-[10px] uppercase tracking-wider">
             Commission statement
           </span>
-          <p className="text-sm font-bold font-mono text-[#002e2c] pt-1 break-all">{statement.invoiceNumber}</p>
+          <p className="text-sm font-bold font-mono text-rh-ink pt-1 break-all">{statement.invoiceNumber}</p>
           <p className="text-gray-600">
             Date: <strong>{statement.invoiceDate}</strong>
           </p>
@@ -239,7 +239,7 @@ export function PartnerStatementBody({ statement }: { statement: PartnerStatemen
           <Row label="Less: withholding tax" value={`- ${naira(s.totalWithholdingTaxKobo)}`} />
           <Row label="Less: transfer fee (est.)" value={`- ${naira(s.totalPaystackTransferFeesKobo)}`} />
           <Row label="Less: stamp duty (est.)" value={`- ${naira(s.totalStampDutyKobo)}`} />
-          <div className="border-t-2 border-[#005b57] pt-2 flex justify-between items-center text-sm font-bold text-[#005b57]">
+          <div className="border-t-2 border-rh-lime pt-2 flex justify-between items-center text-sm font-bold text-[#00cd0f]">
             <span>Net payable</span>
             <span className="text-base">{naira(s.totalNetPayableKobo)}</span>
           </div>
@@ -251,7 +251,7 @@ export function PartnerStatementBody({ statement }: { statement: PartnerStatemen
 
 function Row({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
   return (
-    <div className={`flex justify-between gap-3 ${strong ? "font-bold text-teal-900 border-t border-gray-200 pt-2" : "text-gray-600"}`}>
+    <div className={`flex justify-between gap-3 ${strong ? "font-bold text-rh-ink border-t border-gray-200 pt-2" : "text-gray-600"}`}>
       <span>{label}</span>
       <span className={strong ? "" : "font-medium text-gray-900"}>{value}</span>
     </div>

@@ -27,8 +27,8 @@ function PainSparkline({ points }: { points: number[] }) {
   const path = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${(i * step).toFixed(1)},${(h - (p / 10) * (h - 4) - 2).toFixed(1)}`).join(' ')
   return (
     <svg viewBox={`0 0 ${w} ${h}`} className="h-10 w-40 overflow-visible" role="img" aria-label={`Pain over the last ${points.length} check-ins`}>
-      <path d={path} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="text-rh-teal dark:text-rh-aqua" />
-      <circle cx={(points.length - 1) * step} cy={h - (points[points.length - 1] / 10) * (h - 4) - 2} r={3} className="fill-rh-teal dark:fill-rh-aqua" />
+      <path d={path} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="text-rh-ink dark:text-rh-lime" />
+      <circle cx={(points.length - 1) * step} cy={h - (points[points.length - 1] / 10) * (h - 4) - 2} r={3} className="fill-rh-lime dark:fill-rh-lime" />
     </svg>
   )
 }
@@ -79,13 +79,13 @@ export function OverviewTab({
                 {episode.source === 'referred' && episode.referredBy ? ` · ${episode.referredBy}` : ''}
               </StatusBadge>
             </div>
-            <p className="text-[15px] font-semibold leading-snug text-rh-night dark:text-white">
+            <p className="text-[15px] font-semibold leading-snug text-rh-ink dark:text-white">
               {episode.condition || (isActive ? 'Add what you’re treating' : 'Course of care')}
             </p>
             <div>
               <div className="flex items-baseline justify-between text-sm">
                 <span className="text-neutral-500 dark:text-neutral-400">Sessions</span>
-                <span className="font-semibold tabular-nums text-rh-night dark:text-white">
+                <span className="font-semibold tabular-nums text-rh-ink dark:text-white">
                   {sessions.completed}
                   {planned ? <span className="font-normal text-neutral-400"> of {planned}</span> : ''}
                 </span>
@@ -108,7 +108,7 @@ export function OverviewTab({
         <Panel
           title="Care plan"
           actions={
-            <Button variant="ghost" size="sm" className="h-8 rounded-lg text-rh-teal dark:text-rh-aqua" onClick={onOpenPlan}>
+            <Button variant="ghost" size="sm" className="h-8 rounded-lg text-rh-ink dark:text-rh-lime" onClick={onOpenPlan}>
               {plan ? 'Open plan' : isActive ? 'Create plan' : 'View'}
             </Button>
           }
@@ -116,7 +116,7 @@ export function OverviewTab({
           {plan ? (
             <div className="space-y-4 px-5 pb-5 pt-3">
               <div>
-                <p className="text-[15px] font-semibold leading-snug text-rh-night dark:text-white">{plan.title}</p>
+                <p className="text-[15px] font-semibold leading-snug text-rh-ink dark:text-white">{plan.title}</p>
                 <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">
                   Version {plan.version} · updated {formatDistanceToNow(plan.updatedAt, { addSuffix: true })}
                 </p>
@@ -124,7 +124,7 @@ export function OverviewTab({
               <div>
                 <div className="flex items-baseline justify-between text-sm">
                   <span className="text-neutral-500 dark:text-neutral-400">Functional goals</span>
-                  <span className="font-semibold tabular-nums text-rh-night dark:text-white">
+                  <span className="font-semibold tabular-nums text-rh-ink dark:text-white">
                     {plan.goalsAchieved}
                     <span className="font-normal text-neutral-400"> of {plan.goals.length} met</span>
                   </span>
@@ -174,7 +174,7 @@ export function OverviewTab({
                 <div className="flex items-center gap-3">
                   <IconChip icon={nextAppointment.isOnline ? Video : CalendarClock} tone="mint" className="h-11 w-11 rounded-2xl" />
                   <div className="min-w-0">
-                    <p className="text-[15px] font-semibold text-rh-night dark:text-white">{format(nextAppointment.startTime, 'EEEE d MMM')}</p>
+                    <p className="text-[15px] font-semibold text-rh-ink dark:text-white">{format(nextAppointment.startTime, 'EEEE d MMM')}</p>
                     <p className="text-sm tabular-nums text-neutral-500 dark:text-neutral-400">
                       {format(nextAppointment.startTime, 'h:mm a')} – {format(nextAppointment.endTime, 'h:mm a')}
                     </p>
@@ -237,11 +237,11 @@ export function OverviewTab({
             <div className="space-y-3 rounded-2xl bg-rh-canvas p-4 dark:bg-white/[0.03]">
               <div className="flex items-center gap-2">
                 <IconChip icon={ClipboardList} tone="teal" className="h-8 w-8 rounded-lg" />
-                <p className="text-sm font-semibold text-rh-night dark:text-white">Home exercises, last 7 days</p>
+                <p className="text-sm font-semibold text-rh-ink dark:text-white">Home exercises, last 7 days</p>
               </div>
               {adherence ? (
                 <>
-                  <p className="text-3xl font-semibold tabular-nums tracking-tight text-rh-night dark:text-white">{adherence.rate}%</p>
+                  <p className="text-3xl font-semibold tabular-nums tracking-tight text-rh-ink dark:text-white">{adherence.rate}%</p>
                   <Meter value={adherence.completed} max={adherence.expected} tone={adherence.rate < 40 ? 'amber' : 'teal'} />
                   <p className="text-xs text-neutral-500 dark:text-neutral-400">
                     {adherence.completed} of {adherence.expected} exercise sessions done (each exercise once a day)
@@ -319,7 +319,7 @@ export function OverviewTab({
                     {profile.emergencyContact.phone && (
                       <>
                         {' · '}
-                        <a href={`tel:${profile.emergencyContact.phone.replace(/[^\d+]/g, '')}`} className="text-rh-teal underline-offset-2 hover:underline dark:text-rh-aqua">
+                        <a href={`tel:${profile.emergencyContact.phone.replace(/[^\d+]/g, '')}`} className="text-rh-ink underline-offset-2 hover:underline dark:text-rh-lime">
                           {profile.emergencyContact.phone}
                         </a>
                       </>

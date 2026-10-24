@@ -46,7 +46,7 @@ export function GoLivePanel({ ctx }: { ctx: PortalContext }) {
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
       <div className={`${cardCls} p-6 lg:col-span-2 space-y-5`}>
         <div className="flex items-start gap-3">
-          <div className="p-2.5 rounded-2xl bg-[#FAF6E7] text-[#005b57] shrink-0">
+          <div className="p-2.5 rounded-2xl bg-[#FAF6E7] text-rh-ink shrink-0">
             <Rocket className="w-5 h-5" />
           </div>
           <div>
@@ -84,7 +84,7 @@ export function GoLivePanel({ ctx }: { ctx: PortalContext }) {
         )}
 
         {(status === "not_requested" || status === "rejected") && (
-          <form onSubmit={submit} className="space-y-4 pt-2 border-t border-[#002e2c]/10">
+          <form onSubmit={submit} className="space-y-4 pt-2 border-t border-rh-ink/10">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className={labelCls}>Expected referrals per month</label>
@@ -109,7 +109,7 @@ export function GoLivePanel({ ctx }: { ctx: PortalContext }) {
           {checklist.items.map((item) => (
             <li key={item.key} className="flex items-start gap-2 text-xs">
               {item.done ? <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" /> : <Circle className="w-4 h-4 text-[#52706e]/50 shrink-0" />}
-              <span className={item.done ? "text-[#002e2c]" : "text-[#52706e]"}>
+              <span className={item.done ? "text-rh-ink" : "text-[#52706e]"}>
                 {item.label}
                 {!item.required && <span className="text-[10px] text-[#52706e]"> (recommended)</span>}
               </span>

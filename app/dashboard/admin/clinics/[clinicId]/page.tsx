@@ -44,7 +44,7 @@ const errorText = (err: unknown, fallback: string) =>
 const backLink = (
   <Link
     href={CLINICS_BASE}
-    className="inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider text-rh-teal hover:underline dark:text-rh-aqua"
+    className="inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider text-rh-ink hover:underline dark:text-rh-lime"
   >
     <ArrowLeft className="h-3.5 w-3.5" />
     All clinics
@@ -134,7 +134,7 @@ export default function AdminClinicDetailPage() {
             <ClinicAvatar id={clinic._id} name={clinic.name} logoUrl={clinic.logoUrl} size="lg" />
             <div className="min-w-0">
               <div className="flex min-w-0 flex-wrap items-center gap-2">
-                <h1 className="truncate text-2xl font-semibold tracking-tight text-rh-night dark:text-white sm:text-[28px]">{clinic.name}</h1>
+                <h1 className="truncate text-2xl font-semibold tracking-tight text-rh-ink dark:text-white sm:text-[28px]">{clinic.name}</h1>
                 <RehabifyId value={clinic.clinicNumber} />
                 <ClinicStatusBadge status={clinic.status} />
                 <ApprovalBadge status={data.approval.status} hideApproved />
@@ -174,7 +174,7 @@ export default function AdminClinicDetailPage() {
         <div className="flex items-start gap-3 rounded-2xl border border-rose-200 bg-rh-blush/60 p-4 dark:border-rose-400/20 dark:bg-rose-400/10">
           <ShieldOff className="mt-0.5 h-5 w-5 shrink-0 text-[#be123c] dark:text-rose-300" />
           <div className="min-w-0 text-sm">
-            <p className="font-semibold text-rh-night dark:text-white">
+            <p className="font-semibold text-rh-ink dark:text-white">
               Suspended{clinic.suspendedAt ? ` on ${format(clinic.suspendedAt, 'd MMM yyyy, HH:mm')}` : ''}
               {clinic.suspendedByName ? ` by ${clinic.suspendedByName}` : ''}
             </p>

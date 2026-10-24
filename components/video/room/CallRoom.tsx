@@ -158,14 +158,14 @@ export function CallRoom({
       <div className="flex h-full min-h-0 flex-col gap-3 lg:flex-row">
         {presenter.isLocalParticipant ? (
           <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 rounded-[28px] bg-white/80 p-6 text-center shadow-[0_20px_60px_-24px_rgba(0,0,0,0.2)] ring-1 ring-black/5 backdrop-blur">
-            <span className="flex h-14 w-14 items-center justify-center rounded-full bg-brand/10 text-brand">
+            <span className="flex h-14 w-14 items-center justify-center rounded-full bg-rh-lime/10 text-rh-ink">
               <MonitorUp className="h-6 w-6" />
             </span>
             <p className="text-lg font-semibold tracking-tight">You&apos;re presenting to everyone</p>
             <button
               type="button"
               onClick={() => void call?.screenShare.disable()}
-              className="rounded-full bg-brand px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-brand-dark"
+              className="rounded-full bg-rh-lime px-5 py-2.5 text-sm font-medium text-rh-ink transition-colors hover:bg-rh-lime-deep"
             >
               Stop presenting
             </button>
@@ -189,7 +189,7 @@ export function CallRoom({
         {!other && (
           <div className="pointer-events-none absolute inset-x-0 top-4 flex justify-center px-4">
             <p className="flex items-center gap-2 rounded-full bg-white/85 px-4 py-2 text-[13px] font-medium text-neutral-700 shadow-sm ring-1 ring-black/5 backdrop-blur-xl">
-              <Loader2 className="h-3.5 w-3.5 animate-spin text-brand" />
+              <Loader2 className="h-3.5 w-3.5 animate-spin text-rh-ink" />
               {waitingFor ? `Waiting for ${waitingFor} to join` : "You're the only one here"}
             </p>
           </div>

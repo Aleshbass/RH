@@ -57,7 +57,7 @@ export default function PartnerPortalPage() {
   if (!isLoaded || (isSignedIn && me === undefined) || waitingForAccount || doctorNeedsProfile) {
     return (
       <div className="min-h-[80vh] flex flex-col items-center justify-center space-y-4">
-        <div className="w-10 h-10 rounded-full border-3 border-[#002e2c]/20 border-t-[#002e2c] animate-spin" />
+        <div className="w-10 h-10 rounded-full border-3 border-rh-ink/20 border-t-rh-ink animate-spin" />
         <p className="text-xs font-semibold uppercase tracking-wider text-[#52706e]">Loading your portal…</p>
       </div>
     );

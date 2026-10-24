@@ -16,8 +16,8 @@ type Stats = {
 
 /** Chart ink per theme: one brand hue for data, quiet neutrals for everything else. */
 const CHART = {
-  light: { data: '#005b57', grid: '#e5e5e5', axis: '#737373', surface: '#ffffff', border: '#e5e5e5', text: '#171717' },
-  dark: { data: '#2dd4bf', grid: '#262626', axis: '#a3a3a3', surface: '#171717', border: '#262626', text: '#fafafa' },
+  light: { data: '#00cd0f', grid: '#e5e5e5', axis: '#737373', surface: '#ffffff', border: '#e5e5e5', text: '#171717' },
+  dark: { data: '#00cd0f', grid: '#262626', axis: '#a3a3a3', surface: '#171717', border: '#262626', text: '#fafafa' },
 };
 
 function monthLabel(key: string) {

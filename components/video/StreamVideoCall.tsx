@@ -192,7 +192,7 @@ export default function StreamVideoCall({
   }
 
   if (!isLoaded || !client || !call) {
-    return <CallStatusScreen icon={<Loader2 className="h-6 w-6 animate-spin text-brand" />} title="Getting your call ready" />
+    return <CallStatusScreen icon={<Loader2 className="h-6 w-6 animate-spin text-rh-ink" />} title="Getting your call ready" />
   }
 
   return (

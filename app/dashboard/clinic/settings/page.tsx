@@ -481,7 +481,7 @@ function TagListInput({
                 type="button"
                 aria-label={`Remove ${value}`}
                 onClick={() => onChange(values.filter((item) => item !== value))}
-                className="shrink-0 rounded p-0.5 text-neutral-400 hover:bg-neutral-200 hover:text-neutral-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#005b57] dark:text-neutral-500 dark:hover:bg-neutral-700 dark:hover:text-white dark:focus-visible:ring-[#2dd4bf]"
+                className="shrink-0 rounded p-0.5 text-neutral-400 hover:bg-neutral-200 hover:text-neutral-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-rh-lime dark:text-neutral-500 dark:hover:bg-neutral-700 dark:hover:text-white dark:focus-visible:ring-rh-lime"
               >
                 <X className="h-3.5 w-3.5" />
               </button>

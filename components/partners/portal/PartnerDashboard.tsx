@@ -103,19 +103,19 @@ export function PartnerDashboard({ ownCode, ownType, isAdmin }: { ownCode: strin
   const ctx = info ? { partnerCode, environment: env, info, isAdmin, envWritable, isDoctor } : null;
 
   return (
-    <div className="min-h-screen bg-[#FAF6E7] text-[#002e2c] font-sans pb-28 antialiased selection:bg-[#005b57] selection:text-white overflow-x-clip w-full max-w-full">
-      <header className="sticky top-0 z-40 border-b border-[#002e2c]/10 bg-[#FAF6E7]/80 backdrop-blur-xl w-full">
+    <div className="min-h-screen bg-[#FAF6E7] text-rh-ink font-sans pb-28 antialiased selection:bg-rh-lime selection:text-rh-ink overflow-x-clip w-full max-w-full">
+      <header className="sticky top-0 z-40 border-b border-rh-ink/10 bg-[#FAF6E7]/80 backdrop-blur-xl w-full">
         <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-2 sm:gap-4 min-w-0">
           <div className="flex items-center gap-2 sm:gap-4 min-w-0 flex-1 sm:flex-initial">
             <Link href="/" className="shrink-0 transition-opacity hover:opacity-85">
               <NextImage src="/logos/MainRehabify.svg" alt="Rehabify Health" width={100} height={26} className="h-6 sm:h-7 w-auto object-contain" />
             </Link>
-            <div className="h-5 sm:h-6 w-px bg-[#002e2c]/15 shrink-0" />
+            <div className="h-5 sm:h-6 w-px bg-rh-ink/15 shrink-0" />
             <div className="flex items-center gap-2 min-w-0">
               {info?.logoUrl ? (
                 <img src={info.logoUrl} alt={info.name} className="max-h-6 sm:max-h-7 max-w-[70px] sm:max-w-[120px] object-contain rounded-md shrink-0" />
               ) : null}
-              <span className="font-semibold tracking-tight text-[#002e2c] text-xs sm:text-sm truncate max-w-[110px] sm:max-w-[220px]">
+              <span className="font-semibold tracking-tight text-rh-ink text-xs sm:text-sm truncate max-w-[110px] sm:max-w-[220px]">
                 {info?.name ?? "Partner Portal"}
               </span>
             </div>
@@ -128,7 +128,7 @@ export function PartnerDashboard({ ownCode, ownType, isAdmin }: { ownCode: strin
                   value={partnerCode}
                   onChange={(e) => setSelectedCode(e.target.value)}
                   aria-label="View partner organisation"
-                  className="w-full appearance-none bg-white text-[11px] sm:text-xs font-semibold text-[#002e2c] pl-2.5 pr-6 py-1.5 rounded-xl border border-[#002e2c]/15 focus:outline-none focus:ring-2 focus:ring-[#002e2c]/20 cursor-pointer shadow-xs truncate"
+                  className="w-full appearance-none bg-white text-[11px] sm:text-xs font-semibold text-rh-ink pl-2.5 pr-6 py-1.5 rounded-xl border border-rh-ink/15 focus:outline-none focus:ring-2 focus:ring-rh-ink/20 cursor-pointer shadow-xs truncate"
                 >
                   {adminPartners.map((p) => (
                     <option key={p.code} value={p.code}>
@@ -141,7 +141,7 @@ export function PartnerDashboard({ ownCode, ownType, isAdmin }: { ownCode: strin
             )}
 
             {!isDoctor && (
-              <div className="inline-flex p-0.5 bg-[#002e2c]/5 border border-[#002e2c]/10 rounded-xl shrink-0" role="tablist" aria-label="Environment">
+              <div className="inline-flex p-0.5 bg-rh-ink/5 border border-rh-ink/10 rounded-xl shrink-0" role="tablist" aria-label="Environment">
                 {(["sandbox", "live"] as const).map((option) => (
                   <button
                     key={option}
@@ -150,7 +150,7 @@ export function PartnerDashboard({ ownCode, ownType, isAdmin }: { ownCode: strin
                     aria-selected={environment === option}
                     onClick={() => setEnvironment(option)}
                     className={`px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-lg text-[10px] sm:text-xs font-medium transition-all ${
-                      environment === option ? "bg-white text-[#002e2c] shadow-xs font-semibold" : "text-[#52706e] hover:text-[#002e2c]"
+                      environment === option ? "bg-white text-rh-ink shadow-xs font-semibold" : "text-[#52706e] hover:text-[#0b1312]"
                     }`}
                   >
                     {option === "sandbox" ? "Sandbox" : "Live"}
@@ -160,7 +160,7 @@ export function PartnerDashboard({ ownCode, ownType, isAdmin }: { ownCode: strin
             )}
 
             {isDoctor && ctx && (
-              <button type="button" onClick={() => setReferOpen(true)} className="hidden sm:inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-[#002e2c] text-[#FAF6E7] text-xs font-semibold hover:bg-[#004744] transition">
+              <button type="button" onClick={() => setReferOpen(true)} className="hidden sm:inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-rh-ink text-[#FAF6E7] text-xs font-semibold hover:bg-[#004744] transition">
                 <UserPlus className="w-3.5 h-3.5" />
                 Refer a patient
               </button>
@@ -171,13 +171,13 @@ export function PartnerDashboard({ ownCode, ownType, isAdmin }: { ownCode: strin
                 href="https://docs.physioaroundme.com"
                 target="_blank"
                 rel="noreferrer"
-                className="hidden md:flex items-center gap-1.5 text-xs font-medium text-[#52706e] hover:text-[#002e2c] px-3 py-1.5 rounded-xl hover:bg-white border border-transparent hover:border-[#002e2c]/10 transition"
+                className="hidden md:flex items-center gap-1.5 text-xs font-medium text-[#52706e] hover:text-rh-ink px-3 py-1.5 rounded-xl hover:bg-white border border-transparent hover:border-rh-ink/10 transition"
               >
-                <FileText className="w-3.5 h-3.5 text-[#005b57]" />
+                <FileText className="w-3.5 h-3.5 text-rh-ink" />
                 <span>Docs</span>
               </a>
             )}
-            <div className="flex items-center pl-1 sm:pl-2 border-l border-[#002e2c]/10 shrink-0">
+            <div className="flex items-center pl-1 sm:pl-2 border-l border-rh-ink/10 shrink-0">
               <UserButton afterSignOutUrl="/partners/portal" />
             </div>
           </div>
@@ -201,15 +201,15 @@ export function PartnerDashboard({ ownCode, ownType, isAdmin }: { ownCode: strin
             </div>
           </div>
         ) : !productionApproved && info ? (
-          <div className="rounded-2xl border border-[#002e2c]/15 bg-white p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+          <div className="rounded-2xl border border-rh-ink/15 bg-white p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
             <div className="flex items-start gap-3">
               <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
               <p className="text-xs text-[#52706e] leading-relaxed">
-                <strong className="text-[#002e2c]">Production access is not approved yet.</strong> You can view the live environment, but live keys,
+                <strong className="text-rh-ink">Production access is not approved yet.</strong> You can view the live environment, but live keys,
                 webhooks and links are created after Rehabify approves your go-live request.
               </p>
             </div>
-            <button type="button" onClick={() => setActiveTab("golive")} className="px-3.5 py-1.5 rounded-xl bg-[#002e2c] text-[#FAF6E7] text-xs font-semibold shrink-0">
+            <button type="button" onClick={() => setActiveTab("golive")} className="px-3.5 py-1.5 rounded-xl bg-rh-ink text-[#FAF6E7] text-xs font-semibold shrink-0">
               Go-live checklist
             </button>
           </div>
@@ -222,20 +222,20 @@ export function PartnerDashboard({ ownCode, ownType, isAdmin }: { ownCode: strin
           </div>
         )}
 
-        <div className="rounded-3xl border border-[#002e2c]/10 bg-white p-5 sm:p-7 shadow-[0_4px_24px_rgba(0,46,44,0.03)] flex flex-col md:flex-row md:items-center justify-between gap-5">
+        <div className="rounded-3xl border border-rh-ink/10 bg-white p-5 sm:p-7 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-5">
           <div className="flex items-start gap-4 min-w-0">
             {info?.logoUrl ? (
-              <div className="w-14 h-14 rounded-2xl border border-[#002e2c]/10 bg-white p-2 flex items-center justify-center shrink-0">
+              <div className="w-14 h-14 rounded-2xl border border-rh-ink/10 bg-white p-2 flex items-center justify-center shrink-0">
                 <img src={info.logoUrl} alt={info.name} className="max-h-full max-w-full object-contain" />
               </div>
             ) : (
-              <div className="w-14 h-14 rounded-2xl border border-[#002e2c]/10 bg-[#FAF6E7] flex items-center justify-center shrink-0">
-                {isDoctor ? <Stethoscope className="w-7 h-7 text-[#005b57]" /> : <Building2 className="w-7 h-7 text-[#005b57]" />}
+              <div className="w-14 h-14 rounded-2xl border border-rh-ink/10 bg-[#FAF6E7] flex items-center justify-center shrink-0">
+                {isDoctor ? <Stethoscope className="w-7 h-7 text-rh-ink" /> : <Building2 className="w-7 h-7 text-rh-ink" />}
               </div>
             )}
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap mb-1">
-                <h1 className="text-xl sm:text-2xl font-semibold tracking-tight text-[#002e2c] truncate">
+                <h1 className="text-xl sm:text-2xl font-semibold tracking-tight text-rh-ink truncate">
                   {info?.name ?? (isDoctor ? "Your referral portal" : "Partner organisation")}
                 </h1>
                 {isDoctor ? (
@@ -262,23 +262,23 @@ export function PartnerDashboard({ ownCode, ownType, isAdmin }: { ownCode: strin
           </div>
           <div className="flex flex-col sm:flex-row gap-2 self-start md:self-auto">
             {isDoctor && ctx && (
-              <button type="button" onClick={() => setReferOpen(true)} className="sm:hidden inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-[#002e2c] text-[#FAF6E7] text-xs font-semibold">
+              <button type="button" onClick={() => setReferOpen(true)} className="sm:hidden inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-rh-ink text-[#FAF6E7] text-xs font-semibold">
                 <UserPlus className="w-3.5 h-3.5" />
                 Refer a patient
               </button>
             )}
-            <div className="bg-[#FAF6E7]/80 border border-[#002e2c]/10 rounded-2xl px-4 py-2.5 flex items-center gap-3">
+            <div className="bg-[#FAF6E7]/80 border border-rh-ink/10 rounded-2xl px-4 py-2.5 flex items-center gap-3">
               <div className="flex flex-col">
                 <span className="text-[10px] uppercase tracking-wider text-[#52706e] font-semibold">{isDoctor ? "Your referral code" : "Partner code"}</span>
-                <span className="font-mono text-xs font-bold text-[#002e2c]">{partnerCode}</span>
+                <span className="font-mono text-xs font-bold text-rh-ink">{partnerCode}</span>
               </div>
               <CopyButton text={partnerCode} label={isDoctor ? "Referral code" : "Partner code"} />
             </div>
           </div>
         </div>
 
-        <div className="border-b border-[#002e2c]/10 pb-px">
-          <nav className="flex gap-1 sm:gap-2 overflow-x-auto no-scrollbar p-1 bg-[#002e2c]/5 rounded-2xl max-w-full" aria-label="Portal sections">
+        <div className="border-b border-rh-ink/10 pb-px">
+          <nav className="flex gap-1 sm:gap-2 overflow-x-auto no-scrollbar p-1 bg-rh-ink/5 rounded-2xl max-w-full" aria-label="Portal sections">
             {tabs.map((tab) => {
               const Icon = tab.icon;
               const active = activeTab === tab.id;
@@ -289,10 +289,10 @@ export function PartnerDashboard({ ownCode, ownType, isAdmin }: { ownCode: strin
                   onClick={() => setActiveTab(tab.id)}
                   aria-current={active ? "page" : undefined}
                   className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold transition-all shrink-0 ${
-                    active ? "bg-white text-[#002e2c] shadow-xs" : "text-[#52706e] hover:text-[#002e2c] hover:bg-white/50"
+                    active ? "bg-white text-rh-ink shadow-xs" : "text-[#52706e] hover:text-rh-ink hover:bg-white/50"
                   }`}
                 >
-                  <Icon className={`w-3.5 h-3.5 ${active ? "text-[#005b57]" : "text-[#52706e]"}`} />
+                  <Icon className={`w-3.5 h-3.5 ${active ? "text-[#00cd0f]" : "text-[#52706e]"}`} />
                   <span>{tab.label}</span>
                   {tab.id === "golive" && info?.productionStatus === "requested" && <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />}
                 </button>

@@ -651,10 +651,10 @@ const RealtimeChat = ({ recipientId, className, embedded = false, variant = 'def
                         isOwnMessage
                           ? isPatient
                             ? "bg-pt-primary text-pt-on-primary rounded-br-md"
-                            : "bg-rh-teal text-white rounded-br-md dark:bg-rh-aqua dark:text-rh-night"
+                            : "bg-rh-lime text-rh-ink rounded-br-md dark:bg-rh-lime dark:text-rh-ink"
                           : isPatient
                             ? "bg-pt-sunken text-pt-ink rounded-bl-md"
-                            : "bg-rh-canvas text-rh-night rounded-bl-md dark:bg-white/[0.06] dark:text-neutral-100",
+                            : "bg-rh-canvas text-rh-ink rounded-bl-md dark:bg-white/[0.06] dark:text-neutral-100",
                         isSelected && "ring-2 ring-primary/50 shadow-lg scale-[1.02]",
                         "hover:shadow-md"
                       )}
@@ -803,7 +803,7 @@ const RealtimeChat = ({ recipientId, className, embedded = false, variant = 'def
                         ? "border border-rose-300 bg-rose-50 text-rose-900 dark:border-rose-400/40 dark:bg-rose-400/10 dark:text-rose-100"
                         : isPatient
                           ? "bg-pt-primary/70 text-pt-on-primary"
-                          : "bg-rh-teal/70 text-white dark:bg-rh-aqua/70 dark:text-rh-night"
+                          : "bg-rh-lime/70 text-white dark:bg-white/[0.06] dark:text-rh-ink"
                     )}
                   >
                     <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">{item.content}</p>
@@ -865,7 +865,7 @@ const RealtimeChat = ({ recipientId, className, embedded = false, variant = 'def
                 "rounded-full px-4 py-2 text-sm transition-all duration-200",
                 isPatient
                   ? "bg-pt-primary text-pt-on-primary shadow-pt-lift hover:bg-pt-primary-hover"
-                  : "bg-rh-teal text-white shadow-lg hover:shadow-xl"
+                  : "bg-rh-lime text-rh-ink shadow-lg hover:shadow-xl"
               )}
               size="sm"
             >

@@ -15,7 +15,7 @@ const isProtectedRoute = createRouteMatcher([
 ]);
 
 // Rehabify Learn pages served at the root of learn.* (/register -> /learn/register).
-const LEARN_PAGES = /^\/(?:register|confirmation)(?:\/|$)/;
+const LEARN_PAGES = /^\/(?:register|confirmation|course|start|verify)(?:\/|$)/;
 
 // Partner referral-link attribution (documented: 30-day first-party cookie for
 // physioaroundme.com and all its subdomains; first partner wins at sign-up/booking).

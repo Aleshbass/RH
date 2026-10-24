@@ -71,7 +71,7 @@ export const syncLibraryResourcesInternal = internalMutation({
 });
 
 /** List row: everything but the guide text, which getResource returns. */
-function listRow(r: Doc<"libraryResources">) {
+export function listRow(r: Doc<"libraryResources">) {
   return {
     key: r.key,
     kind: r.kind,
@@ -88,7 +88,7 @@ function listRow(r: Doc<"libraryResources">) {
   };
 }
 
-/** The resource library for the care team and licensees (not patients). */
+/** The resource library for the care team, licensees and Rehabify Learn physios (not patients). */
 export const listResources = query({
   args: { region: v.optional(v.string()) },
   handler: async (ctx, args) => {

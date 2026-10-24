@@ -430,8 +430,8 @@ export default function AdminPayoutsPage() {
         </div>
 
         {tab === 'open' && selectedRows.length > 0 && (
-          <div className="flex flex-col gap-2 border-b border-black/[0.05] bg-rh-mist/60 px-4 py-3 dark:border-white/[0.06] dark:bg-rh-aqua/[0.06] sm:flex-row sm:items-center sm:justify-between sm:px-5">
-            <p className="text-sm text-rh-night dark:text-white">
+          <div className="flex flex-col gap-2 border-b border-black/[0.05] bg-rh-honeydew/60 px-4 py-3 dark:border-white/[0.06] dark:bg-white/[0.06] sm:flex-row sm:items-center sm:justify-between sm:px-5">
+            <p className="text-sm text-rh-ink dark:text-white">
               <span className="font-semibold">{selectedRows.length}</span> selected ·{' '}
               <span className="font-semibold tabular-nums">{formatKobo(selectedTotal)}</span>
             </p>
@@ -497,7 +497,7 @@ export default function AdminPayoutsPage() {
                     <TableCell className={cn('min-w-[180px]', tab === 'open' ? '' : 'pl-5')}>
                       {r.recipient ? (
                         <Link href={`/dashboard/admin/users/${r.recipient._id}`} className="block hover:underline">
-                          <span className="block text-sm font-medium text-rh-night dark:text-white">{r.recipient.name}</span>
+                          <span className="block text-sm font-medium text-rh-ink dark:text-white">{r.recipient.name}</span>
                           <span className="block text-xs text-neutral-500 dark:text-neutral-400">{r.recipient.email}</span>
                         </Link>
                       ) : (
@@ -508,7 +508,7 @@ export default function AdminPayoutsPage() {
                     <TableCell className="min-w-[180px]">
                       {r.bank ? (
                         <div className="text-sm">
-                          <span className="block text-rh-night dark:text-white">
+                          <span className="block text-rh-ink dark:text-white">
                             {r.bank.bankName} · <span className="tabular-nums">{r.bank.accountNumber}</span>
                           </span>
                           <span className="block text-xs text-neutral-500 dark:text-neutral-400">
@@ -521,14 +521,14 @@ export default function AdminPayoutsPage() {
                       )}
                     </TableCell>
                     <TableCell className="min-w-[150px] text-sm">
-                      <span className="block text-rh-night dark:text-white">{r.invoice ? `#${r.invoice.invoiceNumber}` : 'Invoice missing'}</span>
+                      <span className="block text-rh-ink dark:text-white">{r.invoice ? `#${r.invoice.invoiceNumber}` : 'Invoice missing'}</span>
                       {r.patientUserId && (
                         <span className="block">
                           <PatientRef userId={r.patientUserId} patientNumber={r.patientNumber} />
                         </span>
                       )}
                     </TableCell>
-                    <TableCell className="text-right text-sm font-semibold tabular-nums text-rh-night dark:text-white">{formatKobo(r.amountKobo)}</TableCell>
+                    <TableCell className="text-right text-sm font-semibold tabular-nums text-rh-ink dark:text-white">{formatKobo(r.amountKobo)}</TableCell>
                     <TableCell className="min-w-[120px]">
                       <StatusBadge tone={statusBadge[r.status].tone}>{statusBadge[r.status].label}</StatusBadge>
                       {r.status === 'failed' && r.failureReason && (

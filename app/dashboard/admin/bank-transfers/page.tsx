@@ -308,7 +308,7 @@ export default function AdminBankTransfersPage() {
               <li key={r._id} className="flex flex-col gap-3 px-4 py-4 sm:px-5 lg:flex-row lg:items-center">
                 <div className="min-w-0 flex-1 space-y-1">
                   <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                    <p className="truncate text-sm font-semibold text-rh-night dark:text-white">{r.patient.name}</p>
+                    <p className="truncate text-sm font-semibold text-rh-ink dark:text-white">{r.patient.name}</p>
                     <RehabifyId value={r.patient.patientNumber} />
                     {r.bookingCode && <StatusBadge tone="teal">{r.bookingCode}</StatusBadge>}
                     {r.patient.isGuest && <StatusBadge>Guest</StatusBadge>}
@@ -333,7 +333,7 @@ export default function AdminBankTransfersPage() {
                   <p className="text-xs text-neutral-600 dark:text-neutral-300">
                     with{' '}
                     {r.physiotherapist ? (
-                      <Link href={`/dashboard/admin/users/${r.physiotherapist._id}`} className="font-medium text-rh-teal hover:underline dark:text-rh-aqua">
+                      <Link href={`/dashboard/admin/users/${r.physiotherapist._id}`} className="font-medium text-rh-ink hover:underline dark:text-rh-lime">
                         {r.physiotherapist.name}
                       </Link>
                     ) : (
@@ -352,7 +352,7 @@ export default function AdminBankTransfersPage() {
                 </div>
                 <div className="flex items-center justify-between gap-4 lg:justify-end">
                   <div className="text-left lg:text-right">
-                    <p className="text-base font-semibold tabular-nums text-rh-night dark:text-white">{formatKobo(r.serviceAmountKobo)}</p>
+                    <p className="text-base font-semibold tabular-nums text-rh-ink dark:text-white">{formatKobo(r.serviceAmountKobo)}</p>
                     {r.totalAmountKobo !== r.serviceAmountKobo && (
                       <p className="text-xs text-neutral-500 dark:text-neutral-400">Card total {formatKobo(r.totalAmountKobo)}</p>
                     )}
@@ -384,13 +384,13 @@ export default function AdminBankTransfersPage() {
                   return (
                     <TableRow key={r._id}>
                       <TableCell className="whitespace-nowrap pl-5 text-sm">
-                        <span className="block text-rh-night dark:text-white">{confirmedAt ? format(confirmedAt, 'd MMM yyyy, HH:mm') : '–'}</span>
+                        <span className="block text-rh-ink dark:text-white">{confirmedAt ? format(confirmedAt, 'd MMM yyyy, HH:mm') : '–'}</span>
                         {r.bankTransferDetails?.confirmedBy && (
                           <span className="block text-xs text-neutral-500 dark:text-neutral-400">by {r.bankTransferDetails.confirmedBy}</span>
                         )}
                       </TableCell>
                       <TableCell className="min-w-[160px] text-sm">
-                        <span className="block text-rh-night dark:text-white">{r.patient.name}</span>
+                        <span className="block text-rh-ink dark:text-white">{r.patient.name}</span>
                         {r.patient.patientNumber && (
                           <span className="block">
                             <PatientRef userId={r.patient._id} patientNumber={r.patient.patientNumber} />
@@ -400,7 +400,7 @@ export default function AdminBankTransfersPage() {
                       </TableCell>
                       <TableCell className="min-w-[150px] text-sm">
                         {r.physiotherapist ? (
-                          <Link href={`/dashboard/admin/users/${r.physiotherapist._id}`} className="text-rh-teal hover:underline dark:text-rh-aqua">
+                          <Link href={`/dashboard/admin/users/${r.physiotherapist._id}`} className="text-rh-ink hover:underline dark:text-rh-lime">
                             {r.physiotherapist.name}
                           </Link>
                         ) : (
@@ -408,12 +408,12 @@ export default function AdminBankTransfersPage() {
                         )}
                       </TableCell>
                       <TableCell className="min-w-[150px] text-sm">
-                        <span className="block text-rh-night dark:text-white">{r.bankTransferDetails?.senderName ?? '–'}</span>
+                        <span className="block text-rh-ink dark:text-white">{r.bankTransferDetails?.senderName ?? '–'}</span>
                         {r.bankTransferDetails?.bankName && (
                           <span className="block text-xs text-neutral-500 dark:text-neutral-400">{r.bankTransferDetails.bankName}</span>
                         )}
                       </TableCell>
-                      <TableCell className="text-right text-sm font-semibold tabular-nums text-rh-night dark:text-white">
+                      <TableCell className="text-right text-sm font-semibold tabular-nums text-rh-ink dark:text-white">
                         {formatKobo(r.paidAmountKobo ?? r.serviceAmountKobo)}
                       </TableCell>
                       <TableCell className="pr-5 font-mono text-xs text-neutral-500 dark:text-neutral-400">{r.paymentReference ?? '–'}</TableCell>
@@ -440,7 +440,7 @@ export default function AdminBankTransfersPage() {
         >
           <div className="space-y-3">
             <div className="rounded-xl bg-rh-canvas px-3 py-2 text-sm dark:bg-white/[0.04]">
-              <p className="text-rh-night dark:text-white">
+              <p className="text-rh-ink dark:text-white">
                 {target.bookingCode ? `${target.bookingCode} · ` : ''}
                 {sessionLabel(target)}
               </p>

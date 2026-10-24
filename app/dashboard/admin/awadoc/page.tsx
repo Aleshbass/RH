@@ -77,7 +77,7 @@ function DiagRow({ label, value, mono = true }: { label: string; value: ReactNod
   return (
     <div className="grid grid-cols-1 gap-1 border-b border-black/[0.05] py-1.5 last:border-0 dark:border-white/[0.06] sm:grid-cols-[180px_1fr]">
       <span className="text-xs font-medium text-neutral-500 dark:text-neutral-400">{label}</span>
-      <span className={cn('break-all text-xs text-rh-night dark:text-neutral-200', mono && 'font-mono')}>{value}</span>
+      <span className={cn('break-all text-xs text-rh-ink dark:text-neutral-200', mono && 'font-mono')}>{value}</span>
     </div>
   )
 }
@@ -114,7 +114,7 @@ function SignatureDiagnosticsPanel({ diagnostics }: { diagnostics: SignatureDiag
   return (
     <div className="space-y-4">
       <div>
-        <p className="mb-1 text-xs font-semibold text-rh-night dark:text-white">Compare with AwaDoc</p>
+        <p className="mb-1 text-xs font-semibold text-rh-ink dark:text-white">Compare with AwaDoc</p>
         <Input
           value={theirHash}
           onChange={(e) => setTheirHash(e.target.value)}
@@ -127,7 +127,7 @@ function SignatureDiagnosticsPanel({ diagnostics }: { diagnostics: SignatureDiag
       </div>
 
       <div>
-        <p className="mb-1 text-xs font-semibold text-rh-night dark:text-white">Signature</p>
+        <p className="mb-1 text-xs font-semibold text-rh-ink dark:text-white">Signature</p>
         <DiagRow label="Received x-signature" value={d.receivedSignature || '(empty)'} />
         <DiagRow label="x-timestamp" value={d.timestampHeader ?? '(missing)'} />
         <DiagRow label="Clock skew" value={d.timestampSkewSeconds === null ? 'n/a' : `${d.timestampSkewSeconds}s (limit ±300s)`} />
@@ -151,7 +151,7 @@ function SignatureDiagnosticsPanel({ diagnostics }: { diagnostics: SignatureDiag
       </div>
 
       <div>
-        <p className="mb-1 text-xs font-semibold text-rh-night dark:text-white">Headers received</p>
+        <p className="mb-1 text-xs font-semibold text-rh-ink dark:text-white">Headers received</p>
         {d.headers.map((h) => (
           <DiagRow key={h.name} label={h.name} value={h.value} />
         ))}
@@ -159,14 +159,14 @@ function SignatureDiagnosticsPanel({ diagnostics }: { diagnostics: SignatureDiag
 
       <div>
         <div className="mb-1 flex items-center justify-between">
-          <p className="text-xs font-semibold text-rh-night dark:text-white">
+          <p className="text-xs font-semibold text-rh-ink dark:text-white">
             Raw body ({d.rawBodyLength} chars{d.rawBodyTruncated ? ', truncated' : ''})
           </p>
           <Button variant="ghost" size="sm" className={cn(softButtonClass, 'h-6 text-xs')} onClick={copyBody}>
             {copied ? 'Copied' : 'Copy'}
           </Button>
         </div>
-        <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-xl bg-rh-canvas p-2 font-mono text-xs text-rh-night dark:bg-white/[0.04] dark:text-neutral-200">
+        <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-xl bg-rh-canvas p-2 font-mono text-xs text-rh-ink dark:bg-white/[0.04] dark:text-neutral-200">
           {d.rawBody}
         </pre>
       </div>
@@ -246,11 +246,11 @@ export default function AwadocDashboardPage() {
         bodyClassName="space-y-3 px-5 pb-5 pt-3"
       >
         <div className="flex items-center justify-between text-sm">
-          <span className="font-medium text-rh-night dark:text-white">Rehabify earnings ({netPercent}%)</span>
+          <span className="font-medium text-rh-ink dark:text-white">Rehabify earnings ({netPercent}%)</span>
           <span className="font-semibold tabular-nums text-emerald-700 dark:text-emerald-300">{formatKobo(stats.totalNet)}</span>
         </div>
         <div className="flex h-3 w-full gap-0.5 overflow-hidden rounded-full bg-neutral-100 dark:bg-white/[0.06]">
-          <div className="h-full bg-rh-teal transition-all dark:bg-rh-aqua" style={{ width: stats.totalGross > 0 ? `${netPercent}%` : '0%' }} />
+          <div className="h-full bg-rh-lime transition-all dark:bg-rh-lime" style={{ width: stats.totalGross > 0 ? `${netPercent}%` : '0%' }} />
           <div className="h-full bg-rh-amber transition-all" style={{ width: stats.totalGross > 0 ? `${commissionPercent}%` : '0%' }} />
         </div>
         <div className="flex items-center justify-between text-sm">
@@ -274,7 +274,7 @@ export default function AwadocDashboardPage() {
                   <div className="flex min-w-0 items-center gap-3">
                     <span className={cn('h-2 w-2 shrink-0 rounded-full', event.status === 'success' ? 'bg-emerald-500' : 'bg-rose-500')} />
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-rh-night dark:text-white">{event.eventType}</p>
+                      <p className="truncate text-sm font-medium text-rh-ink dark:text-white">{event.eventType}</p>
                       <p className="text-xs text-neutral-500 dark:text-neutral-400">{dateFormatter.format(new Date(event.processedAt))}</p>
                     </div>
                   </div>
@@ -308,17 +308,17 @@ export default function AwadocDashboardPage() {
       <Panel title="Integration details" bodyClassName="grid gap-4 px-5 pb-5 pt-3 md:grid-cols-2">
         <div className="space-y-1.5">
           <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400">Webhook URL</p>
-          <code className="block break-all rounded-lg bg-rh-canvas p-2 text-sm text-rh-night dark:bg-white/[0.04] dark:text-neutral-200">/api/awadoc/webhook</code>
+          <code className="block break-all rounded-lg bg-rh-canvas p-2 text-sm text-rh-ink dark:bg-white/[0.04] dark:text-neutral-200">/api/awadoc/webhook</code>
         </div>
         <div className="space-y-1.5">
           <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400">Environment</p>
-          <p className="text-sm text-rh-night dark:text-neutral-200">
+          <p className="text-sm text-rh-ink dark:text-neutral-200">
             Set on the server by <code className="font-mono text-xs">AWADOC_ENVIRONMENT</code> and <code className="font-mono text-xs">AWADOC_BASE_URL</code>
           </p>
         </div>
         <div className="space-y-1.5">
           <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400">Commission rate</p>
-          <p className="text-sm text-rh-night dark:text-neutral-200">{commissionPercent}% (AwaDoc merchant commission)</p>
+          <p className="text-sm text-rh-ink dark:text-neutral-200">{commissionPercent}% (AwaDoc merchant commission)</p>
         </div>
         <div className="space-y-1.5">
           <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400">AwaDoc docs</p>

@@ -100,7 +100,7 @@ export default function MessageModal({ recipientId, recipientName, isOpen, onClo
                                 >
                                     <div
                                         className={`max-w-[80%] rounded-lg px-4 py-2 text-sm ${isMe
-                                            ? 'bg-[#005b57] text-white dark:bg-[#2dd4bf] dark:text-neutral-950'
+                                            ? 'bg-rh-lime text-rh-ink'
                                             : 'bg-neutral-100 text-neutral-900 dark:bg-neutral-800 dark:text-neutral-100'
                                             }`}
                                     >
@@ -123,7 +123,7 @@ export default function MessageModal({ recipientId, recipientName, isOpen, onClo
                         placeholder="Write a message"
                         className="flex-1"
                     />
-                    <Button type="submit" size="icon" disabled={!newMessage.trim()} aria-label="Send message" className="bg-[#005b57] text-white hover:bg-[#00443e] dark:bg-[#2dd4bf] dark:text-neutral-950 dark:hover:bg-[#5eead4]">
+                    <Button type="submit" size="icon" disabled={!newMessage.trim()} aria-label="Send message" className="bg-rh-lime text-rh-ink hover:bg-rh-lime-deep dark:bg-rh-lime dark:text-neutral-950 dark:hover:bg-rh-lime-deep">
                         <Send className="h-4 w-4" />
                     </Button>
                 </form>

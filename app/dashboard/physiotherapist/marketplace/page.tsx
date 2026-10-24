@@ -120,7 +120,7 @@ export default function PhysiotherapistMarketplacePage() {
             title="Services & coverage"
             description="How Rehabify patients can see you"
             actions={
-              <Link href="/dashboard/physiotherapist/settings/marketplace" className="text-sm font-medium text-rh-teal hover:underline dark:text-rh-aqua">
+              <Link href="/dashboard/physiotherapist/settings/marketplace" className="text-sm font-medium text-rh-ink hover:underline dark:text-rh-lime">
                 Change
               </Link>
             }
@@ -148,7 +148,7 @@ export default function PhysiotherapistMarketplacePage() {
                   {settings.networkTermsAccepted ? (
                     <StatusBadge tone="green">Accepted</StatusBadge>
                   ) : (
-                    <Link href="/dashboard/physiotherapist/settings/network-terms" className="font-medium text-rh-teal hover:underline dark:text-rh-aqua">
+                    <Link href="/dashboard/physiotherapist/settings/network-terms" className="font-medium text-rh-ink hover:underline dark:text-rh-lime">
                       Review and accept
                     </Link>
                   )}

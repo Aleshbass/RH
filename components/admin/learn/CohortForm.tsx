@@ -48,7 +48,7 @@ function Field({
 function Section({ title, description, children }: { title: string; description?: string; children: ReactNode }) {
   return (
     <div className="border-t border-black/[0.05] px-5 py-5 first:border-t-0 dark:border-white/[0.06]">
-      <p className="text-sm font-semibold text-rh-night dark:text-white">{title}</p>
+      <p className="text-sm font-semibold text-rh-ink dark:text-white">{title}</p>
       {description && <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">{description}</p>}
       <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">{children}</div>
     </div>
@@ -74,7 +74,7 @@ function ToggleRow({
       className="flex cursor-pointer items-start justify-between gap-4 rounded-xl border border-black/[0.06] p-3.5 dark:border-white/[0.08]"
     >
       <span className="min-w-0">
-        <span className="block text-sm font-medium text-rh-night dark:text-white">{title}</span>
+        <span className="block text-sm font-medium text-rh-ink dark:text-white">{title}</span>
         <span className="mt-0.5 block text-xs text-neutral-500 dark:text-neutral-400">{description}</span>
       </span>
       <Switch id={id} checked={checked} onCheckedChange={onChange} />
@@ -108,35 +108,35 @@ function Preview({ draft, imageUrl }: { draft: CohortDraft; imageUrl: string | n
             />
           </div>
         )}
-        <p className="text-sm font-semibold text-rh-night dark:text-white">
+        <p className="text-sm font-semibold text-rh-ink dark:text-white">
           {draft.cohortLabel || (datesOk ? defaultCohortLabel(draft.startDate) : 'Next cohort')}
         </p>
         <div className="mt-4 space-y-3.5">
           {rows.map(({ icon: Icon, label, value }) => (
             <div key={label} className="flex items-start gap-3">
-              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-rh-mist text-rh-teal dark:bg-rh-aqua/10 dark:text-rh-aqua">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-rh-honeydew text-rh-ink dark:bg-white/[0.06] dark:text-rh-lime">
                 <Icon className="h-4 w-4" />
               </span>
               <div className="min-w-0">
                 <p className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400">{label}</p>
-                <p className="text-sm font-medium text-rh-night dark:text-white">{value}</p>
+                <p className="text-sm font-medium text-rh-ink dark:text-white">{value}</p>
               </div>
             </div>
           ))}
         </div>
         <div className="mt-5 grid grid-cols-2 gap-2">
-          <div className="rounded-xl bg-rh-teal p-3 text-white">
+          <div className="rounded-xl bg-rh-lime p-3 text-rh-ink">
             <p className="text-[10px] font-medium uppercase tracking-wide text-white/70">Rehabify PT</p>
             <p className="text-lg font-semibold tabular-nums">{price(draft.rehabifyPrice)}</p>
           </div>
-          <div className="rounded-xl bg-rh-mint p-3 text-rh-night dark:bg-emerald-400/10 dark:text-emerald-100">
+          <div className="rounded-xl bg-rh-honeydew p-3 text-rh-ink dark:bg-emerald-400/10 dark:text-emerald-100">
             <p className="text-[10px] font-medium uppercase tracking-wide opacity-70">Other PT</p>
             <p className="text-lg font-semibold tabular-nums">{price(draft.externalPrice)}</p>
           </div>
         </div>
       </div>
       {draft.showBanner && (
-        <div className="overflow-hidden rounded-xl bg-rh-night px-3 py-2.5 text-[11px] text-white">
+        <div className="overflow-hidden rounded-xl bg-rh-ink px-3 py-2.5 text-[11px] text-white">
           <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-rh-lime align-middle" />
           {draft.bannerText || (
             <>
@@ -144,7 +144,7 @@ function Preview({ draft, imageUrl }: { draft: CohortDraft; imageUrl: string | n
               <span className="text-white/70"> — next cohort {dateRange}</span>
             </>
           )}
-          <span className="ml-2 rounded-full bg-rh-lime px-2 py-0.5 font-semibold text-rh-night">Register</span>
+          <span className="ml-2 rounded-full bg-rh-lime px-2 py-0.5 font-semibold text-rh-ink">Register</span>
         </div>
       )}
     </div>
@@ -322,11 +322,8 @@ export function CohortForm({
             />
           </Section>
 
-          <Section title="After payment" description="Sent in the confirmation email.">
-            <Field label="Cohort group link" htmlFor="cohort-communityLink" hint="Optional, e.g. a WhatsApp group invite. Must start with https://">
-              <Input type="url" placeholder="https://chat.whatsapp.com/…" maxLength={500} {...text('communityLink')} />
-            </Field>
-            <Field label="Welcome note" htmlFor="cohort-welcomeNote" hint="Optional. One extra paragraph in the email." className="sm:col-span-2">
+          <Section title="After payment" description="Group, meeting and folder links live in the Course tab, where you can change them any time.">
+            <Field label="Welcome note" htmlFor="cohort-welcomeNote" hint="Optional. Shown in the confirmation email and on the course page." className="sm:col-span-2">
               <textarea
                 id="cohort-welcomeNote"
                 rows={3}

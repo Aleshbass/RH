@@ -170,7 +170,7 @@ export default function NetworkTermsPage() {
                 <ol className="space-y-4">
                     {NETWORK_TERMS_SUMMARY.map((item, index) => (
                         <li key={item.title} className="flex gap-3">
-                            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-rh-mist text-xs font-semibold text-rh-teal dark:bg-rh-aqua/10 dark:text-rh-aqua">
+                            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-rh-honeydew text-xs font-semibold text-rh-ink dark:bg-white/[0.06] dark:text-rh-lime">
                                 {index + 1}
                             </span>
                             <div className="min-w-0">
@@ -187,7 +187,7 @@ export default function NetworkTermsPage() {
                 description={
                     <>
                         What you earn per completed session.{' '}
-                        <Link href={`${SETTINGS}/fee-schedule`} className="font-medium text-rh-teal hover:underline dark:text-rh-aqua">
+                        <Link href={`${SETTINGS}/fee-schedule`} className="font-medium text-rh-ink hover:underline dark:text-rh-lime">
                             How you’re paid
                         </Link>
                     </>

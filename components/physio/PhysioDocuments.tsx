@@ -159,7 +159,7 @@ export function DocumentRow({
           className={cn(
             'mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg',
             current
-              ? 'bg-[#005b57]/10 text-[#005b57] dark:bg-[#2dd4bf]/10 dark:text-[#2dd4bf]'
+              ? 'bg-rh-lime/10 text-rh-ink dark:bg-white/[0.06] dark:text-rh-lime'
               : 'bg-neutral-100 text-neutral-400 dark:bg-neutral-800 dark:text-neutral-500'
           )}
         >

@@ -156,12 +156,12 @@ export function ImageKitUpload({ onUploadSuccess, onRemove, currentImageUrl, fol
                     className={cn(
                         'flex h-64 w-full cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed transition-colors',
                         isDragging
-                            ? 'border-rh-teal bg-rh-mist dark:border-rh-aqua dark:bg-rh-aqua/10'
-                            : 'border-black/10 bg-rh-canvas hover:bg-rh-mist/60 dark:border-white/15 dark:bg-white/[0.03] dark:hover:bg-white/[0.06]'
+                            ? 'border-rh-lime bg-rh-honeydew dark:border-rh-lime dark:bg-white/[0.06]'
+                            : 'border-black/10 bg-rh-canvas hover:bg-rh-honeydew/60 dark:border-white/15 dark:bg-white/[0.03] dark:hover:bg-white/[0.06]'
                     )}
                 >
                     <span className="mb-3 rounded-full bg-white p-4 shadow-soft dark:bg-rh-ink-3">
-                        <Upload className="h-7 w-7 text-rh-teal dark:text-rh-aqua" />
+                        <Upload className="h-7 w-7 text-rh-ink dark:text-rh-lime" />
                     </span>
                     <p className="mb-1 text-sm text-neutral-600 dark:text-neutral-300">
                         <span className="font-semibold">Click to upload</span> or drag and drop

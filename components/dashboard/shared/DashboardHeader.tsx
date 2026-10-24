@@ -136,7 +136,7 @@ export function DashboardHeader() {
   }, [notifications, lastNotifId, router])
 
   return (
-    <header className="bg-[#005b57] border-b border-[#005b57]/20 px-4 py-3 sm:px-6 sm:py-4"> {/* 30% - Core Green */}
+    <header className="bg-rh-ink border-b border-white/10 px-4 py-3 sm:px-6 sm:py-4">
       <div className="flex items-center justify-between">
         {/* Left Side - Logo & Search */}
         <div className="flex items-center gap-3 sm:gap-4 flex-1">
@@ -153,7 +153,7 @@ export function DashboardHeader() {
           </Button>
 
           <Link href="/dashboard" className="flex items-center gap-2">
-            <div className="h-8 w-8 bg-[#00cd0f] rounded-lg flex items-center justify-center"> {/* 10% - Highlighter accent */}
+            <div className="h-8 w-8 bg-rh-lime rounded-lg flex items-center justify-center"> {/* 10% - Highlighter accent */}
               <span className="text-white font-bold text-sm">R</span>
             </div>
             <span className="text-xl font-bold text-white hidden sm:inline">Rehabify</span>
@@ -222,7 +222,7 @@ export function DashboardHeader() {
                 <Bell className="h-5 w-5" />
                 {unreadCount && unreadCount > 0 && (
                   <Badge
-                    className="absolute -top-1 -right-1 h-5 w-5 p-0 flex items-center justify-center text-xs bg-[#00cd0f] text-white border-0"> {/* 10% - Highlighter accent */}
+                    className="absolute -top-1 -right-1 h-5 w-5 p-0 flex items-center justify-center text-xs bg-rh-lime text-rh-ink border-0"> {/* 10% - Highlighter accent */}
                     {unreadCount > 9 ? '9+' : unreadCount}
                   </Badge>
                 )}

@@ -79,10 +79,10 @@ export function PhysioGuideVideoModal({
             className="relative w-full max-w-3xl bg-white rounded-2xl shadow-2xl overflow-hidden"
           >
             {/* ── Header ── */}
-            <div className="bg-gradient-to-r from-[#005b57] to-[#009e96] px-6 pt-5 pb-4 flex items-start justify-between gap-4">
+            <div className="bg-rh-ink px-6 pt-5 pb-4 flex items-start justify-between gap-4">
               <div>
                 <h2 className="text-xl font-bold text-white tracking-tight">{title}</h2>
-                <p className="mt-0.5 text-sm text-teal-100 leading-snug">{subtitle}</p>
+                <p className="mt-0.5 text-sm text-rh-lime leading-snug">{subtitle}</p>
               </div>
               <button
                 onClick={handleClose}
@@ -101,12 +101,12 @@ export function PhysioGuideVideoModal({
                 /* ── Cinematic Splash / Play Button ── */
                 <div className="absolute inset-0 flex items-center justify-center overflow-hidden">
 
-                  {/* Gradient background */}
+                  {/* Flat background */}
                   <div
                     className="absolute inset-0"
                     style={{
                       background:
-                        'radial-gradient(ellipse at 60% 40%, rgba(0,133,127,0.4) 0%, rgba(0,46,44,0.95) 65%, #040e1a 100%)',
+                        '#0b1312',
                     }}
                   />
 
@@ -130,7 +130,7 @@ export function PhysioGuideVideoModal({
                         whileTap={{ scale: 0.95 }}
                         onClick={() => setVideoStarted(true)}
                         aria-label="Play platform guide video"
-                        className="relative h-20 w-20 rounded-full bg-rh-teal hover:bg-rh-teal-deep flex items-center justify-center cursor-pointer focus:outline-none focus-visible:ring-4 focus-visible:ring-teal-300"
+                        className="relative h-20 w-20 rounded-full bg-rh-lime hover:bg-rh-lime-deep flex items-center justify-center cursor-pointer focus:outline-none focus-visible:ring-4 focus-visible:ring-rh-lime"
                       >
                         <Play className="h-9 w-9 text-white ml-1" />
                       </motion.button>
@@ -141,14 +141,14 @@ export function PhysioGuideVideoModal({
                       <p className="text-white text-base font-semibold tracking-wide drop-shadow-md">
                         Click to Watch Your Platform Guide
                       </p>
-                      <p className="text-teal-300 text-xs mt-1.5 font-medium opacity-75 tracking-wide uppercase">
+                      <p className="text-rh-lime text-xs mt-1.5 font-medium opacity-75 tracking-wide uppercase">
                         Rehabify Health · Platform Overview
                       </p>
                     </div>
 
                     {/* Chip */}
                     <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 border border-white/15 px-3.5 py-1.5 text-xs text-white/70 font-medium backdrop-blur-sm">
-                      <PlayCircle className="h-3.5 w-3.5 text-teal-300" />
+                      <PlayCircle className="h-3.5 w-3.5 text-rh-lime" />
                       Full guided walkthrough
                     </span>
                   </div>
@@ -173,7 +173,7 @@ export function PhysioGuideVideoModal({
               </p>
               <button
                 onClick={handleClose}
-                className="shrink-0 inline-flex items-center gap-1.5 rounded-lg bg-[#005b57] hover:bg-[#004844] active:scale-95 transition-all px-4 py-2 text-sm font-semibold text-white"
+                className="shrink-0 inline-flex items-center gap-1.5 rounded-lg bg-rh-lime hover:bg-rh-lime-deep active:scale-95 transition-all px-4 py-2 text-sm font-semibold text-rh-ink"
               >
                 Got it, let&apos;s go!
                 <X className="h-3.5 w-3.5" />

@@ -291,7 +291,7 @@ export function InteractiveTreatmentPlan({ patientId, plan, variant = 'full' }: 
     return (
       <div className="rounded-2xl border border-dashed border-black/10 px-6 py-10 text-center dark:border-white/10">
         <Dumbbell className="mx-auto h-7 w-7 text-neutral-300 dark:text-neutral-600" />
-        <p className="mt-2 text-sm font-semibold text-rh-night dark:text-white">Set up the care plan first</p>
+        <p className="mt-2 text-sm font-semibold text-rh-ink dark:text-white">Set up the care plan first</p>
         <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">Once there's a plan, you can add home exercises to it here.</p>
       </div>
     );
@@ -304,7 +304,7 @@ export function InteractiveTreatmentPlan({ patientId, plan, variant = 'full' }: 
           <Dumbbell className="mx-auto h-8 w-8 text-neutral-300 dark:text-neutral-600" />
           <h3 className="text-sm font-semibold text-neutral-900 dark:text-white">No treatment plan yet</h3>
           <p className="text-sm text-neutral-500 dark:text-neutral-400">Set out the exercises and goals for this patient’s recovery.</p>
-          <Button onClick={handleCreatePlan} size="sm" className="mt-2 bg-[#005b57] text-white hover:bg-[#00443e] dark:bg-[#2dd4bf] dark:text-neutral-950 dark:hover:bg-[#5eead4]">
+          <Button onClick={handleCreatePlan} size="sm" className="mt-2 bg-rh-lime text-rh-ink hover:bg-rh-lime-deep dark:bg-rh-lime dark:text-neutral-950 dark:hover:bg-rh-lime-deep">
             <Plus className="mr-1.5 h-4 w-4" />
             Create a plan
           </Button>
@@ -326,7 +326,7 @@ export function InteractiveTreatmentPlan({ patientId, plan, variant = 'full' }: 
                 variant="secondary"
                 className={
                   currentPlan.status === 'active'
-                    ? 'bg-[#005b57]/10 text-[#005b57] dark:bg-[#2dd4bf]/10 dark:text-[#2dd4bf]'
+                    ? 'bg-rh-lime/10 text-rh-ink dark:bg-white/[0.06] dark:text-rh-lime'
                     : 'bg-neutral-100 text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300'
                 }
               >
@@ -401,7 +401,7 @@ export function InteractiveTreatmentPlan({ patientId, plan, variant = 'full' }: 
           <h3 className="text-base font-semibold text-neutral-900 dark:text-white">Exercises</h3>
           <Dialog open={showExerciseLibrary} onOpenChange={setShowExerciseLibrary}>
             <DialogTrigger asChild>
-              <Button size="sm" className="bg-[#005b57] text-white hover:bg-[#00443e] dark:bg-[#2dd4bf] dark:text-neutral-950 dark:hover:bg-[#5eead4]">
+              <Button size="sm" className="bg-rh-lime text-rh-ink hover:bg-rh-lime-deep dark:bg-rh-lime dark:text-neutral-950 dark:hover:bg-rh-lime-deep">
                 <Plus className="mr-1.5 h-4 w-4" />
                 Add exercise
               </Button>
@@ -541,7 +541,7 @@ export function InteractiveTreatmentPlan({ patientId, plan, variant = 'full' }: 
               <ul className="divide-y divide-neutral-100 dark:divide-neutral-800">
                 {currentPlan.goals.map((goal: any, index: number) => (
                   <li key={index} className="flex items-start gap-3 px-4 py-3">
-                    <Target className="mt-0.5 h-4 w-4 shrink-0 text-[#005b57] dark:text-[#2dd4bf]" />
+                    <Target className="mt-0.5 h-4 w-4 shrink-0 text-rh-ink dark:text-rh-lime" />
                     <div className="min-w-0">
                       <p className="text-sm font-medium text-neutral-900 dark:text-white">{goal.description}</p>
                       <p className="text-xs text-neutral-500 dark:text-neutral-400">

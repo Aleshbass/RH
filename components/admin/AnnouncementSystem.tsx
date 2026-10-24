@@ -128,7 +128,7 @@ export function AnnouncementSystem() {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <Panel title="New announcement" className="lg:col-span-2" bodyClassName="space-y-5 px-5 pb-5 pt-3">
           <div className="space-y-1.5">
-            <Label htmlFor="announcement-title" className="text-sm font-medium text-rh-night dark:text-white">
+            <Label htmlFor="announcement-title" className="text-sm font-medium text-rh-ink dark:text-white">
               Title
             </Label>
             <Input
@@ -144,7 +144,7 @@ export function AnnouncementSystem() {
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="announcement-message" className="text-sm font-medium text-rh-night dark:text-white">
+            <Label htmlFor="announcement-message" className="text-sm font-medium text-rh-ink dark:text-white">
               Message
             </Label>
             <Textarea
@@ -161,7 +161,7 @@ export function AnnouncementSystem() {
           </div>
 
           <div className="space-y-2">
-            <p className="text-sm font-medium text-rh-night dark:text-white">Who should get it</p>
+            <p className="text-sm font-medium text-rh-ink dark:text-white">Who should get it</p>
             <div className="flex flex-wrap gap-2">
               {AUDIENCES.map((role) => {
                 const active = audience.includes(role)
@@ -175,8 +175,8 @@ export function AnnouncementSystem() {
                     className={cn(
                       'inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm transition',
                       active
-                        ? 'border-rh-teal bg-rh-mist text-rh-teal dark:border-rh-aqua dark:bg-rh-aqua/10 dark:text-rh-aqua'
-                        : 'border-black/10 bg-white text-neutral-600 hover:border-rh-teal/40 dark:border-white/10 dark:bg-rh-ink-3 dark:text-neutral-300'
+                        ? 'border-rh-lime bg-rh-honeydew text-rh-ink dark:border-rh-lime dark:bg-white/[0.06] dark:text-rh-lime'
+                        : 'border-black/10 bg-white text-neutral-600 hover:border-rh-lime/40 dark:border-white/10 dark:bg-rh-ink-3 dark:text-neutral-300'
                     )}
                   >
                     {active && <Check className="h-3.5 w-3.5" />}
@@ -189,7 +189,7 @@ export function AnnouncementSystem() {
           </div>
 
           <div className="space-y-2">
-            <p className="text-sm font-medium text-rh-night dark:text-white">Priority</p>
+            <p className="text-sm font-medium text-rh-ink dark:text-white">Priority</p>
             <FilterChips<Priority>
               value={priority}
               onChange={setPriority}
@@ -224,7 +224,7 @@ export function AnnouncementSystem() {
           {title || message ? (
             <div className="rounded-xl border border-black/[0.06] bg-rh-canvas p-4 dark:border-white/[0.06] dark:bg-rh-ink-3">
               <div className="flex items-start justify-between gap-2">
-                <p className="break-words text-sm font-semibold text-rh-night dark:text-white">{title || 'Announcement title'}</p>
+                <p className="break-words text-sm font-semibold text-rh-ink dark:text-white">{title || 'Announcement title'}</p>
                 <StatusBadge tone={PRIORITY_TONE[priority]}>{priority === 'medium' ? 'normal' : priority}</StatusBadge>
               </div>
               <p className="mt-1 whitespace-pre-line break-words text-sm text-neutral-600 dark:text-neutral-300">
@@ -253,7 +253,7 @@ export function AnnouncementSystem() {
               <li key={a._id} className="px-5 py-4">
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <p className="break-words text-sm font-semibold text-rh-night dark:text-white">{a.title}</p>
+                    <p className="break-words text-sm font-semibold text-rh-ink dark:text-white">{a.title}</p>
                     <p className="mt-0.5 line-clamp-2 break-words text-sm text-neutral-600 dark:text-neutral-300">{a.message}</p>
                   </div>
                   <div className="flex shrink-0 items-center gap-1.5">

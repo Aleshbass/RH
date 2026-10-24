@@ -92,10 +92,10 @@ export default function NotificationsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <Bell className="h-6 w-6 text-[#005b57]" />
+          <Bell className="h-6 w-6 text-rh-ink" />
           <h1 className="text-2xl font-bold">Notifications</h1>
           {typeof unreadCount === "number" && unreadCount > 0 && (
-            <Badge className="ml-2 bg-[#00cd0f] text-white border-0">
+            <Badge className="ml-2 bg-rh-lime text-rh-ink border-0">
               {unreadCount > 9 ? "9+" : unreadCount}
             </Badge>
           )}

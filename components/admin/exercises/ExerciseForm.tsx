@@ -41,7 +41,7 @@ interface ExerciseFormProps {
     isEditing?: boolean;
 }
 
-const labelClass = 'text-rh-night dark:text-neutral-200';
+const labelClass = 'text-rh-ink dark:text-neutral-200';
 const textareaClass = inputClass;
 const selectContentClass = 'dark:border-white/10 dark:bg-rh-ink-2';
 
@@ -138,7 +138,7 @@ export function ExerciseForm({ initialData, isEditing = false }: ExerciseFormPro
                         onClick={() => router.back()}
                         type="button"
                         aria-label="Back"
-                        className="-ml-2 mt-1 h-9 w-9 shrink-0 rounded-xl text-rh-night hover:bg-white dark:text-white dark:hover:bg-white/[0.06]"
+                        className="-ml-2 mt-1 h-9 w-9 shrink-0 rounded-xl text-rh-ink hover:bg-white dark:text-white dark:hover:bg-white/[0.06]"
                     >
                         <ArrowLeft className="h-5 w-5" />
                     </Button>
@@ -212,8 +212,8 @@ export function ExerciseForm({ initialData, isEditing = false }: ExerciseFormPro
                                                             className={cn(
                                                                 'rounded-full px-3 py-1 text-xs font-medium transition-colors',
                                                                 isSelected
-                                                                    ? 'bg-rh-teal text-white dark:bg-rh-aqua dark:text-rh-night'
-                                                                    : 'bg-rh-canvas text-neutral-600 hover:text-rh-night dark:bg-white/[0.06] dark:text-neutral-300 dark:hover:text-white'
+                                                                    ? 'bg-rh-lime text-rh-ink dark:bg-rh-lime dark:text-rh-ink'
+                                                                    : 'bg-rh-canvas text-neutral-600 hover:text-rh-ink dark:bg-white/[0.06] dark:text-neutral-300 dark:hover:text-white'
                                                             )}
                                                             onClick={() => {
                                                                 const current = field.value || [];
@@ -285,7 +285,7 @@ export function ExerciseForm({ initialData, isEditing = false }: ExerciseFormPro
                         >
                             {fields.map((field, index) => (
                                 <div key={field.id} className="flex items-start gap-2">
-                                    <span className="mt-1.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-rh-mist text-xs font-semibold text-rh-teal dark:bg-rh-aqua/10 dark:text-rh-aqua">
+                                    <span className="mt-1.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-rh-honeydew text-xs font-semibold text-rh-ink dark:bg-white/[0.06] dark:text-rh-lime">
                                         {index + 1}
                                     </span>
                                     <FormField

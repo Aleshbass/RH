@@ -98,7 +98,7 @@ function AnnouncementBar({ collapsed }: { collapsed: boolean }) {
           animate={{ height: BAR_HEIGHT, opacity: 1 }}
           exit={reduce ? { opacity: 0 } : { height: 0, opacity: 0 }}
           transition={{ duration: 0.25, ease: 'easeOut' }}
-          className="relative z-[61] overflow-hidden bg-rh-night text-white"
+          className="relative z-[61] overflow-hidden bg-rh-ink text-white"
         >
           <div className="mx-auto flex h-10 max-w-6xl items-center justify-center gap-2.5 pl-4 pr-11 text-[13px] sm:gap-3">
             <span aria-hidden className="relative flex h-2 w-2 shrink-0">
@@ -120,7 +120,7 @@ function AnnouncementBar({ collapsed }: { collapsed: boolean }) {
             </p>
             <Link
               href="/learn"
-              className="inline-flex shrink-0 items-center gap-1 rounded-full bg-rh-lime px-3 py-1 text-xs font-semibold text-rh-night transition hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
+              className="inline-flex shrink-0 items-center gap-1 rounded-full bg-rh-lime px-3 py-1 text-xs font-semibold text-rh-ink transition hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
             >
               Register <ArrowRight className="h-3 w-3" />
             </Link>

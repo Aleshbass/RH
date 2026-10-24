@@ -111,7 +111,7 @@ function AccountMenu({ collapsed, onNavigate }: { collapsed: boolean; onNavigate
           type="button"
           title={collapsed ? name : undefined}
           className={cn(
-            'mt-1 flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left hover:bg-neutral-100/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#005b57]/40 dark:hover:bg-neutral-800/60',
+            'mt-1 flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left hover:bg-neutral-100/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-lime/40 dark:hover:bg-neutral-800/60',
             collapsed && 'justify-center px-0'
           )}
         >
@@ -186,14 +186,14 @@ export default function ClinicSidebar({ className, onNavigate, collapsible = tru
         <Icon
           className={cn(
             'h-4 w-4 shrink-0',
-            active ? 'text-[#005b57] dark:text-[#2dd4bf]' : 'text-neutral-400 dark:text-neutral-500'
+            active ? 'text-rh-ink dark:text-rh-lime' : 'text-neutral-400 dark:text-neutral-500'
           )}
         />
         {!collapsed && <span className="flex-1 truncate">{item.title}</span>}
         {badge > 0 && (
           <span
             className={cn(
-              'min-w-5 rounded-full bg-[#005b57] px-1.5 text-center text-[11px] font-medium leading-5 text-white dark:bg-[#2dd4bf] dark:text-neutral-950',
+              'min-w-5 rounded-full bg-rh-lime px-1.5 text-center text-[11px] font-medium leading-5 text-rh-ink dark:bg-rh-lime dark:text-neutral-950',
               collapsed && 'absolute right-1 top-0.5 min-w-4 px-1 text-[10px] leading-4'
             )}
             aria-label={`${badge} new`}

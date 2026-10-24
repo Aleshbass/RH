@@ -10,7 +10,7 @@ import { CallLobby, CallRoom, CallStatusScreen } from '@/components/video/room'
 type StreamCallHandle = ReturnType<StreamVideoClient['call']>
 
 const primaryButton =
-  'inline-flex h-12 items-center justify-center gap-2 rounded-full bg-brand px-8 text-[15px] font-medium text-white shadow-[0_12px_30px_-12px_rgba(0,91,87,0.7)] transition-all hover:bg-brand-dark active:scale-[0.98]'
+  'inline-flex h-12 items-center justify-center gap-2 rounded-full bg-rh-lime px-8 text-[15px] font-medium text-rh-ink shadow-sm transition-all hover:bg-rh-lime-deep active:scale-[0.98]'
 
 // AwaDoc guest patients join with a signed guest token instead of a login.
 export default function GuestVideoCallPage() {
@@ -147,7 +147,7 @@ export default function GuestVideoCallPage() {
   }
 
   if (!client || !call || phase === 'validating') {
-    return <CallStatusScreen icon={<Loader2 className="h-6 w-6 animate-spin text-brand" />} title="Verifying your access" description="Powered by Rehabify Health" />
+    return <CallStatusScreen icon={<Loader2 className="h-6 w-6 animate-spin text-rh-ink" />} title="Verifying your access" description="Powered by Rehabify Health" />
   }
 
   return (

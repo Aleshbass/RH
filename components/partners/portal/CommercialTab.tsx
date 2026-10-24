@@ -92,7 +92,7 @@ export function CommercialTab({ ctx }: { ctx: PortalContext }) {
   return (
     <div className="space-y-5">
       {ctx.environment === "sandbox" && (
-        <div className="p-4 rounded-2xl bg-white border border-[#002e2c]/15 text-xs text-[#52706e]">
+        <div className="p-4 rounded-2xl bg-white border border-rh-ink/15 text-xs text-[#52706e]">
           Commissions are earned only on live, verified payments. Sandbox activity never earns — the figures below are your live earnings.
         </div>
       )}
@@ -142,7 +142,7 @@ export function CommercialTab({ ctx }: { ctx: PortalContext }) {
       </div>
 
       <div className={`${cardCls} overflow-hidden`}>
-        <div className="p-5 flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-[#002e2c]/10">
+        <div className="p-5 flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-rh-ink/10">
           <div>
             <h3 className="text-sm font-semibold">Commission ledger</h3>
             <p className="text-[11px] text-[#52706e]">One line per payment by a patient attributed to you (refund adjustments show as negative lines).</p>
@@ -205,7 +205,7 @@ export function CommercialTab({ ctx }: { ctx: PortalContext }) {
                   <th className={thCls}>Period</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#002e2c]/5">
+              <tbody className="divide-y divide-rh-ink/5">
                 {commissions.map((c) => (
                   <tr key={c._id}>
                     <td className={`${tdCls} whitespace-nowrap`}>{fmtDate(c.earnedAt)}</td>
@@ -346,7 +346,7 @@ function BankAccounts({ ctx }: { ctx: PortalContext }) {
       ) : accounts.length === 0 ? (
         <EmptyState icon={<Landmark className="w-8 h-8" />} title="No payout account yet" body="Add a Nigerian bank account to receive commission payouts." />
       ) : (
-        <ul className="divide-y divide-[#002e2c]/5">
+        <ul className="divide-y divide-rh-ink/5">
           {accounts.map((a) => (
             <li key={a._id} className="py-3 flex items-center justify-between gap-3">
               <div className="min-w-0">
@@ -445,7 +445,7 @@ function BankAccounts({ ctx }: { ctx: PortalContext }) {
               className={`${inputCls} font-mono`}
             />
           </div>
-          <div className="p-3 rounded-xl bg-[#FAF6E7] border border-[#002e2c]/10 text-xs">
+          <div className="p-3 rounded-xl bg-[#FAF6E7] border border-rh-ink/10 text-xs">
             {busy === "verify" ? "Verifying with Paystack…" : resolvedName ? <span>Account name: <strong>{resolvedName}</strong></span> : "Enter the bank and account number to verify."}
           </div>
         </div>

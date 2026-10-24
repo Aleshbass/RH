@@ -321,7 +321,7 @@ export default function AdminApprovalsPage() {
                           <div className="flex flex-wrap items-center gap-2">
                             <Link
                               href={`/dashboard/admin/users/${item.userId}`}
-                              className="truncate text-[15px] font-semibold text-rh-night hover:underline dark:text-white"
+                              className="truncate text-[15px] font-semibold text-rh-ink hover:underline dark:text-white"
                             >
                               {name}
                             </Link>

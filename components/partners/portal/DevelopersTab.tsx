@@ -62,7 +62,7 @@ export function DevelopersTab({ ctx, onNavigate }: { ctx: PortalContext; onNavig
               type="button"
               onClick={() => setSection(s.id)}
               className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold border transition ${
-                section === s.id ? "bg-[#002e2c] text-[#FAF6E7] border-[#002e2c]" : "bg-white text-[#52706e] border-[#002e2c]/10 hover:text-[#002e2c]"
+                section === s.id ? "bg-[#0b1312] text-[#FAF6E7] border-[#0b1312]" : "bg-white text-[#52706e] border-rh-ink/10 hover:text-[#0b1312]"
               }`}
             >
               <Icon className="w-3.5 h-3.5" />
@@ -73,7 +73,7 @@ export function DevelopersTab({ ctx, onNavigate }: { ctx: PortalContext; onNavig
         <EnvBadge env={ctx.environment} className="self-center ml-1" />
       </div>
       {!ctx.envWritable && (section === "keys" || section === "webhooks") && (
-        <div className="p-4 rounded-2xl bg-white border border-[#002e2c]/15 text-xs text-[#52706e] flex items-center justify-between gap-3 flex-wrap">
+        <div className="p-4 rounded-2xl bg-white border border-rh-ink/15 text-xs text-[#52706e] flex items-center justify-between gap-3 flex-wrap">
           <span>Live keys and the live webhook endpoint become available once Rehabify approves your production access.</span>
           <button type="button" className={btnSecondary} onClick={() => onNavigate("golive")}>
             Go-live checklist
@@ -170,7 +170,7 @@ function ApiKeysSection({ ctx }: { ctx: PortalContext }) {
 
   return (
     <div className={`${cardCls} overflow-hidden`}>
-      <div className="p-5 flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-[#002e2c]/10">
+      <div className="p-5 flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-rh-ink/10">
         <div>
           <h3 className="text-sm font-semibold">{ctx.environment === "live" ? "Live" : "Sandbox"} secret keys</h3>
           <p className="text-xs text-[#52706e] mt-0.5 leading-relaxed max-w-2xl">
@@ -200,7 +200,7 @@ function ApiKeysSection({ ctx }: { ctx: PortalContext }) {
                 <th className={thCls} />
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#002e2c]/5">
+            <tbody className="divide-y divide-rh-ink/5">
               {[...active, ...revoked].map((key) => (
                 <tr key={key._id} className={key.status === "revoked" ? "opacity-60" : undefined}>
                   <td className={`${tdCls} font-medium`}>{key.name}</td>
@@ -322,7 +322,7 @@ function WebhooksSection({ ctx }: { ctx: PortalContext }) {
             We POST signed JSON events to this HTTPS URL. Each environment has its own endpoint and signing secret — sandbox events never reach your
             live endpoint. Verify <code className="font-mono">X-Rehabify-Signature: t=…,v1=…</code> (HMAC-SHA256 of <code className="font-mono">&quot;t.body&quot;</code>
             ) — see{" "}
-            <a href={SIGNATURE_DOCS_URL} target="_blank" rel="noreferrer" className="text-[#005b57] font-semibold underline">
+            <a href={SIGNATURE_DOCS_URL} target="_blank" rel="noreferrer" className="text-rh-ink font-semibold underline">
               signature verification
             </a>
             . Respond 2xx within 10 s; failures are retried after {WEBHOOK_RETRY_SCHEDULE}.
@@ -401,7 +401,7 @@ function WebhooksSection({ ctx }: { ctx: PortalContext }) {
           >
             <RefreshCw className="w-3.5 h-3.5" /> Rotate secret
           </button>
-          <span className="w-px h-6 bg-[#002e2c]/10 mx-1" />
+          <span className="w-px h-6 bg-rh-ink/10 mx-1" />
           <select value={testType} onChange={(e) => setTestType(e.target.value)} className={selectCls} aria-label="Test event type">
             {WEBHOOK_EVENT_TYPES.map((t) => (
               <option key={t} value={t}>
@@ -426,7 +426,7 @@ function WebhooksSection({ ctx }: { ctx: PortalContext }) {
       </div>
 
       <div className={`${cardCls} overflow-hidden`}>
-        <div className="p-5 flex items-center justify-between gap-3 border-b border-[#002e2c]/10">
+        <div className="p-5 flex items-center justify-between gap-3 border-b border-rh-ink/10">
           <div>
             <h3 className="text-sm font-semibold">Deliveries</h3>
             <p className="text-[11px] text-[#52706e]">Every event with its delivery attempts. Event ids are stable across retries.</p>
@@ -456,7 +456,7 @@ function WebhooksSection({ ctx }: { ctx: PortalContext }) {
                   <th className={thCls} />
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#002e2c]/5">
+              <tbody className="divide-y divide-rh-ink/5">
                 {deliveries.map((d) => (
                   <tr key={d._id}>
                     <td className={tdCls}>
@@ -565,7 +565,7 @@ function ActivityLogSection({ ctx }: { ctx: PortalContext }) {
 
   return (
     <div className={`${cardCls} overflow-hidden`}>
-      <div className="p-5 flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-[#002e2c]/10">
+      <div className="p-5 flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-rh-ink/10">
         <div>
           <h3 className="text-sm font-semibold">Activity log</h3>
           <p className="text-[11px] text-[#52706e]">Your API requests (with request ids for support), webhook deliveries and account changes.</p>
@@ -606,7 +606,7 @@ function ActivityLogSection({ ctx }: { ctx: PortalContext }) {
                 <th className={thCls}>Request id</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#002e2c]/5">
+            <tbody className="divide-y divide-rh-ink/5">
               {logs.map((log) => (
                 <tr key={log._id} className="hover:bg-[#FAF6E7]/40 cursor-pointer" onClick={() => setSelected(log)}>
                   <td className={`${tdCls} whitespace-nowrap`}>{fmtTime(log.occurredAt)}</td>
@@ -698,16 +698,16 @@ print(referral["tracking_code"], referral["links"]["whatsapp_intake_url"])`,
           <h3 className="text-sm font-semibold">Create your first referral</h3>
           <p className="text-xs text-[#52706e] mt-0.5">
             Base URL <code className="font-mono">{API_BASE_URL}</code>. Full reference, error codes and webhooks at{" "}
-            <a href="https://docs.physioaroundme.com" target="_blank" rel="noreferrer" className="text-[#005b57] font-semibold underline">
+            <a href="https://docs.physioaroundme.com" target="_blank" rel="noreferrer" className="text-rh-ink font-semibold underline">
               docs.physioaroundme.com
             </a>{" "}
             · OpenAPI:{" "}
-            <a href="https://physioaroundme.com/openapi.json" target="_blank" rel="noreferrer" className="text-[#005b57] font-semibold underline">
+            <a href="https://physioaroundme.com/openapi.json" target="_blank" rel="noreferrer" className="text-rh-ink font-semibold underline">
               openapi.json
             </a>
           </p>
         </div>
-        <div className="inline-flex p-0.5 bg-[#002e2c]/5 border border-[#002e2c]/10 rounded-xl">
+        <div className="inline-flex p-0.5 bg-rh-ink/5 border border-rh-ink/10 rounded-xl">
           {(["curl", "node", "python"] as const).map((l) => (
             <button key={l} type="button" onClick={() => setLang(l)} className={`px-3 py-1 rounded-lg text-xs font-semibold ${lang === l ? "bg-white shadow-xs" : "text-[#52706e]"}`}>
               {l === "node" ? "Node.js" : l === "python" ? "Python" : "cURL"}

@@ -66,7 +66,7 @@ const titleCase = (value: string) => value.replace(/(^|[\s-])([a-z])/g, (_, sep:
 const KNOWN_PLACES = Object.keys(NIGERIA_LOCATIONS).map(titleCase)
 
 const switchClass =
-  'data-[state=checked]:bg-rh-teal data-[state=unchecked]:bg-neutral-200 dark:data-[state=checked]:bg-rh-aqua dark:data-[state=unchecked]:bg-white/15'
+  'data-[state=checked]:bg-rh-lime data-[state=unchecked]:bg-neutral-200 dark:data-[state=checked]:bg-rh-lime dark:data-[state=unchecked]:bg-white/15'
 
 const num = (value: string) => Number(value.replace(/[,\s₦%]/g, ''))
 
@@ -170,12 +170,12 @@ function ZoneRow({ zone, onEdit }: { zone: Zone; onEdit: () => void }) {
     <div className={cn('flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-start', !zone.active && 'opacity-70')}>
       <div className="min-w-0 flex-1 space-y-2">
         <div className="flex flex-wrap items-center gap-2">
-          <p className="text-sm font-semibold text-rh-night dark:text-white">{zone.name}</p>
+          <p className="text-sm font-semibold text-rh-ink dark:text-white">{zone.name}</p>
           <StatusBadge tone={zone.active ? 'green' : 'neutral'}>{zone.active ? 'Active' : 'Off'}</StatusBadge>
           {zone.sortOrder !== undefined && <span className="text-[11px] text-neutral-400">Order {zone.sortOrder}</span>}
         </div>
         <p className="text-xs text-neutral-600 dark:text-neutral-300">
-          <span className="font-semibold tabular-nums text-rh-night dark:text-white">{formatKobo(zone.surchargeKobo)}</span> travel charge
+          <span className="font-semibold tabular-nums text-rh-ink dark:text-white">{formatKobo(zone.surchargeKobo)}</span> travel charge
           {zone.surchargeKobo > 0 && (
             <>
               {' '}
@@ -315,7 +315,7 @@ function ZoneSheet({ zone, zones, onClose }: { zone: Zone | 'new' | null; zones:
     <Sheet open={zone !== null} onOpenChange={(open) => !open && !saving && onClose()}>
       <SheetContent side="right" className="w-full overflow-y-auto border-black/[0.06] bg-rh-canvas p-0 dark:border-white/[0.08] dark:bg-rh-ink sm:max-w-lg">
         <SheetHeader className="space-y-1 border-b border-black/[0.05] bg-white px-5 py-4 text-left dark:border-white/[0.06] dark:bg-rh-ink-2">
-          <SheetTitle className="text-lg text-rh-night dark:text-white">{isNew ? 'New travel zone' : `Edit ${zone ? zone.name : 'zone'}`}</SheetTitle>
+          <SheetTitle className="text-lg text-rh-ink dark:text-white">{isNew ? 'New travel zone' : `Edit ${zone ? zone.name : 'zone'}`}</SheetTitle>
           <SheetDescription className="text-xs">
             {isNew
               ? 'A named group of areas in one city with a fixed travel charge.'
@@ -407,7 +407,7 @@ function ZoneSheet({ zone, zones, onClose }: { zone: Zone | 'new' | null; zones:
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <label htmlFor={`${id}-active`} className="flex cursor-pointer items-start justify-between gap-3 sm:col-span-1">
                 <span className="min-w-0">
-                  <span className="block text-sm font-medium text-rh-night dark:text-white">Active</span>
+                  <span className="block text-sm font-medium text-rh-ink dark:text-white">Active</span>
                   <span className="block text-xs text-neutral-500 dark:text-neutral-400">Off removes these areas from home visits.</span>
                 </span>
                 <Switch id={`${id}-active`} checked={form.active} onCheckedChange={(v) => set('active', v)} className={cn('mt-0.5', switchClass)} />
@@ -494,9 +494,9 @@ function AreaInput({
       <Label htmlFor={id} className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
         Areas
       </Label>
-      <div className="flex flex-wrap items-center gap-1.5 rounded-xl border border-black/10 bg-white p-2 focus-within:ring-2 focus-within:ring-rh-teal/30 dark:border-white/10 dark:bg-rh-ink-3 dark:focus-within:ring-rh-aqua/30">
+      <div className="flex flex-wrap items-center gap-1.5 rounded-xl border border-black/10 bg-white p-2 focus-within:ring-2 focus-within:ring-rh-lime/30 dark:border-white/10 dark:bg-rh-ink-3 dark:focus-within:ring-white/10">
         {areas.map((area) => (
-          <span key={area} className="inline-flex items-center gap-1 rounded-full bg-rh-mist py-0.5 pl-2.5 pr-1 text-xs font-medium text-rh-teal dark:bg-rh-aqua/10 dark:text-rh-aqua">
+          <span key={area} className="inline-flex items-center gap-1 rounded-full bg-rh-honeydew py-0.5 pl-2.5 pr-1 text-xs font-medium text-rh-ink dark:bg-white/[0.06] dark:text-rh-lime">
             {area}
             <button
               type="button"
@@ -529,7 +529,7 @@ function AreaInput({
             }
           }}
           placeholder={areas.length ? 'Add another area' : 'e.g. Ikeja, Maryland, Ogba'}
-          className="min-w-[8rem] flex-1 bg-transparent px-1 py-1 text-sm text-rh-night outline-none placeholder:text-neutral-400 dark:text-white dark:placeholder:text-neutral-500"
+          className="min-w-[8rem] flex-1 bg-transparent px-1 py-1 text-sm text-rh-ink outline-none placeholder:text-neutral-400 dark:text-white dark:placeholder:text-neutral-500"
         />
       </div>
       {matches.length > 0 && (
@@ -544,7 +544,7 @@ function AreaInput({
                 add([match])
                 setText('')
               }}
-              className="rounded-full border border-black/10 px-2 py-0.5 text-[11px] text-neutral-600 hover:border-rh-teal hover:text-rh-teal dark:border-white/10 dark:text-neutral-300 dark:hover:border-rh-aqua dark:hover:text-rh-aqua"
+              className="rounded-full border border-black/10 px-2 py-0.5 text-[11px] text-neutral-600 hover:border-rh-lime hover:text-rh-ink dark:border-white/10 dark:text-neutral-300 dark:hover:border-rh-lime dark:hover:text-rh-lime"
             >
               + {match}
             </button>

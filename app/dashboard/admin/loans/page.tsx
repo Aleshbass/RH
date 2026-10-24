@@ -195,7 +195,7 @@ function InitiateLoanDialog({ request, onClose, onInitiated }: { request: LoanRe
           <>
             <DialogHeader>
               <DialogTitle className={dialogTitleClass}>
-                <WalletCards className="h-5 w-5 text-rh-teal dark:text-rh-aqua" />
+                <WalletCards className="h-5 w-5 text-rh-ink dark:text-rh-lime" />
                 Initiate MediLoan
               </DialogTitle>
               <DialogDescription>
@@ -205,7 +205,7 @@ function InitiateLoanDialog({ request, onClose, onInitiated }: { request: LoanRe
             </DialogHeader>
 
             <div className={cn(insetClass, 'space-y-1.5 text-sm')}>
-              <p className="flex items-center gap-2 font-semibold text-rh-night dark:text-white">
+              <p className="flex items-center gap-2 font-semibold text-rh-ink dark:text-white">
                 <User className="h-4 w-4 text-neutral-400" />
                 {request.patientFirstName} {request.patientLastName}
               </p>
@@ -253,12 +253,12 @@ function InitiateLoanDialog({ request, onClose, onInitiated }: { request: LoanRe
                       className={cn(
                         'flex w-full items-start justify-between gap-3 rounded-xl border p-3 text-left text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-60',
                         isChosen
-                          ? 'border-rh-teal bg-rh-mist dark:border-rh-aqua dark:bg-rh-aqua/10'
+                          ? 'border-rh-lime bg-rh-honeydew dark:border-rh-lime dark:bg-white/[0.06]'
                           : 'border-black/10 hover:bg-neutral-50 dark:border-white/10 dark:hover:bg-white/[0.04]'
                       )}
                     >
                       <span className="min-w-0">
-                        <span className="block font-semibold text-rh-night dark:text-white">
+                        <span className="block font-semibold text-rh-ink dark:text-white">
                           {option.kind === 'booking' ? 'Booking: ' : ''}
                           {option.label}
                         </span>
@@ -268,7 +268,7 @@ function InitiateLoanDialog({ request, onClose, onInitiated }: { request: LoanRe
                           {option.hasOpenLoan ? ' · MediLoan already started' : ''}
                         </span>
                       </span>
-                      <span className="shrink-0 font-semibold tabular-nums text-rh-night dark:text-white">{formatKobo(option.amountKobo)}</span>
+                      <span className="shrink-0 font-semibold tabular-nums text-rh-ink dark:text-white">{formatKobo(option.amountKobo)}</span>
                     </button>
                   )
                 })}
@@ -394,7 +394,7 @@ export default function AdminLoansPage() {
         <TabsList className={tabsListClass}>
           <TabsTrigger value="requests">
             Loan requests
-            {pendingCount > 0 && <span className="ml-1.5 rounded-full bg-rh-amber px-1.5 text-[10px] font-semibold tabular-nums text-rh-night">{pendingCount}</span>}
+            {pendingCount > 0 && <span className="ml-1.5 rounded-full bg-rh-amber px-1.5 text-[10px] font-semibold tabular-nums text-rh-ink">{pendingCount}</span>}
           </TabsTrigger>
           <TabsTrigger value="applications">Initiated loans</TabsTrigger>
         </TabsList>
@@ -430,7 +430,7 @@ export default function AdminLoansPage() {
                       return (
                         <TableRow key={req._id}>
                           <TableCell>
-                            <div className="font-medium text-rh-night dark:text-white">
+                            <div className="font-medium text-rh-ink dark:text-white">
                               {req.patientFirstName} {req.patientLastName}
                             </div>
                             <div className="text-xs text-neutral-500 dark:text-neutral-400">{req.patientPhone}</div>
@@ -501,13 +501,13 @@ export default function AdminLoansPage() {
                       return (
                         <TableRow key={loan._id}>
                           <TableCell>
-                            <div className="font-medium text-rh-night dark:text-white">
+                            <div className="font-medium text-rh-ink dark:text-white">
                               {loan.patientFirstName} {loan.patientLastName}
                             </div>
                             <div className="text-xs text-neutral-500 dark:text-neutral-400">{loan.patientPhone}</div>
                           </TableCell>
                           <TableCell className="max-w-[220px] truncate text-sm text-neutral-600 dark:text-neutral-300">{loan.treatment}</TableCell>
-                          <TableCell className="text-right font-semibold tabular-nums text-rh-night dark:text-white">
+                          <TableCell className="text-right font-semibold tabular-nums text-rh-ink dark:text-white">
                             {formatKobo(loan.amount)}
                             {loan.amountApproved !== undefined && loan.amountApproved !== loan.amount && (
                               <div className="text-xs font-normal text-neutral-500 dark:text-neutral-400">Approved {formatKobo(loan.amountApproved)}</div>

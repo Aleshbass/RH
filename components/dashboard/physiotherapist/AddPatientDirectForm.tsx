@@ -124,11 +124,11 @@ export default function AddPatientDirectForm({ onSuccess, onCancel }: AddPatient
                 className={cn(
                   'rounded-2xl border p-3 text-left transition-all active:scale-[0.98]',
                   selected
-                    ? 'border-rh-teal bg-rh-mist ring-1 ring-rh-teal dark:border-rh-aqua dark:bg-rh-aqua/10 dark:ring-rh-aqua'
-                    : 'border-black/[0.08] hover:border-rh-teal/40 hover:bg-rh-canvas dark:border-white/10 dark:hover:bg-white/[0.04]'
+                    ? 'border-rh-lime bg-rh-honeydew ring-1 ring-rh-lime dark:border-rh-lime dark:bg-white/[0.06] dark:ring-rh-lime'
+                    : 'border-black/[0.08] hover:border-rh-lime/40 hover:bg-rh-canvas dark:border-white/10 dark:hover:bg-white/[0.04]'
                 )}
               >
-                <span className="block text-sm font-semibold text-rh-night dark:text-white">{option.title}</span>
+                <span className="block text-sm font-semibold text-rh-ink dark:text-white">{option.title}</span>
                 <span className="block text-xs text-neutral-500 dark:text-neutral-400">{option.hint}</span>
               </button>
             )

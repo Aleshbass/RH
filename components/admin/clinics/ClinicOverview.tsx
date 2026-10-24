@@ -15,14 +15,14 @@ import { cn } from '@/lib/utils'
 export type ClinicDetail = NonNullable<ClinicDetailResult>
 
 const naira = (kobo: number) => formatNaira(kobo / 100)
-const linkClass = 'font-medium text-rh-teal hover:underline dark:text-rh-aqua'
+const linkClass = 'font-medium text-rh-ink hover:underline dark:text-rh-lime'
 
 function Detail({ label, value, href, mono }: { label: string; value: ReactNode; href?: string; mono?: boolean }) {
   const empty = value === null || value === undefined || value === ''
   return (
     <div className="min-w-0">
       <dt className="text-xs text-neutral-500 dark:text-neutral-400">{label}</dt>
-      <dd className={cn('mt-0.5 break-words text-sm text-rh-night dark:text-white', mono && 'font-mono text-[13px]')}>
+      <dd className={cn('mt-0.5 break-words text-sm text-rh-ink dark:text-white', mono && 'font-mono text-[13px]')}>
         {empty ? (
           <span className="text-neutral-400 dark:text-neutral-500">Not given</span>
         ) : href ? (
@@ -87,11 +87,11 @@ export function ClinicOverviewTab({ data }: { data: ClinicDetail }) {
             <ul className="divide-y divide-black/[0.05] rounded-xl border border-black/[0.05] dark:divide-white/[0.06] dark:border-white/[0.06]">
               {clinic.priceList.map((item) => (
                 <li key={item.name} className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm">
-                  <span className="min-w-0 truncate text-rh-night dark:text-white">
+                  <span className="min-w-0 truncate text-rh-ink dark:text-white">
                     {item.name}
                     {item.durationMinutes ? <span className="text-neutral-500 dark:text-neutral-400"> · {item.durationMinutes} min</span> : null}
                   </span>
-                  <span className="shrink-0 font-medium tabular-nums text-rh-night dark:text-white">{formatNaira(item.priceNaira)}</span>
+                  <span className="shrink-0 font-medium tabular-nums text-rh-ink dark:text-white">{formatNaira(item.priceNaira)}</span>
                 </li>
               ))}
             </ul>
@@ -125,19 +125,19 @@ export function ClinicOverviewTab({ data }: { data: ClinicDetail }) {
                   <AvatarFallback className={cn('text-sm font-semibold', tintFor(owner._id))}>{initialsOf(owner.name, 'O')}</AvatarFallback>
                 </Avatar>
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-rh-night dark:text-white">{owner.name}</p>
+                  <p className="truncate text-sm font-semibold text-rh-ink dark:text-white">{owner.name}</p>
                   {!owner.onboarded && <p className="text-xs text-amber-700 dark:text-amber-300">Hasn&apos;t finished registration</p>}
                 </div>
               </div>
               <div className="space-y-1.5 text-sm">
                 {owner.email && (
-                  <a href={`mailto:${owner.email}`} className="flex items-center gap-2 text-neutral-600 hover:text-rh-teal dark:text-neutral-300 dark:hover:text-rh-aqua">
+                  <a href={`mailto:${owner.email}`} className="flex items-center gap-2 text-neutral-600 hover:text-rh-ink dark:text-neutral-300 dark:hover:text-rh-lime">
                     <Mail className="h-4 w-4 shrink-0 text-neutral-400" />
                     <span className="truncate">{owner.email}</span>
                   </a>
                 )}
                 {owner.phoneNumber && (
-                  <a href={`tel:${owner.phoneNumber}`} className="flex items-center gap-2 text-neutral-600 hover:text-rh-teal dark:text-neutral-300 dark:hover:text-rh-aqua">
+                  <a href={`tel:${owner.phoneNumber}`} className="flex items-center gap-2 text-neutral-600 hover:text-rh-ink dark:text-neutral-300 dark:hover:text-rh-lime">
                     <Phone className="h-4 w-4 shrink-0 text-neutral-400" />
                     {owner.phoneNumber}
                   </a>
@@ -194,7 +194,7 @@ export function ClinicOverviewTab({ data }: { data: ClinicDetail }) {
                   >
                     <IconChip icon={FileText} tone="neutral" className="h-8 w-8 rounded-lg" />
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-medium text-rh-night dark:text-white">{doc.label}</span>
+                      <span className="block truncate text-sm font-medium text-rh-ink dark:text-white">{doc.label}</span>
                       <span className="block truncate text-xs text-neutral-500 dark:text-neutral-400">
                         {doc.fileName} · {format(doc.uploadedAt, 'd MMM yyyy')}
                       </span>
@@ -244,7 +244,7 @@ export function ClinicFeesTab({ data }: { data: ClinicDetail }) {
               <IconChip icon={Landmark} tone="mint" />
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <p className="text-sm font-semibold text-rh-night dark:text-white">
+                  <p className="text-sm font-semibold text-rh-ink dark:text-white">
                     {payoutAccount.bankName} ••{payoutAccount.accountNumberLast4}
                   </p>
                   <StatusBadge tone="green">Connected</StatusBadge>
@@ -261,7 +261,7 @@ export function ClinicFeesTab({ data }: { data: ClinicDetail }) {
             <div className="flex items-start gap-3 rounded-xl bg-rh-peach/60 p-3 dark:bg-amber-400/10">
               <IconChip icon={Banknote} tone="peach" />
               <div className="min-w-0 text-sm">
-                <p className="font-semibold text-rh-night dark:text-white">No payout account connected</p>
+                <p className="font-semibold text-rh-ink dark:text-white">No payout account connected</p>
                 <p className="text-neutral-600 dark:text-neutral-300">
                   Online payments settle to Rehabify, so the clinic&apos;s share has to be transferred manually. The owner can
                   connect a bank account in their clinic settings.
@@ -282,7 +282,7 @@ export function ClinicFeesTab({ data }: { data: ClinicDetail }) {
               className={cn('rounded-xl bg-rh-canvas p-3 dark:bg-white/[0.03]', m.attention && 'ring-1 ring-amber-300/70 dark:ring-amber-500/30')}
             >
               <p className="text-xs text-neutral-500 dark:text-neutral-400">{m.label}</p>
-              <p className="mt-1 text-lg font-semibold tabular-nums text-rh-night dark:text-white">{m.value}</p>
+              <p className="mt-1 text-lg font-semibold tabular-nums text-rh-ink dark:text-white">{m.value}</p>
               <p className="mt-0.5 text-[11px] leading-4 text-neutral-500 dark:text-neutral-400">{m.hint}</p>
             </div>
           ))}
@@ -309,7 +309,7 @@ export function ClinicFeesTab({ data }: { data: ClinicDetail }) {
           ].map(([label, value]) => (
             <div key={label} className="flex items-baseline justify-between gap-3">
               <dt className="text-neutral-500 dark:text-neutral-400">{label}</dt>
-              <dd className="font-medium tabular-nums text-rh-night dark:text-white">{value}</dd>
+              <dd className="font-medium tabular-nums text-rh-ink dark:text-white">{value}</dd>
             </div>
           ))}
         </dl>

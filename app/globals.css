@@ -130,14 +130,16 @@ body {
   --color-rh-rose: #ffcfdc;
   --color-rh-blush: #fff0f4;
   --color-rh-lime: #00cd0f;
+  --color-rh-lime-deep: #00b30d; /* hover/pressed state of rh-lime */
   --color-rh-honeydew: #f1ffe9;
   --color-rh-bone: #e3dfd2;
   --color-rh-jasmine: #ffe682;
   --color-rh-ink: #0b1312;
   --color-rh-ink-2: #121c1b;
   --color-rh-ink-3: #1b2827;
-  --shadow-soft: 0 1px 2px rgb(0 46 44 / 0.05), 0 10px 30px -14px rgb(0 46 44 / 0.18);
-  --shadow-lift: 0 2px 4px rgb(0 46 44 / 0.06), 0 18px 40px -16px rgb(0 46 44 / 0.28);
+  /* Neutral ink shadows: no coloured tint, so nothing looks like it glows */
+  --shadow-soft: 0 1px 2px rgb(11 19 18 / 0.05), 0 8px 24px -14px rgb(11 19 18 / 0.14);
+  --shadow-lift: 0 2px 4px rgb(11 19 18 / 0.06), 0 14px 32px -16px rgb(11 19 18 / 0.2);
 
   /* Older names from tailwind.config.js, which Tailwind v4 no longer reads (bg-brand, bg-call-bg, ...) */
   --color-brand: #005b57;

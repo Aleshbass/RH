@@ -81,7 +81,7 @@ export function meetingLinkOf(apt: AppointmentLike): string | undefined {
 
 const TONE_CLASSES: Record<StatusTone, string> = {
   neutral: 'bg-neutral-100 text-neutral-700 dark:bg-white/[0.07] dark:text-neutral-300',
-  teal: 'bg-[#005b57]/10 text-[#005b57] dark:bg-[#2dd4bf]/10 dark:text-[#2dd4bf]',
+  teal: 'bg-rh-lime/10 text-rh-ink dark:bg-white/[0.06] dark:text-rh-lime',
   green: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300',
   amber: 'bg-amber-50 text-amber-800 dark:bg-amber-500/10 dark:text-amber-300',
   red: 'bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-300',
@@ -143,7 +143,7 @@ export function AppointmentPlace({
             target="_blank"
             rel="noopener noreferrer"
             onClick={stop}
-            className="truncate font-medium text-[#005b57] underline-offset-2 hover:underline dark:text-[#2dd4bf]"
+            className="truncate font-medium text-rh-ink underline-offset-2 hover:underline dark:text-rh-lime"
           >
             Join video call
           </a>
@@ -263,7 +263,7 @@ export function SlotPicker({
             className={cn(
               'shrink-0 rounded-lg border px-3 py-1.5 text-sm transition-colors',
               key === day
-                ? 'border-[#005b57] bg-[#005b57] text-white dark:border-[#2dd4bf] dark:bg-[#2dd4bf] dark:text-neutral-950'
+                ? 'border-rh-lime bg-rh-lime text-rh-ink dark:border-rh-lime dark:bg-rh-lime dark:text-neutral-950'
                 : 'border-neutral-200 text-neutral-700 hover:border-neutral-300 dark:border-white/10 dark:text-neutral-300'
             )}
           >
@@ -283,7 +283,7 @@ export function SlotPicker({
               className={cn(
                 'rounded-lg border px-2 py-1.5 text-sm tabular-nums transition-colors',
                 active
-                  ? 'border-[#005b57] bg-[#005b57]/10 font-medium text-[#005b57] dark:border-[#2dd4bf] dark:text-[#2dd4bf]'
+                  ? 'border-rh-lime bg-rh-lime/10 font-medium text-rh-ink dark:border-rh-lime dark:text-rh-lime'
                   : 'border-neutral-200 text-neutral-700 hover:border-neutral-300 dark:border-white/10 dark:text-neutral-300'
               )}
             >
@@ -371,7 +371,7 @@ export function ProposeTimeDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
             Back
           </Button>
-          <Button onClick={submit} disabled={!slot || saving} className="bg-[#005b57] text-white hover:bg-[#00443e]">
+          <Button onClick={submit} disabled={!slot || saving} className="bg-rh-lime text-rh-ink hover:bg-rh-lime-deep">
             {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             {slot ? `Propose ${lagosShortDate(slot.start)}, ${lagosTime(slot.start)}` : 'Pick a time'}
           </Button>
@@ -502,7 +502,7 @@ export function PhysioAppointmentActions({
         size="sm"
         onClick={stop(() => setStatus('confirmed', 'Visit confirmed. The patient has been told.'))}
         disabled={busy !== null}
-        className="bg-[#005b57] text-white hover:bg-[#00443e]"
+        className="bg-rh-lime text-rh-ink hover:bg-rh-lime-deep"
       >
         {busy === 'confirmed' ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Check className="mr-1.5 h-3.5 w-3.5" />}
         Accept

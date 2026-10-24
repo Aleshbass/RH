@@ -83,7 +83,7 @@ export default function PendingApprovalPage({
                 While you wait
               </h3>
 
-              <a href="/payout-policy" target="_blank" className="flex items-center p-3 bg-white rounded-lg border border-gray-100 hover:border-teal-200 transition-colors group">
+              <a href="/payout-policy" target="_blank" className="flex items-center p-3 bg-white rounded-lg border border-gray-100 hover:border-[#e2f7d8] transition-colors group">
                 <div className="h-8 w-8 bg-blue-50 rounded-lg flex items-center justify-center mr-3 group-hover:bg-blue-100 transition-colors">
                   <CreditCard className="h-4 w-4 text-blue-600" />
                 </div>
@@ -91,10 +91,10 @@ export default function PendingApprovalPage({
                   <p className="text-sm font-medium text-gray-900">Payouts & Payment Policy</p>
                   <p className="text-xs text-gray-500">Learn how you get paid</p>
                 </div>
-                <ArrowRight className="h-4 w-4 text-gray-300 group-hover:text-teal-600 transition-colors" />
+                <ArrowRight className="h-4 w-4 text-gray-300 group-hover:text-rh-ink transition-colors" />
               </a>
 
-              <a href="/privacy-policy" target="_blank" className="flex items-center p-3 bg-white rounded-lg border border-gray-100 hover:border-teal-200 transition-colors group">
+              <a href="/privacy-policy" target="_blank" className="flex items-center p-3 bg-white rounded-lg border border-gray-100 hover:border-[#e2f7d8] transition-colors group">
                 <div className="h-8 w-8 bg-purple-50 rounded-lg flex items-center justify-center mr-3 group-hover:bg-purple-100 transition-colors">
                   <ShieldCheck className="h-4 w-4 text-purple-600" />
                 </div>
@@ -102,7 +102,7 @@ export default function PendingApprovalPage({
                   <p className="text-sm font-medium text-gray-900">Privacy Policy</p>
                   <p className="text-xs text-gray-500">How we protect your data</p>
                 </div>
-                <ArrowRight className="h-4 w-4 text-gray-300 group-hover:text-teal-600 transition-colors" />
+                <ArrowRight className="h-4 w-4 text-gray-300 group-hover:text-rh-ink transition-colors" />
               </a>
             </div>
           )}
@@ -120,7 +120,7 @@ export default function PendingApprovalPage({
             {isDeclined && (
               <Button
                 onClick={() => router.push(APPLY_AGAIN_PATH[userRole] ?? '/role-selection')}
-                className="w-full h-12 bg-teal-600 hover:bg-teal-700 text-white"
+                className="w-full h-12 bg-rh-lime hover:bg-rh-lime text-rh-ink"
               >
                 Update and resubmit
               </Button>
@@ -130,7 +130,7 @@ export default function PendingApprovalPage({
           {/* Contact Support (Declined only) */}
           {isDeclined && (
             <p className="mt-6 text-xs text-gray-400">
-              Believe this is an error? <a href="mailto:support@physioaroundme.com" className="text-teal-600 hover:underline">Contact Support</a>
+              Believe this is an error? <a href="mailto:support@physioaroundme.com" className="text-rh-ink hover:underline">Contact Support</a>
             </p>
           )}
         </div>

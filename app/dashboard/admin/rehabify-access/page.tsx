@@ -242,7 +242,7 @@ export default function AdminRehabifyAccessPage() {
                 <span className="block space-y-1">
                   <span className="block h-1.5 w-full overflow-hidden rounded-full bg-neutral-100 dark:bg-white/[0.08]">
                     <span
-                      className={cn('block h-full rounded-full', placesLeft === 0 ? 'bg-amber-500' : 'bg-rh-teal dark:bg-rh-aqua')}
+                      className={cn('block h-full rounded-full', placesLeft === 0 ? 'bg-amber-500' : 'bg-rh-lime dark:bg-rh-lime')}
                       style={{ width: `${usedPercent}%` }}
                     />
                   </span>
@@ -299,12 +299,12 @@ export default function AdminRehabifyAccessPage() {
             {visible.map((app) => (
               <li key={app._id}>
                 <button type="button" onClick={() => setSelectedId(app._id)} className={cn(listRowClass, 'w-full items-start text-left')}>
-                  <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-rh-mist text-xs font-semibold text-rh-teal dark:bg-rh-aqua/10 dark:text-rh-aqua">
+                  <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-rh-honeydew text-xs font-semibold text-rh-ink dark:bg-white/[0.06] dark:text-rh-lime">
                     {app.patientName[0]?.toUpperCase() ?? '?'}
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                      <span className="text-sm font-semibold text-rh-night dark:text-white">{app.patientName}</span>
+                      <span className="text-sm font-semibold text-rh-ink dark:text-white">{app.patientName}</span>
                       {app.patientNumber && <span className="font-mono text-[11px] text-neutral-400">{app.patientNumber}</span>}
                       <StatusBadge tone={STATUS_TONE[app.status]}>{statusLabel(app.status)}</StatusBadge>
                       {app.award && <StatusBadge tone={AWARD_LABELS[app.award.status]?.tone}>{AWARD_LABELS[app.award.status]?.label}</StatusBadge>}
@@ -380,7 +380,7 @@ function ApplicationSheet({
                 <StatusBadge tone={STATUS_TONE[application.status]}>{statusLabel(application.status)}</StatusBadge>
                 {application.patientNumber && <span className="font-mono text-[11px] text-neutral-400">{application.patientNumber}</span>}
               </div>
-              <SheetTitle className="text-lg text-rh-night dark:text-white">{application.patientName}</SheetTitle>
+              <SheetTitle className="text-lg text-rh-ink dark:text-white">{application.patientName}</SheetTitle>
               <SheetDescription className="text-xs">
                 Applied {format(application.createdAt, 'd MMM yyyy, HH:mm')}
                 {application.reviewedAt ? ` · last decision ${formatDistanceToNowStrict(application.reviewedAt, { addSuffix: true })}` : ''}
@@ -397,7 +397,7 @@ function ApplicationSheet({
                       <span className="font-medium">Waiting list note:</span> {application.decisionReason}
                     </p>
                   )}
-                  <p className="text-sm text-rh-night dark:text-neutral-100">
+                  <p className="text-sm text-rh-ink dark:text-neutral-100">
                     {application.status === 'submitted'
                       ? 'Start the review to work through the checks. It shows as In review, so nobody else picks it up.'
                       : 'Resume the review when a place is free or their situation has changed.'}
@@ -417,7 +417,7 @@ function ApplicationSheet({
 
               {application.status === 'declined' && (
                 <Card title="Decision">
-                  <p className="text-sm text-rh-night dark:text-neutral-100">Not approved. The patient sees this reason:</p>
+                  <p className="text-sm text-rh-ink dark:text-neutral-100">Not approved. The patient sees this reason:</p>
                   <p className="mt-1 whitespace-pre-wrap text-sm text-neutral-700 dark:text-neutral-300">{application.decisionReason ?? 'No reason recorded.'}</p>
                   <ReviewRecord application={application} />
                 </Card>
@@ -449,7 +449,7 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div>
       <p className="text-[11px] font-medium text-neutral-500 dark:text-neutral-400">{label}</p>
-      <p className="text-sm text-rh-night dark:text-neutral-100">{children}</p>
+      <p className="text-sm text-rh-ink dark:text-neutral-100">{children}</p>
     </div>
   )
 }
@@ -468,7 +468,7 @@ function ApplicationDetails({ application }: { application: Application }) {
         </div>
         <Link
           href={`/dashboard/admin/users/${application.patientId}`}
-          className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-rh-teal hover:underline dark:text-rh-aqua"
+          className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-rh-ink hover:underline dark:text-rh-lime"
         >
           Open profile <ArrowUpRight className="h-3 w-3" />
         </Link>
@@ -659,7 +659,7 @@ function ReviewForm({ application, placesLeft }: { application: Application; pla
                   className="mt-0.5"
                 />
                 <span>
-                  <span className="block text-sm font-medium text-rh-night dark:text-white">{check.label}</span>
+                  <span className="block text-sm font-medium text-rh-ink dark:text-white">{check.label}</span>
                   <span className="block text-xs text-neutral-500 dark:text-neutral-400">{check.hint}</span>
                 </span>
               </label>
@@ -706,12 +706,12 @@ function ReviewForm({ application, placesLeft }: { application: Application; pla
                         htmlFor={`${id}-svc-${t.id}`}
                         className={cn(
                           'flex cursor-pointer items-start gap-3 rounded-xl border px-3 py-2.5 transition-colors',
-                          checked ? 'border-rh-teal bg-rh-mist/60 dark:border-rh-aqua dark:bg-rh-aqua/10' : 'border-black/[0.06] dark:border-white/10'
+                          checked ? 'border-rh-lime bg-rh-honeydew/60 dark:border-rh-lime dark:bg-white/[0.06]' : 'border-black/[0.06] dark:border-white/10'
                         )}
                       >
                         <Checkbox id={`${id}-svc-${t.id}`} checked={checked} onCheckedChange={() => toggleService(t.id)} className="mt-0.5" />
                         <span className="min-w-0 flex-1">
-                          <span className="flex flex-wrap items-center gap-1.5 text-sm font-medium text-rh-night dark:text-white">
+                          <span className="flex flex-wrap items-center gap-1.5 text-sm font-medium text-rh-ink dark:text-white">
                             {t.name}
                             {t.id === application.serviceNeeded && <StatusBadge tone="teal">Requested</StatusBadge>}
                           </span>
@@ -785,12 +785,12 @@ function ReviewForm({ application, placesLeft }: { application: Application; pla
                         aria-pressed={selected}
                         className={cn(
                           'w-full border-l-[3px] px-3 py-2.5 text-left transition-colors',
-                          selected ? 'border-l-rh-teal bg-rh-mist dark:border-l-rh-aqua dark:bg-rh-aqua/10' : 'border-l-transparent hover:bg-rh-canvas dark:hover:bg-white/[0.03]'
+                          selected ? 'border-l-rh-lime bg-rh-honeydew dark:border-l-rh-lime dark:bg-white/[0.06]' : 'border-l-transparent hover:bg-rh-canvas dark:hover:bg-white/[0.03]'
                         )}
                       >
                         <span className="flex items-start justify-between gap-2">
                           <span className="min-w-0">
-                            <span className="flex flex-wrap items-center gap-1.5 text-sm font-semibold text-rh-night dark:text-white">
+                            <span className="flex flex-wrap items-center gap-1.5 text-sm font-semibold text-rh-ink dark:text-white">
                               {p.name}
                               {isCurrent && <StatusBadge tone="green">Current physio</StatusBadge>}
                             </span>
@@ -964,7 +964,7 @@ function AwardPanel({ application }: { application: Application }) {
     <Card title="Arrangement">
       <div className="flex flex-wrap items-center gap-2">
         <StatusBadge tone={meta.tone}>{meta.label}</StatusBadge>
-        <span className="text-sm font-semibold tabular-nums text-rh-night dark:text-white">
+        <span className="text-sm font-semibold tabular-nums text-rh-ink dark:text-white">
           {award.sessionsUsed} of {award.sessionsGranted} sessions used
         </span>
       </div>
@@ -975,11 +975,11 @@ function AwardPanel({ application }: { application: Application }) {
       <dl className="mt-3 grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
         <div>
           <dt className="text-xs text-neutral-500 dark:text-neutral-400">Physiotherapist</dt>
-          <dd className="font-medium text-rh-night dark:text-white">{award.physiotherapistName}</dd>
+          <dd className="font-medium text-rh-ink dark:text-white">{award.physiotherapistName}</dd>
         </div>
         <div>
           <dt className="text-xs text-neutral-500 dark:text-neutral-400">Services</dt>
-          <dd className="font-medium text-rh-night dark:text-white">{award.serviceNames.join(', ')}</dd>
+          <dd className="font-medium text-rh-ink dark:text-white">{award.serviceNames.join(', ')}</dd>
         </div>
       </dl>
       <ReviewRecord application={application} />

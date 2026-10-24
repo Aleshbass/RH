@@ -19,7 +19,7 @@ import { CLINIC_PORTAL_HOME, clinicianBelongsInClinicPortal } from '@/components
 function ShellSkeleton() {
   return (
     <div className="flex min-h-screen bg-rh-canvas dark:bg-rh-ink">
-      <div className="m-3 hidden w-64 rounded-3xl bg-rh-teal p-5 dark:bg-rh-night md:block">
+      <div className="m-3 hidden w-64 rounded-3xl bg-rh-ink p-5 dark:bg-rh-ink-2 md:block">
         <Skeleton className="mb-6 h-7 w-28 rounded-md" />
         <div className="space-y-2">
           {[...Array(7)].map((_, i) => (
@@ -94,7 +94,7 @@ export function PhysioShell({ children }: { children: ReactNode }) {
   if (access === 'declined') return <PhysioDeclined reason={setup?.approvalComments ?? undefined} />
 
   return (
-    <div className="flex min-h-screen bg-rh-canvas text-rh-night dark:bg-rh-ink dark:text-neutral-50">
+    <div className="flex min-h-screen bg-rh-canvas text-rh-ink dark:bg-rh-ink dark:text-neutral-50">
       {/* Floating teal sidebar on desktop */}
       <div className="hidden shrink-0 p-3 pr-0 md:flex">
         <PhysioSidebar className="sticky top-3 h-[calc(100vh-1.5rem)] rounded-3xl shadow-lift" limited={isUnderReview} />
@@ -109,7 +109,7 @@ export function PhysioShell({ children }: { children: ReactNode }) {
                   variant="ghost"
                   size="sm"
                   data-tour="navigation"
-                  className="h-10 w-10 shrink-0 rounded-xl bg-white p-0 text-rh-night shadow-soft hover:bg-white dark:bg-rh-ink-2 dark:text-white"
+                  className="h-10 w-10 shrink-0 rounded-xl bg-white p-0 text-rh-ink shadow-soft hover:bg-white dark:bg-rh-ink-2 dark:text-white"
                   aria-label="Open menu"
                 >
                   <Menu className="h-5 w-5" />
@@ -117,7 +117,7 @@ export function PhysioShell({ children }: { children: ReactNode }) {
               </SheetTrigger>
               <SheetContent
                 side="left"
-                className="w-72 border-0 bg-rh-teal p-0 dark:bg-rh-night [&>button]:text-white [&>button]:opacity-80"
+                className="w-72 border-0 bg-rh-ink p-0 dark:bg-rh-ink-2 [&>button]:text-white [&>button]:opacity-80"
               >
                 <SheetHeader className="sr-only">
                   <SheetTitle>Menu</SheetTitle>

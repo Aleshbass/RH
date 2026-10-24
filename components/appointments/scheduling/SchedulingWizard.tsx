@@ -97,7 +97,7 @@ export function SchedulingWizard({ isOpen, onClose, onComplete, physiotherapistI
                 {/* Progress Bar */}
                 <div className="h-1 bg-gray-100 w-full">
                     <div
-                        className="h-full bg-[#005b57] transition-all duration-300 ease-in-out dark:bg-[#2dd4bf]"
+                        className="h-full bg-rh-lime transition-all duration-300 ease-in-out dark:bg-rh-lime"
                         style={{ width: `${((step + (physiotherapistId ? 0 : 1)) / 5) * 100}%` }}
                     />
                 </div>

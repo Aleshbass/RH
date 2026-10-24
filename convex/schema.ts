@@ -4188,7 +4188,9 @@ export default defineSchema({
     showOnLanding: v.boolean(),
     showBanner: v.boolean(),
     bannerText: v.optional(v.string()),
-    communityLink: v.optional(v.string()), // e.g. the cohort WhatsApp group, sent after payment
+    communityLink: v.optional(v.string()), // legacy single group link; `links` replaces it
+    // Named links on the learner's course page (WhatsApp group, Drive folder, forms), set by admins
+    links: v.optional(v.array(v.object({ id: v.string(), label: v.string(), url: v.string() }))),
     welcomeNote: v.optional(v.string()), // extra line in the confirmation email
     imageStorageId: v.optional(v.id("_storage")), // optional photo for the landing section and program hero
     imageAlt: v.optional(v.string()),
@@ -4227,14 +4229,100 @@ export default defineSchema({
     adminNotes: v.optional(v.string()),
     contactedAt: v.optional(v.number()), // an admin followed up on an unfinished payment
     contactedBy: v.optional(v.id("users")),
+    // One-tap "Open my course" link from the confirmation email (only its hash is stored)
+    courseLinkHash: v.optional(v.string()),
+    courseLinkExpiresAt: v.optional(v.number()),
+    courseLinkUsedAt: v.optional(v.number()),
+    // Progress: live sessions joined (tapped "Join", or marked by an admin) and weeks ticked off
+    attendedSessionIds: v.optional(v.array(v.id("learnSessions"))),
+    weeksDone: v.optional(v.array(v.id("learnModules"))),
+    // Certificate, once claimed (or issued by an admin). The code is public, for verification.
+    certificateCode: v.optional(v.string()),
+    certificateName: v.optional(v.string()),
+    certificateIssuedAt: v.optional(v.number()),
+    certificateRevokedAt: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
     .index("by_cohort", ["cohortId"])
     .index("by_cohort_status", ["cohortId", "status"])
     .index("by_cohort_email", ["cohortId", "email"])
+    .index("by_email", ["email"])
+    .index("by_course_link", ["courseLinkHash"])
+    .index("by_certificate", ["certificateCode"])
     .index("by_user", ["userId"])
     .index("by_status", ["status"]),
+
+  // Live sessions of a cohort, each with its own meeting link (changed by admins at any time)
+  learnSessions: defineTable({
+    cohortId: v.id("learnCohorts"),
+    startsAt: v.number(),
+    endsAt: v.number(),
+    title: v.optional(v.string()),
+    meetingUrl: v.optional(v.string()),
+    recordingUrl: v.optional(v.string()),
+    linkChangedAt: v.optional(v.number()),
+    // Reminder emails sent for the current start time (cleared when the time changes)
+    remindedDayAt: v.optional(v.number()),
+    remindedHourAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_cohort", ["cohortId", "startsAt"])
+    .index("by_start", ["startsAt"]),
+
+  // A week of course materials: recording, handouts and exercises to study
+  learnModules: defineTable({
+    cohortId: v.id("learnCohorts"),
+    week: v.number(),
+    title: v.string(),
+    summary: v.optional(v.string()),
+    recordingUrl: v.optional(v.string()),
+    files: v.array(
+      v.object({ storageId: v.id("_storage"), name: v.string(), size: v.number(), contentType: v.string() })
+    ),
+    exerciseIds: v.array(v.id("exercises")),
+    resourceKeys: v.array(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_cohort_week", ["cohortId", "week"]),
+
+  // A cohort's final assessment: multiple-choice questions, marked automatically
+  learnAssessments: defineTable({
+    cohortId: v.id("learnCohorts"),
+    status: v.union(v.literal("draft"), v.literal("open"), v.literal("closed")),
+    passMark: v.number(), // percent
+    maxAttempts: v.number(),
+    minSessions: v.number(), // live sessions a physio must attend for the certificate
+    questions: v.array(
+      v.object({
+        id: v.string(),
+        prompt: v.string(),
+        options: v.array(v.string()),
+        answer: v.number(), // index into options; never sent to learners
+        explanation: v.optional(v.string()),
+      })
+    ),
+    // Printed on the certificate
+    signatoryName: v.optional(v.string()),
+    signatoryTitle: v.optional(v.string()),
+    updatedBy: v.optional(v.id("users")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_cohort", ["cohortId"]),
+
+  learnAttempts: defineTable({
+    registrationId: v.id("learnRegistrations"),
+    cohortId: v.id("learnCohorts"),
+    answers: v.array(v.number()),
+    correct: v.number(),
+    total: v.number(),
+    scorePct: v.number(),
+    passed: v.boolean(),
+    submittedAt: v.number(),
+  })
+    .index("by_registration", ["registrationId", "submittedAt"])
+    .index("by_cohort", ["cohortId"]),
 
   // People who asked to hear about the next cohort while registration was closed.
   learnInterest: defineTable({

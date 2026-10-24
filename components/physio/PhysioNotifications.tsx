@@ -106,7 +106,7 @@ export function PhysioNotifications({ className, portal = 'physio' }: { classNam
           type="button"
           aria-label={unread > 0 ? `Notifications, ${unread} unread` : 'Notifications'}
           className={cn(
-            'relative flex h-10 w-10 items-center justify-center rounded-xl bg-white text-rh-night shadow-soft transition-all hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-teal/40 active:scale-95 dark:bg-rh-ink-2 dark:text-neutral-200',
+            'relative flex h-10 w-10 items-center justify-center rounded-xl bg-white text-rh-ink shadow-soft transition-all hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-lime/40 active:scale-95 dark:bg-rh-ink-2 dark:text-neutral-200',
             className
           )}
         >
@@ -128,7 +128,7 @@ export function PhysioNotifications({ className, portal = 'physio' }: { classNam
             <button
               type="button"
               onClick={() => markAllMyAsRead({}).catch(() => toast.error('Could not mark notifications as read'))}
-              className="text-xs font-medium text-[#005b57] hover:underline dark:text-[#2dd4bf]"
+              className="text-xs font-medium text-rh-ink hover:underline dark:text-rh-lime"
             >
               Mark all as read
             </button>
@@ -159,7 +159,7 @@ export function PhysioNotifications({ className, portal = 'physio' }: { classNam
                       <span
                         className={cn(
                           'mt-1.5 h-2 w-2 shrink-0 rounded-full',
-                          isUnread ? 'bg-[#005b57] dark:bg-[#2dd4bf]' : 'bg-transparent'
+                          isUnread ? 'bg-rh-lime dark:bg-rh-lime' : 'bg-transparent'
                         )}
                       />
                       <span className="min-w-0 flex-1">

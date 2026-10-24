@@ -34,7 +34,7 @@ import {
   PairingShapes,
   pillLime,
   pillOutline,
-  pillTeal,
+  pillInk,
   PROGRAM,
   titleCase,
   TRACKS,
@@ -66,7 +66,7 @@ const SKILLS = [
     icon: HeartHandshake,
     title: 'Patient management',
     body: 'Set expectations and keep patients engaged.',
-    tone: 'bg-rh-mint',
+    tone: 'bg-rh-peach',
   },
   {
     icon: Dumbbell,
@@ -89,9 +89,9 @@ function SectionHeading({
 }) {
   return (
     <div className={cn('max-w-2xl', center && 'mx-auto text-center')}>
-      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-rh-teal">{eyebrow}</p>
-      <h2 className="mt-3 text-[32px] leading-[1.1] tracking-tight text-rh-night sm:text-[44px]">{title}</h2>
-      {description && <p className="mt-4 text-lg leading-relaxed text-rh-night/65">{description}</p>}
+      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-rh-ink">{eyebrow}</p>
+      <h2 className="mt-3 text-[32px] leading-[1.1] tracking-tight text-rh-ink sm:text-[44px]">{title}</h2>
+      {description && <p className="mt-4 text-lg leading-relaxed text-rh-ink/65">{description}</p>}
     </div>
   )
 }
@@ -112,13 +112,13 @@ function FadeUp({ children, className, delay = 0 }: { children: ReactNode; class
 }
 
 function StatusPill({ cohort }: { cohort: PublicCohort | null | undefined }) {
-  if (cohort === undefined) return <span className="block h-7 w-32 animate-pulse rounded-full bg-rh-night/[0.07]" />
+  if (cohort === undefined) return <span className="block h-7 w-32 animate-pulse rounded-full bg-rh-ink/[0.07]" />
   if (cohort === null) {
-    return <span className="rounded-full bg-rh-jasmine px-3 py-1 text-xs font-semibold text-rh-night">Dates coming soon</span>
+    return <span className="rounded-full bg-rh-jasmine px-3 py-1 text-xs font-semibold text-rh-ink">Dates coming soon</span>
   }
   if (cohort.isOpen) {
     return (
-      <span className="inline-flex items-center gap-1.5 rounded-full bg-rh-mint px-3 py-1 text-xs font-semibold text-rh-teal">
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-rh-honeydew px-3 py-1 text-xs font-semibold text-rh-ink">
         <span className="relative flex h-2 w-2">
           <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-rh-lime opacity-60" />
           <span className="relative inline-flex h-2 w-2 rounded-full bg-rh-lime" />
@@ -127,7 +127,7 @@ function StatusPill({ cohort }: { cohort: PublicCohort | null | undefined }) {
       </span>
     )
   }
-  return <span className="rounded-full bg-rh-bone px-3 py-1 text-xs font-semibold text-rh-night">Registration closed</span>
+  return <span className="rounded-full bg-rh-bone px-3 py-1 text-xs font-semibold text-rh-ink">Registration closed</span>
 }
 
 /** `compact` lays the facts out 2×2 so the card can sit over the cohort photo. */
@@ -136,12 +136,12 @@ function CohortCard({ cohort, compact = false }: { cohort: PublicCohort | null |
   return (
     <div
       className={cn(
-        'relative rounded-[1.75rem] bg-white text-rh-night shadow-soft',
+        'relative rounded-[1.75rem] bg-white text-rh-ink shadow-soft',
         compact ? 'p-5 sm:p-6' : 'p-6 sm:p-8'
       )}
     >
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-xl leading-tight text-rh-night">{cohort?.cohortLabel ?? 'Next cohort'}</h2>
+        <h2 className="text-xl leading-tight text-rh-ink">{cohort?.cohortLabel ?? 'Next cohort'}</h2>
         <StatusPill cohort={cohort} />
       </div>
 
@@ -157,15 +157,15 @@ function CohortCard({ cohort, compact = false }: { cohort: PublicCohort | null |
         />
       </div>
 
-      <div className={cn('border-t border-rh-night/[0.07]', compact ? 'mt-5 pt-5' : 'mt-8 pt-6')}>
+      <div className={cn('border-t border-rh-ink/[0.07]', compact ? 'mt-5 pt-5' : 'mt-8 pt-6')}>
         {loading ? (
-          <div className="h-12 animate-pulse rounded-full bg-rh-night/[0.06]" />
+          <div className="h-12 animate-pulse rounded-full bg-rh-ink/[0.06]" />
         ) : cohort?.isOpen ? (
           <>
-            <a href="#register" className={cn(pillTeal, 'h-12 w-full text-[15px]')}>
+            <a href="#register" className={cn(pillInk, 'h-12 w-full text-[15px]')}>
               Register now <ArrowRight className="h-4 w-4" />
             </a>
-            <p className="mt-3 text-center text-xs text-rh-night/55">
+            <p className="mt-3 text-center text-xs text-rh-ink/55">
               {cohort.seatsLeft !== null && cohort.seatsLeft <= 20
                 ? `Only ${cohort.seatsLeft} ${cohort.seatsLeft === 1 ? 'seat' : 'seats'} left`
                 : `From ${naira(Math.min(cohort.prices.rehabify, cohort.prices.external))}`}
@@ -173,9 +173,9 @@ function CohortCard({ cohort, compact = false }: { cohort: PublicCohort | null |
             </p>
           </>
         ) : (
-          <p className="text-sm leading-6 text-rh-night/65">
+          <p className="text-sm leading-6 text-rh-ink/65">
             {cohort ? CLOSED_COPY[cohort.closedReason ?? 'closed'] : 'The next cohort will be announced here.'}{' '}
-            <a href="#register" className="font-semibold text-rh-teal underline-offset-4 hover:underline">
+            <a href="#register" className="font-semibold text-rh-ink underline-offset-4 hover:underline">
               Get notified
             </a>
           </p>
@@ -197,11 +197,11 @@ function Hero({ cohort }: { cohort: PublicCohort | null | undefined }) {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
           >
-            <span className="inline-flex items-center gap-2 rounded-full bg-white px-3.5 py-1.5 text-xs font-semibold tracking-wide text-rh-teal ring-1 ring-inset ring-rh-night/10">
+            <span className="inline-flex items-center gap-2 rounded-full bg-white px-3.5 py-1.5 text-xs font-semibold tracking-wide text-rh-ink ring-1 ring-inset ring-rh-ink/10">
               <span className="h-1.5 w-1.5 rounded-full bg-rh-lime" />
               Rehabify Learn · MSK Specialist Program
             </span>
-            <h1 className="mt-6 text-[40px] leading-[1.04] tracking-tight text-rh-night sm:text-[56px] lg:text-[62px]">
+            <h1 className="mt-6 text-[40px] leading-[1.04] tracking-tight text-rh-ink sm:text-[56px] lg:text-[62px]">
               Become a Rehabify Certified{' '}
               <span className="relative inline-block">
                 MSK Specialist
@@ -209,24 +209,24 @@ function Hero({ cohort }: { cohort: PublicCohort | null | undefined }) {
               </span>{' '}
               in {titleCase(duration)}
             </h1>
-            <p className="mt-7 max-w-xl text-lg leading-relaxed text-rh-night/70">{PROGRAM.summary}</p>
+            <p className="mt-7 max-w-xl text-lg leading-relaxed text-rh-ink/70">{PROGRAM.summary}</p>
             <div className="mt-9 flex flex-col gap-3 sm:flex-row">
-              <a href="#register" className={cn(pillTeal, 'h-12 px-7 text-[15px]')}>
+              <a href="#register" className={cn(pillInk, 'h-12 px-7 text-[15px]')}>
                 Register now <ArrowRight className="h-4 w-4" />
               </a>
               <a href="#how-it-works" className={cn(pillOutline, 'h-12 px-7 text-[15px]')}>
                 How it works
               </a>
             </div>
-            <ul className="mt-9 flex flex-wrap gap-x-6 gap-y-3 text-sm text-rh-night/70">
+            <ul className="mt-9 flex flex-wrap gap-x-6 gap-y-3 text-sm text-rh-ink/70">
               <li className="inline-flex items-center gap-2">
-                <Award className="h-4 w-4 text-rh-teal" /> Certificate on completion
+                <Award className="h-4 w-4 text-rh-ink" /> Certificate on completion
               </li>
               <li className="inline-flex items-center gap-2">
-                <PlayCircle className="h-4 w-4 text-rh-teal" /> Every session recorded
+                <PlayCircle className="h-4 w-4 text-rh-ink" /> Every session recorded
               </li>
               <li className="inline-flex items-center gap-2">
-                <BadgeCheck className="h-4 w-4 text-rh-teal" /> Case-based learning
+                <BadgeCheck className="h-4 w-4 text-rh-ink" /> Case-based learning
               </li>
             </ul>
           </motion.div>
@@ -237,12 +237,12 @@ function Hero({ cohort }: { cohort: PublicCohort | null | undefined }) {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1], delay: 0.1 }}
           >
-            {/* Colour pairing from the brand guide: night + lime squares behind the card */}
-            <div aria-hidden className="absolute -left-4 -top-5 h-32 w-32 rounded-[2rem] bg-rh-night/55 sm:-left-8 sm:-top-8 sm:h-40 sm:w-40" />
+            {/* Colour pairing from the brand guide: ink + lime squares behind the card */}
+            <div aria-hidden className="absolute -left-4 -top-5 h-32 w-32 rounded-[2rem] bg-rh-ink sm:-left-8 sm:-top-8 sm:h-40 sm:w-40" />
             <div aria-hidden className="absolute -bottom-5 -right-3 h-28 w-28 rounded-[1.75rem] bg-rh-lime sm:-bottom-8 sm:-right-8 sm:h-36 sm:w-36" />
             {cohort?.imageUrl ? (
               <>
-                <div className="relative aspect-[4/3] overflow-hidden rounded-[1.75rem] bg-rh-night/40 ring-1 ring-rh-night/10">
+                <div className="relative aspect-[4/3] overflow-hidden rounded-[1.75rem] bg-rh-ink/40 ring-1 ring-rh-ink/10">
                   <Image
                     src={cohort.imageUrl}
                     alt={cohort.imageAlt || PROGRAM.title}
@@ -278,11 +278,11 @@ function Skills() {
           {SKILLS.map((skill, i) => (
             <FadeUp key={skill.title} delay={i * 0.06}>
               <article className={cn('flex h-full min-h-[250px] flex-col rounded-[1.75rem] p-6 sm:p-7', skill.tone)}>
-                <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/70 text-rh-night">
+                <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/70 text-rh-ink">
                   <skill.icon className="h-5 w-5" />
                 </span>
-                <h3 className="mt-auto pt-10 text-[22px] leading-tight text-rh-night">{skill.title}</h3>
-                <p className="mt-2 text-[15px] leading-6 text-rh-night/70">{skill.body}</p>
+                <h3 className="mt-auto pt-10 text-[22px] leading-tight text-rh-ink">{skill.title}</h3>
+                <p className="mt-2 text-[15px] leading-6 text-rh-ink/70">{skill.body}</p>
               </article>
             </FadeUp>
           ))}
@@ -294,7 +294,7 @@ function Skills() {
 
 function HowItWorks({ cohort }: { cohort: PublicCohort | null | undefined }) {
   const steps = [
-    { title: 'Learn online', body: 'Structured lessons at your own pace.' },
+    { title: 'Study each week', body: 'Slides, recordings and 3D exercises on your course page.' },
     { title: 'Join live', body: `${cohort?.liveSessions ?? 'Weekly'}. Recorded if you miss one.` },
     { title: 'Work real cases', body: 'Case discussions. Live patient demos for Rehabify PTs.' },
     { title: 'Get certified', body: 'Pass the final assessment.' },
@@ -311,12 +311,12 @@ function HowItWorks({ cohort }: { cohort: PublicCohort | null | undefined }) {
               <article className="h-full rounded-[1.75rem] bg-white p-6 shadow-soft sm:p-7">
                 <span
                   aria-label={`Step ${i + 1}`}
-                  className={cn('flex h-11 w-11 items-center justify-center rounded-full bg-rh-teal text-lg text-white', displayFont)}
+                  className={cn('flex h-11 w-11 items-center justify-center rounded-full bg-rh-ink text-lg text-white', displayFont)}
                 >
                   {i + 1}
                 </span>
-                <h3 className="mt-6 text-xl leading-tight text-rh-night">{step.title}</h3>
-                <p className="mt-2 text-[15px] leading-6 text-rh-night/70">{step.body}</p>
+                <h3 className="mt-6 text-xl leading-tight text-rh-ink">{step.title}</h3>
+                <p className="mt-2 text-[15px] leading-6 text-rh-ink/70">{step.body}</p>
               </article>
             </FadeUp>
           ))}
@@ -343,13 +343,13 @@ function PriceCard({
 
   let action: ReactNode
   if (cohort === undefined) {
-    action = <div className={cn('h-12 animate-pulse rounded-full', featured ? 'bg-white/15' : 'bg-rh-night/[0.06]')} />
+    action = <div className={cn('h-12 animate-pulse rounded-full', featured ? 'bg-white/15' : 'bg-rh-ink/[0.06]')} />
   } else if (registered) {
     action = (
       <div
         className={cn(
           'flex h-12 items-center justify-center gap-2 rounded-full text-sm font-semibold',
-          featured ? 'bg-white/10 text-white' : 'bg-rh-mint text-rh-teal'
+          featured ? 'bg-white/10 text-white' : 'bg-rh-honeydew text-rh-ink'
         )}
       >
         <BadgeCheck className="h-4 w-4" />
@@ -360,7 +360,7 @@ function PriceCard({
     action = (
       <Link
         href={`/learn/register?track=${track}`}
-        className={cn(featured ? pillLime : pillTeal, 'h-12 w-full text-[15px]')}
+        className={cn(featured ? pillLime : pillInk, 'h-12 w-full text-[15px]')}
       >
         {details.cta} <ArrowRight className="h-4 w-4" />
       </Link>
@@ -370,7 +370,7 @@ function PriceCard({
       <div
         className={cn(
           'flex h-12 items-center justify-center gap-2 rounded-full text-sm font-semibold',
-          featured ? 'bg-white/10 text-white/80' : 'bg-rh-canvas text-rh-night/55'
+          featured ? 'bg-white/10 text-white/80' : 'bg-rh-canvas text-rh-ink/55'
         )}
       >
         <Lock className="h-4 w-4" />
@@ -383,35 +383,35 @@ function PriceCard({
     <div
       className={cn(
         'relative flex h-full flex-col overflow-hidden rounded-[2rem] p-7 sm:p-9',
-        featured ? 'bg-rh-teal text-white shadow-lift' : 'bg-white text-rh-night ring-1 ring-inset ring-rh-night/10'
+        featured ? 'bg-rh-ink text-white shadow-lift' : 'bg-white text-rh-ink ring-1 ring-inset ring-rh-ink/10'
       )}
     >
-      {featured && <PairingShapes tone="night" className="-right-10 -top-10 h-36 w-36 opacity-60" />}
+      {featured && <PairingShapes className="-right-10 -top-10 h-36 w-36 opacity-60" />}
       <div className="relative flex flex-wrap items-center gap-2">
-        <h3 className={cn('text-xl leading-tight', featured ? 'text-white' : 'text-rh-night')}>{details.label}</h3>
+        <h3 className={cn('text-xl leading-tight', featured ? 'text-white' : 'text-rh-ink')}>{details.label}</h3>
         {featured && (
-          <span className="rounded-full bg-rh-lime px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wide text-rh-night">
+          <span className="rounded-full bg-rh-lime px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wide text-rh-ink">
             Best rate
           </span>
         )}
       </div>
       <div className="relative mt-6 flex items-end gap-2">
         {cohort === undefined ? (
-          <span className={cn('h-12 w-36 animate-pulse rounded-2xl', featured ? 'bg-white/15' : 'bg-rh-night/[0.06]')} />
+          <span className={cn('h-12 w-36 animate-pulse rounded-2xl', featured ? 'bg-white/15' : 'bg-rh-ink/[0.06]')} />
         ) : price !== null ? (
           <>
             <span className={cn('text-[52px] leading-none tracking-tight', displayFont)}>{naira(price)}</span>
-            <span className={cn('pb-1.5 text-sm', featured ? 'text-white/65' : 'text-rh-night/50')}>one-off</span>
+            <span className={cn('pb-1.5 text-sm', featured ? 'text-white/65' : 'text-rh-ink/50')}>one-off</span>
           </>
         ) : (
           <span className={cn('text-3xl leading-none', displayFont)}>Price coming soon</span>
         )}
       </div>
-      <p className={cn('relative mt-4 text-[15px] leading-6', featured ? 'text-white/80' : 'text-rh-night/65')}>{details.audience}</p>
+      <p className={cn('relative mt-4 text-[15px] leading-6', featured ? 'text-white/80' : 'text-rh-ink/65')}>{details.audience}</p>
 
-      <div className={cn('relative my-7 h-px', featured ? 'bg-white/15' : 'bg-rh-night/[0.08]')} />
+      <div className={cn('relative my-7 h-px', featured ? 'bg-white/15' : 'bg-rh-ink/[0.08]')} />
 
-      <p className={cn('relative text-xs font-semibold uppercase tracking-[0.14em]', featured ? 'text-rh-mint' : 'text-rh-night/45')}>
+      <p className={cn('relative text-xs font-semibold uppercase tracking-[0.14em]', featured ? 'text-rh-lime' : 'text-rh-ink/45')}>
         Includes
       </p>
       <ul className="relative mt-4 space-y-3">
@@ -457,11 +457,13 @@ function Pricing({ cohort }: { cohort: PublicCohort | null | undefined }) {
 
         {registered && cohort && (
           <FadeUp className="mx-auto mt-8 max-w-5xl">
-            <div className="flex items-center gap-3 rounded-2xl bg-rh-mint px-5 py-4 text-rh-night">
-              <BadgeCheck className="h-5 w-5 shrink-0 text-rh-teal" />
+            <div className="flex items-center gap-3 rounded-2xl bg-rh-honeydew px-5 py-4 text-rh-ink">
+              <BadgeCheck className="h-5 w-5 shrink-0 text-rh-ink" />
               <p className="text-sm">
-                <span className="font-semibold">You&apos;re registered for the {cohort.cohortLabel}.</span> Your confirmation email has the
-                details. See you on {cohort.startsOn}!
+                <span className="font-semibold">You&apos;re registered for the {cohort.cohortLabel}.</span> See you on {cohort.startsOn}!{' '}
+                <Link href="/learn/course" className="font-semibold underline underline-offset-4">
+                  Open my course
+                </Link>
               </p>
             </div>
           </FadeUp>
@@ -480,8 +482,8 @@ function Pricing({ cohort }: { cohort: PublicCohort | null | undefined }) {
           <FadeUp className="mx-auto mt-6 max-w-5xl">
             <div className="flex flex-col gap-5 rounded-[1.75rem] bg-rh-honeydew p-6 sm:flex-row sm:items-center sm:justify-between sm:p-8">
               <div className="max-w-sm">
-                <h3 className="text-xl leading-tight text-rh-night">Get notified about the next cohort</h3>
-                <p className="mt-1 text-sm text-rh-night/65">One email when registration opens. Nothing else.</p>
+                <h3 className="text-xl leading-tight text-rh-ink">Get notified about the next cohort</h3>
+                <p className="mt-1 text-sm text-rh-ink/65">One email when registration opens. Nothing else.</p>
               </div>
               <InterestForm className="sm:max-w-md" />
             </div>
@@ -490,11 +492,11 @@ function Pricing({ cohort }: { cohort: PublicCohort | null | undefined }) {
 
         <FadeUp className="mx-auto mt-6 max-w-5xl">
           <div className="flex gap-4 rounded-[1.75rem] bg-rh-cream p-6 sm:p-7">
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white text-rh-teal">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white text-rh-ink">
               <Award className="h-5 w-5" />
             </span>
-            <p className="text-sm leading-6 text-rh-night/70">
-              <span className="font-semibold text-rh-night">About the certificate. </span>
+            <p className="text-sm leading-6 text-rh-ink/70">
+              <span className="font-semibold text-rh-ink">About the certificate. </span>
               {PROGRAM.certificationNote}
             </p>
           </div>
@@ -513,7 +515,14 @@ function Faq({ cohort }: { cohort: PublicCohort | null | undefined }) {
     },
     { q: "I'm not on Rehabify. Can I join?", a: "Yes, if you're a licensed physiotherapist." },
     { q: 'How do I pay?', a: 'Card, bank transfer or USSD through Paystack. Your confirmation comes by email.' },
-    { q: 'How do I get the joining details?', a: 'By email, to the address you register with.' },
+    {
+      q: 'What do I study with?',
+      a: "Each week's slides and recordings, our 3D exercise library and our library of exercise videos and patient leaflets. You keep the libraries for 90 days after the course.",
+    },
+    {
+      q: 'How do I get the joining details?',
+      a: 'On your course page, where the link for every live session is kept up to date. We email you a one-tap link to it after you pay.',
+    },
   ]
   return (
     <section className="bg-rh-cream px-4 py-20 sm:px-6 lg:py-28">
@@ -522,7 +531,7 @@ function Faq({ cohort }: { cohort: PublicCohort | null | undefined }) {
           <SectionHeading eyebrow="Questions" title="Good to know" />
           <a
             href={`mailto:${PROGRAM.supportEmail}?subject=${encodeURIComponent(PROGRAM.title)}`}
-            className="mt-6 inline-flex text-sm font-semibold text-rh-teal underline-offset-4 hover:underline"
+            className="mt-6 inline-flex text-sm font-semibold text-rh-ink underline-offset-4 hover:underline"
           >
             {PROGRAM.supportEmail}
           </a>
@@ -530,13 +539,13 @@ function Faq({ cohort }: { cohort: PublicCohort | null | undefined }) {
         <FadeUp className="space-y-3">
           {items.map((item) => (
             <details key={item.q} className="group rounded-[1.5rem] bg-white px-6 py-5 shadow-soft open:shadow-lift">
-              <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-left text-[17px] font-semibold text-rh-night [&::-webkit-details-marker]:hidden">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-left text-[17px] font-semibold text-rh-ink [&::-webkit-details-marker]:hidden">
                 {item.q}
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-rh-honeydew text-rh-teal transition group-open:rotate-180">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-rh-honeydew text-rh-ink transition group-open:rotate-180">
                   <ChevronDown className="h-4 w-4" />
                 </span>
               </summary>
-              <p className="mt-3 pr-10 text-[15px] leading-7 text-rh-night/70">{item.a}</p>
+              <p className="mt-3 pr-10 text-[15px] leading-7 text-rh-ink/70">{item.a}</p>
             </details>
           ))}
         </FadeUp>
@@ -549,8 +558,8 @@ function FinalCta({ cohort }: { cohort: PublicCohort | null | undefined }) {
   return (
     <section className="bg-white px-4 py-20 sm:px-6 lg:py-24">
       <FadeUp className="mx-auto max-w-6xl">
-        <div className="relative overflow-hidden rounded-[2rem] bg-rh-night px-6 py-12 text-white sm:rounded-[2.5rem] sm:px-12 sm:py-16 lg:px-16">
-          <PairingShapes tone="teal" className="-bottom-16 -right-12 hidden h-64 w-64 sm:block" />
+        <div className="relative overflow-hidden rounded-[2rem] bg-rh-ink px-6 py-12 text-white sm:rounded-[2.5rem] sm:px-12 sm:py-16 lg:px-16">
+          <PairingShapes className="-bottom-16 -right-12 hidden h-64 w-64 sm:block" />
           <div className="relative max-w-2xl">
             <h2 className="text-[32px] leading-[1.1] tracking-tight text-white sm:text-[44px]">Ready to sharpen your MSK practice?</h2>
             {cohort?.isOpen ? (

@@ -97,8 +97,8 @@ function NoteComposer({ workspace, onDone }: { workspace: Workspace; onDone: () 
               className={cn(
                 'rounded-lg px-3 py-1.5 text-sm transition-all',
                 type === option.value
-                  ? 'bg-white font-semibold text-rh-teal shadow-sm dark:bg-rh-ink-3 dark:text-rh-aqua'
-                  : 'text-neutral-600 hover:text-rh-night dark:text-neutral-400 dark:hover:text-white'
+                  ? 'bg-white font-semibold text-rh-ink shadow-sm dark:bg-rh-ink-3 dark:text-rh-lime'
+                  : 'text-neutral-600 hover:text-rh-ink dark:text-neutral-400 dark:hover:text-white'
               )}
             >
               {option.label}
@@ -158,7 +158,7 @@ export function NotesTab({ workspace, composing, setComposing }: { workspace: Wo
           <button
             type="button"
             onClick={() => setComposing(true)}
-            className="flex w-full items-center gap-3 rounded-2xl border border-dashed border-rh-teal/30 bg-white px-5 py-4 text-left text-sm text-neutral-500 transition-all hover:border-rh-teal hover:text-rh-teal dark:border-rh-aqua/30 dark:bg-rh-ink-2 dark:hover:text-rh-aqua"
+            className="flex w-full items-center gap-3 rounded-2xl border border-dashed border-rh-lime/30 bg-white px-5 py-4 text-left text-sm text-neutral-500 transition-all hover:border-rh-lime hover:text-rh-ink dark:border-white/10 dark:bg-rh-ink-2 dark:hover:text-rh-lime"
           >
             <NotebookPen className="h-5 w-5" />
             Write a clinical note for today…
@@ -179,7 +179,7 @@ export function NotesTab({ workspace, composing, setComposing }: { workspace: Wo
               <Panel>
                 <div className="space-y-3 p-5">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="text-sm font-semibold text-rh-night dark:text-white">{format(note.sessionDate, 'EEEE d MMMM yyyy')}</p>
+                    <p className="text-sm font-semibold text-rh-ink dark:text-white">{format(note.sessionDate, 'EEEE d MMMM yyyy')}</p>
                     <StatusBadge tone={note.noteType === 'discharge_summary' ? 'amber' : 'teal'}>{NOTE_LABELS[note.noteType] ?? 'Note'}</StatusBadge>
                   </div>
                   <dl className="grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -229,7 +229,7 @@ function ExerciseLogsPanel({ logs }: { logs: ExerciseLog[] }) {
                 <div className="flex flex-wrap items-center gap-2">
                   {log.painScore !== null && <PainPill score={log.painScore} />}
                   {log.difficulty && <StatusBadge>{DIFFICULTY_LABELS[log.difficulty]}</StatusBadge>}
-                  <span className="truncate text-sm font-medium text-rh-night dark:text-white">{log.exerciseName}</span>
+                  <span className="truncate text-sm font-medium text-rh-ink dark:text-white">{log.exerciseName}</span>
                 </div>
                 {log.note && <p className="text-sm text-neutral-600 dark:text-neutral-300">“{log.note}”</p>}
                 <p className="text-xs text-neutral-400">
@@ -293,7 +293,7 @@ export function CheckInsTab({ workspace }: { workspace: Workspace }) {
               <div
                 className={cn(
                   'w-full max-w-8 rounded-t-lg rounded-b-sm transition-all',
-                  c.painScore >= 7 ? 'bg-rose-300 dark:bg-rose-400/60' : c.painScore >= 4 ? 'bg-rh-amber/70' : 'bg-rh-teal/70 dark:bg-rh-aqua/60'
+                  c.painScore >= 7 ? 'bg-rose-300 dark:bg-rose-400/60' : c.painScore >= 4 ? 'bg-rh-amber/70' : 'bg-rh-lime/70 dark:bg-white/[0.06]'
                 )}
                 style={{ height: `${Math.max(6, (c.painScore / max) * 100)}%` }}
               />
@@ -441,11 +441,11 @@ export function FilesTab({ workspace }: { workspace: Workspace }) {
           <ul className="divide-y divide-black/[0.04] dark:divide-white/[0.05]">
             {files.map((file) => (
               <li key={file._id} className="flex items-center gap-3 px-5 py-3">
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rh-mist text-rh-teal dark:bg-rh-aqua/10 dark:text-rh-aqua">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rh-honeydew text-rh-ink dark:bg-white/[0.06] dark:text-rh-lime">
                   <FileText className="h-5 w-5" />
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-rh-night dark:text-white">{file.fileName}</p>
+                  <p className="truncate text-sm font-medium text-rh-ink dark:text-white">{file.fileName}</p>
                   <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">
                     {DOC_LABELS[file.documentType] ?? 'File'} · {formatSize(file.fileSize)} · {format(file.uploadedAt, 'd MMM yyyy')}
                   </p>
@@ -518,12 +518,12 @@ export function PaymentsTab({ workspace }: { workspace: Workspace }) {
       <div className="grid grid-cols-2 gap-4">
         <div className="rounded-2xl bg-rh-peach p-5 dark:bg-amber-400/10">
           <p className="text-[13px] font-medium text-[#b4690e] dark:text-amber-300">Waiting for payment</p>
-          <p className="mt-1 text-2xl font-semibold tabular-nums text-rh-night dark:text-white">{formatNaira(workspace.payments.unpaidKobo / 100)}</p>
+          <p className="mt-1 text-2xl font-semibold tabular-nums text-rh-ink dark:text-white">{formatNaira(workspace.payments.unpaidKobo / 100)}</p>
           <p className="text-xs text-[#b4690e]/80 dark:text-amber-300/80">{workspace.payments.unpaidCount} invoice{workspace.payments.unpaidCount === 1 ? '' : 's'}</p>
         </div>
-        <div className="rounded-2xl bg-rh-mint p-5 dark:bg-emerald-400/10">
+        <div className="rounded-2xl bg-rh-honeydew p-5 dark:bg-emerald-400/10">
           <p className="text-[13px] font-medium text-[#047857] dark:text-emerald-300">Paid</p>
-          <p className="mt-1 text-2xl font-semibold tabular-nums text-rh-night dark:text-white">{formatNaira(workspace.payments.paidKobo / 100)}</p>
+          <p className="mt-1 text-2xl font-semibold tabular-nums text-rh-ink dark:text-white">{formatNaira(workspace.payments.paidKobo / 100)}</p>
           <p className="text-xs text-[#047857]/80 dark:text-emerald-300/80">from this patient</p>
         </div>
       </div>
@@ -553,7 +553,7 @@ export function PaymentsTab({ workspace }: { workspace: Workspace }) {
                 <li key={invoice._id} className="flex flex-col gap-3 px-5 py-3 sm:flex-row sm:items-center">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                      <p className="text-sm font-semibold tabular-nums text-rh-night dark:text-white">{formatNaira(invoice.totalAmount / 100)}</p>
+                      <p className="text-sm font-semibold tabular-nums text-rh-ink dark:text-white">{formatNaira(invoice.totalAmount / 100)}</p>
                       {invoiceBadge(invoice)}
                     </div>
                     <p className="text-xs text-neutral-500 dark:text-neutral-400">

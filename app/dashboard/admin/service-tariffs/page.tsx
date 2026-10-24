@@ -188,7 +188,7 @@ function marginFor(payload: TariffPayload, mode: 'virtual' | 'home', assisted: b
 const dateInputValue = (ts?: number) => (ts ? format(ts, 'yyyy-MM-dd') : '')
 
 const switchClass =
-  'data-[state=checked]:bg-rh-teal data-[state=unchecked]:bg-neutral-200 dark:data-[state=checked]:bg-rh-aqua dark:data-[state=unchecked]:bg-white/15'
+  'data-[state=checked]:bg-rh-lime data-[state=unchecked]:bg-neutral-200 dark:data-[state=checked]:bg-rh-lime dark:data-[state=unchecked]:bg-white/15'
 
 export default function AdminServiceTariffsPage() {
   const data = useQuery(api.serviceTariffs.adminGetTariffs) as unknown as TariffsData | undefined
@@ -435,7 +435,7 @@ function ServiceEditor({
     <div className={cn('space-y-3 px-5 py-4', !form.active && 'bg-neutral-50/70 dark:bg-white/[0.02]')}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="flex flex-wrap items-center gap-2 text-sm font-semibold text-rh-night dark:text-white">
+          <p className="flex flex-wrap items-center gap-2 text-sm font-semibold text-rh-ink dark:text-white">
             {row.name}
             {changed && <StatusBadge tone="amber">Edited</StatusBadge>}
             {!form.active && <StatusBadge>Off</StatusBadge>}
@@ -472,7 +472,7 @@ function ServiceEditor({
       {row.mode === 'home' && (
         <label htmlFor={`${id}-travel`} className="flex cursor-pointer items-start justify-between gap-3 rounded-xl bg-rh-canvas px-3 py-2.5 dark:bg-white/[0.04]">
           <span className="min-w-0">
-            <span className="block text-xs font-medium text-rh-night dark:text-white">Add the travel-zone charge</span>
+            <span className="block text-xs font-medium text-rh-ink dark:text-white">Add the travel-zone charge</span>
             <span className="block text-[11px] text-neutral-500 dark:text-neutral-400">
               The patient&apos;s zone surcharge is added on top of this price, and the price shows as &ldquo;From&rdquo;.
             </span>
@@ -519,7 +519,7 @@ function MarginLine({ quote, assisted = false }: { quote: RehabifyQuote; assiste
   return (
     <p className="text-neutral-600 dark:text-neutral-300">
       {assisted ? 'Under Access, Rehabify keeps ' : 'Rehabify keeps '}
-      <span className="font-semibold tabular-nums text-rh-night dark:text-white">{formatKobo(quote.rehabifyKobo)}</span> after Paystack (~{fee})
+      <span className="font-semibold tabular-nums text-rh-ink dark:text-white">{formatKobo(quote.rehabifyKobo)}</span> after Paystack (~{fee})
     </p>
   )
 }
@@ -624,7 +624,7 @@ function ProgrammeSettings({
 
       <label htmlFor={`${id}-intake`} className="flex cursor-pointer items-start justify-between gap-3">
         <span className="min-w-0">
-          <span className="block text-sm font-medium text-rh-night dark:text-white">Taking applications</span>
+          <span className="block text-sm font-medium text-rh-ink dark:text-white">Taking applications</span>
           <span className="block text-xs text-neutral-500 dark:text-neutral-400">
             {accessRatesActive || intakeOpen
               ? 'When off, the Access form tells patients to check back later. Reviews and existing arrangements carry on.'
@@ -725,7 +725,7 @@ function NetworkRollout({ readiness }: { readiness: Readiness | undefined }) {
             )}
           >
             <p className="text-[11px] font-medium text-neutral-500 dark:text-neutral-400">{tile.label}</p>
-            <p className="text-lg font-semibold tabular-nums text-rh-night dark:text-white">{tile.value.toLocaleString()}</p>
+            <p className="text-lg font-semibold tabular-nums text-rh-ink dark:text-white">{tile.value.toLocaleString()}</p>
             {tile.hint && <p className="text-[11px] text-neutral-500 dark:text-neutral-400">{tile.hint}</p>}
           </div>
         ))}
@@ -749,7 +749,7 @@ function NetworkRollout({ readiness }: { readiness: Readiness | undefined }) {
                     className="flex items-start justify-between gap-2 px-3 py-2 transition-colors hover:bg-rh-canvas dark:hover:bg-white/[0.03]"
                   >
                     <span className="min-w-0">
-                      <span className="block truncate text-xs font-semibold text-rh-night dark:text-white">{physio.name}</span>
+                      <span className="block truncate text-xs font-semibold text-rh-ink dark:text-white">{physio.name}</span>
                       {physio.email && <span className="block truncate text-[11px] text-neutral-500 dark:text-neutral-400">{physio.email}</span>}
                     </span>
                     <span className="flex shrink-0 flex-wrap justify-end gap-1">
@@ -779,7 +779,7 @@ function VersionHistory({ history, currentVersion }: { history: TariffsData['his
           {history.map((entry) => (
             <li key={entry.version} className="px-5 py-3">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="text-sm font-semibold text-rh-night dark:text-white">Version {entry.version}</span>
+                <span className="text-sm font-semibold text-rh-ink dark:text-white">Version {entry.version}</span>
                 {entry.version === currentVersion && <StatusBadge tone="green">In force</StatusBadge>}
               </div>
               <p className="text-xs text-neutral-500 dark:text-neutral-400">

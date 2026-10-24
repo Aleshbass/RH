@@ -1,7 +1,6 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { useQuery } from 'convex/react'
 import { format, formatDistanceToNow, isToday, isYesterday } from 'date-fns'
 import { Download, KeyRound, Search, Settings, ShieldAlert, ShieldCheck, Clock } from '@/components/icons'
 import { api } from '@/convex/_generated/api'
@@ -32,6 +31,7 @@ import {
   type ActivityLogsResult,
   type SecuritySummaryItem,
 } from '@/components/admin/activityMeta'
+import { useQueryUntyped } from '@/lib/convexUntyped'
 import { cn } from '@/lib/utils'
 
 type CategoryFilter = 'all' | Exclude<ActivityCategory, 'other'>
@@ -91,8 +91,10 @@ export default function AdminActivityPage() {
   }, [windowKey])
   const windowLabel = WINDOWS.find((w) => w.value === windowKey)?.label ?? ''
 
-  const logs = useQuery(api.admin.getUserActivityLogs, { limit, sinceMs, category }) as ActivityLogsResult | undefined
-  const security = useQuery(api.admin.getSecurityEvents, { sinceMs }) as SecuritySummaryItem[] | undefined
+  // Untyped reads: the generated api types sit at TypeScript's depth limit
+  const adminApi = (api as unknown as { admin: Record<string, unknown> }).admin
+  const logs = useQueryUntyped(adminApi.getUserActivityLogs, { limit, sinceMs, category }) as ActivityLogsResult | undefined
+  const security = useQueryUntyped(adminApi.getSecurityEvents, { sinceMs }) as SecuritySummaryItem[] | undefined
 
   const term = search.trim().toLowerCase()
   const items = useMemo(() => {
@@ -220,8 +222,7 @@ export default function AdminActivityPage() {
         actions={
           <span className="flex items-center gap-1.5 text-xs text-neutral-500 dark:text-neutral-400">
             <span className="relative flex h-2 w-2">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-rh-lime" />
             </span>
             Live
           </span>
@@ -256,7 +257,7 @@ export default function AdminActivityPage() {
                         <IconChip icon={meta.icon} tone={meta.tone} className="mt-0.5" />
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                            <span className="text-sm font-medium text-rh-night dark:text-white">{item.activity}</span>
+                            <span className="text-sm font-medium text-rh-ink dark:text-white">{item.activity}</span>
                             <StatusBadge tone="neutral">{meta.label}</StatusBadge>
                             {tone && item.status && <StatusBadge tone={tone}>{item.status}</StatusBadge>}
                           </div>

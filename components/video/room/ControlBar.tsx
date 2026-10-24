@@ -19,7 +19,7 @@ type Tone = 'default' | 'off' | 'active'
 const TONES: Record<Tone, string> = {
   default: 'bg-white text-neutral-800 hover:bg-neutral-50',
   off: 'bg-red-500 text-white hover:bg-red-600',
-  active: 'bg-brand text-white hover:bg-brand-dark',
+  active: 'bg-rh-lime text-rh-ink hover:bg-rh-lime-deep',
 }
 
 export function RoundButton({
@@ -45,7 +45,7 @@ export function RoundButton({
       onClick={onClick}
       disabled={disabled}
       className={cn(
-        'relative flex h-12 w-12 shrink-0 items-center justify-center rounded-full shadow-sm ring-1 ring-black/[0.06] transition-all duration-200 active:scale-95 disabled:pointer-events-none disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/50',
+        'relative flex h-12 w-12 shrink-0 items-center justify-center rounded-full shadow-sm ring-1 ring-black/[0.06] transition-all duration-200 active:scale-95 disabled:pointer-events-none disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-lime/50',
         TONES[tone],
         className,
       )}
@@ -81,7 +81,7 @@ function DeviceSection({
           onSelect={() => onSelect(device.deviceId)}
           className="gap-2 rounded-xl px-2.5 py-2 text-[13px]"
         >
-          <Check className={cn('h-4 w-4 shrink-0 text-brand', current === device.deviceId ? 'opacity-100' : 'opacity-0')} />
+          <Check className={cn('h-4 w-4 shrink-0 text-rh-ink', current === device.deviceId ? 'opacity-100' : 'opacity-0')} />
           <span className="truncate">{device.label || `${title} ${index + 1}`}</span>
         </DropdownMenuItem>
       ))}
@@ -261,7 +261,7 @@ export function ControlBar({
       {onToggleChat && (
         <RoundButton tone={chatOpen ? 'active' : 'default'} label={chatOpen ? 'Close messages' : 'Messages'} onClick={onToggleChat}>
           <MessageSquare className="h-5 w-5" />
-          {chatUnread && !chatOpen && <span className="absolute right-1 top-1 h-2.5 w-2.5 rounded-full bg-brand ring-2 ring-white" />}
+          {chatUnread && !chatOpen && <span className="absolute right-1 top-1 h-2.5 w-2.5 rounded-full bg-rh-lime ring-2 ring-white" />}
         </RoundButton>
       )}
 

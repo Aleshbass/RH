@@ -132,23 +132,23 @@ export default function PatientWorkspacePage() {
     <PageContainer>
       <Link
         href="/dashboard/physiotherapist/patients"
-        className="inline-flex items-center text-sm font-medium text-neutral-500 hover:text-rh-night dark:text-neutral-400 dark:hover:text-white"
+        className="inline-flex items-center text-sm font-medium text-neutral-500 hover:text-rh-ink dark:text-neutral-400 dark:hover:text-white"
       >
         <ChevronLeft className="mr-0.5 h-4 w-4" />
         Patients
       </Link>
 
       {/* Patient header */}
-      <section className="relative overflow-hidden rounded-3xl bg-rh-teal p-5 text-white shadow-lift dark:bg-rh-night sm:p-7">
+      <section className="relative overflow-hidden rounded-3xl bg-rh-lime p-5 text-rh-ink shadow-lift dark:bg-rh-ink sm:p-7">
         {/* Soft brand shapes */}
         <span aria-hidden className="pointer-events-none absolute -right-16 -top-20 h-56 w-56 rounded-full bg-white/[0.07]" />
-        <span aria-hidden className="pointer-events-none absolute -bottom-24 right-24 h-48 w-48 rounded-full bg-rh-mint/10" />
+        <span aria-hidden className="pointer-events-none absolute -bottom-24 right-24 h-48 w-48 rounded-full bg-rh-honeydew/10" />
 
         <div className="relative flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
           <div className="flex min-w-0 items-center gap-4">
             <Avatar className="h-16 w-16 shrink-0 ring-4 ring-white/15 sm:h-20 sm:w-20">
               <AvatarImage src={patient.imageUrl} alt="" />
-              <AvatarFallback className="bg-rh-mint text-xl font-semibold text-rh-teal">{initials}</AvatarFallback>
+              <AvatarFallback className="bg-rh-honeydew text-xl font-semibold text-rh-ink">{initials}</AvatarFallback>
             </Avatar>
             <div className="min-w-0">
               <h1 className="truncate text-2xl font-semibold tracking-tight sm:text-3xl">{name}</h1>
@@ -157,7 +157,7 @@ export default function PatientWorkspacePage() {
               </p>
               <div className="mt-2 flex flex-wrap items-center gap-1.5">
                 <RehabifyId value={patient.patientNumber} tone="onDark" className="rounded-full px-2.5 text-xs" />
-                <span className={cn('rounded-full px-2.5 py-0.5 text-xs font-semibold', isActive ? 'bg-rh-mint text-rh-teal' : 'bg-white/15 text-white')}>
+                <span className={cn('rounded-full px-2.5 py-0.5 text-xs font-semibold', isActive ? 'bg-rh-honeydew text-rh-ink' : 'bg-white/15 text-white')}>
                   {isActive ? 'In treatment' : `Care completed${episode.completedAt ? ` · ${format(episode.completedAt, 'd MMM yyyy')}` : ''}`}
                 </span>
                 <span className="rounded-full bg-white/15 px-2.5 py-0.5 text-xs font-medium">
@@ -182,13 +182,13 @@ export default function PatientWorkspacePage() {
               <Button
                 onClick={() => setDialog('schedule')}
                 disabled={!currentUser}
-                className="rounded-xl bg-white text-rh-teal shadow-sm hover:bg-rh-cream active:scale-[0.98]"
+                className="rounded-xl bg-white text-rh-ink shadow-sm hover:bg-rh-cream active:scale-[0.98]"
               >
                 <CalendarPlus className="mr-2 h-4 w-4" />
                 Book session
               </Button>
             ) : (
-              <Button onClick={reopen} className="rounded-xl bg-white text-rh-teal shadow-sm hover:bg-rh-cream">
+              <Button onClick={reopen} className="rounded-xl bg-white text-rh-ink shadow-sm hover:bg-rh-cream">
                 <RotateCcw className="mr-2 h-4 w-4" />
                 Start new course
               </Button>
@@ -214,7 +214,7 @@ export default function PatientWorkspacePage() {
                 {isActive && (
                   <>
                     <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={() => setDialog('complete')} className="font-medium text-rh-teal focus:text-rh-teal dark:text-rh-aqua">
+                    <DropdownMenuItem onClick={() => setDialog('complete')} className="font-medium text-rh-ink focus:text-rh-ink dark:text-rh-lime">
                       <CheckCircle2 className="mr-2 h-4 w-4" />
                       Complete care
                     </DropdownMenuItem>
@@ -239,8 +239,8 @@ export default function PatientWorkspacePage() {
               className={cn(
                 'whitespace-nowrap rounded-xl px-3.5 py-2 text-sm transition-all active:scale-[0.97]',
                 tab === t.id
-                  ? 'bg-rh-teal font-semibold text-white shadow-sm dark:bg-rh-aqua dark:text-rh-night'
-                  : 'text-neutral-600 hover:bg-rh-canvas hover:text-rh-night dark:text-neutral-400 dark:hover:bg-white/[0.04] dark:hover:text-white'
+                  ? 'bg-rh-lime font-semibold text-rh-ink shadow-sm dark:bg-rh-lime dark:text-rh-ink'
+                  : 'text-neutral-600 hover:bg-rh-canvas hover:text-rh-ink dark:text-neutral-400 dark:hover:bg-white/[0.04] dark:hover:text-white'
               )}
             >
               {t.label}
@@ -286,7 +286,7 @@ export default function PatientWorkspacePage() {
           <ul className="divide-y divide-black/[0.04] dark:divide-white/[0.05]">
             {workspace.pastEpisodes.map((e) => (
               <li key={e._id} className="flex items-center justify-between gap-3 px-5 py-3 text-sm">
-                <span className="truncate text-rh-night dark:text-white">{e.condition || 'Course of care'}</span>
+                <span className="truncate text-rh-ink dark:text-white">{e.condition || 'Course of care'}</span>
                 <span className="shrink-0 text-neutral-500 dark:text-neutral-400">
                   {format(e.startedAt, 'MMM yyyy')} – {e.completedAt ? format(e.completedAt, 'MMM yyyy') : 'now'}
                 </span>

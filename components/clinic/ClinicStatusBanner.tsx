@@ -70,7 +70,7 @@ export default function ClinicStatusBanner() {
         {isOnboardingIncomplete && !isStaff && !isDeclined && !isSuspended && (
           <a
             href="/clinic-owner"
-            className="rounded-md bg-[#005b57] px-3 py-1.5 text-sm font-medium text-white hover:bg-[#00443e]"
+            className="rounded-md bg-rh-lime px-3 py-1.5 text-sm font-medium text-rh-ink hover:bg-rh-lime-deep"
           >
             Finish setup
           </a>

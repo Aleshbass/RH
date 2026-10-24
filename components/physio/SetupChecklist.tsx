@@ -41,7 +41,7 @@ export function SetupProgressBar({ done, total, className }: { done: number; tot
       aria-label={`${done} of ${total} setup steps done`}
     >
       <div
-        className="h-full rounded-full bg-[#005b57] transition-[width] duration-500 ease-out dark:bg-[#2dd4bf]"
+        className="h-full rounded-full bg-rh-lime transition-[width] duration-500 ease-out dark:bg-rh-lime"
         style={{ width: `${total === 0 ? 100 : (done / total) * 100}%` }}
       />
     </div>
@@ -75,7 +75,7 @@ export function SetupChecklistRows({
               className={cn(
                 'flex h-5 w-5 shrink-0 items-center justify-center rounded-full border',
                 item.done
-                  ? 'border-[#005b57] bg-[#005b57] text-white dark:border-[#2dd4bf] dark:bg-[#2dd4bf] dark:text-neutral-950'
+                  ? 'border-rh-lime bg-rh-lime text-rh-ink dark:border-rh-lime dark:bg-rh-lime dark:text-neutral-950'
                   : 'border-neutral-300 dark:border-neutral-600'
               )}
               aria-hidden="true"

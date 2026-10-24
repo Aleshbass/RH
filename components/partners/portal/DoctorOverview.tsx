@@ -77,9 +77,9 @@ export function DoctorOverview({
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className={`${cardCls} overflow-hidden lg:col-span-2`}>
-          <div className="p-5 flex items-center justify-between gap-3 border-b border-[#002e2c]/10">
+          <div className="p-5 flex items-center justify-between gap-3 border-b border-rh-ink/10">
             <h3 className="text-sm font-semibold">Recent referrals</h3>
-            <button type="button" onClick={() => onNavigate("referrals")} className="text-xs font-semibold text-[#005b57] hover:underline">
+            <button type="button" onClick={() => onNavigate("referrals")} className="text-xs font-semibold text-rh-ink hover:underline">
               See all
             </button>
           </div>
@@ -96,11 +96,11 @@ export function DoctorOverview({
               }
             />
           ) : (
-            <ul className="divide-y divide-[#002e2c]/5">
+            <ul className="divide-y divide-rh-ink/5">
               {overview.recentReferrals.slice(0, 6).map((r: any) => (
                 <li key={r.referralId} className="px-5 py-3 flex items-center justify-between gap-3">
                   <div className="min-w-0">
-                    <p className="text-sm font-medium text-[#002e2c] truncate">{r.patientName || DASH}</p>
+                    <p className="text-sm font-medium text-rh-ink truncate">{r.patientName || DASH}</p>
                     <p className="text-[11px] text-[#52706e] truncate">
                       <span className="font-mono">{r.trackingCode || DASH}</span>
                       {r.condition ? ` · ${r.condition}` : ""} · {fmtDate(r.createdAt)}
@@ -116,7 +116,7 @@ export function DoctorOverview({
         <div className="space-y-4">
           <div className={`${cardCls} p-5 space-y-3`}>
             <div className="flex items-center gap-2">
-              <Link2 className="w-4 h-4 text-[#005b57]" />
+              <Link2 className="w-4 h-4 text-rh-ink" />
               <h3 className="text-sm font-semibold">Your referral link</h3>
             </div>
             <p className="text-xs text-[#52706e] leading-relaxed">
@@ -137,7 +137,7 @@ function Money({ label, value, muted = false }: { label: string; value: string; 
   return (
     <div className="min-w-0">
       <dt className="text-[11px] font-semibold uppercase tracking-wider text-[#52706e]">{label}</dt>
-      <dd className={`mt-1 text-lg font-bold tracking-tight truncate ${muted ? "text-[#52706e]" : "text-[#002e2c]"}`}>{value}</dd>
+      <dd className={`mt-1 text-lg font-bold tracking-tight truncate ${muted ? "text-[#52706e]" : "text-[#0b1312]"}`}>{value}</dd>
     </div>
   );
 }

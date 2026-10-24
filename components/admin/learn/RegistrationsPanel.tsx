@@ -104,7 +104,7 @@ async function copyPhone(phone: string) {
 }
 
 const iconButton =
-  'inline-flex h-8 w-8 items-center justify-center rounded-lg text-neutral-500 transition hover:bg-rh-mist hover:text-rh-teal focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-teal/40 disabled:pointer-events-none disabled:opacity-40 dark:text-neutral-400 dark:hover:bg-white/[0.06] dark:hover:text-rh-aqua'
+  'inline-flex h-8 w-8 items-center justify-center rounded-lg text-neutral-500 transition hover:bg-rh-honeydew hover:text-rh-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-lime/40 disabled:pointer-events-none disabled:opacity-40 dark:text-neutral-400 dark:hover:bg-white/[0.06] dark:hover:text-rh-lime'
 
 /** WhatsApp, email, copy phone and the "contacted" marker for one unpaid registration. */
 function FollowUpActions({
@@ -210,7 +210,7 @@ function Detail({ label, value, mono }: { label: string; value: ReactNode; mono?
   return (
     <div className="min-w-0">
       <p className={labelClass}>{label}</p>
-      <p className={cn('mt-0.5 break-words text-sm text-rh-night dark:text-white', mono && 'font-mono text-xs')}>{value || '—'}</p>
+      <p className={cn('mt-0.5 break-words text-sm text-rh-ink dark:text-white', mono && 'font-mono text-xs')}>{value || '—'}</p>
     </div>
   )
 }
@@ -299,7 +299,7 @@ function RegistrationDialog({
           {row.status === 'pending' && (
             <div className={cn(insetClass, 'space-y-3 p-4')}>
               <div>
-                <p className="text-sm font-semibold text-rh-night dark:text-white">Didn&apos;t finish paying</p>
+                <p className="text-sm font-semibold text-rh-ink dark:text-white">Didn&apos;t finish paying</p>
                 <p className="text-xs text-neutral-500 dark:text-neutral-400">
                   Started {ago(startedAt(row))} · {row.paymentAttempts} {row.paymentAttempts === 1 ? 'attempt' : 'attempts'}
                   {row.contactedAt ? ` · Contacted ${ago(row.contactedAt)}` : ' · Not contacted yet'}
@@ -310,8 +310,8 @@ function RegistrationDialog({
           )}
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Detail label="Email" value={<a className="text-rh-teal hover:underline dark:text-rh-aqua" href={`mailto:${row.email}`}>{row.email}</a>} />
-            <Detail label="Phone" value={<a className="text-rh-teal hover:underline dark:text-rh-aqua" href={`tel:${row.phone}`}>{row.phone}</a>} />
+            <Detail label="Email" value={<a className="text-rh-ink hover:underline dark:text-rh-lime" href={`mailto:${row.email}`}>{row.email}</a>} />
+            <Detail label="Phone" value={<a className="text-rh-ink hover:underline dark:text-rh-lime" href={`tel:${row.phone}`}>{row.phone}</a>} />
             <Detail label="Licence number" value={row.licenseNumber} />
             <Detail label="Works at" value={row.workplace} />
             <Detail label="City" value={row.city} />
@@ -429,8 +429,8 @@ function SummaryTile({ onClick, active, children }: { onClick: () => void; activ
       onClick={onClick}
       aria-pressed={active}
       className={cn(
-        'block w-full rounded-2xl text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-teal dark:focus-visible:ring-rh-aqua',
-        active && 'ring-2 ring-rh-teal/60 dark:ring-rh-aqua/50'
+        'block w-full rounded-2xl text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-lime dark:focus-visible:ring-rh-lime',
+        active && 'ring-2 ring-rh-lime/60 dark:ring-white/10'
       )}
     >
       {children}
@@ -649,7 +649,7 @@ export function RegistrationsPanel({ cohort, programUrl }: { cohort: AdminCohort
                       className="cursor-pointer focus-visible:bg-rh-canvas focus-visible:outline-none dark:focus-visible:bg-white/[0.04]"
                     >
                       <TableCell className="pl-5">
-                        <p className="flex items-center gap-1.5 font-medium text-rh-night dark:text-white">
+                        <p className="flex items-center gap-1.5 font-medium text-rh-ink dark:text-white">
                           {fullName(r)}
                           {r.extraPayments.length > 0 && <AlertTriangle className="h-3.5 w-3.5 text-amber-500" aria-label="Payment needs attention" />}
                         </p>
@@ -662,7 +662,7 @@ export function RegistrationsPanel({ cohort, programUrl }: { cohort: AdminCohort
                       <TableCell>
                         <StatusBadge tone={badge.tone}>{badge.label}</StatusBadge>
                       </TableCell>
-                      <TableCell className="whitespace-nowrap text-right tabular-nums text-rh-night dark:text-white">
+                      <TableCell className="whitespace-nowrap text-right tabular-nums text-rh-ink dark:text-white">
                         {formatNaira(r.status === 'paid' ? paidAmount(r) : r.price)}
                       </TableCell>
                       <TableCell className="whitespace-nowrap text-xs text-neutral-500 dark:text-neutral-400">
@@ -740,7 +740,7 @@ export function InterestPanel() {
           {rows.map((r) => (
             <li key={r.id} className="flex items-center justify-between gap-3 px-5 py-3">
               <div className="min-w-0">
-                <p className="truncate text-sm font-medium text-rh-night dark:text-white">{r.email}</p>
+                <p className="truncate text-sm font-medium text-rh-ink dark:text-white">{r.email}</p>
                 {r.name && <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">{r.name}</p>}
               </div>
               <span className={cn(insetClass, 'shrink-0 px-2 py-1 text-xs text-neutral-500 dark:text-neutral-400')}>

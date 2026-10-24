@@ -140,7 +140,7 @@ export default function ClinicMessagesPage() {
                           )}
                         </span>
                         {conversation.unreadCount > 0 && (
-                          <span className="min-w-5 rounded-full bg-[#005b57] px-1.5 text-center text-[11px] font-medium leading-5 text-white dark:bg-[#2dd4bf] dark:text-neutral-950">
+                          <span className="min-w-5 rounded-full bg-rh-lime px-1.5 text-center text-[11px] font-medium leading-5 text-rh-ink dark:bg-rh-lime dark:text-neutral-950">
                             {conversation.unreadCount}
                           </span>
                         )}

@@ -20,7 +20,7 @@ import { cn } from '@/lib/utils';
 import type { MarketplaceSettings, PayoutSchedule, TravelZone } from '@/lib/rehabify-api-types';
 
 const SETTINGS = '/dashboard/physiotherapist/settings';
-const linkClass = 'font-medium text-rh-teal hover:underline dark:text-rh-aqua';
+const linkClass = 'font-medium text-rh-ink hover:underline dark:text-rh-lime';
 
 type ZoneId = Id<'travelZones'>;
 
@@ -248,7 +248,7 @@ export default function ServicesAndCoveragePage() {
                                                             htmlFor={`zone-${zone.id}`}
                                                             className={cn(
                                                                 'flex cursor-pointer items-start gap-3 px-3 py-3 transition-colors hover:bg-rh-canvas dark:hover:bg-white/[0.03]',
-                                                                checked && 'bg-rh-mist/50 dark:bg-rh-aqua/[0.06]',
+                                                                checked && 'bg-rh-honeydew/50 dark:bg-white/[0.06]',
                                                                 !approved && 'cursor-not-allowed opacity-60'
                                                             )}
                                                         >
@@ -316,7 +316,7 @@ export default function ServicesAndCoveragePage() {
                                         </p>
                                     </div>
                                     <div className={cn('shrink-0 text-right', !available && 'opacity-60')}>
-                                        <p className="text-sm font-semibold tabular-nums text-rh-night dark:text-white">
+                                        <p className="text-sm font-semibold tabular-nums text-rh-ink dark:text-white">
                                             {schedule?.confirmed === false ? 'Payout being confirmed' : `You earn ${formatKobo(service.payoutKobo)}`}
                                         </p>
                                         <p className="text-xs tabular-nums text-neutral-500 dark:text-neutral-400">

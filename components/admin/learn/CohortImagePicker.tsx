@@ -208,20 +208,20 @@ export function CohortImagePicker({
             handleFile(e.dataTransfer.files?.[0])
           }}
           className={cn(
-            'flex w-full flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed px-6 py-8 text-center transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-teal/40',
+            'flex w-full flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed px-6 py-8 text-center transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-lime/40',
             dragging
-              ? 'border-rh-teal bg-rh-mist dark:border-rh-aqua dark:bg-rh-aqua/10'
-              : 'border-black/10 hover:border-rh-teal/50 hover:bg-rh-canvas dark:border-white/15 dark:hover:border-rh-aqua/50 dark:hover:bg-white/[0.03]'
+              ? 'border-rh-lime bg-rh-honeydew dark:border-rh-lime dark:bg-white/[0.06]'
+              : 'border-black/10 hover:border-rh-lime/50 hover:bg-rh-canvas dark:border-white/15 dark:hover:border-white/10 dark:hover:bg-white/[0.03]'
           )}
         >
           {busy ? (
-            <Loader2 className="h-6 w-6 animate-spin text-rh-teal dark:text-rh-aqua" />
+            <Loader2 className="h-6 w-6 animate-spin text-rh-ink dark:text-rh-lime" />
           ) : (
-            <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-rh-mist text-rh-teal dark:bg-rh-aqua/10 dark:text-rh-aqua">
+            <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-rh-honeydew text-rh-ink dark:bg-white/[0.06] dark:text-rh-lime">
               <ImagePlus className="h-5 w-5" />
             </span>
           )}
-          <span className="text-sm font-medium text-rh-night dark:text-white">{busy ? 'Optimising and uploading…' : 'Add a photo (optional)'}</span>
+          <span className="text-sm font-medium text-rh-ink dark:text-white">{busy ? 'Optimising and uploading…' : 'Add a photo (optional)'}</span>
           <span className="text-xs text-neutral-500 dark:text-neutral-400">
             Click or drop a JPG, PNG or WebP. Landscape works best. We resize and compress it for fast loading.
           </span>

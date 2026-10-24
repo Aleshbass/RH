@@ -57,7 +57,7 @@ function PersonRow({
         </Avatar>
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-            <p className="truncate text-sm font-semibold text-rh-night dark:text-white">{name ?? 'Unnamed'}</p>
+            <p className="truncate text-sm font-semibold text-rh-ink dark:text-white">{name ?? 'Unnamed'}</p>
             {badges}
           </div>
           <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">{subtitle}</p>
@@ -127,7 +127,7 @@ export function ClinicStaffTab({ clinicId }: { clinicId: Id<'clinics'> }) {
                   <MailQuestion className="h-4 w-4" />
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-rh-night dark:text-white">{inv.inviteeName || inv.inviteeEmail}</p>
+                  <p className="truncate text-sm font-medium text-rh-ink dark:text-white">{inv.inviteeName || inv.inviteeEmail}</p>
                   <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">
                     {inv.inviteeName ? `${inv.inviteeEmail} · ` : ''}
                     {inv.roleName ?? humanize(inv.role)} · sent {formatDistanceToNow(inv.createdAt, { addSuffix: true })}
@@ -286,7 +286,7 @@ export function ClinicReferralsTab({ clinicId }: { clinicId: Id<'clinics'> }) {
             { value: 'all', label: 'All', count: referrals?.length },
           ]}
         />
-        <Link href="/dashboard/admin/referrals" className="inline-flex items-center gap-1 text-sm font-medium text-rh-teal hover:underline dark:text-rh-aqua">
+        <Link href="/dashboard/admin/referrals" className="inline-flex items-center gap-1 text-sm font-medium text-rh-ink hover:underline dark:text-rh-lime">
           Route referrals
           <ArrowUpRight className="h-4 w-4" />
         </Link>
@@ -310,12 +310,12 @@ export function ClinicReferralsTab({ clinicId }: { clinicId: Id<'clinics'> }) {
             {rows.map((r) => {
               const body = (
                 <>
-                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-rh-mist text-xs font-semibold text-rh-teal dark:bg-rh-aqua/10 dark:text-rh-aqua">
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-rh-honeydew text-xs font-semibold text-rh-ink dark:bg-white/[0.06] dark:text-rh-lime">
                     {initialsOf(r.patientName, 'R')}
                   </span>
                   <div className="min-w-0 flex-1">
                     <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                      <p className="truncate text-sm font-semibold text-rh-night dark:text-white">{r.patientName}</p>
+                      <p className="truncate text-sm font-semibold text-rh-ink dark:text-white">{r.patientName}</p>
                       <StatusBadge tone={REFERRAL_TONE[r.status] ?? 'teal'}>{humanize(r.status)}</StatusBadge>
                       {r.priority && r.priority !== 'standard' && <StatusBadge tone="red">{humanize(r.priority)}</StatusBadge>}
                     </div>

@@ -86,7 +86,7 @@ export function ShareLinkDialog({
   const option = (active: boolean) =>
     cn(
       'rounded-2xl border p-3 text-left transition active:scale-[0.99]',
-      active ? 'border-rh-teal bg-rh-mist ring-1 ring-rh-teal/30 dark:border-rh-aqua dark:bg-rh-aqua/10' : 'border-black/[0.08] hover:bg-rh-canvas dark:border-white/10 dark:hover:bg-white/[0.03]'
+      active ? 'border-rh-lime bg-rh-honeydew ring-1 ring-rh-lime/30 dark:border-rh-lime dark:bg-white/[0.06]' : 'border-black/[0.08] hover:bg-rh-canvas dark:border-white/10 dark:hover:bg-white/[0.03]'
     )
 
   return (
@@ -102,25 +102,25 @@ export function ShareLinkDialog({
         {!result ? (
           <div className="space-y-5">
             <div>
-              <p className="text-sm font-medium text-rh-night dark:text-white">How long should the link work?</p>
+              <p className="text-sm font-medium text-rh-ink dark:text-white">How long should the link work?</p>
               <div className="mt-2 grid grid-cols-2 gap-2">
                 {EXPIRY.map((e) => (
                   <button key={e.value} type="button" className={option(expiry === e.value)} onClick={() => setExpiry(e.value)}>
-                    <p className="text-sm font-medium text-rh-night dark:text-white">{e.label}</p>
+                    <p className="text-sm font-medium text-rh-ink dark:text-white">{e.label}</p>
                     <p className="text-xs text-neutral-500">{e.hint}</p>
                   </button>
                 ))}
               </div>
             </div>
             <div>
-              <p className="text-sm font-medium text-rh-night dark:text-white">PIN to open it</p>
+              <p className="text-sm font-medium text-rh-ink dark:text-white">PIN to open it</p>
               <div className="mt-2 grid gap-2">
                 <button type="button" disabled={!hasPhone} className={cn(option(pinMode === 'phone'), !hasPhone && 'opacity-50')} onClick={() => setPinMode('phone')}>
-                  <p className="text-sm font-medium text-rh-night dark:text-white">Last 4 digits of their phone number</p>
+                  <p className="text-sm font-medium text-rh-ink dark:text-white">Last 4 digits of their phone number</p>
                   <p className="text-xs text-neutral-500">{hasPhone ? 'Easiest: they already know it.' : 'No phone number on file for this patient.'}</p>
                 </button>
                 <button type="button" className={option(pinMode === 'custom')} onClick={() => setPinMode('custom')}>
-                  <p className="text-sm font-medium text-rh-night dark:text-white">A PIN you choose</p>
+                  <p className="text-sm font-medium text-rh-ink dark:text-white">A PIN you choose</p>
                   <p className="text-xs text-neutral-500">Tell them the PIN yourself, not in the same message.</p>
                 </button>
                 {pinMode === 'custom' && (
@@ -142,14 +142,14 @@ export function ShareLinkDialog({
           </div>
         ) : (
           <div className="space-y-4">
-            <div className="flex items-start gap-3 rounded-2xl bg-rh-mint p-3.5 text-sm text-[#065f46] dark:bg-emerald-400/10 dark:text-emerald-200">
+            <div className="flex items-start gap-3 rounded-2xl bg-rh-honeydew p-3.5 text-sm text-[#065f46] dark:bg-emerald-400/10 dark:text-emerald-200">
               <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0" />
               <div>
                 <p className="font-semibold">Link ready, works until {format(result.expiresAt, 'd MMM yyyy')}</p>
                 <p className="mt-0.5 flex items-center gap-1.5"><KeyRound className="h-3.5 w-3.5" /> PIN: {result.pinHint}</p>
               </div>
             </div>
-            <pre className="max-h-44 overflow-auto whitespace-pre-wrap rounded-2xl bg-rh-canvas p-3.5 font-sans text-sm text-rh-night dark:bg-white/[0.04] dark:text-neutral-200">{result.message}</pre>
+            <pre className="max-h-44 overflow-auto whitespace-pre-wrap rounded-2xl bg-rh-canvas p-3.5 font-sans text-sm text-rh-ink dark:bg-white/[0.04] dark:text-neutral-200">{result.message}</pre>
             <div className="grid gap-2 sm:grid-cols-3">
               <Button asChild className="rounded-xl bg-[#25D366] text-white hover:bg-[#1ebe5b] sm:col-span-3">
                 <a href={result.whatsappUrl} target="_blank" rel="noopener noreferrer">

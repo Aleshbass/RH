@@ -258,7 +258,7 @@ export function PhysioTour({ firstName, enabled }: { firstName?: string; enabled
               >
                 <X className="h-4 w-4" />
               </button>
-              <p className="text-xs font-medium uppercase tracking-wide text-[#005b57] dark:text-[#2dd4bf]">
+              <p className="text-xs font-medium uppercase tracking-wide text-rh-ink dark:text-rh-lime">
                 Welcome to Rehabify
               </p>
               <h2
@@ -347,7 +347,7 @@ export function PhysioTour({ firstName, enabled }: { firstName?: string; enabled
                     key={s.target}
                     className={cn(
                       'h-1.5 rounded-full transition-all',
-                      i === index ? 'w-4 bg-[#005b57] dark:bg-[#2dd4bf]' : 'w-1.5 bg-neutral-200 dark:bg-neutral-700'
+                      i === index ? 'w-4 bg-rh-lime dark:bg-rh-lime' : 'w-1.5 bg-neutral-200 dark:bg-neutral-700'
                     )}
                   />
                 ))}

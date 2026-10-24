@@ -313,7 +313,7 @@ function PatientRecord({ patientId }: { patientId: Id<'users'> }) {
             {primary && (
               <button
                 type="button"
-                className="shrink-0 font-medium text-[#005b57] hover:underline dark:text-[#2dd4bf]"
+                className="shrink-0 font-medium text-rh-ink hover:underline dark:text-rh-lime"
                 onClick={() => requireFullAccess('Change clinician') && setChangeOpen(true)}
               >
                 Change
@@ -347,7 +347,7 @@ function PatientRecord({ patientId }: { patientId: Id<'users'> }) {
               <TabsTrigger
                 key={value}
                 value={value}
-                className="shrink-0 rounded-none border-b-2 border-transparent bg-transparent px-3 py-2.5 text-sm font-medium text-neutral-500 shadow-none data-[state=active]:border-[#005b57] data-[state=active]:bg-transparent data-[state=active]:text-neutral-900 data-[state=active]:shadow-none dark:text-neutral-400 dark:data-[state=active]:border-[#2dd4bf] dark:data-[state=active]:text-white"
+                className="shrink-0 rounded-none border-b-2 border-transparent bg-transparent px-3 py-2.5 text-sm font-medium text-neutral-500 shadow-none data-[state=active]:border-rh-lime data-[state=active]:bg-transparent data-[state=active]:text-neutral-900 data-[state=active]:shadow-none dark:text-neutral-400 dark:data-[state=active]:border-rh-lime dark:data-[state=active]:text-white"
               >
                 {label}
               </TabsTrigger>
@@ -1340,7 +1340,7 @@ function DocumentsTab({ patientId, documents }: { patientId: Id<'users'>; docume
                     href={doc.downloadUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="shrink-0 text-sm font-medium text-[#005b57] hover:underline dark:text-[#2dd4bf]"
+                    className="shrink-0 text-sm font-medium text-rh-ink hover:underline dark:text-rh-lime"
                   >
                     Open
                   </a>

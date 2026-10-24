@@ -175,7 +175,7 @@ function ManageForm({ referral, onClose, onBusyChange }: { referral: ReferralRow
       onClick={() => setMode(value)}
       className={cn(
         'flex items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition',
-        mode === value ? 'bg-white text-rh-teal shadow-soft dark:bg-rh-ink-3 dark:text-rh-aqua' : 'text-neutral-500 hover:text-rh-night dark:text-neutral-400 dark:hover:text-white'
+        mode === value ? 'bg-white text-rh-ink shadow-soft dark:bg-rh-ink-3 dark:text-rh-lime' : 'text-neutral-500 hover:text-rh-ink dark:text-neutral-400 dark:hover:text-white'
       )}
     >
       <Icon className="h-3.5 w-3.5" />
@@ -262,7 +262,7 @@ function ManageForm({ referral, onClose, onBusyChange }: { referral: ReferralRow
           {referral.clinicalNotes && (
             <div className="space-y-1">
               <span className={labelClass}>Clinical notes from the referrer</span>
-              <p className={cn(insetClass, 'whitespace-pre-wrap text-xs text-rh-night dark:text-neutral-200')}>{referral.clinicalNotes}</p>
+              <p className={cn(insetClass, 'whitespace-pre-wrap text-xs text-rh-ink dark:text-neutral-200')}>{referral.clinicalNotes}</p>
             </div>
           )}
         </section>
@@ -317,7 +317,7 @@ function ManageForm({ referral, onClose, onBusyChange }: { referral: ReferralRow
               <div className="max-h-56 space-y-1 overflow-y-auto rounded-xl bg-rh-canvas p-1.5 dark:bg-white/[0.03]" role="listbox" aria-label="Physiotherapists">
                 {physiosRaw === undefined ? (
                   <div className="flex justify-center py-6">
-                    <Loader2 className="h-5 w-5 animate-spin text-rh-teal dark:text-rh-aqua" />
+                    <Loader2 className="h-5 w-5 animate-spin text-rh-ink dark:text-rh-lime" />
                   </div>
                 ) : filteredPhysios.length === 0 ? (
                   <p className="py-6 text-center text-xs text-neutral-500 dark:text-neutral-400">No approved physiotherapists match.</p>
@@ -333,11 +333,11 @@ function ManageForm({ referral, onClose, onBusyChange }: { referral: ReferralRow
                         onClick={() => setPhysioId(p.id)}
                         className={cn(
                           'flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition',
-                          selected ? 'bg-white shadow-soft ring-1 ring-rh-teal/30 dark:bg-rh-ink-3 dark:ring-rh-aqua/30' : 'hover:bg-white/70 dark:hover:bg-white/[0.05]'
+                          selected ? 'bg-white shadow-soft ring-1 ring-rh-lime/30 dark:bg-rh-ink-3 dark:ring-white/10' : 'hover:bg-white/70 dark:hover:bg-white/[0.05]'
                         )}
                       >
                         <span className="min-w-0 flex-1">
-                          <span className="block truncate text-sm font-medium text-rh-night dark:text-white">{p.name}</span>
+                          <span className="block truncate text-sm font-medium text-rh-ink dark:text-white">{p.name}</span>
                           <span className="flex flex-wrap items-center gap-x-2 text-[11px] text-neutral-500 dark:text-neutral-400">
                             {p.location && (
                               <span className="inline-flex items-center gap-0.5">
@@ -356,7 +356,7 @@ function ManageForm({ referral, onClose, onBusyChange }: { referral: ReferralRow
                             )}
                           </span>
                         </span>
-                        {selected && <Check className="h-4 w-4 shrink-0 text-rh-teal dark:text-rh-aqua" />}
+                        {selected && <Check className="h-4 w-4 shrink-0 text-rh-ink dark:text-rh-lime" />}
                       </button>
                     )
                   })

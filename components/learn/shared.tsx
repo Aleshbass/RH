@@ -6,8 +6,8 @@
  * banner. Cohort logistics (dates, sessions, prices) come from Convex and are edited by
  * admins at /dashboard/admin/learn; the program copy below is fixed.
  *
- * Brand use follows the visual guideline: primary teal leads, secondary night green for
- * depth and text, lime only as a highlight on teal or night, pastels for supporting cards.
+ * Learn is ink and cream, with lime only as a small highlight and pastels for supporting cards.
+ * No teal anywhere in the Learn journey (pillTeal stays for the pricing pages that share these).
  */
 
 import { Component, useState, type ComponentType, type ReactNode } from 'react'
@@ -126,21 +126,22 @@ export const displayFont = 'font-[family-name:var(--font-cal)]'
 const pillBase =
   'inline-flex items-center justify-center gap-2 rounded-full px-6 py-3 text-sm font-semibold transition active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50'
 
-/** Lime highlight: only on teal or night backgrounds. */
-export const pillLime = cn(pillBase, 'bg-rh-lime text-rh-night hover:brightness-[0.94] focus-visible:ring-rh-lime focus-visible:ring-offset-rh-teal')
+/** Lime highlight: only on ink backgrounds. */
+export const pillLime = cn(pillBase, 'bg-rh-lime text-rh-ink hover:brightness-[0.94] focus-visible:ring-rh-lime focus-visible:ring-offset-rh-ink')
+export const pillInk = cn(pillBase, 'bg-rh-ink text-white hover:bg-black focus-visible:ring-rh-ink')
 export const pillTeal = cn(pillBase, 'bg-rh-teal text-white hover:bg-rh-teal-deep focus-visible:ring-rh-teal')
-export const pillWhite = cn(pillBase, 'bg-white text-rh-night hover:bg-rh-honeydew focus-visible:ring-white focus-visible:ring-offset-rh-teal')
-export const pillGhostOnDark = cn(pillBase, 'border border-white/25 text-white hover:bg-white/10 focus-visible:ring-white/70 focus-visible:ring-offset-rh-teal')
-export const pillOutline = cn(pillBase, 'border border-rh-night/15 bg-white text-rh-night hover:border-rh-night/30 focus-visible:ring-rh-teal')
+export const pillWhite = cn(pillBase, 'bg-white text-rh-ink hover:bg-rh-cream focus-visible:ring-white focus-visible:ring-offset-rh-ink')
+export const pillGhostOnDark = cn(pillBase, 'border border-white/25 text-white hover:bg-white/10 focus-visible:ring-white/70 focus-visible:ring-offset-rh-ink')
+export const pillOutline = cn(pillBase, 'border border-rh-ink/15 bg-white text-rh-ink hover:border-rh-ink/30 focus-visible:ring-rh-ink')
 
 export const fieldClass =
-  'h-12 w-full rounded-2xl border border-rh-night/10 bg-white px-4 text-[15px] text-rh-night placeholder:text-rh-night/35 transition focus:border-rh-teal focus:outline-none focus:ring-4 focus:ring-rh-teal/10 disabled:bg-rh-canvas disabled:text-rh-night/60'
+  'h-12 w-full rounded-2xl border border-rh-ink/10 bg-white px-4 text-[15px] text-rh-ink placeholder:text-rh-ink/35 transition focus:border-rh-ink focus:outline-none focus:ring-4 focus:ring-rh-ink/[0.07] disabled:bg-rh-canvas disabled:text-rh-ink/60'
 
-/** The overlapping rounded squares from the guide's colour-pairing page. */
-export function PairingShapes({ className, tone = 'night' }: { className?: string; tone?: 'night' | 'teal' }) {
+/** The overlapping rounded squares from the guide's colour-pairing page, for ink backgrounds. */
+export function PairingShapes({ className }: { className?: string }) {
   return (
     <div aria-hidden className={cn('pointer-events-none absolute', className)}>
-      <div className={cn('absolute inset-0 rounded-[28%]', tone === 'night' ? 'bg-rh-night/70' : 'bg-rh-teal')} />
+      <div className="absolute inset-0 rounded-[28%] bg-white/[0.07]" />
       <div className="absolute -bottom-[18%] -right-[18%] h-[62%] w-[62%] rounded-[26%] bg-rh-lime" />
     </div>
   )
@@ -152,12 +153,12 @@ export function CheckItem({ children, onDark = false }: { children: ReactNode; o
       <span
         className={cn(
           'mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full',
-          onDark ? 'bg-rh-lime text-rh-night' : 'bg-rh-mint text-rh-teal'
+          onDark ? 'bg-rh-lime text-rh-ink' : 'bg-rh-ink text-rh-lime'
         )}
       >
         <Check className="h-3 w-3" strokeWidth={3} />
       </span>
-      <span className={cn('text-[15px] leading-6', onDark ? 'text-white/90' : 'text-rh-night/80')}>{children}</span>
+      <span className={cn('text-[15px] leading-6', onDark ? 'text-white/90' : 'text-rh-ink/80')}>{children}</span>
     </li>
   )
 }
@@ -175,15 +176,15 @@ export function Fact({
 }) {
   return (
     <div className="flex items-start gap-3.5">
-      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-rh-honeydew text-rh-teal">
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-rh-cream text-rh-ink">
         <Icon className="h-[18px] w-[18px]" />
       </span>
       <div className="min-w-0 pt-0.5">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-rh-night/45">{label}</p>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-rh-ink/45">{label}</p>
         {loading ? (
-          <div className="mt-1.5 h-4 w-40 animate-pulse rounded-full bg-rh-night/[0.07]" />
+          <div className="mt-1.5 h-4 w-40 animate-pulse rounded-full bg-rh-ink/[0.07]" />
         ) : (
-          <p className="mt-0.5 text-[15px] font-semibold leading-snug text-rh-night">{value}</p>
+          <p className="mt-0.5 text-[15px] font-semibold leading-snug text-rh-ink">{value}</p>
         )}
       </div>
     </div>
@@ -199,8 +200,8 @@ export function InterestForm({ className, onDark = false }: { className?: string
 
   if (state === 'done') {
     return (
-      <p className={cn('flex items-center gap-2 text-sm font-medium', onDark ? 'text-white' : 'text-rh-teal', className)}>
-        <span className={cn('flex h-5 w-5 items-center justify-center rounded-full', onDark ? 'bg-rh-lime text-rh-night' : 'bg-rh-mint')}>
+      <p className={cn('flex items-center gap-2 text-sm font-medium', onDark ? 'text-white' : 'text-rh-ink', className)}>
+        <span className={cn('flex h-5 w-5 items-center justify-center rounded-full', onDark ? 'bg-rh-lime text-rh-ink' : 'bg-rh-ink text-rh-lime')}>
           <Check className="h-3 w-3" strokeWidth={3} />
         </span>
         You&apos;re on the list. We&apos;ll email you when the next cohort opens.
@@ -238,7 +239,7 @@ export function InterestForm({ className, onDark = false }: { className?: string
           onChange={(e) => setEmail(e.target.value)}
           className={cn(fieldClass, 'sm:flex-1', onDark && 'border-white/15')}
         />
-        <button type="submit" disabled={state === 'busy'} className={cn(onDark ? pillLime : pillTeal, 'h-12 shrink-0')}>
+        <button type="submit" disabled={state === 'busy'} className={cn(onDark ? pillLime : pillInk, 'h-12 shrink-0')}>
           {state === 'busy' && <Loader2 className="h-4 w-4 animate-spin" />}
           Notify me
         </button>

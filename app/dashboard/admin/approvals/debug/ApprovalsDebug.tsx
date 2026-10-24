@@ -201,7 +201,7 @@ export function ApprovalsDebug() {
                     <td className="px-5 py-2.5">
                       {r.user ? (
                         <Link href={`/dashboard/admin/users/${r.user._id}`} className="hover:underline">
-                          <span className="font-medium text-rh-night dark:text-white">{displayName(r.user)}</span>
+                          <span className="font-medium text-rh-ink dark:text-white">{displayName(r.user)}</span>
                           <span className="ml-2 text-xs text-neutral-500 dark:text-neutral-400">{r.user.role ?? 'no role'}</span>
                         </Link>
                       ) : (

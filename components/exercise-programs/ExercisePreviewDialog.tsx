@@ -41,7 +41,7 @@ export function ExercisePreviewDialog({
                 {clip ? (
                   <ExerciseViewer key={clip.id} clipId={clip.id} requestGrant={requestGrant} />
                 ) : (
-                  <div className="flex aspect-square items-center justify-center rounded-3xl bg-rh-mist text-sm text-neutral-500">No 3D demonstration</div>
+                  <div className="flex aspect-square items-center justify-center rounded-3xl bg-rh-honeydew text-sm text-neutral-500">No 3D demonstration</div>
                 )}
                 {entry.sided && (
                   <div className="flex gap-2">
@@ -52,7 +52,7 @@ export function ExercisePreviewDialog({
                         onClick={() => setSide(s)}
                         className={cn(
                           'flex-1 rounded-xl border px-3 py-2 text-sm font-medium transition active:scale-95',
-                          side === s ? 'border-rh-teal bg-rh-teal text-white dark:border-rh-aqua dark:bg-rh-aqua dark:text-rh-night' : 'border-black/[0.08] hover:bg-rh-mist dark:border-white/10'
+                          side === s ? 'border-rh-lime bg-rh-lime text-rh-ink dark:border-rh-lime dark:bg-rh-lime dark:text-rh-ink' : 'border-black/[0.08] hover:bg-rh-honeydew dark:border-white/10'
                         )}
                       >
                         {sideLabel(entry.animation?.slug, s)}
@@ -74,7 +74,7 @@ export function ExercisePreviewDialog({
                 <ol className="space-y-2">
                   {entry.instructions.map((step, i) => (
                     <li key={i} className="flex gap-2.5 text-neutral-700 dark:text-neutral-200">
-                      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-rh-teal text-[11px] font-semibold text-white">{i + 1}</span>
+                      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-rh-lime text-[11px] font-semibold text-rh-ink">{i + 1}</span>
                       {step}
                     </li>
                   ))}

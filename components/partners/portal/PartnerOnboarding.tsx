@@ -60,7 +60,7 @@ export function PartnerGateway() {
     return (
       <div className="min-h-screen py-16 px-4 sm:px-6 lg:px-8 max-w-4xl mx-auto flex flex-col items-center justify-center font-sans antialiased">
         {/* Apple-style floating hero card */}
-        <div className="w-full bg-white/85 backdrop-blur-xl rounded-[32px] border border-[#002e2c]/10 p-8 sm:p-12 shadow-[0_20px_60px_rgba(0,46,44,0.05)] text-center flex flex-col items-center space-y-6">
+        <div className="w-full bg-white/85 backdrop-blur-xl rounded-[32px] border border-rh-ink/10 p-8 sm:p-12 shadow-sm text-center flex flex-col items-center space-y-6">
           {/* Official Rehabify Logo */}
           <Link href="/" className="transition-transform hover:scale-105 active:scale-95 duration-200">
             <NextImage
@@ -74,13 +74,13 @@ export function PartnerGateway() {
           </Link>
 
           {/* Apple-style pill badge */}
-          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#FAF6E7] border border-[#002e2c]/12 text-xs font-medium text-[#002e2c] shadow-xs">
+          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#FAF6E7] border border-rh-ink/12 text-xs font-medium text-rh-ink shadow-xs">
             <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse" />
             <span>Enterprise Partner Network</span>
           </div>
 
           <div className="space-y-3 max-w-2xl">
-            <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight text-[#002e2c] leading-tight">
+            <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight text-rh-ink leading-tight">
               The Rehabilitation Operating System for Healthcare Leaders
             </h1>
             <p className="text-base text-[#52706e] leading-relaxed max-w-xl mx-auto">
@@ -92,7 +92,7 @@ export function PartnerGateway() {
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3.5 w-full max-w-md pt-2">
             <Link
               href={authLinks.signIn}
-              className="w-full sm:flex-1 py-3.5 px-6 rounded-2xl bg-[#002e2c] text-[#FAF6E7] font-semibold text-sm hover:bg-[#004744] active:scale-[0.98] transition-all shadow-sm flex items-center justify-center gap-2 cursor-pointer"
+              className="w-full sm:flex-1 py-3.5 px-6 rounded-2xl bg-rh-ink text-[#FAF6E7] font-semibold text-sm hover:bg-[#004744] active:scale-[0.98] transition-all shadow-sm flex items-center justify-center gap-2 cursor-pointer"
             >
               <Lock className="w-4 h-4 text-emerald-400" />
               <span>Sign In to Portal</span>
@@ -100,9 +100,9 @@ export function PartnerGateway() {
 
             <Link
               href={authLinks.signUp}
-              className="w-full sm:flex-1 py-3.5 px-6 rounded-2xl bg-[#FAF6E7]/80 hover:bg-[#FAF6E7] text-[#002e2c] border border-[#002e2c]/15 font-semibold text-sm active:scale-[0.98] transition-all shadow-xs flex items-center justify-center gap-2 cursor-pointer"
+              className="w-full sm:flex-1 py-3.5 px-6 rounded-2xl bg-[#FAF6E7]/80 hover:bg-[#FAF6E7] text-rh-ink border border-rh-ink/15 font-semibold text-sm active:scale-[0.98] transition-all shadow-xs flex items-center justify-center gap-2 cursor-pointer"
             >
-              <Building2 className="w-4 h-4 text-[#005b57]" />
+              <Building2 className="w-4 h-4 text-rh-ink" />
               <span>Apply for Partner Access</span>
             </Link>
           </div>
@@ -115,31 +115,31 @@ export function PartnerGateway() {
 
         {/* Feature pillars */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 w-full mt-8">
-          <div className="p-6 rounded-2xl bg-white/70 backdrop-blur-md border border-[#002e2c]/10 shadow-xs space-y-2.5">
-            <div className="w-10 h-10 rounded-xl bg-[#FAF6E7] border border-[#002e2c]/10 flex items-center justify-center text-[#005b57]">
+          <div className="p-6 rounded-2xl bg-white/70 backdrop-blur-md border border-rh-ink/10 shadow-xs space-y-2.5">
+            <div className="w-10 h-10 rounded-xl bg-[#FAF6E7] border border-rh-ink/10 flex items-center justify-center text-rh-ink">
               <Users className="w-5 h-5" />
             </div>
-            <h3 className="font-semibold text-[#002e2c] text-sm">Direct Clinical Referrals</h3>
+            <h3 className="font-semibold text-rh-ink text-sm">Direct Clinical Referrals</h3>
             <p className="text-xs text-[#52706e] leading-relaxed">
               Seamlessly triage members to MRTBN-verified physiotherapists for in-home visits or virtual rehabilitation.
             </p>
           </div>
 
-          <div className="p-6 rounded-2xl bg-white/70 backdrop-blur-md border border-[#002e2c]/10 shadow-xs space-y-2.5">
-            <div className="w-10 h-10 rounded-xl bg-[#FAF6E7] border border-[#002e2c]/10 flex items-center justify-center text-[#005b57]">
+          <div className="p-6 rounded-2xl bg-white/70 backdrop-blur-md border border-rh-ink/10 shadow-xs space-y-2.5">
+            <div className="w-10 h-10 rounded-xl bg-[#FAF6E7] border border-rh-ink/10 flex items-center justify-center text-rh-ink">
               <Terminal className="w-5 h-5" />
             </div>
-            <h3 className="font-semibold text-[#002e2c] text-sm">FHIR & Webhook APIs</h3>
+            <h3 className="font-semibold text-rh-ink text-sm">FHIR & Webhook APIs</h3>
             <p className="text-xs text-[#52706e] leading-relaxed">
               Real-time programmatic updates when patients attend sessions, complete assessments, or get discharged.
             </p>
           </div>
 
-          <div className="p-6 rounded-2xl bg-white/70 backdrop-blur-md border border-[#002e2c]/10 shadow-xs space-y-2.5">
-            <div className="w-10 h-10 rounded-xl bg-[#FAF6E7] border border-[#002e2c]/10 flex items-center justify-center text-[#005b57]">
+          <div className="p-6 rounded-2xl bg-white/70 backdrop-blur-md border border-rh-ink/10 shadow-xs space-y-2.5">
+            <div className="w-10 h-10 rounded-xl bg-[#FAF6E7] border border-rh-ink/10 flex items-center justify-center text-rh-ink">
               <CreditCard className="w-5 h-5" />
             </div>
-            <h3 className="font-semibold text-[#002e2c] text-sm">Automated Settlements</h3>
+            <h3 className="font-semibold text-rh-ink text-sm">Automated Settlements</h3>
             <p className="text-xs text-[#52706e] leading-relaxed">
               Transparent commission ledgers and revenue sharing statements with downloadable CSV accounting exports.
             </p>
@@ -397,7 +397,7 @@ export function PartnerApplicationForm() {
       <div className="min-h-screen bg-[#FAF6E7] py-8 sm:py-12 px-4 sm:px-6">
         <div className="max-w-3xl mx-auto space-y-6">
           {/* Header Bar */}
-          <div className="bg-white/90 backdrop-blur-md rounded-2xl border border-[#002e2c]/10 p-4 sm:p-5 flex items-center justify-between shadow-xs">
+          <div className="bg-white/90 backdrop-blur-md rounded-2xl border border-rh-ink/10 p-4 sm:p-5 flex items-center justify-between shadow-xs">
             <div className="flex items-center gap-3">
               <Link href="/" className="shrink-0">
                 <NextImage
@@ -408,9 +408,9 @@ export function PartnerApplicationForm() {
                   className="h-7 w-auto object-contain"
                 />
               </Link>
-              <div className="h-5 w-px bg-[#002e2c]/15" />
+              <div className="h-5 w-px bg-rh-ink/15" />
               <div>
-                <h1 className="text-sm sm:text-base font-semibold text-[#002e2c] leading-tight">
+                <h1 className="text-sm sm:text-base font-semibold text-rh-ink leading-tight">
                   Partner Organization Onboarding
                 </h1>
                 <p className="text-[11px] text-[#52706e] hidden sm:block">
@@ -427,7 +427,7 @@ export function PartnerApplicationForm() {
           </div>
 
           {/* Stepper Card */}
-          <div className="bg-white rounded-3xl border border-[#002e2c]/10 p-6 sm:p-8 shadow-[0_12px_40px_rgba(0,46,44,0.05)] space-y-8">
+          <div className="bg-white rounded-3xl border border-rh-ink/10 p-6 sm:p-8 shadow-sm space-y-8">
             {/* Progress Nav */}
             <div className="space-y-3">
               <div className="grid grid-cols-4 gap-2 text-center text-xs">
@@ -448,7 +448,7 @@ export function PartnerApplicationForm() {
                       }}
                       className={`text-left p-2 rounded-xl transition-all ${
                         isActive
-                          ? "bg-[#002e2c]/5 border border-[#002e2c]/15"
+                          ? "bg-[#0b1312]/5 border border-[#0b1312]/15"
                           : isDone
                           ? "cursor-pointer hover:bg-[#FAF6E7]/50"
                           : "opacity-50 cursor-default"
@@ -460,13 +460,13 @@ export function PartnerApplicationForm() {
                             isDone
                               ? "bg-emerald-600 text-white"
                               : isActive
-                              ? "bg-[#002e2c] text-[#FAF6E7]"
-                              : "bg-[#002e2c]/10 text-[#52706e]"
+                              ? "bg-[#0b1312] text-[#FAF6E7]"
+                              : "bg-[#0b1312]/10 text-[#52706e]"
                           }`}
                         >
                           {isDone ? <Check className="w-3 h-3" /> : s.step}
                         </span>
-                        <span className="font-semibold text-[11px] sm:text-xs text-[#002e2c] truncate">
+                        <span className="font-semibold text-[11px] sm:text-xs text-rh-ink truncate">
                           {s.title}
                         </span>
                       </div>
@@ -479,9 +479,9 @@ export function PartnerApplicationForm() {
               </div>
 
               {/* Progress Line */}
-              <div className="w-full bg-[#002e2c]/10 h-1.5 rounded-full overflow-hidden">
+              <div className="w-full bg-rh-ink/10 h-1.5 rounded-full overflow-hidden">
                 <div
-                  className="bg-[#002e2c] h-full transition-all duration-300 rounded-full"
+                  className="bg-rh-ink h-full transition-all duration-300 rounded-full"
                   style={{
                     width:
                       onboardingStep === 1
@@ -499,8 +499,8 @@ export function PartnerApplicationForm() {
             {/* STEP 1: Organization Profile */}
             {onboardingStep === 1 && (
               <div className="space-y-6 animate-in fade-in-50 duration-200">
-                <div className="border-b border-[#002e2c]/10 pb-4">
-                  <h2 className="text-lg font-bold text-[#002e2c]">Organization Profile</h2>
+                <div className="border-b border-rh-ink/10 pb-4">
+                  <h2 className="text-lg font-bold text-rh-ink">Organization Profile</h2>
                   <p className="text-xs text-[#52706e] mt-1">
                     Provide your company's registered name and operational category.
                   </p>
@@ -517,7 +517,7 @@ export function PartnerApplicationForm() {
                       placeholder="e.g. Reliance HMO, Lagoon Hospitals, Leadway Health"
                       value={onboardingForm.name}
                       onChange={(e) => setOnboardingForm({ ...onboardingForm, name: e.target.value })}
-                      className="w-full px-4 py-3.5 rounded-xl bg-[#FAF6E7]/40 border border-[#002e2c]/15 text-[#002e2c] text-sm focus:outline-none focus:ring-2 focus:ring-[#002e2c]/20"
+                      className="w-full px-4 py-3.5 rounded-xl bg-[#FAF6E7]/40 border border-rh-ink/15 text-rh-ink text-sm focus:outline-none focus:ring-2 focus:ring-rh-ink/20"
                     />
                   </div>
 
@@ -534,19 +534,19 @@ export function PartnerApplicationForm() {
                             onClick={() => setOnboardingForm({ ...onboardingForm, type: key as any })}
                             className={`p-3 rounded-xl border text-left cursor-pointer transition-all flex items-start justify-between ${
                               isSelected
-                                ? "border-[#002e2c] bg-[#002e2c]/5 shadow-xs"
-                                : "border-[#002e2c]/15 bg-white hover:border-[#002e2c]/30 hover:bg-[#FAF6E7]/20"
+                                ? "border-[#0b1312] bg-rh-ink/5 shadow-xs"
+                                : "border-[#0b1312]/15 bg-white hover:border-rh-ink/30 hover:bg-[#FAF6E7]/20"
                             }`}
                           >
                             <div>
-                              <div className="text-xs font-semibold text-[#002e2c]">{item.label}</div>
+                              <div className="text-xs font-semibold text-rh-ink">{item.label}</div>
                               <div className="text-[11px] text-[#52706e] mt-0.5">{item.desc}</div>
                             </div>
                             <div
                               className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 mt-0.5 ${
                                 isSelected
-                                  ? "border-[#002e2c] bg-[#002e2c] text-white"
-                                  : "border-[#002e2c]/30"
+                                  ? "border-[#0b1312] bg-rh-ink text-white"
+                                  : "border-[#0b1312]/30"
                               }`}
                             >
                               {isSelected && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
@@ -570,13 +570,13 @@ export function PartnerApplicationForm() {
                         placeholder="https://yourcompany.com"
                         value={onboardingForm.website}
                         onChange={(e) => setOnboardingForm({ ...onboardingForm, website: e.target.value })}
-                        className="w-full pl-10 pr-4 py-3 rounded-xl bg-[#FAF6E7]/40 border border-[#002e2c]/15 text-[#002e2c] text-sm focus:outline-none focus:ring-2 focus:ring-[#002e2c]/20"
+                        className="w-full pl-10 pr-4 py-3 rounded-xl bg-[#FAF6E7]/40 border border-rh-ink/15 text-rh-ink text-sm focus:outline-none focus:ring-2 focus:ring-rh-ink/20"
                       />
                     </div>
                   </div>
                 </div>
 
-                <div className="pt-4 border-t border-[#002e2c]/10 flex justify-end">
+                <div className="pt-4 border-t border-rh-ink/10 flex justify-end">
                   <button
                     type="button"
                     onClick={() => {
@@ -586,7 +586,7 @@ export function PartnerApplicationForm() {
                       }
                       setOnboardingStep(2);
                     }}
-                    className="px-6 py-3 rounded-xl bg-[#002e2c] text-[#FAF6E7] font-semibold text-sm hover:bg-[#004744] transition-all flex items-center gap-2 shadow-xs"
+                    className="px-6 py-3 rounded-xl bg-rh-ink text-[#FAF6E7] font-semibold text-sm hover:bg-[#004744] transition-all flex items-center gap-2 shadow-xs"
                   >
                     <span>Continue to Brand Identity</span>
                     <ArrowRight className="w-4 h-4" />
@@ -598,8 +598,8 @@ export function PartnerApplicationForm() {
             {/* STEP 2: Brand Identity & Direct Logo Upload */}
             {onboardingStep === 2 && (
               <div className="space-y-6 animate-in fade-in-50 duration-200">
-                <div className="border-b border-[#002e2c]/10 pb-4">
-                  <h2 className="text-lg font-bold text-[#002e2c]">Brand Identity & Logo Upload</h2>
+                <div className="border-b border-rh-ink/10 pb-4">
+                  <h2 className="text-lg font-bold text-rh-ink">Brand Identity & Logo Upload</h2>
                   <p className="text-xs text-[#52706e] mt-1">
                     Upload your official company logo file. It will be stored in Rehabify's secure vault and displayed dynamically across co-branded patient portals.
                   </p>
@@ -639,18 +639,18 @@ export function PartnerApplicationForm() {
                       onClick={() => logoFileInputRef.current?.click()}
                       className={`border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-all ${
                         isDraggingLogo
-                          ? "border-[#002e2c] bg-[#002e2c]/5 scale-[1.01]"
-                          : "border-[#002e2c]/25 bg-[#FAF6E7]/30 hover:border-[#002e2c]/50 hover:bg-[#FAF6E7]/60"
+                          ? "border-[#0b1312] bg-rh-ink/5 scale-[1.01]"
+                          : "border-[#0b1312]/25 bg-[#FAF6E7]/30 hover:border-rh-ink/50 hover:bg-[#FAF6E7]/60"
                       }`}
                     >
-                      <div className="w-14 h-14 rounded-2xl bg-white border border-[#002e2c]/10 text-[#002e2c] flex items-center justify-center mx-auto mb-3 shadow-xs">
+                      <div className="w-14 h-14 rounded-2xl bg-white border border-rh-ink/10 text-rh-ink flex items-center justify-center mx-auto mb-3 shadow-xs">
                         {isUploadingLogo ? (
-                          <div className="w-6 h-6 rounded-full border-2 border-[#002e2c] border-t-transparent animate-spin" />
+                          <div className="w-6 h-6 rounded-full border-2 border-rh-ink border-t-transparent animate-spin" />
                         ) : (
-                          <UploadCloud className="w-7 h-7 text-[#005b57]" />
+                          <UploadCloud className="w-7 h-7 text-rh-ink" />
                         )}
                       </div>
-                      <p className="text-sm font-semibold text-[#002e2c]">
+                      <p className="text-sm font-semibold text-rh-ink">
                         {isUploadingLogo ? "Uploading to Secure Storage..." : "Click to upload logo or drag and drop"}
                       </p>
                       <p className="text-xs text-[#52706e] mt-1">
@@ -661,10 +661,10 @@ export function PartnerApplicationForm() {
                       </p>
                     </div>
                   ) : (
-                    <div className="rounded-2xl bg-white border border-[#002e2c]/10 shadow-xs overflow-hidden">
+                    <div className="rounded-2xl bg-white border border-rh-ink/10 shadow-xs overflow-hidden">
                       {/* Centered logo display */}
                       <div className="p-6 flex flex-col items-center text-center">
-                        <div className="w-28 h-28 rounded-2xl bg-[#FAF6E7]/60 border border-[#002e2c]/10 p-3 flex items-center justify-center shadow-xs">
+                        <div className="w-28 h-28 rounded-2xl bg-[#FAF6E7]/60 border border-rh-ink/10 p-3 flex items-center justify-center shadow-xs">
                           <img
                             src={logoPreviewUrl}
                             alt="Uploaded Logo"
@@ -684,11 +684,11 @@ export function PartnerApplicationForm() {
                       </div>
 
                       {/* Action buttons */}
-                      <div className="border-t border-[#002e2c]/8 px-6 py-3 flex items-center justify-center gap-3 bg-[#FAF6E7]/30">
+                      <div className="border-t border-rh-ink/8 px-6 py-3 flex items-center justify-center gap-3 bg-[#FAF6E7]/30">
                         <button
                           type="button"
                           onClick={() => logoFileInputRef.current?.click()}
-                          className="px-4 py-2 rounded-xl border border-[#002e2c]/20 bg-white text-xs font-semibold text-[#002e2c] hover:bg-[#FAF6E7] transition-all"
+                          className="px-4 py-2 rounded-xl border border-rh-ink/20 bg-white text-xs font-semibold text-rh-ink hover:bg-[#FAF6E7] transition-all"
                         >
                           Change Logo
                         </button>
@@ -706,8 +706,8 @@ export function PartnerApplicationForm() {
                 </div>
 
                 {/* Co-Branding Preview — Clean, logo-focused */}
-                <div className="rounded-2xl border border-[#002e2c]/10 bg-white overflow-hidden">
-                  <div className="px-5 py-3 border-b border-[#002e2c]/8 bg-[#FAF6E7]/40">
+                <div className="rounded-2xl border border-rh-ink/10 bg-white overflow-hidden">
+                  <div className="px-5 py-3 border-b border-rh-ink/8 bg-[#FAF6E7]/40">
                     <span className="text-[11px] font-bold uppercase tracking-wider text-[#52706e]">
                       Co-Branded Referral Preview
                     </span>
@@ -717,7 +717,7 @@ export function PartnerApplicationForm() {
                     {/* Two logos side by side — the hero of this section */}
                     <div className="flex items-center justify-center gap-4 sm:gap-6 w-full">
                       {/* Partner logo */}
-                      <div className="flex-1 max-w-[140px] h-16 sm:h-20 rounded-xl bg-[#FAF6E7]/60 border border-[#002e2c]/8 p-3 flex items-center justify-center">
+                      <div className="flex-1 max-w-[140px] h-16 sm:h-20 rounded-xl bg-[#FAF6E7]/60 border border-rh-ink/8 p-3 flex items-center justify-center">
                         {logoPreviewUrl ? (
                           <img
                             src={logoPreviewUrl}
@@ -725,17 +725,17 @@ export function PartnerApplicationForm() {
                             className="max-h-full max-w-full object-contain"
                           />
                         ) : (
-                          <span className="text-[11px] font-bold text-[#002e2c]/40 uppercase">
+                          <span className="text-[11px] font-bold text-rh-ink/40 uppercase">
                             {onboardingForm.name || "Your Logo"}
                           </span>
                         )}
                       </div>
 
                       {/* Divider */}
-                      <span className="text-lg font-light text-[#002e2c]/25">×</span>
+                      <span className="text-lg font-light text-rh-ink/25">×</span>
 
                       {/* Rehabify logo */}
-                      <div className="flex-1 max-w-[140px] h-16 sm:h-20 rounded-xl bg-[#FAF6E7]/60 border border-[#002e2c]/8 p-3 flex items-center justify-center">
+                      <div className="flex-1 max-w-[140px] h-16 sm:h-20 rounded-xl bg-[#FAF6E7]/60 border border-rh-ink/8 p-3 flex items-center justify-center">
                         <NextImage
                           src="/logos/MainRehabify.svg"
                           alt="Rehabify"
@@ -747,7 +747,7 @@ export function PartnerApplicationForm() {
                     </div>
 
                     {/* Verified badge */}
-                    <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-[#005b57] bg-[#005b57]/8 px-3 py-1 rounded-full">
+                    <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-rh-ink bg-rh-lime/8 px-3 py-1 rounded-full">
                       <ShieldCheck className="w-3.5 h-3.5" />
                       Verified Partner
                     </span>
@@ -758,11 +758,11 @@ export function PartnerApplicationForm() {
                   </div>
                 </div>
 
-                <div className="pt-4 border-t border-[#002e2c]/10 flex items-center justify-between">
+                <div className="pt-4 border-t border-rh-ink/10 flex items-center justify-between">
                   <button
                     type="button"
                     onClick={() => setOnboardingStep(1)}
-                    className="px-5 py-2.5 rounded-xl border border-[#002e2c]/20 text-xs font-semibold text-[#002e2c] hover:bg-[#FAF6E7] transition-all flex items-center gap-1.5"
+                    className="px-5 py-2.5 rounded-xl border border-rh-ink/20 text-xs font-semibold text-rh-ink hover:bg-[#FAF6E7] transition-all flex items-center gap-1.5"
                   >
                     <ArrowLeft className="w-3.5 h-3.5" />
                     Back
@@ -770,7 +770,7 @@ export function PartnerApplicationForm() {
                   <button
                     type="button"
                     onClick={() => setOnboardingStep(3)}
-                    className="px-6 py-3 rounded-xl bg-[#002e2c] text-[#FAF6E7] font-semibold text-sm hover:bg-[#004744] transition-all flex items-center gap-2 shadow-xs"
+                    className="px-6 py-3 rounded-xl bg-rh-ink text-[#FAF6E7] font-semibold text-sm hover:bg-[#004744] transition-all flex items-center gap-2 shadow-xs"
                   >
                     <span>Continue to Contact & Coverage</span>
                     <ArrowRight className="w-4 h-4" />
@@ -782,8 +782,8 @@ export function PartnerApplicationForm() {
             {/* STEP 3: Contacts & Operational Coverage */}
             {onboardingStep === 3 && (
               <div className="space-y-6 animate-in fade-in-50 duration-200">
-                <div className="border-b border-[#002e2c]/10 pb-4">
-                  <h2 className="text-lg font-bold text-[#002e2c]">Liaison & Operational Coverage</h2>
+                <div className="border-b border-rh-ink/10 pb-4">
+                  <h2 className="text-lg font-bold text-rh-ink">Liaison & Operational Coverage</h2>
                   <p className="text-xs text-[#52706e] mt-1">
                     Specify your partnership representative and geographic operating areas for physical therapy dispatch.
                   </p>
@@ -800,7 +800,7 @@ export function PartnerApplicationForm() {
                         placeholder="e.g. Dr. Kemi Balogun / Tunde Adeleke"
                         value={onboardingForm.contactName}
                         onChange={(e) => setOnboardingForm({ ...onboardingForm, contactName: e.target.value })}
-                        className="w-full px-4 py-3 rounded-xl bg-[#FAF6E7]/40 border border-[#002e2c]/15 text-[#002e2c] text-sm focus:outline-none focus:ring-2 focus:ring-[#002e2c]/20"
+                        className="w-full px-4 py-3 rounded-xl bg-[#FAF6E7]/40 border border-rh-ink/15 text-rh-ink text-sm focus:outline-none focus:ring-2 focus:ring-rh-ink/20"
                       />
                     </div>
 
@@ -813,7 +813,7 @@ export function PartnerApplicationForm() {
                         placeholder="+234 800 000 0000"
                         value={onboardingForm.contactPhone}
                         onChange={(e) => setOnboardingForm({ ...onboardingForm, contactPhone: e.target.value })}
-                        className="w-full px-4 py-3 rounded-xl bg-[#FAF6E7]/40 border border-[#002e2c]/15 text-[#002e2c] text-sm focus:outline-none focus:ring-2 focus:ring-[#002e2c]/20"
+                        className="w-full px-4 py-3 rounded-xl bg-[#FAF6E7]/40 border border-rh-ink/15 text-rh-ink text-sm focus:outline-none focus:ring-2 focus:ring-rh-ink/20"
                       />
                     </div>
                   </div>
@@ -828,7 +828,7 @@ export function PartnerApplicationForm() {
                       placeholder="partnerships@yourorganization.com"
                       value={onboardingForm.contactEmail}
                       onChange={(e) => setOnboardingForm({ ...onboardingForm, contactEmail: e.target.value })}
-                      className="w-full px-4 py-3 rounded-xl bg-[#FAF6E7]/40 border border-[#002e2c]/15 text-[#002e2c] text-sm focus:outline-none focus:ring-2 focus:ring-[#002e2c]/20"
+                      className="w-full px-4 py-3 rounded-xl bg-[#FAF6E7]/40 border border-rh-ink/15 text-rh-ink text-sm focus:outline-none focus:ring-2 focus:ring-rh-ink/20"
                     />
                     <p className="text-[11px] text-[#52706e] mt-1">
                       Administrative notifications, API credentials, and commission reports will be dispatched to this email.
@@ -847,7 +847,7 @@ export function PartnerApplicationForm() {
                         {onboardingForm.coverageStates.map((st) => (
                           <span
                             key={st}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#002e2c] text-[#FAF6E7] text-xs font-medium shadow-xs"
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rh-ink text-[#FAF6E7] text-xs font-medium shadow-xs"
                           >
                             <MapPin className="w-3 h-3 text-emerald-400" />
                             <span>{st}</span>
@@ -867,7 +867,7 @@ export function PartnerApplicationForm() {
                     <div className="relative">
                       <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
                         {isSearchingStates ? (
-                          <Loader2 className="w-4 h-4 text-[#005b57] animate-spin" />
+                          <Loader2 className="w-4 h-4 text-rh-ink animate-spin" />
                         ) : (
                           <Search className="w-4 h-4 text-[#52706e]" />
                         )}
@@ -878,22 +878,22 @@ export function PartnerApplicationForm() {
                         value={stateSearchQuery}
                         onChange={(e) => handleStateSearchChange(e.target.value)}
                         onFocus={() => stateSearchResults.length > 0 && setShowStateResults(true)}
-                        className="w-full pl-10 pr-4 py-3 rounded-xl bg-[#FAF6E7]/40 border border-[#002e2c]/15 text-[#002e2c] text-sm focus:outline-none focus:ring-2 focus:ring-[#002e2c]/20"
+                        className="w-full pl-10 pr-4 py-3 rounded-xl bg-[#FAF6E7]/40 border border-rh-ink/15 text-rh-ink text-sm focus:outline-none focus:ring-2 focus:ring-rh-ink/20"
                       />
 
                       {/* Dropdown results */}
                       {showStateResults && stateSearchResults.length > 0 && (
-                        <div className="absolute z-50 w-full mt-1 bg-white border border-[#002e2c]/15 rounded-xl shadow-lg max-h-52 overflow-y-auto">
+                        <div className="absolute z-50 w-full mt-1 bg-white border border-rh-ink/15 rounded-xl shadow-lg max-h-52 overflow-y-auto">
                           {stateSearchResults.map((result) => (
                             <button
                               key={result.id}
                               type="button"
                               onClick={() => addStateFromSearch(result.text)}
-                              className="w-full text-left px-4 py-3 hover:bg-[#FAF6E7]/60 flex items-start gap-3 transition-colors border-b border-[#002e2c]/5 last:border-0"
+                              className="w-full text-left px-4 py-3 hover:bg-[#FAF6E7]/60 flex items-start gap-3 transition-colors border-b border-rh-ink/5 last:border-0"
                             >
-                              <MapPin className="h-4 w-4 text-[#005b57] mt-0.5 flex-shrink-0" />
+                              <MapPin className="h-4 w-4 text-rh-ink mt-0.5 flex-shrink-0" />
                               <div>
-                                <span className="text-sm font-medium text-[#002e2c]">{result.text}</span>
+                                <span className="text-sm font-medium text-rh-ink">{result.text}</span>
                                 <span className="block text-[11px] text-[#52706e] mt-0.5">{result.place_name}</span>
                               </div>
                             </button>
@@ -916,7 +916,7 @@ export function PartnerApplicationForm() {
                       placeholder="e.g. Ikeja, Lekki, Victoria Island, Maitama, Wuse II"
                       value={onboardingForm.coverageCities}
                       onChange={(e) => setOnboardingForm({ ...onboardingForm, coverageCities: e.target.value })}
-                      className="w-full px-4 py-3 rounded-xl bg-[#FAF6E7]/40 border border-[#002e2c]/15 text-[#002e2c] text-sm focus:outline-none focus:ring-2 focus:ring-[#002e2c]/20"
+                      className="w-full px-4 py-3 rounded-xl bg-[#FAF6E7]/40 border border-rh-ink/15 text-rh-ink text-sm focus:outline-none focus:ring-2 focus:ring-rh-ink/20"
                     />
                   </div>
 
@@ -934,17 +934,17 @@ export function PartnerApplicationForm() {
                             onClick={() => toggleCareModeSelection(cm.id)}
                             className={`p-3 rounded-xl border text-left cursor-pointer transition-all flex flex-col justify-between ${
                               isSelected
-                                ? "border-[#002e2c] bg-[#002e2c]/5 shadow-xs"
-                                : "border-[#002e2c]/15 bg-white hover:border-[#002e2c]/30"
+                                ? "border-[#0b1312] bg-rh-ink/5 shadow-xs"
+                                : "border-[#0b1312]/15 bg-white hover:border-[#0b1312]/30"
                             }`}
                           >
                             <div className="flex items-center justify-between mb-1">
-                              <span className="text-xs font-semibold text-[#002e2c]">{cm.label}</span>
+                              <span className="text-xs font-semibold text-rh-ink">{cm.label}</span>
                               <div
                                 className={`w-3.5 h-3.5 rounded-sm border flex items-center justify-center ${
                                   isSelected
-                                    ? "bg-[#002e2c] border-[#002e2c] text-white"
-                                    : "border-[#002e2c]/30"
+                                    ? "bg-[#0b1312] border-rh-ink text-white"
+                                    : "border-[#0b1312]/30"
                                 }`}
                               >
                                 {isSelected && <Check className="w-2.5 h-2.5" />}
@@ -958,11 +958,11 @@ export function PartnerApplicationForm() {
                   </div>
                 </div>
 
-                <div className="pt-4 border-t border-[#002e2c]/10 flex items-center justify-between">
+                <div className="pt-4 border-t border-rh-ink/10 flex items-center justify-between">
                   <button
                     type="button"
                     onClick={() => setOnboardingStep(2)}
-                    className="px-5 py-2.5 rounded-xl border border-[#002e2c]/20 text-xs font-semibold text-[#002e2c] hover:bg-[#FAF6E7] transition-all flex items-center gap-1.5"
+                    className="px-5 py-2.5 rounded-xl border border-rh-ink/20 text-xs font-semibold text-rh-ink hover:bg-[#FAF6E7] transition-all flex items-center gap-1.5"
                   >
                     <ArrowLeft className="w-3.5 h-3.5" />
                     Back
@@ -976,7 +976,7 @@ export function PartnerApplicationForm() {
                       }
                       setOnboardingStep(4);
                     }}
-                    className="px-6 py-3 rounded-xl bg-[#002e2c] text-[#FAF6E7] font-semibold text-sm hover:bg-[#004744] transition-all flex items-center gap-2 shadow-xs"
+                    className="px-6 py-3 rounded-xl bg-rh-ink text-[#FAF6E7] font-semibold text-sm hover:bg-[#004744] transition-all flex items-center gap-2 shadow-xs"
                   >
                     <span>Continue to Review & Submit</span>
                     <ArrowRight className="w-4 h-4" />
@@ -988,19 +988,19 @@ export function PartnerApplicationForm() {
             {/* STEP 4: Review & Application Submission */}
             {onboardingStep === 4 && (
               <div className="space-y-6 animate-in fade-in-50 duration-200">
-                <div className="border-b border-[#002e2c]/10 pb-4">
-                  <h2 className="text-lg font-bold text-[#002e2c]">Review Application Dossier</h2>
+                <div className="border-b border-rh-ink/10 pb-4">
+                  <h2 className="text-lg font-bold text-rh-ink">Review Application Dossier</h2>
                   <p className="text-xs text-[#52706e] mt-1">
                     Confirm your organization profile before submitting for Rehabify administrative verification.
                   </p>
                 </div>
 
                 {/* Dossier Card */}
-                <div className="rounded-2xl border border-[#002e2c]/15 bg-[#FAF6E7]/50 p-5 space-y-4">
-                  <div className="flex items-start justify-between pb-4 border-b border-[#002e2c]/10">
+                <div className="rounded-2xl border border-rh-ink/15 bg-[#FAF6E7]/50 p-5 space-y-4">
+                  <div className="flex items-start justify-between pb-4 border-b border-rh-ink/10">
                     <div className="flex items-center gap-3">
                       {logoPreviewUrl ? (
-                        <div className="w-14 h-14 rounded-xl bg-white border border-[#002e2c]/15 p-1.5 flex items-center justify-center shrink-0 shadow-xs">
+                        <div className="w-14 h-14 rounded-xl bg-white border border-rh-ink/15 p-1.5 flex items-center justify-center shrink-0 shadow-xs">
                           <img
                             src={logoPreviewUrl}
                             alt="Logo"
@@ -1008,16 +1008,16 @@ export function PartnerApplicationForm() {
                           />
                         </div>
                       ) : (
-                        <div className="w-14 h-14 rounded-xl bg-[#002e2c]/10 flex items-center justify-center text-[#002e2c] font-bold text-base shrink-0">
+                        <div className="w-14 h-14 rounded-xl bg-rh-ink/10 flex items-center justify-center text-rh-ink font-bold text-base shrink-0">
                           {onboardingForm.name ? onboardingForm.name.slice(0, 2).toUpperCase() : "PT"}
                         </div>
                       )}
                       <div>
-                        <h3 className="text-base font-bold text-[#002e2c]">
+                        <h3 className="text-base font-bold text-rh-ink">
                           {onboardingForm.name || "Untitled Organization"}
                         </h3>
                         <div className="flex items-center gap-2 mt-1">
-                          <span className="text-[11px] font-semibold px-2 py-0.5 rounded-md bg-[#002e2c] text-[#FAF6E7]">
+                          <span className="text-[11px] font-semibold px-2 py-0.5 rounded-md bg-rh-ink text-[#FAF6E7]">
                             {partnerTypeLabels[onboardingForm.type]?.label || onboardingForm.type}
                           </span>
                           {onboardingForm.website && (
@@ -1032,7 +1032,7 @@ export function PartnerApplicationForm() {
                     <button
                       type="button"
                       onClick={() => setOnboardingStep(1)}
-                      className="text-xs text-[#005b57] font-semibold hover:underline"
+                      className="text-xs text-rh-ink font-semibold hover:underline"
                     >
                       Edit
                     </button>
@@ -1043,7 +1043,7 @@ export function PartnerApplicationForm() {
                       <span className="text-[11px] font-bold uppercase tracking-wider text-[#52706e] block mb-1">
                         Liaison & Contact
                       </span>
-                      <p className="font-semibold text-[#002e2c]">
+                      <p className="font-semibold text-rh-ink">
                         {onboardingForm.contactName || "Official Representative"}
                       </p>
                       <p className="text-[#52706e]">{onboardingForm.contactEmail}</p>
@@ -1056,7 +1056,7 @@ export function PartnerApplicationForm() {
                       <span className="text-[11px] font-bold uppercase tracking-wider text-[#52706e] block mb-1">
                         Coverage & Care Modes
                       </span>
-                      <p className="font-semibold text-[#002e2c]">
+                      <p className="font-semibold text-rh-ink">
                         {onboardingForm.coverageStates.length > 0 ? onboardingForm.coverageStates.join(", ") : "Nationwide"}
                       </p>
                       <p className="text-[#52706e] text-[11px]">
@@ -1088,7 +1088,7 @@ export function PartnerApplicationForm() {
                       type="checkbox"
                       checked={termsAgreed}
                       onChange={(e) => setTermsAgreed(e.target.checked)}
-                      className="mt-0.5 rounded text-[#002e2c] focus:ring-[#002e2c]"
+                      className="mt-0.5 rounded text-rh-ink focus:ring-rh-ink"
                     />
                     <span className="text-xs text-emerald-950 leading-relaxed">
                       I confirm that I am authorized to register this organization and agree to Rehabify's Healthcare Partnership Terms and NDPR Patient Data Privacy Standards.
@@ -1096,11 +1096,11 @@ export function PartnerApplicationForm() {
                   </label>
                 </div>
 
-                <div className="pt-4 border-t border-[#002e2c]/10 flex items-center justify-between">
+                <div className="pt-4 border-t border-rh-ink/10 flex items-center justify-between">
                   <button
                     type="button"
                     onClick={() => setOnboardingStep(3)}
-                    className="px-5 py-2.5 rounded-xl border border-[#002e2c]/20 text-xs font-semibold text-[#002e2c] hover:bg-[#FAF6E7] transition-all flex items-center gap-1.5"
+                    className="px-5 py-2.5 rounded-xl border border-rh-ink/20 text-xs font-semibold text-rh-ink hover:bg-[#FAF6E7] transition-all flex items-center gap-1.5"
                   >
                     <ArrowLeft className="w-3.5 h-3.5" />
                     Back
@@ -1109,7 +1109,7 @@ export function PartnerApplicationForm() {
                     type="button"
                     disabled={isSubmittingApplication || !termsAgreed}
                     onClick={() => handleApplyForPartner()}
-                    className="px-7 py-3.5 rounded-xl bg-[#002e2c] text-[#FAF6E7] font-semibold text-sm hover:bg-[#004744] transition-all flex items-center gap-2 shadow-md disabled:opacity-50"
+                    className="px-7 py-3.5 rounded-xl bg-rh-ink text-[#FAF6E7] font-semibold text-sm hover:bg-[#004744] transition-all flex items-center gap-2 shadow-md disabled:opacity-50"
                   >
                     {isSubmittingApplication ? (
                       <div className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
@@ -1137,8 +1137,8 @@ export function PartnerPendingScreen({ partner }: { partner: PartnerSummaryLite 
   if (pendingPartner?.type === "doctor") return <DoctorPendingScreen partner={pendingPartner} />;
     return (
       <div className="max-w-2xl mx-auto py-16 px-4 sm:px-6">
-        <div className="bg-white rounded-3xl border border-[#002e2c]/10 p-8 sm:p-10 shadow-[0_8px_30px_rgba(0,46,44,0.04)] text-center space-y-6">
-          <div className="flex items-center justify-between border-b border-[#002e2c]/10 pb-4">
+        <div className="bg-white rounded-3xl border border-rh-ink/10 p-8 sm:p-10 shadow-sm text-center space-y-6">
+          <div className="flex items-center justify-between border-b border-rh-ink/10 pb-4">
             <Link href="/" className="shrink-0">
               <NextImage
                 src="/logos/MainRehabify.svg"
@@ -1160,7 +1160,7 @@ export function PartnerPendingScreen({ partner }: { partner: PartnerSummaryLite 
               <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
               Application Under Review
             </div>
-            <h1 className="text-2xl font-bold text-[#002e2c] tracking-tight">
+            <h1 className="text-2xl font-bold text-rh-ink tracking-tight">
               {pendingPartner?.name || "Your Organization"}
             </h1>
             <p className="text-sm text-[#52706e] max-w-md mx-auto leading-relaxed">
@@ -1169,18 +1169,18 @@ export function PartnerPendingScreen({ partner }: { partner: PartnerSummaryLite 
           </div>
 
           {/* Company branding summary */}
-          <div className="p-4 rounded-2xl bg-[#FAF6E7]/80 border border-[#002e2c]/10 text-left space-y-3 text-xs">
+          <div className="p-4 rounded-2xl bg-[#FAF6E7]/80 border border-rh-ink/10 text-left space-y-3 text-xs">
             <div className="flex items-center justify-between">
               <span className="text-[#52706e] font-medium">Organization Type</span>
-              <span className="font-semibold text-[#002e2c] uppercase">{pendingPartner?.type}</span>
+              <span className="font-semibold text-rh-ink uppercase">{pendingPartner?.type}</span>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-[#52706e] font-medium">Contact Email</span>
-              <span className="font-semibold text-[#002e2c]">{pendingPartner?.contactEmail}</span>
+              <span className="font-semibold text-rh-ink">{pendingPartner?.contactEmail}</span>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-[#52706e] font-medium">Assigned Partner Code</span>
-              <span className="font-mono font-semibold text-[#002e2c]">{pendingPartner?.code}</span>
+              <span className="font-mono font-semibold text-rh-ink">{pendingPartner?.code}</span>
             </div>
             {pendingPartner?.logoUrl && (
               <div className="flex items-center justify-between pt-1">
@@ -1196,7 +1196,7 @@ export function PartnerPendingScreen({ partner }: { partner: PartnerSummaryLite 
 
           <div className="text-xs text-[#52706e] pt-2">
             Questions regarding your review status? Contact our clinical team at{" "}
-            <a href="mailto:partners@physioaroundme.com" className="text-[#005b57] font-semibold underline">
+            <a href="mailto:partners@physioaroundme.com" className="text-rh-ink font-semibold underline">
               partners@physioaroundme.com
             </a>
           </div>
@@ -1209,8 +1209,8 @@ export function PartnerPendingScreen({ partner }: { partner: PartnerSummaryLite 
 function DoctorPendingScreen({ partner }: { partner: NonNullable<PartnerSummaryLite> }) {
   return (
     <div className="max-w-xl mx-auto py-16 px-4 sm:px-6">
-      <div className="bg-white rounded-3xl border border-[#002e2c]/10 p-8 sm:p-10 shadow-xs space-y-6">
-        <div className="flex items-center justify-between border-b border-[#002e2c]/10 pb-4">
+      <div className="bg-white rounded-3xl border border-rh-ink/10 p-8 sm:p-10 shadow-xs space-y-6">
+        <div className="flex items-center justify-between border-b border-rh-ink/10 pb-4">
           <Link href="/" className="shrink-0">
             <NextImage src="/logos/MainRehabify.svg" alt="Rehabify Health" width={120} height={32} className="h-7 w-auto object-contain" />
           </Link>
@@ -1221,10 +1221,10 @@ function DoctorPendingScreen({ partner }: { partner: NonNullable<PartnerSummaryL
           <div className="w-14 h-14 rounded-2xl bg-amber-50 border border-amber-200 text-amber-600 flex items-center justify-center mx-auto">
             <Clock className="w-7 h-7" />
           </div>
-          <h1 className="text-2xl font-bold text-[#002e2c] tracking-tight">We&apos;re verifying your licence</h1>
+          <h1 className="text-2xl font-bold text-rh-ink tracking-tight">We&apos;re verifying your licence</h1>
           <p className="text-sm text-[#52706e] max-w-md mx-auto leading-relaxed">
             Thanks{partner.name ? `, ${partner.name}` : ""}. Our clinical team checks every referring doctor&apos;s licence before they can refer
-            patients. We&apos;ll email you at <strong className="text-[#002e2c]">{partner.contactEmail}</strong> as soon as you&apos;re approved.
+            patients. We&apos;ll email you at <strong className="text-rh-ink">{partner.contactEmail}</strong> as soon as you&apos;re approved.
           </p>
         </div>
 
@@ -1234,10 +1234,10 @@ function DoctorPendingScreen({ partner }: { partner: NonNullable<PartnerSummaryL
             ["You're approved", "Your referral portal opens: refer patients and get your referral link."],
             ["Add your bank account", "So we can pay your commissions each month."],
           ].map(([title, body], i) => (
-            <li key={title} className="flex gap-3 p-3 rounded-2xl bg-[#FAF6E7]/70 border border-[#002e2c]/10">
-              <span className="w-6 h-6 rounded-full bg-[#002e2c] text-[#FAF6E7] text-[11px] font-bold flex items-center justify-center shrink-0">{i + 1}</span>
+            <li key={title} className="flex gap-3 p-3 rounded-2xl bg-[#FAF6E7]/70 border border-rh-ink/10">
+              <span className="w-6 h-6 rounded-full bg-rh-ink text-[#FAF6E7] text-[11px] font-bold flex items-center justify-center shrink-0">{i + 1}</span>
               <span>
-                <span className="block text-xs font-semibold text-[#002e2c]">{title}</span>
+                <span className="block text-xs font-semibold text-rh-ink">{title}</span>
                 <span className="block text-xs text-[#52706e]">{body}</span>
               </span>
             </li>
@@ -1245,11 +1245,11 @@ function DoctorPendingScreen({ partner }: { partner: NonNullable<PartnerSummaryL
         </ol>
 
         <div className="flex flex-col sm:flex-row items-center justify-center gap-3 text-xs">
-          <Link href="/doctor" className="font-semibold text-[#005b57] hover:underline">
+          <Link href="/doctor" className="font-semibold text-rh-ink hover:underline">
             Update your details
           </Link>
           <span className="hidden sm:inline text-[#52706e]">·</span>
-          <a href="mailto:partners@physioaroundme.com" className="font-semibold text-[#005b57] hover:underline">
+          <a href="mailto:partners@physioaroundme.com" className="font-semibold text-rh-ink hover:underline">
             partners@physioaroundme.com
           </a>
         </div>
@@ -1267,7 +1267,7 @@ export function PartnerRejectedScreen({ rejectionReason, partnerType }: { reject
           <div className="w-14 h-14 rounded-2xl bg-red-50 text-red-600 flex items-center justify-center mx-auto border border-red-200">
             <AlertCircle className="w-7 h-7" />
           </div>
-          <h2 className="text-xl font-bold text-[#002e2c]">{isDoctor ? "We couldn't verify your account" : "Application Not Approved"}</h2>
+          <h2 className="text-xl font-bold text-rh-ink">{isDoctor ? "We couldn't verify your account" : "Application Not Approved"}</h2>
           <p className="text-sm text-[#52706e]">
             {rejectionReason ||
               (isDoctor
@@ -1278,13 +1278,13 @@ export function PartnerRejectedScreen({ rejectionReason, partnerType }: { reject
             <>
               <a
                 href="/doctor"
-                className="inline-flex items-center justify-center rounded-xl bg-[#002e2c] px-5 py-2.5 text-sm font-semibold text-[#FAF6E7] hover:opacity-90"
+                className="inline-flex items-center justify-center rounded-xl bg-rh-ink px-5 py-2.5 text-sm font-semibold text-[#FAF6E7] hover:opacity-90"
               >
                 Correct my details and resubmit
               </a>
               <p className="text-xs text-[#52706e]">
                 Or email{" "}
-                <a href="mailto:partners@physioaroundme.com" className="font-semibold text-[#005b57] hover:underline">
+                <a href="mailto:partners@physioaroundme.com" className="font-semibold text-rh-ink hover:underline">
                   partners@physioaroundme.com
                 </a>{" "}
                 with your MDCN folio number and we&apos;ll take another look.

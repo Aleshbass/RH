@@ -37,21 +37,21 @@ function PriceTiles({ cohort }: { cohort: PublicCohort }) {
     <div className="grid gap-3">
       <Link
         href="/learn/register?track=rehabify"
-        className="flex items-center justify-between gap-4 rounded-[1.5rem] bg-white p-5 text-rh-night transition hover:-translate-y-0.5 sm:p-6"
+        className="flex items-center justify-between gap-4 rounded-[1.5rem] bg-white p-5 text-rh-ink transition hover:-translate-y-0.5 sm:p-6"
       >
         <span className="min-w-0">
           <span className="block text-[15px] font-semibold">{TRACKS.rehabify.label}</span>
-          <span className="mt-0.5 block text-sm text-rh-night/60">Practising with Rehabify</span>
+          <span className="mt-0.5 block text-sm text-rh-ink/60">Practising with Rehabify</span>
         </span>
         <span className={cn('shrink-0 text-[32px] leading-none tracking-tight', displayFont)}>{naira(cohort.prices.rehabify)}</span>
       </Link>
       <Link
         href="/learn/register?track=external"
-        className="flex items-center justify-between gap-4 rounded-[1.5rem] bg-rh-mint p-5 text-rh-night transition hover:-translate-y-0.5 sm:p-6"
+        className="flex items-center justify-between gap-4 rounded-[1.5rem] bg-rh-jasmine p-5 text-rh-ink transition hover:-translate-y-0.5 sm:p-6"
       >
         <span className="min-w-0">
           <span className="block text-[15px] font-semibold">{TRACKS.external.label}</span>
-          <span className="mt-0.5 block text-sm text-rh-night/60">Licensed physiotherapists</span>
+          <span className="mt-0.5 block text-sm text-rh-ink/60">Licensed physiotherapists</span>
         </span>
         <span className={cn('shrink-0 text-[32px] leading-none tracking-tight', displayFont)}>{naira(cohort.prices.external)}</span>
       </Link>
@@ -90,7 +90,7 @@ function Photo({ cohort, imageUrl }: { cohort: PublicCohort; imageUrl: string })
   return (
     <div className="relative mx-auto w-full max-w-lg lg:max-w-none">
       <div aria-hidden className="absolute -right-3 -top-3 h-24 w-24 rounded-[1.5rem] bg-rh-lime sm:-right-5 sm:-top-5 sm:h-28 sm:w-28" />
-      <div className="relative aspect-[4/3] overflow-hidden rounded-[1.75rem] bg-rh-night/40 ring-1 ring-white/10">
+      <div className="relative aspect-[4/3] overflow-hidden rounded-[1.75rem] bg-rh-ink/40 ring-1 ring-white/10">
         <Image
           src={imageUrl}
           alt={cohort.imageAlt || PROGRAM.title}
@@ -100,12 +100,12 @@ function Photo({ cohort, imageUrl }: { cohort: PublicCohort; imageUrl: string })
           className="object-cover"
         />
       </div>
-      <div className="absolute -bottom-5 left-4 flex items-center gap-3 rounded-2xl bg-white px-4 py-3 text-rh-night shadow-lift sm:left-6">
-        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-rh-honeydew text-rh-teal">
+      <div className="absolute -bottom-5 left-4 flex items-center gap-3 rounded-2xl bg-white px-4 py-3 text-rh-ink shadow-lift sm:left-6">
+        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-rh-honeydew text-rh-ink">
           <CalendarDays className="h-4 w-4" />
         </span>
         <span>
-          <span className="block text-[11px] font-semibold uppercase tracking-[0.12em] text-rh-night/45">Next cohort</span>
+          <span className="block text-[11px] font-semibold uppercase tracking-[0.12em] text-rh-ink/45">Next cohort</span>
           <span className="block text-sm font-semibold">{cohort.dateRange}</span>
         </span>
       </div>
@@ -133,11 +133,11 @@ function Section() {
         whileInView={{ opacity: 1, y: 0 }}
         viewport={{ once: true, margin: '-80px' }}
         transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
-        className="relative mx-auto max-w-6xl overflow-hidden rounded-[2rem] bg-[linear-gradient(115deg,#002e2c_0%,#004a46_42%,#005b57_100%)] text-white sm:rounded-[2.5rem]"
+        className="relative mx-auto max-w-6xl overflow-hidden rounded-[2rem] bg-rh-ink text-white sm:rounded-[2.5rem]"
       >
         {!imageUrl && (
           <>
-            <div aria-hidden className="pointer-events-none absolute -right-12 -top-12 h-40 w-40 rounded-[2.25rem] bg-rh-night/50" />
+            <div aria-hidden className="pointer-events-none absolute -right-12 -top-12 h-40 w-40 rounded-[2.25rem] bg-white/[0.06]" />
             <div aria-hidden className="pointer-events-none absolute right-10 top-16 hidden h-14 w-14 rounded-2xl bg-rh-lime lg:block" />
           </>
         )}
@@ -149,8 +149,8 @@ function Section() {
           )}
         >
           <div>
-            <p className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-rh-mint">
-              <span className="rounded-full bg-rh-lime px-2 py-0.5 text-[10px] tracking-wide text-rh-night">New</span>
+            <p className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-rh-lime">
+              <span className="rounded-full bg-rh-lime px-2 py-0.5 text-[10px] tracking-wide text-rh-ink">New</span>
               Rehabify Learn · For physiotherapists
             </p>
             <h2 id="msk-program-heading" className="mt-4 text-[32px] leading-[1.08] tracking-tight text-white sm:text-[44px]">
@@ -173,10 +173,10 @@ function Section() {
             {imageUrl && <PriceChips cohort={cohort} />}
 
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-              <Link href="/learn#register" className={cn(pillLime, 'h-12 px-7 text-[15px] focus-visible:ring-offset-rh-night')}>
+              <Link href="/learn#register" className={cn(pillLime, 'h-12 px-7 text-[15px] focus-visible:ring-offset-rh-ink')}>
                 Register now <ArrowRight className="h-4 w-4" />
               </Link>
-              <Link href="/learn" className={cn(pillGhostOnDark, 'h-12 px-7 text-[15px] focus-visible:ring-offset-rh-night')}>
+              <Link href="/learn" className={cn(pillGhostOnDark, 'h-12 px-7 text-[15px] focus-visible:ring-offset-rh-ink')}>
                 See the program
               </Link>
             </div>

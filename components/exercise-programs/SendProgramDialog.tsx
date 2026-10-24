@@ -218,7 +218,7 @@ function GoalsEditor({ goals, onChange }: { goals: string[]; onChange: (goals: s
         </div>
       ))}
       {goals.length < MAX_GOALS && (
-        <Button type="button" variant="ghost" size="sm" className="h-8 rounded-lg text-rh-teal dark:text-rh-aqua" onClick={() => onChange([...goals, ''])}>
+        <Button type="button" variant="ghost" size="sm" className="h-8 rounded-lg text-rh-ink dark:text-rh-lime" onClick={() => onChange([...goals, ''])}>
           <Plus className="mr-1 h-4 w-4" /> Add a goal
         </Button>
       )}
@@ -275,7 +275,7 @@ function ResourcePickerDialog({
         </DialogHeader>
         <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
           {rows === undefined ? (
-            <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-rh-teal" /></div>
+            <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-rh-ink" /></div>
           ) : rows === null ? (
             <p className="py-10 text-center text-sm text-neutral-500">The Rehabify Library isn&apos;t available to your account. You can still write your own education.</p>
           ) : results.total === 0 ? (
@@ -291,7 +291,7 @@ function ResourcePickerDialog({
                       <Icon className="h-5 w-5" />
                     </span>
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium text-rh-night dark:text-white">{row.title}</p>
+                      <p className="truncate text-sm font-medium text-rh-ink dark:text-white">{row.title}</p>
                       <p className="truncate text-xs text-neutral-500">
                         {RESOURCE_KIND_LABEL[row.kind]} · {row.condition} · {row.source}
                       </p>
@@ -545,9 +545,9 @@ export function SendProgramDialog({
                     className={cn(
                       'inline-flex items-center gap-1.5 rounded-full px-3 py-1 font-medium transition disabled:cursor-not-allowed',
                       step === i + 1
-                        ? 'bg-rh-teal text-white dark:bg-rh-aqua dark:text-rh-night'
+                        ? 'bg-rh-lime text-rh-ink dark:bg-rh-lime dark:text-rh-ink'
                         : step > i + 1
-                          ? 'bg-rh-mint text-[#047857] dark:bg-emerald-400/10 dark:text-emerald-300'
+                          ? 'bg-rh-honeydew text-[#047857] dark:bg-emerald-400/10 dark:text-emerald-300'
                           : 'bg-rh-canvas text-neutral-500 dark:bg-white/[0.05] dark:text-neutral-400'
                     )}
                   >
@@ -564,7 +564,7 @@ export function SendProgramDialog({
                 <div className="flex flex-wrap items-center gap-2 rounded-2xl bg-rh-canvas px-4 py-3 text-sm dark:bg-white/[0.03]">
                   <span className="text-neutral-600 dark:text-neutral-300">Not in the library?</span>
                   <Button type="button" size="sm" variant="outline" className="h-8 rounded-full" onClick={() => addOwn('custom')}>
-                    <Dumbbell className="mr-1.5 h-3.5 w-3.5 text-rh-teal dark:text-rh-aqua" /> Add your own exercise
+                    <Dumbbell className="mr-1.5 h-3.5 w-3.5 text-rh-ink dark:text-rh-lime" /> Add your own exercise
                   </Button>
                   <Button type="button" size="sm" variant="outline" className="h-8 rounded-full" onClick={() => addOwn('education')}>
                     <BookOpen className="mr-1.5 h-3.5 w-3.5 text-[#b4690e] dark:text-amber-300" /> Add education
@@ -574,7 +574,7 @@ export function SendProgramDialog({
                   </Button>
                 </div>
                 {library === undefined ? (
-                  <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-rh-teal" /></div>
+                  <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-rh-ink" /></div>
                 ) : !library ? (
                   <p className="py-10 text-center text-sm text-neutral-500">The exercise library isn&apos;t available to your account. You can still add your own exercises and education.</p>
                 ) : (
@@ -597,7 +597,7 @@ export function SendProgramDialog({
                           <div
                             className={cn(
                               'relative flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-xl sm:h-20 sm:w-20',
-                              d.type === 'education' ? 'bg-rh-cream dark:bg-amber-400/10' : 'bg-rh-mist dark:bg-white/[0.05]'
+                              d.type === 'education' ? 'bg-rh-cream dark:bg-amber-400/10' : 'bg-rh-honeydew dark:bg-white/[0.05]'
                             )}
                           >
                             {poster ? (
@@ -605,7 +605,7 @@ export function SendProgramDialog({
                             ) : d.type === 'education' ? (
                               <BookOpen className="h-6 w-6 text-[#b4690e] dark:text-amber-300" />
                             ) : (
-                              <Dumbbell className="h-6 w-6 text-rh-teal/60 dark:text-rh-aqua/60" />
+                              <Dumbbell className="h-6 w-6 text-rh-ink/60 dark:text-rh-lime/60" />
                             )}
                           </div>
                           <div className="min-w-0 flex-1 space-y-2.5">
@@ -621,7 +621,7 @@ export function SendProgramDialog({
                                         : 'Education'}
                                 </p>
                                 {d.type === 'library' ? (
-                                  <p className="font-semibold text-rh-night dark:text-white">{d.name}</p>
+                                  <p className="font-semibold text-rh-ink dark:text-white">{d.name}</p>
                                 ) : (
                                   <Input
                                     aria-label={d.type === 'custom' ? 'Exercise name' : 'Education title'}
@@ -653,7 +653,7 @@ export function SendProgramDialog({
                                     onClick={() => patchDraft(d.key, { side: s })}
                                     className={cn(
                                       'rounded-full border px-3 py-1 text-xs font-medium transition active:scale-95',
-                                      d.side === s ? 'border-rh-teal bg-rh-teal text-white dark:border-rh-aqua dark:bg-rh-aqua dark:text-rh-night' : 'border-black/[0.08] hover:bg-rh-mist dark:border-white/10 dark:hover:bg-white/[0.05]'
+                                      d.side === s ? 'border-rh-lime bg-rh-lime text-rh-ink dark:border-rh-lime dark:bg-rh-lime dark:text-rh-ink' : 'border-black/[0.08] hover:bg-rh-honeydew dark:border-white/10 dark:hover:bg-white/[0.05]'
                                     )}
                                   >
                                     {s === 'both' ? 'Both sides' : sideLabel(d.entry?.animation?.slug, s)}
@@ -705,10 +705,10 @@ export function SendProgramDialog({
                 </ul>
                 <div ref={listEndRef} className="flex flex-wrap gap-2 pt-1">
                   <Button type="button" size="sm" variant="outline" className="h-8 rounded-full" onClick={() => setStep(1)}>
-                    <Library className="mr-1.5 h-3.5 w-3.5 text-rh-teal dark:text-rh-aqua" /> Add from the library
+                    <Library className="mr-1.5 h-3.5 w-3.5 text-rh-ink dark:text-rh-lime" /> Add from the library
                   </Button>
                   <Button type="button" size="sm" variant="outline" className="h-8 rounded-full" onClick={() => addOwn('custom')}>
-                    <Dumbbell className="mr-1.5 h-3.5 w-3.5 text-rh-teal dark:text-rh-aqua" /> Add your own exercise
+                    <Dumbbell className="mr-1.5 h-3.5 w-3.5 text-rh-ink dark:text-rh-lime" /> Add your own exercise
                   </Button>
                   <Button type="button" size="sm" variant="outline" className="h-8 rounded-full" onClick={() => addOwn('education')}>
                     <BookOpen className="mr-1.5 h-3.5 w-3.5 text-[#b4690e] dark:text-amber-300" /> Add education
@@ -741,13 +741,13 @@ export function SendProgramDialog({
                             </SelectItem>
                           ))}
                           <SelectItem value={NEW_PROGRAMME}>
-                            <span className="inline-flex items-center gap-1.5 font-medium text-rh-teal dark:text-rh-aqua"><Plus className="h-3.5 w-3.5" /> Create a new programme</span>
+                            <span className="inline-flex items-center gap-1.5 font-medium text-rh-ink dark:text-rh-lime"><Plus className="h-3.5 w-3.5" /> Create a new programme</span>
                           </SelectItem>
                         </SelectContent>
                       </Select>
                     )}
                     {existing && (
-                      <p className="mt-2 rounded-xl bg-rh-mist px-3 py-2 text-xs text-rh-teal dark:bg-rh-aqua/10 dark:text-rh-aqua">
+                      <p className="mt-2 rounded-xl bg-rh-honeydew px-3 py-2 text-xs text-rh-ink dark:bg-white/[0.06] dark:text-rh-lime">
                         {itemCount} item{itemCount === 1 ? '' : 's'} will be added to the end of “{existing.title}”, which has {existing.items.length} now.
                       </p>
                     )}
@@ -781,8 +781,8 @@ export function SendProgramDialog({
                     {(existing?.voiceNoteUrl || (editing && keepVoice)) && ' A new recording replaces the current one.'}
                   </p>
                   {editing && keepVoice && program?.voiceNoteUrl && !media.voice && (
-                    <div className="mt-2 flex items-center gap-2 rounded-2xl bg-rh-mist p-2 pl-3 dark:bg-white/[0.05]">
-                      <Mic className="h-4 w-4 shrink-0 text-rh-teal dark:text-rh-aqua" />
+                    <div className="mt-2 flex items-center gap-2 rounded-2xl bg-rh-honeydew p-2 pl-3 dark:bg-white/[0.05]">
+                      <Mic className="h-4 w-4 shrink-0 text-rh-ink dark:text-rh-lime" />
                       <audio controls preload="none" src={program.voiceNoteUrl} className="h-9 min-w-0 flex-1" />
                       <Button type="button" variant="ghost" size="icon" onClick={() => setKeepVoice(false)} aria-label="Remove the current voice note"><X className="h-4 w-4" /></Button>
                     </div>
@@ -796,14 +796,14 @@ export function SendProgramDialog({
                       </Button>
                     ) : !media.voice ? (
                       <Button type="button" variant="outline" onClick={() => void media.startRecording()} disabled={!media.canRecord || media.uploading} className="rounded-full">
-                        <Mic className="mr-2 h-4 w-4 text-rh-teal dark:text-rh-aqua" /> {editing && keepVoice ? 'Record a new voice note' : 'Record a voice note'}
+                        <Mic className="mr-2 h-4 w-4 text-rh-ink dark:text-rh-lime" /> {editing && keepVoice ? 'Record a new voice note' : 'Record a voice note'}
                       </Button>
                     ) : null}
                     {media.uploading && <span className="inline-flex items-center gap-1.5 text-xs text-neutral-500"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Uploading…</span>}
                   </div>
                   {media.voice && (
-                    <div className="mt-2 flex items-center gap-2 rounded-2xl bg-rh-mist p-2 pl-3 dark:bg-white/[0.05]">
-                      <Mic className="h-4 w-4 shrink-0 text-rh-teal dark:text-rh-aqua" />
+                    <div className="mt-2 flex items-center gap-2 rounded-2xl bg-rh-honeydew p-2 pl-3 dark:bg-white/[0.05]">
+                      <Mic className="h-4 w-4 shrink-0 text-rh-ink dark:text-rh-lime" />
                       <audio controls src={media.voice.previewUrl} className="h-9 min-w-0 flex-1" />
                       <Button type="button" variant="ghost" size="icon" onClick={media.removeVoice} aria-label="Remove voice note"><X className="h-4 w-4" /></Button>
                     </div>
@@ -811,7 +811,7 @@ export function SendProgramDialog({
                 </div>
 
                 <div className="rounded-2xl bg-rh-canvas p-4 text-sm dark:bg-white/[0.03]">
-                  <p className="font-medium text-rh-night dark:text-white">
+                  <p className="font-medium text-rh-ink dark:text-white">
                     {itemsSummary(drafts.flatMap((d) => (d.side === 'both' ? [d, d] : [d])).map((d) => ({ kind: d.type === 'education' ? 'education' : 'exercise' })))}
                   </p>
                   <p className="mt-0.5 text-neutral-500">{drafts.map((d) => d.name.trim() || (d.type === 'education' ? 'Education' : 'Exercise')).join(' · ')}</p>

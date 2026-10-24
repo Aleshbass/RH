@@ -68,7 +68,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
                         className={cn(
                             'flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2.5 text-sm transition-colors',
                             isActive(link.href)
-                                ? 'border-rh-teal font-semibold text-rh-night dark:border-rh-aqua dark:text-white'
+                                ? 'border-rh-lime font-semibold text-rh-ink dark:border-rh-lime dark:text-white'
                                 : 'border-transparent text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white'
                         )}
                     >
@@ -81,7 +81,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
             <div className="lg:grid lg:grid-cols-[13rem_1fr] lg:gap-10">
                 <nav aria-label="Settings" className="hidden lg:block">
                     <div className="sticky top-24 space-y-5 rounded-2xl border border-black/[0.04] bg-white p-3 shadow-soft dark:border-white/[0.06] dark:bg-rh-ink-2 dark:shadow-none">
-                        <p className="px-3 pt-1 text-lg font-semibold tracking-tight text-rh-night dark:text-white">Settings</p>
+                        <p className="px-3 pt-1 text-lg font-semibold tracking-tight text-rh-ink dark:text-white">Settings</p>
                         {GROUPS.map((group) => (
                             <div key={group.label} className="space-y-0.5">
                                 <p className="px-3 pb-1 text-[11px] font-medium uppercase tracking-wide text-neutral-400 dark:text-neutral-500">
@@ -95,8 +95,8 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
                                         className={cn(
                                             'flex items-center justify-between gap-2 rounded-xl px-3 py-2 text-sm transition-colors',
                                             isActive(link.href)
-                                                ? 'bg-rh-mist font-semibold text-rh-teal dark:bg-rh-aqua/10 dark:text-rh-aqua'
-                                                : 'text-neutral-600 hover:bg-rh-canvas hover:text-rh-night dark:text-neutral-400 dark:hover:bg-white/[0.04] dark:hover:text-white'
+                                                ? 'bg-rh-honeydew font-semibold text-rh-ink dark:bg-white/[0.06] dark:text-rh-lime'
+                                                : 'text-neutral-600 hover:bg-rh-canvas hover:text-rh-ink dark:text-neutral-400 dark:hover:bg-white/[0.04] dark:hover:text-white'
                                         )}
                                     >
                                         <span className="truncate">{link.label}</span>

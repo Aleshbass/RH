@@ -155,7 +155,7 @@ function Props({ props }: { props: CatalogProp[] }) {
           )
         }
         if (p.type === 'line') {
-          return <Box key={i} size={[num(p, 'width', 0.05), 0.002, num(p, 'length', 8)]} center={blender(num(p, 'x'), 0, 0.001)} color="#005b57" />
+          return <Box key={i} size={[num(p, 'width', 0.05), 0.002, num(p, 'length', 8)]} center={blender(num(p, 'x'), 0, 0.001)} color="#00cd0f" />
         }
         if (p.type === 'pillow') {
           const top = num(p, 'top', 0.2), h = Math.max(top - 0.008, 0.02)
@@ -193,7 +193,7 @@ function watermarkTexture(text: string) {
   g.font = '600 44px system-ui, -apple-system, Segoe UI, sans-serif'
   g.textAlign = 'center'
   g.textBaseline = 'middle'
-  g.fillStyle = '#002e2c'
+  g.fillStyle = '#0b1312'
   g.fillText(text, 512, 48)
   const tex = new THREE.CanvasTexture(c)
   tex.colorSpace = THREE.SRGBColorSpace
@@ -244,7 +244,7 @@ function Scene({ gltf, clip, props, playing, speed, view, viewNonce, watermark, 
   const strapSegs = useRef<(THREE.Mesh | null)[]>([])
 
   const floorTex = useMemo(() => radialTexture('rgba(230,240,239,1)', 'rgba(247,245,239,0)'), [])
-  const shadowTex = useMemo(() => radialTexture('rgba(0,46,44,0.32)', 'rgba(0,46,44,0)'), [])
+  const shadowTex = useMemo(() => radialTexture('rgba(11, 19, 18,0.32)', 'rgba(11, 19, 18,0)'), [])
   const markTex = useMemo(() => watermarkTexture(`rehabify  ·  ${watermark}`), [watermark])
 
   useEffect(() => {

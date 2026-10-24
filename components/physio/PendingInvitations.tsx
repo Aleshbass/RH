@@ -68,7 +68,7 @@ export function PendingInvitations() {
           return (
             <li key={inv._id} className="flex flex-wrap items-center gap-3 rounded-2xl px-3 py-3">
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-semibold text-rh-night dark:text-white">
+                <p className="truncate text-sm font-semibold text-rh-ink dark:text-white">
                   {inv.patientName || inv.patientEmail || 'Invited patient'}
                 </p>
                 <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">

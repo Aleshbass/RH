@@ -9,7 +9,7 @@ import { SettingsPageHeader, SettingsSection } from '@/components/physio/Setting
 import { PayoutScheduleTable } from './payout-schedule-table';
 
 const SETTINGS = '/dashboard/physiotherapist/settings';
-const linkClass = 'font-medium text-rh-teal hover:underline dark:text-rh-aqua';
+const linkClass = 'font-medium text-rh-ink hover:underline dark:text-rh-lime';
 
 export default function PayoutSchedulePage() {
     const schedule = useQuery(api.serviceTariffs.getPayoutSchedule);

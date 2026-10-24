@@ -97,10 +97,10 @@ function Field({
   return (
     <div className="rounded-xl bg-rh-canvas p-3.5 dark:bg-white/[0.04]">
       <p className="flex items-center gap-1.5 text-xs font-medium text-neutral-500 dark:text-neutral-400">
-        {Icon && <Icon className="h-3.5 w-3.5 text-rh-teal dark:text-rh-aqua" />}
+        {Icon && <Icon className="h-3.5 w-3.5 text-rh-ink dark:text-rh-lime" />}
         {label}
       </p>
-      <div className={cn('mt-1 text-sm font-semibold text-rh-night dark:text-white', mono && 'font-mono')}>{children}</div>
+      <div className={cn('mt-1 text-sm font-semibold text-rh-ink dark:text-white', mono && 'font-mono')}>{children}</div>
     </div>
   )
 }
@@ -131,7 +131,7 @@ function CopyRow({
       <button
         type="button"
         onClick={onCopy}
-        className="rounded-md p-1 text-neutral-400 transition-colors hover:bg-rh-canvas hover:text-rh-night dark:hover:bg-white/[0.06] dark:hover:text-white"
+        className="rounded-md p-1 text-neutral-400 transition-colors hover:bg-rh-canvas hover:text-rh-ink dark:hover:bg-white/[0.06] dark:hover:text-white"
         aria-label={`Copy ${label}`}
       >
         {copied ? <Check className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-300" /> : <Copy className="h-3.5 w-3.5" />}
@@ -145,7 +145,7 @@ function InfoRow({ icon: Icon, label, children }: { icon: ComponentType<{ classN
     <div className="flex items-center gap-2 text-neutral-600 dark:text-neutral-300">
       <Icon className="h-3.5 w-3.5 shrink-0 text-neutral-400" />
       <span className="shrink-0 text-neutral-500 dark:text-neutral-400">{label}</span>
-      <span className="min-w-0 truncate font-medium text-rh-night dark:text-white">{children}</span>
+      <span className="min-w-0 truncate font-medium text-rh-ink dark:text-white">{children}</span>
     </div>
   )
 }
@@ -283,9 +283,9 @@ export default function AdminUserDetailPage() {
         {/* ── Left: identity ── */}
         <div className="space-y-6 lg:sticky lg:top-6 lg:col-span-4">
           <section className={cn(cardClass, 'overflow-hidden')}>
-            <div className="relative h-16 bg-gradient-to-r from-rh-teal to-rh-teal-deep dark:from-rh-aqua/30 dark:to-rh-ink-3">
+            <div className="relative h-16 bg-rh-ink dark:bg-rh-ink-3">
               {physioProfile?.verificationBadge && physioProfile.verificationBadge.status !== 'none' && (
-                <span className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-full bg-white/95 px-2 py-0.5 text-[11px] font-semibold text-rh-teal shadow-sm dark:bg-rh-ink-2 dark:text-rh-aqua">
+                <span className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-full bg-white/95 px-2 py-0.5 text-[11px] font-semibold text-rh-ink shadow-sm dark:bg-rh-ink-2 dark:text-rh-lime">
                   <BadgeCheck className="h-3.5 w-3.5" />
                   {physioProfile.verificationBadge.status === 'pro_verified' ? 'Pro verified' : 'Verified'}
                 </span>
@@ -312,7 +312,7 @@ export default function AdminUserDetailPage() {
                 )}
               </div>
 
-              <h2 className="text-lg font-semibold tracking-tight text-rh-night dark:text-white">{displayName(user)}</h2>
+              <h2 className="text-lg font-semibold tracking-tight text-rh-ink dark:text-white">{displayName(user)}</h2>
               <div className="mt-2 flex flex-wrap gap-1.5">
                 <RoleBadge role={user.role} />
                 <StatusBadge tone={user.onboarded ? 'teal' : 'neutral'}>{user.onboarded ? 'Onboarded' : 'Onboarding'}</StatusBadge>
@@ -626,9 +626,9 @@ export default function AdminUserDetailPage() {
                       <div className="flex min-w-0 items-start gap-3">
                         <IconChip icon={Globe} />
                         <div className="min-w-0">
-                          <h3 className="text-[15px] font-semibold text-rh-night dark:text-white">Public booking link</h3>
+                          <h3 className="text-[15px] font-semibold text-rh-ink dark:text-white">Public booking link</h3>
                           <p className="text-xs text-neutral-500 dark:text-neutral-400">Patients can book this physiotherapist directly from this link.</p>
-                          <p className="mt-2 inline-block max-w-full truncate rounded-lg bg-rh-canvas px-3 py-1.5 font-mono text-xs text-rh-teal dark:bg-white/[0.04] dark:text-rh-aqua">
+                          <p className="mt-2 inline-block max-w-full truncate rounded-lg bg-rh-canvas px-3 py-1.5 font-mono text-xs text-rh-ink dark:bg-white/[0.04] dark:text-rh-lime">
                             {bookingUrl}
                           </p>
                         </div>
@@ -663,12 +663,12 @@ export default function AdminUserDetailPage() {
                           <Link
                             key={patient._id}
                             href={`/dashboard/admin/users/${patient.patientId}`}
-                            className="flex items-center justify-between gap-3 rounded-xl bg-rh-canvas p-3 transition-colors hover:bg-rh-mist dark:bg-white/[0.04] dark:hover:bg-white/[0.07]"
+                            className="flex items-center justify-between gap-3 rounded-xl bg-rh-canvas p-3 transition-colors hover:bg-rh-honeydew dark:bg-white/[0.04] dark:hover:bg-white/[0.07]"
                           >
                             <div className="flex min-w-0 items-center gap-3">
                               <UserAvatar user={{ firstName: patient.name, imageUrl: patient.imageUrl }} />
                               <div className="min-w-0">
-                                <p className="truncate text-sm font-semibold text-rh-night dark:text-white">{patient.name}</p>
+                                <p className="truncate text-sm font-semibold text-rh-ink dark:text-white">{patient.name}</p>
                                 <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">{patient.email || 'No email'}</p>
                               </div>
                             </div>
@@ -697,7 +697,7 @@ export default function AdminUserDetailPage() {
                             <div className="flex min-w-0 items-center gap-3">
                               <IconChip icon={appt.isOnline ? Video : Building2} />
                               <div className="min-w-0">
-                                <p className="truncate text-sm font-semibold text-rh-night dark:text-white">
+                                <p className="truncate text-sm font-semibold text-rh-ink dark:text-white">
                                   {appt.serviceType || 'Physiotherapy session'}
                                 </p>
                                 <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">

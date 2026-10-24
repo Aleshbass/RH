@@ -61,10 +61,10 @@ const nameOf = (p: { firstName?: string; lastName?: string }) => [p.firstName, p
 
 // Avatar tints cycle through the brand's soft colours so the list feels friendly
 const AVATAR_TINTS = [
-  'bg-rh-mint text-rh-teal',
+  'bg-rh-honeydew text-rh-ink',
   'bg-rh-peach text-[#b4690e]',
   'bg-rh-blush text-[#be3a5f]',
-  'bg-rh-mist text-rh-teal',
+  'bg-rh-honeydew text-rh-ink',
 ];
 const tintFor = (id: string) => AVATAR_TINTS[id.charCodeAt(id.length - 1) % AVATAR_TINTS.length];
 
@@ -130,8 +130,8 @@ export default function PatientsPage() {
               className={cn(
                 'rounded-xl px-4 py-2 text-sm transition-all active:scale-[0.97]',
                 view === t.id
-                  ? 'bg-rh-teal font-semibold text-white shadow-sm dark:bg-rh-aqua dark:text-rh-night'
-                  : 'text-neutral-600 hover:text-rh-night dark:text-neutral-400 dark:hover:text-white'
+                  ? 'bg-rh-lime font-semibold text-rh-ink shadow-sm dark:bg-rh-lime dark:text-rh-ink'
+                  : 'text-neutral-600 hover:text-rh-ink dark:text-neutral-400 dark:hover:text-white'
               )}
             >
               {t.label}
@@ -185,7 +185,7 @@ export default function PatientsPage() {
                       </Avatar>
                       <div className="min-w-0 flex-1">
                         <div className="flex min-w-0 flex-wrap items-center gap-2">
-                          <p className="truncate text-sm font-semibold text-rh-night dark:text-white">{nameOf(patient)}</p>
+                          <p className="truncate text-sm font-semibold text-rh-ink dark:text-white">{nameOf(patient)}</p>
                           <RehabifyId value={patient.patientNumber} copyable={false} />
                           {source && (
                             <StatusBadge tone="teal" className="hidden sm:inline-flex">
@@ -240,7 +240,7 @@ export default function PatientsPage() {
                     </Avatar>
                     <div className="min-w-0 flex-1">
                       <div className="flex min-w-0 flex-wrap items-center gap-2">
-                        <p className="truncate text-sm font-semibold text-rh-night dark:text-white">{nameOf(patient)}</p>
+                        <p className="truncate text-sm font-semibold text-rh-ink dark:text-white">{nameOf(patient)}</p>
                         <RehabifyId value={patient.patientNumber} copyable={false} />
                       </div>
                       <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">
@@ -249,7 +249,7 @@ export default function PatientsPage() {
                     </div>
                     {patient.outcome && <StatusBadge tone={patient.outcome === 'goals_met' ? 'green' : 'neutral'}>{OUTCOME_LABELS[patient.outcome]}</StatusBadge>}
                     {patient.followUpRating && (
-                      <span className="hidden shrink-0 items-center gap-0.5 text-xs font-semibold text-rh-night dark:text-white sm:inline-flex">
+                      <span className="hidden shrink-0 items-center gap-0.5 text-xs font-semibold text-rh-ink dark:text-white sm:inline-flex">
                         <Star className="h-3.5 w-3.5 fill-rh-amber text-rh-amber" />
                         {patient.followUpRating}
                       </span>

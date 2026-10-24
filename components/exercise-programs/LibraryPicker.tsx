@@ -61,7 +61,7 @@ export function LibraryPicker({
           onClick={() => setOnly3d((v) => !v)}
           className={cn(
             'inline-flex items-center gap-1.5 rounded-full border px-3 py-2 text-sm transition active:scale-95',
-            only3d ? 'border-rh-teal bg-rh-teal text-white dark:border-rh-aqua dark:bg-rh-aqua dark:text-rh-night' : 'border-black/[0.08] hover:bg-rh-mist dark:border-white/10'
+            only3d ? 'border-rh-lime bg-rh-lime text-rh-ink dark:border-rh-lime dark:bg-rh-lime dark:text-rh-ink' : 'border-black/[0.08] hover:bg-rh-honeydew dark:border-white/10'
           )}
         >
           <Rotate3d className="h-4 w-4" /> 3D only
@@ -75,7 +75,7 @@ export function LibraryPicker({
             onClick={() => setBody(b)}
             className={cn(
               'rounded-full px-3 py-1 text-xs font-medium transition active:scale-95',
-              body === b ? 'bg-rh-night text-white dark:bg-white dark:text-rh-night' : 'bg-rh-canvas text-neutral-600 hover:bg-rh-mist dark:bg-white/[0.05] dark:text-neutral-300'
+              body === b ? 'bg-rh-ink text-white dark:bg-white dark:text-rh-ink' : 'bg-rh-canvas text-neutral-600 hover:bg-rh-honeydew dark:bg-white/[0.05] dark:text-neutral-300'
             )}
           >
             {b}
@@ -95,11 +95,11 @@ export function LibraryPicker({
                 key={entry._id}
                 className={cn(
                   'group relative overflow-hidden rounded-2xl border bg-white transition dark:bg-rh-ink-2',
-                  isSelected ? 'border-rh-teal ring-2 ring-rh-teal/25 dark:border-rh-aqua' : 'border-black/[0.05] hover:shadow-lift dark:border-white/[0.06]'
+                  isSelected ? 'border-rh-lime ring-2 ring-rh-lime/25 dark:border-rh-lime' : 'border-black/[0.05] hover:shadow-lift dark:border-white/[0.06]'
                 )}
               >
                 <button type="button" className="block w-full text-left" onClick={() => (onToggle ? onToggle(entry) : onPreview?.(entry))}>
-                  <div className="relative aspect-square bg-gradient-to-b from-rh-mist to-white dark:from-white/[0.06] dark:to-transparent">
+                  <div className="relative aspect-square bg-rh-cream dark:bg-white/[0.04]">
                     {poster ? (
                       <Image
                         src={poster}
@@ -111,21 +111,21 @@ export function LibraryPicker({
                         className="object-contain p-2 transition group-hover:scale-[1.03]"
                       />
                     ) : (
-                      <Dumbbell className="absolute left-1/2 top-1/2 h-8 w-8 -translate-x-1/2 -translate-y-1/2 text-rh-teal/40" />
+                      <Dumbbell className="absolute left-1/2 top-1/2 h-8 w-8 -translate-x-1/2 -translate-y-1/2 text-rh-ink/40" />
                     )}
                     {entry.animation && (
-                      <span className="absolute left-2 top-2 inline-flex items-center gap-1 rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-semibold text-rh-teal shadow-sm dark:bg-rh-ink-2/90 dark:text-rh-aqua">
+                      <span className="absolute left-2 top-2 inline-flex items-center gap-1 rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-semibold text-rh-ink shadow-sm dark:bg-rh-ink-2/90 dark:text-rh-lime">
                         <Rotate3d className="h-3 w-3" /> 3D
                       </span>
                     )}
                     {isSelected && (
-                      <span className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-rh-teal text-white shadow-sm">
+                      <span className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-rh-lime text-rh-ink shadow-sm">
                         <Check className="h-3.5 w-3.5" strokeWidth={3} />
                       </span>
                     )}
                   </div>
                   <div className="space-y-1 p-3 pt-2">
-                    <p className="line-clamp-1 text-sm font-semibold text-rh-night dark:text-white">{entry.name}</p>
+                    <p className="line-clamp-1 text-sm font-semibold text-rh-ink dark:text-white">{entry.name}</p>
                     <p className="line-clamp-1 text-xs text-neutral-500">{entry.bodyParts.filter((b) => !['Legs', 'Arms'].includes(b)).join(' · ') || entry.bodyParts.join(' · ')}</p>
                     <div className="flex flex-wrap gap-1">
                       {entry.sided && <StatusBadge tone="amber">Left / right</StatusBadge>}
@@ -137,7 +137,7 @@ export function LibraryPicker({
                   <button
                     type="button"
                     onClick={() => onPreview(entry)}
-                    className="absolute bottom-[4.4rem] right-2 inline-flex items-center gap-1 rounded-full bg-white/95 px-2.5 py-1 text-[11px] font-medium text-rh-night opacity-100 shadow-sm transition hover:bg-white sm:opacity-0 sm:group-hover:opacity-100 dark:bg-rh-ink-2 dark:text-white"
+                    className="absolute bottom-[4.4rem] right-2 inline-flex items-center gap-1 rounded-full bg-white/95 px-2.5 py-1 text-[11px] font-medium text-rh-ink opacity-100 shadow-sm transition hover:bg-white sm:opacity-0 sm:group-hover:opacity-100 dark:bg-rh-ink-2 dark:text-white"
                   >
                     <Eye className="h-3 w-3" /> Preview
                   </button>

@@ -96,7 +96,7 @@ export type PublicStatus = (typeof PUBLIC_STATUSES)[number];
 export const STATUS_META: Record<string, { label: string; color: string; dot: string }> = {
   received: { label: "Received", color: "bg-sky-50 text-sky-700 border-sky-200", dot: "bg-sky-500" },
   contacted: { label: "Contacted", color: "bg-amber-50 text-amber-800 border-amber-200", dot: "bg-amber-500" },
-  booked: { label: "Booked", color: "bg-teal-50 text-teal-700 border-teal-200", dot: "bg-teal-600" },
+  booked: { label: "Booked", color: "bg-rh-honeydew text-rh-ink border-[#e2f7d8]", dot: "bg-rh-lime" },
   in_treatment: { label: "In treatment", color: "bg-emerald-50 text-emerald-800 border-emerald-200", dot: "bg-emerald-600" },
   completed: { label: "Completed", color: "bg-green-50 text-green-800 border-green-200", dot: "bg-green-600" },
   not_suitable: { label: "Not suitable", color: "bg-orange-50 text-orange-800 border-orange-200", dot: "bg-orange-500" },
@@ -252,22 +252,22 @@ export function downloadCsv(filename: string, headers: string[], rows: Array<Arr
 
 // ─── Style tokens (keep the portal's cream / deep-teal design language) ───────
 
-export const cardCls = "bg-white rounded-3xl border border-[#002e2c]/10 shadow-xs";
-export const panelCls = "rounded-2xl bg-[#FAF6E7]/50 border border-[#002e2c]/10";
+export const cardCls = "bg-white rounded-3xl border border-rh-ink/10 shadow-xs";
+export const panelCls = "rounded-2xl bg-[#FAF6E7]/50 border border-[#0b1312]/10";
 export const inputCls =
-  "w-full px-3.5 py-2.5 rounded-xl bg-[#FAF6E7]/60 border border-[#002e2c]/15 text-[#002e2c] text-xs placeholder:text-[#52706e]/60 focus:outline-none focus:ring-2 focus:ring-[#002e2c]/20 disabled:opacity-60 disabled:cursor-not-allowed";
+  "w-full px-3.5 py-2.5 rounded-xl bg-[#FAF6E7]/60 border border-rh-ink/15 text-rh-ink text-xs placeholder:text-[#52706e]/60 focus:outline-none focus:ring-2 focus:ring-rh-ink/20 disabled:opacity-60 disabled:cursor-not-allowed";
 export const selectCls =
-  "px-3 py-2 rounded-xl bg-white border border-[#002e2c]/15 text-xs font-medium text-[#002e2c] focus:outline-none focus:ring-2 focus:ring-[#002e2c]/20 disabled:opacity-60";
+  "px-3 py-2 rounded-xl bg-white border border-rh-ink/15 text-xs font-medium text-rh-ink focus:outline-none focus:ring-2 focus:ring-rh-ink/20 disabled:opacity-60";
 export const labelCls = "block text-[11px] font-semibold uppercase tracking-wider text-[#52706e] mb-1.5";
 export const btnPrimary =
-  "inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-[#002e2c] text-[#FAF6E7] text-xs font-semibold hover:bg-[#004744] transition shadow-xs active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100";
+  "inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-rh-ink text-[#FAF6E7] text-xs font-semibold hover:bg-[#004744] transition shadow-xs active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100";
 export const btnSecondary =
-  "inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-white border border-[#002e2c]/15 text-[#002e2c] text-xs font-semibold hover:bg-[#FAF6E7] transition shadow-xs disabled:opacity-50 disabled:cursor-not-allowed";
+  "inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-white border border-rh-ink/15 text-rh-ink text-xs font-semibold hover:bg-[#FAF6E7] transition shadow-xs disabled:opacity-50 disabled:cursor-not-allowed";
 export const btnDanger =
   "inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-white border border-red-200 text-red-700 text-xs font-semibold hover:bg-red-50 transition shadow-xs disabled:opacity-50 disabled:cursor-not-allowed";
 export const btnDangerSolid =
   "inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-red-700 text-white text-xs font-semibold hover:bg-red-800 transition shadow-xs disabled:opacity-50 disabled:cursor-not-allowed";
-export const btnLink ="inline-flex items-center gap-1 text-xs font-semibold text-[#005b57] hover:underline disabled:opacity-50 disabled:no-underline";
+export const btnLink ="inline-flex items-center gap-1 text-xs font-semibold text-rh-ink hover:underline disabled:opacity-50 disabled:no-underline";
 export const thCls = "py-3 px-3 font-semibold whitespace-nowrap";
 export const tdCls = "py-3 px-3 align-top";
 
@@ -303,7 +303,7 @@ export function Pill({ tone, children }: { tone: "green" | "amber" | "red" | "gr
     gray: "bg-zinc-100 text-zinc-600 border-zinc-200",
     blue: "bg-sky-50 text-sky-700 border-sky-200",
     purple: "bg-purple-50 text-purple-700 border-purple-200",
-    teal: "bg-teal-50 text-teal-700 border-teal-200",
+    teal: "bg-teal-50 text-rh-ink border-teal-200",
   };
   return (
     <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border whitespace-nowrap ${tones[tone]}`}>
@@ -313,7 +313,7 @@ export function Pill({ tone, children }: { tone: "green" | "amber" | "red" | "gr
 }
 
 export function Spinner({ className = "w-4 h-4" }: { className?: string }) {
-  return <Loader2 className={`${className} animate-spin text-[#005b57]`} />;
+  return <Loader2 className={`${className} animate-spin text-rh-lime`} />;
 }
 
 export function LoadingBlock({ label = "Loading…" }: { label?: string }) {
@@ -329,7 +329,7 @@ export function EmptyState({ icon, title, body, action }: { icon?: ReactNode; ti
   return (
     <div className="p-10 text-center space-y-2">
       {icon && <div className="flex justify-center text-[#52706e] opacity-50">{icon}</div>}
-      <p className="text-sm font-semibold text-[#002e2c]">{title}</p>
+      <p className="text-sm font-semibold text-[#0b1312]">{title}</p>
       {body && <div className="text-xs text-[#52706e] max-w-md mx-auto leading-relaxed">{body}</div>}
       {action && <div className="pt-2 flex justify-center">{action}</div>}
     </div>
@@ -348,7 +348,7 @@ export function CopyButton({ text, label, className = "" }: { text: string; labe
       }}
       title={`Copy ${label.toLowerCase()}`}
       aria-label={`Copy ${label.toLowerCase()}`}
-      className={`p-1.5 rounded-lg text-[#52706e] hover:text-[#002e2c] hover:bg-[#FAF6E7] transition shrink-0 ${className}`}
+      className={`p-1.5 rounded-lg text-[#52706e] hover:text-rh-ink hover:bg-[#FAF6E7] transition shrink-0 ${className}`}
     >
       {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
     </button>
@@ -357,7 +357,7 @@ export function CopyButton({ text, label, className = "" }: { text: string; labe
 
 export function CodeBlock({ code, label, maxHeight = "max-h-72" }: { code: string; label?: string; maxHeight?: string }) {
   return (
-    <div className="rounded-2xl bg-[#002e2c] text-[#FAF6E7] overflow-hidden border border-[#002e2c]/20 max-w-full">
+    <div className="rounded-2xl bg-rh-ink text-[#FAF6E7] overflow-hidden border border-rh-ink/20 max-w-full">
       {label !== undefined && (
         <div className="flex items-center justify-between gap-2 px-4 py-2 border-b border-white/10 bg-black/20">
           <span className="text-[11px] font-mono text-zinc-300 truncate">{label}</span>
@@ -379,12 +379,12 @@ export function CodeBlock({ code, label, maxHeight = "max-h-72" }: { code: strin
 }
 
 export function KpiCard({ label, value, hint, icon, tone = "default" }: { label: string; value: ReactNode; hint?: ReactNode; icon?: ReactNode; tone?: "default" | "green" | "amber" | "red" }) {
-  const valueTone = tone === "green" ? "text-emerald-800" : tone === "amber" ? "text-amber-700" : tone === "red" ? "text-red-700" : "text-[#002e2c]";
+  const valueTone = tone === "green" ? "text-emerald-800" : tone === "amber" ? "text-amber-700" : tone === "red" ? "text-red-700" : "text-[#0b1312]";
   return (
-    <div className="p-5 rounded-2xl bg-white border border-[#002e2c]/10 shadow-[0_4px_20px_rgba(0,46,44,0.03)] space-y-1.5 min-w-0">
+    <div className="p-5 rounded-2xl bg-white border border-rh-ink/10 shadow-sm space-y-1.5 min-w-0">
       <div className="flex items-center justify-between gap-2">
         <span className="text-[11px] font-semibold uppercase tracking-wider text-[#52706e] truncate">{label}</span>
-        {icon && <div className="p-1.5 rounded-xl bg-[#FAF6E7] text-[#005b57] shrink-0">{icon}</div>}
+        {icon && <div className="p-1.5 rounded-xl bg-[#FAF6E7] text-rh-ink shrink-0">{icon}</div>}
       </div>
       <div className={`text-2xl font-bold tracking-tight ${valueTone} truncate`}>{value}</div>
       {hint && <div className="text-[11px] text-[#52706e] leading-snug">{hint}</div>}
@@ -435,20 +435,20 @@ export function Modal({
         if (dismissable && e.target === e.currentTarget) onClose();
       }}
     >
-      <div className={`bg-white w-full ${MODAL_WIDTH[size]} rounded-t-3xl sm:rounded-3xl border border-[#002e2c]/15 shadow-2xl max-h-[92vh] flex flex-col`}>
-        <div className="flex items-start justify-between gap-3 px-5 sm:px-6 pt-5 pb-4 border-b border-[#002e2c]/10 shrink-0">
+      <div className={`bg-white w-full ${MODAL_WIDTH[size]} rounded-t-3xl sm:rounded-3xl border border-rh-ink/15 shadow-2xl max-h-[92vh] flex flex-col`}>
+        <div className="flex items-start justify-between gap-3 px-5 sm:px-6 pt-5 pb-4 border-b border-rh-ink/10 shrink-0">
           <div className="min-w-0">
-            <h3 className="text-base font-semibold text-[#002e2c]">{title}</h3>
+            <h3 className="text-base font-semibold text-[#0b1312]">{title}</h3>
             {description && <div className="text-xs text-[#52706e] mt-0.5 leading-relaxed">{description}</div>}
           </div>
           {dismissable && (
-            <button type="button" onClick={onClose} aria-label="Close" className="p-1.5 rounded-xl text-[#52706e] hover:text-[#002e2c] hover:bg-[#FAF6E7] transition shrink-0">
+            <button type="button" onClick={onClose} aria-label="Close" className="p-1.5 rounded-xl text-[#52706e] hover:text-rh-ink hover:bg-[#FAF6E7] transition shrink-0">
               <X className="w-4 h-4" />
             </button>
           )}
         </div>
         <div className="px-5 sm:px-6 py-5 overflow-y-auto">{children}</div>
-        {footer && <div className="px-5 sm:px-6 py-4 border-t border-[#002e2c]/10 flex flex-wrap items-center justify-end gap-2 shrink-0">{footer}</div>}
+        {footer && <div className="px-5 sm:px-6 py-4 border-t border-rh-ink/10 flex flex-wrap items-center justify-end gap-2 shrink-0">{footer}</div>}
       </div>
     </div>
   );
@@ -482,18 +482,18 @@ export function Drawer({
   return (
     <div className="fixed inset-0 z-50 overflow-hidden" role="dialog" aria-modal="true">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-xs" onClick={onClose} />
-      <div className="fixed inset-y-0 right-0 w-full sm:max-w-2xl bg-white shadow-2xl flex flex-col z-10 border-l border-[#002e2c]/15">
-        <div className="p-4 sm:p-6 border-b border-[#002e2c]/10 flex items-start justify-between gap-3 bg-[#FAF6E7]/50">
+      <div className="fixed inset-y-0 right-0 w-full sm:max-w-2xl bg-white shadow-2xl flex flex-col z-10 border-l border-[#0b1312]/15">
+        <div className="p-4 sm:p-6 border-b border-rh-ink/10 flex items-start justify-between gap-3 bg-[#FAF6E7]/50">
           <div className="min-w-0 flex-1">
-            <div className="text-base font-semibold text-[#002e2c]">{title}</div>
+            <div className="text-base font-semibold text-[#0b1312]">{title}</div>
             {subtitle && <div className="text-xs text-[#52706e] mt-1">{subtitle}</div>}
           </div>
-          <button type="button" onClick={onClose} aria-label="Close" className="p-2 rounded-xl text-[#52706e] hover:text-[#002e2c] hover:bg-white transition shrink-0">
+          <button type="button" onClick={onClose} aria-label="Close" className="p-2 rounded-xl text-[#52706e] hover:text-rh-ink hover:bg-white transition shrink-0">
             <X className="w-5 h-5" />
           </button>
         </div>
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 text-xs">{children}</div>
-        {footer && <div className="p-4 border-t border-[#002e2c]/10 bg-[#FAF6E7]/30 flex flex-wrap items-center justify-between gap-3">{footer}</div>}
+        {footer && <div className="p-4 border-t border-rh-ink/10 bg-[#FAF6E7]/30 flex flex-wrap items-center justify-between gap-3">{footer}</div>}
       </div>
     </div>
   );
@@ -596,12 +596,12 @@ export function SecretModal({
             readOnly
             value={secret ?? ""}
             onFocus={(e) => e.currentTarget.select()}
-            className="w-full min-w-0 flex-1 px-3.5 py-3 rounded-xl bg-[#FAF6E7] border border-[#002e2c]/15 font-mono text-xs text-[#002e2c]"
+            className="w-full min-w-0 flex-1 px-3.5 py-3 rounded-xl bg-[#FAF6E7] border border-rh-ink/15 font-mono text-xs text-[#0b1312]"
           />
           <button
             type="button"
             onClick={() => secret && copyText(secret, "Secret")}
-            className="p-3 rounded-xl bg-[#002e2c] text-[#FAF6E7] hover:bg-[#004744] transition shrink-0"
+            className="p-3 rounded-xl bg-rh-ink text-[#FAF6E7] hover:bg-[#004744] transition shrink-0"
             title="Copy"
             aria-label="Copy secret"
           >

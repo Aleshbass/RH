@@ -283,11 +283,11 @@ export default function AdminClinicFeesPage() {
                   const split = clinicPaymentSplit(amount * 100, draft)
                   return (
                     <TableRow key={amount}>
-                      <TableCell className="py-2 pl-5 text-rh-night dark:text-white">{naira(split.totalKobo)}</TableCell>
+                      <TableCell className="py-2 pl-5 text-rh-ink dark:text-white">{naira(split.totalKobo)}</TableCell>
                       <TableCell className="px-2 py-2 text-right text-neutral-600 dark:text-neutral-300">{naira(split.paystackFeeKobo)}</TableCell>
                       <TableCell className="px-2 py-2 text-right text-neutral-600 dark:text-neutral-300">{naira(split.rehabifyKobo)}</TableCell>
                       <TableCell className="px-2 py-2 text-right text-neutral-600 dark:text-neutral-300">{naira(split.stampDutyKobo)}</TableCell>
-                      <TableCell className="py-2 pr-5 text-right font-medium text-rh-night dark:text-white">{naira(split.clinicKobo)}</TableCell>
+                      <TableCell className="py-2 pr-5 text-right font-medium text-rh-ink dark:text-white">{naira(split.clinicKobo)}</TableCell>
                     </TableRow>
                   )
                 })}

@@ -75,7 +75,7 @@ function SimulationCard({
   return (
     <div className="space-y-2.5 rounded-xl bg-white p-4 shadow-soft dark:bg-rh-ink-3 dark:shadow-none">
       <div className="flex items-center justify-between gap-2">
-        <span className="text-xs font-semibold text-rh-night dark:text-white">{title}</span>
+        <span className="text-xs font-semibold text-rh-ink dark:text-white">{title}</span>
         <StatusBadge tone="teal">{naira(amount)}</StatusBadge>
       </div>
       <div className="space-y-1.5 text-xs">
@@ -86,14 +86,14 @@ function SimulationCard({
               'flex justify-between gap-3',
               row.tone === 'muted' && 'text-[11px] text-neutral-500 dark:text-neutral-400',
               row.tone === 'danger' && 'text-[11px] text-rose-600 dark:text-rose-300',
-              !row.tone && 'text-rh-night dark:text-neutral-200'
+              !row.tone && 'text-rh-ink dark:text-neutral-200'
             )}
           >
             <span>{row.label}</span>
             <span className="tabular-nums">{row.value}</span>
           </div>
         ))}
-        <div className="flex justify-between rounded-lg bg-rh-mist px-2 py-1.5 font-semibold text-rh-teal dark:bg-rh-aqua/10 dark:text-rh-aqua">
+        <div className="flex justify-between rounded-lg bg-rh-honeydew px-2 py-1.5 font-semibold text-rh-ink dark:bg-white/[0.06] dark:text-rh-lime">
           <span>{net.label}</span>
           <span className="tabular-nums">{net.value}</span>
         </div>
@@ -206,7 +206,7 @@ export function RevenueSettingsTab() {
             bodyClassName="space-y-4 px-5 pb-5 pt-3"
           >
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <SplitInput id="split-physio" label="Physiotherapist" hint="Standard: 80%" value={physioPercent} onChange={setPhysioPercent} swatch="bg-rh-teal dark:bg-rh-aqua" />
+              <SplitInput id="split-physio" label="Physiotherapist" hint="Standard: 80%" value={physioPercent} onChange={setPhysioPercent} swatch="bg-rh-lime dark:bg-rh-lime" />
               <SplitInput id="split-rehabify" label="Rehabify" hint="Standard: 10% platform fee" value={rehabifyPercent} onChange={setRehabifyPercent} swatch="bg-rh-amber" />
               <SplitInput id="split-partner" label="Referring partner" hint="Standard: 10% commission" value={partnerPercent} onChange={setPartnerPercent} swatch="bg-[#7c9cf5]" />
             </div>
@@ -218,7 +218,7 @@ export function RevenueSettingsTab() {
                 </span>
               </div>
               <div className="flex h-2.5 w-full gap-0.5 overflow-hidden rounded-full bg-neutral-100 dark:bg-white/[0.06]">
-                <div style={{ width: `${Math.min(100, Math.max(0, physioPercent))}%` }} className="bg-rh-teal transition-all dark:bg-rh-aqua" title={`Physiotherapist: ${physioPercent}%`} />
+                <div style={{ width: `${Math.min(100, Math.max(0, physioPercent))}%` }} className="bg-rh-lime transition-all dark:bg-rh-lime" title={`Physiotherapist: ${physioPercent}%`} />
                 <div style={{ width: `${Math.min(100, Math.max(0, rehabifyPercent))}%` }} className="bg-rh-amber transition-all" title={`Rehabify: ${rehabifyPercent}%`} />
                 <div style={{ width: `${Math.min(100, Math.max(0, partnerPercent))}%` }} className="bg-[#7c9cf5] transition-all" title={`Referring partner: ${partnerPercent}%`} />
               </div>
@@ -234,8 +234,8 @@ export function RevenueSettingsTab() {
               as its own deduction on every partner invoice.
             </Callout>
             <div className="flex items-center justify-between gap-3 rounded-xl bg-rh-canvas px-3 py-2.5 text-xs dark:bg-white/[0.04]">
-              <span className="flex items-center gap-2 text-rh-night dark:text-neutral-200">
-                <Clock className="h-4 w-4 text-rh-teal dark:text-rh-aqua" />
+              <span className="flex items-center gap-2 text-rh-ink dark:text-neutral-200">
+                <Clock className="h-4 w-4 text-rh-ink dark:text-rh-lime" />
                 Payout schedule: end-of-month consolidated payouts
               </span>
               <StatusBadge tone="teal">Active</StatusBadge>
@@ -255,8 +255,8 @@ export function RevenueSettingsTab() {
         <div className="space-y-6 lg:col-span-5">
           <div className={cn(cardClass, 'space-y-3 bg-rh-cream/60 p-5 dark:bg-rh-ink-2')}>
             <div className="flex items-center justify-between">
-              <h3 className="flex items-center gap-2 text-[15px] font-semibold text-rh-night dark:text-white">
-                <Eye className="h-4 w-4 text-rh-teal dark:text-rh-aqua" /> Live preview
+              <h3 className="flex items-center gap-2 text-[15px] font-semibold text-rh-ink dark:text-white">
+                <Eye className="h-4 w-4 text-rh-ink dark:text-rh-lime" /> Live preview
               </h3>
               <span className="text-[11px] text-neutral-500 dark:text-neutral-400">Updates as you type</span>
             </div>
@@ -289,23 +289,23 @@ export function RevenueSettingsTab() {
           <Panel title="Partner transparency" bodyClassName="px-5 pb-5 pt-2">
             <ul className="space-y-2 text-xs leading-relaxed text-neutral-600 dark:text-neutral-300">
               <li className="flex gap-2">
-                <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-rh-teal dark:text-rh-aqua" />
+                <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-rh-ink dark:text-rh-lime" />
                 <span>
-                  <strong className="text-rh-night dark:text-white">Partner portal:</strong> partners see what the physiotherapist charged and each
+                  <strong className="text-rh-ink dark:text-white">Partner portal:</strong> partners see what the physiotherapist charged and each
                   party&apos;s share, line by line.
                 </span>
               </li>
               <li className="flex gap-2">
-                <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-rh-teal dark:text-rh-aqua" />
+                <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-rh-ink dark:text-rh-lime" />
                 <span>
-                  <strong className="text-rh-night dark:text-white">Paystack and bank transfer:</strong> both are recorded and split the same way, so
+                  <strong className="text-rh-ink dark:text-white">Paystack and bank transfer:</strong> both are recorded and split the same way, so
                   nothing is lost.
                 </span>
               </li>
               <li className="flex gap-2">
-                <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-rh-teal dark:text-rh-aqua" />
+                <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-rh-ink dark:text-rh-lime" />
                 <span>
-                  <strong className="text-rh-night dark:text-white">Month-end audit:</strong> every figure reconciles with the monthly payout summary.
+                  <strong className="text-rh-ink dark:text-white">Month-end audit:</strong> every figure reconciles with the monthly payout summary.
                 </span>
               </li>
             </ul>

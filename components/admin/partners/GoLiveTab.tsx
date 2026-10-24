@@ -33,7 +33,7 @@ export function GoLiveTab({
       </Callout>
 
       <section className="space-y-3">
-        <h3 className="text-sm font-semibold text-rh-night dark:text-white">
+        <h3 className="text-sm font-semibold text-rh-ink dark:text-white">
           Waiting for review <span className="tabular-nums text-neutral-400">({requests.length})</span>
         </h3>
         {applications === undefined ? (
@@ -49,7 +49,7 @@ export function GoLiveTab({
               <div key={partner._id} className={cn(cardClass, 'flex flex-col gap-4 p-5 ring-1 ring-amber-300/70 dark:ring-amber-500/30 md:flex-row md:items-start')}>
                 <div className="min-w-0 flex-1 space-y-2 text-xs">
                   <div className="flex flex-wrap items-center gap-2">
-                    <h4 className="text-base font-semibold text-rh-night dark:text-white">{partner.name}</h4>
+                    <h4 className="text-base font-semibold text-rh-ink dark:text-white">{partner.name}</h4>
                     <PartnerTypeBadge type={partner.type} />
                     <span className="font-mono text-neutral-400">{partner.code}</span>
                   </div>
@@ -58,7 +58,7 @@ export function GoLiveTab({
                     {partner.contactEmail ? ` · ${partner.contactEmail}` : ''}
                   </p>
                   {partner.productionRequestNote ? (
-                    <p className={cn(insetClass, 'whitespace-pre-wrap break-words text-rh-night dark:text-neutral-200')}>{partner.productionRequestNote}</p>
+                    <p className={cn(insetClass, 'whitespace-pre-wrap break-words text-rh-ink dark:text-neutral-200')}>{partner.productionRequestNote}</p>
                   ) : (
                     <p className="italic text-neutral-400">No note provided.</p>
                   )}
@@ -109,7 +109,7 @@ export function GoLiveTab({
                   return (
                     <TableRow key={partner._id}>
                       <TableCell>
-                        <div className="font-medium text-rh-night dark:text-white">{partner.name}</div>
+                        <div className="font-medium text-rh-ink dark:text-white">{partner.name}</div>
                         <div className="font-mono text-[10px] text-neutral-400">{partner.code}</div>
                       </TableCell>
                       <TableCell>

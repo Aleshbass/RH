@@ -65,7 +65,7 @@ export function DashboardSidebar({ items = [], defaultCollapsed = false }: Sideb
                 variant={pathname === item.href ? 'secondary' : 'ghost'}
                 className={cn(
                   'w-full justify-start text-white hover:bg-white/10',
-                  pathname === item.href && 'bg-[#D4FAE8] text-[#005b57] hover:bg-[#D4FAE8] hover:text-[#005b57]'
+                  pathname === item.href && 'bg-rh-honeydew text-rh-ink hover:bg-rh-honeydew hover:text-rh-ink'
                 )}
               >
                 <item.icon className={cn('h-5 w-5', collapsed ? 'mx-auto' : 'mr-2')} />
@@ -73,7 +73,7 @@ export function DashboardSidebar({ items = [], defaultCollapsed = false }: Sideb
                   <span>{item.title}</span>
                 )}
                 {item.badge && !collapsed && (
-                  <Badge className="ml-auto bg-[#00cd0f] text-white border-0">
+                  <Badge className="ml-auto bg-rh-lime text-rh-ink border-0">
                     {item.badge}
                   </Badge>
                 )}
@@ -95,13 +95,13 @@ export function DashboardSidebar({ items = [], defaultCollapsed = false }: Sideb
       {/* Mobile drawer */}
       <div
         className={cn(
-          'fixed inset-y-0 left-0 z-50 w-[240px] border-r bg-[#005b57] shadow-lg transition-transform duration-300 md:hidden',
+          'fixed inset-y-0 left-0 z-50 w-[240px] border-r bg-rh-ink transition-transform duration-300 md:hidden',
           mobileOpen ? 'translate-x-0' : '-translate-x-full'
         )}
       >
         <div className="flex h-[60px] items-center justify-between px-4">
           <Link href="/dashboard" className="flex items-center space-x-2">
-            <Stethoscope className="h-6 w-6 text-[#00cd0f]" /> {/* 10% - Highlighter accent */}
+            <Stethoscope className="h-6 w-6 text-rh-lime" />
             <span className="font-bold text-white">Rehabify</span>
           </Link>
           <Button
@@ -117,10 +117,10 @@ export function DashboardSidebar({ items = [], defaultCollapsed = false }: Sideb
       </div>
 
       {/* Desktop sidebar */}
-      <div className={cn('relative hidden md:flex md:flex-col border-r bg-[#005b57] duration-300 ease-in-out', isCollapsed ? 'w-[80px]' : 'w-[240px]')}> {/* 30% - Core Green sidebar */}
+      <div className={cn('relative hidden md:flex md:flex-col border-r bg-rh-ink duration-300 ease-in-out', isCollapsed ? 'w-[80px]' : 'w-[240px]')}>
         <div className="flex h-[60px] items-center justify-between px-4">
           <Link href="/dashboard" className={cn('flex items-center space-x-2', isCollapsed && 'hidden')}>
-            <Stethoscope className="h-6 w-6 text-[#00cd0f]" /> {/* 10% - Highlighter accent */}
+            <Stethoscope className="h-6 w-6 text-rh-lime" />
             <span className="font-bold text-white">Rehabify</span>
           </Link>
           <Button

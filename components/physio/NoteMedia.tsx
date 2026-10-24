@@ -204,7 +204,7 @@ export type NoteMedia = ReturnType<typeof useNoteMedia>
 export function NoteMediaControls({ media, className }: { media: NoteMedia; className?: string }) {
   const inputRef = useRef<HTMLInputElement>(null)
   const chip =
-    'inline-flex items-center gap-2 rounded-full border border-black/[0.08] bg-white px-3.5 py-2 text-sm font-medium text-rh-night transition-all hover:border-rh-teal/40 hover:bg-rh-mist active:scale-95 disabled:pointer-events-none disabled:opacity-50 dark:border-white/10 dark:bg-white/[0.04] dark:text-white dark:hover:bg-white/[0.08]'
+    'inline-flex items-center gap-2 rounded-full border border-black/[0.08] bg-white px-3.5 py-2 text-sm font-medium text-rh-ink transition-all hover:border-rh-lime/40 hover:bg-rh-honeydew active:scale-95 disabled:pointer-events-none disabled:opacity-50 dark:border-white/10 dark:bg-white/[0.04] dark:text-white dark:hover:bg-white/[0.08]'
 
   return (
     <div className={cn('space-y-3', className)}>
@@ -212,7 +212,6 @@ export function NoteMediaControls({ media, className }: { media: NoteMedia; clas
         {media.recording ? (
           <button type="button" onClick={media.stopRecording} className={cn(chip, 'border-rose-300 bg-rh-blush text-rose-700 dark:bg-rose-500/10 dark:text-rose-300')}>
             <span className="relative flex h-2.5 w-2.5">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-rose-500 opacity-60" />
               <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-rose-500" />
             </span>
             Stop · {formatSeconds(media.elapsed)}
@@ -226,7 +225,7 @@ export function NoteMediaControls({ media, className }: { media: NoteMedia; clas
             title={!media.canRecord ? 'Recording isn’t supported in this browser' : media.voice ? 'Remove the current voice note to record a new one' : undefined}
             className={chip}
           >
-            <Mic className="h-4 w-4 text-rh-teal dark:text-rh-aqua" />
+            <Mic className="h-4 w-4 text-rh-ink dark:text-rh-lime" />
             Voice note
           </button>
         )}
@@ -236,7 +235,7 @@ export function NoteMediaControls({ media, className }: { media: NoteMedia; clas
           disabled={media.busy || media.attachments.length >= MAX_ATTACHMENTS}
           className={chip}
         >
-          <Paperclip className="h-4 w-4 text-rh-teal dark:text-rh-aqua" />
+          <Paperclip className="h-4 w-4 text-rh-ink dark:text-rh-lime" />
           Attach files
         </button>
         {media.uploading && (
@@ -258,8 +257,8 @@ export function NoteMediaControls({ media, className }: { media: NoteMedia; clas
       </div>
 
       {media.voice && (
-        <div className="flex items-center gap-2 rounded-2xl bg-rh-mist p-2 pl-3 dark:bg-white/[0.05]">
-          <Mic className="h-4 w-4 shrink-0 text-rh-teal dark:text-rh-aqua" />
+        <div className="flex items-center gap-2 rounded-2xl bg-rh-honeydew p-2 pl-3 dark:bg-white/[0.05]">
+          <Mic className="h-4 w-4 shrink-0 text-rh-ink dark:text-rh-lime" />
           <audio controls src={media.voice.previewUrl} className="h-9 min-w-0 flex-1" />
           <button
             type="button"
@@ -277,9 +276,9 @@ export function NoteMediaControls({ media, className }: { media: NoteMedia; clas
           {media.attachments.map((file) => (
             <li
               key={file.storageId}
-              className="inline-flex max-w-full items-center gap-2 rounded-full bg-rh-canvas py-1.5 pl-3 pr-1.5 text-xs text-rh-night dark:bg-white/[0.05] dark:text-white"
+              className="inline-flex max-w-full items-center gap-2 rounded-full bg-rh-canvas py-1.5 pl-3 pr-1.5 text-xs text-rh-ink dark:bg-white/[0.05] dark:text-white"
             >
-              <FileText className="h-3.5 w-3.5 shrink-0 text-rh-teal dark:text-rh-aqua" />
+              <FileText className="h-3.5 w-3.5 shrink-0 text-rh-ink dark:text-rh-lime" />
               <span className="truncate">{file.name}</span>
               <span className="shrink-0 text-neutral-400">{formatBytes(file.size)}</span>
               <button
@@ -310,8 +309,8 @@ export function NoteMediaView({
   return (
     <div className="space-y-2 border-t border-black/[0.05] pt-3 dark:border-white/[0.06]">
       {voiceNote && (
-        <div className="flex items-center gap-2 rounded-2xl bg-rh-mist p-2 pl-3 dark:bg-white/[0.05]">
-          <Mic className="h-4 w-4 shrink-0 text-rh-teal dark:text-rh-aqua" />
+        <div className="flex items-center gap-2 rounded-2xl bg-rh-honeydew p-2 pl-3 dark:bg-white/[0.05]">
+          <Mic className="h-4 w-4 shrink-0 text-rh-ink dark:text-rh-lime" />
           <audio controls preload="none" src={voiceNote} className="h-9 min-w-0 flex-1" />
         </div>
       )}
@@ -327,9 +326,9 @@ export function NoteMediaView({
                   href={file.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 rounded-full bg-rh-canvas px-3 py-1.5 text-xs font-medium text-rh-night transition-colors hover:bg-rh-mist dark:bg-white/[0.05] dark:text-white dark:hover:bg-white/10"
+                  className="inline-flex items-center gap-2 rounded-full bg-rh-canvas px-3 py-1.5 text-xs font-medium text-rh-ink transition-colors hover:bg-rh-honeydew dark:bg-white/[0.05] dark:text-white dark:hover:bg-white/10"
                 >
-                  <Icon className="h-3.5 w-3.5 text-rh-teal dark:text-rh-aqua" />
+                  <Icon className="h-3.5 w-3.5 text-rh-ink dark:text-rh-lime" />
                   {kind} {index + 1}
                   <span className="text-neutral-400">{formatBytes(file.size)}</span>
                 </a>

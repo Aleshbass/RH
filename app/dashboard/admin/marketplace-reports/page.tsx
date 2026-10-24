@@ -93,7 +93,7 @@ const STATUS_META: Record<ReportStatus, { label: string; tone: 'neutral' | 'teal
 
 const SEVERITY_META: Record<Severity, { label: string; tone: 'neutral' | 'teal' | 'green' | 'amber' | 'red'; dot: string }> = {
   low: { label: 'Low', tone: 'neutral', dot: 'bg-neutral-400' },
-  medium: { label: 'Medium', tone: 'teal', dot: 'bg-rh-teal dark:bg-rh-aqua' },
+  medium: { label: 'Medium', tone: 'teal', dot: 'bg-rh-lime dark:bg-rh-lime' },
   high: { label: 'High', tone: 'amber', dot: 'bg-amber-500' },
   critical: { label: 'Critical', tone: 'red', dot: 'bg-rose-500' },
 }
@@ -221,7 +221,7 @@ export default function AdminMarketplaceReportsPage() {
                   <span className={cn('mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full', SEVERITY_META[r.severity].dot)} aria-hidden />
                   <span className="min-w-0 flex-1">
                     <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                      <span className="text-sm font-semibold text-rh-night dark:text-white">{reasonLabel(r.reason)}</span>
+                      <span className="text-sm font-semibold text-rh-ink dark:text-white">{reasonLabel(r.reason)}</span>
                       <StatusBadge tone={SEVERITY_META[r.severity].tone}>{SEVERITY_META[r.severity].label}</StatusBadge>
                       <StatusBadge tone={STATUS_META[r.status].tone}>{STATUS_META[r.status].label}</StatusBadge>
                     </span>
@@ -279,8 +279,8 @@ function SeverityChips({ value, onChange }: { value: SeverityFilter; onChange: (
             className={cn(
               'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors',
               active
-                ? 'border-rh-teal bg-rh-mist text-rh-teal dark:border-rh-aqua dark:bg-rh-aqua/10 dark:text-rh-aqua'
-                : 'border-black/10 text-neutral-600 hover:text-rh-night dark:border-white/10 dark:text-neutral-300 dark:hover:text-white'
+                ? 'border-rh-lime bg-rh-honeydew text-rh-ink dark:border-rh-lime dark:bg-white/[0.06] dark:text-rh-lime'
+                : 'border-black/10 text-neutral-600 hover:text-rh-ink dark:border-white/10 dark:text-neutral-300 dark:hover:text-white'
             )}
           >
             {o !== 'all' && <span className={cn('h-2 w-2 rounded-full', SEVERITY_META[o].dot)} aria-hidden />}
@@ -358,7 +358,7 @@ function ReportSheet({
                 <StatusBadge tone={SEVERITY_META[report.severity].tone}>{SEVERITY_META[report.severity].label} severity</StatusBadge>
                 <StatusBadge tone={STATUS_META[report.status].tone}>{STATUS_META[report.status].label}</StatusBadge>
               </div>
-              <SheetTitle className="text-lg text-rh-night dark:text-white">{reasonLabel(report.reason)}</SheetTitle>
+              <SheetTitle className="text-lg text-rh-ink dark:text-white">{reasonLabel(report.reason)}</SheetTitle>
               <SheetDescription className="text-xs">
                 Filed {format(report.createdAt, 'd MMM yyyy, HH:mm')}
                 {report.reviewedAt && report.reviewer ? ` · last updated by ${report.reviewer.name} ${formatDistanceToNowStrict(report.reviewedAt, { addSuffix: true })}` : ''}
@@ -368,29 +368,29 @@ function ReportSheet({
             <div className="flex-1 space-y-4 px-5 py-4">
               <section className="rounded-2xl bg-white p-4 shadow-soft dark:bg-rh-ink-2 dark:shadow-none">
                 <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">What the patient said</p>
-                <p className="mt-2 whitespace-pre-wrap text-sm text-rh-night dark:text-neutral-100">{report.description}</p>
+                <p className="mt-2 whitespace-pre-wrap text-sm text-rh-ink dark:text-neutral-100">{report.description}</p>
               </section>
 
               <section className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div className="rounded-2xl bg-white p-4 shadow-soft dark:bg-rh-ink-2 dark:shadow-none">
                   <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">Physiotherapist</p>
-                  <p className="mt-1 text-sm font-medium text-rh-night dark:text-white">{report.physiotherapist?.name ?? 'Unknown'}</p>
+                  <p className="mt-1 text-sm font-medium text-rh-ink dark:text-white">{report.physiotherapist?.name ?? 'Unknown'}</p>
                   {report.physiotherapist?.email && <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">{report.physiotherapist.email}</p>}
                   <Link
                     href={`/dashboard/admin/users/${report.physiotherapistId}`}
-                    className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-rh-teal hover:underline dark:text-rh-aqua"
+                    className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-rh-ink hover:underline dark:text-rh-lime"
                   >
                     Open profile <ArrowUpRight className="h-3 w-3" />
                   </Link>
                 </div>
                 <div className="rounded-2xl bg-white p-4 shadow-soft dark:bg-rh-ink-2 dark:shadow-none">
                   <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">Reported by</p>
-                  <p className="mt-1 text-sm font-medium text-rh-night dark:text-white">{report.reporter?.name ?? 'Unknown'}</p>
+                  <p className="mt-1 text-sm font-medium text-rh-ink dark:text-white">{report.reporter?.name ?? 'Unknown'}</p>
                   {report.reporter?.email && <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">{report.reporter.email}</p>}
                   {report.reporter && (
                     <Link
                       href={`/dashboard/admin/users/${report.reporter.id}`}
-                      className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-rh-teal hover:underline dark:text-rh-aqua"
+                      className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-rh-ink hover:underline dark:text-rh-lime"
                     >
                       Open profile <ArrowUpRight className="h-3 w-3" />
                     </Link>
@@ -402,14 +402,14 @@ function ReportSheet({
                 <section className="rounded-2xl bg-white p-4 text-sm shadow-soft dark:bg-rh-ink-2 dark:shadow-none">
                   <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">Linked session</p>
                   {report.booking && (
-                    <p className="mt-1 text-rh-night dark:text-white">
+                    <p className="mt-1 text-rh-ink dark:text-white">
                       Booking {report.booking.bookingCode ?? ''}
                       {report.booking.sessionDate ? ` · ${format(report.booking.sessionDate, 'd MMM yyyy, HH:mm')}` : ''}
                       {report.booking.sessionType ? ` · ${report.booking.sessionType.replace(/_/g, ' ')}` : ''}
                     </p>
                   )}
                   {report.appointment && (
-                    <p className="mt-1 text-rh-night dark:text-white">
+                    <p className="mt-1 text-rh-ink dark:text-white">
                       Appointment
                       {report.appointment.startTime ? ` · ${format(report.appointment.startTime, 'd MMM yyyy, HH:mm')}` : ''}
                       {report.appointment.status ? ` · ${report.appointment.status.replace(/_/g, ' ')}` : ''}
@@ -493,7 +493,7 @@ function ReportSheet({
                   <Skeleton className="mt-3 h-10 rounded-xl" />
                 ) : (
                   <>
-                    <p className="mt-1 text-sm text-rh-night dark:text-white">
+                    <p className="mt-1 text-sm text-rh-ink dark:text-white">
                       {history.totalReports} {history.totalReports === 1 ? 'report' : 'reports'} in total · {history.statusCounts.pending + history.statusCounts.under_review} open ·{' '}
                       {history.statusCounts.resolved} resolved · {history.statusCounts.dismissed} dismissed
                     </p>
@@ -504,7 +504,7 @@ function ReportSheet({
                         {others.slice(0, 12).map((r) => (
                           <li key={r._id} className="flex items-center gap-2 text-xs">
                             <span className={cn('h-2 w-2 shrink-0 rounded-full', SEVERITY_META[r.severity].dot)} aria-hidden />
-                            <span className="min-w-0 flex-1 truncate text-rh-night dark:text-neutral-100">{reasonLabel(r.reason)}</span>
+                            <span className="min-w-0 flex-1 truncate text-rh-ink dark:text-neutral-100">{reasonLabel(r.reason)}</span>
                             <StatusBadge tone={STATUS_META[r.status].tone}>{STATUS_META[r.status].label}</StatusBadge>
                             <span className="shrink-0 text-neutral-500 dark:text-neutral-400">{format(r.createdAt, 'd MMM yyyy')}</span>
                           </li>

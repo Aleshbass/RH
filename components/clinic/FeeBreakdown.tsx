@@ -87,7 +87,7 @@ export function HowPayoutsWork({
         className
       )}
     >
-      <summary className="flex cursor-pointer list-none items-center gap-2 rounded-xl px-4 py-3 text-sm font-medium text-neutral-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#005b57] dark:text-white dark:focus-visible:ring-[#2dd4bf] sm:px-5 [&::-webkit-details-marker]:hidden">
+      <summary className="flex cursor-pointer list-none items-center gap-2 rounded-xl px-4 py-3 text-sm font-medium text-neutral-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-rh-lime dark:text-white dark:focus-visible:ring-rh-lime sm:px-5 [&::-webkit-details-marker]:hidden">
         <ChevronRight className="h-4 w-4 shrink-0 text-neutral-400 transition-transform group-open:rotate-90" />
         How payouts work
       </summary>

@@ -136,7 +136,7 @@ function AccountMenu({ collapsed, onNavigate }: { collapsed: boolean; onNavigate
         >
           <Avatar className="h-8 w-8 shrink-0 ring-2 ring-white/20">
             <AvatarImage src={user.imageUrl} alt="" />
-            <AvatarFallback className="bg-rh-mint text-xs font-semibold text-rh-teal">
+            <AvatarFallback className="bg-rh-honeydew text-xs font-semibold text-rh-ink">
               {name[0]?.toUpperCase()}
             </AvatarFallback>
           </Avatar>
@@ -221,7 +221,7 @@ export function PhysioSidebar({
         className={cn(
           'group flex items-center gap-3 rounded-xl px-3 py-2 text-sm transition-all active:scale-[0.98]',
           active
-            ? 'bg-white font-semibold text-rh-teal shadow-sm dark:bg-white dark:text-rh-night'
+            ? 'bg-rh-lime font-semibold text-rh-ink'
             : 'text-white/75 hover:bg-white/10 hover:text-white',
           collapsed && 'justify-center px-0'
         )}
@@ -229,7 +229,7 @@ export function PhysioSidebar({
         <Icon
           className={cn(
             'h-[18px] w-[18px] shrink-0 transition-transform group-hover:scale-105',
-            active ? 'text-rh-teal dark:text-rh-night' : 'text-white/70'
+            active ? 'text-rh-ink' : 'text-white/70'
           )}
         />
         {!collapsed && <span className="flex-1 truncate">{item.title}</span>}
@@ -240,7 +240,7 @@ export function PhysioSidebar({
   return (
     <aside
       className={cn(
-        'flex h-full flex-col bg-rh-teal text-white transition-[width] duration-200 dark:bg-rh-night',
+        'flex h-full flex-col bg-rh-ink text-white transition-[width] duration-200 dark:bg-rh-ink-2',
         collapsed ? 'w-[72px]' : 'w-64',
         className
       )}

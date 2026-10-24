@@ -60,7 +60,7 @@ type Period = '3' | '6' | '12'
 /** Chart ink per theme. Categorical slots validated for CVD separation in both modes. */
 const INK = {
   light: {
-    data: '#005b57',
+    data: '#00cd0f',
     series: ['#00907f', '#b97a1f', '#6d5bd0', '#d9577c'],
     grid: '#ebe8e1',
     axis: '#737373',
@@ -70,7 +70,7 @@ const INK = {
     muted: '#737373',
   },
   dark: {
-    data: '#2dd4bf',
+    data: '#00cd0f',
     series: ['#1fa898', '#b8832a', '#8b7be0', '#d9628a'],
     grid: '#1f2b2a',
     axis: '#a3a3a3',
@@ -340,7 +340,7 @@ export function AdvancedAnalyticsDashboard() {
               <tbody>
                 {[...monthly].reverse().map((m) => (
                   <tr key={m.month} className="border-b tabular-nums text-neutral-700 last:border-0 dark:text-neutral-200">
-                    <td className="px-5 py-2.5 font-medium text-rh-night dark:text-white">{monthLabel(m.month, true)}</td>
+                    <td className="px-5 py-2.5 font-medium text-rh-ink dark:text-white">{monthLabel(m.month, true)}</td>
                     <td className="px-3 py-2.5 text-right">{m.signups}</td>
                     <td className="px-3 py-2.5 text-right">{m.appointments}</td>
                     <td className="px-3 py-2.5 text-right">{m.completed}</td>
@@ -492,10 +492,10 @@ function UsersByRole({ roles }: { roles: RoleCounts | undefined }) {
             <li key={r.role}>
               <div className="mb-1 flex items-baseline justify-between text-sm">
                 <span className="text-neutral-700 dark:text-neutral-200">{roleLabel(r.role)}</span>
-                <span className="font-medium tabular-nums text-rh-night dark:text-white">{formatCount(r)}</span>
+                <span className="font-medium tabular-nums text-rh-ink dark:text-white">{formatCount(r)}</span>
               </div>
-              <div className="h-2 overflow-hidden rounded-full bg-rh-mist dark:bg-white/[0.06]">
-                <div className="h-full rounded-full bg-rh-teal dark:bg-rh-aqua" style={{ width: `${max ? Math.max(2, (r.count / max) * 100) : 0}%` }} />
+              <div className="h-2 overflow-hidden rounded-full bg-rh-honeydew dark:bg-white/[0.06]">
+                <div className="h-full rounded-full bg-rh-lime dark:bg-rh-lime" style={{ width: `${max ? Math.max(2, (r.count / max) * 100) : 0}%` }} />
               </div>
             </li>
           ))}

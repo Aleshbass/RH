@@ -56,7 +56,7 @@ export const tableWrapClass = 'overflow-x-auto [&_th]:text-xs [&_th]:font-medium
 
 /** Horizontal, scrollable tab strip (never squashes on phones). Pass to shadcn <TabsList>. */
 export const tabsListClass =
-  'h-auto w-full justify-start gap-1 overflow-x-auto rounded-xl bg-white p-1 shadow-soft dark:bg-rh-ink-2 [&>button]:shrink-0 [&>button]:rounded-lg [&>button]:px-3 [&>button]:py-1.5 [&>button[data-state=active]]:bg-rh-teal [&>button[data-state=active]]:text-white dark:[&>button[data-state=active]]:bg-rh-aqua dark:[&>button[data-state=active]]:text-rh-night'
+  'h-auto w-full justify-start gap-1 overflow-x-auto rounded-xl bg-white p-1 shadow-soft dark:bg-rh-ink-2 [&>button]:shrink-0 [&>button]:rounded-lg [&>button]:px-3 [&>button]:py-1.5 [&>button[data-state=active]]:bg-rh-lime [&>button[data-state=active]]:text-rh-ink dark:[&>button[data-state=active]]:bg-rh-lime dark:[&>button[data-state=active]]:text-rh-ink'
 
 const container: Variants = {
   hidden: {},
@@ -108,11 +108,11 @@ export function FilterChips<T extends string>({
             onClick={() => onChange(o.value)}
             className={cn(
               'relative rounded-full px-3 py-1 text-xs font-medium transition-colors',
-              active ? 'text-white dark:text-rh-night' : 'bg-white text-neutral-600 shadow-soft hover:text-rh-night dark:bg-rh-ink-2 dark:text-neutral-300 dark:hover:text-white'
+              active ? 'text-white dark:text-rh-ink' : 'bg-white text-neutral-600 shadow-soft hover:text-rh-ink dark:bg-rh-ink-2 dark:text-neutral-300 dark:hover:text-white'
             )}
           >
             {active && (
-              <motion.span layoutId={pillId} className="absolute inset-0 rounded-full bg-rh-teal dark:bg-rh-aqua" transition={{ type: 'spring', stiffness: 500, damping: 38 }} />
+              <motion.span layoutId={pillId} className="absolute inset-0 rounded-full bg-rh-lime dark:bg-rh-lime" transition={{ type: 'spring', stiffness: 500, damping: 38 }} />
             )}
             <span className="relative">
               {o.label}
@@ -163,7 +163,7 @@ export function ConfirmDialog({
           </AlertDialogCancel>
           <AlertDialogAction
             disabled={busy}
-            className={destructive ? dangerButtonClass : 'rounded-xl bg-rh-teal text-white hover:bg-rh-teal-deep dark:bg-rh-aqua dark:text-rh-night'}
+            className={destructive ? dangerButtonClass : 'rounded-xl bg-rh-lime text-rh-ink hover:bg-rh-lime-deep dark:bg-rh-lime dark:text-rh-ink'}
             onClick={async (e) => {
               e.preventDefault()
               setBusy(true)
@@ -222,15 +222,15 @@ export function QuickLink({
       href={href}
       className="group flex items-center gap-3 rounded-2xl border border-black/[0.04] bg-white p-4 shadow-soft transition-all hover:-translate-y-0.5 hover:shadow-lift dark:border-white/[0.06] dark:bg-rh-ink-2 dark:shadow-none dark:hover:bg-rh-ink-3"
     >
-      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rh-mist text-rh-teal dark:bg-rh-aqua/10 dark:text-rh-aqua">
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rh-honeydew text-rh-ink dark:bg-white/[0.06] dark:text-rh-lime">
         <Icon className="h-5 w-5" />
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm font-semibold text-rh-night dark:text-white">{title}</span>
+        <span className="block truncate text-sm font-semibold text-rh-ink dark:text-white">{title}</span>
         {description && <span className="block truncate text-xs text-neutral-500 dark:text-neutral-400">{description}</span>}
       </span>
       {count ? (
-        <span className="rounded-full bg-rh-amber px-2 py-0.5 text-xs font-semibold tabular-nums text-rh-night">{count}</span>
+        <span className="rounded-full bg-rh-amber px-2 py-0.5 text-xs font-semibold tabular-nums text-rh-ink">{count}</span>
       ) : null}
     </Link>
   )

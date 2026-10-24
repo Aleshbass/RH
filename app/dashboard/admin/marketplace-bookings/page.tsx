@@ -199,7 +199,7 @@ function PhysioLocationBadge({
     <div className="mt-1 flex flex-wrap items-center gap-1">
       {location && (
         <span className="inline-flex items-center gap-0.5 text-[11px] text-neutral-500 dark:text-neutral-400">
-          <MapPin className="h-3 w-3 shrink-0 text-rh-teal dark:text-rh-aqua" />
+          <MapPin className="h-3 w-3 shrink-0 text-rh-ink dark:text-rh-lime" />
           {location}
         </span>
       )}
@@ -220,12 +220,12 @@ function PhysioLocationBadge({
 function PatientCell({ booking }: { booking: BookingRow }) {
   return (
     <div className="flex min-w-0 items-start gap-2.5">
-      <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-rh-mist text-xs font-semibold text-rh-teal dark:bg-rh-aqua/10 dark:text-rh-aqua">
+      <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-rh-honeydew text-xs font-semibold text-rh-ink dark:bg-white/[0.06] dark:text-rh-lime">
         {booking.patientName?.[0]?.toUpperCase() || 'G'}
       </span>
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-1.5">
-          <p className="max-w-[180px] truncate text-sm font-semibold text-rh-night dark:text-white">{booking.patientName}</p>
+          <p className="max-w-[180px] truncate text-sm font-semibold text-rh-ink dark:text-white">{booking.patientName}</p>
           <RehabifyId value={booking.patientNumber} />
           {booking.isGuest && (
             <StatusBadge tone="amber" className="gap-0.5 text-[10px]">
@@ -264,9 +264,9 @@ function SessionSummary({ booking }: { booking: BookingRow }) {
   return (
     <div>
       {service ? (
-        <p className="max-w-[220px] whitespace-normal text-sm text-rh-night dark:text-neutral-100">{service.name}</p>
+        <p className="max-w-[220px] whitespace-normal text-sm text-rh-ink dark:text-neutral-100">{service.name}</p>
       ) : (
-        <p className="text-sm capitalize text-rh-night dark:text-neutral-100">{booking.sessionType?.replace(/_/g, ' ')}</p>
+        <p className="text-sm capitalize text-rh-ink dark:text-neutral-100">{booking.sessionType?.replace(/_/g, ' ')}</p>
       )}
       <p className="text-xs text-neutral-500 dark:text-neutral-400">{booking.sessionDuration} min</p>
       {booking.travelZoneName && (
@@ -277,7 +277,7 @@ function SessionSummary({ booking }: { booking: BookingRow }) {
         </p>
       )}
       {booking.isOnline ? (
-        <span className="inline-flex items-center gap-0.5 text-[11px] text-rh-teal dark:text-rh-aqua">
+        <span className="inline-flex items-center gap-0.5 text-[11px] text-rh-ink dark:text-rh-lime">
           <Wifi className="h-2.5 w-2.5" /> Online
         </span>
       ) : (
@@ -286,7 +286,7 @@ function SessionSummary({ booking }: { booking: BookingRow }) {
         </span>
       )}
       {(booking.packageSessions ?? 0) > 1 && (
-        <p className="text-[11px] font-medium text-rh-teal dark:text-rh-aqua">{booking.packageSessions}-session pack</p>
+        <p className="text-[11px] font-medium text-rh-ink dark:text-rh-lime">{booking.packageSessions}-session pack</p>
       )}
     </div>
   );
@@ -400,12 +400,12 @@ function ReassignDialog({ booking, onClose }: { booking: BookingRow; onClose: ()
       <DialogContent className={dialogClass}>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-base dark:text-white">
-            <ArrowRightLeft className="h-5 w-5 shrink-0 text-rh-teal dark:text-rh-aqua" />
+            <ArrowRightLeft className="h-5 w-5 shrink-0 text-rh-ink dark:text-rh-lime" />
             Reassign physiotherapist
           </DialogTitle>
           <DialogDescription className="text-sm">
-            Transfer <span className="font-semibold text-rh-night dark:text-white">{booking.patientName}</span>&apos;s booking
-            from <span className="font-semibold text-rh-night dark:text-white">{booking.physioName}</span> to another
+            Transfer <span className="font-semibold text-rh-ink dark:text-white">{booking.patientName}</span>&apos;s booking
+            from <span className="font-semibold text-rh-ink dark:text-white">{booking.physioName}</span> to another
             physiotherapist. Their appointment, relationship and treatment plan will all be updated.
           </DialogDescription>
         </DialogHeader>
@@ -440,17 +440,17 @@ function ReassignDialog({ booking, onClose }: { booking: BookingRow; onClose: ()
                     className={cn(
                       'w-full border-l-[3px] px-4 py-3 text-left transition-colors',
                       selected
-                        ? 'border-l-rh-teal bg-rh-mist dark:border-l-rh-aqua dark:bg-rh-aqua/10'
+                        ? 'border-l-rh-lime bg-rh-honeydew dark:border-l-rh-lime dark:bg-white/[0.06]'
                         : 'border-l-transparent hover:bg-rh-canvas dark:hover:bg-white/[0.03]'
                     )}
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-rh-night dark:text-white">{p.name}</p>
+                        <p className="truncate text-sm font-semibold text-rh-ink dark:text-white">{p.name}</p>
                         {p.email && <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">{p.email}</p>}
                         <PhysioLocationBadge location={p.location} offersOnline={p.offersOnline} offersInPerson={p.offersInPerson} />
                       </div>
-                      {selected && <CheckCircle2 className="mt-1 h-4 w-4 shrink-0 text-rh-teal dark:text-rh-aqua" />}
+                      {selected && <CheckCircle2 className="mt-1 h-4 w-4 shrink-0 text-rh-ink dark:text-rh-lime" />}
                     </div>
                   </button>
                 );
@@ -549,7 +549,7 @@ function ScheduleVirtualDialog({ booking, onClose }: { booking: BookingRow; onCl
       <DialogContent className={dialogClass}>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-base dark:text-white">
-            <CalendarClock className="h-5 w-5 shrink-0 text-rh-teal dark:text-rh-aqua" />
+            <CalendarClock className="h-5 w-5 shrink-0 text-rh-ink dark:text-rh-lime" />
             {isReschedule ? 'Reschedule virtual consultation' : 'Schedule virtual consultation'}
           </DialogTitle>
           <DialogDescription>
@@ -560,7 +560,7 @@ function ScheduleVirtualDialog({ booking, onClose }: { booking: BookingRow; onCl
         </DialogHeader>
 
         <div className="rounded-xl bg-rh-canvas px-4 py-3 text-sm dark:bg-white/[0.04]">
-          <p className="font-semibold text-rh-night dark:text-white">{booking.patientName}</p>
+          <p className="font-semibold text-rh-ink dark:text-white">{booking.patientName}</p>
           <p className="text-xs text-neutral-500 dark:text-neutral-400">
             {(booking.serviceId && getService(booking.serviceId)?.name) || booking.sessionType?.replace(/_/g, ' ')} · {booking.sessionDuration} min ·{' '}
             {naira(booking.totalAmount)}
@@ -650,7 +650,7 @@ function BookingCard({ booking, onReassign, onSchedule }: { booking: BookingRow;
 
       <div className="border-t border-black/[0.05] pt-3 dark:border-white/[0.06]">
         <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-neutral-400 dark:text-neutral-500">Physiotherapist</p>
-        <p className="text-sm font-semibold text-rh-night dark:text-white">{booking.physioName}</p>
+        <p className="text-sm font-semibold text-rh-ink dark:text-white">{booking.physioName}</p>
         {booking.physioEmail && <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">{booking.physioEmail}</p>}
         <PhysioLocationBadge
           location={booking.physioLocation}
@@ -662,7 +662,7 @@ function BookingCard({ booking, onReassign, onSchedule }: { booking: BookingRow;
       <div className="flex items-end justify-between gap-2">
         <SessionSummary booking={booking} />
         <div className="shrink-0 text-right">
-          <p className="text-sm font-semibold tabular-nums text-rh-night dark:text-white">{naira(booking.totalAmount)}</p>
+          <p className="text-sm font-semibold tabular-nums text-rh-ink dark:text-white">{naira(booking.totalAmount)}</p>
           <p className="text-[11px] tabular-nums text-neutral-500 dark:text-neutral-400">Fee {naira(booking.platformFee)}</p>
         </div>
       </div>
@@ -853,7 +853,7 @@ export default function AdminMarketplaceBookingsPage() {
                   {bookings.map((booking) => (
                     <TableRow key={booking._id}>
                       <TableCell className="whitespace-nowrap py-3 pl-5 align-top">
-                        <p className="text-sm font-medium text-rh-night dark:text-white">{formatDate(booking.createdAt)}</p>
+                        <p className="text-sm font-medium text-rh-ink dark:text-white">{formatDate(booking.createdAt)}</p>
                         <p className="text-xs text-neutral-500 dark:text-neutral-400">{formatTime(booking.createdAt)}</p>
                         {booking.bookingCode && (
                           <p className="font-mono text-[10px] text-neutral-400 dark:text-neutral-500">{booking.bookingCode}</p>
@@ -863,7 +863,7 @@ export default function AdminMarketplaceBookingsPage() {
                         <PatientCell booking={booking} />
                       </TableCell>
                       <TableCell className="py-3 align-top">
-                        <p className="text-sm font-semibold text-rh-night dark:text-white">{booking.physioName}</p>
+                        <p className="text-sm font-semibold text-rh-ink dark:text-white">{booking.physioName}</p>
                         {booking.physioEmail && (
                           <p className="max-w-[200px] truncate text-xs text-neutral-500 dark:text-neutral-400">{booking.physioEmail}</p>
                         )}
@@ -877,7 +877,7 @@ export default function AdminMarketplaceBookingsPage() {
                         <SessionSummary booking={booking} />
                       </TableCell>
                       <TableCell className="whitespace-nowrap py-3 align-top">
-                        <p className="text-sm font-semibold tabular-nums text-rh-night dark:text-white">{naira(booking.totalAmount)}</p>
+                        <p className="text-sm font-semibold tabular-nums text-rh-ink dark:text-white">{naira(booking.totalAmount)}</p>
                         <p className="text-xs tabular-nums text-neutral-500 dark:text-neutral-400">Fee {naira(booking.platformFee)}</p>
                       </TableCell>
                       <TableCell className="py-3 align-top">

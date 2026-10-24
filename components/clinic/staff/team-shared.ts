@@ -96,4 +96,4 @@ export const ROLE_TEMPLATES: { name: string; permissions: ClinicArea[] }[] = [
 
 /** Teal checkbox to match the clinic accent. */
 export const checkboxClass =
-  'border-neutral-300 bg-white dark:border-neutral-700 dark:bg-neutral-950 data-[state=checked]:border-[#005b57] data-[state=checked]:bg-[#005b57] data-[state=checked]:text-white dark:data-[state=checked]:border-[#2dd4bf] dark:data-[state=checked]:bg-[#2dd4bf] dark:data-[state=checked]:text-neutral-950'
+  'border-neutral-300 bg-white dark:border-neutral-700 dark:bg-neutral-950 data-[state=checked]:border-rh-lime data-[state=checked]:bg-rh-lime data-[state=checked]:text-rh-ink dark:data-[state=checked]:border-rh-lime dark:data-[state=checked]:bg-rh-lime dark:data-[state=checked]:text-neutral-950'

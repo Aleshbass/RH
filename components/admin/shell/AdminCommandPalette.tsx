@@ -160,17 +160,17 @@ export function AdminCommandPalette() {
                   onClick={() => go(result)}
                   className={cn(
                     'relative flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm',
-                    selected ? 'text-rh-night dark:text-white' : 'text-neutral-600 dark:text-neutral-300'
+                    selected ? 'text-rh-ink dark:text-white' : 'text-neutral-600 dark:text-neutral-300'
                   )}
                 >
                   {selected && (
                     <motion.span
                       layoutId="admin-palette-highlight"
                       transition={{ type: 'spring', stiffness: 600, damping: 40 }}
-                      className="absolute inset-0 rounded-xl bg-rh-mist dark:bg-white/[0.07]"
+                      className="absolute inset-0 rounded-xl bg-rh-honeydew dark:bg-white/[0.07]"
                     />
                   )}
-                  <span className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white text-rh-teal shadow-sm dark:bg-rh-ink-3 dark:text-rh-aqua">
+                  <span className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white text-rh-ink shadow-sm dark:bg-rh-ink-3 dark:text-rh-lime">
                     <Icon className="h-4 w-4" />
                   </span>
                   <span className="relative min-w-0 flex-1">

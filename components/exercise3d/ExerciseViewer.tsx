@@ -64,10 +64,28 @@ export type ExerciseViewerProps = {
   onReadyChange?: (ready: boolean) => void
   /** Hide the small control bar (e.g. thumbnails). */
   bare?: boolean
+  /** Colour of the active controls: teal in the care dashboards, ink on Rehabify Learn. */
+  accent?: 'teal' | 'ink'
+}
+
+const ACCENTS = {
+  teal: {
+    stage: 'bg-rh-honeydew dark:bg-rh-ink-2',
+    on: 'bg-rh-lime text-rh-ink hover:bg-rh-lime-deep dark:bg-rh-lime dark:text-rh-ink',
+    text: 'text-rh-ink dark:text-rh-lime',
+    ring: 'ring-rh-lime/40',
+  },
+  ink: {
+    stage: 'bg-rh-sand dark:bg-rh-ink-2',
+    on: 'bg-rh-ink text-white hover:bg-black dark:bg-rh-lime dark:text-rh-ink',
+    text: 'text-rh-ink dark:text-rh-lime',
+    ring: 'ring-rh-ink/40',
+  },
 }
 
 /** One exercise in 3D, with a poster first and graceful fallbacks. */
-export function ExerciseViewer({ clipId, requestGrant, className, autoPlay = true, onRep, onReadyChange, bare }: ExerciseViewerProps) {
+export function ExerciseViewer({ clipId, requestGrant, className, autoPlay = true, onRep, onReadyChange, bare, accent = 'teal' }: ExerciseViewerProps) {
+  const tone = ACCENTS[accent]
   const clipInfo = findClip(clipId)
   const [phase, setPhase] = useState<Phase>('checking')
 
@@ -174,12 +192,13 @@ export function ExerciseViewer({ clipId, requestGrant, className, autoPlay = tru
   }, [onRep])
 
   const chip =
-    'inline-flex h-9 items-center gap-1.5 rounded-full bg-white/90 px-3 text-xs font-medium text-rh-night shadow-sm backdrop-blur transition hover:bg-white active:scale-95 dark:bg-rh-ink-2/90 dark:text-white'
+    'inline-flex h-9 items-center gap-1.5 rounded-full bg-white/90 px-3 text-xs font-medium text-rh-ink shadow-sm backdrop-blur transition hover:bg-white active:scale-95 dark:bg-rh-ink-2/90 dark:text-white'
 
   return (
     <div
       className={cn(
-        'relative isolate aspect-square w-full select-none overflow-hidden rounded-3xl bg-rh-mist dark:bg-rh-ink-2',
+        'relative isolate aspect-square w-full select-none overflow-hidden rounded-3xl',
+        tone.stage,
         className
       )}
       onContextMenu={(e) => e.preventDefault()}
@@ -217,14 +236,14 @@ export function ExerciseViewer({ clipId, requestGrant, className, autoPlay = tru
       {phase === 'loading' && (
         <div className="absolute inset-x-0 bottom-4 flex justify-center">
           <span className={chip}>
-            <Loader2 className="h-3.5 w-3.5 animate-spin text-rh-teal" /> Loading 3D demonstration…
+            <Loader2 className={cn('h-3.5 w-3.5 animate-spin', tone.text)} /> Loading 3D demonstration…
           </span>
         </div>
       )}
 
       {phase === 'lite' && (
         <div className="absolute inset-x-0 bottom-4 flex flex-col items-center gap-1.5 px-4 text-center">
-          <button type="button" onClick={() => void load()} className={cn(chip, 'h-10 bg-rh-teal px-4 text-white hover:bg-rh-teal-deep dark:bg-rh-aqua dark:text-rh-night')}>
+          <button type="button" onClick={() => void load()} className={cn(chip, 'h-10 px-4', tone.on)}>
             <Rotate3d className="h-4 w-4" /> Watch in 3D ({totalKb} KB)
           </button>
           {lite && (
@@ -252,10 +271,10 @@ export function ExerciseViewer({ clipId, requestGrant, className, autoPlay = tru
 
       {phase === 'ready' && !bare && (
         <>
-          <div className="pointer-events-none absolute left-3 top-3 flex items-center gap-1.5 rounded-full bg-white/80 px-2.5 py-1 text-[11px] font-medium text-rh-teal backdrop-blur dark:bg-rh-ink-2/80 dark:text-rh-aqua">
+          <div className={cn('pointer-events-none absolute left-3 top-3 flex items-center gap-1.5 rounded-full bg-white/80 px-2.5 py-1 text-[11px] font-medium backdrop-blur dark:bg-rh-ink-2/80', tone.text)}>
             <Rotate3d className="h-3.5 w-3.5" /> Drag to turn
           </div>
-          <div className="pointer-events-none absolute right-3 top-3 rounded-2xl bg-rh-teal px-3 py-1.5 text-center text-white shadow-sm dark:bg-rh-aqua dark:text-rh-night">
+          <div className={cn('pointer-events-none absolute right-3 top-3 rounded-2xl px-3 py-1.5 text-center shadow-sm', tone.on)}>
             <p className="text-lg font-semibold leading-none tabular-nums">{reps}</p>
             <p className="text-[10px] uppercase tracking-wider opacity-80">reps</p>
           </div>
@@ -268,8 +287,8 @@ export function ExerciseViewer({ clipId, requestGrant, className, autoPlay = tru
                 title={voice === 'idle' ? 'Hear spoken instructions' : voice === 'on' ? 'Mute the voice guide' : 'Turn the voice guide back on'}
                 className={cn(
                   chip,
-                  voice === 'on' && 'bg-rh-teal text-white hover:bg-rh-teal-deep dark:bg-rh-aqua dark:text-rh-night',
-                  voice === 'idle' && !voicePreferenceOff() && 'animate-pulse bg-rh-teal text-white hover:bg-rh-teal-deep dark:bg-rh-aqua dark:text-rh-night'
+                  voice === 'on' && tone.on,
+                  voice === 'idle' && !voicePreferenceOff() && cn('animate-pulse', tone.on)
                 )}
               >
                 {voice === 'on' ? <Volume2 className="h-3.5 w-3.5" /> : <VolumeX className="h-3.5 w-3.5" />}
@@ -280,14 +299,14 @@ export function ExerciseViewer({ clipId, requestGrant, className, autoPlay = tru
               {playing ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
               {playing ? 'Pause' : 'Play'}
             </button>
-            <button type="button" className={cn(chip, slow && 'bg-rh-teal text-white hover:bg-rh-teal-deep')} onClick={() => setSlow((s) => !s)} aria-pressed={slow}>
+            <button type="button" className={cn(chip, slow && tone.on)} onClick={() => setSlow((s) => !s)} aria-pressed={slow}>
               <Turtle className="h-3.5 w-3.5" /> {slow ? '0.5×' : '1×'}
             </button>
             {(['front', 'side', 'top'] as ViewName[]).map((v) => (
               <button
                 key={v}
                 type="button"
-                className={cn(chip, view === v && 'ring-2 ring-rh-teal/40')}
+                className={cn(chip, view === v && cn('ring-2', tone.ring))}
                 onClick={() => {
                   setView(v)
                   setViewNonce((n) => n + 1)

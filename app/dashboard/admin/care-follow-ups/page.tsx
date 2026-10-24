@@ -68,7 +68,7 @@ function FollowUpCard({ row, status }: { row: Row; status: Status }) {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <p className="font-semibold text-rh-night dark:text-white">{row.patient.name}</p>
+            <p className="font-semibold text-rh-ink dark:text-white">{row.patient.name}</p>
             {flagged && (
               <StatusBadge tone="amber" className="gap-1">
                 <PhoneCall className="h-3 w-3" /> Call them
@@ -109,7 +109,7 @@ function FollowUpCard({ row, status }: { row: Row; status: Status }) {
               <Star key={i} className={cn('h-4 w-4', i <= (row.rating ?? 0) ? 'fill-amber-400 text-amber-400' : 'text-neutral-300 dark:text-neutral-600')} />
             ))}
           </span>
-          {row.recovery && <span className="text-sm font-medium text-rh-night dark:text-neutral-200">{label(row.recovery)}</span>}
+          {row.recovery && <span className="text-sm font-medium text-rh-ink dark:text-neutral-200">{label(row.recovery)}</span>}
           {row.wantsCall && <span className="text-sm font-semibold text-amber-700 dark:text-amber-300">Asked for a call</span>}
           {row.comment && <p className="w-full text-sm italic text-neutral-600 dark:text-neutral-300">&ldquo;{row.comment}&rdquo;</p>}
         </div>

@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils'
  *
  * Visual rules (keep every clinic page consistent):
  * - Neutral surfaces, 1px borders, rounded-xl panels. No gradients, glows or coloured shadows.
- * - One accent colour (Rehabify teal #005b57 / #2dd4bf in dark mode), used for the primary
+ * - One accent colour (Rehabify green #00cd0f, with ink text), used for the primary
  *   action and the active state only.
  * - Status is shown with small quiet badges, never colour-filled cards.
  * - Plain-language labels: say what something is ("Unpaid invoices"), not marketing copy.
@@ -123,7 +123,7 @@ export function StatTile({
     </div>
   )
   return href ? (
-    <Link href={href} className="block focus:outline-none focus-visible:ring-2 focus-visible:ring-[#005b57] rounded-xl">
+    <Link href={href} className="block focus:outline-none focus-visible:ring-2 focus-visible:ring-rh-lime rounded-xl">
       {body}
     </Link>
   ) : (
@@ -133,7 +133,7 @@ export function StatTile({
 
 const badgeTones = {
   neutral: 'bg-neutral-100 text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300',
-  teal: 'bg-[#005b57]/10 text-[#005b57] dark:bg-[#2dd4bf]/10 dark:text-[#2dd4bf]',
+  teal: 'bg-rh-lime/10 text-rh-ink dark:bg-white/[0.06] dark:text-rh-lime',
   green: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400',
   amber: 'bg-amber-50 text-amber-800 dark:bg-amber-500/10 dark:text-amber-400',
   red: 'bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-400',
@@ -186,4 +186,4 @@ export function EmptyState({
 
 /** Primary button styling for the one main action on a screen. */
 export const primaryButtonClass =
-  'bg-[#005b57] text-white hover:bg-[#00443e] dark:bg-[#2dd4bf] dark:text-neutral-950 dark:hover:bg-[#5eead4]'
+  'bg-rh-lime text-rh-ink hover:bg-rh-lime-deep dark:bg-rh-lime dark:text-neutral-950 dark:hover:bg-rh-lime-deep'

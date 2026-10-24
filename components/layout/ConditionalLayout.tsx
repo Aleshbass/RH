@@ -68,6 +68,8 @@ export default function ConditionalLayout({ children, isSubdomainHost = false }:
     pathname.startsWith('/go/') ||
     pathname.startsWith('/video-call') ||
     pathname.startsWith('/track') ||
+    // Rehabify Learn course and its one-tap links have their own top bar (/course on the learn host)
+    /^\/(?:learn\/)?(?:course|start|verify)(?:\/|$)/.test(pathname) ||
     pathname.includes('physioaroundme.com')
 
   // Check subdomains (docs.physioaroundme.com, api.physioaroundme.com, partners.physioaroundme.com)

@@ -27,15 +27,15 @@ const parseStage = (value: string | null): StageFilter => (STAGES.some((s) => s.
 function RoutedTo({ referral }: { referral: ReferralRow }) {
   if (referral.assignedClinicName) {
     return (
-      <span className="inline-flex items-center gap-1 text-xs text-rh-night dark:text-neutral-200">
-        <Building2 className="h-3.5 w-3.5 text-rh-teal dark:text-rh-aqua" /> {referral.assignedClinicName}
+      <span className="inline-flex items-center gap-1 text-xs text-rh-ink dark:text-neutral-200">
+        <Building2 className="h-3.5 w-3.5 text-rh-ink dark:text-rh-lime" /> {referral.assignedClinicName}
       </span>
     )
   }
   if (referral.assignedPhysiotherapistName) {
     return (
-      <span className="inline-flex items-center gap-1 text-xs text-rh-night dark:text-neutral-200">
-        <Stethoscope className="h-3.5 w-3.5 text-rh-teal dark:text-rh-aqua" /> {referral.assignedPhysiotherapistName}
+      <span className="inline-flex items-center gap-1 text-xs text-rh-ink dark:text-neutral-200">
+        <Stethoscope className="h-3.5 w-3.5 text-rh-ink dark:text-rh-lime" /> {referral.assignedPhysiotherapistName}
       </span>
     )
   }
@@ -179,7 +179,7 @@ function ReferralsContent() {
             aria-pressed={unassignedOnly}
             className={cn(
               'inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-xl px-3 text-xs font-medium transition',
-              unassignedOnly ? 'bg-rh-amber text-rh-night' : 'bg-white text-neutral-600 shadow-soft hover:text-rh-night dark:bg-rh-ink-2 dark:text-neutral-300 dark:hover:text-white'
+              unassignedOnly ? 'bg-rh-amber text-rh-ink' : 'bg-white text-neutral-600 shadow-soft hover:text-rh-ink dark:bg-rh-ink-2 dark:text-neutral-300 dark:hover:text-white'
             )}
           >
             <UserCheck className="h-3.5 w-3.5" /> Unassigned only
@@ -235,7 +235,7 @@ function ReferralsContent() {
                 {rows.map((r: ReferralRow) => (
                   <TableRow key={r._id} className="cursor-pointer" onClick={() => setManaging(r)}>
                     <TableCell className="max-w-[220px]">
-                      <div className="flex flex-wrap items-center gap-1.5 font-medium text-rh-night dark:text-white">
+                      <div className="flex flex-wrap items-center gap-1.5 font-medium text-rh-ink dark:text-white">
                         <span>
                           {r.patientFirstName} {r.patientLastName}
                         </span>
@@ -248,7 +248,7 @@ function ReferralsContent() {
                           target="_blank"
                           rel="noreferrer"
                           onClick={(e) => e.stopPropagation()}
-                          className="mt-0.5 inline-flex items-center gap-0.5 font-mono text-[11px] text-rh-teal hover:underline dark:text-rh-aqua"
+                          className="mt-0.5 inline-flex items-center gap-0.5 font-mono text-[11px] text-rh-ink hover:underline dark:text-rh-lime"
                           title="Open the live care tracking page"
                         >
                           {r.trackingCode} <ExternalLink className="h-2.5 w-2.5" />
@@ -258,17 +258,17 @@ function ReferralsContent() {
                       <div className="mt-0.5 truncate text-xs text-neutral-500 dark:text-neutral-400">{r.condition || r.reason || 'General rehabilitation'}</div>
                     </TableCell>
                     <TableCell>
-                      <div className="text-xs font-medium text-rh-night dark:text-neutral-200">{r.patientPhone}</div>
+                      <div className="text-xs font-medium text-rh-ink dark:text-neutral-200">{r.patientPhone}</div>
                       {r.patientEmail && <div className="max-w-[180px] truncate text-xs text-neutral-500 dark:text-neutral-400">{r.patientEmail}</div>}
                       {(r.city || r.state) && <div className="text-[11px] text-neutral-400">{[r.city, r.state].filter(Boolean).join(', ')}</div>}
                     </TableCell>
                     <TableCell className="max-w-[200px]">
                       {r.partnerName || r.partnerCode ? (
-                        <div className="flex items-center gap-1.5 text-xs font-medium text-rh-night dark:text-neutral-200">
+                        <div className="flex items-center gap-1.5 text-xs font-medium text-rh-ink dark:text-neutral-200">
                           {r.partnerType === 'doctor' ? (
                             <Stethoscope className="h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-300" />
                           ) : (
-                            <Building2 className="h-3.5 w-3.5 shrink-0 text-rh-teal dark:text-rh-aqua" />
+                            <Building2 className="h-3.5 w-3.5 shrink-0 text-rh-ink dark:text-rh-lime" />
                           )}
                           <span className="truncate">{r.partnerName || r.partnerCode}</span>
                           {r.partnerType && (
@@ -276,7 +276,7 @@ function ReferralsContent() {
                           )}
                         </div>
                       ) : (
-                        <div className="flex items-center gap-1.5 text-xs text-rh-night dark:text-neutral-200">
+                        <div className="flex items-center gap-1.5 text-xs text-rh-ink dark:text-neutral-200">
                           <UserCheck className="h-3.5 w-3.5 text-neutral-400" /> {r.doctorName}
                         </div>
                       )}

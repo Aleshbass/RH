@@ -9,10 +9,10 @@ export const userHref = (userId: string) => `/dashboard/admin/users/${userId}`
 
 // Initial tiles cycle through the brand's soft colours, like the physio patient list
 const TINTS = [
-  'bg-rh-mint text-rh-teal dark:bg-emerald-400/10 dark:text-emerald-300',
+  'bg-rh-honeydew text-rh-ink dark:bg-emerald-400/10 dark:text-emerald-300',
   'bg-rh-peach text-[#b4690e] dark:bg-amber-400/10 dark:text-amber-300',
   'bg-rh-blush text-[#be3a5f] dark:bg-rose-400/10 dark:text-rose-300',
-  'bg-rh-mist text-rh-teal dark:bg-rh-aqua/10 dark:text-rh-aqua',
+  'bg-rh-honeydew text-rh-ink dark:bg-white/[0.06] dark:text-rh-lime',
 ]
 export const tintFor = (id: string) => TINTS[id.charCodeAt(id.length - 1) % TINTS.length]
 

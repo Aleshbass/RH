@@ -57,9 +57,9 @@ function MarketplaceMigration() {
         description="Sets isAvailableOnMarketplace = true for every physiotherapist with an approved account. It only needs to run once."
         bodyClassName="space-y-4 p-5 pt-3"
       >
-        <div className="rounded-xl bg-rh-mist px-4 py-3 dark:bg-rh-aqua/10">
-          <h3 className="mb-1.5 text-sm font-semibold text-rh-teal dark:text-rh-aqua">What this does</h3>
-          <ul className="list-inside list-disc space-y-1 text-sm text-rh-night/80 dark:text-neutral-300">
+        <div className="rounded-xl bg-rh-honeydew px-4 py-3 dark:bg-white/[0.06]">
+          <h3 className="mb-1.5 text-sm font-semibold text-rh-ink dark:text-rh-lime">What this does</h3>
+          <ul className="list-inside list-disc space-y-1 text-sm text-rh-ink/80 dark:text-neutral-300">
             <li>Finds all approved physiotherapists</li>
             <li>
               Sets <code className="rounded bg-white/70 px-1 text-xs dark:bg-white/10">isAvailableOnMarketplace = true</code>
@@ -86,7 +86,7 @@ function MarketplaceMigration() {
         )}
 
         {result && (
-          <div className="space-y-3 rounded-xl bg-rh-mint/60 p-4 dark:bg-emerald-400/10">
+          <div className="space-y-3 rounded-xl bg-rh-honeydew/60 p-4 dark:bg-emerald-400/10">
             <p className="flex items-center gap-2 font-semibold text-[#047857] dark:text-emerald-300">
               <CheckCircle2 className="h-5 w-5" />
               Migration complete
@@ -124,7 +124,7 @@ function MarketplaceMigration() {
         )}
 
         <div className="border-t border-black/[0.05] pt-4 dark:border-white/[0.06]">
-          <h3 className="mb-2 text-sm font-semibold text-rh-night dark:text-white">After the migration</h3>
+          <h3 className="mb-2 text-sm font-semibold text-rh-ink dark:text-white">After the migration</h3>
           <ul className="space-y-1 text-sm text-neutral-600 dark:text-neutral-400">
             <li>Approved physiotherapists appear in /find-a-physio</li>
             <li>They can toggle marketplace visibility in their dashboard</li>

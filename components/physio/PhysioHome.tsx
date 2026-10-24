@@ -124,10 +124,8 @@ function Hero({
   if (attentionCount) parts.push(`${attentionCount} thing${attentionCount === 1 ? '' : 's'} need${attentionCount === 1 ? 's' : ''} your attention`)
 
   return (
-    <section className="relative overflow-hidden rounded-3xl bg-rh-teal px-5 py-6 text-white shadow-lift dark:bg-rh-night sm:px-8 sm:py-8">
-      {/* Soft brand shapes, no gradients */}
-      <span aria-hidden className="pointer-events-none absolute -right-10 -top-16 h-64 w-64 rounded-full bg-white/[0.07]" />
-      <span aria-hidden className="pointer-events-none absolute -bottom-28 right-40 h-56 w-56 rounded-full bg-rh-mint/10" />
+    <section className="relative overflow-hidden rounded-3xl bg-rh-ink px-5 py-6 text-white dark:bg-rh-ink-2 sm:px-8 sm:py-8">
+      {/* Flat brand shapes: no gradients, no glows */}
       <span aria-hidden className="pointer-events-none absolute right-16 top-10 hidden h-16 w-16 rounded-2xl bg-rh-amber/80 sm:block" style={{ transform: 'rotate(14deg)' }} />
       <span aria-hidden className="pointer-events-none absolute right-36 top-24 hidden h-7 w-7 rounded-full bg-rh-rose sm:block" />
 
@@ -142,7 +140,7 @@ function Hero({
         </h1>
         <p className="mt-2 text-[15px] text-white/80">{parts.length > 0 ? `${parts.join(' · ')}.` : 'Here’s your practice at a glance.'}</p>
         <div className="mt-5 flex flex-wrap gap-2">
-          <Button asChild className="rounded-xl bg-white text-rh-teal shadow-sm hover:bg-rh-cream active:scale-[0.98]">
+          <Button asChild className="rounded-xl bg-rh-lime text-rh-ink hover:bg-rh-lime-deep active:scale-[0.98]">
             <Link href={`${PHYSIO_HOME}/calendar?new=1`}>
               <Plus className="mr-2 h-4 w-4" />
               New appointment
@@ -188,7 +186,7 @@ function NeedsAttention({ items }: { items: AttentionItem[] | undefined }) {
                 <Link href={item.href} className="group flex items-center gap-3 px-5 py-2.5 transition-colors hover:bg-rh-canvas dark:hover:bg-white/[0.03]">
                   <IconChip icon={style.icon} tone={style.tone} />
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold text-rh-night dark:text-white">{item.patientName}</p>
+                    <p className="truncate text-sm font-semibold text-rh-ink dark:text-white">{item.patientName}</p>
                     <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">
                       {item.title}
                       {item.detail ? ` · ${item.detail}` : ''}
@@ -217,7 +215,7 @@ function TodaySchedule({ appointments }: { appointments: Appointment[] | undefin
         title="Today’s schedule"
         description={format(new Date(), 'EEEE d MMMM')}
         actions={
-          <Link href={`${PHYSIO_HOME}/calendar`} className="text-xs font-semibold text-rh-teal hover:underline dark:text-rh-aqua">
+          <Link href={`${PHYSIO_HOME}/calendar`} className="text-xs font-semibold text-rh-ink hover:underline dark:text-rh-lime">
             Open calendar
           </Link>
         }
@@ -251,24 +249,24 @@ function TodaySchedule({ appointments }: { appointments: Appointment[] | undefin
                     href={`${PHYSIO_HOME}/patients/${appointment.patientId}`}
                     className={cn(
                       'flex items-center gap-3 rounded-2xl p-3 transition-all hover:bg-rh-canvas dark:hover:bg-white/[0.03]',
-                      isNext && 'bg-rh-mist ring-1 ring-rh-teal/15 hover:bg-rh-mist dark:bg-rh-aqua/10 dark:ring-rh-aqua/20',
+                      isNext && 'bg-rh-honeydew ring-1 ring-rh-lime/15 hover:bg-rh-honeydew dark:bg-white/[0.06] dark:ring-white/10',
                       cancelled && 'opacity-60'
                     )}
                   >
                     <div className="w-16 shrink-0 text-center">
-                      <p className={cn('text-sm font-semibold tabular-nums', isNext ? 'text-rh-teal dark:text-rh-aqua' : 'text-rh-night dark:text-white')}>
+                      <p className={cn('text-sm font-semibold tabular-nums', isNext ? 'text-rh-ink dark:text-rh-lime' : 'text-rh-ink dark:text-white')}>
                         {format(appointment.startTime, 'h:mm')}
                       </p>
                       <p className="text-[11px] uppercase text-neutral-400">{format(appointment.startTime, 'a')}</p>
                     </div>
                     <Avatar className="h-9 w-9 shrink-0">
                       <AvatarImage src={appointment.patient?.imageUrl} alt="" />
-                      <AvatarFallback className="bg-rh-cream text-xs font-semibold text-rh-teal dark:bg-white/10 dark:text-rh-aqua">
+                      <AvatarFallback className="bg-rh-cream text-xs font-semibold text-rh-ink dark:bg-white/10 dark:text-rh-lime">
                         {initials(appointment.patient)}
                       </AvatarFallback>
                     </Avatar>
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-semibold text-rh-night dark:text-white">{fullName(appointment.patient)}</p>
+                      <p className="truncate text-sm font-semibold text-rh-ink dark:text-white">{fullName(appointment.patient)}</p>
                       <p className="flex items-center gap-1.5 truncate text-xs text-neutral-500 dark:text-neutral-400">
                         {online && <Video className="h-3 w-3 shrink-0" aria-label="Video session" />}
                         <span className="truncate">{appointment.serviceType || (online ? 'Video session' : 'In person')}</span>
@@ -329,7 +327,7 @@ function CheckInFeed({ checkIns }: { checkIns: RecentCheckIn[] | undefined }) {
                   </AvatarFallback>
                 </Avatar>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold text-rh-night dark:text-white">{fullName(c.patient)}</p>
+                  <p className="truncate text-sm font-semibold text-rh-ink dark:text-white">{fullName(c.patient)}</p>
                   <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">
                     {c.note ? `“${c.note}”` : c.exercisesDone === 'all' ? 'Did all exercises' : c.exercisesDone === 'some' ? 'Did some exercises' : 'Skipped exercises'}
                   </p>
@@ -396,11 +394,11 @@ function OpenWorkspace({ patients }: { patients: PatientRow[] | undefined }) {
               >
                 <Avatar className="h-8 w-8 shrink-0">
                   <AvatarImage src={patient.imageUrl} alt="" />
-                  <AvatarFallback className="bg-rh-mint text-xs font-semibold text-rh-teal">{initials(patient)}</AvatarFallback>
+                  <AvatarFallback className="bg-rh-honeydew text-xs font-semibold text-rh-ink">{initials(patient)}</AvatarFallback>
                 </Avatar>
                 <div className="min-w-0 flex-1">
                   <div className="flex min-w-0 items-center gap-2">
-                    <p className="truncate text-sm font-medium text-rh-night dark:text-white">{fullName(patient)}</p>
+                    <p className="truncate text-sm font-medium text-rh-ink dark:text-white">{fullName(patient)}</p>
                     <RehabifyId value={patient.patientNumber} copyable={false} />
                   </div>
                   <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">
@@ -416,7 +414,7 @@ function OpenWorkspace({ patients }: { patients: PatientRow[] | undefined }) {
         </ul>
       )}
       <div className="px-5 pb-4">
-        <Link href={`${PHYSIO_HOME}/patients`} className="text-xs font-semibold text-rh-teal hover:underline dark:text-rh-aqua">
+        <Link href={`${PHYSIO_HOME}/patients`} className="text-xs font-semibold text-rh-ink hover:underline dark:text-rh-lime">
           All patients
         </Link>
       </div>
@@ -479,7 +477,7 @@ function BookingLinkCard({ physioId, name }: { physioId: Id<'users'>; name?: str
         <div className="flex items-center gap-3">
           <IconChip icon={CalendarClock} tone="peach" className="bg-white dark:bg-white/10" />
           <div className="min-w-0">
-            <h2 className="text-[15px] font-semibold tracking-tight text-rh-night dark:text-white">Your booking link</h2>
+            <h2 className="text-[15px] font-semibold tracking-tight text-rh-ink dark:text-white">Your booking link</h2>
             <p className="text-xs text-neutral-600 dark:text-neutral-400">Patients book and pay through it</p>
           </div>
         </div>
@@ -487,11 +485,11 @@ function BookingLinkCard({ physioId, name }: { physioId: Id<'users'>; name?: str
           {url ? url.replace(/^https?:\/\//, '') : <Skeleton className="h-4 w-48" />}
         </div>
         <div className="mt-3 grid grid-cols-2 gap-2">
-          <Button onClick={copy} disabled={!url} className="rounded-xl bg-rh-teal text-white hover:bg-rh-teal-deep dark:bg-rh-aqua dark:text-rh-night">
+          <Button onClick={copy} disabled={!url} className="rounded-xl bg-rh-lime text-rh-ink hover:bg-rh-lime-deep dark:bg-rh-lime dark:text-rh-ink">
             {copied ? <Check className="mr-1.5 h-4 w-4" /> : <Copy className="mr-1.5 h-4 w-4" />}
             {copied ? 'Copied' : 'Copy link'}
           </Button>
-          <Button asChild variant="ghost" className={cn('rounded-xl bg-white text-rh-night hover:bg-white/80 dark:bg-white/10 dark:text-white', !url && 'pointer-events-none opacity-50')}>
+          <Button asChild variant="ghost" className={cn('rounded-xl bg-white text-rh-ink hover:bg-white/80 dark:bg-white/10 dark:text-white', !url && 'pointer-events-none opacity-50')}>
             <a href={`https://wa.me/?text=${encodeURIComponent(message)}`} target="_blank" rel="noopener noreferrer">
               <MessageCircle className="mr-1.5 h-4 w-4" />
               WhatsApp
@@ -534,7 +532,7 @@ export function PhysioHome({ setup }: { setup: SetupStatus | null | undefined })
       {setup?.isComplete && setup.approvalStatus === 'approved' && !setup.isListed && (
         <div className="flex flex-col gap-2 rounded-2xl bg-white px-5 py-3 text-sm shadow-soft dark:bg-rh-ink-2 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-neutral-600 dark:text-neutral-400">You’re hidden from the marketplace. Patients can still book you through your link.</p>
-          <Link href={`${PHYSIO_HOME}/settings/marketplace`} className="shrink-0 font-semibold text-rh-teal hover:underline dark:text-rh-aqua">
+          <Link href={`${PHYSIO_HOME}/settings/marketplace`} className="shrink-0 font-semibold text-rh-ink hover:underline dark:text-rh-lime">
             Change
           </Link>
         </div>

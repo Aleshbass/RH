@@ -23,7 +23,7 @@ type LiveLocation = {
 
 const STATUS = {
   in_transit: { label: "In transit", pin: "bg-amber-500", tone: "amber" as const },
-  at_patient: { label: "At patient", pin: "bg-rh-teal dark:bg-rh-aqua", tone: "teal" as const },
+  at_patient: { label: "At patient", pin: "bg-rh-lime dark:bg-rh-lime", tone: "teal" as const },
   idle: { label: "Idle", pin: "bg-neutral-500", tone: "neutral" as const },
 };
 
@@ -50,7 +50,7 @@ export default function AdminLiveMap() {
       actions={<StatusBadge tone={locations?.length ? "teal" : "neutral"}>{locations?.length ?? 0} active</StatusBadge>}
       bodyClassName="px-3 pb-3 pt-2"
     >
-      <div className="relative h-[420px] overflow-hidden rounded-xl bg-rh-mist dark:bg-rh-ink-3 sm:h-[520px]">
+      <div className="relative h-[420px] overflow-hidden rounded-xl bg-rh-honeydew dark:bg-rh-ink-3 sm:h-[520px]">
         {hasToken ? (
           <Map
             {...viewState}

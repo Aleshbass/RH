@@ -5,7 +5,8 @@
  *   clinic member with access to Patients whose clinic the patient belongs to. Writes also need
  *   the clinic to be approved.
  * - Library: Rehabify staff (approved physios, clinic members, admins) and members of an active
- *   library licence see everything; patients see only what's in their own programmes.
+ *   library licence see everything; physios on a paid Rehabify Learn course study the 3D library
+ *   and the resource library; patients see only what's in their own programmes.
  * - Share links: a valid, unexpired, unrevoked link plus a device session created by the PIN.
  */
 import { ConvexError } from "convex/values";
@@ -21,8 +22,49 @@ import {
 import { clipIdFor } from "../exerciseLibraryContent";
 import { currentUser, findRelationship, isApproved } from "./careAccess";
 import { sha256Hex } from "./exerciseCrypto";
+import { endOfLagosDay } from "./learnFormat";
 
 type Ctx = QueryCtx | MutationCtx;
+
+/** Course physios keep the library this long after their cohort ends. */
+export const LEARNER_ACCESS_DAYS = 90;
+
+/** The signed-in person's email, only when Clerk has verified it. */
+export async function verifiedIdentityEmail(ctx: Ctx): Promise<string | null> {
+  const identity = await ctx.auth.getUserIdentity();
+  return identity?.emailVerified && typeof identity.email === "string" ? identity.email.toLowerCase().trim() : null;
+}
+
+/** Whether a cohort's study access is still open (until LEARNER_ACCESS_DAYS after it ends). */
+export function learnerAccessOpen(cohort: Doc<"learnCohorts">, now = Date.now()) {
+  const ended = endOfLagosDay(cohort.endDate);
+  return ended === null || now <= ended + LEARNER_ACCESS_DAYS * 86_400_000;
+}
+
+/**
+ * Paid Rehabify Learn registrations for this person, matched by account or by their verified
+ * email (people often pay before they have an account), newest cohort first.
+ */
+export async function paidLearnRegistrations(ctx: Ctx, user: Doc<"users"> | null, email: string | null) {
+  const found = new Map<Id<"learnRegistrations">, Doc<"learnRegistrations">>();
+  if (user) {
+    for (const r of await ctx.db.query("learnRegistrations").withIndex("by_user", (q) => q.eq("userId", user._id)).take(20)) {
+      found.set(r._id, r);
+    }
+  }
+  if (email) {
+    for (const r of await ctx.db.query("learnRegistrations").withIndex("by_email", (q) => q.eq("email", email)).take(20)) {
+      found.set(r._id, r);
+    }
+  }
+  const rows: { registration: Doc<"learnRegistrations">; cohort: Doc<"learnCohorts"> }[] = [];
+  for (const registration of found.values()) {
+    if (registration.status !== "paid") continue;
+    const cohort = await ctx.db.get(registration.cohortId);
+    if (cohort) rows.push({ registration, cohort });
+  }
+  return rows.sort((a, b) => b.cohort.startDate.localeCompare(a.cohort.startDate));
+}
 
 export function displayName(user: Doc<"users"> | null | undefined, fallback = "Your physiotherapist") {
   return [user?.firstName, user?.lastName].filter(Boolean).join(" ") || fallback;
@@ -98,6 +140,7 @@ export async function careTeamOrNull(ctx: Ctx, patientId: Id<"users">) {
 export type LibraryAccess =
   | { kind: "staff"; user: Doc<"users">; label: string }
   | { kind: "licence"; user: Doc<"users">; label: string; licence: Doc<"libraryLicences"> }
+  | { kind: "learner"; user: Doc<"users">; label: string }
   | { kind: "patient"; user: Doc<"users">; label: string };
 
 export async function activeLicenceFor(ctx: Ctx, userId: Id<"users">) {
@@ -128,6 +171,11 @@ export async function libraryAccess(ctx: Ctx): Promise<LibraryAccess | null> {
 
   const licence = await activeLicenceFor(ctx, user._id);
   if (licence) return { kind: "licence", user, label: licence.watermarkLabel || licence.orgName, licence };
+
+  const courses = await paidLearnRegistrations(ctx, user, await verifiedIdentityEmail(ctx));
+  if (courses.some((c) => learnerAccessOpen(c.cohort))) {
+    return { kind: "learner", user, label: `${displayName(user, "Rehabify Learn")} · Rehabify Learn` };
+  }
 
   if (user.role === "patient") return { kind: "patient", user, label: initials(user) };
   return null;

@@ -26,7 +26,7 @@ export default function AddPatientModal({ trigger, onSuccess }: AddPatientModalP
       </DialogTrigger>
       <DialogContent className="max-h-[90vh] overflow-y-auto rounded-3xl border-0 p-6 sm:max-w-lg dark:bg-rh-ink-2">
         <DialogHeader className="text-left">
-          <DialogTitle className="text-xl font-semibold tracking-tight text-rh-night dark:text-white">Add a patient</DialogTitle>
+          <DialogTitle className="text-xl font-semibold tracking-tight text-rh-ink dark:text-white">Add a patient</DialogTitle>
           <DialogDescription>Invite them to Rehabify so you can share plans, messages and bookings.</DialogDescription>
         </DialogHeader>
         <AddPatientDirectForm
