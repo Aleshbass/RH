@@ -98,7 +98,7 @@ const FAQ = () => {
   };
 
   return (
-    <section className="bg-[#FAF6E7] text-[#002e2c] py-20">
+    <section id="faqs" className="bg-[#FAF6E7] text-[#002e2c] py-20 scroll-mt-24">
       <div className="container mx-auto px-6 lg:px-8 max-w-4xl">
         <div className="text-center mb-12">
           <span className="text-sm font-bold tracking-wider uppercase text-[#005b57]">
@@ -170,9 +170,6 @@ const FAQ = () => {
           )}
         </div>
 
-        <div className="text-center mt-8">
-          <p className="text-gray-500 text-sm">Or browse our full <a href="/faqs" className="text-[#005b57] hover:underline font-medium">FAQ page</a>.</p>
-        </div>
       </div>
     </section>
   );
