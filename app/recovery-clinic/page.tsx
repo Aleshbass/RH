@@ -6,9 +6,7 @@ import {
     ArrowRight,
     CheckCircle2,
     ShieldCheck,
-    Star,
     Clock,
-    MapPin,
     Users,
     Activity,
     Award,
@@ -129,9 +127,9 @@ const verificationTiers = [
         badge: Award,
         requirements: [
             "All Verified requirements",
-            "150+ sessions, 4.5+ rating",
+            "Strong session history and patient ratings",
             "Specialty certification verified",
-            "5+ years experience",
+            "Several years of clinical experience",
         ],
     },
     {
@@ -140,61 +138,10 @@ const verificationTiers = [
         badge: Crown,
         requirements: [
             "All Elite requirements",
-            "400+ sessions, 4.8+ rating",
-            "10+ years experience",
+            "Extensive session history and excellent patient ratings",
+            "Extensive clinical experience",
             "Published research or clinical trainer",
         ],
-    },
-];
-
-const physioProfiles = [
-    {
-        name: "Dr. Chisom A.",
-        speciality: "Sports Medicine & Orthopaedic",
-        location: "Lagos, Victoria Island",
-        rating: 4.9,
-        sessions: 280,
-        tier: "Elite",
-        tierColor: "bg-blue-100 text-blue-700",
-    },
-    {
-        name: "Dr. Fatima M.",
-        speciality: "Neurological Rehabilitation",
-        location: "Abuja, Wuse 2",
-        rating: 4.8,
-        sessions: 450,
-        tier: "Master Clinician",
-        tierColor: "bg-purple-100 text-purple-700",
-    },
-    {
-        name: "Dr. Emmanuel O.",
-        speciality: "Paediatric & General",
-        location: "Port Harcourt",
-        rating: 4.7,
-        sessions: 190,
-        tier: "Elite",
-        tierColor: "bg-blue-100 text-blue-700",
-    },
-];
-
-const testimonials = [
-    {
-        text: "After my knee surgery, I was told recovery would take 6 months. Rehabify matched me with Dr. Chisom — I was back on my feet in 3 months.",
-        name: "Tunde A.",
-        condition: "Post-ACL Surgery",
-        rating: 5,
-    },
-    {
-        text: "Finding a neurological physiotherapist for my father's stroke recovery was impossible until we found Rehabify. The progress has been incredible.",
-        name: "Ngozi E.",
-        condition: "Stroke Rehabilitation",
-        rating: 5,
-    },
-    {
-        text: "As a runner, I needed someone who understood sports injuries. The matching was perfect and the package pricing made a real difference.",
-        name: "Kemi O.",
-        condition: "Sports Injury",
-        rating: 5,
     },
 ];
 
@@ -390,110 +337,6 @@ export default function RecoveryClinicPage() {
                                             </li>
                                         ))}
                                     </ul>
-                                </div>
-                            </FadeIn>
-                        ))}
-                    </div>
-                </div>
-            </section>
-
-            {/* ── Featured Physios ── */}
-            <section className="py-20 sm:py-24 bg-[#FAF6E7]">
-                <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-5xl">
-                    <FadeIn>
-                        <div className="text-center mb-14">
-                            <span className="text-xs font-bold uppercase tracking-widest text-[#005b57]">
-                                Our Providers
-                            </span>
-                            <h2 className="text-3xl sm:text-4xl font-bold text-gray-900 mt-2">
-                                Meet Our Verified Physiotherapists
-                            </h2>
-                        </div>
-                    </FadeIn>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-                        {physioProfiles.map((p, i) => (
-                            <FadeIn key={p.name} delay={i * 0.1}>
-                                <div className="bg-white rounded-2xl border border-gray-200 p-6">
-                                    <div className="flex items-center gap-3 mb-4">
-                                        <div className="w-12 h-12 rounded-full bg-[#005b57] text-white flex items-center justify-center font-bold text-lg">
-                                            {p.name.charAt(0)}
-                                        </div>
-                                        <div>
-                                            <p className="font-bold text-gray-900 text-sm">
-                                                {p.name}
-                                            </p>
-                                            <span
-                                                className={`text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full ${p.tierColor}`}
-                                            >
-                                                {p.tier}
-                                            </span>
-                                        </div>
-                                    </div>
-                                    <p className="text-sm text-gray-700 font-medium mb-1">
-                                        {p.speciality}
-                                    </p>
-                                    <p className="text-xs text-gray-400 flex items-center gap-1 mb-3">
-                                        <MapPin className="w-3 h-3" /> {p.location}
-                                    </p>
-                                    <div className="flex items-center gap-4 text-xs text-gray-500">
-                                        <span className="flex items-center gap-1">
-                                            <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
-                                            {p.rating}
-                                        </span>
-                                        <span>{p.sessions}+ sessions</span>
-                                    </div>
-                                </div>
-                            </FadeIn>
-                        ))}
-                    </div>
-                    <FadeIn delay={0.3}>
-                        <p className="text-center text-gray-500 text-sm mt-8">
-                            100+ verified physiotherapists across Nigeria.{" "}
-                            <Link
-                                href="/start-treatment"
-                                className="text-[#005b57] font-semibold hover:underline"
-                            >
-                                Get matched now →
-                            </Link>
-                        </p>
-                    </FadeIn>
-                </div>
-            </section>
-
-            {/* ── Testimonials ── */}
-            <section className="py-20 sm:py-24">
-                <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-5xl">
-                    <FadeIn>
-                        <div className="text-center mb-14">
-                            <span className="text-xs font-bold uppercase tracking-widest text-[#005b57]">
-                                Patient Stories
-                            </span>
-                            <h2 className="text-3xl sm:text-4xl font-bold text-gray-900 mt-2">
-                                Real results, real people
-                            </h2>
-                        </div>
-                    </FadeIn>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                        {testimonials.map((t, i) => (
-                            <FadeIn key={t.name} delay={i * 0.1}>
-                                <div className="bg-white border border-gray-200 rounded-2xl p-6 h-full flex flex-col">
-                                    <div className="flex gap-0.5 mb-3">
-                                        {Array.from({ length: t.rating }).map((_, j) => (
-                                            <Star
-                                                key={j}
-                                                className="w-4 h-4 text-amber-500 fill-amber-500"
-                                            />
-                                        ))}
-                                    </div>
-                                    <p className="text-sm text-gray-700 leading-relaxed flex-1 mb-4">
-                                        &ldquo;{t.text}&rdquo;
-                                    </p>
-                                    <div>
-                                        <p className="font-semibold text-gray-900 text-sm">
-                                            {t.name}
-                                        </p>
-                                        <p className="text-xs text-gray-400">{t.condition}</p>
-                                    </div>
                                 </div>
                             </FadeIn>
                         ))}

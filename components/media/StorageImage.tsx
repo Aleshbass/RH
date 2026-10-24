@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import Image from "next/image";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
@@ -25,6 +26,6 @@ export function StorageImage({ storageId, alt = "", className }: StorageImagePro
     return <div className={`bg-gray-100 text-gray-400 flex items-center justify-center text-sm ${className || "h-32 w-full"}`}>Image unavailable</div>;
   }
 
-  // eslint-disable-next-line @next/next/no-img-element
-  return <img src={url} alt={alt} className={className} />;
+  // Signed storage URL: served as is (width/height only reserve space; the class sets the size)
+  return <Image src={url} alt={alt} width={800} height={600} unoptimized className={className} />;
 }

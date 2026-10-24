@@ -42,8 +42,8 @@ export function ClinicOnboardingSection() {
       icon: CreditCard,
       tag: 'Instant Settlement',
       title: 'Paystack Net Billing',
-      description: 'Issue one-click invoice links with automated 90% net clinic payouts directly into your business bank account.',
-      pill: '90% Net Clinic Share',
+      description: 'Issue one-click invoice links with automated net clinic payouts directly into your business bank account.',
+      pill: 'Automated Clinic Payouts',
     },
     {
       icon: Share2,
@@ -247,8 +247,8 @@ export function ClinicOnboardingSection() {
                     <span className="text-sm font-semibold text-[#005b57] dark:text-[#38b2ac] tabular-nums">₦2.45M</span>
                   </div>
                   <div className="bg-white dark:bg-[#1A1A1D] rounded-xl p-2.5 border border-black/[0.04] dark:border-white/[0.05]">
-                    <span className="block text-[10px] text-neutral-400">Retention</span>
-                    <span className="text-sm font-semibold text-neutral-900 dark:text-white tabular-nums">98.2%</span>
+                    <span className="block text-[10px] text-neutral-400">Sessions Today</span>
+                    <span className="text-sm font-semibold text-neutral-900 dark:text-white tabular-nums">6</span>
                   </div>
                 </div>
 
@@ -350,11 +350,11 @@ export function ClinicOnboardingSection() {
                             <span className="font-medium text-neutral-800 dark:text-neutral-200 block">Paystack Direct Net</span>
                             <span className="text-[11px] text-neutral-400">Settled to GTBank · Instant</span>
                           </div>
-                          <span className="text-[11px] font-bold text-emerald-600 tabular-nums">+₦135,000</span>
+                          <span className="text-[11px] font-bold text-emerald-600 tabular-nums">+₦120,000</span>
                         </div>
                         <div className="flex items-center justify-between text-[11px] text-neutral-500 px-1 pt-1">
-                          <span>Rehabify Escrow Fee (10%)</span>
-                          <span className="tabular-nums">-₦15,000</span>
+                          <span>Rehabify Platform Fee</span>
+                          <span className="tabular-nums">-₦30,000</span>
                         </div>
                       </motion.div>
                     )}

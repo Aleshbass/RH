@@ -12,6 +12,8 @@ export const metadata: Metadata = {
     "Hospital Integration",
     "Developer Dashboard",
   ],
+  // Signed-in partner workspace: keep it out of search results (the public page is /partnerships)
+  robots: { index: false, follow: false },
 };
 
 export default function PartnerPortalLayout({

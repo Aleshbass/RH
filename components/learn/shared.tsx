@@ -29,7 +29,7 @@ export const PROGRAM = {
     'Build practical skills in musculoskeletal assessment, clinical reasoning, patient management, and rehabilitation through structured online learning and live clinical sessions.',
   certificationNote:
     'Certification issued by Rehabify following successful completion of the program and assessment. This is a professional development certificate and does not replace professional licensure or specialist accreditation by a regulatory body.',
-  supportEmail: 'support@rehabify.ng',
+  supportEmail: 'support@physioaroundme.com',
 }
 
 /** Shown before the first cohort exists, and in the headline. */

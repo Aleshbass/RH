@@ -71,7 +71,7 @@ export const consultationBookingPolicySections: readonly PolicySection[] = [
     title: "8. Changes and contact",
     paragraphs: [
       "This policy applies to the version displayed to you when you accept it. A later update will be published with a new version and effective date and will be presented before it applies to a new booking.",
-      "For booking, payment, or policy questions, contact Rehabify at rehabify.app@gmail.com.",
+      "For booking, payment, or policy questions, contact Rehabify at support@physioaroundme.com.",
     ],
   },
 ];

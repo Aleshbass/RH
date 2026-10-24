@@ -116,6 +116,7 @@ export const PRIVATE_PATHS = [
   '/v/', // patient join links
   '/x/', // PIN-protected exercise programme links
   '/r/', // partner referral links (set an attribution cookie)
+  '/go/', // one-tap dashboard links from Joy (carry a sign-in code)
   '/track/', // individual referral tracking pages
   '/invoices',
   '/payment/callback',

@@ -1,5 +1,6 @@
 "use client";
 
+import Image from 'next/image'
 import { Play } from '@/components/icons'
 import React, { useEffect, useRef, useState } from "react";
 
@@ -97,8 +98,7 @@ function YouTubePlayer({ videoId, poster, onReady, onPlay }: { videoId: string; 
         aria-label="Play video"
       >
         {/* Thumbnail */}
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={thumb} alt="Video thumbnail" className="absolute inset-0 h-full w-full object-cover" />
+        <Image src={thumb} alt="Video thumbnail" fill unoptimized sizes="100vw" className="object-cover" />
         <div className="absolute inset-0 bg-black/20 group-hover:bg-black/30 transition-colors" />
         <div className="absolute inset-0 flex items-center justify-center">
           <div className="h-16 w-16 rounded-full bg-white/80 group-hover:bg-white shadow flex items-center justify-center">

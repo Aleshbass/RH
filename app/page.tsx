@@ -4,7 +4,6 @@ import { Authenticated, Unauthenticated, AuthLoading } from "convex/react";
 import dynamicImport from "next/dynamic";
 
 import { LandingHero } from "@/components/landing/hero";
-import { FoundersCarousel } from "@/components/landing/FoundersCarousel";
 import { HowItWorks } from "@/components/landing/HowItWorks";
 import { TrustSafety } from "@/components/landing/TrustSafety";
 import { HomePageSEO } from "@/components/seo/HomePageSEO";
@@ -34,7 +33,6 @@ const PageContent = () => (
     <DoctorsClinicsSection />
     <ClinicOnboardingSection />
     <ForInstitutionsSection />
-    <FoundersCarousel />
     <TrustSafety />
     <FAQ />
   </div>

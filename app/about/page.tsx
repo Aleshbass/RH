@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState } from "react";
 import { motion } from "framer-motion";
 import {
     ArrowRight,
@@ -16,17 +16,9 @@ import {
     Mail,
     Phone,
     Clock,
-    Send,
 } from "@/components/icons";
 import Link from "next/link";
 import Image from "next/image";
-import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import {
-    faXTwitter,
-    faLinkedin,
-    faInstagram,
-    faYoutube,
-} from "@fortawesome/free-brands-svg-icons";
 
 // ── Fade-in wrapper ──────────────────────────────
 function FadeIn({
@@ -56,7 +48,7 @@ const broken = [
     {
         num: "1",
         title: "The Referral System Collapsed",
-        text: "60-90% of patients self-refer chaotically. Doctors have no structured pathway to send patients to physiotherapists. When referrals happen, it's scribbled phone numbers on prescription pads. Zero feedback on what happens next.",
+        text: "Most patients self-refer chaotically. Doctors have no structured pathway to send patients to physiotherapists. When referrals happen, it's scribbled phone numbers on prescription pads. Zero feedback on what happens next.",
     },
     {
         num: "2",
@@ -107,7 +99,7 @@ const differentiators = [
     {
         icon: Target,
         title: "We Fix System Problems, Not Individual Symptoms",
-        text: "Other platforms help you 'find a physio.' We're rebuilding the broken referral infrastructure that's kept 70% of Nigerians in untreated pain.",
+        text: "Other platforms help you 'find a physio.' We're rebuilding the broken referral infrastructure that's kept so many Nigerians in untreated pain.",
     },
     {
         icon: ShieldCheck,
@@ -127,46 +119,7 @@ const clinicalChecks = [
 
 // ── Page ──────────────────────────────────────────
 export default function AboutPage() {
-    const [email, setEmail] = useState("");
     const [activeTab, setActiveTab] = useState<"patients" | "physios" | "doctors">("patients");
-    const [isSubmitting, setIsSubmitting] = useState(false);
-    const [subscribeStatus, setSubscribeStatus] = useState<"success" | "error" | null>(null);
-
-    const isMounted = useRef(true);
-
-    useEffect(() => {
-        return () => {
-            isMounted.current = false;
-        };
-    }, []);
-
-    const handleSubscribe = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (isSubmitting) return;
-
-        setIsSubmitting(true);
-        setSubscribeStatus(null);
-
-        try {
-            // TODO: Replace with real subscribe API
-            await new Promise((resolve) => setTimeout(resolve, 1500));
-            // Simulate random failure 10% of the time for testing, switch to real logic when API exists
-            if (Math.random() > 0.9) throw new Error("Subscription failed");
-
-            if (isMounted.current) {
-                setSubscribeStatus("success");
-                setEmail("");
-            }
-        } catch (error) {
-            if (isMounted.current) {
-                setSubscribeStatus("error");
-            }
-        } finally {
-            if (isMounted.current) {
-                setIsSubmitting(false);
-            }
-        }
-    };
 
     return (
         <div className="bg-white">
@@ -400,7 +353,7 @@ export default function AboutPage() {
                                     ["Smart Matching", "60-second conversation → verified physiotherapist matches → transparent pricing → book in 24 hours"],
                                     ["Fair, Dynamic Pricing", "Pricing based on location, condition complexity, and provider experience."],
                                     ["Progress Tracking", "Digital session notes, exercise videos, objective measurements, recovery timelines — all in one app."],
-                                    ["Package Savings", "Book sessions together, save up to 15%, and guarantee your schedule."],
+                                    ["Package Savings", "Book sessions together and guarantee your schedule."],
                                 ].map(([title, desc]) => (
                                     <div key={title} className="flex gap-3">
                                         <CheckCircle2 className="w-5 h-5 text-[#005b57] mt-0.5 shrink-0" />
@@ -489,7 +442,7 @@ export default function AboutPage() {
                                 <h3 className="font-bold text-gray-900">AwaDOC</h3>
                                 <p className="text-sm text-gray-500 mt-1">Telemedicine Platform</p>
                                 <p className="text-sm text-gray-600 mt-3">
-                                    100+ doctors referring patients for physiotherapy rehabilitation
+                                    Doctors referring patients for physiotherapy rehabilitation
                                 </p>
                             </div>
                         </FadeIn>
@@ -602,69 +555,31 @@ export default function AboutPage() {
                         })}
                     </div>
 
-                    {/* Newsletter */}
+                    {/* Talk to us */}
                     <FadeIn delay={0.2}>
                         <div className="mt-14 bg-[#FAF6E7] rounded-2xl p-6 sm:p-8 text-center">
                             <h3 className="font-bold text-gray-900 text-lg mb-2">
-                                Join Our Community
+                                Talk to us
                             </h3>
                             <p className="text-gray-600 text-sm mb-6 max-w-lg mx-auto">
-                                Subscribe for recovery tips, provider spotlights, and
-                                healthcare system insights.
+                                Book care with Joy on WhatsApp, or find the right team for anything else.
                             </p>
-                            <form
-                                onSubmit={handleSubscribe}
-                                className="flex flex-col sm:flex-row gap-3 max-w-md mx-auto"
-                            >
-                                <input
-                                    type="email"
-                                    required
-                                    placeholder="your@email.com"
-                                    value={email}
-                                    onChange={(e) => setEmail(e.target.value)}
-                                    disabled={isSubmitting}
-                                    className="flex-1 px-4 py-3 rounded-full border border-gray-300 focus:outline-none focus:ring-2 focus:ring-[#005b57]/20 focus:border-[#005b57] text-sm disabled:opacity-70 disabled:bg-gray-50"
-                                />
-                                <button
-                                    type="submit"
-                                    disabled={isSubmitting}
-                                    className="bg-[#005b57] text-white font-semibold px-6 py-3 rounded-full hover:bg-[#004a46] transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed"
+                            <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                                <a
+                                    href={`https://wa.me/2348061525811?text=${encodeURIComponent("Hi Joy! I need help with my recovery.")}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="bg-[#005b57] text-white font-semibold px-6 py-3 rounded-full hover:bg-[#004a46] transition-all inline-flex items-center justify-center gap-2"
                                 >
-                                    {isSubmitting ? (
-                                        <span className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />
-                                    ) : (
-                                        <Send className="w-4 h-4" />
-                                    )}
-                                    {isSubmitting ? "Subscribing..." : "Subscribe"}
-                                </button>
-                            </form>
-                            {subscribeStatus === "success" && (
-                                <p className="text-sm mt-3 text-green-600 font-medium tracking-wide">
-                                    Thanks for subscribing!
-                                </p>
-                            )}
-                            {subscribeStatus === "error" && (
-                                <p className="text-sm mt-3 text-red-600 font-medium tracking-wide">
-                                    Subscription failed. Please try again.
-                                </p>
-                            )}
-                            <div className="flex justify-center gap-5 mt-6">
-                                {[
-                                    { icon: faLinkedin, href: "#", label: "LinkedIn" },
-                                    { icon: faXTwitter, href: "#", label: "X" },
-                                    { icon: faInstagram, href: "#", label: "Instagram" },
-                                    { icon: faYoutube, href: "#", label: "YouTube" },
-                                ].map((s) => (
-                                    <button
-                                        key={s.label}
-                                        type="button"
-                                        aria-label={s.label}
-                                        onClick={(e) => { e.preventDefault(); /* TODO: Add real social links */ }}
-                                        className="text-gray-400 hover:text-[#005b57] transition-colors cursor-pointer"
-                                    >
-                                        <FontAwesomeIcon icon={s.icon} size="lg" />
-                                    </button>
-                                ))}
+                                    Chat with Joy
+                                    <ArrowRight className="w-4 h-4" />
+                                </a>
+                                <Link
+                                    href="/contact"
+                                    className="border border-gray-300 text-gray-900 font-semibold px-6 py-3 rounded-full hover:bg-white transition-all inline-flex items-center justify-center"
+                                >
+                                    All contact options
+                                </Link>
                             </div>
                         </div>
                     </FadeIn>

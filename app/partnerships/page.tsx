@@ -445,7 +445,7 @@ export default function PartnershipsPage() {
 
           <FadeIn delay={0.2}>
             <p className="text-xl text-gray-600 max-w-3xl mx-auto mb-10 leading-relaxed">
-              Integrate Nigeria&apos;s largest verified physiotherapy network into your product. 
+              Integrate Rehabify&apos;s verified physiotherapy network into your product.
               REST APIs, embed widgets, WhatsApp deep-links, and more — choose the integration 
               that fits your workflow.
             </p>
@@ -467,23 +467,6 @@ export default function PartnershipsPage() {
                 <Code className="w-4 h-4" />
                 View Integration Docs
               </Link>
-            </div>
-          </FadeIn>
-
-          {/* Stats strip */}
-          <FadeIn delay={0.4}>
-            <div className="mt-14 grid grid-cols-2 md:grid-cols-4 gap-6 max-w-3xl mx-auto">
-              {[
-                { value: "500+", label: "Patients Treated" },
-                { value: "50+", label: "Verified Therapists" },
-                { value: "15 min", label: "Average Setup" },
-                { value: "99.9%", label: "API Uptime" },
-              ].map((stat, i) => (
-                <div key={i} className="text-center">
-                  <div className="text-2xl md:text-3xl font-bold text-[#002e2c] font-cal">{stat.value}</div>
-                  <div className="text-sm text-gray-500 mt-1">{stat.label}</div>
-                </div>
-              ))}
             </div>
           </FadeIn>
         </div>

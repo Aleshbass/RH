@@ -11,6 +11,10 @@
  * the <style> block only tightens spacing on phones.
  */
 
+import { SUPPORT_EMAIL } from "../contact";
+
+export { SUPPORT_EMAIL };
+
 export const EMAIL_COLORS = {
   ink: "#002e2c",
   brand: "#005b57",
@@ -30,7 +34,6 @@ export const EMAIL_LOGO_ON_DARK =
   "https://res.cloudinary.com/dubeogufg/image/upload/e_replace_color:ffffff:40:005b57,w_1200/v1764254773/MainRehabify_xfzfil.png";
 
 const SITE_URL = "https://physioaroundme.com";
-export const SUPPORT_EMAIL = "support@physioaroundme.com";
 
 const FONT = "'Helvetica Neue', Helvetica, Arial, sans-serif";
 const MONO = "SFMono-Regular, Menlo, Consolas, 'Courier New', monospace";

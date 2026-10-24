@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { paginationOptsValidator } from "convex/server";
 import { internalMutation, mutation, query, action, QueryCtx, MutationCtx, internalQuery } from "./_generated/server";
 import { Doc, Id } from "./_generated/dataModel";
@@ -755,7 +755,7 @@ export const completeUserProfile = mutation({
         const displayName = `${user.firstName || ""} ${user.lastName || ""}`.trim() || (user.email || "User");
         const roleLabel = args.role === "physiotherapist" ? "Physiotherapist" : "Clinic Owner";
         const appUrl = publicAppUrl();
-        const adminActionPath = `/admin/users/${user._id}`;
+        const adminActionPath = `/dashboard/admin/users/${user._id}`;
         const adminDashboardLink = `${appUrl}${adminActionPath}`;
 
 
@@ -868,33 +868,147 @@ export const updateUserRole = mutation({
   },
 });
 
-// ==== INTERNAL MUTATION: Delete User from Clerk Data ====
-export const deleteUser = internalMutation({
-  args: {
-    clerkId: v.string(),
-  },
-  handler: async (ctx, args) => {
-    if (!args.clerkId) {
-      throw new Error("Clerk User ID is required for deletion.");
+// ==== ACCOUNT DELETION (NDPR) ====
+
+const OPEN_LOAN_STATUSES = ["initiated", "pending", "approved", "offer_accepted"];
+
+/**
+ * Erases a person's personal data and keeps the records the law and accounting need (visits,
+ * clinical notes written by their physio, invoices, payments) under the name "Deleted user".
+ * Safe to run twice.
+ */
+async function erasePersonalData(ctx: MutationCtx, user: Doc<"users">, reason: string) {
+  if (user.deletedAt) return;
+
+  // Health and contact details the patient gave us, and the files they uploaded
+  const patientProfile = await ctx.db
+    .query("patientProfiles")
+    .withIndex("by_user_id", (q) => q.eq("userId", user._id))
+    .first();
+  if (patientProfile) {
+    const documents = await ctx.db
+      .query("patientDocuments")
+      .withIndex("by_patient_profile_id", (q) => q.eq("patientProfileId", patientProfile._id))
+      .take(500);
+    for (const document of documents) {
+      await ctx.storage.delete(document.storageId).catch(() => undefined);
+      await ctx.db.delete(document._id);
+    }
+    await ctx.db.patch(patientProfile._id, {
+      dateOfBirth: undefined,
+      gender: undefined,
+      address: undefined,
+      city: undefined,
+      area: undefined,
+      country: undefined,
+      medicalHistorySummary: undefined,
+      emergencyContact: undefined,
+      referralSource: undefined,
+      preferredLanguage: undefined,
+      therapyFor: undefined,
+      therapyType: undefined,
+      relationshipStatus: undefined,
+    });
+  }
+
+  // Family members lose access to this person's care
+  const grants = await ctx.db
+    .query("familyAccessGrants")
+    .withIndex("by_patient_user_id", (q) => q.eq("patientUserId", user._id))
+    .take(100);
+  for (const grant of grants) await ctx.db.delete(grant._id);
+
+  // A physio leaves the marketplace; their public bio and location go
+  const physioProfile = await ctx.db
+    .query("physiotherapistProfiles")
+    .withIndex("by_user_id", (q) => q.eq("userId", user._id))
+    .first();
+  if (physioProfile) {
+    await ctx.db.patch(physioProfile._id, {
+      isAvailableOnMarketplace: false,
+      bio: undefined,
+      location: undefined,
+      latitude: undefined,
+      longitude: undefined,
+    });
+  }
+
+  const notifications = await ctx.db
+    .query("notifications")
+    .withIndex("by_user", (q) => q.eq("userId", user._id))
+    .take(1000);
+  for (const notification of notifications) await ctx.db.delete(notification._id);
+
+  // A new clerkId frees the sign-in: signing up again starts a fresh account
+  await ctx.db.patch(user._id, {
+    clerkId: `deleted:${user._id}`,
+    email: undefined,
+    firstName: "Deleted",
+    lastName: "user",
+    imageUrl: undefined,
+    phoneNumber: undefined,
+    notificationPreferences: undefined,
+    preferences: undefined,
+    status: "terminated",
+    deletedAt: Date.now(),
+  });
+
+  await logSecurityEvent(ctx, "account_deleted", { userId: user._id, details: { reason, role: user.role ?? null } });
+}
+
+/**
+ * The signed-in patient or physio deletes their own account (Settings). Called by
+ * /api/account/delete, which then removes the Clerk sign-in.
+ */
+export const deleteMyAccount = mutation({
+  args: { confirm: v.literal("DELETE") },
+  handler: async (ctx) => {
+    const user = await getAuthenticatedUser(ctx);
+    if (user.role !== "patient" && user.role !== "physiotherapist") {
+      throw new ConvexError("Please contact support to close this account.");
     }
 
-    const existingUser = await ctx.db
+    const now = Date.now();
+    const upcoming = [
+      ...(await ctx.db
+        .query("appointments")
+        .withIndex("by_patient_id_and_time", (q) => q.eq("patientId", user._id).gt("startTime", now))
+        .take(50)),
+      ...(user.role === "physiotherapist"
+        ? await ctx.db
+            .query("appointments")
+            .withIndex("by_physiotherapist_id_and_time", (q) => q.eq("physiotherapistId", user._id).gt("startTime", now))
+            .take(50)
+        : []),
+    ];
+    if (upcoming.some((appointment) => appointment.status === "scheduled" || appointment.status === "confirmed")) {
+      throw new ConvexError("You have upcoming visits. Cancel them first, then delete your account.");
+    }
+
+    const loans = await ctx.db
+      .query("loanApplications")
+      .withIndex("by_patient", (q) => q.eq("patientId", user._id))
+      .take(50);
+    if (loans.some((loan) => OPEN_LOAN_STATUSES.includes(loan.status))) {
+      throw new ConvexError("You have a MediLoan in progress. Please contact support to close your account.");
+    }
+
+    await erasePersonalData(ctx, user, "self_service");
+    return { success: true };
+  },
+});
+
+/** Clerk webhook user.deleted: the sign-in is gone, so erase the account's personal data. */
+export const eraseUserByClerkId = internalMutation({
+  args: { clerkId: v.string() },
+  handler: async (ctx, args) => {
+    const user = await ctx.db
       .query("users")
       .withIndex("by_clerk_id", (q) => q.eq("clerkId", args.clerkId))
       .unique();
-
-    if (existingUser) {
-      // Optional: Delete associated profile data
-      // if (existingUser.physiotherapistProfileId) {
-      //   await ctx.db.delete(existingUser.physiotherapistProfileId);
-      // }
-      // if (existingUser.patientProfileId) {
-      //   await ctx.db.delete(existingUser.patientProfileId);
-      // }
-      await ctx.db.delete(existingUser._id);
-    } else {
-      console.warn(`User with Clerk ID ${args.clerkId} not found for deletion.`);
-    }
+    if (!user) return { erased: false };
+    await erasePersonalData(ctx, user, "clerk_user_deleted");
+    return { erased: true };
   },
 });
 

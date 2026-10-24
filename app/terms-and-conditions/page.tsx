@@ -1,4 +1,4 @@
-import { Download, ArrowLeft } from '@/components/icons'
+import { ArrowLeft } from '@/components/icons'
 import { Metadata } from 'next';
 import Link from 'next/link';
 import { MedicalWebPageSchema } from '@/components/seo/StructuredData';
@@ -31,19 +31,7 @@ export default function TermsAndConditionsPage() {
             <div className="flex flex-col sm:flex-row sm:items-center gap-4 text-sm text-gray-600">
               <p><strong>Effective Date:</strong> October 2, 2025</p>
               <span className="hidden sm:block">•</span>
-              <p><strong>Contact:</strong> <a href="mailto:rehabify.app@gmail.com" className="text-[#005b57] hover:underline">rehabify.app@gmail.com</a></p>
-            </div>
-            
-            {/* Download Option */}
-            <div className="mt-6 pt-6 border-t border-gray-200">
-              <a 
-                href="/docs/Rehabify Health – Terms and Conditions of Use 2_10_25.docx"
-                download
-                className="inline-flex items-center gap-2 text-[#005b57] hover:text-[#00877e] transition-colors"
-              >
-                <Download className="w-5 h-5" />
-                Download as Word Document
-              </a>
+              <p><strong>Contact:</strong> <a href="mailto:support@physioaroundme.com" className="text-[#005b57] hover:underline">support@physioaroundme.com</a></p>
             </div>
           </div>
 
@@ -253,7 +241,7 @@ export default function TermsAndConditionsPage() {
               </p>
               <div className="mt-4 p-6 bg-gray-50 rounded-lg">
                 <p className="text-gray-700">
-                  <strong>Email:</strong> <a href="mailto:rehabify.app@gmail.com" className="text-[#005b57] hover:underline">rehabify.app@gmail.com</a>
+                  <strong>Email:</strong> <a href="mailto:support@physioaroundme.com" className="text-[#005b57] hover:underline">support@physioaroundme.com</a>
                 </p>
                 <p className="text-gray-700 mt-2">
                   <strong>Platform:</strong> <a href="https://physioaroundme.com" className="text-[#005b57] hover:underline">https://physioaroundme.com</a>

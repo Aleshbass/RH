@@ -19,6 +19,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { Resend } from "resend";
 import { platformAdminEmails } from "@/lib/email/adminRecipients";
+import { publicAppUrl } from "@/lib/public-app-url";
 import {
     actions,
     button,
@@ -41,7 +42,7 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 
 const ADMIN_EMAILS = platformAdminEmails();
 const FROM_EMAIL  = process.env.FROM_EMAIL || "noreply@physioaroundme.com";
-const APP_URL     = process.env.NEXT_PUBLIC_APP_URL || "https://rehabifyhealth.com";
+const APP_URL     = publicAppUrl();
 
 export async function POST(request: NextRequest) {
     try {

@@ -31,6 +31,7 @@ const STATIC_ROUTES: StaticRoute[] = [
   { path: '/pricing', changeFrequency: 'monthly', priority: 0.8 },
   { path: '/rehabify-access', changeFrequency: 'monthly', priority: 0.6 },
   { path: '/about', changeFrequency: 'monthly', priority: 0.7 },
+  { path: '/contact', changeFrequency: 'yearly', priority: 0.5 },
   { path: '/meet-joy', changeFrequency: 'monthly', priority: 0.6 },
   { path: '/payment', changeFrequency: 'monthly', priority: 0.5 },
   { path: '/platform/patients', changeFrequency: 'monthly', priority: 0.6 },

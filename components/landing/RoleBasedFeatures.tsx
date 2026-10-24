@@ -64,7 +64,7 @@ export default function RoleBasedFeatures() {
         {/* Aceternity-Style Asymmetric Bento Grid */}
         <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-12 gap-6 lg:gap-8 max-w-6xl mx-auto">
           
-          {/* ── CARD 1: 100% Verified Therapists with Stylish Cloudinary Image (Col Span 7) ── */}
+          {/* ── CARD 1: Verified Therapists with Stylish Cloudinary Image (Col Span 7) ── */}
           <motion.div
             initial={{ opacity: 0, y: 24 }}
             whileInView={{ opacity: 1, y: 0 }}
@@ -78,7 +78,7 @@ export default function RoleBasedFeatures() {
                 <span>3-Tier Clinical Verification</span>
               </div>
               <h3 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-1 font-cal">
-                100% MRTBN-Licensed Specialists
+                MRTBN-Licensed Specialists
               </h3>
               <p className="text-[#005b57] text-sm font-semibold mb-6">
                 Matched in Under 24 Hours
@@ -120,19 +120,15 @@ export default function RoleBasedFeatures() {
                 <span>Fair Healthcare Pricing</span>
               </div>
               <h3 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-1 font-cal">
-                40–60% Lower Than Private Hospitals
+                Lower Than Private Hospitals
               </h3>
               <p className="text-[#005b57] text-sm font-semibold mb-6">
                 Active Recovery & Joy WhatsApp Tracking
               </p>
             </div>
 
-            {/* Micro Graphic: Cost Comparison Banner */}
+            {/* Micro Graphic: Price Banner */}
             <div className="bg-[#FAF6E7] rounded-2xl p-5 border border-[#e8dfc8] space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-gray-500 font-medium">Average Hospital Fee</span>
-                <span className="text-xs text-gray-400 line-through font-semibold">₦25,000+ / session</span>
-              </div>
               <div className="flex items-center justify-between text-[#005b57] font-bold">
                 <span className="text-sm">Rehabify Direct Care</span>
                 <span className="text-lg text-emerald-700 font-extrabold">From ₦6,000</span>

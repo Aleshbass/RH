@@ -2,7 +2,8 @@ import * as Sentry from '@sentry/nextjs'
 import { scrubBreadcrumb, scrubEvent } from './lib/sentryScrub'
 
 Sentry.init({
-  dsn: process.env.SENTRY_DSN,
+  // Falls back to the public DSN: only NEXT_PUBLIC_SENTRY_DSN is set in Vercel
+  dsn: process.env.SENTRY_DSN || process.env.NEXT_PUBLIC_SENTRY_DSN,
   environment: process.env.NODE_ENV,
 
   // Adjust this value in production, or use tracesSampler for greater control

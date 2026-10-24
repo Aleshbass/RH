@@ -31,7 +31,7 @@ export default function PaymentPolicyPage() {
             <div className="flex flex-col sm:flex-row sm:items-center gap-4 text-sm text-gray-600">
               <p><strong>Effective Date:</strong> October 19, 2026</p>
               <span className="hidden sm:block">•</span>
-              <p><strong>Contact:</strong> <a href="mailto:rehabify.app@gmail.com" className="text-[#005b57] hover:underline">rehabify.app@gmail.com</a></p>
+              <p><strong>Contact:</strong> <a href="mailto:support@physioaroundme.com" className="text-[#005b57] hover:underline">support@physioaroundme.com</a></p>
             </div>
           </div>
 
@@ -145,7 +145,7 @@ export default function PaymentPolicyPage() {
                 <li><strong>Dispute Window:</strong> 7 days from appointment date to raise a dispute</li>
                 <li><strong>Processing Time:</strong> 5-10 business days for investigation</li>
                 <li><strong>Resolution:</strong> Refunds granted based on evidence and platform policies</li>
-                <li><strong>Contact:</strong> <a href="mailto:rehabify.app@gmail.com" className="text-[#005b57] hover:underline">rehabify.app@gmail.com</a></li>
+                <li><strong>Contact:</strong> <a href="mailto:support@physioaroundme.com" className="text-[#005b57] hover:underline">support@physioaroundme.com</a></li>
               </ul>
             </section>
 
@@ -220,7 +220,7 @@ export default function PaymentPolicyPage() {
               <div className="mt-4 p-6 bg-gray-50 rounded-lg">
                 <p className="text-gray-700 font-semibold mb-3">Payment Support Team</p>
                 <p className="text-gray-700">
-                  <strong>Email:</strong> <a href="mailto:rehabify.app@gmail.com" className="text-[#005b57] hover:underline">rehabify.app@gmail.com</a>
+                  <strong>Email:</strong> <a href="mailto:support@physioaroundme.com" className="text-[#005b57] hover:underline">support@physioaroundme.com</a>
                 </p>
                 <p className="text-gray-700 mt-2">
                   <strong>Subject Line:</strong> "Payment Issue - [Your Issue]"

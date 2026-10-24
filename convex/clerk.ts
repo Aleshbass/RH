@@ -55,10 +55,11 @@ export const webhookHandler = action({
         }
 
         case "user.deleted": {
-          // Handle user deletion (optional)
-          // You might want to implement this for account deletion
-          // Example: await ctx.runMutation(internal.users.deleteUser, { clerkId: args.data.id });
-          return { success: true, message: "User deletion received (not implemented)" };
+          // The sign-in was deleted (by the person, an admin or /api/account/delete): erase their data
+          if (args.data?.id) {
+            await ctx.runMutation(internal.users.eraseUserByClerkId, { clerkId: args.data.id });
+          }
+          return { success: true, message: "User data erased" };
         }
 
         default:

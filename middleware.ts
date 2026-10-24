@@ -78,7 +78,8 @@ export default clerkMiddleware(async (auth, req) => {
   if (currentHost.startsWith("docs.")) {
     requestHeaders.set("x-is-b2b-subdomain", "true");
     requestHeaders.set("x-subdomain-type", "docs");
-    if (url.pathname.startsWith("/api")) {
+    // robots.txt is answered per host by app/robots.ts
+    if (url.pathname.startsWith("/api") || url.pathname === "/robots.txt") {
       return NextResponse.next({ request: { headers: requestHeaders } });
     }
     // Symmetrical redirect for partner portal
@@ -113,7 +114,8 @@ export default clerkMiddleware(async (auth, req) => {
   if (currentHost.startsWith("partners.")) {
     requestHeaders.set("x-is-b2b-subdomain", "true");
     requestHeaders.set("x-subdomain-type", "partners");
-    if (url.pathname.startsWith("/api")) {
+    // robots.txt is answered per host by app/robots.ts
+    if (url.pathname.startsWith("/api") || url.pathname === "/robots.txt") {
       return NextResponse.next({ request: { headers: requestHeaders } });
     }
     // On this host the partner auth pages are /sign-in and /sign-up (everything else is the portal)
@@ -167,6 +169,10 @@ export default clerkMiddleware(async (auth, req) => {
 
     if (req.method === "OPTIONS") {
       return new NextResponse(null, { status: 204, headers: corsHeaders });
+    }
+    // robots.txt is answered per host by app/robots.ts
+    if (url.pathname === "/robots.txt") {
+      return NextResponse.next({ request: { headers: requestHeaders } });
     }
 
     let pathname = url.pathname;

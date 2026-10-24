@@ -218,7 +218,7 @@ const NavItemComponent = ({ item, isActive, alignEnd, onClick, onMouseEnter, onM
             {/* Image Panel */}
             <div className="w-[180px] shrink-0 relative">
               {item.name === "CPD" ? (
-                <a href="https://www.rehabifylearn.com" target="_blank" rel="noopener noreferrer" className="block w-full h-full">
+                <Link href="/learn" className="block w-full h-full" onClick={onClick}>
                   <Image
                     src="/logos/images/www.rehabifylearn.com_(Nest Hub Max).webp"
                     alt="Rehabify Learn"
@@ -226,7 +226,7 @@ const NavItemComponent = ({ item, isActive, alignEnd, onClick, onMouseEnter, onM
                     className="object-cover"
                     priority
                   />
-                </a>
+                </Link>
               ) : (
                 <Image
                   src={
@@ -322,22 +322,10 @@ const navLinks: NavItem[] = [
         badge: "New",
       },
       {
-        name: "Courses",
-        href: "https://www.rehabifylearn.com",
-        subtitle: "Continuing professional development",
+        name: "Register for the next cohort",
+        href: "/learn/register",
+        subtitle: "Reserve your seat",
         icon: BookOpen,
-      },
-      {
-        name: "Workshops",
-        href: "https://www.rehabifylearn.com/courses",
-        subtitle: "Hands-on learning opportunities",
-        icon: Users,
-      },
-      {
-        name: "Certificates",
-        href: "https://www.rehabifylearn.com/about",
-        subtitle: "Track your professional development",
-        icon: Award,
       },
     ],
   },

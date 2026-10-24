@@ -20,6 +20,8 @@ export default defineSchema({
       v.literal("suspended"),
       v.literal("terminated")
     )),
+    // Set when the person deleted their account; their personal data has been erased (users.ts)
+    deletedAt: v.optional(v.number()),
     // When the user joined the clinic (if applicable)
     joinedAt: v.optional(v.number()),
 

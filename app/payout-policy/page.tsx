@@ -162,7 +162,7 @@ export default function PayoutPolicyPage() {
                             </p>
                             <div className="mt-4">
                                 <a
-                                    href="mailto:rehabify.app@gmail.com"
+                                    href="mailto:support@physioaroundme.com"
                                     className="inline-flex items-center text-sm font-medium text-blue-600 hover:text-blue-700"
                                 >
                                     Contact Support →

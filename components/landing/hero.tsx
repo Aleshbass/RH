@@ -9,7 +9,6 @@ import { useQuery } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import { useAuth } from '@clerk/nextjs';
 import HeroBackground from './HeroBackground';
-import { AnimatedTooltip } from '@/components/ui/animated-tooltip';
 import { FlipWords } from '@/components/ui/flip-words';
 
 const TYPING_PHRASES = [
@@ -19,51 +18,6 @@ const TYPING_PHRASES = [
   "Ẹhin mi n dun mi lọpọlọpọ...",
   "I need a physiotherapist near me...",
   "Can you help with sports injuries?",
-];
-
-const socialProofPeople = [
-  {
-    id: 1,
-    name: "Amaka O.",
-    designation: "Recovered from back pain",
-    image:
-      "https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?auto=format&fit=crop&w=250&q=80",
-  },
-  {
-    id: 2,
-    name: "Dr. Chidera N.",
-    designation: "Physiotherapist, Lekki",
-    image:
-      "https://images.unsplash.com/photo-1622253692010-333f2da6031d?auto=format&fit=crop&w=250&q=80",
-  },
-  {
-    id: 3,
-    name: "Fatima A.",
-    designation: "Post-stroke recovery",
-    image:
-      "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=250&q=80",
-  },
-  {
-    id: 4,
-    name: "Emeka I.",
-    designation: "Sports injury rehab",
-    image:
-      "https://images.unsplash.com/photo-1507152832244-10d45c7eda57?auto=format&fit=crop&w=250&q=80",
-  },
-  {
-    id: 5,
-    name: "Ngozi U.",
-    designation: "Knee recovery",
-    image:
-      "https://images.unsplash.com/photo-1531123897727-8f129e1688ce?auto=format&fit=crop&w=250&q=80",
-  },
-  {
-    id: 6,
-    name: "Tunde B.",
-    designation: "Physiotherapist, Ikeja",
-    image:
-      "https://images.unsplash.com/photo-1522529599102-193c0d76b5b6?auto=format&fit=crop&w=250&q=80",
-  },
 ];
 
 function TypingAnimation() {
@@ -222,13 +176,11 @@ export function LandingHero() {
               )}
             </div>
 
-            {/* Social Proof — Animated Tooltips */}
+            {/* Trust line */}
             <div className="flex flex-col items-center lg:items-start gap-3 mt-8">
-              <div className="flex flex-row items-center">
-                <AnimatedTooltip items={socialProofPeople} />
-              </div>
-              <p className="text-sm text-[#777] font-medium">
-                Trusted by <span className="text-[#1A1A1A] font-semibold">500+</span> Nigerians recovering today
+              <p className="text-sm text-[#777] font-medium flex items-center gap-2">
+                <Check className="w-4 h-4 text-[#005b57] shrink-0" />
+                Licensed physiotherapists, approved by the Rehabify team
               </p>
             </div>
           </motion.div>

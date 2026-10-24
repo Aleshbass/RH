@@ -78,7 +78,7 @@ export async function emailAboutAppointment(
       buttonUrl: appLink(args.buttonPath),
       footnote:
         args.audience === "provider"
-          ? "You're receiving this because you provide care on Rehabify Health. Questions? Write to support@rehabify.ng."
+          ? "You're receiving this because you provide care on Rehabify Health. Questions? Write to support@physioaroundme.com."
           : undefined,
     });
   } catch (err) {

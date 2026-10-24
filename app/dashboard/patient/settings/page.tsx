@@ -35,6 +35,8 @@ import { useClinicTheme } from '@/components/clinic/ClinicTheme'
 import { useSoundSetting } from '@/components/patient/shell/PatientControls'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
+import { SUPPORT_EMAIL } from '@/lib/contact'
+import { DeleteAccountButton } from '@/components/account/DeleteAccountButton'
 import {
   IconChip,
   InfoTip,
@@ -49,8 +51,6 @@ import {
 } from '@/components/patient/ui'
 
 type Gender = 'male' | 'female' | 'other' | 'prefer_not_to_say'
-
-const SUPPORT_EMAIL = 'hello@myrehabifyhealth.com'
 
 const EMPTY_FORM = {
   firstName: '',
@@ -275,10 +275,6 @@ export default function PatientSettingsPage() {
       setExporting(false)
     }
   }
-
-  const deletionMailto = `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent('Delete my Rehabify account')}&body=${encodeURIComponent(
-    `Please delete my Rehabify account.\n\nAccount email: ${patient?.email ?? ''}\nPatient ID: ${currentUser?.patientNumber ?? ''}\nName: ${patient?.firstName ?? ''} ${patient?.lastName ?? ''}`
-  )}`
 
   const isDark = theme === 'dark'
   // Patients who joined through Joy sign in with a placeholder address; don't show it as theirs
@@ -513,7 +509,7 @@ export default function PatientSettingsPage() {
           <SettingRow
             icon={Download}
             title="Download your data"
-            info="A file with a copy of your profile, visits, check-ins, exercise logs, invoices and list of documents."
+            info="A file with a copy of your profile, visits, bookings, check-ins, exercise programmes and logs, invoices, payments, loans and list of documents."
             description="Get a copy of everything we hold about you."
             control={
               <Button onClick={handleExport} disabled={exporting} className={cn(secondaryButtonClass, 'h-9 px-3')}>
@@ -528,19 +524,17 @@ export default function PatientSettingsPage() {
                 <p className="flex items-center gap-1 text-sm font-semibold text-pt-ink">
                   Delete your account
                   <InfoTip>
-                    Some clinical records must be kept for the time the law requires. We’ll tell you what is deleted and what is kept.
+                    Visit notes, invoices and payments are kept for the time the law requires, under the name “Deleted user”. Everything else is erased.
                   </InfoTip>
                 </p>
-                <p className="mt-0.5 text-[13px] text-pt-muted">Email us and we’ll close your account.</p>
+                <p className="mt-0.5 text-[13px] text-pt-muted">Erase your details and close your account. Cancel any upcoming visits first.</p>
                 <div className="mt-3 flex flex-wrap items-center gap-3">
-                  <Button asChild className={cn(dangerButtonClass, 'h-9 px-3')}>
-                    <a href={deletionMailto}>
-                      <Trash2 className="mr-2 h-3.5 w-3.5" />
-                      Request deletion
-                    </a>
-                  </Button>
+                  <DeleteAccountButton
+                    triggerClassName={cn(dangerButtonClass, 'inline-flex h-9 items-center px-3 text-sm font-medium')}
+                    kept="Visit notes, invoices and payments stay for the time the law requires, under the name “Deleted user”."
+                  />
                   <span className="flex items-center gap-1.5 text-xs text-pt-muted">
-                    <Mail className="h-3.5 w-3.5" /> {SUPPORT_EMAIL}
+                    <Mail className="h-3.5 w-3.5" /> Questions? {SUPPORT_EMAIL}
                   </span>
                 </div>
               </div>

@@ -220,7 +220,7 @@ export default function ClinicSettingsPage() {
             : setup.approvalStatus === 'pending_review'
               ? "We're checking your documents. You'll get an email once your clinic is approved."
               : setup.approvalStatus === 'declined'
-                ? 'Your application was not approved. Contact support@rehabify.ng to update your documents.'
+                ? 'Your application was not approved. Contact support@physioaroundme.com to update your documents.'
                 : 'Finish clinic setup to submit your documents for verification.'}
         </p>
       </Panel>

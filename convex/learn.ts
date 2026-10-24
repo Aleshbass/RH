@@ -482,7 +482,7 @@ async function scheduleConfirmationEmail(ctx: MutationCtx, registrationId: Id<"l
     buttonLabel: cohort.communityLink ? "Join the cohort group" : "View the program",
     buttonUrl: cohort.communityLink ?? appLink("/learn"),
     footnote:
-      "You're receiving this because you registered for a Rehabify Learn program. Questions? Write to support@rehabify.ng.",
+      "You're receiving this because you registered for a Rehabify Learn program. Questions? Write to support@physioaroundme.com.",
   });
   await ctx.db.patch(registration._id, { confirmationEmailSentAt: Date.now() });
 }

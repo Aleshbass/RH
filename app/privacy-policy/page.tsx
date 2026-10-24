@@ -140,7 +140,7 @@ export default function PrivacyPolicyPage() {
             <section id="data-storage" className="mb-8">
               <h2 className="text-2xl font-bold text-[#005b57] mb-4">6. Data Storage & Security</h2>
               <ul className="list-disc pl-6 text-gray-700 space-y-2">
-                <li>All data is stored securely on cloud servers with 99.9% uptime.</li>
+                <li>All data is stored securely on cloud servers.</li>
                 <li>Encryption is applied to sensitive health and payment data in transit and at rest.</li>
                 <li>Access is role-based, ensuring only authorized users (e.g., assigned physiotherapist) can view specific patient records.</li>
                 <li>Regular security audits and penetration testing are conducted.</li>
@@ -170,8 +170,8 @@ export default function PrivacyPolicyPage() {
               </ul>
               <p className="text-gray-700 leading-relaxed mt-6">
                 Requests can be made via email to{' '}
-                <a href="mailto:rehabify.app@gmail.com" className="text-[#005b57] hover:underline font-semibold">
-                  rehabify.app@gmail.com
+                <a href="mailto:support@physioaroundme.com" className="text-[#005b57] hover:underline font-semibold">
+                  support@physioaroundme.com
                 </a>
               </p>
             </section>

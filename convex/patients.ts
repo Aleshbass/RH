@@ -1123,8 +1123,9 @@ export const updateMyPatientProfile = mutation({
 });
 
 /**
- * Everything the platform holds for the signed-in patient, for "Download my data". Clinician-only
- * working notes (notesForTherapist, internal follow-up notes) are left out.
+ * Everything the platform holds for the signed-in patient, for "Download my data": profile, visits,
+ * bookings, payments, loans, programmes and logs. Clinician-only working notes (notesForTherapist,
+ * internal follow-up notes) are left out.
  */
 export const exportMyData = query({
   args: {},
@@ -1157,6 +1158,10 @@ export const exportMyData = query({
     const careEpisodes = await ctx.db.query("careEpisodes").withIndex("by_patient", (q) => q.eq("patientId", user._id)).collect();
     const joyIntakes = await ctx.db.query("joyIntakes").withIndex("by_patient", (q) => q.eq("patientId", user._id)).collect();
     const joyJourney = await ctx.db.query("joyJourneyEvents").withIndex("by_patient", (q) => q.eq("patientId", user._id)).collect();
+    const bookings = await ctx.db.query("marketplaceBookings").withIndex("by_patient", (q) => q.eq("patientId", user._id)).take(500);
+    const loans = await ctx.db.query("loanApplications").withIndex("by_patient", (q) => q.eq("patientId", user._id)).take(200);
+    const programmes = await ctx.db.query("exercisePrograms").withIndex("by_patient", (q) => q.eq("patientId", user._id)).take(200);
+    const payments = await ctx.db.query("payments").withIndex("by_user_id", (q) => q.eq("userId", user._id)).take(500);
 
     return {
       exportedAt: new Date().toISOString(),
@@ -1191,6 +1196,11 @@ export const exportMyData = query({
       careEpisodes: careEpisodes.map(({ followUpNotes: _internalNotes, ...episode }) => episode),
       whatsAppIntakes: joyIntakes,
       whatsAppJourney: joyJourney.map(({ stage, occurredAt, bookingId }) => ({ stage, occurredAt, bookingId })),
+      bookings,
+      mediLoans: loans,
+      exerciseProgrammes: programmes.map(({ voiceNoteStorageId: _voiceNote, ...programme }) => programme),
+      // Raw gateway responses are left out; the payment record itself is included
+      payments: payments.map(({ gatewayResponse: _gateway, metadata: _metadata, ...payment }) => payment),
     };
   },
 });

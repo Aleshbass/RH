@@ -5,11 +5,17 @@
  *   failed_authentication – a sign-in attempt rejected by Clerk (wrong password or code)
  *   role_changed          – an account's platform role changed
  *   permission_updated    – a clinic team member's dashboard role changed
+ *   account_deleted       – a person deleted their account (personal data erased)
  */
 import type { MutationCtx } from "../_generated/server";
 import type { Id } from "../_generated/dataModel";
 
-export type SecurityEventType = "user_login" | "failed_authentication" | "role_changed" | "permission_updated";
+export type SecurityEventType =
+  | "user_login"
+  | "failed_authentication"
+  | "role_changed"
+  | "permission_updated"
+  | "account_deleted";
 
 export async function logSecurityEvent(
   ctx: MutationCtx,

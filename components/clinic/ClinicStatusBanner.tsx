@@ -35,8 +35,8 @@ export default function ClinicStatusBanner() {
             {clinicSuspendedReason && <span className="mt-0.5 block text-rose-800/90 dark:text-rose-300/90">Reason: {clinicSuspendedReason}</span>}
             <span className="mt-0.5 block">
               Contact{' '}
-              <a href="mailto:support@rehabify.ng" className="font-medium underline underline-offset-2">
-                support@rehabify.ng
+              <a href="mailto:support@physioaroundme.com" className="font-medium underline underline-offset-2">
+                support@physioaroundme.com
               </a>{' '}
               to restore access.
             </span>
@@ -53,7 +53,7 @@ export default function ClinicStatusBanner() {
     : isStaff && (isDeclined || isOnboardingIncomplete)
     ? "The clinic isn't fully set up yet, so changes are turned off. The clinic owner can finish it."
     : isDeclined
-    ? 'Your clinic application was not approved. Contact support@rehabify.ng to update your documents.'
+    ? 'Your clinic application was not approved. Contact support@physioaroundme.com to update your documents.'
     : isPendingApproval
     ? isStaff
       ? 'Rehabify is still verifying this clinic. You can look around; changes unlock once it is approved.'

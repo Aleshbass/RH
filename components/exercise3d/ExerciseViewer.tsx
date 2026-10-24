@@ -179,7 +179,7 @@ export function ExerciseViewer({ clipId, requestGrant, className, autoPlay = tru
   return (
     <div
       className={cn(
-        'relative isolate aspect-square w-full select-none overflow-hidden rounded-3xl bg-gradient-to-b from-rh-mist via-white to-rh-canvas dark:from-white/[0.06] dark:via-rh-ink-2 dark:to-rh-ink-2',
+        'relative isolate aspect-square w-full select-none overflow-hidden rounded-3xl bg-rh-mist dark:bg-rh-ink-2',
         className
       )}
       onContextMenu={(e) => e.preventDefault()}

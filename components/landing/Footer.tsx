@@ -3,8 +3,6 @@
 import React, { useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faXTwitter, faLinkedin, faInstagram } from '@fortawesome/free-brands-svg-icons';
 import BookDemoModal from './BookDemoModal';
 
 const Footer = () => {
@@ -30,7 +28,6 @@ const Footer = () => {
               Book a Demo
             </button>
           </div>
-          <p className="text-gray-400 text-sm mt-6">Trusted by 500+ patients. Verified by medical professionals.</p>
         </div>
 
         {/* Links Section */}
@@ -42,10 +39,9 @@ const Footer = () => {
           <div>
             <h3 className="font-bold mb-4 text-white">Professionals</h3>
             <ul className="space-y-2 text-sm">
-              <li><a href="#" className="text-gray-300 hover:text-white transition-colors">Patient Management</a></li>
-              <li><a href="#" className="text-gray-300 hover:text-white transition-colors">Exercise Library</a></li>
-              <li><a href="#" className="text-gray-300 hover:text-white transition-colors">Telehealth</a></li>
-              <li><a href="#" className="text-gray-300 hover:text-white transition-colors">Analytics</a></li>
+              <li><Link href="/platform/physiotherapists" className="text-gray-300 hover:text-white transition-colors">For Physiotherapists</Link></li>
+              <li><Link href="/platform/clinics" className="text-gray-300 hover:text-white transition-colors">For Clinics</Link></li>
+              <li><Link href="/physio-register" className="text-gray-300 hover:text-white transition-colors">Physio Register</Link></li>
               <li><a href="https://docs.physioaroundme.com" className="text-gray-300 hover:text-white transition-colors">Integrations</a></li>
             </ul>
           </div>
@@ -108,8 +104,7 @@ const Footer = () => {
               <li><Link href="/rehabify-access" className="text-gray-300 hover:text-white transition-colors">Rehabify Access</Link></li>
               <li><a href="/payment" className="text-gray-300 hover:text-white transition-colors">Payment & Financing</a></li>
               <li><a href="/learn" className="text-gray-300 hover:text-white transition-colors">Rehabify Learn</a></li>
-              <li><a href="#" className="text-gray-300 hover:text-white transition-colors">Careers</a></li>
-              <li><a href="#" className="text-gray-300 hover:text-white transition-colors">Contact</a></li>
+              <li><Link href="/contact" className="text-gray-300 hover:text-white transition-colors">Contact</Link></li>
             </ul>
           </div>
           <div>
@@ -147,18 +142,7 @@ const Footer = () => {
         {/* Bottom Bar */}
         <div className="mt-8 py-6 border-t border-gray-700 flex flex-col sm:flex-row justify-between items-center">
           <p className="text-gray-400 text-sm">&copy; {new Date().getFullYear()} Rehabify. All rights reserved.</p>
-          {/* Social Icons */}
-          <div className="flex space-x-6 mt-4 sm:mt-0">
-            <a href="#" aria-label="X" className="text-gray-400 hover:text-white transition-colors">
-              <FontAwesomeIcon icon={faXTwitter} size="lg" />
-            </a>
-            <a href="#" aria-label="LinkedIn" className="text-gray-400 hover:text-white transition-colors">
-              <FontAwesomeIcon icon={faLinkedin} size="lg" />
-            </a>
-            <a href="#" aria-label="Instagram" className="text-gray-400 hover:text-white transition-colors">
-              <FontAwesomeIcon icon={faInstagram} size="lg" />
-            </a>
-          </div>
+          {/* Social links go here once the profiles exist (add them to SITE_CONFIG.organization.sameAs too) */}
         </div>
       </div>
 

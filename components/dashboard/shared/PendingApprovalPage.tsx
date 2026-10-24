@@ -130,7 +130,7 @@ export default function PendingApprovalPage({
           {/* Contact Support (Declined only) */}
           {isDeclined && (
             <p className="mt-6 text-xs text-gray-400">
-              Believe this is an error? <a href="mailto:support@rehabify.ng" className="text-teal-600 hover:underline">Contact Support</a>
+              Believe this is an error? <a href="mailto:support@physioaroundme.com" className="text-teal-600 hover:underline">Contact Support</a>
             </p>
           )}
         </div>

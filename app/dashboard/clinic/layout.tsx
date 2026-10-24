@@ -152,7 +152,7 @@ function ClinicPortal({ children }: { children: React.ReactNode }) {
               Application not approved
             </h2>
             <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-1 leading-relaxed">
-              We couldn&apos;t verify your clinic. Contact support@rehabify.ng with updated documents.
+              We couldn&apos;t verify your clinic. Contact support@physioaroundme.com with updated documents.
             </p>
           </div>
           <Button variant="outline" onClick={() => router.push('/clinic-owner')} className="w-full">

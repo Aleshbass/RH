@@ -174,7 +174,7 @@ export function ClinicAccessProvider({ children }: { children: ReactNode }) {
             </DialogTitle>
             <DialogDescription>
               {isClinicSuspended
-                ? `Rehabify has suspended this clinic, so "${attemptedAction}" is turned off. Contact support@rehabify.ng to restore access.`
+                ? `Rehabify has suspended this clinic, so "${attemptedAction}" is turned off. Contact support@physioaroundme.com to restore access.`
                 : isPendingApproval
                 ? `"${attemptedAction}" will work once Rehabify has verified the clinic.`
                 : isSuspended

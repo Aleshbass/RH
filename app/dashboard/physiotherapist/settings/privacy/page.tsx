@@ -8,8 +8,8 @@ import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { playSound, setSoundsEnabled, soundsEnabled } from '@/lib/sounds';
 import { SettingsPageHeader, SettingsSection } from '@/components/physio/SettingsUI';
-
-const SUPPORT_EMAIL = 'support@rehabify.ng';
+import { SUPPORT_EMAIL } from '@/lib/contact';
+import { DeleteAccountButton } from '@/components/account/DeleteAccountButton';
 
 function Row({
     title,
@@ -70,10 +70,6 @@ export default function AccountPrivacyPage() {
     const { user } = useUser();
     const email = user?.primaryEmailAddress?.emailAddress;
 
-    const deletionMail = `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent('Delete my Rehabify account')}&body=${encodeURIComponent(
-        `Please delete my physiotherapist account${email ? ` (${email})` : ''}.`
-    )}`;
-
     return (
         <div className="space-y-6">
             <SettingsPageHeader title="Account & privacy" description="Sign-in, security, sounds and your data." />
@@ -116,11 +112,12 @@ export default function AccountPrivacyPage() {
             <SettingsSection title="Delete account">
                 <Row
                     title="Close your account"
-                    description="Email our team to close your account. We’ll confirm with you before anything is deleted."
+                    description={`Erase your details and leave the marketplace. Cancel upcoming visits first. Questions? ${SUPPORT_EMAIL}`}
                     action={
-                        <Button asChild variant="outline" size="sm" className="text-red-600 hover:text-red-700 dark:text-red-400">
-                            <a href={deletionMail}>Request deletion</a>
-                        </Button>
+                        <DeleteAccountButton
+                            triggerClassName="inline-flex h-8 items-center rounded-md border border-neutral-200 px-3 text-sm font-medium text-red-600 hover:bg-red-50 hover:text-red-700 dark:border-neutral-700 dark:text-red-400 dark:hover:bg-red-500/10"
+                            kept="Visit records and invoices for your patients stay for the time the law requires, under the name “Deleted user”."
+                        />
                     }
                 />
             </SettingsSection>

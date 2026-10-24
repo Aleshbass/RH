@@ -63,7 +63,7 @@ export default function PlatformPageLayout({
                                 href="/contact"
                                 className="inline-flex items-center justify-center px-8 py-4 text-lg font-medium text-[#002e2c] bg-transparent border-2 border-[#002e2c]/10 rounded-full hover:bg-[#002e2c]/5 transition-colors"
                             >
-                                Contact Sales
+                                Contact us
                             </Link>
                         </div>
                     </motion.div>
@@ -127,7 +127,7 @@ export default function PlatformPageLayout({
                             Ready to transform your experience?
                         </h2>
                         <p className="text-xl text-[#FAF6E7]/80 mb-10 font-light">
-                            Join thousands of others on Rehabify Health today.
+                            Get started on Rehabify Health today.
                         </p>
                         <Link
                             href={ctaLink}

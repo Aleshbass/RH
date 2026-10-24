@@ -608,6 +608,7 @@ const ACTIVITY_CATEGORIES = {
     "patient_updated",
     "patient_archived",
     "profile_view",
+    "account_deleted",
   ],
   appointments: [
     "appointment_created",

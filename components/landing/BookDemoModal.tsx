@@ -58,7 +58,7 @@ export default function BookDemoModal({ isOpen, onClose }: BookDemoModalProps) {
     } catch (error) {
       console.error("Error booking demo:", error);
       toast.error("Failed to send request", {
-        description: "Please try again or contact rehabify.app@gmail.com",
+        description: "Please try again or contact support@physioaroundme.com",
       });
     } finally {
       setIsSubmitting(false);
@@ -269,21 +269,11 @@ export default function BookDemoModal({ isOpen, onClose }: BookDemoModalProps) {
             <div className="absolute inset-0 flex flex-col justify-end p-12 text-white">
               <div className="space-y-4">
                 <h3 className="text-3xl font-bold">
-                  Join 500+ Clinics
+                  Bring your clinic to Rehabify
                 </h3>
                 <p className="text-lg text-gray-200">
                   Transform your practice with intelligent patient management, exercise prescription, and telehealth capabilities.
                 </p>
-                <div className="grid grid-cols-2 gap-4 pt-6">
-                  <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/20">
-                    <div className="text-3xl font-bold">98%</div>
-                    <div className="text-sm text-gray-200">Satisfaction Rate</div>
-                  </div>
-                  <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/20">
-                    <div className="text-3xl font-bold">40%</div>
-                    <div className="text-sm text-gray-200">Time Saved</div>
-                  </div>
-                </div>
               </div>
             </div>
           </div>

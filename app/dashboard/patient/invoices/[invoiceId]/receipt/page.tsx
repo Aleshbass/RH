@@ -8,6 +8,7 @@ import { format } from 'date-fns'
 import { ArrowLeft, Printer, Receipt } from '@/components/icons'
 import { api } from '@/convex/_generated/api'
 import type { Id } from '@/convex/_generated/dataModel'
+import { SUPPORT_EMAIL } from '@/lib/contact'
 import { Button } from '@/components/ui/button'
 import { EmptyState, PageContainer, PageSkeleton, Panel, primaryButtonClass, softButtonClass } from '@/components/patient/ui'
 import { money, payableOf, type PatientInvoice } from '../../invoice-ui'
@@ -161,7 +162,7 @@ export default function InvoiceReceiptPage() {
         </table>
 
         <p className="mt-8 text-xs leading-relaxed text-[#8e9199]">
-          Thank you. Keep this receipt for your records. Questions about this payment: hello@myrehabifyhealth.com
+          Thank you. Keep this receipt for your records. Questions about this payment: {SUPPORT_EMAIL}
         </p>
       </div>
     </PageContainer>

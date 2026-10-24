@@ -18,6 +18,7 @@ import {
   quote,
   renderEmail,
 } from "@/lib/email/layout";
+import { publicAppUrl } from "@/lib/public-app-url";
 
 export async function POST(request: Request) {
   const resend = new Resend(process.env.RESEND_API_KEY);
@@ -111,7 +112,7 @@ export async function POST(request: Request) {
             "Q&amp;A with our product experts",
             "A custom pricing discussion",
           ]),
-          paragraph(`In the meantime, explore our learning resources at ${link("rehabifylearn.com", "https://www.rehabifylearn.com/")}.`),
+          paragraph(`In the meantime, see what physiotherapists learn with us at ${link("Rehabify Learn", `${publicAppUrl()}/learn`)}.`),
         ].join(""),
         footerNote: "You're receiving this because you asked for a Rehabify demo.",
       }),

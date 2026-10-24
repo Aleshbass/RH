@@ -7,8 +7,7 @@ import { Button } from '@/components/ui/button'
 import { primaryButtonClass } from '@/components/clinic/ui'
 import { PageContainer } from '@/components/physio/ui'
 import { SetupChecklistCard, type SetupStatus } from '@/components/physio/SetupChecklist'
-
-const SUPPORT_EMAIL = 'support@rehabify.ng'
+import { SUPPORT_EMAIL } from '@/lib/contact'
 
 /**
  * Shown inside the dashboard while an application is being reviewed. The physio can't see

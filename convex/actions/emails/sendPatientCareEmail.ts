@@ -51,7 +51,7 @@ export const sendPatientCareEmail = internalAction({
         cta,
       ].join(""),
       footerNote: escapeHtml(
-        args.footnote ?? "You're receiving this because you're a patient on Rehabify Health. Questions? Write to support@rehabify.ng."
+        args.footnote ?? "You're receiving this because you're a patient on Rehabify Health. Questions? Write to support@physioaroundme.com."
       ),
     });
 

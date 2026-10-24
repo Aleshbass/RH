@@ -93,7 +93,7 @@ export const submitRegistration = mutation({
 
         return { success: true, id: existing._id, slug: generateSlug(args.licenseNumber), resubmission: true };
       }
-      throw new ConvexError("This licence number is already on the register. Sign in to manage that profile, or contact support@rehabify.ng if it isn't yours.");
+      throw new ConvexError("This licence number is already on the register. Sign in to manage that profile, or contact support@physioaroundme.com if it isn't yours.");
     }
 
     const slug = generateSlug(args.licenseNumber);

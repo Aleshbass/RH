@@ -628,7 +628,7 @@ export const processPayment = mutation({
         title: "Payment Confirmed",
         body: `Payment for invoice ${invoice.invoiceNumber} has been processed successfully`,
         data: {
-          actionUrl: `/invoices/${args.invoiceId}`,
+          actionUrl: `/dashboard/patient/invoices/${args.invoiceId}`,
         },
       },
       createdAt: Date.now(),

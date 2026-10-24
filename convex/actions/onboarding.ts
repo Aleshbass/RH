@@ -44,7 +44,7 @@ export const completePatientOnboarding = action({
         title: 'New Patient Onboarding Complete',
         body: `${name || email} has completed their onboarding.`,
         data: {
-          actionUrl: `/admin/users/${userId}`,
+          actionUrl: `/dashboard/admin/users/${userId}`,
           entityType: 'user',
           entityId: userId
         }
@@ -62,7 +62,7 @@ export const completePatientOnboarding = action({
           await ctx.runAction(internal.actions.emails.sendOnboardingNotificationEmail as any, {
             adminEmail,
             userName: name || 'New User',
-            adminDashboardLink: `/admin/users/${userId}`,
+            adminDashboardLink: `/dashboard/admin/users/${userId}`,
           });
         }
       }
@@ -112,7 +112,7 @@ export const completeClinicOwnerOnboarding = action({
         title: 'New Clinic Owner Onboarding Complete',
         body: `${name || email} from ${clinicName} has completed their clinic owner onboarding.`,
         data: {
-          actionUrl: `/admin/users/${userId}`,
+          actionUrl: `/dashboard/admin/users/${userId}`,
           entityType: 'user',
           entityId: userId,
           metadata: {
@@ -133,7 +133,7 @@ export const completeClinicOwnerOnboarding = action({
           await ctx.runAction(internal.actions.emails.sendOnboardingNotificationEmail as any, {
             adminEmail,
             userName: `${name || 'Clinic Owner'} (${clinicName})`,
-            adminDashboardLink: `/admin/users/${userId}`,
+            adminDashboardLink: `/dashboard/admin/users/${userId}`,
           });
         }
       }
@@ -181,7 +181,7 @@ export const completePhysiotherapistOnboarding = action({
         title: 'New Physiotherapist Onboarding Complete',
         body: `${name || email} has completed their independent physiotherapist onboarding${specialization ? ` (${specialization})` : ''}.`,
         data: {
-          actionUrl: `/admin/users/${userId}`,
+          actionUrl: `/dashboard/admin/users/${userId}`,
           entityType: 'user',
           entityId: userId,
           metadata: {
@@ -202,7 +202,7 @@ export const completePhysiotherapistOnboarding = action({
           await ctx.runAction(internal.actions.emails.sendOnboardingNotificationEmail as any, {
             adminEmail,
             userName: `${name || 'Physiotherapist'}${specialization ? ` (${specialization})` : ''}`,
-            adminDashboardLink: `/admin/users/${userId}`,
+            adminDashboardLink: `/dashboard/admin/users/${userId}`,
           });
         }
       }

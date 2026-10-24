@@ -9,8 +9,7 @@ import {
     Activity, 
     MessageSquare, 
     UserCheck, 
-    Calendar, 
-    Star,
+    Calendar,
     ChevronRight,
     MapPin
 } from '@/components/icons';
@@ -180,7 +179,7 @@ export function HowItWorks() {
                                     02
                                 </span>
                                 <span className="inline-flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
-                                    <ShieldCheck className="w-3.5 h-3.5" /> 100% Vetted
+                                    <ShieldCheck className="w-3.5 h-3.5" /> Vetted
                                 </span>
                             </div>
 
@@ -203,10 +202,6 @@ export function HowItWorks() {
                                             <span className="text-[10px] bg-[#005b57] text-white px-1.5 py-0.2 rounded font-semibold">MRTBN</span>
                                         </div>
                                         <p className="text-xs text-gray-500 truncate">Orthopedic & Spine Specialist</p>
-                                    </div>
-                                    <div className="flex items-center gap-1 bg-amber-50 border border-amber-200/80 px-2 py-0.5 rounded-lg text-xs font-bold text-amber-800">
-                                        <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
-                                        4.98
                                     </div>
                                 </div>
 

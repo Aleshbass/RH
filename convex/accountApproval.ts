@@ -103,7 +103,7 @@ export const submitForReview = internalMutation({
     const displayName = `${user.firstName || ""} ${user.lastName || ""}`.trim() || (user.email || "User");
     const roleLabel = user.role === "physiotherapist" ? "Physiotherapist" : user.role === "clinic_owner" ? "Clinic Owner" : "User";
     const appUrl = publicAppUrl();
-    const adminActionPath = `/admin/users/${user._id}`;
+    const adminActionPath = `/dashboard/admin/users/${user._id}`;
     const adminDashboardLink = `${appUrl}${adminActionPath}`;
 
     for (const admin of admins) {

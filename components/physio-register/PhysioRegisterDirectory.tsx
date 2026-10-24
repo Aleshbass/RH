@@ -68,7 +68,7 @@ export default function PhysioRegisterDirectoryPage() {
               The Physio Register
             </h1>
             <p className="text-lg md:text-xl text-teal-100/90 mb-8 font-light max-w-2xl mx-auto">
-              Join over 500+ registered rehabilitation experts across the country.
+              Search registered rehabilitation experts across the country.
             </p>
 
             {/* Search Bar */}

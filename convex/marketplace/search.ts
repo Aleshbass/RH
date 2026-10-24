@@ -13,6 +13,11 @@ import { query, mutation, internalQuery } from "../_generated/server";
 import { isPhysioNetworkEligible, offersServiceMode, recordProfileView, servesRehabifyNetwork } from "../physioSetup";
 import { BOOKABLE_SERVICE_IDS, getService, isBookableServiceId } from "../../lib/rehabify-services";
 
+/** Public coordinates are rounded to about 1 km so a physio's home or clinic address isn't exposed. */
+function approxCoord(value?: number): number | undefined {
+  return typeof value === "number" ? Math.round(value * 100) / 100 : value;
+}
+
 /** The Rehabify services this physio offers (virtual ones, plus home ones if they visit). */
 function servicesOffered(profile: any): string[] {
   return BOOKABLE_SERVICE_IDS.filter((id) => {
@@ -197,8 +202,8 @@ export const searchPhysiotherapists = query({
       specializations: p.specializations || [],
       yearsOfExperience: p.yearsOfExperience || 0,
       location: p.location,
-      latitude: p.latitude,
-      longitude: p.longitude,
+      latitude: approxCoord(p.latitude),
+      longitude: approxCoord(p.longitude),
       servicesOffered: servicesOffered(p),
       averageRating: p.averageRating || 0,
       reviewCount: p.reviewCount || 0,
@@ -289,8 +294,8 @@ export const getPhysiotherapistProfile = query({
       specializations: profile?.specializations || [],
       yearsOfExperience: profile?.yearsOfExperience || 0,
       location: profile?.location,
-      latitude: profile?.latitude,
-      longitude: profile?.longitude,
+      latitude: approxCoord(profile?.latitude),
+      longitude: approxCoord(profile?.longitude),
       languagesSpoken: profile?.languagesSpoken || [],
 
       // Services (standard Rehabify prices come from serviceTariffs.getCatalogue)
