@@ -106,6 +106,7 @@ export default function PatientsPage() {
       <PageHeader
         title="Patients"
         description="Everyone you’re treating, and everyone you’ve finished with."
+        info="Open a patient to see their care plan, notes, check-ins, files and payments in one place. When you finish a course of care they move to Care completed, and you can start a new course any time."
         actions={
           <AddPatientModal
             trigger={

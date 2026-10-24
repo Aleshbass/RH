@@ -81,6 +81,7 @@ export default function PhysiotherapistMarketplacePage() {
       <PageHeader
         title="Marketplace profile"
         description="How you’re doing on the Rehabify marketplace."
+        info="This is how patients find you on Rehabify. Change your services, home-visit areas and whether you’re listed in Settings → Services & coverage."
         actions={
           <>
             <Button asChild variant="outline">

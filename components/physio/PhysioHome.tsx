@@ -31,8 +31,10 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import AddPatientModal from '@/components/dashboard/physiotherapist/AddPatientModal'
-import { EmptyState, IconChip, PageContainer, Panel, StatTile, StatusBadge, type Tone } from '@/components/physio/ui'
-import { appointmentStatusLabel, appointmentStatusTone } from '@/convex/helpers/appointmentStatus'
+import { accentButtonClass, EmptyState, IconChip, InfoTip, PageContainer, Panel, StatTile, StatusBadge, type Tone } from '@/components/physio/ui'
+import { useBooking } from '@/components/physio/schedule/BookingDrawer'
+import { AppointmentDrawer } from '@/components/physio/schedule/AppointmentDrawer'
+import { joinLink, useNow, visitStatus, type PhysioAppointment } from '@/components/physio/schedule/shared'
 import { SetupChecklistCard, type SetupStatus } from '@/components/physio/SetupChecklist'
 import { PHYSIO_HOME } from '@/components/physio/PhysioSidebar'
 import { PainPill } from '@/components/physio/workspace/shared'
@@ -100,11 +102,6 @@ const fullName = (p?: { firstName?: string; lastName?: string } | null) =>
 const initials = (p?: { firstName?: string; lastName?: string } | null) =>
   `${p?.firstName?.[0] ?? ''}${p?.lastName?.[0] ?? ''}`.toUpperCase() || 'P'
 
-// Shared labels, so Home, the appointments list, the patient and the clinic say the same thing
-function statusBadge(status: string) {
-  return <StatusBadge tone={appointmentStatusTone(status)}>{appointmentStatusLabel(status)}</StatusBadge>
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 
 function Hero({
@@ -119,6 +116,7 @@ function Hero({
   attentionCount?: number
 }) {
   const now = new Date()
+  const openBooking = useBooking()
   const parts: string[] = []
   if (todayCount !== undefined) parts.push(todayCount === 0 ? 'No sessions today' : `${todayCount} session${todayCount === 1 ? '' : 's'} today`)
   if (attentionCount) parts.push(`${attentionCount} thing${attentionCount === 1 ? '' : 's'} need${attentionCount === 1 ? 's' : ''} your attention`)
@@ -140,11 +138,9 @@ function Hero({
         </h1>
         <p className="mt-2 text-[15px] text-white/80">{parts.length > 0 ? `${parts.join(' · ')}.` : 'Here’s your practice at a glance.'}</p>
         <div className="mt-5 flex flex-wrap gap-2">
-          <Button asChild className="rounded-xl bg-rh-lime text-rh-ink hover:bg-rh-lime-deep active:scale-[0.98]">
-            <Link href={`${PHYSIO_HOME}/calendar?new=1`}>
-              <Plus className="mr-2 h-4 w-4" />
-              New appointment
-            </Link>
+          <Button className="rounded-xl bg-rh-lime text-rh-ink hover:bg-rh-lime-deep active:scale-[0.98]" onClick={() => openBooking()}>
+            <Plus className="mr-2 h-4 w-4" />
+            New appointment
           </Button>
           <AddPatientModal
             trigger={
@@ -164,6 +160,7 @@ function NeedsAttention({ items }: { items: AttentionItem[] | undefined }) {
   return (
     <Panel
       title="Needs your attention"
+      info="Things to act on: high pain or flagged check-ins, booking requests, follow-ups and reviews that are due. Tap one to open the patient."
       actions={items && items.length > 0 ? <StatusBadge tone="amber">{items.length}</StatusBadge> : undefined}
     >
       {items === undefined ? (
@@ -206,14 +203,20 @@ function NeedsAttention({ items }: { items: AttentionItem[] | undefined }) {
 
 function TodaySchedule({ appointments }: { appointments: Appointment[] | undefined }) {
   const sorted = useMemo(() => (appointments ?? []).slice().sort((a, b) => a.startTime - b.startTime), [appointments])
-  const now = Date.now()
+  const now = useNow(30_000)
   const nextId = sorted.find((a) => !CANCELLED.has(a.status) && (a.endTime ?? a.startTime) >= now)?._id
+  const openBooking = useBooking()
+  // The visit open in the drawer, looked up live so it updates while open
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const selected = (sorted.find((a) => a._id === selectedId) ?? null) as unknown as PhysioAppointment | null
 
   return (
     <div data-tour="today">
       <Panel
         title="Today’s schedule"
         description={format(new Date(), 'EEEE d MMMM')}
+        info="Tap a session for details and actions. Video sessions get a Join button 10 minutes before they start."
         actions={
           <Link href={`${PHYSIO_HOME}/calendar`} className="text-xs font-semibold text-rh-ink hover:underline dark:text-rh-lime">
             Open calendar
@@ -232,8 +235,8 @@ function TodaySchedule({ appointments }: { appointments: Appointment[] | undefin
             title="A free day"
             description="New bookings from your link and the marketplace show up here."
             action={
-              <Button asChild variant="outline" size="sm" className="rounded-xl">
-                <Link href={`${PHYSIO_HOME}/calendar?new=1`}>Schedule an appointment</Link>
+              <Button variant="outline" size="sm" className="rounded-xl" onClick={() => openBooking()}>
+                New appointment
               </Button>
             }
           />
@@ -243,12 +246,19 @@ function TodaySchedule({ appointments }: { appointments: Appointment[] | undefin
               const online = appointment.isOnline || appointment.appointmentType === 'telehealth'
               const isNext = appointment._id === nextId
               const cancelled = CANCELLED.has(appointment.status)
+              const full = appointment as unknown as PhysioAppointment
+              const link = joinLink(full, now)
+              const status = visitStatus(full, now)
               return (
-                <li key={appointment._id}>
-                  <Link
-                    href={`${PHYSIO_HOME}/patients/${appointment.patientId}`}
+                <li key={appointment._id} className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedId(appointment._id)
+                      setDrawerOpen(true)
+                    }}
                     className={cn(
-                      'flex items-center gap-3 rounded-2xl p-3 transition-all hover:bg-rh-canvas dark:hover:bg-white/[0.03]',
+                      'flex min-w-0 flex-1 items-center gap-3 rounded-2xl p-3 text-left transition-all hover:bg-rh-canvas dark:hover:bg-white/[0.03]',
                       isNext && 'bg-rh-honeydew ring-1 ring-rh-lime/15 hover:bg-rh-honeydew dark:bg-white/[0.06] dark:ring-white/10',
                       cancelled && 'opacity-60'
                     )}
@@ -273,14 +283,23 @@ function TodaySchedule({ appointments }: { appointments: Appointment[] | undefin
                         {appointment.endTime ? <span className="shrink-0">· {Math.round((appointment.endTime - appointment.startTime) / 60000)} min</span> : null}
                       </p>
                     </div>
-                    {isNext ? <StatusBadge tone="teal">Up next</StatusBadge> : statusBadge(appointment.status)}
-                  </Link>
+                    {isNext && !link ? <StatusBadge tone="teal">Up next</StatusBadge> : !link && <StatusBadge tone={status.tone}>{status.label}</StatusBadge>}
+                  </button>
+                  {link && (
+                    <Button asChild size="sm" className={cn(accentButtonClass, 'h-9 shrink-0 px-3')}>
+                      <a href={link} target="_blank" rel="noopener noreferrer">
+                        <Video className="mr-1.5 h-3.5 w-3.5" />
+                        Join
+                      </a>
+                    </Button>
+                  )}
                 </li>
               )
             })}
           </ol>
         )}
       </Panel>
+      <AppointmentDrawer appointment={selected} open={drawerOpen && selected !== null} onOpenChange={setDrawerOpen} />
     </div>
   )
 }
@@ -299,7 +318,11 @@ type RecentCheckIn = {
 
 function CheckInFeed({ checkIns }: { checkIns: RecentCheckIn[] | undefined }) {
   return (
-    <Panel title="Patient check-ins" description="How patients say they’re doing between sessions">
+    <Panel
+      title="Patient check-ins"
+      description="How patients say they’re doing between sessions"
+      info="Patients log their pain and exercises from their dashboard. High pain or a flag also shows in Needs your attention."
+    >
       {checkIns === undefined ? (
         <div className="space-y-2 p-5">
           <Skeleton className="h-12 rounded-xl" />
@@ -477,7 +500,10 @@ function BookingLinkCard({ physioId, name }: { physioId: Id<'users'>; name?: str
         <div className="flex items-center gap-3">
           <IconChip icon={CalendarClock} tone="peach" className="bg-white dark:bg-white/10" />
           <div className="min-w-0">
-            <h2 className="text-[15px] font-semibold tracking-tight text-rh-ink dark:text-white">Your booking link</h2>
+            <h2 className="flex items-center gap-1 text-[15px] font-semibold tracking-tight text-rh-ink dark:text-white">
+              Your booking link
+              <InfoTip>Your public page: patients see your services and open times, then book and pay. Share it on WhatsApp, Instagram or your business card.</InfoTip>
+            </h2>
             <p className="text-xs text-neutral-600 dark:text-neutral-400">Patients book and pay through it</p>
           </div>
         </div>
@@ -539,10 +565,10 @@ export function PhysioHome({ setup }: { setup: SetupStatus | null | undefined })
       )}
 
       <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
-        <StatTile label="Today" value={stat(stats?.todaysAppointments)} hint="appointments" icon={CalendarDays} tone="mint" href={`${PHYSIO_HOME}/calendar`} />
-        <StatTile label="This week" value={stat(stats?.completedSessionsThisWeek)} hint="sessions completed" icon={Activity} tone="teal" />
-        <StatTile label="Patients" value={stat(stats?.totalPatients)} hint="in treatment" icon={Users} tone="peach" href={`${PHYSIO_HOME}/patients`} />
-        <StatTile label="Invites" value={stat(stats?.pendingInvitations)} hint="waiting to join" icon={UserPlus} tone="rose" href={`${PHYSIO_HOME}/patients`} />
+        <StatTile label="Today" value={stat(stats?.todaysAppointments)} hint="appointments" icon={CalendarDays} tone="mint" href={`${PHYSIO_HOME}/calendar`} info="Sessions booked for today, including any still waiting to be confirmed." />
+        <StatTile label="This week" value={stat(stats?.completedSessionsThisWeek)} hint="sessions completed" icon={Activity} tone="teal" info="Sessions you’ve marked done since Monday." />
+        <StatTile label="Patients" value={stat(stats?.totalPatients)} hint="in treatment" icon={Users} tone="peach" href={`${PHYSIO_HOME}/patients`} info="Patients currently in your care. Finished courses are under Patients → Care completed." />
+        <StatTile label="Invites" value={stat(stats?.pendingInvitations)} hint="waiting to join" icon={UserPlus} tone="rose" href={`${PHYSIO_HOME}/patients`} info="Patients you’ve invited who haven’t created their account yet. You can resend the invite from Patients." />
       </div>
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">

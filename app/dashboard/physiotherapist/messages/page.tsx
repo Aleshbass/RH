@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
-import { EmptyState } from '@/components/physio/ui';
+import { EmptyState, InfoTip } from '@/components/physio/ui';
 import { cn } from '@/lib/utils';
 
 type Conversation = {
@@ -66,7 +66,8 @@ export default function PhysiotherapistMessagesPage() {
 
   return (
     // Fills the screen under the top bar; on phones the list and the chat take turns
-    <div className="mx-auto flex h-[calc(100dvh-9.5rem)] w-full max-w-6xl min-h-[28rem] overflow-hidden rounded-2xl border border-black/[0.04] bg-white shadow-soft dark:border-white/[0.06] dark:bg-rh-ink-2 dark:shadow-none lg:h-[calc(100dvh-10rem)]">
+    // (on phones it also clears the bottom tab bar and the home indicator)
+    <div className="mx-auto flex h-[calc(100dvh-10.5rem-env(safe-area-inset-bottom))] w-full max-w-6xl min-h-[24rem] overflow-hidden rounded-3xl border border-pt-line bg-pt-surface shadow-pt dark:shadow-none lg:h-[calc(100dvh-10rem)]">
       <aside
         className={cn(
           'flex w-full flex-col border-r border-neutral-200 dark:border-white/[0.07] md:w-80 md:shrink-0',
@@ -74,7 +75,10 @@ export default function PhysiotherapistMessagesPage() {
         )}
       >
         <div className="flex h-14 shrink-0 items-center justify-between border-b border-neutral-200 px-4 dark:border-white/[0.07]">
-          <h1 className="text-base font-semibold text-neutral-900 dark:text-white">Messages</h1>
+          <h1 className="flex items-center gap-1 text-base font-semibold text-pt-ink">
+            Messages
+            <InfoTip>Chat privately with patients in your care. Send photos, documents and voice notes. One grey tick means sent, two mean delivered, and two blue ticks mean they’ve read it.</InfoTip>
+          </h1>
           <Button size="sm" variant="outline" onClick={() => setPickerOpen(true)}>
             <Plus className="mr-1 h-4 w-4" />
             New

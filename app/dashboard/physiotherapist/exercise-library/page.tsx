@@ -79,6 +79,7 @@ export default function ExerciseLibraryPage() {
         eyebrow="Exercise library"
         title="3D exercise library"
         description="Every exercise is demonstrated in 3D by a Rehabify clinician. Preview it, then send it to a patient with your own dose and voice note."
+        info="Patients watch the exercises on their dashboard or through a private WhatsApp link, follow along with the 3D model and the voice guide, and log how it went. You see their progress on their page."
         actions={
           <span className="inline-flex items-center gap-1.5 rounded-full bg-rh-honeydew px-3 py-1.5 text-sm font-medium text-rh-ink dark:bg-white/[0.06] dark:text-rh-lime">
             <Rotate3d className="h-4 w-4" /> {count3d} in 3D

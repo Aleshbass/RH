@@ -28,8 +28,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Skeleton } from '@/components/ui/skeleton';
 import EditPatientModal from '@/components/dashboard/physiotherapist/EditPatientModal';
-import { CreateVideoCallModal } from '@/components/dashboard/physiotherapist/modals/CreateVideoCallModal';
-import SchedulePatientAppointmentModal from '@/components/dashboard/physiotherapist/modals/SchedulePatientAppointmentModal';
+import { useBooking } from '@/components/physio/schedule/BookingDrawer';
 import { EmptyState, PageContainer, Panel } from '@/components/physio/ui';
 import { OverviewTab } from '@/components/physio/workspace/OverviewTab';
 import { CarePlanTab } from '@/components/physio/workspace/CarePlanTab';
@@ -54,7 +53,6 @@ export default function PatientWorkspacePage() {
   const searchParams = useSearchParams();
   const patientId = params.patientId as Id<'users'>;
 
-  const currentUser = useQuery(api.users.getMyUser);
   // A fixed "now" (to 5 minutes) keeps the query's arguments stable, so Convex can cache it
   const [workspaceNow] = useState(() => Math.floor(Date.now() / 300_000) * 300_000);
   const workspace = useQuery(api.physioCare.getPatientWorkspace, patientId ? { patientId, now: workspaceNow } : 'skip') as
@@ -66,7 +64,8 @@ export default function PatientWorkspacePage() {
   const initialTab = (searchParams.get('tab') as TabId | null) ?? 'overview';
   const [tab, setTab] = useState<TabId>(TABS.some((t) => t.id === initialTab) ? initialTab : 'overview');
   const [composing, setComposing] = useState(false);
-  const [dialog, setDialog] = useState<'episode' | 'complete' | 'edit' | 'video' | 'schedule' | null>(null);
+  const [dialog, setDialog] = useState<'episode' | 'complete' | 'edit' | null>(null);
+  const openBooking = useBooking();
 
   useEffect(() => {
     const fromUrl = searchParams.get('tab') as TabId | null;
@@ -180,8 +179,7 @@ export default function PatientWorkspacePage() {
             </Button>
             {isActive ? (
               <Button
-                onClick={() => setDialog('schedule')}
-                disabled={!currentUser}
+                onClick={() => openBooking({ patient: { id: patientId, name } })}
                 className="rounded-xl bg-white text-rh-ink shadow-sm hover:bg-rh-cream active:scale-[0.98]"
               >
                 <CalendarPlus className="mr-2 h-4 w-4" />
@@ -204,7 +202,7 @@ export default function PatientWorkspacePage() {
                   <>
                     <DropdownMenuItem onClick={() => { go('notes'); setComposing(true); }}>Write an assessment or note</DropdownMenuItem>
                     <DropdownMenuItem onClick={() => go('plan')}>{workspace.plan ? 'Revise care plan' : 'Create care plan'}</DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => setDialog('video')}>Schedule a video session</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => openBooking({ patient: { id: patientId, name }, mode: 'telehealth' })}>Book a video session</DropdownMenuItem>
                     <DropdownMenuItem onClick={() => go('payments')}>Request payment</DropdownMenuItem>
                     <DropdownMenuItem onClick={() => go('files')}>Upload a file</DropdownMenuItem>
                     <DropdownMenuItem onClick={() => setDialog('episode')}>Care details and source</DropdownMenuItem>
@@ -272,7 +270,7 @@ export default function PatientWorkspacePage() {
           workspace={workspace}
           onEditEpisode={() => setDialog('episode')}
           onOpenPlan={() => go('plan')}
-          onSchedule={() => setDialog('schedule')}
+          onSchedule={() => openBooking({ patient: { id: patientId, name } })}
         />
       )}
       {tab === 'plan' && <CarePlanTab workspace={workspace} />}
@@ -312,18 +310,6 @@ export default function PatientWorkspacePage() {
         }}
         onSuccess={() => setDialog(null)}
       />
-      <CreateVideoCallModal isOpen={dialog === 'video'} onClose={() => setDialog(null)} preselectedPatientId={patientId} />
-      {currentUser && (
-        <SchedulePatientAppointmentModal
-          open={dialog === 'schedule'}
-          onOpenChange={(open) => setDialog(open ? 'schedule' : null)}
-          patientId={patientId}
-          patientName={name}
-          physiotherapistId={currentUser._id as Id<'users'>}
-          physiotherapistName={fullName(currentUser)}
-          physiotherapistImage={currentUser.imageUrl}
-        />
-      )}
     </PageContainer>
   );
 }

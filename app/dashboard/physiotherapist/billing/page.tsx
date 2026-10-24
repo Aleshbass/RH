@@ -222,8 +222,9 @@ export default function BillingPage() {
     <PageContainer>
       <PaystackTestModeBanner />
       <PageHeader
-        title="Billing"
+        title="Invoices"
         description="Invoices you’ve sent and payments you’ve received."
+        info="Send an invoice and the patient gets a link to pay by card, transfer or USSD. Paid invoices go to the bank account in Settings → Payouts. Rehabify patients pay through Rehabify, so their sessions don’t need an invoice from you."
         actions={
           <Button onClick={() => setCreating(true)} className={primaryButtonClass}>
             <Plus className="mr-2 h-4 w-4" />

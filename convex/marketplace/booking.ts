@@ -376,6 +376,50 @@ export const getMyOpenBookings = query({
     },
 });
 
+/**
+ * The physio's Rehabify sessions that are waiting for the patient to pay (a held time), so their
+ * schedule shows them before they become appointments.
+ */
+export const getMyHeldBookingsAsPhysio = query({
+    args: {},
+    handler: async (ctx) => {
+        const user = await signedInUser(ctx);
+        if (!user || user.role !== "physiotherapist") return [];
+        const bookings = await ctx.db
+            .query("marketplaceBookings")
+            .withIndex("by_physiotherapist", (q) => q.eq("physiotherapistId", user._id))
+            .order("desc")
+            .take(100);
+        const now = Date.now();
+        const waiting = bookings.filter(
+            (b) =>
+                b.sourceSystem !== "joy_ai" &&
+                b.bookingStatus === "pending_payment" &&
+                b.paymentStatus === "pending" &&
+                (b.sessionDate ?? 0) > now
+        );
+        return Promise.all(
+            waiting.map(async (b) => {
+                const patient = await ctx.db.get(b.patientId);
+                return {
+                    id: b._id,
+                    patientId: b.patientId,
+                    patientName: patient ? `${patient.firstName ?? ""} ${patient.lastName ?? ""}`.trim() || "Patient" : "Patient",
+                    serviceName: b.serviceId ? getService(b.serviceId)?.name ?? "Physiotherapy session" : "Physiotherapy session",
+                    sessionDate: b.sessionDate ?? 0,
+                    durationMinutes: b.sessionDuration,
+                    isOnline: b.isOnline,
+                    travelZoneName: b.travelZoneName ?? null,
+                    chargeKobo: b.serviceAmount,
+                    held: isLiveHold(b, now),
+                    holdExpiresAt: b.holdExpiresAt ?? null,
+                    scheduledBy: b.scheduledBy ?? "patient",
+                };
+            })
+        );
+    },
+});
+
 /** Patient (or the physio who scheduled it) cancels a booking that hasn't been paid. */
 export const cancelUnpaidMarketplaceBooking = mutation({
     args: { bookingId: v.id("marketplaceBookings") },

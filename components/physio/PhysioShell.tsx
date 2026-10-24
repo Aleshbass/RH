@@ -14,10 +14,19 @@ import { PhysioBrand, PhysioMobileNav, PhysioSidebar, SectionTabs, PHYSIO_HOME }
 import { PhysioHelp } from '@/components/physio/shell/PhysioHelp'
 import { PhysioDutySwitch } from '@/components/physio/PhysioDutySwitch'
 import { PhysioDeclined, PhysioUnderReview } from '@/components/physio/PhysioReviewStates'
+import { BookingProvider, useBooking } from '@/components/physio/schedule/BookingDrawer'
 import { CLINIC_PORTAL_HOME, clinicianBelongsInClinicPortal } from '@/components/clinic/clinician-routing'
 
-/** Opens a new appointment on the calendar. */
-export const NEW_APPOINTMENT_HREF = `${PHYSIO_HOME}/calendar?new=1`
+/** The top bar's main action: book a patient in, in a drawer, without leaving the page. */
+function NewAppointmentButton() {
+  const openBooking = useBooking()
+  return (
+    <Button className={`${primaryButtonClass} hidden h-10 px-4 sm:inline-flex`} onClick={() => openBooking()}>
+      <CalendarPlus className="mr-2 h-4 w-4" />
+      New appointment
+    </Button>
+  )
+}
 
 function ShellSkeleton() {
   return (
@@ -110,9 +119,8 @@ export function PhysioShell({ children }: { children: ReactNode }) {
   if (access === 'loading' || access === 'redirecting') return <ShellSkeleton />
   if (access === 'declined') return <PhysioDeclined reason={setup?.approvalComments ?? undefined} />
 
-  const onCalendar = pathname.startsWith(`${PHYSIO_HOME}/calendar`)
-
   return (
+    <BookingProvider>
     <div className="flex min-h-screen bg-pt-canvas text-pt-ink">
       <div className="hidden shrink-0 p-3 pr-0 lg:flex">
         <PhysioSidebar className="sticky top-3 h-[calc(100vh-1.5rem)]" limited={isUnderReview} unreadMessages={unreadMessages} />
@@ -127,14 +135,7 @@ export function PhysioShell({ children }: { children: ReactNode }) {
 
           <div className="flex shrink-0 items-center gap-2">
             {!isUnderReview && <PhysioDutySwitch />}
-            {!isUnderReview && !onCalendar && (
-              <Button asChild className={`${primaryButtonClass} hidden h-10 px-4 sm:inline-flex`}>
-                <Link href={NEW_APPOINTMENT_HREF}>
-                  <CalendarPlus className="mr-2 h-4 w-4" />
-                  New appointment
-                </Link>
-              </Button>
-            )}
+            {!isUnderReview && <NewAppointmentButton />}
             <PhysioHelp />
             <PatientThemeToggle className="hidden sm:flex" />
             <PatientNotifications />
@@ -156,5 +157,6 @@ export function PhysioShell({ children }: { children: ReactNode }) {
 
       <PhysioMobileNav limited={isUnderReview} unreadMessages={unreadMessages} />
     </div>
+    </BookingProvider>
   )
 }

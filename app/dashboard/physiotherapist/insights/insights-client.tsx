@@ -66,7 +66,11 @@ export default function InsightsClient({ initialStats }: { initialStats: Stats |
 
   return (
     <PageContainer>
-      <PageHeader title="Insights" description="How your practice is doing." />
+      <PageHeader
+        title="Earnings"
+        description="How your practice is doing."
+        info="Numbers come from your sessions and paid invoices. “Received” is money that has reached you; “Waiting” is invoices sent but not paid yet."
+      />
 
       <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
         <StatTile label="Received" value={formatNaira(stats.earnings.paid)} hint="from paid invoices" />

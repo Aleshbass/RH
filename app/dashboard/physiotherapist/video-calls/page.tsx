@@ -4,9 +4,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useMutation, useQuery } from 'convex/react';
 import { format, isToday, isTomorrow } from 'date-fns';
-import { Copy, Loader2, Plus, Video } from '@/components/icons';
+import { Copy, Plus, Video } from '@/components/icons';
 import { toast } from 'sonner';
-import { playSound } from '@/lib/sounds';
 import { api } from '@/convex/_generated/api';
 import type { Id } from '@/convex/_generated/dataModel';
 import {
@@ -20,13 +19,10 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
-import { EmptyState, PageContainer, PageHeader, Panel, StatusBadge, primaryButtonClass } from '@/components/physio/ui';
+import { accentButtonClass, EmptyState, PageContainer, PageHeader, Panel, StatusBadge, primaryButtonClass, secondaryButtonClass } from '@/components/physio/ui';
+import { useBooking } from '@/components/physio/schedule/BookingDrawer';
 import { cn } from '@/lib/utils';
 
 type VideoCall = {
@@ -42,18 +38,11 @@ type VideoCall = {
   patient?: { _id: string; firstName?: string; lastName?: string; email?: string };
 };
 
-type PatientLite = { _id: Id<'users'>; firstName?: string; lastName?: string; email?: string };
-
 /** Join opens this long before the start time. */
 const JOIN_EARLY_MS = 10 * 60 * 1000;
 
 const fullName = (p?: { firstName?: string; lastName?: string }) =>
   [p?.firstName, p?.lastName].filter(Boolean).join(' ') || 'Patient';
-
-function localDateTimeValue(date: Date) {
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
 
 function whenLabel(time: number) {
   if (isToday(time)) return `Today, ${format(time, 'h:mm a')}`;
@@ -84,202 +73,13 @@ function callHref(call: VideoCall) {
   return `/video-call/${call.roomId}`;
 }
 
-function ScheduleDialog({
-  open,
-  onOpenChange,
-  patients,
-  defaultPlatform,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  patients: PatientLite[];
-  defaultPlatform: 'stream' | 'google_meet';
-}) {
-  const scheduleVideoCall = useMutation(api.videoCalls.scheduleVideoCall);
-  const [patientId, setPatientId] = useState('');
-  const [title, setTitle] = useState('Video session');
-  const [when, setWhen] = useState('');
-  const [duration, setDuration] = useState('45');
-  const [platform, setPlatform] = useState<'stream' | 'google_meet'>(defaultPlatform);
-  const [meetLink, setMeetLink] = useState('');
-  const [notes, setNotes] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [conflict, setConflict] = useState(false);
-
-  useEffect(() => {
-    if (!open) return;
-    // Next half hour, so the default is always in the future
-    const next = new Date(Date.now() + 30 * 60 * 1000);
-    next.setMinutes(next.getMinutes() < 30 ? 30 : 60, 0, 0);
-    setWhen(localDateTimeValue(next));
-    setPlatform(defaultPlatform);
-    setConflict(false);
-  }, [open, defaultPlatform]);
-
-  const patient = patients.find((p) => p._id === patientId);
-
-  const submit = async (force = false) => {
-    const scheduledAt = new Date(when).getTime();
-    if (!patientId) return toast.error('Choose a patient.');
-    if (!when || Number.isNaN(scheduledAt)) return toast.error('Choose a date and time.');
-    if (scheduledAt < Date.now() - 5 * 60 * 1000) return toast.error('Choose a time in the future.');
-    if (platform === 'google_meet' && !/^https:\/\/meet\.google\.com\//.test(meetLink.trim())) {
-      return toast.error('Paste a Google Meet link (https://meet.google.com/…).');
-    }
-    setSaving(true);
-    try {
-      await scheduleVideoCall({
-        patientId: patientId as Id<'users'>,
-        scheduledAt,
-        title: title.trim() || 'Video session',
-        notes: notes.trim() || undefined,
-        platform,
-        duration: Number(duration),
-        meetingLink: platform === 'google_meet' ? meetLink.trim() : undefined,
-        force: force || undefined,
-      });
-      playSound('booked');
-      toast.success(
-        patient?.email ? `Scheduled. ${patient.firstName ?? 'Your patient'} will get the link by email.` : 'Scheduled. Share the link with your patient.'
-      );
-      onOpenChange(false);
-      setPatientId('');
-      setNotes('');
-      setMeetLink('');
-    } catch (error) {
-      const message = String((error as Error)?.message ?? '');
-      if (message.includes('already exists close to this time')) setConflict(true);
-      else toast.error('Couldn’t schedule the session. Try again.');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>Schedule a video session</DialogTitle>
-          <DialogDescription>Your patient gets an email with the link to join.</DialogDescription>
-        </DialogHeader>
-
-        <div className="space-y-4 py-2">
-          <div className="space-y-1.5">
-            <Label>Patient</Label>
-            <Select value={patientId} onValueChange={setPatientId}>
-              <SelectTrigger>
-                <SelectValue placeholder={patients.length ? 'Choose a patient' : 'No patients yet'} />
-              </SelectTrigger>
-              <SelectContent>
-                {patients.map((p) => (
-                  <SelectItem key={p._id} value={p._id}>
-                    {fullName(p)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {patient && !patient.email && (
-              <p className="text-xs text-amber-700 dark:text-amber-400">This patient has no email on file. You’ll need to send the link yourself.</p>
-            )}
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="call-title">Title</Label>
-            <Input id="call-title" value={title} onChange={(e) => setTitle(e.target.value)} />
-          </div>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-[1fr_8rem]">
-            <div className="space-y-1.5">
-              <Label htmlFor="call-when">Date and time</Label>
-              <Input id="call-when" type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Length</Label>
-              <Select value={duration} onValueChange={setDuration}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {['30', '45', '60', '90'].map((m) => (
-                    <SelectItem key={m} value={m}>
-                      {m} min
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <div className="space-y-1.5">
-            <Label>Where</Label>
-            <div className="grid grid-cols-2 rounded-lg border border-neutral-200 p-0.5 dark:border-white/[0.07]" role="radiogroup">
-              {(
-                [
-                  ['stream', 'Rehabify video'],
-                  ['google_meet', 'Google Meet'],
-                ] as const
-              ).map(([value, label]) => (
-                <button
-                  key={value}
-                  type="button"
-                  role="radio"
-                  aria-checked={platform === value}
-                  onClick={() => setPlatform(value)}
-                  className={cn(
-                    'rounded-md py-1.5 text-sm transition-colors',
-                    platform === value
-                      ? 'bg-neutral-900 font-medium text-white dark:bg-white dark:text-neutral-950'
-                      : 'text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white'
-                  )}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-            {platform === 'google_meet' && (
-              <Input
-                className="mt-2"
-                value={meetLink}
-                onChange={(e) => setMeetLink(e.target.value)}
-                placeholder="https://meet.google.com/abc-defg-hij"
-                aria-label="Google Meet link"
-              />
-            )}
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="call-notes">Note for your patient (optional)</Label>
-            <Textarea id="call-notes" rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="e.g. Wear loose clothing and have a chair nearby." />
-          </div>
-          {conflict && (
-            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
-              This patient already has a session close to this time.
-              <button type="button" className="ml-1 font-medium underline" onClick={() => submit(true)}>
-                Schedule anyway
-              </button>
-            </div>
-          )}
-        </div>
-
-        <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={saving}>
-            Cancel
-          </Button>
-          <Button onClick={() => submit(false)} disabled={saving} className={primaryButtonClass}>
-            {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Schedule
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
 export default function VideoCallsPage() {
   const router = useRouter();
   const calls = useQuery(api.videoCalls.getMyVideoCalls, {}) as VideoCall[] | undefined;
-  const patients = useQuery(api.patients.getMyPatientOptions, {}) as PatientLite[] | undefined;
-  const platformPreference = useQuery(api.physiotherapistProfiles.getVideoPlatformPreference) as string | null | undefined;
+  const openBooking = useBooking();
   const startVideoCall = useMutation(api.videoCalls.startVideoCall);
   const cancelVideoCall = useMutation(api.videoCalls.cancelVideoCall);
 
-  const [scheduling, setScheduling] = useState(false);
   const [cancelling, setCancelling] = useState<VideoCall | null>(null);
   const [cancelReason, setCancelReason] = useState('');
   const [now, setNow] = useState(() => Date.now());
@@ -367,11 +167,11 @@ export default function VideoCallsPage() {
             <Button variant="ghost" size="sm" onClick={() => setCancelling(call)} className="text-neutral-500">
               Cancel
             </Button>
-            <Button variant="outline" size="sm" onClick={() => copyLink(call)}>
+            <Button size="sm" className={cn(secondaryButtonClass, 'h-9')} onClick={() => copyLink(call)}>
               <Copy className="mr-1.5 h-3.5 w-3.5" />
               Link
             </Button>
-            <Button size="sm" onClick={() => join(call)} disabled={!canJoin(call)} className={primaryButtonClass}>
+            <Button size="sm" onClick={() => join(call)} disabled={!canJoin(call)} className={cn(canJoin(call) ? accentButtonClass : primaryButtonClass, 'h-9')}>
               {canJoin(call) ? 'Join' : start ? `Opens ${format(start - JOIN_EARLY_MS, 'h:mm a')}` : 'Join'}
             </Button>
           </div>
@@ -385,10 +185,11 @@ export default function VideoCallsPage() {
       <PageHeader
         title="Video sessions"
         description="Online sessions with your patients. Join opens 10 minutes before the start."
+        info="Each video session gets a private link that only you and your patient can use. It also shows on your calendar and the patient’s dashboard."
         actions={
-          <Button onClick={() => setScheduling(true)} className={primaryButtonClass} disabled={!patients}>
+          <Button onClick={() => openBooking({ mode: 'telehealth' })} className={cn(primaryButtonClass, 'h-10 px-4')}>
             <Plus className="mr-2 h-4 w-4" />
-            Schedule a session
+            Book a video session
           </Button>
         }
       />
@@ -404,7 +205,12 @@ export default function VideoCallsPage() {
           <EmptyState
             icon={<Video className="h-8 w-8" />}
             title="No video sessions coming up"
-            description="Schedule one here, or book an online appointment from the calendar."
+            description="Book one and its private link is made for you."
+            action={
+              <Button onClick={() => openBooking({ mode: 'telehealth' })} className={cn(primaryButtonClass, 'h-10')}>
+                Book a video session
+              </Button>
+            }
           />
         ) : (
           <ul className="divide-y divide-neutral-100 dark:divide-neutral-800">{upcoming.map((call) => row(call, true))}</ul>
@@ -416,13 +222,6 @@ export default function VideoCallsPage() {
           <ul className="divide-y divide-neutral-100 dark:divide-neutral-800">{past.map((call) => row(call, false))}</ul>
         </Panel>
       )}
-
-      <ScheduleDialog
-        open={scheduling}
-        onOpenChange={setScheduling}
-        patients={patients ?? []}
-        defaultPlatform={platformPreference === 'google_meet' ? 'google_meet' : 'stream'}
-      />
 
       <AlertDialog open={cancelling !== null} onOpenChange={(open) => !open && setCancelling(null)}>
         <AlertDialogContent>

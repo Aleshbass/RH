@@ -1,23 +1,22 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useMutation, useQuery } from 'convex/react';
 import { addDays, addWeeks, endOfDay, endOfWeek, format, startOfDay, startOfWeek } from 'date-fns';
-import { ChevronLeft, ChevronRight, List, Plus } from '@/components/icons';
+import { CalendarPlus, ChevronLeft, ChevronRight, Video } from '@/components/icons';
 import { api } from '@/convex/_generated/api';
 import type { Id } from '@/convex/_generated/dataModel';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { AppointmentCalendar } from '@/components/calendar/AppointmentCalendar';
 import type { AppointmentData } from '@/lib/calendar/dayPilotAdapter';
-import { AppointmentModal } from '@/components/calendar/AppointmentModal';
-import { SessionLogModal } from '@/components/dashboard/physiotherapist/SessionLogModal';
-import { PageContainer, primaryButtonClass, StatusBadge } from '@/components/physio/ui';
+import { accentButtonClass, cardClass, InfoTip, PageContainer, PageHeader, Panel, primaryButtonClass, StatusBadge } from '@/components/physio/ui';
+import { AppointmentDrawer } from '@/components/physio/schedule/AppointmentDrawer';
+import { useBooking } from '@/components/physio/schedule/BookingDrawer';
+import { joinLink, useNow, visitStatus, type PhysioAppointment } from '@/components/physio/schedule/shared';
 import { cn } from '@/lib/utils';
-import { APPOINTMENT_STATUS_LABELS, appointmentStatusLabel } from '@/convex/helpers/appointmentStatus';
-import { appointmentBadgeTone, type AppointmentLike } from '@/components/appointments/appointment-ui';
+import { APPOINTMENT_STATUS_LABELS } from '@/convex/helpers/appointmentStatus';
 import { lagosTimeRange } from '@/convex/helpers/lagosTime';
 
 type AppointmentStatus = 'scheduled' | 'confirmed' | 'completed' | 'cancelled_by_patient' | 'cancelled_by_therapist' | 'no_show';
@@ -41,14 +40,6 @@ const STATUS_FILTERS: { value: AppointmentStatus | 'all'; label: string }[] = [
   })),
 ];
 
-// Same labels as the appointments list, patient and clinic views
-function statusBadge(appointment: RawAppointment) {
-  return (
-    <StatusBadge tone={appointmentBadgeTone(appointment as AppointmentLike, 'provider')}>
-      {appointmentStatusLabel(appointment as AppointmentLike, 'provider')}
-    </StatusBadge>
-  );
-}
 
 export default function CalendarPage() {
   const searchParams = useSearchParams();
@@ -60,11 +51,11 @@ export default function CalendarPage() {
   }, []);
   const [statusFilter, setStatusFilter] = useState<AppointmentStatus | 'all'>('all');
 
-  // Modal state: creating (no id) or editing an existing appointment
-  const [modalOpen, setModalOpen] = useState(false);
-  const [modalDate, setModalDate] = useState<Date>(new Date());
-  const [editingId, setEditingId] = useState<string | undefined>(undefined);
-  const [sessionLogFor, setSessionLogFor] = useState<AppointmentData | null>(null);
+  const openBooking = useBooking();
+  const now = useNow(30_000);
+  // The visit open in the drawer (looked up live, so it updates while open)
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   const currentUser = useQuery(api.users.getMyUser);
 
@@ -112,11 +103,8 @@ export default function CalendarPage() {
     [appointments, currentUser?._id]
   );
 
-  const openNew = (date?: Date) => {
-    setEditingId(undefined);
-    setModalDate(date ?? new Date());
-    setModalOpen(true);
-  };
+  // An empty slot books that time; the button starts from your open times
+  const openNew = (date?: Date) => openBooking(date ? { slot: { start: date.getTime() } } : undefined);
 
   // ?new=1 (from Home and the patient page) opens a new appointment once
   const openedFromQuery = useRef(false);
@@ -125,18 +113,21 @@ export default function CalendarPage() {
       openedFromQuery.current = true;
       openNew();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
-  const handleAppointmentClick = (appointment: AppointmentData) => {
-    // Confirmed and completed sessions get notes; anything else opens for editing
-    if (appointment.status === 'confirmed' || appointment.status === 'completed') {
-      setSessionLogFor(appointment);
-    } else {
-      setEditingId(appointment._id);
-      setModalDate(new Date(appointment.startTime));
-      setModalOpen(true);
-    }
+  const openVisit = (id: string) => {
+    setSelectedId(id);
+    setDrawerOpen(true);
   };
+  const handleAppointmentClick = (appointment: AppointmentData) => openVisit(appointment._id);
+  const selected = useMemo(
+    () =>
+      ((appointmentsResult ?? []).find((a) => a._id === selectedId) ??
+        (todaysSchedule ?? []).find((a) => a._id === selectedId) ??
+        null) as PhysioAppointment | null,
+    [appointmentsResult, todaysSchedule, selectedId]
+  );
 
   const step = (direction: 1 | -1) =>
     setCurrentDate((date) => (viewMode === 'week' ? addWeeks(date, direction) : addDays(date, direction)));
@@ -158,28 +149,21 @@ export default function CalendarPage() {
 
   return (
     <PageContainer className="max-w-7xl">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight text-neutral-900 dark:text-white sm:text-2xl">Calendar</h1>
-          <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">Drag a session to move it. Click an empty slot to book.</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button asChild variant="outline">
-            <Link href="/dashboard/physiotherapist/appointments">
-              <List className="mr-2 h-4 w-4" />
-              List
-            </Link>
-          </Button>
-          <Button onClick={() => openNew()} className={primaryButtonClass}>
-            <Plus className="mr-2 h-4 w-4" />
+      <PageHeader
+        title="Calendar"
+        description="Tap an empty time to book it. Tap a session to see it or answer it."
+        info="Drag a session to move it; the patient is told. Times are Lagos time. Paid Rehabify sessions appear once the patient has paid."
+        actions={
+          <Button onClick={() => openNew()} className={cn(primaryButtonClass, 'h-10 px-4')}>
+            <CalendarPlus className="mr-2 h-4 w-4" />
             New appointment
           </Button>
-        </div>
-      </div>
+        }
+      />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_18rem]">
-        <section className="min-w-0 overflow-hidden rounded-2xl border border-black/[0.04] bg-white shadow-soft dark:border-white/[0.06] dark:bg-rh-ink-2 dark:shadow-none">
-          <div className="flex flex-col gap-3 border-b border-neutral-200 px-4 py-3 dark:border-white/[0.07] sm:flex-row sm:items-center sm:justify-between">
+        <section className={cn(cardClass, 'min-w-0 overflow-hidden')}>
+          <div className="flex flex-col gap-3 border-b border-pt-line px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-2">
               <Button variant="outline" size="sm" className="h-8 w-8 p-0" onClick={() => step(-1)} aria-label="Previous">
                 <ChevronLeft className="h-4 w-4" />
@@ -190,7 +174,7 @@ export default function CalendarPage() {
               <Button variant="outline" size="sm" className="h-8" onClick={() => setCurrentDate(new Date())}>
                 Today
               </Button>
-              <p className="ml-1 truncate text-sm font-semibold text-neutral-900 dark:text-white">{rangeLabel}</p>
+              <p className="ml-1 truncate text-sm font-semibold text-pt-ink">{rangeLabel}</p>
             </div>
             <div className="flex items-center gap-2">
               <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as AppointmentStatus | 'all')}>
@@ -205,7 +189,7 @@ export default function CalendarPage() {
                   ))}
                 </SelectContent>
               </Select>
-              <div className="inline-flex rounded-lg border border-neutral-200 p-0.5 dark:border-white/[0.07]" role="radiogroup" aria-label="View">
+              <div className="inline-flex rounded-xl bg-pt-sunken p-0.5" role="radiogroup" aria-label="View">
                 {(['day', 'week'] as const).map((mode) => (
                   <button
                     key={mode}
@@ -214,10 +198,8 @@ export default function CalendarPage() {
                     aria-checked={viewMode === mode}
                     onClick={() => setViewMode(mode)}
                     className={cn(
-                      'rounded-md px-3 py-1 text-sm capitalize transition-colors',
-                      viewMode === mode
-                        ? 'bg-neutral-900 font-medium text-white dark:bg-white dark:text-neutral-950'
-                        : 'text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white'
+                      'rounded-lg px-3 py-1 text-sm capitalize transition-colors',
+                      viewMode === mode ? 'bg-pt-surface font-medium text-pt-ink shadow-pt dark:shadow-none' : 'text-pt-muted hover:text-pt-ink'
                     )}
                   >
                     {mode}
@@ -249,48 +231,60 @@ export default function CalendarPage() {
         </section>
 
         <aside className="space-y-6">
-          <section className="rounded-2xl border border-black/[0.04] bg-white shadow-soft dark:border-white/[0.06] dark:bg-rh-ink-2 dark:shadow-none">
-            <h2 className="border-b border-neutral-200 px-4 py-3 text-sm font-semibold text-neutral-900 dark:border-white/[0.07] dark:text-white">
-              Today
-            </h2>
+          <Panel title="Today" info="Tap a session to open it. Video sessions get a Join button 10 minutes before they start." bodyClassName="px-2 pb-2 pt-1">
             {todaysSchedule === undefined ? (
-              <div className="p-4 text-sm text-neutral-500">Loading…</div>
+              <div className="p-4 text-sm text-pt-muted">Loading…</div>
             ) : todaysSchedule.length === 0 ? (
-              <p className="px-4 py-6 text-center text-sm text-neutral-500 dark:text-neutral-400">Nothing booked today.</p>
+              <p className="px-4 py-6 text-center text-sm text-pt-muted">Nothing booked today.</p>
             ) : (
-              <ul className="divide-y divide-neutral-100 dark:divide-neutral-800">
+              <ul>
                 {todaysSchedule
                   .slice()
                   .sort((a, b) => a.startTime - b.startTime)
-                  .map((appointment) => (
-                    <li key={appointment._id} className="flex items-start justify-between gap-2 px-4 py-3">
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium text-neutral-900 dark:text-white">
-                          {[appointment.patient?.firstName, appointment.patient?.lastName].filter(Boolean).join(' ') || 'Patient'}
-                        </p>
-                        <p className="text-xs tabular-nums text-neutral-500 dark:text-neutral-400">
-                          {lagosTimeRange(appointment.startTime, appointment.endTime)}
-                        </p>
-                      </div>
-                      {statusBadge(appointment)}
-                    </li>
-                  ))}
+                  .map((appointment) => {
+                    const full = appointment as unknown as PhysioAppointment;
+                    const status = visitStatus(full, now);
+                    const link = joinLink(full, now);
+                    return (
+                      <li key={appointment._id} className="flex items-center gap-2 rounded-2xl px-2 py-2.5 transition-colors hover:bg-pt-hover">
+                        <button type="button" onClick={() => openVisit(appointment._id)} className="min-w-0 flex-1 text-left">
+                          <p className="truncate text-sm font-semibold text-pt-ink">
+                            {[appointment.patient?.firstName, appointment.patient?.lastName].filter(Boolean).join(' ') || 'Patient'}
+                          </p>
+                          <p className="text-xs tabular-nums text-pt-muted">{lagosTimeRange(appointment.startTime, appointment.endTime)}</p>
+                        </button>
+                        {link ? (
+                          <Button asChild size="sm" className={cn(accentButtonClass, 'h-8 px-2.5')}>
+                            <a href={link} target="_blank" rel="noopener noreferrer">
+                              <Video className="mr-1 h-3.5 w-3.5" />
+                              Join
+                            </a>
+                          </Button>
+                        ) : (
+                          <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
+                        )}
+                      </li>
+                    );
+                  })}
               </ul>
             )}
-          </section>
+          </Panel>
 
-          <section className="rounded-xl border border-neutral-200 bg-white p-4 dark:border-white/[0.07] dark:bg-rh-ink-2">
-            <h2 className="text-sm font-semibold text-neutral-900 dark:text-white">{viewMode === 'week' ? 'This week' : 'This day'}</h2>
+          <section className={cn(cardClass, 'p-5')}>
+            <h2 className="flex items-center gap-1.5 text-sm font-semibold text-pt-ink">
+              {viewMode === 'week' ? 'This week' : 'This day'}
+              <InfoTip>Counts for the dates on screen. “Waiting” means the patient or you still have to confirm the time.</InfoTip>
+            </h2>
             <dl className="mt-3 space-y-2 text-sm">
               {[
                 ['Appointments', counts.total],
                 ['Confirmed', counts.confirmed],
                 ['Completed', counts.completed],
-                ['Awaiting confirmation', counts.pending],
+                ['Waiting', counts.pending],
               ].map(([label, value]) => (
                 <div key={label as string} className="flex justify-between">
-                  <dt className="text-neutral-500 dark:text-neutral-400">{label}</dt>
-                  <dd className="font-medium tabular-nums text-neutral-900 dark:text-white">{value}</dd>
+                  <dt className="text-pt-muted">{label}</dt>
+                  <dd className="font-medium tabular-nums text-pt-ink">{value}</dd>
                 </div>
               ))}
             </dl>
@@ -298,20 +292,7 @@ export default function CalendarPage() {
         </aside>
       </div>
 
-      <AppointmentModal
-        isOpen={modalOpen}
-        onClose={() => setModalOpen(false)}
-        selectedDate={modalDate}
-        onAppointmentCreated={() => setModalOpen(false)}
-        appointmentId={editingId}
-      />
-
-      <SessionLogModal
-        isOpen={sessionLogFor !== null}
-        onClose={() => setSessionLogFor(null)}
-        appointmentId={sessionLogFor?._id as Id<'appointments'> | undefined}
-        patientId={sessionLogFor?.patientId}
-      />
+      <AppointmentDrawer appointment={selected} open={drawerOpen && selected !== null} onOpenChange={setDrawerOpen} />
     </PageContainer>
   );
 }
