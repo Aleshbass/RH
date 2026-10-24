@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useQuery } from 'convex/react';
+import { useQueryUntyped } from '@/lib/convexUntyped';
 import { format, formatDistanceToNow } from 'date-fns';
 import { ChevronRight, Search, Star, UserPlus, Users } from '@/components/icons';
 import { api } from '@/convex/_generated/api';
@@ -17,6 +17,9 @@ import { OUTCOME_LABELS, type Outcome } from '@/components/physio/workspace/shar
 import { RehabifyId } from '@/components/shared/RehabifyId';
 import { matchesRehabifyId } from '@/convex/helpers/rehabifyIdFormat';
 import { cn } from '@/lib/utils';
+
+/** The generated api types sit at TypeScript's depth limit, so this page reads its functions untyped. */
+const patientsApi = api as unknown as Record<string, Record<string, unknown>>;
 
 type ActivePatient = {
   _id: string;
@@ -62,15 +65,15 @@ const nameOf = (p: { firstName?: string; lastName?: string }) => [p.firstName, p
 // Avatar tints cycle through the brand's soft colours so the list feels friendly
 const AVATAR_TINTS = [
   'bg-rh-honeydew text-rh-ink',
-  'bg-rh-peach text-[#b4690e]',
+  'bg-pt-violet-bg text-pt-violet-fg',
   'bg-rh-blush text-[#be3a5f]',
   'bg-rh-honeydew text-rh-ink',
 ];
 const tintFor = (id: string) => AVATAR_TINTS[id.charCodeAt(id.length - 1) % AVATAR_TINTS.length];
 
 export default function PatientsPage() {
-  const active = useQuery(api.patients.getMyPatients, { limit: 200 }) as ActivePatient[] | undefined;
-  const completed = useQuery(api.physioCare.getCompletedCare, {}) as CompletedPatient[] | undefined;
+  const active = useQueryUntyped(patientsApi.patients.getMyPatients, { limit: 200 }) as ActivePatient[] | undefined;
+  const completed = useQueryUntyped(patientsApi.physioCare.getCompletedCare, {}) as CompletedPatient[] | undefined;
   const [view, setView] = useState<'active' | 'completed'>('active');
   const [searchTerm, setSearchTerm] = useState('');
 

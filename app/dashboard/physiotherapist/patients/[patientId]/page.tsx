@@ -3,15 +3,18 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
-import { useMutation, useQuery } from 'convex/react';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import {
   CalendarPlus,
   CheckCircle2,
   ChevronLeft,
+  ClipboardList,
+  Dumbbell,
   MessageSquare,
   MoreHorizontal,
+  NotebookPen,
+  Receipt,
   RotateCcw,
   Users,
 } from '@/components/icons';
@@ -28,15 +31,30 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Skeleton } from '@/components/ui/skeleton';
 import EditPatientModal from '@/components/dashboard/physiotherapist/EditPatientModal';
+import { SendProgramDialog } from '@/components/exercise-programs/SendProgramDialog';
+import { ShareLinkDialog } from '@/components/exercise-programs/ShareLinkDialog';
 import { useBooking } from '@/components/physio/schedule/BookingDrawer';
-import { EmptyState, PageContainer, Panel } from '@/components/physio/ui';
+import {
+  cardClass,
+  EmptyState,
+  InfoTip,
+  PageContainer,
+  Panel,
+  primaryButtonClass,
+  secondaryButtonClass,
+  StatusBadge,
+} from '@/components/physio/ui';
 import { OverviewTab } from '@/components/physio/workspace/OverviewTab';
 import { CarePlanTab } from '@/components/physio/workspace/CarePlanTab';
 import { CheckInsTab, FilesTab, NotesTab, PaymentsTab } from '@/components/physio/workspace/RecordTabs';
 import { CompleteCareDialog, EpisodeDialog } from '@/components/physio/workspace/CareDialogs';
+import { CarePlanDrawer, NoteDrawer, RequestPaymentDrawer, SaveTemplateDrawer } from '@/components/physio/workspace/WorkspaceDrawers';
 import { SOURCE_LABELS, fullName, type Workspace } from '@/components/physio/workspace/shared';
 import { RehabifyId } from '@/components/shared/RehabifyId';
+import { useMutationUntyped, useQueryUntyped } from '@/lib/convexUntyped';
 import { cn } from '@/lib/utils';
+
+const careApi = (api as unknown as Record<string, Record<string, unknown>>).physioCare;
 
 const TABS = [
   { id: 'overview', label: 'Overview' },
@@ -48,6 +66,9 @@ const TABS = [
 ] as const;
 type TabId = (typeof TABS)[number]['id'];
 
+/** Every drawer the workspace can open; one at a time. */
+type DrawerId = 'episode' | 'complete' | 'edit' | 'note' | 'plan' | 'template' | 'payment' | 'exercises';
+
 export default function PatientWorkspacePage() {
   const params = useParams();
   const searchParams = useSearchParams();
@@ -55,16 +76,16 @@ export default function PatientWorkspacePage() {
 
   // A fixed "now" (to 5 minutes) keeps the query's arguments stable, so Convex can cache it
   const [workspaceNow] = useState(() => Math.floor(Date.now() / 300_000) * 300_000);
-  const workspace = useQuery(api.physioCare.getPatientWorkspace, patientId ? { patientId, now: workspaceNow } : 'skip') as
+  const workspace = useQueryUntyped(careApi.getPatientWorkspace, patientId ? { patientId, now: workspaceNow } : 'skip') as
     | Workspace
     | null
     | undefined;
-  const startNewEpisode = useMutation(api.physioCare.startNewEpisode);
+  const startNewEpisode = useMutationUntyped(careApi.startNewEpisode);
 
   const initialTab = (searchParams.get('tab') as TabId | null) ?? 'overview';
   const [tab, setTab] = useState<TabId>(TABS.some((t) => t.id === initialTab) ? initialTab : 'overview');
-  const [composing, setComposing] = useState(false);
-  const [dialog, setDialog] = useState<'episode' | 'complete' | 'edit' | null>(null);
+  const [drawer, setDrawer] = useState<DrawerId | null>(null);
+  const [shareFor, setShareFor] = useState<Id<'exercisePrograms'> | null>(null);
   const openBooking = useBooking();
 
   useEffect(() => {
@@ -78,16 +99,17 @@ export default function PatientWorkspacePage() {
     url.searchParams.set('tab', next);
     window.history.replaceState(null, '', url.toString());
   };
+  const drawerProps = (id: DrawerId) => ({ open: drawer === id, onOpenChange: (open: boolean) => setDrawer(open ? id : null) });
 
   if (workspace === undefined) {
     return (
       <PageContainer>
-        <Skeleton className="h-5 w-24" />
-        <Skeleton className="h-40 rounded-3xl" />
-        <Skeleton className="h-10 w-full max-w-xl rounded-xl" />
+        <Skeleton className="h-5 w-24 bg-pt-sunken" />
+        <Skeleton className="h-44 rounded-3xl bg-pt-sunken" />
+        <Skeleton className="h-10 w-full max-w-xl rounded-2xl bg-pt-sunken" />
         <div className="grid gap-5 lg:grid-cols-3">
           {[0, 1, 2].map((i) => (
-            <Skeleton key={i} className="h-60 rounded-2xl" />
+            <Skeleton key={i} className="h-60 rounded-3xl bg-pt-sunken" />
           ))}
         </div>
       </PageContainer>
@@ -103,7 +125,7 @@ export default function PatientWorkspacePage() {
             title="Patient not found"
             description="This patient isn’t on your list."
             action={
-              <Button asChild variant="outline" size="sm" className="rounded-xl">
+              <Button asChild className={secondaryButtonClass}>
                 <Link href="/dashboard/physiotherapist/patients">Back to patients</Link>
               </Button>
             }
@@ -117,6 +139,9 @@ export default function PatientWorkspacePage() {
   const name = fullName(patient);
   const initials = `${patient.firstName?.[0] ?? ''}${patient.lastName?.[0] ?? ''}`.toUpperCase() || 'P';
   const isActive = episode.status === 'active';
+  const needsReview =
+    workspace.checkIns.some((c) => c.flagged && !c.reviewedAt) ||
+    (workspace.exerciseLogs ?? []).some((l) => l.painScore !== null && l.painScore >= 7 && !l.reviewedAt);
 
   const reopen = async () => {
     try {
@@ -127,92 +152,82 @@ export default function PatientWorkspacePage() {
     }
   };
 
+  const quickActions = [
+    { id: 'note' as const, label: 'Write a note', icon: NotebookPen },
+    { id: 'exercises' as const, label: 'Send exercises', icon: Dumbbell },
+    { id: 'plan' as const, label: workspace.plan ? 'Revise plan' : 'Create plan', icon: ClipboardList },
+    { id: 'payment' as const, label: 'Request payment', icon: Receipt },
+  ];
+
   return (
     <PageContainer>
-      <Link
-        href="/dashboard/physiotherapist/patients"
-        className="inline-flex items-center text-sm font-medium text-neutral-500 hover:text-rh-ink dark:text-neutral-400 dark:hover:text-white"
-      >
+      <Link href="/dashboard/physiotherapist/patients" className="inline-flex items-center text-sm font-medium text-pt-muted transition-colors hover:text-pt-ink">
         <ChevronLeft className="mr-0.5 h-4 w-4" />
         Patients
       </Link>
 
       {/* Patient header */}
-      <section className="relative overflow-hidden rounded-3xl bg-rh-lime p-5 text-rh-ink shadow-lift dark:bg-rh-ink sm:p-7">
-        {/* Soft brand shapes */}
-        <span aria-hidden className="pointer-events-none absolute -right-16 -top-20 h-56 w-56 rounded-full bg-white/[0.07]" />
-        <span aria-hidden className="pointer-events-none absolute -bottom-24 right-24 h-48 w-48 rounded-full bg-rh-honeydew/10" />
-
-        <div className="relative flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
+      <section className={cn(cardClass, 'p-5 sm:p-6')}>
+        <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
           <div className="flex min-w-0 items-center gap-4">
-            <Avatar className="h-16 w-16 shrink-0 ring-4 ring-white/15 sm:h-20 sm:w-20">
+            <Avatar className="h-16 w-16 shrink-0 sm:h-[72px] sm:w-[72px]">
               <AvatarImage src={patient.imageUrl} alt="" />
-              <AvatarFallback className="bg-rh-honeydew text-xl font-semibold text-rh-ink">{initials}</AvatarFallback>
+              <AvatarFallback className="bg-pt-sunken text-xl font-semibold text-pt-ink">{initials}</AvatarFallback>
             </Avatar>
             <div className="min-w-0">
-              <h1 className="truncate text-2xl font-semibold tracking-tight sm:text-3xl">{name}</h1>
-              <p className="truncate text-sm text-white/70">
-                {[patient.email, patient.phoneNumber].filter(Boolean).join(' · ') || 'No contact details'}
-              </p>
+              <h1 className="truncate text-2xl font-semibold tracking-tight text-pt-ink sm:text-[28px]">{name}</h1>
+              <p className="truncate text-sm text-pt-muted">{[patient.email, patient.phoneNumber].filter(Boolean).join(' · ') || 'No contact details'}</p>
               <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                <RehabifyId value={patient.patientNumber} tone="onDark" className="rounded-full px-2.5 text-xs" />
-                <span className={cn('rounded-full px-2.5 py-0.5 text-xs font-semibold', isActive ? 'bg-rh-honeydew text-rh-ink' : 'bg-white/15 text-white')}>
+                <RehabifyId value={patient.patientNumber} className="rounded-full px-2.5 text-xs" />
+                <StatusBadge tone={isActive ? 'green' : 'neutral'}>
                   {isActive ? 'In treatment' : `Care completed${episode.completedAt ? ` · ${format(episode.completedAt, 'd MMM yyyy')}` : ''}`}
-                </span>
-                <span className="rounded-full bg-white/15 px-2.5 py-0.5 text-xs font-medium">
+                </StatusBadge>
+                <StatusBadge>
                   {SOURCE_LABELS[episode.source]}
                   {episode.source === 'referred' && episode.referredBy ? ` by ${episode.referredBy}` : ''}
-                </span>
-                <span className="rounded-full bg-white/15 px-2.5 py-0.5 text-xs font-medium">
-                  Since {format(workspace.relationship.startDate, 'MMM yyyy')}
-                </span>
+                </StatusBadge>
+                <StatusBadge>Since {format(workspace.relationship.startDate, 'MMM yyyy')}</StatusBadge>
               </div>
             </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <Button asChild className="rounded-xl bg-white/15 text-white hover:bg-white/25" variant="ghost">
+            <Button asChild className={cn(secondaryButtonClass, 'h-10')}>
               <Link href={`/dashboard/physiotherapist/messages?with=${patientId}`}>
                 <MessageSquare className="mr-2 h-4 w-4" />
                 Message
               </Link>
             </Button>
             {isActive ? (
-              <Button
-                onClick={() => openBooking({ patient: { id: patientId, name } })}
-                className="rounded-xl bg-white text-rh-ink shadow-sm hover:bg-rh-cream active:scale-[0.98]"
-              >
+              <Button onClick={() => openBooking({ patient: { id: patientId, name } })} className={cn(primaryButtonClass, 'h-10')}>
                 <CalendarPlus className="mr-2 h-4 w-4" />
                 Book session
               </Button>
             ) : (
-              <Button onClick={reopen} className="rounded-xl bg-white text-rh-ink shadow-sm hover:bg-rh-cream">
+              <Button onClick={reopen} className={cn(primaryButtonClass, 'h-10')}>
                 <RotateCcw className="mr-2 h-4 w-4" />
                 Start new course
               </Button>
             )}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button size="icon" variant="ghost" className="rounded-xl bg-white/15 text-white hover:bg-white/25" aria-label="More actions">
+                <Button size="icon" className={cn(secondaryButtonClass, 'h-10 w-10')} aria-label="More actions">
                   <MoreHorizontal className="h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-52 rounded-xl">
+              <DropdownMenuContent align="end" className="w-56 rounded-xl">
                 {isActive && (
                   <>
-                    <DropdownMenuItem onClick={() => { go('notes'); setComposing(true); }}>Write an assessment or note</DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => go('plan')}>{workspace.plan ? 'Revise care plan' : 'Create care plan'}</DropdownMenuItem>
                     <DropdownMenuItem onClick={() => openBooking({ patient: { id: patientId, name }, mode: 'telehealth' })}>Book a video session</DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => go('payments')}>Request payment</DropdownMenuItem>
                     <DropdownMenuItem onClick={() => go('files')}>Upload a file</DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => setDialog('episode')}>Care details and source</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setDrawer('episode')}>Care details and source</DropdownMenuItem>
                   </>
                 )}
-                <DropdownMenuItem onClick={() => setDialog('edit')}>Edit contact details</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setDrawer('edit')}>Edit contact details</DropdownMenuItem>
                 {isActive && (
                   <>
                     <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={() => setDialog('complete')} className="font-medium text-rh-ink focus:text-rh-ink dark:text-rh-lime">
+                    <DropdownMenuItem onClick={() => setDrawer('complete')} className="font-medium">
                       <CheckCircle2 className="mr-2 h-4 w-4" />
                       Complete care
                     </DropdownMenuItem>
@@ -222,11 +237,28 @@ export default function PatientWorkspacePage() {
             </DropdownMenu>
           </div>
         </div>
+
+        {/* The four things you do most, one tap each */}
+        {isActive && (
+          <div className="mt-5 grid grid-cols-2 gap-2 border-t border-pt-line pt-4 sm:grid-cols-4">
+            {quickActions.map((action) => (
+              <button
+                key={action.id}
+                type="button"
+                onClick={() => setDrawer(action.id)}
+                className="flex items-center gap-2.5 rounded-2xl bg-pt-sunken px-3 py-2.5 text-left text-sm font-medium text-pt-ink transition hover:bg-pt-hover active:scale-[0.98]"
+              >
+                <action.icon className="h-4 w-4 shrink-0 text-pt-muted" />
+                <span className="truncate">{action.label}</span>
+              </button>
+            ))}
+          </div>
+        )}
       </section>
 
       {/* Tabs */}
       <div className="-mx-4 overflow-x-auto px-4 [scrollbar-width:none] sm:mx-0 sm:px-0 [&::-webkit-scrollbar]:hidden">
-        <div className="inline-flex gap-1 rounded-2xl bg-white p-1 shadow-soft dark:bg-rh-ink-2" role="tablist">
+        <div className="inline-flex items-center gap-1 rounded-2xl bg-pt-sunken p-1" role="tablist">
           {TABS.map((t) => (
             <button
               key={t.id}
@@ -235,57 +267,59 @@ export default function PatientWorkspacePage() {
               aria-selected={tab === t.id}
               onClick={() => go(t.id)}
               className={cn(
-                'whitespace-nowrap rounded-xl px-3.5 py-2 text-sm transition-all active:scale-[0.97]',
-                tab === t.id
-                  ? 'bg-rh-lime font-semibold text-rh-ink shadow-sm dark:bg-rh-lime dark:text-rh-ink'
-                  : 'text-neutral-600 hover:bg-rh-canvas hover:text-rh-ink dark:text-neutral-400 dark:hover:bg-white/[0.04] dark:hover:text-white'
+                'whitespace-nowrap rounded-xl px-3.5 py-2 text-sm font-medium transition',
+                tab === t.id ? 'bg-pt-surface text-pt-ink shadow-pt dark:shadow-none' : 'text-pt-muted hover:text-pt-ink'
               )}
             >
               {t.label}
-              {t.id === 'checkins' &&
-                (workspace.checkIns.some((c) => c.flagged && !c.reviewedAt) ||
-                  (workspace.exerciseLogs ?? []).some((l) => l.painScore !== null && l.painScore >= 7 && !l.reviewedAt)) && (
-                <span className="ml-1.5 inline-block h-2 w-2 rounded-full bg-rose-400 align-middle" aria-label="needs review" />
+              {t.id === 'checkins' && needsReview && (
+                <span className="ml-1.5 inline-block h-2 w-2 rounded-full bg-pt-rose-fg align-middle" aria-label="needs review" />
               )}
             </button>
           ))}
+          <InfoTip label="About these tabs" className="mx-1">
+            Everything about this patient in one place. A rose dot on Check-ins means high pain or a flag you haven’t reviewed yet.
+          </InfoTip>
         </div>
       </div>
 
       {isActive && !workspace.plan && tab === 'overview' && (
         <button
           type="button"
-          onClick={() => go('plan')}
-          className="flex w-full items-center justify-between gap-3 rounded-2xl bg-rh-peach px-5 py-3 text-left text-sm text-[#7c4a0a] transition-all hover:brightness-[0.98] dark:bg-amber-400/10 dark:text-amber-200"
+          onClick={() => setDrawer('plan')}
+          className="flex w-full items-center justify-between gap-3 rounded-2xl border border-dashed border-pt-line-strong bg-pt-surface px-5 py-3.5 text-left text-sm text-pt-muted transition-colors hover:border-pt-ink/40"
         >
-          <span>
-            <span className="font-semibold">No care plan yet.</span> Set goals, frequency, a review date and precautions.
+          <span className="flex items-center gap-3">
+            <ClipboardList className="h-5 w-5 shrink-0 text-pt-ink" />
+            <span>
+              <span className="font-semibold text-pt-ink">No care plan yet.</span> Set goals, frequency, a review date and precautions, or start from a template.
+            </span>
           </span>
-          <span className="shrink-0 font-semibold">Create plan →</span>
+          <span className="shrink-0 font-semibold text-pt-ink">Create plan →</span>
         </button>
       )}
 
       {tab === 'overview' && (
         <OverviewTab
           workspace={workspace}
-          onEditEpisode={() => setDialog('episode')}
+          onEditEpisode={() => setDrawer('episode')}
           onOpenPlan={() => go('plan')}
           onSchedule={() => openBooking({ patient: { id: patientId, name } })}
         />
       )}
-      {tab === 'plan' && <CarePlanTab workspace={workspace} />}
-      {tab === 'notes' && <NotesTab workspace={workspace} composing={composing} setComposing={setComposing} />}
+      {tab === 'plan' && <CarePlanTab workspace={workspace} onEditPlan={() => setDrawer('plan')} onSaveTemplate={() => setDrawer('template')} />}
+      {tab === 'notes' && <NotesTab workspace={workspace} onWrite={() => setDrawer('note')} />}
       {tab === 'checkins' && <CheckInsTab workspace={workspace} />}
       {tab === 'files' && <FilesTab workspace={workspace} />}
-      {tab === 'payments' && <PaymentsTab workspace={workspace} />}
+      {tab === 'payments' && <PaymentsTab workspace={workspace} onRequest={() => setDrawer('payment')} />}
 
       {workspace.pastEpisodes.length > 0 && tab === 'overview' && (
         <Panel title="Earlier courses of care">
-          <ul className="divide-y divide-black/[0.04] dark:divide-white/[0.05]">
+          <ul className="divide-y divide-pt-line">
             {workspace.pastEpisodes.map((e) => (
               <li key={e._id} className="flex items-center justify-between gap-3 px-5 py-3 text-sm">
-                <span className="truncate text-rh-ink dark:text-white">{e.condition || 'Course of care'}</span>
-                <span className="shrink-0 text-neutral-500 dark:text-neutral-400">
+                <span className="truncate text-pt-ink">{e.condition || 'Course of care'}</span>
+                <span className="shrink-0 text-pt-muted">
                   {format(e.startedAt, 'MMM yyyy')} – {e.completedAt ? format(e.completedAt, 'MMM yyyy') : 'now'}
                 </span>
               </li>
@@ -294,11 +328,30 @@ export default function PatientWorkspacePage() {
         </Panel>
       )}
 
-      <EpisodeDialog open={dialog === 'episode'} onOpenChange={(open) => setDialog(open ? 'episode' : null)} workspace={workspace} />
-      <CompleteCareDialog open={dialog === 'complete'} onOpenChange={(open) => setDialog(open ? 'complete' : null)} workspace={workspace} />
+      <NoteDrawer workspace={workspace} {...drawerProps('note')} />
+      <CarePlanDrawer workspace={workspace} {...drawerProps('plan')} />
+      {workspace.plan && <SaveTemplateDrawer plan={workspace.plan} {...drawerProps('template')} />}
+      <RequestPaymentDrawer workspace={workspace} {...drawerProps('payment')} />
+      <EpisodeDialog workspace={workspace} {...drawerProps('episode')} />
+      <CompleteCareDialog workspace={workspace} {...drawerProps('complete')} />
+      <SendProgramDialog
+        patientId={patientId}
+        patientName={patient.firstName || 'your patient'}
+        mode="send"
+        program={null}
+        {...drawerProps('exercises')}
+        onSent={(programId) => setShareFor(programId)}
+      />
+      <ShareLinkDialog
+        programId={shareFor}
+        patientName={patient.firstName || 'your patient'}
+        hasPhone={Boolean(patient.phoneNumber?.replace(/\D/g, '').length)}
+        open={Boolean(shareFor)}
+        onOpenChange={(open) => !open && setShareFor(null)}
+      />
       <EditPatientModal
-        isOpen={dialog === 'edit'}
-        onClose={() => setDialog(null)}
+        isOpen={drawer === 'edit'}
+        onClose={() => setDrawer(null)}
         patientId={patientId}
         currentData={{
           firstName: patient.firstName ?? '',
@@ -308,7 +361,7 @@ export default function PatientWorkspacePage() {
           dateOfBirth: workspace.profile?.dateOfBirth,
           gender: workspace.profile?.gender,
         }}
-        onSuccess={() => setDialog(null)}
+        onSuccess={() => setDrawer(null)}
       />
     </PageContainer>
   );

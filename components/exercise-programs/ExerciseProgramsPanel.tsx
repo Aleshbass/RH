@@ -102,13 +102,13 @@ function ItemThumb({ item }: { item: CareTeamProgram['items'][number] }) {
       <div
         className={cn(
           'relative flex h-20 w-20 items-center justify-center overflow-hidden rounded-xl',
-          item.kind === 'education' ? 'bg-rh-cream dark:bg-amber-400/10' : 'bg-rh-honeydew dark:bg-white/[0.05]'
+          item.kind === 'education' ? 'bg-pt-violet-bg' : 'bg-rh-honeydew dark:bg-white/[0.05]'
         )}
       >
         {item.clipId ? (
           <Image src={posterUrl(item.clipId)} alt="" fill sizes="80px" className="object-contain" draggable={false} />
         ) : item.kind === 'education' ? (
-          <BookOpen className="h-6 w-6 text-[#b4690e] dark:text-amber-300" />
+          <BookOpen className="h-6 w-6 text-pt-violet-fg" />
         ) : (
           <Dumbbell className="h-6 w-6 text-rh-ink/50 dark:text-rh-lime/60" />
         )}
@@ -192,7 +192,7 @@ function ProgramCard({
 
       <div className="flex flex-wrap gap-1.5 text-xs">
         <StatusBadge tone={a.activeDaysLast14 >= 7 ? 'green' : a.activeDaysLast14 > 0 ? 'teal' : 'neutral'}>Active {a.activeDaysLast14} of last 14 days</StatusBadge>
-        {a.averagePain !== null && <StatusBadge tone={a.averagePain >= 5 ? 'amber' : 'neutral'}>Average pain {a.averagePain}/10</StatusBadge>}
+        {a.averagePain !== null && <StatusBadge tone={a.averagePain >= 5 ? 'rose' : 'neutral'}>Average pain {a.averagePain}/10</StatusBadge>}
         {a.highPain && (
           <StatusBadge tone="red">
             <TriangleAlert className="mr-1 h-3 w-3" /> Pain 7+ reported

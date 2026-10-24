@@ -203,7 +203,11 @@ const nextConfig = {
     return [
       { source: `${physio}/exercises`, destination: `${physio}/exercise-library`, permanent: true },
       { source: `${physio}/my-exercise-library`, destination: `${physio}/exercise-library`, permanent: true },
-      { source: `${physio}/templates`, destination: `${physio}/treatment-templates`, permanent: true },
+      // Treatment templates now live in the care plan: "Save as template" and "Start from a template"
+      { source: `${physio}/templates`, destination: `${physio}/patients`, permanent: false },
+      { source: `${physio}/treatment-templates/:path*`, destination: `${physio}/patients`, permanent: false },
+      { source: `${physio}/treatment-templates`, destination: `${physio}/patients`, permanent: false },
+      { source: `${physio}/patients/:patientId/treatment-plan`, destination: `${physio}/patients/:patientId?tab=plan`, permanent: false },
       { source: `${physio}/assessments`, destination: physio, permanent: true },
       { source: `${physio}/patient-progress`, destination: `${physio}/patients`, permanent: true },
       { source: `${physio}/test-reminders`, destination: physio, permanent: true },

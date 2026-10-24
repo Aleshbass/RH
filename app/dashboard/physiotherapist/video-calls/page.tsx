@@ -59,7 +59,7 @@ function callStatus(call: VideoCall) {
     case 'cancelled':
       return <StatusBadge tone="red">Cancelled</StatusBadge>;
     case 'missed':
-      return <StatusBadge tone="amber">Missed</StatusBadge>;
+      return <StatusBadge tone="neutral">Missed</StatusBadge>;
     default:
       return <StatusBadge tone="teal">Scheduled</StatusBadge>;
   }

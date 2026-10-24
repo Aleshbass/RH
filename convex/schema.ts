@@ -925,6 +925,12 @@ export default defineSchema({
         })
       )
     ),
+    // Care plan templates (saved from a patient's care plan): the plan's own fields
+    kind: v.optional(v.literal("care_plan")),
+    sessionFrequency: v.optional(v.string()),
+    plannedSessions: v.optional(v.number()),
+    precautions: v.optional(v.string()),
+    reviewAfterDays: v.optional(v.number()),
     createdBy: v.id("users"),
     clinicId: v.optional(v.id("clinics")),
     isPublic: v.boolean(),

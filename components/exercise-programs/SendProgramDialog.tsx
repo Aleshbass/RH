@@ -31,12 +31,13 @@ import { api } from '@/convex/_generated/api'
 import type { Id } from '@/convex/_generated/dataModel'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useNoteMedia } from '@/components/physio/NoteMedia'
-import { primaryButtonClass } from '@/components/physio/ui'
+import { primaryButtonClass, useIsPhone } from '@/components/physio/ui'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
 import { programError } from './errors'
@@ -287,7 +288,7 @@ function ResourcePickerDialog({
                 const isAdded = added.has(row.key)
                 return (
                   <li key={row.key} className="flex items-center gap-3 rounded-2xl px-3 py-2.5 hover:bg-rh-canvas dark:hover:bg-white/[0.03]">
-                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rh-cream text-[#b4690e] dark:bg-amber-400/10 dark:text-amber-300">
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-pt-violet-bg text-pt-violet-fg">
                       <Icon className="h-5 w-5" />
                     </span>
                     <div className="min-w-0 flex-1">
@@ -522,19 +523,28 @@ export function SendProgramDialog({
     }
   }
 
+  const isPhone = useIsPhone()
   const steps = ['Choose exercises', 'Set the dose', editing ? 'Programme details' : 'Programme & notes']
   const heading = editing ? `Edit “${program?.title}”` : mode === 'new' ? `New home programme for ${patientName}` : `Send exercises to ${patientName}`
   const submitLabel = editing ? 'Save changes' : existing ? `Add to “${existing.title}”` : `Send to ${patientName}`
 
   return (
     <>
-      <Dialog open={open} onOpenChange={(o) => !saving && onOpenChange(o)}>
-        <DialogContent className="flex max-h-[94vh] flex-col gap-0 overflow-hidden rounded-3xl p-0 sm:max-w-5xl">
-          <DialogHeader className="border-b border-black/[0.05] px-6 pb-4 pt-5 dark:border-white/[0.06]">
-            <DialogTitle className="pr-6">{heading}</DialogTitle>
-            <DialogDescription>
+      {/* A wide drawer: from the right on a computer, from the bottom on a phone */}
+      <Sheet open={open} onOpenChange={(o) => !saving && onOpenChange(o)}>
+        <SheetContent
+          side={isPhone ? 'bottom' : 'right'}
+          className={cn(
+            'flex flex-col gap-0 overflow-hidden border-pt-line bg-pt-surface p-0 text-pt-ink [&>button:last-child]:right-4 [&>button:last-child]:top-4 [&>button:last-child]:rounded-full [&>button:last-child]:p-1.5 [&>button:last-child]:hover:bg-pt-hover',
+            isPhone ? 'max-h-[94dvh] rounded-t-3xl' : 'h-full w-full sm:max-w-4xl'
+          )}
+        >
+          {isPhone && <div className="mx-auto mt-2.5 h-1.5 w-10 shrink-0 rounded-full bg-pt-line-strong" aria-hidden />}
+          <SheetHeader className="gap-1 border-b border-pt-line px-6 pb-4 pt-5 text-left">
+            <SheetTitle className="pr-8 text-[17px] font-semibold tracking-tight text-pt-ink">{heading}</SheetTitle>
+            <SheetDescription className="text-sm text-pt-muted">
               Exercises from the library come with a 3D demonstration. Add your own exercises or education too; everything shows in {patientName}&apos;s app.
-            </DialogDescription>
+            </SheetDescription>
             <ol className="mt-3 flex flex-wrap gap-2 text-xs">
               {steps.map((label, i) => (
                 <li key={label}>
@@ -556,7 +566,7 @@ export function SendProgramDialog({
                 </li>
               ))}
             </ol>
-          </DialogHeader>
+          </SheetHeader>
 
           <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
             {step === 1 && (
@@ -567,10 +577,10 @@ export function SendProgramDialog({
                     <Dumbbell className="mr-1.5 h-3.5 w-3.5 text-rh-ink dark:text-rh-lime" /> Add your own exercise
                   </Button>
                   <Button type="button" size="sm" variant="outline" className="h-8 rounded-full" onClick={() => addOwn('education')}>
-                    <BookOpen className="mr-1.5 h-3.5 w-3.5 text-[#b4690e] dark:text-amber-300" /> Add education
+                    <BookOpen className="mr-1.5 h-3.5 w-3.5 text-pt-violet-fg" /> Add education
                   </Button>
                   <Button type="button" size="sm" variant="outline" className="h-8 rounded-full" onClick={() => setResourcePickerOpen(true)}>
-                    <Library className="mr-1.5 h-3.5 w-3.5 text-[#b4690e] dark:text-amber-300" /> Education from the Rehabify Library
+                    <Library className="mr-1.5 h-3.5 w-3.5 text-pt-violet-fg" /> Education from the Rehabify Library
                   </Button>
                 </div>
                 {library === undefined ? (
@@ -597,13 +607,13 @@ export function SendProgramDialog({
                           <div
                             className={cn(
                               'relative flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-xl sm:h-20 sm:w-20',
-                              d.type === 'education' ? 'bg-rh-cream dark:bg-amber-400/10' : 'bg-rh-honeydew dark:bg-white/[0.05]'
+                              d.type === 'education' ? 'bg-pt-violet-bg' : 'bg-rh-honeydew dark:bg-white/[0.05]'
                             )}
                           >
                             {poster ? (
                               <Image src={poster} alt="" fill sizes="80px" unoptimized={!isLocalImage(poster)} className="object-contain" draggable={false} />
                             ) : d.type === 'education' ? (
-                              <BookOpen className="h-6 w-6 text-[#b4690e] dark:text-amber-300" />
+                              <BookOpen className="h-6 w-6 text-pt-violet-fg" />
                             ) : (
                               <Dumbbell className="h-6 w-6 text-rh-ink/60 dark:text-rh-lime/60" />
                             )}
@@ -711,10 +721,10 @@ export function SendProgramDialog({
                     <Dumbbell className="mr-1.5 h-3.5 w-3.5 text-rh-ink dark:text-rh-lime" /> Add your own exercise
                   </Button>
                   <Button type="button" size="sm" variant="outline" className="h-8 rounded-full" onClick={() => addOwn('education')}>
-                    <BookOpen className="mr-1.5 h-3.5 w-3.5 text-[#b4690e] dark:text-amber-300" /> Add education
+                    <BookOpen className="mr-1.5 h-3.5 w-3.5 text-pt-violet-fg" /> Add education
                   </Button>
                   <Button type="button" size="sm" variant="outline" className="h-8 rounded-full" onClick={() => setResourcePickerOpen(true)}>
-                    <Library className="mr-1.5 h-3.5 w-3.5 text-[#b4690e] dark:text-amber-300" /> Education from the Rehabify Library
+                    <Library className="mr-1.5 h-3.5 w-3.5 text-pt-violet-fg" /> Education from the Rehabify Library
                   </Button>
                 </div>
                 <datalist id="rh-frequencies">{FREQUENCIES.map((f) => <option key={f} value={f} />)}</datalist>
@@ -820,7 +830,7 @@ export function SendProgramDialog({
             )}
           </div>
 
-          <div className="flex items-center justify-between gap-2 border-t border-black/[0.05] px-6 py-4 dark:border-white/[0.06]">
+          <div className="flex items-center justify-between gap-2 border-t border-pt-line px-6 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-4">
             <div className="text-sm text-neutral-500">{drafts.length > 0 && step === 1 && `${drafts.length} selected`}</div>
             <div className="flex gap-2">
               {step > 1 && (
@@ -840,8 +850,8 @@ export function SendProgramDialog({
               )}
             </div>
           </div>
-        </DialogContent>
-      </Dialog>
+        </SheetContent>
+      </Sheet>
       <ExercisePreviewDialog entry={preview} onOpenChange={(o) => !o && setPreview(null)} />
       <ResourcePickerDialog open={resourcePickerOpen} onOpenChange={closeResourcePicker} added={addedResources} onAdd={addResource} />
     </>

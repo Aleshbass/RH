@@ -1,8 +1,25 @@
 'use client'
 
 import type { ReactNode } from 'react'
+import { api } from '@/convex/_generated/api'
 import type { Id } from '@/convex/_generated/dataModel'
+import type { listCarePlanTemplates } from '@/convex/physioCare'
+import type { QueryResult } from '@/lib/convexUntyped'
 import { cn } from '@/lib/utils'
+
+/**
+ * The generated api types sit at TypeScript's depth limit, so the workspace drawers read their
+ * Convex functions untyped; results are cast to the type of the function they came from.
+ */
+const root = api as unknown as Record<string, Record<string, unknown>>
+export const workspaceApi = {
+  physioCare: root.physioCare,
+  billing: root.billing,
+  physioBilling: root.physioBilling,
+  users: root.users,
+}
+
+export type CarePlanTemplate = QueryResult<typeof listCarePlanTemplates>[number]
 
 export type EpisodeSource =
   | 'referred'
@@ -167,11 +184,11 @@ export function fullName(person?: { firstName?: string; lastName?: string } | nu
   return [person?.firstName, person?.lastName].filter(Boolean).join(' ') || 'Patient'
 }
 
-/** Pain scores coloured from calm teal to warm rose. */
+/** Pain scores: green when low, plain in the middle, rose when high. No gold. */
 export function painTone(score: number) {
-  if (score >= 7) return 'bg-rh-blush text-[#be123c] dark:bg-rose-400/10 dark:text-rose-300'
-  if (score >= 4) return 'bg-rh-peach text-[#b4690e] dark:bg-amber-400/10 dark:text-amber-300'
-  return 'bg-rh-honeydew text-[#047857] dark:bg-emerald-400/10 dark:text-emerald-300'
+  if (score >= 7) return 'bg-pt-rose-bg text-pt-rose-fg'
+  if (score >= 4) return 'bg-pt-neutral-bg text-pt-ink'
+  return 'bg-pt-green-bg text-pt-green-fg'
 }
 
 export function PainPill({ score, className }: { score: number; className?: string }) {
@@ -182,14 +199,14 @@ export function PainPill({ score, className }: { score: number; className?: stri
   )
 }
 
-export function Meter({ value, max, className, tone = 'teal' }: { value: number; max: number; className?: string; tone?: 'teal' | 'amber' }) {
+export function Meter({ value, max, className, tone = 'teal' }: { value: number; max: number; className?: string; tone?: 'teal' | 'low' }) {
   const pct = max > 0 ? Math.min(100, Math.round((value / max) * 100)) : 0
   return (
-    <div className={cn('h-2 w-full overflow-hidden rounded-full bg-rh-honeydew dark:bg-white/[0.06]', className)} role="progressbar" aria-valuenow={value} aria-valuemax={max}>
+    <div className={cn('h-2 w-full overflow-hidden rounded-full bg-pt-sunken', className)} role="progressbar" aria-valuenow={value} aria-valuemax={max}>
       <div
         className={cn(
           'h-full rounded-full transition-[width] duration-700 ease-out',
-          tone === 'amber' ? 'bg-rh-amber' : 'bg-rh-lime dark:bg-rh-lime'
+          tone === 'low' ? 'bg-pt-rose-fg' : 'bg-pt-accent'
         )}
         style={{ width: `${pct}%` }}
       />
@@ -201,8 +218,8 @@ export function Meter({ value, max, className, tone = 'teal' }: { value: number;
 export function Fact({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="min-w-0">
-      <dt className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">{label}</dt>
-      <dd className="mt-0.5 break-words text-sm text-rh-ink dark:text-neutral-100">{children}</dd>
+      <dt className="text-[11px] font-semibold uppercase tracking-wider text-pt-faint">{label}</dt>
+      <dd className="mt-0.5 break-words text-sm text-pt-ink">{children}</dd>
     </div>
   )
 }

@@ -32,7 +32,7 @@ export function ExercisePreviewDialog({
             <DialogHeader>
               <DialogTitle className="flex flex-wrap items-center gap-2">
                 {entry.name}
-                {entry.animation?.status === 'draft' && <StatusBadge tone="amber">Awaiting clinical sign-off</StatusBadge>}
+                {entry.animation?.status === 'draft' && <StatusBadge tone="blue">Awaiting clinical sign-off</StatusBadge>}
               </DialogTitle>
               <DialogDescription>{entry.description}</DialogDescription>
             </DialogHeader>
@@ -80,7 +80,7 @@ export function ExercisePreviewDialog({
                   ))}
                 </ol>
                 {entry.precautions.length > 0 && (
-                  <div className="flex gap-2.5 rounded-2xl bg-rh-peach p-3 text-[#7c4a0a] dark:bg-amber-400/10 dark:text-amber-200">
+                  <div className="flex gap-2.5 rounded-2xl bg-pt-rose-bg p-3 text-pt-rose-fg">
                     <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
                     <ul className="space-y-1">{entry.precautions.map((p, i) => <li key={i}>{p}</li>)}</ul>
                   </div>

@@ -17,6 +17,13 @@ const TRIAGE = {
   red: { label: 'Red triage', tone: 'red' },
 } as const
 
+/** Same colours as the Schedule: ink when it's waiting on you, blue when it's waiting on someone else. */
+function bookingTone(state: keyof typeof BOOKING_STATE) {
+  if (state === 'awaiting_physio') return 'ink' as const
+  const tone = BOOKING_STATE[state].tone
+  return tone === 'amber' ? ('blue' as const) : tone
+}
+
 function List({ items }: { items: string[] }) {
   return items.length ? <>{items.join(', ')}</> : <span className="text-neutral-400">Not given</span>
 }
@@ -137,7 +144,7 @@ export function JoyHandoffPanel({ patientId }: { patientId: Id<'users'> }) {
               {bookings.map((b) => (
                 <div key={b._id} className="space-y-1.5 rounded-2xl bg-rh-canvas p-3 dark:bg-white/[0.03]">
                   <div className="flex flex-wrap items-center gap-1.5">
-                    <StatusBadge tone={BOOKING_STATE[b.state].tone}>{BOOKING_STATE[b.state].label}</StatusBadge>
+                    <StatusBadge tone={bookingTone(b.state)}>{BOOKING_STATE[b.state].label}</StatusBadge>
                     <StatusBadge>{SERVICE_MODE[b.mode]}</StatusBadge>
                   </div>
                   {b.startTime && (
@@ -156,7 +163,7 @@ export function JoyHandoffPanel({ patientId }: { patientId: Id<'users'> }) {
                     </p>
                   )}
                   {b.providerResponseDueAt && (
-                    <p className="text-xs font-medium text-[#b4690e] dark:text-amber-300">
+                    <p className="text-xs font-semibold text-pt-ink">
                       Accept on WhatsApp by {format(b.providerResponseDueAt, 'h:mm a, d MMM')}
                     </p>
                   )}

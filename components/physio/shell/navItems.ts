@@ -40,8 +40,7 @@ export const NAV = {
     title: 'Library',
     href: path('exercise-library'),
     icon: Dumbbell,
-    hint: '3D exercises to send, and treatment templates',
-    also: [path('treatment-templates')],
+    hint: '3D exercises to preview and send',
   },
   money: {
     title: 'Money',
@@ -98,13 +97,6 @@ export const SECTION_TABS: { section: PhysioNavItem; tabs: { title: string; href
     tabs: [
       { title: 'Invoices', href: path('billing') },
       { title: 'Earnings', href: path('insights') },
-    ],
-  },
-  {
-    section: NAV.library,
-    tabs: [
-      { title: '3D exercises', href: path('exercise-library') },
-      { title: 'Templates', href: path('treatment-templates') },
     ],
   },
 ]

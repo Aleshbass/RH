@@ -995,6 +995,122 @@ export const saveCarePlan = mutation({
   },
 });
 
+// ─── Care plan templates ─────────────────────────────────────────────────────
+// Saved from any care plan and used to start the next one. Stored in treatmentTemplates with
+// kind "care_plan"; older phase-and-exercise templates there are offered as goals only.
+
+const MAX_OWN_TEMPLATES = 100;
+
+/** Templates this physio can start a plan from: their own, ones shared in their clinic, and Rehabify's. */
+export const listCarePlanTemplates = query({
+  args: {},
+  handler: async (ctx) => {
+    const physio = await physioOrNull(ctx);
+    if (!physio) return [];
+    const clinicId = physio.clinicId;
+    const [own, shared, clinic] = await Promise.all([
+      ctx.db.query("treatmentTemplates").withIndex("by_created_by", (q) => q.eq("createdBy", physio._id)).take(MAX_OWN_TEMPLATES),
+      ctx.db.query("treatmentTemplates").withIndex("by_public", (q) => q.eq("isPublic", true)).take(100),
+      clinicId
+        ? ctx.db.query("treatmentTemplates").withIndex("by_clinic", (q) => q.eq("clinicId", clinicId)).take(200)
+        : Promise.resolve([]),
+    ]);
+    const byId = new Map([...own, ...clinic, ...shared].map((t) => [t._id, t]));
+    return [...byId.values()]
+      .map((t) => ({
+        id: t._id,
+        title: t.title,
+        description: t.description ?? null,
+        goals: (t.goals ?? []).map((g) => ({ description: g.description, targetValue: g.targetValue ?? "", timeline: g.timeline ?? "" })),
+        sessionFrequency: t.sessionFrequency ?? null,
+        plannedSessions: t.plannedSessions ?? null,
+        precautions: t.precautions ?? null,
+        reviewAfterDays: t.reviewAfterDays ?? null,
+        mine: t.createdBy === physio._id,
+        sharedWithClinic: Boolean(t.clinicId),
+        fromRehabify: t.isPublic,
+        usageCount: t.usageCount ?? 0,
+        updatedAt: t.updatedAt,
+      }))
+      .sort((a, b) => Number(b.mine) - Number(a.mine) || b.usageCount - a.usageCount || b.updatedAt - a.updatedAt);
+  },
+});
+
+export const saveCarePlanTemplate = mutation({
+  args: {
+    title: v.string(),
+    description: v.optional(v.string()),
+    goals: v.array(v.object({ description: v.string(), targetValue: v.string(), timeline: v.string() })),
+    sessionFrequency: v.optional(v.string()),
+    plannedSessions: v.optional(v.number()),
+    precautions: v.optional(v.string()),
+    reviewAfterDays: v.optional(v.number()),
+    shareWithClinic: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    const physio = await requirePhysio(ctx);
+    const title = args.title.trim();
+    if (!title) throw new ConvexError("Give the template a name.");
+    const goals = args.goals
+      .map((g) => ({
+        description: g.description.trim(),
+        targetValue: g.targetValue.trim() || undefined,
+        timeline: g.timeline.trim() || undefined,
+        measurable: Boolean(g.targetValue.trim()),
+      }))
+      .filter((g) => g.description);
+    if (goals.length === 0) throw new ConvexError("A template needs at least one goal.");
+    const own = await ctx.db
+      .query("treatmentTemplates")
+      .withIndex("by_created_by", (q) => q.eq("createdBy", physio._id))
+      .take(MAX_OWN_TEMPLATES);
+    if (own.length >= MAX_OWN_TEMPLATES) throw new ConvexError("You have 100 templates. Delete one you no longer use first.");
+    const now = Date.now();
+    return await ctx.db.insert("treatmentTemplates", {
+      kind: "care_plan",
+      title,
+      description: args.description?.trim() || undefined,
+      goals,
+      phases: [],
+      sessionFrequency: args.sessionFrequency?.trim() || undefined,
+      plannedSessions: args.plannedSessions ? Math.round(args.plannedSessions) : undefined,
+      precautions: args.precautions?.trim() || undefined,
+      reviewAfterDays: args.reviewAfterDays ? Math.round(args.reviewAfterDays) : undefined,
+      createdBy: physio._id,
+      clinicId: args.shareWithClinic ? physio.clinicId : undefined,
+      isPublic: false,
+      usageCount: 0,
+      createdAt: now,
+      updatedAt: now,
+    });
+  },
+});
+
+export const deleteCarePlanTemplate = mutation({
+  args: { templateId: v.id("treatmentTemplates") },
+  handler: async (ctx, args) => {
+    const physio = await requirePhysio(ctx);
+    const template = await ctx.db.get(args.templateId);
+    if (!template) return null;
+    if (template.createdBy !== physio._id) throw new ConvexError("You can only delete your own templates.");
+    await ctx.db.delete(args.templateId);
+    return null;
+  },
+});
+
+/** Counts a use, so the templates you use most come first. */
+export const noteCarePlanTemplateUsed = mutation({
+  args: { templateId: v.id("treatmentTemplates") },
+  handler: async (ctx, args) => {
+    const physio = await requirePhysio(ctx);
+    const template = await ctx.db.get(args.templateId);
+    if (!template) return null;
+    const allowed = template.isPublic || template.createdBy === physio._id || (template.clinicId && template.clinicId === physio.clinicId);
+    if (allowed) await ctx.db.patch(args.templateId, { usageCount: (template.usageCount ?? 0) + 1 });
+    return null;
+  },
+});
+
 export const setGoalAchieved = mutation({
   args: { planId: v.id("treatmentPlans"), goalIndex: v.number(), achieved: v.boolean() },
   handler: async (ctx, args) => {

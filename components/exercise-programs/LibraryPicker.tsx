@@ -99,7 +99,7 @@ export function LibraryPicker({
                 )}
               >
                 <button type="button" className="block w-full text-left" onClick={() => (onToggle ? onToggle(entry) : onPreview?.(entry))}>
-                  <div className="relative aspect-square bg-rh-cream dark:bg-white/[0.04]">
+                  <div className="relative aspect-square bg-pt-sunken">
                     {poster ? (
                       <Image
                         src={poster}
@@ -128,7 +128,7 @@ export function LibraryPicker({
                     <p className="line-clamp-1 text-sm font-semibold text-rh-ink dark:text-white">{entry.name}</p>
                     <p className="line-clamp-1 text-xs text-neutral-500">{entry.bodyParts.filter((b) => !['Legs', 'Arms'].includes(b)).join(' · ') || entry.bodyParts.join(' · ')}</p>
                     <div className="flex flex-wrap gap-1">
-                      {entry.sided && <StatusBadge tone="amber">Left / right</StatusBadge>}
+                      {entry.sided && <StatusBadge tone="neutral">Left / right</StatusBadge>}
                       {entry.animation?.status === 'draft' && <StatusBadge>Awaiting sign-off</StatusBadge>}
                     </div>
                   </div>

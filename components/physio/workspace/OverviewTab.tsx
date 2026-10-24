@@ -62,6 +62,7 @@ export function OverviewTab({
         {/* Current care episode */}
         <Panel
           title="Current care"
+          info="This course of treatment: what you’re treating, where the patient came from, and sessions so far. When you finish, use Complete care in the … menu."
           actions={
             isActive && (
               <Button variant="ghost" size="sm" className="h-8 rounded-lg text-neutral-500" onClick={onEditEpisode}>
@@ -107,6 +108,7 @@ export function OverviewTab({
         {/* Care plan progress */}
         <Panel
           title="Care plan"
+          info="Goals, frequency, review date and precautions. The patient sees it in their app. Start a new one from your templates."
           actions={
             <Button variant="ghost" size="sm" className="h-8 rounded-lg text-rh-ink dark:text-rh-lime" onClick={onOpenPlan}>
               {plan ? 'Open plan' : isActive ? 'Create plan' : 'View'}
@@ -135,7 +137,7 @@ export function OverviewTab({
                 <Fact label="Frequency">{plan.sessionFrequency || 'Not set'}</Fact>
                 <Fact label="Review">
                   {plan.reviewDate ? (
-                    <span className={reviewOverdue ? 'font-semibold text-[#b4690e] dark:text-amber-300' : undefined}>
+                    <span className={reviewOverdue ? 'font-semibold text-pt-rose-fg' : undefined}>
                       {format(plan.reviewDate, 'd MMM')}
                       {reviewOverdue ? ' · due' : ''}
                     </span>
@@ -145,7 +147,7 @@ export function OverviewTab({
                 </Fact>
               </dl>
               {plan.precautions && (
-                <div className="flex gap-2.5 rounded-2xl bg-rh-peach p-3 text-sm text-[#7c4a0a] dark:bg-amber-400/10 dark:text-amber-200">
+                <div className="flex gap-2.5 rounded-2xl bg-pt-rose-bg p-3 text-sm text-pt-rose-fg">
                   <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
                   <span className="line-clamp-3">{plan.precautions}</span>
                 </div>
@@ -167,7 +169,7 @@ export function OverviewTab({
         </Panel>
 
         {/* Next appointment */}
-        <Panel title="Next appointment">
+        <Panel title="Next appointment" info="The next session booked with this patient. Open Schedule to accept, move or join it.">
           <div className="px-5 pb-5 pt-3">
             {nextAppointment ? (
               <div className="space-y-3">
@@ -184,7 +186,7 @@ export function OverviewTab({
                   {nextAppointment.serviceType}
                   {nextAppointment.isOnline ? ' · Video' : ''}
                 </p>
-                {nextAppointment.status === 'scheduled' && <StatusBadge tone="amber">Waiting for confirmation</StatusBadge>}
+                {nextAppointment.status === 'scheduled' && <StatusBadge tone="blue">Not confirmed yet</StatusBadge>}
               </div>
             ) : (
               <div className="space-y-3">
@@ -202,7 +204,11 @@ export function OverviewTab({
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
         {/* How they're doing */}
-        <Panel title="How they’re doing" className="lg:col-span-2">
+        <Panel
+          title="How they’re doing"
+          className="lg:col-span-2"
+          info="Their latest check-in (pain, mood, exercises) and how much of their home programme they’ve done in the last 7 days."
+        >
           <div className="grid gap-5 px-5 pb-5 pt-3 sm:grid-cols-2">
             <div className="space-y-3">
               {latest ? (
@@ -242,7 +248,7 @@ export function OverviewTab({
               {adherence ? (
                 <>
                   <p className="text-3xl font-semibold tabular-nums tracking-tight text-rh-ink dark:text-white">{adherence.rate}%</p>
-                  <Meter value={adherence.completed} max={adherence.expected} tone={adherence.rate < 40 ? 'amber' : 'teal'} />
+                  <Meter value={adherence.completed} max={adherence.expected} tone={adherence.rate < 40 ? 'low' : 'teal'} />
                   <p className="text-xs text-neutral-500 dark:text-neutral-400">
                     {adherence.completed} of {adherence.expected} exercise sessions done (each exercise once a day)
                     {adherence.source === 'care_plan' ? ' · care plan exercises' : ''}
