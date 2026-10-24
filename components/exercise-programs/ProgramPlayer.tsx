@@ -347,7 +347,7 @@ export function ProgramPlayer({
                       <Dumbbell className="m-5 h-6 w-6 text-rh-ink" />
                     )}
                     {isDone && (
-                      <span className="absolute inset-0 flex items-center justify-center bg-rh-lime/70 text-white">
+                      <span className="absolute inset-0 flex items-center justify-center bg-rh-lime/80 text-rh-ink">
                         <Check className="h-6 w-6" strokeWidth={3} />
                       </span>
                     )}

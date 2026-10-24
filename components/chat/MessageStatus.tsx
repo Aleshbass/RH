@@ -1,5 +1,3 @@
-
-
 'use client'
 
 import React from 'react'
@@ -11,69 +9,48 @@ interface MessageStatusProps {
   isReadByReceiver?: boolean
   timestamp: number
   isOwnMessage: boolean
+  /** Bubble colours: the clinician dashboards' green bubble or the patient portal's ink one. */
+  variant?: 'default' | 'patient'
   className?: string
 }
 
+/**
+ * Time and WhatsApp-style ticks on a message:
+ * one grey tick = sent, two grey ticks = delivered to their device, two blue ticks = read.
+ */
 const MessageStatus: React.FC<MessageStatusProps> = ({
-  isDelivered = true, // Default to delivered for existing messages
+  isDelivered = true, // messages from before delivery receipts existed count as delivered
   isReadByReceiver = false,
   timestamp,
   isOwnMessage,
-  className
+  variant = 'default',
+  className,
 }) => {
-  // Debug logging to see what values we're getting
-  React.useEffect(() => {
-    if (isOwnMessage) {
-      console.log('MessageStatus Debug:', {
-        isDelivered,
-        isReadByReceiver,
-        timestamp,
-        isOwnMessage
-      });
-    }
-  }, [isDelivered, isReadByReceiver, timestamp, isOwnMessage]);
+  const time = new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 
   if (!isOwnMessage) {
-    return (
-      <span className={cn(
-        "text-xs text-muted-foreground",
-        className
-      )}>
-        {new Date(timestamp).toLocaleTimeString([], { 
-          hour: '2-digit', 
-          minute: '2-digit' 
-        })}
-      </span>
-    )
+    return <span className={cn('text-[11px] text-muted-foreground', className)}>{time}</span>
   }
 
+  const patient = variant === 'patient'
+  const muted = patient ? 'text-pt-on-primary/60' : 'text-rh-ink/55'
+  // Blue that stays readable on the green bubble and on the patient portal's ink (or, in dark mode, light) bubble
+  const read = patient ? 'text-sky-400 dark:text-sky-700' : 'text-blue-700'
+  const label = isReadByReceiver ? 'Read' : isDelivered ? 'Delivered' : 'Sent'
+
   return (
-    <div className={cn("flex items-center gap-1", className)}>
-      <span className="text-xs text-primary-foreground/70">
-        {new Date(timestamp).toLocaleTimeString([], { 
-          hour: '2-digit', 
-          minute: '2-digit' 
-        })}
-      </span>
-      <div className="flex items-center ml-1">
+    <span className={cn('inline-flex items-center gap-1', className)}>
+      <span className={cn('text-[11px]', muted)}>{time}</span>
+      <span role="img" aria-label={label} title={label} className="inline-flex">
         {isReadByReceiver ? (
-          // Double blue checkmarks - Message read
-          <CheckCheck 
-            className="h-3 w-3 text-blue-500" 
-          />
+          <CheckCheck className={cn('h-3.5 w-3.5', read)} />
         ) : isDelivered ? (
-          // Double grey checkmarks - Message delivered but not read
-          <CheckCheck 
-            className="h-3 w-3 text-primary-foreground/50" 
-          />
+          <CheckCheck className={cn('h-3.5 w-3.5', muted)} />
         ) : (
-          // Single grey checkmark - Message sent but not delivered
-          <Check 
-            className="h-3 w-3 text-primary-foreground/50" 
-          />
+          <Check className={cn('h-3.5 w-3.5', muted)} />
         )}
-      </div>
-    </div>
+      </span>
+    </span>
   )
 }
 

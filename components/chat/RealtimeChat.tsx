@@ -3,6 +3,7 @@
 'use client'
 
 import React, { useState, useRef, useEffect, useMemo } from 'react'
+import Image from 'next/image'
 import { api } from '@/convex/_generated/api'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -28,7 +29,8 @@ import {
   Trash,
   Mic,
   MicOff,
-  Smile
+  Smile,
+  RotateCcw,
 } from '@/components/icons'
 import {
   DropdownMenu,
@@ -57,6 +59,48 @@ type PendingMessage = {
   replyToMessageId?: Id<'messages'>
   status: 'sending' | 'failed'
   createdAt: number
+}
+
+/** A file on its way: shown straight away with progress, kept with a Retry if it fails. */
+type PendingAttachment = {
+  localId: string
+  file: File
+  status: 'uploading' | 'failed'
+  error?: string
+}
+
+const MAX_FILE_BYTES = 25 * 1024 * 1024
+
+function fileSizeLabel(bytes: number | undefined) {
+  if (!bytes) return ''
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+/**
+ * Phone photos are often 3–10 MB: shrink them to at most 2000 px (JPEG) before upload, so they
+ * send quickly on mobile data. Anything that can't be decoded here is sent as it is.
+ */
+async function shrinkImage(file: File): Promise<File> {
+  if (!/^image\/(jpeg|png|webp)$/.test(file.type) || file.size < 600_000) return file
+  try {
+    const bitmap = await createImageBitmap(file)
+    const scale = Math.min(1, 2000 / Math.max(bitmap.width, bitmap.height))
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.round(bitmap.width * scale)
+    canvas.height = Math.round(bitmap.height * scale)
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return file
+    ctx.fillStyle = '#ffffff' // transparent PNGs get a white background in JPEG
+    ctx.fillRect(0, 0, canvas.width, canvas.height)
+    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
+    bitmap.close()
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.85))
+    if (!blob || blob.size >= file.size) return file
+    return new File([blob], file.name.replace(/\.[a-z0-9]+$/i, '') + '.jpg', { type: 'image/jpeg' })
+  } catch {
+    return file
+  }
 }
 
 /** getMessages adds a link to open each attachment (fileUrl holds a storage id). */
@@ -105,17 +149,26 @@ const RealtimeChat = ({ recipientId, className, embedded = false, variant = 'def
   // Text messages on their way to the server: shown straight away as "Sending…", kept as
   // "Failed" with a Retry if the send doesn't go through
   const [pending, setPending] = useState<PendingMessage[]>([])
+  const [attachment, setAttachment] = useState<PendingAttachment | null>(null)
+  // Only mark messages read while this chat is really in front of the person
+  const [onScreen, setOnScreen] = useState(true)
+  useEffect(() => {
+    const update = () => setOnScreen(document.visibilityState === 'visible' && document.hasFocus())
+    update()
+    window.addEventListener('focus', update)
+    window.addEventListener('blur', update)
+    document.addEventListener('visibilitychange', update)
+    return () => {
+      window.removeEventListener('focus', update)
+      window.removeEventListener('blur', update)
+      document.removeEventListener('visibilitychange', update)
+    }
+  }, [])
   const [sending, setSending] = useState(false)
   const sendingRef = useRef(false)
 
-  const { uploadFile, isUploading } = useFileUpload({
-    onSuccess: () => {
-      toast.success("File uploaded successfully");
-    },
-    onError: (error) => {
-      toast.error(programError(error, "Couldn't upload that file. Please try again."));
-    },
-  });
+  // Upload progress and errors show on the file's own bubble, not as toasts
+  const { uploadFile, progress: uploadProgress } = useFileUpload();
 
   // Get or create conversation with recipient
   const getOrCreateConversation = useMutationUntyped(chatModule['getOrCreateConversation'])
@@ -252,32 +305,37 @@ const RealtimeChat = ({ recipientId, className, embedded = false, variant = 'def
   const toggleStar = useMutationUntyped(chatModule['toggleStar'])
   const setTypingStatus = useMutationUntyped(chatModule['setTyping'])
 
-  // Handle file upload
-  const handleFileUpload = async (file: File) => {
+  /** Upload a file and send it as a message. Photos are shrunk first and shown as pictures. */
+  const sendAttachment = async (original: File, localId = `file-${Date.now()}`) => {
+    if (!conversationId) return;
+    setAttachment({ localId, file: original, status: 'uploading' });
+    const file = original.type.startsWith('image/') ? await shrinkImage(original) : original;
+    const contentType = file.type.startsWith('image/') ? 'image' : file.type.startsWith('audio/') ? 'audio' : 'file';
+
+    let storageId: string;
     try {
       const result = await uploadFile(file);
-      if (!result?.storageId || !conversationId) return;
+      if (!result?.storageId) throw new Error('No file id came back');
+      storageId = String(result.storageId);
+    } catch {
+      setAttachment({ localId, file: original, status: 'failed', error: "Couldn't upload. Check your connection and try again." });
+      playSound('error');
+      return;
+    }
 
-      // Send message with file
+    try {
       await sendMessage({
         conversationId,
-        content: file.name,
-        contentType: "file",
-        fileUrl: result.storageId.toString(),
-        metadata: {
-          originalName: file.name,
-          fileSize: file.size,
-          mimeType: file.type,
-        },
+        content: original.name,
+        contentType,
+        fileUrl: storageId,
+        metadata: { originalName: original.name, fileSize: file.size, mimeType: file.type },
       });
-
-      // Reset file input
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
+      setAttachment(null);
+      playSound('send');
     } catch (error) {
-      console.error('Failed to upload file:', error);
-      toast.error("Failed to upload file. Please try again.");
+      setAttachment({ localId, file: original, status: 'failed', error: programError(error, "Uploaded, but the message didn't send. Try again.") });
+      playSound('error');
     }
   };
 
@@ -409,11 +467,16 @@ const RealtimeChat = ({ recipientId, className, embedded = false, variant = 'def
 
   // Handle file selection
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = event.target.files;
-    if (!files || files.length === 0) return;
-
-    const file = files[0];
-    handleFileUpload(file);
+    const file = event.target.files?.[0];
+    // Clear the picker so choosing the same file again (e.g. after a failure) still works
+    event.target.value = '';
+    if (!file) return;
+    if (file.size > MAX_FILE_BYTES) {
+      toast.error(`${file.name} is ${fileSizeLabel(file.size)}. Files can be up to 25 MB.`);
+      playSound('error');
+      return;
+    }
+    void sendAttachment(file);
   };
 
   // Handle typing status
@@ -501,7 +564,7 @@ const RealtimeChat = ({ recipientId, className, embedded = false, variant = 'def
 
   // Mark messages as read when they become visible
   useEffect(() => {
-    if (!conversationId || !paginatedMessages.items.length) return;
+    if (!conversationId || !paginatedMessages.items.length || !onScreen) return;
 
     // Only when something from the other person is unread, and once per set of unread messages
     const unreadMessages = paginatedMessages.items.filter(
@@ -514,7 +577,7 @@ const RealtimeChat = ({ recipientId, className, embedded = false, variant = 'def
     markMessagesAsRead({ conversationId }).catch(() => {
       markedReadKeyRef.current = null;
     });
-  }, [conversationId, paginatedMessages, markMessagesAsRead, currentUser?._id]);
+  }, [conversationId, paginatedMessages, markMessagesAsRead, currentUser?._id, onScreen]);
 
   // Scroll to bottom when new messages arrive
   useEffect(() => {
@@ -672,28 +735,52 @@ const RealtimeChat = ({ recipientId, className, embedded = false, variant = 'def
                         <div className="w-64">
                           <StorageAudio storageId={message.fileUrl} />
                         </div>
+                      ) : message.contentType === "image" && downloadUrlOf(message) ? (
+                        <button
+                          type="button"
+                          className="-mx-2 -mt-1 block overflow-hidden rounded-xl"
+                          aria-label={`Open ${message.content}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            window.open(downloadUrlOf(message)!, '_blank', 'noopener,noreferrer');
+                          }}
+                        >
+                          <Image
+                            src={downloadUrlOf(message)!}
+                            alt={message.content}
+                            width={260}
+                            height={200}
+                            unoptimized
+                            className="h-auto max-h-64 w-full max-w-[260px] object-cover"
+                          />
+                        </button>
                       ) : (
-                        <div className="flex items-center gap-2">
-                          <FileIcon className="h-4 w-4" />
-                          <span className="text-sm">{message.content}</span>
-                          {downloadUrlOf(message) ? (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="p-0 h-auto"
-                              aria-label={`Download ${message.content}`}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                const url = downloadUrlOf(message);
-                                if (url) window.open(url, '_blank', 'noopener,noreferrer');
-                              }}
-                            >
-                              <Download className="h-4 w-4" />
-                            </Button>
-                          ) : message.fileUrl ? (
-                            <span className="text-[11px] opacity-70">File no longer available</span>
-                          ) : null}
-                        </div>
+                        <button
+                          type="button"
+                          disabled={!downloadUrlOf(message)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const url = downloadUrlOf(message);
+                            if (url) window.open(url, '_blank', 'noopener,noreferrer');
+                          }}
+                          className={cn(
+                            "-mx-1 flex min-w-[200px] items-center gap-3 rounded-xl px-2.5 py-2 text-left transition",
+                            isOwnMessage ? (isPatient ? "bg-white/10 hover:bg-white/15" : "bg-black/[0.06] hover:bg-black/10") : "bg-white hover:bg-white/80 dark:bg-white/[0.06]"
+                          )}
+                        >
+                          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white/80 text-rh-ink dark:bg-white/10 dark:text-white">
+                            <FileIcon className="h-4 w-4" />
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-sm font-medium">{message.content}</span>
+                            <span className="block text-[11px] opacity-70">
+                              {downloadUrlOf(message)
+                                ? [fileSizeLabel((message.metadata as { fileSize?: number } | undefined)?.fileSize), 'Tap to open'].filter(Boolean).join(' · ')
+                                : 'No longer available'}
+                            </span>
+                          </span>
+                          {downloadUrlOf(message) && <Download className="h-4 w-4 shrink-0 opacity-60" />}
+                        </button>
                       )}
                       
                       <div className={cn(
@@ -705,6 +792,7 @@ const RealtimeChat = ({ recipientId, className, embedded = false, variant = 'def
                           isReadByReceiver={message.isReadByReceiver ?? false}
                           timestamp={message.timestamp}
                           isOwnMessage={isOwnMessage}
+                          variant={variant}
                         />
                         {message.editedAt && !isDeleted && (
                           <span className="ml-2 text-[10px] opacity-70">(edited)</span>
@@ -803,7 +891,7 @@ const RealtimeChat = ({ recipientId, className, embedded = false, variant = 'def
                         ? "border border-rose-300 bg-rose-50 text-rose-900 dark:border-rose-400/40 dark:bg-rose-400/10 dark:text-rose-100"
                         : isPatient
                           ? "bg-pt-primary/70 text-pt-on-primary"
-                          : "bg-rh-lime/70 text-white dark:bg-white/[0.06] dark:text-rh-ink"
+                          : "bg-rh-lime/60 text-rh-ink"
                     )}
                   >
                     <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">{item.content}</p>
@@ -830,6 +918,56 @@ const RealtimeChat = ({ recipientId, className, embedded = false, variant = 'def
                 </div>
               </div>
             ))}
+
+            {/* A file on its way, or one that didn't go through */}
+            {attachment && (
+              <div className="flex flex-row-reverse items-end gap-2">
+                <Avatar className="h-8 w-8 flex-shrink-0">
+                  <AvatarImage src={currentUser?.imageUrl} />
+                  <AvatarFallback className="text-xs">{getUserInitials(currentUser)}</AvatarFallback>
+                </Avatar>
+                <div className="flex max-w-[70%] flex-col items-end">
+                  <div
+                    className={cn(
+                      "w-60 rounded-2xl rounded-br-md px-3 py-2.5",
+                      attachment.status === 'failed'
+                        ? "border border-rose-300 bg-rose-50 text-rose-900 dark:border-rose-400/40 dark:bg-rose-400/10 dark:text-rose-100"
+                        : isPatient
+                          ? "bg-pt-primary/80 text-pt-on-primary"
+                          : "bg-rh-lime/60 text-rh-ink"
+                    )}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <FileIcon className="h-4 w-4 shrink-0" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-medium">{attachment.file.name}</span>
+                        <span className="block text-[11px] opacity-70">{fileSizeLabel(attachment.file.size)}</span>
+                      </span>
+                    </div>
+                    {attachment.status === 'uploading' && (
+                      <div className="mt-2 h-1 overflow-hidden rounded-full bg-black/10">
+                        <div className="h-full rounded-full bg-current transition-[width] duration-300" style={{ width: `${Math.max(5, uploadProgress)}%` }} />
+                      </div>
+                    )}
+                  </div>
+                  {attachment.status === 'uploading' ? (
+                    <span className="mt-1 inline-flex items-center gap-1 text-[11px] text-muted-foreground">
+                      <Loader2 className="h-3 w-3 animate-spin" /> Sending file… {uploadProgress > 0 && uploadProgress < 100 ? `${uploadProgress}%` : ''}
+                    </span>
+                  ) : (
+                    <span className="mt-1 inline-flex flex-wrap items-center justify-end gap-2 text-[11px] text-rose-600 dark:text-rose-300">
+                      {attachment.error}
+                      <button type="button" className="inline-flex items-center gap-1 font-semibold underline underline-offset-2" onClick={() => void sendAttachment(attachment.file, attachment.localId)}>
+                        <RotateCcw className="h-3 w-3" /> Retry
+                      </button>
+                      <button type="button" className="text-muted-foreground underline underline-offset-2" onClick={() => setAttachment(null)}>
+                        Discard
+                      </button>
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
 
             {typingStatus.isOtherUserTyping && (
               <div className="flex items-center gap-2 text-sm text-muted-foreground px-4">
@@ -903,6 +1041,9 @@ const RealtimeChat = ({ recipientId, className, embedded = false, variant = 'def
               size="icon"
               onClick={() => fileInputRef.current?.click()}
               className="mb-1"
+              aria-label="Attach a photo or file"
+              title="Attach a photo or file (up to 25 MB)"
+              disabled={!conversationId || attachment?.status === 'uploading'}
             >
               <Paperclip className="h-5 w-5" />
             </Button>
@@ -945,7 +1086,7 @@ const RealtimeChat = ({ recipientId, className, embedded = false, variant = 'def
               className={cn("shrink-0 rounded-full", isPatient && "bg-pt-primary text-pt-on-primary hover:bg-pt-primary-hover")}
               onClick={handleSendMessage}
               aria-label={sending ? 'Sending' : 'Send'}
-              disabled={!newMessage.trim() || !conversationId || sending || isUploading || isRecording}
+              disabled={!newMessage.trim() || !conversationId || sending || isRecording}
             >
               {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
             </Button>

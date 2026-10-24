@@ -121,7 +121,7 @@ export function useFileUpload(options?: UseFileUploadOptions) {
         // Configure and send the request
         xhr.open('POST', uploadUrl, true);
         xhr.setRequestHeader('Content-Type', safeContentType);
-        xhr.timeout = 120000; // 120 second timeout
+        xhr.timeout = 10 * 60 * 1000; // slow mobile networks need time for photos and documents
         xhr.send(file);
 
         // Wait for upload to complete

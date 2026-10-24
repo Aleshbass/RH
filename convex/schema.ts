@@ -1536,7 +1536,8 @@ export default defineSchema({
     .index("by_conversation_id_and_timestamp", ["conversationId", "timestamp"])
     .index("by_sender", ["senderId"])
     .index("by_receiver_id_and_is_read_by_receiver", ["receiverId", "isReadByReceiver"])
-    .index("by_conversation_and_receiver_and_read", ["conversationId", "receiverId", "isReadByReceiver"]),
+    .index("by_conversation_and_receiver_and_read", ["conversationId", "receiverId", "isReadByReceiver"])
+    .index("by_receiver_and_delivered", ["receiverId", "isDelivered"]),
 
   // Typing status for real-time chat
   typingStatus: defineTable({

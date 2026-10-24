@@ -59,6 +59,8 @@ async function hasCareLink(ctx: QueryCtx, patientId: Id<"users">, physioId: Id<"
   return Boolean(appointment);
 }
 
+const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
+
 /** A link to open an attachment: full URLs pass through, storage ids are resolved (null if gone). */
 async function attachmentUrl(ctx: QueryCtx, fileUrl: string | undefined): Promise<string | null> {
   if (!fileUrl) return null;
@@ -421,6 +423,15 @@ export const sendMessage = mutation({
     if (!receiver) throw new ConvexError("This person's account no longer exists.");
     await assertCanMessage(ctx, user, receiver);
     if (!args.content.trim() && !args.fileUrl) throw new ConvexError("Write a message first.");
+    if (args.contentType !== "text") {
+      if (!args.fileUrl) throw new ConvexError("Attach a file first.");
+      const storageId = ctx.db.system.normalizeId("_storage", args.fileUrl);
+      const file = storageId ? await ctx.db.system.get(storageId) : null;
+      if (!/^https?:\/\//.test(args.fileUrl) && !file) {
+        throw new ConvexError("The file didn't finish uploading. Please try again.");
+      }
+      if (file && file.size > MAX_ATTACHMENT_BYTES) throw new ConvexError("Files can be up to 25 MB.");
+    }
 
     const message = {
       conversationId: args.conversationId,
@@ -432,12 +443,12 @@ export const sendMessage = mutation({
       replyToMessageId: args.replyToMessageId,
       metadata: args.metadata,
       timestamp: Date.now(),
-      // WhatsApp-style message status - initially sent and delivered
-      isDelivered: true, // Mark as delivered immediately for real-time chat
+      // WhatsApp-style status: sent (one tick) until the other person's app receives it
+      // (markDelivered: two ticks), then read when they open the chat (two blue ticks)
+      isDelivered: false,
       isReadByReceiver: false,
       isRead: false, // Legacy field
-      deliveredAt: Date.now(), // Mark as delivered immediately
-      readAt: undefined, // Will be set when message is read
+      readAt: undefined,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
@@ -665,12 +676,15 @@ export const markMessagesAsRead = mutation({
       )
       .collect();
 
+    const now = Date.now();
     for (const message of unreadMessages) {
       await ctx.db.patch(message._id, {
         isReadByReceiver: true,
         isRead: true, // Update legacy field too
-        readAt: Date.now(),
-        updatedAt: Date.now(),
+        readAt: now,
+        // Read implies delivered
+        ...(message.isDelivered === false ? { isDelivered: true, deliveredAt: now } : {}),
+        updatedAt: now,
       });
     }
 
@@ -1027,5 +1041,52 @@ export const getConversations = query({
     );
 
     return conversationsWithMessages;
+  },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Delivery receipts: the second tick
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function signedInUser(ctx: QueryCtx) {
+  const identity = await ctx.auth.getUserIdentity();
+  if (!identity) return null;
+  return await ctx.db
+    .query("users")
+    .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+    .first();
+}
+
+/**
+ * The oldest message for the signed-in person that their app hasn't confirmed yet (null if none).
+ * An id rather than a yes/no, so a message landing while the last confirmation was saving still
+ * shows up as a change.
+ */
+export const firstUndeliveredMessage = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await signedInUser(ctx);
+    if (!user) return null;
+    const first = await ctx.db
+      .query("messages")
+      .withIndex("by_receiver_and_delivered", (q) => q.eq("receiverId", user._id).eq("isDelivered", false))
+      .first();
+    return first?._id ?? null;
+  },
+});
+
+/** Called by the receiver's app while it's open: their messages have reached their device. */
+export const markDelivered = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const user = await signedInUser(ctx);
+    if (!user) return 0;
+    const waiting = await ctx.db
+      .query("messages")
+      .withIndex("by_receiver_and_delivered", (q) => q.eq("receiverId", user._id).eq("isDelivered", false))
+      .take(200);
+    const now = Date.now();
+    for (const message of waiting) await ctx.db.patch(message._id, { isDelivered: true, deliveredAt: now });
+    return waiting.length;
   },
 });
