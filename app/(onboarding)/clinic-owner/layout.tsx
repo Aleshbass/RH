@@ -5,7 +5,16 @@ import { useEffect } from 'react';
 import { useOnboardingStore } from '@/stores/onboardingStore';
 import { useRouter } from 'next/navigation';
 import { useQuery } from 'convex/react';
-import { api } from '@/convex/_generated/api';
+import { makeFunctionReference } from 'convex/server';
+import type { Id } from '@/convex/_generated/dataModel';
+
+type Account = { _id: Id<'users'>; role?: string; onboarded?: boolean } | null;
+
+// Plain references: the generated `api` type is at TypeScript's depth limit (TS2589)
+const getMyUserRef = makeFunctionReference<'query', Record<string, never>, Account>('users:getMyUser');
+const getApprovalStatusRef = makeFunctionReference<'query', { userId: Id<'users'> }, { status?: string } | null>(
+  'accountApproval:getStatus'
+);
 
 export default function ClinicOwnerOnboardingLayout({
   children,
@@ -15,11 +24,11 @@ export default function ClinicOwnerOnboardingLayout({
   const router = useRouter();
   const { user, isLoaded } = useUser();
   const { data, setRole } = useOnboardingStore();
-  const currentUser = useQuery(api.users.getMyUser);
+  const currentUser = useQuery(getMyUserRef);
   const approval = useQuery(
-    api.accountApproval.getStatus,
+    getApprovalStatusRef,
     currentUser?.onboarded && currentUser.role === 'clinic_owner' ? { userId: currentUser._id } : 'skip'
-  ) as { status?: string } | null | undefined;
+  );
 
   useEffect(() => {
     if (isLoaded) {
@@ -49,7 +58,7 @@ export default function ClinicOwnerOnboardingLayout({
   }, [isLoaded, user, currentUser, approval, data.role, setRole, router]);
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-rh-canvas">
       {/* Header is handled by ConditionalLayout globally */}
       <main className="pt-24 pb-12">
         {children}

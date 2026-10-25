@@ -22,7 +22,7 @@ export default function PartnerPortalLayout({
   children: ReactNode;
 }) {
   return (
-    <div className="min-h-screen bg-[#FAF6E7] text-rh-ink selection:bg-rh-lime selection:text-rh-ink font-sans antialiased">
+    <div className="min-h-screen bg-rh-canvas text-rh-ink selection:bg-rh-lime selection:text-rh-ink font-sans antialiased">
       {children}
     </div>
   );

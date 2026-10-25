@@ -5,7 +5,7 @@ import { pageMetadata } from '@/lib/seo/utils';
 export const metadata: Metadata = pageMetadata({
   title: 'Physiotherapy for Patients',
   description:
-    'Personalised recovery plans from licensed physiotherapists, guided exercise videos, chat with your physio, easy booking of video or in-person sessions and progress tracking.',
+    'Physiotherapy from MRTBN-licensed physiotherapists at a clinic, at home or online. Message Joy on WhatsApp and get matched within 24 hours.',
   path: '/platform/patients',
 });
 

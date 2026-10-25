@@ -138,7 +138,7 @@ function PatientStep1Content() {
   };
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen p-4 bg-[#002e2c]">
+    <div className="flex flex-col items-center justify-center min-h-screen p-4 bg-rh-canvas">
       <div className="w-full max-w-2xl p-8 space-y-6 bg-white/90 backdrop-blur-sm rounded-xl shadow-xl">
         <PersonalInfoForm
           initialData={initialData}
@@ -155,8 +155,8 @@ function PatientStep1Content() {
 export default function PatientStep1Page() {
   return (
     <Suspense fallback={
-      <div className="flex flex-col items-center justify-center min-h-screen p-4 bg-[#002e2c]">
-        <Loader2 className="h-8 w-8 animate-spin text-white" />
+      <div className="flex flex-col items-center justify-center min-h-screen p-4 bg-rh-canvas">
+        <Loader2 className="h-8 w-8 animate-spin text-rh-ink" />
       </div>
     }>
       <PatientStep1Content />

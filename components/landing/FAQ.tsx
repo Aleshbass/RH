@@ -1,179 +1,94 @@
 "use client";
 
 import React, { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Minus, Send, Mail } from '@/components/icons';
-import { WhatsApp } from '@/components/icons';
+import { Plus, WhatsApp } from '@/components/icons';
+import { joyWhatsAppUrl } from '@/lib/joyWhatsApp';
 
 const faqData = [
   {
-    question: "How quickly can I get an appointment?",
-    answer: "Most patients get matched and booked within 24 hours. Urgent cases often same-day."
+    question: "How much does care cost?",
+    answer: "Talking to Joy is free. Your physiotherapist's fee is confirmed before you pay, so there are no surprises. If you'd rather spread the cost, you can apply for MediLoan to pay later.",
   },
   {
-    question: "Do you work with my doctor?",
-    answer: "Yes! If you're referred by a doctor, we send them progress updates with your permission. You can also share your session notes and recovery data."
+    question: "What is rehabilitation?",
+    answer: "Rehabilitation helps you move, work and live with less pain after an injury, surgery, a stroke or a long-term condition. A physiotherapist assesses you, then guides you with exercise, hands-on care and advice.",
   },
   {
-    question: "What if I need to cancel?",
-    answer: "Cancel or reschedule up to 6 hours before your session with no penalty. Less than 6 hours = one-time warning, repeat cancellations may forfeit package discounts."
+    question: "Do I need a referral or a diagnosis?",
+    answer: "No. You can start on your own by telling Joy what hurts. If a doctor has referred you, or you have scans or reports, share them with your physiotherapist.",
   },
   {
-    question: "How do packages work?",
-    answer: "Book 4, 6, or 8 sessions together and save. Pay upfront, and lock in your schedule."
+    question: "How does Rehabify work?",
+    answer: "Tell Joy what's bothering you on WhatsApp. We match you with a licensed physiotherapist, usually within 24 hours. You choose a clinic, home or online visit, and Joy keeps you on track between sessions.",
   },
   {
-    question: "Can I switch physiotherapists?",
-    answer: "Absolutely. If it's not the right fit after your first session, we'll rematch you at no extra cost."
+    question: "How does online care work, and does it work?",
+    answer: "Your physiotherapist assesses you over video, then guides your exercises and checks your progress. It suits many muscle and joint problems. If you need to be seen in person, your physiotherapist will tell you.",
   },
   {
-    question: "Do you accept HMO coverage?",
-    answer: "Currently, we do not accept HMO coverage. We are actively working on bringing this to you soon."
-  }
+    question: "Is Joy my clinician?",
+    answer: "No. Joy is Rehabify's WhatsApp assistant. Joy helps you get started, book and stay on track. Your care is planned and led by a licensed physiotherapist.",
+  },
 ];
 
-interface FaqItemProps {
-  item: { question: string; answer: string };
-  isOpen: boolean;
-  onClick: () => void;
-}
-
-const FaqItem = ({ item, isOpen, onClick }: FaqItemProps) => {
-  return (
-    <div className="border-b border-[#002e2c]/20 py-6">
-      <button
-        className="w-full flex justify-between items-center text-left text-lg md:text-xl font-medium text-[#002e2c] cursor-pointer"
-        onClick={onClick}
-      >
-        <span>{item.question}</span>
-        {isOpen ? <Minus className="text-[#005b57]" /> : <Plus className="text-[#002e2c]" />}
-      </button>
-      <AnimatePresence>
-        {isOpen && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.3, ease: 'easeInOut' }}
-            className="overflow-hidden"
-          >
-            <p className="pt-4 text-gray-700">
-              {item.answer}
-            </p>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-};
-
 const FAQ = () => {
-  const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const [question, setQuestion] = useState('');
-  const [submitted, setSubmitted] = useState(false);
 
-  const handleClick = (index: number) => {
-    setActiveIndex(activeIndex === index ? null : index);
-  };
-
-  const handleWhatsAppSubmit = (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
+  const askJoy = (e: React.FormEvent) => {
+    e.preventDefault();
     const query = question.trim() || "I have a question about Rehabify physiotherapy";
-    const waUrl = `https://wa.me/2348061525811?text=${encodeURIComponent(`Hi Joy! 👋🏾 ${query}`)}`;
-    window.open(waUrl, '_blank', 'noopener,noreferrer');
-    setSubmitted(true);
+    window.open(joyWhatsAppUrl(`Hi Joy! 👋🏾 ${query}`), '_blank', 'noopener,noreferrer');
     setQuestion('');
-    setTimeout(() => setSubmitted(false), 5000);
-  };
-
-  const handleEmailSubmit = (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    const query = question.trim() || "I have a question about Rehabify physiotherapy";
-    const subject = encodeURIComponent('FAQ Question — PhysioAroundMe / Rehabify');
-    const body = encodeURIComponent(query);
-    window.location.href = `mailto:support@physioaroundme.com?subject=${subject}&body=${body}`;
-    setSubmitted(true);
-    setQuestion('');
-    setTimeout(() => setSubmitted(false), 5000);
   };
 
   return (
-    <section id="faqs" className="bg-[#FAF6E7] text-[#002e2c] py-20 scroll-mt-24">
-      <div className="container mx-auto px-6 lg:px-8 max-w-4xl">
-        <div className="text-center mb-12">
-          <span className="text-sm font-bold tracking-wider uppercase text-[#005b57]">
-            FAQs
-          </span>
-          <h2 className="text-4xl md:text-5xl font-bold mt-2">
-            Frequently Asked Questions
-          </h2>
-        </div>
+    <section id="faqs" className="bg-rh-canvas px-4 py-20 text-rh-ink scroll-mt-24 sm:px-6 lg:py-28">
+      <div className="mx-auto grid max-w-6xl gap-12 lg:grid-cols-[0.8fr_1.2fr] lg:gap-16">
         <div>
-          {faqData.map((item, index) => (
-            <FaqItem
-              key={index}
-              item={item}
-              isOpen={activeIndex === index}
-              onClick={() => handleClick(index)}
+          <h2 className="text-[36px] font-bold leading-[1.05] tracking-tight sm:text-5xl">Questions people ask.</h2>
+
+          {/* Anything else goes straight to Joy */}
+          <form onSubmit={askJoy} className="mt-8 max-w-sm">
+            <label htmlFor="faq-question-input" className="text-sm font-semibold">Ask a question</label>
+            <input
+              id="faq-question-input"
+              type="text"
+              value={question}
+              onChange={(e) => setQuestion(e.target.value)}
+              placeholder="e.g. Do you do home visits in Abuja?"
+              className="mt-2 h-12 w-full rounded-full bg-white px-5 text-sm text-rh-ink ring-1 ring-inset ring-rh-ink/10 placeholder:text-rh-ink/40 focus:outline-none focus:ring-2 focus:ring-rh-ink"
             />
+            <button
+              id="faq-question-submit"
+              type="submit"
+              className="mt-3 inline-flex h-12 items-center gap-2 rounded-full bg-rh-lime px-6 text-[15px] font-semibold text-rh-ink transition-colors hover:bg-rh-lime-deep focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-ink focus-visible:ring-offset-2"
+            >
+              <WhatsApp className="h-4 w-4" />
+              Ask Joy on WhatsApp
+            </button>
+            <p className="mt-3 text-sm text-rh-ink/55">
+              Or email{' '}
+              <a href="mailto:support@physioaroundme.com" className="font-medium text-rh-ink underline-offset-4 hover:underline">
+                support@physioaroundme.com
+              </a>
+            </p>
+          </form>
+        </div>
+
+        <div className="border-b border-rh-ink/10">
+          {faqData.map((item) => (
+            <details key={item.question} className="group border-t border-rh-ink/10">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-6 py-6 text-lg font-semibold leading-snug sm:text-xl [&::-webkit-details-marker]:hidden">
+                {item.question}
+                <Plus className="h-4 w-4 shrink-0 transition-transform duration-300 group-open:rotate-45 motion-reduce:transition-none" />
+              </summary>
+              <p className="-mt-2 max-w-2xl pb-6 text-[15px] leading-relaxed text-rh-ink/65 sm:text-base">{item.answer}</p>
+            </details>
           ))}
         </div>
-
-        {/* Inline question submission */}
-        <div className="mt-14 bg-white rounded-2xl border border-[#005b57]/10 p-6 sm:p-8 shadow-sm">
-          <div className="text-center mb-6">
-            <h3 className="text-lg font-bold text-[#002e2c]">Still have questions?</h3>
-            <p className="text-sm text-gray-500 mt-1">Ask Joy directly on WhatsApp or send an email to our clinical care team.</p>
-          </div>
-          {submitted ? (
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className="text-center py-4 bg-emerald-50 rounded-xl border border-emerald-200"
-            >
-              <p className="text-[#005b57] font-semibold text-sm">✓ Opening your inquiry — our team will reply shortly!</p>
-            </motion.div>
-          ) : (
-            <form onSubmit={handleWhatsAppSubmit} className="space-y-3">
-              <div className="flex flex-col sm:flex-row gap-3">
-                <input
-                  id="faq-question-input"
-                  type="text"
-                  value={question}
-                  onChange={(e) => setQuestion(e.target.value)}
-                  placeholder="e.g. Do you serve home visits in Ikeja or Abuja?"
-                  className="flex-1 px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#005b57]/20 focus:border-[#005b57] text-sm text-[#002e2c] bg-gray-50"
-                  required
-                />
-                <button
-                  id="faq-question-submit"
-                  type="submit"
-                  className="inline-flex items-center justify-center gap-2 bg-[#008069] hover:bg-[#006653] text-white font-semibold px-6 py-3 rounded-xl text-sm transition-colors cursor-pointer shadow-sm"
-                >
-                  <WhatsApp className="w-4 h-4" />
-                  Ask on WhatsApp
-                </button>
-                <button
-                  type="button"
-                  onClick={handleEmailSubmit}
-                  className="inline-flex items-center justify-center gap-2 bg-white hover:bg-gray-50 text-gray-700 font-semibold px-5 py-3 rounded-xl text-sm border border-gray-300 transition-colors cursor-pointer"
-                >
-                  <Mail className="w-4 h-4 text-gray-500" />
-                  Email Support
-                </button>
-              </div>
-              <div className="flex flex-wrap items-center justify-between text-xs text-gray-400 px-1 pt-1">
-                <span>Instant response via Joy WhatsApp AI</span>
-                <span>or email <a href="mailto:support@physioaroundme.com" className="text-[#005b57] hover:underline font-medium">support@physioaroundme.com</a></span>
-              </div>
-            </form>
-          )}
-        </div>
-
       </div>
     </section>
   );
 };
 
 export default FAQ;
-

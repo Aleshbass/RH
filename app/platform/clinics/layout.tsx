@@ -5,7 +5,7 @@ import { pageMetadata } from '@/lib/seo/utils';
 export const metadata: Metadata = pageMetadata({
   title: 'Physiotherapy Clinic Management Software',
   description:
-    'Practice management for physiotherapy clinics in Nigeria: bookings, billing with Paystack, patient records, staff scheduling, analytics and telehealth video consultations.',
+    'Run your physiotherapy clinic on Rehabify: guided setup, staff roles, patient assignment, team appointments, invoices with Paystack and monthly reports.',
   path: '/platform/clinics',
 });
 

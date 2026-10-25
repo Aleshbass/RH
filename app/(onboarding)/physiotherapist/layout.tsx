@@ -20,7 +20,7 @@ export default function PhysiotherapistOnboardingLayout({
   }, [data.role, setRole]);
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-rh-canvas">
       {/* Header is handled by ConditionalLayout globally */}
       <main className="pb-12 pt-24">{children}</main>
     </div>

@@ -9,7 +9,7 @@ export const metadata = {
 
 export default function MediLoanDisclaimerPage() {
   return (
-    <div className="min-h-screen bg-[#F5F0EA] flex flex-col">
+    <div className="min-h-screen bg-rh-canvas flex flex-col">
       <main className="flex-grow container mx-auto px-4 py-16 md:py-24 max-w-4xl">
         <Link
           href="/"

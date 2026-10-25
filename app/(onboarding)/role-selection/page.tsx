@@ -150,13 +150,13 @@ function RoleSelectionContent() {
   const settingUp = loadingIntent ? SETTING_UP_LABELS[loadingIntent] : null;
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen p-4 bg-gradient-to-br from-emerald-50 to-teal-100">
+    <div className="flex flex-col items-center justify-center min-h-screen p-4 bg-rh-canvas">
       <div className="w-full max-w-2xl shadow-xl bg-white/80 backdrop-blur-md rounded-xl p-8">
         <div className="text-center mb-6">
-          <h1 className="text-3xl font-semibold text-teal-800">
+          <h1 className="text-3xl font-semibold text-rh-ink">
             Welcome to Rehabify Health!
           </h1>
-          <p className="text-lg text-teal-700 pt-2" role="status">
+          <p className="text-lg text-rh-ink/70 pt-2" role="status">
             {settingUp ? `Setting up your ${settingUp} account…` : 'Please select your role to get started.'}
           </p>
         </div>
@@ -204,7 +204,7 @@ function RoleSelectionContent() {
 
 export default function RoleSelectionPage() {
   return (
-    <React.Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-emerald-50 to-teal-100">Loading...</div>}>
+    <React.Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-rh-canvas">Loading...</div>}>
       <RoleSelectionContent />
     </React.Suspense>
   );

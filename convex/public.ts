@@ -53,7 +53,60 @@ export const submitPartnershipInquiry = mutation({
         });
       }
     }
-    
+
+    return { success: true, inquiryId };
+  },
+});
+
+/**
+ * "Book a demo" on the partners page. Called by /api/book-demo, which rate-limits and sends the
+ * emails; this keeps the request for the admin Partnerships › Inquiries tab and alerts admins in-app.
+ */
+export const requestDemo = mutation({
+  args: {
+    name: v.string(),
+    email: v.string(),
+    organization: v.string(),
+    phone: v.optional(v.string()),
+    message: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    // Public form: trim and cap every field
+    const clip = (value: string, max: number) => value.trim().slice(0, max);
+    const name = clip(args.name, 120);
+    const email = clip(args.email, 200).toLowerCase();
+    const organization = clip(args.organization, 160);
+    if (!name || !email || !organization) throw new Error("Name, email and organisation are required.");
+
+    const now = Date.now();
+    const inquiryId = await ctx.db.insert("partnershipInquiries", {
+      kind: "demo",
+      name,
+      email,
+      phone: args.phone ? clip(args.phone, 40) || undefined : undefined,
+      organization,
+      message: args.message ? clip(args.message, 2000) : "",
+      status: "new",
+      createdAt: now,
+    });
+
+    const admins = await ctx.db.query("users")
+      .withIndex("by_role", q => q.eq("role", "admin"))
+      .collect();
+    for (const admin of admins) {
+      await ctx.db.insert("notifications", {
+        userId: admin._id,
+        type: "system_alert",
+        title: "New demo request",
+        message: `${name} from ${organization} would like a demo.`,
+        data: { inquiryId, organization },
+        status: "pending",
+        priority: "high",
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+
     return { success: true, inquiryId };
   },
 });

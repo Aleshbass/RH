@@ -16,6 +16,7 @@ import { PhysioDutySwitch } from '@/components/physio/PhysioDutySwitch'
 import { PhysioDeclined, PhysioUnderReview } from '@/components/physio/PhysioReviewStates'
 import { BookingProvider, useBooking } from '@/components/physio/schedule/BookingDrawer'
 import { CLINIC_PORTAL_HOME, clinicianBelongsInClinicPortal } from '@/components/clinic/clinician-routing'
+import { WebsiteLink } from '@/components/dashboard/shared/WebsiteLink'
 
 /** The top bar's main action: book a patient in, in a drawer, without leaving the page. */
 function NewAppointmentButton() {
@@ -134,6 +135,7 @@ export function PhysioShell({ children }: { children: ReactNode }) {
           <div className="hidden lg:block" />
 
           <div className="flex shrink-0 items-center gap-2">
+            <WebsiteLink tone="portal" className="hidden sm:inline-flex" />
             {!isUnderReview && <PhysioDutySwitch />}
             {!isUnderReview && <NewAppointmentButton />}
             <PhysioHelp />

@@ -1,43 +1,36 @@
 "use client";
 
-import React, { useState } from 'react';
+import React from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import BookDemoModal from './BookDemoModal';
+import { joyWhatsAppUrl } from '@/lib/joyWhatsApp';
 
+// Book a demo lives on the partners page (/partnerships) now
 const Footer = () => {
-  const [isDemoModalOpen, setIsDemoModalOpen] = useState(false);
-
   return (
-    <footer className="bg-[#002e2c] text-white rounded-t-2xl">
+    <footer className="bg-rh-ink text-white rounded-t-[2rem]">
       <div className="container mx-auto px-6 lg:px-8">
         {/* CTA Section */}
-        <div className="py-12 text-center">
-          <h2 className="text-4xl md:text-5xl font-bold mb-4">Start Your Recovery Journey Now</h2>
-          <p className="text-gray-300 mb-8 max-w-2xl mx-auto">No more choosing between health and finances. No more waiting weeks. No more wondering if you found the right physiotherapist.</p>
-          <div className="flex flex-col sm:flex-row justify-center gap-4">
-            <a href={`https://wa.me/2348061525811?text=${encodeURIComponent("Hi Joy! 👋🏾 I need help with my recovery.")}`} target="_blank" rel="noopener noreferrer">
-              <button className="bg-white text-[#005b57] font-bold py-3 px-6 rounded-lg hover:bg-gray-200 transition-colors cursor-pointer">
-                Start Your Recovery
-              </button>
-            </a>
-            <button
-              onClick={() => setIsDemoModalOpen(true)}
-              className="bg-transparent border border-white text-white font-bold py-3 px-6 rounded-lg hover:bg-white hover:text-[#005b57] transition-colors cursor-pointer"
-            >
-              Book a Demo
-            </button>
-          </div>
+        <div className="py-16 text-center">
+          <h2 className="text-[36px] sm:text-5xl font-bold tracking-tight leading-tight mb-8 max-w-2xl mx-auto">Your first step to recovery starts here.</h2>
+          <a
+            href={joyWhatsAppUrl("Hi Joy! 👋🏾 I need help with my recovery.")}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex h-12 items-center rounded-full bg-rh-lime px-7 font-semibold text-rh-ink transition-colors hover:bg-rh-lime-deep focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-lime focus-visible:ring-offset-2 focus-visible:ring-offset-rh-ink"
+          >
+            Start Your Recovery
+          </a>
         </div>
 
         {/* Links Section */}
-        <div className="py-12 border-t border-gray-700 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-8">
+        <div className="py-12 border-t border-white/10 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-8">
           <div className="col-span-1 sm:col-span-2 md:col-span-3 lg:col-span-1">
             <Image src="/logos/White MainRehabify.svg" width={150} height={40} alt="Rehabify Logo" className="object-contain mb-4" />
             <p className="text-gray-400 text-sm">Revolutionizing physiotherapy through technology and seamless care pathways.</p>
           </div>
           <div>
-            <h3 className="font-bold mb-4 text-white">Professionals</h3>
+            <h3 className="text-base font-semibold mb-4 text-white">Professionals</h3>
             <ul className="space-y-2 text-sm">
               <li><Link href="/platform/physiotherapists" className="text-gray-300 hover:text-white transition-colors">For Physiotherapists</Link></li>
               <li><Link href="/platform/clinics" className="text-gray-300 hover:text-white transition-colors">For Clinics</Link></li>
@@ -46,10 +39,10 @@ const Footer = () => {
             </ul>
           </div>
           <div>
-            <h3 className="font-bold mb-4 text-white">Partners</h3>
+            <h3 className="text-base font-semibold mb-4 text-white">Partners</h3>
             <ul className="space-y-2 text-sm">
               <li>
-                <a href="https://partners.physioaroundme.com" className="text-emerald-400 hover:text-emerald-300 font-medium transition-colors">
+                <a href="https://partners.physioaroundme.com" className="text-rh-lime hover:text-white font-medium transition-colors">
                   Partner Program →
                 </a>
               </li>
@@ -71,7 +64,7 @@ const Footer = () => {
             </ul>
           </div>
           <div>
-            <h3 className="font-bold mb-4 text-white">Developers</h3>
+            <h3 className="text-base font-semibold mb-4 text-white">Developers</h3>
             <ul className="space-y-2 text-sm">
               <li>
                 <a href="https://docs.physioaroundme.com" className="text-gray-300 hover:text-white transition-colors">
@@ -96,19 +89,20 @@ const Footer = () => {
             </ul>
           </div>
           <div>
-            <h3 className="font-bold mb-4 text-white">Company</h3>
+            <h3 className="text-base font-semibold mb-4 text-white">Company</h3>
             <ul className="space-y-2 text-sm">
               <li><a href="/about" className="text-gray-300 hover:text-white transition-colors">About Us</a></li>
+              <li><Link href="/careers" className="text-gray-300 hover:text-white transition-colors">Careers</Link></li>
               <li><a href="/meet-joy" className="text-gray-300 hover:text-white transition-colors">Meet Joy</a></li>
               <li><Link href="/pricing" className="text-gray-300 hover:text-white transition-colors">Pricing</Link></li>
               <li><Link href="/rehabify-access" className="text-gray-300 hover:text-white transition-colors">Rehabify Access</Link></li>
-              <li><a href="/payment" className="text-gray-300 hover:text-white transition-colors">Payment & Financing</a></li>
+              <li><Link href="/pay-later" className="text-gray-300 hover:text-white transition-colors">Pay Later</Link></li>
               <li><a href="/learn" className="text-gray-300 hover:text-white transition-colors">Rehabify Learn</a></li>
               <li><Link href="/contact" className="text-gray-300 hover:text-white transition-colors">Contact</Link></li>
             </ul>
           </div>
           <div>
-            <h3 className="font-bold mb-4 text-white">Legal</h3>
+            <h3 className="text-base font-semibold mb-4 text-white">Legal</h3>
             <ul className="space-y-2 text-sm">
               <li>
                 <Link href="/terms-and-conditions" className="text-gray-300 hover:text-white transition-colors">
@@ -140,17 +134,11 @@ const Footer = () => {
         </div>
 
         {/* Bottom Bar */}
-        <div className="mt-8 py-6 border-t border-gray-700 flex flex-col sm:flex-row justify-between items-center">
+        <div className="mt-8 py-6 border-t border-white/10 flex flex-col sm:flex-row justify-between items-center">
           <p className="text-gray-400 text-sm">&copy; {new Date().getFullYear()} Rehabify. All rights reserved.</p>
           {/* Social links go here once the profiles exist (add them to SITE_CONFIG.organization.sameAs too) */}
         </div>
       </div>
-
-      {/* Book Demo Modal */}
-      <BookDemoModal
-        isOpen={isDemoModalOpen}
-        onClose={() => setIsDemoModalOpen(false)}
-      />
     </footer>
   );
 };

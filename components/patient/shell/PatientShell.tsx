@@ -14,6 +14,7 @@ import { NAV, PATIENT_HOME } from '@/components/patient/shell/navItems'
 import { PatientBrand, PatientMobileNav, PatientSidebar } from '@/components/patient/shell/PatientNav'
 import { PatientHelp, PatientNotifications, PatientThemeToggle } from '@/components/patient/shell/PatientControls'
 import { PatientTour } from '@/components/patient/shell/PatientTour'
+import { WebsiteLink } from '@/components/dashboard/shared/WebsiteLink'
 
 // Staff accounts have their own dashboards; the patient pages would only show them an empty record
 const STAFF_ROLES = new Set(['physiotherapist', 'clinic_owner', 'clinic_staff', 'doctor', 'admin', 'partner'])
@@ -88,6 +89,7 @@ export function PatientShell({ children }: { children: ReactNode }) {
             <div className="hidden lg:block" />
 
             <div className="flex items-center gap-2">
+              <WebsiteLink tone="portal" />
               {!onAppointments && (
                 <Button asChild className={`${primaryButtonClass} hidden h-10 px-4 sm:inline-flex`}>
                   <Link href={BOOK_SESSION_HREF}>

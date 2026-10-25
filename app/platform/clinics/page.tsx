@@ -1,50 +1,35 @@
 "use client";
 
-import PlatformPageLayout from "@/components/platform/PlatformPageLayout";
-import { Building2, Users, Calendar, BarChart3, ShieldCheck, Stethoscope } from "@/components/icons";
+import PlatformPageLayout, { type PlatformFeature } from "@/components/platform/PlatformPageLayout";
+import { MARKETING_VIDEOS } from "@/lib/marketingVideos";
+
+const FEATURES: PlatformFeature[] = [
+  { title: "Guided clinic setup", description: "Create your clinic profile in a few guided steps." },
+  { title: "Staff roles", description: "Invite your clinicians and choose which pages each role can open." },
+  { title: "Assign patients", description: "Give each patient to the right clinician, and reassign when you need to." },
+  { title: "Team appointments", description: "See every appointment across your clinic in one place." },
+  { title: "Invoices and payouts", description: "Invoice patients and keep track of what your clinic is paid." },
+  { title: "Monthly reports", description: "Revenue, visits, patients and team numbers at a glance." },
+];
 
 export default function ClinicsPage() {
-  const features = [
-    {
-      title: "Practice Management",
-      description: "Streamline your clinic's operations with our all-in-one management suite. Handle bookings, billing, and patient records effortlessly.",
-      icon: <Building2 className="h-6 w-6" />,
-    },
-    {
-      title: "Staff Coordination",
-      description: "Manage your team of physiotherapists, assign patients, and track performance metrics all from a single dashboard.",
-      icon: <Users className="h-6 w-6" />,
-    },
-    {
-      title: "Smart Scheduling",
-      description: "Automated appointment scheduling that syncs with your team's calendars, reducing no-shows and optimizing availability.",
-      icon: <Calendar className="h-6 w-6" />,
-    },
-    {
-      title: "Advanced Analytics",
-      description: "Gain deep insights into your clinic's performance with detailed reports on revenue, patient retention, and treatment outcomes.",
-      icon: <BarChart3 className="h-6 w-6" />,
-    },
-    {
-      title: "Compliance & Security",
-      description: "Enterprise-grade security ensuring all patient data is encrypted and compliant with healthcare regulations.",
-      icon: <ShieldCheck className="h-6 w-6" />,
-    },
-    {
-      title: "Telehealth Integration",
-      description: "Expand your reach with built-in high-quality video consultations, allowing you to treat patients remotely.",
-      icon: <Stethoscope className="h-6 w-6" />,
-    },
-  ];
-
   return (
     <PlatformPageLayout
-      title="For Clinics"
-      subtitle="Complete practice management solution"
-      description="Empower your clinic with the tools you need to scale. From solo practitioners to multi-location networks, Rehabify Health provides the infrastructure for modern physiotherapy practices."
-      features={features}
-      ctaText="Register Your Clinic"
+      title="Your team, patients and payments in one place."
+      description="Set up your clinic, bring in your clinicians and keep every appointment and invoice together."
+      features={FEATURES}
+      featuresTitle="What your clinic gets"
+      ctaText="Register your clinic"
       ctaLink="/sign-up?as=clinic_owner"
+      videoUrl={MARKETING_VIDEOS.clinic}
+      videoTitle="Rehabify for clinics"
+      image={{
+        src: "https://res.cloudinary.com/dubeogufg/image/upload/f_auto,q_auto/v1741105204/IMG_6328_a4bxtu.png",
+        alt: "A physiotherapist treating a patient in a clinic",
+        unoptimized: true,
+      }}
+      closingTitle="Bring your clinic onto Rehabify."
+      closingText="Register your clinic, or talk to our team first."
     />
   );
 }

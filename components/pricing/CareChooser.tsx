@@ -3,13 +3,23 @@
 import { useId, useMemo, useState, type ComponentType, type ReactNode } from 'react'
 import { useQuery } from 'convex/react'
 import { motion, useReducedMotion } from 'framer-motion'
-import { ArrowRight, Check, ChevronDown, ClipboardCheck, ClipboardList, House, Info, MapPinOff, Repeat, Video } from '@/components/icons'
+import { ArrowRight, Check, ChevronDown, ClipboardList, House, Info, MapPinOff, Repeat, Video } from '@/components/icons'
 import { api } from '@/convex/_generated/api'
-import { displayFont, fieldClass, pillOutline, pillTeal } from '@/components/learn/shared'
+import { displayFont, fieldClass } from '@/components/learn/shared'
 import { formatKobo } from '@/lib/rehabify-services'
 import { cn } from '@/lib/utils'
 import type { ServiceQuote, TravelZone } from '@/lib/rehabify-api-types'
-import { bookWithJoyUrl, findService, ListItem, showsPrice, WHATSAPP_HELP_URL, type Catalogue, type CatalogueService } from './shared'
+import {
+  bookWithJoyUrl,
+  ctaPrimary,
+  ctaSecondary,
+  findService,
+  ListItem,
+  showsPrice,
+  WHATSAPP_HELP_URL,
+  type Catalogue,
+  type CatalogueService,
+} from './shared'
 
 type Assessed = 'no' | 'yes'
 type Mode = 'virtual' | 'home'
@@ -160,19 +170,19 @@ function Reveal({ children }: { children: ReactNode }) {
 
 function StepShell({ number, title, hint, labelId, children }: { number: number; title: string; hint?: string; labelId?: string; children: ReactNode }) {
   return (
-    <div className="rounded-[1.75rem] bg-white p-5 shadow-soft sm:p-6">
-      <div className="flex items-start gap-3">
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-rh-teal text-sm font-semibold text-white">
-          {number}
+    <div className="rounded-[2rem] bg-white p-6 sm:p-7">
+      <div className="flex items-start gap-4">
+        <span aria-hidden className="w-6 shrink-0 pt-1 text-sm font-semibold tabular-nums text-rh-ink/40">
+          {String(number).padStart(2, '0')}
         </span>
-        <div className="min-w-0 pt-0.5">
-          <h3 id={labelId} className="text-lg leading-snug text-rh-night">
+        <div className="min-w-0">
+          <h3 id={labelId} className="text-[20px] font-bold leading-snug tracking-tight text-rh-ink">
             {title}
           </h3>
-          {hint && <p className="mt-0.5 text-sm font-medium text-rh-night/75">{hint}</p>}
+          {hint && <p className="mt-1 text-[15px] font-medium text-rh-ink/65">{hint}</p>}
         </div>
       </div>
-      <div className="mt-4">{children}</div>
+      <div className="mt-5">{children}</div>
     </div>
   )
 }
@@ -208,24 +218,24 @@ function Choice({
   return (
     <label
       className={cn(
-        'relative flex cursor-pointer items-start gap-3.5 rounded-2xl border p-4 transition active:scale-[0.99] has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-rh-teal has-[:focus-visible]:ring-offset-2',
-        checked ? 'border-rh-teal bg-rh-honeydew' : 'border-rh-night/10 bg-white hover:border-rh-night/25'
+        'relative flex cursor-pointer items-start gap-3.5 rounded-2xl p-4 ring-inset transition active:scale-[0.99] has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-rh-ink',
+        checked ? 'bg-rh-canvas ring-2 ring-rh-ink' : 'bg-white ring-1 ring-rh-ink/10 hover:ring-rh-ink/25'
       )}
     >
       <input type="radio" name={name} value={value} checked={checked} onChange={onSelect} className="sr-only" />
       <span
         className={cn(
-          'flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition',
-          checked ? 'bg-rh-teal text-white' : 'bg-rh-mist text-rh-teal'
+          'flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-rh-ink transition-colors',
+          checked ? 'bg-rh-lime' : 'bg-rh-canvas'
         )}
       >
         <Icon className="h-[18px] w-[18px]" />
       </span>
       <span className="min-w-0 pr-5">
-        <span className="block text-[15px] font-semibold text-rh-night">{title}</span>
-        <span className="mt-0.5 block text-sm font-medium leading-5 text-rh-night/75">{body}</span>
+        <span className="block text-base font-semibold text-rh-ink">{title}</span>
+        <span className="mt-0.5 block text-sm font-medium leading-5 text-rh-ink/65">{body}</span>
       </span>
-      {checked && <Check aria-hidden className="absolute right-4 top-4 h-4 w-4 text-rh-teal" strokeWidth={3} />}
+      {checked && <Check aria-hidden className="absolute right-4 top-4 h-4 w-4 text-rh-ink" />}
     </label>
   )
 }
@@ -254,15 +264,15 @@ function AreaStep({
     <StepShell number={3} title="Where are you?" hint="We check that a physiotherapist covers your area.">
       {zones === undefined ? (
         <div className="grid gap-3 sm:grid-cols-2">
-          <div className="h-12 animate-pulse rounded-2xl bg-rh-night/[0.06]" />
-          <div className="h-12 animate-pulse rounded-2xl bg-rh-night/[0.06]" />
+          <div className="h-12 animate-pulse rounded-2xl bg-rh-ink/[0.06]" />
+          <div className="h-12 animate-pulse rounded-2xl bg-rh-ink/[0.06]" />
         </div>
       ) : zones.length === 0 ? (
-        <p className="text-sm text-rh-night/65">Home visits can&apos;t be booked online in any area just yet.</p>
+        <p className="text-[15px] font-medium text-rh-ink/70">Home visits can&apos;t be booked online in any area just yet.</p>
       ) : (
         <div className="grid gap-3 sm:grid-cols-2">
           <div>
-            <label htmlFor={cityId} className="mb-1.5 block text-sm font-medium text-rh-night/75">
+            <label htmlFor={cityId} className="mb-1.5 block text-sm font-semibold text-rh-ink/75">
               City
             </label>
             <Select id={cityId} value={city} onChange={onCity}>
@@ -278,7 +288,7 @@ function AreaStep({
             </Select>
           </div>
           <div>
-            <label htmlFor={areaId} className="mb-1.5 block text-sm font-medium text-rh-night/75">
+            <label htmlFor={areaId} className="mb-1.5 block text-sm font-semibold text-rh-ink/75">
               Area
             </label>
             <Select id={areaId} value={areaKey} onChange={onArea} disabled={!city || city === OTHER}>
@@ -323,20 +333,17 @@ function Select({
       >
         {children}
       </select>
-      <ChevronDown aria-hidden className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-rh-night/50" />
+      <ChevronDown aria-hidden className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-rh-ink/50" />
     </div>
   )
 }
 
 function Placeholder() {
   return (
-    <div className="rounded-[1.75rem] border border-dashed border-rh-night/15 bg-white/60 p-7 text-center sm:p-9">
-      <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-rh-mint text-rh-teal">
-        <ClipboardCheck className="h-5 w-5" />
-      </span>
-      <h3 className="mt-5 text-xl text-rh-night">Your recommendation</h3>
-      <p className="mx-auto mt-2 max-w-xs text-[15px] font-medium leading-6 text-rh-night/75">
-        Answer the questions and we&apos;ll show you the right session and what&apos;s included.
+    <div className="rounded-[2rem] border border-dashed border-rh-ink/15 p-8 text-center sm:p-10">
+      <h3 className="text-[22px] font-bold leading-tight tracking-tight text-rh-ink">Your recommendation</h3>
+      <p className="mx-auto mt-2 max-w-xs text-[15px] font-medium leading-6 text-rh-ink/65">
+        Answer the questions to see the right session and what&apos;s included.
       </p>
     </div>
   )
@@ -344,22 +351,21 @@ function Placeholder() {
 
 function AreaNotCovered({ noZones, onVideo }: { noZones: boolean; onVideo: () => void }) {
   return (
-    <div className="rounded-[1.75rem] bg-rh-peach p-7 sm:p-8">
-      <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/70 text-rh-night">
+    <div className="rounded-[2rem] bg-white p-7 sm:p-9">
+      <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-rh-canvas text-rh-ink">
         <MapPinOff className="h-5 w-5" />
       </span>
-      <h3 className="mt-5 text-xl text-rh-night">
+      <h3 className="mt-5 text-[22px] font-bold leading-tight tracking-tight text-rh-ink">
         {noZones ? 'Home visits are coming to online booking' : "We can't confirm home visits there yet"}
       </h3>
-      <p className="mt-2 text-[15px] leading-6 text-rh-night/70">
-        Home visits are booked by area, so we can send a physiotherapist who covers it. You can start by video today, or
-        ask us and we&apos;ll check your area.
+      <p className="mt-2 text-[15px] font-medium leading-6 text-rh-ink/70">
+        Home visits are booked by area. Start by video today, or ask us to check your area.
       </p>
       <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-        <button type="button" onClick={onVideo} className={cn(pillTeal, 'h-12')}>
+        <button type="button" onClick={onVideo} className={ctaPrimary}>
           <Video className="h-4 w-4" /> Choose video instead
         </button>
-        <a href={WHATSAPP_HELP_URL} target="_blank" rel="noopener noreferrer" className={cn(pillOutline, 'h-12')}>
+        <a href={WHATSAPP_HELP_URL} target="_blank" rel="noopener noreferrer" className={ctaSecondary}>
           Ask about your area
         </a>
       </div>
@@ -384,34 +390,32 @@ function Recommendation({
   const priced = quote?.ok ? quote : null
 
   return (
-    <article className="relative overflow-hidden rounded-[1.75rem] bg-white shadow-lift ring-1 ring-rh-night/[0.06]">
-      <div className="bg-rh-teal px-6 pb-6 pt-5 text-white sm:px-7">
-        <span className="inline-flex items-center gap-1.5 rounded-full bg-rh-lime px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wide text-rh-night">
-          Recommended for you
-        </span>
-        <h3 className="mt-3 text-[24px] leading-tight text-white">{service.name}</h3>
-        <p className="mt-1 text-sm font-medium text-white/90">
+    <article className="overflow-hidden rounded-[2rem] bg-white">
+      <div className="bg-rh-ink px-7 pb-7 pt-6 text-white sm:px-9">
+        <p className="text-sm font-semibold text-white/60">Recommended for you</p>
+        <h3 className="mt-2 text-[26px] font-bold leading-tight tracking-tight text-white">{service.name}</h3>
+        <p className="mt-1 text-[15px] font-medium text-white/70">
           {service.durationLabel}
           {area ? ` · ${area.area}` : ''}
         </p>
       </div>
 
-      <div className="px-6 py-6 sm:px-7">
+      <div className="px-7 py-7 sm:px-9">
         {failure ? (
-          <p className="mb-6 flex gap-2.5 rounded-2xl bg-rh-peach p-4 text-sm font-medium leading-6 text-rh-night">
-            <Info className="mt-0.5 h-4 w-4 shrink-0" />
+          <p className="mb-6 flex gap-2.5 rounded-2xl bg-rh-canvas p-4 text-[15px] font-medium leading-6 text-rh-ink">
+            <Info className="mt-1 h-4 w-4 shrink-0" />
             {failure}
           </p>
         ) : showsPrice(service) ? (
-          <div className="mb-6 flex items-end justify-between gap-4 border-b border-rh-night/[0.08] pb-5">
-            <p className="font-semibold text-rh-night">You pay</p>
-            <p className={cn('text-[30px] leading-none tracking-tight text-rh-night', displayFont)}>
+          <div className="mb-6 flex items-end justify-between gap-4 border-b border-rh-ink/10 pb-5">
+            <p className="text-base font-semibold text-rh-ink">You pay</p>
+            <p className={cn('text-[32px] leading-none tracking-tight text-rh-ink', displayFont)}>
               {formatKobo(priced?.chargeKobo ?? service.priceKobo)}
             </p>
           </div>
         ) : null}
 
-        <p className="text-[15px] font-medium leading-6 text-rh-night/85">{service.summary}</p>
+        <p className="text-[15px] font-medium leading-6 text-rh-ink/80">{service.summary}</p>
 
         <ul className="mt-5 space-y-2.5">
           {service.whatHappens.map((item) => (
@@ -419,14 +423,14 @@ function Recommendation({
           ))}
         </ul>
 
-        <p className="mt-5 rounded-2xl bg-rh-honeydew p-4 text-sm font-medium leading-6 text-rh-night">
-          <span className="font-semibold">You receive: </span>
+        <p className="mt-5 rounded-2xl bg-rh-canvas p-4 text-[15px] font-medium leading-6 text-rh-ink/80">
+          <span className="font-semibold text-rh-ink">You receive: </span>
           {service.youReceive}
         </p>
-        {service.notIncluded && <p className="mt-3 text-sm font-medium leading-6 text-rh-night/75">{service.notIncluded}</p>}
+        {service.notIncluded && <p className="mt-3 text-sm font-medium leading-6 text-rh-ink/65">{service.notIncluded}</p>}
 
         {failure ? (
-          <a href={WHATSAPP_HELP_URL} target="_blank" rel="noopener noreferrer" className={cn(pillOutline, 'mt-6 h-12 w-full text-[15px]')}>
+          <a href={WHATSAPP_HELP_URL} target="_blank" rel="noopener noreferrer" className={cn(ctaSecondary, 'mt-6 w-full')}>
             Ask us on WhatsApp
           </a>
         ) : (
@@ -435,16 +439,16 @@ function Recommendation({
               href={bookWithJoyUrl(service, area?.area)}
               target="_blank"
               rel="noopener noreferrer"
-              className={cn(pillTeal, 'mt-6 h-12 w-full text-[15px]')}
+              className={cn(ctaPrimary, 'mt-6 w-full')}
             >
-              Book now <ArrowRight className="h-4 w-4" />
+              Book now <ArrowRight className="h-4 w-4 transition-transform duration-300 group-hover:translate-x-1" />
             </a>
-            <p className="mt-3 text-center text-xs font-medium text-rh-night/70">Opens WhatsApp, where Joy books your session.</p>
+            <p className="mt-3 text-center text-sm font-medium text-rh-ink/60">Opens WhatsApp, where Joy books your session.</p>
           </>
         )}
 
         {assessed === 'yes' && (
-          <p className="mt-5 border-t border-rh-night/[0.08] pt-5 text-sm font-medium leading-6 text-rh-night/75">
+          <p className="mt-5 border-t border-rh-ink/10 pt-5 text-sm font-medium leading-6 text-rh-ink/65">
             Treatment sessions follow your Rehabify assessment. If you haven&apos;t had one yet, choose &ldquo;No, not yet&rdquo; above.
           </p>
         )}

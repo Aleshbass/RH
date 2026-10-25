@@ -283,7 +283,7 @@ ${servicesList(live.catalogue)}
 
 ## Company
 
-- Founded by two Ibadan-trained physiotherapists, Mary and Abass. According to the About page, Rehabify launched in January 2026 to connect patients who need physiotherapy, physiotherapists, and doctors who need a reliable referral pathway.
+- Launched in 2025 by Mary Akinwola and Ademola Abass, two physiotherapists trained in Nigeria. Mary went on to study at the University of Oxford; Ademola became a Doctor of Physiotherapy. Rehabify connects people with qualified physiotherapists for virtual and home-based care and gives clinicians and clinics the tools to support patients beyond their appointments.
 - Payments are processed by Paystack.
 
 ## Contact

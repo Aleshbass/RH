@@ -2,8 +2,8 @@
 
 import { useState, useEffect } from 'react'
 import { UserButton } from '@clerk/nextjs'
-import { useQuery, useMutation } from 'convex/react'
 import { api } from '@/convex/_generated/api'
+import { useMutationUntyped, useQueryUntyped } from '@/lib/convexUntyped'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -38,6 +38,7 @@ import Link from 'next/link'
 import { toast } from 'sonner'
 import { useRouter } from 'next/navigation'
 import { useSidebarStore } from '@/stores/sidebarStore'
+import { WebsiteLink } from '@/components/dashboard/shared/WebsiteLink'
 
 interface NotificationDoc {
   _id: string
@@ -63,15 +64,17 @@ export function DashboardHeader() {
   const [lastNotifId, setLastNotifId] = useState<string | null>(null)
   const { toggleMobile } = useSidebarStore()
 
-  // Get user and clinic info
-  const user = useQuery(api.users.getMyUser)
-  const clinicInfo = useQuery(api.clinics.getMyClinicInfo)
+  // Untyped hooks: the generated `api` type is at TypeScript's depth limit (TS2589) here
+  const user = useQueryUntyped(api.users.getMyUser) as { role?: string } | null | undefined
+  const clinicInfo = useQueryUntyped(api.clinics.getMyClinicInfo) as { name: string } | null | undefined
 
   // Recent notifications & count
-  const notifications = useQuery(api.notifications.getMyNotifications, { limit: 5, includeRead: true })
-  const unreadCount = useQuery(api.notifications.getMyUnreadCount, {})
-  const markAsRead = useMutation(api.notifications.markAsRead)
-  const markAllMyAsRead = useMutation(api.notifications.markAllMyAsRead)
+  const notifications = useQueryUntyped(api.notifications.getMyNotifications, { limit: 5, includeRead: true }) as
+    | NotificationDoc[]
+    | undefined
+  const unreadCount = useQueryUntyped(api.notifications.getMyUnreadCount, {}) as number | undefined
+  const markAsRead = useMutationUntyped(api.notifications.markAsRead)
+  const markAllMyAsRead = useMutationUntyped(api.notifications.markAllMyAsRead)
 
   const quickActions = [
     {
@@ -210,6 +213,8 @@ export function DashboardHeader() {
               </DropdownMenuContent>
             </DropdownMenu>
           )}
+
+          <WebsiteLink tone="dark" />
 
           {/* Notifications */}
           <Popover open={showNotifications} onOpenChange={setShowNotifications}>

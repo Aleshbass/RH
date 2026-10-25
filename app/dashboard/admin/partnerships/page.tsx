@@ -78,7 +78,7 @@ function PartnershipsContent() {
       <PageHeader
         eyebrow="Partners"
         title="Partners & revenue"
-        description="Partner and referring-doctor applications, go-live reviews, website inquiries, monthly payouts and the platform revenue split."
+        description="Partner and referring-doctor applications, go-live reviews, website inquiries and demo requests, monthly payouts and the platform revenue split."
       />
 
       <Stagger className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -141,7 +141,7 @@ function PartnershipsContent() {
             <TabCount value={goLiveCount} tone="attention" />
           </TabsTrigger>
           <TabsTrigger value="inquiries">
-            Inquiries
+            Inquiries &amp; demos
             <TabCount value={newInquiries} />
           </TabsTrigger>
           <TabsTrigger value="bulk_payouts">

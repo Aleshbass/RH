@@ -11,6 +11,7 @@ import NextImage from "next/image";
 import { useMutation } from "convex/react";
 import { UserButton, useUser } from "@clerk/nextjs";
 import { authRoutes } from "@/components/auth/authConfig";
+import { BookDemoDialog } from "@/components/partners/BookDemoDialog";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
@@ -57,6 +58,7 @@ export function PartnerGateway() {
       () => false,
     );
     const authLinks = authRoutes("partner", partnersHost);
+    const [demoOpen, setDemoOpen] = useState(false);
     return (
       <div className="min-h-screen py-16 px-4 sm:px-6 lg:px-8 max-w-4xl mx-auto flex flex-col items-center justify-center font-sans antialiased">
         {/* Apple-style floating hero card */}
@@ -73,17 +75,11 @@ export function PartnerGateway() {
             />
           </Link>
 
-          {/* Apple-style pill badge */}
-          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#FAF6E7] border border-rh-ink/12 text-xs font-medium text-rh-ink shadow-xs">
-            <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse" />
-            <span>Enterprise Partner Network</span>
-          </div>
-
           <div className="space-y-3 max-w-2xl">
             <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight text-rh-ink leading-tight">
               The Rehabilitation Operating System for Healthcare Leaders
             </h1>
-            <p className="text-base text-[#52706e] leading-relaxed max-w-xl mx-auto">
+            <p className="text-base text-rh-ink/70 leading-relaxed max-w-xl mx-auto">
               Connect your HMO, hospital, clinic, or corporate wellness plan. Dispatch verified MRTBN physiotherapists, track patient recovery milestones in real time, and automate commercial settlements.
             </p>
           </div>
@@ -92,9 +88,9 @@ export function PartnerGateway() {
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3.5 w-full max-w-md pt-2">
             <Link
               href={authLinks.signIn}
-              className="w-full sm:flex-1 py-3.5 px-6 rounded-2xl bg-rh-ink text-[#FAF6E7] font-semibold text-sm hover:bg-[#004744] active:scale-[0.98] transition-all shadow-sm flex items-center justify-center gap-2 cursor-pointer"
+              className="w-full sm:flex-1 py-3.5 px-6 rounded-2xl bg-rh-ink text-[#FAF6E7] font-semibold text-sm hover:bg-black active:scale-[0.98] transition-all shadow-sm flex items-center justify-center gap-2 cursor-pointer"
             >
-              <Lock className="w-4 h-4 text-emerald-400" />
+              <Lock className="w-4 h-4 text-rh-lime" />
               <span>Sign In to Portal</span>
             </Link>
 
@@ -107,47 +103,47 @@ export function PartnerGateway() {
             </Link>
           </div>
 
-          <div className="pt-2 text-xs text-[#52706e] flex items-center justify-center gap-2">
-            <ShieldCheck className="w-4 h-4 text-emerald-600" />
-            <span>Enterprise OAuth & Single Sign-On Supported</span>
-          </div>
+          <button
+            type="button"
+            onClick={() => setDemoOpen(true)}
+            className="text-sm font-semibold text-rh-ink underline-offset-4 hover:underline"
+          >
+            Not ready yet? Book a demo
+          </button>
         </div>
+        <BookDemoDialog open={demoOpen} onOpenChange={setDemoOpen} />
 
-        {/* Feature pillars */}
+        {/* Feature pillars: solid white cards and 15px ink text so they read as well on desktop as on phones */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 w-full mt-8">
-          <div className="p-6 rounded-2xl bg-white/70 backdrop-blur-md border border-rh-ink/10 shadow-xs space-y-2.5">
-            <div className="w-10 h-10 rounded-xl bg-[#FAF6E7] border border-rh-ink/10 flex items-center justify-center text-rh-ink">
-              <Users className="w-5 h-5" />
+          {[
+            {
+              icon: Users,
+              title: "Direct Clinical Referrals",
+              body: "Seamlessly triage members to MRTBN-verified physiotherapists for in-home visits or virtual rehabilitation.",
+            },
+            {
+              icon: Terminal,
+              title: "REST API & Webhooks",
+              body: "Real-time programmatic updates when patients attend sessions, complete assessments, or get discharged.",
+            },
+            {
+              icon: CreditCard,
+              title: "Automated Settlements",
+              body: "Transparent commission ledgers and revenue sharing statements with downloadable CSV accounting exports.",
+            },
+          ].map(({ icon: Icon, title, body }) => (
+            <div key={title} className="p-6 sm:p-7 rounded-2xl bg-white border border-rh-ink/10 space-y-3">
+              <div className="w-10 h-10 rounded-xl bg-rh-canvas flex items-center justify-center text-rh-ink">
+                <Icon className="w-5 h-5" />
+              </div>
+              <h3 className="text-base font-semibold leading-snug text-rh-ink">{title}</h3>
+              <p className="text-[15px] font-medium leading-relaxed text-rh-ink/75">{body}</p>
             </div>
-            <h3 className="font-semibold text-rh-ink text-sm">Direct Clinical Referrals</h3>
-            <p className="text-xs text-[#52706e] leading-relaxed">
-              Seamlessly triage members to MRTBN-verified physiotherapists for in-home visits or virtual rehabilitation.
-            </p>
-          </div>
-
-          <div className="p-6 rounded-2xl bg-white/70 backdrop-blur-md border border-rh-ink/10 shadow-xs space-y-2.5">
-            <div className="w-10 h-10 rounded-xl bg-[#FAF6E7] border border-rh-ink/10 flex items-center justify-center text-rh-ink">
-              <Terminal className="w-5 h-5" />
-            </div>
-            <h3 className="font-semibold text-rh-ink text-sm">FHIR & Webhook APIs</h3>
-            <p className="text-xs text-[#52706e] leading-relaxed">
-              Real-time programmatic updates when patients attend sessions, complete assessments, or get discharged.
-            </p>
-          </div>
-
-          <div className="p-6 rounded-2xl bg-white/70 backdrop-blur-md border border-rh-ink/10 shadow-xs space-y-2.5">
-            <div className="w-10 h-10 rounded-xl bg-[#FAF6E7] border border-rh-ink/10 flex items-center justify-center text-rh-ink">
-              <CreditCard className="w-5 h-5" />
-            </div>
-            <h3 className="font-semibold text-rh-ink text-sm">Automated Settlements</h3>
-            <p className="text-xs text-[#52706e] leading-relaxed">
-              Transparent commission ledgers and revenue sharing statements with downloadable CSV accounting exports.
-            </p>
-          </div>
+          ))}
         </div>
 
-        <div className="mt-10 text-center text-xs text-[#52706e]">
-          Protected by Rehabify Health Clinical Governance · MRTBN Licensed Practitioners · HIPAA & NDPR Aligned
+        <div className="mt-10 text-center text-xs text-rh-ink/70">
+          MRTBN-licensed physiotherapists · <Link href="/privacy-policy" className="font-semibold text-rh-ink underline-offset-4 hover:underline">How we protect patient data</Link>
         </div>
       </div>
     );
@@ -394,7 +390,7 @@ export function PartnerApplicationForm() {
     };
 
     return (
-      <div className="min-h-screen bg-[#FAF6E7] py-8 sm:py-12 px-4 sm:px-6">
+      <div className="min-h-screen bg-rh-canvas py-8 sm:py-12 px-4 sm:px-6">
         <div className="max-w-3xl mx-auto space-y-6">
           {/* Header Bar */}
           <div className="bg-white/90 backdrop-blur-md rounded-2xl border border-rh-ink/10 p-4 sm:p-5 flex items-center justify-between shadow-xs">
@@ -409,17 +405,12 @@ export function PartnerApplicationForm() {
                 />
               </Link>
               <div className="h-5 w-px bg-rh-ink/15" />
-              <div>
-                <h1 className="text-sm sm:text-base font-semibold text-rh-ink leading-tight">
-                  Partner Organization Onboarding
-                </h1>
-                <p className="text-[11px] text-[#52706e] hidden sm:block">
-                  Rehabify Clinical Network & Enterprise Integration
-                </p>
-              </div>
+              <h1 className="text-sm sm:text-base font-semibold text-rh-ink leading-tight">
+                Partner Organization Onboarding
+              </h1>
             </div>
             <div className="flex items-center gap-3">
-              <span className="text-xs text-[#52706e] hidden sm:inline">
+              <span className="text-xs text-rh-ink/70 hidden sm:inline">
                 {user?.primaryEmailAddress?.emailAddress}
               </span>
               <UserButton afterSignOutUrl="/partners/portal" />
@@ -461,7 +452,7 @@ export function PartnerApplicationForm() {
                               ? "bg-emerald-600 text-white"
                               : isActive
                               ? "bg-[#0b1312] text-[#FAF6E7]"
-                              : "bg-[#0b1312]/10 text-[#52706e]"
+                              : "bg-[#0b1312]/10 text-rh-ink/70"
                           }`}
                         >
                           {isDone ? <Check className="w-3 h-3" /> : s.step}
@@ -470,7 +461,7 @@ export function PartnerApplicationForm() {
                           {s.title}
                         </span>
                       </div>
-                      <p className="text-[10px] text-[#52706e] truncate pl-7 hidden sm:block">
+                      <p className="text-[10px] text-rh-ink/70 truncate pl-7 hidden sm:block">
                         {s.subtitle}
                       </p>
                     </button>
@@ -501,14 +492,14 @@ export function PartnerApplicationForm() {
               <div className="space-y-6 animate-in fade-in-50 duration-200">
                 <div className="border-b border-rh-ink/10 pb-4">
                   <h2 className="text-lg font-bold text-rh-ink">Organization Profile</h2>
-                  <p className="text-xs text-[#52706e] mt-1">
+                  <p className="text-xs text-rh-ink/70 mt-1">
                     Provide your company's registered name and operational category.
                   </p>
                 </div>
 
                 <div className="space-y-4">
                   <div>
-                    <label className="block text-xs font-semibold uppercase tracking-wider text-[#52706e] mb-2">
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-rh-ink/70 mb-2">
                       Legal Organization Name *
                     </label>
                     <input
@@ -522,7 +513,7 @@ export function PartnerApplicationForm() {
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold uppercase tracking-wider text-[#52706e] mb-2">
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-rh-ink/70 mb-2">
                       Organization Classification *
                     </label>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
@@ -540,7 +531,7 @@ export function PartnerApplicationForm() {
                           >
                             <div>
                               <div className="text-xs font-semibold text-rh-ink">{item.label}</div>
-                              <div className="text-[11px] text-[#52706e] mt-0.5">{item.desc}</div>
+                              <div className="text-[11px] text-rh-ink/70 mt-0.5">{item.desc}</div>
                             </div>
                             <div
                               className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 mt-0.5 ${
@@ -558,11 +549,11 @@ export function PartnerApplicationForm() {
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold uppercase tracking-wider text-[#52706e] mb-2">
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-rh-ink/70 mb-2">
                       Official Website (Optional)
                     </label>
                     <div className="relative">
-                      <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-[#52706e]">
+                      <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-rh-ink/70">
                         <Globe className="w-4 h-4" />
                       </div>
                       <input
@@ -586,7 +577,7 @@ export function PartnerApplicationForm() {
                       }
                       setOnboardingStep(2);
                     }}
-                    className="px-6 py-3 rounded-xl bg-rh-ink text-[#FAF6E7] font-semibold text-sm hover:bg-[#004744] transition-all flex items-center gap-2 shadow-xs"
+                    className="px-6 py-3 rounded-xl bg-rh-ink text-[#FAF6E7] font-semibold text-sm hover:bg-black transition-all flex items-center gap-2 shadow-xs"
                   >
                     <span>Continue to Brand Identity</span>
                     <ArrowRight className="w-4 h-4" />
@@ -600,7 +591,7 @@ export function PartnerApplicationForm() {
               <div className="space-y-6 animate-in fade-in-50 duration-200">
                 <div className="border-b border-rh-ink/10 pb-4">
                   <h2 className="text-lg font-bold text-rh-ink">Brand Identity & Logo Upload</h2>
-                  <p className="text-xs text-[#52706e] mt-1">
+                  <p className="text-xs text-rh-ink/70 mt-1">
                     Upload your official company logo file. It will be stored in Rehabify's secure vault and displayed dynamically across co-branded patient portals.
                   </p>
                 </div>
@@ -619,7 +610,7 @@ export function PartnerApplicationForm() {
 
                 {/* Logo Upload Box */}
                 <div className="space-y-3">
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-[#52706e]">
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-rh-ink/70">
                     Official Company Logo *
                   </label>
 
@@ -653,10 +644,10 @@ export function PartnerApplicationForm() {
                       <p className="text-sm font-semibold text-rh-ink">
                         {isUploadingLogo ? "Uploading to Secure Storage..." : "Click to upload logo or drag and drop"}
                       </p>
-                      <p className="text-xs text-[#52706e] mt-1">
+                      <p className="text-xs text-rh-ink/70 mt-1">
                         High-resolution PNG, JPG, SVG, or WebP (max 5MB)
                       </p>
-                      <p className="text-[11px] text-[#52706e]/80 mt-2">
+                      <p className="text-[11px] text-rh-ink/55 mt-2">
                         Transparent backgrounds look best on light co-branded pages
                       </p>
                     </div>
@@ -677,7 +668,7 @@ export function PartnerApplicationForm() {
                             {logoStorageId ? "Vault Encrypted" : "Uploaded"}
                           </span>
                         </div>
-                        <p className="text-xs text-[#52706e] mt-1.5">
+                        <p className="text-xs text-rh-ink/70 mt-1.5">
                           {logoFile?.name || "company_logo.png"}
                           {logoFile && ` · ${(logoFile.size / 1024).toFixed(1)} KB`}
                         </p>
@@ -708,7 +699,7 @@ export function PartnerApplicationForm() {
                 {/* Co-Branding Preview — Clean, logo-focused */}
                 <div className="rounded-2xl border border-rh-ink/10 bg-white overflow-hidden">
                   <div className="px-5 py-3 border-b border-rh-ink/8 bg-[#FAF6E7]/40">
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-[#52706e]">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-rh-ink/70">
                       Co-Branded Referral Preview
                     </span>
                   </div>
@@ -752,7 +743,7 @@ export function PartnerApplicationForm() {
                       Verified Partner
                     </span>
 
-                    <p className="text-xs text-[#52706e] max-w-xs">
+                    <p className="text-xs text-rh-ink/70 max-w-xs">
                       This is how your brand will appear alongside Rehabify on patient referral pages.
                     </p>
                   </div>
@@ -770,7 +761,7 @@ export function PartnerApplicationForm() {
                   <button
                     type="button"
                     onClick={() => setOnboardingStep(3)}
-                    className="px-6 py-3 rounded-xl bg-rh-ink text-[#FAF6E7] font-semibold text-sm hover:bg-[#004744] transition-all flex items-center gap-2 shadow-xs"
+                    className="px-6 py-3 rounded-xl bg-rh-ink text-[#FAF6E7] font-semibold text-sm hover:bg-black transition-all flex items-center gap-2 shadow-xs"
                   >
                     <span>Continue to Contact & Coverage</span>
                     <ArrowRight className="w-4 h-4" />
@@ -784,7 +775,7 @@ export function PartnerApplicationForm() {
               <div className="space-y-6 animate-in fade-in-50 duration-200">
                 <div className="border-b border-rh-ink/10 pb-4">
                   <h2 className="text-lg font-bold text-rh-ink">Liaison & Operational Coverage</h2>
-                  <p className="text-xs text-[#52706e] mt-1">
+                  <p className="text-xs text-rh-ink/70 mt-1">
                     Specify your partnership representative and geographic operating areas for physical therapy dispatch.
                   </p>
                 </div>
@@ -792,7 +783,7 @@ export function PartnerApplicationForm() {
                 <div className="space-y-4">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-xs font-semibold uppercase tracking-wider text-[#52706e] mb-2">
+                      <label className="block text-xs font-semibold uppercase tracking-wider text-rh-ink/70 mb-2">
                         Partnership Liaison Name
                       </label>
                       <input
@@ -805,7 +796,7 @@ export function PartnerApplicationForm() {
                     </div>
 
                     <div>
-                      <label className="block text-xs font-semibold uppercase tracking-wider text-[#52706e] mb-2">
+                      <label className="block text-xs font-semibold uppercase tracking-wider text-rh-ink/70 mb-2">
                         Official Contact Phone
                       </label>
                       <input
@@ -819,7 +810,7 @@ export function PartnerApplicationForm() {
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold uppercase tracking-wider text-[#52706e] mb-2">
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-rh-ink/70 mb-2">
                       Official Contact Email *
                     </label>
                     <input
@@ -830,14 +821,14 @@ export function PartnerApplicationForm() {
                       onChange={(e) => setOnboardingForm({ ...onboardingForm, contactEmail: e.target.value })}
                       className="w-full px-4 py-3 rounded-xl bg-[#FAF6E7]/40 border border-rh-ink/15 text-rh-ink text-sm focus:outline-none focus:ring-2 focus:ring-rh-ink/20"
                     />
-                    <p className="text-[11px] text-[#52706e] mt-1">
+                    <p className="text-[11px] text-rh-ink/70 mt-1">
                       Administrative notifications, API credentials, and commission reports will be dispatched to this email.
                     </p>
                   </div>
 
                   {/* Operating States — Mapbox Search */}
                   <div ref={stateSearchContainerRef}>
-                    <label className="block text-xs font-semibold uppercase tracking-wider text-[#52706e] mb-2">
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-rh-ink/70 mb-2">
                       Operating States
                     </label>
 
@@ -849,7 +840,7 @@ export function PartnerApplicationForm() {
                             key={st}
                             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rh-ink text-[#FAF6E7] text-xs font-medium shadow-xs"
                           >
-                            <MapPin className="w-3 h-3 text-emerald-400" />
+                            <MapPin className="w-3 h-3 text-rh-lime" />
                             <span>{st}</span>
                             <button
                               type="button"
@@ -869,7 +860,7 @@ export function PartnerApplicationForm() {
                         {isSearchingStates ? (
                           <Loader2 className="w-4 h-4 text-rh-ink animate-spin" />
                         ) : (
-                          <Search className="w-4 h-4 text-[#52706e]" />
+                          <Search className="w-4 h-4 text-rh-ink/70" />
                         )}
                       </div>
                       <input
@@ -894,7 +885,7 @@ export function PartnerApplicationForm() {
                               <MapPin className="h-4 w-4 text-rh-ink mt-0.5 flex-shrink-0" />
                               <div>
                                 <span className="text-sm font-medium text-rh-ink">{result.text}</span>
-                                <span className="block text-[11px] text-[#52706e] mt-0.5">{result.place_name}</span>
+                                <span className="block text-[11px] text-rh-ink/70 mt-0.5">{result.place_name}</span>
                               </div>
                             </button>
                           ))}
@@ -902,13 +893,13 @@ export function PartnerApplicationForm() {
                       )}
                     </div>
 
-                    <p className="text-[11px] text-[#52706e] mt-1.5">
+                    <p className="text-[11px] text-rh-ink/70 mt-1.5">
                       Type to search and select your operating states across Nigeria.
                     </p>
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold uppercase tracking-wider text-[#52706e] mb-2">
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-rh-ink/70 mb-2">
                       Operating Cities / Districts
                     </label>
                     <input
@@ -922,7 +913,7 @@ export function PartnerApplicationForm() {
 
                   {/* Care Modes */}
                   <div>
-                    <label className="block text-xs font-semibold uppercase tracking-wider text-[#52706e] mb-2">
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-rh-ink/70 mb-2">
                       Supported Care Modes
                     </label>
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
@@ -950,7 +941,7 @@ export function PartnerApplicationForm() {
                                 {isSelected && <Check className="w-2.5 h-2.5" />}
                               </div>
                             </div>
-                            <span className="text-[10px] text-[#52706e] leading-snug">{cm.desc}</span>
+                            <span className="text-[10px] text-rh-ink/70 leading-snug">{cm.desc}</span>
                           </div>
                         );
                       })}
@@ -976,7 +967,7 @@ export function PartnerApplicationForm() {
                       }
                       setOnboardingStep(4);
                     }}
-                    className="px-6 py-3 rounded-xl bg-rh-ink text-[#FAF6E7] font-semibold text-sm hover:bg-[#004744] transition-all flex items-center gap-2 shadow-xs"
+                    className="px-6 py-3 rounded-xl bg-rh-ink text-[#FAF6E7] font-semibold text-sm hover:bg-black transition-all flex items-center gap-2 shadow-xs"
                   >
                     <span>Continue to Review & Submit</span>
                     <ArrowRight className="w-4 h-4" />
@@ -990,7 +981,7 @@ export function PartnerApplicationForm() {
               <div className="space-y-6 animate-in fade-in-50 duration-200">
                 <div className="border-b border-rh-ink/10 pb-4">
                   <h2 className="text-lg font-bold text-rh-ink">Review Application Dossier</h2>
-                  <p className="text-xs text-[#52706e] mt-1">
+                  <p className="text-xs text-rh-ink/70 mt-1">
                     Confirm your organization profile before submitting for Rehabify administrative verification.
                   </p>
                 </div>
@@ -1021,7 +1012,7 @@ export function PartnerApplicationForm() {
                             {partnerTypeLabels[onboardingForm.type]?.label || onboardingForm.type}
                           </span>
                           {onboardingForm.website && (
-                            <span className="text-xs text-[#52706e] flex items-center gap-1">
+                            <span className="text-xs text-rh-ink/70 flex items-center gap-1">
                               <Globe className="w-3 h-3" />
                               {onboardingForm.website.replace(/^https?:\/\//, "")}
                             </span>
@@ -1040,29 +1031,29 @@ export function PartnerApplicationForm() {
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
                     <div>
-                      <span className="text-[11px] font-bold uppercase tracking-wider text-[#52706e] block mb-1">
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-rh-ink/70 block mb-1">
                         Liaison & Contact
                       </span>
                       <p className="font-semibold text-rh-ink">
                         {onboardingForm.contactName || "Official Representative"}
                       </p>
-                      <p className="text-[#52706e]">{onboardingForm.contactEmail}</p>
+                      <p className="text-rh-ink/70">{onboardingForm.contactEmail}</p>
                       {onboardingForm.contactPhone && (
-                        <p className="text-[#52706e]">{onboardingForm.contactPhone}</p>
+                        <p className="text-rh-ink/70">{onboardingForm.contactPhone}</p>
                       )}
                     </div>
 
                     <div>
-                      <span className="text-[11px] font-bold uppercase tracking-wider text-[#52706e] block mb-1">
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-rh-ink/70 block mb-1">
                         Coverage & Care Modes
                       </span>
                       <p className="font-semibold text-rh-ink">
                         {onboardingForm.coverageStates.length > 0 ? onboardingForm.coverageStates.join(", ") : "Nationwide"}
                       </p>
-                      <p className="text-[#52706e] text-[11px]">
+                      <p className="text-rh-ink/70 text-[11px]">
                         Cities: {onboardingForm.coverageCities || "All metro centers"}
                       </p>
-                      <p className="text-[#52706e] text-[11px] mt-0.5">
+                      <p className="text-rh-ink/70 text-[11px] mt-0.5">
                         Modes: {onboardingForm.supportedCareModes.map((m) => m === "face_to_face" ? "In-Clinic" : m === "home_visit" ? "Home Visit" : "Tele-Rehab").join(", ")}
                       </p>
                     </div>
@@ -1109,12 +1100,12 @@ export function PartnerApplicationForm() {
                     type="button"
                     disabled={isSubmittingApplication || !termsAgreed}
                     onClick={() => handleApplyForPartner()}
-                    className="px-7 py-3.5 rounded-xl bg-rh-ink text-[#FAF6E7] font-semibold text-sm hover:bg-[#004744] transition-all flex items-center gap-2 shadow-md disabled:opacity-50"
+                    className="px-7 py-3.5 rounded-xl bg-rh-ink text-[#FAF6E7] font-semibold text-sm hover:bg-black transition-all flex items-center gap-2 shadow-md disabled:opacity-50"
                   >
                     {isSubmittingApplication ? (
                       <div className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
                     ) : (
-                      <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                      <ShieldCheck className="w-4 h-4 text-rh-lime" />
                     )}
                     <span>Submit Application for Admin Review</span>
                   </button>
@@ -1123,8 +1114,8 @@ export function PartnerApplicationForm() {
             )}
           </div>
 
-          <div className="text-center text-xs text-[#52706e]">
-            Protected by Rehabify Health Clinical Governance · MRTBN Licensed Practitioners · HIPAA & NDPR Aligned
+          <div className="text-center text-xs text-rh-ink/70">
+            MRTBN-licensed physiotherapists · <Link href="/privacy-policy" className="font-semibold text-rh-ink underline-offset-4 hover:underline">How we protect patient data</Link>
           </div>
         </div>
       </div>
@@ -1163,7 +1154,7 @@ export function PartnerPendingScreen({ partner }: { partner: PartnerSummaryLite 
             <h1 className="text-2xl font-bold text-rh-ink tracking-tight">
               {pendingPartner?.name || "Your Organization"}
             </h1>
-            <p className="text-sm text-[#52706e] max-w-md mx-auto leading-relaxed">
+            <p className="text-sm text-rh-ink/70 max-w-md mx-auto leading-relaxed">
               Your partner registration is being reviewed by the Rehabify Health Clinical and Compliance team. Once approved you get sandbox access straight away — test API keys, webhooks and referral links — and can request production (live) access when your integration is ready.
             </p>
           </div>
@@ -1171,20 +1162,20 @@ export function PartnerPendingScreen({ partner }: { partner: PartnerSummaryLite 
           {/* Company branding summary */}
           <div className="p-4 rounded-2xl bg-[#FAF6E7]/80 border border-rh-ink/10 text-left space-y-3 text-xs">
             <div className="flex items-center justify-between">
-              <span className="text-[#52706e] font-medium">Organization Type</span>
+              <span className="text-rh-ink/70 font-medium">Organization Type</span>
               <span className="font-semibold text-rh-ink uppercase">{pendingPartner?.type}</span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-[#52706e] font-medium">Contact Email</span>
+              <span className="text-rh-ink/70 font-medium">Contact Email</span>
               <span className="font-semibold text-rh-ink">{pendingPartner?.contactEmail}</span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-[#52706e] font-medium">Assigned Partner Code</span>
+              <span className="text-rh-ink/70 font-medium">Assigned Partner Code</span>
               <span className="font-mono font-semibold text-rh-ink">{pendingPartner?.code}</span>
             </div>
             {pendingPartner?.logoUrl && (
               <div className="flex items-center justify-between pt-1">
-                <span className="text-[#52706e] font-medium">Uploaded Logo</span>
+                <span className="text-rh-ink/70 font-medium">Uploaded Logo</span>
                 <img
                   src={pendingPartner.logoUrl}
                   alt={pendingPartner.name}
@@ -1194,7 +1185,7 @@ export function PartnerPendingScreen({ partner }: { partner: PartnerSummaryLite 
             )}
           </div>
 
-          <div className="text-xs text-[#52706e] pt-2">
+          <div className="text-xs text-rh-ink/70 pt-2">
             Questions regarding your review status? Contact our clinical team at{" "}
             <a href="mailto:partners@physioaroundme.com" className="text-rh-ink font-semibold underline">
               partners@physioaroundme.com
@@ -1222,7 +1213,7 @@ function DoctorPendingScreen({ partner }: { partner: NonNullable<PartnerSummaryL
             <Clock className="w-7 h-7" />
           </div>
           <h1 className="text-2xl font-bold text-rh-ink tracking-tight">We&apos;re verifying your licence</h1>
-          <p className="text-sm text-[#52706e] max-w-md mx-auto leading-relaxed">
+          <p className="text-sm text-rh-ink/70 max-w-md mx-auto leading-relaxed">
             Thanks{partner.name ? `, ${partner.name}` : ""}. Our clinical team checks every referring doctor&apos;s licence before they can refer
             patients. We&apos;ll email you at <strong className="text-rh-ink">{partner.contactEmail}</strong> as soon as you&apos;re approved.
           </p>
@@ -1238,7 +1229,7 @@ function DoctorPendingScreen({ partner }: { partner: NonNullable<PartnerSummaryL
               <span className="w-6 h-6 rounded-full bg-rh-ink text-[#FAF6E7] text-[11px] font-bold flex items-center justify-center shrink-0">{i + 1}</span>
               <span>
                 <span className="block text-xs font-semibold text-rh-ink">{title}</span>
-                <span className="block text-xs text-[#52706e]">{body}</span>
+                <span className="block text-xs text-rh-ink/70">{body}</span>
               </span>
             </li>
           ))}
@@ -1248,7 +1239,7 @@ function DoctorPendingScreen({ partner }: { partner: NonNullable<PartnerSummaryL
           <Link href="/doctor" className="font-semibold text-rh-ink hover:underline">
             Update your details
           </Link>
-          <span className="hidden sm:inline text-[#52706e]">·</span>
+          <span className="hidden sm:inline text-rh-ink/70">·</span>
           <a href="mailto:partners@physioaroundme.com" className="font-semibold text-rh-ink hover:underline">
             partners@physioaroundme.com
           </a>
@@ -1268,7 +1259,7 @@ export function PartnerRejectedScreen({ rejectionReason, partnerType }: { reject
             <AlertCircle className="w-7 h-7" />
           </div>
           <h2 className="text-xl font-bold text-rh-ink">{isDoctor ? "We couldn't verify your account" : "Application Not Approved"}</h2>
-          <p className="text-sm text-[#52706e]">
+          <p className="text-sm text-rh-ink/70">
             {rejectionReason ||
               (isDoctor
                 ? "We couldn't confirm your licence details."
@@ -1282,7 +1273,7 @@ export function PartnerRejectedScreen({ rejectionReason, partnerType }: { reject
               >
                 Correct my details and resubmit
               </a>
-              <p className="text-xs text-[#52706e]">
+              <p className="text-xs text-rh-ink/70">
                 Or email{" "}
                 <a href="mailto:partners@physioaroundme.com" className="font-semibold text-rh-ink hover:underline">
                   partners@physioaroundme.com

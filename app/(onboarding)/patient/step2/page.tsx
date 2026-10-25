@@ -106,7 +106,7 @@ function PatientStep2Content() {
   };
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen p-4 bg-gradient-to-br from-emerald-50 to-teal-100">
+    <div className="flex flex-col items-center justify-center min-h-screen p-4 bg-rh-canvas">
       <div className="w-full max-w-2xl p-8 space-y-6 bg-white/90 backdrop-blur-sm rounded-xl shadow-xl">
         <HealthInfoForm
           onSubmit={handleSubmit}
@@ -121,8 +121,8 @@ function PatientStep2Content() {
 export default function PatientStep2Page() {
   return (
     <Suspense fallback={
-      <div className="flex flex-col items-center justify-center min-h-screen p-4 bg-gradient-to-br from-emerald-50 to-teal-100">
-        <Loader2 className="h-8 w-8 animate-spin text-emerald-600" />
+      <div className="flex flex-col items-center justify-center min-h-screen p-4 bg-rh-canvas">
+        <Loader2 className="h-8 w-8 animate-spin text-rh-ink" />
       </div>
     }>
       <PatientStep2Content />

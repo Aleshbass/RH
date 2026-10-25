@@ -127,7 +127,7 @@ function Section() {
   ]
 
   return (
-    <section aria-labelledby="msk-program-heading" className="bg-white px-4 py-14 sm:px-6 sm:py-20">
+    <section aria-labelledby="msk-program-heading" className="bg-rh-canvas px-4 py-14 sm:px-6 sm:py-20">
       <motion.div
         initial={reduce ? false : { opacity: 0, y: 24 }}
         whileInView={{ opacity: 1, y: 0 }}
@@ -149,10 +149,7 @@ function Section() {
           )}
         >
           <div>
-            <p className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-rh-lime">
-              <span className="rounded-full bg-rh-lime px-2 py-0.5 text-[10px] tracking-wide text-rh-ink">New</span>
-              Rehabify Learn · For physiotherapists
-            </p>
+            <p className="text-sm font-semibold text-rh-lime">For physiotherapists</p>
             <h2 id="msk-program-heading" className="mt-4 text-[32px] leading-[1.08] tracking-tight text-white sm:text-[44px]">
               Become a Rehabify Certified MSK Specialist in {titleCase(cohort.duration)}
             </h2>

@@ -19,17 +19,17 @@ export function Card({
   children: React.ReactNode;
 }) {
   const content = (
-    <div className="h-full p-5 rounded-2xl bg-white/80 hover:bg-white border border-[#002e2c]/10 hover:border-[#005b57]/30 shadow-xs hover:shadow-md transition-all group flex flex-col justify-between">
+    <div className="h-full p-5 rounded-2xl bg-white/80 hover:bg-white border border-rh-ink/10 hover:border-rh-ink/25 shadow-xs hover:shadow-md transition-all group flex flex-col justify-between">
       <div>
         <div className="flex items-center justify-between gap-2 mb-2">
-          <h4 className="text-sm font-semibold text-[#002e2c] group-hover:text-[#005b57] transition-colors">
+          <h4 className="text-sm font-semibold text-rh-ink group-hover:text-rh-ink transition-colors">
             {title}
           </h4>
           {href && (
-            <ArrowUpRight className="w-4 h-4 text-[#52706e] group-hover:text-[#005b57] transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+            <ArrowUpRight className="w-4 h-4 text-rh-ink/60 group-hover:text-rh-ink transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
           )}
         </div>
-        <div className="text-xs text-[#4a6866] leading-relaxed">{children}</div>
+        <div className="text-xs text-rh-ink/65 leading-relaxed">{children}</div>
       </div>
     </div>
   );
@@ -54,12 +54,12 @@ export function Callout({
   title?: string;
   children: React.ReactNode;
 }) {
-  let icon = <Info className="w-4 h-4 text-[#005b57] flex-shrink-0 mt-0.5" />;
-  let borderClass = "border-[#005b57]/25 bg-white/70";
+  let icon = <Info className="w-4 h-4 text-rh-ink flex-shrink-0 mt-0.5" />;
+  let borderClass = "border-rh-ink/20 bg-white/70";
 
   if (type === "tip") {
-    icon = <Lightbulb className="w-4 h-4 text-emerald-600 flex-shrink-0 mt-0.5" />;
-    borderClass = "border-emerald-500/30 bg-emerald-50/50";
+    icon = <Lightbulb className="w-4 h-4 text-rh-ink flex-shrink-0 mt-0.5" />;
+    borderClass = "border-rh-lime/50 bg-rh-honeydew";
   } else if (type === "warn" || type === "warning" || type === "important") {
     icon = <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />;
     borderClass = "border-amber-500/30 bg-amber-50/50";
@@ -71,8 +71,8 @@ export function Callout({
   return (
     <div className={`p-4 rounded-2xl border ${borderClass} my-4 shadow-xs flex items-start gap-3`}>
       {icon}
-      <div className="text-xs leading-relaxed text-[#1b3a38] flex-1">
-        {title && <div className="font-semibold text-[#002e2c] mb-1">{title}</div>}
+      <div className="text-xs leading-relaxed text-rh-ink/85 flex-1">
+        {title && <div className="font-semibold text-rh-ink mb-1">{title}</div>}
         <div>{children}</div>
       </div>
     </div>
@@ -113,7 +113,7 @@ export function Blockquote({ children, className, ...props }: React.HTMLAttribut
 
   return (
     <blockquote
-      className={`border-l-4 border-[#005b57] pl-4 italic text-[#4a6866] my-4 bg-white/40 py-2 rounded-r-xl ${className || ""}`}
+      className={`border-l-4 border-rh-lime pl-4 italic text-rh-ink/70 my-4 bg-white/40 py-2 rounded-r-xl ${className || ""}`}
       {...props}
     >
       {children}
@@ -123,7 +123,7 @@ export function Blockquote({ children, className, ...props }: React.HTMLAttribut
 
 // Steps & Step
 export function Steps({ children }: { children: React.ReactNode }) {
-  return <div className="space-y-6 my-6 border-l-2 border-[#005b57]/20 ml-3 pl-6">{children}</div>;
+  return <div className="space-y-6 my-6 border-l-2 border-rh-ink/15 ml-3 pl-6">{children}</div>;
 }
 
 export function Step({
@@ -135,9 +135,9 @@ export function Step({
 }) {
   return (
     <div className="relative">
-      <div className="absolute -left-[31px] top-0 w-4 h-4 rounded-full bg-[#005b57] border-2 border-[#FAF6E7]" />
-      {title && <h4 className="text-sm font-semibold text-[#002e2c] mb-2">{title}</h4>}
-      <div className="text-xs text-[#2d4d4b] leading-relaxed">{children}</div>
+      <div className="absolute -left-[31px] top-0 w-4 h-4 rounded-full bg-rh-lime border-2 border-rh-canvas" />
+      {title && <h4 className="text-sm font-semibold text-rh-ink mb-2">{title}</h4>}
+      <div className="text-xs text-rh-ink/75 leading-relaxed">{children}</div>
     </div>
   );
 }
@@ -153,17 +153,17 @@ export function Tabs({
   const [activeIdx, setActiveIdx] = useState(0);
 
   return (
-    <div className="my-6 rounded-2xl border border-[#002e2c]/15 overflow-hidden bg-white/60 shadow-xs">
+    <div className="my-6 rounded-2xl border border-rh-ink/15 overflow-hidden bg-white/60 shadow-xs">
       {/* Tab bar */}
-      <div className="flex items-center gap-1 p-1.5 bg-[#FAF6E7] border-b border-[#002e2c]/10 overflow-x-auto">
+      <div className="flex items-center gap-1 p-1.5 bg-rh-canvas border-b border-rh-ink/10 overflow-x-auto">
         {items.map((label, idx) => (
           <button
             key={label}
             onClick={() => setActiveIdx(idx)}
             className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-all ${
               activeIdx === idx
-                ? "bg-white text-[#002e2c] font-semibold shadow-xs"
-                : "text-[#52706e] hover:text-[#002e2c]"
+                ? "bg-white text-rh-ink font-semibold shadow-xs"
+                : "text-rh-ink/60 hover:text-rh-ink"
             }`}
           >
             {label}
@@ -226,15 +226,15 @@ export function PreCode({
   };
 
   return (
-    <div className="relative group my-5 rounded-2xl overflow-hidden border border-[#002e2c]/15 bg-[#12141A] text-zinc-100 shadow-md">
+    <div className="relative group my-5 rounded-2xl overflow-hidden border border-rh-ink/15 bg-[#12141A] text-zinc-100 shadow-md">
       <div className="flex items-center justify-between px-4 py-2 bg-zinc-950/80 border-b border-white/5 text-[11px] font-mono text-zinc-400">
-        <span className="font-semibold text-teal-400 tracking-wider text-[10px] truncate pr-2">{displayLabel}</span>
+        <span className="font-semibold text-rh-lime tracking-wider text-[10px] truncate pr-2">{displayLabel}</span>
         <button
           type="button"
           onClick={handleCopy}
           className="flex items-center gap-1.5 text-zinc-400 hover:text-white px-2 py-0.5 rounded-md hover:bg-white/10 transition cursor-pointer"
         >
-          {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+          {copied ? <Check className="w-3.5 h-3.5 text-rh-lime" /> : <Copy className="w-3.5 h-3.5" />}
           <span>{copied ? "Copied" : "Copy"}</span>
         </button>
       </div>
@@ -251,9 +251,9 @@ export function PreCode({
 // Clean Apple-styled Table wrapper
 export function TableWrapper({ children, ...props }: { children?: React.ReactNode; [key: string]: any }) {
   return (
-    <div className="my-6 rounded-2xl border border-[#002e2c]/15 overflow-hidden bg-white/70 shadow-xs" {...props}>
+    <div className="my-6 rounded-2xl border border-rh-ink/15 overflow-hidden bg-white/70 shadow-xs" {...props}>
       <div className="overflow-x-auto">
-        <table className="w-full text-left border-collapse text-xs text-[#1b3a38]">
+        <table className="w-full text-left border-collapse text-xs text-rh-ink/85">
           {children}
         </table>
       </div>
@@ -275,15 +275,15 @@ export function Accordion({
 }) {
   const [open, setOpen] = useState(false);
   return (
-    <div className="border border-[#002e2c]/15 rounded-2xl overflow-hidden bg-white/70">
+    <div className="border border-rh-ink/15 rounded-2xl overflow-hidden bg-white/70">
       <button
         onClick={() => setOpen(!open)}
-        className="w-full text-left px-4 py-3 text-xs font-semibold text-[#002e2c] flex items-center justify-between hover:bg-white transition"
+        className="w-full text-left px-4 py-3 text-xs font-semibold text-rh-ink flex items-center justify-between hover:bg-white transition"
       >
         <span>{title}</span>
-        <span className="text-[#52706e]">{open ? "−" : "+"}</span>
+        <span className="text-rh-ink/60">{open ? "−" : "+"}</span>
       </button>
-      {open && <div className="p-4 pt-1 text-xs text-[#2d4d4b] leading-relaxed border-t border-[#002e2c]/10">{children}</div>}
+      {open && <div className="p-4 pt-1 text-xs text-rh-ink/75 leading-relaxed border-t border-rh-ink/10">{children}</div>}
     </div>
   );
 }
@@ -304,7 +304,7 @@ export function CodeBlockTab({ children, ...props }: any) {
 
 export function CodeBlockTabs({ children, ...props }: any) {
   return (
-    <div className="my-6 rounded-2xl border border-[#002e2c]/15 overflow-hidden bg-[#12141A] shadow-md" {...props}>
+    <div className="my-6 rounded-2xl border border-rh-ink/15 overflow-hidden bg-[#12141A] shadow-md" {...props}>
       {children}
     </div>
   );

@@ -5,7 +5,7 @@ import { pageMetadata } from '@/lib/seo/utils';
 export const metadata: Metadata = pageMetadata({
   title: 'Support a Family Member’s Recovery',
   description:
-    'Tools that help family members follow a loved one’s physiotherapy and rehabilitation: progress updates, care coordination, appointment reminders and support resources.',
+    'Arrange physiotherapy for someone you love: message Joy on WhatsApp, get matched with a licensed physiotherapist within 24 hours, and follow their care with their consent.',
   path: '/platform/family',
 });
 

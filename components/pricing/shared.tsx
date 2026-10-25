@@ -2,13 +2,14 @@
 
 /**
  * Pieces shared by /pricing and /rehabify-access: the live service catalogue (with the code
- * defaults from lib/rehabify-services.ts while it loads) and a few layout helpers. Buttons and
- * fields reuse the brand pieces in components/learn/shared.tsx.
+ * defaults from lib/rehabify-services.ts while it loads) and a few layout helpers in the landing
+ * page's style: canvas, ink and white, with lime only for the main action.
  */
 
 import type { ReactNode } from 'react'
 import { useQuery } from 'convex/react'
 import { motion, useReducedMotion } from 'framer-motion'
+import { Plus } from '@/components/icons'
 import { api } from '@/convex/_generated/api'
 import { cn } from '@/lib/utils'
 import { joyWhatsAppUrl } from '@/lib/joyWhatsApp'
@@ -77,13 +78,28 @@ export function bookWithJoyUrl(service?: Pick<CatalogueService, 'name'>, area?: 
 
 export const WHATSAPP_HELP_URL = joyWhatsAppUrl('Hi Joy! I have a question about booking physiotherapy with Rehabify.')
 
+/** Main action: lime with ink text. Add `w-full` or spacing at the call site. */
+export const ctaPrimary =
+  'group inline-flex h-12 items-center justify-center gap-2 rounded-full bg-rh-lime px-7 text-[15px] font-semibold text-rh-ink transition-colors hover:bg-rh-lime-deep focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-ink focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50'
+
+/** Second action on a light background. */
+export const ctaSecondary =
+  'inline-flex h-12 items-center justify-center gap-2 rounded-full bg-white px-7 text-[15px] font-semibold text-rh-ink ring-1 ring-inset ring-rh-ink/10 transition-colors hover:ring-rh-ink/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-ink focus-visible:ring-offset-2'
+
+/** Second action on ink. */
+export const ctaSecondaryOnDark =
+  'inline-flex h-12 items-center justify-center gap-2 rounded-full px-7 text-[15px] font-semibold text-white ring-1 ring-inset ring-white/25 transition-colors hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-lime focus-visible:ring-offset-2 focus-visible:ring-offset-rh-ink'
+
+/** Inline text link on a light background. */
+export const textLink = 'font-semibold text-rh-ink underline decoration-rh-ink/30 underline-offset-4 transition-colors hover:decoration-rh-ink'
+
 export function SectionHeading({
-  eyebrow,
   title,
   description,
   center = false,
   onDark = false,
 }: {
+  /** @deprecated No longer shown: headings stand on their own. Kept so older callers still compile. */
   eyebrow?: string
   title: string
   description?: ReactNode
@@ -92,12 +108,19 @@ export function SectionHeading({
 }) {
   return (
     <div className={cn('max-w-2xl', center && 'mx-auto text-center')}>
-      {eyebrow && (
-        <p className={cn('mb-3 text-xs font-semibold uppercase tracking-[0.16em]', onDark ? 'text-rh-mint' : 'text-rh-teal')}>{eyebrow}</p>
-      )}
-      <h2 className={cn('text-[30px] leading-[1.1] tracking-tight sm:text-[42px]', onDark ? 'text-white' : 'text-rh-night')}>{title}</h2>
+      <h2 className={cn('text-[34px] font-bold leading-[1.05] tracking-tight sm:text-5xl', onDark ? 'text-white' : 'text-rh-ink')}>
+        {title}
+      </h2>
       {description && (
-        <p className={cn('mt-4 text-lg font-medium leading-relaxed', onDark ? 'text-white' : 'text-rh-night/85')}>{description}</p>
+        <p
+          className={cn(
+            'mt-4 max-w-xl text-base font-medium leading-relaxed sm:text-lg',
+            center && 'mx-auto',
+            onDark ? 'text-white/75' : 'text-rh-ink/75'
+          )}
+        >
+          {description}
+        </p>
       )}
     </div>
   )
@@ -107,8 +130,8 @@ export function SectionHeading({
 export function ListItem({ children, onDark = false }: { children: ReactNode; onDark?: boolean }) {
   return (
     <li className="flex items-start gap-3">
-      <span aria-hidden className={cn('mt-[9px] h-1.5 w-1.5 shrink-0 rounded-full', onDark ? 'bg-rh-lime' : 'bg-rh-teal')} />
-      <span className={cn('text-[15px] font-medium leading-6', onDark ? 'text-white' : 'text-rh-night')}>{children}</span>
+      <span aria-hidden className={cn('mt-[9px] h-1.5 w-1.5 shrink-0 rounded-full', onDark ? 'bg-rh-lime' : 'bg-rh-ink/40')} />
+      <span className={cn('text-[15px] font-medium leading-6', onDark ? 'text-white/85' : 'text-rh-ink/80')}>{children}</span>
     </li>
   )
 }
@@ -128,17 +151,15 @@ export function FadeUp({ children, className, delay = 0 }: { children: ReactNode
   )
 }
 
-/** A question and answer that opens in place (no script needed). */
+/** A question and answer that opens in place (no script needed). Wrap a list of them in `border-b border-rh-ink/10`. */
 export function FaqItem({ question, children }: { question: string; children: ReactNode }) {
   return (
-    <details className="group border-b border-rh-night/10 py-5">
-      <summary className="flex cursor-pointer list-none items-start justify-between gap-4 text-left text-[17px] font-semibold text-rh-night [&::-webkit-details-marker]:hidden">
+    <details className="group border-t border-rh-ink/10">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-6 py-6 text-left text-lg font-semibold leading-snug text-rh-ink sm:text-xl [&::-webkit-details-marker]:hidden">
         {question}
-        <span aria-hidden className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center text-2xl leading-none text-rh-teal transition group-open:rotate-45">
-          +
-        </span>
+        <Plus aria-hidden className="h-4 w-4 shrink-0 transition-transform duration-300 group-open:rotate-45 motion-reduce:transition-none" />
       </summary>
-      <div className="pt-3 text-[15px] font-medium leading-7 text-rh-night/80">{children}</div>
+      <div className="-mt-2 max-w-2xl pb-6 text-[15px] font-medium leading-relaxed text-rh-ink/70 sm:text-base">{children}</div>
     </details>
   )
 }

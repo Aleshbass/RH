@@ -1,50 +1,32 @@
 "use client";
 
-import PlatformPageLayout from "@/components/platform/PlatformPageLayout";
-import { Heart, PlayCircle, MessageCircle, CalendarCheck, TrendingUp, Shield } from "@/components/icons";
+import PlatformPageLayout, { type PlatformFeature } from "@/components/platform/PlatformPageLayout";
+
+const FEATURES: PlatformFeature[] = [
+  { title: "Talk to Joy", description: "Tell Joy what's wrong on WhatsApp to get started." },
+  { title: "A licensed physiotherapist", description: "Every Rehabify physio is licensed by the MRTBN." },
+  { title: "Clinic, home or online", description: "See your physio where it suits you, depending on your needs and area." },
+  { title: "Exercises with 3D demonstrations", description: "Follow your exercise programme with clear 3D demonstrations." },
+  { title: "Your patient portal", description: "See your appointments and message your physio in one place." },
+  { title: "Pay later with MediLoan", description: "Spread the cost with MediLoan, subject to approval." },
+];
 
 export default function PatientsPage() {
-  const features = [
-    {
-      title: "Personalized Care Plans",
-      description: "Receive a recovery plan tailored specifically to your injury, goals, and lifestyle by a licensed physiotherapist.",
-      icon: <Heart className="h-6 w-6" />,
-    },
-    {
-      title: "Guided Exercise Videos",
-      description: "Never guess if you're doing it right. Follow along with clear, high-definition videos for every exercise in your plan.",
-      icon: <PlayCircle className="h-6 w-6" />,
-    },
-    {
-      title: "Chat with Your Physio",
-      description: "Have questions? Message your physiotherapist directly through the app for guidance and support whenever you need it.",
-      icon: <MessageCircle className="h-6 w-6" />,
-    },
-    {
-      title: "Easy Booking",
-      description: "Schedule video consultations or in-person visits with just a few taps. Manage your appointments effortlessly.",
-      icon: <CalendarCheck className="h-6 w-6" />,
-    },
-    {
-      title: "Track Your Progress",
-      description: "See how far you've come with visual progress tracking. Celebrate milestones and stay motivated on your road to recovery.",
-      icon: <TrendingUp className="h-6 w-6" />,
-    },
-    {
-      title: "Private & Secure",
-      description: "Your health data is yours. We use bank-level encryption to ensure your personal information stays private and secure.",
-      icon: <Shield className="h-6 w-6" />,
-    },
-  ];
-
   return (
     <PlatformPageLayout
-      title="For Patients"
-      subtitle="Personalized rehabilitation programs"
-      description="Recover faster and better with a dedicated team by your side. Rehabify Health connects you with top physiotherapists and gives you the tools to take control of your health."
-      features={features}
-      ctaText="Start Your Recovery"
+      title="Start your recovery on WhatsApp."
+      description="Tell Joy what hurts and get matched with an MRTBN-licensed physiotherapist, usually within 24 hours."
+      features={FEATURES}
+      featuresTitle="How Rehabify works for you"
+      ctaText="Start your recovery"
       ctaLink="/start-treatment"
+      image={{
+        src: "/logos/images/Group 469272 (1).webp",
+        alt: "A Rehabify physiotherapist treating a patient",
+        position: "center 15%",
+      }}
+      closingTitle="Ready to feel better?"
+      closingText="Start today and Joy will guide you through the next steps."
     />
   );
 }

@@ -5,7 +5,7 @@ import { pageMetadata } from '@/lib/seo/utils';
 export const metadata: Metadata = pageMetadata({
   title: 'Software for Physiotherapists',
   description:
-    'Treatment plans, remote monitoring, patient messaging, automated documentation and online bookings for physiotherapists in Nigeria, with patient referrals through the Rehabify marketplace.',
+    'Get matched with patients in Nigeria and treat them in one workspace: SOAP notes, care plan templates, a 3D exercise library, video calls and messages, and a fixed payout per completed session.',
   path: '/platform/physiotherapists',
 });
 

@@ -6,16 +6,12 @@ import Link from 'next/link'
 import { useQuery } from 'convex/react'
 import { motion, useReducedMotion } from 'framer-motion'
 import {
-  Activity,
   ArrowRight,
   Award,
   BadgeCheck,
-  Brain,
   CalendarDays,
   ChevronDown,
   Clock3,
-  Dumbbell,
-  HeartHandshake,
   Lock,
   MonitorPlay,
   PlayCircle,
@@ -50,30 +46,10 @@ type RegistrationContext = {
 }
 
 const SKILLS = [
-  {
-    icon: Activity,
-    title: 'MSK assessment',
-    body: 'A structured exam for common MSK problems.',
-    tone: 'bg-rh-jasmine',
-  },
-  {
-    icon: Brain,
-    title: 'Clinical reasoning',
-    body: 'From findings to a clear diagnosis and plan.',
-    tone: 'bg-rh-rose',
-  },
-  {
-    icon: HeartHandshake,
-    title: 'Patient management',
-    body: 'Set expectations and keep patients engaged.',
-    tone: 'bg-rh-peach',
-  },
-  {
-    icon: Dumbbell,
-    title: 'Rehabilitation',
-    body: 'Prescribe and progress exercise that works.',
-    tone: 'bg-rh-honeydew',
-  },
+  { title: 'MSK assessment', body: 'A structured exam for common MSK problems.' },
+  { title: 'Clinical reasoning', body: 'From findings to a clear diagnosis and plan.' },
+  { title: 'Patient management', body: 'Set expectations and keep patients engaged.' },
+  { title: 'Rehabilitation', body: 'Prescribe and progress exercise that works.' },
 ]
 
 function SectionHeading({
@@ -269,24 +245,25 @@ function Hero({ cohort }: { cohort: PublicCohort | null | undefined }) {
 
 function Skills() {
   return (
-    <section className="bg-white px-4 py-20 sm:px-6 lg:py-28">
+    <section className="bg-white px-4 py-16 sm:px-6 lg:py-20">
       <div className="mx-auto max-w-6xl">
         <FadeUp>
           <SectionHeading eyebrow="What you'll build" title="Practical skills for your next patient" />
         </FadeUp>
-        <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {SKILLS.map((skill, i) => (
-            <FadeUp key={skill.title} delay={i * 0.06}>
-              <article className={cn('flex h-full min-h-[250px] flex-col rounded-[1.75rem] p-6 sm:p-7', skill.tone)}>
-                <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/70 text-rh-ink">
-                  <skill.icon className="h-5 w-5" />
+        {/* A short numbered list: the content is one line per skill, so no cards */}
+        <FadeUp delay={0.06}>
+          <ol className="mt-10 grid gap-x-12 sm:grid-cols-2">
+            {SKILLS.map((skill, i) => (
+              <li key={skill.title} className="flex gap-5 border-t border-rh-ink/10 py-5">
+                <span className="w-6 shrink-0 pt-0.5 text-sm tabular-nums text-rh-ink/40">{String(i + 1).padStart(2, '0')}</span>
+                <span>
+                  <span className="block text-[17px] font-semibold leading-snug text-rh-ink">{skill.title}</span>
+                  <span className="mt-1 block text-sm leading-6 text-rh-ink/65">{skill.body}</span>
                 </span>
-                <h3 className="mt-auto pt-10 text-[22px] leading-tight text-rh-ink">{skill.title}</h3>
-                <p className="mt-2 text-[15px] leading-6 text-rh-ink/70">{skill.body}</p>
-              </article>
-            </FadeUp>
-          ))}
-        </div>
+              </li>
+            ))}
+          </ol>
+        </FadeUp>
       </div>
     </section>
   )

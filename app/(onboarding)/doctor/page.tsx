@@ -8,7 +8,7 @@ import { useUser } from '@clerk/nextjs';
 import { useMutation, useQuery } from 'convex/react';
 import { toast } from 'sonner';
 import { api } from '@/convex/_generated/api';
-import { ArrowRight, Loader2, ShieldCheck, Stethoscope, UserPlus, Wallet } from '@/components/icons';
+import { ArrowRight, Loader2, ShieldCheck, UserPlus, Wallet } from '@/components/icons';
 import { errorMessage, inputCls, labelCls } from '@/components/partners/portal/shared';
 
 type DoctorProfile = {
@@ -81,7 +81,7 @@ export default function DoctorOnboardingPage() {
     };
 
     return (
-        <div className="min-h-screen bg-[#FAF6E7] text-[#002e2c] px-4 py-10 sm:py-14">
+        <div className="min-h-screen bg-rh-canvas text-[#002e2c] px-4 py-10 sm:py-14">
             <div className="max-w-2xl mx-auto space-y-6">
                 <div className="flex items-center justify-between">
                     <Link href="/" aria-label="Rehabify home">
@@ -92,10 +92,6 @@ export default function DoctorOnboardingPage() {
 
                 <div className="bg-white rounded-3xl border border-[#002e2c]/10 p-6 sm:p-8 shadow-xs space-y-6">
                     <div className="space-y-2">
-                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#FAF6E7] border border-[#002e2c]/10 text-[11px] font-semibold uppercase tracking-wider text-[#52706e]">
-                            <Stethoscope className="w-3.5 h-3.5" />
-                            Step 1 of 1
-                        </span>
                         <h1 className="text-2xl font-semibold tracking-tight">
                             {name ? `Welcome, ${name}` : 'Set up your referral account'}
                         </h1>

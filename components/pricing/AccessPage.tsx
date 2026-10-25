@@ -1,83 +1,56 @@
 'use client'
 
-import type { ComponentType } from 'react'
 import Link from 'next/link'
-import { ArrowRight, BadgeCheck, ClipboardCheck, FileText, HeartHandshake, Lock, Scale, Search, Stethoscope, Users } from '@/components/icons'
-import { CheckItem, pillOutline, pillTeal } from '@/components/learn/shared'
-import { cn } from '@/lib/utils'
+import { ArrowRight } from '@/components/icons'
+import { CheckItem } from '@/components/learn/shared'
 import { AccessApplication } from './AccessApplication'
-import { FadeUp, FaqItem, SectionHeading } from './shared'
+import { ctaPrimary, ctaSecondary, FadeUp, FaqItem, SectionHeading, textLink } from './shared'
+
+const PROMISES = [
+  { title: 'The same clinical standards', body: 'Qualified Rehabify physiotherapists. Not a lower-quality service.' },
+  { title: 'Fair and consistent', body: 'Every application reviewed against the same criteria.' },
+  { title: 'Only what we need', body: 'Income in ranges, no documents up front.' },
+]
 
 const WHO_FOR = [
   "You've lost your job or income, including partway through treatment",
   "Your income doesn't stretch to the cost of the care you need",
   "You're a student, retired or not currently working",
-  "Your HMO, employer or family can only cover part of it",
+  'Your HMO, employer or family can only cover part of it',
   "You're applying for someone you care for",
 ]
 
-const STEPS: { icon: ComponentType<{ className?: string }>; title: string; body: string }[] = [
-  {
-    icon: FileText,
-    title: 'Apply',
-    body: 'A short form from your Rehabify patient account. It takes about five minutes.',
-  },
-  {
-    icon: Search,
-    title: 'We review',
-    body: 'Every application is reviewed individually, against the same criteria. We may get in touch to confirm a few details.',
-  },
-  {
-    icon: Users,
-    title: "You're matched",
-    body: "If you're approved, we match you with a Rehabify physiotherapist and confirm which sessions your Access rate covers.",
-  },
-  {
-    icon: Stethoscope,
-    title: 'Book and recover',
-    body: 'Book through your account at your Access rate. Same assessment, same treatment, same standards.',
-  },
+const STEPS = [
+  { title: 'Apply', body: 'A short form from your Rehabify patient account. About five minutes.' },
+  { title: 'We review', body: 'Each application is reviewed against the same criteria. We may get in touch to confirm details.' },
+  { title: "You're matched", body: 'If approved, we match you with a Rehabify physiotherapist and confirm which sessions your Access rate covers.' },
+  { title: 'Book and recover', body: 'Book through your account at your Access rate. Same care, same standards.' },
 ]
 
-const WE_ASK: { icon: ComponentType<{ className?: string }>; title: string; body: string }[] = [
-  {
-    icon: ClipboardCheck,
-    title: 'What you need help with',
-    body: 'The care you need and a line about your condition, so the right clinician reviews it.',
-  },
-  {
-    icon: Scale,
-    title: 'Your situation, in ranges',
-    body: 'What best describes your circumstances and a monthly income band. Never exact figures or payslips.',
-  },
-  {
-    icon: HeartHandshake,
-    title: 'Any other help you have',
-    body: 'HMO, employer or family support, so Access reaches the people who need it most.',
-  },
-  {
-    icon: Lock,
-    title: 'Nothing more',
-    body: 'No documents up front. We may ask to verify some details during review, and we only use them to assess your application.',
-  },
+const WE_ASK = [
+  { title: 'What you need help with', body: 'The care you need and a line about your condition.' },
+  { title: 'Your situation, in ranges', body: 'Your circumstances and a monthly income band. Never exact figures or payslips.' },
+  { title: 'Any other help you have', body: 'HMO, employer or family support, so Access reaches the people who need it most.' },
+  { title: 'Nothing more', body: 'No documents up front. If we verify details during review, we only use them to assess your application.' },
 ]
+
+const number = (i: number) => String(i + 1).padStart(2, '0')
 
 export function AccessPage() {
   return (
-    <div className="bg-rh-cream">
+    <div className="overflow-x-clip bg-rh-canvas text-rh-ink">
       <Hero />
 
-      <section className="bg-white px-4 py-20 sm:px-6 lg:py-28">
-        <div className="mx-auto grid max-w-6xl gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:gap-16">
+      <section className="px-4 py-20 sm:px-6 lg:py-28">
+        <div className="mx-auto grid max-w-6xl gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:items-start lg:gap-16">
           <FadeUp>
             <SectionHeading
-              eyebrow="Who it's for"
               title="For people who need rehab but are worried about the cost"
-              description="If any of these sound like you, you can apply. If you're not sure, apply anyway and we'll look at your situation."
+              description="If any of these sound like you, apply. Not sure? Apply anyway and we'll look at your situation."
             />
           </FadeUp>
           <FadeUp delay={0.06}>
-            <ul className="space-y-4 rounded-[2rem] bg-rh-cream p-7 sm:p-9">
+            <ul className="space-y-4 rounded-[2rem] bg-white p-7 sm:p-9">
               {WHO_FOR.map((item) => (
                 <CheckItem key={item}>{item}</CheckItem>
               ))}
@@ -86,71 +59,59 @@ export function AccessPage() {
         </div>
       </section>
 
-      <section className="px-4 py-20 sm:px-6 lg:py-28">
+      <section className="bg-rh-ink px-4 py-20 text-white sm:px-6 lg:py-28">
         <div className="mx-auto max-w-6xl">
           <FadeUp>
-            <SectionHeading eyebrow="How it works" title="Four steps, and the same care at the end" />
+            <SectionHeading onDark title="Four steps, and the same care at the end" />
           </FadeUp>
-          <FadeUp>
-            <ol className="mt-10 grid gap-4 sm:grid-cols-2 lg:mt-12 lg:grid-cols-4">
+          <FadeUp delay={0.05}>
+            <ol className="mt-12 grid gap-x-8 sm:grid-cols-2 lg:mt-14 lg:grid-cols-4">
               {STEPS.map((step, i) => (
-                <li key={step.title} className="h-full rounded-[1.75rem] bg-white p-6 shadow-soft">
-                  <div className="flex items-center justify-between">
-                    <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-rh-honeydew text-rh-teal">
-                      <step.icon className="h-5 w-5" />
-                    </span>
-                    <span aria-hidden className="text-sm font-semibold text-rh-night/35">
-                      0{i + 1}
-                    </span>
-                  </div>
-                  <h3 className="mt-5 text-lg leading-snug text-rh-night">{step.title}</h3>
-                  <p className="mt-2 text-[15px] leading-6 text-rh-night/65">{step.body}</p>
+                <li key={step.title} className="border-t border-white/10 py-6">
+                  <span aria-hidden className="text-sm font-semibold tabular-nums text-white/40">
+                    {number(i)}
+                  </span>
+                  <h3 className="mt-3 text-[20px] font-bold leading-snug tracking-tight text-white">{step.title}</h3>
+                  <p className="mt-2 text-[15px] font-medium leading-6 text-white/70">{step.body}</p>
                 </li>
               ))}
             </ol>
           </FadeUp>
-          <p className="mt-6 max-w-3xl text-sm leading-6 text-rh-night/60">
-            Already being treated by a Rehabify physiotherapist? Say so on the form and, where we can, we&apos;ll keep you with
-            them.
+          <p className="mt-8 max-w-2xl text-[15px] font-medium leading-6 text-white/60">
+            Already being treated by a Rehabify physiotherapist? Say so on the form and, where we can, we&apos;ll keep you with them.
           </p>
         </div>
       </section>
 
-      <section className="bg-white px-4 py-20 sm:px-6 lg:py-28">
+      <section className="px-4 py-20 sm:px-6 lg:py-28">
         <div className="mx-auto max-w-6xl">
           <FadeUp>
-            <SectionHeading
-              eyebrow="What we ask, and why"
-              title="We only ask what we need"
-              description="Applying shouldn't feel like an interrogation. Here's everything the form covers."
-            />
+            <SectionHeading title="We only ask what we need" description="Here's everything the form covers." />
           </FadeUp>
-          <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:mt-12">
+          <ol className="mt-10 grid gap-x-10 sm:grid-cols-2 lg:mt-12">
             {WE_ASK.map((item, i) => (
-              <FadeUp key={item.title} delay={i * 0.05}>
-                <div className="flex h-full items-start gap-4 rounded-[1.75rem] bg-rh-cream p-6">
-                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white text-rh-teal">
-                    <item.icon className="h-5 w-5" />
-                  </span>
-                  <div className="min-w-0">
-                    <h3 className="text-lg leading-snug text-rh-night">{item.title}</h3>
-                    <p className="mt-1.5 text-[15px] leading-6 text-rh-night/65">{item.body}</p>
-                  </div>
+              <li key={item.title} className="flex gap-4 border-t border-rh-ink/10 py-5">
+                <span aria-hidden className="w-6 shrink-0 pt-0.5 text-sm font-semibold tabular-nums text-rh-ink/40">
+                  {number(i)}
+                </span>
+                <div className="min-w-0">
+                  <h3 className="text-lg font-bold leading-snug tracking-tight text-rh-ink">{item.title}</h3>
+                  <p className="mt-1 text-[15px] font-medium leading-6 text-rh-ink/70">{item.body}</p>
                 </div>
-              </FadeUp>
+              </li>
             ))}
-          </div>
+          </ol>
           <FadeUp>
-            <div className="mt-6 rounded-[1.75rem] bg-rh-peach p-6 sm:p-7">
-              <p className="font-semibold text-rh-night">Places are limited</p>
-              <p className="mt-1.5 text-[15px] leading-6 text-rh-night/75">
-                Rehabify Access depends on programme capacity, so assisted rates aren&apos;t guaranteed for everyone who applies.
-                If we can&apos;t offer a place straight away, we may add you to the waiting list. In the meantime you can book at our{' '}
-                <Link href="/pricing" className="font-semibold text-rh-night underline underline-offset-2">
+            <div className="mt-8 rounded-[2rem] bg-white p-7 sm:p-9">
+              <p className="text-lg font-bold text-rh-ink">Places are limited</p>
+              <p className="mt-2 max-w-3xl text-[15px] font-medium leading-6 text-rh-ink/70 sm:text-base">
+                Access depends on programme capacity, so assisted rates aren&apos;t guaranteed. If there&apos;s no place straight
+                away, we may add you to the waiting list. Meanwhile, book at our{' '}
+                <Link href="/pricing" className={textLink}>
                   standard prices
                 </Link>{' '}
                 or spread the cost with{' '}
-                <Link href="/pricing#mediloan" className="font-semibold text-rh-night underline underline-offset-2">
+                <Link href="/pricing#mediloan" className={textLink}>
                   MediLoan
                 </Link>
                 .
@@ -160,14 +121,10 @@ export function AccessPage() {
         </div>
       </section>
 
-      <section id="apply" className="scroll-mt-20 px-4 py-20 sm:px-6 lg:py-28">
+      <section id="apply" className="scroll-mt-20 px-4 pb-20 pt-4 sm:px-6 lg:pb-28">
         <div className="mx-auto max-w-3xl">
           <FadeUp>
-            <SectionHeading
-              eyebrow="Apply"
-              title="Apply for Assisted Care"
-              description="Tell us a little about your situation. It takes about five minutes."
-            />
+            <SectionHeading title="Apply for Assisted Care" description="Tell us a little about your situation. It takes about five minutes." />
           </FadeUp>
           <div className="mt-10">
             <AccessApplication />
@@ -175,27 +132,27 @@ export function AccessPage() {
         </div>
       </section>
 
-      <section className="bg-white px-4 py-20 sm:px-6 lg:py-28">
-        <div className="mx-auto max-w-3xl">
+      <section className="px-4 pb-20 pt-4 sm:px-6 lg:pb-28">
+        <div className="mx-auto grid max-w-6xl gap-10 lg:grid-cols-[0.8fr_1.2fr] lg:gap-16">
           <FadeUp>
-            <SectionHeading eyebrow="Questions" title="Rehabify Access, answered" center />
+            <h2 className="text-[34px] font-bold leading-[1.05] tracking-tight text-rh-ink sm:text-5xl">Rehabify Access, answered</h2>
           </FadeUp>
-          <div className="mt-10">
+          <div className="border-b border-rh-ink/10">
             <FaqItem question="Is assisted care a lower-quality service?">
-              No. You see a qualified Rehabify physiotherapist, with the same assessment, treatment and clinical standards as
-              any other patient. Only the price is different.
+              No. You see a qualified Rehabify physiotherapist, with the same assessment, treatment and clinical standards as any
+              other patient. Only the price is different.
             </FaqItem>
             <FaqItem question="How do you decide who gets a place?">
-              Every application is reviewed individually, against the same criteria: your clinical need, your circumstances
-              and any other help you have. Places also depend on how much capacity the programme has at the time.
+              Every application is reviewed against the same criteria: your clinical need, your circumstances and any other help
+              you have. Places also depend on the programme&apos;s capacity at the time.
             </FaqItem>
             <FaqItem question="Do I need to send documents?">
-              Not to apply. We ask for an income range, not exact figures. If we need to verify anything, we&apos;ll get in
-              touch during the review.
+              Not to apply. We ask for an income range, not exact figures. If we need to verify anything, we&apos;ll get in touch
+              during the review.
             </FaqItem>
             <FaqItem question="Can I book while I wait for a decision?">
               Yes. You can book at our{' '}
-              <Link href="/pricing" className="font-semibold text-rh-teal underline-offset-4 hover:underline">
+              <Link href="/pricing" className={textLink}>
                 standard prices
               </Link>{' '}
               at any time. An Access rate applies to sessions booked after you&apos;re approved.
@@ -204,7 +161,7 @@ export function AccessPage() {
               No. Rehabify Access is our own assisted care programme, offering reduced fees or flexible arrangements to eligible
               patients. MediLoan is healthcare financing from our partner MyItura: you pay for care now and repay MyItura over
               time.{' '}
-              <Link href="/partners/mediloan" className="font-semibold text-rh-teal underline-offset-4 hover:underline">
+              <Link href="/partners/mediloan" className={textLink}>
                 About MediLoan
               </Link>
             </FaqItem>
@@ -217,50 +174,40 @@ export function AccessPage() {
 
 function Hero() {
   return (
-    <section className="px-4 pb-16 pt-24 sm:px-6 sm:pt-28 lg:pb-20">
-      <div className="mx-auto max-w-6xl">
-        <div className="grid gap-12 py-4 sm:py-8 lg:grid-cols-[1.15fr_0.85fr] lg:items-center lg:gap-14">
-          <div>
-            <span className="inline-flex items-center gap-2 rounded-full bg-white px-3.5 py-1.5 text-xs font-semibold tracking-wide text-rh-teal ring-1 ring-inset ring-rh-night/10">
-              <span className="h-1.5 w-1.5 rounded-full bg-rh-lime" />
-              Rehabify Access · Assisted care
-            </span>
-            <h1 className="mt-6 text-[38px] leading-[1.05] tracking-tight text-rh-night sm:text-[52px] lg:text-[56px]">
-              Cost shouldn&apos;t stand between you and recovery
-            </h1>
-            <p className="mt-6 max-w-xl text-lg leading-relaxed text-rh-night/70">
-              Financial circumstances shouldn&apos;t prevent appropriate recovery care. If you need rehabilitation but are
-              worried about the cost, apply for Rehabify Access. Eligible patients may get reduced-fee physiotherapy or a
-              flexible arrangement.
-            </p>
-            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-              <a href="#apply" className={cn(pillTeal, 'h-12 px-7 text-[15px]')}>
-                Apply for Assisted Care <ArrowRight className="h-4 w-4" />
-              </a>
-              <Link href="/pricing" className={cn(pillOutline, 'h-12 px-7 text-[15px]')}>
-                See our standard prices
-              </Link>
-            </div>
+    <section className="px-4 pb-16 pt-28 sm:px-6 sm:pt-32 lg:pb-20 lg:pt-40">
+      <div className="mx-auto grid max-w-6xl gap-12 lg:grid-cols-[1.15fr_0.85fr] lg:items-center lg:gap-16">
+        <FadeUp>
+          <h1 className="text-[40px] font-bold leading-[1.04] tracking-tight text-rh-ink sm:text-[56px] lg:text-[60px]">
+            Cost shouldn&apos;t stand between you and recovery
+          </h1>
+          <p className="mt-6 max-w-xl text-lg font-medium leading-relaxed text-rh-ink/75">
+            Rehabify Access offers eligible patients reduced-fee physiotherapy or a flexible arrangement.
+          </p>
+          <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+            <a href="#apply" className={ctaPrimary}>
+              Apply for Assisted Care <ArrowRight className="h-4 w-4 transition-transform duration-300 group-hover:translate-x-1" />
+            </a>
+            <Link href="/pricing" className={ctaSecondary}>
+              See our standard prices
+            </Link>
           </div>
+        </FadeUp>
 
-          <ul className="space-y-3">
-            {[
-              { icon: BadgeCheck, title: 'The same clinical standards', body: 'Qualified Rehabify physiotherapists. Not a lower-quality service.' },
-              { icon: Scale, title: 'Fair and consistent', body: 'Every application reviewed individually, against the same criteria.' },
-              { icon: Lock, title: 'Only what we need', body: 'Income in ranges, no documents up front.' },
-            ].map((item) => (
-              <li key={item.title} className="flex items-start gap-3.5 rounded-[1.5rem] bg-white p-5 shadow-soft">
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-rh-honeydew text-rh-teal">
-                  <item.icon className="h-[18px] w-[18px]" />
+        <FadeUp delay={0.08}>
+          <ol className="rounded-[2rem] bg-white px-7 py-3 sm:px-9 sm:py-4">
+            {PROMISES.map((item, i) => (
+              <li key={item.title} className="flex gap-4 border-t border-rh-ink/10 py-5 first:border-t-0">
+                <span aria-hidden className="w-6 shrink-0 pt-0.5 text-sm font-semibold tabular-nums text-rh-ink/40">
+                  {number(i)}
                 </span>
                 <div className="min-w-0">
-                  <p className="text-[15px] font-semibold leading-snug text-rh-night">{item.title}</p>
-                  <p className="mt-1 text-sm leading-5 text-rh-night/60">{item.body}</p>
+                  <p className="text-base font-semibold leading-snug text-rh-ink">{item.title}</p>
+                  <p className="mt-1 text-[15px] font-medium leading-6 text-rh-ink/65">{item.body}</p>
                 </div>
               </li>
             ))}
-          </ul>
-        </div>
+          </ol>
+        </FadeUp>
       </div>
     </section>
   )

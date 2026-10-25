@@ -36,6 +36,7 @@ import {
   LogOut,
   type IconComponent,
 } from '@/components/icons'
+import { WebsiteLink } from '@/components/dashboard/shared/WebsiteLink'
 
 interface SidebarProps {
   className?: string
@@ -218,6 +219,10 @@ export default function ClinicSidebar({ className, onNavigate, collapsible = tru
           <Link href="/dashboard/clinic" onClick={onNavigate} className="min-w-0">
             <ClinicBrand />
           </Link>
+        )}
+        {/* Back to the public site; the mobile top bar has its own */}
+        {!collapsed && collapsible && (
+          <WebsiteLink tone="console" className="ml-auto mr-1 h-8 w-8 px-0 shadow-none ring-1 ring-inset ring-black/[0.06] [&>span]:hidden" />
         )}
         {collapsible && (
           <Button

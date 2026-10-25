@@ -1,16 +1,18 @@
 'use client'
 
-import type { ComponentType } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
-import { ArrowRight, BadgeCheck, CalendarCheck, HeartHandshake, Receipt, Wallet } from '@/components/icons'
-import { displayFont, pillGhostOnDark, pillLime, pillOutline, pillTeal } from '@/components/learn/shared'
+import { ArrowRight } from '@/components/icons'
+import { displayFont } from '@/components/learn/shared'
 import { joyWhatsAppUrl } from '@/lib/joyWhatsApp'
 import { formatKobo } from '@/lib/rehabify-services'
 import { cn } from '@/lib/utils'
 import { CareChooser } from './CareChooser'
 import {
   bookWithJoyUrl,
+  ctaPrimary,
+  ctaSecondary,
+  ctaSecondaryOnDark,
   FadeUp,
   FaqItem,
   findService,
@@ -18,6 +20,7 @@ import {
   SectionHeading,
   servicePrice,
   showsPrice,
+  textLink,
   useCatalogue,
   WHATSAPP_HELP_URL,
   type Catalogue,
@@ -27,11 +30,11 @@ import {
 const MEDILOAN_LOGO = 'https://loans.myitura.com/static/assets/logos/mediloan.svg?v=a5762be08a39'
 const ASSESSMENT_WITH_JOY_URL = joyWhatsAppUrl("Hi Joy! I'd like to book a physiotherapy assessment.")
 
-const TRUST: { icon: ComponentType<{ className?: string }>; title: string; body: string }[] = [
-  { icon: Receipt, title: 'The price you see is the price you pay', body: 'No booking or platform fee at checkout.' },
-  { icon: Wallet, title: 'No subscriptions — pay per session', body: 'Pay for each session as you go.' },
-  { icon: CalendarCheck, title: 'Confirmed once paid', body: "Pick a time from your physio's availability. It's yours once you've paid." },
-  { icon: BadgeCheck, title: 'Same price whichever physiotherapist', body: 'Standard prices across the Rehabify network.' },
+const PROMISES = [
+  { title: 'The price you see is the price you pay', body: 'No booking or platform fee at checkout.' },
+  { title: 'No subscriptions', body: 'Pay for each session as you go.' },
+  { title: 'Confirmed once paid', body: "Pick a time. It's yours once you've paid." },
+  { title: 'Same price, any physiotherapist', body: 'Standard prices across the Rehabify network.' },
 ]
 
 const PRICE_GROUPS = [
@@ -40,13 +43,15 @@ const PRICE_GROUPS = [
   { title: 'Treatment and follow-up', ids: ['virtual_treatment', 'home_treatment'] },
 ]
 
+const arrow = 'h-4 w-4 transition-transform duration-300 group-hover:translate-x-1'
+const number = (i: number) => String(i + 1).padStart(2, '0')
 const lowerFirst = (text: string) => text.charAt(0).toLowerCase() + text.slice(1)
 
 export function PricingPage({ initialCatalogue }: { initialCatalogue: Catalogue | null }) {
   const catalogue = useCatalogue(initialCatalogue)
 
   return (
-    <div className="bg-rh-canvas">
+    <div className="overflow-x-clip bg-rh-canvas text-rh-ink">
       <Hero consultation={findService(catalogue, 'recovery_consultation')} />
 
       <section id="find-your-care" className="scroll-mt-20 px-4 py-20 sm:px-6 lg:py-28">
@@ -54,7 +59,7 @@ export function PricingPage({ initialCatalogue }: { initialCatalogue: Catalogue 
           <FadeUp>
             <SectionHeading
               title="A few questions to the right session"
-              description="Tell us where you are in your recovery and how you'd like to be seen. We'll show you the right session and what's included."
+              description="Answer a few questions and we'll show you the right session."
             />
           </FadeUp>
           <div className="mt-10 lg:mt-12">
@@ -73,103 +78,102 @@ export function PricingPage({ initialCatalogue }: { initialCatalogue: Catalogue 
 function Hero({ consultation }: { consultation: CatalogueService }) {
   const price = formatKobo(consultation.priceKobo)
   return (
-    <section className="px-4 pb-16 pt-24 sm:px-6 sm:pt-28 lg:pb-20">
+    <section className="px-4 pb-16 pt-28 sm:px-6 sm:pt-32 lg:pb-20 lg:pt-40">
       <div className="mx-auto max-w-6xl">
-        <div className="grid gap-12 py-4 sm:py-8 lg:grid-cols-[1.1fr_0.9fr] lg:items-center lg:gap-14">
-          <div>
-            <h1 className="text-[40px] leading-[1.04] tracking-tight text-rh-night sm:text-[56px] lg:text-[60px]">
+        <div className="grid gap-12 lg:grid-cols-[1.1fr_0.9fr] lg:items-center lg:gap-16">
+          <FadeUp>
+            <h1 className="text-[40px] font-bold leading-[1.04] tracking-tight text-rh-ink sm:text-[56px] lg:text-[64px]">
               Not sure where to start?
             </h1>
-            <p className="mt-6 max-w-xl text-lg font-medium leading-relaxed text-rh-night/85">
-              Book a {consultation.durationLabel} Recovery Consultation. A physiotherapist listens, checks what&apos;s going on and
-              tells you the right next step, and what it costs.
+            <p className="mt-6 max-w-xl text-lg font-medium leading-relaxed text-rh-ink/75">
+              Book a {consultation.durationLabel} Recovery Consultation. A physiotherapist tells you the right next step, and what
+              it costs.
             </p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
               {consultation.bookable && (
-                <a
-                  href={bookWithJoyUrl(consultation)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className={cn(pillTeal, 'h-12 px-7 text-[15px]')}
-                >
-                  Book a consultation · {price} <ArrowRight className="h-4 w-4" />
+                <a href={bookWithJoyUrl(consultation)} target="_blank" rel="noopener noreferrer" className={ctaPrimary}>
+                  Book a consultation · {price} <ArrowRight className={arrow} />
                 </a>
               )}
-              <a href={ASSESSMENT_WITH_JOY_URL} target="_blank" rel="noopener noreferrer" className={cn(pillOutline, 'h-12 px-7 text-[15px]')}>
+              <a href={ASSESSMENT_WITH_JOY_URL} target="_blank" rel="noopener noreferrer" className={ctaSecondary}>
                 Book an assessment directly
               </a>
             </div>
-          </div>
+          </FadeUp>
 
-          <div className="relative rounded-[1.75rem] bg-white p-6 text-rh-night shadow-soft sm:p-8">
-            <div className="flex items-start justify-between gap-4">
-              <div className="min-w-0">
-                <h2 className="text-xl leading-tight text-rh-night">{consultation.name}</h2>
-                <p className="mt-1 text-sm font-medium text-rh-night/75">{consultation.durationLabel}</p>
+          <FadeUp delay={0.08}>
+            <div className="rounded-[2rem] bg-white p-7 sm:p-9">
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <h2 className="text-[22px] font-bold leading-tight tracking-tight text-rh-ink">{consultation.name}</h2>
+                  <p className="mt-1 text-[15px] font-medium text-rh-ink/60">{consultation.durationLabel}</p>
+                </div>
+                <p className={cn('shrink-0 text-[32px] leading-none tracking-tight text-rh-ink sm:text-[36px]', displayFont)}>{price}</p>
               </div>
-              <p className={cn('shrink-0 text-[32px] leading-none tracking-tight', displayFont)}>{price}</p>
-            </div>
-            <ul className="mt-6 space-y-2.5">
-              {consultation.whatHappens.map((item) => (
-                <ListItem key={item}>{item}</ListItem>
-              ))}
-            </ul>
-            <p className="mt-5 rounded-2xl bg-rh-honeydew p-4 text-sm font-medium leading-6 text-rh-night">
-              <span className="font-semibold">You receive: </span>
-              {consultation.youReceive}
-            </p>
-            {consultation.notIncluded && (
-              <p className="mt-3 text-sm font-medium leading-6 text-rh-night/75">
-                <span className="font-semibold text-rh-night">Not a full assessment.</span> It doesn&apos;t include{' '}
-                {lowerFirst(consultation.notIncluded)}
+              <ol className="mt-6">
+                {consultation.whatHappens.map((item, i) => (
+                  <li key={item} className="flex gap-4 border-t border-rh-ink/10 py-3.5 text-[15px] font-medium leading-snug text-rh-ink/80">
+                    <span aria-hidden className="w-5 shrink-0 tabular-nums text-rh-ink/40">
+                      {number(i)}
+                    </span>
+                    {item}
+                  </li>
+                ))}
+              </ol>
+              <p className="mt-2 rounded-2xl bg-rh-canvas p-4 text-[15px] font-medium leading-6 text-rh-ink/80">
+                <span className="font-semibold text-rh-ink">You receive: </span>
+                {consultation.youReceive}
               </p>
-            )}
-          </div>
-        </div>
-      </div>
-
-      <ul className="mx-auto mt-6 grid max-w-6xl gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {TRUST.map((item) => (
-          <li key={item.title} className="flex items-start gap-3.5 rounded-[1.5rem] bg-white p-5 shadow-soft">
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-rh-honeydew text-rh-teal">
-              <item.icon className="h-[18px] w-[18px]" />
-            </span>
-            <div className="min-w-0">
-              <p className="text-[15px] font-semibold leading-snug text-rh-night">{item.title}</p>
-              <p className="mt-1 text-sm font-medium leading-5 text-rh-night/80">{item.body}</p>
+              {consultation.notIncluded && (
+                <p className="mt-4 text-sm font-medium leading-6 text-rh-ink/65">
+                  <span className="font-semibold text-rh-ink">Not a full assessment.</span> It doesn&apos;t include{' '}
+                  {lowerFirst(consultation.notIncluded)}
+                </p>
+              )}
             </div>
-          </li>
-        ))}
-      </ul>
+          </FadeUp>
+        </div>
+
+        <ol className="mt-14 grid gap-x-8 sm:grid-cols-2 lg:mt-16 lg:grid-cols-4">
+          {PROMISES.map((item, i) => (
+            <li key={item.title} className="border-t border-rh-ink/10 py-5">
+              <span aria-hidden className="text-sm font-semibold tabular-nums text-rh-ink/40">
+                {number(i)}
+              </span>
+              <p className="mt-2 text-base font-semibold leading-snug text-rh-ink">{item.title}</p>
+              <p className="mt-1 text-[15px] font-medium leading-6 text-rh-ink/65">{item.body}</p>
+            </li>
+          ))}
+        </ol>
+      </div>
     </section>
   )
 }
 
 function PriceList({ catalogue }: { catalogue: Catalogue }) {
   return (
-    <section className="px-4 py-20 sm:px-6 lg:py-28">
+    <section className="bg-rh-ink px-4 py-20 text-white sm:px-6 lg:py-28">
       <div className="mx-auto max-w-6xl">
         <FadeUp>
           <SectionHeading
+            onDark
             title="Every service, one standard price"
-            description="Set by Rehabify and the same whichever physiotherapist you see. Pay per session."
+            description="Set by Rehabify and the same whichever physiotherapist you see."
           />
         </FadeUp>
-        <div className="mt-10 grid gap-4 lg:mt-12 lg:grid-cols-3">
+        <div className="mt-12 grid gap-x-10 gap-y-12 lg:mt-14 lg:grid-cols-3">
           {PRICE_GROUPS.map((group, i) => (
             <FadeUp key={group.title} delay={i * 0.06}>
-              <div className="h-full rounded-[1.75rem] bg-white p-6 shadow-soft sm:p-7">
-                <h3 className="text-lg leading-tight text-rh-night">{group.title}</h3>
-                <ul className="mt-4 divide-y divide-rh-night/[0.07]">
-                  {group.ids.map((id) => (
-                    <PriceRow key={id} service={findService(catalogue, id)} />
-                  ))}
-                </ul>
-              </div>
+              <h3 className="text-[20px] font-bold leading-tight tracking-tight text-white">{group.title}</h3>
+              <ul className="mt-5">
+                {group.ids.map((id) => (
+                  <PriceRow key={id} service={findService(catalogue, id)} />
+                ))}
+              </ul>
             </FadeUp>
           ))}
         </div>
-        <p className="mt-6 text-sm font-medium leading-6 text-rh-night/80">
+        <p className="mt-12 max-w-2xl text-[15px] font-medium leading-6 text-white/60">
           Any travel charge for a home visit depends on your area and is shown, with your total, before you pay.
         </p>
       </div>
@@ -179,29 +183,27 @@ function PriceList({ catalogue }: { catalogue: Catalogue }) {
 
 function PriceRow({ service }: { service: CatalogueService }) {
   return (
-    <li className="flex items-start justify-between gap-4 py-4 last:pb-0">
+    <li className="flex items-start justify-between gap-4 border-t border-white/10 py-5">
       <div className="min-w-0">
-        <p className="font-semibold leading-snug text-rh-night">{service.name}</p>
-        {service.kind !== 'screening' && <p className="mt-0.5 text-sm font-medium text-rh-night/75">{service.durationLabel}</p>}
+        <p className="text-base font-semibold leading-snug text-white">{service.name}</p>
+        {service.kind !== 'screening' && <p className="mt-0.5 text-[15px] font-medium text-white/60">{service.durationLabel}</p>}
         {service.bookable ? (
           <a
             href={bookWithJoyUrl(service)}
             target="_blank"
             rel="noopener noreferrer"
-            className="mt-2 inline-flex items-center gap-1 text-sm font-semibold text-rh-teal underline-offset-4 hover:underline"
+            className="group mt-2 inline-flex items-center gap-1.5 rounded-sm text-[15px] font-semibold text-rh-lime underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-lime focus-visible:ring-offset-2 focus-visible:ring-offset-rh-ink"
           >
-            Book<span className="sr-only"> {service.name}</span> <ArrowRight className="h-3.5 w-3.5" />
+            Book<span className="sr-only"> {service.name}</span> <ArrowRight className="h-3.5 w-3.5 transition-transform duration-300 group-hover:translate-x-1" />
           </a>
         ) : service.kind === 'screening' ? (
-          <span className="mt-2 inline-block rounded-full bg-rh-jasmine px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wide text-rh-night">
-            Coming soon
-          </span>
+          <span className="mt-2 inline-block text-sm font-semibold text-white/60">Coming soon</span>
         ) : (
-          <span className="mt-2 inline-block text-sm font-medium text-rh-night/60">Not available right now</span>
+          <span className="mt-2 inline-block text-sm font-medium text-white/50">Not available right now</span>
         )}
       </div>
       {showsPrice(service) && (
-        <p className={cn('shrink-0 text-right text-xl leading-none text-rh-night', displayFont)}>{servicePrice(service)}</p>
+        <p className={cn('shrink-0 text-right text-[22px] leading-none text-white', displayFont)}>{servicePrice(service)}</p>
       )}
     </li>
   )
@@ -212,45 +214,43 @@ function CostHelp() {
     <section className="px-4 py-20 sm:px-6 lg:py-28">
       <div className="mx-auto max-w-6xl">
         <FadeUp>
-          <SectionHeading
-            title="Worried about the cost?"
-            description="Financial circumstances shouldn't prevent appropriate recovery care. There are two ways we can help."
-          />
+          <SectionHeading title="Worried about the cost?" description="There are two ways we can help." />
         </FadeUp>
-        <div className="mt-10 grid gap-4 lg:mt-12 lg:grid-cols-2">
-          <FadeUp>
-            <article id="rehabify-access" className="flex h-full flex-col rounded-[2rem] bg-rh-teal p-7 text-white shadow-lift sm:p-9">
-              <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/10 text-rh-lime">
-                <HeartHandshake className="h-5 w-5" />
-              </span>
-              <h3 className="mt-6 text-[26px] leading-tight text-white">Assisted care</h3>
-              <p className="mt-3 text-[15px] font-medium leading-6 text-white">
-                If you need rehabilitation but the cost is a worry, apply for Rehabify Access. Eligible patients may get
-                reduced-fee physiotherapy or a flexible arrangement, with the same clinical standards.
+        <div className="mt-10 grid gap-5 lg:mt-12 lg:grid-cols-2">
+          <FadeUp className="flex">
+            <article id="rehabify-access" className="flex w-full scroll-mt-24 flex-col rounded-[2rem] bg-rh-ink p-7 text-white sm:p-9">
+              <h3 className="text-[28px] font-bold leading-tight tracking-tight text-white sm:text-[32px]">Assisted care</h3>
+              <p className="mt-3 max-w-md text-[15px] font-medium leading-relaxed text-white/75 sm:text-base">
+                Rehabify Access offers eligible patients reduced-fee physiotherapy or a flexible arrangement, with the same clinical
+                standards.
               </p>
               <ul className="mt-6 space-y-3">
-                <ListItem onDark>Every application reviewed individually, against the same criteria</ListItem>
-                <ListItem onDark>We only ask what we need. No documents up front</ListItem>
-                <ListItem onDark>Places depend on programme capacity, so assisted rates aren&apos;t guaranteed for everyone</ListItem>
+                <ListItem onDark>Every application reviewed against the same criteria</ListItem>
+                <ListItem onDark>No documents up front</ListItem>
+                <ListItem onDark>Places depend on capacity, so assisted rates aren&apos;t guaranteed</ListItem>
               </ul>
               <div className="mt-auto flex flex-col gap-3 pt-8 sm:flex-row">
-                <Link href="/rehabify-access#apply" className={cn(pillLime, 'h-12 px-7 text-[15px]')}>
-                  Apply for Assisted Care <ArrowRight className="h-4 w-4" />
+                <Link
+                  href="/rehabify-access#apply"
+                  className={cn(ctaPrimary, 'focus-visible:ring-rh-lime focus-visible:ring-offset-rh-ink')}
+                >
+                  Apply for Assisted Care <ArrowRight className={arrow} />
                 </Link>
-                <Link href="/rehabify-access" className={cn(pillGhostOnDark, 'h-12 px-7 text-[15px]')}>
+                <Link href="/rehabify-access" className={ctaSecondaryOnDark}>
                   How it works
                 </Link>
               </div>
             </article>
           </FadeUp>
 
-          <FadeUp delay={0.06}>
-            <article id="mediloan" className="flex h-full flex-col rounded-[2rem] bg-white p-7 text-rh-night shadow-soft sm:p-9">
-              <Image src={MEDILOAN_LOGO} alt="MediLoan by MyItura" width={160} height={48} unoptimized className="h-12 w-auto self-start" />
-              <h3 className="mt-6 text-[26px] leading-tight text-rh-night">Get treated now, pay later</h3>
-              <p className="mt-3 text-[15px] font-medium leading-6 text-rh-night">
-                MediLoan is healthcare financing from our partner MyItura. Apply in a few minutes and spread the cost of your
-                physiotherapy.
+          <FadeUp delay={0.06} className="flex">
+            <article id="mediloan" className="flex w-full scroll-mt-24 flex-col rounded-[2rem] bg-white p-7 sm:p-9">
+              <Image src={MEDILOAN_LOGO} alt="MediLoan by MyItura" width={160} height={48} unoptimized className="h-10 w-auto self-start" />
+              <h3 className="mt-6 text-[28px] font-bold leading-tight tracking-tight text-rh-ink sm:text-[32px]">
+                Get treated now, pay later
+              </h3>
+              <p className="mt-3 max-w-md text-[15px] font-medium leading-relaxed text-rh-ink/75 sm:text-base">
+                Spread the cost of your physiotherapy with MediLoan, healthcare financing from our partner MyItura.
               </p>
               <ul className="mt-6 space-y-3">
                 <ListItem>Quick SMS-based application, no paperwork</ListItem>
@@ -258,12 +258,12 @@ function CostHelp() {
                 <ListItem>Start treatment without waiting to save up</ListItem>
               </ul>
               <div className="mt-auto pt-8">
-                <Link href="/payment" className={cn(pillTeal, 'h-12 px-7 text-[15px]')}>
-                  Apply for MediLoan <ArrowRight className="h-4 w-4" />
+                <Link href="/pay-later" className={ctaPrimary}>
+                  Apply for MediLoan <ArrowRight className={arrow} />
                 </Link>
-                <p className="mt-4 text-xs font-medium leading-5 text-rh-night/75">
-                  MediLoan is provided by MyItura, an independent company. Loan approvals and repayments are handled by MyItura.{' '}
-                  <Link href="/partners/mediloan" className="font-semibold text-rh-night underline underline-offset-2">
+                <p className="mt-4 text-sm font-medium leading-6 text-rh-ink/60">
+                  MediLoan is provided by MyItura, an independent company that handles loan approvals and repayments.{' '}
+                  <Link href="/partners/mediloan" className={textLink}>
                     Read the disclaimer
                   </Link>
                 </p>
@@ -281,34 +281,38 @@ function Faq({ catalogue }: { catalogue: Catalogue }) {
   const virtualAssessment = findService(catalogue, 'virtual_assessment')
   const homeAssessment = findService(catalogue, 'home_assessment')
   const withTravel = catalogue.services.filter((s) => s.travelApplies).map((s) => s.name)
-  const link = 'font-semibold text-rh-teal underline-offset-4 hover:underline'
 
   return (
-    <section className="px-4 py-20 sm:px-6 lg:py-28">
-      <div className="mx-auto max-w-3xl">
+    <section className="px-4 pb-20 pt-4 sm:px-6 lg:pb-28">
+      <div className="mx-auto grid max-w-6xl gap-10 lg:grid-cols-[0.8fr_1.2fr] lg:gap-16">
         <FadeUp>
-          <SectionHeading title="Prices and payment, answered" center />
+          <h2 className="text-[34px] font-bold leading-[1.05] tracking-tight text-rh-ink sm:text-5xl">Prices and payment, answered</h2>
+          <p className="mt-5 text-base font-medium text-rh-ink/70">Still unsure?</p>
+          <a href={WHATSAPP_HELP_URL} target="_blank" rel="noopener noreferrer" className={cn(ctaSecondary, 'group mt-3')}>
+            Ask Joy on WhatsApp <ArrowRight className={arrow} />
+          </a>
         </FadeUp>
-        <div className="mt-10">
+
+        <div className="border-b border-rh-ink/10">
           <FaqItem question="What is the Recovery Consultation, and what isn't it?">
-            A {consultation.durationLabel} video call with a physiotherapist, for {formatKobo(consultation.priceKobo)}. You explain
-            what&apos;s wrong, they take a brief history, check for anything that needs urgent medical attention, and recommend
-            the right next step, with its price. It isn&apos;t a full assessment
+            A {consultation.durationLabel} video call with a physiotherapist, for {formatKobo(consultation.priceKobo)}. They take a
+            brief history, check for anything that needs urgent medical attention, and recommend the right next step, with its
+            price. It isn&apos;t a full assessment
             {consultation.notIncluded ? `: it doesn't include ${lowerFirst(consultation.notIncluded)}` : '.'}
           </FaqItem>
           <FaqItem question="Can I book an assessment directly?">
-            Yes. You don&apos;t need a consultation first. Book a {virtualAssessment.name} ({virtualAssessment.durationLabel} by
-            video) or an {homeAssessment.name} ({homeAssessment.durationLabel} at home). You&apos;ll see the price when you book.{' '}
-            <a href={ASSESSMENT_WITH_JOY_URL} target="_blank" rel="noopener noreferrer" className={link}>
+            Yes, no consultation needed. Book a {virtualAssessment.name} ({virtualAssessment.durationLabel} by video) or an{' '}
+            {homeAssessment.name} ({homeAssessment.durationLabel} at home). You&apos;ll see the price when you book.{' '}
+            <a href={ASSESSMENT_WITH_JOY_URL} target="_blank" rel="noopener noreferrer" className={textLink}>
               Ask Joy to book one
             </a>
           </FaqItem>
           <FaqItem question="What's included in an assessment?">
-            The video assessment covers your history, pain, movement and everyday difficulties, your goals and your treatment
-            options. Your initial recovery plan is included. If you need a physical examination, your physiotherapist will
-            recommend an in-person assessment. The home assessment is {homeAssessment.durationLabel} with your physiotherapist
-            (not counting their travel), with a clinical examination, initial treatment or supervised exercise where appropriate,
-            and a personalised rehabilitation plan.
+            The video assessment covers your history, pain, movement, everyday difficulties, goals and treatment options, plus your
+            initial recovery plan. If you need a physical examination, your physiotherapist will recommend an in-person
+            assessment. The home assessment is {homeAssessment.durationLabel} with your physiotherapist (not counting their
+            travel), with a clinical examination, initial treatment or supervised exercise where appropriate, and a personalised
+            rehabilitation plan.
           </FaqItem>
           <FaqItem question="How do travel charges work?">
             {withTravel.length > 0
@@ -317,42 +321,34 @@ function Faq({ catalogue }: { catalogue: Catalogue }) {
             Any travel charge is shown, with your total, before you pay. Video sessions never have one.
           </FaqItem>
           <FaqItem question="Does the price depend on which physiotherapist I see?">
-            No. Prices are set by Rehabify and are the same across our network, whichever physiotherapist you see.
+            No. Prices are set by Rehabify and are the same across our network.
           </FaqItem>
           <FaqItem question="Are there any other fees?">
-            No. The price you see is the price you pay. There&apos;s no booking or platform fee at checkout and no subscription:
-            you pay for each session as you go.
+            No. There&apos;s no booking or platform fee at checkout and no subscription: you pay for each session as you go.
           </FaqItem>
           <FaqItem question="How do payment and confirmation work?">
-            Choose a time from your physiotherapist&apos;s availability, then pay securely through Paystack. We hold the time
-            while you pay, and your booking is confirmed as soon as payment goes through.
+            You book through Joy on WhatsApp. Joy confirms your time and sends a secure Paystack payment link, and your
+            appointment is confirmed once it&apos;s paid.
           </FaqItem>
           <FaqItem question="What if I need to cancel or get a refund?">
             Cancellations and refunds follow our{' '}
-            <Link href="/payment-policy" className={link}>
+            <Link href="/payment-policy" className={textLink}>
               Payment Policy
             </Link>
             .
           </FaqItem>
           <FaqItem question="What if I can't afford it?">
             You can apply for{' '}
-            <Link href="/rehabify-access" className={link}>
+            <Link href="/rehabify-access" className={textLink}>
               Rehabify Access
             </Link>{' '}
             (assisted care), or spread the cost with{' '}
-            <Link href="/payment" className={link}>
+            <Link href="/pay-later" className={textLink}>
               MediLoan
             </Link>{' '}
             from MyItura.
           </FaqItem>
         </div>
-        <p className="mt-10 text-center text-[15px] font-medium text-rh-night/80">
-          Still unsure?{' '}
-          <a href={WHATSAPP_HELP_URL} target="_blank" rel="noopener noreferrer" className={link}>
-            Ask Joy on WhatsApp
-          </a>
-          .
-        </p>
       </div>
     </section>
   )

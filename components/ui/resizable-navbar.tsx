@@ -226,7 +226,7 @@ export const MobileNavToggle = ({
       aria-label={isOpen ? "Close Menu" : "Open Menu"}
       aria-expanded={isOpen}
       className={cn(
-        "relative flex h-10 w-10 items-center justify-center rounded-full bg-gray-100/80 hover:bg-[#e6f0ef] text-[#002e2c] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#005b57]",
+        "relative flex h-10 w-10 items-center justify-center rounded-full bg-rh-ink/[0.05] hover:bg-rh-ink/10 text-rh-ink transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-rh-lime",
         className
       )}
     >
@@ -237,7 +237,7 @@ export const MobileNavToggle = ({
             y: isOpen ? 7 : 0,
           }}
           transition={{ duration: 0.25, ease: "easeInOut" }}
-          className="h-[2px] w-full rounded-full bg-[#002e2c] origin-center"
+          className="h-[2px] w-full rounded-full bg-rh-ink origin-center"
         />
         <motion.span
           animate={{
@@ -245,7 +245,7 @@ export const MobileNavToggle = ({
             scaleX: isOpen ? 0 : 1,
           }}
           transition={{ duration: 0.2, ease: "easeInOut" }}
-          className="h-[2px] w-full rounded-full bg-[#002e2c]"
+          className="h-[2px] w-full rounded-full bg-rh-ink"
         />
         <motion.span
           animate={{
@@ -253,7 +253,7 @@ export const MobileNavToggle = ({
             y: isOpen ? -7 : 0,
           }}
           transition={{ duration: 0.25, ease: "easeInOut" }}
-          className="h-[2px] w-full rounded-full bg-[#002e2c] origin-center"
+          className="h-[2px] w-full rounded-full bg-rh-ink origin-center"
         />
       </div>
     </motion.button>
@@ -295,12 +295,12 @@ export const NavbarButton = ({
     | React.ComponentPropsWithoutRef<"button">
   )) => {
   const baseStyles =
-    "px-4 py-2 rounded-md bg-white button text-[#002e2c] text-sm font-bold relative cursor-pointer hover:-translate-y-0.5 transition duration-200 inline-block text-center font-sans";
+    "px-4 py-2 rounded-md bg-white button text-rh-ink text-sm font-bold relative cursor-pointer hover:-translate-y-0.5 transition duration-200 inline-block text-center font-sans";
 
   const variantStyles = {
     primary:
       "shadow-[0_0_24px_rgba(34,_42,_53,_0.06),_0_1px_1px_rgba(0,_0,_0,_0.05),_0_0_0_1px_rgba(34,_42,_53,_0.04),_0_0_4px_rgba(34,_42,_53,_0.08),_0_16px_68px_rgba(47,_48,_55,_0.05),_0_1px_0_rgba(255,_255,_255,_0.1)_inset]",
-    secondary: "bg-transparent shadow-none text-[#002e2c] dark:text-[#002e2c]",
+    secondary: "bg-transparent shadow-none text-rh-ink dark:text-rh-ink",
     dark: "bg-black text-white shadow-[0_0_24px_rgba(34,_42,_53,_0.06),_0_1px_1px_rgba(0,_0,_0,_0.05),_0_0_0_1px_rgba(34,_42,_53,_0.04),_0_0_4px_rgba(34,_42,_53,_0.08),_0_16px_68px_rgba(47,_48,_55,_0.05),_0_1px_0_rgba(255,_255,_255,_0.1)_inset]",
     gradient:
       "bg-gradient-to-b from-blue-500 to-blue-700 text-white shadow-[0px_2px_0px_0px_rgba(255,255,255,0.3)_inset]",

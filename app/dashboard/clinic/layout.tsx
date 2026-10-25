@@ -20,6 +20,7 @@ import { ClinicBrand, PoweredByRehabify } from '@/components/clinic/ClinicBrand'
 import { EmptyState } from '@/components/clinic/ui'
 import { PhysioNotifications } from '@/components/physio/PhysioNotifications'
 import Link from 'next/link'
+import { WebsiteLink } from '@/components/dashboard/shared/WebsiteLink'
 
 export default function ClinicLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -218,6 +219,7 @@ function ClinicPortal({ children }: { children: React.ReactNode }) {
               </span>
             ) : null}
 
+            <WebsiteLink tone="console" className="h-9 px-2.5 shadow-none ring-1 ring-inset ring-black/[0.06]" />
             <ClinicThemeToggle />
             {!isReadOnly && <PhysioNotifications portal="clinic" />}
 

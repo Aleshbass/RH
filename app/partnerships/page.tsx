@@ -1,51 +1,49 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, type ReactNode } from "react";
 import { useMutation } from "convex/react";
-import { api } from "@/convex/_generated/api";
-import { motion } from "framer-motion";
+import { makeFunctionReference } from "convex/server";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import Link from "next/link";
-import {
-  Building2,
-  Stethoscope,
-  Briefcase,
-  Dumbbell,
-  Laptop,
-  Code,
-  Webhook,
-  MessageSquare,
-  LayoutDashboard,
-  ShieldCheck,
-  ArrowRight,
-  CheckCircle2,
-  Zap,
-  Globe,
-  Lock,
-  Clock,
-  Copy,
-  Check,
-  Send,
-  Users,
-  TrendingUp,
-  Handshake,
-} from "@/components/icons";
+import { BookDemoDialog } from "@/components/partners/BookDemoDialog";
+import { ArrowRight, Check, Copy } from "@/components/icons";
+import { PairingShapes } from "@/components/learn/shared";
+import { SegmentedSwitch, switchPanelId, switchTabId } from "@/components/landing/SegmentedSwitch";
+import { cn } from "@/lib/utils";
 
-// ── Fade-in wrapper ──────────────────────────────
-function FadeIn({
-  children,
-  delay = 0,
-  className = "",
-}: {
-  children: React.ReactNode;
-  delay?: number;
-  className?: string;
-}) {
+const EASE = [0.22, 1, 0.36, 1] as const;
+
+// A plain reference: the generated `api` type is at TypeScript's depth limit (TS2589)
+const submitPartnershipInquiryRef = makeFunctionReference<
+  "mutation",
+  { name: string; email: string; organization: string; message: string },
+  { success: boolean; inquiryId: string }
+>("public:submitPartnershipInquiry");
+
+// ── Shared styles ────────────────────────────────
+const pill =
+  "group inline-flex h-12 items-center justify-center gap-2 rounded-full px-7 text-[15px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2";
+const primary = cn(pill, "bg-rh-lime text-rh-ink hover:bg-rh-lime-deep focus-visible:ring-rh-ink");
+const primaryOnInk = cn(pill, "bg-rh-lime text-rh-ink hover:bg-rh-lime-deep focus-visible:ring-rh-lime focus-visible:ring-offset-rh-ink");
+const secondary = cn(pill, "bg-white text-rh-ink ring-1 ring-inset ring-rh-ink/10 hover:bg-rh-ink/[0.03] focus-visible:ring-rh-ink");
+const textLink =
+  "group inline-flex items-center gap-2 rounded-sm text-[15px] font-semibold text-rh-ink underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-ink";
+const h2Class = "max-w-2xl text-[36px] font-bold leading-[1.05] tracking-tight sm:text-5xl";
+const leadClass = "mt-4 max-w-xl text-base font-medium leading-relaxed sm:text-lg";
+
+function Arrow() {
+  return <ArrowRight className="h-4 w-4 transition-transform duration-300 group-hover:translate-x-1" />;
+}
+
+// ── Subtle fade-up ───────────────────────────────
+function Rise({ children, delay = 0, className }: { children: ReactNode; delay?: number; className?: string }) {
+  const reduce = useReducedMotion();
   return (
     <motion.div
-      initial={{ opacity: 0, y: 24 }}
+      initial={reduce ? false : { opacity: 0, y: 20 }}
       whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true, margin: "-40px" }}
-      transition={{ duration: 0.5, delay }}
+      viewport={{ once: true, margin: "-60px" }}
+      transition={{ duration: 0.5, ease: EASE, delay }}
       className={className}
     >
       {children}
@@ -53,157 +51,105 @@ function FadeIn({
   );
 }
 
-// ── Partner Type Cards Data ──────────────────────
-const partnerTypes = [
-  {
-    icon: Building2,
-    title: "Hospitals & Clinics",
-    description: "Refer patients to verified physiotherapists with real-time outcome tracking and automated discharge summaries.",
-    features: ["1-Click Referral", "Outcome Reports", "Per-referral Incentive"],
-    color: "from-teal-500/10 to-emerald-500/10",
-    borderColor: "border-teal-200",
-    iconBg: "bg-teal-500/10 text-teal-600",
-  },
-  {
-    icon: Stethoscope,
-    title: "HMOs & Insurers",
-    description: "Pre-authorize and sponsor physiotherapy sessions for your members with bulk packages and utilization dashboards.",
-    features: ["Eligibility API", "Bulk Pricing", "Utilization Dashboard"],
-    color: "from-blue-500/10 to-indigo-500/10",
-    borderColor: "border-blue-200",
-    iconBg: "bg-blue-500/10 text-blue-600",
-  },
-  {
-    icon: Briefcase,
-    title: "Corporate & HR",
-    description: "Offer recovery and wellness benefits to your employees. Boost productivity with accessible physiotherapy.",
-    features: ["Employee Portal", "Usage Analytics", "Flexible Plans"],
-    color: "from-violet-500/10 to-purple-500/10",
-    borderColor: "border-violet-200",
-    iconBg: "bg-violet-500/10 text-violet-600",
-  },
-  {
-    icon: Dumbbell,
-    title: "Gyms & Sports Clubs",
-    description: "Embed recovery services for your members. QR codes, booking widgets, and member discount packages.",
-    features: ["Referral Links", "QR Codes", "Member Discounts"],
-    color: "from-orange-500/10 to-amber-500/10",
-    borderColor: "border-orange-200",
-    iconBg: "bg-orange-500/10 text-orange-600",
-  },
-  {
-    icon: Laptop,
-    title: "Healthtech Platforms",
-    description: "Embed Rehabify's verified physio network inside your product via our REST API and JavaScript SDK.",
-    features: ["Full REST API", "Sandbox Environment", "Revenue Share"],
-    color: "from-cyan-500/10 to-sky-500/10",
-    borderColor: "border-cyan-200",
-    iconBg: "bg-cyan-500/10 text-cyan-600",
-  },
+// ── Content ──────────────────────────────────────
+const REFERRAL_STEPS = [
+  { title: "You refer", body: "Send a referral by link, portal or API, with the patient's consent." },
+  { title: "We reach out", body: "Our care team contacts the patient, and Joy handles intake on WhatsApp." },
+  { title: "They're matched", body: "An MRTBN-licensed physiotherapist, usually within 24 hours." },
+  { title: "You follow along", body: "Track each referral's status and progress reports." },
 ];
 
-// ── Integration Channels Data ────────────────────
-const integrationChannels = [
-  {
-    icon: Code,
-    name: "REST API",
-    description: "Programmatic access to referrals, eligibility, provider search, and booking",
-    setupTime: "1–3 days",
-    badge: "Full Control",
-  },
-  {
-    icon: Laptop,
-    name: "JavaScript SDK",
-    description: "Drop-in booking widget (coming soon) — use no-code referral links today",
-    setupTime: "30 minutes",
-    badge: "Fastest",
-  },
-  {
-    icon: Webhook,
-    name: "Webhooks",
-    description: "Real-time event streaming — session booked, completed, discharged",
-    setupTime: "1–2 hours",
-    badge: "Real-time",
-  },
-  {
-    icon: MessageSquare,
-    name: "WhatsApp Deep-Links",
-    description: "Smart links with partner tokens. Joy recognizes the source automatically",
-    setupTime: "15 minutes",
-    badge: "No-Code",
-  },
-  {
-    icon: LayoutDashboard,
-    name: "Partner Portal",
-    description: "Web dashboard for manual referrals, patient tracking, and analytics",
-    setupTime: "Instant",
-    badge: "Dashboard",
-  },
-  {
-    icon: Lock,
-    name: "SSO / OAuth",
-    description: "Your users authenticate into Rehabify via your own identity system",
-    setupTime: "3–5 days",
-    badge: "Enterprise",
-  },
+const PARTNER_TYPES = [
+  { title: "Hospitals, clinics & doctors", body: "Refer patients for physiotherapy and get progress reports back." },
+  { title: "HMOs & insurers", body: "Send members to licensed physiotherapists and track every referral." },
+  { title: "Employers", body: "Offer physiotherapy to your staff as part of their health benefits." },
+  { title: "Gyms & sports clubs", body: "Share a referral link or QR code so members can get recovery care." },
+  { title: "Healthtech platforms", body: "Add Rehabify's physiotherapists to your product with our REST API." },
 ];
 
-// ── Pricing Tiers ────────────────────────────────
-const pricingTiers = [
+type Cta = { label: string; href: string };
+
+const PATHS = [
   {
-    name: "Starter",
-    price: "Free",
-    priceNote: "Forever",
-    description: "Perfect for individual doctors and small clinics getting started with referrals.",
-    features: [
-      "WhatsApp deep-links",
-      "Partner portal access",
-      "Email support",
-      "Up to 10 referrals/month",
+    id: "links",
+    label: "Referral links",
+    short: "Links",
+    heading: "Share a link. No code needed.",
+    points: [
+      "Create co-branded referral links in the partner portal",
+      "Share them on WhatsApp, by SMS or as a QR code",
+      "Sign-ups and paid bookings are credited to you for 30 days",
     ],
-    cta: "Get Started Free",
-    popular: false,
-    gradient: "from-gray-50 to-white",
+    ctas: [{ label: "Become a partner", href: "#inquiry" }] as Cta[],
   },
   {
-    name: "Professional",
-    price: "₦25,000",
-    priceNote: "/month",
-    description: "For mid-size clinics and gyms that want API access, webhooks, and data.",
-    features: [
-      "500 API calls/month",
-      "5 webhook endpoints",
-      "No-code referral links",
-      "Priority email + chat support",
-      "Usage analytics dashboard",
+    id: "portal",
+    label: "Partner portal",
+    short: "Portal",
+    heading: "Refer and track from one dashboard.",
+    points: [
+      "Send referrals from a simple web form",
+      "Follow each patient's status and progress reports",
+      "See your commissions and payouts",
     ],
-    cta: "Start Professional",
-    popular: true,
-    gradient: "from-[#002e2c] to-[#005b57]",
+    ctas: [
+      { label: "Create a partner account", href: "/partners/sign-up" },
+      { label: "Sign in to the portal", href: "/partners/portal" },
+    ] as Cta[],
   },
   {
-    name: "Enterprise",
-    price: "₦100,000",
-    priceNote: "/month",
-    description: "Unlimited API access, dedicated support, and custom SLAs for large organizations.",
-    features: [
-      "Unlimited API calls",
-      "Unlimited webhook endpoints",
-      "SSO / OAuth integration",
-      "Dedicated account manager",
-      "Custom SLA guarantee",
-      "White-label option available",
+    id: "api",
+    label: "API & webhooks",
+    short: "API",
+    heading: "Build referrals into your own product.",
+    points: [
+      "Create referrals and search providers over a REST API",
+      "Get a signed webhook event each time a referral moves",
+      "Test everything in sandbox before you go live",
     ],
-    cta: "Contact Sales",
-    popular: false,
-    gradient: "from-gray-50 to-white",
+    ctas: [{ label: "Read the integration docs", href: "/integrations" }] as Cta[],
   },
+] as const;
+
+type PathId = (typeof PATHS)[number]["id"];
+
+const DEV_FACTS = [
+  "Sandbox and live keys (sk_test_ and sk_live_)",
+  "Idempotency keys make retries safe",
+  "Webhooks signed with X-Rehabify-Signature",
+  "Failed webhook deliveries are retried automatically",
+];
+
+const TRUST: { title: string; body: ReactNode }[] = [
+  { title: "Shared with consent", body: "Referrals are shared only with the patient's consent." },
+  {
+    title: "Covered by our privacy policy",
+    body: (
+      <>
+        Patient data is handled under our{" "}
+        <Link href="/privacy-policy" className="font-semibold text-rh-ink underline underline-offset-4 hover:no-underline">
+          privacy policy
+        </Link>
+        .
+      </>
+    ),
+  },
+  { title: "Hashed API keys", body: "We store API keys as hashes and show each one only once." },
+  { title: "Sandbox, then live", body: "Live access opens only after a separate go-live review." },
 ];
 
 // ── Code Sample Component ────────────────────────
+const CODE_ID = "partner-code";
+const CODE_TABS = [
+  { id: "referral", label: "Create referral", short: "Referral" },
+  { id: "widget", label: "Referral link", short: "Link" },
+  { id: "webhook", label: "Webhook event", short: "Webhook" },
+] as const;
+type CodeTab = (typeof CODE_TABS)[number]["id"];
+
 function CodeSample() {
   const [copied, setCopied] = useState(false);
-  const [activeTab, setActiveTab] = useState<"referral" | "widget" | "webhook">("referral");
+  const [activeTab, setActiveTab] = useState<CodeTab>("referral");
 
   const codeSnippets = {
     referral: `// Create a patient referral (server-side, secret key)
@@ -260,45 +206,46 @@ const referral = await response.json();
   };
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(codeSnippets[activeTab]);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    navigator.clipboard
+      .writeText(codeSnippets[activeTab])
+      .then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      })
+      .catch(() => {});
   };
 
   return (
-    <div className="rounded-2xl overflow-hidden border border-gray-800 bg-[#0d1117] shadow-2xl">
-      {/* Tab Bar */}
-      <div className="flex items-center justify-between border-b border-gray-800 bg-[#161b22]">
-        <div className="flex">
-          {(["referral", "widget", "webhook"] as const).map((tab) => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={`px-4 py-3 text-xs font-medium transition-colors capitalize ${
-                activeTab === tab
-                  ? "text-white bg-[#0d1117] border-b-2 border-emerald-400"
-                  : "text-gray-500 hover:text-gray-300"
-              }`}
-            >
-              {tab === "referral" ? "Create Referral" : tab === "widget" ? "Referral Link" : "Webhook Event"}
-            </button>
-          ))}
-        </div>
+    <div className="relative overflow-hidden rounded-[2rem] bg-rh-ink-2 ring-1 ring-inset ring-white/10">
+      <div className="flex items-center justify-between gap-2 border-b border-white/10 p-3 sm:p-4">
+        <SegmentedSwitch
+          idBase={CODE_ID}
+          label="Code examples"
+          tone="dark"
+          options={CODE_TABS}
+          value={activeTab}
+          onChange={setActiveTab}
+          className="min-w-0 overflow-x-auto"
+        />
         <button
+          type="button"
           onClick={handleCopy}
-          className="mr-3 p-1.5 rounded-md text-gray-500 hover:text-white hover:bg-gray-700 transition-colors"
+          aria-label={copied ? "Copied" : "Copy code"}
           title="Copy code"
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-white/70 ring-1 ring-inset ring-white/15 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-lime"
         >
-          {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+          {copied ? <Check className="h-4 w-4 text-rh-lime" /> : <Copy className="h-4 w-4" />}
         </button>
       </div>
 
-      {/* Code Content */}
-      <div className="p-5 overflow-x-auto">
-        <pre className="text-sm leading-relaxed font-mono">
-          <code className="text-gray-300 whitespace-pre">
-            {codeSnippets[activeTab]}
-          </code>
+      <div
+        id={switchPanelId(CODE_ID)}
+        role="tabpanel"
+        aria-labelledby={switchTabId(CODE_ID, activeTab)}
+        className="overflow-x-auto p-5 sm:p-7"
+      >
+        <pre className="font-mono text-[13px] leading-relaxed sm:text-sm">
+          <code className="whitespace-pre text-white/85">{codeSnippets[activeTab]}</code>
         </pre>
       </div>
     </div>
@@ -306,6 +253,10 @@ const referral = await response.json();
 }
 
 // ── Partner Inquiry Form ─────────────────────────
+const fieldClass =
+  "h-12 w-full rounded-2xl border border-rh-ink/10 bg-white px-4 text-[15px] text-rh-ink placeholder:text-rh-ink/40 transition-colors focus:border-rh-ink focus:outline-none focus:ring-4 focus:ring-rh-ink/[0.07]";
+const labelClass = "mb-2 block text-[15px] font-semibold text-rh-ink";
+
 function PartnerInquiryForm() {
   const [formData, setFormData] = useState({
     companyName: "",
@@ -315,7 +266,7 @@ function PartnerInquiryForm() {
     message: "",
   });
 
-  const submitInquiry = useMutation(api.public.submitPartnershipInquiry);
+  const submitInquiry = useMutation(submitPartnershipInquiryRef);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -336,50 +287,57 @@ function PartnerInquiryForm() {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+    <form onSubmit={handleSubmit} className="space-y-5">
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
         <div>
-          <label className="block text-sm font-semibold text-gray-700 mb-1.5">Company Name</label>
+          <label htmlFor="pi-company" className={labelClass}>Company name</label>
           <input
+            id="pi-company"
             type="text"
             required
+            autoComplete="organization"
             value={formData.companyName}
             onChange={(e) => setFormData({ ...formData, companyName: e.target.value })}
-            className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-white/80 focus:ring-2 focus:ring-[#005b57] focus:border-transparent transition-all text-sm"
+            className={fieldClass}
             placeholder="Acme Healthcare"
           />
         </div>
         <div>
-          <label className="block text-sm font-semibold text-gray-700 mb-1.5">Contact Name</label>
+          <label htmlFor="pi-contact" className={labelClass}>Contact name</label>
           <input
+            id="pi-contact"
             type="text"
             required
+            autoComplete="name"
             value={formData.contactName}
             onChange={(e) => setFormData({ ...formData, contactName: e.target.value })}
-            className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-white/80 focus:ring-2 focus:ring-[#005b57] focus:border-transparent transition-all text-sm"
+            className={fieldClass}
             placeholder="Dr. Adaeze Nwosu"
           />
         </div>
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
         <div>
-          <label className="block text-sm font-semibold text-gray-700 mb-1.5">Email</label>
+          <label htmlFor="pi-email" className={labelClass}>Email</label>
           <input
+            id="pi-email"
             type="email"
             required
+            autoComplete="email"
             value={formData.email}
             onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-            className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-white/80 focus:ring-2 focus:ring-[#005b57] focus:border-transparent transition-all text-sm"
+            className={fieldClass}
             placeholder="adaeze@acme.com"
           />
         </div>
         <div>
-          <label className="block text-sm font-semibold text-gray-700 mb-1.5">Partnership Type</label>
+          <label htmlFor="pi-type" className={labelClass}>Partnership type</label>
           <select
+            id="pi-type"
             required
             value={formData.partnerType}
             onChange={(e) => setFormData({ ...formData, partnerType: e.target.value })}
-            className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-white/80 focus:ring-2 focus:ring-[#005b57] focus:border-transparent transition-all text-sm"
+            className={fieldClass}
           >
             <option value="">Select type...</option>
             <option value="Hospital / Clinic">Hospital / Clinic</option>
@@ -392,359 +350,277 @@ function PartnerInquiryForm() {
         </div>
       </div>
       <div>
-        <label className="block text-sm font-semibold text-gray-700 mb-1.5">Tell us about your integration needs</label>
+        <label htmlFor="pi-message" className={labelClass}>What do you need?</label>
         <textarea
+          id="pi-message"
           value={formData.message}
           onChange={(e) => setFormData({ ...formData, message: e.target.value })}
-          rows={3}
-          className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-white/80 focus:ring-2 focus:ring-[#005b57] focus:border-transparent transition-all text-sm resize-none"
-          placeholder="We're looking to integrate physiotherapy referrals into our hospital management system..."
+          rows={4}
+          className={cn(fieldClass, "h-auto resize-none py-3 leading-relaxed")}
+          placeholder="We'd like to refer patients from our hospital system..."
         />
       </div>
-      <button
-        type="submit"
-        className="w-full sm:w-auto bg-[#002e2c] text-white font-bold py-3 px-8 rounded-xl hover:bg-[#005b57] transition-all duration-200 shadow-lg hover:shadow-xl flex items-center justify-center gap-2 group"
-      >
-        <Send className="w-4 h-4" />
-        Send Partnership Inquiry
-        <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-      </button>
+      <div className="flex flex-col gap-3 pt-1 sm:flex-row sm:items-center sm:gap-5">
+        <button type="submit" className={cn(primary, "w-full sm:w-auto")}>
+          Send partnership inquiry
+          <Arrow />
+        </button>
+        <p className="text-sm font-medium text-rh-ink/60">Opens WhatsApp with your details filled in.</p>
+      </div>
     </form>
+  );
+}
+
+// ── Integration paths (segmented) ────────────────
+const PATHS_ID = "partner-paths";
+
+function IntegrationPaths() {
+  const reduce = useReducedMotion();
+  const [id, setId] = useState<PathId>("links");
+  const path = PATHS.find((p) => p.id === id) ?? PATHS[0];
+
+  return (
+    <section className="px-4 pb-20 sm:px-6 lg:pb-28">
+      <div className="mx-auto max-w-6xl">
+        <Rise>
+          <h2 className={cn(h2Class, "text-rh-ink")}>Choose how you connect.</h2>
+          <p className={cn(leadClass, "text-rh-ink/75")}>Start with a link today and move to the API when you&apos;re ready.</p>
+        </Rise>
+
+        <SegmentedSwitch
+          idBase={PATHS_ID}
+          label="Ways to connect"
+          options={PATHS}
+          value={id}
+          onChange={setId}
+          className="mt-8 flex w-full sm:inline-flex sm:w-auto"
+        />
+
+        <div id={switchPanelId(PATHS_ID)} role="tabpanel" aria-labelledby={switchTabId(PATHS_ID, id)} className="mt-6">
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.div
+              key={path.id}
+              initial={reduce ? { opacity: 0 } : { opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={reduce ? { opacity: 0 } : { opacity: 0, y: -12 }}
+              transition={{ duration: 0.35, ease: EASE }}
+              className="grid gap-6 rounded-[2rem] bg-white p-7 sm:p-10 lg:grid-cols-[0.9fr_1.1fr] lg:grid-rows-[auto_1fr] lg:gap-x-14 lg:gap-y-8"
+            >
+              <h3 className="text-[26px] font-bold leading-tight tracking-tight text-rh-ink sm:text-[32px] lg:col-start-1 lg:row-start-1">
+                {path.heading}
+              </h3>
+              <ul className="lg:col-start-2 lg:row-span-2 lg:row-start-1">
+                {path.points.map((point) => (
+                  <li key={point} className="flex items-center gap-3 border-t border-rh-ink/10 py-4 text-base font-medium text-rh-ink/80">
+                    <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full bg-rh-lime" />
+                    {point}
+                  </li>
+                ))}
+              </ul>
+              <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap lg:col-start-1 lg:row-start-2 lg:self-end">
+                {path.ctas.map((cta, i) => (
+                  <Link key={cta.href} href={cta.href} className={i === 0 ? primary : secondary}>
+                    {cta.label}
+                    {i === 0 && <Arrow />}
+                  </Link>
+                ))}
+              </div>
+            </motion.div>
+          </AnimatePresence>
+        </div>
+
+        <Rise delay={0.05}>
+          <div className="mt-5 flex flex-col gap-4 rounded-[2rem] bg-white p-7 sm:flex-row sm:items-center sm:justify-between sm:p-9">
+            <div>
+              <h3 className="text-xl font-bold leading-tight text-rh-ink">Free to join.</h3>
+              <p className="mt-1 max-w-2xl text-[15px] font-medium text-rh-ink/70">
+                Partners earn commission on verified payments from patients they refer, as set in their partner agreement.
+              </p>
+            </div>
+            <a href="#inquiry" className={cn(textLink, "shrink-0 self-start sm:self-center")}>
+              Ask about terms
+              <Arrow />
+            </a>
+          </div>
+        </Rise>
+      </div>
+    </section>
   );
 }
 
 // ── Main Page Component ──────────────────────────
 export default function PartnershipsPage() {
+  const [demoOpen, setDemoOpen] = useState(false);
   return (
-    <div className="bg-[#FAF6E7] min-h-screen font-sans text-gray-900">
-      {/* ─── Hero Section ─────────────────────────── */}
-      <section className="relative pt-32 pb-20 px-6 lg:px-8 overflow-hidden">
-        {/* Background decoration */}
-        <div className="absolute inset-0 -z-10">
-          <div className="absolute top-20 left-10 w-96 h-96 bg-[#002e2c]/5 rounded-full blur-3xl" />
-          <div className="absolute bottom-10 right-10 w-80 h-80 bg-emerald-500/5 rounded-full blur-3xl" />
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-teal-500/3 rounded-full blur-3xl" />
-        </div>
-
-        <div className="max-w-5xl mx-auto text-center">
-          <FadeIn>
-            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#002e2c]/5 border border-[#002e2c]/10 mb-6">
-              <Handshake className="w-4 h-4 text-[#005b57]" />
-              <span className="text-sm font-semibold text-[#005b57]">Partnership Program</span>
-            </div>
-          </FadeIn>
-
-          <FadeIn delay={0.1}>
-            <h1 className="text-5xl md:text-6xl lg:text-7xl font-bold tracking-tight text-[#002e2c] mb-6 font-cal leading-[1.1]">
-              Power Your Platform with{" "}
-              <span className="bg-gradient-to-r from-[#005b57] to-emerald-500 bg-clip-text text-transparent">
-                Rehabify
-              </span>
+    <div className="min-h-screen bg-rh-canvas font-sans text-rh-ink">
+      {/* ─── Hero ─────────────────────────────────── */}
+      <section className="px-4 pb-20 pt-32 sm:px-6 sm:pt-36 lg:pb-28 lg:pt-44">
+        <div className="mx-auto grid max-w-6xl items-center gap-12 lg:grid-cols-[1.05fr_0.95fr] lg:gap-16">
+          <Rise>
+            <h1 className="text-[40px] font-bold leading-[1.05] tracking-tight text-rh-ink sm:text-[56px] lg:text-[64px]">
+              Connect the people you serve to licensed physiotherapy.
             </h1>
-          </FadeIn>
-
-          <FadeIn delay={0.2}>
-            <p className="text-xl text-gray-600 max-w-3xl mx-auto mb-10 leading-relaxed">
-              Integrate Rehabify&apos;s verified physiotherapy network into your product.
-              REST APIs, embed widgets, WhatsApp deep-links, and more — choose the integration 
-              that fits your workflow.
+            <p className="mt-5 max-w-xl text-lg font-medium leading-relaxed text-rh-ink/75">
+              Refer through a link, the partner portal or our REST API, and follow every patient&apos;s recovery.
             </p>
-          </FadeIn>
-
-          <FadeIn delay={0.3}>
-            <div className="flex flex-col sm:flex-row justify-center gap-4">
-              <a
-                href="#inquiry"
-                className="bg-[#002e2c] text-white font-bold py-4 px-8 rounded-xl hover:bg-[#005b57] transition-all duration-200 shadow-lg hover:shadow-xl flex items-center justify-center gap-2 group"
-              >
-                Become a Partner
-                <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+              <button type="button" onClick={() => setDemoOpen(true)} className={primary}>
+                Book a demo
+                <Arrow />
+              </button>
+              <a href="#inquiry" className={secondary}>
+                Become a partner
               </a>
-              <Link
-                href="/integrations"
-                className="bg-white text-[#002e2c] border border-[#002e2c]/20 font-bold py-4 px-8 rounded-xl hover:bg-gray-50 transition-all duration-200 shadow-lg hover:shadow-xl flex items-center justify-center gap-2"
-              >
-                <Code className="w-4 h-4" />
-                View Integration Docs
+            </div>
+            <div className="mt-6 flex flex-wrap gap-x-6 gap-y-3">
+              <Link href="/integrations" className={textLink}>
+                Read the integration docs
+                <Arrow />
+              </Link>
+              <Link href="/partners/portal" className={textLink}>
+                Partner sign in
               </Link>
             </div>
-          </FadeIn>
+            <p className="mt-8 text-[15px] font-medium text-rh-ink/60">Partners include AwaDoc and MediLoan by MyItura.</p>
+          </Rise>
+
+          <Rise delay={0.08}>
+            <div className="rounded-[2rem] bg-white p-7 sm:p-9">
+              <h2 className="text-[22px] font-bold leading-tight text-rh-ink sm:text-2xl">How a referral works</h2>
+              <ol className="mt-6">
+                {REFERRAL_STEPS.map((step, i) => (
+                  <li key={step.title} className="flex gap-4 border-t border-rh-ink/10 py-4 last:pb-0">
+                    <span
+                      aria-hidden
+                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-rh-ink text-sm font-semibold text-white"
+                    >
+                      {i + 1}
+                    </span>
+                    <span>
+                      <span className="block text-[17px] font-bold leading-snug text-rh-ink">{step.title}</span>
+                      <span className="mt-0.5 block text-[15px] font-medium leading-relaxed text-rh-ink/70">{step.body}</span>
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          </Rise>
         </div>
       </section>
 
-      {/* ─── Partner Types Section ────────────────── */}
-      <section className="py-20 px-6 lg:px-8 bg-white border-y border-gray-100">
-        <div className="max-w-7xl mx-auto">
-          <FadeIn>
-            <div className="text-center mb-14">
-              <h2 className="text-3xl md:text-4xl font-bold text-[#002e2c] font-cal mb-4">
-                Built for Every Healthcare Partner
-              </h2>
-              <p className="text-lg text-gray-500 max-w-2xl mx-auto">
-                Whether you&apos;re a hospital, HMO, corporate, gym, or healthtech platform — we have 
-                the right integration for you.
-              </p>
-            </div>
-          </FadeIn>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {partnerTypes.map((partner, idx) => (
-              <FadeIn key={idx} delay={idx * 0.08}>
-                <div
-                  className={`relative p-6 rounded-2xl border ${partner.borderColor} bg-gradient-to-br ${partner.color} hover:shadow-lg transition-all duration-300 group h-full`}
-                >
-                  <div className={`w-12 h-12 rounded-xl ${partner.iconBg} flex items-center justify-center mb-4`}>
-                    <partner.icon className="w-6 h-6" />
-                  </div>
-                  <h3 className="text-lg font-bold text-gray-900 mb-2 font-cal">{partner.title}</h3>
-                  <p className="text-sm text-gray-600 mb-4 leading-relaxed">{partner.description}</p>
-                  <div className="flex flex-wrap gap-2">
-                    {partner.features.map((feature, i) => (
-                      <span
-                        key={i}
-                        className="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full bg-white/80 text-gray-700 border border-gray-200"
-                      >
-                        <CheckCircle2 className="w-3 h-3 text-emerald-500" />
-                        {feature}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              </FadeIn>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ─── Integration Showcase ─────────────────── */}
-      <section className="py-20 px-6 lg:px-8">
-        <div className="max-w-7xl mx-auto">
-          <FadeIn>
-            <div className="text-center mb-14">
-              <h2 className="text-3xl md:text-4xl font-bold text-[#002e2c] font-cal mb-4">
-                Choose Your Integration Path
-              </h2>
-              <p className="text-lg text-gray-500 max-w-2xl mx-auto">
-                From no-code WhatsApp links to full REST APIs — integrate at the level that 
-                matches your technical capacity.
-              </p>
-            </div>
-          </FadeIn>
-
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-start">
-            {/* Integration Channels */}
-            <div className="space-y-4">
-              {integrationChannels.map((channel, idx) => (
-                <FadeIn key={idx} delay={idx * 0.06}>
-                  <div className="flex items-start gap-4 p-4 rounded-xl bg-white border border-gray-100 hover:border-[#005b57]/20 hover:shadow-md transition-all duration-300 group">
-                    <div className="w-10 h-10 rounded-lg bg-[#002e2c]/5 text-[#005b57] flex items-center justify-center shrink-0 group-hover:bg-[#002e2c] group-hover:text-white transition-colors">
-                      <channel.icon className="w-5 h-5" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <h4 className="font-bold text-gray-900 text-sm">{channel.name}</h4>
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-                          {channel.badge}
-                        </span>
-                      </div>
-                      <p className="text-xs text-gray-500 leading-relaxed">{channel.description}</p>
-                    </div>
-                    <div className="text-right shrink-0">
-                      <div className="flex items-center gap-1 text-xs text-gray-400">
-                        <Clock className="w-3 h-3" />
-                        {channel.setupTime}
-                      </div>
-                    </div>
-                  </div>
-                </FadeIn>
+      {/* ─── Who we work with ─────────────────────── */}
+      <section className="px-4 pb-20 sm:px-6 lg:pb-28">
+        <div className="mx-auto max-w-6xl">
+          <Rise>
+            <h2 className={cn(h2Class, "text-rh-ink")}>Built for every kind of referrer.</h2>
+            <p className={cn(leadClass, "text-rh-ink/75")}>From one clinic to a national health plan, refer the same way.</p>
+          </Rise>
+          <Rise delay={0.06}>
+            <ol className="mt-10 grid gap-x-12 sm:grid-cols-2">
+              {PARTNER_TYPES.map((partner, i) => (
+                <li key={partner.title} className="flex gap-5 border-t border-rh-ink/10 py-5">
+                  <span className="w-7 shrink-0 pt-0.5 text-[15px] font-semibold tabular-nums text-rh-ink/40">
+                    {String(i + 1).padStart(2, "0")}
+                  </span>
+                  <span>
+                    <span className="block text-lg font-bold leading-snug text-rh-ink">{partner.title}</span>
+                    <span className="mt-1 block text-[15px] font-medium leading-relaxed text-rh-ink/70">{partner.body}</span>
+                  </span>
+                </li>
               ))}
-            </div>
+            </ol>
+          </Rise>
+        </div>
+      </section>
 
-            {/* Code Preview */}
-            <FadeIn delay={0.2}>
-              <div className="sticky top-24">
-                <CodeSample />
-                <p className="text-xs text-gray-400 text-center mt-4">
-                  Production-ready API with comprehensive documentation
-                </p>
+      {/* ─── Integration paths ────────────────────── */}
+      <IntegrationPaths />
+
+      {/* ─── For developers ───────────────────────── */}
+      <section className="overflow-hidden bg-rh-ink px-4 py-20 text-white sm:px-6 lg:py-28">
+        <div className="mx-auto max-w-6xl">
+          <div className="grid gap-10 lg:grid-cols-2 lg:gap-16">
+            <Rise>
+              <h2 className={cn(h2Class, "text-white")}>Made for developers.</h2>
+              <p className={cn(leadClass, "text-white/75")}>A REST API and signed webhooks, with a sandbox to build in first.</p>
+              <div className="mt-8">
+                <Link href="/integrations" className={primaryOnInk}>
+                  Read the integration docs
+                  <Arrow />
+                </Link>
               </div>
-            </FadeIn>
+            </Rise>
+            <Rise delay={0.05}>
+              <ul className="lg:pt-2">
+                {DEV_FACTS.map((fact) => (
+                  <li key={fact} className="flex items-center gap-3 border-t border-white/10 py-4 text-base font-medium text-white/85">
+                    <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full bg-rh-lime" />
+                    {fact}
+                  </li>
+                ))}
+              </ul>
+            </Rise>
           </div>
+
+          <Rise delay={0.1} className="relative mt-12 lg:mt-16">
+            <PairingShapes className="-right-5 -top-6 h-28 w-28 sm:-right-8 sm:-top-8 sm:h-40 sm:w-40" />
+            <CodeSample />
+          </Rise>
         </div>
       </section>
 
-      {/* ─── Pricing Section ──────────────────────── */}
-      <section className="py-20 px-6 lg:px-8 bg-white border-y border-gray-100">
-        <div className="max-w-6xl mx-auto">
-          <FadeIn>
-            <div className="text-center mb-14">
-              <h2 className="text-3xl md:text-4xl font-bold text-[#002e2c] font-cal mb-4">
-                Simple, Transparent Pricing
-              </h2>
-              <p className="text-lg text-gray-500 max-w-2xl mx-auto">
-                Start free. Scale as you grow. Only pay for what you use.
-              </p>
-            </div>
-          </FadeIn>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            {pricingTiers.map((tier, idx) => (
-              <FadeIn key={idx} delay={idx * 0.1}>
-                <div
-                  className={`relative rounded-2xl p-8 h-full flex flex-col ${
-                    tier.popular
-                      ? "bg-gradient-to-br from-[#002e2c] to-[#005b57] text-white shadow-2xl ring-2 ring-emerald-400/30 scale-[1.02]"
-                      : "bg-white border border-gray-200 shadow-lg"
-                  }`}
-                >
-                  {tier.popular && (
-                    <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                      <span className="px-4 py-1 rounded-full bg-emerald-400 text-[#002e2c] text-xs font-bold shadow-lg">
-                        Most Popular
-                      </span>
-                    </div>
-                  )}
-
-                  <h3 className={`text-lg font-bold font-cal ${tier.popular ? "text-white" : "text-gray-900"}`}>
-                    {tier.name}
-                  </h3>
-
-                  <div className="mt-4 mb-2">
-                    <span className={`text-4xl font-bold font-cal ${tier.popular ? "text-white" : "text-[#002e2c]"}`}>
-                      {tier.price}
-                    </span>
-                    <span className={`text-sm ml-1 ${tier.popular ? "text-emerald-200" : "text-gray-500"}`}>
-                      {tier.priceNote}
-                    </span>
-                  </div>
-
-                  <p className={`text-sm mb-6 ${tier.popular ? "text-emerald-100" : "text-gray-500"}`}>
-                    {tier.description}
-                  </p>
-
-                  <ul className="space-y-3 mb-8 flex-1">
-                    {tier.features.map((feature, i) => (
-                      <li key={i} className="flex items-start gap-2">
-                        <CheckCircle2
-                          className={`w-4 h-4 shrink-0 mt-0.5 ${
-                            tier.popular ? "text-emerald-300" : "text-emerald-500"
-                          }`}
-                        />
-                        <span className={`text-sm ${tier.popular ? "text-emerald-50" : "text-gray-600"}`}>
-                          {feature}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-
-                  <a
-                    href="#inquiry"
-                    className={`w-full py-3 rounded-xl font-bold text-sm text-center transition-all duration-200 block ${
-                      tier.popular
-                        ? "bg-white text-[#002e2c] hover:bg-emerald-50 shadow-lg"
-                        : "bg-[#002e2c] text-white hover:bg-[#005b57] shadow-md"
-                    }`}
-                  >
-                    {tier.cta}
-                  </a>
-                </div>
-              </FadeIn>
-            ))}
-          </div>
-
-          {/* Additional note */}
-          <FadeIn delay={0.3}>
-            <div className="mt-10 text-center">
-              <p className="text-sm text-gray-500">
-                All plans include an{" "}
-                <span className="font-semibold text-gray-700">8–12% platform fee</span>{" "}
-                per booked session (built into therapist pricing, not charged to partners).
-              </p>
-            </div>
-          </FadeIn>
+      {/* ─── Trust ────────────────────────────────── */}
+      <section className="px-4 py-20 sm:px-6 lg:py-28">
+        <div className="mx-auto max-w-6xl">
+          <Rise>
+            <h2 className={cn(h2Class, "text-rh-ink")}>Patient data, handled with care.</h2>
+            <p className={cn(leadClass, "text-rh-ink/75")}>Every Rehabify physiotherapist is MRTBN-licensed.</p>
+          </Rise>
+          <Rise delay={0.06}>
+            <ol className="mt-10 grid gap-x-12 sm:grid-cols-2">
+              {TRUST.map((item, i) => (
+                <li key={item.title} className="flex gap-5 border-t border-rh-ink/10 py-5">
+                  <span className="w-7 shrink-0 pt-0.5 text-[15px] font-semibold tabular-nums text-rh-ink/40">
+                    {String(i + 1).padStart(2, "0")}
+                  </span>
+                  <span>
+                    <span className="block text-lg font-bold leading-snug text-rh-ink">{item.title}</span>
+                    <span className="mt-1 block text-[15px] font-medium leading-relaxed text-rh-ink/70">{item.body}</span>
+                  </span>
+                </li>
+              ))}
+            </ol>
+          </Rise>
         </div>
       </section>
 
-      {/* ─── Why Partner With Us ──────────────────── */}
-      <section className="py-20 px-6 lg:px-8">
-        <div className="max-w-5xl mx-auto">
-          <FadeIn>
-            <div className="text-center mb-14">
-              <h2 className="text-3xl md:text-4xl font-bold text-[#002e2c] font-cal mb-4">
-                Why Partner With Rehabify?
-              </h2>
-            </div>
-          </FadeIn>
+      {/* ─── Inquiry Form ─────────────────────────── */}
+      <section id="inquiry" className="scroll-mt-24 px-4 pb-24 sm:px-6 lg:pb-32">
+        <div className="mx-auto grid max-w-6xl gap-10 lg:grid-cols-[0.8fr_1.2fr] lg:gap-16">
+          <Rise>
+            <h2 className={cn(h2Class, "text-rh-ink")}>Tell us about your organisation.</h2>
+            <p className={cn(leadClass, "text-rh-ink/75")}>Share a few details and we&apos;ll pick it up with you on WhatsApp.</p>
+            <p className="mt-6 text-[15px] font-medium text-rh-ink/70">
+              Prefer to talk it through?{" "}
+              <button
+                type="button"
+                onClick={() => setDemoOpen(true)}
+                className="rounded-sm font-semibold text-rh-ink underline underline-offset-4 hover:no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-ink"
+              >
+                Book a demo
+              </button>
+            </p>
+          </Rise>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {[
-              {
-                icon: ShieldCheck,
-                title: "Verified Network",
-                description: "Every therapist is license-verified and background-checked. Your patients are in safe hands.",
-              },
-              {
-                icon: Zap,
-                title: "Fast Integration",
-                description: "From no-code deep-links (15 mins) to full API integration (3 days). We meet you where you are.",
-              },
-              {
-                icon: Globe,
-                title: "WhatsApp-First",
-                description: "Patients prefer WhatsApp. Our AI assistant Joy handles intake, booking, and follow-ups on WhatsApp.",
-              },
-              {
-                icon: TrendingUp,
-                title: "Outcome Data",
-                description: "Real-time clinical outcomes data. Know exactly how your referred patients are progressing.",
-              },
-              {
-                icon: Users,
-                title: "Dedicated Support",
-                description: "Enterprise partners get a dedicated account manager and SLA-backed support.",
-              },
-              {
-                icon: Lock,
-                title: "HIPAA-Ready",
-                description: "Enterprise-grade security with encrypted data, audit logs, and compliance-ready infrastructure.",
-              },
-            ].map((item, idx) => (
-              <FadeIn key={idx} delay={idx * 0.08}>
-                <div className="text-center p-6">
-                  <div className="w-14 h-14 rounded-2xl bg-[#002e2c]/5 text-[#005b57] flex items-center justify-center mx-auto mb-4">
-                    <item.icon className="w-6 h-6" />
-                  </div>
-                  <h3 className="font-bold text-gray-900 mb-2 font-cal">{item.title}</h3>
-                  <p className="text-sm text-gray-500 leading-relaxed">{item.description}</p>
-                </div>
-              </FadeIn>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ─── Inquiry Form Section ─────────────────── */}
-      <section id="inquiry" className="py-20 px-6 lg:px-8 bg-white border-t border-gray-100">
-        <div className="max-w-3xl mx-auto">
-          <FadeIn>
-            <div className="text-center mb-10">
-              <h2 className="text-3xl md:text-4xl font-bold text-[#002e2c] font-cal mb-4">
-                Ready to Integrate?
-              </h2>
-              <p className="text-lg text-gray-500">
-                Tell us about your organization and integration needs. 
-                Our partnerships team will get back to you within 24 hours.
-              </p>
-            </div>
-          </FadeIn>
-
-          <FadeIn delay={0.1}>
-            <div className="bg-[#FAF6E7] rounded-2xl p-8 border border-gray-100 shadow-sm">
+          <Rise delay={0.05}>
+            <div className="rounded-[2rem] bg-white p-6 sm:p-9">
               <PartnerInquiryForm />
             </div>
-          </FadeIn>
+          </Rise>
         </div>
       </section>
+
+      <BookDemoDialog open={demoOpen} onOpenChange={setDemoOpen} />
     </div>
   );
 }

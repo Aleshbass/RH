@@ -32,6 +32,8 @@ import { DevelopersTab } from "./DevelopersTab";
 import { CommercialTab } from "./CommercialTab";
 import { SettingsTab } from "./SettingsTab";
 import { GoLivePanel } from "./GoLivePanel";
+import { WebsiteLink } from "@/components/dashboard/shared/WebsiteLink";
+import { publicAppUrl } from "@/lib/public-app-url";
 
 export type TabId = "overview" | "refer" | "referrals" | "links" | "developers" | "golive" | "commercial" | "settings";
 
@@ -90,7 +92,7 @@ export function PartnerDashboard({ ownCode, ownType, isAdmin }: { ownCode: strin
 
   if (!partnerCode) {
     return (
-      <div className="min-h-screen bg-[#FAF6E7] flex items-center justify-center p-6">
+      <div className="min-h-screen bg-rh-canvas flex items-center justify-center p-6">
         {isAdmin && adminPartners !== undefined && adminPartners.length === 0 ? (
           <p className="text-sm text-[#52706e]">No partner organisations yet. Create one from the admin Partnerships page.</p>
         ) : (
@@ -103,8 +105,8 @@ export function PartnerDashboard({ ownCode, ownType, isAdmin }: { ownCode: strin
   const ctx = info ? { partnerCode, environment: env, info, isAdmin, envWritable, isDoctor } : null;
 
   return (
-    <div className="min-h-screen bg-[#FAF6E7] text-rh-ink font-sans pb-28 antialiased selection:bg-rh-lime selection:text-rh-ink overflow-x-clip w-full max-w-full">
-      <header className="sticky top-0 z-40 border-b border-rh-ink/10 bg-[#FAF6E7]/80 backdrop-blur-xl w-full">
+    <div className="min-h-screen bg-rh-canvas text-rh-ink font-sans pb-28 antialiased selection:bg-rh-lime selection:text-rh-ink overflow-x-clip w-full max-w-full">
+      <header className="sticky top-0 z-40 border-b border-rh-ink/10 bg-rh-canvas/80 backdrop-blur-xl w-full">
         <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-2 sm:gap-4 min-w-0">
           <div className="flex items-center gap-2 sm:gap-4 min-w-0 flex-1 sm:flex-initial">
             <Link href="/" className="shrink-0 transition-opacity hover:opacity-85">
@@ -122,6 +124,8 @@ export function PartnerDashboard({ ownCode, ownType, isAdmin }: { ownCode: strin
           </div>
 
           <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
+            {/* On partners.* "/" is the portal itself, so link to the main site in full */}
+            <WebsiteLink tone="console" href={publicAppUrl()} />
             {isAdmin && adminPartners && adminPartners.length > 0 && (
               <div className="relative max-w-[110px] sm:max-w-[200px]">
                 <select

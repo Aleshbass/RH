@@ -3427,13 +3427,145 @@ export default defineSchema({
   ...healthTables,
 
   partnershipInquiries: defineTable({
+    // "demo" = Book a demo on the partners page; missing on older rows, which are partnership inquiries
+    kind: v.optional(v.union(v.literal("partnership"), v.literal("demo"))),
     name: v.string(),
     email: v.string(),
+    phone: v.optional(v.string()),
     organization: v.string(),
     message: v.string(),
     status: v.union(v.literal("new"), v.literal("contacted"), v.literal("closed")),
     createdAt: v.number(),
   }).index("by_status", ["status"]).index("by_created", ["createdAt"]),
+
+  // Marketing emails (convex/marketing.ts, convex/actions/marketingSend.ts). Group sends go out as
+  // Resend Broadcasts to one Resend audience per segment; one-to-one sends use a throttled queue.
+  marketingContacts: defineTable({
+    email: v.string(),
+    name: v.optional(v.string()),
+    tags: v.array(v.string()),
+    createdAt: v.number(),
+  }).index("by_email", ["email"]),
+
+  marketingAudiences: defineTable({
+    segment: v.string(), // patients | physiotherapists | clinics | partners | contacts
+    resendAudienceId: v.string(),
+    createdAt: v.number(),
+  }).index("by_segment", ["segment"]),
+
+  // Who is already a contact in each Resend audience, so a sync only adds and removes the difference
+  marketingAudienceMembers: defineTable({
+    segment: v.string(),
+    email: v.string(),
+    resendContactId: v.optional(v.string()),
+    syncedAt: v.number(),
+  })
+    .index("by_segment", ["segment"])
+    .index("by_segment_and_email", ["segment", "email"]),
+
+  marketingCampaigns: defineTable({
+    subject: v.string(),
+    previewText: v.optional(v.string()),
+    heading: v.string(),
+    body: v.string(),
+    ctaLabel: v.optional(v.string()),
+    ctaUrl: v.optional(v.string()),
+    imageUrl: v.optional(v.string()),
+    audience: v.union(
+      v.literal("everyone"),
+      v.literal("patients"),
+      v.literal("physiotherapists"),
+      v.literal("clinics"),
+      v.literal("partners"),
+      v.literal("contacts"),
+      v.literal("individual")
+    ),
+    status: v.union(v.literal("preparing"), v.literal("sending"), v.literal("sent"), v.literal("partial"), v.literal("failed")),
+    segmentsToSend: v.array(v.string()), // Broadcast segments still to go, in order
+    broadcastIds: v.array(v.string()),
+    recipientCount: v.number(),
+    sentCount: v.number(),
+    failedCount: v.number(),
+    lastError: v.optional(v.string()),
+    createdBy: v.id("users"),
+    createdByName: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    sentAt: v.optional(v.number()),
+  }).index("by_created", ["createdAt"]),
+
+  // One-to-one sends (audience "individual"), drained in batches under the daily cap
+  marketingQueue: defineTable({
+    campaignId: v.id("marketingCampaigns"),
+    email: v.string(),
+    name: v.optional(v.string()),
+    status: v.union(v.literal("pending"), v.literal("sent"), v.literal("failed")),
+    attempts: v.number(),
+    lastError: v.optional(v.string()),
+    sentAt: v.optional(v.number()),
+  }).index("by_campaign_and_status", ["campaignId", "status"]),
+
+  // One-to-one marketing emails sent per UTC day, kept under MARKETING_DIRECT_DAILY_LIMIT so they
+  // never use up the Resend free plan's 100 a day that appointment and payment emails rely on
+  marketingDailyUsage: defineTable({
+    day: v.string(), // YYYY-MM-DD (UTC, as Resend counts it)
+    count: v.number(),
+  }).index("by_day", ["day"]),
+
+  // Careers (convex/careers.ts): roles posted by admins on /careers, and the applications to them
+  careerJobs: defineTable({
+    slug: v.string(),
+    title: v.string(),
+    team: v.string(), // e.g. "Clinical", "Engineering", "Operations"
+    location: v.string(), // e.g. "Lagos", "Anywhere in Nigeria"
+    workplace: v.union(v.literal("onsite"), v.literal("hybrid"), v.literal("remote")),
+    employmentType: v.union(
+      v.literal("full_time"),
+      v.literal("part_time"),
+      v.literal("contract"),
+      v.literal("internship")
+    ),
+    summary: v.string(), // one sentence for the roles list
+    description: v.string(), // "About the role"; paragraphs separated by blank lines
+    responsibilities: v.array(v.string()),
+    requirements: v.array(v.string()),
+    niceToHave: v.optional(v.array(v.string())),
+    salary: v.optional(v.string()), // shown as written, e.g. "₦400,000 – ₦600,000 a month"
+    status: v.union(v.literal("draft"), v.literal("open"), v.literal("closed")),
+    closesAt: v.optional(v.number()),
+    publishedAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_slug", ["slug"]).index("by_status", ["status"]),
+
+  careerApplications: defineTable({
+    jobId: v.id("careerJobs"),
+    jobTitle: v.string(), // as it was when they applied
+    fullName: v.string(),
+    email: v.string(),
+    phone: v.optional(v.string()),
+    location: v.optional(v.string()),
+    linkedinUrl: v.optional(v.string()),
+    portfolioUrl: v.optional(v.string()),
+    coverNote: v.optional(v.string()),
+    cvStorageId: v.id("_storage"), // PDF, checked for type and size on submit
+    cvFileName: v.optional(v.string()),
+    status: v.union(
+      v.literal("new"),
+      v.literal("reviewing"),
+      v.literal("interview"),
+      v.literal("accepted"),
+      v.literal("rejected")
+    ),
+    adminNotes: v.optional(v.string()),
+    decisionEmailSentAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_job", ["jobId"])
+    .index("by_status", ["status"])
+    .index("by_email_and_job", ["email", "jobId"])
+    .index("by_created", ["createdAt"]),
 
   // Enterprise & Healthcare Partners (HMOs, Hospitals, Corporate Wellness, BNPL, Gyms, Pharmacies, Employers)
   partners: defineTable({

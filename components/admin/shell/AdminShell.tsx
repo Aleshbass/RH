@@ -15,6 +15,7 @@ import { PhysioNotifications } from '@/components/physio/PhysioNotifications'
 import { AdminSidebar } from './AdminSidebar'
 import { AdminCommandPalette, OPEN_ADMIN_PALETTE_EVENT } from './AdminCommandPalette'
 import { adminBreadcrumbs } from './adminNav'
+import { WebsiteLink } from '@/components/dashboard/shared/WebsiteLink'
 
 function ShellSkeleton() {
   return (
@@ -156,6 +157,7 @@ function ShellFrame({ children }: { children: ReactNode }) {
           <Breadcrumbs />
 
           <div className="ml-auto flex shrink-0 items-center gap-1.5">
+            <WebsiteLink tone="console" />
             <SearchButton />
             <ClinicThemeToggle className="h-10 w-10 rounded-xl bg-white shadow-soft hover:bg-white dark:bg-rh-ink-2 dark:hover:bg-rh-ink-3 md:hidden" />
             <PhysioNotifications />

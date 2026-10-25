@@ -93,7 +93,7 @@ export default function OnboardingCompletePage() {
   }, [dashboardAccess, router]);
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-green-50">
+    <div className="min-h-screen flex items-center justify-center bg-rh-canvas">
       <div className="max-w-md w-full p-8 bg-white rounded-lg shadow-lg">
         <div className="text-center">
           {status === "loading" && (

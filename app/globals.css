@@ -151,10 +151,16 @@ body {
   --color-call-control: #ffffff;
   --color-call-accent: #002e2c;
   --animate-fadeIn: fadeIn 0.5s ease-in-out forwards;
+  /* Logo banners: the list is rendered twice, so moving it by half loops seamlessly */
+  --animate-marquee: marquee 45s linear infinite;
 
   @keyframes fadeIn {
     0% { opacity: 0; transform: translateY(10px); }
     100% { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes marquee {
+    from { transform: translateX(0); }
+    to { transform: translateX(-50%); }
   }
 }
 

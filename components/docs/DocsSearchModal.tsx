@@ -50,7 +50,7 @@ function Highlighted({ text }: { text: string }) {
         const match = part.match(/^<mark>([\s\S]*?)<\/mark>$/);
         if (match) {
           return (
-            <mark key={i} className="bg-[#005b57]/15 text-[#002e2c] rounded px-0.5">
+            <mark key={i} className="bg-rh-lime/40 text-rh-ink rounded px-0.5">
               {match[1]}
             </mark>
           );
@@ -187,18 +187,18 @@ export default function DocsSearchModal({ isOpen, onClose }: DocsSearchModalProp
       onClick={onClose}
     >
       <div
-        className="w-full max-w-xl bg-[#FAF6E7] border border-[#002e2c]/15 rounded-3xl shadow-2xl overflow-hidden text-[#002e2c]"
+        className="w-full max-w-xl bg-rh-canvas border border-rh-ink/15 rounded-3xl shadow-2xl overflow-hidden text-rh-ink"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-label="Search documentation"
       >
         {/* Search Input Bar */}
-        <div className="p-4 border-b border-[#002e2c]/10 flex items-center gap-3 bg-white/70">
+        <div className="p-4 border-b border-rh-ink/10 flex items-center gap-3 bg-white/70">
           {isLoading ? (
-            <Loader2 className="w-5 h-5 text-[#005b57] animate-spin" />
+            <Loader2 className="w-5 h-5 text-rh-ink animate-spin" />
           ) : (
-            <Search className="w-5 h-5 text-[#005b57]" />
+            <Search className="w-5 h-5 text-rh-ink" />
           )}
           <input
             ref={inputRef}
@@ -209,19 +209,19 @@ export default function DocsSearchModal({ isOpen, onClose }: DocsSearchModalProp
               setQuery(e.target.value);
               setSelectedIndex(0);
             }}
-            className="w-full bg-transparent text-sm text-[#002e2c] placeholder-[#52706e] focus:outline-none font-medium"
+            className="w-full bg-transparent text-sm text-rh-ink placeholder-rh-ink/45 focus:outline-none font-medium"
             aria-label="Search documentation"
           />
           <button
             onClick={onClose}
-            className="text-[11px] font-mono text-[#52706e] bg-[#FAF6E7] border border-[#002e2c]/10 px-2 py-1 rounded-md hover:bg-white transition"
+            className="text-[11px] font-mono text-rh-ink/60 bg-rh-canvas border border-rh-ink/10 px-2 py-1 rounded-md hover:bg-white transition"
           >
             ESC
           </button>
         </div>
 
         {/* Results List */}
-        <div className="max-h-96 overflow-y-auto p-2 divide-y divide-[#002e2c]/5">
+        <div className="max-h-96 overflow-y-auto p-2 divide-y divide-rh-ink/5">
           {results.length > 0 ? (
             results.map((item, idx) => {
               const isSelected = idx === selectedIndex;
@@ -236,16 +236,16 @@ export default function DocsSearchModal({ isOpen, onClose }: DocsSearchModalProp
                   onMouseEnter={() => setSelectedIndex(idx)}
                   className={`p-3 rounded-2xl cursor-pointer flex items-center justify-between gap-3 transition-all ${
                     isSelected
-                      ? "bg-[#005b57]/10 text-[#002e2c] font-semibold"
-                      : "text-[#2d4d4b] hover:bg-white/60"
+                      ? "bg-rh-ink/[0.06] text-rh-ink font-semibold"
+                      : "text-rh-ink/75 hover:bg-white/60"
                   }`}
                 >
                   <div className="flex items-center gap-3 min-w-0">
                     <div
                       className={`w-8 h-8 flex-shrink-0 rounded-xl flex items-center justify-center ${
                         isSelected
-                          ? "bg-[#005b57] text-white"
-                          : "bg-white/80 text-[#52706e] border border-[#002e2c]/10"
+                          ? "bg-rh-ink text-white"
+                          : "bg-white/80 text-rh-ink/60 border border-rh-ink/10"
                       }`}
                     >
                       <Icon className="w-4 h-4" />
@@ -257,13 +257,13 @@ export default function DocsSearchModal({ isOpen, onClose }: DocsSearchModalProp
                         <Highlighted text={item.content} />
                       </div>
                       {item.context && (
-                        <div className="text-[11px] text-[#52706e] font-normal truncate">{item.context}</div>
+                        <div className="text-[11px] text-rh-ink/60 font-normal truncate">{item.context}</div>
                       )}
                     </div>
                   </div>
 
                   {item.badge && (
-                    <span className="flex-shrink-0 text-[10px] uppercase font-mono px-2 py-0.5 rounded-full bg-[#005b57]/10 text-[#005b57] font-semibold border border-[#005b57]/20">
+                    <span className="flex-shrink-0 text-[10px] uppercase font-mono px-2 py-0.5 rounded-full bg-rh-ink/[0.06] text-rh-ink font-semibold border border-rh-ink/15">
                       {item.badge}
                     </span>
                   )}
@@ -271,14 +271,14 @@ export default function DocsSearchModal({ isOpen, onClose }: DocsSearchModalProp
               );
             })
           ) : (
-            <div className="p-8 text-center text-xs text-[#52706e]">
+            <div className="p-8 text-center text-xs text-rh-ink/60">
               {isLoading ? "Searching…" : <>No results for &ldquo;{query}&rdquo;.</>}
             </div>
           )}
         </div>
 
         {/* Footer shortcuts */}
-        <div className="px-4 py-2.5 bg-white/40 border-t border-[#002e2c]/10 flex items-center justify-between text-[11px] text-[#52706e]">
+        <div className="px-4 py-2.5 bg-white/40 border-t border-rh-ink/10 flex items-center justify-between text-[11px] text-rh-ink/60">
           <div className="flex items-center gap-2">
             <span className="flex items-center gap-1 font-mono">
               <CornerDownLeft className="w-3 h-3" /> Select

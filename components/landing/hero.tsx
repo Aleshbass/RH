@@ -2,14 +2,14 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowRight, ArrowUp, Check } from '@/components/icons';
+import { ArrowRight, ArrowUp } from '@/components/icons';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useQuery } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import { useAuth } from '@clerk/nextjs';
-import HeroBackground from './HeroBackground';
 import { FlipWords } from '@/components/ui/flip-words';
+import { joyWhatsAppUrl } from '@/lib/joyWhatsApp';
 
 const TYPING_PHRASES = [
   "My back has been hurting for weeks...",
@@ -125,15 +125,10 @@ export function LandingHero() {
 
   const dashboardProps = getDashboardProps();
 
-  const whatsappNumber = "2348061525811";
-  const whatsappPreMessage = "Hi Joy! 👋🏾 I need help with my recovery.";
-  const whatsappMessage = encodeURIComponent(whatsappPreMessage);
-  const whatsappUrl = `https://wa.me/${whatsappNumber}?text=${whatsappMessage}`;
+  const whatsappUrl = joyWhatsAppUrl("Hi Joy! 👋🏾 I need help with my recovery.");
 
   return (
-    <section className="relative min-h-[100svh] overflow-hidden bg-[#F5F0EA] pt-[140px] md:pt-[180px] lg:pt-[220px] pb-0 lg:pb-20 flex flex-col">
-      <HeroBackground />
-
+    <section className="relative min-h-[100svh] overflow-hidden bg-rh-canvas pt-[140px] md:pt-[180px] lg:pt-[220px] pb-0 lg:pb-20 flex flex-col">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10 flex-1 flex flex-col justify-end lg:justify-center">
         <div className="flex flex-col lg:flex-row items-center justify-between max-w-6xl mx-auto gap-12 lg:gap-16 w-full flex-1">
 
@@ -145,21 +140,24 @@ export function LandingHero() {
             className="w-full lg:w-[55%] text-center lg:text-left order-1 lg:pr-8"
           >
 
-            <h1 className="text-[2.25rem] sm:text-5xl md:text-6xl lg:text-6xl xl:text-7xl font-extrabold tracking-tight text-[#1A1A1A] mb-5 leading-[1.15]">
+            <h1 className="text-[2.25rem] sm:text-5xl md:text-6xl lg:text-6xl xl:text-7xl font-extrabold tracking-tight text-rh-ink mb-5 leading-[1.15]">
               <span className="block">Recovery at your</span>
               <span className="block mt-1 sm:mt-2 min-h-[1.2em]">
-                <FlipWords words={["fingertips.", "doorstep.", "schedule.", "home."]} className="text-[#005b57] font-extrabold !px-0" />
+                <span className="relative inline-block">
+                  <FlipWords words={["fingertips.", "doorstep.", "schedule.", "home."]} className="text-rh-ink font-extrabold !px-0" />
+                  <span aria-hidden className="absolute -bottom-1 left-0 h-[0.12em] w-full rounded-full bg-rh-lime" />
+                </span>
               </span>
             </h1>
 
-            <p className="text-lg sm:text-xl md:text-2xl text-[#555] mb-8 font-medium max-w-lg mx-auto lg:mx-0">
-              Tell Joy what hurts. Get matched with a verified specialist, same day, on WhatsApp.
+            <p className="text-lg sm:text-xl md:text-2xl text-rh-ink/65 mb-8 font-medium max-w-lg mx-auto lg:mx-0">
+              Tell Joy what hurts on WhatsApp. Get matched with a licensed physiotherapist within 24 hours.
             </p>
 
             {/* Primary CTA */}
             <div className="flex flex-col sm:flex-row items-center lg:items-start gap-3 mb-6">
               <Link href={whatsappUrl} target="_blank" rel="noopener noreferrer" className="w-full sm:w-auto">
-                <span className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-base sm:text-lg py-4 px-8 rounded-2xl flex items-center justify-center gap-2 transition-all duration-300 shadow-lg shadow-emerald-900/20 hover:shadow-emerald-900/30 transform hover:-translate-y-0.5 w-full sm:w-auto">
+                <span className="bg-rh-lime hover:bg-rh-lime-deep text-rh-ink font-bold text-base sm:text-lg py-4 px-8 rounded-full flex items-center justify-center gap-2 transition-colors duration-300 w-full sm:w-auto">
                   Talk to Joy now
                   <ArrowRight className="w-5 h-5" />
                 </span>
@@ -169,20 +167,13 @@ export function LandingHero() {
             <div className="flex flex-col sm:flex-row flex-wrap items-center justify-center lg:justify-start gap-4">
               {dashboardProps && (
                 <Link href={dashboardProps.href} className="w-full sm:w-auto">
-                  <span className="flex items-center justify-center text-white bg-emerald-600 hover:bg-emerald-500 font-semibold py-3 px-6 rounded-xl transition-all duration-300 shadow-md shadow-emerald-900/10 w-full text-sm">
+                  <span className="flex items-center justify-center text-white bg-rh-ink hover:bg-rh-ink-3 font-semibold py-3 px-6 rounded-full transition-colors duration-300 w-full text-sm">
                     {dashboardProps.text}
                   </span>
                 </Link>
               )}
             </div>
 
-            {/* Trust line */}
-            <div className="flex flex-col items-center lg:items-start gap-3 mt-8">
-              <p className="text-sm text-[#777] font-medium flex items-center gap-2">
-                <Check className="w-4 h-4 text-[#005b57] shrink-0" />
-                Licensed physiotherapists, approved by the Rehabify team
-              </p>
-            </div>
           </motion.div>
 
           {/* ── Right: Image (Mobile) & WhatsApp Chat Mockup (Desktop) ── */}
@@ -210,8 +201,8 @@ export function LandingHero() {
               <div className="bg-[#EFEAE2] rounded-[2rem] overflow-hidden shadow-[0_20px_60px_-15px_rgba(0,0,0,0.15)] border-[5px] border-[#E8E3DB] text-left">
 
                 {/* WhatsApp header */}
-                <div className="bg-[#008069] px-4 py-3.5 flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-[#E8A54F] flex items-center justify-center text-white font-bold text-lg flex-shrink-0 shadow-sm">
+                <div className="bg-rh-ink px-4 py-3.5 flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-rh-lime flex items-center justify-center text-rh-ink font-bold text-lg flex-shrink-0">
                     J
                   </div>
                   <div className="min-w-0">

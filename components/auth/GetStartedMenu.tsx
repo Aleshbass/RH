@@ -10,7 +10,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { makeFunctionReference } from "convex/server";
 import { Building2, ChevronDown, Handshake, Heart, HeartHandshake, LayoutDashboard, Stethoscope, UserCheck } from "@/components/icons";
 import { cn } from "@/lib/utils";
 import {
@@ -54,14 +54,14 @@ function IntentLink({
         onPick?.();
       }}
       className={cn(
-        "group flex items-center gap-3 rounded-xl px-3 transition-colors hover:bg-[#f0f8f7] focus-visible:bg-[#f0f8f7] focus-visible:outline-none",
+        "group flex items-center gap-3 rounded-xl px-3 transition-colors hover:bg-rh-canvas focus-visible:bg-rh-canvas focus-visible:outline-none",
         compact ? "py-2" : "py-2.5",
-        suggested && "bg-[#f0f8f7] ring-1 ring-inset ring-[#005b57]/15",
+        suggested && "bg-rh-canvas ring-1 ring-inset ring-rh-ink/10",
       )}
     >
       <span
         className={cn(
-          "flex shrink-0 items-center justify-center rounded-lg bg-[#e6f0ef] text-[#005b57] transition-colors group-hover:bg-[#005b57] group-hover:text-white",
+          "flex shrink-0 items-center justify-center rounded-lg bg-rh-canvas text-rh-ink transition-colors group-hover:bg-rh-lime group-hover:text-rh-ink",
           compact ? "h-7 w-7" : "h-9 w-9",
         )}
       >
@@ -71,7 +71,7 @@ function IntentLink({
         <span className="flex items-center gap-2">
           <span className={cn("font-semibold text-gray-900", compact ? "text-[13px]" : "text-sm")}>{details.menuLabel}</span>
           {suggested && (
-            <span className="rounded-full bg-[#005b57] px-2 py-0.5 text-[10px] font-bold text-white">Suggested</span>
+            <span className="rounded-full bg-rh-lime px-2 py-0.5 text-[10px] font-bold text-rh-ink">Suggested</span>
           )}
         </span>
         {!compact && <span className="mt-0.5 block text-xs text-gray-500">{details.description}</span>}
@@ -128,7 +128,7 @@ export function GetStartedMenu({ className }: { className?: string }) {
         aria-expanded={open}
         aria-haspopup="true"
         onClick={() => setOpen((value) => !value)}
-        className="inline-flex items-center gap-1.5 rounded-md bg-[#002e2c] px-4 py-2 text-sm font-bold text-white transition hover:-translate-y-0.5 hover:bg-[#004744] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#005b57]/25"
+        className="inline-flex items-center gap-1.5 rounded-md bg-rh-ink px-4 py-2 text-sm font-bold text-white transition hover:-translate-y-0.5 hover:bg-rh-ink-3 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-rh-lime/40"
       >
         Get started
         <ChevronDown className={cn("h-3 w-3 transition-transform duration-200", open && "rotate-180")} />
@@ -153,6 +153,9 @@ export function GetStartedMenu({ className }: { className?: string }) {
 
 type AccountLike = { role?: string | null; onboarded?: boolean } | null | undefined;
 
+// A plain reference: the generated `api` type is at TypeScript's depth limit (TS2589)
+const getMyUserRef = makeFunctionReference<"query", Record<string, never>, AccountLike>("users:getMyUser");
+
 const ROLE_SETUP_PATHS: Record<string, string> = {
   patient: onboardingPathFor("patient"),
   physiotherapist: onboardingPathFor("physiotherapist"),
@@ -172,14 +175,14 @@ export function accountDestination(user: AccountLike): { href: string; label: st
 
 /** "Dashboard" (or "Finish setup") for signed-in visitors, next to the account avatar. */
 export function DashboardButton({ className, onClick }: { className?: string; onClick?: () => void }) {
-  const user = useQuery(api.users.getMyUser);
+  const user = useQuery(getMyUserRef);
   const { href, label } = accountDestination(user);
   return (
     <Link
       href={href}
       onClick={onClick}
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-md bg-[#002e2c] px-3 py-1.5 text-xs font-bold text-white transition hover:bg-[#004744] sm:px-4 sm:py-2 sm:text-sm",
+        "inline-flex items-center gap-1.5 rounded-md bg-rh-ink px-3 py-1.5 text-xs font-bold text-white transition hover:bg-rh-ink-3 sm:px-4 sm:py-2 sm:text-sm",
         className,
       )}
     >

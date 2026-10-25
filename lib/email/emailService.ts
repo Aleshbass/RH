@@ -310,6 +310,8 @@ export interface PartnerNoticeData {
   calloutText?: string;
   ctaLabel?: string;
   ctaUrl?: string;
+  /** Plain text footer; defaults to the partner operations footer (careers emails use their own). */
+  footerNote?: string;
 }
 
 function escapeHtml(value: unknown): string {
@@ -1042,7 +1044,7 @@ export function getEmailContent(options: EmailOptions): { subject: string; body:
             d.calloutText ? callout('brand', escapeHtml(d.calloutTitle || "Details"), escapeHtml(d.calloutText)) : "",
             cta,
           ].join(''),
-          footerNote: PARTNER_FOOTER,
+          footerNote: d.footerNote ? escapeHtml(d.footerNote) : PARTNER_FOOTER,
         }),
       };
     }

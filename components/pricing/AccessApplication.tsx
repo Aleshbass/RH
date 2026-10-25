@@ -3,23 +3,33 @@
 import { useId, useState, type FormEvent, type ReactNode } from 'react'
 import Link from 'next/link'
 import { useConvexAuth, useMutation, useQuery } from 'convex/react'
-import { ArrowRight, CalendarClock, Check, ChevronDown, Clock, HeartHandshake, Info, Loader2 } from '@/components/icons'
+import { ArrowRight, CalendarClock, Check, ChevronDown, Clock, Info, Loader2 } from '@/components/icons'
 import { api } from '@/convex/_generated/api'
-import { CheckItem, displayFont, fieldClass, pillOutline, pillTeal } from '@/components/learn/shared'
+import { CheckItem, displayFont } from '@/components/learn/shared'
 import { errorMessage } from '@/components/partners/portal/shared'
 import { ACCESS_STATUS_LABELS, FUNDING_OPTIONS, INCOME_BANDS, SITUATIONS } from '@/lib/rehabify-access'
 import { formatKobo } from '@/lib/rehabify-services'
 import { cn } from '@/lib/utils'
 import type { AccessStatus, MyAccess } from '@/lib/rehabify-api-types'
-import { useCatalogue } from './shared'
+import { ctaPrimary, ctaSecondary, textLink, useCatalogue } from './shared'
 
 type Application = NonNullable<MyAccess['application']>
 type Award = NonNullable<MyAccess['award']>
 
 const OPEN_STATUSES = new Set(['submitted', 'under_review', 'waitlisted'])
 const RETURN_PATH = '/rehabify-access#apply'
-const card = 'rounded-[2rem] bg-white p-6 shadow-soft sm:p-9'
-const textLink = 'font-semibold text-rh-teal underline-offset-4 hover:underline'
+const card = 'rounded-[2rem] bg-white p-6 sm:p-9'
+const cardLabel = 'text-sm font-semibold text-rh-ink/60'
+const cardTitle = 'text-[24px] font-bold leading-tight tracking-tight text-rh-ink'
+/** Inputs, selects and textareas: canvas fill, hairline ring, ink ring on focus. */
+const inputClass =
+  'h-12 w-full rounded-2xl bg-rh-canvas px-4 text-[15px] text-rh-ink ring-1 ring-inset ring-rh-ink/10 placeholder:text-rh-ink/40 transition focus:outline-none focus:ring-2 focus:ring-rh-ink disabled:opacity-60'
+const fieldLabel = 'block text-[15px] font-semibold text-rh-ink'
+const errorText = 'mt-1.5 text-sm font-medium text-red-700'
+/** For the confirm-withdraw step: firm, but not the lime main action. */
+const inkButton =
+  'inline-flex h-12 items-center justify-center gap-2 rounded-full bg-rh-ink px-7 text-[15px] font-semibold text-white transition-colors hover:bg-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-ink focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50'
+const arrow = 'h-4 w-4 transition-transform duration-300 group-hover:translate-x-1'
 
 const formatDate = (ms: number) => new Date(ms).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
 
@@ -73,8 +83,8 @@ export function AccessApplication() {
     <div className="space-y-4">
       {application && <PreviousOutcome application={application} />}
       {status && !status.placesAvailable && (
-        <p className="flex gap-2.5 rounded-2xl bg-rh-peach p-4 text-sm leading-6 text-rh-night">
-          <Info className="mt-0.5 h-4 w-4 shrink-0" />
+        <p className="flex gap-3 rounded-[1.5rem] bg-white p-5 text-[15px] font-medium leading-6 text-rh-ink/80">
+          <Info className="mt-1 h-4 w-4 shrink-0 text-rh-ink" />
           All our current places are taken. You can still apply: if we can&apos;t offer you a place straight away, we may add
           you to the waiting list.
         </p>
@@ -87,10 +97,10 @@ export function AccessApplication() {
 function Skeleton() {
   return (
     <div className={cn(card, 'space-y-4')} aria-busy="true">
-      <div className="h-6 w-1/2 animate-pulse rounded-full bg-rh-night/[0.07]" />
-      <div className="h-4 w-3/4 animate-pulse rounded-full bg-rh-night/[0.05]" />
-      <div className="h-12 animate-pulse rounded-2xl bg-rh-night/[0.05]" />
-      <div className="h-12 animate-pulse rounded-2xl bg-rh-night/[0.05]" />
+      <div className="h-6 w-1/2 animate-pulse rounded-full bg-rh-ink/[0.07]" />
+      <div className="h-4 w-3/4 animate-pulse rounded-full bg-rh-ink/[0.05]" />
+      <div className="h-12 animate-pulse rounded-2xl bg-rh-ink/[0.05]" />
+      <div className="h-12 animate-pulse rounded-2xl bg-rh-ink/[0.05]" />
     </div>
   )
 }
@@ -98,11 +108,8 @@ function Skeleton() {
 function Notice({ title, children, action }: { title: string; children: ReactNode; action?: ReactNode }) {
   return (
     <div className={card}>
-      <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-rh-honeydew text-rh-teal">
-        <HeartHandshake className="h-5 w-5" />
-      </span>
-      <h3 className="mt-5 text-[24px] leading-tight text-rh-night">{title}</h3>
-      <p className="mt-3 text-[15px] leading-7 text-rh-night/70">{children}</p>
+      <h3 className={cardTitle}>{title}</h3>
+      <p className="mt-3 text-[15px] font-medium leading-7 text-rh-ink/70">{children}</p>
       {action && <div className="mt-7 flex flex-col gap-3 sm:flex-row">{action}</div>}
     </div>
   )
@@ -115,10 +122,10 @@ function SignInPrompt() {
       title="Sign in to apply"
       action={
         <>
-          <Link href={`/sign-up?redirect_url=${redirect}`} className={cn(pillTeal, 'h-12 px-7 text-[15px]')}>
-            Create a free account <ArrowRight className="h-4 w-4" />
+          <Link href={`/sign-up?redirect_url=${redirect}`} className={ctaPrimary}>
+            Create a free account <ArrowRight className={arrow} />
           </Link>
-          <Link href={`/sign-in?redirect_url=${redirect}`} className={cn(pillOutline, 'h-12 px-7 text-[15px]')}>
+          <Link href={`/sign-in?redirect_url=${redirect}`} className={ctaSecondary}>
             I already have an account
           </Link>
         </>
@@ -135,8 +142,8 @@ function FinishSetup() {
     <Notice
       title="Finish setting up your account"
       action={
-        <Link href="/role-selection" className={cn(pillTeal, 'h-12 px-7 text-[15px]')}>
-          Set up my patient account <ArrowRight className="h-4 w-4" />
+        <Link href="/role-selection" className={ctaPrimary}>
+          Set up my patient account <ArrowRight className={arrow} />
         </Link>
       }
     >
@@ -167,24 +174,24 @@ function ApplicationStatus({ application, justSubmitted }: { application: Applic
   return (
     <div className={card}>
       {justSubmitted && (
-        <p role="status" className="mb-6 flex items-center gap-2.5 rounded-2xl bg-rh-honeydew p-4 text-[15px] font-semibold text-rh-night">
-          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-rh-teal text-white">
-            <Check className="h-3.5 w-3.5" strokeWidth={3} />
+        <p role="status" className="mb-6 flex items-center gap-3 rounded-2xl bg-rh-canvas p-4 text-[15px] font-semibold text-rh-ink">
+          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-rh-lime text-rh-ink">
+            <Check className="h-3.5 w-3.5" />
           </span>
           Thank you. Your application has been received.
         </p>
       )}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-rh-night/45">Your application</p>
-          <h3 className="mt-1.5 text-[24px] leading-tight text-rh-night">{ACCESS_STATUS_LABELS[application.status] ?? 'Received'}</h3>
-          <p className="mt-1 text-sm text-rh-night/55">Submitted {formatDate(application.createdAt)}</p>
+          <p className={cardLabel}>Your application</p>
+          <h3 className={cn(cardTitle, 'mt-1.5')}>{ACCESS_STATUS_LABELS[application.status] ?? 'Received'}</h3>
+          <p className="mt-1 text-sm font-medium text-rh-ink/60">Submitted {formatDate(application.createdAt)}</p>
         </div>
-        <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-rh-honeydew text-rh-teal">
+        <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-rh-canvas text-rh-ink">
           {waitlisted ? <CalendarClock className="h-5 w-5" /> : <Clock className="h-5 w-5" />}
         </span>
       </div>
-      <p className="mt-5 text-[15px] leading-7 text-rh-night/70">
+      <p className="mt-5 text-[15px] font-medium leading-7 text-rh-ink/70">
         {waitlisted
           ? "The programme is full at the moment, so you're on our waiting list. We'll be in touch as soon as a place opens."
           : "We review every application individually and will be in touch about the outcome. We may contact you to confirm a few details."}{' '}
@@ -195,23 +202,27 @@ function ApplicationStatus({ application, justSubmitted }: { application: Applic
         in the meantime.
       </p>
 
-      <div className="mt-7 border-t border-rh-night/[0.08] pt-5">
+      <div className="mt-7 border-t border-rh-ink/10 pt-5">
         {confirming ? (
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-            <p className="text-sm font-semibold text-rh-night sm:mr-auto">Withdraw your application?</p>
-            <button type="button" onClick={onWithdraw} disabled={busy} className={cn(pillTeal, 'h-11')}>
+            <p className="text-[15px] font-semibold text-rh-ink sm:mr-auto">Withdraw your application?</p>
+            <button type="button" onClick={onWithdraw} disabled={busy} className={inkButton}>
               {busy && <Loader2 className="h-4 w-4 animate-spin" />} Yes, withdraw it
             </button>
-            <button type="button" onClick={() => setConfirming(false)} disabled={busy} className={cn(pillOutline, 'h-11')}>
+            <button type="button" onClick={() => setConfirming(false)} disabled={busy} className={ctaSecondary}>
               Keep it
             </button>
           </div>
         ) : (
-          <button type="button" onClick={() => setConfirming(true)} className="text-sm font-semibold text-rh-night/60 underline-offset-4 hover:text-rh-night hover:underline">
+          <button
+            type="button"
+            onClick={() => setConfirming(true)}
+            className="rounded-sm text-[15px] font-semibold text-rh-ink/60 underline-offset-4 hover:text-rh-ink hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-ink focus-visible:ring-offset-2"
+          >
             Withdraw my application
           </button>
         )}
-        {error && <p className="mt-3 text-sm text-red-700">{error}</p>}
+        {error && <p className={cn(errorText, 'mt-3')}>{error}</p>}
       </div>
     </div>
   )
@@ -223,11 +234,9 @@ function AwardCard({ award }: { award: Award }) {
 
   return (
     <div className={card}>
-      <span className="inline-flex items-center gap-1.5 rounded-full bg-rh-lime px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wide text-rh-night">
-        Approved
-      </span>
-      <h3 className="mt-3 text-[24px] leading-tight text-rh-night">Your Access rate with {award.physiotherapistName}</h3>
-      <p className="mt-1 text-sm text-rh-night/55">
+      <p className={cardLabel}>Approved</p>
+      <h3 className={cn(cardTitle, 'mt-1.5')}>Your Access rate with {award.physiotherapistName}</h3>
+      <p className="mt-1 text-sm font-medium text-rh-ink/60">
         {usedUp
           ? "You've used all the sessions in your arrangement"
           : `${award.sessionsLeft} of ${award.sessionsGranted} session${award.sessionsGranted === 1 ? '' : 's'} left`}
@@ -236,26 +245,26 @@ function AwardCard({ award }: { award: Award }) {
       {services.length > 0 && (
         <ul className="mt-6 space-y-3">
           {services.map((service) => (
-            <li key={service.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-rh-cream p-4">
+            <li key={service.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-rh-canvas p-4">
               <div className="min-w-0">
-                <p className="font-semibold text-rh-night">{service.name}</p>
-                <p className="mt-0.5 text-sm tabular-nums">
-                  <span className={cn('text-lg text-rh-night', displayFont)}>{formatKobo(service.assistedPriceKobo ?? 0)}</span>
+                <p className="text-base font-semibold text-rh-ink">{service.name}</p>
+                <p className="mt-0.5 text-[15px] tabular-nums">
+                  <span className={cn('text-lg text-rh-ink', displayFont)}>{formatKobo(service.assistedPriceKobo ?? 0)}</span>
                   {service.standardPriceKobo > (service.assistedPriceKobo ?? 0) && (
-                    <s className="ml-2 text-rh-night/40">{formatKobo(service.standardPriceKobo)}</s>
+                    <s className="ml-2 text-rh-ink/40">{formatKobo(service.standardPriceKobo)}</s>
                   )}
                 </p>
               </div>
               {!usedUp && (
-                <Link href={`/book/${award.physiotherapistId}/${service.id}?access=${award.id}`} className={cn(pillTeal, 'h-11')}>
-                  Book at your Access rate <ArrowRight className="h-4 w-4" />
+                <Link href={`/book/${award.physiotherapistId}/${service.id}?access=${award.id}`} className={ctaPrimary}>
+                  Book at your Access rate <ArrowRight className={arrow} />
                 </Link>
               )}
             </li>
           ))}
         </ul>
       )}
-      <p className="mt-6 text-sm leading-6 text-rh-night/60">
+      <p className="mt-6 text-[15px] font-medium leading-6 text-rh-ink/65">
         You&apos;ll also find this in your{' '}
         <Link href="/dashboard/patient" className={textLink}>
           patient dashboard
@@ -271,8 +280,8 @@ function PreviousOutcome({ application }: { application: Application }) {
   const ended = application.status === 'approved'
   if (!declined && !ended) return null
   return (
-    <div className="rounded-2xl bg-white p-5 text-[15px] leading-6 text-rh-night/75 shadow-soft">
-      <p className="font-semibold text-rh-night">
+    <div className="rounded-[1.5rem] bg-white p-5 text-[15px] font-medium leading-6 text-rh-ink/75">
+      <p className="font-semibold text-rh-ink">
         {declined ? "Your last application wasn't approved" : 'Your last Access arrangement has ended'}
       </p>
       {declined && application.decisionReason && <p className="mt-1">{application.decisionReason}</p>}
@@ -389,7 +398,7 @@ function ApplicationForm({ onSubmitted }: { onSubmitted: () => void }) {
       </Field>
 
       <fieldset aria-describedby={errors.isCurrentPatient ? 'access-isCurrentPatient-error' : undefined}>
-        <legend className="mb-2 block text-sm font-semibold text-rh-night">Are you already being treated by a Rehabify physiotherapist?</legend>
+        <legend className={cn(fieldLabel, 'mb-2')}>Are you already being treated by a Rehabify physiotherapist?</legend>
         <div className="grid gap-3 sm:grid-cols-2">
           {(
             [
@@ -400,8 +409,10 @@ function ApplicationForm({ onSubmitted }: { onSubmitted: () => void }) {
             <label
               key={value}
               className={cn(
-                'flex cursor-pointer items-center gap-3 rounded-2xl border px-4 py-3.5 text-[15px] font-medium transition has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-rh-teal has-[:focus-visible]:ring-offset-2',
-                fields.isCurrentPatient === value ? 'border-rh-teal bg-rh-honeydew text-rh-night' : 'border-rh-night/10 bg-white text-rh-night/80 hover:border-rh-night/25'
+                'flex cursor-pointer items-center gap-3 rounded-2xl px-4 py-3.5 text-[15px] font-medium ring-inset transition has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-rh-ink',
+                fields.isCurrentPatient === value
+                  ? 'bg-rh-canvas text-rh-ink ring-2 ring-rh-ink'
+                  : 'bg-white text-rh-ink/80 ring-1 ring-rh-ink/10 hover:ring-rh-ink/25'
               )}
             >
               <input
@@ -411,14 +422,14 @@ function ApplicationForm({ onSubmitted }: { onSubmitted: () => void }) {
                 value={value}
                 checked={fields.isCurrentPatient === value}
                 onChange={() => set('isCurrentPatient', value)}
-                className="h-4 w-4 accent-[#005b57]"
+                className="h-4 w-4 accent-rh-ink"
               />
               {label}
             </label>
           ))}
         </div>
         {errors.isCurrentPatient && (
-          <p id="access-isCurrentPatient-error" className="mt-1.5 text-sm text-red-700">
+          <p id="access-isCurrentPatient-error" className={errorText}>
             {errors.isCurrentPatient}
           </p>
         )}
@@ -470,7 +481,7 @@ function ApplicationForm({ onSubmitted }: { onSubmitted: () => void }) {
             value={fields.clinicalNeed}
             onChange={(e) => set('clinicalNeed', e.target.value)}
             placeholder="For example: lower back pain for six months, worse after sitting at work."
-            className={cn(fieldClass, 'h-auto min-h-[96px] resize-y py-3 leading-6')}
+            className={cn(inputClass, 'h-auto min-h-[96px] resize-y py-3 leading-6')}
           />
         )}
       </Field>
@@ -483,7 +494,7 @@ function ApplicationForm({ onSubmitted }: { onSubmitted: () => void }) {
             maxLength={1000}
             value={fields.statement}
             onChange={(e) => set('statement', e.target.value)}
-            className={cn(fieldClass, 'h-auto min-h-[96px] resize-y py-3 leading-6')}
+            className={cn(inputClass, 'h-auto min-h-[96px] resize-y py-3 leading-6')}
           />
         )}
       </Field>
@@ -491,24 +502,24 @@ function ApplicationForm({ onSubmitted }: { onSubmitted: () => void }) {
       <div className="grid gap-6 sm:grid-cols-2">
         <Field name="city" label="City" optional>
           {(props) => (
-            <input {...props} type="text" autoComplete="address-level2" maxLength={80} value={fields.city} onChange={(e) => set('city', e.target.value)} className={fieldClass} />
+            <input {...props} type="text" autoComplete="address-level2" maxLength={80} value={fields.city} onChange={(e) => set('city', e.target.value)} className={inputClass} />
           )}
         </Field>
         <Field name="area" label="Area" optional>
           {(props) => (
-            <input {...props} type="text" maxLength={80} value={fields.area} onChange={(e) => set('area', e.target.value)} className={fieldClass} />
+            <input {...props} type="text" maxLength={80} value={fields.area} onChange={(e) => set('area', e.target.value)} className={inputClass} />
           )}
         </Field>
       </div>
 
       <Field name="phone" label="Phone number" hint="If you'd like us to call a different number from the one on your account." optional>
         {(props) => (
-          <input {...props} type="tel" autoComplete="tel" maxLength={32} value={fields.phone} onChange={(e) => set('phone', e.target.value)} className={fieldClass} />
+          <input {...props} type="tel" autoComplete="tel" maxLength={32} value={fields.phone} onChange={(e) => set('phone', e.target.value)} className={inputClass} />
         )}
       </Field>
 
       <div>
-        <label className="flex cursor-pointer items-start gap-3 rounded-2xl bg-rh-cream p-4">
+        <label className="flex cursor-pointer items-start gap-3 rounded-2xl bg-rh-canvas p-4">
           <input
             id="access-consent"
             type="checkbox"
@@ -518,35 +529,35 @@ function ApplicationForm({ onSubmitted }: { onSubmitted: () => void }) {
               if (errors.consent) setErrors((current) => ({ ...current, consent: undefined }))
             }}
             aria-describedby={errors.consent ? 'access-consent-error' : undefined}
-            className="mt-1 h-4 w-4 shrink-0 accent-[#005b57]"
+            className="mt-1 h-4 w-4 shrink-0 accent-rh-ink"
           />
-          <span className="text-sm leading-6 text-rh-night/80">
+          <span className="text-[15px] font-medium leading-6 text-rh-ink/80">
             The information I&apos;ve given is accurate. I agree to Rehabify reviewing it, and contacting me if needed, to assess
             my application for Rehabify Access.
           </span>
         </label>
         {errors.consent && (
-          <p id="access-consent-error" className="mt-1.5 text-sm text-red-700">
+          <p id="access-consent-error" className={errorText}>
             {errors.consent}
           </p>
         )}
       </div>
 
       {formError && (
-        <p role="alert" className="rounded-2xl bg-red-50 p-4 text-sm leading-6 text-red-800">
+        <p role="alert" className="rounded-2xl bg-red-50 p-4 text-[15px] font-medium leading-6 text-red-800">
           {formError}
         </p>
       )}
 
       <div>
-        <button type="submit" disabled={submitting} className={cn(pillTeal, 'h-12 w-full px-7 text-[15px] sm:w-auto')}>
+        <button type="submit" disabled={submitting} className={cn(ctaPrimary, 'w-full sm:w-auto')}>
           {submitting ? (
             <>
               <Loader2 className="h-4 w-4 animate-spin" /> Sending
             </>
           ) : (
             <>
-              Submit application <ArrowRight className="h-4 w-4" />
+              Submit application <ArrowRight className={arrow} />
             </>
           )}
         </button>
@@ -582,18 +593,18 @@ function Field({
   const describedBy = [hint ? hintId : null, error ? errorId : null].filter(Boolean).join(' ') || undefined
   return (
     <div>
-      <label htmlFor={id} className="mb-1.5 block text-sm font-semibold text-rh-night">
+      <label htmlFor={id} className={cn(fieldLabel, 'mb-1.5')}>
         {label}
-        {optional && <span className="ml-1.5 font-normal text-rh-night/45">(optional)</span>}
+        {optional && <span className="ml-1.5 font-medium text-rh-ink/50">(optional)</span>}
       </label>
       {hint && (
-        <p id={hintId} className="-mt-0.5 mb-1.5 text-sm text-rh-night/55">
+        <p id={hintId} className="-mt-0.5 mb-2 text-sm font-medium text-rh-ink/60">
           {hint}
         </p>
       )}
       {children({ id, 'aria-describedby': describedBy, 'aria-invalid': error ? true : undefined })}
       {error && (
-        <p id={errorId} className="mt-1.5 text-sm text-red-700">
+        <p id={errorId} className={errorText}>
           {error}
         </p>
       )}
@@ -610,13 +621,13 @@ function Select({
 }: ControlProps & { value: string; onChange: (value: string) => void; placeholder: string; children: ReactNode }) {
   return (
     <div className="relative">
-      <select {...props} value={value} onChange={(e) => onChange(e.target.value)} className={cn(fieldClass, 'appearance-none pr-10')}>
+      <select {...props} value={value} onChange={(e) => onChange(e.target.value)} className={cn(inputClass, 'appearance-none pr-10')}>
         <option value="" disabled>
           {placeholder}
         </option>
         {children}
       </select>
-      <ChevronDown aria-hidden className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-rh-night/50" />
+      <ChevronDown aria-hidden className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-rh-ink/50" />
     </div>
   )
 }

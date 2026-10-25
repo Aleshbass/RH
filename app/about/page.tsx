@@ -1,590 +1,468 @@
 "use client";
 
-import React, { useState } from "react";
-import { motion } from "framer-motion";
-import {
-    ArrowRight,
-    Heart,
-    Building2,
-    Stethoscope,
-    ShieldCheck,
-    Users,
-    Target,
-    Eye,
-    Zap,
-    CheckCircle2,
-    Mail,
-    Phone,
-    Clock,
-} from "@/components/icons";
-import Link from "next/link";
 import Image from "next/image";
+import Link from "next/link";
+import { motion, useReducedMotion } from "framer-motion";
+import type { ReactNode } from "react";
+import { ArrowRight } from "@/components/icons";
+import { MarketingVideo } from "@/components/landing/MarketingVideo";
+import { PairingShapes } from "@/components/learn/shared";
+import { PARTNER_SUPPORT_EMAIL, SUPPORT_EMAIL } from "@/lib/contact";
+import { joyWhatsAppUrl } from "@/lib/joyWhatsApp";
+import { MARKETING_VIDEOS } from "@/lib/marketingVideos";
+import { SITE_CONFIG } from "@/lib/seo/config";
+import { cn } from "@/lib/utils";
 
-// ── Fade-in wrapper ──────────────────────────────
-function FadeIn({
-    children,
-    delay = 0,
-    className = "",
-}: {
-    children: React.ReactNode;
-    delay?: number;
-    className?: string;
-}) {
-    return (
-        <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ duration: 0.5, delay }}
-            className={className}
-        >
-            {children}
-        </motion.div>
-    );
+const EASE = [0.22, 1, 0.36, 1] as const;
+const JOY_URL = joyWhatsAppUrl("Hi Joy! I need help with my recovery.");
+const { supportPhone, officeHours } = SITE_CONFIG.organization;
+
+// The ink story section goes two-column only once the film URL is set
+const HAS_FILM = Boolean(MARKETING_VIDEOS.launchFilm);
+
+// Same published figures as the landing page proof band. Keep them true.
+const FACTS = [
+  { value: "500+", label: "people using Rehabify" },
+  { value: "Under 24 hrs", label: "usual time to match you with a physiotherapist" },
+  { value: "MRTBN", label: "licensed physiotherapists" },
+];
+
+const AUDIENCES: {
+  title: string;
+  points: string[];
+  link: { label: string; href: string; external?: boolean };
+}[] = [
+  {
+    title: "For patients",
+    points: [
+      "Tell Joy what's wrong on WhatsApp.",
+      "We match you with a licensed physiotherapist, usually within 24 hours.",
+      "See your fee before you pay.",
+      "Session notes, exercises and progress in one app.",
+    ],
+    link: { label: "Chat with Joy", href: JOY_URL, external: true },
+  },
+  {
+    title: "For physiotherapists",
+    points: [
+      "Patients matched to your skills, with no marketing costs.",
+      "Scheduling, notes, payments and messages in one place.",
+      "A fixed payout for every completed session.",
+    ],
+    link: { label: "Join our network", href: "/physiotherapist" },
+  },
+  {
+    title: "For doctors and partners",
+    points: [
+      "Refer a patient in a few steps. We match them with a physiotherapist.",
+      "Follow each referral's status from your partner account.",
+      "Earn when referred patients pay for care.",
+    ],
+    link: { label: "Become a partner", href: "/partners/sign-up" },
+  },
+];
+
+const STANDARDS = [
+  "Licensed by the Medical Rehabilitation Therapists Board of Nigeria (MRTBN).",
+  "Reviewed and approved by the Rehabify team.",
+  "Degree certificate and passport photo on file before patients can book them.",
+  "Rated and reviewed by the patients they treat.",
+];
+
+const VALUES = [
+  { title: "Patient outcomes first", body: "Success is a patient back to their life, not a booking." },
+  { title: "Fix the system", body: "We build the missing links in care, not quick fixes." },
+  { title: "Clinical judgement", body: "Every decision starts with: would this be good for my patient?" },
+  { title: "Clear prices", body: "Patients see the fee before they pay. Physiotherapists know their payout." },
+  { title: "Respect for providers", body: "Physiotherapists set their working hours and are paid for every completed session." },
+];
+
+// The logo banner. Paste a logo's URL (e.g. uploaded to Cloudinary) into `logo`; until then the
+// organisation's name shows in its tile.
+const ORGANISATIONS = [
+  { name: "Mastercard Foundation", logo: "" },
+  { name: "Africa Oxford Initiative", logo: "" },
+  { name: "MediLoan by MyItura", logo: "https://loans.myitura.com/static/assets/logos/mediloan.svg?v=a5762be08a39" },
+  { name: "AwaDoc", logo: "https://www.awadoc.com/_next/image?url=%2Fawadoc.png&w=256&q=75" },
+  { name: "Goshen Physiotherapy", logo: "" },
+];
+
+// Cloudinary crops portraits around the face and serves WebP/AVIF at the size shown
+const CLOUDINARY = "https://res.cloudinary.com/dubeogufg/image/upload";
+const FOUNDERS = [
+  { name: "Mary Akinwola", role: "Co-founder Â· Physiotherapist", photo: `${CLOUDINARY}/c_fill,g_face,ar_4:5,w_800,q_auto,f_auto/v1792946835/Mary_Akinwola_sjvv0a.jpg` },
+  { name: "Ademola Abass", role: "Co-founder Â· Doctor of Physiotherapy", photo: `${CLOUDINARY}/c_fill,g_face,ar_4:5,w_800,q_auto,f_auto/v1792946835/Abass_Ademola_gvqglh.jpg` },
+];
+const FOUNDERS_TOGETHER = `${CLOUDINARY}/c_limit,w_1600,q_auto,f_auto/v1792946835/Mary_and_Demola_oebqbg.jpg`;
+
+const CONTACTS: { label: string; value: string; href?: string }[] = [
+  { label: "Patient support", value: supportPhone, href: `tel:${supportPhone.replace(/\s/g, "")}` },
+  { label: "Provider enquiries", value: PARTNER_SUPPORT_EMAIL, href: `mailto:${PARTNER_SUPPORT_EMAIL}` },
+  { label: "General questions", value: SUPPORT_EMAIL, href: `mailto:${SUPPORT_EMAIL}` },
+  { label: "Office hours", value: officeHours },
+];
+
+const num = (i: number) => String(i + 1).padStart(2, "0");
+
+const primaryCta =
+  "group inline-flex h-12 items-center justify-center gap-2 rounded-full bg-rh-lime px-7 text-[15px] font-semibold text-rh-ink transition-colors hover:bg-rh-lime-deep focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-ink focus-visible:ring-offset-2";
+const secondaryCta =
+  "inline-flex h-12 items-center justify-center gap-2 rounded-full bg-white px-7 text-[15px] font-semibold text-rh-ink ring-1 ring-inset ring-rh-ink/10 transition-colors hover:ring-rh-ink/25 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rh-ink";
+const textLink =
+  "group inline-flex items-center gap-2 rounded-sm text-[15px] font-semibold text-rh-ink underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-ink focus-visible:ring-offset-2";
+const h2Class = "text-[34px] font-bold leading-[1.05] tracking-tight sm:text-5xl";
+
+function Rise({ children, delay = 0, className }: { children: ReactNode; delay?: number; className?: string }) {
+  const reduce = useReducedMotion();
+  return (
+    <motion.div
+      initial={reduce ? false : { opacity: 0, y: 20 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, margin: "-60px" }}
+      transition={{ duration: 0.5, ease: EASE, delay }}
+      className={className}
+    >
+      {children}
+    </motion.div>
+  );
 }
 
-// ── Data ──────────────────────────────────────────
-const broken = [
-    {
-        num: "1",
-        title: "The Referral System Collapsed",
-        text: "Most patients self-refer chaotically. Doctors have no structured pathway to send patients to physiotherapists. When referrals happen, it's scribbled phone numbers on prescription pads. Zero feedback on what happens next.",
-    },
-    {
-        num: "2",
-        title: "The Workforce Is Leaving",
-        text: "A large proportion of Nigerian physiotherapists emigrate. Why? Not just for better pay — but better patient flow.",
-    },
-    {
-        num: "3",
-        title: "The Market Can't Clear",
-        text: "There is massive demand and a qualified supply, but zero marketplace infrastructure to connect them efficiently. Result: patients suffer with untreated pain, and enormous value evaporates.",
-    },
-];
+function Arrow() {
+  return <ArrowRight className="h-4 w-4 transition-transform duration-300 group-hover:translate-x-1" />;
+}
 
-const values = [
-    {
-        icon: Heart,
-        title: "Obsessed with patient outcomes",
-        text: "Success isn't a completed transaction; it's a patient who gets back to their life.",
-    },
-    {
-        icon: Building2,
-        title: "We build infrastructure",
-        text: "We're solving the system problem that has existed for decades.",
-    },
-    {
-        icon: Stethoscope,
-        title: "Clinical credibility first",
-        text: "Every decision — product, partnerships, policy — runs through: 'Would this be good for my patient?'",
-    },
-    {
-        icon: Eye,
-        title: "Healthcare transparency",
-        text: "Patients and providers both see exactly what they pay and earn.",
-    },
-    {
-        icon: Users,
-        title: "Empower providers",
-        text: "Physiotherapists set their own rates, control their schedules, and keep ownership of patient relationships.",
-    },
-];
-
-const differentiators = [
-    {
-        icon: Stethoscope,
-        title: "We're Not Tech Founders Playing in Healthcare",
-        text: "We ARE healthcare. We've treated hundreds of patients. We understand patient psychology, provider challenges, and clinical quality because we live it.",
-    },
-    {
-        icon: Target,
-        title: "We Fix System Problems, Not Individual Symptoms",
-        text: "Other platforms help you 'find a physio.' We're rebuilding the broken referral infrastructure that's kept so many Nigerians in untreated pain.",
-    },
-    {
-        icon: ShieldCheck,
-        title: "We Verify What Others Can't",
-        text: "We built a verification system — documents, clinical interview, and peer review — that actually works at scale.",
-    },
-];
-
-const clinicalChecks = [
-    "Licensed by Medical Rehabilitation Therapists Board of Nigeria (MRTBN)",
-    "University-trained with verified degree certificates",
-    "Clinically interviewed by our team (we're physiotherapists too)",
-    "Peer-reviewed by existing verified providers",
-    "Continuously rated by real patients",
-    "Required to maintain CPD (Continuing Professional Development)",
-];
-
-// ── Page ──────────────────────────────────────────
 export default function AboutPage() {
-    const [activeTab, setActiveTab] = useState<"patients" | "physios" | "doctors">("patients");
+  return (
+    <div className="bg-rh-canvas">
+      {/* Mission */}
+      <section className="px-4 pb-16 pt-[132px] sm:px-6 sm:pt-40 lg:pb-24 lg:pt-48">
+        <Rise className="mx-auto max-w-6xl">
+          <h1 className="text-[40px] font-bold leading-[1.05] tracking-tight text-rh-ink sm:text-6xl lg:text-[68px]">About Rehabify</h1>
+          <p className="mt-6 max-w-3xl text-[26px] font-bold leading-tight tracking-tight text-rh-ink sm:text-[34px]">
+            Better rehabilitation care shouldn&apos;t end when your appointment does.
+          </p>
+          <div className="mt-6 max-w-2xl space-y-4 text-lg font-medium leading-relaxed text-rh-ink/75">
+            <p>
+              Needing care is one thing. Finding the right professional, understanding your treatment and knowing what to do
+              between appointments can be another.
+            </p>
+            <p>At Rehabify, we&apos;re making rehabilitation easier to access, understand and follow through.</p>
+            <p>
+              We connect people with qualified physiotherapists for virtual and home-based care, while giving clinicians and
+              clinics the tools to manage treatment, create personalised recovery programmes and support patients beyond their
+              appointments.
+            </p>
+          </div>
+          <p className="mt-6 text-xl font-bold text-rh-ink">
+            <span className="relative inline-block">
+              Built for Better Care.
+              <span aria-hidden className="absolute -bottom-1 left-0 h-[0.14em] w-full rounded-full bg-rh-lime" />
+            </span>
+          </p>
+          <div className="mt-9 flex flex-col gap-3 sm:flex-row">
+            <a href={JOY_URL} target="_blank" rel="noopener noreferrer" className={cn(primaryCta, "focus-visible:ring-offset-rh-canvas")}>
+              Chat with Joy
+              <Arrow />
+            </a>
+            <Link href="/physiotherapist" className={secondaryCta}>
+              Join as a physiotherapist
+            </Link>
+          </div>
 
-    return (
-        <div className="bg-white">
-            {/* ── Hero ── */}
-            <section className="relative bg-[#002e2c] text-white overflow-hidden">
-                <div className="absolute inset-0 bg-gradient-to-br from-[#002e2c] via-[#003d3a] to-[#005b57] opacity-80" />
-                <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10 py-24 sm:py-32 text-center">
-                    <FadeIn>
-                        <span className="inline-block text-xs font-bold uppercase tracking-widest text-green-400 mb-4">
-                            About Rehabify
-                        </span>
-                        <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold leading-tight max-w-4xl mx-auto mb-6">
-                            Transform How You Access Quality Physiotherapy
-                        </h1>
-                        <p className="text-lg sm:text-xl text-gray-300 max-w-3xl mx-auto">
-                            Our mission is to fix Nigeria&apos;s broken healthcare referral
-                            system — making quality, affordable physiotherapy accessible to
-                            every Nigerian who needs it.
-                        </p>
-                    </FadeIn>
-                </div>
-            </section>
+          <dl className="mt-14 grid gap-x-8 sm:grid-cols-3">
+            {FACTS.map((fact) => (
+              <div key={fact.label} className="flex flex-col-reverse justify-end border-t border-rh-ink/10 py-5">
+                <dt className="mt-1.5 text-[15px] leading-snug text-rh-ink/70">{fact.label}</dt>
+                <dd className="text-[28px] font-bold leading-tight tracking-tight text-rh-ink">{fact.value}</dd>
+              </div>
+            ))}
+          </dl>
+        </Rise>
+      </section>
 
-            {/* ── The Problem ── */}
-            <section className="py-20 sm:py-24 bg-gray-50">
-                <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-5xl">
-                    <FadeIn>
-                        <div className="text-center mb-14">
-                            <span className="text-xs font-bold uppercase tracking-widest text-red-500">
-                                The Problem
-                            </span>
-                            <h2 className="text-3xl sm:text-4xl font-bold text-gray-900 mt-2">
-                                60 million Nigerians wake up in pain every day
-                            </h2>
-                            <p className="text-gray-600 mt-3 max-w-2xl mx-auto">
-                                Most never get help because the system to connect them
-                                doesn&apos;t work. Here&apos;s what&apos;s broken:
-                            </p>
-                        </div>
-                    </FadeIn>
-                    <div className="space-y-6">
-                        {broken.map((item, i) => (
-                            <FadeIn key={item.num} delay={i * 0.1}>
-                                <div className="bg-white rounded-2xl border border-gray-200 p-6 sm:p-8 flex gap-5">
-                                    <div className="w-10 h-10 rounded-full bg-red-100 text-red-600 flex items-center justify-center font-bold text-lg shrink-0">
-                                        {item.num}
-                                    </div>
-                                    <div>
-                                        <h3 className="font-bold text-gray-900 text-lg mb-1">
-                                            {item.title}
-                                        </h3>
-                                        <p className="text-gray-600">{item.text}</p>
-                                    </div>
-                                </div>
-                            </FadeIn>
-                        ))}
-                    </div>
-                    <FadeIn delay={0.3}>
-                        <div className="text-center mt-10">
-                            <div className="inline-block bg-[#002e2c] text-white font-bold py-3 px-8 rounded-full text-lg">
-                                We&apos;re fixing this. ✓
-                            </div>
-                        </div>
-                    </FadeIn>
-                </div>
-            </section>
+      {/* Our mission: the statement beside the launch film, then the founders' story */}
+      <section className="overflow-hidden bg-rh-ink px-4 py-20 text-white sm:px-6 lg:py-28">
+        <div className="mx-auto max-w-6xl">
+          <div className={cn(HAS_FILM && "grid items-center gap-12 lg:grid-cols-[0.95fr_1.05fr] lg:gap-16")}>
+            <Rise className={HAS_FILM ? undefined : "max-w-3xl"}>
+              <h2 className={h2Class}>Our mission</h2>
+              <p className="mt-6 text-[22px] font-bold leading-snug tracking-tight sm:text-[28px]">
+                To make quality rehabilitation care more accessible and continuous by connecting people with qualified
+                physiotherapists and giving patients and care providers the tools they need to support recovery{" "}
+                <span className="text-rh-lime">beyond the clinic.</span>
+              </p>
+            </Rise>
 
-            {/* ── Our Story ── */}
-            <section className="py-20 sm:py-24">
-                <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-4xl">
-                    <FadeIn>
-                        <span className="text-xs font-bold uppercase tracking-widest text-[#005b57]">
-                            Our Story
-                        </span>
-                        <h2 className="text-3xl sm:text-4xl font-bold text-gray-900 mt-2 mb-8">
-                            Rehabify&apos;s Story
-                        </h2>
-                    </FadeIn>
-                    <FadeIn delay={0.1}>
-                        <div className="prose prose-lg text-gray-600 max-w-none space-y-4">
-                            <p>
-                                Two Ibadan-trained physiotherapists got sick of watching the same
-                                scene play out: A patient with debilitating back pain getting
-                                another prescription for painkillers because the doctor
-                                didn&apos;t know where to refer them for physiotherapy.
-                            </p>
-                            <p>
-                                Down the hall, the physiotherapy department was half-empty in
-                                some places and overburdened in others. The disconnect was
-                                absurd.
-                            </p>
-                            <p>
-                                Mary and Abass knew there had to be a better way. They&apos;d
-                                spent 10+ years combined treating patients and had seen patients
-                                choose pain over clinic fees. The problem was infrastructure.{" "}
-                                <strong>So they built it.</strong>
-                            </p>
-                            <p>
-                                Rehabify launched in January 2026 as Nigeria&apos;s first
-                                three-sided rehabilitation healthcare platform — connecting{" "}
-                                <strong>patients</strong> who need physiotherapy,{" "}
-                                <strong>physiotherapists</strong> who need patients, and{" "}
-                                <strong>doctors</strong> who need a reliable referral pathway.
-                            </p>
-                        </div>
-                    </FadeIn>
-                </div>
-            </section>
+            {HAS_FILM && (
+              <Rise delay={0.1} className="relative">
+                <PairingShapes className="-right-5 -top-6 h-32 w-32 sm:-right-8 sm:-top-8 sm:h-44 sm:w-44" />
+                <MarketingVideo url={MARKETING_VIDEOS.launchFilm} title="Rehabify launch film" mode="preview" className="ring-1 ring-white/10" />
+              </Rise>
+            )}
+          </div>
 
-            {/* ── What Makes Us Different ── */}
-            <section className="py-20 sm:py-24 bg-[#FAF6E7]">
-                <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-5xl">
-                    <FadeIn>
-                        <div className="text-center mb-14">
-                            <span className="text-xs font-bold uppercase tracking-widest text-[#005b57]">
-                                What Makes Us Different
-                            </span>
-                            <h2 className="text-3xl sm:text-4xl font-bold text-gray-900 mt-2">
-                                Built by clinicians, for clinicians
-                            </h2>
-                        </div>
-                    </FadeIn>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        {differentiators.map((item, i) => {
-                            const Icon = item.icon;
-                            return (
-                                <FadeIn key={item.title} delay={i * 0.1}>
-                                    <div className="bg-white rounded-2xl p-6 border border-gray-100 h-full">
-                                        <div className="w-12 h-12 rounded-xl bg-[#e6f0ef] flex items-center justify-center mb-4">
-                                            <Icon className="w-6 h-6 text-[#005b57]" />
-                                        </div>
-                                        <h3 className="font-bold text-gray-900 mb-2">
-                                            {item.title}
-                                        </h3>
-                                        <p className="text-gray-600 text-sm leading-relaxed">
-                                            {item.text}
-                                        </p>
-                                    </div>
-                                </FadeIn>
-                            );
-                        })}
-                    </div>
-                </div>
-            </section>
-
-            {/* ── Our Values ── */}
-            <section className="py-20 sm:py-24">
-                <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-5xl">
-                    <FadeIn>
-                        <div className="text-center mb-14">
-                            <span className="text-xs font-bold uppercase tracking-widest text-[#005b57]">
-                                Our Values
-                            </span>
-                            <h2 className="text-3xl sm:text-4xl font-bold text-gray-900 mt-2">
-                                What drives everything we do
-                            </h2>
-                        </div>
-                    </FadeIn>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-                        {values.map((v, i) => {
-                            const Icon = v.icon;
-                            return (
-                                <FadeIn key={v.title} delay={i * 0.08}>
-                                    <div className="flex gap-4 p-5 rounded-2xl bg-gray-50 border border-gray-100">
-                                        <Icon className="w-5 h-5 text-[#005b57] mt-0.5 shrink-0" />
-                                        <div>
-                                            <p className="font-semibold text-gray-900 text-sm">
-                                                {v.title}
-                                            </p>
-                                            <p className="text-gray-500 text-sm mt-1">{v.text}</p>
-                                        </div>
-                                    </div>
-                                </FadeIn>
-                            );
-                        })}
-                    </div>
-                </div>
-            </section>
-
-            {/* ── What We Offer (Tabs) ── */}
-            <section className="py-20 sm:py-24 bg-gray-50">
-                <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-4xl">
-                    <FadeIn>
-                        <div className="text-center mb-10">
-                            <span className="text-xs font-bold uppercase tracking-widest text-[#005b57]">
-                                What We Offer
-                            </span>
-                            <h2 className="text-3xl sm:text-4xl font-bold text-gray-900 mt-2">
-                                Solutions for everyone in the care chain
-                            </h2>
-                        </div>
-                    </FadeIn>
-
-                    {/* Tab buttons */}
-                    <div className="flex justify-center gap-2 mb-8">
-                        {(
-                            [
-                                { key: "patients", label: "For Patients", icon: Heart },
-                                { key: "physios", label: "For Physiotherapists", icon: Stethoscope },
-                                { key: "doctors", label: "For Doctors", icon: Building2 },
-                            ] as const
-                        ).map(({ key, label, icon: Icon }) => (
-                            <button
-                                key={key}
-                                onClick={() => setActiveTab(key)}
-                                aria-label={`Tab: ${label}`}
-                                aria-pressed={activeTab === key}
-                                className={`flex items-center gap-2 px-4 py-2.5 rounded-full text-sm font-semibold transition-all cursor-pointer ${activeTab === key
-                                    ? "bg-[#005b57] text-white shadow-lg shadow-[#005b57]/20"
-                                    : "bg-white text-gray-600 border border-gray-200 hover:border-[#005b57]"
-                                    }`}
-                            >
-                                <Icon className="w-4 h-4" />
-                                <span className="hidden sm:inline">{label}</span>
-                            </button>
-                        ))}
-                    </div>
-
-                    {/* Tab content */}
-                    <motion.div
-                        key={activeTab}
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.3 }}
-                        className="bg-white rounded-2xl border border-gray-100 p-6 sm:p-8"
-                    >
-                        {activeTab === "patients" && (
-                            <div className="space-y-4">
-                                <h3 className="font-bold text-xl text-gray-900">For Patients</h3>
-                                {[
-                                    ["Smart Matching", "60-second conversation → verified physiotherapist matches → transparent pricing → book in 24 hours"],
-                                    ["Fair, Dynamic Pricing", "Pricing based on location, condition complexity, and provider experience."],
-                                    ["Progress Tracking", "Digital session notes, exercise videos, objective measurements, recovery timelines — all in one app."],
-                                    ["Package Savings", "Book sessions together and guarantee your schedule."],
-                                ].map(([title, desc]) => (
-                                    <div key={title} className="flex gap-3">
-                                        <CheckCircle2 className="w-5 h-5 text-[#005b57] mt-0.5 shrink-0" />
-                                        <div>
-                                            <p className="font-semibold text-gray-900 text-sm">{title}</p>
-                                            <p className="text-gray-500 text-sm">{desc}</p>
-                                        </div>
-                                    </div>
-                                ))}
-                                <Link href="/start-treatment" className="inline-flex items-center gap-2 text-[#005b57] font-semibold text-sm mt-2 hover:underline">
-                                    Start Treatment <ArrowRight className="w-4 h-4" />
-                                </Link>
-                            </div>
-                        )}
-                        {activeTab === "physios" && (
-                            <div className="space-y-4">
-                                <h3 className="font-bold text-xl text-gray-900">For Physiotherapists</h3>
-                                {[
-                                    ["Consistent Patient Flow", "No more marketing costs. Verified referrals matched to your expertise."],
-                                    ["Practice Management Suite", "Scheduling, session notes, payment processing, and patient communication — all automated."],
-                                    ["Full Pricing Control", "You set your rates, your package discounts, and we match the right patients."],
-                                ].map(([title, desc]) => (
-                                    <div key={title} className="flex gap-3">
-                                        <CheckCircle2 className="w-5 h-5 text-[#005b57] mt-0.5 shrink-0" />
-                                        <div>
-                                            <p className="font-semibold text-gray-900 text-sm">{title}</p>
-                                            <p className="text-gray-500 text-sm">{desc}</p>
-                                        </div>
-                                    </div>
-                                ))}
-                                <Link href="/physiotherapist" className="inline-flex items-center gap-2 text-[#005b57] font-semibold text-sm mt-2 hover:underline">
-                                    Join Our Network <ArrowRight className="w-4 h-4" />
-                                </Link>
-                            </div>
-                        )}
-                        {activeTab === "doctors" && (
-                            <div className="space-y-4">
-                                <h3 className="font-bold text-xl text-gray-900">For Doctors &amp; Referring Partners</h3>
-                                {[
-                                    ["30-Second Referral", "Log in → enter patient info → we match them to verified physios → patient gets booking link automatically."],
-                                    ["Passive Income", "Earn per patient referred. No overhead, no admin burden."],
-                                    ["Closed-Loop Outcomes", "See if your patient attended sessions, completed treatment, and actually got better."],
-                                    ["EMR Integration", "Works alongside your existing practice management systems."],
-                                ].map(([title, desc]) => (
-                                    <div key={title} className="flex gap-3">
-                                        <CheckCircle2 className="w-5 h-5 text-[#005b57] mt-0.5 shrink-0" />
-                                        <div>
-                                            <p className="font-semibold text-gray-900 text-sm">{title}</p>
-                                            <p className="text-gray-500 text-sm">{desc}</p>
-                                        </div>
-                                    </div>
-                                ))}
-                                <Link href="/partners/sign-up" className="inline-flex items-center gap-2 text-[#005b57] font-semibold text-sm mt-2 hover:underline">
-                                    Become a Partner <ArrowRight className="w-4 h-4" />
-                                </Link>
-                            </div>
-                        )}
-                    </motion.div>
-                </div>
-            </section>
-
-            {/* ── Partners ── */}
-            <section className="py-20 sm:py-24">
-                <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-4xl">
-                    <FadeIn>
-                        <div className="text-center mb-12">
-                            <span className="text-xs font-bold uppercase tracking-widest text-[#005b57]">
-                                Our Trusted Partners
-                            </span>
-                            <h2 className="text-3xl sm:text-4xl font-bold text-gray-900 mt-2">
-                                Together, we&apos;re building better healthcare
-                            </h2>
-                        </div>
-                    </FadeIn>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                        <FadeIn>
-                            <div className="bg-white border border-gray-200 rounded-2xl p-6 text-center">
-                                <Image
-                                    src="https://www.awadoc.com/_next/image?url=%2Fawadoc.png&w=256&q=75"
-                                    alt="AwaDoc"
-                                    width={128}
-                                    height={56}
-                                    unoptimized
-                                    className="h-14 w-auto mx-auto mb-4 object-contain"
-                                />
-                                <h3 className="font-bold text-gray-900">AwaDOC</h3>
-                                <p className="text-sm text-gray-500 mt-1">Telemedicine Platform</p>
-                                <p className="text-sm text-gray-600 mt-3">
-                                    Doctors referring patients for physiotherapy rehabilitation
-                                </p>
-                            </div>
-                        </FadeIn>
-                        <FadeIn delay={0.1}>
-                            <div className="bg-white border border-gray-200 rounded-2xl p-6 text-center">
-                                <div className="w-14 h-14 bg-purple-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                                    <Zap className="w-7 h-7 text-purple-600" />
-                                </div>
-                                <h3 className="font-bold text-gray-900">MyItura</h3>
-                                <p className="text-sm text-gray-500 mt-1">Teleconsultation Infrastructure</p>
-                                <p className="text-sm text-gray-600 mt-3">
-                                    Enabling remote assessments for patients in rural areas
-                                </p>
-                            </div>
-                        </FadeIn>
-                    </div>
-                </div>
-            </section>
-
-            {/* ── Clinical Team ── */}
-            <section className="py-20 sm:py-24 bg-[#002e2c] text-white">
-                <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-4xl">
-                    <FadeIn>
-                        <div className="text-center mb-12">
-                            <span className="text-xs font-bold uppercase tracking-widest text-green-400">
-                                Quality Standards
-                            </span>
-                            <h2 className="text-3xl sm:text-4xl font-bold mt-2">
-                                Every physiotherapist on Rehabify is:
-                            </h2>
-                        </div>
-                    </FadeIn>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        {clinicalChecks.map((check, i) => (
-                            <FadeIn key={check} delay={i * 0.06}>
-                                <div className="flex items-start gap-3 bg-white/10 rounded-xl p-4">
-                                    <CheckCircle2 className="w-5 h-5 text-green-400 mt-0.5 shrink-0" />
-                                    <p className="text-sm text-gray-200">{check}</p>
-                                </div>
-                            </FadeIn>
-                        ))}
-                    </div>
-                    <FadeIn delay={0.3}>
-                        <p className="text-center text-gray-400 mt-8 text-sm">
-                            We hold ourselves to the same standards we demand from our
-                            network.
-                        </p>
-                    </FadeIn>
-                </div>
-            </section>
-
-            {/* ── CTA + Contact ── */}
-            <section className="py-20 sm:py-24">
-                <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-4xl">
-                    <FadeIn>
-                        <div className="text-center mb-12">
-                            <h2 className="text-3xl sm:text-4xl font-bold text-gray-900">
-                                Start Your Health Journey Now
-                            </h2>
-                            <p className="text-gray-600 mt-3 max-w-2xl mx-auto">
-                                Whether you&apos;re a patient in pain, a physiotherapist
-                                building your practice, or a doctor looking for reliable
-                                referral pathways — we&apos;re here.
-                            </p>
-                            <div className="flex flex-wrap justify-center gap-3 mt-8">
-                                <Link
-                                    href="/start-treatment"
-                                    className="bg-[#005b57] text-white font-semibold py-3 px-6 rounded-full hover:bg-[#004a46] transition-all hover:scale-105"
-                                >
-                                    Find a Physio
-                                </Link>
-                                <Link
-                                    href="/physiotherapist"
-                                    className="bg-white text-[#005b57] font-semibold py-3 px-6 rounded-full border-2 border-[#005b57] hover:bg-[#005b57] hover:text-white transition-all"
-                                >
-                                    Join Our Network
-                                </Link>
-                                <Link
-                                    href="/partners/sign-up"
-                                    className="bg-white text-[#005b57] font-semibold py-3 px-6 rounded-full border-2 border-[#005b57] hover:bg-[#005b57] hover:text-white transition-all"
-                                >
-                                    Become a Partner
-                                </Link>
-                            </div>
-                        </div>
-                    </FadeIn>
-
-                    {/* Contact grid */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-12">
-                        {[
-                            { icon: Phone, label: "Patient Support", value: "+234 806 152 5811" },
-                            { icon: Mail, label: "Provider Inquiries", value: "partners@physioaroundme.com" },
-                            { icon: Mail, label: "General Questions", value: "support@physioaroundme.com" },
-                            { icon: Clock, label: "Office Hours", value: "Mon-Fri 8AM-6PM WAT" },
-                        ].map((item) => {
-                            const Icon = item.icon;
-                            return (
-                                <FadeIn key={item.label}>
-                                    <div className="bg-gray-50 rounded-2xl p-5 text-center">
-                                        <Icon className="w-5 h-5 text-[#005b57] mx-auto mb-2" />
-                                        <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">
-                                            {item.label}
-                                        </p>
-                                        <p className="text-sm font-semibold text-gray-900 mt-1">
-                                            {item.value}
-                                        </p>
-                                    </div>
-                                </FadeIn>
-                            );
-                        })}
-                    </div>
-
-                    {/* Talk to us */}
-                    <FadeIn delay={0.2}>
-                        <div className="mt-14 bg-[#FAF6E7] rounded-2xl p-6 sm:p-8 text-center">
-                            <h3 className="font-bold text-gray-900 text-lg mb-2">
-                                Talk to us
-                            </h3>
-                            <p className="text-gray-600 text-sm mb-6 max-w-lg mx-auto">
-                                Book care with Joy on WhatsApp, or find the right team for anything else.
-                            </p>
-                            <div className="flex flex-col sm:flex-row gap-3 justify-center">
-                                <a
-                                    href={`https://wa.me/2348061525811?text=${encodeURIComponent("Hi Joy! I need help with my recovery.")}`}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="bg-[#005b57] text-white font-semibold px-6 py-3 rounded-full hover:bg-[#004a46] transition-all inline-flex items-center justify-center gap-2"
-                                >
-                                    Chat with Joy
-                                    <ArrowRight className="w-4 h-4" />
-                                </a>
-                                <Link
-                                    href="/contact"
-                                    className="border border-gray-300 text-gray-900 font-semibold px-6 py-3 rounded-full hover:bg-white transition-all inline-flex items-center justify-center"
-                                >
-                                    All contact options
-                                </Link>
-                            </div>
-                        </div>
-                    </FadeIn>
-                </div>
-            </section>
+          <Rise delay={0.05}>
+            <div className="mt-14 grid gap-x-12 gap-y-4 border-t border-white/10 pt-10 text-[17px] font-medium leading-relaxed text-white/75 lg:grid-cols-2">
+              <div className="space-y-4">
+                <p>
+                  Rehabify was launched in 2025 by Mary Akinwola and Ademola Abass, two physiotherapists trained in Nigeria who
+                  understand the practical challenges of delivering and accessing rehabilitation care.
+                </p>
+                <p>
+                  Through our clinical training and experience, we recognised that the challenges of rehabilitation often extend
+                  beyond the treatment itself. Finding appropriate care can be difficult, patients may struggle to follow their
+                  prescribed exercises at home, and physiotherapists need better ways to manage treatment and stay informed about
+                  their patients&apos; progress.
+                </p>
+                <p>
+                  We wanted to build something that addressed these challenges. Mary went on to study at the University of Oxford,
+                  while Ademola advanced his clinical training to become a Doctor of Physiotherapy. Our combined backgrounds in
+                  rehabilitation and technology have influenced how we&apos;ve approached Rehabify from the beginning.
+                </p>
+              </div>
+              <div className="space-y-4">
+                <p>
+                  We&apos;re building Rehabify because we believe good care should be{" "}
+                  <span className="font-bold text-white">easier to access, easier to deliver and easier to continue.</span>
+                </p>
+                <p>
+                  We believe patients should be able to access appropriate care without unnecessary difficulty, understand the
+                  treatment they&apos;re receiving and feel supported as they work towards getting better. That&apos;s why Rehabify
+                  brings together clinician-led physiotherapy, personalised home exercise programmes, progress tracking and digital
+                  recovery support.
+                </p>
+                <p className="font-bold text-white">
+                  Our goal is to make it easier for physiotherapists to deliver care and for patients to follow it, wherever their
+                  recovery takes place.
+                </p>
+              </div>
+            </div>
+          </Rise>
         </div>
-    );
+      </section>
+
+      {/* The founders */}
+      <section className="px-4 py-20 sm:px-6 lg:py-28">
+        <div className="mx-auto max-w-6xl">
+          <Rise>
+            <h2 className={cn(h2Class, "text-rh-ink")}>Meet the founders.</h2>
+          </Rise>
+          <div className="mt-10 grid gap-5 sm:grid-cols-2">
+            {FOUNDERS.map((founder, i) => (
+              <Rise key={founder.name} delay={0.06 * i}>
+                <figure>
+                  <div className="relative aspect-[4/5] overflow-hidden rounded-[2rem] bg-rh-ink/10">
+                    <Image
+                      src={founder.photo}
+                      alt={`${founder.name}, ${founder.role.toLowerCase()} at Rehabify`}
+                      fill
+                      unoptimized
+                      sizes="(min-width: 640px) 50vw, 100vw"
+                      className="object-cover"
+                    />
+                  </div>
+                  <figcaption className="mt-4">
+                    <span className="block text-xl font-bold text-rh-ink">{founder.name}</span>
+                    <span className="mt-0.5 block text-[15px] font-medium text-rh-ink/65">{founder.role}</span>
+                  </figcaption>
+                </figure>
+              </Rise>
+            ))}
+          </div>
+          <Rise delay={0.1} className="relative mt-5">
+            <div className="relative aspect-[16/10] overflow-hidden rounded-[2rem] bg-rh-ink/10 sm:aspect-[16/8]">
+              <Image
+                src={FOUNDERS_TOGETHER}
+                alt="Mary Akinwola and Ademola Abass, Rehabify's co-founders"
+                fill
+                unoptimized
+                sizes="(min-width: 1152px) 1152px, 100vw"
+                className="object-cover"
+              />
+            </div>
+          </Rise>
+        </div>
+      </section>
+
+      {/* What we offer */}
+      <section className="px-4 pb-20 sm:px-6 lg:pb-28">
+        <div className="mx-auto max-w-6xl">
+          <Rise>
+            <h2 className={cn(h2Class, "max-w-2xl text-rh-ink")}>One platform for everyone in the care chain.</h2>
+          </Rise>
+          <div className="mt-10 grid gap-5 lg:grid-cols-3">
+            {AUDIENCES.map((audience, i) => (
+              <Rise key={audience.title} delay={0.05 * (i + 1)} className="flex">
+                <article className="flex w-full flex-col rounded-[2rem] bg-white p-7 sm:p-8">
+                  <h3 className="text-[24px] font-bold leading-tight tracking-tight text-rh-ink">{audience.title}</h3>
+                  <ul className="mt-5 flex-1">
+                    {audience.points.map((point) => (
+                      <li key={point} className="border-t border-rh-ink/10 py-3.5 text-[15px] font-medium leading-snug text-rh-ink/75">
+                        {point}
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="pt-5">
+                    {audience.link.external ? (
+                      <a href={audience.link.href} target="_blank" rel="noopener noreferrer" className={textLink}>
+                        {audience.link.label}
+                        <Arrow />
+                      </a>
+                    ) : (
+                      <Link href={audience.link.href} className={textLink}>
+                        {audience.link.label}
+                        <Arrow />
+                      </Link>
+                    )}
+                  </div>
+                </article>
+              </Rise>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Quality standards */}
+      <section className="bg-rh-ink px-4 py-20 text-white sm:px-6 lg:py-28">
+        <div className="mx-auto max-w-6xl">
+          <Rise>
+            <h2 className={cn(h2Class, "max-w-xl")}>Every physiotherapist is checked.</h2>
+            <p className="mt-4 max-w-lg text-base font-medium leading-relaxed text-white/75 sm:text-lg">
+              We&apos;re physiotherapists too, so we hold our network to our own standard.
+            </p>
+          </Rise>
+          <Rise delay={0.06}>
+            <ol className="mt-10 grid gap-x-12 sm:grid-cols-2">
+              {STANDARDS.map((standard, i) => (
+                <li key={standard} className="flex gap-5 border-t border-white/10 py-5">
+                  <span className="w-6 shrink-0 pt-0.5 text-sm tabular-nums text-white/40">{num(i)}</span>
+                  <span className="text-[17px] font-semibold leading-snug">{standard}</span>
+                </li>
+              ))}
+            </ol>
+          </Rise>
+        </div>
+      </section>
+
+      {/* Values */}
+      <section className="px-4 py-20 sm:px-6 lg:py-28">
+        <div className="mx-auto max-w-6xl">
+          <Rise>
+            <h2 className={cn(h2Class, "text-rh-ink")}>What we value.</h2>
+          </Rise>
+          <Rise delay={0.06}>
+            <ol className="mt-10 grid gap-x-12 rounded-[2rem] bg-white px-7 py-3 sm:grid-cols-2 sm:px-10 sm:py-6">
+              {VALUES.map((value, i) => (
+                <li key={value.title} className={cn("flex gap-5 py-5", i > 0 && "border-t border-rh-ink/10", i === 1 && "sm:border-t-0")}>
+                  <span className="w-6 shrink-0 pt-0.5 text-sm tabular-nums text-rh-ink/40">{num(i)}</span>
+                  <span>
+                    <span className="block text-[17px] font-semibold leading-snug text-rh-ink">{value.title}</span>
+                    <span className="mt-1 block text-[15px] font-medium leading-relaxed text-rh-ink/70">{value.body}</span>
+                  </span>
+                </li>
+              ))}
+            </ol>
+          </Rise>
+        </div>
+      </section>
+
+      {/* Organisations and partners, as a slow logo banner */}
+      <section aria-labelledby="growing-heading" className="overflow-hidden pb-20 lg:pb-28">
+        <Rise className="mx-auto max-w-6xl px-4 sm:px-6">
+          <h2 id="growing-heading" className={cn(h2Class, "max-w-3xl text-rh-ink")}>
+            Growing with the people and organisations who believe in better care
+          </h2>
+          <p className="mt-5 max-w-2xl text-lg font-medium leading-relaxed text-rh-ink/70">
+            Our journey is strengthened by the organisations, clinical collaborators and healthtech partners who have supported
+            or worked with us as we build Rehabify.
+          </p>
+        </Rise>
+        <div className="mt-10 [mask-image:linear-gradient(to_right,transparent,black_6%,black_94%,transparent)]">
+          {/* The list is rendered twice so moving it by half loops seamlessly; reduced motion shows one static row */}
+          <ul className="flex w-max animate-marquee hover:[animation-play-state:paused] motion-reduce:w-auto motion-reduce:animate-none motion-reduce:flex-wrap motion-reduce:justify-center motion-reduce:gap-y-4 motion-reduce:px-4">
+            {[...ORGANISATIONS, ...ORGANISATIONS].map((org, i) => (
+              <li
+                key={`${org.name}-${i}`}
+                aria-hidden={i >= ORGANISATIONS.length || undefined}
+                className={cn(
+                  // Spacing as a right margin on every tile, so the two halves are exactly equal and the loop has no seam
+                  "mr-4 flex h-24 w-[240px] shrink-0 items-center justify-center rounded-[1.5rem] bg-white px-8",
+                  i >= ORGANISATIONS.length && "motion-reduce:hidden"
+                )}
+              >
+                {org.logo ? (
+                  <Image src={org.logo} alt={org.name} width={180} height={56} unoptimized className="max-h-12 w-auto object-contain" />
+                ) : (
+                  <span className="text-center text-lg font-bold leading-tight tracking-tight text-rh-ink">{org.name}</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      </section>
+
+      {/* Closing call to action */}
+      <section className="px-4 pb-20 sm:px-6 lg:pb-28">
+        <Rise className="relative mx-auto max-w-6xl overflow-hidden rounded-[2rem] bg-rh-ink px-7 py-12 text-white sm:px-12 sm:py-16">
+          <PairingShapes className="-right-10 -top-10 h-40 w-40 sm:h-52 sm:w-52" />
+          <div className="relative max-w-2xl">
+            <h2 className="text-[32px] font-bold leading-tight tracking-tight sm:text-[44px]">Your recovery deserves the right support.</h2>
+            <p className="mt-4 text-lg font-medium leading-relaxed text-white/75">
+              If you&apos;re recovering from an injury, managing pain or working towards moving more comfortably, we&apos;re here to
+              help you take the next step with appropriate care.
+            </p>
+            <a
+              href={JOY_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={cn(primaryCta, "mt-8 focus-visible:ring-rh-lime focus-visible:ring-offset-rh-ink")}
+            >
+              Get Started
+              <Arrow />
+            </a>
+          </div>
+        </Rise>
+      </section>
+
+      {/* Contact */}
+      <section className="px-4 pb-20 sm:px-6 lg:pb-28">
+        <Rise className="mx-auto max-w-6xl">
+          <div className="grid gap-10 rounded-[2rem] bg-white p-7 sm:p-10 lg:grid-cols-2 lg:gap-16 lg:p-12">
+            <div>
+              <h2 className={cn(h2Class, "text-rh-ink")}>Talk to us.</h2>
+              <p className="mt-4 max-w-md text-base font-medium leading-relaxed text-rh-ink/70 sm:text-lg">
+                Book care with Joy on WhatsApp, or reach the right team.
+              </p>
+              <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+                <a href={JOY_URL} target="_blank" rel="noopener noreferrer" className={primaryCta}>
+                  Chat with Joy
+                  <Arrow />
+                </a>
+                <Link href="/contact" className={secondaryCta}>
+                  All contact options
+                </Link>
+              </div>
+            </div>
+
+            <dl>
+              {CONTACTS.map((contact) => (
+                <div key={contact.label} className="flex flex-col gap-1 border-t border-rh-ink/10 py-4 sm:flex-row sm:items-baseline sm:justify-between sm:gap-6">
+                  <dt className="text-[15px] text-rh-ink/60">{contact.label}</dt>
+                  <dd className="break-words text-[15px] font-semibold text-rh-ink">
+                    {contact.href ? (
+                      <a href={contact.href} className="rounded-sm underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-ink">
+                        {contact.value}
+                      </a>
+                    ) : (
+                      contact.value
+                    )}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+        </Rise>
+      </section>
+    </div>
+  );
 }

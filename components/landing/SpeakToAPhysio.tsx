@@ -1,6 +1,8 @@
 "use client";
 
-import { motion } from "framer-motion";
+import { motion, useReducedMotion } from "framer-motion";
+import { ArrowRight } from "@/components/icons";
+import { joyWhatsAppUrl } from "@/lib/joyWhatsApp";
 
 const conditions = [
     "Back Pain & Neck Stiffness",
@@ -15,72 +17,56 @@ const conditions = [
     "Mobility After Accidents",
 ];
 
-const getWhatsAppUrl = (condition?: string) => {
-    const text = condition 
-        ? `Hi Joy! 👋🏾 I need help with my recovery for: ${condition}.`
-        : "Hi Joy! 👋🏾 I need help with my recovery.";
-    return `https://wa.me/2348061525811?text=${encodeURIComponent(text)}`;
-};
+const getWhatsAppUrl = (condition?: string) =>
+    joyWhatsAppUrl(
+        condition
+            ? `Hi Joy! 👋🏾 I need help with my recovery for: ${condition}.`
+            : "Hi Joy! 👋🏾 I need help with my recovery."
+    );
 
+/** Each concern opens Joy on WhatsApp with it already typed. */
 export function SpeakToAPhysio() {
+    const reduce = useReducedMotion();
     return (
-        <section className="py-20 sm:py-24 bg-[#002e2c]">
-            <div className="container mx-auto px-4 sm:px-6 lg:px-8">
-                <div className="max-w-4xl mx-auto text-center">
-                    <motion.div
-                        initial={{ opacity: 0, y: 20 }}
-                        whileInView={{ opacity: 1, y: 0 }}
-                        viewport={{ once: true }}
-                        transition={{ duration: 0.5 }}
-                    >
-                        <span className="inline-block text-xs font-bold uppercase tracking-widest text-green-400 mb-4">
-                            We Can Help
-                        </span>
-                        <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold text-white leading-tight mb-4">
-                            Speak to a Physio For:
-                        </h2>
-                        <p className="text-gray-400 mb-10">
-                            Whatever you&apos;re dealing with, our verified physiotherapists have seen it before and treated it successfully.
-                        </p>
-                    </motion.div>
+        <section className="bg-rh-canvas px-4 pb-4 pt-20 sm:px-6 lg:pt-28">
+            <div className="mx-auto max-w-6xl">
+                <motion.h2
+                    initial={reduce ? false : { opacity: 0, y: 20 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    viewport={{ once: true }}
+                    transition={{ duration: 0.5 }}
+                    className="text-[36px] font-bold leading-tight tracking-tight text-rh-ink sm:text-5xl"
+                >
+                    Speak to a physio for:
+                </motion.h2>
 
-                    <div className="flex flex-wrap justify-center gap-3 mb-12">
-                        {conditions.map((condition, i) => (
-                            <motion.div
-                                key={condition}
-                                initial={{ opacity: 0, scale: 0.9 }}
-                                whileInView={{ opacity: 1, scale: 1 }}
-                                viewport={{ once: true }}
-                                transition={{ duration: 0.3, delay: i * 0.05 }}
-                            >
-                                <a
-                                    href={getWhatsAppUrl(condition)}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="inline-block bg-white/10 hover:bg-white/20 border border-white/20 hover:border-white/40 text-white text-sm font-medium px-5 py-2.5 rounded-full transition-all duration-200 hover:scale-105 cursor-pointer"
-                                >
-                                    {condition}
-                                </a>
-                            </motion.div>
-                        ))}
-                    </div>
-
-                    <motion.div
-                        initial={{ opacity: 0, y: 16 }}
-                        whileInView={{ opacity: 1, y: 0 }}
-                        viewport={{ once: true }}
-                        transition={{ duration: 0.5, delay: 0.3 }}
-                    >
-                        <a
-                            href={getWhatsAppUrl()}
+                <div className="mt-8 flex flex-wrap gap-2.5">
+                    {conditions.map((condition, i) => (
+                        <motion.a
+                            key={condition}
+                            href={getWhatsAppUrl(condition)}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="group inline-flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-4 px-10 rounded-full transition-all duration-300 hover:scale-105 shadow-lg shadow-emerald-500/30"
+                            initial={reduce ? false : { opacity: 0, y: 8 }}
+                            whileInView={{ opacity: 1, y: 0 }}
+                            viewport={{ once: true }}
+                            transition={{ duration: 0.3, delay: i * 0.03 }}
+                            className="rounded-full bg-white px-5 py-3 text-[15px] font-medium text-rh-ink ring-1 ring-inset ring-rh-ink/10 transition-colors duration-200 hover:bg-rh-lime hover:ring-rh-lime focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-ink"
                         >
-                            Find Your Physio on WhatsApp
-                        </a>
-                    </motion.div>
+                            {condition}
+                        </motion.a>
+                    ))}
                 </div>
+
+                <a
+                    href={getWhatsAppUrl()}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="group mt-6 inline-flex items-center gap-2 text-[15px] font-semibold text-rh-ink underline-offset-4 hover:underline"
+                >
+                    Not sure where you fit? Talk to Joy
+                    <ArrowRight className="h-4 w-4 transition-transform duration-300 group-hover:translate-x-1" />
+                </a>
             </div>
         </section>
     );

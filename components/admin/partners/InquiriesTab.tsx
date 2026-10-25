@@ -28,32 +28,45 @@ type Inquiry = FunctionReturnType<typeof api.adminPartnerships.getPartnershipInq
 const STATUS_TONE: Record<InquiryStatus, 'amber' | 'teal' | 'neutral'> = { new: 'amber', contacted: 'teal', closed: 'neutral' }
 const STATUS_LABEL: Record<InquiryStatus, string> = { new: 'New', contacted: 'Contacted', closed: 'Closed' }
 
+// "Book a demo" requests from the partners page share this table, marked kind: "demo"
+type InquiryKind = 'all' | 'demo' | 'partnership'
+const isDemo = (inquiry: Inquiry) => inquiry.kind === 'demo'
+
 export function InquiriesTab({ inquiries }: { inquiries: Inquiry[] | undefined }) {
   const updateStatus = useMutation(api.adminPartnerships.updatePartnershipInquiryStatus)
   const [search, setSearch] = useState('')
+  const [kind, setKind] = useState<InquiryKind>('all')
   const [filter, setFilter] = useState<'all' | InquiryStatus>('all')
   const [updatingId, setUpdatingId] = useState<string | null>(null)
 
-  const counts = useMemo(() => {
+  const ofKind = useMemo(
+    () => (inquiries ?? []).filter((i) => kind === 'all' || (kind === 'demo' ? isDemo(i) : !isDemo(i))),
+    [inquiries, kind],
+  )
+
+  const kindCounts = useMemo(() => {
     const rows = inquiries ?? []
-    return {
-      all: rows.length,
-      new: rows.filter((i) => i.status === 'new').length,
-      contacted: rows.filter((i) => i.status === 'contacted').length,
-      closed: rows.filter((i) => i.status === 'closed').length,
-    }
+    const demos = rows.filter(isDemo).length
+    return { all: rows.length, demo: demos, partnership: rows.length - demos }
   }, [inquiries])
+
+  const counts = useMemo(() => ({
+    all: ofKind.length,
+    new: ofKind.filter((i) => i.status === 'new').length,
+    contacted: ofKind.filter((i) => i.status === 'contacted').length,
+    closed: ofKind.filter((i) => i.status === 'closed').length,
+  }), [ofKind])
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
-    return (inquiries ?? []).filter((inquiry) => {
+    return ofKind.filter((inquiry) => {
       if (filter !== 'all' && inquiry.status !== filter) return false
       if (!q) return true
       const org = (inquiry.organization || inquiry.organizationName || '').toLowerCase()
       const contact = (inquiry.name || inquiry.contactName || '').toLowerCase()
       return org.includes(q) || contact.includes(q) || (inquiry.email || '').toLowerCase().includes(q)
     })
-  }, [inquiries, filter, search])
+  }, [ofKind, filter, search])
 
   const changeStatus = async (inquiry: Inquiry, status: InquiryStatus) => {
     setUpdatingId(inquiry._id)
@@ -70,6 +83,15 @@ export function InquiriesTab({ inquiries }: { inquiries: Inquiry[] | undefined }
 
   return (
     <div className="space-y-4">
+      <FilterChips
+        value={kind}
+        onChange={setKind}
+        options={[
+          { value: 'all', label: 'Everything', count: kindCounts.all },
+          { value: 'demo', label: 'Demo requests', count: kindCounts.demo },
+          { value: 'partnership', label: 'Partnerships', count: kindCounts.partnership },
+        ]}
+      />
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <FilterChips
           value={filter}
@@ -99,7 +121,11 @@ export function InquiriesTab({ inquiries }: { inquiries: Inquiry[] | undefined }
           <EmptyState
             icon={<MessageSquare />}
             title="No inquiries found"
-            description={search || filter !== 'all' ? 'Try adjusting your search or filters.' : 'New partnership inquiries from the website appear here.'}
+            description={
+              search || filter !== 'all' || kind !== 'all'
+                ? 'Try adjusting your search or filters.'
+                : 'Partnership inquiries and demo requests from the website appear here.'
+            }
           />
         </div>
       ) : (
@@ -115,6 +141,7 @@ export function InquiriesTab({ inquiries }: { inquiries: Inquiry[] | undefined }
                         <h3 className="text-base font-semibold text-rh-ink dark:text-white">
                           {inquiry.organization || inquiry.organizationName || 'Partner organisation'}
                         </h3>
+                        {isDemo(inquiry) && <StatusBadge tone="teal">Demo request</StatusBadge>}
                         {inquiry.organizationType && <StatusBadge tone="teal">{inquiry.organizationType}</StatusBadge>}
                         <StatusBadge tone={STATUS_TONE[status]}>{STATUS_LABEL[status]}</StatusBadge>
                       </div>
@@ -157,12 +184,14 @@ export function InquiriesTab({ inquiries }: { inquiries: Inquiry[] | undefined }
                     </div>
                   </div>
 
-                  <p className={cn(insetClass, 'whitespace-pre-wrap text-sm text-rh-ink dark:text-neutral-200')}>{inquiry.message}</p>
+                  {inquiry.message ? (
+                    <p className={cn(insetClass, 'whitespace-pre-wrap text-sm text-rh-ink dark:text-neutral-200')}>{inquiry.message}</p>
+                  ) : null}
                 </div>
 
                 <div className="flex w-full flex-col justify-center gap-2 border-t border-black/[0.05] bg-rh-canvas/60 p-5 dark:border-white/[0.06] dark:bg-white/[0.02] md:w-56 md:border-l md:border-t-0">
                   <Button asChild className={primaryButtonClass}>
-                    <a href={`mailto:${inquiry.email}?subject=Partnership with RehabifyHealth`}>
+                    <a href={`mailto:${inquiry.email}?subject=${isDemo(inquiry) ? 'Your Rehabify demo' : 'Partnership with RehabifyHealth'}`}>
                       <Mail className="mr-2 h-4 w-4" /> Email contact
                     </a>
                   </Button>
