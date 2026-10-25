@@ -61,6 +61,8 @@ type ServiceBookingInput = {
     sourceSystem: "rh_marketplace_web" | "rh_patient_dashboard";
     scheduledBy: "patient" | "physiotherapist";
     holdMs: number;
+    /** The physio is accepting the patient's own request (patientNotes is then the patient's note). */
+    fromPatientRequest?: boolean;
 };
 
 /**
@@ -130,6 +132,7 @@ export async function insertServiceBooking(ctx: any, input: ServiceBookingInput)
         referralLinkId: attribution.referralLinkId,
         sourceSystem: input.sourceSystem,
         scheduledBy: input.scheduledBy,
+        fromPatientRequest: input.fromPatientRequest || undefined,
         paymentStatus: "pending",
         bookingStatus: "pending_payment",
         holdExpiresAt: now + input.holdMs,
@@ -369,6 +372,7 @@ export const getMyOpenBookings = query({
                     status: b.bookingStatus === "awaiting_admin_schedule" ? ("needs_new_time" as const) : isLiveHold(b, now) ? ("held" as const) : ("hold_lapsed" as const),
                     holdExpiresAt: b.holdExpiresAt ?? null,
                     scheduledBy: b.scheduledBy ?? "patient",
+                    fromPatientRequest: Boolean(b.fromPatientRequest),
                     isAccess: Boolean(b.accessAwardId),
                 };
             })
@@ -414,6 +418,7 @@ export const getMyHeldBookingsAsPhysio = query({
                     held: isLiveHold(b, now),
                     holdExpiresAt: b.holdExpiresAt ?? null,
                     scheduledBy: b.scheduledBy ?? "patient",
+                    fromPatientRequest: Boolean(b.fromPatientRequest),
                 };
             })
         );
@@ -629,7 +634,8 @@ export async function completeMarketplaceBookingCore(ctx: any, bookingId: any, o
             appointmentType: booking.isOnline ? "telehealth" : "in-person",
             isOnline: booking.isOnline,
             location: booking.isOnline ? undefined : booking.patientAddress,
-            notesForPatient: booking.patientNotes,
+            // A physio-scheduled follow-up's note is for the patient; an accepted request's note is the patient's own
+            ...(booking.fromPatientRequest ? { notesForTherapist: booking.patientNotes } : { notesForPatient: booking.patientNotes }),
         });
 
         // Link appointment to booking

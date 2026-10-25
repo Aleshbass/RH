@@ -14,8 +14,10 @@ import { getAuthenticatedUser } from "./auth";
 import { insertServiceBooking } from "./marketplace/booking";
 import { PHYSIO_SCHEDULED_HOLD_MS } from "./helpers/slotHolds";
 import { hasPriorAssessment } from "./helpers/rehabifyPricing";
-import { getService, isBookableServiceId } from "../lib/rehabify-services";
-import { lagosDateTime } from "./helpers/lagosTime";
+import { awaitingConfirmationFrom } from "./helpers/appointmentStatus";
+import { emailAboutAppointment, personName, syncGoogleCalendarEvent } from "./helpers/appointmentNotify";
+import { formatKobo, getService, isBookableServiceId } from "../lib/rehabify-services";
+import { lagosDate, lagosDateTime, lagosTimeRange } from "./helpers/lagosTime";
 
 const REHABIFY_SOURCES = new Set(["marketplace", "joy_whatsapp", "booking_link"]);
 
@@ -33,6 +35,26 @@ export async function isRehabifyCare(
     .withIndex("by_patient_and_physiotherapist", (q) => q.eq("patientId", patientId).eq("physiotherapistId", physiotherapistId))
     .first();
   return Boolean(relationship && REHABIFY_SOURCES.has(relationship.source ?? ""));
+}
+
+/**
+ * A patient's request the physio accepts with an invoice: a Rehabify patient's, for a visit that
+ * isn't paid for yet. A paid visit the patient asked to move is simply confirmed at the new time.
+ */
+export async function needsInvoiceOnAccept(ctx: QueryCtx, appointment: Doc<"appointments">): Promise<boolean> {
+  if (awaitingConfirmationFrom(appointment) !== "provider") return false;
+  if (!(await isRehabifyCare(ctx, appointment.patientId, appointment.physiotherapistId))) return false;
+  const booking = await ctx.db
+    .query("marketplaceBookings")
+    .withIndex("by_appointment", (q) => q.eq("appointmentId", appointment._id))
+    .first();
+  if (booking) return false;
+  const paidInvoices = await ctx.db
+    .query("invoices")
+    .withIndex("by_patient_id", (q) => q.eq("patientId", appointment.patientId))
+    .filter((q) => q.eq(q.field("status"), "paid"))
+    .collect();
+  return !paidInvoices.some((invoice) => invoice.relatedAppointmentIds?.includes(appointment._id));
 }
 
 /** For the scheduling screens: whether a new session must be booked and paid through Rehabify. */
@@ -107,6 +129,89 @@ export const scheduleRehabifyFollowUp = mutation({
         data: { entityType: "marketplace_booking", entityId: result.bookingId, actionUrl: "/dashboard/patient" },
       },
       createdAt: Date.now(),
+    });
+    return result;
+  },
+});
+
+/**
+ * Physio accepts a Rehabify patient's request and sends the invoice in one step. They pick the
+ * service from Rehabify's price list (never an amount), the request becomes a pay-to-confirm
+ * booking at the time the patient asked for, and the visit is confirmed once the patient pays.
+ */
+export const acceptRequestWithInvoice = mutation({
+  args: {
+    appointmentId: v.id("appointments"),
+    serviceId: v.string(),
+    zoneId: v.optional(v.id("travelZones")),
+    area: v.optional(v.string()),
+    patientAddress: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const physio = await getAuthenticatedUser(ctx);
+    if (physio.role !== "physiotherapist") throw new ConvexError("Only physiotherapists can accept requests.");
+    if (!isBookableServiceId(args.serviceId)) throw new ConvexError("Choose a service from the price list.");
+    const request = await ctx.db.get(args.appointmentId);
+    if (!request || request.physiotherapistId !== physio._id) throw new ConvexError("Request not found.");
+    if (awaitingConfirmationFrom(request) !== "provider") {
+      throw new ConvexError("This visit isn't waiting for your answer any more.");
+    }
+    if (request.startTime <= Date.now()) throw new ConvexError("This request's time has passed. Suggest another time instead.");
+    if (!(await needsInvoiceOnAccept(ctx, request))) {
+      throw new ConvexError("This visit doesn't need an invoice, so just accept it.");
+    }
+    const patient = (await ctx.db.get(request.patientId)) as Doc<"users"> | null;
+    if (!patient) throw new ConvexError("Patient not found.");
+
+    // The request makes way for the booking at the same time; paying turns the booking into the visit
+    await syncGoogleCalendarEvent(ctx, request._id, "delete");
+    await ctx.db.delete(request._id);
+
+    const result = await insertServiceBooking(ctx, {
+      patient,
+      physiotherapistId: physio._id,
+      serviceId: args.serviceId,
+      slotStart: request.startTime,
+      zoneId: args.zoneId,
+      area: args.area,
+      patientAddress: args.patientAddress ?? request.location,
+      patientNotes: request.notesForTherapist,
+      sourceSystem: "rh_patient_dashboard",
+      scheduledBy: "physiotherapist",
+      fromPatientRequest: true,
+      // Pay within a day, and before the visit starts
+      holdMs: Math.min(PHYSIO_SCHEDULED_HOLD_MS, request.startTime - Date.now()),
+    });
+
+    const service = getService(args.serviceId);
+    const physioName = personName(physio, "Your physiotherapist");
+    const price = formatKobo(result.chargeKobo);
+    const payBy = lagosDateTime(result.holdExpiresAt);
+    await ctx.db.insert("notifications", {
+      userId: patient._id,
+      type: "appointment_scheduled",
+      priority: "high",
+      status: "pending",
+      payload: {
+        title: "Request accepted: pay to confirm",
+        body: `${physioName} accepted your visit on ${lagosDateTime(request.startTime)}. Pay ${price} by ${payBy} to confirm it.`,
+        data: { entityType: "marketplace_booking", entityId: result.bookingId, actionUrl: "/dashboard/patient" },
+      },
+      createdAt: Date.now(),
+    });
+    const end = request.startTime + result.durationMinutes * 60_000;
+    await emailAboutAppointment(ctx, {
+      to: patient.email,
+      audience: "patient",
+      subject: `${physioName} accepted your request: pay to confirm`,
+      greetingName: patient.firstName,
+      heading: "Your physio accepted your request",
+      paragraphs: [
+        `${physioName} accepted your ${service?.name ?? "session"} on ${lagosDate(request.startTime)}, ${lagosTimeRange(request.startTime, end)} (Lagos time), ${service?.mode === "home" ? "at your home" : "by video call"}.`,
+        `It costs ${price}. Pay by ${payBy} to confirm your visit. We hold the time for you until then.`,
+      ],
+      buttonLabel: "Pay now",
+      buttonPath: "/dashboard/patient",
     });
     return result;
   },

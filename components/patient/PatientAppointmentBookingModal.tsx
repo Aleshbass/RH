@@ -12,8 +12,10 @@ import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
-import { Calendar as CalendarIcon, Check, Clock, Loader2, MapPin, Search, User, Video } from '@/components/icons'
+import { Calendar as CalendarIcon, Check, Clock, Home, Loader2, MapPin, Receipt, Search, User, Video } from '@/components/icons'
 import { formatLagos, lagosDate, lagosDateTime, lagosTime, lagosTimeRange, startOfZonedDay, zonedDateKey } from '@/convex/helpers/lagosTime'
+import { bookableServices, type Catalogue } from '@/components/booking/booking-shared'
+import { formatKobo } from '@/lib/rehabify-services'
 import { useGoogleBusyRefresh } from '@/lib/hooks/useGoogleBusyRefresh'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
@@ -227,7 +229,8 @@ function StepDots({ step }: { step: Step }) {
 /**
  * Book a visit with one of the patient's physios, in a drawer: pick a day and time from their
  * real availability, then say what it's for and how to meet. The physio confirms the request.
- * Physios who bill through Rehabify are booked (and paid) on their booking page instead.
+ * Rehabify patients pick from Rehabify's price list; their physio accepts with the invoice and
+ * paying it confirms the visit.
  */
 export function PatientAppointmentBookingModal({
   isOpen,
@@ -243,6 +246,7 @@ export function PatientAppointmentBookingModal({
   const [notes, setNotes] = useState<string>('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [physiotherapistId, setPhysiotherapistId] = useState<string>('')
+  const [paidServiceId, setPaidServiceId] = useState<string>('')
 
   // Typed from the query itself: the generated `api` type degrades to `any` in the full app build
   const careTeam = useQuery(api.patients.getPatientCareTeam, isOpen ? {} : 'skip') as
@@ -250,12 +254,26 @@ export function PatientAppointmentBookingModal({
     | undefined as CareTeamMember[] | undefined
   const requestAppointment = useMutation(api.appointments.requestAppointment)
 
-  // Rehabify patients book and pay for sessions on the physio's booking page instead
+  // Rehabify patients pay per visit: they choose from the price list, and paying the physio's invoice confirms it
   const billingMode = useQuery(
     api.rehabifyFollowUps.getCareBillingMode,
     isOpen && physiotherapistId ? { physiotherapistId: physiotherapistId as Id<'users'> } : 'skip'
-  ) as { mode: 'rehabify' | 'own' } | null | undefined
+  ) as { mode: 'rehabify' | 'own'; assessed: boolean } | null | undefined
   const paidOnRehabify = billingMode?.mode === 'rehabify'
+  const catalogue = useQuery(api.serviceTariffs.getCatalogue, isOpen && paidOnRehabify ? {} : 'skip') as Catalogue | undefined
+  const physioProfile = useQuery(
+    api.marketplace.search.getPhysiotherapistProfile,
+    isOpen && paidOnRehabify ? { physiotherapistId: physiotherapistId as Id<'users'> } : 'skip'
+  ) as { servicesOffered?: string[] } | null | undefined
+  // What this physio offers; treatment follows an assessment
+  const paidServices = useMemo(
+    () =>
+      bookableServices(catalogue?.services, physioProfile?.servicesOffered).filter(
+        (service) => billingMode?.assessed !== false || !service.requiresPriorAssessment
+      ),
+    [catalogue, physioProfile, billingMode?.assessed]
+  )
+  const paidService = paidServices.find((service) => service.id === paidServiceId)
 
   useEffect(() => {
     if (preselectedPhysiotherapistId) {
@@ -271,6 +289,7 @@ export function PatientAppointmentBookingModal({
       setStep('when')
       setSlot(null)
       setServiceType('')
+      setPaidServiceId('')
       setAppointmentType('telehealth')
       setLocation('')
       setNotes('')
@@ -284,7 +303,7 @@ export function PatientAppointmentBookingModal({
     : ''
 
   const handleSubmit = async () => {
-    if (!slot || !serviceType || !physiotherapistId || paidOnRehabify) return
+    if (!slot || !serviceType || !physiotherapistId) return
     if (appointmentType === 'in-person' && !location.trim()) {
       toast.error('Please enter the address for your visit')
       return
@@ -314,7 +333,7 @@ export function PatientAppointmentBookingModal({
   }
 
   const noCareTeam = careTeam !== undefined && careTeam.length === 0 && !preselectedPhysiotherapistId
-  const canBookHere = !noCareTeam && !paidOnRehabify && !!physiotherapistId
+  const canBookHere = !noCareTeam && !!physiotherapistId
 
   const title = step === 'success' ? 'Request sent' : step === 'details' ? 'Your visit' : 'Book a session'
   const description =
@@ -404,6 +423,8 @@ export function PatientAppointmentBookingModal({
                   onValueChange={(value) => {
                     setPhysiotherapistId(value)
                     setSlot(null)
+                    setPaidServiceId('')
+                    setServiceType('')
                   }}
                 >
                   <SelectTrigger className={cn(fieldClass, 'h-11')}>
@@ -423,21 +444,7 @@ export function PatientAppointmentBookingModal({
               </div>
             )}
 
-            {paidOnRehabify ? (
-              <div className="space-y-3 rounded-2xl bg-pt-sunken p-5 text-sm">
-                <p className="font-semibold text-pt-ink">
-                  Sessions with {physioName || 'your physiotherapist'} are booked and paid on Rehabify
-                </p>
-                <p className="text-pt-muted">
-                  Choose a service and a time on their booking page. The price you see is the price you pay, and your booking is confirmed once paid.
-                </p>
-                <Button asChild className={cn(primaryButtonClass, 'h-11 w-full')}>
-                  <Link href={`/book/${physiotherapistId}`} onClick={onClose}>
-                    Go to the booking page
-                  </Link>
-                </Button>
-              </div>
-            ) : physiotherapistId ? (
+            {physiotherapistId ? (
               <PatientSlotPicker
                 physiotherapistId={physiotherapistId}
                 durationMinutes={SESSION_MINUTES}
@@ -470,63 +477,106 @@ export function PatientAppointmentBookingModal({
             </p>
           </div>
 
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-pt-ink">What is this visit for?</label>
-            <Select value={serviceType} onValueChange={setServiceType}>
-              <SelectTrigger className={cn(fieldClass, 'h-11')}>
-                <SelectValue placeholder="Choose a service" />
-              </SelectTrigger>
-              <SelectContent>
-                {SERVICE_TYPES.map((type) => (
-                  <SelectItem key={type} value={type}>
-                    {type}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-2">
-            <p className="flex items-center gap-1 text-sm font-medium text-pt-ink">
-              How would you like to meet?
-              <InfoTip>A video call happens on your phone or laptop. In person means your physio sees you at the address you give.</InfoTip>
-            </p>
-            <div className="grid grid-cols-2 gap-2">
-              {(
-                [
-                  { value: 'telehealth', label: 'Video call', Icon: Video },
-                  { value: 'in-person', label: 'In person', Icon: MapPin },
-                ] as const
-              ).map(({ value, label, Icon }) => {
-                const active = appointmentType === value
-                return (
-                  <button
-                    key={value}
-                    type="button"
-                    onClick={() => setAppointmentType(value)}
-                    aria-pressed={active}
-                    className={cn(
-                      'flex items-center justify-center gap-2 rounded-2xl border px-3 py-3.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pt-accent/50',
-                      active
-                        ? 'border-transparent bg-pt-primary text-pt-on-primary'
-                        : 'border-pt-line-strong bg-pt-surface text-pt-ink hover:bg-pt-hover'
-                    )}
-                  >
-                    <Icon className="h-4 w-4" />
-                    {label}
-                  </button>
-                )
-              })}
+          {paidOnRehabify ? (
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-pt-ink">What is this visit for?</label>
+              <Select
+                value={paidServiceId}
+                onValueChange={(id) => {
+                  const chosen = paidServices.find((service) => service.id === id)
+                  setPaidServiceId(id)
+                  setServiceType(chosen?.name ?? '')
+                  setAppointmentType(chosen?.mode === 'home' ? 'in-person' : 'telehealth')
+                }}
+              >
+                <SelectTrigger className={cn(fieldClass, 'h-11')}>
+                  <SelectValue placeholder={catalogue === undefined ? 'Loading prices…' : 'Choose a service'} />
+                </SelectTrigger>
+                <SelectContent>
+                  {paidServices.map((service) => (
+                    <SelectItem key={service.id} value={service.id}>
+                      {service.name} · {service.travelApplies ? 'from ' : ''}
+                      {formatKobo(service.priceKobo)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {paidService && (
+                <p className="flex items-center gap-1.5 text-xs text-pt-muted">
+                  {paidService.mode === 'home' ? <Home className="h-3.5 w-3.5" /> : <Video className="h-3.5 w-3.5" />}
+                  {paidService.mode === 'home' ? 'Home visit' : 'Video call'} · {paidService.durationLabel}
+                </p>
+              )}
+              <div className="flex gap-2.5 rounded-2xl bg-pt-blue-bg p-3.5 text-sm text-pt-blue-fg">
+                <Receipt className="mt-0.5 h-4 w-4 shrink-0" />
+                <span className="flex-1">Your physio accepts the time and sends your invoice. Your visit is confirmed once you pay.</span>
+                <InfoTip>
+                  Prices are Rehabify’s standard prices{paidService?.travelApplies ? ', plus travel for your area' : ''}. Your physio may pick a
+                  different service if it suits you better. You’ll see the final price before you pay.
+                </InfoTip>
+              </div>
             </div>
-            {appointmentType === 'telehealth' && (
-              <p className="text-xs text-pt-muted">Once your physio confirms, the video link appears on your dashboard and in your email.</p>
-            )}
-          </div>
+          ) : (
+            <>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-pt-ink">What is this visit for?</label>
+                <Select value={serviceType} onValueChange={setServiceType}>
+                  <SelectTrigger className={cn(fieldClass, 'h-11')}>
+                    <SelectValue placeholder="Choose a service" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SERVICE_TYPES.map((type) => (
+                      <SelectItem key={type} value={type}>
+                        {type}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <p className="flex items-center gap-1 text-sm font-medium text-pt-ink">
+                  How would you like to meet?
+                  <InfoTip>A video call happens on your phone or laptop. In person means your physio sees you at the address you give.</InfoTip>
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  {(
+                    [
+                      { value: 'telehealth', label: 'Video call', Icon: Video },
+                      { value: 'in-person', label: 'In person', Icon: MapPin },
+                    ] as const
+                  ).map(({ value, label, Icon }) => {
+                    const active = appointmentType === value
+                    return (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() => setAppointmentType(value)}
+                        aria-pressed={active}
+                        className={cn(
+                          'flex items-center justify-center gap-2 rounded-2xl border px-3 py-3.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pt-accent/50',
+                          active
+                            ? 'border-transparent bg-pt-primary text-pt-on-primary'
+                            : 'border-pt-line-strong bg-pt-surface text-pt-ink hover:bg-pt-hover'
+                        )}
+                      >
+                        <Icon className="h-4 w-4" />
+                        {label}
+                      </button>
+                    )
+                  })}
+                </div>
+                {appointmentType === 'telehealth' && (
+                  <p className="text-xs text-pt-muted">Once your physio confirms, the video link appears on your dashboard and in your email.</p>
+                )}
+              </div>
+            </>
+          )}
 
           {appointmentType === 'in-person' && (
             <div className="space-y-2">
               <label htmlFor="visit-address" className="text-sm font-medium text-pt-ink">
-                Address
+                {paidOnRehabify ? 'Your address' : 'Address'}
               </label>
               <Input
                 id="visit-address"
@@ -559,10 +609,17 @@ export function PatientAppointmentBookingModal({
             <Check className="h-6 w-6" />
           </span>
           <p className="mt-4 text-lg font-semibold text-pt-ink">Your request is with {physioName || 'your physio'}</p>
-          <p className="mt-1 max-w-xs text-sm text-pt-muted">
-            They&apos;ll confirm <span className="font-medium text-pt-ink">{lagosDateTime(slot.start)}</span> or suggest another time. We&apos;ll
-            let you know either way.
-          </p>
+          {paidOnRehabify ? (
+            <p className="mt-1 max-w-xs text-sm text-pt-muted">
+              When they accept <span className="font-medium text-pt-ink">{lagosDateTime(slot.start)}</span>, your invoice appears on your
+              dashboard. Pay it to confirm your visit.
+            </p>
+          ) : (
+            <p className="mt-1 max-w-xs text-sm text-pt-muted">
+              They&apos;ll confirm <span className="font-medium text-pt-ink">{lagosDateTime(slot.start)}</span> or suggest another time. We&apos;ll
+              let you know either way.
+            </p>
+          )}
         </div>
       )}
     </PatientDrawer>

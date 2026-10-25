@@ -3,7 +3,7 @@ import { mutation, query, internalQuery } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { onPatientSessionCompleted } from "./helpers/partnerAttribution";
-import { isRehabifyCare } from "./rehabifyFollowUps";
+import { isRehabifyCare, needsInvoiceOnAccept } from "./rehabifyFollowUps";
 import { lagosDate, lagosDateTime, lagosShortDate, lagosTime, lagosTimeRange, startOfZonedDay, zonedDateTimeToUtc } from "./helpers/lagosTime";
 import { awaitingConfirmationFrom, isOpenAppointment } from "./helpers/appointmentStatus";
 import { isGoogleBusy } from "./helpers/slotHolds";
@@ -398,6 +398,8 @@ export const getMyAppointments = query({
           const patient = await ctx.db.get(appointment.patientId);
           return {
             ...appointment,
+            // Rehabify patients pay per session, so their requests are accepted with an invoice
+            needsInvoice: await needsInvoiceOnAccept(ctx, appointment),
             patient: patient ? {
               _id: patient._id,
               firstName: patient.firstName,
@@ -464,6 +466,7 @@ export const getMyAppointments = query({
           const patient = await ctx.db.get(appointment.patientId);
           return {
             ...appointment,
+            needsInvoice: false, // clinic visits are priced by the clinic
             patient: patient ? {
               _id: patient._id,
               firstName: patient.firstName,
@@ -522,6 +525,10 @@ export const updateAppointmentStatus = mutation({
     }
     if (args.status === "confirmed" && appointment.endTime < Date.now()) {
       throw new ConvexError("This visit's time has passed. Propose another time instead.");
+    }
+    // A Rehabify patient's request is confirmed by paying: the physio accepts it with an invoice
+    if (args.status === "confirmed" && (await needsInvoiceOnAccept(ctx, appointment))) {
+      throw new ConvexError("This is a paid Rehabify visit. Use Accept & send invoice so the patient can pay to confirm it.");
     }
     // Completing (or marking a no-show) only once the visit has started: completion releases the payout
     if ((args.status === "completed" || args.status === "no_show") && appointment.startTime > Date.now()) {
@@ -1009,6 +1016,21 @@ export const respondToProposedTime = mutation({
         throw new ConvexError("That time has just been taken. Keep your original time or ask your physio for another.");
       }
 
+      // A Rehabify patient's request moves to the new time and still waits for the physio's
+      // invoice: paying it is what confirms the visit
+      if (await needsInvoiceOnAccept(ctx, appointment)) {
+        await ctx.db.patch(args.appointmentId, { startTime: start, endTime: end, ...CLEAR_PROPOSAL });
+        await notifyAboutAppointment(ctx, {
+          userId: appointment.physiotherapistId,
+          type: "appointment_rescheduled",
+          title: "New time accepted: send the invoice",
+          body: `${patientName} accepted ${lagosDateTime(start)}. Accept & send the invoice so they can pay to confirm it.`,
+          appointmentId: args.appointmentId,
+          actionUrl: PHYSIO_APPOINTMENTS,
+        });
+        return { success: true, message: "Moved to the new time. Your physio will send the invoice, and paying it confirms your visit." };
+      }
+
       await ctx.db.patch(args.appointmentId, {
         startTime: start,
         endTime: end,
@@ -1238,17 +1260,17 @@ export const getPatientAppointments = query({
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    // Ensure the caller is the patient themselves
+    // Ensure the caller is the patient themselves. Return nothing (not throw) while the
+    // session or user row is still settling, like getMyUser and getPatientStats do.
     const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Not authenticated");
+    if (!identity) return [];
 
     const patient = await ctx.db
       .query("users")
       .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
       .unique();
 
-    if (!patient) throw new Error("User not found");
-    if (patient.role !== "patient") throw new Error("Access denied");
+    if (!patient || patient.role !== "patient") return [];
 
     const limit = args.limit ?? 100;
 
@@ -1467,10 +1489,9 @@ export const requestAppointment = mutation({
       throw new Error("Access denied. You are not assigned to this physiotherapist.");
     }
 
-    // Sessions with a Rehabify physio are booked and paid on the booking page
-    if (await isRehabifyCare(ctx, patient._id, args.physiotherapistId)) {
-      throw new ConvexError("Please book this session on the booking page. It's confirmed once you pay.");
-    }
+    // Rehabify patients pay per session: the physio accepts and sends the invoice
+    // (rehabifyFollowUps.acceptRequestWithInvoice), and paying confirms the visit
+    const paidVisit = await isRehabifyCare(ctx, patient._id, args.physiotherapistId);
 
     // Get physiotherapist info for clinic details
     const physiotherapist = await ctx.db.get(args.physiotherapistId);
@@ -1535,7 +1556,8 @@ export const requestAppointment = mutation({
     let googleMeetLink: string | undefined;
     let googleCalendarLink: string | undefined;
 
-    if (args.appointmentType === 'telehealth' || !args.appointmentType) {
+    // A paid visit gets its calendar event once it's paid (the request is replaced on accept)
+    if (!paidVisit && (args.appointmentType === 'telehealth' || !args.appointmentType)) {
       // Schedule Google Meet link generation
 
       await ctx.scheduler.runAfter(0, internal.calendar.service.createCalendarEventAsync, {
@@ -1572,7 +1594,9 @@ export const requestAppointment = mutation({
       status: "pending",
       payload: {
         title: "New Appointment Request",
-        body: `${patientName} asked for a visit on ${lagosDateTime(args.startTime)}. Accept it, decline it, or propose another time.`,
+        body: paidVisit
+          ? `${patientName} asked for a visit on ${lagosDateTime(args.startTime)}. It's a paid Rehabify visit: accept it and send the invoice, decline it, or propose another time.`
+          : `${patientName} asked for a visit on ${lagosDateTime(args.startTime)}. Accept it, decline it, or propose another time.`,
         data: {
           entityId: appointmentId,
           entityType: "appointment",
@@ -1590,7 +1614,9 @@ export const requestAppointment = mutation({
       status: "pending",
       payload: {
         title: "Appointment Requested",
-        body: `You asked ${physiotherapistName} for a visit on ${lagosDateTime(args.startTime)}. We'll let you know when they confirm.`,
+        body: paidVisit
+          ? `You asked ${physiotherapistName} for a visit on ${lagosDateTime(args.startTime)}. When they accept, you'll get the invoice. Paying it confirms your visit.`
+          : `You asked ${physiotherapistName} for a visit on ${lagosDateTime(args.startTime)}. We'll let you know when they confirm.`,
         data: {
           entityId: appointmentId,
           entityType: "appointment",
@@ -1626,7 +1652,9 @@ export const requestAppointment = mutation({
       heading: "We've sent your request",
       paragraphs: [
         `You asked ${physiotherapistName} for a ${args.serviceType} on ${lagosDate(args.startTime)}, ${appointmentTimeStr} (Lagos time), ${args.appointmentType === "in-person" ? `at ${args.location?.trim()}` : "by video call"}.`,
-        "Your physio will confirm it, or propose another time. We'll email you either way.",
+        paidVisit
+          ? "Your physio will accept it and send you the invoice, or propose another time. Your visit is confirmed once you pay."
+          : "Your physio will confirm it, or propose another time. We'll email you either way.",
       ],
       buttonLabel: "View my appointments",
       buttonPath: PATIENT_APPOINTMENTS,
@@ -1635,7 +1663,9 @@ export const requestAppointment = mutation({
     return {
       success: true,
       appointmentId,
-      message: "Appointment requested successfully. You'll be notified when it's confirmed.",
+      message: paidVisit
+        ? "Request sent. When your physio accepts, you'll get the invoice to pay."
+        : "Appointment requested successfully. You'll be notified when it's confirmed.",
       googleMeetLink,
       googleCalendarLink,
     };

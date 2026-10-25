@@ -8,6 +8,7 @@ import { recordInvoicePartnerCommission } from "./helpers/partnerLedger";
 import { getAuthenticatedUser } from "./auth";
 import { isServerCaller } from "./helpers/serverSecret";
 import { insertClinicInvoice } from "./clinicTools";
+import { isRehabifyCare } from "./rehabifyFollowUps";
 
 /**
  * True when the signed-in caller is a party to the invoice: its patient, its
@@ -105,6 +106,10 @@ export const createInvoice = mutation({
 
     if (!relationship) {
       throw new ConvexError("No active relationship with this patient");
+    }
+    // Rehabify patients pay Rehabify's set prices per session, never an amount typed here
+    if (await isRehabifyCare(ctx, args.patientId, physiotherapist._id)) {
+      throw new ConvexError("This is a Rehabify patient, so sessions are paid at Rehabify's prices. Book the session and they'll pay to confirm it.");
     }
 
     // A due date the page couldn't read (e.g. left blank) would break every invoice list

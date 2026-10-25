@@ -17,6 +17,7 @@ export const workspaceApi = {
   billing: root.billing,
   physioBilling: root.physioBilling,
   users: root.users,
+  rehabifyFollowUps: root.rehabifyFollowUps,
 }
 
 export type CarePlanTemplate = QueryResult<typeof listCarePlanTemplates>[number]

@@ -88,6 +88,13 @@ export function visitStatus(apt: PhysioAppointment, now = Date.now()): { label: 
     return { label: 'New time sent', tone: 'blue', explain: 'You suggested another time. The patient can accept it or keep the original.' }
   }
   const waitingOn = awaitingConfirmationFrom(like)
+  if (waitingOn === 'provider' && apt.needsInvoice) {
+    return {
+      label: 'Needs your answer',
+      tone: 'ink',
+      explain: 'The patient asked for this time. It’s a paid Rehabify visit: accepting sends them the invoice, and it’s confirmed once they pay.',
+    }
+  }
   if (waitingOn === 'provider') {
     return { label: 'Needs your answer', tone: 'ink', explain: 'The patient asked for this time. Accept it, decline it, or suggest another time.' }
   }

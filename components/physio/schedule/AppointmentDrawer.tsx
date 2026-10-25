@@ -4,12 +4,30 @@
  * One visit, in a drawer: when and where, its status explained, and everything the physio can
  * do with it (join, accept, decline, suggest another time, cancel, mark done or no-show). After
  * "Mark done" it asks for a quick session note, so records stay complete without extra clicks.
+ * A Rehabify patient's request is accepted with an invoice: the physio picks the service from
+ * Rehabify's price list and the patient pays to confirm.
  */
 
 import { useEffect, useState, type ReactNode } from 'react'
 import Link from 'next/link'
 import { toast } from 'sonner'
-import { CalendarDays, Check, CheckCircle2, ClipboardList, Clock, MapPin, MessageSquare, NotebookPen, User, UserX, Video, X } from '@/components/icons'
+import {
+  CalendarDays,
+  Check,
+  CheckCircle2,
+  ClipboardList,
+  Clock,
+  Home,
+  Loader2,
+  MapPin,
+  MessageSquare,
+  NotebookPen,
+  Receipt,
+  User,
+  UserX,
+  Video,
+  X,
+} from '@/components/icons'
 import type { Id } from '@/convex/_generated/dataModel'
 import { hasPendingProposal, isOpenAppointment } from '@/convex/helpers/appointmentStatus'
 import { lagosDate, lagosDateTime, lagosShortDate, lagosTime, lagosTimeRange } from '@/convex/helpers/lagosTime'
@@ -20,16 +38,21 @@ import { isVideoVisit, meetingLinkOf } from '@/components/appointments/appointme
 import {
   accentButtonClass,
   DetailRow,
+  EmptyState,
   fieldClass,
+  IconChip,
   InfoTip,
   PhysioDrawer,
   primaryButtonClass,
   secondaryButtonClass,
   StatusBadge,
 } from '@/components/physio/ui'
-import { useMutationUntyped } from '@/lib/convexUntyped'
+import { formatKobo } from '@/lib/rehabify-services'
+import type { ServiceQuote } from '@/lib/rehabify-api-types'
+import { useMutationUntyped, useQueryUntyped } from '@/lib/convexUntyped'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
+import { Choice, HomeVisitFields, suggestService, useRehabifyServices, type HomeVisit, type ScheduleService } from './rehabifyServices'
 import {
   asLike,
   joinLink,
@@ -43,7 +66,7 @@ import {
   type PhysioAppointment,
 } from './shared'
 
-type View = 'details' | 'propose' | 'decline' | 'cancel' | 'note'
+export type View = 'details' | 'invoice' | 'propose' | 'decline' | 'cancel' | 'note'
 type Slot = { start: number; end: number; duration: number }
 
 const PHYSIO = '/dashboard/physiotherapist'
@@ -67,10 +90,22 @@ export function AppointmentDrawer({
   const [slot, setSlot] = useState<Slot | null>(null)
   const [message, setMessage] = useState('')
   const [note, setNote] = useState({ did: '', how: '', plan: '' })
+  const [service, setService] = useState<ScheduleService | null>(null)
+  const [visit, setVisit] = useState<HomeVisit | null>(null)
+  const [address, setAddress] = useState('')
 
   const updateStatus = useMutationUntyped(scheduleApi.appointments.updateAppointmentStatus)
   const propose = useMutationUntyped(scheduleApi.appointments.proposeNewTime)
   const addNote = useMutationUntyped(scheduleApi.physioCare.addClinicalNote)
+  const acceptWithInvoice = useMutationUntyped(scheduleApi.rehabifyFollowUps.acceptRequestWithInvoice)
+
+  // A Rehabify patient's request: the price list it's invoiced from
+  const invoicing = Boolean(isOpen && appointment?.needsInvoice)
+  const { billing, coverage, payoutSchedule, zones, services, coveredZones } = useRehabifyServices(invoicing ? appointment?.patientId : null)
+  const quote = useQueryUntyped(
+    scheduleApi.booking.getServiceQuote,
+    view === 'invoice' && service && (service.mode !== 'home' || visit) ? { serviceId: service.id, zoneId: service.mode === 'home' ? visit?.zoneId : undefined } : 'skip'
+  ) as ServiceQuote | undefined
 
   const id = appointment?._id
   // Fresh each time it opens (not while it slides closed)
@@ -80,7 +115,28 @@ export function AppointmentDrawer({
     setSlot(null)
     setMessage('')
     setNote({ did: '', how: '', plan: '' })
+    setService(null)
+    setVisit(null)
+    setAddress(appointment?.location ?? '')
   }, [id, startWith, isOpen])
+
+  // Start the invoice on what the patient asked for, and on their area if their address names one
+  useEffect(() => {
+    if (view !== 'invoice' || service || !appointment) return
+    const pick = suggestService(services, { serviceType: appointment.serviceType, home: !isVideoVisit(asLike(appointment)) })
+    if (pick) setService(pick)
+  }, [view, service, services, appointment])
+  useEffect(() => {
+    if (view !== 'invoice' || visit || service?.mode !== 'home' || !appointment?.location) return
+    const text = appointment.location.toLowerCase()
+    for (const zone of coveredZones) {
+      const area = zone.areas.find((a) => text.includes(a.toLowerCase()))
+      if (area) {
+        setVisit({ zoneId: zone.id, area })
+        return
+      }
+    }
+  }, [view, visit, service, coveredZones, appointment])
 
   if (!appointment) return null
 
@@ -161,6 +217,15 @@ export function AppointmentDrawer({
           </StatusBadge>
           <InfoTip label="What this status means">{status.explain}</InfoTip>
         </div>
+        {answer && appointment.needsInvoice && (
+          <div className="flex gap-2.5 rounded-2xl bg-pt-blue-bg p-3.5 text-sm text-pt-blue-fg">
+            <Receipt className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>
+              Paid visit. {first} came through Rehabify, so when you accept you pick the service from Rehabify’s price list and they get the
+              invoice. It’s confirmed once they pay.
+            </span>
+          </div>
+        )}
         <div className="divide-y divide-pt-line rounded-2xl border border-pt-line px-3">
           <DetailRow icon={CalendarDays} label="When">
             {lagosDate(appointment.startTime)}
@@ -205,7 +270,25 @@ export function AppointmentDrawer({
       </div>
     )
 
-    if (answer) {
+    if (answer && appointment.needsInvoice) {
+      footer = (
+        <div className="space-y-2">
+          <Button className={cn(primaryButtonClass, 'h-11 w-full')} disabled={busy !== null} onClick={() => setView('invoice')}>
+            <Receipt className="mr-2 h-4 w-4" />
+            Accept &amp; send invoice
+          </Button>
+          <div className="grid grid-cols-2 gap-2">
+            <Button className={cn(secondaryButtonClass, 'h-11')} disabled={busy !== null} onClick={() => setView('decline')}>
+              <X className="mr-1.5 h-4 w-4" />
+              Decline
+            </Button>
+            <Button className={cn(secondaryButtonClass, 'h-11')} disabled={busy !== null} onClick={() => setView('propose')}>
+              Other time
+            </Button>
+          </div>
+        </div>
+      )
+    } else if (answer) {
       footer = (
         <div className="grid grid-cols-3 gap-2">
           <Button className={cn(secondaryButtonClass, 'h-11')} disabled={busy !== null} onClick={() => setView('decline')}>
@@ -292,6 +375,131 @@ export function AppointmentDrawer({
         </div>
       )
     }
+  }
+
+  if (view === 'invoice') {
+    const loading = billing === undefined || coverage === undefined || payoutSchedule === undefined
+    const home = service?.mode === 'home'
+    const price = quote?.ok ? formatKobo(quote.chargeKobo) : service ? `${service.travelApplies ? 'from ' : ''}${formatKobo(service.priceKobo)}` : ''
+    const ready = Boolean(service) && (!home || (Boolean(visit) && Boolean(address.trim())))
+
+    title = 'Accept & send invoice'
+    description = `${lagosShortDate(appointment.startTime)}, ${lagosTime(appointment.startTime)} · ${name}`
+    body = (
+      <div className="space-y-4">
+        <p className="flex items-start gap-1 text-sm text-pt-muted">
+          Choose what this visit is. {first} gets the invoice at Rehabify’s price and pays to confirm.
+          <InfoTip>
+            Prices are set by Rehabify. {first} has 24 hours to pay (or until the visit, if that’s sooner) and the time is held for them
+            until then. You earn the amount shown once the session is done.
+          </InfoTip>
+        </p>
+        <div className="rounded-2xl bg-pt-sunken p-3.5 text-sm">
+          <p className="text-xs font-medium text-pt-muted">{first} asked for</p>
+          <p className="mt-0.5 font-semibold text-pt-ink">
+            {appointment.serviceType || 'A session'} · {video ? 'Video call' : 'Home visit'}
+          </p>
+          {appointment.notesForTherapist && <p className="mt-1 whitespace-pre-line text-pt-muted">“{appointment.notesForTherapist}”</p>}
+        </div>
+
+        {loading ? (
+          <div className="flex items-center gap-2 py-6 text-sm text-pt-muted">
+            <Loader2 className="h-4 w-4 animate-spin" /> Loading prices…
+          </div>
+        ) : services.length === 0 ? (
+          <EmptyState
+            title="No Rehabify services switched on"
+            description="Turn on video sessions or home visits in Settings → Services & coverage."
+            action={
+              <Button asChild className={cn(secondaryButtonClass, 'h-10')}>
+                <Link href={`${PHYSIO}/settings/marketplace`} onClick={close}>
+                  Open Services &amp; coverage
+                </Link>
+              </Button>
+            }
+          />
+        ) : (
+          <div className="space-y-2">
+            {services.map((option) => (
+              <Choice
+                key={option.id}
+                icon={<IconChip icon={option.mode === 'home' ? Home : Video} tone={option.mode === 'home' ? 'sun' : 'violet'} />}
+                title={option.name}
+                detail={`${option.durationLabel} · ${option.mode === 'home' ? 'Home visit' : 'Video call'}`}
+                aside={
+                  <>
+                    <span className="block text-sm font-semibold tabular-nums text-pt-ink">
+                      {option.travelApplies ? 'From ' : ''}
+                      {formatKobo(option.priceKobo)}
+                    </span>
+                    <span className="block text-[11px] tabular-nums text-pt-muted">You earn {formatKobo(option.payoutKobo)}</span>
+                  </>
+                }
+                selected={service?.id === option.id}
+                onClick={() => setService(option)}
+              />
+            ))}
+          </div>
+        )}
+
+        {home && (
+          <HomeVisitFields
+            idPrefix="invoice"
+            zones={zones}
+            coveredZones={coveredZones}
+            visit={visit}
+            onVisit={setVisit}
+            address={address}
+            onAddress={setAddress}
+          />
+        )}
+
+        {service && (
+          <div className="rounded-2xl bg-pt-green-bg p-4 text-pt-green-fg">
+            <p className="text-sm font-semibold">
+              {first} pays {price} to confirm
+            </p>
+            <p className="mt-0.5 text-xs opacity-80">
+              {service.durationMinutes !== minutes &&
+                `Booked for ${service.durationMinutes} min: ${lagosTimeRange(appointment.startTime, appointment.startTime + service.durationMinutes * 60_000)}. `}
+              You earn {formatKobo(service.payoutKobo)}
+              {service.travelApplies ? ' plus your share of travel' : ''} once it’s done.
+            </p>
+          </div>
+        )}
+      </div>
+    )
+    footer = (
+      <div className="flex gap-2">
+        <Button className={cn(secondaryButtonClass, 'h-11 flex-1')} disabled={busy !== null} onClick={() => setView('details')}>
+          Back
+        </Button>
+        <Button
+          className={cn(primaryButtonClass, 'h-11 flex-[2]')}
+          disabled={!ready || busy !== null}
+          onClick={() =>
+            service &&
+            void run(
+              'invoice',
+              () =>
+                acceptWithInvoice({
+                  appointmentId: appointment._id as Id<'appointments'>,
+                  serviceId: service.id,
+                  zoneId: home ? (visit?.zoneId as Id<'travelZones'>) : undefined,
+                  area: home ? visit?.area : undefined,
+                  patientAddress: home ? address.trim() : undefined,
+                }),
+              `Accepted. ${first} has the invoice to pay.`,
+              'booked',
+              close
+            )
+          }
+        >
+          {busy === 'invoice' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Receipt className="mr-2 h-4 w-4" />}
+          {!service ? 'Choose a service' : home && !visit ? 'Choose their area' : `Send invoice · ${price}`}
+        </Button>
+      </div>
+    )
   }
 
   if (view === 'propose') {

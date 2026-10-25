@@ -36,10 +36,11 @@ import {
   StatusBadge,
 } from '@/components/physio/ui'
 import { programError } from '@/components/exercise-programs/errors'
+import { useBooking } from '@/components/physio/schedule/BookingDrawer'
 import { useMutationUntyped, useQueryUntyped, useActionUntyped } from '@/lib/convexUntyped'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
-import { workspaceApi, type CarePlanTemplate, type Workspace } from './shared'
+import { fullName, workspaceApi, type CarePlanTemplate, type Workspace } from './shared'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
@@ -748,6 +749,12 @@ export function RequestPaymentDrawer({ workspace, open, onOpenChange }: { worksp
   const createInvoice = useMutationUntyped(workspaceApi.billing.createInvoice)
   const createLink = useActionUntyped(workspaceApi.physioBilling.createPhysioPaymentLink)
   const me = useQueryUntyped(workspaceApi.users.getMyUser, open ? {} : 'skip') as { clinicId?: string } | null | undefined
+  // Rehabify patients pay Rehabify's set prices per session, so there's no amount to type
+  const billing = useQueryUntyped(workspaceApi.rehabifyFollowUps.getCareBillingMode, open ? { patientId: workspace.patient._id } : 'skip') as
+    | { mode: 'rehabify' | 'own' }
+    | null
+    | undefined
+  const openBooking = useBooking()
   const [items, setItems] = useState<Item[]>([{ description: '', amount: '' }])
   const [dueIn, setDueIn] = useState<DueIn>('7')
   const [saving, setSaving] = useState(false)
@@ -820,6 +827,41 @@ export function RequestPaymentDrawer({ workspace, open, onOpenChange }: { worksp
     } finally {
       setLinkBusy(null)
     }
+  }
+
+  if (billing?.mode === 'rehabify') {
+    return (
+      <PhysioDrawer
+        open={open}
+        onOpenChange={onOpenChange}
+        title="Request payment"
+        description={`${workspace.patient.firstName ?? 'Your patient'} pays Rehabify’s set prices.`}
+        footer={
+          <div className="flex gap-2">
+            <Button className={cn(secondaryButtonClass, 'h-11 flex-1')} onClick={() => onOpenChange(false)}>
+              Close
+            </Button>
+            <Button
+              className={cn(primaryButtonClass, 'h-11 flex-[2]')}
+              onClick={() => {
+                onOpenChange(false)
+                openBooking({ patient: { id: workspace.patient._id, name: fullName(workspace.patient) } })
+              }}
+            >
+              Book a paid session
+            </Button>
+          </div>
+        }
+      >
+        <div className="flex gap-2.5 rounded-2xl bg-pt-blue-bg p-4 text-sm text-pt-blue-fg">
+          <Receipt className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>
+            {workspace.patient.firstName ?? 'This patient'} came through Rehabify, so each session is paid at Rehabify’s price. Book the session
+            (or accept their request) and they get the invoice. It’s confirmed once they pay.
+          </span>
+        </div>
+      </PhysioDrawer>
+    )
   }
 
   return (

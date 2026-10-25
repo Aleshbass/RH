@@ -9,7 +9,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
-import { CalendarDays, CalendarPlus, Check, ChevronRight, Hourglass, Inbox, Loader2, MapPin, Video } from '@/components/icons'
+import { CalendarDays, CalendarPlus, Check, ChevronRight, Hourglass, Inbox, Loader2, MapPin, Receipt, Video } from '@/components/icons'
 import type { Id } from '@/convex/_generated/dataModel'
 import { isCancelledAppointment, isOpenAppointment } from '@/convex/helpers/appointmentStatus'
 import { lagosShortDate, lagosTime, zonedDateKey } from '@/convex/helpers/lagosTime'
@@ -32,7 +32,7 @@ import { formatKobo } from '@/lib/rehabify-services'
 import { useMutationUntyped, useQueryUntyped } from '@/lib/convexUntyped'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
-import { AppointmentDrawer } from './AppointmentDrawer'
+import { AppointmentDrawer, type View } from './AppointmentDrawer'
 import { useBooking } from './BookingDrawer'
 import {
   asLike,
@@ -174,6 +174,7 @@ function HeldRow({ booking, now }: { booking: HeldBooking; now: number }) {
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm font-semibold text-pt-ink">{booking.patientName}</span>
         <span className="block truncate text-xs text-pt-muted">
+          {booking.fromPatientRequest ? 'Invoice sent · ' : ''}
           {booking.serviceName} · {formatKobo(booking.chargeKobo)}
           {booking.held && booking.holdExpiresAt ? ` · held until ${lagosTime(booking.holdExpiresAt)}, ${lagosShortDate(booking.holdExpiresAt)}` : ' · hold ended'}
         </span>
@@ -234,6 +235,7 @@ export function ScheduleList({
   const [tab, setTab] = useState<Tab>('upcoming')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const [drawerView, setDrawerView] = useState<View>('details')
   const [accepting, setAccepting] = useState<string | null>(null)
 
   const sorted = useMemo(() => [...(appointments ?? [])].sort((a, b) => a.startTime - b.startTime), [appointments])
@@ -245,8 +247,9 @@ export function ScheduleList({
 
   // The drawer follows live data: an accepted or rescheduled visit updates while it's open
   const selected = useMemo(() => (appointments ?? []).find((apt) => apt._id === selectedId) ?? null, [appointments, selectedId])
-  const open = (apt: PhysioAppointment) => {
+  const open = (apt: PhysioAppointment, view: View = 'details') => {
     setSelectedId(apt._id)
+    setDrawerView(view)
     setDrawerOpen(true)
   }
 
@@ -258,6 +261,7 @@ export function ScheduleList({
     setHandledParam(visitParam)
     if (appointments.some((apt) => apt._id === visitParam)) {
       setSelectedId(visitParam)
+      setDrawerView('details')
       setDrawerOpen(true)
     }
   }, [visitParam, handledParam, appointments])
@@ -312,7 +316,7 @@ export function ScheduleList({
                   Needs your answer <StatusBadge tone="ink">{answer.length}</StatusBadge>
                 </>
               }
-              info="Patients asked for these times. Accept, decline or suggest another time. They’re told straight away."
+              info="Patients asked for these times. Accept, decline or suggest another time. They’re told straight away. Rehabify patients pay per visit, so accepting theirs sends the invoice."
               bodyClassName="p-2 sm:p-3"
             >
               {answer.map((apt) => (
@@ -323,15 +327,22 @@ export function ScheduleList({
                   showDay
                   onOpen={() => open(apt)}
                   action={
-                    <Button
-                      size="sm"
-                      className={cn(primaryButtonClass, 'h-9 shrink-0 px-3')}
-                      disabled={accepting !== null}
-                      onClick={() => void accept(apt)}
-                    >
-                      {accepting === apt._id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="mr-1 h-3.5 w-3.5" />}
-                      Accept
-                    </Button>
+                    apt.needsInvoice ? (
+                      <Button size="sm" className={cn(primaryButtonClass, 'h-9 shrink-0 px-3')} onClick={() => open(apt, 'invoice')}>
+                        <Receipt className="mr-1 h-3.5 w-3.5" />
+                        Accept &amp; invoice
+                      </Button>
+                    ) : (
+                      <Button
+                        size="sm"
+                        className={cn(primaryButtonClass, 'h-9 shrink-0 px-3')}
+                        disabled={accepting !== null}
+                        onClick={() => void accept(apt)}
+                      >
+                        {accepting === apt._id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="mr-1 h-3.5 w-3.5" />}
+                        Accept
+                      </Button>
+                    )
                   }
                 />
               ))}
@@ -412,7 +423,7 @@ export function ScheduleList({
         </>
       )}
 
-      <AppointmentDrawer appointment={selected} open={drawerOpen && selected !== null} onOpenChange={setDrawerOpen} />
+      <AppointmentDrawer appointment={selected} open={drawerOpen && selected !== null} onOpenChange={setDrawerOpen} startWith={drawerView} />
     </PageContainer>
   )
 }

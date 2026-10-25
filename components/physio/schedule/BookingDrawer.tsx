@@ -9,7 +9,7 @@
  * calendar) → details → done. Modelled on the patient portal's booking drawer.
  */
 
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useState, type ReactNode } from 'react'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import { ArrowRight, CalendarDays, Check, Clock, Home, Loader2, MapPin, MessageSquare, Search, User, Video } from '@/components/icons'
@@ -29,11 +29,12 @@ import {
   primaryButtonClass,
   secondaryButtonClass,
 } from '@/components/physio/ui'
-import { formatKobo, getService, type ServiceMode } from '@/lib/rehabify-services'
-import type { CareBillingMode, MarketplaceSettings, PayoutSchedule, ServiceQuote, TravelZone } from '@/lib/rehabify-api-types'
+import { formatKobo } from '@/lib/rehabify-services'
+import type { ServiceQuote } from '@/lib/rehabify-api-types'
 import { useMutationUntyped, useQueryUntyped } from '@/lib/convexUntyped'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
+import { Choice, HomeVisitFields, useRehabifyServices, type HomeVisit, type ScheduleService } from './rehabifyServices'
 import { readableError, scheduleApi } from './shared'
 
 export type BookingPatient = { id: string; name: string }
@@ -48,18 +49,6 @@ type Step = 'patient' | 'what' | 'when' | 'details' | 'done'
 type Slot = { start: number; end: number; duration: number }
 
 type PatientOption = { _id: string; firstName?: string; lastName?: string; email?: string; patientNumber?: string }
-
-/** A Rehabify service this physio offers, for a patient who pays per session. */
-type ScheduleService = {
-  id: string
-  name: string
-  mode: ServiceMode
-  durationMinutes: number
-  durationLabel: string
-  priceKobo: number
-  payoutKobo: number
-  travelApplies: boolean
-}
 
 const BookingContext = createContext<(options?: BookingOptions) => void>(() => undefined)
 
@@ -103,51 +92,6 @@ function StepBar({ index, total }: { index: number; total: number }) {
   )
 }
 
-/** A big tappable choice: icon, title, a line under it, optional right-hand text, selected state. */
-function Choice({
-  icon,
-  title,
-  detail,
-  aside,
-  selected,
-  onClick,
-}: {
-  icon: ReactNode
-  title: string
-  detail?: ReactNode
-  aside?: ReactNode
-  selected: boolean
-  onClick: () => void
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={selected}
-      className={cn(
-        'flex w-full items-center gap-3 rounded-2xl border p-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pt-accent/50 active:scale-[0.99]',
-        selected ? 'border-pt-ink bg-pt-sunken' : 'border-pt-line-strong bg-pt-surface hover:bg-pt-hover'
-      )}
-    >
-      {icon}
-      <span className="min-w-0 flex-1">
-        <span className="block text-sm font-semibold text-pt-ink">{title}</span>
-        {detail && <span className="mt-0.5 block text-xs text-pt-muted">{detail}</span>}
-      </span>
-      {aside && <span className="shrink-0 text-right">{aside}</span>}
-      <span
-        aria-hidden
-        className={cn(
-          'flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2',
-          selected ? 'border-pt-ink bg-pt-ink text-pt-on-primary' : 'border-pt-line-strong'
-        )}
-      >
-        {selected && <Check className="h-3 w-3" />}
-      </span>
-    </button>
-  )
-}
-
 function Summary({ patient, title, slot, mode }: { patient: string; title: string; slot: Slot; mode: string }) {
   return (
     <div className="rounded-2xl bg-pt-sunken p-4">
@@ -174,7 +118,7 @@ function BookingDrawer({ options, onClose }: { options: BookingOptions; onClose:
   const [mode, setMode] = useState<'telehealth' | 'in-person'>(options.mode ?? 'telehealth')
   const [service, setService] = useState<ScheduleService | null>(null)
   const [slot, setSlot] = useState<Slot | null>(null)
-  const [visit, setVisit] = useState<{ zoneId: string; area: string } | null>(null)
+  const [visit, setVisit] = useState<HomeVisit | null>(null)
   const [address, setAddress] = useState('')
   const [location, setLocation] = useState('')
   const [notes, setNotes] = useState('')
@@ -183,14 +127,7 @@ function BookingDrawer({ options, onClose }: { options: BookingOptions; onClose:
 
   const me = useQueryUntyped(scheduleApi.users.getMyUser) as { _id: string } | null | undefined
   const patients = useQueryUntyped(scheduleApi.patients.getMyPatientOptions, step === 'patient' ? {} : 'skip') as PatientOption[] | undefined
-  const billing = useQueryUntyped(scheduleApi.rehabifyFollowUps.getCareBillingMode, patient ? { patientId: patient.id } : 'skip') as
-    | CareBillingMode
-    | null
-    | undefined
-  const isRehabify = billing?.mode === 'rehabify'
-  const coverage = useQueryUntyped(scheduleApi.marketplaceSettings.getMyMarketplaceSettings, {}) as MarketplaceSettings | null | undefined
-  const payoutSchedule = useQueryUntyped(scheduleApi.serviceTariffs.getPayoutSchedule, isRehabify ? {} : 'skip') as PayoutSchedule | null | undefined
-  const zones = useQueryUntyped(scheduleApi.travelZones.listZones, isRehabify ? {} : 'skip') as TravelZone[] | undefined
+  const { billing, isRehabify, coverage, payoutSchedule, zones, services, coveredZones } = useRehabifyServices(patient?.id)
   const quote = useQueryUntyped(
     scheduleApi.booking.getServiceQuote,
     isRehabify && service && (service.mode !== 'home' || visit) ? { serviceId: service.id, zoneId: service.mode === 'home' ? visit?.zoneId : undefined } : 'skip'
@@ -200,37 +137,6 @@ function BookingDrawer({ options, onClose }: { options: BookingOptions; onClose:
   const scheduleFollowUp = useMutationUntyped(scheduleApi.rehabifyFollowUps.scheduleRehabifyFollowUp)
 
   const offersOnline = coverage?.offersOnlineSessions ?? true
-
-  // Only the Rehabify services this physio offers: video, and home visits where they cover an area
-  const services = useMemo<ScheduleService[]>(() => {
-    if (!payoutSchedule || !coverage) return []
-    const offersHome = coverage.offersInPersonSessions && coverage.coveredZoneIds.length > 0
-    const rows = payoutSchedule.services.flatMap((row) => {
-      const info = getService(row.id)
-      if (!row.active || !info || (row.mode === 'home' ? !offersHome : !coverage.offersOnlineSessions)) return []
-      // Treatment follows an assessment; the server refuses it until the patient has had one
-      if (info.requiresPriorAssessment && billing?.assessed === false) return []
-      return [
-        {
-          id: row.id,
-          name: row.name,
-          mode: row.mode,
-          durationMinutes: info.durationMinutes,
-          durationLabel: row.durationLabel,
-          priceKobo: row.priceKobo,
-          payoutKobo: row.payoutKobo,
-          travelApplies: row.travelApplies,
-        },
-      ]
-    })
-    const isTreatment = (id: string) => Number(getService(id)?.kind === 'treatment')
-    return rows.sort((a, b) => isTreatment(b.id) - isTreatment(a.id))
-  }, [payoutSchedule, coverage, billing?.assessed])
-
-  const coveredZones = useMemo(() => {
-    const covered = new Set<string>((coverage?.coveredZoneIds ?? []) as string[])
-    return (zones ?? []).filter((zone) => covered.has(zone.id))
-  }, [zones, coverage])
 
   const duration = isRehabify ? service?.durationMinutes ?? 60 : sessionType?.duration ?? 60
   const sessionTitle = isRehabify ? service?.name ?? 'Session' : sessionType?.title ?? 'Session'
@@ -550,48 +456,15 @@ function BookingDrawer({ options, onClose }: { options: BookingOptions; onClose:
         <Summary patient={patient.name} title={sessionTitle} slot={slot} mode={modeLabel} />
 
         {home && (
-          <div className="space-y-4">
-            <div>
-              <label htmlFor="booking-area" className="mb-1.5 flex items-center gap-1 text-sm font-medium text-pt-ink">
-                Patient’s area
-                <InfoTip>Only the areas you cover are listed. The travel charge for the area is added to the price.</InfoTip>
-              </label>
-              <select
-                id="booking-area"
-                value={visit ? `${visit.zoneId}::${visit.area}` : ''}
-                onChange={(e) => {
-                  const [zoneId, ...rest] = e.target.value.split('::')
-                  setVisit(zoneId ? { zoneId, area: rest.join('::') } : null)
-                }}
-                className={cn(fieldClass, 'h-11 w-full border px-3 text-sm')}
-              >
-                <option value="">{zones === undefined ? 'Loading areas…' : 'Choose an area you cover'}</option>
-                {coveredZones.map((zone) => (
-                  <optgroup key={zone.id} label={`${zone.name}, ${zone.city}`}>
-                    {zone.areas.map((area) => (
-                      <option key={area} value={`${zone.id}::${area}`}>
-                        {area}
-                      </option>
-                    ))}
-                  </optgroup>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label htmlFor="booking-address" className="mb-1.5 block text-sm font-medium text-pt-ink">
-                Address for the visit
-              </label>
-              <Textarea
-                id="booking-address"
-                value={address}
-                onChange={(e) => setAddress(e.target.value)}
-                placeholder="House number, street and any landmarks"
-                rows={2}
-                maxLength={500}
-                className={cn(fieldClass, 'resize-none')}
-              />
-            </div>
-          </div>
+          <HomeVisitFields
+            idPrefix="booking"
+            zones={zones}
+            coveredZones={coveredZones}
+            visit={visit}
+            onVisit={setVisit}
+            address={address}
+            onAddress={setAddress}
+          />
         )}
 
         {!isRehabify && mode === 'in-person' && (

@@ -2862,6 +2862,8 @@ export default defineSchema({
     checkoutReferences: v.optional(v.array(v.string())), // MKT_ references started, for payment reconciliation
     refundedAmountKobo: v.optional(v.number()), // refunded through Paystack (partial or full)
     scheduledBy: v.optional(v.union(v.literal("patient"), v.literal("physiotherapist"))),
+    // The physio accepted the patient's own request and invoiced it (rehabifyFollowUps.acceptRequestWithInvoice)
+    fromPatientRequest: v.optional(v.boolean()),
     adminAttentionReason: v.optional(v.string()), // e.g. paid after the hold lapsed and the slot was taken
 
     createdAt: v.number(),

@@ -42,6 +42,8 @@ type OpenBooking = {
   status: 'held' | 'hold_lapsed' | 'needs_new_time'
   holdExpiresAt: number | null
   scheduledBy: 'patient' | 'physiotherapist'
+  /** The physio accepted the patient's own request and sent this invoice */
+  fromPatientRequest?: boolean
   isAccess: boolean
   /** The latest MediLoan for this booking, if the patient chose to pay with one */
   mediloan: { status: string; updatedAt: number } | null
@@ -193,11 +195,15 @@ export function OpenBookingsCard() {
                   )}
                   <p className="flex items-center gap-1.5 text-xs text-pt-muted">
                     <Clock className="h-3.5 w-3.5 shrink-0" aria-hidden />
-                    {booking.scheduledBy === 'physiotherapist'
-                      ? 'Your physiotherapist scheduled this. Pay to confirm it.'
-                      : holdLive && booking.holdExpiresAt
-                        ? `Your time is held until ${format(booking.holdExpiresAt, 'HH:mm')}.`
-                        : 'The hold on this time has ended. Pay now and we’ll keep it if it’s still free.'}
+                    {booking.fromPatientRequest
+                      ? holdLive && booking.holdExpiresAt
+                        ? `Your physiotherapist accepted your request. Pay by ${format(booking.holdExpiresAt, 'EEE HH:mm')} to confirm it.`
+                        : 'Your physiotherapist accepted your request. Pay now to confirm it.'
+                      : booking.scheduledBy === 'physiotherapist'
+                        ? 'Your physiotherapist scheduled this. Pay to confirm it.'
+                        : holdLive && booking.holdExpiresAt
+                          ? `Your time is held until ${format(booking.holdExpiresAt, 'HH:mm')}.`
+                          : 'The hold on this time has ended. Pay now and we’ll keep it if it’s still free.'}
                     {booking.scheduledBy !== 'physiotherapist' && (
                       <InfoTip label="What is a hold?">
                         We keep this time for you while you pay. If the hold ends, you can still pay, and we&apos;ll keep the time
