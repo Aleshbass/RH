@@ -66,6 +66,7 @@ import type * as admin_marketplaceBookings from "../admin/marketplaceBookings.js
 import type * as admin_marketplaceEarnings from "../admin/marketplaceEarnings.js";
 import type * as admin_fix from "../admin_fix.js";
 import type * as admin_purge from "../admin_purge.js";
+import type * as agreements from "../agreements.js";
 import type * as analytics from "../analytics.js";
 import type * as analytics_service from "../analytics/service.js";
 import type * as appointments from "../appointments.js";
@@ -123,6 +124,7 @@ import type * as helpers_doctorReferralUpdates from "../helpers/doctorReferralUp
 import type * as helpers_escapeHtml from "../helpers/escapeHtml.js";
 import type * as helpers_exerciseAccess from "../helpers/exerciseAccess.js";
 import type * as helpers_exerciseCrypto from "../helpers/exerciseCrypto.js";
+import type * as helpers_imagekit from "../helpers/imagekit.js";
 import type * as helpers_joyPricing from "../helpers/joyPricing.js";
 import type * as helpers_lagosTime from "../helpers/lagosTime.js";
 import type * as helpers_learnFormat from "../helpers/learnFormat.js";
@@ -305,6 +307,7 @@ declare const fullApi: ApiFromModules<{
   "admin/marketplaceEarnings": typeof admin_marketplaceEarnings;
   admin_fix: typeof admin_fix;
   admin_purge: typeof admin_purge;
+  agreements: typeof agreements;
   analytics: typeof analytics;
   "analytics/service": typeof analytics_service;
   appointments: typeof appointments;
@@ -362,6 +365,7 @@ declare const fullApi: ApiFromModules<{
   "helpers/escapeHtml": typeof helpers_escapeHtml;
   "helpers/exerciseAccess": typeof helpers_exerciseAccess;
   "helpers/exerciseCrypto": typeof helpers_exerciseCrypto;
+  "helpers/imagekit": typeof helpers_imagekit;
   "helpers/joyPricing": typeof helpers_joyPricing;
   "helpers/lagosTime": typeof helpers_lagosTime;
   "helpers/learnFormat": typeof helpers_learnFormat;
