@@ -45,6 +45,7 @@ import {
   type StudyResource,
 } from './shared'
 import { AssessmentPanel, CertificatePanel } from './Progress'
+import { youtubeIdFrom } from '@/lib/youtube'
 
 export type StudyPanel =
   | { kind: 'week'; week: CourseWeek }
@@ -55,12 +56,8 @@ export type StudyPanel =
 
 const LANG_LABEL = { en: 'English', yo: 'Yorùbá', ig: 'Igbo', ha: 'Hausa' } as const
 
-/** YouTube id from a watch, share, shorts or embed link (recordings are often unlisted YouTube). */
-export function youtubeIdFrom(url: string | null) {
-  if (!url) return null
-  const match = url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?(?:.*&)?v=|embed\/|shorts\/|live\/))([A-Za-z0-9_-]{11})/)
-  return match?.[1] ?? null
-}
+// Kept here for older imports; the helper lives in lib/youtube.ts
+export { youtubeIdFrom }
 
 export function ResourceIcon({ kind, className }: { kind: string; className?: string }) {
   const Icon = kind === 'youtube' ? PlayCircle : kind === 'guide' ? FileText : Globe

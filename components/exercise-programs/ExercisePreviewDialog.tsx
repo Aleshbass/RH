@@ -8,6 +8,8 @@ import { StatusBadge } from '@/components/physio/ui'
 import { useViewerGrant } from '@/lib/exercise3d/useViewerGrant'
 import { cn } from '@/lib/utils'
 import { sideLabel, type LibraryEntry } from './types'
+import { OwnMediaView } from './OwnMediaView'
+import { useExerciseMediaLinks } from './ownMedia'
 
 /** Staff preview of one library exercise: 3D demo, steps, safety notes and default dose. */
 export function ExercisePreviewDialog({
@@ -20,6 +22,7 @@ export function ExercisePreviewDialog({
   action?: React.ReactNode
 }) {
   const requestGrant = useViewerGrant({ kind: 'staff' })
+  const requestMedia = useExerciseMediaLinks({ kind: 'staff' })
   const [side, setSide] = useState<'L' | 'R' | null>(null)
   useEffect(() => setSide(entry?.sided ? 'L' : null), [entry])
   const clip = entry?.animation?.clips.find((c) => c.side === side) ?? entry?.animation?.clips[0] ?? null
@@ -40,6 +43,8 @@ export function ExercisePreviewDialog({
               <div className="space-y-3">
                 {clip ? (
                   <ExerciseViewer key={clip.id} clipId={clip.id} requestGrant={requestGrant} />
+                ) : entry.ownMedia ? (
+                  <OwnMediaView exerciseId={entry._id} name={entry.name} requestLinks={requestMedia} />
                 ) : (
                   <div className="flex aspect-square items-center justify-center rounded-3xl bg-rh-honeydew text-sm text-neutral-500">No 3D demonstration</div>
                 )}

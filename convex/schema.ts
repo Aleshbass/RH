@@ -866,6 +866,34 @@ export default defineSchema({
     animationApprovedBy: v.optional(v.id("users")),
     animationApprovedAt: v.optional(v.number()),
 
+    // A physio's own exercise (createdBy): their photos or video, private on ImageKit and opened
+    // through signed links (lib/ownExerciseMedia.ts). The consent they confirmed is kept with it.
+    ownMedia: v.optional(v.object({
+      video: v.optional(v.object({
+        fileId: v.string(),
+        filePath: v.string(),
+        url: v.string(),
+        size: v.number(),
+        durationSec: v.number(),
+        poster: v.optional(v.object({ fileId: v.string(), filePath: v.string(), url: v.string(), size: v.number() })),
+      })),
+      photos: v.optional(v.array(v.object({ fileId: v.string(), filePath: v.string(), url: v.string(), size: v.number() }))),
+      totalBytes: v.number(),
+      consent: v.union(v.literal("no_patient"), v.literal("patient_consented")),
+      consentedBy: v.id("users"),
+      consentedAt: v.number(),
+    })),
+    // Offered to the shared Rehabify library by its creator; an admin reviews it first
+    libraryShare: v.optional(v.object({
+      status: v.union(v.literal("pending"), v.literal("approved"), v.literal("declined")),
+      requestedAt: v.number(),
+      reviewedBy: v.optional(v.id("users")),
+      reviewedAt: v.optional(v.number()),
+      note: v.optional(v.string()),
+    })),
+    // Removed by its creator: hidden from libraries, kept for programmes that already use it
+    archivedAt: v.optional(v.number()),
+
     // Legacy compatibility
     media: v.optional(v.array(v.object({ type: v.union(v.literal("image"), v.literal("video")), url: v.string() }))),
     translations: v.optional(v.object({ // Key-value for language code and translated instructions
@@ -878,6 +906,7 @@ export default defineSchema({
     .index("by_difficulty", ["difficultyLevel"])
     .index("by_clinic", ["clinicId"])
     .index("by_public", ["isPublic"])
+    .index("by_creator", ["createdBy"])
     .index("by_target_muscles", ["targetMuscles"])
     .index("by_animation_slug", ["animationSlug"]),
 

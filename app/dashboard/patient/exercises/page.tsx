@@ -19,6 +19,7 @@ function Program({ program }: { program: MyProgram }) {
       program={program}
       doneToday={program.doneToday}
       requestGrant={requestGrant}
+      mediaContext={{ kind: 'program', programId: program._id }}
       onLog={(input: LogInput) => log({ programId: program._id, ...input })}
     />
   )

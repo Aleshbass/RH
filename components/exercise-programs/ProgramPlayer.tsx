@@ -12,10 +12,13 @@ import { Textarea } from '@/components/ui/textarea'
 import { ExerciseViewer } from '@/components/exercise3d/ExerciseViewer'
 import { VideoEmbed } from '@/components/media/VideoEmbed'
 import { posterUrl } from '@/convex/exerciseLibraryCatalog'
-import type { ViewerGrant } from '@/lib/exercise3d/useViewerGrant'
+import type { GrantContext, ViewerGrant } from '@/lib/exercise3d/useViewerGrant'
+import { youtubeIdFrom } from '@/lib/youtube'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
 import { PdfViewer } from './PdfViewer'
+import { OwnMediaView } from './OwnMediaView'
+import { useExerciseMediaLinks } from './ownMedia'
 import { programError } from './errors'
 import { doseLabel, isLocalImage, sideLabel, type LogInput, type ProgramForPlayer, type ProgramItem } from './types'
 
@@ -248,19 +251,25 @@ function LibraryResource({ resource }: { resource: NonNullable<ProgramItem['reso
   )
 }
 
+const STAFF_CONTEXT: GrantContext = { kind: 'staff' }
+
 export function ProgramPlayer({
   program,
   doneToday,
   requestGrant,
+  mediaContext = STAFF_CONTEXT,
   onLog,
   readOnly,
 }: {
   program: ProgramForPlayer
   doneToday: number[]
   requestGrant: (clipIds: string[]) => Promise<ViewerGrant>
+  /** Who is watching, for the physio's own photos and videos (same as the 3D grant) */
+  mediaContext?: GrantContext
   onLog?: (input: LogInput) => Promise<void>
   readOnly?: boolean
 }) {
+  const requestMedia = useExerciseMediaLinks(mediaContext)
   const [selected, setSelected] = useState(0)
   const [rep, setRep] = useState(0)
   const [guided, setGuided] = useState(false)
@@ -387,6 +396,15 @@ export function ProgramPlayer({
           <div ref={detailRef} className="scroll-mt-20 space-y-4">
             {isEducation ? (
               item.resource?.youtubeId ? <VideoEmbed youtubeId={item.resource.youtubeId} className="rounded-3xl" /> : null
+            ) : item.exercise?.ownMedia && item.exerciseId ? (
+              <OwnMediaView exerciseId={item.exerciseId} name={item.name} requestLinks={requestMedia} />
+            ) : !item.clipId && item.exercise?.videoUrl ? (
+              // A video link the physio added (YouTube or a direct file)
+              <VideoEmbed
+                youtubeId={youtubeIdFrom(item.exercise.videoUrl) ?? undefined}
+                url={youtubeIdFrom(item.exercise.videoUrl) ? undefined : item.exercise.videoUrl}
+                className="rounded-3xl"
+              />
             ) : item.clipId ? (
               <ExerciseViewer
                 clipId={item.clipId}

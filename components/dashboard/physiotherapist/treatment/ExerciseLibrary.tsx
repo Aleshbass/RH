@@ -11,7 +11,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Search, Plus, Dumbbell, Play } from '@/components/icons';
 import { Exercise as AssessmentExercise } from '@/types/assessments';
 import { Loader2 } from '@/components/icons';
-import { CreateExerciseDialog } from './CreateExerciseDialog';
+import { OwnExerciseSheet } from '@/components/exercise-programs/OwnExerciseSheet';
+import { useExerciseMediaLinks } from '@/components/exercise-programs/ownMedia';
 
 interface ExerciseLibraryProps {
   onExerciseSelect?: (exercise: AssessmentExercise) => void;
@@ -22,7 +23,9 @@ export function ExerciseLibrary({ onExerciseSelect, selectedExercises = [] }: Ex
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDifficulty, setSelectedDifficulty] = useState('all');
   const [selectedBodyPart, setSelectedBodyPart] = useState('all');
-  const [refreshKey, setRefreshKey] = useState(0);
+  // Physios add their own exercises (with their photos or video); the list updates by itself
+  const [creating, setCreating] = useState(false);
+  const requestLinks = useExerciseMediaLinks({ kind: 'staff' });
 
   const isStandalone = !onExerciseSelect;
 
@@ -72,7 +75,9 @@ export function ExerciseLibrary({ onExerciseSelect, selectedExercises = [] }: Ex
               </CardDescription>
             </div>
             <div className="flex items-center gap-2">
-              <CreateExerciseDialog onSuccess={() => setRefreshKey(k => k + 1)} />
+              <Button size="sm" onClick={() => setCreating(true)} className="rounded-full bg-rh-lime text-rh-ink hover:bg-rh-lime-deep">
+                <Plus className="mr-1.5 h-4 w-4" /> New exercise
+              </Button>
               {isStandalone && (
                 <div className="text-sm text-muted-foreground bg-rh-lime/5 text-rh-ink px-3 py-1 rounded-full">
                   Browse Mode
@@ -218,6 +223,7 @@ export function ExerciseLibrary({ onExerciseSelect, selectedExercises = [] }: Ex
           )}
         </CardContent>
       </Card>
+      <OwnExerciseSheet open={creating} onOpenChange={setCreating} requestLinks={requestLinks} />
     </div>
   );
 }

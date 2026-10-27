@@ -15,6 +15,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 import { playSound } from '@/lib/sounds';
+import { OwnExerciseReviews } from '@/components/admin/exercises/OwnExerciseReviews';
 import {
   AdminPage,
   ConfirmDialog,
@@ -93,6 +94,8 @@ export default function AdminExercisesPage() {
           </Button>
         }
       />
+
+      <OwnExerciseReviews />
 
       <Panel bodyClassName="flex flex-col gap-3 p-4 sm:p-5 lg:flex-row lg:items-center">
         <div className="relative flex-1">

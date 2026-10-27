@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { BookOpen, Loader2, Rotate3d, Search, Send } from '@/components/icons'
+import { BookOpen, Camera, Loader2, Rotate3d, Search, Send } from '@/components/icons'
 import { api } from '@/convex/_generated/api'
 import type { Id } from '@/convex/_generated/dataModel'
 import { Button } from '@/components/ui/button'
@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input'
 import { EducationBrowser } from '@/components/exercise-programs/EducationLibrary'
 import { ExercisePreviewDialog } from '@/components/exercise-programs/ExercisePreviewDialog'
 import { LibraryPicker } from '@/components/exercise-programs/LibraryPicker'
+import { OwnExercisesTab } from '@/components/exercise-programs/OwnExercisesTab'
 import { SendProgramDialog } from '@/components/exercise-programs/SendProgramDialog'
 import { ShareLinkDialog } from '@/components/exercise-programs/ShareLinkDialog'
 import type { LibraryData, LibraryEntry, LibraryResourceRow } from '@/components/exercise-programs/types'
@@ -26,7 +27,10 @@ type PatientOption = { _id: Id<'users'>; firstName?: string; lastName?: string; 
 /** What's being sent: a 3D exercise or a piece of education. */
 type Choice = { entry?: LibraryEntry; resource?: LibraryResourceRow }
 
-type Tab = '3d' | 'education'
+type Tab = '3d' | 'education' | 'mine'
+
+const TABS: Tab[] = ['3d', 'education', 'mine']
+const tabFrom = (value: string | null): Tab => (TABS.includes(value as Tab) ? (value as Tab) : '3d')
 
 function PatientChooser({ open, onOpenChange, onChoose }: { open: boolean; onOpenChange: (open: boolean) => void; onChoose: (p: PatientOption) => void }) {
   const patients = useQueryUntyped(root.patientInvitations.getMyPatients, open ? { status: 'active' } : 'skip') as PatientOption[] | undefined
@@ -75,7 +79,7 @@ function PatientChooser({ open, onOpenChange, onChoose }: { open: boolean; onOpe
 export default function ExerciseLibraryPage() {
   const searchParams = useSearchParams()
   const library = useQueryUntyped(root.exerciseLibrary.listLibrary, {}) as LibraryData | null | undefined
-  const [tab, setTab] = useState<Tab>(searchParams.get('tab') === 'education' ? 'education' : '3d')
+  const [tab, setTab] = useState<Tab>(tabFrom(searchParams.get('tab')))
   const [preview, setPreview] = useState<LibraryEntry | null>(null)
   const [choosing, setChoosing] = useState<Choice | null>(null)
   const [target, setTarget] = useState<{ patient: PatientOption; pick: Choice } | null>(null)
@@ -84,7 +88,7 @@ export default function ExerciseLibraryPage() {
 
   useEffect(() => {
     const fromUrl = searchParams.get('tab')
-    if (fromUrl === 'education' || fromUrl === '3d') setTab(fromUrl)
+    if (fromUrl) setTab(tabFrom(fromUrl))
   }, [searchParams])
 
   const go = (next: Tab) => {
@@ -99,7 +103,7 @@ export default function ExerciseLibraryPage() {
       <PageHeader
         eyebrow="Library"
         title="Exercises and education"
-        description="3D exercises demonstrated by a Rehabify clinician, and videos, leaflets and guides to teach your patients. Preview anything, then send it with your own dose and notes."
+        description="3D exercises demonstrated by a Rehabify clinician, education to teach your patients, and your own exercises with your photos or video. Preview anything, then send it with your own dose and notes."
         info="Patients see everything you send in their app, or through a private WhatsApp link: they follow the 3D model with a voice guide, watch the videos, read the leaflets and log how it went."
       />
 
@@ -108,6 +112,7 @@ export default function ExerciseLibraryPage() {
           [
             { key: '3d', label: '3D exercises', icon: Rotate3d, count: count3d },
             { key: 'education', label: 'Education', icon: BookOpen, count: null },
+            { key: 'mine', label: 'My exercises', icon: Camera, count: null },
           ] as const
         ).map((t) => (
           <button
@@ -140,9 +145,13 @@ export default function ExerciseLibraryPage() {
             <LibraryPicker items={library.items} onPreview={setPreview} />
           )}
         </Panel>
-      ) : (
+      ) : tab === 'education' ? (
         <Panel bodyClassName="p-4 sm:p-5">
           <EducationBrowser mode="browse" onSend={(resource) => setChoosing({ resource })} />
+        </Panel>
+      ) : (
+        <Panel bodyClassName="p-4 sm:p-5">
+          <OwnExercisesTab onSend={(entry) => setChoosing({ entry })} />
         </Panel>
       )}
 

@@ -210,6 +210,7 @@ function Unlocked({ code, session, onSessionLost }: { code: string; session: str
         program={data.program}
         doneToday={data.doneToday}
         requestGrant={requestGrant}
+        mediaContext={{ kind: 'link', code, session }}
         onLog={(input: LogInput) => log({ code, session, ...input })}
       />
     </div>

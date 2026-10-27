@@ -28,6 +28,7 @@ import { listRow } from "./libraryResources";
 import { appLink, publicAppUrl } from "./helpers/appUrl";
 import { LEARNER_ACCESS_DAYS, learnerAccessOpen, paidLearnRegistrations, verifiedIdentityEmail } from "./helpers/exerciseAccess";
 import { randomToken, sha256Hex } from "./helpers/exerciseCrypto";
+import { IMAGEKIT_URL, imagekitUploadAuth, removeImagekitFilesLater, signedImagekitUrl } from "./helpers/imagekit";
 import { lagosDateTime, lagosShortDate, lagosTime, zonedDateKey, zonedDateTimeToUtc, zonedTimeKey } from "./helpers/lagosTime";
 import { getViewer, requireAdmin } from "./helpers/partnerAccess";
 import { verifyPaystackSignature } from "./helpers/paystackSignature";
@@ -2266,7 +2267,6 @@ const COVER_FOLDER = "/learn/covers";
 // ImageKit's free plan caps a video file at 100 MB; the admin page checks this before uploading
 const MAX_VIDEO_BYTES = 100 * 1024 * 1024;
 const PLAYBACK_LINK_MS = 6 * HOUR_MS;
-const IMAGEKIT_URL = /^https:\/\/ik\.imagekit\.io\/[^\s]+$/i;
 
 const videoValidator = v.object({
   fileId: v.string(),
@@ -2420,32 +2420,6 @@ export const lessonForPlayback = internalQuery({
   },
 });
 
-async function hmacSha1Hex(key: string, data: string) {
-  const enc = new TextEncoder();
-  const k = await crypto.subtle.importKey("raw", enc.encode(key), { name: "HMAC", hash: "SHA-1" }, false, ["sign"]);
-  const bytes = new Uint8Array(await crypto.subtle.sign("HMAC", k, enc.encode(data)));
-  return [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
-}
-
-function imagekitPrivateKey() {
-  const key = process.env.IMAGEKIT_PRIVATE_KEY;
-  if (!key) throw new ConvexError("Video hosting isn't set up yet (IMAGEKIT_PRIVATE_KEY).");
-  return key;
-}
-
-/**
- * ImageKit signed URL: HMAC-SHA1(private key, the path after the URL endpoint + expiry), sent
- * as ik-t (expiry, epoch seconds) and ik-s (signature).
- */
-async function signedImagekitUrl(url: string, filePath: string, expiresAt: number) {
-  const endpoint = url.endsWith(filePath) ? url.slice(0, url.length - filePath.length) : process.env.IMAGEKIT_URL_ENDPOINT;
-  if (!endpoint) throw new ConvexError("Video hosting isn't set up yet (IMAGEKIT_URL_ENDPOINT).");
-  const base = endpoint.endsWith("/") ? endpoint : `${endpoint}/`;
-  const expiry = Math.floor(expiresAt / 1000);
-  const signature = await hmacSha1Hex(imagekitPrivateKey(), url.slice(base.length) + expiry);
-  return `${url}${url.includes("?") ? "&" : "?"}ik-t=${expiry}&ik-s=${signature}`;
-}
-
 /** A playback link for one lesson, valid for a few hours. */
 export const getLessonPlayback = action({
   args: { lessonId: v.id("learnVideoLessons") },
@@ -2520,13 +2494,7 @@ export const adminVideoUploadAuth = action({
     args
   ): Promise<{ token: string; expire: number; signature: string; publicKey: string; folder: string }> => {
     await ctx.runQuery(internal.learn.assertLearnAdmin, {});
-    const publicKey = process.env.IMAGEKIT_PUBLIC_KEY;
-    if (!publicKey) throw new ConvexError("Video hosting isn't set up yet (IMAGEKIT_PUBLIC_KEY).");
-    const token = crypto.randomUUID();
-    const expire = Math.floor(Date.now() / 1000) + 30 * 60; // ImageKit allows up to an hour
-    const signature = await hmacSha1Hex(imagekitPrivateKey(), token + expire);
-    const folder = args.kind === "video" ? VIDEO_FOLDER : args.kind === "poster" ? POSTER_FOLDER : COVER_FOLDER;
-    return { token, expire, signature, publicKey, folder };
+    return imagekitUploadAuth(args.kind === "video" ? VIDEO_FOLDER : args.kind === "poster" ? POSTER_FOLDER : COVER_FOLDER);
   },
 });
 
@@ -2547,10 +2515,7 @@ export const deleteImagekitFiles = internalAction({
   },
 });
 
-async function removeFilesLater(ctx: MutationCtx, fileIds: (string | undefined)[]) {
-  const ids = fileIds.filter((id): id is string => Boolean(id));
-  if (ids.length) await ctx.scheduler.runAfter(0, internal.learn.deleteImagekitFiles, { fileIds: ids });
-}
+const removeFilesLater = removeImagekitFilesLater;
 
 function assertImagekitUrl(url: string | undefined, label: string) {
   if (url && !IMAGEKIT_URL.test(url)) throw new ConvexError(`${label} must be an ImageKit link.`);

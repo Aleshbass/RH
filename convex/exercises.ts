@@ -51,7 +51,22 @@ export const listExercises = query({
     search: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    let exercises = await ctx.db.query("exercises").collect();
+    // A physio's own exercises are private to them (and their clinic team); removed ones are hidden
+    const identity = await ctx.auth.getUserIdentity();
+    const viewer = identity
+      ? await ctx.db.query("users").withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject)).unique()
+      : null;
+    let exercises = (await ctx.db.query("exercises").collect())
+      .filter(
+        (ex) =>
+          !ex.archivedAt &&
+          (!ex.createdBy ||
+            ex.isPublic ||
+            ex.createdBy === viewer?._id ||
+            (ex.clinicId !== undefined && ex.clinicId === viewer?.clinicId))
+      )
+      // File details stay on the server; links come from exerciseLibrary.requestExerciseMediaLinks
+      .map(({ ownMedia: _ownMedia, ...ex }) => ex);
 
     if (args.bodyPart) {
       exercises = exercises.filter(ex => ex.bodyParts.includes(args.bodyPart!));
@@ -121,7 +136,11 @@ export const getExercise = query({
     id: v.id("exercises"),
   },
   handler: async (ctx, args) => {
-    return await ctx.db.get(args.id);
+    const exercise = await ctx.db.get(args.id);
+    if (!exercise) return null;
+    // File details stay on the server; links come from exerciseLibrary.requestExerciseMediaLinks
+    const { ownMedia: _ownMedia, ...rest } = exercise;
+    return rest;
   },
 });
 
@@ -143,7 +162,8 @@ export const getExercisesByIds = query({
           .first();
 
         if (exercise) {
-          exercises.push(exercise);
+          const { ownMedia: _ownMedia, ...rest } = exercise;
+          exercises.push(rest);
         }
       } catch (e) {
         // Ignore invalid IDs

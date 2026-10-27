@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import Image from 'next/image'
-import { Check, Dumbbell, Eye, Rotate3d, Search } from '@/components/icons'
+import { Camera, Check, Dumbbell, Eye, Rotate3d, Search } from '@/components/icons'
 import { Input } from '@/components/ui/input'
 import { StatusBadge } from '@/components/physio/ui'
 import { posterUrl } from '@/convex/exerciseLibraryCatalog'
@@ -110,8 +110,15 @@ export function LibraryPicker({
                         draggable={false}
                         className="object-contain p-2 transition group-hover:scale-[1.03]"
                       />
+                    ) : entry.ownMedia ? (
+                      <Camera className="absolute left-1/2 top-1/2 h-8 w-8 -translate-x-1/2 -translate-y-1/2 text-rh-ink/40" />
                     ) : (
                       <Dumbbell className="absolute left-1/2 top-1/2 h-8 w-8 -translate-x-1/2 -translate-y-1/2 text-rh-ink/40" />
+                    )}
+                    {!entry.animation && entry.ownMedia && (
+                      <span className="absolute left-2 top-2 inline-flex items-center gap-1 rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-semibold text-rh-ink shadow-sm dark:bg-rh-ink-2/90 dark:text-rh-lime">
+                        <Camera className="h-3 w-3" /> {entry.ownMedia.kind === 'video' ? 'Video' : 'Photos'}
+                      </span>
                     )}
                     {entry.animation && (
                       <span className="absolute left-2 top-2 inline-flex items-center gap-1 rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-semibold text-rh-ink shadow-sm dark:bg-rh-ink-2/90 dark:text-rh-lime">

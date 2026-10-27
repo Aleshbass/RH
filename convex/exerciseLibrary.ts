@@ -6,12 +6,14 @@
  * decrypt what requestViewerGrant gives it keys for, and every grant is rate-limited and logged.
  */
 import { ConvexError, v } from "convex/values";
-import { internalMutation, mutation, query, type MutationCtx } from "./_generated/server";
+import { internalMutation, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { ensureUserRole } from "./auth";
 import { EXERCISE_CATALOG, findClip, posterUrl } from "./exerciseLibraryCatalog";
 import { LIBRARY, clipIdFor } from "./exerciseLibraryContent";
 import { deriveAssetKey } from "./helpers/exerciseCrypto";
+import { IMAGEKIT_URL, imagekitUploadAuth, removeImagekitFilesLater, signedImagekitUrl } from "./helpers/imagekit";
+import { OWN_MEDIA_LIMITS, ownMediaFolder } from "../lib/ownExerciseMedia";
 import {
   displayName,
   initials,
@@ -63,6 +65,8 @@ export function libraryItem(exercise: Doc<"exercises">) {
       : null,
     imageUrl: exercise.imageUrl ?? null,
     videoUrl: exercise.videoUrl ?? null,
+    // A physio's own photos or video (links come from requestExerciseMediaLinks)
+    ownMedia: ownMediaSummary(exercise),
   };
 }
 
@@ -204,7 +208,14 @@ export const listLibrary = query({
             .take(1000)
         ).filter((e) => !e.isPublic)
       : [];
-    const rows = [...publicRows, ...clinicRows];
+    // The physio's own exercises that aren't shared with a clinic or the library
+    const ownRows = (
+      await ctx.db
+        .query("exercises")
+        .withIndex("by_creator", (q) => q.eq("createdBy", access.user._id))
+        .take(2000)
+    ).filter((e) => !e.isPublic && !(clinicId && e.clinicId === clinicId));
+    const rows = [...publicRows, ...clinicRows, ...ownRows].filter((e) => !e.archivedAt);
     // Licensees and Rehabify Learn physios only get the 3D library.
     const visible = access.kind === "licence" || access.kind === "learner" ? rows.filter((e) => e.animationSlug) : rows;
     const items = visible.map(libraryItem);
@@ -311,5 +322,333 @@ export const requestViewerGrant = mutation({
       denied: requested.filter((id) => !permitted.includes(id)),
       watermark,
     };
+  },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// A physio's own exercises, with their own photos or video
+// ─────────────────────────────────────────────────────────────────────────────
+
+const OWN_LINK_MS = 6 * HOUR;
+
+const fileValidator = v.object({ fileId: v.string(), filePath: v.string(), url: v.string(), size: v.number() });
+const ownMediaValidator = v.object({
+  video: v.optional(
+    v.object({ fileId: v.string(), filePath: v.string(), url: v.string(), size: v.number(), durationSec: v.number(), poster: v.optional(fileValidator) })
+  ),
+  photos: v.optional(v.array(fileValidator)),
+});
+const consentValidator = v.union(v.literal("no_patient"), v.literal("patient_consented"));
+
+/** Staff who may keep their own exercises: approved physios and clinic teams. */
+async function ownExerciseAuthor(ctx: QueryCtx | MutationCtx) {
+  const access = await libraryAccess(ctx);
+  if (!access || access.kind !== "staff") throw new ConvexError("Only physiotherapists and clinic teams can add their own exercises.");
+  return access.user;
+}
+
+/** What a physio's own exercises use against the fair-use limits. */
+async function ownUsage(ctx: QueryCtx | MutationCtx, userId: Id<"users">, except?: Id<"exercises">) {
+  const rows = await ctx.db
+    .query("exercises")
+    .withIndex("by_creator", (q) => q.eq("createdBy", userId))
+    .take(2000);
+  let videos = 0;
+  let bytes = 0;
+  for (const row of rows) {
+    if (row._id === except || !row.ownMedia) continue;
+    if (row.ownMedia.video) videos++;
+    bytes += row.ownMedia.totalBytes;
+  }
+  return { videos, bytes };
+}
+
+/** Summary for lists: what media there is, never the file links. */
+function ownMediaSummary(exercise: Doc<"exercises">) {
+  const media = exercise.ownMedia;
+  if (!media) return null;
+  return {
+    kind: media.video ? ("video" as const) : ("photos" as const),
+    photoCount: media.photos?.length ?? 0,
+    durationSec: media.video?.durationSec ?? null,
+    totalBytes: media.totalBytes,
+  };
+}
+
+/** The signed-in physio's own exercises and how much of their allowance they've used. */
+export const myOwnExercises = query({
+  args: {},
+  handler: async (ctx) => {
+    const access = await libraryAccess(ctx);
+    if (!access || access.kind !== "staff") return null;
+    const rows = await ctx.db
+      .query("exercises")
+      .withIndex("by_creator", (q) => q.eq("createdBy", access.user._id))
+      .take(2000);
+    const usage = await ownUsage(ctx, access.user._id);
+    const items = rows
+      .filter((row) => !row.archivedAt)
+      .sort((a, b) => b._creationTime - a._creationTime)
+      .map((row) => ({
+        ...libraryItem(row),
+        libraryShare: row.libraryShare?.status ?? null,
+        createdAt: row._creationTime,
+      }));
+    return { items, usage, limits: OWN_MEDIA_LIMITS };
+  },
+});
+
+/** A signature to upload one photo or video straight from the browser into the physio's folder. */
+export const ownExerciseUploadAuth = mutation({
+  args: { kind: v.union(v.literal("video"), v.literal("photo")) },
+  handler: async (ctx, args) => {
+    const user = await ownExerciseAuthor(ctx);
+    const usage = await ownUsage(ctx, user._id);
+    if (usage.bytes >= OWN_MEDIA_LIMITS.totalBytes) {
+      throw new ConvexError("You've used all 2 GB of your exercise storage. Remove some photos or videos first.");
+    }
+    if (args.kind === "video" && usage.videos >= OWN_MEDIA_LIMITS.videos) {
+      throw new ConvexError(`You can keep up to ${OWN_MEDIA_LIMITS.videos} exercise videos. Remove one first.`);
+    }
+    return imagekitUploadAuth(ownMediaFolder(user._id));
+  },
+});
+
+/** Only the physio's own uploads: an ImageKit link inside their folder. */
+function assertOwnFile(file: { url: string; filePath: string; size: number }, userId: Id<"users">, maxBytes: number) {
+  if (!IMAGEKIT_URL.test(file.url) || !file.url.endsWith(file.filePath) || !file.filePath.startsWith(`${ownMediaFolder(userId)}/`)) {
+    throw new ConvexError("That file wasn't uploaded here. Upload it again.");
+  }
+  if (!(file.size > 0) || file.size > maxBytes) throw new ConvexError("That file is too large.");
+}
+
+const ownFileIds = (media: Doc<"exercises">["ownMedia"]) =>
+  media ? [media.video?.fileId, media.video?.poster?.fileId, ...(media.photos ?? []).map((p) => p.fileId)] : [];
+
+/**
+ * Creates or edits one of the physio's own exercises. `media`: leave out to keep what's there,
+ * null to remove it. New media needs the consent confirmation, which is stored with it.
+ */
+export const saveOwnExercise = mutation({
+  args: {
+    exerciseId: v.optional(v.id("exercises")),
+    name: v.string(),
+    steps: v.array(v.string()),
+    bodyPart: v.optional(v.string()),
+    sets: v.number(),
+    reps: v.number(),
+    holdSeconds: v.optional(v.number()),
+    media: v.optional(v.union(v.null(), ownMediaValidator)),
+    consent: v.optional(consentValidator),
+    shareToLibrary: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const user = await ownExerciseAuthor(ctx);
+    const existing = args.exerciseId ? await ctx.db.get(args.exerciseId) : null;
+    if (args.exerciseId && (!existing || existing.createdBy !== user._id || existing.archivedAt)) {
+      throw new ConvexError("You can only change exercises you created.");
+    }
+
+    const name = args.name.trim().replace(/\s+/g, " ");
+    const steps = args.steps.map((s) => s.trim()).filter(Boolean);
+    if (name.length < 2 || name.length > 80) throw new ConvexError("Give the exercise a name (up to 80 characters).");
+    if (steps.length === 0) throw new ConvexError("Add at least one step.");
+    if (steps.length > 12 || steps.some((s) => s.length > 400)) throw new ConvexError("Keep it to 12 short steps.");
+    const whole = (n: number, max: number) => Number.isInteger(n) && n >= 0 && n <= max;
+    if (!whole(args.sets, 20) || !whole(args.reps, 200) || (args.holdSeconds !== undefined && !whole(args.holdSeconds, 600))) {
+      throw new ConvexError("Check the sets, reps and hold time.");
+    }
+
+    let ownMedia = existing?.ownMedia;
+    let replaced: (string | undefined)[] = [];
+    if (args.media !== undefined) {
+      const before = ownFileIds(existing?.ownMedia);
+      if (args.media === null || (!args.media.video && !args.media.photos?.length)) {
+        ownMedia = undefined;
+      } else {
+        const { video, photos } = args.media;
+        if (video && photos?.length) throw new ConvexError("Use either a video or photos, not both.");
+        if (!args.consent) throw new ConvexError("Confirm who appears in the photos or video.");
+        if (video) {
+          assertOwnFile(video, user._id, OWN_MEDIA_LIMITS.videoBytes);
+          if (video.poster) assertOwnFile(video.poster, user._id, OWN_MEDIA_LIMITS.photoBytes);
+          if (!(video.durationSec > 0) || video.durationSec > OWN_MEDIA_LIMITS.videoSeconds) {
+            throw new ConvexError("Keep videos under 5 minutes.");
+          }
+        }
+        if (photos) {
+          if (photos.length > OWN_MEDIA_LIMITS.photosPerExercise) throw new ConvexError("Up to 5 photos per exercise.");
+          for (const photo of photos) assertOwnFile(photo, user._id, OWN_MEDIA_LIMITS.photoBytes);
+        }
+        const totalBytes = (video ? video.size + (video.poster?.size ?? 0) : 0) + (photos ?? []).reduce((sum, p) => sum + p.size, 0);
+        const usage = await ownUsage(ctx, user._id, existing?._id);
+        if (usage.bytes + totalBytes > OWN_MEDIA_LIMITS.totalBytes) throw new ConvexError("That would go over your 2 GB of exercise storage.");
+        if (video && usage.videos >= OWN_MEDIA_LIMITS.videos) throw new ConvexError(`You can keep up to ${OWN_MEDIA_LIMITS.videos} exercise videos.`);
+        ownMedia = { video, photos, totalBytes, consent: args.consent, consentedBy: user._id, consentedAt: Date.now() };
+      }
+      // Files kept from before stay; the rest are deleted
+      const kept = new Set(ownFileIds(ownMedia));
+      replaced = before.filter((id) => id && !kept.has(id));
+    }
+
+    const libraryShare =
+      args.shareToLibrary === true && existing?.libraryShare?.status !== "approved" && existing?.libraryShare?.status !== "pending"
+        ? { status: "pending" as const, requestedAt: Date.now() }
+        : args.shareToLibrary === false && existing?.libraryShare?.status === "pending"
+          ? undefined
+          : existing?.libraryShare;
+    const fields = {
+      name,
+      description: steps[0],
+      instructions: steps,
+      bodyParts: args.bodyPart?.trim() ? [args.bodyPart.trim()] : (existing?.bodyParts ?? []),
+      defaultSets: args.sets,
+      defaultReps: args.reps,
+      defaultHoldSeconds: args.holdSeconds,
+      ownMedia,
+      libraryShare,
+    };
+
+    let exerciseId = existing?._id;
+    if (existing) {
+      await ctx.db.patch(existing._id, fields);
+    } else {
+      exerciseId = await ctx.db.insert("exercises", {
+        ...fields,
+        targetMuscles: [],
+        conditions: [],
+        equipmentNeeded: [],
+        difficultyLevel: "beginner",
+        defaultFrequency: "Daily",
+        createdBy: user._id,
+        // Shared with the physio's clinic team, if they're in one
+        clinicId: user.clinicId,
+        isPublic: false,
+      });
+    }
+    await removeImagekitFilesLater(ctx, replaced);
+    return { exerciseId };
+  },
+});
+
+/**
+ * Removes one of the physio's own exercises from their library and deletes its files. Patients
+ * who already have it keep its name and steps.
+ */
+export const removeOwnExercise = mutation({
+  args: { exerciseId: v.id("exercises") },
+  handler: async (ctx, args) => {
+    const user = await ownExerciseAuthor(ctx);
+    const exercise = await ctx.db.get(args.exerciseId);
+    if (!exercise || exercise.createdBy !== user._id) throw new ConvexError("You can only remove exercises you created.");
+    if (exercise.libraryShare?.status === "approved") {
+      throw new ConvexError("This exercise is in the Rehabify library now. Ask the Rehabify team to remove it.");
+    }
+    await removeImagekitFilesLater(ctx, ownFileIds(exercise.ownMedia));
+    await ctx.db.patch(exercise._id, { archivedAt: Date.now(), ownMedia: undefined, libraryShare: undefined });
+    return { success: true };
+  },
+});
+
+/**
+ * Short-lived links to own-exercise photos and videos, for anyone allowed to see the exercise:
+ * its creator and their clinic team, admins, or a patient (or WhatsApp link) whose programme
+ * includes it. Exercises approved for the shared library are open to all staff.
+ */
+export const requestExerciseMediaLinks = mutation({
+  args: {
+    exerciseIds: v.array(v.id("exercises")),
+    programId: v.optional(v.id("exercisePrograms")),
+    share: v.optional(v.object({ code: v.string(), session: v.string() })),
+  },
+  handler: async (ctx, args) => {
+    const ids = [...new Set(args.exerciseIds)].slice(0, 40);
+    const programExercises = (program: Doc<"exercisePrograms">) =>
+      new Set<string>(program.items.map((item) => item.exerciseId).filter((id): id is Id<"exercises"> => Boolean(id)));
+    let inProgram: Set<string> | null = null;
+    let staff: Doc<"users"> | null = null;
+    if (args.share) {
+      const res = await resolveShareSession(ctx, args.share.code, args.share.session);
+      if (!res.ok) throw new ConvexError(res.reason === "needs_pin" ? "Enter your PIN again to continue." : "This link is no longer available.");
+      inProgram = programExercises(res.program);
+    } else {
+      const access = await libraryAccess(ctx);
+      if (!access) throw new ConvexError("Sign in to see this exercise.");
+      if (access.kind === "patient") {
+        const program = args.programId ? await ctx.db.get(args.programId) : null;
+        if (!program || program.patientId !== access.user._id) throw new ConvexError("Open the exercise from your programme.");
+        inProgram = programExercises(program);
+      } else if (access.kind === "staff") {
+        staff = access.user;
+      } else {
+        return { links: {}, expiresAt: Date.now() };
+      }
+    }
+
+    const expiresAt = Date.now() + OWN_LINK_MS;
+    const sign = (file: { url: string; filePath: string }) => signedImagekitUrl(file.url, file.filePath, expiresAt);
+    const links: Record<string, { video: string | null; poster: string | null; photos: string[] }> = {};
+    for (const id of ids) {
+      const exercise = await ctx.db.get(id);
+      const media = exercise?.ownMedia;
+      if (!exercise || !media) continue;
+      const allowed = inProgram
+        ? inProgram.has(id)
+        : staff !== null &&
+          (staff.role === "admin" ||
+            exercise.createdBy === staff._id ||
+            exercise.isPublic ||
+            (exercise.clinicId !== undefined && exercise.clinicId === staff.clinicId));
+      if (!allowed) continue;
+      links[id] = {
+        video: media.video ? await sign(media.video) : null,
+        poster: media.video?.poster ? await sign(media.video.poster) : null,
+        photos: await Promise.all((media.photos ?? []).map(sign)),
+      };
+    }
+    return { links, expiresAt };
+  },
+});
+
+/** Admin: own exercises offered to the shared library, oldest first. */
+export const adminOwnExerciseShares = query({
+  args: {},
+  handler: async (ctx) => {
+    await ensureUserRole(ctx, ["admin"]);
+    const rows = await ctx.db
+      .query("exercises")
+      .withIndex("by_public", (q) => q.eq("isPublic", false))
+      .take(5000);
+    const pending = rows.filter((row) => row.libraryShare?.status === "pending" && !row.archivedAt);
+    pending.sort((a, b) => (a.libraryShare?.requestedAt ?? 0) - (b.libraryShare?.requestedAt ?? 0));
+    return Promise.all(
+      pending.map(async (row) => ({
+        ...libraryItem(row),
+        consent: row.ownMedia?.consent ?? null,
+        requestedAt: row.libraryShare?.requestedAt ?? row._creationTime,
+        creatorName: row.createdBy ? displayName(await ctx.db.get(row.createdBy)) : "Unknown",
+      }))
+    );
+  },
+});
+
+/** Admin: approve (it joins the shared library for every physio) or decline an offered exercise. */
+export const adminReviewOwnExercise = mutation({
+  args: { exerciseId: v.id("exercises"), approve: v.boolean(), note: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const admin = await ensureUserRole(ctx, ["admin"]);
+    const exercise = await ctx.db.get(args.exerciseId);
+    if (!exercise?.libraryShare || exercise.libraryShare.status !== "pending") throw new ConvexError("This exercise isn't waiting for review.");
+    await ctx.db.patch(exercise._id, {
+      isPublic: args.approve,
+      libraryShare: {
+        ...exercise.libraryShare,
+        status: args.approve ? "approved" : "declined",
+        reviewedBy: admin._id,
+        reviewedAt: Date.now(),
+        note: args.note?.trim().slice(0, 500) || undefined,
+      },
+    });
+    return { success: true };
   },
 });
