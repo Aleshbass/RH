@@ -23,7 +23,7 @@ export default function ReviewsList({ physiotherapistId }: ReviewsListProps) {
   if (reviews === undefined) {
     return (
       <div className="flex items-center justify-center py-8">
-        <Loader2 className="h-6 w-6 animate-spin text-[#005b57]" />
+        <Loader2 className="h-6 w-6 animate-spin text-rh-ink" />
       </div>
     );
   }
@@ -151,12 +151,12 @@ export default function ReviewsList({ physiotherapistId }: ReviewsListProps) {
 
                 {/* Physiotherapist Response */}
                 {review.response && (
-                  <div className="mt-4 p-4 bg-blue-50 border-l-4 border-blue-500 rounded">
-                    <p className="text-sm font-semibold text-blue-900 mb-1">
+                  <div className="mt-4 rounded-xl border-l-4 border-rh-lime bg-rh-canvas p-4">
+                    <p className="mb-1 text-sm font-semibold text-rh-ink">
                       Response from Physiotherapist
                     </p>
-                    <p className="text-sm text-blue-800">{review.response.text}</p>
-                    <p className="text-xs text-blue-600 mt-2">
+                    <p className="text-sm text-rh-ink/80">{review.response.text}</p>
+                    <p className="mt-2 text-xs text-rh-ink/50">
                       {format(new Date(review.response.respondedAt), "MMM d, yyyy")}
                     </p>
                   </div>

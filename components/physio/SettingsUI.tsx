@@ -2,6 +2,8 @@
 
 import type { ReactNode } from 'react'
 import { useState } from 'react'
+import Link from 'next/link'
+import { HOW_YOU_WORK_HREF } from '@/components/physio/practiceMode'
 import { Plus, X } from '@/components/icons'
 import { cn } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
@@ -54,6 +56,33 @@ export function SettingsSection({
         </div>
       )}
     </section>
+  )
+}
+
+/**
+ * For pages about Rehabify Care (prices, payouts, services, network terms) that an independent
+ * physio can still reach by URL: a short note instead of the page.
+ */
+export function OwnPatientsOnlyNotice({ title }: { title: string }) {
+  return (
+    <div className="space-y-6">
+      <SettingsPageHeader title={title} />
+      <SettingsSection>
+        <OwnPatientsOnlyText />
+      </SettingsSection>
+    </div>
+  )
+}
+
+export function OwnPatientsOnlyText() {
+  return (
+    <p className="text-sm text-neutral-600 dark:text-neutral-400">
+      You see your own patients only, so Rehabify prices and payouts don’t apply to you.{' '}
+      <Link href={HOW_YOU_WORK_HREF} className="font-medium text-rh-ink hover:underline dark:text-rh-lime">
+        Change this in How you work
+      </Link>
+      .
+    </p>
   )
 }
 

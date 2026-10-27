@@ -17,7 +17,7 @@ import { api, internal } from "../_generated/api";
 import { publicAppUrl } from "../helpers/appUrl";
 import { attributionForBooking, bumpLinkCounter } from "../helpers/partnerAttribution";
 import { recordPartnerCommission } from "../helpers/partnerLedger";
-import { isPhysioNetworkEligible } from "../physioSetup";
+import { isIndependentPractice, isPhysioNetworkEligible } from "../physioSetup";
 import { markProviderMatched, transitionReferral } from "../helpers/partnerEvents";
 import { referralEnv, toPublicStatus } from "../helpers/partnerShared";
 import { verifyPaystackSignature } from "../helpers/paystackSignature";
@@ -31,6 +31,8 @@ import { getService, isBookableServiceId } from "../../lib/rehabify-services";
 import type { Doc, Id } from "../_generated/dataModel";
 import { lagosDateTime, lagosTimeRange } from "../helpers/lagosTime";
 import { assertServerCaller } from "../helpers/serverSecret";
+import { recordPolicyAcceptances } from "../helpers/policyAcceptance";
+import { CHECKOUT_POLICIES } from "../../lib/policies";
 
 const MIN_NOTICE_MS = 30 * 60 * 1000;
 
@@ -44,6 +46,8 @@ const serviceBookingArgs = {
     accessAwardId: v.optional(v.id("accessAwards")),
     patientNotes: v.optional(v.string()),
     referralPublicCode: v.optional(v.string()), // partner referral-link code from the attribution cookie
+    // The Booking and Payment Policy versions the patient ticked "I agree" to (lib/policies.ts)
+    acceptedPolicies: v.optional(v.record(v.string(), v.string())),
 };
 
 type ServiceBookingInput = {
@@ -161,13 +165,23 @@ export const createServiceBooking = mutation({
     handler: async (ctx, args) => {
         const patient = await signedInUser(ctx);
         if (!patient) throw new ConvexError("Please sign in to book.");
-        return insertServiceBooking(ctx, {
-            ...args,
+        const { acceptedPolicies, ...booking } = args;
+        const created = await insertServiceBooking(ctx, {
+            ...booking,
             patient,
             sourceSystem: "rh_marketplace_web",
             scheduledBy: "patient",
             holdMs: WEB_HOLD_MS,
         });
+        await recordPolicyAcceptances(ctx, {
+            user: patient,
+            documents: CHECKOUT_POLICIES,
+            accepted: acceptedPolicies,
+            channel: "web",
+            contextType: "marketplace_booking",
+            contextId: created.bookingId,
+        });
+        return created;
     },
 });
 
@@ -184,11 +198,11 @@ export const guestCreateServiceBooking = mutation({
         guestName: v.optional(v.string()),
     },
     handler: async (ctx, args) => {
-        const { guestEmail, guestPhone, guestName, ...booking } = args;
+        const { guestEmail, guestPhone, guestName, acceptedPolicies, ...booking } = args;
         const email = guestEmail.trim().toLowerCase();
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new ConvexError("Please enter a valid email address.");
         const patient = await findOrCreateGuestPatient(ctx, email, guestPhone, guestName);
-        return insertServiceBooking(ctx, {
+        const created = await insertServiceBooking(ctx, {
             ...booking,
             patient,
             guest: { email, phone: guestPhone?.slice(0, 32), name: guestName?.slice(0, 120) },
@@ -196,6 +210,17 @@ export const guestCreateServiceBooking = mutation({
             scheduledBy: "patient",
             holdMs: WEB_HOLD_MS,
         });
+        await recordPolicyAcceptances(ctx, {
+            user: patient,
+            name: guestName,
+            email,
+            documents: CHECKOUT_POLICIES,
+            accepted: acceptedPolicies,
+            channel: "web",
+            contextType: "marketplace_booking",
+            contextId: created.bookingId,
+        });
+        return created;
     },
 });
 
@@ -382,13 +407,17 @@ export const getMyOpenBookings = query({
 
 /**
  * The physio's Rehabify sessions that are waiting for the patient to pay (a held time), so their
- * schedule shows them before they become appointments.
+ * schedule shows them before they become appointments. Carries the physio's payout, never what
+ * the patient is charged.
  */
 export const getMyHeldBookingsAsPhysio = query({
     args: {},
     handler: async (ctx) => {
         const user = await signedInUser(ctx);
         if (!user || user.role !== "physiotherapist") return [];
+        // Own patients only: no Rehabify Care bookings or payouts are shown to them
+        const profile = user.physiotherapistProfileId ? await ctx.db.get(user.physiotherapistProfileId) : null;
+        if (isIndependentPractice(profile)) return [];
         const bookings = await ctx.db
             .query("marketplaceBookings")
             .withIndex("by_physiotherapist", (q) => q.eq("physiotherapistId", user._id))
@@ -414,7 +443,8 @@ export const getMyHeldBookingsAsPhysio = query({
                     durationMinutes: b.sessionDuration,
                     isOnline: b.isOnline,
                     travelZoneName: b.travelZoneName ?? null,
-                    chargeKobo: b.serviceAmount,
+                    // Payout plus travel share: what the physio is paid once the session is done
+                    payoutKobo: (b.physiotherapistEarnings ?? 0) as number,
                     held: isLiveHold(b, now),
                     holdExpiresAt: b.holdExpiresAt ?? null,
                     scheduledBy: b.scheduledBy ?? "patient",
@@ -1281,8 +1311,18 @@ export const getBookingDetails = query({
         const physio = await ctx.db.get(booking.physiotherapistId);
         const patient = await ctx.db.get(booking.patientId);
 
+        // Physios only ever see their payout, never what the patient paid
+        const visible =
+            booking.patientId === user._id
+                ? booking
+                : Object.fromEntries(
+                      Object.entries(booking).filter(
+                          ([key]) => key === "physiotherapistEarnings" || !/amount|price|charge|fee|quote|refund/i.test(key)
+                      )
+                  );
+
         return {
-            ...booking,
+            ...visible,
             physiotherapist: physio
                 ? { id: physio._id, fullName: `${physio.firstName} ${physio.lastName}`, imageUrl: physio.imageUrl }
                 : null,

@@ -407,7 +407,8 @@ export const getActivePackageBooking = query({
       conditionLabel: bookings.conditionLabel ?? "General physiotherapy",
       conditionLevel: bookings.conditionLevel ?? "standard",
       packageDiscountPercent: bookings.packageDiscountPercent ?? 0,
-      totalAmount: bookings.totalAmount, // kobo
+      // The physio's payout, never what the patient paid
+      physiotherapistEarnings: bookings.physiotherapistEarnings, // kobo
       treatmentPlanId: (bookings as any).treatmentPlanId ?? null,
       paidAt: bookings.paidAt,
     };

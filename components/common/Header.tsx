@@ -54,6 +54,7 @@ const navLinks: NavItem[] = [
     name: "About us",
     items: [
       { name: "About Rehabify", href: "/about" },
+      { name: "Blog", href: "/blog" },
       { name: "FAQs", href: "/#faqs" },
       { name: "Support", href: "/contact" },
     ],
@@ -61,7 +62,6 @@ const navLinks: NavItem[] = [
   {
     name: "For professionals",
     items: [
-      { name: "For clinics", href: "/platform/clinics" },
       {
         name: "For physiotherapists",
         href: "/platform/physiotherapists",
@@ -70,6 +70,7 @@ const navLinks: NavItem[] = [
           { name: "Physio register", href: "/physio-register/register" },
         ],
       },
+      { name: "For clinics", href: "/platform/clinics" },
       { name: "For partners", href: "/partnerships" },
     ],
   },

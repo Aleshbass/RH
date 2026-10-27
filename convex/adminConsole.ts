@@ -18,7 +18,7 @@ export const getNavBadges = query({
   handler: async (ctx) => {
     await ensureUserRole(ctx, ["admin"]);
 
-    const [approvals, pendingReports, reviewingReports, pendingBookings, partners, newAccess, reviewingAccess] = await Promise.all([
+    const [approvals, pendingReports, reviewingReports, pendingBookings, partners, newAccess, reviewingAccess, countersign] = await Promise.all([
       ctx.db
         .query("accountApprovalStatus")
         .withIndex("by_status", (q) => q.eq("status", "pending_review"))
@@ -47,6 +47,11 @@ export const getNavBadges = query({
         .query("assistedCareApplications")
         .withIndex("by_status", (q) => q.eq("status", "under_review"))
         .take(BADGE_CAP),
+      // Agreements signed by a physio or clinic, waiting for Rehabify's countersignature
+      ctx.db
+        .query("agreementSignatures")
+        .withIndex("by_status", (q) => q.eq("status", "awaiting_countersign"))
+        .take(BADGE_CAP),
     ]);
 
     const bankTransfers = pendingBookings.filter(
@@ -59,6 +64,7 @@ export const getNavBadges = query({
       bankTransfers: Math.min(bankTransfers, BADGE_CAP),
       partnerApplications: partners.filter((p) => partnerApprovalStatus(p) === "pending").length,
       accessApplications: Math.min(newAccess.length + reviewingAccess.length, BADGE_CAP),
+      agreements: countersign.length,
       cap: BADGE_CAP,
     };
   },

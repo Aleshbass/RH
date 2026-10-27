@@ -30,11 +30,10 @@ import {
   secondaryButtonClass,
 } from '@/components/physio/ui'
 import { formatKobo } from '@/lib/rehabify-services'
-import type { ServiceQuote } from '@/lib/rehabify-api-types'
 import { useMutationUntyped, useQueryUntyped } from '@/lib/convexUntyped'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
-import { Choice, HomeVisitFields, useRehabifyServices, type HomeVisit, type ScheduleService } from './rehabifyServices'
+import { Choice, HomeVisitFields, earningsFor, useRehabifyServices, type HomeVisit, type ScheduleService } from './rehabifyServices'
 import { readableError, scheduleApi } from './shared'
 
 export type BookingPatient = { id: string; name: string }
@@ -123,15 +122,16 @@ function BookingDrawer({ options, onClose }: { options: BookingOptions; onClose:
   const [location, setLocation] = useState('')
   const [notes, setNotes] = useState('')
   const [busy, setBusy] = useState(false)
-  const [result, setResult] = useState<{ chargeKobo?: number; holdExpiresAt?: number } | null>(null)
+  const [result, setResult] = useState<{ payoutKobo?: number; holdExpiresAt?: number } | null>(null)
 
   const me = useQueryUntyped(scheduleApi.users.getMyUser) as { _id: string } | null | undefined
   const patients = useQueryUntyped(scheduleApi.patients.getMyPatientOptions, step === 'patient' ? {} : 'skip') as PatientOption[] | undefined
-  const { billing, isRehabify, coverage, payoutSchedule, zones, services, coveredZones } = useRehabifyServices(patient?.id)
-  const quote = useQueryUntyped(
-    scheduleApi.booking.getServiceQuote,
-    isRehabify && service && (service.mode !== 'home' || visit) ? { serviceId: service.id, zoneId: service.mode === 'home' ? visit?.zoneId : undefined } : 'skip'
-  ) as ServiceQuote | undefined
+  const { isRehabify, coverage, zones, services, coveredZones, loading: servicesLoading } = useRehabifyServices(patient?.id)
+  // What the physio earns (payout plus their travel share once the area is known), never the patient's price
+  const earnings =
+    isRehabify && service
+      ? earningsFor(service, service.mode === 'home' && visit ? zones?.find((zone) => zone.id === visit.zoneId) : null)
+      : null
 
   const createAppointment = useMutationUntyped(scheduleApi.appointments.createAppointment)
   const scheduleFollowUp = useMutationUntyped(scheduleApi.rehabifyFollowUps.scheduleRehabifyFollowUp)
@@ -183,7 +183,7 @@ function BookingDrawer({ options, onClose }: { options: BookingOptions; onClose:
           area: service.mode === 'home' ? visit?.area : undefined,
           patientAddress: service.mode === 'home' ? address.trim() : undefined,
           notes: notes.trim() || undefined,
-        })) as { chargeKobo: number; holdExpiresAt: number }
+        })) as { payoutKobo: number; holdExpiresAt: number }
         setResult(res)
       } else {
         await createAppointment({
@@ -295,7 +295,7 @@ function BookingDrawer({ options, onClose }: { options: BookingOptions; onClose:
   }
 
   if (step === 'what') {
-    const loading = billing === undefined || coverage === undefined || (isRehabify && payoutSchedule === undefined)
+    const loading = servicesLoading
     body = (
       <div>
         <StepBar index={stepIndex} total={steps.length} />
@@ -334,11 +334,8 @@ function BookingDrawer({ options, onClose }: { options: BookingOptions; onClose:
                   detail={`${option.durationLabel} · ${option.mode === 'home' ? 'Home visit' : 'Video call'}`}
                   aside={
                     <>
-                      <span className="block text-sm font-semibold tabular-nums text-pt-ink">
-                        {option.travelApplies ? 'From ' : ''}
-                        {formatKobo(option.priceKobo)}
-                      </span>
-                      <span className="block text-[11px] tabular-nums text-pt-muted">You earn {formatKobo(option.payoutKobo)}</span>
+                      <span className="block text-sm font-semibold tabular-nums text-pt-ink">You earn {formatKobo(option.payoutKobo)}</span>
+                      {option.travelApplies && <span className="block text-[11px] text-pt-muted">+ your share of travel</span>}
                     </>
                   }
                   selected={service?.id === option.id}
@@ -364,7 +361,7 @@ function BookingDrawer({ options, onClose }: { options: BookingOptions; onClose:
             <div>
               <p className="mb-2 flex items-center gap-1 text-sm font-medium text-pt-ink">
                 How you’ll meet
-                <InfoTip>Video sessions get a private link automatically. It shows on your Schedule and the patient’s, and opens 10 minutes before.</InfoTip>
+                <InfoTip>Video sessions get a private link automatically. Join shows on Today, your Schedule and the patient’s page, and opens 15 minutes before.</InfoTip>
               </p>
               <div className="grid grid-cols-2 gap-2">
                 {(['telehealth', 'in-person'] as const)
@@ -486,15 +483,13 @@ function BookingDrawer({ options, onClose }: { options: BookingOptions; onClose:
         {isRehabify && service && (
           <div className="rounded-2xl bg-pt-green-bg p-4 text-pt-green-fg">
             <p className="flex items-center gap-1.5 text-sm font-semibold">
-              {quote?.ok
-                ? `${firstName} pays ${formatKobo(quote.chargeKobo)} to confirm`
-                : `${firstName} pays ${service.travelApplies ? 'from ' : ''}${formatKobo(service.priceKobo)} to confirm`}
+              You earn {earnings !== null ? formatKobo(earnings) : `${formatKobo(service.payoutKobo)} plus your share of travel`}
               <InfoTip>
-                The price is Rehabify’s standard price{service.travelApplies ? ' plus travel for the area' : ''}. You earn {formatKobo(service.payoutKobo)}
-                {service.travelApplies ? ' plus your share of travel' : ''} once the session is done.
+                {firstName} pays Rehabify’s standard price to confirm. You’re paid your payout{service.travelApplies ? ' and your share of travel' : ''} once the
+                session is done.
               </InfoTip>
             </p>
-            <p className="mt-1 text-xs opacity-80">They have 24 hours to pay. If they don’t, the time is released.</p>
+            <p className="mt-1 text-xs opacity-80">{firstName} has 24 hours to pay. If they don’t, the time is released.</p>
           </div>
         )}
 
@@ -545,8 +540,8 @@ function BookingDrawer({ options, onClose }: { options: BookingOptions; onClose:
           {isRehabify ? `Sent to ${firstName} to pay` : `${firstName} is booked in`}
         </h3>
         <p className="mx-auto mt-2 max-w-sm text-sm text-pt-muted">
-          {isRehabify && result?.chargeKobo !== undefined && result.holdExpiresAt
-            ? `They pay ${formatKobo(result.chargeKobo)} to confirm. We hold the time until ${lagosShortDate(result.holdExpiresAt)}, ${lagosTime(result.holdExpiresAt)}.`
+          {isRehabify && result?.holdExpiresAt
+            ? `They pay to confirm${result.payoutKobo !== undefined ? `, and you earn ${formatKobo(result.payoutKobo)}` : ''}. We hold the time until ${lagosShortDate(result.holdExpiresAt)}, ${lagosTime(result.holdExpiresAt)}.`
             : `${firstName} gets a notification to confirm the time. You’ll see it on your Schedule.`}
         </p>
         <div className="mt-5 text-left">

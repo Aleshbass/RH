@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
 import { format } from 'date-fns';
@@ -34,6 +34,8 @@ import EditPatientModal from '@/components/dashboard/physiotherapist/EditPatient
 import { SendProgramDialog } from '@/components/exercise-programs/SendProgramDialog';
 import { ShareLinkDialog } from '@/components/exercise-programs/ShareLinkDialog';
 import { useBooking } from '@/components/physio/schedule/BookingDrawer';
+import { JoinVideoButton } from '@/components/physio/schedule/JoinVideoButton';
+import { needsMyAnswer, useNow, useTodaysVisits, videoJoin } from '@/components/physio/schedule/shared';
 import {
   cardClass,
   EmptyState,
@@ -68,6 +70,25 @@ type TabId = (typeof TABS)[number]['id'];
 
 /** Every drawer the workspace can open; one at a time. */
 type DrawerId = 'episode' | 'complete' | 'edit' | 'note' | 'plan' | 'template' | 'payment' | 'exercises';
+
+/**
+ * "Join video call" in the header when this patient has an online session today: live from 15
+ * minutes before the start until the end, greyed out with the time it opens before that.
+ */
+function TodaysVideoJoin({ patientId }: { patientId: string }) {
+  const today = useTodaysVisits();
+  const now = useNow(30_000);
+  const join = useMemo(() => {
+    const rows = (today ?? [])
+      .filter((visit) => visit.patientId === patientId && !needsMyAnswer(visit, now))
+      .map((visit) => ({ start: visit.startTime, join: videoJoin(visit, now) }))
+      .filter((row) => row.join.kind !== 'none')
+      .sort((a, b) => a.start - b.start);
+    return (rows.find((row) => row.join.kind === 'open') ?? rows[0])?.join ?? null;
+  }, [today, now, patientId]);
+  if (!join) return null;
+  return <JoinVideoButton join={join} size="md" label="Join video call" />;
+}
 
 export default function PatientWorkspacePage() {
   const params = useParams();
@@ -192,6 +213,7 @@ export default function PatientWorkspacePage() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            <TodaysVideoJoin patientId={patientId} />
             <Button asChild className={cn(secondaryButtonClass, 'h-10')}>
               <Link href={`/dashboard/physiotherapist/messages?with=${patientId}`}>
                 <MessageSquare className="mr-2 h-4 w-4" />

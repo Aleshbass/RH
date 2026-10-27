@@ -337,6 +337,7 @@ export const adminListApprovalQueue = query({
           yearsOfExperience?: number;
           clinicName?: string;
           specializations?: string[];
+          practiceMode?: "network" | "independent" | "both";
         } = {};
 
         if (user.role === "physiotherapist") {
@@ -352,6 +353,7 @@ export const adminListApprovalQueue = query({
               location: profile.location,
               yearsOfExperience: profile.yearsOfExperience,
               specializations: (profile.specializations ?? []).slice(0, 4),
+              practiceMode: profile.clinicId ? undefined : profile.practiceMode ?? "network",
             };
             const docs = await ctx.db
               .query("physiotherapistDocuments")

@@ -106,9 +106,10 @@ export function FilterChips<T extends string>({
             key={o.value}
             type="button"
             onClick={() => onChange(o.value)}
+            aria-pressed={active}
             className={cn(
-              'relative rounded-full px-3 py-1 text-xs font-medium transition-colors',
-              active ? 'text-white dark:text-rh-ink' : 'bg-white text-neutral-600 shadow-soft hover:text-rh-ink dark:bg-rh-ink-2 dark:text-neutral-300 dark:hover:text-white'
+              'relative rounded-full px-3 py-1 text-xs font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-rh-lime focus-visible:ring-offset-1 dark:focus-visible:ring-offset-rh-ink',
+              active ? 'text-rh-ink' : 'bg-white text-neutral-600 shadow-soft hover:text-rh-ink dark:bg-rh-ink-2 dark:text-neutral-300 dark:hover:text-white'
             )}
           >
             {active && (

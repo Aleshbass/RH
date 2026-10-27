@@ -10,7 +10,7 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { UserButton, useClerk } from '@clerk/nextjs'
 import { useAction, useConvexAuth, useQuery } from 'convex/react'
-import { ArrowRight, BookOpen, Check, GraduationCap, Library, Loader2, LogIn, Mail, SearchX } from '@/components/icons'
+import { ArrowRight, BookOpen, Check, GraduationCap, Library, Loader2, LogIn, Mail, PlayCircle, SearchX } from '@/components/icons'
 import { errorMessage } from '@/components/partners/portal/shared'
 import { api } from '@/convex/_generated/api'
 import type { Id } from '@/convex/_generated/dataModel'
@@ -21,8 +21,9 @@ import { CourseHome } from './CourseHome'
 import { dateOnly, type CourseOk, type MyCourse } from './shared'
 import { StudyDrawer, type StudyPanel } from './StudyDrawer'
 import { StudyLibrary } from './StudyLibrary'
+import { VideoCourses } from '../video/VideoCourses'
 
-type Tab = 'course' | 'library'
+type Tab = 'course' | 'courses' | 'library'
 const SIGN_IN_HREF = `/sign-in?redirect=${encodeURIComponent('/learn/course')}`
 
 function TopBar({ tab, setTab, showTabs }: { tab?: Tab; setTab?: (tab: Tab) => void; showTabs: boolean }) {
@@ -38,6 +39,7 @@ function TopBar({ tab, setTab, showTabs }: { tab?: Tab; setTab?: (tab: Tab) => v
             {(
               [
                 { key: 'course', label: 'My course', icon: BookOpen },
+                { key: 'courses', label: 'Courses', icon: PlayCircle },
                 { key: 'library', label: 'Library', icon: Library },
               ] as const
             ).map((t) => (
@@ -47,11 +49,11 @@ function TopBar({ tab, setTab, showTabs }: { tab?: Tab; setTab?: (tab: Tab) => v
                 onClick={() => setTab(t.key)}
                 aria-current={tab === t.key ? 'page' : undefined}
                 className={cn(
-                  'inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-semibold transition sm:px-4',
+                  'inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-semibold transition sm:px-4',
                   tab === t.key ? 'bg-rh-ink text-white' : 'text-rh-ink/60 hover:text-rh-ink'
                 )}
               >
-                <t.icon className="h-3.5 w-3.5" />
+                <t.icon className="hidden h-3.5 w-3.5 sm:block" />
                 {t.label}
               </button>
             ))}
@@ -244,13 +246,21 @@ function CourseView({
   const [stack, setStack] = useState<StudyPanel[]>([])
   const accessUntil = course.accessUntil ? dateOnly(course.accessUntil) : null
 
-  // /learn/course#library opens the library straight away
+  // /learn/course#library and #courses (with a course or lesson after it) open those tabs straight away
   useEffect(() => {
-    if (window.location.hash === '#library') setTabState('library')
+    const sync = () => {
+      const hash = window.location.hash
+      if (hash === '#library') setTabState('library')
+      else if (hash.startsWith('#courses')) setTabState('courses')
+    }
+    sync()
+    window.addEventListener('popstate', sync)
+    return () => window.removeEventListener('popstate', sync)
   }, [])
   const setTab = (next: Tab) => {
     setTabState(next)
-    window.history.replaceState(null, '', next === 'library' ? '#library' : window.location.pathname + window.location.search)
+    const path = window.location.pathname + window.location.search
+    window.history.replaceState(null, '', next === 'course' ? path : `${path}#${next}`)
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
   const open = (panel: StudyPanel) => setStack([panel])
@@ -259,7 +269,8 @@ function CourseView({
     <div className="min-h-screen bg-rh-cream">
       <TopBar tab={tab} setTab={setTab} showTabs />
       <main className="mx-auto max-w-6xl px-4 pb-24 pt-6 sm:px-6 sm:pt-8">
-        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        {/* The Courses tab has its own headings (catalogue, course, lesson) */}
+        <div className={cn('mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between', tab === 'courses' && 'hidden')}>
           <div>
             <h1 className={cn('text-[30px] leading-tight tracking-tight text-rh-ink sm:text-[38px]', displayFont)}>
               {tab === 'course' ? `Welcome, ${course.learner.firstName}` : 'Exercise library'}
@@ -292,6 +303,8 @@ function CourseView({
         <div key={tab} className="animate-in fade-in duration-300">
           {tab === 'course' ? (
             <CourseHome course={course} open={open} showLibrary={() => setTab('library')} accessUntil={accessUntil} />
+          ) : tab === 'courses' ? (
+            <VideoCourses />
           ) : (
             <StudyLibrary open={open} accessUntil={accessUntil} />
           )}

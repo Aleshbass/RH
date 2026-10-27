@@ -9,7 +9,8 @@ import type { SetupStatus } from '@/components/physio/SetupChecklist';
 
 const BASE = '/dashboard/physiotherapist/settings';
 
-type SettingsLink = { label: string; href: string; setupItem?: string };
+/** `network`: only for Rehabify network physios. `own`: not for clinic members. */
+type SettingsLink = { label: string; href: string; setupItem?: string; network?: boolean; own?: boolean };
 
 /** Grouped like Apple's Settings: who you are, how you practise, then the account itself. */
 const GROUPS: { label: string; items: SettingsLink[] }[] = [
@@ -23,10 +24,12 @@ const GROUPS: { label: string; items: SettingsLink[] }[] = [
     {
         label: 'Practice',
         items: [
+            { label: 'How you work', href: `${BASE}/practice`, own: true },
             { label: 'Working hours', href: `${BASE}/availability`, setupItem: 'availability' },
-            { label: 'Services & coverage', href: `${BASE}/marketplace`, setupItem: 'coverage' },
-            { label: 'Network terms', href: `${BASE}/network-terms`, setupItem: 'network_terms' },
-            { label: 'Payout schedule', href: `${BASE}/fee-schedule` },
+            { label: 'Services & coverage', href: `${BASE}/marketplace`, setupItem: 'coverage', network: true },
+            { label: 'Network terms', href: `${BASE}/network-terms`, setupItem: 'network_terms', network: true },
+            { label: 'Agreements', href: `${BASE}/agreements`, setupItem: 'agreement', own: true },
+            { label: 'Payout schedule', href: `${BASE}/fee-schedule`, network: true },
             { label: 'Payouts', href: `${BASE}/payout`, setupItem: 'payout' },
             { label: 'Calendar sync', href: `${BASE}/calendar` },
         ],
@@ -37,11 +40,16 @@ const GROUPS: { label: string; items: SettingsLink[] }[] = [
     },
 ];
 
-const ALL_LINKS = GROUPS.flatMap((group) => group.items);
-
 export default function SettingsLayout({ children }: { children: React.ReactNode }) {
     const pathname = usePathname() ?? '';
     const setup = useQuery(api.physioSetup.getMySetupStatus) as SetupStatus | null | undefined;
+    // Independent physios don't see network pages; clinic members don't choose how they work
+    const independent = setup?.practiceMode === 'independent';
+    const groups = GROUPS.map((group) => ({
+        ...group,
+        items: group.items.filter((link) => !(link.network && independent) && !(link.own && setup?.isClinicMember)),
+    }));
+    const ALL_LINKS = groups.flatMap((group) => group.items);
     // Small dot beside settings that still block bookings
     const pending = new Set(
         (setup?.items ?? []).filter((item) => item.required && !item.done).map((item) => item.id)
@@ -82,7 +90,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
                 <nav aria-label="Settings" className="hidden lg:block">
                     <div className="sticky top-24 space-y-5 rounded-2xl border border-black/[0.04] bg-white p-3 shadow-soft dark:border-white/[0.06] dark:bg-rh-ink-2 dark:shadow-none">
                         <p className="px-3 pt-1 text-lg font-semibold tracking-tight text-rh-ink dark:text-white">Settings</p>
-                        {GROUPS.map((group) => (
+                        {groups.map((group) => (
                             <div key={group.label} className="space-y-0.5">
                                 <p className="px-3 pb-1 text-[11px] font-medium uppercase tracking-wide text-neutral-400 dark:text-neutral-500">
                                     {group.label}

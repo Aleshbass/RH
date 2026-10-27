@@ -4,9 +4,12 @@ import React from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { joyWhatsAppUrl } from '@/lib/joyWhatsApp';
+import { useConsent } from '@/components/consent/ConsentProvider';
+import { GENERAL_EMAIL, SUPPORT_EMAIL } from '@/lib/contact';
 
 // Book a demo lives on the partners page (/partnerships) now
 const Footer = () => {
+  const { openSettings } = useConsent();
   return (
     <footer className="bg-rh-ink text-white rounded-t-[2rem]">
       <div className="container mx-auto px-6 lg:px-8">
@@ -106,13 +109,23 @@ const Footer = () => {
             <ul className="space-y-2 text-sm">
               <li>
                 <Link href="/terms-and-conditions" className="text-gray-300 hover:text-white transition-colors">
-                  Terms & Conditions
+                  Terms of Service
                 </Link>
               </li>
               <li>
                 <Link href="/privacy-policy" className="text-gray-300 hover:text-white transition-colors">
                   Privacy Policy
                 </Link>
+              </li>
+              <li>
+                <Link href="/cookie-policy" className="text-gray-300 hover:text-white transition-colors">
+                  Cookie Policy
+                </Link>
+              </li>
+              <li>
+                <button type="button" onClick={openSettings} className="text-gray-300 hover:text-white transition-colors">
+                  Cookie settings
+                </button>
               </li>
               <li>
                 <Link href="/payment-policy" className="text-gray-300 hover:text-white transition-colors">
@@ -136,6 +149,10 @@ const Footer = () => {
         {/* Bottom Bar */}
         <div className="mt-8 py-6 border-t border-white/10 flex flex-col sm:flex-row justify-between items-center">
           <p className="text-gray-400 text-sm">&copy; {new Date().getFullYear()} Rehabify. All rights reserved.</p>
+          <p className="mt-3 flex flex-wrap justify-center gap-x-4 gap-y-1 text-sm sm:mt-0">
+            <a href={`mailto:${GENERAL_EMAIL}`} className="text-gray-300 transition-colors hover:text-white">{GENERAL_EMAIL}</a>
+            <a href={`mailto:${SUPPORT_EMAIL}`} className="text-gray-300 transition-colors hover:text-white">{SUPPORT_EMAIL}</a>
+          </p>
           {/* Social links go here once the profiles exist (add them to SITE_CONFIG.organization.sameAs too) */}
         </div>
       </div>

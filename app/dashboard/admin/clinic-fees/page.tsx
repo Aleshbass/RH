@@ -172,8 +172,9 @@ export default function AdminClinicFeesPage() {
         title="Clinic fees"
         description={
           <>
-            How clinic payments made online are shared. Clinics see changes in their payment form immediately; invoices
-            already sent keep their amounts.
+            Clinics keep everything their own patients pay (after Paystack&apos;s fee): they pay a software subscription
+            instead. The split below applies only to Rehabify Care patients referred to a clinic. Invoices already sent keep
+            their amounts.
             <span className="mt-1 block text-xs text-neutral-400 dark:text-neutral-500">
               {settings.isCustom && settings.updatedAt
                 ? `Last changed ${format(new Date(settings.updatedAt), 'd MMM yyyy, HH:mm')}${settings.updatedBy ? ` by ${settings.updatedBy}` : ''}`
@@ -203,7 +204,11 @@ export default function AdminClinicFeesPage() {
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
         <div className="space-y-6 lg:col-span-3">
-          <Panel title="Split" description="Shared after Paystack's fee is taken off." bodyClassName="grid grid-cols-1 gap-4 p-5 pt-3 sm:grid-cols-2">
+          <Panel
+            title="Referral split"
+            description="For Rehabify Care patients referred to a clinic. Shared after Paystack's fee is taken off."
+            bodyClassName="grid grid-cols-1 gap-4 p-5 pt-3 sm:grid-cols-2"
+          >
             <Field label="Clinic share (%)" hint={`Rehabify gets ${rehabifyPercent}%`}>
               <Input inputMode="decimal" value={form.clinicSharePercent} onChange={set('clinicSharePercent')} className={inputClass} />
             </Field>

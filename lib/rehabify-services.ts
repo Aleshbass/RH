@@ -1,5 +1,5 @@
 /**
- * Rehabify's standard services and prices (pricing model of 19 October 2026).
+ * Rehabify's standard services, prices and payouts (company business model, October 2026).
  *
  * Every Rehabify-affiliated physiotherapist delivers these services at the same price; only
  * home visits vary, by the patient's travel zone. The patient price is all-inclusive:
@@ -17,7 +17,9 @@ export type RehabifyServiceId =
   | "virtual_assessment"
   | "home_assessment"
   | "virtual_treatment"
-  | "home_treatment";
+  | "home_treatment"
+  | "virtual_review"
+  | "home_review";
 
 /** Services a patient can book and pay for. */
 export type BookableServiceId = Exclude<RehabifyServiceId, "automated_screening">;
@@ -104,7 +106,7 @@ export const REHABIFY_SERVICES: RehabifyService[] = [
     bookable: true,
     requiresPriorAssessment: false,
     defaultPriceKobo: naira(20_000),
-    defaultPayoutKobo: naira(14_000),
+    defaultPayoutKobo: naira(12_000),
     defaultAssistedPriceKobo: naira(10_000),
     defaultAssistedPayoutKobo: naira(8_000),
     defaultTravelApplies: false,
@@ -131,10 +133,10 @@ export const REHABIFY_SERVICES: RehabifyService[] = [
     bookable: true,
     requiresPriorAssessment: false,
     defaultPriceKobo: naira(30_000),
-    defaultPayoutKobo: naira(21_000),
+    defaultPayoutKobo: naira(18_000),
     defaultAssistedPriceKobo: naira(16_000),
     defaultAssistedPayoutKobo: naira(13_000),
-    defaultTravelApplies: false,
+    defaultTravelApplies: true,
     summary: "Our comprehensive in-person first assessment, at your home.",
     whatHappens: [
       "Detailed history and clinical examination",
@@ -158,7 +160,7 @@ export const REHABIFY_SERVICES: RehabifyService[] = [
     bookable: true,
     requiresPriorAssessment: true,
     defaultPriceKobo: naira(12_000),
-    defaultPayoutKobo: naira(8_400),
+    defaultPayoutKobo: naira(7_200),
     defaultTravelApplies: false,
     summary: "For patients already assessed whose treatment can be delivered remotely.",
     whatHappens: [
@@ -181,7 +183,7 @@ export const REHABIFY_SERVICES: RehabifyService[] = [
     bookable: true,
     requiresPriorAssessment: true,
     defaultPriceKobo: naira(30_000),
-    defaultPayoutKobo: naira(21_000),
+    defaultPayoutKobo: naira(18_000),
     defaultTravelApplies: true,
     summary: "A treatment session at your home, following your assessment.",
     whatHappens: [
@@ -192,6 +194,52 @@ export const REHABIFY_SERVICES: RehabifyService[] = [
       "Review and progression of your home programme",
     ],
     youReceive: "Treatment, documentation of your response and an updated home programme.",
+  },
+  {
+    id: "virtual_review",
+    name: "Virtual Physiotherapy Review",
+    shortName: "Virtual review",
+    mode: "virtual",
+    kind: "treatment",
+    durationMinutes: 45,
+    durationLabel: "45 minutes",
+    bookable: true,
+    requiresPriorAssessment: true,
+    defaultPriceKobo: naira(15_000),
+    defaultPayoutKobo: naira(9_000),
+    defaultTravelApplies: false,
+    summary: "A progress review by video for patients already in treatment.",
+    whatHappens: [
+      "Review of your symptoms, function and goals",
+      "Re-assessment of the areas being treated",
+      "Progress measured against your plan",
+      "Your programme updated or progressed",
+      "Agreement on the next stage of your care",
+    ],
+    youReceive: "An updated assessment of your progress and a revised recovery plan.",
+  },
+  {
+    id: "home_review",
+    name: "Home Physiotherapy Review",
+    shortName: "Home review",
+    mode: "home",
+    kind: "treatment",
+    durationMinutes: 60,
+    durationLabel: "60 minutes",
+    bookable: true,
+    requiresPriorAssessment: true,
+    defaultPriceKobo: naira(30_000),
+    defaultPayoutKobo: naira(18_000),
+    defaultTravelApplies: true,
+    summary: "An in-person progress review at your home for patients already in treatment.",
+    whatHappens: [
+      "Review of your symptoms, function and goals",
+      "Physical re-examination of the areas being treated",
+      "Progress measured against your plan",
+      "Your programme updated or progressed",
+      "Agreement on the next stage of your care",
+    ],
+    youReceive: "An updated clinical assessment of your progress and a revised recovery plan.",
   },
 ];
 

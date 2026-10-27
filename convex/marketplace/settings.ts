@@ -12,7 +12,7 @@ import { mutation, query } from "../_generated/server";
 import { NETWORK_TERMS_VERSION } from "../../lib/rehabify-network-terms";
 import { BOOKABLE_SERVICE_IDS, getService } from "../../lib/rehabify-services";
 import { loadTariffs } from "../helpers/rehabifyPricing";
-import { profileViewCount } from "../physioSetup";
+import { isIndependentPractice, profileViewCount } from "../physioSetup";
 
 async function approvedPhysio(ctx: any) {
   const identity = await ctx.auth.getUserIdentity();
@@ -53,29 +53,40 @@ export const updateMarketplaceSettings = mutation({
   },
   handler: async (ctx, args) => {
     const { profile } = await approvedPhysio(ctx);
+    if (args.isAvailableOnMarketplace === true && isIndependentPractice(profile)) {
+      throw new ConvexError("You run your own practice, so you aren't listed. Join the Rehabify network first, under Settings > How you work.");
+    }
     const updates: any = {};
     for (const key of ["isAvailableOnMarketplace", "offersOnlineSessions", "offersInPersonSessions", "location", "bio", "specializations"]) {
       if (args[key] !== undefined) updates[key] = args[key];
     }
 
-    const online = args.offersOnlineSessions ?? profile.offersOnlineSessions !== false;
-    const home = args.offersInPersonSessions ?? Boolean(profile.offersInPersonSessions);
-    if (!online && !home) throw new ConvexError("Offer video sessions, home visits, or both.");
+    // Only check coverage when it's being changed, so showing or hiding the listing never trips
+    // over home visits that were switched on before any area was picked
+    const coverageChanged =
+      args.offersOnlineSessions !== undefined || args.offersInPersonSessions !== undefined || args.coveredZoneIds !== undefined;
+    if (coverageChanged) {
+      const online = args.offersOnlineSessions ?? profile.offersOnlineSessions !== false;
+      const home = args.offersInPersonSessions ?? Boolean(profile.offersInPersonSessions);
+      if (!online && !home) throw new ConvexError("Offer video sessions, home visits, or both.");
 
-    let zoneIds = profile.coveredZoneIds ?? [];
-    if (args.coveredZoneIds !== undefined) {
-      const zones = await Promise.all([...new Set(args.coveredZoneIds)].map((id) => ctx.db.get(id)));
-      if (zones.some((zone) => !zone || !zone.active)) throw new ConvexError("One of those areas is no longer available. Please refresh.");
-      zoneIds = zones.map((zone) => zone._id);
-      updates.coveredZoneIds = zoneIds;
+      let zoneIds = profile.coveredZoneIds ?? [];
+      if (args.coveredZoneIds !== undefined) {
+        const zones = await Promise.all([...new Set(args.coveredZoneIds)].map((id) => ctx.db.get(id)));
+        if (zones.some((zone) => !zone || !zone.active)) throw new ConvexError("One of those areas is no longer available. Please refresh.");
+        zoneIds = zones.map((zone) => zone._id);
+        updates.coveredZoneIds = zoneIds;
+      }
+      if (home && zoneIds.length === 0) {
+        throw new ConvexError("Pick at least one area for home visits, or turn home visits off.");
+      }
+
+      // Keep Joy's matching fields in step with the website
+      const zones = await Promise.all(zoneIds.map((id) => ctx.db.get(id)));
+      const modes = [...(online ? ["online"] : []), ...(home ? ["home_visit"] : [])];
+      updates.joyServiceModes = modes;
+      updates.joyServiceAreas = home ? [...new Set(zones.filter(Boolean).flatMap((zone) => [zone.city, ...zone.areas]))] : [];
     }
-    if (home && zoneIds.length === 0) throw new ConvexError("Choose at least one area you travel to for home visits.");
-
-    // Keep Joy's matching fields in step with the website
-    const zones = await Promise.all(zoneIds.map((id) => ctx.db.get(id)));
-    const modes = [...(online ? ["online"] : []), ...(home ? ["home_visit"] : [])];
-    updates.joyServiceModes = modes;
-    updates.joyServiceAreas = home ? [...new Set(zones.filter(Boolean).flatMap((zone) => [zone.city, ...zone.areas]))] : [];
 
     await ctx.db.patch(profile._id, updates);
     return { success: true };
@@ -94,6 +105,9 @@ export const acceptNetworkTerms = mutation({
     const { user, profile } = await approvedPhysio(ctx);
     if (profile.clinicId) {
       throw new ConvexError("You work under your clinic's terms, so the Rehabify network terms don't apply to you.");
+    }
+    if (isIndependentPractice(profile)) {
+      throw new ConvexError("Join the Rehabify network first, under Settings > How you work.");
     }
     if (args.version !== NETWORK_TERMS_VERSION) throw new ConvexError("These terms have been updated. Please refresh and read the latest version.");
     const { version: tariffVersion } = await loadTariffs(ctx);
@@ -133,10 +147,13 @@ export const getMyNetworkTerms = query({
       .query("physiotherapistProfiles")
       .withIndex("by_user_id", (q) => q.eq("userId", user._id))
       .first();
-    const terms = profile?.networkTerms ?? null;
+    // Own patients only: the network terms (and any Rehabify Access payout minimums) don't apply
+    const independent = isIndependentPractice(profile);
+    const terms = independent ? null : profile?.networkTerms ?? null;
     return {
       currentVersion: NETWORK_TERMS_VERSION,
       isClinicMember: Boolean(profile?.clinicId),
+      isIndependent: independent,
       accepted: terms?.version === NETWORK_TERMS_VERSION,
       terms,
     };
@@ -190,6 +207,9 @@ export const getMyMarketplaceSettings = query({
       )
       .collect();
 
+    // Own patients only: no Rehabify payouts or network terms in what they're sent
+    const independent = isIndependentPractice(profile);
+
     return {
       userId: user._id,
       fullName: `${user.firstName} ${user.lastName}`,
@@ -202,7 +222,8 @@ export const getMyMarketplaceSettings = query({
       offersInPersonSessions: profile.offersInPersonSessions || false,
       coveredZoneIds: profile.coveredZoneIds ?? [],
       isClinicMember: Boolean(profile.clinicId),
-      networkTermsAccepted: profile.networkTerms?.version === NETWORK_TERMS_VERSION,
+      practiceMode: profile.clinicId ? "network" : profile.practiceMode ?? "network",
+      networkTermsAccepted: !independent && profile.networkTerms?.version === NETWORK_TERMS_VERSION,
       location: profile.location,
       bio: profile.bio,
       specializations: profile.specializations || [],
@@ -213,9 +234,8 @@ export const getMyMarketplaceSettings = query({
 
       // Stats
       profileViews: await profileViewCount(ctx, user._id, profile.profileViews),
-      bookingsThroughMarketplace: totalBookings.length,
-      totalMarketplaceEarnings:
-        (profile.totalMarketplaceEarnings || 0) / 100,
+      bookingsThroughMarketplace: independent ? 0 : totalBookings.length,
+      totalMarketplaceEarnings: independent ? 0 : (profile.totalMarketplaceEarnings || 0) / 100,
       averageRating: profile.averageRating || 0,
       reviewCount: reviews.length,
 

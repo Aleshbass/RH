@@ -71,6 +71,7 @@ type QueueItem = {
     yearsOfExperience?: number
     clinicName?: string
     specializations?: string[]
+    practiceMode?: 'network' | 'independent' | 'both'
   }
   documents: { _id: string; fileName: string; documentType: string; uploadedAt?: number }[]
 }
@@ -345,6 +346,15 @@ export default function AdminApprovalsPage() {
                               <span className="inline-flex items-center gap-1">
                                 <Building2 className="h-3 w-3" />
                                 {item.summary.clinicName}
+                              </span>
+                            )}
+                            {item.summary.practiceMode && (
+                              <span className="font-medium text-rh-ink dark:text-white">
+                                {item.summary.practiceMode === 'independent'
+                                  ? 'Own patients only'
+                                  : item.summary.practiceMode === 'both'
+                                    ? 'Rehabify Care + own patients'
+                                    : 'Rehabify Care'}
                               </span>
                             )}
                             {item.summary.licenseNumber && <span className="font-mono">Licence {item.summary.licenseNumber}</span>}

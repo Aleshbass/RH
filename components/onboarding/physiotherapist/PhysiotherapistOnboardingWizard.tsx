@@ -1,11 +1,14 @@
 'use client';
 
 /**
- * Physiotherapist application: three short steps, only what Rehabify needs to verify someone.
+ * Physiotherapist application: four short steps, only what Rehabify needs to verify someone.
  *
- *   1. About you      name and phone
- *   2. Your licence   board, licence number and expiry, experience, ID and a licence document
- *   3. Your practice  where you work, what you treat, terms; then submit for review
+ *   1. How you'll work  join the Rehabify network, or run their own practice (lib/practiceModes.ts)
+ *   2. About you        name and phone
+ *   3. Your licence     board, licence number and expiry, experience, ID and a licence document
+ *   4. Your practice    where you work, what you treat, terms; then submit for review
+ *
+ * Both kinds of physio go through the same licence check and approval.
  *
  * Everything else (photo and bio, working hours, prices, payout account, other documents) is
  * finished from the dashboard, before or after approval. Patients can only book once that's done
@@ -35,6 +38,7 @@ import {
     type PhysioDocumentType,
 } from '@/components/physio/PhysioDocuments';
 import { useOnboardingStore } from '@/stores/onboardingStore';
+import { modeFrom, PATIENT_SOURCES, sourcesOf, type PatientSource, type PracticeMode } from '@/lib/practiceModes';
 import { cn } from '@/lib/utils';
 
 const MapboxLocationPicker = dynamic(() => import('@/components/onboarding/physiotherapist/MapboxLocationPicker'), {
@@ -43,6 +47,7 @@ const MapboxLocationPicker = dynamic(() => import('@/components/onboarding/physi
 });
 
 const STEPS = [
+    { id: 'path', title: 'Your patients', subtitle: 'Which patients you’ll see on Rehabify.' },
     { id: 'about', title: 'About you', subtitle: 'So patients and our team know who you are.' },
     { id: 'licence', title: 'Your licence', subtitle: 'We verify every physiotherapist before they can see patients.' },
     { id: 'practice', title: 'Your practice', subtitle: 'Where you work and what you treat.' },
@@ -55,7 +60,7 @@ const LICENCE_PROOFS: { type: PhysioDocumentType; label: string }[] = [
     { type: 'degreeCertificate', label: 'Degree certificate' },
 ];
 
-const primary = 'bg-[#005b57] text-white hover:bg-[#00443e]';
+const primary = 'bg-rh-lime font-semibold text-rh-ink hover:bg-rh-lime-deep';
 const labelClass = 'text-sm font-medium text-neutral-700';
 const hintClass = 'mt-1 text-xs text-neutral-500';
 const errorClass = 'mt-1 text-xs text-red-600';
@@ -69,6 +74,7 @@ type Draft = {
     email: string;
     phoneNumber: string;
     profileId: string | null;
+    practiceMode: PracticeMode | null;
     gender: string | null;
     licenseNumber: string;
     certificationBoard: string;
@@ -138,14 +144,78 @@ function Field({
     );
 }
 
+/** Step 1: which patients they'll see on Rehabify. Either or both. */
+function PracticeModeChoice({
+    value,
+    onChange,
+    error,
+}: {
+    value: PracticeMode | null;
+    onChange: (mode: PracticeMode | null) => void;
+    error?: string;
+}) {
+    const chosen = sourcesOf(value);
+    const toggle = (source: PatientSource) =>
+        onChange(modeFrom(chosen.includes(source) ? chosen.filter((s) => s !== source) : [...chosen, source]));
+    return (
+        <div>
+            <p className="mb-3 text-sm text-neutral-600">Choose one or both.</p>
+            <div role="group" aria-label="Which patients you’ll see" className="grid gap-3">
+                {PATIENT_SOURCES.map((mode) => {
+                    const selected = chosen.includes(mode.id);
+                    return (
+                        <button
+                            key={mode.id}
+                            type="button"
+                            role="checkbox"
+                            aria-checked={selected}
+                            onClick={() => toggle(mode.id)}
+                            className={cn(
+                                'flex w-full items-start gap-4 rounded-2xl border-2 bg-white p-5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-ink focus-visible:ring-offset-2',
+                                selected ? 'border-rh-ink' : 'border-neutral-200 hover:border-neutral-400'
+                            )}
+                        >
+                            <span
+                                aria-hidden
+                                className={cn(
+                                    'mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border-2 transition-colors',
+                                    selected ? 'border-rh-ink bg-rh-ink text-rh-lime' : 'border-neutral-300'
+                                )}
+                            >
+                                {selected && <Check className="h-3 w-3" strokeWidth={3} />}
+                            </span>
+                            <span className="min-w-0">
+                                <span className="block text-base font-semibold text-neutral-900">{mode.title}</span>
+                                <span className="mt-1 block text-sm leading-relaxed text-neutral-600">{mode.summary}</span>
+                                <span className="mt-3 block space-y-1.5">
+                                    {mode.points.map((point) => (
+                                        <span key={point} className="flex gap-2 text-sm text-neutral-700">
+                                            <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-rh-ink" />
+                                            {point}
+                                        </span>
+                                    ))}
+                                </span>
+                            </span>
+                        </button>
+                    );
+                })}
+            </div>
+            {error && <p className={errorClass}>{error}</p>}
+            <p className="mt-4 text-xs leading-relaxed text-neutral-500">
+                Everyone goes through the same licence check, and you can change this later in Settings. Work at a clinic? Ask
+                your clinic to invite you instead.
+            </p>
+        </div>
+    );
+}
+
 function SignInFirst() {
     return (
         <div className="mx-auto w-full max-w-md px-4 py-10 text-center">
-            <p className="text-xs font-medium uppercase tracking-wide text-[#005b57]">For physiotherapists</p>
-            <h1 className="mt-2 text-2xl font-semibold tracking-tight text-neutral-900">Join Rehabify</h1>
+            <h1 className="text-2xl font-semibold tracking-tight text-neutral-900">Join Rehabify</h1>
             <p className="mt-2 text-sm leading-relaxed text-neutral-600">
-                Create your account, then apply in three short steps. It takes about five minutes. Have your licence
-                number and a photo of your ID ready.
+                Take Rehabify Care patients, see your own patients on Rehabify, or both. Create your account, then apply in four
+                short steps. It takes about five minutes. Have your licence number and a photo of your ID ready.
             </p>
             <div className="mt-6 flex flex-col gap-2">
                 <Button asChild className={cn('h-11', primary)}>
@@ -159,14 +229,14 @@ function SignInFirst() {
     );
 }
 
-function Submitted() {
+function Submitted({ practiceMode }: { practiceMode: PracticeMode }) {
     return (
         <motion.div
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             className="mx-auto w-full max-w-md px-4 py-10 text-center"
         >
-            <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[#005b57] text-white">
+            <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-rh-lime text-rh-ink">
                 <Check className="h-6 w-6" strokeWidth={2.5} />
             </span>
             <h1 className="mt-5 text-2xl font-semibold tracking-tight text-neutral-900">Application sent</h1>
@@ -175,8 +245,9 @@ function Submitted() {
                 approved.
             </p>
             <p className="mt-3 text-sm leading-relaxed text-neutral-600">
-                While you wait, finish setting up your profile, hours and payout account so you can start seeing patients
-                the day you&apos;re approved.
+                {practiceMode === 'independent'
+                    ? 'While you wait, add your photo and payout account. Once you’re approved, you can invite your patients.'
+                    : 'While you wait, finish setting up your profile, hours and payout account so you can start seeing patients the day you’re approved.'}
             </p>
             <Button asChild className={cn('mt-6 h-11 w-full', primary)}>
                 <Link href="/dashboard/physiotherapist">Finish setting up</Link>
@@ -205,6 +276,7 @@ export default function PhysiotherapistOnboardingWizard() {
     const initialised = useRef(false);
 
     // Answers
+    const [practiceMode, setPracticeMode] = useState<PracticeMode | null>(null);
     const [firstName, setFirstName] = useState('');
     const [lastName, setLastName] = useState('');
     const [phone, setPhone] = useState('');
@@ -264,6 +336,7 @@ export default function PhysiotherapistOnboardingWizard() {
         const licence = draft.licenseNumber || r?.licenseNumber || '';
         const expiryValue = draft.licenseExpiryDate || r?.licenseExpiryDate || '';
 
+        setPracticeMode(draft.practiceMode);
         setFirstName(first);
         setLastName(last);
         setPhone(phoneValue);
@@ -292,14 +365,14 @@ export default function PhysiotherapistOnboardingWizard() {
         const aboutDone = Boolean(draft.profileId && draft.firstName && draft.lastName && draft.phoneNumber);
         const licenceDone =
             aboutDone && Boolean(draft.licenseNumber && draft.licenseExpiryDate) && draft.uploadedDocumentTypes.includes('nationalId') && hasProof;
-        setStep(licenceDone ? 2 : aboutDone ? 1 : 0);
+        setStep(licenceDone ? 3 : aboutDone ? 2 : draft.practiceMode ? 1 : 0);
     }, [draft, registry, registrySlug]);
 
     const uploaded = useMemo(() => new Set((documents ?? []).map((doc) => doc.documentType)), [documents]);
 
     if (!authLoaded) return <WizardSkeleton />;
     if (!isSignedIn) return <SignInFirst />;
-    if (submitted) return <Submitted />;
+    if (submitted) return <Submitted practiceMode={practiceMode ?? 'network'} />;
     if (draft === undefined || draft === null || !initialised.current) {
         return <WizardSkeleton message={draft === null ? 'Setting up your account…' : undefined} />;
     }
@@ -313,12 +386,13 @@ export default function PhysiotherapistOnboardingWizard() {
 
     const validate = (): Record<string, string> => {
         const e: Record<string, string> = {};
-        if (step === 0) {
+        if (step === 0 && !practiceMode) e.practiceMode = 'Choose at least one';
+        if (step === 1) {
             if (!firstName.trim()) e.firstName = 'Enter your first name';
             if (!lastName.trim()) e.lastName = 'Enter your last name';
             if (phone.replace(/\D/g, '').length < 10) e.phone = 'Enter a phone number we can reach you on';
         }
-        if (step === 1) {
+        if (step === 2) {
             if (board === 'other' && otherBoard.trim().length < 2) e.board = 'Enter the board that issued your licence';
             if (!licenseNumber.trim()) e.licenseNumber = 'Enter your licence number';
             if (!expiry) e.expiry = 'Enter the date your licence expires';
@@ -330,7 +404,7 @@ export default function PhysiotherapistOnboardingWizard() {
                 e.proof = 'Upload your MRTB licence or degree certificate';
             }
         }
-        if (step === 2) {
+        if (step === 3) {
             if (location.location.trim().length < 2) e.location = 'Search for your practice address or drop a pin';
             if (specializations.length === 0) e.specializations = 'Choose at least one';
             if (!termsAccepted) e.terms = 'Please accept the terms to continue';
@@ -349,17 +423,23 @@ export default function PhysiotherapistOnboardingWizard() {
         setSaving(true);
         try {
             if (step === 0) {
+                // Saved now if the profile exists (a returning applicant); otherwise with the next step
+                if (draft.profileId && practiceMode) {
+                    await completeUserProfile({ role: 'physiotherapist', profileData: { practiceMode } as never, finalStep: false });
+                }
+                go(1);
+            } else if (step === 1) {
                 // Creates the physiotherapist profile on first save, so documents can be uploaded next
                 await completeUserProfile({
                     role: 'physiotherapist',
-                    profileData: compact({ gender: gender || undefined }) as never,
+                    profileData: compact({ gender: gender || undefined, practiceMode: practiceMode ?? undefined }) as never,
                     firstName: firstName.trim(),
                     lastName: lastName.trim(),
                     finalStep: false,
                 });
                 await updatePhysioProfile({ phoneNumber: phone.trim() });
-                go(1);
-            } else if (step === 1) {
+                go(2);
+            } else if (step === 2) {
                 await completeUserProfile({
                     role: 'physiotherapist',
                     profileData: compact({
@@ -370,7 +450,7 @@ export default function PhysiotherapistOnboardingWizard() {
                     }) as never,
                     finalStep: false,
                 });
-                go(2);
+                go(3);
             } else {
                 await completeUserProfile({
                     role: 'physiotherapist',
@@ -383,6 +463,7 @@ export default function PhysiotherapistOnboardingWizard() {
                         // Someone coming from the Physio Register keeps the bio they wrote there
                         bio: registryBio || undefined,
                         termsAcceptedAt: termsAccepted ? Date.now() : undefined,
+                        practiceMode: practiceMode ?? undefined,
                     }) as never,
                     firstName: firstName.trim(),
                     lastName: lastName.trim(),
@@ -436,7 +517,7 @@ export default function PhysiotherapistOnboardingWizard() {
                     {STEPS.map((s, i) => (
                         <div key={s.id} className="h-1 flex-1 overflow-hidden rounded-full bg-neutral-200">
                             <motion.div
-                                className="h-full bg-[#005b57]"
+                                className="h-full bg-rh-ink"
                                 initial={false}
                                 animate={{ width: i <= step ? '100%' : '0%' }}
                                 transition={{ duration: 0.35, ease: 'easeOut' }}
@@ -462,6 +543,10 @@ export default function PhysiotherapistOnboardingWizard() {
                     className="space-y-5"
                 >
                     {step === 0 && (
+                        <PracticeModeChoice value={practiceMode} onChange={setPracticeMode} error={errors.practiceMode} />
+                    )}
+
+                    {step === 1 && (
                         <>
                             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                                 <Field id="firstName" label="First name" error={errors.firstName}>
@@ -492,7 +577,7 @@ export default function PhysiotherapistOnboardingWizard() {
                         </>
                     )}
 
-                    {step === 1 && (
+                    {step === 2 && (
                         <>
                             <Field label="Licensing board" error={errors.board}>
                                 <Select value={board} onValueChange={setBoard}>
@@ -572,9 +657,17 @@ export default function PhysiotherapistOnboardingWizard() {
                         </>
                     )}
 
-                    {step === 2 && (
+                    {step === 3 && (
                         <>
-                            <Field label="Practice address" hint="Patients near you see you first. For home visits, use the area you cover." error={errors.location}>
+                            <Field
+                                label="Practice address"
+                                hint={
+                                    practiceMode === 'independent'
+                                        ? 'Where you see patients. For home visits, use the area you cover.'
+                                        : 'Patients near you see you first. For home visits, use the area you cover.'
+                                }
+                                error={errors.location}
+                            >
                                 <MapboxLocationPicker
                                     value={location}
                                     onChange={(data) =>
@@ -607,15 +700,15 @@ export default function PhysiotherapistOnboardingWizard() {
                                     type="checkbox"
                                     checked={termsAccepted}
                                     onChange={(e) => setTermsAccepted(e.target.checked)}
-                                    className="mt-0.5 h-4 w-4 rounded border-neutral-300 accent-[#005b57]"
+                                    className="mt-0.5 h-4 w-4 rounded border-neutral-300 accent-rh-ink"
                                 />
                                 <span className="text-sm text-neutral-700">
                                     I agree to the{' '}
-                                    <a href="/terms-and-conditions" target="_blank" rel="noopener noreferrer" className="font-medium text-[#005b57] underline">
+                                    <a href="/terms-and-conditions" target="_blank" rel="noopener noreferrer" className="font-medium text-rh-ink underline">
                                         Terms
                                     </a>{' '}
                                     and{' '}
-                                    <a href="/privacy-policy" target="_blank" rel="noopener noreferrer" className="font-medium text-[#005b57] underline">
+                                    <a href="/privacy-policy" target="_blank" rel="noopener noreferrer" className="font-medium text-rh-ink underline">
                                         Privacy Policy
                                     </a>
                                     , and confirm my licence details are true.

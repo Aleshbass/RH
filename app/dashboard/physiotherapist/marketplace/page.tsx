@@ -10,11 +10,27 @@ import PhysioCard from "@/components/marketplace/PhysioCard";
 import VerificationBadgeWidget from "@/components/marketplace/VerificationBadgeWidget";
 import { EmptyState, PageContainer, PageHeader, Panel, StatTile, StatusBadge, formatNaira } from "@/components/physio/ui";
 import type { MarketplaceSettings, TravelZone } from "@/lib/rehabify-api-types";
+import { OwnPatientsOnlyText } from "@/components/physio/SettingsUI";
+import { usePracticeMode } from "@/components/physio/practiceMode";
 
 /** Marketplace performance, services and coverage, the verified badge and a preview of the public profile. */
 export default function PhysiotherapistMarketplacePage() {
-  const settings = useQuery(api.marketplace.settings.getMyMarketplaceSettings) as MarketplaceSettings | null | undefined;
-  const zones = useQuery(api.travelZones.listZones) as TravelZone[] | undefined;
+  // Not in an independent physio's menu, but reachable by URL: they get a short note instead
+  const practice = usePracticeMode();
+  const network = practice.loaded && !practice.isIndependent;
+  const settings = useQuery(api.marketplace.settings.getMyMarketplaceSettings, network ? {} : "skip") as MarketplaceSettings | null | undefined;
+  const zones = useQuery(api.travelZones.listZones, network ? {} : "skip") as TravelZone[] | undefined;
+
+  if (practice.loaded && practice.isIndependent) {
+    return (
+      <PageContainer>
+        <PageHeader title="Marketplace profile" />
+        <Panel bodyClassName="p-5 sm:p-6">
+          <OwnPatientsOnlyText />
+        </Panel>
+      </PageContainer>
+    );
+  }
 
   if (settings === undefined) {
     return (

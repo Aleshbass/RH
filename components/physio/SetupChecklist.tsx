@@ -21,6 +21,9 @@ export type SetupStatus = {
   approvalComments?: string | null
   isListed: boolean
   isBookable: boolean
+  /** "independent" sees only their own patients (never listed or matched to Rehabify patients). */
+  practiceMode?: 'network' | 'independent' | 'both'
+  isClinicMember?: boolean
 }
 
 /** Progress across the required items only; optional ones never hold anyone back. */
@@ -134,7 +137,9 @@ export function SetupChecklistCard({ setup }: { setup: SetupStatus }) {
         <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
           {underReview
             ? 'Do these while we review your application, so you can start the day you’re approved.'
-            : 'Patients can find and book you once these are done.'}
+            : setup.practiceMode === 'independent'
+              ? 'Finish these so your patients can pay your invoices and you get paid.'
+              : 'Patients can find and book you once these are done.'}
         </p>
         <SetupProgressBar done={done} total={total} className="mt-3" />
       </div>

@@ -60,7 +60,9 @@ export default function ConditionalLayout({ children, isSubdomainHost = false }:
   // B2B, Partner Hub, API, Documentation, and Patient Care Tracker routes
   // MUST NEVER display the consumer marketplace header or footer
   const isB2BOrDocsRoute =
-    pathname.startsWith('/partners') ||
+    // Not a bare startsWith: that would also catch the public /partnerships page
+    pathname === '/partners' ||
+    pathname.startsWith('/partners/') ||
     pathname.startsWith('/docs') ||
     pathname.startsWith('/api') ||
     pathname.startsWith('/r/') ||

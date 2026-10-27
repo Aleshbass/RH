@@ -217,7 +217,7 @@ export function ClinicFeesTab({ data }: { data: ClinicDetail }) {
 
   const money = [
     { label: 'Paid', value: naira(billing.paidKobo), hint: `${naira(billing.onlinePaidKobo)} online` },
-    { label: 'Rehabify fees', value: naira(billing.rehabifyFeesKobo), hint: 'From online payments' },
+    { label: 'Rehabify fees', value: naira(billing.rehabifyFeesKobo), hint: 'Referred Rehabify Care patients only' },
     {
       label: 'Unpaid',
       value: naira(billing.unpaidKobo),

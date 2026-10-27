@@ -21,9 +21,11 @@ import {
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
-import { accentButtonClass, EmptyState, PageContainer, PageHeader, Panel, StatusBadge, primaryButtonClass, secondaryButtonClass } from '@/components/physio/ui';
+import { EmptyState, PageContainer, PageHeader, Panel, StatusBadge, primaryButtonClass, secondaryButtonClass } from '@/components/physio/ui';
 import { useBooking } from '@/components/physio/schedule/BookingDrawer';
 import { cn } from '@/lib/utils';
+import { JOIN_OPENS_BEFORE_MS, joinWindow } from '@/lib/videoJoin';
+import { joinButtonClass } from '@/components/physio/schedule/JoinVideoButton';
 
 type VideoCall = {
   _id: Id<'videoCalls'>;
@@ -38,8 +40,6 @@ type VideoCall = {
   patient?: { _id: string; firstName?: string; lastName?: string; email?: string };
 };
 
-/** Join opens this long before the start time. */
-const JOIN_EARLY_MS = 10 * 60 * 1000;
 
 const fullName = (p?: { firstName?: string; lastName?: string }) =>
   [p?.firstName, p?.lastName].filter(Boolean).join(' ') || 'Patient';
@@ -108,7 +108,7 @@ export default function VideoCallsPage() {
     if (call.status === 'active') return true;
     if (call.status !== 'scheduled') return false;
     const start = call.scheduledAt ?? 0;
-    return start - JOIN_EARLY_MS <= now && now <= start + (call.plannedDuration ?? 60) * 60 * 1000;
+    return joinWindow(start, start + (call.plannedDuration ?? 60) * 60 * 1000, now).phase === 'open';
   };
 
   const join = async (call: VideoCall) => {
@@ -171,8 +171,8 @@ export default function VideoCallsPage() {
               <Copy className="mr-1.5 h-3.5 w-3.5" />
               Link
             </Button>
-            <Button size="sm" onClick={() => join(call)} disabled={!canJoin(call)} className={cn(canJoin(call) ? accentButtonClass : primaryButtonClass, 'h-9')}>
-              {canJoin(call) ? 'Join' : start ? `Opens ${format(start - JOIN_EARLY_MS, 'h:mm a')}` : 'Join'}
+            <Button size="sm" onClick={() => join(call)} disabled={!canJoin(call)} className={cn(canJoin(call) ? joinButtonClass : primaryButtonClass, 'h-9')}>
+              {canJoin(call) ? 'Join' : start ? `Opens ${format(start - JOIN_OPENS_BEFORE_MS, 'h:mm a')}` : 'Join'}
             </Button>
           </div>
         )}
@@ -184,7 +184,7 @@ export default function VideoCallsPage() {
     <PageContainer>
       <PageHeader
         title="Video sessions"
-        description="Online sessions with your patients. Join opens 10 minutes before the start."
+        description="Online sessions with your patients. Join opens 15 minutes before the start."
         info="Each video session gets a private link that only you and your patient can use. It also shows on your calendar and the patient’s dashboard."
         actions={
           <Button onClick={() => openBooking({ mode: 'telehealth' })} className={cn(primaryButtonClass, 'h-10 px-4')}>

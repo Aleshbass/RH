@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import localFont from 'next/font/local';
-import Script from 'next/script';
 import "./globals.css";
+import { ConsentProvider } from "@/components/consent/ConsentProvider";
 import ConvexClientProvider from "@/components/ConvexClientProvider";
 import { ClerkProvider } from "@clerk/nextjs";
 import SyncUserWithConvex from "@/components/auth/SyncUserWithConvex";
@@ -172,21 +172,15 @@ export default async function RootLayout({
               <SyncUserWithConvex />
               <PlatformStatusGate />
 
-              <ConditionalLayout isSubdomainHost={isSubdomainHost}>
-                {children}
-              </ConditionalLayout>
+              {/* Cookie banner and settings; also loads analytics (Umami) only once allowed */}
+              <ConsentProvider>
+                <ConditionalLayout isSubdomainHost={isSubdomainHost}>
+                  {children}
+                </ConditionalLayout>
+              </ConsentProvider>
             </ConvexClientProvider>
           </Providers>
         </ClerkProvider>
-
-        {/* Umami Analytics */}
-        <Script
-          src="https://yoursiteanalytics.vercel.app/script.js"
-          data-website-id={process.env.NEXT_PUBLIC_UMAMI_WEBSITE_ID || "051e7953-f174-41aa-a2b7-96106c6f3d0d"}
-          strategy="afterInteractive"
-        />
-
-
       </body>
     </html>
   );

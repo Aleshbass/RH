@@ -17,7 +17,7 @@ const EASE = [0.22, 1, 0.36, 1] as const;
 const JOY_URL = joyWhatsAppUrl("Hi Joy! I need help with my recovery.");
 const { supportPhone, officeHours } = SITE_CONFIG.organization;
 
-// The ink story section goes two-column only once the film URL is set
+// The ink mission section goes two-column only once the film URL is set
 const HAS_FILM = Boolean(MARKETING_VIDEOS.launchFilm);
 
 // Same published figures as the landing page proof band. Keep them true.
@@ -25,48 +25,6 @@ const FACTS = [
   { value: "500+", label: "people using Rehabify" },
   { value: "Under 24 hrs", label: "usual time to match you with a physiotherapist" },
   { value: "MRTBN", label: "licensed physiotherapists" },
-];
-
-const AUDIENCES: {
-  title: string;
-  points: string[];
-  link: { label: string; href: string; external?: boolean };
-}[] = [
-  {
-    title: "For patients",
-    points: [
-      "Tell Joy what's wrong on WhatsApp.",
-      "We match you with a licensed physiotherapist, usually within 24 hours.",
-      "See your fee before you pay.",
-      "Session notes, exercises and progress in one app.",
-    ],
-    link: { label: "Chat with Joy", href: JOY_URL, external: true },
-  },
-  {
-    title: "For physiotherapists",
-    points: [
-      "Patients matched to your skills, with no marketing costs.",
-      "Scheduling, notes, payments and messages in one place.",
-      "A fixed payout for every completed session.",
-    ],
-    link: { label: "Join our network", href: "/physiotherapist" },
-  },
-  {
-    title: "For doctors and partners",
-    points: [
-      "Refer a patient in a few steps. We match them with a physiotherapist.",
-      "Follow each referral's status from your partner account.",
-      "Earn when referred patients pay for care.",
-    ],
-    link: { label: "Become a partner", href: "/partners/sign-up" },
-  },
-];
-
-const STANDARDS = [
-  "Licensed by the Medical Rehabilitation Therapists Board of Nigeria (MRTBN).",
-  "Reviewed and approved by the Rehabify team.",
-  "Degree certificate and passport photo on file before patients can book them.",
-  "Rated and reviewed by the patients they treat.",
 ];
 
 const VALUES = [
@@ -90,8 +48,8 @@ const ORGANISATIONS = [
 // Cloudinary crops portraits around the face and serves WebP/AVIF at the size shown
 const CLOUDINARY = "https://res.cloudinary.com/dubeogufg/image/upload";
 const FOUNDERS = [
-  { name: "Mary Akinwola", role: "Co-founder Â· Physiotherapist", photo: `${CLOUDINARY}/c_fill,g_face,ar_4:5,w_800,q_auto,f_auto/v1792946835/Mary_Akinwola_sjvv0a.jpg` },
-  { name: "Ademola Abass", role: "Co-founder Â· Doctor of Physiotherapy", photo: `${CLOUDINARY}/c_fill,g_face,ar_4:5,w_800,q_auto,f_auto/v1792946835/Abass_Ademola_gvqglh.jpg` },
+  { name: "Mary Akinwola", role: "Chief Executive Officer (CEO) · Physiotherapist", photo: `${CLOUDINARY}/c_fill,g_face,ar_4:5,w_800,q_auto,f_auto/v1792946835/Mary_Akinwola_sjvv0a.jpg` },
+  { name: "Ademola Abass", role: "Chief Technical Officer (CTO) · Doctor of Physiotherapy", photo: `${CLOUDINARY}/c_fill,g_face,ar_4:5,w_800,q_auto,f_auto/v1792946835/Abass_Ademola_gvqglh.jpg` },
 ];
 const FOUNDERS_TOGETHER = `${CLOUDINARY}/c_limit,w_1600,q_auto,f_auto/v1792946835/Mary_and_Demola_oebqbg.jpg`;
 
@@ -108,8 +66,6 @@ const primaryCta =
   "group inline-flex h-12 items-center justify-center gap-2 rounded-full bg-rh-lime px-7 text-[15px] font-semibold text-rh-ink transition-colors hover:bg-rh-lime-deep focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-ink focus-visible:ring-offset-2";
 const secondaryCta =
   "inline-flex h-12 items-center justify-center gap-2 rounded-full bg-white px-7 text-[15px] font-semibold text-rh-ink ring-1 ring-inset ring-rh-ink/10 transition-colors hover:ring-rh-ink/25 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rh-ink";
-const textLink =
-  "group inline-flex items-center gap-2 rounded-sm text-[15px] font-semibold text-rh-ink underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-ink focus-visible:ring-offset-2";
 const h2Class = "text-[34px] font-bold leading-[1.05] tracking-tight sm:text-5xl";
 
 function Rise({ children, delay = 0, className }: { children: ReactNode; delay?: number; className?: string }) {
@@ -180,7 +136,7 @@ export default function AboutPage() {
         </Rise>
       </section>
 
-      {/* Our mission: the statement beside the launch film, then the founders' story */}
+      {/* Our mission, beside the launch film */}
       <section className="overflow-hidden bg-rh-ink px-4 py-20 text-white sm:px-6 lg:py-28">
         <div className="mx-auto max-w-6xl">
           <div className={cn(HAS_FILM && "grid items-center gap-12 lg:grid-cols-[0.95fr_1.05fr] lg:gap-16")}>
@@ -200,9 +156,39 @@ export default function AboutPage() {
               </Rise>
             )}
           </div>
+        </div>
+      </section>
 
+      {/* The founders, their story, then the two of them together */}
+      <section className="px-4 py-20 sm:px-6 lg:py-28">
+        <div className="mx-auto max-w-6xl">
+          <Rise>
+            <h2 className={cn(h2Class, "text-rh-ink")}>Meet the founders.</h2>
+          </Rise>
+          <div className="mt-10 grid gap-5 sm:grid-cols-2">
+            {FOUNDERS.map((founder, i) => (
+              <Rise key={founder.name} delay={0.06 * i}>
+                <figure>
+                  <div className="relative aspect-[4/5] overflow-hidden rounded-[2rem] bg-rh-ink/10">
+                    <Image
+                      src={founder.photo}
+                      alt={`${founder.name}, Rehabify co-founder`}
+                      fill
+                      unoptimized
+                      sizes="(min-width: 640px) 50vw, 100vw"
+                      className="object-cover"
+                    />
+                  </div>
+                  <figcaption className="mt-4">
+                    <span className="block text-xl font-bold text-rh-ink">{founder.name}</span>
+                    <span className="mt-0.5 block text-[15px] font-medium text-rh-ink/65">{founder.role}</span>
+                  </figcaption>
+                </figure>
+              </Rise>
+            ))}
+          </div>
           <Rise delay={0.05}>
-            <div className="mt-14 grid gap-x-12 gap-y-4 border-t border-white/10 pt-10 text-[17px] font-medium leading-relaxed text-white/75 lg:grid-cols-2">
+            <div className="mt-12 grid gap-x-12 gap-y-4 text-[17px] font-medium leading-relaxed text-rh-ink/75 lg:grid-cols-2">
               <div className="space-y-4">
                 <p>
                   Rehabify was launched in 2025 by Mary Akinwola and Ademola Abass, two physiotherapists trained in Nigeria who
@@ -223,7 +209,7 @@ export default function AboutPage() {
               <div className="space-y-4">
                 <p>
                   We&apos;re building Rehabify because we believe good care should be{" "}
-                  <span className="font-bold text-white">easier to access, easier to deliver and easier to continue.</span>
+                  <span className="font-bold text-rh-ink">easier to access, easier to deliver and easier to continue.</span>
                 </p>
                 <p>
                   We believe patients should be able to access appropriate care without unnecessary difficulty, understand the
@@ -231,45 +217,14 @@ export default function AboutPage() {
                   brings together clinician-led physiotherapy, personalised home exercise programmes, progress tracking and digital
                   recovery support.
                 </p>
-                <p className="font-bold text-white">
+                <p className="font-bold text-rh-ink">
                   Our goal is to make it easier for physiotherapists to deliver care and for patients to follow it, wherever their
                   recovery takes place.
                 </p>
               </div>
             </div>
           </Rise>
-        </div>
-      </section>
-
-      {/* The founders */}
-      <section className="px-4 py-20 sm:px-6 lg:py-28">
-        <div className="mx-auto max-w-6xl">
-          <Rise>
-            <h2 className={cn(h2Class, "text-rh-ink")}>Meet the founders.</h2>
-          </Rise>
-          <div className="mt-10 grid gap-5 sm:grid-cols-2">
-            {FOUNDERS.map((founder, i) => (
-              <Rise key={founder.name} delay={0.06 * i}>
-                <figure>
-                  <div className="relative aspect-[4/5] overflow-hidden rounded-[2rem] bg-rh-ink/10">
-                    <Image
-                      src={founder.photo}
-                      alt={`${founder.name}, ${founder.role.toLowerCase()} at Rehabify`}
-                      fill
-                      unoptimized
-                      sizes="(min-width: 640px) 50vw, 100vw"
-                      className="object-cover"
-                    />
-                  </div>
-                  <figcaption className="mt-4">
-                    <span className="block text-xl font-bold text-rh-ink">{founder.name}</span>
-                    <span className="mt-0.5 block text-[15px] font-medium text-rh-ink/65">{founder.role}</span>
-                  </figcaption>
-                </figure>
-              </Rise>
-            ))}
-          </div>
-          <Rise delay={0.1} className="relative mt-5">
+          <Rise delay={0.1} className="relative mt-12">
             <div className="relative aspect-[16/10] overflow-hidden rounded-[2rem] bg-rh-ink/10 sm:aspect-[16/8]">
               <Image
                 src={FOUNDERS_TOGETHER}
@@ -280,66 +235,6 @@ export default function AboutPage() {
                 className="object-cover"
               />
             </div>
-          </Rise>
-        </div>
-      </section>
-
-      {/* What we offer */}
-      <section className="px-4 pb-20 sm:px-6 lg:pb-28">
-        <div className="mx-auto max-w-6xl">
-          <Rise>
-            <h2 className={cn(h2Class, "max-w-2xl text-rh-ink")}>One platform for everyone in the care chain.</h2>
-          </Rise>
-          <div className="mt-10 grid gap-5 lg:grid-cols-3">
-            {AUDIENCES.map((audience, i) => (
-              <Rise key={audience.title} delay={0.05 * (i + 1)} className="flex">
-                <article className="flex w-full flex-col rounded-[2rem] bg-white p-7 sm:p-8">
-                  <h3 className="text-[24px] font-bold leading-tight tracking-tight text-rh-ink">{audience.title}</h3>
-                  <ul className="mt-5 flex-1">
-                    {audience.points.map((point) => (
-                      <li key={point} className="border-t border-rh-ink/10 py-3.5 text-[15px] font-medium leading-snug text-rh-ink/75">
-                        {point}
-                      </li>
-                    ))}
-                  </ul>
-                  <div className="pt-5">
-                    {audience.link.external ? (
-                      <a href={audience.link.href} target="_blank" rel="noopener noreferrer" className={textLink}>
-                        {audience.link.label}
-                        <Arrow />
-                      </a>
-                    ) : (
-                      <Link href={audience.link.href} className={textLink}>
-                        {audience.link.label}
-                        <Arrow />
-                      </Link>
-                    )}
-                  </div>
-                </article>
-              </Rise>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Quality standards */}
-      <section className="bg-rh-ink px-4 py-20 text-white sm:px-6 lg:py-28">
-        <div className="mx-auto max-w-6xl">
-          <Rise>
-            <h2 className={cn(h2Class, "max-w-xl")}>Every physiotherapist is checked.</h2>
-            <p className="mt-4 max-w-lg text-base font-medium leading-relaxed text-white/75 sm:text-lg">
-              We&apos;re physiotherapists too, so we hold our network to our own standard.
-            </p>
-          </Rise>
-          <Rise delay={0.06}>
-            <ol className="mt-10 grid gap-x-12 sm:grid-cols-2">
-              {STANDARDS.map((standard, i) => (
-                <li key={standard} className="flex gap-5 border-t border-white/10 py-5">
-                  <span className="w-6 shrink-0 pt-0.5 text-sm tabular-nums text-white/40">{num(i)}</span>
-                  <span className="text-[17px] font-semibold leading-snug">{standard}</span>
-                </li>
-              ))}
-            </ol>
           </Rise>
         </div>
       </section>
@@ -434,10 +329,6 @@ export default function AboutPage() {
                 Book care with Joy on WhatsApp, or reach the right team.
               </p>
               <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-                <a href={JOY_URL} target="_blank" rel="noopener noreferrer" className={primaryCta}>
-                  Chat with Joy
-                  <Arrow />
-                </a>
                 <Link href="/contact" className={secondaryCta}>
                   All contact options
                 </Link>

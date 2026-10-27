@@ -15,6 +15,7 @@ import { useFileUpload } from '@/lib/hooks/useFileUpload'
 import { cn } from '@/lib/utils'
 import { NoteMediaView } from '@/components/physio/NoteMedia'
 import { programError } from '@/components/exercise-programs/errors'
+import { usePracticeMode } from '@/components/physio/practiceMode'
 import { DIFFICULTY_LABELS, EXERCISES_LABELS, HIGH_PAIN, MOOD_LABELS, PainPill, type ExerciseLog, type Workspace } from './shared'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -364,7 +365,9 @@ type Invoice = {
   _id: Id<'invoices'>
   invoiceNumber: string
   patientId: Id<'users'>
+  /** For a Rehabify Care invoice this is the physio's payout, never what the patient paid */
   totalAmount: number
+  rehabifyCare?: boolean
   status: string
   issueDate: number
   dueDate: number
@@ -384,7 +387,9 @@ export function PaymentsTab({ workspace, onRequest }: { workspace: Workspace; on
   const invoices = useQuery(api.billing.getMyInvoices, { patientId: workspace.patient._id, limit: 200 }) as Invoice[] | undefined
   const createLink = useAction(api.physioBilling.createPhysioPaymentLink)
   const [busyId, setBusyId] = useState<string | null>(null)
-  const mine = (invoices ?? []).filter((i) => i.patientId === workspace.patient._id)
+  // Rehabify Care payouts only ever show for a Rehabify Care patient, never to an independent physio
+  const { isIndependent } = usePracticeMode()
+  const mine = (invoices ?? []).filter((i) => i.patientId === workspace.patient._id && !(isIndependent && i.rehabifyCare))
   const isActive = workspace.episode.status === 'active'
 
   const sendLink = async (invoice: Invoice, email: boolean) => {
@@ -418,7 +423,7 @@ export function PaymentsTab({ workspace, onRequest }: { workspace: Workspace; on
         <div className="rounded-3xl border border-pt-line bg-pt-surface p-5 shadow-pt dark:shadow-none">
           <p className="text-[13px] font-medium text-pt-muted">Paid</p>
           <p className="mt-1 text-2xl font-semibold tabular-nums text-pt-green-fg">{formatNaira(workspace.payments.paidKobo / 100)}</p>
-          <p className="text-xs text-pt-muted">from this patient</p>
+          <p className="text-xs text-pt-muted">to you, for this patient</p>
         </div>
       </div>
 
@@ -451,7 +456,7 @@ export function PaymentsTab({ workspace, onRequest }: { workspace: Workspace; on
                       {invoiceBadge(invoice)}
                     </div>
                     <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                      #{invoice.invoiceNumber} · issued {Number.isFinite(invoice.issueDate) ? formatDistanceToNow(invoice.issueDate, { addSuffix: true }) : '—'} · due {Number.isFinite(invoice.dueDate) ? format(invoice.dueDate, 'd MMM') : '—'}
+                      {invoice.rehabifyCare && 'Your payout · Paid through Rehabify · '}#{invoice.invoiceNumber} · issued {Number.isFinite(invoice.issueDate) ? formatDistanceToNow(invoice.issueDate, { addSuffix: true }) : '—'} · due {Number.isFinite(invoice.dueDate) ? format(invoice.dueDate, 'd MMM') : '—'}
                     </p>
                   </div>
                   {unpaid && (

@@ -109,13 +109,17 @@ function YouTubePlayer({ videoId, poster, onReady, onPlay }: { videoId: string; 
     );
   }
 
-  const src = `https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0&modestbranding=1`;
+  // Privacy-enhanced mode: YouTube sets no cookies unless the viewer interacts with the player
+  const src = `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&rel=0&modestbranding=1`;
   return (
     <iframe
       title="YouTube video player"
       src={src}
       className="absolute inset-0 h-full w-full"
       allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+      // YouTube refuses to play without a referrer (error 153). This sends our origin only,
+      // never the page path, so private links like /x/<token> stay private.
+      referrerPolicy="strict-origin-when-cross-origin"
       allowFullScreen
       loading="lazy"
       onLoad={onReady}

@@ -208,7 +208,7 @@ export function PhysioMapView({
                                                     className="rounded-full object-cover border border-gray-100"
                                                 />
                                             ) : (
-                                                <div className="w-12 h-12 rounded-full bg-teal-50 flex items-center justify-center text-[#005b57] text-sm font-bold border border-teal-100">
+                                                <div className="w-12 h-12 rounded-full bg-rh-ink flex items-center justify-center text-white text-sm font-semibold">
                                                     {selectedPhysio.fullName
                                                         .split(" ")
                                                         .map((n) => n[0])
@@ -217,14 +217,14 @@ export function PhysioMapView({
                                                 </div>
                                             )}
                                             {selectedPhysio.isVerified && (
-                                                <div className="absolute -bottom-0.5 -right-0.5 bg-blue-500 rounded-full p-0.5 border-2 border-white">
-                                                    <BadgeCheck className="h-2.5 w-2.5 text-white" />
+                                                <div className="absolute -bottom-0.5 -right-0.5 bg-rh-lime text-rh-ink rounded-full p-0.5 border-2 border-white">
+                                                    <BadgeCheck className="h-2.5 w-2.5" />
                                                 </div>
                                             )}
                                         </div>
 
                                         <div className="flex-1 min-w-0">
-                                            <h3 className="text-sm font-bold text-gray-900 truncate group-hover:text-[#005b57] transition-colors">
+                                            <h3 className="text-sm font-semibold text-rh-ink truncate group-hover:underline">
                                                 {selectedPhysio.fullName}
                                             </h3>
                                             <p className="text-[11px] text-gray-500 truncate">
@@ -235,7 +235,7 @@ export function PhysioMapView({
                                             <div className="flex items-center gap-2 mt-0.5">
                                                 {selectedPhysio.averageRating > 0 && (
                                                     <div className="flex items-center gap-0.5">
-                                                        <Star className="h-3 w-3 fill-amber-400 text-amber-400" />
+                                                        <Star className="h-3 w-3 text-rh-ink" />
                                                         <span className="text-[11px] font-semibold text-gray-900">
                                                             {selectedPhysio.averageRating.toFixed(1)}
                                                         </span>
@@ -257,7 +257,7 @@ export function PhysioMapView({
                                             <Badge
                                                 key={i}
                                                 variant="secondary"
-                                                className="text-[10px] px-1.5 py-0 bg-gray-50 text-gray-600 border-gray-100 font-normal"
+                                                className="text-[10px] px-1.5 py-0 bg-rh-canvas text-rh-ink/80 border-0 font-normal"
                                             >
                                                 {spec}
                                             </Badge>
@@ -270,13 +270,13 @@ export function PhysioMapView({
                                             <div className="flex items-center gap-1.5">
                                                 {selectedPhysio.offersOnlineSessions && (
                                                     <div className="flex items-center gap-0.5 text-[10px] text-gray-500 bg-gray-50 px-1.5 py-0.5 rounded">
-                                                        <Video className="h-2.5 w-2.5 text-[#005b57]" />
+                                                        <Video className="h-2.5 w-2.5 text-rh-ink" />
                                                         <span>Online</span>
                                                     </div>
                                                 )}
                                                 {selectedPhysio.offersInPersonSessions && (
                                                     <div className="flex items-center gap-0.5 text-[10px] text-gray-500 bg-gray-50 px-1.5 py-0.5 rounded">
-                                                        <Users className="h-2.5 w-2.5 text-[#005b57]" />
+                                                        <Users className="h-2.5 w-2.5 text-rh-ink" />
                                                         <span>In-Person</span>
                                                     </div>
                                                 )}
@@ -285,7 +285,7 @@ export function PhysioMapView({
 
                                         <Button
                                             size="sm"
-                                            className="bg-[#005b57] hover:bg-[#00443e] text-white rounded-lg h-8 text-xs font-medium shrink-0"
+                                            className="bg-rh-lime hover:bg-rh-lime-deep text-rh-ink rounded-full h-8 text-xs font-semibold shrink-0"
                                         >
                                             View Profile
                                         </Button>
@@ -298,9 +298,9 @@ export function PhysioMapView({
             </Map>
 
             {/* Map stats overlay */}
-            <div className="absolute bottom-4 left-4 bg-white/95 backdrop-blur-sm rounded-xl px-3 py-2 shadow-lg border border-gray-100">
-                <p className="text-xs text-gray-600">
-                    <span className="font-bold text-[#005b57]">{geocodedPhysios.length}</span>{" "}
+            <div className="absolute bottom-4 left-4 bg-white rounded-full px-3 py-1.5 shadow-sm border border-rh-ink/10">
+                <p className="text-xs text-rh-ink/70">
+                    <span className="font-semibold text-rh-ink">{geocodedPhysios.length}</span>{" "}
                     {geocodedPhysios.length === 1 ? "physiotherapist" : "physiotherapists"} on map
                 </p>
             </div>

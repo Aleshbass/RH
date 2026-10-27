@@ -7,13 +7,16 @@
  * The dashboard checklist, the "finish setting up" popup and the marketplace gate all use this
  * file so they can never disagree.
  */
-import { query, type MutationCtx, type QueryCtx } from "./_generated/server";
+import { ConvexError, v } from "convex/values";
+import { mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { getService, type BookableServiceId } from "../lib/rehabify-services";
 import { NETWORK_TERMS_VERSION } from "../lib/rehabify-network-terms";
 import { loadPricingSettings } from "./helpers/rehabifyPricing";
+import { requireAdmin } from "./helpers/partnerAccess";
+import { physioAgreementsStatus } from "./agreements";
 
-export type PhysioSetupItemId = "profile" | "availability" | "coverage" | "network_terms" | "payout" | "documents";
+export type PhysioSetupItemId = "profile" | "availability" | "coverage" | "network_terms" | "agreement" | "payout" | "documents";
 
 export type PhysioSetupItem = {
   id: PhysioSetupItemId;
@@ -89,14 +92,18 @@ export async function computePhysioSetup(
     .first();
 
   const bioLength = profile?.bio?.trim().length ?? 0;
+  // Independent physios aren't listed, so only verification and getting paid are required
+  const independent = isIndependentPractice(profile);
   const items: PhysioSetupItem[] = [
     {
       id: "profile",
       title: "Add a photo and short bio",
-      description: "Patients choose physios they can picture. A photo and a few lines about how you work.",
+      description: independent
+        ? "Your patients see this in their app. A photo and a few lines about how you work."
+        : "Patients choose physios they can picture. A photo and a few lines about how you work.",
       href: `${SETTINGS}/profile`,
       done: Boolean(user.imageUrl) && bioLength >= MIN_BIO_LENGTH,
-      required: true,
+      required: !independent,
     },
     {
       id: "availability",
@@ -104,12 +111,12 @@ export async function computePhysioSetup(
       description: "Patients can only book the hours you open.",
       href: `${SETTINGS}/availability`,
       done: hasAvailability(profile?.availabilitySchedule),
-      required: true,
+      required: !independent,
     },
     {
       id: "payout",
       title: "Add a payout account",
-      description: "Where we send your earnings from sessions.",
+      description: independent ? "Where we send what your patients pay on your invoices." : "Where we send your earnings from sessions.",
       href: `${SETTINGS}/payout`,
       done: Boolean(bankAccount),
       required: true,
@@ -122,23 +129,46 @@ export async function computePhysioSetup(
       done: FOLLOW_UP_DOCUMENTS.every((type) => uploaded.has(type)),
       required: true,
     },
-    {
-      id: "network_terms",
-      title: "Accept the Rehabify network terms",
-      description: "Standard Rehabify prices and your payout for each service.",
-      href: `${SETTINGS}/network-terms`,
-      done: hasAcceptedNetworkTerms(profile),
-      required: await networkTermsRequired(ctx),
-    },
-    {
-      id: "coverage",
-      title: "Choose your services and areas",
-      description: "Video sessions, home visits, and the areas you travel to.",
-      href: `${SETTINGS}/marketplace`,
-      done: hasCoverage(profile),
-      required: false,
-    },
   ];
+  if (!independent) {
+    items.push(
+      {
+        id: "network_terms",
+        title: "Accept the Rehabify network terms",
+        description: "Standard Rehabify prices and your payout for each service.",
+        href: `${SETTINGS}/network-terms`,
+        done: hasAcceptedNetworkTerms(profile),
+        required: await networkTermsRequired(ctx),
+      },
+      {
+        id: "coverage",
+        title: "Choose your services and areas",
+        description: "Video sessions, home visits, and the areas you travel to.",
+        href: `${SETTINGS}/marketplace`,
+        done: hasCoverage(profile),
+        required: false,
+      }
+    );
+  }
+  // Required once an admin sets the date (Agreements page); until then a reminder only
+  if (profile && !profile.clinicId) {
+    const agreements = await physioAgreementsStatus(ctx, profile);
+    items.push({
+      id: "agreement",
+      title:
+        agreements.ids.length > 1
+          ? "Sign your agreements"
+          : independent
+            ? "Accept the platform agreement"
+            : "Sign your contractor agreement",
+      description: independent
+        ? "How you use Rehabify with your own patients. Free, and your fees stay yours."
+        : "How you work with Rehabify: bookings, payouts and patient care.",
+      href: `${SETTINGS}/agreements`,
+      done: agreements.done,
+      required: agreements.required,
+    });
+  }
 
   const requiredRemaining = items.filter((item) => item.required && !item.done).length;
   return { items, requiredRemaining, isComplete: requiredRemaining === 0 };
@@ -199,9 +229,17 @@ export async function isPhysioNetworkEligible(
   return true;
 }
 
-/** Clinic members are excluded: their clinic sets prices and terms for their patients. */
-export function servesRehabifyNetwork(profile: Pick<Doc<"physiotherapistProfiles">, "clinicId">): boolean {
-  return !profile.clinicId;
+/** Only sees their own private patients: never listed or matched with Rehabify Care patients. */
+export function isIndependentPractice(profile: Pick<Doc<"physiotherapistProfiles">, "clinicId" | "practiceMode"> | null) {
+  return Boolean(profile && !profile.clinicId && profile.practiceMode === "independent");
+}
+
+/**
+ * Takes Rehabify patients (search, Joy, partner and admin matching, Rehabify Access). Clinic
+ * members are excluded (their clinic sets prices and terms), and so are independent physios.
+ */
+export function servesRehabifyNetwork(profile: Pick<Doc<"physiotherapistProfiles">, "clinicId" | "practiceMode">): boolean {
+  return !profile.clinicId && profile.practiceMode !== "independent";
 }
 
 export function offersServiceMode(
@@ -266,6 +304,7 @@ export const getMyOnboardingDraft = query({
       email: user.email ?? "",
       phoneNumber: user.phoneNumber ?? "",
       profileId: profile?._id ?? null,
+      practiceMode: profile?.practiceMode ?? null,
       gender: profile?.gender ?? null,
       licenseNumber: profile?.licenseNumber ?? "",
       certificationBoard: profile?.certificationBoard ?? "",
@@ -307,10 +346,96 @@ export const getMySetupStatus = query({
       /** Reason given by the admin when an application is declined. */
       approvalComments: approval?.status === "declined" ? approval.comments ?? null : null,
       isListed: profile?.isAvailableOnMarketplace !== false,
-      /** Live for patients = approved + listed + required setup done. */
+      /** Which patients they see (clinic members work under their clinic, shown as "network"). */
+      practiceMode: profile && !profile.clinicId && profile.practiceMode ? profile.practiceMode : ("network" as const),
+      isClinicMember: Boolean(profile?.clinicId),
+      /** Live for patients = approved + on the network + listed + required setup done. */
       isBookable:
-        approval?.status === "approved" && profile?.isAvailableOnMarketplace !== false && setup.isComplete,
+        approval?.status === "approved" &&
+        Boolean(profile && servesRehabifyNetwork(profile)) &&
+        profile?.isAvailableOnMarketplace !== false &&
+        setup.isComplete,
     };
+  },
+});
+
+/**
+ * Which patients a physio sees: Rehabify Care, their own, or both. Patients they already see stay
+ * with them; switching to "own patients only" also makes those patients their own (billed by the
+ * physio, not Rehabify), and no new Rehabify Care patients are matched.
+ */
+export const setMyPracticeMode = mutation({
+  args: { practiceMode: v.union(v.literal("network"), v.literal("independent"), v.literal("both")) },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new ConvexError("Please sign in again.");
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .unique();
+    if (!user || user.role !== "physiotherapist") throw new ConvexError("Only physiotherapists can change this.");
+    const profile = user.physiotherapistProfileId ? await ctx.db.get(user.physiotherapistProfileId) : null;
+    if (!profile) throw new ConvexError("Finish your application first.");
+    if (profile.clinicId) throw new ConvexError("You work with a clinic, so your clinic decides how you see patients.");
+    await ctx.db.patch(profile._id, {
+      practiceMode: args.practiceMode,
+      // Listed again when taking Rehabify Care patients (search still waits for approval and setup)
+      isAvailableOnMarketplace: args.practiceMode !== "independent",
+    });
+    return { practiceMode: args.practiceMode };
+  },
+});
+
+/**
+ * Admin: every physiotherapist and whether they show on Find a Physio, with what's holding back
+ * the ones who don't. Uses the same checks as marketplace search.
+ */
+export const getMarketplaceListingHealth = query({
+  args: {},
+  handler: async (ctx) => {
+    await requireAdmin(ctx);
+    const physios = await ctx.db
+      .query("users")
+      .withIndex("by_role", (q) => q.eq("role", "physiotherapist"))
+      .take(2000);
+
+    const rows = await Promise.all(
+      physios.map(async (user) => {
+        const profile = await ctx.db
+          .query("physiotherapistProfiles")
+          .withIndex("by_user_id", (q) => q.eq("userId", user._id))
+          .first();
+        const approval = await ctx.db
+          .query("accountApprovalStatus")
+          .withIndex("by_user_id", (q) => q.eq("userId", user._id))
+          .first();
+        const setup = await computePhysioSetup(ctx, user, profile);
+
+        const reasons: string[] = [];
+        if (user.status === "suspended" || user.status === "terminated") reasons.push("Account suspended");
+        if (!profile) reasons.push("Hasn't finished the application");
+        if (approval?.status !== "approved") {
+          reasons.push(approval?.status === "declined" ? "Application declined" : "Awaiting approval");
+        }
+        if (profile?.clinicId) reasons.push("Works with a clinic (booked through the clinic)");
+        if (isIndependentPractice(profile)) reasons.push("Runs their own practice (not on the network)");
+        if (profile?.isAvailableOnMarketplace === false && !isIndependentPractice(profile)) reasons.push("Turned their listing off");
+        for (const item of setup.items) {
+          if (item.required && !item.done) reasons.push(item.title);
+        }
+
+        return {
+          userId: user._id,
+          name: `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() || user.email,
+          email: user.email,
+          approvalStatus: approval?.status ?? null,
+          isLive: reasons.length === 0,
+          reasons,
+        };
+      })
+    );
+
+    return rows.sort((a, b) => Number(a.isLive) - Number(b.isLive) || a.reasons.length - b.reasons.length);
   },
 });
 

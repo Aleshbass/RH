@@ -194,10 +194,13 @@ export function SimpleInvoiceModal({
                       <span>-{formatCurrency(selectedInvoice.discountAmount ?? 0)}</span>
                     </div>
                   )}
-                  <div className="flex justify-between">
-                    <span>Platform Fee:</span>
-                    <span>{formatCurrency(selectedInvoice.platformFeeAmount ?? selectedInvoice.platformFee ?? 100000)}</span>
-                  </div>
+                  {/* Older invoices may carry a platform fee; new ones don't */}
+                  {(selectedInvoice.platformFeeAmount ?? selectedInvoice.platformFee ?? 0) > 0 && (
+                    <div className="flex justify-between">
+                      <span>Platform Fee:</span>
+                      <span>{formatCurrency(selectedInvoice.platformFeeAmount ?? selectedInvoice.platformFee ?? 0)}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between font-bold text-lg pt-2 border-t">
                     <span>Total:</span>
                     <span>{formatCurrency(selectedInvoice.totalAmount || 0)}</span>

@@ -554,6 +554,28 @@ async function applyPaymentStatus(
     // Paystack names the subaccount when it split the payment to the provider's bank
     payoutRoute: evidence.subaccount_code ? "split_to_provider" : "held_by_platform",
   });
+  // A physio's own invoice (not Rehabify Care, not a clinic's) that Paystack couldn't split to
+  // their bank: that money is entirely theirs, so it's owed now rather than when a linked
+  // session is completed (appointments.ts skips invoices that already have a payout)
+  const ownInvoice = !invoice.clinicId && invoice.physiotherapistId && !invoice.invoiceNumber?.startsWith("INV-MKT-");
+  if (ownInvoice && !evidence.subaccount_code && invoice.physiotherapistId && (invoice.physiotherapistShare ?? 0) > 0) {
+    const existingPayout = await ctx.db
+      .query("payouts")
+      .withIndex("by_payout_invoice_id", (q) => q.eq("invoiceId", invoice._id))
+      .first();
+    if (!existingPayout) {
+      await ctx.db.insert("payouts", {
+        invoiceId: invoice._id,
+        paymentId: payment._id,
+        amount: Math.min(invoice.physiotherapistShare ?? 0, paidKobo),
+        status: "pending",
+        type: "physiotherapist_earning",
+        userId: invoice.physiotherapistId,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+  }
   // Any other open link for this invoice must not collect again
   await closeInvoicePaymentLinks(ctx, invoice._id, { keepReference: args.paystackReference });
   await applyPatientBalanceUpdate(ctx, { invoiceId: invoice._id, amountPaid: paidKobo });

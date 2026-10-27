@@ -335,7 +335,7 @@ export default function PhysioBookingPage() {
                     <h2 id="services-heading" className="text-lg font-semibold tracking-tight">
                         Choose a service
                     </h2>
-                    <p className="text-xs text-rh-night/55">The price you see is the price you pay</p>
+                    <p className="text-xs text-rh-night/55">You&#39;ll see the exact price before you pay</p>
                 </div>
                 {services.length === 0 ? (
                     <p className="px-2 pb-4 text-sm text-rh-night/65 sm:px-3">

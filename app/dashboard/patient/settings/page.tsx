@@ -36,6 +36,8 @@ import { useSoundSetting } from '@/components/patient/shell/PatientControls'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
 import { SUPPORT_EMAIL } from '@/lib/contact'
+import { PATIENT_POLICIES, POLICIES } from '@/lib/policies'
+import { useConsent } from '@/components/consent/ConsentProvider'
 import { DeleteAccountButton } from '@/components/account/DeleteAccountButton'
 import {
   IconChip,
@@ -147,6 +149,7 @@ export default function PatientSettingsPage() {
   const [savingProfile, setSavingProfile] = useState(false)
   const [savingReminders, setSavingReminders] = useState(false)
   const [exporting, setExporting] = useState(false)
+  const { openSettings: openCookieSettings } = useConsent()
   const [calendarNotice, setCalendarNotice] = useState<'success' | 'access_denied' | 'error' | null>(null)
   const [activeSection, setActiveSection] = useState<string>('profile')
 
@@ -541,6 +544,30 @@ export default function PatientSettingsPage() {
             </div>
           </div>
         </div>
+      </Panel>
+
+      {/* Policies: everything a patient agrees to, including the Booking Policy */}
+      <Panel id="policies" className="scroll-mt-20" title="Policies">
+        <ul className="divide-y divide-pt-line">
+          {PATIENT_POLICIES.map((id) => (
+            <li key={id}>
+              <a
+                href={POLICIES[id].href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-between gap-3 py-3 text-sm font-medium text-pt-ink hover:underline"
+              >
+                {POLICIES[id].title}
+                <span className="text-xs font-normal text-pt-muted">Updated {POLICIES[id].version}</span>
+              </a>
+            </li>
+          ))}
+          <li>
+            <button type="button" onClick={openCookieSettings} className="w-full py-3 text-left text-sm font-medium text-pt-ink hover:underline">
+              Cookie settings
+            </button>
+          </li>
+        </ul>
       </Panel>
 
       {/* Calendar */}

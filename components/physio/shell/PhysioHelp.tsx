@@ -6,40 +6,58 @@ import { Button } from '@/components/ui/button'
 import { PatientDrawer, primaryButtonClass, secondaryButtonClass } from '@/components/patient/ui'
 import { topBarButtonClass } from '@/components/patient/shell/PatientControls'
 import { START_PHYSIO_TOUR_EVENT } from '@/components/physio/PhysioTour'
+import { usePracticeMode } from '@/components/physio/practiceMode'
 import { cn } from '@/lib/utils'
 
 const SUPPORT_EMAIL = 'support@physioaroundme.com'
 
-const HELP_TOPICS: { q: string; a: string }[] = [
-  {
-    q: 'How do I answer a booking request?',
-    a: 'Open Schedule, then Requests & list. Accept, decline or suggest another time. You get a notification for every new request.',
-  },
-  {
-    q: 'How do patients book me?',
-    a: 'Share your booking page from Today. Set your hours in Settings → Working hours, and your services and home-visit areas in Settings → Services & coverage.',
-  },
-  {
-    q: 'How do I send exercises?',
-    a: 'Open a patient, go to Care plan and send exercises, or start from the Library: choose 3D exercises and send them to a patient.',
-  },
-  {
-    q: 'How do I start a video session?',
-    a: 'Go to Schedule → Video sessions. The Join button opens 10 minutes before the start time.',
-  },
-  {
-    q: 'How do I get paid?',
-    a: 'Money shows your invoices and what patients have paid. Payments go to the bank account in Settings → Payouts.',
-  },
-  {
-    q: 'What does On duty do?',
-    a: 'While you do home visits it shares your location with Rehabify. Turn it off when you finish for the day.',
-  },
-]
+type HelpTopic = { q: string; a: string }
+
+/** Answers depend on which patients the physio sees: independents never get Rehabify booking or payout answers. */
+function helpTopics(independent: boolean): HelpTopic[] {
+  return [
+    {
+      q: 'How do I answer a booking request?',
+      a: 'Open Schedule, then Requests & list. Accept, decline or suggest another time. You get a notification for every new request.',
+    },
+    independent
+      ? {
+          q: 'How do I book my patients?',
+          a: 'Add them from Patients, then tap New appointment. Set your hours in Settings → Working hours.',
+        }
+      : {
+          q: 'How do patients book me?',
+          a: 'Share your booking page from Today. Set your hours in Settings → Working hours, and your services and home-visit areas in Settings → Services & coverage.',
+        },
+    {
+      q: 'How do I send exercises?',
+      a: 'Open a patient, go to Care plan and send exercises, or start from the Library: choose 3D exercises and send them to a patient.',
+    },
+    {
+      q: 'How do I join a video session?',
+      a: 'From 15 minutes before an online session, a green Join button appears at the top of every page, on Today, in your Schedule and on the patient’s page. It stays until the session ends.',
+    },
+    independent
+      ? {
+          q: 'How do I get paid?',
+          a: 'Send your patients an invoice at your own prices from Money or their page. They pay by card, transfer or USSD into the bank account in Settings → Payouts, or pay you directly and you record it. Rehabify takes nothing.',
+        }
+      : {
+          q: 'How do I get paid?',
+          a: 'Money shows your invoices and what patients have paid. Payments go to the bank account in Settings → Payouts.',
+        },
+    {
+      q: 'What does On duty do?',
+      a: 'While you do home visits it shares your location with Rehabify. Turn it off when you finish for the day.',
+    },
+  ]
+}
 
 /** “?” in the top bar: quick answers, the tour, and support. */
 export function PhysioHelp({ className }: { className?: string }) {
   const [open, setOpen] = useState(false)
+  const { isIndependent } = usePracticeMode()
+  const HELP_TOPICS = helpTopics(isIndependent)
   return (
     <>
       <button type="button" onClick={() => setOpen(true)} aria-label="Help" title="Help" className={cn(topBarButtonClass, className)}>

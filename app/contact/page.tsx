@@ -1,6 +1,6 @@
 import Link from 'next/link';
-import { Building2, Mail, MessageCircle, Users } from '@/components/icons';
-import { PARTNER_SUPPORT_EMAIL, SUPPORT_EMAIL } from '@/lib/contact';
+import { Building2, Mail, MessageCircle, Send, Users } from '@/components/icons';
+import { GENERAL_EMAIL, PARTNER_SUPPORT_EMAIL, SUPPORT_EMAIL } from '@/lib/contact';
 import { SITE_CONFIG } from '@/lib/seo/config';
 import { pageMetadata } from '@/lib/seo/utils';
 
@@ -27,6 +27,12 @@ const CHANNELS = [
     action: { label: SUPPORT_EMAIL, href: `mailto:${SUPPORT_EMAIL}`, external: false },
   },
   {
+    icon: Send,
+    title: 'General enquiries',
+    body: 'Press, careers, agreements and anything for the Rehabify company.',
+    action: { label: GENERAL_EMAIL, href: `mailto:${GENERAL_EMAIL}`, external: false },
+  },
+  {
     icon: Users,
     title: 'Partners and developers',
     body: 'Referral partners, insurers, HMOs and teams integrating with the Rehabify API.',
@@ -42,36 +48,36 @@ const CHANNELS = [
 
 export default function ContactPage() {
   return (
-    <main className="bg-white px-4 pb-20 pt-28 sm:pt-32">
-      <div className="mx-auto max-w-3xl">
-        <h1 className="text-4xl leading-tight text-[#002e2c] sm:text-5xl">Contact us</h1>
-        <p className="mt-4 max-w-xl text-lg text-neutral-600">
+    <main className="bg-rh-canvas px-4 pb-24 pt-[132px] text-rh-ink sm:px-6 sm:pt-40 lg:pt-44">
+      <div className="mx-auto max-w-4xl">
+        <h1 className="text-[38px] font-bold leading-[1.05] tracking-tight sm:text-6xl">Contact us</h1>
+        <p className="mt-4 max-w-xl text-lg text-rh-ink/65">
           The quickest way to book care is Joy on WhatsApp. For anything else, pick the right team below.
         </p>
 
-        <ul className="mt-10 grid gap-4 sm:grid-cols-2">
+        <ul className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {CHANNELS.map(({ icon: Icon, title, body, action }) => (
-            <li key={title} className="flex flex-col rounded-2xl border border-neutral-200 p-6">
-              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#005b57]/10 text-[#005b57]">
+            <li key={title} className="flex flex-col rounded-[1.75rem] bg-white p-6">
+              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-rh-canvas text-rh-ink">
                 <Icon className="h-4 w-4" />
               </span>
-              <h2 className="mt-4 text-xl text-[#002e2c]">{title}</h2>
-              <p className="mt-2 flex-1 text-sm leading-relaxed text-neutral-600">{body}</p>
+              <h2 className="mt-4 text-xl font-semibold tracking-tight">{title}</h2>
+              <p className="mt-2 flex-1 text-sm leading-relaxed text-rh-ink/65">{body}</p>
               {action.external ? (
                 <a
                   href={action.href}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="mt-5 text-sm font-semibold text-[#005b57] underline underline-offset-4 hover:text-[#002e2c]"
+                  className="mt-5 text-sm font-semibold text-rh-ink underline decoration-rh-lime decoration-2 underline-offset-4 hover:decoration-rh-ink"
                 >
                   {action.label}
                 </a>
               ) : action.href.startsWith('mailto:') ? (
-                <a href={action.href} className="mt-5 break-all text-sm font-semibold text-[#005b57] underline underline-offset-4 hover:text-[#002e2c]">
+                <a href={action.href} className="mt-5 break-all text-sm font-semibold text-rh-ink underline decoration-rh-lime decoration-2 underline-offset-4 hover:decoration-rh-ink">
                   {action.label}
                 </a>
               ) : (
-                <Link href={action.href} className="mt-5 text-sm font-semibold text-[#005b57] underline underline-offset-4 hover:text-[#002e2c]">
+                <Link href={action.href} className="mt-5 text-sm font-semibold text-rh-ink underline decoration-rh-lime decoration-2 underline-offset-4 hover:decoration-rh-ink">
                   {action.label}
                 </Link>
               )}

@@ -2251,3 +2251,532 @@ export const adminRevokeCertificate = mutation({
     await ctx.db.patch(registration._id, { certificateRevokedAt: Date.now(), updatedAt: Date.now() });
   },
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Video courses: on-demand lessons for paid learners
+//
+// Admins upload straight from the browser to ImageKit (signed upload, private file). Learners
+// only ever get a signed playback link that expires, created on request after the same access
+// check as the rest of the course, so a shared link stops working.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const VIDEO_FOLDER = "/learn/videos";
+const POSTER_FOLDER = "/learn/posters";
+const COVER_FOLDER = "/learn/covers";
+// ImageKit's free plan caps a video file at 100 MB; the admin page checks this before uploading
+const MAX_VIDEO_BYTES = 100 * 1024 * 1024;
+const PLAYBACK_LINK_MS = 6 * HOUR_MS;
+const IMAGEKIT_URL = /^https:\/\/ik\.imagekit\.io\/[^\s]+$/i;
+
+const videoValidator = v.object({
+  fileId: v.string(),
+  filePath: v.string(),
+  url: v.string(),
+  sizeBytes: v.number(),
+  durationSec: v.number(),
+  posterUrl: v.optional(v.string()),
+  posterFileId: v.optional(v.string()),
+});
+
+/** Like `clean`, but keeps line breaks (descriptions). */
+const cleanText = (value: string | undefined | null, max: number) =>
+  (value ?? "")
+    .replace(/[^\S\n]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim()
+    .slice(0, max);
+
+/** Whose progress this is, or null when they can't watch. Admins can always watch (to preview). */
+async function videoLearner(ctx: Ctx): Promise<{ email: string; userId?: Id<"users">; isAdmin: boolean } | null> {
+  const viewer = await getViewer(ctx);
+  if (!viewer) return null;
+  const courses = await paidLearnRegistrations(ctx, viewer.user, await verifiedIdentityEmail(ctx));
+  const open = courses.find((c) => learnerAccessOpen(c.cohort));
+  if (open) return { email: open.registration.email, userId: viewer.user?._id, isAdmin: viewer.isAdmin };
+  if (viewer.isAdmin && viewer.user) {
+    return { email: (viewer.user.email ?? `admin-${viewer.user._id}`).toLowerCase(), userId: viewer.user._id, isAdmin: true };
+  }
+  return null;
+}
+
+async function courseLessons(ctx: Ctx, courseId: Id<"learnVideoCourses">) {
+  return await ctx.db
+    .query("learnVideoLessons")
+    .withIndex("by_course_order", (q) => q.eq("courseId", courseId))
+    .take(200);
+}
+
+async function videoProgressRow(ctx: Ctx, email: string, courseId: Id<"learnVideoCourses">) {
+  return await ctx.db
+    .query("learnVideoProgress")
+    .withIndex("by_email_course", (q) => q.eq("email", email).eq("courseId", courseId))
+    .first();
+}
+
+function lessonView(lesson: Doc<"learnVideoLessons">, done: Set<string>) {
+  return {
+    id: lesson._id,
+    title: lesson.title,
+    description: lesson.description ?? null,
+    durationSec: lesson.video.durationSec,
+    posterUrl: lesson.video.posterUrl ?? null,
+    done: done.has(lesson._id),
+  };
+}
+
+/** How far the learner is, and the lesson to resume: the unfinished one they were in, else the next undone one. */
+function progressSummary(row: Doc<"learnVideoProgress"> | null, lessons: Doc<"learnVideoLessons">[]) {
+  const done = new Set<string>(row?.completedLessonIds ?? []);
+  const completed = lessons.filter((l) => done.has(l._id)).length;
+  const lastIndex = row?.lastLessonId ? lessons.findIndex((l) => l._id === row.lastLessonId) : -1;
+  let index = lastIndex >= 0 && !done.has(lessons[lastIndex]._id) ? lastIndex : -1;
+  if (index < 0) {
+    const after = lessons.findIndex((l, i) => i > lastIndex && !done.has(l._id));
+    index = after >= 0 ? after : lessons.findIndex((l) => !done.has(l._id));
+  }
+  if (index < 0) index = 0;
+  const lesson = lessons[index];
+  return {
+    started: Boolean(row),
+    completed,
+    total: lessons.length,
+    isComplete: lessons.length > 0 && completed === lessons.length,
+    updatedAt: row?.updatedAt ?? null,
+    resume: lesson
+      ? {
+          lessonId: lesson._id,
+          number: index + 1,
+          title: lesson.title,
+          durationSec: lesson.video.durationSec,
+          positionSec: index === lastIndex ? (row?.lastPositionSec ?? 0) : 0,
+        }
+      : null,
+  };
+}
+
+function courseCard(course: Doc<"learnVideoCourses">, lessons: Doc<"learnVideoLessons">[], row: Doc<"learnVideoProgress"> | null) {
+  return {
+    id: course._id,
+    title: course.title,
+    summary: course.summary,
+    benefits: course.benefits,
+    coverUrl: course.coverUrl ?? lessons.find((l) => l.video.posterUrl)?.video.posterUrl ?? null,
+    lessonCount: lessons.length,
+    durationSec: lessons.reduce((sum, l) => sum + l.video.durationSec, 0),
+    learnerCount: course.learnerCount,
+    progress: progressSummary(row, lessons),
+  };
+}
+
+/** The learner's course library: published courses with lessons, and the one to resume. */
+export const getVideoLibrary = query({
+  args: {},
+  handler: async (ctx) => {
+    const learner = await videoLearner(ctx);
+    if (!learner) return { state: "no_access" as const };
+    const courses = await ctx.db
+      .query("learnVideoCourses")
+      .withIndex("by_status_order", (q) => q.eq("status", "published"))
+      .take(100);
+    const cards = [];
+    for (const course of courses) {
+      const lessons = await courseLessons(ctx, course._id);
+      if (lessons.length === 0) continue;
+      cards.push(courseCard(course, lessons, await videoProgressRow(ctx, learner.email, course._id)));
+    }
+    const resume = cards
+      .filter((c) => c.progress.started && !c.progress.isComplete)
+      .sort((a, b) => (b.progress.updatedAt ?? 0) - (a.progress.updatedAt ?? 0))[0];
+    return { state: "ok" as const, courses: cards, resumeCourseId: resume?.id ?? null };
+  },
+});
+
+/** One course with its lessons, for the course page and the player. */
+export const getVideoCourse = query({
+  args: { courseId: v.id("learnVideoCourses") },
+  handler: async (ctx, args) => {
+    const learner = await videoLearner(ctx);
+    if (!learner) return null;
+    const course = await ctx.db.get(args.courseId);
+    if (!course || (course.status !== "published" && !learner.isAdmin)) return null;
+    const lessons = await courseLessons(ctx, course._id);
+    const row = await videoProgressRow(ctx, learner.email, course._id);
+    const done = new Set<string>(row?.completedLessonIds ?? []);
+    return { ...courseCard(course, lessons, row), lessons: lessons.map((l) => lessonView(l, done)) };
+  },
+});
+
+export const lessonForPlayback = internalQuery({
+  args: { lessonId: v.id("learnVideoLessons") },
+  handler: async (ctx, args) => {
+    const learner = await videoLearner(ctx);
+    if (!learner) throw new ConvexError("Your course access has ended.");
+    const lesson = await ctx.db.get(args.lessonId);
+    const course = lesson ? await ctx.db.get(lesson.courseId) : null;
+    if (!lesson || !course || (course.status !== "published" && !learner.isAdmin)) {
+      throw new ConvexError("This lesson isn't available.");
+    }
+    return { url: lesson.video.url, filePath: lesson.video.filePath };
+  },
+});
+
+async function hmacSha1Hex(key: string, data: string) {
+  const enc = new TextEncoder();
+  const k = await crypto.subtle.importKey("raw", enc.encode(key), { name: "HMAC", hash: "SHA-1" }, false, ["sign"]);
+  const bytes = new Uint8Array(await crypto.subtle.sign("HMAC", k, enc.encode(data)));
+  return [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+function imagekitPrivateKey() {
+  const key = process.env.IMAGEKIT_PRIVATE_KEY;
+  if (!key) throw new ConvexError("Video hosting isn't set up yet (IMAGEKIT_PRIVATE_KEY).");
+  return key;
+}
+
+/**
+ * ImageKit signed URL: HMAC-SHA1(private key, the path after the URL endpoint + expiry), sent
+ * as ik-t (expiry, epoch seconds) and ik-s (signature).
+ */
+async function signedImagekitUrl(url: string, filePath: string, expiresAt: number) {
+  const endpoint = url.endsWith(filePath) ? url.slice(0, url.length - filePath.length) : process.env.IMAGEKIT_URL_ENDPOINT;
+  if (!endpoint) throw new ConvexError("Video hosting isn't set up yet (IMAGEKIT_URL_ENDPOINT).");
+  const base = endpoint.endsWith("/") ? endpoint : `${endpoint}/`;
+  const expiry = Math.floor(expiresAt / 1000);
+  const signature = await hmacSha1Hex(imagekitPrivateKey(), url.slice(base.length) + expiry);
+  return `${url}${url.includes("?") ? "&" : "?"}ik-t=${expiry}&ik-s=${signature}`;
+}
+
+/** A playback link for one lesson, valid for a few hours. */
+export const getLessonPlayback = action({
+  args: { lessonId: v.id("learnVideoLessons") },
+  handler: async (ctx, args): Promise<{ url: string; expiresAt: number }> => {
+    const lesson: { url: string; filePath: string } = await ctx.runQuery(internal.learn.lessonForPlayback, {
+      lessonId: args.lessonId,
+    });
+    const expiresAt = Date.now() + PLAYBACK_LINK_MS;
+    return { url: await signedImagekitUrl(lesson.url, lesson.filePath, expiresAt), expiresAt };
+  },
+});
+
+/** Where the learner is in a lesson; `completed` once they reach the end. */
+export const saveLessonProgress = mutation({
+  args: { lessonId: v.id("learnVideoLessons"), positionSec: v.number(), completed: v.boolean() },
+  handler: async (ctx, args) => {
+    const learner = await videoLearner(ctx);
+    if (!learner) throw new ConvexError("Your course access has ended.");
+    const lesson = await ctx.db.get(args.lessonId);
+    const course = lesson ? await ctx.db.get(lesson.courseId) : null;
+    if (!lesson || !course) return { completedCourse: false };
+    const now = Date.now();
+    const position = Math.max(0, Math.min(Math.round(args.positionSec), Math.ceil(lesson.video.durationSec)));
+
+    let row = await videoProgressRow(ctx, learner.email, course._id);
+    if (!row) {
+      const id = await ctx.db.insert("learnVideoProgress", {
+        courseId: course._id,
+        email: learner.email,
+        userId: learner.userId,
+        completedLessonIds: [],
+        startedAt: now,
+        updatedAt: now,
+      });
+      // Admins previewing a course don't count as learners
+      if (!learner.isAdmin) await ctx.db.patch(course._id, { learnerCount: course.learnerCount + 1 });
+      row = await ctx.db.get(id);
+      if (!row) return { completedCourse: false };
+    }
+
+    const completedIds =
+      args.completed && !row.completedLessonIds.includes(lesson._id) ? [...row.completedLessonIds, lesson._id] : row.completedLessonIds;
+    const lessons = await courseLessons(ctx, course._id);
+    const allDone = lessons.length > 0 && lessons.every((l) => completedIds.includes(l._id));
+    await ctx.db.patch(row._id, {
+      completedLessonIds: completedIds,
+      lastLessonId: lesson._id,
+      lastPositionSec: args.completed ? 0 : position,
+      completedAt: allDone ? (row.completedAt ?? now) : row.completedAt,
+      userId: row.userId ?? learner.userId,
+      updatedAt: now,
+    });
+    return { completedCourse: allDone && !row.completedAt };
+  },
+});
+
+// ── Admin ────────────────────────────────────────────────────────────────────
+
+export const assertLearnAdmin = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    await requireAdmin(ctx);
+    return null;
+  },
+});
+
+/** Signature for one browser upload to ImageKit. Each upload needs a fresh one. */
+export const adminVideoUploadAuth = action({
+  args: { kind: v.union(v.literal("video"), v.literal("poster"), v.literal("cover")) },
+  handler: async (
+    ctx,
+    args
+  ): Promise<{ token: string; expire: number; signature: string; publicKey: string; folder: string }> => {
+    await ctx.runQuery(internal.learn.assertLearnAdmin, {});
+    const publicKey = process.env.IMAGEKIT_PUBLIC_KEY;
+    if (!publicKey) throw new ConvexError("Video hosting isn't set up yet (IMAGEKIT_PUBLIC_KEY).");
+    const token = crypto.randomUUID();
+    const expire = Math.floor(Date.now() / 1000) + 30 * 60; // ImageKit allows up to an hour
+    const signature = await hmacSha1Hex(imagekitPrivateKey(), token + expire);
+    const folder = args.kind === "video" ? VIDEO_FOLDER : args.kind === "poster" ? POSTER_FOLDER : COVER_FOLDER;
+    return { token, expire, signature, publicKey, folder };
+  },
+});
+
+/** Removes replaced or deleted files from ImageKit so they stop using storage. */
+export const deleteImagekitFiles = internalAction({
+  args: { fileIds: v.array(v.string()) },
+  handler: async (_ctx, args) => {
+    const key = process.env.IMAGEKIT_PRIVATE_KEY;
+    if (!key) return;
+    for (const fileId of args.fileIds) {
+      const res = await fetch(`https://api.imagekit.io/v1/files/${encodeURIComponent(fileId)}`, {
+        method: "DELETE",
+        headers: { Authorization: `Basic ${btoa(`${key}:`)}` },
+      });
+      // 404 means it's already gone; anything else is left for a manual clean-up, never retried
+      if (!res.ok && res.status !== 404) console.warn(`ImageKit delete failed (${res.status})`);
+    }
+  },
+});
+
+async function removeFilesLater(ctx: MutationCtx, fileIds: (string | undefined)[]) {
+  const ids = fileIds.filter((id): id is string => Boolean(id));
+  if (ids.length) await ctx.scheduler.runAfter(0, internal.learn.deleteImagekitFiles, { fileIds: ids });
+}
+
+function assertImagekitUrl(url: string | undefined, label: string) {
+  if (url && !IMAGEKIT_URL.test(url)) throw new ConvexError(`${label} must be an ImageKit link.`);
+}
+
+/** Every course with its lessons and numbers, for the admin page. */
+export const adminVideoCourses = query({
+  args: {},
+  handler: async (ctx) => {
+    await requireAdmin(ctx);
+    const courses = await ctx.db.query("learnVideoCourses").take(200);
+    const rows = [];
+    for (const course of courses) {
+      const lessons = await courseLessons(ctx, course._id);
+      const progress = await ctx.db
+        .query("learnVideoProgress")
+        .withIndex("by_course", (q) => q.eq("courseId", course._id))
+        .take(5000);
+      rows.push({
+        id: course._id,
+        title: course.title,
+        summary: course.summary,
+        benefits: course.benefits,
+        coverUrl: course.coverUrl ?? null,
+        coverFileId: course.coverFileId ?? null,
+        status: course.status,
+        order: course.order,
+        learnerCount: course.learnerCount,
+        completedCount: progress.filter((p) => p.completedAt).length,
+        lessonCount: lessons.length,
+        durationSec: lessons.reduce((sum, l) => sum + l.video.durationSec, 0),
+        updatedAt: course.updatedAt,
+        lessons: lessons.map((l) => ({
+          id: l._id,
+          title: l.title,
+          description: l.description ?? null,
+          durationSec: l.video.durationSec,
+          sizeBytes: l.video.sizeBytes,
+          posterUrl: l.video.posterUrl ?? null,
+        })),
+      });
+    }
+    return rows.sort((a, b) => a.order - b.order);
+  },
+});
+
+export const adminSaveVideoCourse = mutation({
+  args: {
+    courseId: v.optional(v.id("learnVideoCourses")),
+    title: v.string(),
+    summary: v.string(),
+    benefits: v.array(v.string()),
+    coverUrl: v.optional(v.string()),
+    coverFileId: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const { user } = await requireAdmin(ctx);
+    const title = clean(args.title, 120);
+    const summary = cleanText(args.summary, 600);
+    const benefits = args.benefits.map((b) => clean(b, 160)).filter(Boolean).slice(0, 12);
+    if (!title) throw new ConvexError("Give the course a title.");
+    if (!summary) throw new ConvexError("Add a short description.");
+    if (benefits.length === 0) throw new ConvexError("Add at least one thing learners will get from it.");
+    assertImagekitUrl(args.coverUrl, "The cover image");
+    const now = Date.now();
+
+    if (args.courseId) {
+      const course = await ctx.db.get(args.courseId);
+      if (!course) throw new ConvexError("Course not found.");
+      if (course.coverFileId && course.coverFileId !== args.coverFileId) await removeFilesLater(ctx, [course.coverFileId]);
+      await ctx.db.patch(course._id, {
+        title,
+        summary,
+        benefits,
+        coverUrl: args.coverUrl,
+        coverFileId: args.coverFileId,
+        updatedBy: user._id,
+        updatedAt: now,
+      });
+      return course._id;
+    }
+
+    const last = (await ctx.db.query("learnVideoCourses").take(200)).reduce((max, c) => Math.max(max, c.order), 0);
+    return await ctx.db.insert("learnVideoCourses", {
+      title,
+      summary,
+      benefits,
+      coverUrl: args.coverUrl,
+      coverFileId: args.coverFileId,
+      status: "draft",
+      order: last + 1,
+      learnerCount: 0,
+      createdBy: user._id,
+      createdAt: now,
+      updatedAt: now,
+    });
+  },
+});
+
+export const adminSetVideoCourseStatus = mutation({
+  args: { courseId: v.id("learnVideoCourses"), status: v.union(v.literal("draft"), v.literal("published")) },
+  handler: async (ctx, args) => {
+    const { user } = await requireAdmin(ctx);
+    const course = await ctx.db.get(args.courseId);
+    if (!course) throw new ConvexError("Course not found.");
+    if (args.status === "published" && (await courseLessons(ctx, course._id)).length === 0) {
+      throw new ConvexError("Add at least one lesson before publishing.");
+    }
+    await ctx.db.patch(course._id, {
+      status: args.status,
+      publishedAt: args.status === "published" ? (course.publishedAt ?? Date.now()) : course.publishedAt,
+      updatedBy: user._id,
+      updatedAt: Date.now(),
+    });
+  },
+});
+
+export const adminMoveVideoCourse = mutation({
+  args: { courseId: v.id("learnVideoCourses"), direction: v.union(v.literal("up"), v.literal("down")) },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx);
+    const courses = (await ctx.db.query("learnVideoCourses").take(200)).sort((a, b) => a.order - b.order);
+    const i = courses.findIndex((c) => c._id === args.courseId);
+    const j = args.direction === "up" ? i - 1 : i + 1;
+    if (i < 0 || j < 0 || j >= courses.length) return;
+    await ctx.db.patch(courses[i]._id, { order: courses[j].order });
+    await ctx.db.patch(courses[j]._id, { order: courses[i].order });
+  },
+});
+
+export const adminDeleteVideoCourse = mutation({
+  args: { courseId: v.id("learnVideoCourses") },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx);
+    const course = await ctx.db.get(args.courseId);
+    if (!course) return;
+    if (course.status === "published") throw new ConvexError("Unpublish the course before deleting it.");
+    const lessons = await courseLessons(ctx, course._id);
+    const files = [course.coverFileId, ...lessons.flatMap((l) => [l.video.fileId, l.video.posterFileId])];
+    for (const lesson of lessons) await ctx.db.delete(lesson._id);
+    const progress = await ctx.db
+      .query("learnVideoProgress")
+      .withIndex("by_course", (q) => q.eq("courseId", course._id))
+      .take(5000);
+    for (const row of progress) await ctx.db.delete(row._id);
+    await ctx.db.delete(course._id);
+    await removeFilesLater(ctx, files);
+  },
+});
+
+/** Add a lesson (a video is required) or change one (a new video replaces the old file). */
+export const adminSaveVideoLesson = mutation({
+  args: {
+    courseId: v.id("learnVideoCourses"),
+    lessonId: v.optional(v.id("learnVideoLessons")),
+    title: v.string(),
+    description: v.optional(v.string()),
+    video: v.optional(videoValidator),
+  },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx);
+    const course = await ctx.db.get(args.courseId);
+    if (!course) throw new ConvexError("Course not found.");
+    const title = clean(args.title, 140);
+    if (!title) throw new ConvexError("Give the lesson a title.");
+    const description = cleanText(args.description, 1500) || undefined;
+    if (args.video) {
+      assertImagekitUrl(args.video.url, "The video");
+      assertImagekitUrl(args.video.posterUrl, "The poster");
+      if (args.video.sizeBytes > MAX_VIDEO_BYTES) throw new ConvexError("Videos must be 100 MB or smaller.");
+      if (!(args.video.durationSec > 0)) throw new ConvexError("We couldn't read the video's length. Try another file.");
+    }
+    const now = Date.now();
+    await ctx.db.patch(course._id, { updatedAt: now });
+
+    if (args.lessonId) {
+      const lesson = await ctx.db.get(args.lessonId);
+      if (!lesson || lesson.courseId !== course._id) throw new ConvexError("Lesson not found.");
+      if (args.video && args.video.fileId !== lesson.video.fileId) {
+        await removeFilesLater(ctx, [lesson.video.fileId, lesson.video.posterFileId]);
+      }
+      await ctx.db.patch(lesson._id, { title, description, video: args.video ?? lesson.video, updatedAt: now });
+      return lesson._id;
+    }
+
+    if (!args.video) throw new ConvexError("Upload the lesson video.");
+    const last = (await courseLessons(ctx, course._id)).reduce((max, l) => Math.max(max, l.order), 0);
+    return await ctx.db.insert("learnVideoLessons", {
+      courseId: course._id,
+      order: last + 1,
+      title,
+      description,
+      video: args.video,
+      createdAt: now,
+      updatedAt: now,
+    });
+  },
+});
+
+export const adminMoveVideoLesson = mutation({
+  args: { lessonId: v.id("learnVideoLessons"), direction: v.union(v.literal("up"), v.literal("down")) },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx);
+    const lesson = await ctx.db.get(args.lessonId);
+    if (!lesson) return;
+    const lessons = await courseLessons(ctx, lesson.courseId);
+    const i = lessons.findIndex((l) => l._id === lesson._id);
+    const j = args.direction === "up" ? i - 1 : i + 1;
+    if (i < 0 || j < 0 || j >= lessons.length) return;
+    await ctx.db.patch(lessons[i]._id, { order: lessons[j].order });
+    await ctx.db.patch(lessons[j]._id, { order: lessons[i].order });
+  },
+});
+
+export const adminDeleteVideoLesson = mutation({
+  args: { lessonId: v.id("learnVideoLessons") },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx);
+    const lesson = await ctx.db.get(args.lessonId);
+    if (!lesson) return;
+    const course = await ctx.db.get(lesson.courseId);
+    const lessons = await courseLessons(ctx, lesson.courseId);
+    if (course?.status === "published" && lessons.length === 1) {
+      throw new ConvexError("A published course needs at least one lesson. Unpublish it first.");
+    }
+    await ctx.db.delete(lesson._id);
+    await removeFilesLater(ctx, [lesson.video.fileId, lesson.video.posterFileId]);
+  },
+});

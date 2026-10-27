@@ -14,7 +14,8 @@ import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { primaryButtonClass, StatusBadge } from '@/components/physio/ui';
-import { SettingsPageHeader, SettingsSection, fieldHintClass, fieldLabelClass } from '@/components/physio/SettingsUI';
+import { OwnPatientsOnlyNotice, SettingsPageHeader, SettingsSection, fieldHintClass, fieldLabelClass } from '@/components/physio/SettingsUI';
+import { usePracticeMode } from '@/components/physio/practiceMode';
 import { formatKobo } from '@/lib/rehabify-services';
 import { cn } from '@/lib/utils';
 import type { MarketplaceSettings, PayoutSchedule, TravelZone } from '@/lib/rehabify-api-types';
@@ -30,10 +31,13 @@ function errorMessage(error: unknown, fallback: string) {
 }
 
 export default function ServicesAndCoveragePage() {
-    const settings = useQuery(api.marketplace.settings.getMyMarketplaceSettings) as MarketplaceSettings | null | undefined;
+    // Hidden from independent physios in Settings, but reachable by URL: they get a short note instead
+    const practice = usePracticeMode();
+    const network = practice.loaded && !practice.isIndependent;
+    const settings = useQuery(api.marketplace.settings.getMyMarketplaceSettings, network ? {} : 'skip') as MarketplaceSettings | null | undefined;
     const setup = useQuery(api.physioSetup.getMySetupStatus);
-    const zones = useQuery(api.travelZones.listZones) as TravelZone[] | undefined;
-    const schedule = useQuery(api.serviceTariffs.getPayoutSchedule) as PayoutSchedule | null | undefined;
+    const zones = useQuery(api.travelZones.listZones, network ? {} : 'skip') as TravelZone[] | undefined;
+    const schedule = useQuery(api.serviceTariffs.getPayoutSchedule, network ? {} : 'skip') as PayoutSchedule | null | undefined;
     const updateSettings = useMutation(api.marketplace.settings.updateMarketplaceSettings);
 
     const [loaded, setLoaded] = useState(false);
@@ -61,6 +65,8 @@ export default function ServicesAndCoveragePage() {
         for (const zone of zones ?? []) groups.set(zone.city, [...(groups.get(zone.city) ?? []), zone]);
         return [...groups.entries()];
     }, [zones]);
+
+    if (practice.loaded && practice.isIndependent) return <OwnPatientsOnlyNotice title="Services & coverage" />;
 
     if (
         settings === undefined ||
@@ -105,6 +111,8 @@ export default function ServicesAndCoveragePage() {
         );
     }
 
+    if (settings.practiceMode === 'independent') return <OwnPatientsOnlyNotice title="Services & coverage" />;
+
     const approved = setup.approvalStatus === 'approved';
 
     const toggleListing = async (checked: boolean) => {
@@ -130,7 +138,7 @@ export default function ServicesAndCoveragePage() {
             return;
         }
         if (home && zoneIds.length === 0) {
-            toast.error('Choose at least one area you travel to for home visits.');
+            toast.error('Pick at least one area for home visits, or turn home visits off.');
             return;
         }
         setIsSaving(true);
@@ -242,6 +250,8 @@ export default function ServicesAndCoveragePage() {
                                             <div className="divide-y divide-neutral-100 overflow-hidden rounded-xl border border-neutral-100 dark:divide-white/[0.07] dark:border-white/[0.07]">
                                                 {cityZones.map((zone) => {
                                                     const checked = zoneIds.includes(zone.id);
+                                                    // The physio's share of the area's travel charge, never the charge itself
+                                                    const travelShareKobo = Math.round((zone.surchargeKobo * (zone.physioTravelSharePercent ?? 100)) / 100);
                                                     return (
                                                         <label
                                                             key={zone.id}
@@ -262,9 +272,9 @@ export default function ServicesAndCoveragePage() {
                                                             <span className="min-w-0 flex-1">
                                                                 <span className="flex flex-wrap items-baseline justify-between gap-x-3">
                                                                     <span className="text-sm font-medium text-neutral-900 dark:text-white">{zone.name}</span>
-                                                                    {zone.surchargeKobo > 0 && (
+                                                                    {travelShareKobo > 0 && (
                                                                         <span className="text-xs tabular-nums text-neutral-500 dark:text-neutral-400">
-                                                                            Travel charge {formatKobo(zone.surchargeKobo)}
+                                                                            + {formatKobo(travelShareKobo)} travel to you
                                                                         </span>
                                                                     )}
                                                                 </span>
@@ -280,8 +290,8 @@ export default function ServicesAndCoveragePage() {
                                     ))
                                 )}
                                 <p className={fieldHintClass}>
-                                    Patients in these areas can book you for home visits. The travel charge is added to home treatment, and you get
-                                    your share of it.
+                                    Patients in these areas can book you for home visits. For home treatment you get the travel amount shown on top
+                                    of your payout.
                                 </p>
                             </div>
                         )}
@@ -319,10 +329,9 @@ export default function ServicesAndCoveragePage() {
                                         <p className="text-sm font-semibold tabular-nums text-rh-ink dark:text-white">
                                             {schedule?.confirmed === false ? 'Payout being confirmed' : `You earn ${formatKobo(service.payoutKobo)}`}
                                         </p>
-                                        <p className="text-xs tabular-nums text-neutral-500 dark:text-neutral-400">
-                                            Patient pays {service.travelApplies ? 'from ' : ''}
-                                            {formatKobo(service.priceKobo)}
-                                        </p>
+                                        {service.travelApplies && schedule?.confirmed !== false && (
+                                            <p className="text-xs text-neutral-500 dark:text-neutral-400">+ your share of travel</p>
+                                        )}
                                     </div>
                                 </li>
                             );

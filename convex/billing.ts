@@ -9,6 +9,8 @@ import { getAuthenticatedUser } from "./auth";
 import { isServerCaller } from "./helpers/serverSecret";
 import { insertClinicInvoice } from "./clinicTools";
 import { isRehabifyCare } from "./rehabifyFollowUps";
+import { isRehabifyCareInvoice, rehabifyCarePayoutKobo } from "./helpers/marketplaceInvoices";
+import { isIndependentPractice } from "./physioSetup";
 
 /**
  * True when the signed-in caller is a party to the invoice: its patient, its
@@ -171,13 +173,14 @@ export const createInvoice = mutation({
     const discountAmount = Math.round((args.discountAmount || 0) * 100); // Convert from Naira to kobo
     
     // Fee calculations:
-    // Platform fee: ₦1,000 flat fee
-    const platformFeeAmount = 100000; // ₦1,000 in kobo
-    
+    // A physio's own patients: the money is entirely theirs. Rehabify takes no platform fee;
+    // only Paystack's card fee is added, and that goes to Paystack.
+    const platformFeeAmount = 0;
+
     // Calculate base amount after discount (this is the physiotherapist-set amount)
     const baseAmount = subtotalAmount - discountAmount;
-    
-    // Paystack fees: 1.5% + ₦100 (applied to base + platform fee)
+
+    // Paystack fees: 1.5% + ₦100
     const paystackPercentageFee = Math.round((baseAmount + platformFeeAmount) * 0.015); // 1.5%
     const paystackFlatFee = 10000; // ₦100 in kobo
     const paystackFeeAmount = paystackPercentageFee + paystackFlatFee;
@@ -190,7 +193,7 @@ export const createInvoice = mutation({
     
     // Calculate shares
     const physiotherapistShare = baseAmount; // They get the base amount after discount
-    const platformShare = platformFeeAmount; // Platform gets fixed ₦1,000
+    const platformShare = platformFeeAmount; // Nothing: Rehabify takes no share of a physio's own invoices
 
     // Generate invoice number
     const invoiceNumber = await generateInvoiceNumber(ctx, clinicId);
@@ -688,7 +691,10 @@ export const getMyInvoices = query({
     patientName: v.string(),
     patientEmail: v.optional(v.string()),
     patientPhone: v.optional(v.string()),
+    /** The invoice amount; for a Rehabify Care invoice, the physio's payout (never what the patient paid) */
     totalAmount: v.number(),
+    /** A Rehabify Care session paid through Rehabify: totalAmount is then the physio's payout */
+    rehabifyCare: v.boolean(),
     currency: v.string(),
     status: v.string(),
     issueDate: v.number(),
@@ -734,7 +740,10 @@ export const getMyInvoices = query({
         )
       : await myInvoiceScope(ctx, physiotherapist._id, clinicId);
     const now = Date.now();
+    // Physios who see only their own patients never see Rehabify Care payouts
+    const independent = isIndependentPractice(physiotherapistProfile);
     const invoices = scoped
+      .filter((invoice) => !(independent && isRehabifyCareInvoice(invoice)))
       .filter((invoice) => {
         if (!args.status) return true;
         if (args.status === "overdue") return invoice.status !== "paid" && invoice.dueDate < now;
@@ -753,6 +762,8 @@ export const getMyInvoices = query({
           .withIndex("by_invoice_id", (q: any) => q.eq("invoiceId", invoice._id))
           .order("desc")
           .first();
+        // Physios only ever see their payout on Rehabify Care, never what the patient paid
+        const rehabifyCare = isRehabifyCareInvoice(invoice);
 
         return {
           _id: invoice._id,
@@ -761,7 +772,8 @@ export const getMyInvoices = query({
           patientName: `${patientUser?.firstName || "Unknown"} ${patientUser?.lastName || "Patient"}`,
           patientEmail: patientUser?.email,
           patientPhone: patientUser?.phoneNumber,
-          totalAmount: invoice.totalAmount,
+          totalAmount: rehabifyCare ? rehabifyCarePayoutKobo(invoice) : invoice.totalAmount,
+          rehabifyCare,
           currency: invoice.currency || "NGN",
           status: invoice.status,
           issueDate: invoice.issueDate,
@@ -907,6 +919,11 @@ export const getInvoiceById = query({
     const invoice = await ctx.db.get(args.invoiceId);
     if (!invoice) return null;
     if (!fromServer && !(await isInvoiceParty(ctx, invoice))) return null;
+    // Physios never see what a patient paid Rehabify for Rehabify Care (patients and admins do)
+    if (!fromServer && isRehabifyCareInvoice(invoice)) {
+      const viewer = await getAuthenticatedUser(ctx).catch(() => null);
+      if (!viewer || (viewer._id !== invoice.patientId && viewer.role !== "admin")) return null;
+    }
     return await loadInvoicePaymentView(ctx, invoice);
   },
 });
@@ -1021,6 +1038,12 @@ export const getShareableInvoice = query({
     const invoice = await ctx.db.get(args.invoiceId);
     if (!invoice || !(await isInvoiceParty(ctx, invoice))) {
       return null;
+    }
+    // A Rehabify Care invoice shows what the patient paid Rehabify: only the patient and admins
+    // see it. The physio sees their payout on their billing page instead.
+    if (isRehabifyCareInvoice(invoice)) {
+      const viewer = await getAuthenticatedUser(ctx).catch(() => null);
+      if (!viewer || (viewer._id !== invoice.patientId && viewer.role !== "admin")) return null;
     }
 
     // Get clinic and patient details for the share page

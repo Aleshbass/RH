@@ -24,19 +24,22 @@ export function useClinicFeeConfig(): ClinicFeeConfig {
   return settings ? normalizeClinicFeeConfig(settings) : DEFAULT_CLINIC_FEE_CONFIG
 }
 
-/** What happens to an online (Paystack) payment of this amount, as a few compact rows. */
+/**
+ * What happens to an online (Paystack) payment of this amount, as a few compact rows. Without a
+ * config it shows a payment from the clinic's own patient, where Rehabify takes no share.
+ */
 export function FeeBreakdown({
   amountNaira,
   config,
   className,
 }: {
   amountNaira: number
-  /** Override the live settings (e.g. the admin preview of unsaved numbers) */
+  /** Override the live settings (e.g. the admin preview of the referral split) */
   config?: ClinicFeeConfig
   className?: string
 }) {
   const liveConfig = useClinicFeeConfig()
-  const split = clinicPaymentSplit(Math.round(amountNaira * 100), config ?? liveConfig)
+  const split = clinicPaymentSplit(Math.round(amountNaira * 100), config ?? { ...liveConfig, clinicSharePercent: 100 })
   const rows = [
     { label: 'Patient pays', value: naira(split.totalKobo), show: true },
     { label: 'Paystack fee', value: `−${naira(split.paystackFeeKobo)}`, show: split.paystackFeeKobo > 0 },
@@ -78,7 +81,6 @@ export function HowPayoutsWork({
 }) {
   const config = useClinicFeeConfig()
   const exampleNaira = 20_000
-  const rehabifyPercent = 100 - config.clinicSharePercent
 
   return (
     <details
@@ -93,17 +95,22 @@ export function HowPayoutsWork({
       </summary>
       <div className="space-y-3 border-t border-neutral-200 px-4 py-3 text-sm text-neutral-600 dark:border-neutral-800 dark:text-neutral-400 sm:px-5">
         <p>
-          When a patient pays online with a Paystack link, Paystack&apos;s fee comes off first. What&apos;s left is
-          split {percent(config.clinicSharePercent)} to you and {percent(rehabifyPercent)} to Rehabify. Stamp duty is
-          then taken from your share when it&apos;s paid into your bank.
+          When your patient pays online with a Paystack link, Paystack&apos;s fee comes off first and the rest is yours:
+          Rehabify takes nothing from what your patients pay. Stamp duty is taken when it&apos;s paid into your bank.
         </p>
+        {config.clinicSharePercent < 100 && (
+          <p>
+            Rehabify Care patients we refer to you are a separate arrangement: {percent(config.clinicSharePercent)} of
+            those payments, after Paystack&apos;s fee, goes to you.
+          </p>
+        )}
         <p>Cash, POS and bank transfer payments you mark as paid have no fees. You keep all of it.</p>
 
         <div className="max-w-xs">
           <p className="mb-1 text-xs font-medium text-neutral-900 dark:text-white">
             Example: a {formatNaira(exampleNaira)} online payment
           </p>
-          <FeeBreakdown amountNaira={exampleNaira} config={config} />
+          <FeeBreakdown amountNaira={exampleNaira} />
         </div>
 
         <ul className="list-disc space-y-1 pl-4 text-xs">

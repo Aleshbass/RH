@@ -34,6 +34,7 @@ import {
   MessageSquare,
   LogIn,
   LogOut,
+  FileSignature,
   type IconComponent,
 } from '@/components/icons'
 import { WebsiteLink } from '@/components/dashboard/shared/WebsiteLink'
@@ -69,6 +70,7 @@ const mainItems: NavItem[] = [
 
 const bottomItems: NavItem[] = [
   { title: 'Clinic settings', href: '/dashboard/clinic/settings', icon: Building2, area: 'settings' },
+  { title: 'Agreement', href: '/dashboard/clinic/agreement', icon: FileSignature, area: 'settings' },
 ]
 
 function isActivePath(pathname: string, href: string) {

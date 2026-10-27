@@ -16,7 +16,8 @@ import {
   isOpenAppointment,
 } from '@/convex/helpers/appointmentStatus'
 import { isVideoVisit, meetingLinkOf, type AppointmentLike } from '@/components/appointments/appointment-ui'
-import type { QueryResult } from '@/lib/convexUntyped'
+import { useQueryUntyped, type QueryResult } from '@/lib/convexUntyped'
+import { joinTarget, joinWindow } from '@/lib/videoJoin'
 import type { Tone } from '@/components/physio/ui'
 
 export type PhysioAppointment = QueryResult<typeof getMyAppointments>[number]
@@ -49,14 +50,39 @@ export function minutesOf(apt: { startTime: number; endTime: number }) {
   return Math.max(15, Math.round((apt.endTime - apt.startTime) / 60000))
 }
 
-/** Video sessions can be joined from 10 minutes before the start until the end. */
-export const JOIN_EARLY_MS = 10 * 60 * 1000
+/** The fields the Join rule reads, so Home and the top-bar banner can use it on their own shapes. */
+export type JoinableVisit = Pick<
+  AppointmentLike,
+  'startTime' | 'endTime' | 'status' | 'appointmentType' | 'isOnline' | 'meetingLink' | 'googleMeetLink' | 'manualMeetingLink' | 'streamMeetingLink'
+>
 
-export function joinLink(apt: PhysioAppointment, now: number) {
-  const like = asLike(apt)
-  if (!isVideoVisit(like) || !isOpenAppointment(apt.status)) return null
-  if (now < apt.startTime - JOIN_EARLY_MS || now > apt.endTime) return null
-  return meetingLinkOf(like) ?? null
+/**
+ * What a visit's Join button shows (rule in lib/videoJoin.ts: from 15 minutes before the start
+ * until the end). In-person, cancelled, closed and finished visits have no Join at all.
+ */
+export type VideoJoin =
+  | { kind: 'none' }
+  /** Too early: shown disabled, "Opens 13:45" */
+  | { kind: 'soon'; opensAt: number }
+  /** Time to join, but the link isn't there yet (made when the visit is confirmed) */
+  | { kind: 'no-link' }
+  | { kind: 'open'; href: string; external: boolean; live: boolean }
+
+export function videoJoin(apt: JoinableVisit, now: number): VideoJoin {
+  const like = apt as unknown as AppointmentLike
+  if (!isVideoVisit(like) || !isOpenAppointment(apt.status)) return { kind: 'none' }
+  const timing = joinWindow(apt.startTime, apt.endTime, now)
+  if (timing.phase === 'over') return { kind: 'none' }
+  if (timing.phase === 'before') return { kind: 'soon', opensAt: timing.opensAt }
+  const link = meetingLinkOf(like)
+  if (!link) return { kind: 'no-link' }
+  return { kind: 'open', ...joinTarget(link), live: timing.live }
+}
+
+/** The link to join with right now, or null. */
+export function joinLink(apt: JoinableVisit, now: number) {
+  const join = videoJoin(apt, now)
+  return join.kind === 'open' ? join.href : null
 }
 
 /** True when the patient asked for this time and the physio hasn't answered. */
@@ -102,6 +128,23 @@ export function visitStatus(apt: PhysioAppointment, now = Date.now()): { label: 
     return { label: 'Waiting for patient', tone: 'blue', explain: 'You booked this time. It’s confirmed once the patient accepts it.' }
   }
   return { label: 'Confirmed', tone: 'green', explain: 'Both of you have agreed this time.' }
+}
+
+/**
+ * Today's visits (local day). Home, the top-bar session banner and the patient page all call it
+ * with the same arguments, so they share one live subscription.
+ */
+export function useTodaysVisits(enabled = true) {
+  const [range] = useState(() => {
+    const start = new Date()
+    start.setHours(0, 0, 0, 0)
+    const end = new Date(start)
+    end.setHours(23, 59, 59, 999)
+    return { startDate: start.getTime(), endDate: end.getTime() }
+  })
+  return useQueryUntyped(scheduleApi.appointments.getMyAppointments, enabled ? { ...range, limit: 50 } : 'skip') as
+    | PhysioAppointment[]
+    | undefined
 }
 
 /** Re-renders on an interval so time-based states (Join, Not closed) update by themselves. */

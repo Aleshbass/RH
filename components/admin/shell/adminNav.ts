@@ -24,6 +24,7 @@ import {
   MapPinned,
   Megaphone,
   Percent,
+  PlayCircle,
   ReceiptText,
   Settings,
   ShieldCheck,
@@ -41,7 +42,7 @@ import {
 export const ADMIN_HOME = '/dashboard/admin'
 
 /** Live counts shown next to nav items. Resolved in AdminSidebar. */
-export type AdminBadgeKey = 'approvals' | 'partnerApplications' | 'openReports' | 'bankTransfers' | 'accessApplications'
+export type AdminBadgeKey = 'approvals' | 'partnerApplications' | 'openReports' | 'bankTransfers' | 'accessApplications' | 'agreements'
 
 export type AdminNavItem = {
   title: string
@@ -82,9 +83,10 @@ export const ADMIN_NAV: AdminNavSection[] = [
     label: 'Rehabify Physios',
     icon: Stethoscope,
     items: [
-      { title: 'All physiotherapists', href: a('/users?role=physiotherapist'), icon: Stethoscope, keywords: ['physio', 'clinicians'] },
+      { title: 'All physiotherapists', href: a('/physiotherapists'), icon: Stethoscope, keywords: ['physio', 'clinicians'] },
       { title: 'Approvals', href: a('/approvals'), icon: UserCheck, badgeKey: 'approvals', keywords: ['pending', 'review', 'verify'] },
       { title: 'Declined', href: a('/declined-physios'), icon: UserX, keywords: ['rejected'] },
+      { title: 'Marketplace listing', href: a('/marketplace-listing'), icon: Store, keywords: ['find a physio', 'live', 'hidden', 'setup'] },
       { title: 'Public registry', href: a('/physio-registry'), icon: ShieldCheck, keywords: ['directory', 'listing'] },
       { title: 'Payouts', href: a('/payouts'), icon: Banknote, keywords: ['earnings', 'paystack', 'transfers'] },
     ],
@@ -160,6 +162,7 @@ export const ADMIN_NAV: AdminNavSection[] = [
     icon: GraduationCap,
     items: [
       { title: 'MSK Specialist Program', href: a('/learn'), icon: GraduationCap, keywords: ['cohort', 'course', 'training', 'certificate', 'registrations', 'cpd'] },
+      { title: 'Video courses', href: a('/learn/courses'), icon: PlayCircle, keywords: ['upload', 'lessons', 'videos', 'imagekit', 'on demand'] },
     ],
   },
   {
@@ -168,6 +171,7 @@ export const ADMIN_NAV: AdminNavSection[] = [
     icon: Settings,
     items: [
       { title: 'Users & roles', href: a('/users'), icon: Users, keywords: ['accounts', 'permissions', 'admins'] },
+      { title: 'Agreements', href: a('/agreements'), icon: FileSignature, badgeKey: 'agreements', keywords: ['contracts', 'sign', 'countersign', 'contractor', 'clinic saas', 'independent', 'e-signature'] },
       { title: 'Announcements', href: a('/announcements'), icon: Megaphone, keywords: ['broadcast', 'notify'] },
       { title: 'Email campaigns', href: a('/emails'), icon: Mail, keywords: ['marketing', 'newsletter', 'broadcast', 'resend', 'contacts'] },
       { title: 'Careers', href: a('/careers'), icon: Briefcase, keywords: ['jobs', 'hiring', 'roles', 'applications', 'cv'] },

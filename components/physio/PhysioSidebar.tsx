@@ -24,6 +24,7 @@ import {
 import { PatientDrawer, initials } from '@/components/patient/ui'
 import { PatientThemeToggle, SoundSwitchRow } from '@/components/patient/shell/PatientControls'
 import { START_PHYSIO_TOUR_EVENT } from '@/components/physio/PhysioTour'
+import { usePracticeMode } from '@/components/physio/practiceMode'
 import { CLINIC_PORTAL_HOME } from '@/components/clinic/clinician-routing'
 import { cn } from '@/lib/utils'
 import {
@@ -170,6 +171,7 @@ function AccountMenu() {
 /** A card at the foot of the menu: the clinic workspace if they have one, else their booking page. */
 function FooterCard({ onNavigate }: { onNavigate?: () => void }) {
   const clinicWorkspace = useClinicWorkspace()
+  const practice = usePracticeMode()
   if (clinicWorkspace) {
     return (
       <Link
@@ -187,6 +189,8 @@ function FooterCard({ onNavigate }: { onNavigate?: () => void }) {
       </Link>
     )
   }
+  // Services, areas and the public page are for Rehabify Care patients: not for independent physios
+  if (!practice.loaded || practice.isIndependent) return null
   return (
     <Link
       href={`${PHYSIO_HOME}/settings/marketplace`}

@@ -472,7 +472,7 @@ export const findPhysiosForService = query({
     const results = [];
     for (const profile of profiles) {
       // Cheap checks first; isPhysioNetworkEligible then confirms approval and setup
-      if (profile.isAvailableOnMarketplace === false || profile.clinicId) continue;
+      if (profile.isAvailableOnMarketplace === false || !servesRehabifyNetwork(profile)) continue;
       if (!offersServiceMode(profile, service.mode, zoneId)) continue;
       if (!(await isPhysioNetworkEligible(ctx, profile.userId, { serviceId: args.serviceId, zoneId }))) continue;
       const user = await ctx.db.get(profile.userId);

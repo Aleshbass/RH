@@ -10,8 +10,8 @@ const EASE = [0.22, 1, 0.36, 1] as const;
 
 // Published figures. Keep them true: update when the numbers change.
 const STATS = [
-  { value: "500+", label: "People using Rehabify*" },
-  { value: "Under 24 hrs", label: "Published matching timeframe*" },
+  { value: "500+", label: "People using Rehabify" },
+  { value: "Under 24 hrs", label: "Usual time to be matched" },
   { value: "Licensed clinicians", label: "MRTBN professional registration" },
 ];
 
@@ -82,9 +82,6 @@ function StatsSlide({ still }: { still: boolean }) {
           </motion.div>
         ))}
       </dl>
-      <p className="mt-5 text-[11px] leading-snug text-white/55 sm:text-xs">
-        *Usage and matching timeframe published by Rehabify; appointment availability is confirmed before booking.
-      </p>
     </motion.div>
   );
 }

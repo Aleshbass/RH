@@ -9,6 +9,7 @@ import type { Doc, Id } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
 import { getService, type BookableServiceId } from "../../lib/rehabify-services";
 import { hasPriorAssessment, loadPricingSettings, quoteBooking, zoneForArea, type BookingQuote } from "./rehabifyPricing";
+import { loadAgreementsEnforcedAt } from "../agreements";
 import { isPhysioNetworkEligible, servesRehabifyNetwork } from "../physioSetup";
 
 export type JoyServiceMode = "home_visit" | "clinic" | "online";
@@ -86,7 +87,9 @@ export async function quoteJoyProviderBooking(
 export async function isJoyProviderEligible(ctx: QueryCtx, profile: Doc<"physiotherapistProfiles">): Promise<boolean> {
   if (!servesRehabifyNetwork(profile)) return false;
   const { networkTermsEnforcedAt } = await loadPricingSettings(ctx);
-  if (typeof networkTermsEnforcedAt === "number" && networkTermsEnforcedAt <= Date.now()) {
+  const agreementsEnforcedAt = await loadAgreementsEnforcedAt(ctx);
+  const passed = (at: number | undefined) => typeof at === "number" && at <= Date.now();
+  if (passed(networkTermsEnforcedAt) || passed(agreementsEnforcedAt)) {
     return isPhysioNetworkEligible(ctx, profile.userId);
   }
   const approval = await ctx.db.query("accountApprovalStatus").withIndex("by_user_id", (q) => q.eq("userId", profile.userId)).first();

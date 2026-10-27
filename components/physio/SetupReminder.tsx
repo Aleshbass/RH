@@ -58,11 +58,13 @@ export function SetupReminder({ setup }: { setup: SetupStatus | null | undefined
       <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-md dark:border-white/[0.07] dark:bg-rh-ink-2">
         <DialogHeader className="space-y-2 p-6 pb-4 text-left">
           <DialogTitle className="text-lg font-semibold tracking-tight text-neutral-900 dark:text-white">
-            Patients can&apos;t book you yet
+            {setup.practiceMode === 'independent' ? 'Almost ready' : <>Patients can&apos;t book you yet</>}
           </DialogTitle>
           <DialogDescription className="text-sm leading-relaxed text-neutral-600 dark:text-neutral-400">
-            You&apos;re approved. Finish {setup.requiredRemaining === 1 ? 'this last step' : `these ${setup.requiredRemaining} steps`} to
-            appear on the marketplace and start taking bookings.
+            You&apos;re approved. Finish {setup.requiredRemaining === 1 ? 'this last step' : `these ${setup.requiredRemaining} steps`}{' '}
+            {setup.practiceMode === 'independent'
+              ? 'so your patients can pay your invoices and you get paid.'
+              : 'to appear on the marketplace and start taking bookings.'}
           </DialogDescription>
           <div className="flex items-center gap-3 pt-2">
             <SetupProgressBar done={done} total={total} />

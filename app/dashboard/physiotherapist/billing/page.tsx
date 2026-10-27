@@ -18,6 +18,7 @@ import { CreateInvoiceModal } from '@/components/dashboard/physiotherapist/modal
 import { EmptyState, PageContainer, PageHeader, Panel, StatTile, StatusBadge, primaryButtonClass } from '@/components/physio/ui';
 import { PaystackTestModeBanner } from '@/components/billing/PaystackTestModeBanner';
 import { programError } from '@/components/exercise-programs/errors';
+import { usePracticeMode } from '@/components/physio/practiceMode';
 
 type InvoiceFromQuery = {
   _id: Id<'invoices'>;
@@ -25,7 +26,9 @@ type InvoiceFromQuery = {
   patientName: string;
   patientEmail?: string;
   patientPhone?: string;
-  totalAmount: number; // kobo
+  totalAmount: number; // kobo; for a Rehabify Care invoice, the physio's payout (never what the patient paid)
+  /** Paid through Rehabify: shown as "Your payout", with no invoice document or actions */
+  rehabifyCare?: boolean;
   currency: string;
   status: string;
   issueDate: number;
@@ -113,9 +116,13 @@ export default function BillingPage() {
     | undefined;
   const loanByInvoice = useMemo(() => new Map((invoiceLoans ?? []).map((loan) => [loan.invoiceId, loan])), [invoiceLoans]);
 
+  // Independent physios only have their own patients: no Rehabify Care payouts here (the server drops them too)
+  const { isIndependent } = usePracticeMode();
+
   const filtered = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
     return (invoices ?? []).filter((invoice) => {
+      if (isIndependent && invoice.rehabifyCare) return false;
       const matchesSearch =
         !term || invoice.invoiceNumber.toLowerCase().includes(term) || invoice.patientName.toLowerCase().includes(term);
       const matchesStatus =
@@ -123,7 +130,7 @@ export default function BillingPage() {
         (statusFilter === 'overdue' ? invoice.isOverdue && invoice.status !== 'paid' : invoice.status === statusFilter);
       return matchesSearch && matchesStatus;
     });
-  }, [invoices, searchTerm, statusFilter]);
+  }, [invoices, searchTerm, statusFilter, isIndependent]);
 
   const handleSend = useCallback(
     async (invoiceId: Id<'invoices'>) => {
@@ -224,7 +231,11 @@ export default function BillingPage() {
       <PageHeader
         title="Invoices"
         description="Invoices you’ve sent and payments you’ve received."
-        info="Send an invoice and the patient gets a link to pay by card, transfer or USSD. Paid invoices go to the bank account in Settings → Payouts. Rehabify patients pay through Rehabify, so their sessions don’t need an invoice from you."
+        info={
+          isIndependent
+            ? 'Invoice your patients at your own prices. They get a link to pay by card, transfer or USSD, and paid invoices go to the bank account in Settings → Payouts. If they pay you directly, record it as paid. Rehabify takes nothing.'
+            : 'Send an invoice and the patient gets a link to pay by card, transfer or USSD. Paid invoices go to the bank account in Settings → Payouts. Rehabify Care patients pay through Rehabify, so their sessions don’t need an invoice from you.'
+        }
         actions={
           <Button onClick={() => setCreating(true)} className={primaryButtonClass}>
             <Plus className="mr-2 h-4 w-4" />
@@ -308,14 +319,9 @@ export default function BillingPage() {
           />
         ) : (
           <ul className="divide-y divide-neutral-100 dark:divide-neutral-800">
-            {filtered.map((invoice) => (
-              <li key={invoice._id} className="flex items-center gap-3 px-4 py-3 sm:px-5">
-                <button
-                  type="button"
-                  onClick={() => setSelected(invoice)}
-                  className="min-w-0 flex-1 text-left"
-                  aria-label={`Open invoice ${invoice.invoiceNumber}`}
-                >
+            {filtered.map((invoice) => {
+              const details = (
+                <>
                   <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
                     <p className="truncate text-sm font-medium text-neutral-900 dark:text-white">{invoice.patientName}</p>
                     {invoiceStatus(invoice)}
@@ -334,29 +340,55 @@ export default function BillingPage() {
                       )}
                   </div>
                   <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">
-                    #{invoice.invoiceNumber} · Issued {Number.isFinite(invoice.issueDate) ? format(invoice.issueDate, 'd MMM yyyy') : '—'} · Due {Number.isFinite(invoice.dueDate) ? format(invoice.dueDate, 'd MMM') : '—'}
+                    {invoice.rehabifyCare
+                      ? `Rehabify Care · paid through Rehabify${invoice.paymentDate && Number.isFinite(invoice.paymentDate) ? ` ${format(invoice.paymentDate, 'd MMM yyyy')}` : ''}`
+                      : `#${invoice.invoiceNumber} · Issued ${Number.isFinite(invoice.issueDate) ? format(invoice.issueDate, 'd MMM yyyy') : '—'} · Due ${Number.isFinite(invoice.dueDate) ? format(invoice.dueDate, 'd MMM') : '—'}`}
                   </p>
-                </button>
-                <p className="shrink-0 text-sm font-semibold tabular-nums text-neutral-900 dark:text-white">
-                  {formatKobo(invoice.totalAmount, invoice.currency)}
-                </p>
-                <div className="flex shrink-0 items-center gap-1">
-                  {invoice.status === 'draft' && (
-                    <Button size="sm" variant="outline" onClick={() => handleSend(invoice._id)} className="hidden sm:inline-flex">
-                      Send
-                    </Button>
+                </>
+              );
+              return (
+                <li key={invoice._id} className="flex items-center gap-3 px-4 py-3 sm:px-5">
+                  {/* Rehabify Care: the patient paid Rehabify, so there's no invoice of the physio's to open */}
+                  {invoice.rehabifyCare ? (
+                    <div className="min-w-0 flex-1">{details}</div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setSelected(invoice)}
+                      className="min-w-0 flex-1 text-left"
+                      aria-label={`Open invoice ${invoice.invoiceNumber}`}
+                    >
+                      {details}
+                    </button>
                   )}
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    onClick={() => handleDownload(invoice._id)}
-                    aria-label={`Download invoice ${invoice.invoiceNumber}`}
-                  >
-                    <Download className="h-4 w-4" />
-                  </Button>
-                </div>
-              </li>
-            ))}
+                  <div className="shrink-0 text-right">
+                    <p className="text-sm font-semibold tabular-nums text-neutral-900 dark:text-white">
+                      {formatKobo(invoice.totalAmount, invoice.currency)}
+                    </p>
+                    {invoice.rehabifyCare && <p className="text-[11px] text-neutral-500 dark:text-neutral-400">Your payout</p>}
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1">
+                    {invoice.status === 'draft' && (
+                      <Button size="sm" variant="outline" onClick={() => handleSend(invoice._id)} className="hidden sm:inline-flex">
+                        Send
+                      </Button>
+                    )}
+                    {invoice.rehabifyCare ? (
+                      <span className="size-9" aria-hidden />
+                    ) : (
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={() => handleDownload(invoice._id)}
+                        aria-label={`Download invoice ${invoice.invoiceNumber}`}
+                      >
+                        <Download className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         )}
       </Panel>

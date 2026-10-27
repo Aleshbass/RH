@@ -1,9 +1,9 @@
 'use client'
 
 /**
- * Rehabify's price list as a physio sees it, for patients who pay per session: the services this
- * physio offers (with what the patient pays and what the physio earns), the areas they cover for
- * home visits, and the pieces the booking and accept-a-request drawers both use.
+ * Rehabify's services as a physio sees them, for patients who pay per session: the services this
+ * physio offers (with what the physio earns, never what the patient pays), the areas they cover
+ * for home visits, and the pieces the booking and accept-a-request drawers both use.
  */
 
 import { useMemo, type ReactNode } from 'react'
@@ -14,6 +14,7 @@ import { getService, type ServiceMode } from '@/lib/rehabify-services'
 import type { CareBillingMode, MarketplaceSettings, PayoutSchedule, TravelZone } from '@/lib/rehabify-api-types'
 import { useQueryUntyped } from '@/lib/convexUntyped'
 import { cn } from '@/lib/utils'
+import { useCareBillingMode, usePracticeMode } from '@/components/physio/practiceMode'
 import { scheduleApi } from './shared'
 
 /** A Rehabify service this physio offers, for a patient who pays per session. */
@@ -23,7 +24,6 @@ export type ScheduleService = {
   mode: ServiceMode
   durationMinutes: number
   durationLabel: string
-  priceKobo: number
   payoutKobo: number
   travelApplies: boolean
 }
@@ -32,20 +32,23 @@ export type HomeVisit = { zoneId: string; area: string }
 
 /**
  * Whether this patient pays Rehabify prices, and if so the services and areas the physio can
- * offer them. Pass no patient to skip the queries.
+ * offer them. Pass no patient to skip the queries. Independent physios only have their own
+ * patients, so nothing about Rehabify services, payouts or areas is loaded for them.
  */
 export function useRehabifyServices(patientId: string | null | undefined) {
-  const billing = useQueryUntyped(scheduleApi.rehabifyFollowUps.getCareBillingMode, patientId ? { patientId } : 'skip') as
-    | CareBillingMode
-    | null
-    | undefined
+  const practice = usePracticeMode()
+  const billing: CareBillingMode | null | undefined = useCareBillingMode(patientId)
   const isRehabify = billing?.mode === 'rehabify'
-  const coverage = useQueryUntyped(scheduleApi.marketplaceSettings.getMyMarketplaceSettings, patientId ? {} : 'skip') as
-    | MarketplaceSettings
-    | null
-    | undefined
+  // Video and home-visit coverage are Rehabify network settings: an independent physio has none
+  const coverageQuery = useQueryUntyped(
+    scheduleApi.marketplaceSettings.getMyMarketplaceSettings,
+    patientId && practice.loaded && !practice.isIndependent ? {} : 'skip'
+  ) as MarketplaceSettings | null | undefined
+  const coverage = practice.isIndependent ? null : coverageQuery
   const payoutSchedule = useQueryUntyped(scheduleApi.serviceTariffs.getPayoutSchedule, isRehabify ? {} : 'skip') as PayoutSchedule | null | undefined
   const zones = useQueryUntyped(scheduleApi.travelZones.listZones, isRehabify ? {} : 'skip') as TravelZone[] | undefined
+  /** True while anything the booking and invoice drawers need is still on its way. */
+  const loading = Boolean(patientId) && (billing === undefined || coverage === undefined || (isRehabify && payoutSchedule === undefined))
 
   // Only the Rehabify services this physio offers: video, and home visits where they cover an area
   const services = useMemo<ScheduleService[]>(() => {
@@ -63,7 +66,6 @@ export function useRehabifyServices(patientId: string | null | undefined) {
           mode: row.mode,
           durationMinutes: info.durationMinutes,
           durationLabel: row.durationLabel,
-          priceKobo: row.priceKobo,
           payoutKobo: row.payoutKobo,
           travelApplies: row.travelApplies,
         },
@@ -78,7 +80,19 @@ export function useRehabifyServices(patientId: string | null | undefined) {
     return (zones ?? []).filter((zone) => covered.has(zone.id))
   }, [zones, coverage])
 
-  return { billing, isRehabify, coverage, payoutSchedule, zones, services, coveredZones }
+  return { billing, isRehabify, coverage, payoutSchedule, zones, services, coveredZones, loading }
+}
+
+/**
+ * What the physio earns for a service: their payout, plus their share of the area's travel
+ * charge on a home visit that carries one (null until that area is chosen). Same sums as the
+ * server's quote, so it matches the payout the booking records.
+ */
+export function earningsFor(service: ScheduleService, zone: TravelZone | null | undefined): number | null {
+  if (!service.travelApplies) return service.payoutKobo
+  if (!zone) return null
+  const share = Math.min(100, Math.max(0, zone.physioTravelSharePercent ?? 100))
+  return service.payoutKobo + Math.round((Math.max(0, Math.round(zone.surchargeKobo)) * share) / 100)
 }
 
 const KIND_RANK: Record<string, number> = { treatment: 0, assessment: 1, consultation: 2 }
@@ -165,7 +179,7 @@ export function HomeVisitFields({
       <div>
         <label htmlFor={`${idPrefix}-area`} className="mb-1.5 flex items-center gap-1 text-sm font-medium text-pt-ink">
           Patient’s area
-          <InfoTip>Only the areas you cover are listed. The travel charge for the area is added to the price.</InfoTip>
+          <InfoTip>Only the areas you cover are listed. Your share of the area’s travel charge is added to your payout.</InfoTip>
         </label>
         <select
           id={`${idPrefix}-area`}

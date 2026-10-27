@@ -103,12 +103,11 @@ export function CreateInvoiceModal({ isOpen, onClose, preselectedPatientId }: Cr
     }, [patients, search]);
 
     const subtotal = items.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
-    // Same sums as billing.createInvoice: an independent physio's patient pays the ₦1,000 service fee
-    // and Paystack's 1.5% + ₦100 on top; a clinic's patient pays the quoted price
+    // Same sums as billing.createInvoice: Rehabify takes nothing from a physio's own invoice; their
+    // patient pays only Paystack's 1.5% + ₦100 on top. A clinic's patient pays the quoted price.
     const throughClinic = Boolean(me?.clinicId);
-    const serviceFee = throughClinic ? 0 : 1000;
-    const processing = throughClinic || subtotal <= 0 ? 0 : Math.round((subtotal + serviceFee) * 0.015) + 100;
-    const patientPays = subtotal + serviceFee + processing;
+    const processing = throughClinic || subtotal <= 0 ? 0 : Math.round(subtotal * 0.015) + 100;
+    const patientPays = subtotal + processing;
     const first = patient?.firstName || 'The patient';
 
     const setItem = (index: number, patch: Partial<Item>) => setItems((list) => list.map((item, i) => (i === index ? { ...item, ...patch } : item)));
@@ -369,22 +368,16 @@ export function CreateInvoiceModal({ isOpen, onClose, preselectedPatientId }: Cr
                             <span className="tabular-nums text-pt-ink">{formatNaira(subtotal)}</span>
                         </div>
                         {!throughClinic && (
-                            <>
-                                <div className="mt-1.5 flex justify-between text-pt-muted">
-                                    <span className="flex items-center gap-1">
-                                        Rehabify service fee
-                                        <InfoTip>A flat ₦1,000 the patient pays on top. You still receive the full amount you charge.</InfoTip>
-                                    </span>
-                                    <span className="tabular-nums">{formatNaira(serviceFee)}</span>
-                                </div>
-                                <div className="mt-1.5 flex justify-between text-pt-muted">
-                                    <span className="flex items-center gap-1">
-                                        Card and transfer fee
-                                        <InfoTip>Paystack’s 1.5% + ₦100, added to what the patient pays.</InfoTip>
-                                    </span>
-                                    <span className="tabular-nums">{formatNaira(processing)}</span>
-                                </div>
-                            </>
+                            <div className="mt-1.5 flex justify-between text-pt-muted">
+                                <span className="flex items-center gap-1">
+                                    Card and transfer fee
+                                    <InfoTip>
+                                        Paystack’s 1.5% + ₦100, added to what the patient pays. Rehabify takes nothing. If they pay you
+                                        directly, record it as paid instead.
+                                    </InfoTip>
+                                </span>
+                                <span className="tabular-nums">{formatNaira(processing)}</span>
+                            </div>
                         )}
                         <div className="mt-3 flex justify-between border-t border-pt-line pt-3 font-semibold text-pt-ink">
                             <span>{patient ? `${first} pays` : 'The patient pays'}</span>

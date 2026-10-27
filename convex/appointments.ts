@@ -3,7 +3,7 @@ import { mutation, query, internalQuery } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { onPatientSessionCompleted } from "./helpers/partnerAttribution";
-import { isRehabifyCare, needsInvoiceOnAccept } from "./rehabifyFollowUps";
+import { isRehabifyCare, mustPayToConfirm, needsInvoiceOnAccept } from "./rehabifyFollowUps";
 import { lagosDate, lagosDateTime, lagosShortDate, lagosTime, lagosTimeRange, startOfZonedDay, zonedDateTimeToUtc } from "./helpers/lagosTime";
 import { awaitingConfirmationFrom, isOpenAppointment } from "./helpers/appointmentStatus";
 import { isGoogleBusy } from "./helpers/slotHolds";
@@ -1030,6 +1030,10 @@ export const respondToProposedTime = mutation({
         });
         return { success: true, message: "Moved to the new time. Your physio will send the invoice, and paying it confirms your visit." };
       }
+      // Any other unpaid Rehabify Care visit is confirmed by paying, never by accepting a time
+      if (await mustPayToConfirm(ctx, appointment)) {
+        throw new ConvexError("This visit is paid through Rehabify, so paying is what confirms it. Ask your physio to send you the payment request.");
+      }
 
       await ctx.db.patch(args.appointmentId, {
         startTime: start,
@@ -1823,6 +1827,10 @@ export const confirmAppointmentAsPatient = mutation({
     }
     if (appointment.endTime < Date.now()) {
       throw new ConvexError("This visit's time has passed.");
+    }
+    // Rehabify Care visits are confirmed by paying, not by accepting (own and clinic patients are)
+    if (await mustPayToConfirm(ctx, appointment)) {
+      throw new ConvexError("This visit is paid through Rehabify, so paying is what confirms it. Ask your physio to send you the payment request.");
     }
 
     // Update the appointment

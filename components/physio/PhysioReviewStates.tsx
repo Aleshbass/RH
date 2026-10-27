@@ -42,9 +42,12 @@ export function PhysioUnderReview({ setup }: { setup: SetupStatus | null }) {
       )}
 
       <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
-        <Link href="/payout-policy" className="text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white">
-          How payouts work
-        </Link>
+        {/* Rehabify payouts are for Rehabify Care patients: not for physios who see only their own */}
+        {setup?.practiceMode !== 'independent' && (
+          <Link href="/payout-policy" className="text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white">
+            How payouts work
+          </Link>
+        )}
         <a href={`mailto:${SUPPORT_EMAIL}`} className="text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white">
           Contact support
         </a>

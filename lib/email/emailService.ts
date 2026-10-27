@@ -454,11 +454,12 @@ export function getEmailContent(options: EmailOptions): { subject: string; body:
           eyebrow: copy.eyebrow,
           tone: 'success',
           title: copy.title,
-          preheader: `${amountStr} received for your Rehabify booking.`,
+          // A physio's copy carries their payout (never what the patient paid), so it's labelled as such
+          preheader: d.role === 'physiotherapist' ? `Your payout: ${amountStr}, paid after the session.` : `${amountStr} received for your Rehabify booking.`,
           body: [
             greeting(d.recipientName),
             paragraph(copy.message),
-            highlight({ label: 'Amount paid', value: amountStr, sub: lagosEmailDate(d.date, true) }),
+            highlight({ label: d.role === 'physiotherapist' ? 'Your payout' : 'Amount paid', value: amountStr, sub: lagosEmailDate(d.date, true) }),
             details([
               ['Reference', d.paymentReference],
               ['Patient', d.patientName],

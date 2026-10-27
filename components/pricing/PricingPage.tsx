@@ -6,6 +6,7 @@ import { ArrowRight } from '@/components/icons'
 import { displayFont } from '@/components/learn/shared'
 import { joyWhatsAppUrl } from '@/lib/joyWhatsApp'
 import { formatKobo } from '@/lib/rehabify-services'
+import { RECOVERY_PLANS, recoveryPlanStatus } from '@/lib/recoveryPlans'
 import { cn } from '@/lib/utils'
 import { CareChooser } from './CareChooser'
 import {
@@ -32,7 +33,7 @@ const ASSESSMENT_WITH_JOY_URL = joyWhatsAppUrl("Hi Joy! I'd like to book a physi
 
 const PROMISES = [
   { title: 'The price you see is the price you pay', body: 'No booking or platform fee at checkout.' },
-  { title: 'No subscriptions', body: 'Pay for each session as you go.' },
+  { title: 'Pay as you go', body: 'Pay for each session. No subscription for your care.' },
   { title: 'Confirmed once paid', body: "Pick a time. It's yours once you've paid." },
   { title: 'Same price, any physiotherapist', body: 'Standard prices across the Rehabify network.' },
 ]
@@ -69,6 +70,7 @@ export function PricingPage({ initialCatalogue }: { initialCatalogue: Catalogue 
       </section>
 
       <PriceList catalogue={catalogue} />
+      <BetweenSessions />
       <CostHelp />
       <Faq catalogue={catalogue} />
     </div>
@@ -209,6 +211,49 @@ function PriceRow({ service }: { service: CatalogueService }) {
   )
 }
 
+/** Basic, Flex and Flex Max: support between sessions (Flex plans show as coming soon until launch). */
+function BetweenSessions() {
+  return (
+    <section className="px-4 pt-20 sm:px-6 lg:pt-28">
+      <div className="mx-auto max-w-6xl">
+        <FadeUp>
+          <SectionHeading
+            title="Support between sessions"
+            description="Your physiotherapist’s plan, with as much help at home as you want."
+          />
+        </FadeUp>
+        <div className="mt-10 grid gap-5 lg:mt-12 lg:grid-cols-3">
+          {RECOVERY_PLANS.map((plan, i) => (
+            <FadeUp key={plan.id} delay={i * 0.06} className="flex">
+              <article
+                className={cn(
+                  'flex w-full flex-col rounded-[2rem] p-7 sm:p-8',
+                  plan.available ? 'bg-rh-ink text-white' : 'bg-white text-rh-ink'
+                )}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <h3 className="text-[26px] font-bold leading-tight tracking-tight">{plan.name}</h3>
+                  <span
+                    className={cn(
+                      'shrink-0 rounded-full px-3 py-1 text-xs font-semibold',
+                      plan.available ? 'bg-rh-lime text-rh-ink' : 'bg-rh-canvas text-rh-ink/70'
+                    )}
+                  >
+                    {recoveryPlanStatus(plan)}
+                  </span>
+                </div>
+                <p className={cn('mt-3 text-[15px] font-medium leading-relaxed', plan.available ? 'text-white/75' : 'text-rh-ink/70')}>
+                  {plan.description}
+                </p>
+              </article>
+            </FadeUp>
+          ))}
+        </div>
+      </div>
+    </section>
+  )
+}
+
 function CostHelp() {
   return (
     <section className="px-4 py-20 sm:px-6 lg:py-28">
@@ -324,7 +369,7 @@ function Faq({ catalogue }: { catalogue: Catalogue }) {
             No. Prices are set by Rehabify and are the same across our network.
           </FaqItem>
           <FaqItem question="Are there any other fees?">
-            No. There&apos;s no booking or platform fee at checkout and no subscription: you pay for each session as you go.
+            No. There&apos;s no booking or platform fee at checkout and no subscription for your care: you pay for each session as you go.
           </FaqItem>
           <FaqItem question="How do payment and confirmation work?">
             You book through Joy on WhatsApp. Joy confirms your time and sends a secure Paystack payment link, and your

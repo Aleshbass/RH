@@ -24,6 +24,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton';
 import { primaryButtonClass, StatusBadge } from '@/components/physio/ui';
 import { SettingsPageHeader, SettingsSection, fieldHintClass, fieldLabelClass } from '@/components/physio/SettingsUI';
+import { usePracticeMode } from '@/components/physio/practiceMode';
 
 type BankAccount = {
     _id: Id<'physiotherapistBankAccounts'>;
@@ -179,6 +180,8 @@ function BankAccountForm({ onDone, onCancel }: { onDone: () => void; onCancel?: 
 export default function PayoutSettingsPage() {
     const accounts = useQuery(api.paystack.getMyBankAccounts) as BankAccount[] | undefined;
     const deleteBankAccount = useMutation(api.paystack.deleteBankAccount);
+    // Independent physios are paid by their own patients, never Rehabify payouts
+    const { isIndependent, mode } = usePracticeMode();
     const [editing, setEditing] = useState(false);
     const [confirmRemove, setConfirmRemove] = useState(false);
 
@@ -198,7 +201,10 @@ export default function PayoutSettingsPage() {
 
     return (
         <div className="space-y-6">
-            <SettingsPageHeader title="Payouts" description="The account we send your session payouts to." />
+            <SettingsPageHeader
+                title="Payouts"
+                description={isIndependent ? 'Where your patients’ payments on your invoices go.' : 'The account we send your session payouts to.'}
+            />
 
             <SettingsSection title="Payout account">
                 {accounts === undefined ? (
@@ -241,21 +247,30 @@ export default function PayoutSettingsPage() {
                 )}
             </SettingsSection>
 
-            <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                Rehabify patients pay Rehabify. For each session you earn the fixed payout for that service, plus your share of any
-                home-visit travel charge, and we send it to this account once the session is marked completed. See your{' '}
-                <Link href="/dashboard/physiotherapist/settings/fee-schedule" className="underline hover:text-neutral-900 dark:hover:text-white">
-                    payout schedule
-                </Link>
-                .
-            </p>
+            {isIndependent ? (
+                <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                    Your patients pay your invoices by card, transfer or USSD, and the money comes to this account. Rehabify takes nothing.
+                    If a patient pays you directly, record it as paid on the invoice.
+                </p>
+            ) : (
+                <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                    Rehabify Care patients pay Rehabify. For each session you earn the fixed payout for that service, plus your share of any
+                    home-visit travel charge, and we send it to this account once the session is marked completed. See your{' '}
+                    <Link href="/dashboard/physiotherapist/settings/fee-schedule" className="underline hover:text-neutral-900 dark:hover:text-white">
+                        payout schedule
+                    </Link>
+                    .{mode === 'both' && ' Your own patients pay your invoices into this account too.'}
+                </p>
+            )}
 
             <AlertDialog open={confirmRemove} onOpenChange={setConfirmRemove}>
                 <AlertDialogContent>
                     <AlertDialogHeader>
                         <AlertDialogTitle>Remove your payout account?</AlertDialogTitle>
                         <AlertDialogDescription>
-                            Patients can’t book you until you add another account.
+                            {isIndependent
+                                ? 'Your patients can’t pay your invoices online until you add another account.'
+                                : 'Patients can’t book you until you add another account.'}
                         </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>

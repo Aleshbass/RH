@@ -101,7 +101,8 @@ export function ServiceOption({
                         <li className="inline-flex items-center rounded-full bg-rh-night/[0.05] px-2.5 py-1">Coming soon</li>
                     )}
                 </ul>
-                {!comingSoon && (
+                {/* No price menu: only the first consultation's price, or the service the patient has picked */}
+                {!comingSoon && (priceText || selected || service.id === "recovery_consultation") && (
                     <p className="text-right text-base font-bold tabular-nums text-rh-night">{priceText ?? servicePriceLabel(service)}</p>
                 )}
             </div>

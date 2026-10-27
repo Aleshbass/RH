@@ -439,6 +439,7 @@ export const removeProfileImage = mutation({
 // Profile data validators (subset of fields from schema, excluding userId)
 const physiotherapistProfileDataValidator = v.object({
   clinicId: v.optional(v.id("clinics")),
+  practiceMode: v.optional(v.union(v.literal("network"), v.literal("independent"), v.literal("both"))),
   specializations: v.optional(v.array(v.string())),
   licenseNumber: v.optional(v.string()),
   certificationBoard: v.optional(v.string()),
@@ -545,13 +546,17 @@ export const completeUserProfile = mutation({
 
     switch (args.role) {
       case "physiotherapist":
-        const physioData = args.profileData as typeof physiotherapistProfileDataValidator.type;
+        // Clinic membership only comes from accepting a clinic's invitation, never from this form
+        const { clinicId: _ignoredClinicId, ...physioData } = args.profileData as typeof physiotherapistProfileDataValidator.type;
+        // Physios who only see their own patients are never listed; taking Rehabify Care patients
+        // (alone or with their own) lists them again, e.g. after changing their mind mid-application
+        if (physioData.practiceMode) physioData.isAvailableOnMarketplace = physioData.practiceMode !== "independent";
         let physioProfileId: Id<"physiotherapistProfiles">;
         try {
           if (user.physiotherapistProfileId) {
-            
+
             const existingProfile = await ctx.db.get(user.physiotherapistProfileId);
-            
+
             await ctx.db.patch(user.physiotherapistProfileId, {
               ...physioData,
               isAvailableOnMarketplace: physioData.isAvailableOnMarketplace ?? existingProfile?.isAvailableOnMarketplace ?? true,

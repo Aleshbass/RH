@@ -42,7 +42,7 @@ import { activityMeta, formatCount, roleLabel } from '@/components/admin/activit
 import AdminLiveMap from '@/components/dashboard/admin/AdminLiveMap'
 import { cn } from '@/lib/utils'
 
-type Badges = { approvals: number; openReports: number; bankTransfers: number; partnerApplications: number; accessApplications: number; cap: number }
+type Badges = { approvals: number; openReports: number; bankTransfers: number; partnerApplications: number; accessApplications: number; agreements: number; cap: number }
 
 function greeting(date: Date) {
   const hour = date.getHours()

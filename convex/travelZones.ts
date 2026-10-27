@@ -6,6 +6,7 @@
 import { ConvexError, v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { ensureUserRole } from "./auth";
+import { servesRehabifyNetwork } from "./physioSetup";
 
 /** Public: active zones and their areas, grouped by city, for the area picker. */
 export const listZones = query({
@@ -37,7 +38,7 @@ export const adminListZones = query({
       .sort((a, b) => a.city.localeCompare(b.city) || (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.name.localeCompare(b.name))
       .map((zone) => ({
         ...zone,
-        physiosCovering: profiles.filter((profile) => !profile.clinicId && profile.coveredZoneIds?.includes(zone._id)).length,
+        physiosCovering: profiles.filter((profile) => servesRehabifyNetwork(profile) && profile.coveredZoneIds?.includes(zone._id)).length,
       }));
   },
 });

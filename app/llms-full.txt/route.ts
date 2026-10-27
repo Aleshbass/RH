@@ -119,6 +119,10 @@ function serviceLines(catalogue: Catalogue | null): ServiceLine[] {
   });
 }
 
+/**
+ * Rehabify publishes only the first consultation's price, not a price list: every other session's
+ * exact amount (with any travel charge) is shown to the patient before they pay.
+ */
 function servicesList(catalogue: Catalogue | null): string {
   return serviceLines(catalogue)
     .map((service) => {
@@ -126,9 +130,10 @@ function servicesList(catalogue: Catalogue | null): string {
       if (service.kind === 'screening' && !service.bookable) {
         return `- ${service.name} (${service.durationLabel}, ${where}): free, coming soon. ${service.summary}`;
       }
-      const price = service.travelApplies
-        ? `from ${formatKobo(service.priceKobo)}, plus a travel charge for the patient's area (shown before payment)`
-        : formatKobo(service.priceKobo);
+      const price =
+        service.id === 'recovery_consultation'
+          ? formatKobo(service.priceKobo)
+          : `price shown before payment${service.travelApplies ? ", with any travel charge for the patient's area" : ''}`;
       return `- ${service.name} (${service.durationLabel}, ${where}): ${price}${service.bookable ? '' : ' (not bookable right now)'}. ${service.summary}`;
     })
     .join('\n');
@@ -257,14 +262,15 @@ Full terms: ${base}/consultation-booking-policy and ${base}/payment-policy
 
 ## Services and prices
 
-Rehabify sets one standard price for each service, the same whichever Rehabify physiotherapist the patient sees (prices can change; ${base}/pricing shows the current ones):
+Rehabify sets one standard price for each service, the same whichever Rehabify physiotherapist the patient sees. The first consultation's price is published; for every other session the patient sees the exact amount before paying:
 
 ${servicesList(live.catalogue)}
 
 - Not sure where to start: the Initial Recovery Consultation is a brief clinician-led video consultation that recommends the right next step. It is not a full assessment.
 - Patients can book a comprehensive assessment directly. The virtual assessment includes an initial recovery plan; if a physical examination is needed, the clinician recommends an in-person assessment. Treatment sessions follow a Rehabify assessment.
 - All-inclusive: the price shown is the price the patient pays. There is no booking or platform fee at checkout.
-- No subscriptions: patients pay per session.
+- Patients pay per session; there is no subscription for care.
+- Support between sessions: Basic (the essential instructions to follow the physiotherapist's plan) is always free. Flex (interactive home programme with exercise demo videos and progress tracking) and Flex Max (Flex plus Joy on WhatsApp for reminders and support) are coming soon.
 - Home visits: a travel charge may be added, set by the travel zone for the patient's city and area. It is shown, with the total, before payment.
 - HMO coverage is not currently accepted.
 

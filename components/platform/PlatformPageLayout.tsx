@@ -33,6 +33,12 @@ interface PlatformPageLayoutProps {
     videoTitle?: string;
     closingTitle?: string;
     closingText?: string;
+    /** Replaces the main link with a button (e.g. opening the Book a demo dialog) */
+    primaryAction?: { label: string; onClick: () => void };
+    /** Replaces "Contact us" as the second button */
+    secondaryCta?: { label: string; href: string };
+    /** Extra sections after the features (e.g. plans) */
+    children?: ReactNode;
 }
 
 const primary =
@@ -57,14 +63,31 @@ function Rise({ children, delay = 0, className }: { children: ReactNode; delay?:
     );
 }
 
-function PrimaryCta({ href, label, onInk = false }: { href: string; label: string; onInk?: boolean }) {
-    return (
-        <Link
-            href={href}
-            className={cn(primary, onInk ? "focus-visible:ring-rh-lime focus-visible:ring-offset-rh-ink" : "focus-visible:ring-rh-ink")}
-        >
+function PrimaryCta({
+    href,
+    label,
+    onClick,
+    onInk = false,
+}: {
+    href: string;
+    label: string;
+    onClick?: () => void;
+    onInk?: boolean;
+}) {
+    const className = cn(primary, onInk ? "focus-visible:ring-rh-lime focus-visible:ring-offset-rh-ink" : "focus-visible:ring-rh-ink");
+    const content = (
+        <>
             {label}
             <ArrowRight className="h-4 w-4 transition-transform duration-300 group-hover:translate-x-1" />
+        </>
+    );
+    return onClick ? (
+        <button type="button" onClick={onClick} className={className}>
+            {content}
+        </button>
+    ) : (
+        <Link href={href} className={className}>
+            {content}
         </Link>
     );
 }
@@ -81,6 +104,9 @@ export default function PlatformPageLayout({
     videoTitle = "Rehabify demo",
     closingTitle = "Ready to get started?",
     closingText,
+    primaryAction,
+    secondaryCta = { label: "Contact us", href: "/contact" },
+    children,
 }: PlatformPageLayoutProps) {
     const reduce = useReducedMotion();
     const hasVisual = Boolean(videoUrl || image);
@@ -98,9 +124,9 @@ export default function PlatformPageLayout({
                         <h1 className="max-w-xl text-[40px] font-bold leading-[1.04] tracking-tight text-rh-ink sm:text-[56px]">{title}</h1>
                         <p className="mt-5 max-w-lg text-lg font-medium leading-relaxed text-rh-ink/70 sm:text-xl">{description}</p>
                         <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-                            <PrimaryCta href={ctaLink} label={ctaText} />
-                            <Link href="/contact" className={secondaryOnLight}>
-                                Contact us
+                            <PrimaryCta href={ctaLink} label={primaryAction?.label ?? ctaText} onClick={primaryAction?.onClick} />
+                            <Link href={secondaryCta.href} className={secondaryOnLight}>
+                                {secondaryCta.label}
                             </Link>
                         </div>
                     </motion.div>
@@ -158,6 +184,8 @@ export default function PlatformPageLayout({
                 </div>
             </section>
 
+            {children}
+
             {/* Closing call to action */}
             <section className="px-4 pb-20 sm:px-6 lg:pb-28">
                 <Rise className="mx-auto max-w-6xl">
@@ -167,9 +195,9 @@ export default function PlatformPageLayout({
                             <h2 className="text-[32px] font-bold leading-[1.1] tracking-tight text-white sm:text-[44px]">{closingTitle}</h2>
                             {closingText && <p className="mt-4 text-lg font-medium leading-relaxed text-white/75">{closingText}</p>}
                             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-                                <PrimaryCta href={ctaLink} label={ctaText} onInk />
-                                <Link href="/contact" className={secondaryOnInk}>
-                                    Contact us
+                                <PrimaryCta href={ctaLink} label={primaryAction?.label ?? ctaText} onClick={primaryAction?.onClick} onInk />
+                                <Link href={secondaryCta.href} className={secondaryOnInk}>
+                                    {secondaryCta.label}
                                 </Link>
                             </div>
                         </div>

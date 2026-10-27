@@ -14,16 +14,16 @@ export const DynamicPhysioMapView = dynamic(
     {
         ssr: false,
         loading: () => (
-            <div className="w-full h-full flex flex-col items-center justify-center bg-gray-50 rounded-xl border border-gray-100">
+            <div className="w-full h-full flex flex-col items-center justify-center bg-white rounded-2xl">
                 <div className="animate-pulse flex flex-col items-center gap-3">
-                    <div className="w-12 h-12 rounded-full bg-teal-50 flex items-center justify-center">
-                        <Map className="w-6 h-6 text-[#005b57]" />
+                    <div className="w-12 h-12 rounded-full bg-rh-canvas flex items-center justify-center">
+                        <Map className="w-6 h-6 text-rh-ink" />
                     </div>
                     <div className="space-y-2 w-48">
                         <Skeleton className="h-3 w-full" />
                         <Skeleton className="h-3 w-3/4 mx-auto" />
                     </div>
-                    <p className="text-xs text-gray-400 mt-1">Loading map...</p>
+                    <p className="text-xs text-rh-ink/50 mt-1">Loading map…</p>
                 </div>
             </div>
         ),

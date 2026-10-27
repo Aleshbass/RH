@@ -6,7 +6,8 @@ import { makeFunctionReference } from "convex/server";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import Link from "next/link";
 import { BookDemoDialog } from "@/components/partners/BookDemoDialog";
-import { ArrowRight, Check, Copy } from "@/components/icons";
+import { ArrowRight, Check, Copy, Info } from "@/components/icons";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { PairingShapes } from "@/components/learn/shared";
 import { SegmentedSwitch, switchPanelId, switchTabId } from "@/components/landing/SegmentedSwitch";
 import { cn } from "@/lib/utils";
@@ -33,6 +34,40 @@ const leadClass = "mt-4 max-w-xl text-base font-medium leading-relaxed sm:text-l
 
 function Arrow() {
   return <ArrowRight className="h-4 w-4 transition-transform duration-300 group-hover:translate-x-1" />;
+}
+
+/** "i" beside the hero buttons: what each one does, plus sign-in and docs, so the hero keeps two CTAs. */
+function CtaInfo() {
+  return (
+    <Popover>
+      <PopoverTrigger
+        aria-label="Which option is right for me?"
+        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-rh-ink/50 transition-colors hover:bg-white hover:text-rh-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-ink"
+      >
+        <Info className="h-4 w-4" />
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        className="w-[min(20rem,calc(100vw-2rem))] rounded-2xl border-rh-ink/10 bg-white p-4 text-sm leading-relaxed text-rh-ink/75"
+      >
+        <p>
+          <span className="font-semibold text-rh-ink">Book a demo</span> for a short call with our team.
+        </p>
+        <p className="mt-2">
+          <span className="font-semibold text-rh-ink">Become a partner</span> to send your details. We&apos;ll set up your
+          partner account.
+        </p>
+        <div className="mt-3 flex flex-col gap-1.5 border-t border-rh-ink/10 pt-3">
+          <Link href="/partners/portal" className="font-semibold text-rh-ink hover:underline">
+            Already a partner? Sign in
+          </Link>
+          <Link href="/integrations" className="font-semibold text-rh-ink hover:underline">
+            Integration docs
+          </Link>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
 }
 
 // ── Subtle fade-up ───────────────────────────────
@@ -463,23 +498,17 @@ export default function PartnershipsPage() {
             <p className="mt-5 max-w-xl text-lg font-medium leading-relaxed text-rh-ink/75">
               Refer through a link, the partner portal or our REST API, and follow every patient&apos;s recovery.
             </p>
-            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+            <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
               <button type="button" onClick={() => setDemoOpen(true)} className={primary}>
                 Book a demo
                 <Arrow />
               </button>
-              <a href="#inquiry" className={secondary}>
-                Become a partner
-              </a>
-            </div>
-            <div className="mt-6 flex flex-wrap gap-x-6 gap-y-3">
-              <Link href="/integrations" className={textLink}>
-                Read the integration docs
-                <Arrow />
-              </Link>
-              <Link href="/partners/portal" className={textLink}>
-                Partner sign in
-              </Link>
+              <div className="flex items-center gap-2">
+                <a href="#inquiry" className={cn(secondary, "flex-1 sm:flex-none")}>
+                  Become a partner
+                </a>
+                <CtaInfo />
+              </div>
             </div>
             <p className="mt-8 text-[15px] font-medium text-rh-ink/60">Partners include AwaDoc and MediLoan by MyItura.</p>
           </Rise>

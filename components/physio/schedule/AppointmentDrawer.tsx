@@ -5,7 +5,8 @@
  * do with it (join, accept, decline, suggest another time, cancel, mark done or no-show). After
  * "Mark done" it asks for a quick session note, so records stay complete without extra clicks.
  * A Rehabify patient's request is accepted with an invoice: the physio picks the service from
- * Rehabify's price list and the patient pays to confirm.
+ * Rehabify's list (seeing only their payout, never the patient's price) and the patient pays to
+ * confirm.
  */
 
 import { useEffect, useState, type ReactNode } from 'react'
@@ -36,7 +37,6 @@ import { Textarea } from '@/components/ui/textarea'
 import { PatientSlotPicker } from '@/components/patient/PatientAppointmentBookingModal'
 import { isVideoVisit, meetingLinkOf } from '@/components/appointments/appointment-ui'
 import {
-  accentButtonClass,
   DetailRow,
   EmptyState,
   fieldClass,
@@ -48,20 +48,21 @@ import {
   StatusBadge,
 } from '@/components/physio/ui'
 import { formatKobo } from '@/lib/rehabify-services'
-import type { ServiceQuote } from '@/lib/rehabify-api-types'
-import { useMutationUntyped, useQueryUntyped } from '@/lib/convexUntyped'
+import { useMutationUntyped } from '@/lib/convexUntyped'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
-import { Choice, HomeVisitFields, suggestService, useRehabifyServices, type HomeVisit, type ScheduleService } from './rehabifyServices'
+import { usePracticeMode } from '@/components/physio/practiceMode'
+import { Choice, HomeVisitFields, earningsFor, suggestService, useRehabifyServices, type HomeVisit, type ScheduleService } from './rehabifyServices'
+import { JoinVideoButton } from './JoinVideoButton'
 import {
   asLike,
-  joinLink,
   minutesOf,
   needsMyAnswer,
   patientName,
   readableError,
   scheduleApi,
   useNow,
+  videoJoin,
   visitStatus,
   type PhysioAppointment,
 } from './shared'
@@ -99,13 +100,12 @@ export function AppointmentDrawer({
   const addNote = useMutationUntyped(scheduleApi.physioCare.addClinicalNote)
   const acceptWithInvoice = useMutationUntyped(scheduleApi.rehabifyFollowUps.acceptRequestWithInvoice)
 
-  // A Rehabify patient's request: the price list it's invoiced from
-  const invoicing = Boolean(isOpen && appointment?.needsInvoice)
-  const { billing, coverage, payoutSchedule, zones, services, coveredZones } = useRehabifyServices(invoicing ? appointment?.patientId : null)
-  const quote = useQueryUntyped(
-    scheduleApi.booking.getServiceQuote,
-    view === 'invoice' && service && (service.mode !== 'home' || visit) ? { serviceId: service.id, zoneId: service.mode === 'home' ? visit?.zoneId : undefined } : 'skip'
-  ) as ServiceQuote | undefined
+  // A Rehabify Care patient's request: the services it's invoiced from (with the physio's payouts).
+  // Independent physios only have their own patients, so it never applies to them.
+  const practice = usePracticeMode()
+  const needsInvoice = Boolean(appointment?.needsInvoice) && practice.loaded && !practice.isIndependent
+  const invoicing = isOpen && needsInvoice
+  const { zones, services, coveredZones, loading: servicesLoading } = useRehabifyServices(invoicing ? appointment?.patientId : null)
 
   const id = appointment?._id
   // Fresh each time it opens (not while it slides closed)
@@ -147,8 +147,10 @@ export function AppointmentDrawer({
   const upcoming = appointment.startTime > now
   const started = appointment.startTime <= now
   const answer = needsMyAnswer(appointment, now)
-  const link = joinLink(appointment, now)
+  const join = videoJoin(appointment, now)
   const video = isVideoVisit(asLike(appointment))
+  // Every online visit that's still to come shows Join: live in its window, greyed out before
+  const joinButton = video && !answer && join.kind !== 'none' ? <JoinVideoButton join={join} size="lg" label="Join video call" /> : null
   const minutes = minutesOf(appointment)
   const patientHref = `${PHYSIO}/patients/${appointment.patientId}`
 
@@ -183,19 +185,21 @@ export function AppointmentDrawer({
   let title = name
   let description: ReactNode = `${appointment.serviceType || 'Session'} · ${minutes} min`
 
-  if (view === 'details') {
+  if (view === 'details' || (view === 'invoice' && !needsInvoice)) {
+    const hasLink = Boolean(meetingLinkOf(asLike(appointment)))
     const place = video ? (
-      link ? (
-        <a href={link} target="_blank" rel="noopener noreferrer" className="font-semibold underline-offset-2 hover:underline">
-          Join video call
-        </a>
-      ) : (
-        <span className="inline-flex items-center gap-1">
-          Video call
-          {open && !meetingLinkOf(asLike(appointment)) ? ' · link made once it’s confirmed' : open ? ' · Join opens 10 minutes before' : ''}
-          {open && <InfoTip>The private link appears here and on the patient’s dashboard. The Join button opens 10 minutes before the start.</InfoTip>}
-        </span>
-      )
+      <span className="inline-flex flex-wrap items-center gap-1">
+        {join.kind === 'open'
+          ? 'Video call · ready to join'
+          : open && !hasLink && appointment.endTime > now
+            ? 'Video call · link made once it’s confirmed'
+            : join.kind === 'soon'
+              ? `Video call · Join opens at ${lagosTime(join.opensAt)}`
+              : 'Video call'}
+        {join.kind !== 'none' && (
+          <InfoTip>The private link is on your Schedule and the patient’s dashboard. Join opens 15 minutes before the start and stays open until the end.</InfoTip>
+        )}
+      </span>
     ) : appointment.location ? (
       <a
         href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(appointment.location)}`}
@@ -217,7 +221,7 @@ export function AppointmentDrawer({
           </StatusBadge>
           <InfoTip label="What this status means">{status.explain}</InfoTip>
         </div>
-        {answer && appointment.needsInvoice && (
+        {answer && needsInvoice && (
           <div className="flex gap-2.5 rounded-2xl bg-pt-blue-bg p-3.5 text-sm text-pt-blue-fg">
             <Receipt className="mt-0.5 h-4 w-4 shrink-0" />
             <span>
@@ -270,7 +274,7 @@ export function AppointmentDrawer({
       </div>
     )
 
-    if (answer && appointment.needsInvoice) {
+    if (answer && needsInvoice) {
       footer = (
         <div className="space-y-2">
           <Button className={cn(primaryButtonClass, 'h-11 w-full')} disabled={busy !== null} onClick={() => setView('invoice')}>
@@ -311,14 +315,7 @@ export function AppointmentDrawer({
     } else if (open && started) {
       footer = (
         <div className="space-y-2">
-          {link && (
-            <Button asChild className={cn(accentButtonClass, 'h-11 w-full')}>
-              <a href={link} target="_blank" rel="noopener noreferrer">
-                <Video className="mr-2 h-4 w-4" />
-                Join video call
-              </a>
-            </Button>
-          )}
+          {joinButton}
           <div className="grid grid-cols-2 gap-2">
             <Button
               className={cn(secondaryButtonClass, 'h-11')}
@@ -339,14 +336,24 @@ export function AppointmentDrawer({
           </div>
         </div>
       )
-    } else if (link) {
+    } else if (joinButton) {
       footer = (
-        <Button asChild className={cn(accentButtonClass, 'h-11 w-full')}>
-          <a href={link} target="_blank" rel="noopener noreferrer">
-            <Video className="mr-2 h-4 w-4" />
-            Join video call
-          </a>
-        </Button>
+        <div className="space-y-2">
+          {joinButton}
+          <div className="grid grid-cols-2 gap-2">
+            <Button asChild className={cn(secondaryButtonClass, 'h-11')}>
+              <Link href={`${PHYSIO}/messages?with=${appointment.patientId}`} onClick={close}>
+                <MessageSquare className="mr-2 h-4 w-4" />
+                Message
+              </Link>
+            </Button>
+            <Button asChild className={cn(secondaryButtonClass, 'h-11')}>
+              <Link href={patientHref} onClick={close}>
+                Open patient
+              </Link>
+            </Button>
+          </div>
+        </div>
       )
     } else if (appointment.status === 'no_show') {
       footer = (
@@ -377,10 +384,11 @@ export function AppointmentDrawer({
     }
   }
 
-  if (view === 'invoice') {
-    const loading = billing === undefined || coverage === undefined || payoutSchedule === undefined
+  if (view === 'invoice' && needsInvoice) {
+    const loading = servicesLoading
     const home = service?.mode === 'home'
-    const price = quote?.ok ? formatKobo(quote.chargeKobo) : service ? `${service.travelApplies ? 'from ' : ''}${formatKobo(service.priceKobo)}` : ''
+    // The physio's payout (plus their travel share once the area is known), never the patient's price
+    const earnings = service ? earningsFor(service, home && visit ? zones?.find((zone) => zone.id === visit.zoneId) : null) : null
     const ready = Boolean(service) && (!home || (Boolean(visit) && Boolean(address.trim())))
 
     title = 'Accept & send invoice'
@@ -428,11 +436,8 @@ export function AppointmentDrawer({
                 detail={`${option.durationLabel} · ${option.mode === 'home' ? 'Home visit' : 'Video call'}`}
                 aside={
                   <>
-                    <span className="block text-sm font-semibold tabular-nums text-pt-ink">
-                      {option.travelApplies ? 'From ' : ''}
-                      {formatKobo(option.priceKobo)}
-                    </span>
-                    <span className="block text-[11px] tabular-nums text-pt-muted">You earn {formatKobo(option.payoutKobo)}</span>
+                    <span className="block text-sm font-semibold tabular-nums text-pt-ink">You earn {formatKobo(option.payoutKobo)}</span>
+                    {option.travelApplies && <span className="block text-[11px] text-pt-muted">+ your share of travel</span>}
                   </>
                 }
                 selected={service?.id === option.id}
@@ -457,13 +462,12 @@ export function AppointmentDrawer({
         {service && (
           <div className="rounded-2xl bg-pt-green-bg p-4 text-pt-green-fg">
             <p className="text-sm font-semibold">
-              {first} pays {price} to confirm
+              You earn {earnings !== null ? formatKobo(earnings) : `${formatKobo(service.payoutKobo)} plus your share of travel`}
             </p>
             <p className="mt-0.5 text-xs opacity-80">
               {service.durationMinutes !== minutes &&
                 `Booked for ${service.durationMinutes} min: ${lagosTimeRange(appointment.startTime, appointment.startTime + service.durationMinutes * 60_000)}. `}
-              You earn {formatKobo(service.payoutKobo)}
-              {service.travelApplies ? ' plus your share of travel' : ''} once it’s done.
+              {first} pays Rehabify to confirm, and you’re paid once it’s done.
             </p>
           </div>
         )}
@@ -496,7 +500,7 @@ export function AppointmentDrawer({
           }
         >
           {busy === 'invoice' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Receipt className="mr-2 h-4 w-4" />}
-          {!service ? 'Choose a service' : home && !visit ? 'Choose their area' : `Send invoice · ${price}`}
+          {!service ? 'Choose a service' : home && !visit ? 'Choose their area' : 'Send invoice'}
         </Button>
       </div>
     )

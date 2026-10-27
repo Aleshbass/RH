@@ -14,7 +14,8 @@ import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { primaryButtonClass, StatusBadge } from '@/components/physio/ui';
-import { SettingsPageHeader, SettingsSection, fieldHintClass, fieldLabelClass } from '@/components/physio/SettingsUI';
+import { OwnPatientsOnlyNotice, SettingsPageHeader, SettingsSection, fieldHintClass, fieldLabelClass } from '@/components/physio/SettingsUI';
+import { usePracticeMode } from '@/components/physio/practiceMode';
 import { NETWORK_TERMS_SUMMARY, NETWORK_TERMS_VERSION } from '@/lib/rehabify-network-terms';
 import { formatKobo } from '@/lib/rehabify-services';
 import type { NetworkTermsStatus, PayoutSchedule } from '@/lib/rehabify-api-types';
@@ -32,8 +33,11 @@ function formatDay(timestamp: number) {
 }
 
 export default function NetworkTermsPage() {
-    const status = useQuery(api.marketplace.settings.getMyNetworkTerms) as NetworkTermsStatus | null | undefined;
-    const schedule = useQuery(api.serviceTariffs.getPayoutSchedule) as PayoutSchedule | null | undefined;
+    // Hidden from independent physios in Settings, but reachable by URL: they get a short note instead
+    const practice = usePracticeMode();
+    const network = practice.loaded && !practice.isIndependent;
+    const status = useQuery(api.marketplace.settings.getMyNetworkTerms, network ? {} : 'skip') as NetworkTermsStatus | null | undefined;
+    const schedule = useQuery(api.serviceTariffs.getPayoutSchedule, network ? {} : 'skip') as PayoutSchedule | null | undefined;
     const setup = useQuery(api.physioSetup.getMySetupStatus);
     const acceptTerms = useMutation(api.marketplace.settings.acceptNetworkTerms);
 
@@ -57,6 +61,8 @@ export default function NetworkTermsPage() {
         setMinimums(initial);
         setLoaded(true);
     }, [status, schedule, loaded]);
+
+    if (practice.loaded && practice.isIndependent) return <OwnPatientsOnlyNotice title="Network terms" />;
 
     if (status === undefined || schedule === undefined || setup === undefined || (status && schedule && !loaded)) {
         return (

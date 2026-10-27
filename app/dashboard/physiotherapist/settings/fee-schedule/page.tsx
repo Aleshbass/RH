@@ -5,15 +5,21 @@ import { useQuery } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import { Skeleton } from '@/components/ui/skeleton';
 import { StatusBadge } from '@/components/physio/ui';
-import { SettingsPageHeader, SettingsSection } from '@/components/physio/SettingsUI';
+import { OwnPatientsOnlyNotice, SettingsPageHeader, SettingsSection } from '@/components/physio/SettingsUI';
+import { usePracticeMode } from '@/components/physio/practiceMode';
 import { PayoutScheduleTable } from './payout-schedule-table';
 
 const SETTINGS = '/dashboard/physiotherapist/settings';
 const linkClass = 'font-medium text-rh-ink hover:underline dark:text-rh-lime';
 
 export default function PayoutSchedulePage() {
-    const schedule = useQuery(api.serviceTariffs.getPayoutSchedule);
-    const terms = useQuery(api.marketplace.settings.getMyNetworkTerms);
+    // Hidden from independent physios in Settings, but reachable by URL: they get a short note instead
+    const practice = usePracticeMode();
+    const network = practice.loaded && !practice.isIndependent;
+    const schedule = useQuery(api.serviceTariffs.getPayoutSchedule, network ? {} : 'skip');
+    const terms = useQuery(api.marketplace.settings.getMyNetworkTerms, network ? {} : 'skip');
+
+    if (practice.loaded && practice.isIndependent) return <OwnPatientsOnlyNotice title="Payout schedule" />;
 
     if (schedule === undefined || terms === undefined) {
         return (

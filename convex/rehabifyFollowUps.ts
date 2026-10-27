@@ -8,7 +8,7 @@
  * Patients of a clinic, or a physio's own private patients, are unaffected.
  */
 import { ConvexError, v } from "convex/values";
-import { mutation, query, type QueryCtx } from "./_generated/server";
+import { mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { getAuthenticatedUser } from "./auth";
 import { insertServiceBooking } from "./marketplace/booking";
@@ -29,12 +29,42 @@ export async function isRehabifyCare(
 ): Promise<boolean> {
   const physio = await ctx.db.get(physiotherapistId);
   const profile = physio?.physiotherapistProfileId ? await ctx.db.get(physio.physiotherapistProfileId) : null;
-  if (!profile || profile.clinicId) return false;
-  const relationship = await ctx.db
+  // Clinic members bill through their clinic; a physio who sees only their own patients has no
+  // Rehabify Care patients (anyone they still see is treated as their own patient)
+  if (!profile || profile.clinicId || profile.practiceMode === "independent") return false;
+  // Old data can hold more than one row for a pair: any Rehabify-sourced one makes it Rehabify Care
+  const relationships = await ctx.db
     .query("patientPhysiotherapistRelationships")
     .withIndex("by_patient_and_physiotherapist", (q) => q.eq("patientId", patientId).eq("physiotherapistId", physiotherapistId))
+    .take(10);
+  return relationships.some((relationship) => REHABIFY_SOURCES.has(relationship.source ?? ""));
+}
+
+/** Paid for through Rehabify: a paid booking that created the visit, or a paid invoice for it. */
+export async function isVisitPaid(ctx: QueryCtx, appointment: Doc<"appointments">): Promise<boolean> {
+  const booking = await ctx.db
+    .query("marketplaceBookings")
+    .withIndex("by_appointment", (q) => q.eq("appointmentId", appointment._id))
     .first();
-  return Boolean(relationship && REHABIFY_SOURCES.has(relationship.source ?? ""));
+  // A booking only creates its visit once paid (or covered by Rehabify Access)
+  if (booking) return true;
+  const paidInvoices = await ctx.db
+    .query("invoices")
+    .withIndex("by_patient_id", (q) => q.eq("patientId", appointment.patientId))
+    .filter((q) => q.eq(q.field("status"), "paid"))
+    .collect();
+  return paidInvoices.some((invoice) => invoice.relatedAppointmentIds?.includes(appointment._id));
+}
+
+/**
+ * Payment rules follow the relationship: a Rehabify Care visit is confirmed only by paying.
+ * A physio's own patients and clinic patients are confirmed when the other side accepts (they
+ * pay the physio or clinic their own way). Record-only rows aren't visits.
+ */
+export async function mustPayToConfirm(ctx: QueryCtx, appointment: Doc<"appointments">): Promise<boolean> {
+  if (appointment.isRecordOnly) return false;
+  if (!(await isRehabifyCare(ctx, appointment.patientId, appointment.physiotherapistId))) return false;
+  return !(await isVisitPaid(ctx, appointment));
 }
 
 /**
@@ -43,18 +73,24 @@ export async function isRehabifyCare(
  */
 export async function needsInvoiceOnAccept(ctx: QueryCtx, appointment: Doc<"appointments">): Promise<boolean> {
   if (awaitingConfirmationFrom(appointment) !== "provider") return false;
-  if (!(await isRehabifyCare(ctx, appointment.patientId, appointment.physiotherapistId))) return false;
-  const booking = await ctx.db
-    .query("marketplaceBookings")
-    .withIndex("by_appointment", (q) => q.eq("appointmentId", appointment._id))
-    .first();
-  if (booking) return false;
-  const paidInvoices = await ctx.db
-    .query("invoices")
-    .withIndex("by_patient_id", (q) => q.eq("patientId", appointment.patientId))
-    .filter((q) => q.eq(q.field("status"), "paid"))
-    .collect();
-  return !paidInvoices.some((invoice) => invoice.relatedAppointmentIds?.includes(appointment._id));
+  return mustPayToConfirm(ctx, appointment);
+}
+
+/**
+ * What the physio's scheduling screens get back for a new booking: their payout for it (plus
+ * travel share), never what the patient is charged.
+ */
+async function physioBookingResult(
+  ctx: MutationCtx,
+  result: { bookingId: Id<"marketplaceBookings">; holdExpiresAt: number; durationMinutes: number }
+) {
+  const booking = await ctx.db.get(result.bookingId);
+  return {
+    bookingId: result.bookingId,
+    holdExpiresAt: result.holdExpiresAt,
+    durationMinutes: result.durationMinutes,
+    payoutKobo: booking?.physiotherapistEarnings ?? 0,
+  };
 }
 
 /** For the scheduling screens: whether a new session must be booked and paid through Rehabify. */
@@ -130,7 +166,7 @@ export const scheduleRehabifyFollowUp = mutation({
       },
       createdAt: Date.now(),
     });
-    return result;
+    return await physioBookingResult(ctx, result);
   },
 });
 
@@ -213,6 +249,6 @@ export const acceptRequestWithInvoice = mutation({
       buttonLabel: "Pay now",
       buttonPath: "/dashboard/patient",
     });
-    return result;
+    return await physioBookingResult(ctx, result);
   },
 });

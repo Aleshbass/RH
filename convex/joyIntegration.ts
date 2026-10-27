@@ -10,6 +10,7 @@ import { attributeUserToLink, attributeUserToReferral, bumpLinkCounter } from ".
 import { recordPartnerCommission } from "./helpers/partnerLedger";
 import { ensureJoyCareLink, logJourney } from "./joyHandoff";
 import { ensureUserNumbers } from "./helpers/rehabifyIds";
+import { servesRehabifyNetwork } from "./physioSetup";
 import { loadTariffs, quoteBooking, quoteSnapshot } from "./helpers/rehabifyPricing";
 import {
   isJoyProviderEligible,
@@ -1254,7 +1255,7 @@ export const adminScheduleJoyVirtualBooking = mutation({
     const profile = await ctx.db.query("physiotherapistProfiles").withIndex("by_user_id", q => q.eq("userId", args.physiotherapistId)).first();
     const approval = await ctx.db.query("accountApprovalStatus").withIndex("by_user_id", q => q.eq("userId", args.physiotherapistId)).first();
     if (!clinician || clinician.role !== "physiotherapist" || approval?.status !== "approved" || !profile?.offersOnlineSessions) throw new Error("Choose an approved clinician who offers online sessions");
-    if (profile.clinicId) throw new Error("Choose a Rehabify network clinician (clinic members work under their clinic's terms)");
+    if (!servesRehabifyNetwork(profile)) throw new Error("Choose a Rehabify network clinician (clinic members and independent physios aren't matched to Rehabify patients)");
     const endTime = args.startTime + booking.sessionDuration * 60_000;
     const appointments = await ctx.db.query("appointments").withIndex("by_physiotherapist_id_and_time", q => q.eq("physiotherapistId", args.physiotherapistId)).collect();
     if (appointments.some(a => a.status !== "cancelled_by_patient" && a.status !== "cancelled_by_therapist" && a.startTime < endTime && a.endTime > args.startTime)) throw new Error("That clinician already has an appointment at this time");

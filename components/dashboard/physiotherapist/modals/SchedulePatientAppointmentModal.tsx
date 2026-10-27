@@ -16,7 +16,8 @@ import { toast } from "sonner";
 import { playSound } from "@/lib/sounds";
 import { formatKobo, getService, type ServiceMode } from "@/lib/rehabify-services";
 import { cn } from "@/lib/utils";
-import type { CareBillingMode, MarketplaceSettings, PayoutSchedule, ServiceQuote, TravelZone } from "@/lib/rehabify-api-types";
+import type { CareBillingMode, MarketplaceSettings, PayoutSchedule, TravelZone } from "@/lib/rehabify-api-types";
+import { useCareBillingMode } from "@/components/physio/practiceMode";
 import { ArrowLeft, ArrowRight, CalendarDays, Check, Clock, Home, Loader2, MapPin, Video, X } from "@/components/icons";
 
 interface SchedulePatientAppointmentModalProps {
@@ -41,7 +42,6 @@ type ScheduleService = {
     durationMinutes: number;
     durationLabel: string;
     summary: string;
-    priceKobo: number;
     payoutKobo: number;
     travelApplies: boolean;
 };
@@ -113,11 +113,8 @@ function ServiceChoice({
                     </ul>
                 </div>
                 <div className="shrink-0 text-right">
-                    <p className="text-base font-bold tabular-nums">
-                        {service.travelApplies ? "From " : ""}
-                        {formatKobo(service.priceKobo)}
-                    </p>
-                    <p className="text-xs tabular-nums text-rh-ink/55 dark:text-white/55">You earn {formatKobo(service.payoutKobo)}</p>
+                    <p className="text-base font-bold tabular-nums">You earn {formatKobo(service.payoutKobo)}</p>
+                    {service.travelApplies && <p className="text-xs text-rh-ink/55 dark:text-white/55">+ your share of travel</p>}
                 </div>
             </div>
         </motion.button>
@@ -170,22 +167,17 @@ export default function SchedulePatientAppointmentModal({
     const [pickedServiceId, setPickedServiceId] = useState<string | null>(null);
     const [visit, setVisit] = useState<HomeVisit | null>(null);
     const [address, setAddress] = useState("");
-    const [scheduled, setScheduled] = useState<{ chargeKobo: number; holdExpiresAt: number } | null>(null);
+    const [scheduled, setScheduled] = useState<{ payoutKobo: number; holdExpiresAt: number } | null>(null);
 
     const createAppointment = useMutation(api.appointments.createAppointment);
     const scheduleFollowUp = useMutation(api.rehabifyFollowUps.scheduleRehabifyFollowUp);
 
-    const billing = useQuery(api.rehabifyFollowUps.getCareBillingMode, open ? { patientId } : "skip") as CareBillingMode | null | undefined;
+    // Independent physios only have their own patients, so this is always "own" for them
+    const billing: CareBillingMode | null | undefined = useCareBillingMode(open ? patientId : null);
     const isRehabify = billing?.mode === "rehabify";
     const payoutSchedule = useQuery(api.serviceTariffs.getPayoutSchedule, isRehabify ? {} : "skip") as PayoutSchedule | null | undefined;
     const coverage = useQuery(api.marketplace.settings.getMyMarketplaceSettings, isRehabify ? {} : "skip") as MarketplaceSettings | null | undefined;
     const zones = useQuery(api.travelZones.listZones, isRehabify ? {} : "skip") as TravelZone[] | undefined;
-    const quote = useQuery(
-        api.marketplace.booking.getServiceQuote,
-        isRehabify && service && (service.mode !== "home" || visit)
-            ? { serviceId: service.id, zoneId: service.mode === "home" ? visit?.zoneId : undefined }
-            : "skip"
-    ) as ServiceQuote | undefined;
 
     // Only the services this physio offers: video, and home visits where they cover an area
     const services = useMemo<ScheduleService[]>(() => {
@@ -204,7 +196,6 @@ export default function SchedulePatientAppointmentModal({
                     durationMinutes: info.durationMinutes,
                     durationLabel: row.durationLabel,
                     summary: info.summary,
-                    priceKobo: row.priceKobo,
                     payoutKobo: row.payoutKobo,
                     travelApplies: row.travelApplies,
                 },
@@ -221,11 +212,8 @@ export default function SchedulePatientAppointmentModal({
     }, [zones, coverage]);
 
     const servicesLoading = isRehabify && (payoutSchedule === undefined || coverage === undefined);
-    const patientPrice = quote?.ok
-        ? formatKobo(quote.chargeKobo)
-        : service
-          ? `${service.travelApplies ? "From " : ""}${formatKobo(service.priceKobo)}`
-          : "";
+    // Physios only ever see their payout, never what the patient pays
+    const payoutLabel = service ? `${formatKobo(service.payoutKobo)}${service.travelApplies ? " + travel share" : ""}` : "";
 
     useEffect(
         () => () => {
@@ -321,7 +309,7 @@ export default function SchedulePatientAppointmentModal({
                 patientAddress: isHome ? address.trim() : undefined,
                 notes: notes.trim() || undefined,
             });
-            setScheduled({ chargeKobo: result.chargeKobo, holdExpiresAt: result.holdExpiresAt });
+            setScheduled({ payoutKobo: result.payoutKobo, holdExpiresAt: result.holdExpiresAt });
             playSound("booked");
             toast.success(`Scheduled — ${patientName} pays to confirm within 24 hours`);
             setStep("confirm");
@@ -504,7 +492,7 @@ export default function SchedulePatientAppointmentModal({
                                                 sessionDescription={service.summary}
                                                 offersOnlineSessions={service.mode === "virtual"}
                                                 offersInPersonSessions={service.mode === "home"}
-                                                prices={[{ label: "Patient pays", amount: patientPrice }]}
+                                                prices={[{ label: "You earn", amount: payoutLabel }]}
                                                 selectedSlot={selectedSlot}
                                                 onSlotSelect={setSelectedSlot}
                                                 onContinue={goToDetails}
@@ -595,21 +583,12 @@ export default function SchedulePatientAppointmentModal({
                                                 {isRehabify && service && (
                                                     <div className="rounded-2xl bg-rh-honeydew p-4 ring-1 ring-rh-lime/40 dark:bg-rh-lime/10 dark:ring-rh-lime/25">
                                                         <p className="text-base font-semibold">
-                                                            {quote?.ok
-                                                                ? `The patient pays ${formatKobo(quote.chargeKobo)} to confirm`
-                                                                : service.mode === "home"
-                                                                  ? `The patient pays from ${formatKobo(service.priceKobo)} to confirm`
-                                                                  : `The patient pays ${formatKobo(service.priceKobo)} to confirm`}
+                                                            You earn {formatKobo(service.payoutKobo)}
+                                                            {service.travelApplies ? " plus your share of travel" : ""}
                                                         </p>
-                                                        {quote?.ok && quote.travelSurchargeKobo > 0 && (
-                                                            <p className="mt-0.5 text-xs tabular-nums text-rh-ink/60 dark:text-white/60">
-                                                                Includes a {formatKobo(quote.travelSurchargeKobo)} travel charge for {quote.zoneName ?? "this area"}.
-                                                            </p>
-                                                        )}
                                                         <p className="mt-2 text-sm text-rh-ink/70 dark:text-white/70">
-                                                            They’re asked to pay within 24 hours, and the time is held until then. You earn{" "}
-                                                            {formatKobo(service.payoutKobo)}
-                                                            {service.travelApplies ? " plus your share of travel" : ""} once the session is completed.
+                                                            The patient pays Rehabify to confirm. They’re asked to pay within 24 hours, and the time is held
+                                                            until then. You’re paid once the session is completed.
                                                         </p>
                                                     </div>
                                                 )}
@@ -713,7 +692,7 @@ export default function SchedulePatientAppointmentModal({
                                                 </h2>
                                                 {isRehabify && scheduled && (
                                                     <p className="mt-2 text-sm text-rh-ink/70 dark:text-white/70">
-                                                        They pay {formatKobo(scheduled.chargeKobo)} to confirm. We’ll hold the time until{" "}
+                                                        They pay to confirm, and you earn {formatKobo(scheduled.payoutKobo)}. We’ll hold the time until{" "}
                                                         {formatTime(scheduled.holdExpiresAt)} on{" "}
                                                         {new Date(scheduled.holdExpiresAt).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}.
                                                     </p>

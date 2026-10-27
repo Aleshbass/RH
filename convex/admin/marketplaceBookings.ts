@@ -13,7 +13,7 @@
 
 import { ConvexError, v } from "convex/values";
 import { paginationOptsValidator } from "convex/server";
-import { query, mutation, type QueryCtx } from "../_generated/server";
+import { query, mutation, internalMutation, type QueryCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
 import { ensureUserRole } from "../auth";
 import { isPhysioNetworkEligible } from "../physioSetup";
@@ -426,6 +426,8 @@ export const adminReassignBookingPhysio = mutation({
           isPrimaryPhysiotherapist: true,
           startDate: Date.now(),
           notes: `Created via admin reassignment${args.reason ? `: ${args.reason}` : ""}`,
+          // Still a Rehabify Care patient: their sessions with the new physio are paid through Rehabify
+          source: booking.sourceSystem === "joy_ai" ? "joy_whatsapp" : "marketplace",
         });
       }
     }
@@ -484,5 +486,30 @@ export const adminReassignBookingPhysio = mutation({
     } as any);
 
     return { success: true, bookingId: args.bookingId, newPhysiotherapistId: newPhysioId };
+  },
+});
+
+/**
+ * One-off repair: relationships created by an admin reassignment before 26 Oct 2026 have no
+ * source, so the new physio's sessions with that Rehabify Care patient weren't treated as paid.
+ * Run once: npx convex run admin/marketplaceBookings:backfillReassignedRelationshipSources --prod
+ */
+export const backfillReassignedRelationshipSources = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const rows = await ctx.db.query("patientPhysiotherapistRelationships").collect();
+    let fixed = 0;
+    for (const row of rows) {
+      if (row.source || !row.notes?.startsWith("Created via admin reassignment")) continue;
+      // The booking that was reassigned to this physio tells us whether it came from Joy
+      const booking = await ctx.db
+        .query("marketplaceBookings")
+        .withIndex("by_patient", (q) => q.eq("patientId", row.patientId))
+        .filter((q) => q.eq(q.field("physiotherapistId"), row.physiotherapistId))
+        .first();
+      await ctx.db.patch(row._id, { source: booking?.sourceSystem === "joy_ai" ? "joy_whatsapp" : "marketplace" });
+      fixed++;
+    }
+    return { fixed };
   },
 });

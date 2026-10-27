@@ -15,7 +15,7 @@ import { ensureUserRole, getAuthenticatedUser } from "./auth";
 import { FUNDING_OPTIONS, INCOME_BANDS, SITUATIONS, isOption } from "../lib/rehabify-access";
 import { BOOKABLE_SERVICE_IDS, getService, isBookableServiceId } from "../lib/rehabify-services";
 import { loadPricingSettings, loadTariffs } from "./helpers/rehabifyPricing";
-import { isPhysioNetworkEligible, meetsAccessMinimum } from "./physioSetup";
+import { isPhysioNetworkEligible, meetsAccessMinimum, servesRehabifyNetwork } from "./physioSetup";
 import { sessionsCommitted } from "./helpers/accessAwards";
 
 const OPEN_STATUSES = new Set(["submitted", "under_review", "waitlisted"]);
@@ -239,7 +239,7 @@ export const adminEligiblePhysios = query({
     const { tariffs } = await loadTariffs(ctx);
     const serviceIds = args.serviceIds.filter(isBookableServiceId);
     const profiles = await ctx.db.query("physiotherapistProfiles").collect();
-    const optedIn = profiles.filter((profile) => !profile.clinicId && profile.networkTerms?.accessOptIn);
+    const optedIn = profiles.filter((profile) => servesRehabifyNetwork(profile) && profile.networkTerms?.accessOptIn);
     const results = [];
     for (const profile of optedIn) {
       let ok = serviceIds.length > 0;

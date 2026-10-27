@@ -30,6 +30,7 @@ import { getReferralPublicCode } from "@/lib/referralCookie";
 import { playSound } from "@/lib/sounds";
 import { usableEmail } from "@/lib/auth/joyLoginEmail";
 import { formatKobo, getService, isBookableServiceId, type BookableServiceId } from "@/lib/rehabify-services";
+import { CHECKOUT_POLICIES, POLICIES, policyVersions } from "@/lib/policies";
 import CalendarBookingWidget, { type AvailableSlot } from "@/components/marketplace/CalendarBookingWidget";
 import { BookingShell, PoweredBy } from "@/components/booking/BookingShell";
 import { BookingBottomSheet } from "@/components/booking/BookingBottomSheet";
@@ -191,6 +192,8 @@ function BookingFlow() {
     const [notes, setNotes] = useState("");
     const [treatmentPrefs, setTreatmentPrefs] = useState<TreatmentPrefs | null>(null);
     const [isProcessing, setIsProcessing] = useState(false);
+    // "I agree" to the Booking and Payment policies, recorded with the booking (lib/policies.ts)
+    const [agreed, setAgreed] = useState(false);
     const [bookingError, setBookingError] = useState<string | null>(null);
     const [attempt, setAttempt] = useState<{ bookingId: string; key: string } | null>(null);
     const savedPrefsRef = useRef(false);
@@ -480,6 +483,7 @@ function BookingFlow() {
                     patientNotes: notes.trim() || undefined,
                     // Partner referral-link code (validated server-side; first partner wins)
                     referralPublicCode: getReferralPublicCode(),
+                    acceptedPolicies: policyVersions(CHECKOUT_POLICIES),
                 };
                 const result = (isSignedIn
                     ? await createBooking(bookingArgs)
@@ -629,7 +633,7 @@ function BookingFlow() {
                         </button>
                     )}
                     <p className="mt-4 text-xs leading-relaxed text-rh-night/55">
-                        The price you see is the price you pay. Your booking is confirmed once paid.
+                        You&#39;ll see the exact price before you pay. Your booking is confirmed once paid.
                     </p>
                 </motion.div>
                 <PoweredBy />
@@ -893,7 +897,7 @@ function BookingFlow() {
     const payLabel = chargeKobo !== null ? `Book and pay ${formatKobo(chargeKobo)}` : "Book and pay";
     // With ?access=, wait for the award so the booking isn't made at the standard price by mistake
     const accessLoading = Boolean(accessParam && isSignedIn && myAccess === undefined);
-    const canPay = Boolean(quoteOk) && userLoaded && !isProcessing && !accessLoading;
+    const canPay = Boolean(quoteOk) && userLoaded && !isProcessing && !accessLoading && agreed;
 
     const summary = (
         <div className="flex items-start gap-3.5 rounded-2xl bg-rh-canvas/80 p-4 ring-1 ring-inset ring-rh-night/[0.06]">
@@ -1037,6 +1041,33 @@ function BookingFlow() {
                         </Notice>
                     )}
 
+                    {!(needsSignIn && userLoaded && !isSignedIn) && (
+                        <label className="mb-4 flex cursor-pointer items-start gap-3 rounded-2xl bg-rh-canvas/80 p-4 text-sm ring-1 ring-inset ring-rh-night/[0.06]">
+                            <input
+                                type="checkbox"
+                                checked={agreed}
+                                onChange={(e) => setAgreed(e.target.checked)}
+                                className="mt-0.5 h-4 w-4 shrink-0 rounded border-rh-night/30 accent-rh-ink"
+                            />
+                            <span className="text-rh-night/75">
+                                I agree to the{" "}
+                                {CHECKOUT_POLICIES.map((id, i) => (
+                                    <span key={id}>
+                                        {i > 0 && " and "}
+                                        <a
+                                            href={POLICIES[id].href}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="font-semibold text-rh-night underline underline-offset-4 hover:no-underline"
+                                        >
+                                            {POLICIES[id].title}
+                                        </a>
+                                    </span>
+                                ))}
+                                .
+                            </span>
+                        </label>
+                    )}
                     {needsSignIn && userLoaded && !isSignedIn ? (
                         <div className="space-y-3 rounded-2xl bg-rh-canvas/80 p-4 ring-1 ring-inset ring-rh-night/[0.06] sm:p-5">
                             <p className="text-sm font-semibold">Sign in to book</p>

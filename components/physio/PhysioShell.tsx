@@ -12,6 +12,7 @@ import { primaryButtonClass } from '@/components/patient/ui'
 import { PatientNotifications, PatientThemeToggle } from '@/components/patient/shell/PatientControls'
 import { PhysioBrand, PhysioMobileNav, PhysioSidebar, SectionTabs, PHYSIO_HOME } from '@/components/physio/PhysioSidebar'
 import { PhysioHelp } from '@/components/physio/shell/PhysioHelp'
+import { LiveSessionBanner } from '@/components/physio/shell/LiveSessionBanner'
 import { PhysioDutySwitch } from '@/components/physio/PhysioDutySwitch'
 import { PhysioDeclined, PhysioUnderReview } from '@/components/physio/PhysioReviewStates'
 import { BookingProvider, useBooking } from '@/components/physio/schedule/BookingDrawer'
@@ -108,6 +109,8 @@ export function PhysioShell({ children }: { children: ReactNode }) {
   const pathname = usePathname() ?? ''
   const { access, setup, isUnderReview } = usePhysioAccess(pathname)
   const unreadMessages = useQuery(api.chat.getUnreadCount, access === 'full' ? {} : 'skip') as number | undefined
+  // Approved physios only: getMyAppointments needs an approved account
+  const liveSessions = access === 'full' && !isUnderReview
 
   useEffect(() => {
     const root = document.documentElement
@@ -128,20 +131,27 @@ export function PhysioShell({ children }: { children: ReactNode }) {
       </div>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-30 flex h-16 items-center justify-between gap-2 bg-pt-canvas/90 px-4 backdrop-blur-xl sm:px-6 lg:px-8">
-          <Link href={PHYSIO_HOME} aria-label="Rehabify home" className="lg:hidden">
-            <PhysioBrand />
-          </Link>
-          <div className="hidden lg:block" />
+        <header className="sticky top-0 z-30 bg-pt-canvas/90 backdrop-blur-xl">
+          <div className="flex h-16 items-center justify-between gap-2 px-4 sm:px-6 lg:px-8">
+            <Link href={PHYSIO_HOME} aria-label="Rehabify home" className="lg:hidden">
+              <PhysioBrand />
+            </Link>
+            {/* An online session starting within 15 minutes (or under way): one tap to join, on every page */}
+            <div className="hidden min-w-0 flex-1 lg:flex">
+              <LiveSessionBanner enabled={liveSessions} layout="inline" />
+            </div>
 
-          <div className="flex shrink-0 items-center gap-2">
-            <WebsiteLink tone="portal" className="hidden sm:inline-flex" />
-            {!isUnderReview && <PhysioDutySwitch />}
-            {!isUnderReview && <NewAppointmentButton />}
-            <PhysioHelp />
-            <PatientThemeToggle className="hidden sm:flex" />
-            <PatientNotifications />
+            <div className="flex shrink-0 items-center gap-2">
+              <WebsiteLink tone="portal" className="hidden sm:inline-flex" />
+              {!isUnderReview && <PhysioDutySwitch />}
+              {!isUnderReview && <NewAppointmentButton />}
+              <PhysioHelp />
+              <PatientThemeToggle className="hidden sm:flex" />
+              <PatientNotifications />
+            </div>
           </div>
+          {/* Phones and tablets: a slim strip under the top bar, inside the sticky header so it never covers the page */}
+          <LiveSessionBanner enabled={liveSessions} layout="row" className="lg:hidden" />
         </header>
 
         {/* Bottom room so the last card clears the tab bar and the phone's home indicator */}

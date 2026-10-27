@@ -16,7 +16,6 @@ import { lagosShortDate, lagosTime, zonedDateKey } from '@/convex/helpers/lagosT
 import { Button } from '@/components/ui/button'
 import { isVideoVisit } from '@/components/appointments/appointment-ui'
 import {
-  accentButtonClass,
   EmptyState,
   IconChip,
   InfoTip,
@@ -33,10 +32,12 @@ import { useMutationUntyped, useQueryUntyped } from '@/lib/convexUntyped'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
 import { AppointmentDrawer, type View } from './AppointmentDrawer'
+import { usePracticeMode } from '@/components/physio/practiceMode'
 import { useBooking } from './BookingDrawer'
+import { JoinVideoButton } from './JoinVideoButton'
 import {
   asLike,
-  joinLink,
+  videoJoin,
   minutesOf,
   needsMyAnswer,
   patientName,
@@ -76,7 +77,9 @@ export function VisitRow({
 }) {
   const video = isVideoVisit(asLike(appointment))
   const status = visitStatus(appointment, now)
-  const link = joinLink(appointment, now)
+  const join = videoJoin(appointment, now)
+  // An online visit still waiting on your answer shows its answer buttons; Join comes once it's agreed
+  const showJoin = join.kind !== 'none' && !needsMyAnswer(appointment, now)
   return (
     <div className="flex items-center gap-3 rounded-2xl px-3 py-3 transition-colors hover:bg-pt-hover">
       <button type="button" onClick={onOpen} className="flex min-w-0 flex-1 items-center gap-3 text-left focus-visible:outline-none">
@@ -97,16 +100,7 @@ export function VisitRow({
         <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
         <InfoTip label="What this status means">{status.explain}</InfoTip>
       </span>
-      {link ? (
-        <Button asChild size="sm" className={cn(accentButtonClass, 'h-9 shrink-0 px-3')}>
-          <a href={link} target="_blank" rel="noopener noreferrer">
-            <Video className="mr-1.5 h-3.5 w-3.5" />
-            Join
-          </a>
-        </Button>
-      ) : (
-        action
-      )}
+      {showJoin ? <JoinVideoButton join={join} /> : action}
       <button type="button" onClick={onOpen} aria-label={`Open ${patientName(appointment)}'s visit`} className="shrink-0 text-pt-faint hover:text-pt-ink">
         <ChevronRight className="h-4 w-4" />
       </button>
@@ -175,7 +169,7 @@ function HeldRow({ booking, now }: { booking: HeldBooking; now: number }) {
         <span className="block truncate text-sm font-semibold text-pt-ink">{booking.patientName}</span>
         <span className="block truncate text-xs text-pt-muted">
           {booking.fromPatientRequest ? 'Invoice sent · ' : ''}
-          {booking.serviceName} · {formatKobo(booking.chargeKobo)}
+          {booking.serviceName} · you earn {formatKobo(booking.payoutKobo)}
           {booking.held && booking.holdExpiresAt ? ` · held until ${lagosTime(booking.holdExpiresAt)}, ${lagosShortDate(booking.holdExpiresAt)}` : ' · hold ended'}
         </span>
       </span>
@@ -229,7 +223,9 @@ export function ScheduleList({
   extraActions?: ReactNode
 }) {
   const openBooking = useBooking()
-  const now = useNow()
+  const now = useNow(30_000)
+  // Independent physios only have their own patients: no Rehabify invoices or held payments
+  const practice = usePracticeMode()
   const appointments = useQueryUntyped(scheduleApi.appointments.getMyAppointments, { limit: 300 }) as PhysioAppointment[] | undefined
   const updateStatus = useMutationUntyped(scheduleApi.appointments.updateAppointmentStatus)
   const [tab, setTab] = useState<Tab>('upcoming')
@@ -316,7 +312,11 @@ export function ScheduleList({
                   Needs your answer <StatusBadge tone="ink">{answer.length}</StatusBadge>
                 </>
               }
-              info="Patients asked for these times. Accept, decline or suggest another time. They’re told straight away. Rehabify patients pay per visit, so accepting theirs sends the invoice."
+              info={
+                practice.isIndependent
+                  ? 'Patients asked for these times. Accept, decline or suggest another time. They’re told straight away.'
+                  : 'Patients asked for these times. Accept, decline or suggest another time. They’re told straight away. Rehabify Care patients pay per visit, so accepting theirs sends the invoice.'
+              }
               bodyClassName="p-2 sm:p-3"
             >
               {answer.map((apt) => (
@@ -327,7 +327,7 @@ export function ScheduleList({
                   showDay
                   onOpen={() => open(apt)}
                   action={
-                    apt.needsInvoice ? (
+                    apt.needsInvoice && !practice.isIndependent ? (
                       <Button size="sm" className={cn(primaryButtonClass, 'h-9 shrink-0 px-3')} onClick={() => open(apt, 'invoice')}>
                         <Receipt className="mr-1 h-3.5 w-3.5" />
                         Accept &amp; invoice
@@ -373,9 +373,11 @@ export function ScheduleList({
             </Panel>
           )}
 
-          <Quiet>
-            <HeldPanel now={now} />
-          </Quiet>
+          {practice.loaded && !practice.isIndependent && (
+            <Quiet>
+              <HeldPanel now={now} />
+            </Quiet>
+          )}
 
           <div className="flex flex-wrap items-center gap-1 rounded-2xl bg-pt-sunken p-1 sm:w-fit">
             {tabs.map((t) => (
@@ -403,7 +405,13 @@ export function ScheduleList({
               <EmptyState
                 icon={tab === 'upcoming' ? <CalendarDays /> : <Inbox />}
                 title={tab === 'upcoming' ? 'Nothing coming up' : tab === 'past' ? 'No finished sessions yet' : 'Nothing cancelled'}
-                description={tab === 'upcoming' ? 'Book a patient in, or share your booking page from Today.' : undefined}
+                description={
+                  tab === 'upcoming'
+                    ? practice.isIndependent
+                      ? 'Book one of your patients in.'
+                      : 'Book a patient in, or share your booking page from Today.'
+                    : undefined
+                }
                 action={
                   tab === 'upcoming' ? (
                     <Button className={cn(primaryButtonClass, 'h-10')} onClick={() => openBooking()}>

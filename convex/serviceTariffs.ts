@@ -17,6 +17,7 @@ import {
 } from "../lib/rehabify-services";
 import { loadPricingSettings, loadTariffs } from "./helpers/rehabifyPricing";
 import { NETWORK_TERMS_VERSION } from "../lib/rehabify-network-terms";
+import { isIndependentPractice } from "./physioSetup";
 
 /** Public: what each service costs patients (no payouts). */
 export const getCatalogue = query({
@@ -50,12 +51,20 @@ export const getCatalogue = query({
   },
 });
 
-/** Physiotherapists (and admins): the payout schedule they work under. */
+/**
+ * Physiotherapists (and admins): the payout schedule they work under. Payouts only: physios
+ * never see what the patient pays (admins read prices from adminGetTariffs).
+ */
 export const getPayoutSchedule = query({
   args: {},
   handler: async (ctx) => {
     const user = await getAuthenticatedUser(ctx);
     if (user.role !== "physiotherapist" && user.role !== "admin") return null;
+    // Physios who see only their own patients never work under Rehabify payouts
+    if (user.role === "physiotherapist") {
+      const profile = user.physiotherapistProfileId ? await ctx.db.get(user.physiotherapistProfileId) : null;
+      if (isIndependentPractice(profile)) return null;
+    }
     const { version, tariffs } = await loadTariffs(ctx);
     return {
       version,
@@ -70,10 +79,8 @@ export const getPayoutSchedule = query({
           mode: service.mode,
           durationLabel: service.durationLabel,
           active: tariff.active,
-          priceKobo: tariff.priceKobo,
           payoutKobo: tariff.payoutKobo,
           travelApplies: tariff.travelApplies,
-          assistedPriceKobo: tariff.assistedPriceKobo ?? null,
           assistedPayoutKobo: tariff.assistedPayoutKobo ?? null,
         };
       }),

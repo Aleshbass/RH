@@ -190,6 +190,10 @@ export default defineSchema({
   physiotherapistProfiles: defineTable({
     userId: v.id("users"),
     clinicId: v.optional(v.id("clinics")), // The primary clinic they are associated with, now optional
+    // Which patients a physio outside a clinic sees: "network" = Rehabify Care patients (listed,
+    // Rehabify prices, fixed payouts); "independent" = only their own private patients; "both".
+    // Unset = network. The rules follow the patient and the service, not the physio.
+    practiceMode: v.optional(v.union(v.literal("network"), v.literal("independent"), v.literal("both"))),
     specializations: v.optional(v.array(v.string())),
     bio: v.optional(v.string()),
     licenseNumber: v.optional(v.string()),
@@ -4464,6 +4468,140 @@ export default defineSchema({
   })
     .index("by_registration", ["registrationId", "submittedAt"])
     .index("by_cohort", ["cohortId"]),
+
+  // On-demand video courses for paid MSK learners. Videos are private ImageKit files, played
+  // through short-lived signed links (see getLessonPlayback in convex/learn.ts).
+  learnVideoCourses: defineTable({
+    title: v.string(),
+    summary: v.string(),
+    benefits: v.array(v.string()), // "What you'll learn"
+    coverUrl: v.optional(v.string()), // public ImageKit image
+    coverFileId: v.optional(v.string()),
+    status: v.union(v.literal("draft"), v.literal("published")),
+    order: v.number(),
+    learnerCount: v.number(), // learners who have started it
+    publishedAt: v.optional(v.number()),
+    createdBy: v.id("users"),
+    updatedBy: v.optional(v.id("users")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_status_order", ["status", "order"]),
+
+  learnVideoLessons: defineTable({
+    courseId: v.id("learnVideoCourses"),
+    order: v.number(),
+    title: v.string(),
+    description: v.optional(v.string()),
+    video: v.object({
+      fileId: v.string(),
+      filePath: v.string(),
+      url: v.string(), // unsigned; never sent to learners
+      sizeBytes: v.number(),
+      durationSec: v.number(),
+      posterUrl: v.optional(v.string()), // public frame grabbed in the browser at upload
+      posterFileId: v.optional(v.string()),
+    }),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_course_order", ["courseId", "order"]),
+
+  // One row per learner per course, keyed by the email of their paid registration
+  learnVideoProgress: defineTable({
+    courseId: v.id("learnVideoCourses"),
+    email: v.string(),
+    userId: v.optional(v.id("users")),
+    completedLessonIds: v.array(v.id("learnVideoLessons")),
+    lastLessonId: v.optional(v.id("learnVideoLessons")),
+    lastPositionSec: v.optional(v.number()),
+    startedAt: v.number(),
+    completedAt: v.optional(v.number()),
+    updatedAt: v.number(),
+  })
+    .index("by_email_course", ["email", "courseId"])
+    .index("by_course", ["courseId"]),
+
+  // Legal proof of every policy or agreement acceptance: who, which document and version, when and
+  // how. Append-only: rows are only ever inserted, never changed or deleted. See lib/policies.ts.
+  policyAcceptances: defineTable({
+    userId: v.optional(v.id("users")),
+    name: v.string(),
+    email: v.optional(v.string()),
+    document: v.string(), // lib/policies.ts PolicyId, or an agreement id
+    version: v.string(),
+    channel: v.union(v.literal("web"), v.literal("app"), v.literal("whatsapp")),
+    // What it was accepted for, e.g. a booking
+    contextType: v.optional(v.string()),
+    contextId: v.optional(v.string()),
+    acceptedAt: v.number(),
+  })
+    .index("by_user_document", ["userId", "document", "acceptedAt"])
+    .index("by_context", ["contextType", "contextId"]),
+
+  // Signed agreements (lib/agreements.ts): network contractor, independent platform and clinic.
+  // A row is never edited except to add Rehabify's countersignature or to void it; signing a new
+  // version adds a row. documentHash is the SHA-256 of the exact filled-in text that was signed.
+  agreementSignatures: defineTable({
+    agreementId: v.string(),
+    version: v.string(),
+    party: v.union(v.literal("physiotherapist"), v.literal("clinic")),
+    userId: v.id("users"), // who signed
+    clinicId: v.optional(v.id("clinics")),
+    values: v.record(v.string(), v.string()), // the details filled in, as signed
+    signatureName: v.string(), // typed signature
+    signatureTitle: v.optional(v.string()),
+    signatureDrawing: v.optional(v.string()), // SVG path data when drawn
+    signerEmail: v.string(),
+    documentHash: v.string(),
+    userAgent: v.optional(v.string()),
+    signedAt: v.number(),
+    status: v.union(v.literal("awaiting_countersign"), v.literal("active"), v.literal("void")),
+    countersignedBy: v.optional(v.id("users")),
+    countersignName: v.optional(v.string()),
+    countersignTitle: v.optional(v.string()),
+    countersignedAt: v.optional(v.number()),
+    voidedAt: v.optional(v.number()),
+    voidedBy: v.optional(v.id("users")),
+    voidReason: v.optional(v.string()),
+  })
+    .index("by_user_agreement", ["userId", "agreementId", "signedAt"])
+    .index("by_clinic_agreement", ["clinicId", "agreementId", "signedAt"])
+    .index("by_status", ["status", "signedAt"])
+    .index("by_signed", ["signedAt"]),
+
+  // Admin "please sign" emails, so reminders aren't sent twice in a day.
+  agreementReminders: defineTable({
+    agreementId: v.string(),
+    userId: v.id("users"),
+    clinicId: v.optional(v.id("clinics")),
+    email: v.string(),
+    sentBy: v.id("users"),
+    sentAt: v.number(),
+  }).index("by_user_agreement", ["userId", "agreementId", "sentAt"]),
+
+  // From enforcedAt, physios must have signed their agreement to be bookable (latest row wins).
+  agreementSettings: defineTable({
+    enforcedAt: v.optional(v.number()),
+    updatedAt: v.number(),
+    updatedBy: v.id("users"),
+  }),
+
+  // Proof of cookie consent (one row per browser choice id; see lib/consent.ts). Holds no
+  // IP address or device details, only the choice, when, how, and the account if signed in.
+  cookieConsents: defineTable({
+    consentId: v.string(),
+    version: v.number(),
+    analytics: v.boolean(),
+    action: v.union(v.literal("accept_all"), v.literal("reject_all"), v.literal("custom"), v.literal("gpc")),
+    decidedAt: v.number(),
+    userId: v.optional(v.id("users")),
+    // Earlier choices made with the same id, oldest first (capped)
+    history: v.array(v.object({ analytics: v.boolean(), action: v.string(), version: v.number(), decidedAt: v.number() })),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_consent_id", ["consentId"])
+    .index("by_user", ["userId", "decidedAt"])
+    .index("by_decided", ["decidedAt"]),
 
   // People who asked to hear about the next cohort while registration was closed.
   learnInterest: defineTable({

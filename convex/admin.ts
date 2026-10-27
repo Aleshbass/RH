@@ -3,6 +3,9 @@ import { paginationOptsValidator } from "convex/server";
 import { query, mutation, internalMutation, type QueryCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { ensureUserRole } from "./auth";
+import { requireAdmin } from "./helpers/partnerAccess";
+import { isPhysioBookable, servesRehabifyNetwork } from "./physioSetup";
+import { physioAgreementStates } from "./agreements";
 import type { Doc, Id } from "./_generated/dataModel";
 
 /**
@@ -1219,6 +1222,573 @@ export const getAdminUserDetails = query({
             declineReason: approvalStatus.comments,
           }
         : null,
+    };
+  },
+});
+
+// ==== PHYSIOTHERAPIST DIRECTORY ====
+
+/**
+ * Who a physio is "currently handling". A patient is on the physio's current caseload when at
+ * least one of these is true:
+ *   1. they have an active care episode together (careEpisodes.status "active");
+ *   2. a session is booked from now on (appointment "scheduled" or "confirmed");
+ *   3. they had a session in the last 60 days that wasn't cancelled ("completed", "scheduled",
+ *      "confirmed" or "no_show");
+ *   4. the physio took them on in the last 60 days (an active relationship whose startDate is
+ *      inside the window), even if nothing is booked yet.
+ * An active relationship on its own doesn't count: relationships are almost never closed, so it
+ * would keep every patient the physio has ever seen. Record-only appointments (isRecordOnly,
+ * which only anchor a note) are not sessions.
+ *
+ * Where each patient came from follows the rules billing uses (rehabifyFollowUps.isRehabifyCare):
+ *   "clinic":   the relationship (or, without one, the episode or appointment) belongs to a clinic;
+ *   "rehabify": Rehabify Care. Came through the website, Joy or the physio's Rehabify booking
+ *               link, and the physio isn't a clinic member;
+ *   "own":      everyone else (private patients, invites, referrals the physio took on).
+ */
+const CASELOAD_WINDOW = 60 * DAY;
+const UPCOMING_WINDOW = 14 * DAY;
+// The directory reads the newest 500 physio accounts and says so (`capped`)
+const DIRECTORY_PHYSIO_CAP = 500;
+const APPROVAL_SCAN_CAP = 3000;
+// Per-physio read caps in the directory. A physio who hits one is flagged (`patientsCapped`).
+const DIRECTORY_REL_CAP = 300;
+const DIRECTORY_EPISODE_CAP = 200;
+const DIRECTORY_PAST_CAP = 200;
+const DIRECTORY_FUTURE_CAP = 60;
+// One physio's caseload drawer
+const CASELOAD_REL_CAP = 1000;
+const CASELOAD_EPISODE_CAP = 500;
+const CASELOAD_PAST_CAP = 2000;
+const CASELOAD_FUTURE_CAP = 300;
+const CASELOAD_PATIENT_CAP = 300;
+const UPCOMING_LIST_CAP = 100;
+
+// Same set as rehabifyFollowUps.isRehabifyCare
+const REHABIFY_CARE_SOURCES = new Set<string>(["marketplace", "joy_whatsapp", "booking_link"]);
+const BOOKED_STATUSES = new Set<string>(["scheduled", "confirmed"]);
+const HELD_STATUSES = new Set<string>(["scheduled", "confirmed", "completed", "no_show"]);
+
+type CaseloadSource = "rehabify" | "own" | "clinic";
+type CaseloadStatus = "active_episode" | "upcoming" | "recent" | "new";
+type DirectoryMode = "network" | "independent" | "both" | "clinic";
+type DirectoryApproval = "approved" | "pending_review" | "declined" | "not_submitted";
+type Relationship = Doc<"patientPhysiotherapistRelationships">;
+
+type CaseloadEntry = {
+  patientId: Id<"users">;
+  source: CaseloadSource;
+  status: CaseloadStatus;
+  /** How they arrived: the relationship's source, else the episode's. */
+  channel: string | null;
+  relationship: Relationship | null;
+  episode: Doc<"careEpisodes"> | null;
+  lastSessionAt: number | null;
+  nextSessionAt: number | null;
+  sessionsCompleted: number;
+};
+
+const CASELOAD_STATUS_RANK: Record<CaseloadStatus, number> = { active_episode: 0, upcoming: 1, recent: 2, new: 3 };
+
+const isSession = (a: Doc<"appointments">) => !a.isRecordOnly;
+const isBooked = (a: Doc<"appointments">) => isSession(a) && BOOKED_STATUSES.has(a.status);
+const isHeld = (a: Doc<"appointments">) => isSession(a) && HELD_STATUSES.has(a.status);
+
+function latestOf(values: (number | null | undefined)[]): number | null {
+  const numbers = values.filter((n): n is number => typeof n === "number" && Number.isFinite(n));
+  return numbers.length ? Math.max(...numbers) : null;
+}
+
+async function loadPhysioProfile(ctx: QueryCtx, user: Doc<"users">) {
+  if (user.physiotherapistProfileId) {
+    const linked = await ctx.db.get(user.physiotherapistProfileId);
+    if (linked) return linked;
+  }
+  return await ctx.db
+    .query("physiotherapistProfiles")
+    .withIndex("by_user_id", (q) => q.eq("userId", user._id))
+    .first();
+}
+
+/** Clinic members are "Clinic" whatever their practiceMode says. */
+function physioClinicId(user: Doc<"users">, profile: Doc<"physiotherapistProfiles"> | null): Id<"clinics"> | null {
+  return profile ? (profile.clinicId ?? null) : (user.clinicId ?? null);
+}
+
+function directoryMode(profile: Doc<"physiotherapistProfiles"> | null, clinicId: Id<"clinics"> | null): DirectoryMode {
+  if (clinicId) return "clinic";
+  return profile?.practiceMode ?? "network";
+}
+
+/** Suspended or removed: the same test marketplace search uses. */
+function isSuspendedAccount(user: Doc<"users">) {
+  return user.status === "suspended" || user.status === "terminated";
+}
+
+function physioLocation(profile: Doc<"physiotherapistProfiles"> | null, clinic: Doc<"clinics"> | null): string | null {
+  const own = profile?.location?.trim();
+  if (own) return own;
+  const clinicPlace = clinic ? [clinic.city, clinic.state].filter(Boolean).join(", ") : "";
+  if (clinicPlace) return clinicPlace;
+  return profile?.joyServiceAreas?.[0] ?? null;
+}
+
+function caseloadSource(
+  inClinic: boolean,
+  relationship: Relationship | null,
+  episode: Doc<"careEpisodes"> | null,
+  appointment: Doc<"appointments"> | null
+): CaseloadSource {
+  if (relationship) {
+    if (relationship.clinicId) return "clinic";
+    return !inClinic && REHABIFY_CARE_SOURCES.has(relationship.source ?? "") ? "rehabify" : "own";
+  }
+  if (episode?.clinicId || episode?.source === "clinic" || appointment?.clinicId) return "clinic";
+  return !inClinic && episode && REHABIFY_CARE_SOURCES.has(episode.source) ? "rehabify" : "own";
+}
+
+/** The relationship that describes the pair: the active one, else the newest. */
+function preferRelationship(a: Relationship, b: Relationship): Relationship {
+  const aActive = a.status === "active";
+  if (aActive !== (b.status === "active")) return aActive ? a : b;
+  return a.startDate >= b.startDate ? a : b;
+}
+
+/**
+ * Applies the "currently handling" rule above. `past` is sessions that started before `now`,
+ * `future` those from `now` on, `episodes` only active ones.
+ */
+function buildCaseload(input: {
+  now: number;
+  inClinic: boolean;
+  relationships: Relationship[];
+  episodes: Doc<"careEpisodes">[];
+  past: Doc<"appointments">[];
+  future: Doc<"appointments">[];
+}): Map<Id<"users">, CaseloadEntry> {
+  const since = input.now - CASELOAD_WINDOW;
+
+  const relationshipOf = new Map<Id<"users">, Relationship>();
+  for (const rel of input.relationships) {
+    const current = relationshipOf.get(rel.patientId);
+    relationshipOf.set(rel.patientId, current ? preferRelationship(current, rel) : rel);
+  }
+
+  const episodeOf = new Map<Id<"users">, Doc<"careEpisodes">>();
+  for (const episode of input.episodes) {
+    const current = episodeOf.get(episode.patientId);
+    if (!current || episode.startedAt > current.startedAt) episodeOf.set(episode.patientId, episode);
+  }
+
+  const lastOf = new Map<Id<"users">, Doc<"appointments">>();
+  const completedOf = new Map<Id<"users">, number>();
+  for (const appointment of input.past) {
+    if (!isHeld(appointment)) continue;
+    if (appointment.status === "completed") {
+      completedOf.set(appointment.patientId, (completedOf.get(appointment.patientId) ?? 0) + 1);
+    }
+    const current = lastOf.get(appointment.patientId);
+    if (!current || appointment.startTime > current.startTime) lastOf.set(appointment.patientId, appointment);
+  }
+
+  const nextOf = new Map<Id<"users">, Doc<"appointments">>();
+  for (const appointment of input.future) {
+    if (!isBooked(appointment)) continue;
+    const current = nextOf.get(appointment.patientId);
+    if (!current || appointment.startTime < current.startTime) nextOf.set(appointment.patientId, appointment);
+  }
+
+  const patientIds = new Set<Id<"users">>([...episodeOf.keys(), ...nextOf.keys()]);
+  for (const [patientId, appointment] of lastOf) {
+    if (appointment.startTime >= since) patientIds.add(patientId);
+  }
+  for (const [patientId, rel] of relationshipOf) {
+    if (rel.status === "active" && rel.startDate >= since) patientIds.add(patientId);
+  }
+
+  const caseload = new Map<Id<"users">, CaseloadEntry>();
+  for (const patientId of patientIds) {
+    const relationship = relationshipOf.get(patientId) ?? null;
+    const episode = episodeOf.get(patientId) ?? null;
+    const last = lastOf.get(patientId) ?? null;
+    const next = nextOf.get(patientId) ?? null;
+    const status: CaseloadStatus = episode
+      ? "active_episode"
+      : next
+        ? "upcoming"
+        : last && last.startTime >= since
+          ? "recent"
+          : "new";
+    caseload.set(patientId, {
+      patientId,
+      source: caseloadSource(input.inClinic, relationship, episode, next ?? last),
+      status,
+      channel: relationship?.source ?? episode?.source ?? null,
+      relationship,
+      episode,
+      lastSessionAt: last?.startTime ?? null,
+      nextSessionAt: next?.startTime ?? null,
+      sessionsCompleted: completedOf.get(patientId) ?? 0,
+    });
+  }
+  return caseload;
+}
+
+/**
+ * Admin: one row per physiotherapist (newest 500 accounts) with how they work, their review
+ * status and the patients they're currently handling, split by where the patients came from.
+ * Every read goes through an index; per-physio reads are capped (see the caps above).
+ */
+export const adminPhysioDirectory = query({
+  args: {},
+  handler: async (ctx) => {
+    await requireAdmin(ctx);
+    const now = Date.now();
+    const since = now - CASELOAD_WINDOW;
+
+    const fetched = await ctx.db
+      .query("users")
+      .withIndex("by_role", (q) => q.eq("role", "physiotherapist"))
+      .order("desc")
+      .take(DIRECTORY_PHYSIO_CAP + 1);
+    const capped = fetched.length > DIRECTORY_PHYSIO_CAP;
+    // Deleted accounts have had their personal data erased
+    const physios = fetched.slice(0, DIRECTORY_PHYSIO_CAP).filter((user) => !user.deletedAt);
+
+    // Review decisions, read by status instead of once per physio
+    const approvalRanges = await Promise.all(
+      (["pending_review", "approved", "declined"] as const).map((status) =>
+        ctx.db
+          .query("accountApprovalStatus")
+          .withIndex("by_status", (q) => q.eq("status", status))
+          .take(APPROVAL_SCAN_CAP + 1)
+      )
+    );
+    const approvalsComplete = approvalRanges.every((rows) => rows.length <= APPROVAL_SCAN_CAP);
+    const approvalOf = new Map<Id<"users">, Doc<"accountApprovalStatus">>();
+    for (const row of approvalRanges.flat()) {
+      const current = approvalOf.get(row.userId);
+      if (!current || row.submittedAt > current.submittedAt) approvalOf.set(row.userId, row);
+    }
+
+    const clinicCache = new Map<Id<"clinics">, Promise<Doc<"clinics"> | null>>();
+    const getClinic = (clinicId: Id<"clinics">) => {
+      let pending = clinicCache.get(clinicId);
+      if (!pending) {
+        pending = ctx.db.get(clinicId);
+        clinicCache.set(clinicId, pending);
+      }
+      return pending;
+    };
+
+    // A patient seen by two physios counts once in the platform total
+    const allPatients = new Set<Id<"users">>();
+
+    const rows = await Promise.all(
+      physios.map(async (user) => {
+        const profile = await loadPhysioProfile(ctx, user);
+        const clinicId = physioClinicId(user, profile);
+
+        const [clinic, approval, relationships, episodes, past, future] = await Promise.all([
+          clinicId ? getClinic(clinicId) : Promise.resolve(null),
+          approvalOf.get(user._id) ??
+            (approvalsComplete
+              ? Promise.resolve(null)
+              : ctx.db
+                  .query("accountApprovalStatus")
+                  .withIndex("by_user_id", (q) => q.eq("userId", user._id))
+                  .order("desc")
+                  .first()),
+          ctx.db
+            .query("patientPhysiotherapistRelationships")
+            .withIndex("by_physiotherapist", (q) => q.eq("physiotherapistId", user._id))
+            .take(DIRECTORY_REL_CAP + 1),
+          ctx.db
+            .query("careEpisodes")
+            .withIndex("by_physiotherapist_and_status", (q) => q.eq("physiotherapistId", user._id).eq("status", "active"))
+            .take(DIRECTORY_EPISODE_CAP + 1),
+          ctx.db
+            .query("appointments")
+            .withIndex("by_physiotherapist_id_and_time", (q) =>
+              q.eq("physiotherapistId", user._id).gte("startTime", since).lt("startTime", now)
+            )
+            .order("desc")
+            .take(DIRECTORY_PAST_CAP + 1),
+          ctx.db
+            .query("appointments")
+            .withIndex("by_physiotherapist_id_and_time", (q) => q.eq("physiotherapistId", user._id).gte("startTime", now))
+            .take(DIRECTORY_FUTURE_CAP + 1),
+        ]);
+
+        const patientsCapped =
+          relationships.length > DIRECTORY_REL_CAP ||
+          episodes.length > DIRECTORY_EPISODE_CAP ||
+          past.length > DIRECTORY_PAST_CAP ||
+          future.length > DIRECTORY_FUTURE_CAP;
+
+        const caseload = buildCaseload({
+          now,
+          inClinic: Boolean(clinicId),
+          relationships: relationships.slice(0, DIRECTORY_REL_CAP),
+          episodes: episodes.slice(0, DIRECTORY_EPISODE_CAP),
+          past: past.slice(0, DIRECTORY_PAST_CAP),
+          future: future.slice(0, DIRECTORY_FUTURE_CAP),
+        });
+        const patients = { total: caseload.size, rehabify: 0, own: 0, clinic: 0 };
+        for (const entry of caseload.values()) {
+          patients[entry.source] += 1;
+          allPatients.add(entry.patientId);
+        }
+
+        const booked = future.slice(0, DIRECTORY_FUTURE_CAP).filter(isBooked);
+        const weekEnd = now + WEEK;
+
+        // Last activity: there's no login tracking (lastLoginAt is never written), so it's the
+        // latest of a session held, an active episode changing, or a patient being added.
+        let lastSessionAt = past.find(isHeld)?.startTime ?? null;
+        if (lastSessionAt === null) {
+          const older = await ctx.db
+            .query("appointments")
+            .withIndex("by_physiotherapist_id_and_time", (q) => q.eq("physiotherapistId", user._id).lt("startTime", since))
+            .order("desc")
+            .take(5);
+          lastSessionAt = older.find(isHeld)?.startTime ?? null;
+        }
+        const lastActiveAt = latestOf([
+          user.lastLoginAt,
+          lastSessionAt,
+          ...episodes.map((episode) => episode.updatedAt),
+          ...relationships.map((rel) => rel.startDate),
+        ]);
+
+        const approvalStatus: DirectoryApproval = approval?.status ?? "not_submitted";
+        const suspended = isSuspendedAccount(user);
+        return {
+          userId: user._id,
+          name: displayName(user, "Unnamed physio"),
+          imageUrl: user.imageUrl ?? null,
+          rehabifyId: user.staffNumber ?? null,
+          email: user.email ?? null,
+          phone: user.phoneNumber ?? null,
+          mode: directoryMode(profile, clinicId),
+          clinicId,
+          clinicName: clinic?.name ?? null,
+          clinicSuspended: clinic?.status === "suspended",
+          approvalStatus,
+          suspended,
+          // Approved, on the network and listing switched on. Find a Physio also needs setup
+          // finished (documents, payout...), which the caseload drawer checks exactly.
+          marketplaceListed: Boolean(
+            profile &&
+              !suspended &&
+              approvalStatus === "approved" &&
+              servesRehabifyNetwork(profile) &&
+              profile.isAvailableOnMarketplace !== false
+          ),
+          location: physioLocation(profile, clinic),
+          patients,
+          patientsCapped,
+          sessionsNext7Days: booked.filter((a) => a.startTime < weekEnd).length,
+          nextSessionAt: booked[0]?.startTime ?? null,
+          lastActiveAt,
+          joinedAt: user._creationTime,
+        };
+      })
+    );
+
+    rows.sort((a, b) => b.patients.total - a.patients.total || a.name.localeCompare(b.name));
+    return {
+      rows,
+      patientsHandled: allPatients.size,
+      capped,
+      cap: DIRECTORY_PHYSIO_CAP,
+      windowDays: CASELOAD_WINDOW / DAY,
+      generatedAt: now,
+    };
+  },
+});
+
+/**
+ * Admin: one physio's current caseload (same rule as the directory) and their sessions in the
+ * next 14 days. Statuses and dates only: no clinical notes, conditions or plan contents.
+ * Takes the id as a string so a mistyped link shows "not found" instead of an error.
+ */
+export const adminPhysioCaseload = query({
+  args: { physiotherapistId: v.string() },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx);
+    const physioId = ctx.db.normalizeId("users", args.physiotherapistId);
+    const user = physioId ? await ctx.db.get(physioId) : null;
+    if (!user || user.role !== "physiotherapist") return null;
+
+    const now = Date.now();
+    const profile = await loadPhysioProfile(ctx, user);
+    const clinicId = physioClinicId(user, profile);
+
+    const [clinic, approval, relationships, episodes, past, future, bookable] = await Promise.all([
+      clinicId ? ctx.db.get(clinicId) : Promise.resolve(null),
+      ctx.db
+        .query("accountApprovalStatus")
+        .withIndex("by_user_id", (q) => q.eq("userId", user._id))
+        .order("desc")
+        .first(),
+      ctx.db
+        .query("patientPhysiotherapistRelationships")
+        .withIndex("by_physiotherapist", (q) => q.eq("physiotherapistId", user._id))
+        .take(CASELOAD_REL_CAP + 1),
+      ctx.db
+        .query("careEpisodes")
+        .withIndex("by_physiotherapist_and_status", (q) => q.eq("physiotherapistId", user._id).eq("status", "active"))
+        .take(CASELOAD_EPISODE_CAP + 1),
+      ctx.db
+        .query("appointments")
+        .withIndex("by_physiotherapist_id_and_time", (q) => q.eq("physiotherapistId", user._id).lt("startTime", now))
+        .order("desc")
+        .take(CASELOAD_PAST_CAP + 1),
+      ctx.db
+        .query("appointments")
+        .withIndex("by_physiotherapist_id_and_time", (q) => q.eq("physiotherapistId", user._id).gte("startTime", now))
+        .take(CASELOAD_FUTURE_CAP + 1),
+      isPhysioBookable(ctx, user._id),
+    ]);
+
+    const relationshipRows = relationships.slice(0, CASELOAD_REL_CAP);
+    const episodeRows = episodes.slice(0, CASELOAD_EPISODE_CAP);
+    const pastRows = past.slice(0, CASELOAD_PAST_CAP);
+    const futureRows = future.slice(0, CASELOAD_FUTURE_CAP);
+    const caseload = buildCaseload({
+      now,
+      inClinic: Boolean(clinicId),
+      relationships: relationshipRows,
+      episodes: episodeRows,
+      past: pastRows,
+      future: futureRows,
+    });
+
+    const entries = [...caseload.values()].sort(
+      (a, b) =>
+        CASELOAD_STATUS_RANK[a.status] - CASELOAD_STATUS_RANK[b.status] ||
+        (a.nextSessionAt ?? Infinity) - (b.nextSessionAt ?? Infinity) ||
+        (b.lastSessionAt ?? 0) - (a.lastSessionAt ?? 0)
+    );
+    const listed = entries.slice(0, CASELOAD_PATIENT_CAP);
+    const counts = { total: entries.length, rehabify: 0, own: 0, clinic: 0 };
+    for (const entry of entries) counts[entry.source] += 1;
+
+    const upcomingAppointments = futureRows
+      .filter((a) => isBooked(a) && a.startTime < now + UPCOMING_WINDOW)
+      .slice(0, UPCOMING_LIST_CAP);
+
+    // Patient names and IDs for the caseload and the upcoming sessions
+    const patientIds = [...new Set([...listed.map((e) => e.patientId), ...upcomingAppointments.map((a) => a.patientId)])];
+    const patientDocs = await Promise.all(patientIds.map((id) => ctx.db.get(id)));
+    const patientOf = new Map(patientIds.map((id, i) => [id, patientDocs[i]] as const));
+    const patientName = (id: Id<"users">) => {
+      const patient = patientOf.get(id) ?? null;
+      return patient?.deletedAt ? "Deleted account" : displayName(patient, "Patient");
+    };
+
+    // The active care plan's status and schedule (not its contents)
+    const plans = await Promise.all(
+      listed.map(async (entry) => {
+        const active = await ctx.db
+          .query("treatmentPlans")
+          .withIndex("by_patient_and_status", (q) => q.eq("patientId", entry.patientId).eq("status", "active"))
+          .take(10);
+        const mine = active.filter((plan) => plan.physiotherapistId === user._id);
+        return mine.sort((a, b) => b.updatedAt - a.updatedAt)[0] ?? null;
+      })
+    );
+
+    const patients = listed.map((entry, i) => {
+      const patient = patientOf.get(entry.patientId) ?? null;
+      const plan = plans[i];
+      return {
+        patientId: entry.patientId,
+        name: patientName(entry.patientId),
+        imageUrl: patient?.deletedAt ? null : (patient?.imageUrl ?? null),
+        rehabifyId: patient?.patientNumber ?? null,
+        source: entry.source,
+        status: entry.status,
+        channel: entry.channel,
+        addedAt: entry.relationship?.startDate ?? null,
+        lastSessionAt: entry.lastSessionAt,
+        nextSessionAt: entry.nextSessionAt,
+        sessionsCompleted: entry.sessionsCompleted,
+        episode: entry.episode
+          ? { startedAt: entry.episode.startedAt, plannedSessions: entry.episode.plannedSessions ?? null }
+          : null,
+        plan: plan
+          ? {
+              version: plan.version,
+              plannedSessions: plan.plannedSessions ?? null,
+              sessionFrequency: plan.sessionFrequency ?? null,
+              reviewDate: plan.reviewDate ?? null,
+            }
+          : null,
+      };
+    });
+
+    const otherOnRecord = new Set(
+      relationshipRows.filter((rel) => rel.status === "active" && !caseload.has(rel.patientId)).map((rel) => rel.patientId)
+    ).size;
+
+    const approvalStatus: DirectoryApproval = approval?.status ?? "not_submitted";
+    // Clinic members work under their clinic's agreement
+    const agreements = profile && !clinicId ? await physioAgreementStates(ctx, profile) : [];
+    return {
+      physio: {
+        userId: user._id,
+        name: displayName(user, "Unnamed physio"),
+        imageUrl: user.imageUrl ?? null,
+        rehabifyId: user.staffNumber ?? null,
+        email: user.email ?? null,
+        phone: user.phoneNumber ?? null,
+        mode: directoryMode(profile, clinicId),
+        clinicId,
+        clinicName: clinic?.name ?? null,
+        clinicSuspended: clinic?.status === "suspended",
+        approvalStatus,
+        suspended: isSuspendedAccount(user),
+        // Exactly what Find a Physio checks: bookable (approved, listed, setup done) and on the network
+        liveOnFindAPhysio: Boolean(bookable && profile && servesRehabifyNetwork(profile)),
+        location: physioLocation(profile, clinic),
+        joinedAt: user._creationTime,
+        lastActiveAt: latestOf([
+          user.lastLoginAt,
+          pastRows.find(isHeld)?.startTime,
+          ...episodeRows.map((episode) => episode.updatedAt),
+          ...relationshipRows.map((rel) => rel.startDate),
+        ]),
+        specializations: (profile?.specializations ?? []).slice(0, 6),
+        agreements,
+        yearsOfExperience: profile?.yearsOfExperience ?? null,
+        rating: profile?.reviewCount ? (profile.averageRating ?? null) : null,
+        reviewCount: profile?.reviewCount ?? 0,
+        offersOnline: profile ? profile.offersOnlineSessions !== false : false,
+        offersInPerson: Boolean(profile?.offersInPersonSessions),
+      },
+      patients,
+      counts,
+      patientsCapped:
+        entries.length > listed.length || relationships.length > CASELOAD_REL_CAP || episodes.length > CASELOAD_EPISODE_CAP,
+      // Completed counts only see the newest 2000 past appointments
+      sessionsCapped: past.length > CASELOAD_PAST_CAP,
+      otherOnRecord,
+      upcoming: upcomingAppointments.map((a) => ({
+        appointmentId: a._id,
+        startTime: a.startTime,
+        endTime: a.endTime,
+        patientId: a.patientId,
+        patientName: patientName(a.patientId),
+        patientRehabifyId: patientOf.get(a.patientId)?.patientNumber ?? null,
+        serviceType: a.serviceType,
+        online: Boolean(a.isOnline || a.appointmentType === "telehealth"),
+        status: a.status === "confirmed" ? ("confirmed" as const) : ("scheduled" as const),
+      })),
+      windowDays: CASELOAD_WINDOW / DAY,
+      generatedAt: now,
     };
   },
 });

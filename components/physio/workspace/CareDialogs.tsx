@@ -13,6 +13,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { fieldClass, InfoTip, PhysioDrawer, primaryButtonClass, secondaryButtonClass } from '@/components/physio/ui'
 import { programError } from '@/components/exercise-programs/errors'
+import { usePracticeMode } from '@/components/physio/practiceMode'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
 import { OUTCOME_LABELS, SOURCE_LABELS, type EpisodeSource, type Outcome, type Workspace } from './shared'
@@ -68,6 +69,7 @@ export function EpisodeDialog({
   const [condition, setCondition] = useState(workspace.episode.condition ?? '')
   const [planned, setPlanned] = useState(workspace.episode.plannedSessions ? String(workspace.episode.plannedSessions) : '')
   const [saving, setSaving] = useState(false)
+  const { isIndependent } = usePracticeMode()
 
   useEffect(() => {
     if (!open) return
@@ -96,9 +98,13 @@ export function EpisodeDialog({
     }
   }
 
-  const sourceOptions = (['referred', 'existing_patient', 'marketplace', 'booking_link', 'invite', 'other'] as EpisodeSource[]).map(
-    (value) => ({ value, label: SOURCE_LABELS[value] })
-  )
+  // Marketplace and booking-link patients are Rehabify Care patients: not a choice for an independent
+  // physio (unless the record already says so)
+  const sources: EpisodeSource[] = isIndependent
+    ? ['referred', 'existing_patient', 'invite', 'other']
+    : ['referred', 'existing_patient', 'marketplace', 'booking_link', 'invite', 'other']
+  if (!sources.includes(workspace.episode.source) && workspace.episode.source in SOURCE_LABELS) sources.push(workspace.episode.source)
+  const sourceOptions = sources.map((value) => ({ value, label: SOURCE_LABELS[value] }))
 
   return (
     <PhysioDrawer

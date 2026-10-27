@@ -34,7 +34,6 @@ import { isCancelledAppointment } from '@/convex/helpers/appointmentStatus'
 import { Button } from '@/components/ui/button'
 import { isVideoVisit } from '@/components/appointments/appointment-ui'
 import {
-  accentButtonClass,
   cardClass,
   DetailRow,
   InfoTip,
@@ -46,8 +45,10 @@ import { formatKobo } from '@/lib/rehabify-services'
 import { useMutationUntyped, useQueryUntyped } from '@/lib/convexUntyped'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
+import { usePracticeMode } from '@/components/physio/practiceMode'
 import { AppointmentDrawer } from './AppointmentDrawer'
 import { useBooking } from './BookingDrawer'
+import { JoinVideoButton } from './JoinVideoButton'
 import {
   DAY_MS,
   durationLabel,
@@ -65,7 +66,6 @@ import {
 } from './calendarTime'
 import {
   asLike,
-  joinLink,
   minutesOf,
   needsMyAnswer,
   patientName,
@@ -73,6 +73,7 @@ import {
   readableError,
   scheduleApi,
   useNow,
+  videoJoin,
   visitStatus,
   type HeldBooking,
   type PhysioAppointment,
@@ -154,7 +155,7 @@ function entryIsVideo(entry: Entry) {
 }
 
 function entryDetail(entry: Entry) {
-  if (entry.kind === 'held') return `${entry.held.serviceName} · ${formatKobo(entry.held.chargeKobo)}`
+  if (entry.kind === 'held') return `${entry.held.serviceName} · you earn ${formatKobo(entry.held.payoutKobo)}`
   const video = isVideoVisit(asLike(entry.visit))
   return `${entry.visit.serviceType || 'Session'} · ${video ? 'Video call' : entry.visit.location || 'In person'}`
 }
@@ -270,26 +271,32 @@ function DayColumn({
         const look = lookOf(entry, now)
         const height = Math.max(px((entry.end - entry.start) / MINUTE_MS) - 2, 22)
         const Icon = entry.kind === 'held' ? Hourglass : entryIsVideo(entry) ? Video : MapPin
+        // A live Join on the block itself while the window is open (lib/videoJoin.ts), when there's room
+        const join = entry.kind === 'visit' ? videoJoin(entry.visit, now) : null
+        const joinHere = join?.kind === 'open' && height >= 34 && columns === 1 ? join : null
         return (
-          <button
+          <div
             key={entry.id}
-            type="button"
             data-entry
-            onClick={() => onOpen(entry)}
-            title={`${entryTitle(entry)} · ${lagosTime(entry.start)} · ${look.label}`}
-            className={cn(
-              'absolute z-[2] overflow-hidden rounded-lg border border-l-[3px] px-1.5 py-1 text-left transition hover:brightness-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pt-ink/40',
-              BLOCK_TONE[look.tone],
-              BAR_TONE[look.tone],
-              look.dashed && 'border-dashed',
-              look.faded && 'opacity-60'
-            )}
+            className="absolute z-[2]"
             style={{
               top: topOf(entry.start) + 1,
               height,
               left: `calc(${(column / columns) * 100}% + 3px)`,
               width: `calc(${100 / columns}% - 6px)`,
             }}
+          >
+          <button
+            type="button"
+            onClick={() => onOpen(entry)}
+            title={`${entryTitle(entry)} · ${lagosTime(entry.start)} · ${look.label}`}
+            className={cn(
+              'block h-full w-full overflow-hidden rounded-lg border border-l-[3px] px-1.5 py-1 text-left transition hover:brightness-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pt-ink/40',
+              BLOCK_TONE[look.tone],
+              BAR_TONE[look.tone],
+              look.dashed && 'border-dashed',
+              look.faded && 'opacity-60'
+            )}
           >
             {height < 34 || columns > 2 ? (
               <span className="flex items-center gap-1 truncate text-[11px] leading-tight">
@@ -317,6 +324,15 @@ function DayColumn({
               </>
             )}
           </button>
+          {joinHere && (
+            <JoinVideoButton
+              join={joinHere}
+              iconOnly
+              label={`Join video call with ${entryTitle(entry)}`}
+              className="absolute right-1 top-1 h-6 w-6 rounded-md px-0"
+            />
+          )}
+          </div>
         )
       })}
 
@@ -537,6 +553,7 @@ export function DayAgenda({
   onOpen: (entry: Entry) => void
   onBook: (start?: number) => void
 }) {
+  const practice = usePracticeMode()
   const today = startOfZonedDay(now)
   const past = day + DAY_MS <= now
   const active = entries.filter((e) => e.kind === 'held' || !isCancelledAppointment(e.visit.status))
@@ -586,7 +603,13 @@ export function DayAgenda({
           {dayOff ? <CalendarOff className="h-6 w-6 text-pt-faint" /> : <CalendarPlus className="h-6 w-6 text-pt-faint" />}
           <p className="mt-2 text-sm font-semibold text-pt-ink">{dayOff ? 'Not a working day' : past ? 'Nothing happened this day' : 'Nothing booked'}</p>
           <p className="mt-1 max-w-[16rem] text-xs text-pt-muted">
-            {dayOff ? 'You aren’t taking bookings this day. Change that in your working hours.' : past ? 'No sessions were booked.' : 'Book a patient in, or share your booking page from Today.'}
+            {dayOff
+              ? 'You aren’t taking bookings this day. Change that in your working hours.'
+              : past
+                ? 'No sessions were booked.'
+                : practice.isIndependent
+                  ? 'Book one of your patients in.'
+                  : 'Book a patient in, or share your booking page from Today.'}
           </p>
           {dayOff ? (
             <Button asChild size="sm" className={cn(secondaryButtonClass, 'mt-4 h-9')}>
@@ -640,7 +663,8 @@ export function DayAgenda({
             }
             const { entry } = row
             const look = lookOf(entry, now)
-            const link = entry.kind === 'visit' ? joinLink(entry.visit, now) : null
+            // Online visits show Join (greyed out until 15 minutes before); one awaiting your answer shows that first
+            const join = entry.kind === 'visit' && !needsMyAnswer(entry.visit, now) ? videoJoin(entry.visit, now) : null
             const minutes = entry.kind === 'visit' ? minutesOf(entry.visit) : Math.round((entry.end - entry.start) / MINUTE_MS)
             return (
               <li key={entry.id} className={cn('flex gap-3', look.faded && 'opacity-60')}>
@@ -670,14 +694,7 @@ export function DayAgenda({
                       {look.label}
                     </span>
                   </button>
-                  {link && (
-                    <Button asChild size="sm" className={cn(accentButtonClass, 'h-8 shrink-0 px-2.5')}>
-                      <a href={link} target="_blank" rel="noopener noreferrer">
-                        <Video className="mr-1 h-3.5 w-3.5" />
-                        Join
-                      </a>
-                    </Button>
-                  )}
+                  {join && <JoinVideoButton join={join} className="h-8 px-2.5" />}
                 </div>
               </li>
             )
@@ -754,8 +771,8 @@ function HeldDrawer({ booking, onClose }: { booking: HeldBooking | null; onClose
             {shown.serviceName}
             {shown.isOnline ? ' · Video call' : shown.travelZoneName ? ` · ${shown.travelZoneName}` : ''}
           </DetailRow>
-          <DetailRow icon={Hourglass} label="Patient pays">
-            {formatKobo(shown.chargeKobo)}
+          <DetailRow icon={Hourglass} label="You earn">
+            {formatKobo(shown.payoutKobo)}
           </DetailRow>
         </div>
       </div>
@@ -768,6 +785,9 @@ function HeldDrawer({ booking, onClose }: { booking: HeldBooking | null; onClose
 export function CalendarView({ header }: { header: ReactNode }) {
   const openBooking = useBooking()
   const now = useNow(30_000)
+  // Rehabify bookings waiting for payment only exist for physios who take Rehabify Care patients
+  const practice = usePracticeMode()
+  const showHeld = practice.loaded && !practice.isIndependent
   const [weekStart, setWeekStart] = useState(() => weekStartOf(Date.now()))
   const [selectedDay, setSelectedDay] = useState(() => startOfZonedDay(Date.now()))
   const [showCancelled, setShowCancelled] = useState(false)
@@ -795,7 +815,7 @@ export function CalendarView({ header }: { header: ReactNode }) {
       if (!showCancelled && isCancelledAppointment(visit.status)) continue
       add({ kind: 'visit', id: visit._id, start: visit.startTime, end: visit.endTime, visit })
     }
-    for (const booking of held) {
+    for (const booking of showHeld ? held : []) {
       add({
         kind: 'held',
         id: booking.id,
@@ -806,7 +826,7 @@ export function CalendarView({ header }: { header: ReactNode }) {
     }
     for (const list of map.values()) list.sort((a, b) => a.start - b.start)
     return map
-  }, [appointments, held, days, showCancelled])
+  }, [appointments, held, showHeld, days, showCancelled])
 
   const hoursByDay = useMemo(() => new Map(days.map((day) => [day, workingHours(schedule, day)])), [days, schedule])
 
@@ -850,9 +870,11 @@ export function CalendarView({ header }: { header: ReactNode }) {
   return (
     <>
       {header}
-      <Quiet>
-        <HeldSource onChange={setHeld} />
-      </Quiet>
+      {showHeld && (
+        <Quiet>
+          <HeldSource onChange={setHeld} />
+        </Quiet>
+      )}
       <Quiet>
         <HoursSource onChange={setSchedule} />
       </Quiet>
@@ -903,9 +925,12 @@ export function CalendarView({ header }: { header: ReactNode }) {
                 <span className="block">
                   <b className="text-pt-green-fg">Green</b> is confirmed or done.
                 </span>
-                <span className="block">
-                  <b>Dashed white</b> is a Rehabify booking waiting for payment.
-                </span>
+                {showHeld && (
+                  <span className="block">
+                    <b>Dashed white</b> is a Rehabify Care booking waiting for payment.
+                  </span>
+                )}
+                <span className="mt-1.5 block">Online sessions show a lime Join from 15 minutes before the start.</span>
               </InfoTip>
             </div>
           </div>

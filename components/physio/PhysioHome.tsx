@@ -14,6 +14,7 @@ import {
   ClipboardCheck,
   Copy,
   HeartPulse,
+  MapPin,
   MessageCircle,
   Plus,
   Receipt,
@@ -30,10 +31,14 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import AddPatientModal from '@/components/dashboard/physiotherapist/AddPatientModal'
-import { accentButtonClass, cardClass, EmptyState, IconChip, InfoTip, PageContainer, Panel, StatTile, StatusBadge, type Tone } from '@/components/physio/ui'
+import { cardClass, EmptyState, IconChip, InfoTip, PageContainer, Panel, StatTile, StatusBadge, type Tone } from '@/components/physio/ui'
 import { useBooking } from '@/components/physio/schedule/BookingDrawer'
 import { AppointmentDrawer } from '@/components/physio/schedule/AppointmentDrawer'
-import { joinLink, useNow, visitStatus, type PhysioAppointment } from '@/components/physio/schedule/shared'
+import { JoinVideoButton } from '@/components/physio/schedule/JoinVideoButton'
+import { needsMyAnswer, useNow, useTodaysVisits, videoJoin, visitStatus, type PhysioAppointment } from '@/components/physio/schedule/shared'
+import { isVideoVisit, type AppointmentLike } from '@/components/appointments/appointment-ui'
+import { isOpenAppointment } from '@/convex/helpers/appointmentStatus'
+import { lagosTime } from '@/convex/helpers/lagosTime'
 import { SetupChecklistCard, type SetupStatus } from '@/components/physio/SetupChecklist'
 import { PHYSIO_HOME } from '@/components/physio/PhysioSidebar'
 import { PainPill } from '@/components/physio/workspace/shared'
@@ -52,6 +57,7 @@ type Appointment = {
   appointmentType?: 'in-person' | 'telehealth'
   isOnline?: boolean
   patientId: string
+  location?: string
   patient?: { _id: string; firstName?: string; lastName?: string; imageUrl?: string } | null
 }
 
@@ -218,10 +224,74 @@ function NeedsAttention({ items }: { items: AttentionItem[] | undefined }) {
   )
 }
 
-function TodaySchedule({ appointments }: { appointments: Appointment[] | undefined }) {
+/**
+ * The next (or current) session, on an ink card at the top of Today’s schedule. Online sessions
+ * get the big lime "Join video call" from 15 minutes before the start until the end (rule:
+ * lib/videoJoin.ts); before that it’s greyed out with the time it opens.
+ */
+function NextSessionCard({ appointment, now, onOpen }: { appointment: PhysioAppointment; now: number; onOpen: () => void }) {
+  const online = isVideoVisit(appointment as unknown as AppointmentLike)
+  const join = videoJoin(appointment, now)
+  const answer = needsMyAnswer(appointment, now)
+  const live = appointment.startTime <= now
+  const minutesAway = Math.max(1, Math.round((appointment.startTime - now) / 60_000))
+  const when = live ? 'Now' : minutesAway < 60 ? `In ${minutesAway} min` : lagosTime(appointment.startTime)
+  const first = appointment.patient?.firstName || fullName(appointment.patient)
+
+  return (
+    <div className="mx-3 mb-1 mt-2 rounded-2xl bg-rh-ink p-4 text-white dark:bg-white/[0.06] dark:ring-1 dark:ring-white/10 sm:p-5">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <button type="button" onClick={onOpen} className="flex min-w-0 items-center gap-3 text-left focus-visible:outline-none">
+          <Avatar className="h-11 w-11 shrink-0">
+            <AvatarImage src={appointment.patient?.imageUrl} alt="" />
+            <AvatarFallback className="bg-white/10 text-sm font-semibold text-white">{initials(appointment.patient)}</AvatarFallback>
+          </Avatar>
+          <span className="min-w-0">
+            <span className="block text-xs font-medium text-white/70">
+              {live ? 'Happening now' : 'Next session'} · {when}
+            </span>
+            <span className="block truncate text-base font-semibold">{fullName(appointment.patient)}</span>
+            <span className="flex items-center gap-1.5 truncate text-xs text-white/70">
+              {online ? <Video className="h-3 w-3 shrink-0" /> : <MapPin className="h-3 w-3 shrink-0" />}
+              <span className="truncate">
+                {lagosTime(appointment.startTime)} · {online ? 'Video call' : appointment.location || 'In person'}
+                {appointment.serviceType ? ` · ${appointment.serviceType}` : ''}
+              </span>
+            </span>
+          </span>
+        </button>
+        <div className="flex shrink-0 flex-col gap-1.5 sm:items-end">
+          {answer ? (
+            <Button onClick={onOpen} className="h-11 rounded-xl bg-white px-5 text-rh-ink hover:bg-white/90">
+              Answer {first}’s request
+            </Button>
+          ) : online && join.kind !== 'none' ? (
+            <>
+              <JoinVideoButton
+                join={join}
+                size="md"
+                label="Join video call"
+                className={cn('h-11 px-5', join.kind !== 'open' && 'border-white/15 bg-white/10 text-white/70')}
+              />
+              {join.kind === 'soon' && <span className="text-[11px] text-white/60">Join opens 15 min before</span>}
+              {join.kind === 'no-link' && <span className="text-[11px] text-white/60">The link is made once it’s confirmed</span>}
+            </>
+          ) : (
+            <Button onClick={onOpen} className="h-11 rounded-xl bg-white/10 px-5 text-white hover:bg-white/20">
+              Details
+            </Button>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function TodaySchedule({ appointments, independent }: { appointments: Appointment[] | undefined; independent: boolean }) {
   const sorted = useMemo(() => (appointments ?? []).slice().sort((a, b) => a.startTime - b.startTime), [appointments])
   const now = useNow(30_000)
-  const nextId = sorted.find((a) => !CANCELLED.has(a.status) && (a.endTime ?? a.startTime) >= now)?._id
+  const next = sorted.find((a) => isOpenAppointment(a.status) && (a.endTime ?? a.startTime) >= now) as unknown as PhysioAppointment | undefined
+  const nextId = next?._id
   const openBooking = useBooking()
   // The visit open in the drawer, looked up live so it updates while open
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -233,7 +303,7 @@ function TodaySchedule({ appointments }: { appointments: Appointment[] | undefin
       <Panel
         title="Today’s schedule"
         description={format(new Date(), 'EEEE d MMMM')}
-        info="Tap a session for details and actions. Video sessions get a Join button 10 minutes before they start."
+        info="Tap a session for details and actions. Video sessions get a Join button 15 minutes before they start, and it stays until the end."
         actions={
           <Link href={`${PHYSIO_HOME}/calendar`} className="text-xs font-semibold text-rh-ink hover:underline dark:text-rh-lime">
             Open calendar
@@ -250,7 +320,7 @@ function TodaySchedule({ appointments }: { appointments: Appointment[] | undefin
           <EmptyState
             icon={<CalendarDays />}
             title="A free day"
-            description="New bookings from your link and the marketplace show up here."
+            description={independent ? 'Sessions you book with your patients show up here.' : 'New bookings from your link and the marketplace show up here.'}
             action={
               <Button variant="outline" size="sm" className="rounded-xl" onClick={() => openBooking()}>
                 New appointment
@@ -258,13 +328,26 @@ function TodaySchedule({ appointments }: { appointments: Appointment[] | undefin
             }
           />
         ) : (
+          <>
+          {next && (
+            <NextSessionCard
+              appointment={next}
+              now={now}
+              onOpen={() => {
+                setSelectedId(next._id)
+                setDrawerOpen(true)
+              }}
+            />
+          )}
           <ol className="space-y-2 px-3 pb-3 pt-2">
             {sorted.map((appointment) => {
               const online = appointment.isOnline || appointment.appointmentType === 'telehealth'
               const isNext = appointment._id === nextId
               const cancelled = CANCELLED.has(appointment.status)
               const full = appointment as unknown as PhysioAppointment
-              const link = joinLink(full, now)
+              // The next session's Join is on the card above; the others show theirs while it's open
+              const join = isNext || needsMyAnswer(full, now) ? null : videoJoin(full, now)
+              const link = join?.kind === 'open' ? join : null
               const status = visitStatus(full, now)
               return (
                 <li key={appointment._id} className="flex items-center gap-2">
@@ -302,18 +385,12 @@ function TodaySchedule({ appointments }: { appointments: Appointment[] | undefin
                     </div>
                     {isNext && !link ? <StatusBadge tone="teal">Up next</StatusBadge> : !link && <StatusBadge tone={status.tone}>{status.label}</StatusBadge>}
                   </button>
-                  {link && (
-                    <Button asChild size="sm" className={cn(accentButtonClass, 'h-9 shrink-0 px-3')}>
-                      <a href={link} target="_blank" rel="noopener noreferrer">
-                        <Video className="mr-1.5 h-3.5 w-3.5" />
-                        Join
-                      </a>
-                    </Button>
-                  )}
+                  {link && <JoinVideoButton join={link} />}
                 </li>
               )
             })}
           </ol>
+          </>
         )}
       </Panel>
       <AppointmentDrawer appointment={selected} open={drawerOpen && selected !== null} onOpenChange={setDrawerOpen} />
@@ -554,17 +631,12 @@ export function PhysioHome({ setup }: { setup: SetupStatus | null | undefined })
   const attention = useQueryUntyped(homeApi.physioCare.getNeedsAttention, { now: attentionNow }) as AttentionItem[] | undefined
   const checkIns = useQueryUntyped(homeApi.physioCare.getRecentCheckIns, { limit: 6 }) as RecentCheckIn[] | undefined
 
-  const [range] = useState(() => {
-    const start = new Date()
-    start.setHours(0, 0, 0, 0)
-    const end = new Date(start)
-    end.setHours(23, 59, 59, 999)
-    return { startDate: start.getTime(), endDate: end.getTime() }
-  })
-  const today = useQueryUntyped(homeApi.appointments.getMyAppointments, { ...range, limit: 50 }) as Appointment[] | undefined
+  // Same subscription as the top-bar session banner
+  const today = useTodaysVisits() as unknown as Appointment[] | undefined
   const todayActive = today?.filter((a) => !CANCELLED.has(a.status))
   const name = [user?.firstName, user?.lastName].filter(Boolean).join(' ')
   const stat = (value: number | undefined) => (stats === undefined ? '–' : value ?? 0)
+  const independent = setup?.practiceMode === 'independent' && !setup.isClinicMember
 
   return (
     <PageContainer className="max-w-7xl">
@@ -572,7 +644,18 @@ export function PhysioHome({ setup }: { setup: SetupStatus | null | undefined })
 
       {setup && <SetupChecklistCard setup={setup} />}
 
-      {setup?.isComplete && setup.approvalStatus === 'approved' && !setup.isListed && (
+      {setup?.practiceMode === 'independent' && setup.approvalStatus === 'approved' && (
+        <div className="flex flex-col gap-2 rounded-2xl bg-white px-5 py-3 text-sm shadow-soft dark:bg-rh-ink-2 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-neutral-600 dark:text-neutral-400">
+            You see your own patients here. You aren&apos;t matched with Rehabify Care patients.
+          </p>
+          <Link href={`${PHYSIO_HOME}/settings/practice`} className="shrink-0 font-semibold text-rh-ink hover:underline dark:text-rh-lime">
+            Take Rehabify Care patients too
+          </Link>
+        </div>
+      )}
+
+      {setup?.practiceMode !== 'independent' && setup?.isComplete && setup.approvalStatus === 'approved' && !setup.isListed && (
         <div className="flex flex-col gap-2 rounded-2xl bg-white px-5 py-3 text-sm shadow-soft dark:bg-rh-ink-2 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-neutral-600 dark:text-neutral-400">You’re hidden from the marketplace. Patients can still book you through your link.</p>
           <Link href={`${PHYSIO_HOME}/settings/marketplace`} className="shrink-0 font-semibold text-rh-ink hover:underline dark:text-rh-lime">
@@ -590,13 +673,14 @@ export function PhysioHome({ setup }: { setup: SetupStatus | null | undefined })
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
         <div className="space-y-5 lg:col-span-2">
-          <TodaySchedule appointments={today} />
+          <TodaySchedule appointments={today} independent={independent} />
           <CheckInFeed checkIns={checkIns} />
         </div>
         <div className="space-y-5">
           <NeedsAttention items={attention} />
           <OpenWorkspace patients={patients} />
-          {user?._id && <BookingLinkCard physioId={user._id} name={name || undefined} />}
+          {/* The booking link is a Rehabify Care booking page (Rehabify prices), so it isn't for independent physios */}
+          {user?._id && setup && !independent && <BookingLinkCard physioId={user._id} name={name || undefined} />}
         </div>
       </div>
     </PageContainer>

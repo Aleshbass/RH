@@ -194,12 +194,13 @@ const nextConfig = {
         headers: [{ key: 'Cache-Control', value: 'public, max-age=2592000' }],
       },
       // Exercise links sent on WhatsApp: private, never cached or indexed, token never leaked
-      // to other sites through the Referer header.
+      // to other sites through the Referer header. Other sites get our origin only (no path):
+      // "no-referrer" broke the YouTube videos on these pages (YouTube error 153).
       {
         source: '/x/:path*',
         headers: [
           { key: 'Cache-Control', value: 'no-store' },
-          { key: 'Referrer-Policy', value: 'no-referrer' },
+          { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
           { key: 'X-Robots-Tag', value: 'noindex, nofollow' },
         ],
       },

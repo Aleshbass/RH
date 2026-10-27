@@ -9,6 +9,22 @@ import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import { getService } from "../../lib/rehabify-services";
 
+/**
+ * A Rehabify Care invoice (made by ensureMarketplaceInvoice below). It records what the patient
+ * paid Rehabify; the physio only ever sees their payout for it, never that amount.
+ */
+export function isRehabifyCareInvoice(invoice: { invoiceNumber?: string }): boolean {
+  return Boolean(invoice.invoiceNumber?.startsWith("INV-MKT-"));
+}
+
+/** The physio's payout (plus travel share) on a Rehabify Care invoice, in kobo. */
+export function rehabifyCarePayoutKobo(invoice: {
+  physiotherapistShare?: number;
+  feeBreakdown?: { physiotherapistEarnings?: number };
+}): number {
+  return invoice.physiotherapistShare ?? invoice.feeBreakdown?.physiotherapistEarnings ?? 0;
+}
+
 export function bookingDescription(booking: Doc<"marketplaceBookings">): string {
   const service = booking.serviceId ? getService(booking.serviceId) : undefined;
   const name = service?.name ?? `Physiotherapy session (${booking.sessionType})`;

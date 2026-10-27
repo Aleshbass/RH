@@ -31,8 +31,8 @@ export default function PhysioPriceMarker({
                 "relative px-2.5 py-1 rounded-full text-xs font-bold shadow-lg transition-all duration-200 cursor-pointer border-2 whitespace-nowrap flex items-center gap-1.5",
                 "hover:scale-110 hover:z-50",
                 isSelected || isHovered
-                    ? "bg-[#002e2c] text-white border-[#002e2c] scale-110 z-50 shadow-xl shadow-teal-900/30"
-                    : "bg-white text-gray-900 border-white hover:bg-[#005b57] hover:text-white hover:border-[#005b57]"
+                    ? "bg-rh-ink text-white border-rh-ink scale-110 z-50 shadow-xl"
+                    : "bg-white text-rh-ink border-white hover:bg-rh-ink hover:text-white hover:border-rh-ink"
             )}
             style={{
                 // Prevent marker from being clipped
@@ -41,11 +41,11 @@ export default function PhysioPriceMarker({
         >
             {rating && rating > 0 ? (
                 <>
-                    <Star className="w-3 h-3 fill-amber-400 text-amber-400 shrink-0" />
+                    <Star className="w-3 h-3 shrink-0" />
                     <span>{rating.toFixed(1)}</span>
                 </>
             ) : (
-                <Stethoscope className={cn("w-3 h-3 shrink-0", isSelected || isHovered ? "text-teal-300" : "text-[#005b57]")} />
+                <Stethoscope className={cn("w-3 h-3 shrink-0", isSelected || isHovered ? "text-rh-lime" : "text-rh-ink")} />
             )}
             {name && (
                 <span className="font-semibold text-[11px] truncate max-w-[70px]">{name}</span>
@@ -55,7 +55,7 @@ export default function PhysioPriceMarker({
                 className={cn(
                     "absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-2.5 h-2.5 rotate-45 border-b-2 border-r-2",
                     isSelected || isHovered
-                        ? "bg-[#002e2c] border-[#002e2c]"
+                        ? "bg-rh-ink border-rh-ink"
                         : "bg-white border-white"
                 )}
             />

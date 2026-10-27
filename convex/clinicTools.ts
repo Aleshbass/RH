@@ -1834,12 +1834,16 @@ export async function insertClinicInvoice(
     const patientSource = careRelationship?.source === "rehabify_referral" ? "rehabify_referral" : "clinic_direct";
 
     const totalKobo = input.items.reduce((sum, item) => sum + item.totalPrice, 0);
-    // Online payment split with the admin's current fee settings: Paystack fee first, then the
-    // clinic/Rehabify split; stamp duty comes off the clinic's payout. The patient pays the quoted
-    // price; nothing is added on top. The amounts are fixed on the invoice now, so later settings
-    // changes don't alter it. See convex/clinicFees.ts.
+    // Online payment: Paystack's fee first, then stamp duty off the clinic's payout. The clinic's
+    // own patients: Rehabify takes no cut (clinics pay a software subscription instead). Rehabify
+    // Care patients sent to a clinic are a separate deal, so only they use the admin's split. The
+    // patient pays the quoted price; nothing is added on top. The amounts are fixed on the invoice
+    // now, so later settings changes don't alter it. See convex/clinicFees.ts.
     const feeConfig = await loadClinicFeeConfig(ctx);
-    const split = clinicPaymentSplit(totalKobo, feeConfig);
+    const split = clinicPaymentSplit(
+      totalKobo,
+      patientSource === "rehabify_referral" ? feeConfig : { ...feeConfig, clinicSharePercent: 100 }
+    );
     const platformFeeKobo = split.rehabifyKobo;
     // What Paystack settles to the clinic's subaccount (stamp duty is deducted from it on payout)
     const clinicShareKobo = split.clinicShareKobo;

@@ -1,5 +1,5 @@
 import type { MetadataRoute } from 'next';
-import { api } from '@/convex/_generated/api';
+import { makeFunctionReference } from 'convex/server';
 import { getConvexClient } from '@/lib/convex-client';
 import { SITE_CONFIG } from '@/lib/seo/config';
 import { LEARN_URL } from '@/lib/site-hosts';
@@ -17,6 +17,13 @@ import { LEARN_URL } from '@/lib/site-hosts';
 export const revalidate = 3600;
 
 const CONVEX_TIMEOUT_MS = 8000;
+
+// A plain reference: the generated `api` type is at TypeScript's depth limit (TS2589)
+const searchPhysiotherapistsRef = makeFunctionReference<
+  'query',
+  { limit: number; offset: number },
+  { results: { id: string }[] }
+>('marketplace/search:searchPhysiotherapists');
 
 type StaticRoute = {
   path: string;
@@ -43,18 +50,23 @@ const STATIC_ROUTES: StaticRoute[] = [
   { path: '/physio-register', changeFrequency: 'weekly', priority: 0.6 },
   { path: '/learn', changeFrequency: 'weekly', priority: 0.7 }, // MSK Specialist Program (cohort dates change per intake)
   // Policies
-  { path: '/terms-and-conditions', changeFrequency: 'yearly', priority: 0.3, lastModified: '2025-10-02' },
-  { path: '/privacy-policy', changeFrequency: 'yearly', priority: 0.3, lastModified: '2025-10-02' },
-  { path: '/payment-policy', changeFrequency: 'yearly', priority: 0.3, lastModified: '2026-10-19' },
-  { path: '/consultation-booking-policy', changeFrequency: 'yearly', priority: 0.3, lastModified: '2026-09-22' },
+  { path: '/terms-and-conditions', changeFrequency: 'yearly', priority: 0.3, lastModified: '2026-10-26' },
+  { path: '/privacy-policy', changeFrequency: 'yearly', priority: 0.3, lastModified: '2026-10-26' },
+  { path: '/payment-policy', changeFrequency: 'yearly', priority: 0.3, lastModified: '2026-10-26' },
+  { path: '/consultation-booking-policy', changeFrequency: 'yearly', priority: 0.3, lastModified: '2026-10-26' },
+  { path: '/cookie-policy', changeFrequency: 'yearly', priority: 0.3, lastModified: '2026-10-26' },
   { path: '/payout-policy', changeFrequency: 'yearly', priority: 0.3 },
+  // Agreements (read-only copies; people sign them in their dashboard)
+  { path: '/agreements/network-physiotherapist', changeFrequency: 'yearly', priority: 0.3, lastModified: '2026-10-26' },
+  { path: '/agreements/independent-physiotherapist', changeFrequency: 'yearly', priority: 0.3, lastModified: '2026-10-26' },
+  { path: '/agreements/clinic', changeFrequency: 'yearly', priority: 0.3, lastModified: '2026-10-26' },
 ];
 
 /** User ids of every physiotherapist whose public profile can be booked (same rule as /find-a-physio). */
 async function bookablePhysioIds(): Promise<string[]> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    const query = getConvexClient().query(api.marketplace.search.searchPhysiotherapists, {
+    const query = getConvexClient().query(searchPhysiotherapistsRef, {
       limit: 5000,
       offset: 0,
     });
@@ -62,7 +74,7 @@ async function bookablePhysioIds(): Promise<string[]> {
       timer = setTimeout(() => resolve(null), CONVEX_TIMEOUT_MS);
     });
     const result = await Promise.race([query, timeout]);
-    return result ? result.results.map((physio: { id: string }) => physio.id) : [];
+    return result ? result.results.map((physio) => physio.id) : [];
   } catch {
     // Convex unreachable or not configured (e.g. local build): static pages only
     return [];

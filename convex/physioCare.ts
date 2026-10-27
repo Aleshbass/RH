@@ -16,6 +16,7 @@ import { internal } from "./_generated/api";
 import { publicAppUrl } from "./helpers/appUrl";
 import { awaitingConfirmationFrom, hasPendingProposal } from "./helpers/appointmentStatus";
 import { lagosDateTime } from "./helpers/lagosTime";
+import { isRehabifyCareInvoice, rehabifyCarePayoutKobo } from "./helpers/marketplaceInvoices";
 import {
   currentUser,
   findRelationship,
@@ -462,8 +463,14 @@ export const getPatientWorkspace = query({
       lastNoteAt: myNotes[0]?.sessionDate ?? null,
       payments: {
         unpaidCount: unpaid.length,
-        unpaidKobo: unpaid.reduce((sum, i) => sum + (i.totalAmount - (i.paidAmount ?? 0)), 0),
-        paidKobo: invoices.filter((i) => i.status === "paid").reduce((sum, i) => sum + (i.paidAmount ?? i.totalAmount), 0),
+        // Rehabify Care counts the physio's payout, never what the patient paid Rehabify
+        unpaidKobo: unpaid.reduce(
+          (sum, i) => sum + (isRehabifyCareInvoice(i) ? rehabifyCarePayoutKobo(i) : i.totalAmount - (i.paidAmount ?? 0)),
+          0
+        ),
+        paidKobo: invoices
+          .filter((i) => i.status === "paid")
+          .reduce((sum, i) => sum + (isRehabifyCareInvoice(i) ? rehabifyCarePayoutKobo(i) : i.paidAmount ?? i.totalAmount), 0),
       },
       followUp:
         storedCurrent && storedCurrent.status === "completed" && storedCurrent.followUpStatus

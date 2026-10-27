@@ -21,6 +21,7 @@ import {
     fieldHintClass,
     fieldLabelClass,
 } from '@/components/physio/SettingsUI';
+import { usePracticeMode } from '@/components/physio/practiceMode';
 import { useFileUpload } from '@/lib/hooks/useFileUpload';
 
 /** Matches the "photo and short bio" item on the setup checklist (convex/physioSetup.ts). */
@@ -69,6 +70,8 @@ async function convertImageToWebp(file: File, quality = 0.85): Promise<File> {
 export default function ProfileSettingsPage() {
     const currentUser = useQuery(api.users.getMyUser);
     const currentUserProfile = useQuery(api.queries.getCurrentUser);
+    // Independent physios aren't listed and have no Rehabify booking link
+    const { isIndependent } = usePracticeMode();
     const updateProfile = useMutation(api.users.updatePhysiotherapistProfile);
     const updateProfileImage = useMutation(api.users.updateProfileImageFromStorage);
     const removeProfileImage = useMutation(api.users.removeProfileImage);
@@ -179,7 +182,10 @@ export default function ProfileSettingsPage() {
 
     return (
         <div className="space-y-6">
-            <SettingsPageHeader title="Profile" description="What patients see on your marketplace page and booking link." />
+            <SettingsPageHeader
+                title="Profile"
+                description={isIndependent ? 'What your patients see in their Rehabify app.' : 'What patients see on your marketplace page and booking link.'}
+            />
 
             <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileSelect} />
 

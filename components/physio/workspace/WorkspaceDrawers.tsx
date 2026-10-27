@@ -37,6 +37,7 @@ import {
 } from '@/components/physio/ui'
 import { programError } from '@/components/exercise-programs/errors'
 import { useBooking } from '@/components/physio/schedule/BookingDrawer'
+import { useCareBillingMode } from '@/components/physio/practiceMode'
 import { useMutationUntyped, useQueryUntyped, useActionUntyped } from '@/lib/convexUntyped'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
@@ -749,11 +750,9 @@ export function RequestPaymentDrawer({ workspace, open, onOpenChange }: { worksp
   const createInvoice = useMutationUntyped(workspaceApi.billing.createInvoice)
   const createLink = useActionUntyped(workspaceApi.physioBilling.createPhysioPaymentLink)
   const me = useQueryUntyped(workspaceApi.users.getMyUser, open ? {} : 'skip') as { clinicId?: string } | null | undefined
-  // Rehabify patients pay Rehabify's set prices per session, so there's no amount to type
-  const billing = useQueryUntyped(workspaceApi.rehabifyFollowUps.getCareBillingMode, open ? { patientId: workspace.patient._id } : 'skip') as
-    | { mode: 'rehabify' | 'own' }
-    | null
-    | undefined
+  // Rehabify Care patients pay Rehabify's set prices per session, so there's no amount to type.
+  // Independent physios only have their own patients (always "own").
+  const billing = useCareBillingMode(open ? workspace.patient._id : null)
   const openBooking = useBooking()
   const [items, setItems] = useState<Item[]>([{ description: '', amount: '' }])
   const [dueIn, setDueIn] = useState<DueIn>('7')
@@ -770,12 +769,11 @@ export function RequestPaymentDrawer({ workspace, open, onOpenChange }: { worksp
   }, [open])
 
   const subtotal = items.reduce((sum, item) => sum + (Number(item.amount) || 0), 0)
-  // Same sums as billing.createInvoice: an independent physio's patient pays the ₦1,000 service fee
-  // and Paystack's 1.5% + ₦100 on top; a clinic's patient pays the quoted price
+  // Same sums as billing.createInvoice: Rehabify takes nothing from a physio's own invoice; their
+  // patient pays only Paystack's 1.5% + ₦100 on top. A clinic's patient pays the quoted price.
   const throughClinic = Boolean(me?.clinicId)
-  const serviceFee = throughClinic ? 0 : 1000
-  const processing = throughClinic || subtotal <= 0 ? 0 : Math.round((subtotal + serviceFee) * 0.015) + 100
-  const patientPays = subtotal + serviceFee + processing
+  const processing = throughClinic || subtotal <= 0 ? 0 : Math.round(subtotal * 0.015) + 100
+  const patientPays = subtotal + processing
 
   const setItem = (index: number, patch: Partial<Item>) => setItems((list) => list.map((item, i) => (i === index ? { ...item, ...patch } : item)))
 
@@ -975,22 +973,16 @@ export function RequestPaymentDrawer({ workspace, open, onOpenChange }: { worksp
               <span className="tabular-nums text-pt-ink">{formatNaira(subtotal)}</span>
             </div>
             {!throughClinic && (
-              <>
-                <div className="mt-1.5 flex justify-between text-pt-muted">
-                  <span className="flex items-center gap-1">
-                    Rehabify service fee
-                    <InfoTip>A flat ₦1,000 the patient pays on top. You still receive the full amount you charge.</InfoTip>
-                  </span>
-                  <span className="tabular-nums">{formatNaira(serviceFee)}</span>
-                </div>
-                <div className="mt-1.5 flex justify-between text-pt-muted">
-                  <span className="flex items-center gap-1">
-                    Card and transfer fee
-                    <InfoTip>Paystack’s 1.5% + ₦100, added to what the patient pays.</InfoTip>
-                  </span>
-                  <span className="tabular-nums">{formatNaira(processing)}</span>
-                </div>
-              </>
+              <div className="mt-1.5 flex justify-between text-pt-muted">
+                <span className="flex items-center gap-1">
+                  Card and transfer fee
+                  <InfoTip>
+                    Paystack’s 1.5% + ₦100, added to what the patient pays. Rehabify takes nothing. If they pay you directly,
+                    record it as paid instead.
+                  </InfoTip>
+                </span>
+                <span className="tabular-nums">{formatNaira(processing)}</span>
+              </div>
             )}
             <div className="mt-3 flex justify-between border-t border-pt-line pt-3 font-semibold text-pt-ink">
               <span>{name} pays</span>
