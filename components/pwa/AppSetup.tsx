@@ -236,12 +236,36 @@ function InstallBody({ device, canPrompt, onInstalled }: { device: Device; canPr
   );
 }
 
-function NotifyBody({ publicKey }: { publicKey: string }) {
+/** Set before reloading from the "blocked" screen, so the dialog opens again after the reload. */
+const REOPEN_KEY = 'rh_app_setup_reopen';
+
+function reopenRequested(): boolean {
+  try {
+    return sessionStorage.getItem(REOPEN_KEY) === 'reloaded';
+  } catch {
+    return false;
+  }
+}
+
+function setReopen(on: boolean) {
+  try {
+    if (on) sessionStorage.setItem(REOPEN_KEY, 'reloaded');
+    else sessionStorage.removeItem(REOPEN_KEY);
+  } catch {
+    // Storage blocked: the dialog just won't reopen by itself
+  }
+}
+
+/**
+ * Asks for permission (from a tap), subscribes this device, saves it and sends a test.
+ * Returns 'denied' when the phone still says notifications are blocked.
+ */
+function useTurnOnPush(publicKey: string) {
   const subscribe = useMutation(subscribeRef);
   const sendTest = useMutation(sendTestRef);
   const [busy, setBusy] = useState(false);
 
-  const turnOn = async () => {
+  const turnOn = async (): Promise<'on' | 'denied' | 'other'> => {
     setBusy(true);
     try {
       const result = await enablePush(publicKey);
@@ -250,18 +274,27 @@ function NotifyBody({ publicKey }: { publicKey: string }) {
         else if (result.error === 'unsupported') toast.error('This browser can’t show notifications.');
         else if (result.error === 'failed') toast.error('Couldn’t turn on notifications. Please try again.');
         refreshAppSetup();
-        return;
+        return result.error === 'denied' ? 'denied' : 'other';
       }
       await subscribe(result.device);
       await sendTest({}).catch(() => undefined);
+      setReopen(false);
       toast.success('Notifications are on. We’ve sent you a test.');
       refreshAppSetup();
+      return 'on';
     } catch {
       toast.error('Couldn’t turn on notifications. Please try again.');
+      return 'other';
     } finally {
       setBusy(false);
     }
   };
+
+  return { turnOn, busy };
+}
+
+function NotifyBody({ publicKey }: { publicKey: string }) {
+  const { turnOn, busy } = useTurnOnPush(publicKey);
 
   return (
     <div className="space-y-4">
@@ -269,7 +302,7 @@ function NotifyBody({ publicKey }: { publicKey: string }) {
         Your phone will tell you when a new patient books or sends you a message, even when Rehabify is closed. Message
         notifications show who it’s from, never what they wrote.
       </p>
-      <Button type="button" className={primaryClass} onClick={turnOn} disabled={busy}>
+      <Button type="button" className={primaryClass} onClick={() => void turnOn()} disabled={busy}>
         {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Bell className="mr-2 h-4 w-4" />}
         Turn on notifications
       </Button>
@@ -277,7 +310,49 @@ function NotifyBody({ publicKey }: { publicKey: string }) {
   );
 }
 
-function BlockedBody({ standalone }: { standalone: boolean }) {
+function BlockedBody({ standalone, publicKey, device }: { standalone: boolean; publicKey: string; device: Device }) {
+  const { turnOn, busy } = useTurnOnPush(publicKey);
+  const [stillBlocked, setStillBlocked] = useState(false);
+
+  // The page often keeps the old "blocked" answer after the setting changes: ask again, and if
+  // the phone still says no, reload once (the dialog reopens) before giving the manual steps
+  const recheck = async () => {
+    const outcome = await turnOn();
+    if (outcome !== 'denied') return;
+    if (!reopenRequested()) {
+      setReopen(true);
+      toast('Checking your phone’s new setting…');
+      window.location.reload();
+      return;
+    }
+    setStillBlocked(true);
+  };
+
+  if (stillBlocked) {
+    return (
+      <div className="space-y-4">
+        <p className="text-sm leading-relaxed text-neutral-700 dark:text-white/80">
+          Your phone still says notifications are blocked for Rehabify.
+        </p>
+        <Steps
+          steps={[
+            { text: 'Close Rehabify completely (swipe it away from your recent apps), then open it again' },
+            ...(device.platform === 'android'
+              ? [{ text: 'If it’s still blocked: open Chrome, then Settings, Site settings, Notifications, and allow physioaroundme.com' }]
+              : device.platform === 'ios'
+                ? [{ text: 'If it’s still blocked: Settings, Notifications, Rehabify, and turn on Allow Notifications' }]
+                : [{ text: 'If it’s still blocked: allow notifications for this site in your browser’s settings' }]),
+            { text: 'Then tap “Turn on notifications” here' },
+          ]}
+        />
+        <Button type="button" className={primaryClass} onClick={() => void recheck()} disabled={busy}>
+          {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          Try again
+        </Button>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
       <p className="text-sm leading-relaxed text-neutral-700 dark:text-white/80">
@@ -298,7 +373,8 @@ function BlockedBody({ standalone }: { standalone: boolean }) {
               ]
         }
       />
-      <Button type="button" className={primaryClass} onClick={() => refreshAppSetup()}>
+      <Button type="button" className={primaryClass} onClick={() => void recheck()} disabled={busy}>
+        {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
         I’ve allowed them
       </Button>
     </div>
@@ -365,7 +441,14 @@ export function AppSetupPrompt() {
 
   // Ask again (a day after "Not now") until it's done: physios and clinics need these alerts
   useEffect(() => {
-    if (autoOpened.current || !need || need === 'done' || need === 'blocked') return;
+    if (autoOpened.current || !need || need === 'done') return;
+    // Reloaded from the "blocked" screen: carry on where they were, whatever the snooze says
+    if (reopenRequested()) {
+      autoOpened.current = true;
+      openAppSetup();
+      return;
+    }
+    if (need === 'blocked') return;
     autoOpened.current = true;
     if (appSetupSnoozed()) return;
     const timer = window.setTimeout(openAppSetup, 1500);
@@ -408,7 +491,9 @@ export function AppSetupPrompt() {
           <InstallBody device={env.device} canPrompt={pwa.canPrompt} onInstalled={() => refreshAppSetup()} />
         )}
         {need === 'notify' && config?.publicKey && <NotifyBody publicKey={config.publicKey} />}
-        {need === 'blocked' && <BlockedBody standalone={env.standalone} />}
+        {need === 'blocked' && config?.publicKey && (
+          <BlockedBody standalone={env.standalone} publicKey={config.publicKey} device={env.device} />
+        )}
         {/* Shown right after notifications are turned on */}
         {need === 'done' && <DoneBody />}
 
