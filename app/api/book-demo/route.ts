@@ -29,6 +29,12 @@ const requestDemoRef = makeFunctionReference<
   { success: boolean }
 >("public:requestDemo");
 
+// Who hears about demo requests: DEMO_REQUEST_EMAIL (comma-separated) or both team inboxes
+const DEMO_INBOXES = (process.env.DEMO_REQUEST_EMAIL || "support@physioaroundme.com,hello@myrehabifyhealth.com")
+  .split(",")
+  .map((address) => address.trim())
+  .filter(Boolean);
+
 export async function POST(request: Request) {
   const resend = new Resend(process.env.RESEND_API_KEY);
   try {
@@ -93,7 +99,7 @@ export async function POST(request: Request) {
       // Send email to admin/sales team
       await resend.emails.send({
         from: fromAddress,
-        to: process.env.DEMO_REQUEST_EMAIL || "support@physioaroundme.com",
+        to: DEMO_INBOXES,
         replyTo: email,
         subject: `New Demo Request from ${name}`,
         html: renderEmail({
