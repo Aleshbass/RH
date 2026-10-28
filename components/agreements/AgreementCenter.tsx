@@ -82,10 +82,14 @@ export function StateChip({ state }: { state: AgreementState | 'void' }) {
   );
 }
 
-/** The agreement on "paper": light in both themes, with a contents menu. */
+/**
+ * The agreement on "paper": light in both themes, with a contents menu. In dark mode the portals
+ * darken white backgrounds (app/portal-dark.css) and the canvas colour (app/patient-portal.css),
+ * so the paper sets both back explicitly; its text is always ink.
+ */
 export function AgreementPaper({ doc, children }: { doc: LegalDocument; children?: ReactNode }) {
   return (
-    <article className="min-w-0 rounded-[1.75rem] bg-white p-5 text-rh-ink ring-1 ring-rh-ink/10 sm:p-8">
+    <article className="min-w-0 rounded-[1.75rem] bg-white p-5 text-rh-ink ring-1 ring-rh-ink/10 [--color-rh-canvas:#f4ede3] [color-scheme:light] dark:bg-white sm:p-8">
       <h2 className="text-2xl font-bold leading-tight tracking-tight sm:text-[28px]">{doc.title}</h2>
       <p className="mt-2 text-sm text-rh-ink/55">
         Effective {doc.effectiveDate} · Version {doc.version}
@@ -98,7 +102,7 @@ export function AgreementPaper({ doc, children }: { doc: LegalDocument; children
         <ol className="mt-3 grid gap-1 text-sm sm:grid-cols-2">
           {doc.sections.map((section) => (
             <li key={section.title}>
-              <a href={`#${anchor(section.title)}`} className="block rounded-lg px-2 py-1 text-rh-ink/70 hover:bg-white hover:text-rh-ink">
+              <a href={`#${anchor(section.title)}`} className="block rounded-lg px-2 py-1 text-rh-ink/70 hover:bg-white hover:text-rh-ink dark:hover:bg-white">
                 {section.title}
               </a>
             </li>

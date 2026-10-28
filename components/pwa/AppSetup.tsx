@@ -439,13 +439,15 @@ export function AppSetupButton({ tone = 'portal', className }: { tone?: keyof ty
       aria-label={label}
       title={label}
       className={cn(
-        'inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-xl px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-lime',
+        'relative inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-xl px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-lime',
         TONES[tone],
         className
       )}
     >
-      {need === 'install' ? <Smartphone className="h-4 w-4" /> : <Bell className="h-4 w-4" />}
+      {/* A phone, never a bell: the notifications bell sits right next to it */}
+      <Smartphone className="h-4 w-4" />
       <span className="hidden sm:inline">{label}</span>
+      <span aria-hidden className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-rh-lime sm:hidden" />
     </button>
   );
 }
