@@ -244,7 +244,7 @@ export function ReferPatientForm({ ctx, onDone, compact = false }: { ctx: Portal
           <ShieldCheck className="w-3.5 h-3.5 text-emerald-700" />
           Sent securely to Rehabify&apos;s care team
         </p>
-        <button type="submit" className={btnPrimary} disabled={busy}>
+        <button type="submit" className={btnPrimary} disabled={busy || !form.consent}>
           <Busy busy={busy} label="Send referral" busyLabel="Sending…" icon={<Send className="w-3.5 h-3.5" />} />
         </button>
       </div>

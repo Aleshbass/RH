@@ -1,3 +1,4 @@
+import { insertNotification } from "./helpers/pushNotify";
 import { v, ConvexError } from "convex/values";
 import { paginationOptsValidator } from "convex/server";
 import { query, mutation, internalMutation, type QueryCtx } from "./_generated/server";
@@ -922,7 +923,7 @@ export const deliverAnnouncementBatch = internalMutation({
     let delivered = 0;
     for (const user of result.page) {
       if (user.status === "suspended" || user.status === "terminated") continue;
-      await ctx.db.insert("notifications", {
+      await insertNotification(ctx, {
         userId: user._id,
         type: "announcement",
         priority: announcement.priority,

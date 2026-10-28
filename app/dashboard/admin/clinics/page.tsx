@@ -30,6 +30,7 @@ import {
   countLabel,
 } from '@/components/admin/clinics/shared'
 import type { ClinicsListResult } from '@/components/admin/clinics/types'
+import { ClinicBillingAttentionPanel } from '@/components/admin/clinics/ClinicSubscriptionTab'
 import { RehabifyId } from '@/components/shared/RehabifyId'
 import { cn } from '@/lib/utils'
 
@@ -132,6 +133,9 @@ export default function AdminClinicsPage() {
           </StaggerItem>
         ))}
       </Stagger>
+
+      {/* Past due or read-only on Rehabify's subscription invoices */}
+      <ClinicBillingAttentionPanel />
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <FilterChips<StatusFilter>

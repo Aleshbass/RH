@@ -223,7 +223,7 @@ export function ApplyForm({ jobId, jobTitle }: { jobId: Id<"careerJobs">; jobTit
 
       <button
         type="submit"
-        disabled={state === "sending"}
+        disabled={state === "sending" || !consent}
         className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-full bg-rh-lime text-[15px] font-semibold text-rh-ink transition-colors hover:bg-rh-lime-deep disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-ink focus-visible:ring-offset-2"
       >
         {state === "sending" ? (

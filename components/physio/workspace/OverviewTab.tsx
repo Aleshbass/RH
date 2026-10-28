@@ -15,23 +15,13 @@ import {
   PainPill,
   RECOVERY_LABELS,
   SOURCE_LABELS,
+  Sparkline,
   type Workspace,
 } from './shared'
 import { JoyHandoffPanel } from './JoyHandoffPanel'
-
-function PainSparkline({ points }: { points: number[] }) {
-  if (points.length < 2) return null
-  const w = 160
-  const h = 40
-  const step = w / (points.length - 1)
-  const path = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${(i * step).toFixed(1)},${(h - (p / 10) * (h - 4) - 2).toFixed(1)}`).join(' ')
-  return (
-    <svg viewBox={`0 0 ${w} ${h}`} className="h-10 w-40 overflow-visible" role="img" aria-label={`Pain over the last ${points.length} check-ins`}>
-      <path d={path} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="text-rh-ink dark:text-rh-lime" />
-      <circle cx={(points.length - 1) * step} cy={h - (points[points.length - 1] / 10) * (h - 4) - 2} r={3} className="fill-rh-lime dark:fill-rh-lime" />
-    </svg>
-  )
-}
+import { ProgressPanel } from '@/components/physio/notes/ProgressPanel'
+import { goalTargets } from '@/convex/helpers/goalMeasures'
+import { QuestionnairesPanel } from '@/components/questionnaires/QuestionnairesPanel'
 
 export function OverviewTab({
   workspace,
@@ -229,7 +219,7 @@ export function OverviewTab({
                   </p>
                   {latest.note && <p className="rounded-2xl bg-rh-canvas p-3 text-sm italic text-neutral-600 dark:bg-white/[0.04] dark:text-neutral-300">“{latest.note}”</p>}
                   <p className="text-xs text-neutral-400">Checked in {formatDistanceToNow(latest.createdAt, { addSuffix: true })}</p>
-                  <PainSparkline points={painPoints} />
+                  <Sparkline points={painPoints} min={0} max={10} label={`Pain over the last ${painPoints.length} check-ins`} />
                 </>
               ) : (
                 <div className="flex items-start gap-3">
@@ -340,6 +330,12 @@ export function OverviewTab({
           </Panel>
         )}
       </div>
+
+      {/* Outcome questionnaires the patient fills in, and their scores over time */}
+      <QuestionnairesPanel patientId={workspace.patient._id} patientFirstName={workspace.patient.firstName} />
+
+      {/* Measures from clinical notes, over time */}
+      <ProgressPanel patientId={workspace.patient._id} targets={goalTargets(workspace.plan?.goals)} condition={workspace.episode.condition} />
     </div>
   )
 }

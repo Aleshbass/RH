@@ -1,3 +1,4 @@
+import { insertNotification } from "./helpers/pushNotify";
 import { ConvexError, v } from "convex/values";
 import { mutation, query, internalQuery, type MutationCtx } from "./_generated/server";
 import { Doc, Id } from "./_generated/dataModel";
@@ -6,6 +7,7 @@ import { getAuthenticatedUser, ensureClinicOwner, ensureUserRole, ensureIsClinic
 import { assertClinicNotSuspended, getClinicMember, getClinicMemberOrNull, getOwnerClinic } from "./clinicTools";
 import { ensureClinicNumber, ensureUserNumbers } from "./helpers/rehabifyIds";
 import { CLINIC_INVITE_APPROVAL_NOTE } from "./helpers/clinicApproval";
+import { assertClinicianSeatFree, assertClinicNotBillingReadOnly } from "./helpers/clinicSubscriptions";
 
 /**
  * Create the owner's clinic during onboarding, or update it if one already exists
@@ -261,6 +263,10 @@ export const invitePhysiotherapist = mutation({
       };
     }
 
+    // Every invitation is for a clinician, so it needs a free seat on the clinic's plan
+    // (seats held by invitations still waiting count as taken)
+    await assertClinicianSeatFree(ctx, clinic, { countPending: true });
+
     // Generate unique invitation code
     const code = generateInvitationCode();
 
@@ -358,6 +364,14 @@ export const acceptClinicInvitation = mutation({
     const isClinician = invitation.role === "physiotherapist";
     const now = Date.now();
 
+    if (invitingClinic) {
+      await assertClinicNotBillingReadOnly(ctx, invitingClinic._id);
+      // Joining as a physiotherapist takes one of the plan's clinician seats
+      if (isClinician || user.role === "physiotherapist") {
+        await assertClinicianSeatFree(ctx, invitingClinic, { countPending: false, excludeUserId: user._id, audience: "invitee" });
+      }
+    }
+
     // Join the clinic. Existing accounts keep their onboarding state: clinic work never
     // requires the physio marketplace onboarding, so nobody is sent back through it.
     await ctx.db.patch(user._id, {
@@ -401,7 +415,7 @@ export const acceptClinicInvitation = mutation({
     });
 
     // Create notification for clinic owner
-    await ctx.db.insert("notifications", {
+    await insertNotification(ctx, {
       userId: invitation.clinicOwnerId,
       type: "invitation_accepted",
       status: "pending",
@@ -450,8 +464,12 @@ export const acceptClinicInvitation = mutation({
  * Get pending invitations for a clinic
  */
 /** A pending staff invitation of the caller's clinic (owner, or a member with the Team page). */
-async function getOwnClinicStaffInvitation(ctx: MutationCtx, invitationId: Id<"clinicStaffInvitations">) {
-  const { clinic } = await getClinicMember(ctx, "team");
+async function getOwnClinicStaffInvitation(
+  ctx: MutationCtx,
+  invitationId: Id<"clinicStaffInvitations">,
+  options: { allowBillingReadOnly?: boolean } = {}
+) {
+  const { clinic } = await getClinicMember(ctx, "team", options);
   const invitation = await ctx.db.get(invitationId);
   if (!invitation || invitation.clinicId !== clinic._id) {
     throw new ConvexError("Invitation not found.");
@@ -477,7 +495,8 @@ export const extendClinicStaffInvitation = mutation({
 export const revokeClinicStaffInvitation = mutation({
   args: { invitationId: v.id("clinicStaffInvitations") },
   handler: async (ctx, args) => {
-    const invitation = await getOwnClinicStaffInvitation(ctx, args.invitationId);
+    // Withdrawing an invitation always works, even while the clinic is read-only
+    const invitation = await getOwnClinicStaffInvitation(ctx, args.invitationId, { allowBillingReadOnly: true });
     await ctx.db.patch(invitation._id, { status: "expired", expiresAt: Math.min(invitation.expiresAt, Date.now()) });
     return { success: true };
   },
@@ -607,7 +626,7 @@ export const declineClinicInvitation = mutation({
     });
 
     // Create notification for clinic owner
-    await ctx.db.insert("notifications", {
+    await insertNotification(ctx, {
       userId: invitation.clinicOwnerId,
       type: "invitation_declined",
       priority: "medium",
@@ -1559,6 +1578,7 @@ export const updateClinic = mutation({
       throw new Error("Clinic not found");
     }
     assertClinicNotSuspended(clinic);
+    await assertClinicNotBillingReadOnly(ctx, clinic._id);
 
     const updateData: Partial<Doc<"clinics">> = {};
     if (args.name !== undefined) updateData.name = args.name;
@@ -1611,6 +1631,12 @@ export const updateStaffRole = mutation({
     if (staffMember._id === user._id || staffMember.role === "admin" || staffMember.role === "clinic_owner") {
       throw new Error("This account's role cannot be changed from the clinic dashboard");
     }
+    assertClinicNotSuspended(clinic);
+    await assertClinicNotBillingReadOnly(ctx, clinic._id);
+    // Front desk becoming a physiotherapist takes a clinician seat
+    if (staffMember.role !== "physiotherapist") {
+      await assertClinicianSeatFree(ctx, clinic, { countPending: false, excludeUserId: staffMember._id });
+    }
 
     // Update the staff member's role
     await ctx.db.patch(args.staffId, {
@@ -1645,8 +1671,9 @@ export const updateStaffStatus = mutation({
     newStatus: v.union(v.literal("active"), v.literal("suspended"), v.literal("terminated")),
   },
   handler: async (ctx, args) => {
-    // Only the clinic owner can suspend or reactivate team members
-    const { user, clinic } = await getOwnerClinic(ctx);
+    // Only the clinic owner can suspend or reactivate team members. Suspending or ending someone's
+    // access always works; reactivating waits until a read-only clinic has paid
+    const { user, clinic } = await getOwnerClinic(ctx, { allowBillingReadOnly: args.newStatus !== "active" });
 
     // Verify the team member belongs to this clinic (patients also carry clinicId, so check the role)
     const staffMember = await ctx.db.get(args.staffId);
@@ -1656,6 +1683,12 @@ export const updateStaffStatus = mutation({
       (staffMember.role !== "physiotherapist" && staffMember.role !== "clinic_staff")
     ) {
       throw new ConvexError("This person isn't on your team");
+    }
+
+    // Reactivating a clinician takes a seat on the clinic's plan again
+    const reactivating = args.newStatus === "active" && Boolean(staffMember.status) && staffMember.status !== "active";
+    if (reactivating && staffMember.role === "physiotherapist") {
+      await assertClinicianSeatFree(ctx, clinic, { countPending: false, excludeUserId: staffMember._id });
     }
 
     // Update the staff member's status
@@ -1721,6 +1754,11 @@ export const reassignStaffToClinic = mutation({
       throw new Error("Target clinic not found or not owned by you");
     }
     assertClinicNotSuspended(newClinic);
+    await assertClinicNotBillingReadOnly(ctx, clinic._id);
+    await assertClinicNotBillingReadOnly(ctx, newClinic._id);
+    if (newClinic._id !== clinic._id && staffMember.role === "physiotherapist") {
+      await assertClinicianSeatFree(ctx, newClinic, { countPending: false, excludeUserId: staffMember._id });
+    }
 
     // Update the staff member's clinic assignment
     await ctx.db.patch(args.staffId, {
@@ -1788,6 +1826,10 @@ export const createStaffDirect = mutation({
     if (existingUser) {
       throw new Error("A user with this email already exists");
     }
+    assertClinicNotSuspended(clinic);
+    await assertClinicNotBillingReadOnly(ctx, clinic._id);
+    // Every directly created team member is a clinician, so it needs a free seat
+    await assertClinicianSeatFree(ctx, clinic, { countPending: true });
 
     // Create the staff member
     const staffId = await ctx.db.insert("users", {

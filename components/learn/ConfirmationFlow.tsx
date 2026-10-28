@@ -180,8 +180,7 @@ function Success({ result, reference }: { result: Paid; reference: string }) {
           <div className="mt-7 rounded-2xl bg-rh-honeydew p-5 text-sm leading-6 text-rh-ink/75">
             <p className="font-semibold text-rh-ink">What happens next</p>
             <p className="mt-1">
-              Your course page has the joining link for every live session, the recordings, each week&apos;s slides and exercises, and our 3D
-              exercise library. If a joining link changes, it changes there too.
+              Your course page has the video courses from the Rehabify team, to watch at your own pace.
             </p>
           </div>
           <p className="mt-5 break-all text-xs text-rh-ink/45">Payment reference: {reference}</p>

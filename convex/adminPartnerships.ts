@@ -4,6 +4,7 @@
  * Approving an application grants SANDBOX access only. Live keys and live webhooks
  * require a separate production-access approval (go-live review).
  */
+import { insertNotification } from "./helpers/pushNotify";
 import { ConvexError, v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { internal } from "./_generated/api";
@@ -123,7 +124,7 @@ export const reviewPartnerApplication = mutation({
       });
       if (ownerUser) {
         if (!ownerUser.role || ownerUser.role === "patient") await ctx.db.patch(ownerUser._id, { role: isDoctor ? "doctor" : "partner" });
-        await ctx.db.insert("notifications", {
+        await insertNotification(ctx, {
           userId: ownerUser._id,
           type: "system_alert",
           title: isDoctor ? "You're approved to refer patients" : "Partner application approved",
@@ -157,7 +158,7 @@ export const reviewPartnerApplication = mutation({
       updatedAt: now,
     });
     if (ownerUser) {
-      await ctx.db.insert("notifications", {
+      await insertNotification(ctx, {
         userId: ownerUser._id,
         type: "system_alert",
         title: "Partner application update",
@@ -253,7 +254,7 @@ export const reviewProductionAccess = mutation({
       suspended: `Production access was suspended: ${reason}. Live API keys are disabled until it is reinstated.`,
     };
     if (owner) {
-      await ctx.db.insert("notifications", {
+      await insertNotification(ctx, {
         userId: owner._id,
         type: "system_alert",
         title: next === "approved" ? "You're live!" : "Production access update",

@@ -21,7 +21,10 @@ import {
   UserRound,
   Users,
 } from '@/components/icons'
-import { api } from '@/convex/_generated/api'
+import { makeFunctionReference } from 'convex/server'
+import type { getAdminDashboardStats, getSystemHealth, getUserActivityLogs, getUserRoleCounts } from '@/convex/admin'
+import type { getMyUser } from '@/convex/users'
+import type { QueryResult } from '@/lib/convexUntyped'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   AdminPage,
@@ -42,7 +45,17 @@ import { activityMeta, formatCount, roleLabel } from '@/components/admin/activit
 import AdminLiveMap from '@/components/dashboard/admin/AdminLiveMap'
 import { cn } from '@/lib/utils'
 
-type Badges = { approvals: number; openReports: number; bankTransfers: number; partnerApplications: number; accessApplications: number; agreements: number; cap: number }
+// By name: the generated api object is at TypeScript's depth limit ("excessively deep") here
+const homeQueries = {
+  me: makeFunctionReference<'query', Record<string, never>, QueryResult<typeof getMyUser>>('users:getMyUser'),
+  roles: makeFunctionReference<'query', Record<string, never>, QueryResult<typeof getUserRoleCounts>>('admin:getUserRoleCounts'),
+  stats: makeFunctionReference<'query', { todayStart: number }, QueryResult<typeof getAdminDashboardStats>>('admin:getAdminDashboardStats'),
+  badges: makeFunctionReference<'query', Record<string, never>, unknown>('adminConsole:getNavBadges'),
+  health: makeFunctionReference<'query', Record<string, never>, QueryResult<typeof getSystemHealth>>('admin:getSystemHealth'),
+  activity: makeFunctionReference<'query', { limit?: number }, QueryResult<typeof getUserActivityLogs>>('admin:getUserActivityLogs'),
+}
+
+type Badges = { approvals: number; openReports: number; bankTransfers: number; partnerApplications: number; accessApplications: number; agreements: number; refunds: number; inquiries?: number; cap: number }
 
 function greeting(date: Date) {
   const hour = date.getHours()
@@ -59,7 +72,7 @@ function badgeCount(n: number | undefined, cap: number | undefined) {
 const loadingValue = <Skeleton className="mt-1 h-7 w-16 rounded-lg" />
 
 export default function AdminHomePage() {
-  const me = useQuery(api.users.getMyUser)
+  const me = useQuery(homeQueries.me)
   // Local midnight, so "today" matches the admin's clock. Stable for the life of the page.
   const todayStart = useMemo(() => {
     const d = new Date()
@@ -67,11 +80,11 @@ export default function AdminHomePage() {
     return d.getTime()
   }, [])
 
-  const roles = useQuery(api.admin.getUserRoleCounts)
-  const stats = useQuery(api.admin.getAdminDashboardStats, { todayStart })
-  const badges = useQuery(api.adminConsole.getNavBadges) as Badges | undefined
-  const health = useQuery(api.admin.getSystemHealth)
-  const activity = useQuery(api.admin.getUserActivityLogs, { limit: 6 })
+  const roles = useQuery(homeQueries.roles)
+  const stats = useQuery(homeQueries.stats, { todayStart })
+  const badges = useQuery(homeQueries.badges) as Badges | undefined
+  const health = useQuery(homeQueries.health)
+  const activity = useQuery(homeQueries.activity, { limit: 6 })
 
   const now = new Date()
   const firstName = me?.firstName?.trim()
@@ -484,7 +497,7 @@ function RecentActivity({ items, className }: { items: ActivityItem[] | undefine
 
 function QuickLinks({ badges }: { badges: Badges | undefined }) {
   const sections = visibleAdminNav().filter((s) => s.id !== 'overview')
-  const countFor = (key?: AdminBadgeKey) => (key && badges ? badges[key] : 0)
+  const countFor = (key?: AdminBadgeKey) => (key && badges ? badges[key] ?? 0 : 0)
   return (
     <section className="space-y-3">
       <h2 className="text-[15px] font-semibold tracking-tight text-rh-ink dark:text-white">Jump to</h2>

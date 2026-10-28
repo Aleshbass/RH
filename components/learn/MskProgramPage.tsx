@@ -494,7 +494,7 @@ function Faq({ cohort }: { cohort: PublicCohort | null | undefined }) {
     { q: 'How do I pay?', a: 'Card, bank transfer or USSD through Paystack. Your confirmation comes by email.' },
     {
       q: 'What do I study with?',
-      a: "Each week's slides and recordings, our 3D exercise library and our library of exercise videos and patient leaflets. You keep the libraries for 90 days after the course.",
+      a: 'Video courses from the Rehabify team, on your own course page, to watch at your own pace. You keep access for 90 days after the course.',
     },
     {
       q: 'How do I get the joining details?',

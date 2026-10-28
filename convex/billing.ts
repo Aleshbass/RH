@@ -1,3 +1,4 @@
+import { insertNotification } from "./helpers/pushNotify";
 import { query, mutation, internalMutation, internalQuery, QueryCtx, MutationCtx } from "./_generated/server";
 import { ConvexError, v } from "convex/values";
 import { api } from "./_generated/api";
@@ -243,7 +244,7 @@ export const createInvoice = mutation({
         // Create enhanced notification for patient
     const practitionerName = clinic?.name || `${physiotherapist.firstName} ${physiotherapist.lastName}`;
     
-    await ctx.db.insert("notifications", {
+    await insertNotification(ctx, {
       userId: args.patientId,
       type: "invoice_created" as any,
       priority: "high",
@@ -265,7 +266,7 @@ export const createInvoice = mutation({
     });
 
     // Create notification for physiotherapist
-    await ctx.db.insert("notifications", {
+    await insertNotification(ctx, {
       userId: physiotherapist._id,
       type: "invoice_sent" as any,
       priority: "medium",
@@ -346,7 +347,7 @@ export const sendInvoice = mutation({
     });
 
     // Notify patient
-    await ctx.db.insert("notifications", {
+    await insertNotification(ctx, {
       userId: invoice.patientId,
       type: "invoice_sent" as any,
       priority: "medium",
@@ -384,7 +385,7 @@ export const sendPaymentReminders = mutation({
       // Only someone on the invoice (its physio/clinic, or an admin) can send its reminder
       if (!(await isInvoiceParty(ctx, invoice))) continue;
 
-      await ctx.db.insert("notifications", {
+      await insertNotification(ctx, {
         userId: invoice.patientId,
         type: "payment_reminder" as any,
         priority: "medium",
@@ -627,7 +628,7 @@ export const processPayment = mutation({
     });
 
     // Create payment confirmation notification
-    await ctx.db.insert("notifications", {
+    await insertNotification(ctx, {
       userId: invoice.patientId,
       type: "payment_confirmed" as any,
       priority: "medium",
@@ -1147,7 +1148,7 @@ export const processPatientPayment = mutation({
       : null;
 
     // Create payment confirmation notification for patient
-    await ctx.db.insert("notifications", {
+    await insertNotification(ctx, {
       userId: invoice.patientId,
       type: "payment_confirmed" as any,
       priority: "medium",
@@ -1168,7 +1169,7 @@ export const processPatientPayment = mutation({
 
     // Create notification for physiotherapist if found
     if (physiotherapistProfile) {
-      await ctx.db.insert("notifications", {
+      await insertNotification(ctx, {
         userId: physiotherapistProfile.userId,
         type: "payment_received" as any,
         priority: "medium",
@@ -1259,7 +1260,7 @@ export const recordPayment = mutation({
       .withIndex("by_user_id", (q: any) => q.eq("userId", user._id))
       .unique();
 
-    await ctx.db.insert("notifications", {
+    await insertNotification(ctx, {
       userId: invoice.patientId,
       type: "payment_confirmed" as any,
       priority: "medium",
@@ -1278,7 +1279,7 @@ export const recordPayment = mutation({
     });
 
     if (physiotherapistProfile) {
-      await ctx.db.insert("notifications", {
+      await insertNotification(ctx, {
         userId: user._id,
         type: "payment_received" as any,
         priority: "medium",

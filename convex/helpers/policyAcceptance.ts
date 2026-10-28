@@ -2,9 +2,23 @@
  * Records policy and agreement acceptances (append-only: insert only, never patch or delete).
  */
 import { ConvexError } from "convex/values";
-import type { MutationCtx } from "../_generated/server";
-import type { Doc } from "../_generated/dataModel";
+import type { MutationCtx, QueryCtx } from "../_generated/server";
+import type { Doc, Id } from "../_generated/dataModel";
 import { POLICIES, type PolicyId } from "../../lib/policies";
+
+/** The documents this person hasn't accepted in their current version (by any channel). */
+export async function missingPolicies(ctx: QueryCtx | MutationCtx, userId: Id<"users">, documents: PolicyId[]): Promise<PolicyId[]> {
+  const missing: PolicyId[] = [];
+  for (const id of documents) {
+    const latest = await ctx.db
+      .query("policyAcceptances")
+      .withIndex("by_user_document", (q) => q.eq("userId", userId).eq("document", id))
+      .order("desc")
+      .first();
+    if (latest?.version !== POLICIES[id].version) missing.push(id);
+  }
+  return missing;
+}
 
 /**
  * Checks the versions the person was shown are the current ones, then stores one row per
@@ -45,4 +59,20 @@ export async function recordPolicyAcceptances(
       acceptedAt: now,
     });
   }
+}
+
+/**
+ * Like recordPolicyAcceptances, but only for documents this signed-up person hasn't accepted in
+ * their current version, so submitting a form twice doesn't add duplicate rows. Returns what it
+ * recorded.
+ */
+export async function recordMissingPolicyAcceptances(
+  ctx: MutationCtx,
+  input: Omit<Parameters<typeof recordPolicyAcceptances>[1], "user"> & {
+    user: Pick<Doc<"users">, "_id" | "firstName" | "lastName" | "email">;
+  }
+): Promise<PolicyId[]> {
+  const documents = await missingPolicies(ctx, input.user._id, input.documents);
+  if (documents.length > 0) await recordPolicyAcceptances(ctx, { ...input, documents });
+  return documents;
 }

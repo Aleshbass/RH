@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { format, formatDistanceToNowStrict } from 'date-fns'
 import { toast } from 'sonner'
@@ -56,8 +56,13 @@ import {
 } from '@/components/admin/ui'
 import { dateStamp, errorText, formatKobo, koboToNairaNumber } from '@/components/admin/finance/format'
 import { PatientRef } from '@/components/admin/finance/PatientRef'
+import { PayoutRunView, PayoutRunsList, PayoutWaitingView } from '@/components/admin/payouts/PayoutRuns'
 
 const payoutsApi = api.payouts
+
+/** The weekly run, payouts still waiting, past runs, and every payout (manual actions). */
+type View = 'run' | 'waiting' | 'runs' | 'all'
+const VIEWS: View[] = ['run', 'waiting', 'runs', 'all']
 
 type PayoutStatus = 'pending' | 'processing' | 'completed' | 'failed'
 
@@ -73,6 +78,8 @@ type PayoutRow = {
   failureReason: string | null
   transferReference: string | null
   adminNote: string | null
+  heldReason: string | null
+  inRun: boolean
   recipient: { _id: Id<'users'>; name: string; email: string; role: string } | null
   bank: { bankName: string; accountName: string; accountNumber: string; isVerified: boolean } | null
   invoice: { _id: Id<'invoices'>; invoiceNumber: string; totalAmountKobo: number } | null
@@ -111,6 +118,13 @@ type Action =
   | { kind: 'retry'; row: PayoutRow }
 
 export default function AdminPayoutsPage() {
+  const [view, setView] = useState<View>('run')
+  const [openRunId, setOpenRunId] = useState<Id<'payoutRuns'> | null>(null)
+  // Notifications link to ?tab=waiting (a patient's concern) and so on
+  useEffect(() => {
+    const wanted = new URLSearchParams(window.location.search).get('tab') as View | null
+    if (wanted && VIEWS.includes(wanted)) setView(wanted)
+  }, [])
   const [tab, setTab] = useState<Tab>('open')
   const [openFilter, setOpenFilter] = useState<OpenFilter>('all')
   const [historyFilter, setHistoryFilter] = useState<HistoryFilter>('all')
@@ -125,7 +139,7 @@ export default function AdminPayoutsPage() {
   const openRows = useQueryUntyped(payoutsApi.adminListPayouts, { tab: 'open', limit: LIST_LIMIT }) as PayoutRow[] | undefined
   const historyRows = useQueryUntyped(
     payoutsApi.adminListPayouts,
-    tab === 'history' ? { tab: 'history', limit: LIST_LIMIT } : 'skip'
+    view === 'all' && tab === 'history' ? { tab: 'history', limit: LIST_LIMIT } : 'skip'
   ) as PayoutRow[] | undefined
 
   const markPaid = useMutationUntyped(payoutsApi.adminMarkPayoutsPaid)
@@ -340,14 +354,15 @@ export default function AdminPayoutsPage() {
   return (
     <AdminPage>
       <PageHeader
-        eyebrow="Rehabify physios"
         title="Payouts"
-        description="What Rehabify owes physiotherapists for completed, paid sessions. Each payout is the physio’s share of one invoice."
+        description="Every Friday the Available payouts are gathered into a run. Review it and press Pay all: one Paystack transfer per physio, never sent without you."
         actions={
-          <Button onClick={exportCsv} className={softButtonClass}>
-            <Download className="mr-2 h-4 w-4" />
-            Export CSV
-          </Button>
+          view === 'all' ? (
+            <Button onClick={exportCsv} className={softButtonClass}>
+              <Download className="mr-2 h-4 w-4" />
+              Export CSV
+            </Button>
+          ) : undefined
         }
       />
 
@@ -381,6 +396,31 @@ export default function AdminPayoutsPage() {
         <p className="text-xs text-neutral-500 dark:text-neutral-400">Totals cover the most recent 1,000 payouts in each status.</p>
       )}
 
+      <Tabs
+        value={view}
+        onValueChange={(value) => {
+          setView(value as View)
+          setOpenRunId(null)
+        }}
+      >
+        <TabsList className={tabsListClass}>
+          <TabsTrigger value="run">This week’s run</TabsTrigger>
+          <TabsTrigger value="waiting">Waiting</TabsTrigger>
+          <TabsTrigger value="runs">Past runs</TabsTrigger>
+          <TabsTrigger value="all">All payouts</TabsTrigger>
+        </TabsList>
+      </Tabs>
+
+      {view === 'run' && <PayoutRunView />}
+      {view === 'waiting' && <PayoutWaitingView />}
+      {view === 'runs' &&
+        (openRunId ? <PayoutRunView runId={openRunId} onBack={() => setOpenRunId(null)} /> : <PayoutRunsList onOpen={setOpenRunId} />)}
+
+      {view === 'all' && (
+      <>
+      <p className="text-xs text-neutral-500 dark:text-neutral-400">
+        Every payout, for edge cases: mark one paid after a manual bank transfer, mark it failed, or put a failed one back in the queue for the next run.
+      </p>
       <Tabs
         value={tab}
         onValueChange={(value) => {
@@ -531,6 +571,12 @@ export default function AdminPayoutsPage() {
                     <TableCell className="text-right text-sm font-semibold tabular-nums text-rh-ink dark:text-white">{formatKobo(r.amountKobo)}</TableCell>
                     <TableCell className="min-w-[120px]">
                       <StatusBadge tone={statusBadge[r.status].tone}>{statusBadge[r.status].label}</StatusBadge>
+                      {r.status === 'pending' && r.inRun && <StatusBadge className="ml-1">In this week’s run</StatusBadge>}
+                      {r.status === 'pending' && r.heldReason && (
+                        <span className="mt-1 block max-w-[220px] truncate text-xs text-rose-600 dark:text-rose-300" title={r.heldReason}>
+                          On hold: {r.heldReason}
+                        </span>
+                      )}
                       {r.status === 'failed' && r.failureReason && (
                         <span className="mt-1 block max-w-[220px] truncate text-xs text-rose-600 dark:text-rose-300" title={r.failureReason}>
                           {r.failureReason}
@@ -566,6 +612,8 @@ export default function AdminPayoutsPage() {
           </p>
         )}
       </Panel>
+      </>
+      )}
 
       {dialog && (
         <ConfirmDialog

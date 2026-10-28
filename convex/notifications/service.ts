@@ -1,3 +1,4 @@
+import { insertNotification } from "../helpers/pushNotify";
 import { v } from "convex/values";
 import { mutation, internalMutation, action, query, internalAction, internalQuery } from "../_generated/server";
 import { MutationCtx } from "../_generated/server";
@@ -155,7 +156,7 @@ export const sendNotificationWithFallback = internalMutation({
       }
       
       // Step 1: Create the notification in the database directly
-      const notificationId: Id<"notifications"> = await ctx.db.insert("notifications", {
+      const notificationId: Id<"notifications"> = await insertNotification(ctx, {
         userId,
         type: type as any,
         priority: "medium",
@@ -448,7 +449,7 @@ export const createNotification = internalMutation({
       retryCount: 0,
     };
 
-    const notificationId = await ctx.db.insert("notifications", notification);
+    const notificationId = await insertNotification(ctx, notification);
 
     // Track the event
     await ctx.db.insert("analytics_events", {

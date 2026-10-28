@@ -576,7 +576,7 @@ export function RegisterFlow() {
             </div>
           )}
 
-          <button type="submit" disabled={submitting} className={cn(pillInk, 'mt-8 h-14 w-full text-base')}>
+          <button type="submit" disabled={submitting || (track === 'external' && !confirmedLicensed)} className={cn(pillInk, 'mt-8 h-14 w-full text-base')}>
             {submitting ? (
               <>
                 <Loader2 className="h-5 w-5 animate-spin" /> Taking you to Paystack…

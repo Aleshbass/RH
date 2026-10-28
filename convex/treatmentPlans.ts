@@ -1,8 +1,23 @@
+import { insertNotification } from "./helpers/pushNotify";
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 import { getAuthenticatedUser } from "./auth";
 import { findRelationship } from "./helpers/careAccess";
 import { internal } from "./_generated/api";
+import { cleanGoalMeasure, goalMeasureValidator, type GoalMeasure, type GoalWithMeasure } from "./helpers/goalMeasures";
+
+/**
+ * Goals sent back by the older plan editor: a measure link is checked again, and keeps the
+ * baseline stored for the same series (the client never sets baselines).
+ */
+function keepGoalMeasures<G extends { measure?: GoalMeasure }>(goals: G[], stored: GoalWithMeasure[]): G[] {
+  return goals.map((goal) => {
+    if (!goal.measure) return goal;
+    const link = cleanGoalMeasure(goal.measure);
+    const before = stored.find((g) => g.measure?.seriesKey === link.seriesKey)?.measure;
+    return { ...goal, measure: { ...link, baseline: before?.baseline, baselineAt: before?.baselineAt } };
+  });
+}
 
 /**
  * Treatment Plan Management System
@@ -100,7 +115,7 @@ export const createTreatmentPlan = mutation({
     });
 
     // Notify patient about new plan
-    await ctx.db.insert("notifications", {
+    await insertNotification(ctx, {
       userId: args.patientId,
       type: "treatment_plan_created" as any,
       priority: "high",
@@ -222,6 +237,8 @@ export const updateTreatmentPlan = mutation({
       timeline: v.string(),
       measurable: v.boolean(),
       achieved: v.optional(v.boolean()),
+      // Sent back as stored by the UI; checked again and the stored baseline kept (keepGoalMeasures)
+      measure: v.optional(goalMeasureValidator),
     }))),
     phases: v.optional(v.array(v.object({
       name: v.string(),
@@ -275,6 +292,7 @@ export const updateTreatmentPlan = mutation({
 
     await ctx.db.patch(args.treatmentPlanId, {
       ...updateData,
+      ...(updateData.goals ? { goals: keepGoalMeasures(updateData.goals, treatmentPlan.goals) } : {}),
       updatedAt: Date.now(),
       version: treatmentPlan.version + 1,
     });
@@ -291,7 +309,7 @@ export const updateTreatmentPlan = mutation({
     });
 
     // Notify patient that plan was updated
-    await ctx.db.insert("notifications", {
+    await insertNotification(ctx, {
       userId: treatmentPlan.patientId,
       type: "treatment_plan_updated" as any,
       priority: "medium",
@@ -378,7 +396,7 @@ export const updateTreatmentPlanStatus = mutation({
       cancelled: "Treatment Plan Cancelled",
       on_hold: "Treatment Plan On Hold",
     };
-    await ctx.db.insert("notifications", {
+    await insertNotification(ctx, {
       userId: treatmentPlan.patientId,
       type: `treatment_plan_${args.status}` as any,
       priority: args.status === "completed" ? "high" : "medium",
@@ -588,6 +606,11 @@ export const duplicateTreatmentPlan = mutation({
 
     const duplicatedPlanId = await ctx.db.insert("treatmentPlans", {
       ...planData,
+      // Measured targets carry over; baselines belong to the original patient's course of care
+      goals:
+        newPatientId === originalPlan.patientId
+          ? planData.goals
+          : planData.goals.map((g) => (g.measure ? { ...g, measure: { ...g.measure, baseline: undefined, baselineAt: undefined } } : g)),
       patientId: newPatientId,
       title: args.title || `${originalPlan.title} (Copy)`,
       status: "draft",
@@ -691,7 +714,7 @@ export const logExerciseCompletion = mutation({
 
     // A high pain score is worth the physio's attention; routine completions stay quiet
     if ((args.painLevel ?? 0) >= 7) {
-      await ctx.db.insert("notifications", {
+      await insertNotification(ctx, {
         userId: plan.physiotherapistId,
         type: "exercise_completed" as any,
         priority: "high",
@@ -744,7 +767,7 @@ export const acceptTreatmentPlan = mutation({
     });
 
     // Notify physiotherapist
-    await ctx.db.insert("notifications", {
+    await insertNotification(ctx, {
       userId: plan.physiotherapistId,
       type: "treatment_plan_accepted" as any,
       priority: "medium",
@@ -1099,7 +1122,7 @@ export const deleteTreatmentPlan = mutation({
     await ctx.db.delete(args.treatmentPlanId);
 
     // Notify patient about the deleted plan
-    await ctx.db.insert("notifications", {
+    await insertNotification(ctx, {
       userId: plan.patientId,
       type: "treatment_plan_deleted" as any,
       priority: "medium",
@@ -1213,7 +1236,7 @@ export const assignTemplateToPatient = mutation({
     });
 
     // Notify patient about plan created from template
-    await ctx.db.insert("notifications", {
+    await insertNotification(ctx, {
       userId: args.patientId,
       type: "treatment_plan_created" as any,
       priority: "high",

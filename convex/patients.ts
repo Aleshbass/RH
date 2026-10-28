@@ -1,4 +1,5 @@
 
+import { insertNotification } from "./helpers/pushNotify";
 import { ConvexError, v } from "convex/values";
 import { internalQuery, mutation, query } from "./_generated/server";
 import { getAuthenticatedUser, ensureClinicOwner, ensureUserRole, ensureIsClinicOwner } from "./auth";
@@ -89,7 +90,7 @@ export const createPatientInvitation = mutation({
     });
 
     // Create notification for the physiotherapist
-    await ctx.db.insert("notifications", {
+    await insertNotification(ctx, {
       userId: physiotherapist._id,
       type: "invitation_created",
       priority: "medium",
@@ -871,7 +872,17 @@ export const getPatientHealthSummary = query({
       profile: patientProfile,
       activeTreatmentPlans,
       progressIndicators,
-      recentSessions: recentSessions.slice(0, 5), // Latest 5 sessions
+      // Latest 5 sessions, as the patient sees a note: no working diagnosis, measures or edit history
+      recentSessions: recentSessions.slice(0, 5).map((s) => ({
+        _id: s._id,
+        appointmentId: s.appointmentId,
+        sessionDate: s.sessionDate,
+        noteType: s.noteType,
+        subjectiveAssessment: s.subjectiveAssessment,
+        objectiveAssessment: s.objectiveAssessment,
+        treatmentAdministered: s.treatmentAdministered,
+        planForNextSession: s.planForNextSession,
+      })),
       healthMetrics: {
         attendanceRate,
         totalSessions: recentSessions.length,

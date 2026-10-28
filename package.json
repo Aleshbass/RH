@@ -91,6 +91,7 @@
     "tailwind-merge": "^3.3.0",
     "three": "^0.186.1",
     "twilio": "5.9.0",
+    "web-push": "3.6.7",
     "web-vitals": "^5.1.0",
     "zod": "^3.25.48",
     "zustand": "^5.0.5"
@@ -103,6 +104,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/three": "0.186.0",
+    "@types/web-push": "3.6.4",
     "convex": "^1.31.4",
     "dotenv": "^16.6.1",
     "eslint": "^9",

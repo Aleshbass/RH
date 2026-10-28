@@ -10,6 +10,7 @@ import { api } from '@/convex/_generated/api';
 import { Loader2 } from '@/components/icons';
 import { toast } from 'sonner';
 import { programError } from '@/components/exercise-programs/errors';
+import { PATIENT_CONSENT_POLICIES, policyVersions } from '@/lib/policies';
 
 function PatientStep1Content() {
   const router = useRouter();
@@ -82,9 +83,10 @@ function PatientStep1Content() {
   const completeProfile = useMutation(api.users.completeUserProfile);
 
   const handleSubmit = async (formData: PatientInfoValues) => {
+    const { acceptTerms, acceptHealthData, ...details } = formData;
     // Store the form data in Zustand store
     updatePatientData({
-      ...formData,
+      ...details,
       // medicalHistory removed from form, so we don't append invitation info here anymore
       // or we can just store the invitation info if needed, but formData doesn't have medicalHistory
     });
@@ -110,6 +112,8 @@ function PatientStep1Content() {
         firstName: formData.firstName,
         lastName: formData.lastName,
         finalStep: true,
+        // Terms, Privacy and the health information consent, recorded append-only (channel "web")
+        acceptedPolicies: acceptTerms && acceptHealthData ? policyVersions(PATIENT_CONSENT_POLICIES) : undefined,
       });
 
       // Navigate to Find a Physio page

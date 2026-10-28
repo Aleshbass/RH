@@ -18,7 +18,7 @@ import {
 } from '@fortawesome/free-brands-svg-icons'
 import {
   faAlignLeft, faArrowDown, faArrowLeft, faArrowRight, faArrowRightArrowLeft, faArrowRotateLeft,
-  faArrowTrendDown, faArrowTrendUp, faArrowTurnDown, faArrowUp, faArrowUpRightFromSquare,
+  faArrowTrendDown, faArrowTrendUp, faArrowTurnDown, faArrowUp, faArrowUpFromBracket, faArrowUpRightFromSquare,
   faArrowsRotate, faAward, faBaby, faBan, faBars, faBell, faBolt, faBone, faBook, faBookOpen,
   faBox, faBoxArchive, faBoxOpen, faBrain, faBriefcase, faBuilding, faBullhorn, faBullseye,
   faCalendar, faCalendarCheck, faCalendarDay, faCalendarDays, faCalendarPlus, faCalendarWeek,
@@ -40,8 +40,8 @@ import {
   faPen, faPenToSquare, faPercent, faPhone, faPhoneSlash, faPhoneVolume, faPills, faPlay,
   faPlug, faPlugCircleXmark, faPlus, faPrint, faQrcode, faQuoteLeft, faReceipt,
   faRectangleXmark, faRepeat, faReply, faRightFromBracket, faRightToBracket, faRocket,
-  faRotateLeft, faScaleBalanced, faShare, faShareNodes, faShield, faShieldHalved, faShoePrints,
-  faSliders, faSquare, faStar, faStethoscope, faStopwatch, faStore, faSun, faTableCellsLarge,
+  faRotateLeft, faRulerCombined, faScaleBalanced, faShare, faShareNodes, faShield, faShieldHalved, faShoePrints,
+  faSliders, faSquare, faSquarePlus, faStar, faStethoscope, faStopwatch, faStore, faSun, faTableCellsLarge,
   faTableColumns, faTag, faTags, faTemperatureHalf, faTerminal, faThumbsUp, faTrash, faTrashCan,
   faTriangleExclamation, faTv, faUpload, faUser, faUserCheck, faUserGear, faUserGroup,
   faUserPlus, faUserXmark, faUsers, faVideo, faVideoSlash, faVolumeHigh, faVolumeXmark,
@@ -297,6 +297,7 @@ export const Reply = /*#__PURE__*/ createIcon('Reply', faReply)
 export const Rocket = /*#__PURE__*/ createIcon('Rocket', faRocket)
 export const Rotate3d = /*#__PURE__*/ createIcon('Rotate3d', faCube)
 export const RotateCcw = /*#__PURE__*/ createIcon('RotateCcw', faRotateLeft)
+export const Ruler = /*#__PURE__*/ createIcon('Ruler', faRulerCombined)
 export const Save = /*#__PURE__*/ createIcon('Save', faFloppyDisk)
 export const Scale = /*#__PURE__*/ createIcon('Scale', faScaleBalanced)
 export const Search = /*#__PURE__*/ createIcon('Search', faMagnifyingGlass)
@@ -306,6 +307,8 @@ export const Settings = /*#__PURE__*/ createIcon('Settings', faGear)
 export const Settings2 = /*#__PURE__*/ createIcon('Settings2', faSliders)
 export const Share = /*#__PURE__*/ createIcon('Share', faShare)
 export const Share2 = /*#__PURE__*/ createIcon('Share2', faShareNodes)
+/** The iPhone/iPad Share button (square with an arrow up) */
+export const ShareIos = /*#__PURE__*/ createIcon('ShareIos', faArrowUpFromBracket)
 export const Shield = /*#__PURE__*/ createIcon('Shield', faShield)
 export const ShieldAlert = /*#__PURE__*/ createIcon('ShieldAlert', faTriangleExclamation)
 export const ShieldCheck = /*#__PURE__*/ createIcon('ShieldCheck', faShieldHalved)
@@ -314,6 +317,7 @@ export const SlidersHorizontal = /*#__PURE__*/ createIcon('SlidersHorizontal', f
 export const Smartphone = /*#__PURE__*/ createIcon('Smartphone', faMobileScreen)
 export const Smile = /*#__PURE__*/ createIcon('Smile', faFaceSmile)
 export const Square = /*#__PURE__*/ createIcon('Square', faSquare)
+export const SquarePlus = /*#__PURE__*/ createIcon('SquarePlus', faSquarePlus)
 export const Star = /*#__PURE__*/ createIcon('Star', faStar)
 export const StarOff = /*#__PURE__*/ createIcon('StarOff', faStar)
 export const Stethoscope = /*#__PURE__*/ createIcon('Stethoscope', faStethoscope)

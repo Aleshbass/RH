@@ -7,6 +7,7 @@ import type { Doc, Id } from './_generated/dataModel';
 import { publicAppUrl } from './helpers/appUrl';
 import { canJoinVideoCall, mayInviteToCall, staffClinicId } from './helpers/callAccess';
 import { isOpenAppointment } from './helpers/appointmentStatus';
+import { patientJoinedCall } from './pushAlerts';
 // Stream video imports will be handled in the action
 
 // Hosts a physiotherapist may use as an external meeting link (Google Meet / Zoom).
@@ -672,6 +673,13 @@ export const joinVideoCall = mutation({
       }
     } catch (e) {
       console.warn('[joinVideoCall] Failed to evaluate active participants:', e)
+    }
+
+    // The patient is in the call: tell the physio's phone if they aren't there yet
+    try {
+      await patientJoinedCall(ctx, call, user)
+    } catch {
+      console.warn('[joinVideoCall] Could not send the patient-waiting alert')
     }
 
     return {

@@ -1,9 +1,10 @@
+import { insertNotification } from "./helpers/pushNotify";
 import { ConvexError, v } from "convex/values";
 import { mutation, query, internalQuery } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { onPatientSessionCompleted } from "./helpers/partnerAttribution";
-import { isRehabifyCare, mustPayToConfirm, needsInvoiceOnAccept } from "./rehabifyFollowUps";
+import { isRehabifyCare, mustPayToConfirm, needsInvoiceOnAccept, releaseCancelledVisit, settleNoShow, settlePatientCancellation, useFreeReschedule } from "./rehabifyFollowUps";
 import { lagosDate, lagosDateTime, lagosShortDate, lagosTime, lagosTimeRange, startOfZonedDay, zonedDateTimeToUtc } from "./helpers/lagosTime";
 import { awaitingConfirmationFrom, isOpenAppointment } from "./helpers/appointmentStatus";
 import { isGoogleBusy } from "./helpers/slotHolds";
@@ -224,7 +225,7 @@ export const createAppointment = mutation({
     const appointmentTimeStr = lagosTimeRange(args.startTime, args.endTime);
 
     // Notification for patient
-    await ctx.db.insert("notifications", {
+    await insertNotification(ctx, {
       userId: args.patientId,
       type: "appointment_scheduled",
       priority: "medium",
@@ -259,7 +260,7 @@ export const createAppointment = mutation({
 
     // External calendar sync disabled: no Google Calendar events scheduled
 
-    await ctx.db.insert("notifications", {
+    await insertNotification(ctx, {
       userId: user._id,
       type: "appointment_scheduled",
       priority: "medium",
@@ -400,6 +401,12 @@ export const getMyAppointments = query({
             ...appointment,
             // Rehabify patients pay per session, so their requests are accepted with an invoice
             needsInvoice: await needsInvoiceOnAccept(ctx, appointment),
+            // Paid through Rehabify Care: cancelling sends the patient another physio or a refund
+            paidThroughRehabify: await ctx.db
+              .query("marketplaceBookings")
+              .withIndex("by_appointment", (q) => q.eq("appointmentId", appointment._id))
+              .first()
+              .then((b) => Boolean(b && b.paymentStatus === "completed" && b.pricingModel)),
             patient: patient ? {
               _id: patient._id,
               firstName: patient.firstName,
@@ -534,16 +541,6 @@ export const updateAppointmentStatus = mutation({
     if ((args.status === "completed" || args.status === "no_show") && appointment.startTime > Date.now()) {
       throw new ConvexError("This visit hasn't started yet, so it can't be marked as done.");
     }
-    // A visit the patient paid for on Rehabify needs a refund or rebooking, which support handles
-    if (args.status === "cancelled_by_therapist") {
-      const paidBooking = await ctx.db
-        .query("marketplaceBookings")
-        .withIndex("by_appointment", (q) => q.eq("appointmentId", args.appointmentId))
-        .first();
-      if (paidBooking?.paymentStatus === "completed") {
-        throw new ConvexError("This visit was paid through Rehabify. Contact Rehabify support to cancel it so the patient is refunded or rebooked.");
-      }
-    }
 
     // Update the appointment
     const updateData: any = { status: args.status };
@@ -559,6 +556,12 @@ export const updateAppointmentStatus = mutation({
 
     if (args.status === "cancelled_by_therapist") {
       await syncGoogleCalendarEvent(ctx, args.appointmentId, "delete");
+      // Paid through Rehabify: the patient picks another physio or a full refund; no payout
+      await releaseCancelledVisit(ctx, appointment);
+    }
+    // The patient didn't come: no refund, and the physio is paid in full (Payment Policy 4.3)
+    if (args.status === "no_show") {
+      await settleNoShow(ctx, appointment);
     }
 
     // A completed session moves the patient's booked partner referral into treatment
@@ -625,7 +628,7 @@ export const updateAppointmentStatus = mutation({
       });
     }
 
-    await ctx.db.insert("notifications", {
+    await insertNotification(ctx, {
       userId: appointment.patientId,
       type: notificationTypes[args.status],
       priority: "medium",
@@ -724,6 +727,11 @@ export const updateAppointmentStatus = mutation({
               status: "pending",
               type: "physiotherapist_earning",
               userId: appointment.physiotherapistId,
+              // Links the payout to the visit: it waits for the session note (helpers/payoutStage.ts)
+              reason: "session",
+              appointmentId: args.appointmentId,
+              ...(booking ? { bookingId: booking._id } : {}),
+              sessionAt: appointment.startTime,
               createdAt: Date.now(),
               updatedAt: Date.now(),
             });
@@ -843,7 +851,7 @@ export const rescheduleAppointment = mutation({
     // Create notification for patient
     const patient = await ctx.db.get(appointment.patientId);
 
-    await ctx.db.insert("notifications", {
+    await insertNotification(ctx, {
       userId: appointment.patientId,
       type: "appointment_rescheduled",
       priority: "medium",
@@ -1591,7 +1599,7 @@ export const requestAppointment = mutation({
     const appointmentTimeStr = lagosTimeRange(args.startTime, args.endTime);
 
     // Create notification for physiotherapist
-    await ctx.db.insert("notifications", {
+    await insertNotification(ctx, {
       userId: args.physiotherapistId,
       type: "appointment_scheduled",
       priority: "medium",
@@ -1611,7 +1619,7 @@ export const requestAppointment = mutation({
     });
 
     // Create notification for patient
-    await ctx.db.insert("notifications", {
+    await insertNotification(ctx, {
       userId: patient._id,
       type: "appointment_scheduled",
       priority: "medium",
@@ -1711,6 +1719,8 @@ export const cancelAppointmentAsPatient = mutation({
       ...CLEAR_PROPOSAL,
     });
     await syncGoogleCalendarEvent(ctx, args.appointmentId, "delete");
+    // A paid Rehabify Care visit: the refund and the physio's share follow Payment Policy 4.3
+    const careOutcome = await settlePatientCancellation(ctx, appointment);
 
     // Get physiotherapist info for notification
     const physiotherapist = await ctx.db.get(appointment.physiotherapistId);
@@ -1718,7 +1728,7 @@ export const cancelAppointmentAsPatient = mutation({
     const physiotherapistName = physiotherapist ? `${physiotherapist.firstName} ${physiotherapist.lastName}` : "your physiotherapist";
 
     // Create notification for physiotherapist
-    await ctx.db.insert("notifications", {
+    await insertNotification(ctx, {
       userId: appointment.physiotherapistId,
       type: "appointment_cancelled",
       priority: "medium",
@@ -1738,7 +1748,7 @@ export const cancelAppointmentAsPatient = mutation({
     });
 
     // Create notification for patient
-    await ctx.db.insert("notifications", {
+    await insertNotification(ctx, {
       userId: patient._id,
       type: "appointment_cancelled",
       priority: "medium",
@@ -1791,7 +1801,11 @@ export const cancelAppointmentAsPatient = mutation({
 
     return {
       success: true,
-      message: "Appointment cancelled successfully.",
+      message: careOutcome
+        ? careOutcome.refundKobo > 0
+          ? `Cancelled. We'll refund ₦${Math.round(careOutcome.refundKobo / 100).toLocaleString("en-NG")} to how you paid, usually within 5 to 10 business days.`
+          : "Cancelled. Under 2 hours before the visit there's no refund (Payment Policy 4.3)."
+        : "Appointment cancelled successfully.",
     };
   },
 });
@@ -1845,7 +1859,7 @@ export const confirmAppointmentAsPatient = mutation({
     const physiotherapistName = physiotherapist ? `${physiotherapist.firstName} ${physiotherapist.lastName}` : "your physiotherapist";
 
     // Create notification for physiotherapist
-    const notificationId = await ctx.db.insert("notifications", {
+    const notificationId = await insertNotification(ctx, {
       userId: appointment.physiotherapistId,
       type: "appointment_confirmed",
       priority: "medium",
@@ -1932,6 +1946,8 @@ export const requestAppointmentReschedule = mutation({
     if (args.newStartTime < Date.now() - 60_000) {
       throw new ConvexError("Please choose a time in the future.");
     }
+    // Paid Rehabify Care visits: one free move at short notice (Payment Policy 4.3)
+    await useFreeReschedule(ctx, appointment, args.newStartTime);
 
     // Check for time conflicts (excluding the current appointment)
     const conflictingAppointments = await ctx.db
@@ -1981,7 +1997,7 @@ export const requestAppointmentReschedule = mutation({
     const physiotherapistName = physiotherapist ? `${physiotherapist.firstName} ${physiotherapist.lastName}` : "your physiotherapist";
 
     // Create notification for physiotherapist
-    await ctx.db.insert("notifications", {
+    await insertNotification(ctx, {
       userId: appointment.physiotherapistId,
       type: "appointment_rescheduled",
       priority: "medium",
@@ -2001,7 +2017,7 @@ export const requestAppointmentReschedule = mutation({
     });
 
     // Create notification for patient
-    await ctx.db.insert("notifications", {
+    await insertNotification(ctx, {
       userId: patient._id,
       type: "appointment_rescheduled",
       priority: "medium",
@@ -2307,7 +2323,7 @@ export const submitPatientFeedback = mutation({
     if (!physiotherapist) throw new Error("Physiotherapist not found")
 
     // Create notification for physiotherapist
-    await ctx.db.insert("notifications", {
+    await insertNotification(ctx, {
       userId: appointment.physiotherapistId,
       type: "appointment_feedback",
       priority: "medium",

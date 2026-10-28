@@ -10,6 +10,7 @@ import { ensureUserNumbers } from "./helpers/rehabifyIds";
 import { activePaymentLink } from "./helpers/paymentLinks";
 import { isClinicInviteApproval } from "./helpers/clinicApproval";
 import { usableSubaccount } from "./helpers/paystackMode";
+import { assertClinicNotBillingReadOnly, subscriptionForClinic } from "./helpers/clinicSubscriptions";
 import {
   CLEAR_PROPOSAL,
   appointmentsPathFor,
@@ -19,9 +20,20 @@ import {
   syncGoogleCalendarEvent,
   visitPlace,
 } from "./helpers/appointmentNotify";
-import { lagosDateTime, lagosTimeRange } from "./helpers/lagosTime";
+import { lagosDateTime, lagosTimeRange, zonedDateKey, zonedTimeKey } from "./helpers/lagosTime";
 import { transitionReferral } from "./helpers/partnerEvents";
 import { attributeUserToReferral } from "./helpers/partnerAttribution";
+import { assertNoteTextLength, keepRevision } from "./helpers/noteRevisions";
+
+/** Section names as the clinic's note form shows them, for "too long" messages. */
+const CLINIC_NOTE_LABELS: Record<string, string> = {
+  diagnosis: "Diagnosis",
+  goals: "Goals",
+  subjectiveAssessment: "Patient report",
+  objectiveAssessment: "Findings",
+  treatmentAdministered: "Treatment given",
+  planForNextSession: "Plan",
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Clinic access: the owner, and team members (clinicians and front-desk staff)
@@ -68,7 +80,7 @@ export type ClinicMember = {
 /** Team members who work inside a clinic dashboard (patients also carry clinicId, so role matters). */
 const isClinicTeamRole = (role: Doc<"users">["role"]) => role === "physiotherapist" || role === "clinic_staff";
 
-async function resolveClinicMember(ctx: QueryCtx, user: Doc<"users">): Promise<ClinicMember | null> {
+export async function resolveClinicMember(ctx: QueryCtx, user: Doc<"users">): Promise<ClinicMember | null> {
   if (user.role === "clinic_owner") {
     const clinic = await ctx.db
       .query("clinics")
@@ -106,7 +118,12 @@ export function canUseArea(member: ClinicMember, area: ClinicArea) {
 /**
  * The signed-in clinic owner or team member. With `area`, the member's role must include that page.
  */
-export async function getClinicMember(ctx: QueryCtx, area?: ClinicArea): Promise<ClinicMember> {
+export async function getClinicMember(
+  ctx: QueryCtx,
+  area?: ClinicArea,
+  // Paying Rehabify's invoices (and asking for an upgrade) must keep working while read-only
+  options: { allowBillingReadOnly?: boolean } = {}
+): Promise<ClinicMember> {
   const user = await getAuthenticatedUser(ctx);
   const member = await resolveClinicMember(ctx, user);
   if (!member) {
@@ -120,21 +137,32 @@ export async function getClinicMember(ctx: QueryCtx, area?: ClinicArea): Promise
   if (area && !canUseArea(member, area)) {
     throw new ConvexError(`Your role doesn't include ${AREA_LABELS[area]}. Ask the clinic owner for access.`);
   }
-  // Only mutations have db.insert: a suspended clinic can still be viewed, but not changed
-  if ("insert" in ctx.db) assertClinicNotSuspended(member.clinic);
+  // Only mutations have db.insert: a suspended clinic, or one read-only for an unpaid Rehabify
+  // invoice, can still be viewed (and exported), but not changed
+  if ("insert" in ctx.db) {
+    assertClinicNotSuspended(member.clinic);
+    if (!options.allowBillingReadOnly) await assertClinicNotBillingReadOnly(ctx, member.clinic._id);
+  }
   return member;
 }
 
 /** For changes: the member needs the page, and the clinic must be approved. */
-export async function requireClinicWrite(ctx: QueryCtx, area?: ClinicArea): Promise<ClinicMember> {
-  const member = await getClinicMember(ctx, area);
-  await ensureClinicApproved(ctx, member.clinic);
+export async function requireClinicWrite(
+  ctx: QueryCtx,
+  area?: ClinicArea,
+  options: { allowBillingReadOnly?: boolean } = {}
+): Promise<ClinicMember> {
+  const member = await getClinicMember(ctx, area, options);
+  await ensureClinicApproved(ctx, member.clinic, options);
   return member;
 }
 
 /** Owner-only actions: bank account, roles, removing or suspending staff. */
-export async function getOwnerClinic(ctx: QueryCtx): Promise<ClinicMember> {
-  const member = await getClinicMember(ctx);
+export async function getOwnerClinic(
+  ctx: QueryCtx,
+  options: { allowBillingReadOnly?: boolean } = {}
+): Promise<ClinicMember> {
+  const member = await getClinicMember(ctx, undefined, options);
   if (!member.isOwner) {
     throw new ConvexError("Only the clinic owner can do this.");
   }
@@ -486,8 +514,13 @@ export function assertClinicNotSuspended(clinic: Doc<"clinics">) {
  * has approved the clinic, and while the clinic isn't suspended. Applies to team members
  * too, since they act for the clinic.
  */
-export async function ensureClinicApproved(ctx: QueryCtx, clinic: Doc<"clinics">) {
+export async function ensureClinicApproved(
+  ctx: QueryCtx,
+  clinic: Doc<"clinics">,
+  options: { allowBillingReadOnly?: boolean } = {}
+) {
   assertClinicNotSuspended(clinic);
+  if (!options.allowBillingReadOnly) await assertClinicNotBillingReadOnly(ctx, clinic._id);
   const owner = await ctx.db.get(clinic.ownerId);
   // A skip always leaves onboarded=false, so once onboarded is true a stale skip flag is ignored
   if (!owner?.onboarded) {
@@ -1465,13 +1498,18 @@ export const saveClinicalNote = mutation({
     // Always the signed-in clinician (args.physiotherapistId is kept for older clients and ignored)
     const clinicianId = await requireTreatingClinician(ctx, member, args.patientId);
 
-    const hasContent = [
-      args.subjectiveAssessment, args.objectiveAssessment, args.treatmentAdministered,
-      args.planForNextSession, args.goalsSummary, args.diagnosis,
-    ].some((field) => field && field.trim());
-    if (!hasContent) {
+    const sections = {
+      diagnosis: args.diagnosis?.trim() || undefined,
+      goals: args.goalsSummary?.trim() || undefined,
+      subjectiveAssessment: args.subjectiveAssessment?.trim() || undefined,
+      objectiveAssessment: args.objectiveAssessment?.trim() || undefined,
+      treatmentAdministered: args.treatmentAdministered?.trim() || undefined,
+      planForNextSession: args.planForNextSession?.trim() || undefined,
+    };
+    if (!Object.values(sections).some(Boolean)) {
       throw new ConvexError("Write something in at least one field before saving the note");
     }
+    assertNoteTextLength(sections, CLINIC_NOTE_LABELS);
 
     const appointmentId = await anchorAppointmentForRecord(ctx, clinic, args.patientId, clinicianId, args.noteType);
 
@@ -1482,12 +1520,7 @@ export const saveClinicalNote = mutation({
       clinicId: clinic._id,
       sessionDate: Date.now(),
       noteType: args.noteType,
-      diagnosis: args.diagnosis?.trim() || undefined,
-      goals: args.goalsSummary?.trim() || undefined,
-      subjectiveAssessment: args.subjectiveAssessment,
-      objectiveAssessment: args.objectiveAssessment,
-      treatmentAdministered: args.treatmentAdministered,
-      planForNextSession: args.planForNextSession,
+      ...sections,
     });
 
     // Discharge closes the episode of care at this clinic
@@ -1496,6 +1529,52 @@ export const saveClinicalNote = mutation({
     }
 
     return { success: true, noteId };
+  },
+});
+
+/**
+ * The clinician who wrote a note corrects or adds to it. Only the fields sent change (an empty
+ * string clears one); the earlier wording is kept with the note.
+ */
+export const updateClinicNote = mutation({
+  args: {
+    noteId: v.id("sessionLogs"),
+    subjectiveAssessment: v.optional(v.string()),
+    objectiveAssessment: v.optional(v.string()),
+    treatmentAdministered: v.optional(v.string()),
+    planForNextSession: v.optional(v.string()),
+    goalsSummary: v.optional(v.string()),
+    diagnosis: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const member = await requireClinicWrite(ctx, "patients");
+    const { user, clinic } = member;
+    const note = await ctx.db.get(args.noteId);
+    if (!note || note.clinicId !== clinic._id) throw new ConvexError("Note not found");
+    if (note.physiotherapistId !== user._id) {
+      throw new ConvexError("Only the clinician who wrote this note can change it.");
+    }
+
+    const pick = (sent: string | undefined, current: string | undefined) => (sent === undefined ? current : sent.trim() || undefined);
+    const next = {
+      diagnosis: pick(args.diagnosis, note.diagnosis),
+      goals: pick(args.goalsSummary, note.goals),
+      subjectiveAssessment: pick(args.subjectiveAssessment, note.subjectiveAssessment),
+      objectiveAssessment: pick(args.objectiveAssessment, note.objectiveAssessment),
+      treatmentAdministered: pick(args.treatmentAdministered, note.treatmentAdministered),
+      planForNextSession: pick(args.planForNextSession, note.planForNextSession),
+    };
+    if (!Object.values(next).some(Boolean)) {
+      throw new ConvexError("A note can't be empty. Write something in at least one field.");
+    }
+    assertNoteTextLength(next, CLINIC_NOTE_LABELS);
+    if (!(Object.keys(next) as (keyof typeof next)[]).some((key) => next[key] !== note[key])) {
+      return { changed: false };
+    }
+
+    const kept = await keepRevision(ctx, note, user._id, Date.now());
+    await ctx.db.patch(note._id, { ...next, ...kept });
+    return { changed: true };
   },
 });
 
@@ -1921,7 +2000,8 @@ export const createClinicPaymentRequest = mutation({
     appointmentId: v.optional(v.id("appointments")),
   },
   handler: async (ctx, args) => {
-    const member = await requireClinicWrite(ctx, "billing");
+    // Billing its own patients keeps working while the clinic is read-only for Rehabify's invoice
+    const member = await requireClinicWrite(ctx, "billing", { allowBillingReadOnly: true });
     const { clinic } = member;
     await assertPatientInClinic(ctx, clinic, args.patientId);
 
@@ -2105,8 +2185,9 @@ export const getClinicBillingSummary = query({
 export const removeClinician = mutation({
   args: { clinicianId: v.id("users") },
   handler: async (ctx, args) => {
-    const { user, clinic } = await getOwnerClinic(ctx);
-    await ensureClinicApproved(ctx, clinic);
+    // Taking someone's access away always works, even while the clinic is read-only
+    const { user, clinic } = await getOwnerClinic(ctx, { allowBillingReadOnly: true });
+    await ensureClinicApproved(ctx, clinic, { allowBillingReadOnly: true });
     if (args.clinicianId === user._id) {
       throw new ConvexError("You can't remove yourself from your own clinic");
     }
@@ -3125,6 +3206,8 @@ export const getMyClinicAccess = query({
       // The whole clinic was suspended by Rehabify (changes are refused server-side)
       clinicSuspended: member.clinic.status === "suspended",
       clinicSuspendedReason: member.clinic.status === "suspended" ? (member.clinic.suspendedReason ?? null) : null,
+      // Read-only for an unpaid Rehabify invoice (view, export and pay still work)
+      billingReadOnly: (await subscriptionForClinic(ctx, member.clinic._id))?.status === "read_only",
     };
   },
 });
@@ -3265,7 +3348,7 @@ export const getClinicFrontDeskStaff = query({
 export const removeFrontDeskStaff = mutation({
   args: { memberId: v.id("users") },
   handler: async (ctx, args) => {
-    const { clinic } = await getOwnerClinic(ctx);
+    const { clinic } = await getOwnerClinic(ctx, { allowBillingReadOnly: true });
     const target = await ctx.db.get(args.memberId);
     if (!target || target.clinicId !== clinic._id || target.role !== "clinic_staff") {
       throw new ConvexError("This person isn't on your front-desk team");
@@ -3328,5 +3411,157 @@ export const getClinicClinicianOptions = query({
       options.push({ id: clinician._id, name: fullName(clinician), isOwner: false, isMe: clinician._id === me._id });
     }
     return options;
+  },
+});
+// ─────────────────────────────────────────────────────────────────────────────
+// Data export: included in every plan and allowed while the clinic is read-only
+// (Clinic Master SaaS Agreement 7.4 and 15.4). Rows go to the browser, which writes the CSV.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const EXPORT_CAP = 5000;
+
+const exportDateTime = (ms: number | null | undefined) =>
+  typeof ms === "number" && Number.isFinite(ms) ? `${zonedDateKey(ms)} ${zonedTimeKey(ms)}` : "";
+const exportDate = (ms: number | null | undefined) =>
+  typeof ms === "number" && Number.isFinite(ms) ? zonedDateKey(ms) : "";
+const exportNaira = (kobo: number | null | undefined) =>
+  typeof kobo === "number" && Number.isFinite(kobo) ? (kobo / 100).toFixed(2) : "";
+
+/** The clinic's patients, appointments or invoices as plain rows (Lagos dates, naira amounts). */
+export const exportClinicData = query({
+  args: { kind: v.union(v.literal("patients"), v.literal("appointments"), v.literal("invoices")) },
+  handler: async (ctx, args): Promise<{ rows: Record<string, string>[]; capped: boolean }> => {
+    const member = await getClinicMember(ctx);
+    // The clinic's whole record: for the owner and team members with full access
+    if (member.permissions !== "all") {
+      throw new ConvexError("Data export is for the clinic owner and team members with full access.");
+    }
+    const { clinic } = member;
+
+    const people = new Map<Id<"users">, Doc<"users"> | null>();
+    const person = async (id: Id<"users">) => {
+      if (!people.has(id)) people.set(id, await ctx.db.get(id));
+      return people.get(id) ?? null;
+    };
+    const nameOf = (u: Doc<"users"> | null) => (u ? `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() || u.email || "" : "");
+
+    const clinicRels = await ctx.db
+      .query("patientPhysiotherapistRelationships")
+      .withIndex("by_clinic", (q: any) => q.eq("clinicId", clinic._id))
+      .collect();
+
+    if (args.kind === "patients") {
+      const staffIds = await getClinicStaffUserIds(ctx, clinic);
+      const staffRels = await Promise.all(
+        Array.from(staffIds).map((id) =>
+          ctx.db
+            .query("patientPhysiotherapistRelationships")
+            .withIndex("by_physiotherapist", (q: any) => q.eq("physiotherapistId", id))
+            .filter((q: any) => q.eq(q.field("status"), "active"))
+            .collect()
+        )
+      );
+      // One row per patient: the active relationship when there is one, else the latest
+      const best = new Map<Id<"users">, Doc<"patientPhysiotherapistRelationships">>();
+      for (const rel of [...clinicRels, ...staffRels.flat()]) {
+        const current = best.get(rel.patientId);
+        if (
+          !current ||
+          (rel.status === "active" && current.status !== "active") ||
+          (rel.status !== "active" && current.status !== "active" && (rel.endDate ?? 0) > (current.endDate ?? 0))
+        ) {
+          best.set(rel.patientId, rel);
+        }
+      }
+      const rels = Array.from(best.values()).sort((a, b) => b.startDate - a.startDate);
+      const rows: Record<string, string>[] = [];
+      for (const rel of rels.slice(0, EXPORT_CAP)) {
+        const patient = await person(rel.patientId);
+        if (!patient) continue;
+        rows.push({
+          "Rehabify ID": patient.patientNumber ?? "",
+          "First name": patient.firstName ?? "",
+          "Last name": patient.lastName ?? "",
+          Email: patient.email ?? "",
+          Phone: patient.phoneNumber ?? "",
+          Clinician: nameOf(await person(rel.physiotherapistId)),
+          "Care status": rel.status === "active" ? "In care" : rel.notes === "Care paused" ? "Paused" : "Discharged",
+          Source: rel.source === "rehabify_referral" ? "Referred by Rehabify" : "Clinic patient",
+          Started: exportDate(rel.startDate),
+          Ended: exportDate(rel.endDate),
+        });
+      }
+      return { rows, capped: rels.length > EXPORT_CAP };
+    }
+
+    if (args.kind === "appointments") {
+      const clinicPatientIds = new Set(clinicRels.map((rel) => rel.patientId));
+      const staffIds = await getClinicStaffUserIds(ctx, clinic);
+      const [atClinic, ...byStaff] = await Promise.all([
+        ctx.db
+          .query("appointments")
+          .withIndex("by_clinic_id_and_time", (q: any) => q.eq("clinicId", clinic._id))
+          .order("desc")
+          .take(EXPORT_CAP + 1),
+        ...Array.from(staffIds).map((id) =>
+          ctx.db
+            .query("appointments")
+            .withIndex("by_physiotherapist_id_and_time", (q: any) => q.eq("physiotherapistId", id))
+            .order("desc")
+            .take(2000)
+        ),
+      ]);
+      const byId = new Map<Id<"appointments">, Doc<"appointments">>();
+      for (const apt of atClinic) byId.set(apt._id, apt);
+      // Older visits saved without the clinic: only the clinic's own patients, never a
+      // clinician's private practice
+      for (const apt of byStaff.flat()) {
+        if (apt.clinicId === undefined && clinicPatientIds.has(apt.patientId)) byId.set(apt._id, apt);
+      }
+      const appointments = Array.from(byId.values())
+        .filter((apt) => !apt.isRecordOnly)
+        .sort((a, b) => b.startTime - a.startTime);
+      const rows: Record<string, string>[] = [];
+      for (const apt of appointments.slice(0, EXPORT_CAP)) {
+        const patient = await person(apt.patientId);
+        rows.push({
+          Date: exportDate(apt.startTime),
+          Start: zonedTimeKey(apt.startTime),
+          End: zonedTimeKey(apt.endTime),
+          Patient: nameOf(patient),
+          "Patient ID": patient?.patientNumber ?? "",
+          Clinician: nameOf(await person(apt.physiotherapistId)),
+          Service: apt.serviceType,
+          Type: apt.isOnline || apt.appointmentType === "telehealth" ? "Online" : "In person",
+          Status: apt.status.replace(/_/g, " "),
+          Location: apt.location ?? "",
+        });
+      }
+      return { rows, capped: appointments.length > EXPORT_CAP || atClinic.length > EXPORT_CAP };
+    }
+
+    const invoices = await ctx.db
+      .query("invoices")
+      .withIndex("by_clinic_id", (q: any) => q.eq("clinicId", clinic._id))
+      .order("desc")
+      .take(EXPORT_CAP + 1);
+    const rows: Record<string, string>[] = [];
+    for (const inv of invoices.slice(0, EXPORT_CAP)) {
+      const patient = await person(inv.patientId);
+      rows.push({
+        Invoice: inv.invoiceNumber,
+        Patient: nameOf(patient),
+        "Patient ID": patient?.patientNumber ?? "",
+        Items: inv.items.map((item) => item.description).join("; "),
+        "Amount (NGN)": exportNaira(inv.feeBreakdown?.total ?? inv.totalAmount),
+        Status: inv.status === "sent" ? "unpaid" : inv.status.replace(/_/g, " "),
+        Issued: exportDate(inv.issueDate),
+        Due: exportDate(inv.dueDate),
+        Paid: exportDateTime(inv.paymentDate),
+        "Payment method": inv.paymentMethod?.replace(/_/g, " ") ?? "",
+        "Refunded (NGN)": inv.refundedAmount ? exportNaira(inv.refundedAmount) : "",
+      });
+    }
+    return { rows, capped: invoices.length > EXPORT_CAP };
   },
 });

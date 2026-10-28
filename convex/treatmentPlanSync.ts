@@ -1,3 +1,4 @@
+import { insertNotification } from "./helpers/pushNotify";
 import { query, mutation, internalMutation } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
@@ -65,7 +66,7 @@ export const syncTreatmentPlanToPatient = internalMutation({
 
     // Send real-time notification to patient
     if (args.notifyPatient !== false) {
-      await ctx.db.insert("notifications", {
+      await insertNotification(ctx, {
         userId: plan.patientId,
         type: "treatment_plan_updated",
         payload: {

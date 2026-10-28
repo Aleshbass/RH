@@ -48,10 +48,13 @@ import {
 import { BOOK_SESSION_HREF } from '@/components/patient/shell/PatientShell'
 import { NAV } from '@/components/patient/shell/navItems'
 import { PatientCheckInCard, PatientFollowUpBanner } from '@/components/patient/PatientCheckInCard'
+import { PatientQuestionnaireBanner } from '@/components/questionnaires/PatientQuestionnaireBanner'
 import { JoyJourneyCard } from '@/components/patient/JoyJourneyCard'
 import { OpenBookingsCard } from '@/components/patient/OpenBookingsCard'
+import { BookingDecisionCard } from '@/components/patient/BookingDecisionCard'
 import { MediLoanCard } from '@/components/patient/MediLoanCard'
 import { AccessAwardCard } from '@/components/patient/AccessAwardCard'
+import { YourPlanCard } from '@/components/patient/YourPlanCard'
 import { cn } from '@/lib/utils'
 
 interface PatientDashboardProps {
@@ -409,9 +412,11 @@ export function PatientDashboard({ initialUser, initialAppointments, initialStat
       </div>
 
       {/* Things waiting on the patient come first */}
+      <BookingDecisionCard />
       <OpenBookingsCard />
       <MediLoanCard />
       <PatientFollowUpBanner />
+      <PatientQuestionnaireBanner />
 
       <div className="grid gap-5 lg:grid-cols-5">
         <div className="lg:col-span-3">
@@ -498,6 +503,7 @@ export function PatientDashboard({ initialUser, initialAppointments, initialStat
         </div>
       </div>
 
+      <YourPlanCard />
       <AccessAwardCard />
       <JoyJourneyCard />
 

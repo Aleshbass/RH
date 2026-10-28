@@ -5,6 +5,7 @@ import { api } from '@/convex/_generated/api'
 import type { Id } from '@/convex/_generated/dataModel'
 import type { listCarePlanTemplates } from '@/convex/physioCare'
 import type { QueryResult } from '@/lib/convexUntyped'
+import type { GoalMeasure } from '@/convex/helpers/goalMeasures'
 import { cn } from '@/lib/utils'
 
 /**
@@ -34,7 +35,15 @@ export type EpisodeSource =
 
 export type Outcome = 'goals_met' | 'partially_met' | 'not_met' | 'referred_on' | 'stopped_attending'
 
-export type Goal = { description: string; targetValue: string; timeline: string; measurable: boolean; achieved?: boolean }
+export type Goal = {
+  description: string
+  targetValue: string
+  timeline: string
+  measurable: boolean
+  achieved?: boolean
+  /** Optional measured target (convex/helpers/goalMeasures.ts) */
+  measure?: GoalMeasure
+}
 
 export type CheckIn = {
   _id: Id<'patientCheckIns'>
@@ -222,5 +231,36 @@ export function Fact({ label, children }: { label: string; children: ReactNode }
       <dt className="text-[11px] font-semibold uppercase tracking-wider text-pt-faint">{label}</dt>
       <dd className="mt-0.5 break-words text-sm text-pt-ink">{children}</dd>
     </div>
+  )
+}
+
+/** A small line of values over time, latest point marked. Scales to min–max (or the values' own range). */
+export function Sparkline({
+  points,
+  min,
+  max,
+  label,
+  className,
+}: {
+  points: number[]
+  min?: number
+  max?: number
+  label: string
+  className?: string
+}) {
+  if (points.length < 2) return null
+  const w = 160
+  const h = 40
+  const low = min ?? Math.min(...points)
+  const high = max ?? Math.max(...points)
+  const span = high - low || 1
+  const step = w / (points.length - 1)
+  const y = (p: number) => h - ((p - low) / span) * (h - 4) - 2
+  const path = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${(i * step).toFixed(1)},${y(p).toFixed(1)}`).join(' ')
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} className={cn('h-10 w-40 overflow-visible', className)} role="img" aria-label={label}>
+      <path d={path} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="text-rh-ink dark:text-rh-lime" />
+      <circle cx={(points.length - 1) * step} cy={y(points[points.length - 1])} r={3} className="fill-rh-lime" />
+    </svg>
   )
 }

@@ -9,6 +9,7 @@
  * - Patient functions only touch the signed-in patient's own records.
  * - Follow-up admin functions are for Rehabify admins.
  */
+import { insertNotification } from "./helpers/pushNotify";
 import { ConvexError, v } from "convex/values";
 import { internalMutation, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -16,6 +17,11 @@ import { internal } from "./_generated/api";
 import { publicAppUrl } from "./helpers/appUrl";
 import { awaitingConfirmationFrom, hasPendingProposal } from "./helpers/appointmentStatus";
 import { lagosDateTime } from "./helpers/lagosTime";
+import { assertNoteTextLength, earlierVersions, keepRevision, revisionCountOf } from "./helpers/noteRevisions";
+import { canReadNote, noteReaderFor, physioNoteReader, type NoteReader } from "./helpers/noteAccess";
+import { cleanMeasures, measureValidator, sameMeasures } from "./helpers/clinicalMeasures";
+import { autoTargetText, cleanGoalMeasure, firstValueSince, goalMeasureValidator, type GoalMeasure } from "./helpers/goalMeasures";
+import { physioMeasuredNotes } from "./helpers/measuredNotes";
 import { isRehabifyCareInvoice, rehabifyCarePayoutKobo } from "./helpers/marketplaceInvoices";
 import {
   currentUser,
@@ -183,7 +189,7 @@ async function notify(
   actionUrl: string,
   priority: "low" | "medium" | "high" = "medium"
 ) {
-  await ctx.db.insert("notifications", {
+  await insertNotification(ctx, {
     userId,
     type,
     priority,
@@ -487,42 +493,161 @@ export const getPatientWorkspace = query({
   },
 });
 
-/** Clinical notes this physio wrote for a patient, newest first. */
+/** Notes getClinicalNotes returns when no limit is sent, and the most it returns at once. */
+const NOTES_PAGE = 50;
+const MAX_NOTES_PAGE = 200;
+/** Notes getClinicalNoteMeasures reads for progress (newest first): years of weekly visits. */
+const MAX_MEASURED_NOTES = 400;
+/** Most of a patient's notes one query looks through (others' notes at other providers are skipped). */
+const MAX_NOTES_SCANNED = 1_000;
+
+/** The newest `limit` notes on this patient's record that the reader may see, newest first. */
+async function readableNotes(ctx: QueryCtx, reader: NoteReader, patientId: Id<"users">, limit: number) {
+  const found: Doc<"sessionLogs">[] = [];
+  let scanned = 0;
+  for await (const note of ctx.db
+    .query("sessionLogs")
+    .withIndex("by_patient_id_and_date", (q) => q.eq("patientId", patientId))
+    .order("desc")) {
+    scanned += 1;
+    if (canReadNote(reader, note)) found.push(note);
+    if (found.length >= limit || scanned >= MAX_NOTES_SCANNED) break;
+  }
+  return found;
+}
+
+/** Looks up people's names once per query. */
+function nameLookup(ctx: QueryCtx) {
+  const names = new Map<Id<"users">, string>();
+  return async (id: Id<"users">) => {
+    if (!names.has(id)) {
+      const user = await ctx.db.get(id);
+      names.set(id, [user?.firstName, user?.lastName].filter(Boolean).join(" ") || "Clinician");
+    }
+    return names.get(id)!;
+  };
+}
+
+/**
+ * A patient's clinical notes, newest first: the physio's own and, for a physio on a clinic team
+ * who treats or covers the patient, their colleagues' notes for that patient too (read-only;
+ * `mine` says which). Returns the newest `limit` notes (50 when not sent, at most 200): ask for
+ * more to load older ones. Voice notes and files are resolved only for the notes returned. Use
+ * getClinicalNoteMeasures for measures across the whole history.
+ */
 export const getClinicalNotes = query({
+  args: { patientId: v.id("users"), limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const reader = await physioNoteReader(ctx, args.patientId);
+    if (!reader) return [];
+    const limit = Math.min(MAX_NOTES_PAGE, Math.max(1, Math.floor(args.limit ?? NOTES_PAGE)));
+    const notes = await readableNotes(ctx, reader, args.patientId, limit);
+    const nameOf = nameLookup(ctx);
+    return await Promise.all(
+      notes.map(async (n) => ({
+        _id: n._id,
+        sessionDate: n.sessionDate,
+        noteType: n.noteType ?? "treatment_note",
+        subjectiveAssessment: n.subjectiveAssessment,
+        objectiveAssessment: n.objectiveAssessment,
+        treatmentAdministered: n.treatmentAdministered,
+        planForNextSession: n.planForNextSession,
+        diagnosis: n.diagnosis,
+        /** Goals, on notes written in the clinic dashboard */
+        goals: n.goals,
+        measures: n.measures ?? [],
+        editedAt: n.editedAt ?? null,
+        authorName: await nameOf(n.physiotherapistId),
+        /** The signed-in physio wrote it (only they can edit it) */
+        mine: n.physiotherapistId === reader.user._id,
+        /** Earlier wordings kept (getClinicalNoteHistory) */
+        revisionCount: revisionCountOf(n),
+        voiceNote: n.voiceNoteUrl ? await resolveStoredUrl(ctx, n.voiceNoteUrl) : null,
+        attachments: (
+          await Promise.all(
+            (n.attachments ?? []).map(async (fileId) => {
+              const meta = await ctx.db.system.get(fileId);
+              const url = await ctx.storage.getUrl(fileId);
+              return meta && url ? { url, contentType: meta.contentType ?? null, size: meta.size } : null;
+            })
+          )
+        ).filter((a): a is { url: string; contentType: string | null; size: number } => a !== null),
+      }))
+    );
+  },
+});
+
+/**
+ * Measures across the patient's whole record, for progress and "last time" values: the measured
+ * notes the physio can read (as getClinicalNotes), newest first, without text or media.
+ */
+export const getClinicalNoteMeasures = query({
   args: { patientId: v.id("users") },
   handler: async (ctx, args) => {
-    const physio = await physioOrNull(ctx);
-    if (!physio) return [];
-    if (!(await findRelationship(ctx, physio._id, args.patientId))) return [];
-    const notes = await ctx.db
-      .query("sessionLogs")
-      .withIndex("by_patient_id_and_date", (q) => q.eq("patientId", args.patientId))
-      .order("desc")
-      .collect();
+    const reader = await physioNoteReader(ctx, args.patientId);
+    if (!reader) return [];
+    const notes = (await readableNotes(ctx, reader, args.patientId, MAX_MEASURED_NOTES)).filter((n) => n.measures?.length);
+    const nameOf = nameLookup(ctx);
     return await Promise.all(
-      notes
-        .filter((n) => n.physiotherapistId === physio._id)
-        .map(async (n) => ({
-          _id: n._id,
-          sessionDate: n.sessionDate,
-          noteType: n.noteType ?? "treatment_note",
-          subjectiveAssessment: n.subjectiveAssessment,
-          objectiveAssessment: n.objectiveAssessment,
-          treatmentAdministered: n.treatmentAdministered,
-          planForNextSession: n.planForNextSession,
-          diagnosis: n.diagnosis,
-          voiceNote: n.voiceNoteUrl ? await resolveStoredUrl(ctx, n.voiceNoteUrl) : null,
-          attachments: (
-            await Promise.all(
-              (n.attachments ?? []).map(async (fileId) => {
-                const meta = await ctx.db.system.get(fileId);
-                const url = await ctx.storage.getUrl(fileId);
-                return meta && url ? { url, contentType: meta.contentType ?? null, size: meta.size } : null;
-              })
-            )
-          ).filter((a): a is { url: string; contentType: string | null; size: number } => a !== null),
-        }))
+      notes.map(async (n) => ({
+        _id: n._id,
+        sessionDate: n.sessionDate,
+        noteType: n.noteType ?? "treatment_note",
+        authorName: await nameOf(n.physiotherapistId),
+        mine: n.physiotherapistId === reader.user._id,
+        measures: n.measures ?? [],
+      }))
     );
+  },
+});
+
+/**
+ * Every wording of a clinical note, newest first: the current one, then each earlier version
+ * with who replaced it and when. Same access as reading the note (the author, a clinic colleague
+ * who treats the patient, or a clinic member with Patients access); null otherwise.
+ */
+export const getClinicalNoteHistory = query({
+  args: { noteId: v.id("sessionLogs") },
+  handler: async (ctx, args) => {
+    const note = await ctx.db.get(args.noteId);
+    if (!note) return null;
+    const reader = await noteReaderFor(ctx, note);
+    if (!reader) return null;
+    const nameOf = nameLookup(ctx);
+    const versions = await earlierVersions(ctx, note);
+    return {
+      noteId: note._id,
+      sessionDate: note.sessionDate,
+      authorName: await nameOf(note.physiotherapistId),
+      mine: note.physiotherapistId === reader.user._id,
+      current: {
+        savedAt: note.editedAt ?? note.sessionDate,
+        noteType: note.noteType ?? "treatment_note",
+        diagnosis: note.diagnosis,
+        goals: note.goals,
+        subjectiveAssessment: note.subjectiveAssessment,
+        objectiveAssessment: note.objectiveAssessment,
+        treatmentAdministered: note.treatmentAdministered,
+        planForNextSession: note.planForNextSession,
+        measures: note.measures ?? [],
+      },
+      earlier: await Promise.all(
+        versions.map(async (version) => ({
+          key: version.key,
+          savedAt: version.savedAt,
+          replacedAt: version.replacedAt,
+          replacedByName: await nameOf(version.replacedBy),
+          noteType: version.noteType ?? note.noteType ?? "treatment_note",
+          diagnosis: version.diagnosis,
+          goals: version.goals,
+          subjectiveAssessment: version.subjectiveAssessment,
+          objectiveAssessment: version.objectiveAssessment,
+          treatmentAdministered: version.treatmentAdministered,
+          planForNextSession: version.planForNextSession,
+          measures: version.measures ?? [],
+        }))
+      ),
+    };
   },
 });
 
@@ -878,7 +1003,50 @@ const goalInput = v.object({
   targetValue: v.string(),
   timeline: v.string(),
   achieved: v.optional(v.boolean()),
+  // Optional measured target; the server works out the series key and the baseline
+  measure: v.optional(goalMeasureValidator),
 });
+
+type GoalInput = { description: string; targetValue: string; timeline: string; achieved?: boolean; measure?: GoalMeasure };
+
+/**
+ * Tidies a plan's goals. A goal linked to a measure keeps the baseline it already had for the
+ * same series; otherwise its baseline is the first value recorded since this course of care
+ * began, in any note the physio can read (none yet: it's read from the notes until the next save). A linked goal with no
+ * "measure" text gets one written from the link, so the patient's app has something to show.
+ */
+async function cleanPlanGoals(ctx: MutationCtx, physioId: Id<"users">, patientId: Id<"users">, since: number, input: GoalInput[]) {
+  const linked = input.some((g) => g.measure && g.description.trim());
+  const previous = linked ? (await activePlanFor(ctx, physioId, patientId))?.goals ?? [] : [];
+  // The same notes getClinicalNoteMeasures shows the physio (clinic colleagues' included)
+  const notes = linked ? await physioMeasuredNotes(ctx, patientId) : [];
+  return input
+    .map((g) => {
+      const description = g.description.trim();
+      let targetValue = g.targetValue.trim();
+      let measure: GoalMeasure | undefined;
+      if (g.measure && description) {
+        const link = cleanGoalMeasure(g.measure);
+        const kept = previous.find((p) => p.measure?.seriesKey === link.seriesKey && p.measure.baseline !== undefined)?.measure;
+        const first = kept ? null : firstValueSince(notes, link.seriesKey, since);
+        measure = {
+          ...link,
+          baseline: kept ? kept.baseline : first?.value,
+          baselineAt: kept ? kept.baselineAt : first?.date,
+        };
+        if (!targetValue) targetValue = autoTargetText(link);
+      }
+      return {
+        description,
+        targetValue,
+        timeline: g.timeline.trim(),
+        measurable: Boolean(targetValue || measure),
+        achieved: g.achieved || undefined,
+        ...(measure ? { measure } : {}),
+      };
+    })
+    .filter((g) => g.description);
+}
 
 /**
  * Create the care plan, or revise it. A revision keeps the previous version (with the reason
@@ -903,15 +1071,7 @@ export const saveCarePlan = mutation({
 
     const title = args.title.trim();
     if (!title) throw new ConvexError("Give the plan a title.");
-    const goals = args.goals
-      .map((g) => ({
-        description: g.description.trim(),
-        targetValue: g.targetValue.trim(),
-        timeline: g.timeline.trim(),
-        measurable: Boolean(g.targetValue.trim()),
-        achieved: g.achieved || undefined,
-      }))
-      .filter((g) => g.description);
+    const goals = await cleanPlanGoals(ctx, physio._id, args.patientId, episode.startedAt, args.goals);
     if (goals.length === 0) throw new ConvexError("Add at least one functional goal.");
     const now = Date.now();
     const fields = {
@@ -1155,6 +1315,7 @@ export const addClinicalNote = mutation({
     treatmentAdministered: v.optional(v.string()),
     planForNextSession: v.optional(v.string()),
     diagnosis: v.optional(v.string()),
+    measures: v.optional(v.array(measureValidator)),
     appointmentId: v.optional(v.id("appointments")),
     voiceNoteStorageId: v.optional(v.id("_storage")),
     attachments: v.optional(v.array(v.id("_storage"))),
@@ -1162,12 +1323,19 @@ export const addClinicalNote = mutation({
   handler: async (ctx, args) => {
     const physio = await requirePhysio(ctx);
     const relationship = await requireActiveRelationship(ctx, physio._id, args.patientId);
-    const text = [args.subjectiveAssessment, args.objectiveAssessment, args.treatmentAdministered, args.planForNextSession, args.diagnosis]
-      .map((t) => t?.trim())
-      .filter(Boolean);
+    const sections = {
+      subjectiveAssessment: args.subjectiveAssessment?.trim() || undefined,
+      objectiveAssessment: args.objectiveAssessment?.trim() || undefined,
+      treatmentAdministered: args.treatmentAdministered?.trim() || undefined,
+      planForNextSession: args.planForNextSession?.trim() || undefined,
+      diagnosis: args.diagnosis?.trim() || undefined,
+    };
+    assertNoteTextLength(sections);
+    const text = Object.values(sections).filter(Boolean);
+    const measures = cleanMeasures(args.measures ?? []);
     const attachments = [...new Set(args.attachments ?? [])];
-    if (text.length === 0 && !args.voiceNoteStorageId && attachments.length === 0) {
-      throw new ConvexError("Write something, record a voice note or attach a file before saving.");
+    if (text.length === 0 && measures.length === 0 && !args.voiceNoteStorageId && attachments.length === 0) {
+      throw new ConvexError("Write something, add a measure, record a voice note or attach a file before saving.");
     }
     if (attachments.length > MAX_NOTE_ATTACHMENTS) {
       throw new ConvexError(`A note can have up to ${MAX_NOTE_ATTACHMENTS} attachments.`);
@@ -1201,17 +1369,64 @@ export const addClinicalNote = mutation({
       clinicId: relationship.clinicId,
       sessionDate: Date.now(),
       noteType: args.noteType,
-      diagnosis: args.diagnosis?.trim() || undefined,
-      subjectiveAssessment: args.subjectiveAssessment?.trim() || undefined,
-      objectiveAssessment: args.objectiveAssessment?.trim() || undefined,
-      treatmentAdministered: args.treatmentAdministered?.trim() || undefined,
-      planForNextSession: args.planForNextSession?.trim() || undefined,
+      ...sections,
+      measures: measures.length ? measures : undefined,
       // Stored as the storage id; getClinicalNotes turns it into a playable URL.
       voiceNoteUrl: args.voiceNoteStorageId,
       attachments: attachments.length ? attachments : undefined,
     });
     await ensureActiveEpisode(ctx, physio, relationship);
     return { noteId };
+  },
+});
+
+/** The physio who wrote a clinical note corrects or adds to it. The earlier wording is kept. */
+export const updateClinicalNote = mutation({
+  args: {
+    noteId: v.id("sessionLogs"),
+    noteType: v.optional(v.union(v.literal("initial_assessment"), v.literal("treatment_note"), v.literal("follow_up"))),
+    subjectiveAssessment: v.optional(v.string()),
+    objectiveAssessment: v.optional(v.string()),
+    treatmentAdministered: v.optional(v.string()),
+    planForNextSession: v.optional(v.string()),
+    /** The Assessment section; left as it is when not sent */
+    diagnosis: v.optional(v.string()),
+    /** The note's measures, replacing the ones it had; left as they are when not sent */
+    measures: v.optional(v.array(measureValidator)),
+  },
+  handler: async (ctx, args) => {
+    const physio = await requirePhysio(ctx);
+    const note = await ctx.db.get(args.noteId);
+    if (!note || note.physiotherapistId !== physio._id) {
+      throw new ConvexError("Only the physiotherapist who wrote this note can change it.");
+    }
+    const next = {
+      subjectiveAssessment: args.subjectiveAssessment?.trim() || undefined,
+      objectiveAssessment: args.objectiveAssessment?.trim() || undefined,
+      treatmentAdministered: args.treatmentAdministered?.trim() || undefined,
+      planForNextSession: args.planForNextSession?.trim() || undefined,
+      diagnosis: args.diagnosis !== undefined ? args.diagnosis.trim() || undefined : note.diagnosis,
+    };
+    assertNoteTextLength(next);
+    const cleaned = args.measures !== undefined ? cleanMeasures(args.measures) : note.measures ?? [];
+    const measures = cleaned.length ? cleaned : undefined;
+    const hasMedia = Boolean(note.voiceNoteUrl) || Boolean(note.attachments?.length);
+    if (!Object.values(next).some(Boolean) && !measures && !hasMedia) {
+      throw new ConvexError("A note can't be empty. Write something or add a measure before saving.");
+    }
+    // Discharge summaries and follow-up calls keep their type
+    const editableType = !note.noteType || ["initial_assessment", "treatment_note", "follow_up"].includes(note.noteType);
+    const noteType = editableType && args.noteType ? args.noteType : note.noteType;
+    const changed =
+      noteType !== note.noteType ||
+      (Object.keys(next) as (keyof typeof next)[]).some((key) => next[key] !== note[key]) ||
+      !sameMeasures(measures ?? [], note.measures ?? []);
+    if (!changed) return { changed: false };
+
+    const now = Date.now();
+    const kept = await keepRevision(ctx, note, physio._id, now);
+    await ctx.db.patch(note._id, { ...next, measures, noteType, ...kept });
+    return { changed: true };
   },
 });
 
@@ -1317,6 +1532,11 @@ export const completeCare = mutation({
     const relationship = await requireActiveRelationship(ctx, physio._id, args.patientId);
     const summary = args.dischargeSummary.trim();
     if (summary.length < 10) throw new ConvexError("Write a short discharge summary for the record.");
+    // Stored as the discharge note (sessionLogs)
+    assertNoteTextLength(
+      { treatmentAdministered: summary, planForNextSession: args.homeAdvice?.trim() },
+      { treatmentAdministered: "The discharge summary", planForNextSession: "Home advice" }
+    );
     const now = Date.now();
     const followUpDays = Math.min(90, Math.max(3, Math.round(args.followUpInDays ?? DEFAULT_FOLLOW_UP_DAYS)));
 

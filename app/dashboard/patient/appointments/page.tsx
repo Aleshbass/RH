@@ -50,6 +50,7 @@ import {
   type PatientAppointment,
 } from '@/components/patient/AppointmentDetailsModal'
 import { OpenBookingsCard } from '@/components/patient/OpenBookingsCard'
+import { BookingDecisionCard } from '@/components/patient/BookingDecisionCard'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
@@ -276,6 +277,7 @@ function AppointmentsView() {
       />
 
       {/* Scheduled bookings waiting for payment (renders nothing when there are none) */}
+      <BookingDecisionCard />
       <OpenBookingsCard />
 
       {lists.needsAnswer.length > 0 && (

@@ -2,85 +2,50 @@
 
 import { useRouter } from 'next/navigation';
 import { useState, useEffect } from 'react';
-import { useUserProfileMutation } from "@/lib/onboardingHelpers";
 import { useQuery } from "convex/react";
+import { makeFunctionReference } from "convex/server";
 import { api } from "@/convex/_generated/api";
-import { useOnboardingStore } from '@/stores/onboardingStore';
 import { PhysioGuideVideoModal } from '@/components/dashboard/shared/PhysioGuideVideoModal';
 
 type Status = "loading" | "success" | "error";
+
+// Plain reference: the generated `api` type is at TypeScript's depth limit (TS2589)
+const getMyUserRef = makeFunctionReference<'query', Record<string, never>, { role?: string } | null>('users:getMyUser');
 
 export default function OnboardingCompletePage() {
   const router = useRouter();
   const [status, setStatus] = useState<Status>("loading");
   const [message, setMessage] = useState("Finalizing your onboarding...");
-  const { data } = useOnboardingStore();
   const [showModal, setShowModal] = useState(false);
   const [showVideoGuide, setShowVideoGuide] = useState(false);
 
-  // Completion actions for non-patient roles
-  const completeUserProfile = useUserProfileMutation();
+  // The account type comes from the server, never from answers saved in the browser: those can
+  // be months old (or from another account on the same device) and used to re-submit stale details.
+  const me = useQuery(getMyUserRef, {});
+  const role = me?.role;
 
   useEffect(() => {
-    const runOnboarding = async () => {
-      try {
-        const userRole = data.role;
-
-        if (!userRole) {
-          throw new Error("User role not found");
-        }
-
-        // Handle different completion flows based on role
-        switch (userRole) {
-          case 'patient':
-            // Patient onboarding is already completed in step 2.
-            setStatus("success");
-            setMessage("Patient onboarding complete! You're all set.");
-            setShowModal(true);
-            break;
-
-          case 'physiotherapist':
-            // The physiotherapist wizard submits the application itself. Re-submitting from the
-            // persisted store here would overwrite saved licence details with stale or empty values.
-            router.replace('/dashboard/physiotherapist');
-            return;
-
-          case 'clinic_owner':
-            // Clinic owner completion flow
-            if (!data.clinicOwnerData) {
-              throw new Error("Clinic owner data not found");
-            }
-
-            // Complete the clinic owner profile with final step flag
-            await completeUserProfile({
-              role: "clinic_owner",
-              profileData: {
-                // Add clinic owner specific data here
-                referralSource: data.clinicOwnerData.referralSource || "",
-              },
-              firstName: data.clinicOwnerData.firstName,
-              lastName: data.clinicOwnerData.lastName,
-              finalStep: true, // This is the final step!
-            });
-
-            setStatus("success");
-            setMessage("Clinic registration submitted! Your account is pending admin approval.");
-            setShowModal(true);
-            break;
-
-          default:
-            throw new Error(`Unknown user role: ${userRole}`);
-        }
-
-      } catch (err) {
-        console.error("Onboarding completion failed:", err);
-        setStatus("error");
-        setMessage(`An error occurred during onboarding: ${err instanceof Error ? err.message : 'Unknown error'}. Please try again or contact support.`);
-      }
-    };
-
-    runOnboarding();
-  }, [completeUserProfile, router, data]);
+    if (me === undefined) return;
+    if (me === null) {
+      router.replace('/sign-in');
+      return;
+    }
+    if (role === 'patient') {
+      // Patient onboarding is already completed in the earlier steps
+      setStatus("success");
+      setMessage("Patient onboarding complete! You're all set.");
+      setShowModal(true);
+      return;
+    }
+    if (!role) {
+      setStatus("error");
+      setMessage("We couldn't find your account type. Please choose it again.");
+      return;
+    }
+    // Physiotherapist and clinic forms submit the application themselves; the dashboard routes
+    // everyone else (and shows "under review" where needed)
+    router.replace(role === 'physiotherapist' ? '/dashboard/physiotherapist' : '/dashboard');
+  }, [me, role, router]);
 
   // Real-time check for approval status
   const dashboardAccess = useQuery(api.queries.checkDashboardAccess);
@@ -151,16 +116,16 @@ export default function OnboardingCompletePage() {
                   <h3 className="text-2xl font-bold text-teal-dark">Congratulations!</h3>
                 </div>
                 <p className="mt-3 text-gray-700">
-                  {data.role === 'patient' && (
+                  {role === 'patient' && (
                     <>Your onboarding is complete. You can now explore your personal dashboard, book appointments, and view your treatment plan.</>
                   )}
-                  {(data.role === 'physiotherapist' || data.role === 'clinic_owner') && (
+                  {(role === 'physiotherapist' || role === 'clinic_owner') && (
                     <>Your onboarding is complete and your account is now awaiting admin approval. While you wait, feel free to explore the platform and get set up.</>
                   )}
                 </p>
               </div>
               <div className="px-8 pb-8">
-                {(data.role === 'physiotherapist' || data.role === 'clinic_owner') && (
+                {(role === 'physiotherapist' || role === 'clinic_owner') && (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                     <FeatureCard title="Set up your calendar" desc="Review your schedule and availability." icon="📅" />
                     <FeatureCard title="Explore treatment plans" desc="Browse and personalize plans." icon="🧩" />
@@ -168,7 +133,7 @@ export default function OnboardingCompletePage() {
                     <FeatureCard title="Connect your tools" desc="Calendar, video calls and more." icon="🔌" />
                   </div>
                 )}
-                {data.role === 'patient' && (
+                {role === 'patient' && (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                     <FeatureCard title="Book an appointment" desc="Find a time that works for you." icon="🗓️" />
                     <FeatureCard title="View your plan" desc="See exercises and goals." icon="🏆" />
@@ -176,12 +141,12 @@ export default function OnboardingCompletePage() {
                 )}
                 <div className="flex flex-col sm:flex-row gap-3">
                   <button
-                    onClick={() => router.push(data.role === 'patient' ? '/dashboard/patient' : '/dashboard')}
+                    onClick={() => router.push(role === 'patient' ? '/dashboard/patient' : '/dashboard')}
                     className="inline-flex items-center justify-center px-5 py-3 rounded-lg bg-teal-dark text-white hover:opacity-90 transition"
                   >
                     Go to Dashboard
                   </button>
-                  {(data.role === 'physiotherapist' || data.role === 'clinic_owner') && (
+                  {(role === 'physiotherapist' || role === 'clinic_owner') && (
                     <button
                       onClick={() => router.push('/dashboard')}
                       className="inline-flex items-center justify-center px-5 py-3 rounded-lg border border-teal-dark text-teal-dark hover:bg-call-bg transition"
@@ -203,7 +168,7 @@ export default function OnboardingCompletePage() {
       )}
 
       {/* Platform guide video — shown to physios right after onboarding */}
-      {showVideoGuide && data.role === 'physiotherapist' && (
+      {showVideoGuide && role === 'physiotherapist' && (
         <PhysioGuideVideoModal
           forceShow
           title="🎬 Welcome to Rehabify!"

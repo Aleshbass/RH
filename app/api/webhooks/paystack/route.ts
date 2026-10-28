@@ -17,7 +17,7 @@ import { SERVER_SECRET_HEADER } from '@/app/api/emails/_auth'
  * Events handled:
  * - charge.success — payment was successful
  * - charge.failed — payment failed
- * - transfer.success / transfer.failed / transfer.reversed — partner & doctor payouts
+ * - transfer.success / transfer.failed / transfer.reversed — physio payout runs, partner & doctor payouts
  * - refund.processed — refunds (reverses partner commissions)
  *
  * Payments are routed by reference prefix. A failure for any of our own references returns
@@ -26,7 +26,7 @@ import { SERVER_SECRET_HEADER } from '@/app/api/emails/_auth'
  * PAYSTACK_SECRET_KEY, so Vercel and Convex must hold the same key (same account and mode).
  */
 
-const OUR_PREFIXES = ['JOYREV_', 'JOY_', 'MKT_', 'VERIFICATION_', 'LEARN_', 'INV_', 'CLN_', 'PHY_', 'RH_']
+const OUR_PREFIXES = ['JOYREV_', 'JOY_', 'MKT_', 'VERIFICATION_', 'LEARN_', 'FLEX_', 'CLINICSUB_', 'INV_', 'CLN_', 'PHY_', 'RH_']
 const INVOICE_PREFIXES = ['INV_', 'CLN_', 'PHY_', 'RH_']
 const EMAIL_TIMEOUT_MS = 10_000
 
@@ -237,6 +237,36 @@ async function handlePaymentSuccess(data: {
             return
         }
 
+        // Flex / Flex Max (FLEX_ references): Convex re-verifies the signature, takes the patient
+        // and plan from the reference, checks the amount, starts the 30 days (or waits for the
+        // programme) and issues the receipt (idempotent with the browser's own verify call).
+        if (reference.startsWith('FLEX_')) {
+            const result = await convex.mutation(api.exercisePrograms.recordFlexPaystackWebhook, {
+                rawBody,
+                signature,
+            })
+            log.info('Flex payment processed', {
+                action: 'paystack_flex_payment',
+                metadata: { reference, result },
+            })
+            return
+        }
+
+        // Clinic subscription invoices (CLINICSUB_ references): Convex re-verifies the signature,
+        // takes the invoice from the reference, checks the amount, issues the receipt and lifts
+        // past due or read-only at once (idempotent with the browser's own verify call).
+        if (reference.startsWith('CLINICSUB_')) {
+            const result = await convex.mutation(api.clinicBilling.recordClinicSubscriptionPaystackWebhook, {
+                rawBody,
+                signature,
+            })
+            log.info('Clinic subscription payment processed', {
+                action: 'paystack_clinic_subscription_payment',
+                metadata: { reference, result },
+            })
+            return
+        }
+
         if (!startsWithAny(reference, INVOICE_PREFIXES)) {
             // Not a Rehabify checkout (e.g. a payment made directly on the Paystack dashboard)
             log.warn('Paystack payment with an unknown reference', {
@@ -352,7 +382,11 @@ async function handlePaymentFailed(data: {
  */
 async function handleTransferEvent(data: any, rawBody: string, signature: string, event: string) {
     const { convex, api } = await convexClient()
-    const result = await convex.mutation(api.monthlySettlements.recordPaystackTransferWebhook, { rawBody, signature })
+    // Physio payout runs use "rhpo_" references (convex/payouts.ts); everything else is a partner payout
+    const physioPayout = String(data?.reference ?? '').toLowerCase().startsWith('rhpo_')
+    const result = physioPayout
+        ? await convex.mutation(api.payouts.recordPayoutTransferWebhook, { rawBody, signature })
+        : await convex.mutation(api.monthlySettlements.recordPaystackTransferWebhook, { rawBody, signature })
     log.info('Paystack transfer event processed', {
         action: 'paystack_transfer_event',
         metadata: { event, reference: data?.reference, result },

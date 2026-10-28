@@ -9,6 +9,7 @@ import PlatformStatusGate from "@/components/platform/PlatformStatusGate";
 import Providers from "./providers";
 import '@fortawesome/fontawesome-svg-core/styles.css';
 import ConditionalLayout from '@/components/layout/ConditionalLayout';
+import PwaRegister from '@/components/pwa/PwaRegister';
 
 const calSans = localFont({
   src: '../public/fonts/CalSans-SemiBold.woff2',
@@ -76,8 +77,13 @@ export const metadata: Metadata = {
     telephone: false,
   },
   icons: {
-    icon: '/logos/favicon/favicon.ico',
-    apple: '/logos/favicon/apple-touch-icon.png',
+    icon: [
+      { url: '/logos/favicon/favicon.ico', sizes: '48x48' },
+      { url: '/logos/favicon/favicon-32x32.png', sizes: '32x32', type: 'image/png' },
+      { url: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
+    ],
+    // Opaque square: iOS fills transparent corners with black
+    apple: { url: '/icons/apple-touch-icon.png', sizes: '180x180' },
     shortcut: '/logos/favicon/favicon.ico',
   },
   manifest: '/manifest.json',
@@ -121,12 +127,16 @@ export const metadata: Metadata = {
   // the homepage. Pages set their own (lib/seo/utils pageMetadata; homepage in HomePageSEO).
   other: {
     'apple-mobile-web-app-capable': 'yes',
-    'apple-mobile-web-app-status-bar-style': 'black-translucent',
+    'mobile-web-app-capable': 'yes',
+    'apple-mobile-web-app-title': 'Rehabify',
+    // "black", not "black-translucent": translucent draws pages under the iPhone status bar
+    'apple-mobile-web-app-status-bar-style': 'black',
   },
 };
 
 import { headers } from "next/headers";
 import { clinicThemeNoFlashScript } from "@/lib/clinic-theme";
+import { domTranslationGuardScript } from "@/lib/domTranslationGuard";
 
 export default async function RootLayout({
   children,
@@ -160,12 +170,14 @@ export default async function RootLayout({
       {isClinicPortal && (
         <head>
           <script dangerouslySetInnerHTML={{ __html: clinicThemeNoFlashScript }} />
+          <script dangerouslySetInnerHTML={{ __html: domTranslationGuardScript }} />
         </head>
       )}
       <body
         className={`${calSans.variable} ${matter.variable} font-sans antialiased`}
       >
         {/* Top loader is rendered in app/providers.tsx (client component) */}
+        <PwaRegister />
         <ClerkProvider>
           <Providers>
             <ConvexClientProvider>

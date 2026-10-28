@@ -4,6 +4,7 @@ import { ensureUserRole } from "./auth";
 import { Doc, Id } from "./_generated/dataModel";
 import { markProviderMatched, transitionReferral } from "./helpers/partnerEvents";
 import { referralEnv } from "./helpers/partnerShared";
+import { notifyReferralAssigned } from "./pushAlerts";
 
 type ReferralStatus = Doc<"inboundReferrals">["status"];
 
@@ -341,19 +342,21 @@ export const assignReferralToClinic = mutation({
             throw new Error("Referral not found");
         }
 
+        let clinic: Doc<"clinics"> | null = null;
         if (args.clinicId) {
-            const clinic = await ctx.db.get(args.clinicId);
-            if (!clinic) {
+            const target = await ctx.db.get(args.clinicId);
+            if (!target) {
                 throw new Error("Clinic not found");
             }
-            if (clinic.status === "suspended") throw new Error("This clinic is suspended");
+            if (target.status === "suspended") throw new Error("This clinic is suspended");
             const approval = await ctx.db
                 .query("accountApprovalStatus")
-                .withIndex("by_user_id", (q) => q.eq("userId", clinic.ownerId))
+                .withIndex("by_user_id", (q) => q.eq("userId", target.ownerId))
                 .unique();
             if (approval?.status !== "approved") {
                 throw new Error("Referrals can only be routed to approved clinics");
             }
+            clinic = target;
         }
 
         const now = Date.now();
@@ -361,6 +364,10 @@ export const assignReferralToClinic = mutation({
             assignedClinicId: args.clinicId,
             updatedAt: now,
         });
+        // Newly routed here: the clinic hears about it on their phones (pushAlerts.ts)
+        if (clinic && args.clinicId !== referral.assignedClinicId) {
+            await notifyReferralAssigned(ctx, clinic, referral);
+        }
 
         await ctx.db.insert("referralEvents", {
             referralId: args.referralId,

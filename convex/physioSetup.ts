@@ -8,12 +8,15 @@
  * file so they can never disagree.
  */
 import { ConvexError, v } from "convex/values";
-import { mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
+import { makeFunctionReference } from "convex/server";
+import { action, internalQuery, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { getService, type BookableServiceId } from "../lib/rehabify-services";
 import { NETWORK_TERMS_VERSION } from "../lib/rehabify-network-terms";
 import { loadPricingSettings } from "./helpers/rehabifyPricing";
-import { requireAdmin } from "./helpers/partnerAccess";
+import { adminDisplayName, requireAdmin } from "./helpers/partnerAccess";
+import { currentUser, isApproved } from "./helpers/careAccess";
+import { IMAGEKIT_URL, imagekitUploadAuth, signedImagekitUrl } from "./helpers/imagekit";
 import { physioAgreementsStatus } from "./agreements";
 
 export type PhysioSetupItemId = "profile" | "availability" | "coverage" | "network_terms" | "agreement" | "payout" | "documents";
@@ -463,3 +466,138 @@ export async function recordProfileView(ctx: MutationCtx, physioUserId: Id<"user
   if (row) await ctx.db.patch(row._id, { count: row.count + 1 });
   else await ctx.db.insert("physioProfileViews", { userId: physioUserId, count: 1 });
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The physiotherapist handbook (Standard of Physiotherapy Practice)
+//
+// A PDF the clinical team uploads to ImageKit as a private file. Approved physiotherapists read
+// it in Settings (Terms & handbook) through a signed link that expires, so it never sits at a
+// public address. Every upload is kept, newest first: the newest is the one physios see, and
+// earlier versions stay on record for clinical governance. Internal references go through
+// makeFunctionReference (the generated api types are at TypeScript's depth limit).
+// ─────────────────────────────────────────────────────────────────────────────
+
+const HANDBOOK_FOLDER = "/rehabify/handbooks";
+const HANDBOOK_LINK_MS = 60 * 60 * 1000;
+const HANDBOOK_MAX_BYTES = 30 * 1024 * 1024;
+
+/** Approved physiotherapists and admins can read the handbook. */
+async function handbookReader(ctx: QueryCtx) {
+  const user = await currentUser(ctx);
+  if (!user) return null;
+  if (user.role === "admin") return user;
+  if (user.role === "physiotherapist" && (await isApproved(ctx, user._id))) return user;
+  return null;
+}
+
+async function newestHandbook(ctx: QueryCtx) {
+  return await ctx.db.query("practiceHandbooks").withIndex("by_uploaded_at").order("desc").first();
+}
+
+/** The current handbook's details (not its link), or null when there is none or it isn't yours to read. */
+export const getPracticeHandbook = query({
+  args: {},
+  handler: async (ctx) => {
+    if (!(await handbookReader(ctx))) return null;
+    const doc = await newestHandbook(ctx);
+    return doc ? { title: doc.title, version: doc.version, uploadedAt: doc.uploadedAt, size: doc.size } : null;
+  },
+});
+
+export const practiceHandbookFile = internalQuery({
+  args: {},
+  handler: async (ctx): Promise<{ url: string; filePath: string }> => {
+    if (!(await handbookReader(ctx))) throw new ConvexError("The handbook is for approved Rehabify physiotherapists.");
+    const doc = await newestHandbook(ctx);
+    if (!doc) throw new ConvexError("The handbook hasn’t been published yet.");
+    return { url: doc.url, filePath: doc.filePath };
+  },
+});
+
+const practiceHandbookFileRef = makeFunctionReference<"query", Record<string, never>, { url: string; filePath: string }>(
+  "physioSetup:practiceHandbookFile"
+);
+
+/** A link to the current handbook, valid for an hour. */
+export const getPracticeHandbookLink = action({
+  args: {},
+  handler: async (ctx): Promise<{ url: string; expiresAt: number }> => {
+    const file = await ctx.runQuery(practiceHandbookFileRef, {});
+    const expiresAt = Date.now() + HANDBOOK_LINK_MS;
+    return { url: await signedImagekitUrl(file.url, file.filePath, expiresAt), expiresAt };
+  },
+});
+
+export const assertHandbookAdmin = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    await requireAdmin(ctx);
+    return null;
+  },
+});
+
+const assertHandbookAdminRef = makeFunctionReference<"query", Record<string, never>, null>("physioSetup:assertHandbookAdmin");
+
+/** Signature for one browser upload of the handbook to ImageKit. */
+export const adminHandbookUploadAuth = action({
+  args: {},
+  handler: async (ctx): Promise<{ token: string; expire: number; signature: string; publicKey: string; folder: string }> => {
+    await ctx.runQuery(assertHandbookAdminRef, {});
+    return imagekitUploadAuth(HANDBOOK_FOLDER);
+  },
+});
+
+/** Publishes an uploaded PDF as the current handbook. Earlier versions are kept. */
+export const adminPublishHandbook = mutation({
+  args: {
+    title: v.string(),
+    version: v.string(),
+    fileId: v.string(),
+    filePath: v.string(),
+    url: v.string(),
+    size: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const { user } = await requireAdmin(ctx);
+    const title = args.title.trim();
+    const version = args.version.trim();
+    if (!title || title.length > 120) throw new ConvexError("Give the handbook a title (up to 120 characters).");
+    if (!version || version.length > 40) throw new ConvexError("Give this version a label, e.g. 0.1 or 1.0.");
+    if (!IMAGEKIT_URL.test(args.url) || !args.filePath.startsWith(`${HANDBOOK_FOLDER}/`) || !args.fileId) {
+      throw new ConvexError("Upload the PDF here first, then publish it.");
+    }
+    if (!/\.pdf$/i.test(args.filePath)) throw new ConvexError("The handbook must be a PDF.");
+    if (!(args.size > 0 && args.size <= HANDBOOK_MAX_BYTES)) throw new ConvexError("The PDF must be under 30 MB.");
+    const id = await ctx.db.insert("practiceHandbooks", {
+      title,
+      version,
+      fileId: args.fileId,
+      filePath: args.filePath,
+      url: args.url,
+      size: args.size,
+      uploadedBy: user._id,
+      uploadedAt: Date.now(),
+    });
+    return { id };
+  },
+});
+
+/** Every version, newest first, for the admin page. */
+export const adminListHandbooks = query({
+  args: {},
+  handler: async (ctx) => {
+    await requireAdmin(ctx);
+    const docs = await ctx.db.query("practiceHandbooks").withIndex("by_uploaded_at").order("desc").take(50);
+    return await Promise.all(
+      docs.map(async (doc, index) => ({
+        id: doc._id,
+        title: doc.title,
+        version: doc.version,
+        size: doc.size,
+        uploadedAt: doc.uploadedAt,
+        uploadedBy: adminDisplayName(await ctx.db.get(doc.uploadedBy)),
+        current: index === 0,
+      }))
+    );
+  },
+});

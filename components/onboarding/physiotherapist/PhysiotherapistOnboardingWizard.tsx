@@ -39,6 +39,7 @@ import {
 } from '@/components/physio/PhysioDocuments';
 import { useOnboardingStore } from '@/stores/onboardingStore';
 import { modeFrom, PATIENT_SOURCES, sourcesOf, type PatientSource, type PracticeMode } from '@/lib/practiceModes';
+import { PROFESSIONAL_SIGNUP_POLICIES, policyVersions } from '@/lib/policies';
 import { cn } from '@/lib/utils';
 
 const MapboxLocationPicker = dynamic(() => import('@/components/onboarding/physiotherapist/MapboxLocationPicker'), {
@@ -59,6 +60,8 @@ const LICENCE_PROOFS: { type: PhysioDocumentType; label: string }[] = [
     { type: 'mrtbLicense', label: 'MRTB licence' },
     { type: 'degreeCertificate', label: 'Degree certificate' },
 ];
+// Licence uploads from the older application form still count as proof
+const LEGACY_LICENCE_PROOFS: PhysioDocumentType[] = ['licenseDocument', 'practicingLicense'];
 
 const primary = 'bg-rh-lime font-semibold text-rh-ink hover:bg-rh-lime-deep';
 const labelClass = 'text-sm font-medium text-neutral-700';
@@ -292,12 +295,16 @@ export default function PhysiotherapistOnboardingWizard() {
     const [referralSource, setReferralSource] = useState('');
     const [termsAccepted, setTermsAccepted] = useState(false);
     const [registryBio, setRegistryBio] = useState('');
+    // Applied before (possibly months ago): their saved answers are shown for review
+    const [returning, setReturning] = useState(false);
 
     // Someone who came from the public Physio Register: prefill from their listing
     const [registrySlug, setRegistrySlug] = useState<string | null>(null);
     useEffect(() => {
         try {
             setRegistrySlug(localStorage.getItem('physioOnboardingRegistrySlug'));
+            // Left behind by the older application form, which kept answers in the browser
+            localStorage.removeItem('physioOnboardingData');
         } catch {
             // Storage blocked: no prefill
         }
@@ -334,7 +341,9 @@ export default function PhysiotherapistOnboardingWizard() {
         const phoneValue = draft.phoneNumber || r?.phone || '';
         const boardValue = draft.certificationBoard || r?.regulatoryBody || '';
         const licence = draft.licenseNumber || r?.licenseNumber || '';
-        const expiryValue = draft.licenseExpiryDate || r?.licenseExpiryDate || '';
+        // A licence date that has since passed is left blank for them to update
+        const savedExpiry = draft.licenseExpiryDate || r?.licenseExpiryDate || '';
+        const expiryValue = savedExpiry >= todayIso() ? savedExpiry : '';
 
         setPracticeMode(draft.practiceMode);
         setFirstName(first);
@@ -361,14 +370,19 @@ export default function PhysiotherapistOnboardingWizard() {
             setProofType('degreeCertificate');
         }
 
-        const hasProof = draft.uploadedDocumentTypes.some((t) => t === 'mrtbLicense' || t === 'degreeCertificate');
+        const hasProof = draft.uploadedDocumentTypes.some(
+            (t) => t === 'mrtbLicense' || t === 'degreeCertificate' || LEGACY_LICENCE_PROOFS.includes(t as PhysioDocumentType)
+        );
         const aboutDone = Boolean(draft.profileId && draft.firstName && draft.lastName && draft.phoneNumber);
         const licenceDone =
-            aboutDone && Boolean(draft.licenseNumber && draft.licenseExpiryDate) && draft.uploadedDocumentTypes.includes('nationalId') && hasProof;
+            aboutDone && Boolean(draft.licenseNumber && expiryValue) && draft.uploadedDocumentTypes.includes('nationalId') && hasProof;
         setStep(licenceDone ? 3 : aboutDone ? 2 : draft.practiceMode ? 1 : 0);
+        setReturning(Boolean(draft.profileId) && draft.approvalStatus !== 'declined');
     }, [draft, registry, registrySlug]);
 
     const uploaded = useMemo(() => new Set((documents ?? []).map((doc) => doc.documentType)), [documents]);
+    const legacyProofOnFile =
+        !uploaded.has('mrtbLicense') && !uploaded.has('degreeCertificate') && LEGACY_LICENCE_PROOFS.some((t) => uploaded.has(t));
 
     if (!authLoaded) return <WizardSkeleton />;
     if (!isSignedIn) return <SignInFirst />;
@@ -400,7 +414,7 @@ export default function PhysiotherapistOnboardingWizard() {
             const y = Number(years);
             if (years.trim() === '' || !Number.isFinite(y) || y < 0 || y > 60) e.years = 'Enter your years of experience';
             if (!uploaded.has('nationalId')) e.nationalId = 'Upload a photo or scan of your ID';
-            if (!uploaded.has('mrtbLicense') && !uploaded.has('degreeCertificate')) {
+            if (!uploaded.has('mrtbLicense') && !uploaded.has('degreeCertificate') && !legacyProofOnFile) {
                 e.proof = 'Upload your MRTB licence or degree certificate';
             }
         }
@@ -468,6 +482,8 @@ export default function PhysiotherapistOnboardingWizard() {
                     firstName: firstName.trim(),
                     lastName: lastName.trim(),
                     finalStep: true,
+                    // The ticked Terms and Privacy Policy, recorded append-only (channel "web")
+                    acceptedPolicies: termsAccepted ? policyVersions(PROFESSIONAL_SIGNUP_POLICIES) : undefined,
                 });
                 try {
                     localStorage.removeItem('physioOnboardingData');
@@ -508,6 +524,12 @@ export default function PhysiotherapistOnboardingWizard() {
             {draft.approvalStatus === 'declined' && (
                 <div className="mb-6 rounded-xl border border-neutral-200 bg-neutral-50 p-4 text-sm text-neutral-700">
                     Update anything our team flagged, then send your application again.
+                </div>
+            )}
+            {returning && (
+                <div className="mb-6 rounded-xl border border-neutral-200 bg-neutral-50 p-4 text-sm text-neutral-700">
+                    Welcome back. We kept the answers you gave before. Check each step and update anything that has
+                    changed, like your licence expiry date, then send your application.
                 </div>
             )}
 
@@ -651,6 +673,11 @@ export default function PhysiotherapistOnboardingWizard() {
                                         </div>
                                         <DocumentRow type={proofType} required documents={documents ?? []} onUpload={uploadDoc(proofType)} />
                                         {errors.proof && <p className={cn(errorClass, '-mt-1')}>{errors.proof}</p>}
+                                        {legacyProofOnFile && (
+                                            <p className={hintClass}>
+                                                The licence you uploaded before is on file. Upload a newer one here if it has changed.
+                                            </p>
+                                        )}
                                     </div>
                                 </div>
                             </div>
@@ -731,7 +758,7 @@ export default function PhysiotherapistOnboardingWizard() {
                     <ChevronLeft className="mr-1 h-4 w-4" />
                     Back
                 </Button>
-                <Button type="button" onClick={next} disabled={saving} className={cn('h-11 min-w-36', primary)}>
+                <Button type="button" onClick={next} disabled={saving || (step === 3 && !termsAccepted)} className={cn('h-11 min-w-36', primary)}>
                     {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                     {step === STEPS.length - 1 ? 'Submit application' : 'Continue'}
                 </Button>

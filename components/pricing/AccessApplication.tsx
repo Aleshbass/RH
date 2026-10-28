@@ -550,7 +550,7 @@ function ApplicationForm({ onSubmitted }: { onSubmitted: () => void }) {
       )}
 
       <div>
-        <button type="submit" disabled={submitting} className={cn(ctaPrimary, 'w-full sm:w-auto')}>
+        <button type="submit" disabled={submitting || !consent} className={cn(ctaPrimary, 'w-full sm:w-auto')}>
           {submitting ? (
             <>
               <Loader2 className="h-4 w-4 animate-spin" /> Sending

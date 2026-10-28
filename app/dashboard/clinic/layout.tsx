@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetTrigger, SheetTitle, SheetHeader } from '@/components/ui/sheet'
 import ClinicSidebar from '@/components/clinic/ClinicSidebar'
 import ClinicStatusBanner from '@/components/clinic/ClinicStatusBanner'
+import ClinicBillingBanner from '@/components/clinic/ClinicBillingBanner'
 import {
   CLINIC_AREA_LABELS,
   ClinicAccessProvider,
@@ -21,6 +22,7 @@ import { EmptyState } from '@/components/clinic/ui'
 import { PhysioNotifications } from '@/components/physio/PhysioNotifications'
 import Link from 'next/link'
 import { WebsiteLink } from '@/components/dashboard/shared/WebsiteLink'
+import { AppIconBadge, AppSetupButton, AppSetupPrompt } from '@/components/pwa/AppSetup'
 
 export default function ClinicLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -101,7 +103,7 @@ function ClinicPortal({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const { isLoaded: authLoaded, isSignedIn } = useAuth()
   const { signOut } = useClerk()
-  const { isLoaded, isReadOnly, isDeclined, isOwner, canUse, isClinicSuspended, nonMember } = useClinicAccess()
+  const { isLoaded, isReadOnly, isDeclined, isOwner, canUse, isClinicSuspended, isBillingReadOnly, nonMember } = useClinicAccess()
   const nonMemberDestination = nonMember ? nonMemberHome(nonMember.role) : null
 
   // The clinic portal is for clinic owners and their teams only
@@ -217,8 +219,13 @@ function ClinicPortal({ children }: { children: React.ReactNode }) {
               <span className="rounded-md bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-800 dark:bg-amber-500/10 dark:text-amber-400">
                 Not live yet
               </span>
+            ) : isBillingReadOnly ? (
+              <span className="rounded-md bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-800 dark:bg-amber-500/10 dark:text-amber-400">
+                Read-only
+              </span>
             ) : null}
 
+            <AppSetupButton tone="console" className="h-9 px-2.5 shadow-none ring-1 ring-inset ring-black/[0.06]" />
             <WebsiteLink tone="console" className="h-9 px-2.5 shadow-none ring-1 ring-inset ring-black/[0.06]" />
             <ClinicThemeToggle />
             {!isReadOnly && <PhysioNotifications portal="clinic" />}
@@ -237,13 +244,16 @@ function ClinicPortal({ children }: { children: React.ReactNode }) {
 
         {/* Desktop: notifications (patient check-ins, pain alerts, payments) */}
         {!isReadOnly && (
-          <div className="hidden md:flex justify-end px-6 pt-3">
+          <div className="hidden md:flex justify-end gap-2 px-6 pt-3">
+            <AppSetupButton tone="console" />
             <PhysioNotifications portal="clinic" />
           </div>
         )}
 
         {/* Set-up / verification / suspension status */}
         <ClinicStatusBanner />
+        {/* Rehabify's own billing: allowance warnings, overdue invoice, read-only */}
+        <ClinicBillingBanner />
 
         <main className="flex-1 w-full min-w-0">
           {blocked && area ? (
@@ -267,6 +277,10 @@ function ClinicPortal({ children }: { children: React.ReactNode }) {
         {/* The desktop sidebar carries this; on phones it sits under the page */}
         <PoweredByRehabify className="md:hidden px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] text-center" />
       </div>
+
+      {/* Home-screen app + notifications for new patients and messages, asked until done */}
+      <AppSetupPrompt />
+      <AppIconBadge />
     </div>
   )
 }

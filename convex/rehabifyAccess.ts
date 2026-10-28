@@ -8,6 +8,7 @@
  * from the assisted tariff, never per case. The patient then books those services at the
  * Access rate (marketplace/booking.ts), and each paid session uses up one.
  */
+import { insertNotification } from "./helpers/pushNotify";
 import { ConvexError, v } from "convex/values";
 import { mutation, query, type QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -373,7 +374,7 @@ export const adminApprove = mutation({
       awardId,
       updatedAt: now,
     });
-    await ctx.db.insert("notifications", {
+    await insertNotification(ctx, {
       userId: application.patientId,
       type: "system_message",
       priority: "high",

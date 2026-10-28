@@ -1,3 +1,4 @@
+import { insertNotification } from "./helpers/pushNotify";
 import { ConvexError, v } from "convex/values";
 import { internalMutation, mutation, query, type MutationCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
@@ -157,7 +158,7 @@ async function notifyAdminsOfDoctor(
         .collect();
     const details = [profile.specialty, profile.hospitalAffiliation].filter(Boolean).join(", ");
     for (const admin of admins) {
-        await ctx.db.insert("notifications", {
+        await insertNotification(ctx, {
             userId: admin._id,
             type: "system_alert",
             title: resubmitted ? "Referring doctor resubmitted for review" : "New referring doctor to verify",

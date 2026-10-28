@@ -29,7 +29,10 @@ export type LinkStatus =
 export type ProgramForPlayer = Pick<
   ProgramView,
   '_id' | 'title' | 'note' | 'goals' | 'voiceNoteUrl' | 'voiceNoteSeconds' | 'senderName' | 'clinicName' | 'createdAt' | 'items'
->
+> & {
+  /** Whether Flex applies (convex/helpers/patientPlans.ts programPlan); optional for previews */
+  plan?: ProgramView['plan']
+}
 export type ProgramItem = ProgramForPlayer['items'][number]
 
 /** One Rehabify Library resource (link, video or written guide) as libraryResources.listResources lists it. */

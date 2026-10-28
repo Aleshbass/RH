@@ -11,6 +11,7 @@
  * search and stats queries scan a capped window of the most recent bookings.
  */
 
+import { insertNotification } from "../helpers/pushNotify";
 import { ConvexError, v } from "convex/values";
 import { paginationOptsValidator } from "convex/server";
 import { query, mutation, internalMutation, type QueryCtx } from "../_generated/server";
@@ -19,9 +20,12 @@ import { ensureUserRole } from "../auth";
 import { isPhysioNetworkEligible } from "../physioSetup";
 import { isBookableServiceId } from "../../lib/rehabify-services";
 import { findSlotClash } from "../helpers/slotHolds";
+import { providerResponseDueAt } from "../../lib/bookingResponse";
+import { askPhysioToRespond } from "../marketplace/booking";
 
 const BOOKING_STATUSES = new Set([
   "pending_payment",
+  "awaiting_physio",
   "awaiting_admin_schedule",
   "confirmed",
   "completed",
@@ -390,11 +394,21 @@ export const adminReassignBookingPhysio = mutation({
     }
     if (invoice) await ctx.db.patch(invoice._id, { physiotherapistId: newPhysioId });
 
-    // 1. Update the booking
+    // 1. Update the booking. A paid website request still waiting for a physio gives the new
+    // physio their own time to accept (Booking Policy 5.4)
+    const awaitingPhysio = booking.bookingStatus === "awaiting_physio";
+    const responseDueAt = awaitingPhysio ? providerResponseDueAt(Date.now(), booking.sessionDate) : undefined;
     await ctx.db.patch(args.bookingId, {
       physiotherapistId: newPhysioId,
       updatedAt: Date.now(),
+      ...(awaitingPhysio
+        ? { providerResponse: "pending" as const, providerResponseDueAt: responseDueAt, replacementStatus: "not_needed" as const, adminAttentionReason: undefined }
+        : {}),
     });
+    if (awaitingPhysio && responseDueAt) {
+      const updated = await ctx.db.get(args.bookingId);
+      if (updated) await askPhysioToRespond(ctx, updated, responseDueAt);
+    }
 
     // 2. Update the linked appointment
     if (booking.appointmentId) {
@@ -468,7 +482,7 @@ export const adminReassignBookingPhysio = mutation({
     }
 
     // 6. Insert in-app notification for new physio
-    await ctx.db.insert("notifications", {
+    await insertNotification(ctx, {
       userId: newPhysioId,
       type: "appointment_scheduled",
       priority: "high",

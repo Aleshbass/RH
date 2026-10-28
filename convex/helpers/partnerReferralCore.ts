@@ -3,6 +3,7 @@
  * the Partner Portal and the no-code landing page. All functions take an explicit
  * partner + environment that the caller has already authenticated.
  */
+import { insertNotification } from "./pushNotify";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
 import { internal } from "../_generated/api";
@@ -98,7 +99,7 @@ async function notifyAdmins(ctx: MutationCtx, title: string, message: string, da
     .collect();
   const now = Date.now();
   for (const admin of admins) {
-    await ctx.db.insert("notifications", {
+    await insertNotification(ctx, {
       userId: admin._id,
       type: "system_alert",
       title,

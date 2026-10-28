@@ -1291,7 +1291,7 @@ export const issueCourseLink = internalMutation({
         greetingName: registration.firstName,
         heading: "Open your course",
         paragraphs: [
-          `Here's your link to the ${cohort.cohortLabel}: the live session links, recordings, weekly materials and the exercise library.`,
+          `Here's your link to your ${cohort.cohortLabel} courses: the video courses from the Rehabify team, to watch at your own pace.`,
           "The button signs you in, no password needed. It works once, within 30 days. If you didn't ask for it, you can ignore this email.",
         ],
         footnote: LEARN_FOOTNOTE,
@@ -1309,7 +1309,7 @@ export const issueCourseLink = internalMutation({
         `Program dates: ${formatCohortRange(cohort.startDate, cohort.endDate)}`,
         `Live sessions: ${cohort.liveSessions}`,
         ...(cohort.welcomeNote ? [cohort.welcomeNote] : []),
-        "Your course page has everything in one place: the joining link for each live session, recordings, weekly materials and the 3D exercise library.",
+        "Your course page has the video courses from the Rehabify team, to watch at your own pace.",
         "The button below signs you straight in, no password needed. It works once, within 30 days; after that, open the course page and we'll email you a fresh link.",
         `Registration: ${TRACK_LABEL[registration.track]}. Payment reference: ${registration.paidReference ?? "—"}.`,
       ],
@@ -2278,6 +2278,40 @@ const videoValidator = v.object({
   posterFileId: v.optional(v.string()),
 });
 
+const youtubeValidator = v.object({ videoId: v.string(), durationSec: v.number(), thumbnailUrl: v.string() });
+
+const YOUTUBE_ID = /^[A-Za-z0-9_-]{11}$/;
+
+/** A lesson's length and picture, and its YouTube id when it plays from YouTube. */
+function lessonMedia(lesson: Doc<"learnVideoLessons">) {
+  if (lesson.youtube) {
+    return { durationSec: lesson.youtube.durationSec, posterUrl: lesson.youtube.thumbnailUrl, youtubeId: lesson.youtube.videoId };
+  }
+  return { durationSec: lesson.video?.durationSec ?? 0, posterUrl: lesson.video?.posterUrl ?? null, youtubeId: null };
+}
+
+/** The ImageKit files behind a lesson (none for YouTube lessons), for clean-up. */
+const lessonFiles = (lesson: Doc<"learnVideoLessons">) => [lesson.video?.fileId, lesson.video?.posterFileId];
+
+/** The video id in any YouTube link (watch, youtu.be, shorts, embed, live), or null. */
+function youtubeIdFrom(link: string): string | null {
+  const text = link.trim();
+  if (YOUTUBE_ID.test(text)) return text;
+  let url: URL;
+  try {
+    url = new URL(text.startsWith("http") ? text : `https://${text}`);
+  } catch {
+    return null;
+  }
+  const host = url.hostname.replace(/^(www|m|music)\./, "");
+  let id: string | null = null;
+  if (host === "youtu.be") id = url.pathname.slice(1).split("/")[0];
+  else if (host === "youtube.com" || host === "youtube-nocookie.com") {
+    id = url.searchParams.get("v") ?? url.pathname.match(/^\/(?:shorts|embed|live|v)\/([^/?#]+)/)?.[1] ?? null;
+  }
+  return id && YOUTUBE_ID.test(id) ? id : null;
+}
+
 /** Like `clean`, but keeps line breaks (descriptions). */
 const cleanText = (value: string | undefined | null, max: number) =>
   (value ?? "")
@@ -2314,12 +2348,15 @@ async function videoProgressRow(ctx: Ctx, email: string, courseId: Id<"learnVide
 }
 
 function lessonView(lesson: Doc<"learnVideoLessons">, done: Set<string>) {
+  const media = lessonMedia(lesson);
   return {
     id: lesson._id,
     title: lesson.title,
     description: lesson.description ?? null,
-    durationSec: lesson.video.durationSec,
-    posterUrl: lesson.video.posterUrl ?? null,
+    durationSec: media.durationSec,
+    posterUrl: media.posterUrl,
+    // YouTube lessons play in YouTube's privacy-enhanced player; the rest through signed links
+    youtubeId: media.youtubeId,
     done: done.has(lesson._id),
   };
 }
@@ -2347,7 +2384,7 @@ function progressSummary(row: Doc<"learnVideoProgress"> | null, lessons: Doc<"le
           lessonId: lesson._id,
           number: index + 1,
           title: lesson.title,
-          durationSec: lesson.video.durationSec,
+          durationSec: lessonMedia(lesson).durationSec,
           positionSec: index === lastIndex ? (row?.lastPositionSec ?? 0) : 0,
         }
       : null,
@@ -2360,9 +2397,10 @@ function courseCard(course: Doc<"learnVideoCourses">, lessons: Doc<"learnVideoLe
     title: course.title,
     summary: course.summary,
     benefits: course.benefits,
-    coverUrl: course.coverUrl ?? lessons.find((l) => l.video.posterUrl)?.video.posterUrl ?? null,
+    // No cover uploaded: the first lesson's picture (a YouTube lesson brings its own thumbnail)
+    coverUrl: course.coverUrl ?? lessons.map((l) => lessonMedia(l).posterUrl).find(Boolean) ?? null,
     lessonCount: lessons.length,
-    durationSec: lessons.reduce((sum, l) => sum + l.video.durationSec, 0),
+    durationSec: lessons.reduce((sum, l) => sum + lessonMedia(l).durationSec, 0),
     learnerCount: course.learnerCount,
     progress: progressSummary(row, lessons),
   };
@@ -2416,6 +2454,7 @@ export const lessonForPlayback = internalQuery({
     if (!lesson || !course || (course.status !== "published" && !learner.isAdmin)) {
       throw new ConvexError("This lesson isn't available.");
     }
+    if (!lesson.video) throw new ConvexError("This lesson plays from YouTube.");
     return { url: lesson.video.url, filePath: lesson.video.filePath };
   },
 });
@@ -2442,7 +2481,9 @@ export const saveLessonProgress = mutation({
     const course = lesson ? await ctx.db.get(lesson.courseId) : null;
     if (!lesson || !course) return { completedCourse: false };
     const now = Date.now();
-    const position = Math.max(0, Math.min(Math.round(args.positionSec), Math.ceil(lesson.video.durationSec)));
+    // YouTube may not have said how long a video is (0); then only the lower bound applies
+    const length = lessonMedia(lesson).durationSec;
+    const position = Math.max(0, length > 0 ? Math.min(Math.round(args.positionSec), Math.ceil(length)) : Math.round(args.positionSec));
 
     let row = await videoProgressRow(ctx, learner.email, course._id);
     if (!row) {
@@ -2546,15 +2587,18 @@ export const adminVideoCourses = query({
         learnerCount: course.learnerCount,
         completedCount: progress.filter((p) => p.completedAt).length,
         lessonCount: lessons.length,
-        durationSec: lessons.reduce((sum, l) => sum + l.video.durationSec, 0),
+        durationSec: lessons.reduce((sum, l) => sum + lessonMedia(l).durationSec, 0),
+        // The cover learners see: the uploaded one, or the first lesson's picture
+        shownCoverUrl: course.coverUrl ?? lessons.map((l) => lessonMedia(l).posterUrl).find(Boolean) ?? null,
         updatedAt: course.updatedAt,
         lessons: lessons.map((l) => ({
           id: l._id,
           title: l.title,
           description: l.description ?? null,
-          durationSec: l.video.durationSec,
-          sizeBytes: l.video.sizeBytes,
-          posterUrl: l.video.posterUrl ?? null,
+          durationSec: lessonMedia(l).durationSec,
+          sizeBytes: l.video?.sizeBytes ?? 0,
+          posterUrl: lessonMedia(l).posterUrl,
+          youtubeId: lessonMedia(l).youtubeId,
         })),
       });
     }
@@ -2624,6 +2668,10 @@ export const adminSetVideoCourseStatus = mutation({
     if (args.status === "published" && (await courseLessons(ctx, course._id)).length === 0) {
       throw new ConvexError("Add at least one lesson before publishing.");
     }
+    // A course made from a YouTube link starts without these
+    if (args.status === "published" && (!course.summary.trim() || course.benefits.length === 0)) {
+      throw new ConvexError("Add a description and what learners will get (Edit course) before publishing.");
+    }
     await ctx.db.patch(course._id, {
       status: args.status,
       publishedAt: args.status === "published" ? (course.publishedAt ?? Date.now()) : course.publishedAt,
@@ -2654,7 +2702,7 @@ export const adminDeleteVideoCourse = mutation({
     if (!course) return;
     if (course.status === "published") throw new ConvexError("Unpublish the course before deleting it.");
     const lessons = await courseLessons(ctx, course._id);
-    const files = [course.coverFileId, ...lessons.flatMap((l) => [l.video.fileId, l.video.posterFileId])];
+    const files = [course.coverFileId, ...lessons.flatMap(lessonFiles)];
     for (const lesson of lessons) await ctx.db.delete(lesson._id);
     const progress = await ctx.db
       .query("learnVideoProgress")
@@ -2666,7 +2714,20 @@ export const adminDeleteVideoCourse = mutation({
   },
 });
 
-/** Add a lesson (a video is required) or change one (a new video replaces the old file). */
+/** A YouTube video as a lesson keeps only its id, length and YouTube's own thumbnail. */
+function checkYoutube(youtube: { videoId: string; durationSec: number; thumbnailUrl: string }) {
+  if (!YOUTUBE_ID.test(youtube.videoId)) throw new ConvexError("That isn't a YouTube video link.");
+  if (!youtube.thumbnailUrl.startsWith(`https://i.ytimg.com/vi/${youtube.videoId}/`)) {
+    throw new ConvexError("The thumbnail must be the video's own YouTube thumbnail.");
+  }
+  if (!(youtube.durationSec >= 0 && youtube.durationSec <= 24 * 3600)) throw new ConvexError("That video's length doesn't look right.");
+  return { videoId: youtube.videoId, durationSec: Math.round(youtube.durationSec), thumbnailUrl: youtube.thumbnailUrl };
+}
+
+/**
+ * Add a lesson or change one. It plays from an uploaded video or a YouTube video; sending one
+ * replaces the other (an uploaded file it replaces is removed).
+ */
 export const adminSaveVideoLesson = mutation({
   args: {
     courseId: v.id("learnVideoCourses"),
@@ -2674,6 +2735,7 @@ export const adminSaveVideoLesson = mutation({
     title: v.string(),
     description: v.optional(v.string()),
     video: v.optional(videoValidator),
+    youtube: v.optional(youtubeValidator),
   },
   handler: async (ctx, args) => {
     await requireAdmin(ctx);
@@ -2682,36 +2744,120 @@ export const adminSaveVideoLesson = mutation({
     const title = clean(args.title, 140);
     if (!title) throw new ConvexError("Give the lesson a title.");
     const description = cleanText(args.description, 1500) || undefined;
+    if (args.video && args.youtube) throw new ConvexError("Choose either an uploaded video or a YouTube link, not both.");
     if (args.video) {
       assertImagekitUrl(args.video.url, "The video");
       assertImagekitUrl(args.video.posterUrl, "The poster");
       if (args.video.sizeBytes > MAX_VIDEO_BYTES) throw new ConvexError("Videos must be 100 MB or smaller.");
       if (!(args.video.durationSec > 0)) throw new ConvexError("We couldn't read the video's length. Try another file.");
     }
+    const youtube = args.youtube ? checkYoutube(args.youtube) : undefined;
     const now = Date.now();
     await ctx.db.patch(course._id, { updatedAt: now });
 
     if (args.lessonId) {
       const lesson = await ctx.db.get(args.lessonId);
       if (!lesson || lesson.courseId !== course._id) throw new ConvexError("Lesson not found.");
-      if (args.video && args.video.fileId !== lesson.video.fileId) {
-        await removeFilesLater(ctx, [lesson.video.fileId, lesson.video.posterFileId]);
+      const media = args.video ? { video: args.video, youtube: undefined } : youtube ? { video: undefined, youtube } : {};
+      // A new upload, or a switch to YouTube, retires the old file
+      if (lesson.video && (youtube || (args.video && args.video.fileId !== lesson.video.fileId))) {
+        await removeFilesLater(ctx, lessonFiles(lesson));
       }
-      await ctx.db.patch(lesson._id, { title, description, video: args.video ?? lesson.video, updatedAt: now });
+      await ctx.db.patch(lesson._id, { title, description, ...media, updatedAt: now });
       return lesson._id;
     }
 
-    if (!args.video) throw new ConvexError("Upload the lesson video.");
+    if (!args.video && !youtube) throw new ConvexError("Upload the lesson video or paste a YouTube link.");
     const last = (await courseLessons(ctx, course._id)).reduce((max, l) => Math.max(max, l.order), 0);
     return await ctx.db.insert("learnVideoLessons", {
       courseId: course._id,
       order: last + 1,
       title,
       description,
-      video: args.video,
+      ...(args.video ? { video: args.video } : { youtube }),
       createdAt: now,
       updatedAt: now,
     });
+  },
+});
+
+/**
+ * What YouTube says about a video link: its title, channel, length and best thumbnail. The video
+ * must allow playing on other sites, since lessons play inside Rehabify.
+ */
+export const adminYoutubeInfo = action({
+  args: { link: v.string() },
+  handler: async (
+    ctx,
+    args
+  ): Promise<{ videoId: string; title: string; channel: string; durationSec: number; thumbnailUrl: string; description: string }> => {
+    await ctx.runQuery(internal.learn.assertLearnAdmin, {});
+    const videoId = youtubeIdFrom(args.link);
+    if (!videoId) throw new ConvexError("Paste a YouTube video link, like https://youtu.be/…");
+    const watch = `https://www.youtube.com/watch?v=${videoId}`;
+
+    const oembed = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(watch)}&format=json`);
+    if (oembed.status === 401 || oembed.status === 403) {
+      throw new ConvexError("This video can't be played on other sites. Turn on embedding for it in YouTube, or choose another.");
+    }
+    if (!oembed.ok) throw new ConvexError("We couldn't find that video. Check it's public or unlisted, not private.");
+    const info = (await oembed.json()) as { title?: string; author_name?: string };
+
+    // The largest thumbnail YouTube made for it (HD videos have maxres)
+    let thumbnailUrl = `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+    try {
+      const maxres = await fetch(`https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`, { method: "HEAD" });
+      if (maxres.ok) thumbnailUrl = `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`;
+    } catch {
+      // keep hqdefault
+    }
+
+    // Length and description from the watch page; best effort (0 and "" when YouTube doesn't say)
+    let durationSec = 0;
+    let description = "";
+    try {
+      const page = await (await fetch(watch, { headers: { "Accept-Language": "en-GB,en;q=0.9" } })).text();
+      durationSec = Number(page.match(/"lengthSeconds":"(\d+)"/)?.[1] ?? 0) || 0;
+      const raw = page.match(/"shortDescription":"((?:[^"\\]|\\.)*)"/)?.[1];
+      if (raw) description = (JSON.parse(`"${raw}"`) as string).slice(0, 600);
+    } catch {
+      // the lesson still works without them
+    }
+
+    return {
+      videoId,
+      title: clean(info.title ?? "", 140),
+      channel: clean(info.author_name ?? "", 120),
+      durationSec,
+      thumbnailUrl,
+      description: cleanText(description, 600),
+    };
+  },
+});
+
+/** A new draft course made from one YouTube video, which becomes its first lesson. */
+export const adminCreateCourseFromYoutube = mutation({
+  args: { title: v.string(), summary: v.optional(v.string()), youtube: youtubeValidator },
+  handler: async (ctx, args) => {
+    const { user } = await requireAdmin(ctx);
+    const title = clean(args.title, 120);
+    if (!title) throw new ConvexError("Give the course a title.");
+    const youtube = checkYoutube(args.youtube);
+    const now = Date.now();
+    const last = (await ctx.db.query("learnVideoCourses").take(200)).reduce((max, c) => Math.max(max, c.order), 0);
+    const courseId = await ctx.db.insert("learnVideoCourses", {
+      title,
+      summary: cleanText(args.summary, 600),
+      benefits: [],
+      status: "draft",
+      order: last + 1,
+      learnerCount: 0,
+      createdBy: user._id,
+      createdAt: now,
+      updatedAt: now,
+    });
+    await ctx.db.insert("learnVideoLessons", { courseId, order: 1, title: clean(args.title, 140), youtube, createdAt: now, updatedAt: now });
+    return courseId;
   },
 });
 
@@ -2742,6 +2888,6 @@ export const adminDeleteVideoLesson = mutation({
       throw new ConvexError("A published course needs at least one lesson. Unpublish it first.");
     }
     await ctx.db.delete(lesson._id);
-    await removeFilesLater(ctx, [lesson.video.fileId, lesson.video.posterFileId]);
+    await removeFilesLater(ctx, lessonFiles(lesson));
   },
 });

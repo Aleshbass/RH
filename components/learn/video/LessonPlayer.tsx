@@ -1,11 +1,12 @@
 'use client'
 
 /**
- * The lesson player: a signed, expiring video link, resume where you left off, progress saved
- * as you watch, and the next lesson queued at the end.
+ * The lesson player: a signed, expiring video link (or YouTube's privacy-enhanced player for
+ * YouTube lessons), resume where you left off, progress saved as you watch, and the next lesson
+ * queued at the end.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
 import Image from 'next/image'
 import { useAction, useMutation } from 'convex/react'
 import { useReducedMotion } from 'framer-motion'
@@ -85,6 +86,131 @@ export function LessonList({
   )
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// YouTube lessons: YouTube's IFrame API, so position, pause and end report like a <video>
+// ─────────────────────────────────────────────────────────────────────────────
+
+type YouTubePlayer = {
+  getCurrentTime: () => number
+  getDuration: () => number
+  getPlayerState: () => number
+  seekTo: (seconds: number, allowSeekAhead: boolean) => void
+  playVideo: () => void
+  destroy: () => void
+}
+
+type YouTubeApi = {
+  Player: new (
+    element: HTMLElement,
+    options: {
+      videoId: string
+      host?: string
+      playerVars?: Record<string, number | string>
+      events?: { onReady?: () => void; onStateChange?: (event: { data: number }) => void; onError?: () => void }
+    }
+  ) => YouTubePlayer
+}
+
+const YT_PLAYING = 1
+const YT_PAUSED = 2
+const YT_ENDED = 0
+
+let youtubeApi: Promise<YouTubeApi> | null = null
+
+/** Loads YouTube's player script once per page. */
+function loadYoutubeApi(): Promise<YouTubeApi> {
+  const w = window as unknown as { YT?: YouTubeApi & { loaded?: number }; onYouTubeIframeAPIReady?: () => void }
+  if (w.YT?.Player) return Promise.resolve(w.YT)
+  youtubeApi ??= new Promise((resolve, reject) => {
+    const previous = w.onYouTubeIframeAPIReady
+    w.onYouTubeIframeAPIReady = () => {
+      previous?.()
+      if (w.YT) resolve(w.YT)
+    }
+    const script = document.createElement('script')
+    script.src = 'https://www.youtube.com/iframe_api'
+    script.async = true
+    script.onerror = () => {
+      youtubeApi = null
+      reject(new Error('YouTube didn’t load. Check your connection and try again.'))
+    }
+    document.head.appendChild(script)
+  })
+  return youtubeApi
+}
+
+/** A YouTube video in the lesson frame. Reports what a <video> element would, through callbacks. */
+function YoutubeFrame({
+  videoId,
+  playerRef,
+  onReady,
+  onTick,
+  onPlay,
+  onPause,
+  onEnded,
+  onError,
+}: {
+  videoId: string
+  playerRef: RefObject<YouTubePlayer | null>
+  onReady: () => void
+  onTick: () => void
+  onPlay: () => void
+  onPause: () => void
+  onEnded: () => void
+  onError: (message: string) => void
+}) {
+  const host = useRef<HTMLDivElement>(null)
+  // Latest callbacks without recreating the player
+  const handlers = useRef({ onReady, onTick, onPlay, onPause, onEnded, onError })
+  useEffect(() => {
+    handlers.current = { onReady, onTick, onPlay, onPause, onEnded, onError }
+  })
+
+  useEffect(() => {
+    let cancelled = false
+    let timer: ReturnType<typeof setInterval> | null = null
+    const stopTicking = () => {
+      if (timer) clearInterval(timer)
+      timer = null
+    }
+    loadYoutubeApi()
+      .then((YT) => {
+        if (cancelled || !host.current) return
+        const target = document.createElement('div')
+        host.current.appendChild(target)
+        playerRef.current = new YT.Player(target, {
+          videoId,
+          host: 'https://www.youtube-nocookie.com',
+          playerVars: { autoplay: 1, rel: 0, modestbranding: 1, playsinline: 1 },
+          events: {
+            onReady: () => handlers.current.onReady(),
+            onStateChange: ({ data }) => {
+              if (data === YT_PLAYING) {
+                handlers.current.onPlay()
+                stopTicking()
+                timer = setInterval(() => handlers.current.onTick(), 1000)
+              } else {
+                stopTicking()
+                if (data === YT_PAUSED) handlers.current.onPause()
+                if (data === YT_ENDED) handlers.current.onEnded()
+              }
+            },
+            onError: () => handlers.current.onError('This YouTube video can’t be played here right now.'),
+          },
+        })
+      })
+      .catch((err: Error) => !cancelled && handlers.current.onError(err.message))
+    return () => {
+      cancelled = true
+      stopTicking()
+      playerRef.current?.destroy()
+      playerRef.current = null
+    }
+  }, [videoId, playerRef])
+
+  return <div ref={host} className="h-full w-full [&_iframe]:h-full [&_iframe]:w-full" />
+}
+
 /** Everything that belongs to one lesson; keyed by lesson so it starts fresh on every switch. */
 function Stage({
   course,
@@ -102,6 +228,7 @@ function Stage({
   const index = course.lessons.findIndex((l) => l.id === lessonId)
   const lesson = course.lessons[index]
   const next = course.lessons[index + 1] ?? null
+  const youtubeId = lesson?.youtubeId ?? null
 
   // Read once when the lesson opens: the live query updates as progress saves
   const [resumeAt] = useState(() =>
@@ -115,21 +242,33 @@ function Stage({
   const [finishedCourse, setFinishedCourse] = useState(false)
 
   const videoRef = useRef<HTMLVideoElement>(null)
+  const ytRef = useRef<YouTubePlayer | null>(null)
+  const [ytAttempt, setYtAttempt] = useState(0)
   const lastSaved = useRef(0)
   const markedDone = useRef(Boolean(lesson?.done))
   const retried = useRef(false)
   const played = useRef(false)
   const restoreAt = useRef(resumeAt)
 
+  // The same questions of either player: where it is, how long the video is, whether it's playing
+  const position = () => ytRef.current?.getCurrentTime() ?? videoRef.current?.currentTime ?? 0
+  const length = () => ytRef.current?.getDuration() ?? videoRef.current?.duration ?? 0
+  const seek = (seconds: number) => {
+    if (ytRef.current) ytRef.current.seekTo(seconds, true)
+    else if (videoRef.current) videoRef.current.currentTime = seconds
+  }
+
   const load = useCallback(async () => {
     setError(null)
+    // YouTube lessons need no link: YouTube's own player loads them
+    if (youtubeId) return
     try {
       const { url } = await getPlayback({ lessonId })
       setSource(url)
     } catch (err) {
       setError(errorMessage(err, 'We couldn’t load this lesson. Please try again.'))
     }
-  }, [getPlayback, lessonId])
+  }, [getPlayback, lessonId, youtubeId])
 
   useEffect(() => {
     void load()
@@ -137,10 +276,10 @@ function Stage({
 
   const save = useCallback(
     (completed: boolean) => {
-      const video = videoRef.current
-      if (!video) return
+      if (!videoRef.current && !ytRef.current) return
       lastSaved.current = Date.now()
-      saveProgress({ lessonId, positionSec: video.currentTime || 0, completed })
+      const at = ytRef.current?.getCurrentTime() ?? videoRef.current?.currentTime ?? 0
+      saveProgress({ lessonId, positionSec: at || 0, completed })
         .then((result) => {
           if (result?.completedCourse) {
             setFinishedCourse(true)
@@ -157,7 +296,10 @@ function Stage({
   // Save when the tab is hidden or the lesson closes, so a resume point is never lost
   useEffect(() => {
     const onHide = () => {
-      if (document.visibilityState === 'hidden' && videoRef.current && !videoRef.current.paused) save(false)
+      const playing = ytRef.current
+        ? ytRef.current.getPlayerState() === YT_PLAYING
+        : Boolean(videoRef.current && !videoRef.current.paused)
+      if (document.visibilityState === 'hidden' && playing) save(false)
     }
     document.addEventListener('visibilitychange', onHide)
     return () => {
@@ -188,22 +330,23 @@ function Stage({
 
   if (!lesson) return null
 
-  const onLoadedMetadata = () => {
-    const video = videoRef.current
-    if (!video) return
+  // Ready to play: pick up where the learner left off
+  const restore = () => {
+    const duration = length()
     const at = restoreAt.current
-    if (at > 5 && at < video.duration - 10) {
-      video.currentTime = at
+    if (at > 5 && (!duration || at < duration - 10)) {
+      seek(at)
       if (at === resumeAt && !retried.current) setResumedChip(true)
     }
   }
 
-  const onTimeUpdate = () => {
-    const video = videoRef.current
-    if (!video || !video.duration) return
-    restoreAt.current = video.currentTime
+  const tick = () => {
+    const duration = length()
+    if (!duration) return
+    const now = position()
+    restoreAt.current = now
     // Counts as watched near the end, so skipping the last seconds still completes it
-    if (!markedDone.current && video.currentTime >= video.duration - Math.min(15, video.duration * 0.05)) {
+    if (!markedDone.current && now >= duration - Math.min(15, duration * 0.05)) {
       markedDone.current = true
       save(true)
     } else if (Date.now() - lastSaved.current > SAVE_EVERY_MS) {
@@ -231,12 +374,16 @@ function Stage({
   }
 
   const startOver = () => {
-    const video = videoRef.current
-    if (video) {
-      video.currentTime = 0
-      void video.play().catch(() => {})
-    }
+    seek(0)
+    if (ytRef.current) ytRef.current.playVideo()
+    else void videoRef.current?.play().catch(() => {})
     setResumedChip(false)
+  }
+
+  const onPlay = () => {
+    played.current = true
+    setEnded(false)
+    setCountdown(null)
   }
 
   const replay = () => {
@@ -248,7 +395,19 @@ function Stage({
   return (
     <div className="min-w-0">
       <div className="relative aspect-video overflow-hidden rounded-[1.5rem] bg-rh-ink shadow-soft sm:rounded-[1.75rem]">
-        {source ? (
+        {youtubeId && !error ? (
+          <YoutubeFrame
+            key={ytAttempt}
+            videoId={youtubeId}
+            playerRef={ytRef}
+            onReady={restore}
+            onTick={tick}
+            onPlay={onPlay}
+            onPause={() => !markedDone.current && save(false)}
+            onEnded={onEnded}
+            onError={setError}
+          />
+        ) : source ? (
           <video
             ref={videoRef}
             src={source}
@@ -259,14 +418,10 @@ function Stage({
             preload="metadata"
             controlsList="nodownload"
             onContextMenu={(e) => e.preventDefault()}
-            onLoadedMetadata={onLoadedMetadata}
-            onTimeUpdate={onTimeUpdate}
+            onLoadedMetadata={restore}
+            onTimeUpdate={tick}
             onPause={() => !markedDone.current && save(false)}
-            onPlay={() => {
-              played.current = true
-              setEnded(false)
-              setCountdown(null)
-            }}
+            onPlay={onPlay}
             onEnded={onEnded}
             onError={onVideoError}
             className="h-full w-full bg-rh-ink object-contain"
@@ -308,7 +463,10 @@ function Stage({
               onClick={() => {
                 retried.current = false
                 setSource(null)
-                void load()
+                if (youtubeId) {
+                  setError(null)
+                  setYtAttempt((n) => n + 1)
+                } else void load()
               }}
               className={cn(pillLime, 'h-11')}
             >

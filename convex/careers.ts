@@ -8,6 +8,7 @@
  * Emails go through actions/emails/sendCareerEmails: a confirmation to the applicant and an alert
  * to admins on apply, an acceptance email when an admin accepts, and an optional kind "no" note.
  */
+import { insertNotification } from "./helpers/pushNotify";
 import { ConvexError, v } from "convex/values";
 import { makeFunctionReference } from "convex/server";
 import { mutation, query, type MutationCtx } from "./_generated/server";
@@ -187,7 +188,7 @@ export const submitApplication = mutation({
 
     const admins = await ctx.db.query("users").withIndex("by_role", (q) => q.eq("role", "admin")).collect();
     for (const admin of admins) {
-      await ctx.db.insert("notifications", {
+      await insertNotification(ctx, {
         userId: admin._id,
         type: "system_alert",
         title: "New job application",

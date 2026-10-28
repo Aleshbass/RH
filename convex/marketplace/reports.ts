@@ -4,6 +4,7 @@
  * /dashboard/admin/marketplace-reports.
  */
 
+import { insertNotification } from "../helpers/pushNotify";
 import { ConvexError, v } from "convex/values";
 import { mutation, query } from "../_generated/server";
 import type { Doc } from "../_generated/dataModel";
@@ -94,7 +95,7 @@ export const reportPhysiotherapist = mutation({
       .take(50);
 
     for (const admin of admins) {
-      await ctx.db.insert("notifications", {
+      await insertNotification(ctx, {
         userId: admin._id,
         type: "physiotherapist_report",
         priority: args.severity === "critical" || args.severity === "high" ? "urgent" : "high",
@@ -265,7 +266,7 @@ export const updateReportStatus = mutation({
     // Tell the reporter when the outcome changes (not for note-only edits)
     if (args.status !== report.status) {
       const label = args.status === "under_review" ? "is being reviewed" : `has been ${args.status}`;
-      await ctx.db.insert("notifications", {
+      await insertNotification(ctx, {
         userId: report.reporterId,
         type: "report_update",
         priority: "medium",

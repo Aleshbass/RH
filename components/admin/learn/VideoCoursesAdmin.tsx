@@ -55,6 +55,8 @@ import {
   type AdminVideoCourse,
   type AdminVideoLesson,
   type UploadedVideo,
+  type YoutubeInfo,
+  type YoutubeVideo,
 } from '@/components/learn/video/videoApi'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
@@ -95,6 +97,159 @@ function Thumb({ url, title, className }: { url: string | null; title: string; c
         <span className="absolute inset-0 flex items-end p-2 text-[11px] font-semibold leading-tight text-white/85">{title}</span>
       )}
     </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// YouTube: paste a link, and the video's title, length and thumbnail come with it
+// ─────────────────────────────────────────────────────────────────────────────
+
+const toYoutubeVideo = ({ videoId, durationSec, thumbnailUrl }: YoutubeInfo): YoutubeVideo => ({ videoId, durationSec, thumbnailUrl })
+
+function YoutubeLinkField({ found, onFound }: { found: YoutubeInfo | null; onFound: (info: YoutubeInfo | null) => void }) {
+  const lookUp = useAction(videoApi.youtubeInfo)
+  const [link, setLink] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const check = async (value: string) => {
+    if (!value.trim()) return
+    setBusy(true)
+    try {
+      onFound(await lookUp({ link: value }))
+    } catch (err) {
+      onFound(null)
+      toast.error(errorMessage(err, 'Couldn’t read that YouTube link.'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (found) {
+    return (
+      <div className="flex items-center gap-3 rounded-2xl bg-rh-honeydew p-3 dark:bg-white/[0.06]">
+        <Thumb url={found.thumbnailUrl} title="" className="aspect-video w-28" />
+        <div className="min-w-0 flex-1 text-sm">
+          <p className="line-clamp-2 font-medium text-rh-ink dark:text-white">{found.title || 'YouTube video'}</p>
+          <p className="text-xs text-neutral-600 dark:text-neutral-400">
+            {[found.channel, found.durationSec ? formatLength(found.durationSec) : null].filter(Boolean).join(' · ')}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            onFound(null)
+            setLink('')
+          }}
+          className="shrink-0 text-xs font-medium text-rh-ink hover:underline dark:text-white"
+        >
+          Change
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex gap-2">
+      <Input
+        value={link}
+        onChange={(e) => setLink(e.target.value)}
+        // Pasting a link looks it up straight away
+        onPaste={(e) => {
+          const text = e.clipboardData.getData('text').trim()
+          if (!text) return
+          e.preventDefault()
+          setLink(text)
+          void check(text)
+        }}
+        onKeyDown={(e) => {
+          if (e.key !== 'Enter') return
+          e.preventDefault()
+          void check(link)
+        }}
+        placeholder="Paste a YouTube link, e.g. https://youtu.be/…"
+        aria-label="YouTube link"
+        className={inputClass}
+        disabled={busy}
+      />
+      <Button type="button" className={softButtonClass} onClick={() => void check(link)} disabled={busy || !link.trim()}>
+        {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Look up'}
+      </Button>
+    </div>
+  )
+}
+
+/** A new draft course from one YouTube video: the video is its first lesson, its thumbnail the course picture. */
+function YoutubeCourseDialog({
+  open,
+  onOpenChange,
+  onCreated,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  onCreated: (id: CourseId) => void
+}) {
+  const create = useMutation(videoApi.createFromYoutube)
+  const [info, setInfo] = useState<YoutubeInfo | null>(null)
+  const [title, setTitle] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    if (!open) return
+    setInfo(null)
+    setTitle('')
+  }, [open])
+
+  const submit = async () => {
+    if (!info) return
+    setSaving(true)
+    try {
+      const id = await create({ title: title.trim() || info.title, summary: info.description || undefined, youtube: toYoutubeVideo(info) })
+      toast.success('Draft course created. Add what learners will get, then publish it.')
+      playSound('success')
+      onOpenChange(false)
+      onCreated(id)
+    } catch (err) {
+      toast.error(errorMessage(err, 'Couldn’t create the course.'))
+      playSound('error')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(next) => !saving && onOpenChange(next)}>
+      <DialogContent className="max-w-lg rounded-2xl dark:border-white/10 dark:bg-rh-ink-2">
+        <DialogHeader>
+          <DialogTitle className="text-rh-ink dark:text-white">New course from a YouTube link</DialogTitle>
+          <DialogDescription>
+            Paste a video. It becomes the course’s first lesson, and its YouTube thumbnail becomes the course picture. Add more lessons after.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <YoutubeLinkField
+            found={info}
+            onFound={(found) => {
+              setInfo(found)
+              if (found && !title.trim()) setTitle(found.title)
+            }}
+          />
+          {info && (
+            <Field label="Course title" htmlFor="yt-course-title">
+              <Input id="yt-course-title" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={120} className={inputClass} />
+            </Field>
+          )}
+        </div>
+        <div className="flex justify-end gap-2 pt-2">
+          <Button variant="ghost" className="rounded-xl" onClick={() => onOpenChange(false)} disabled={saving}>
+            Cancel
+          </Button>
+          <Button className={primaryButtonClass} onClick={() => void submit()} disabled={!info || saving}>
+            {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Create course
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
   )
 }
 
@@ -300,6 +455,9 @@ function LessonDrawer({
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [upload, setUpload] = useState<UploadState>({ stage: 'idle' })
+  // Where the lesson plays from: a video uploaded here, or a YouTube video
+  const [source, setSource] = useState<'upload' | 'youtube'>('upload')
+  const [youtube, setYoutube] = useState<YoutubeInfo | null>(null)
   const [saving, setSaving] = useState(false)
   const [dragging, setDragging] = useState(false)
   const abort = useRef<AbortController | null>(null)
@@ -310,6 +468,8 @@ function LessonDrawer({
     setTitle(lesson?.title ?? '')
     setDescription(lesson?.description ?? '')
     setUpload({ stage: 'idle' })
+    setSource(lesson?.youtubeId ? 'youtube' : 'upload')
+    setYoutube(null)
   }, [open, lesson])
 
   const busy = upload.stage === 'reading' || upload.stage === 'uploading'
@@ -390,7 +550,8 @@ function LessonDrawer({
         lessonId: lesson?.id,
         title,
         description: description || undefined,
-        video: upload.stage === 'done' ? upload.video : undefined,
+        video: source === 'upload' && upload.stage === 'done' ? upload.video : undefined,
+        youtube: source === 'youtube' && youtube ? toYoutubeVideo(youtube) : undefined,
       })
       toast.success(lesson ? 'Lesson saved' : 'Lesson added')
       onOpenChange(false)
@@ -409,14 +570,19 @@ function LessonDrawer({
     onOpenChange(next)
   }
 
-  const canSave = Boolean(title.trim()) && !busy && (Boolean(lesson) || upload.stage === 'done')
+  // Editing without a new video keeps the current one, as long as it's the same kind
+  const hasVideo =
+    source === 'youtube'
+      ? Boolean(youtube) || Boolean(lesson?.youtubeId)
+      : upload.stage === 'done' || Boolean(lesson && !lesson.youtubeId)
+  const canSave = Boolean(title.trim()) && !busy && hasVideo
 
   return (
     <AdminDrawer
       open={open}
       onOpenChange={close}
       title={lesson ? 'Edit lesson' : 'Add a lesson'}
-      description="Videos upload straight to our video host and stay private: only paid learners can play them."
+      description="Upload a video (private: only paid learners can play it) or use a YouTube video. Either way, learners watch inside Rehabify."
       footer={
         <>
           <Button onClick={save} disabled={!canSave || saving} className={primaryButtonClass}>
@@ -430,8 +596,57 @@ function LessonDrawer({
       }
     >
       <div className="space-y-5">
-        <Field label="Video" hint="MP4, up to 100 MB. About 15 minutes at 720p fits comfortably.">
-          {upload.stage === 'uploading' || upload.stage === 'reading' ? (
+        <Field
+          label="Video"
+          hint={
+            source === 'upload'
+              ? 'MP4, up to 100 MB. About 15 minutes at 720p fits comfortably.'
+              : 'A public or unlisted video that allows embedding. Its title, length and thumbnail come from YouTube. Anyone with the link can also watch it on YouTube.'
+          }
+        >
+          <div className="mb-3 inline-flex rounded-full bg-rh-canvas p-1 dark:bg-white/[0.06]" role="radiogroup" aria-label="Where the video comes from">
+            {(
+              [
+                { value: 'upload', label: 'Upload a video' },
+                { value: 'youtube', label: 'YouTube link' },
+              ] as const
+            ).map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                role="radio"
+                aria-checked={source === option.value}
+                onClick={() => setSource(option.value)}
+                disabled={busy}
+                className={cn(
+                  'rounded-full px-3.5 py-1.5 text-xs font-semibold transition',
+                  source === option.value ? 'bg-white text-rh-ink shadow-sm dark:bg-rh-ink-3 dark:text-white' : 'text-neutral-500 hover:text-rh-ink dark:hover:text-white'
+                )}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+          {source === 'youtube' ? (
+            <div className="space-y-3">
+              {lesson?.youtubeId && !youtube && (
+                <div className="flex items-center gap-3 rounded-2xl bg-rh-canvas p-3 dark:bg-white/[0.04]">
+                  <Thumb url={lesson.posterUrl} title="" className="aspect-video w-28" />
+                  <div className="min-w-0 flex-1 text-sm">
+                    <p className="font-medium text-rh-ink dark:text-white">Current YouTube video</p>
+                    <p className="text-xs text-neutral-500">{lesson.durationSec ? formatLength(lesson.durationSec) : 'Length not given by YouTube'}</p>
+                  </div>
+                </div>
+              )}
+              <YoutubeLinkField
+                found={youtube}
+                onFound={(info) => {
+                  setYoutube(info)
+                  if (info && !title.trim()) setTitle(info.title)
+                }}
+              />
+            </div>
+          ) : upload.stage === 'uploading' || upload.stage === 'reading' ? (
             <div className="rounded-2xl border border-black/[0.06] p-4 dark:border-white/10">
               <div className="flex items-center justify-between gap-3 text-sm">
                 <span className="min-w-0 truncate font-medium text-rh-ink dark:text-white">{upload.name}</span>
@@ -467,7 +682,7 @@ function LessonDrawer({
             </div>
           ) : (
             <>
-              {lesson && (
+              {lesson && !lesson.youtubeId && (
                 <div className="mb-3 flex items-center gap-3 rounded-2xl bg-rh-canvas p-3 dark:bg-white/[0.04]">
                   <Thumb url={lesson.posterUrl} title="" className="aspect-video w-28" />
                   <div className="min-w-0 flex-1 text-sm">
@@ -499,7 +714,9 @@ function LessonDrawer({
                 )}
               >
                 <UploadCloud className="h-7 w-7 text-rh-ink dark:text-white" />
-                <span className="text-sm font-medium text-rh-ink dark:text-white">{lesson ? 'Replace the video' : 'Choose a video or drop it here'}</span>
+                <span className="text-sm font-medium text-rh-ink dark:text-white">
+                  {lesson && !lesson.youtubeId ? 'Replace the video' : 'Choose a video or drop it here'}
+                </span>
                 <span className="text-xs text-neutral-500">MP4 · 100 MB max</span>
               </button>
             </>
@@ -543,7 +760,8 @@ function PreviewDialog({ lesson, onClose }: { lesson: AdminVideoLesson | null; o
   useEffect(() => {
     setUrl(null)
     setError(null)
-    if (!lesson) return
+    // YouTube lessons play in YouTube's own player; uploads need a signed link
+    if (!lesson || lesson.youtubeId) return
     let live = true
     getPlayback({ lessonId: lesson.id as LessonId })
       .then((r) => live && setUrl(r.url))
@@ -561,7 +779,15 @@ function PreviewDialog({ lesson, onClose }: { lesson: AdminVideoLesson | null; o
           <DialogDescription>Preview. Watching here doesn&apos;t count towards learner numbers.</DialogDescription>
         </DialogHeader>
         <div className="relative aspect-video bg-rh-ink">
-          {url ? (
+          {lesson?.youtubeId ? (
+            <iframe
+              src={`https://www.youtube-nocookie.com/embed/${lesson.youtubeId}?autoplay=1&rel=0&modestbranding=1`}
+              title={lesson.title}
+              allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
+              allowFullScreen
+              className="h-full w-full"
+            />
+          ) : url ? (
             <video src={url} poster={lesson?.posterUrl ?? undefined} controls autoPlay playsInline className="h-full w-full" />
           ) : (
             <div className="absolute inset-0 flex items-center justify-center p-6 text-center text-sm text-white/70">
@@ -656,7 +882,9 @@ function CourseManager({ course, onBack }: { course: AdminVideoCourse; onBack: (
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium text-rh-ink dark:text-white">{lesson.title}</p>
                   <p className="text-xs text-neutral-500">
-                    {formatLength(lesson.durationSec)} · {formatBytes(lesson.sizeBytes)}
+                    {lesson.youtubeId
+                      ? [lesson.durationSec ? formatLength(lesson.durationSec) : null, 'YouTube'].filter(Boolean).join(' · ')
+                      : `${formatLength(lesson.durationSec)} · ${formatBytes(lesson.sizeBytes)}`}
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-0.5">
@@ -778,20 +1006,29 @@ export function VideoCoursesAdmin() {
   const courses = useQuery(videoApi.adminCourses, {})
   const moveCourse = useMutation(videoApi.moveCourse)
   const [selected, setSelected] = useState<CourseId | 'new' | null>(null)
+  const [fromYoutube, setFromYoutube] = useState(false)
 
   const header = (
-    <PageHeader
-      eyebrow="Rehabify Learn"
-      title="Video courses"
-      description="On-demand courses for physios who paid for the MSK Specialist Program. They watch them under Courses on their course page."
-      actions={
-        selected === null && courses && courses.length > 0 ? (
-          <Button className={primaryButtonClass} onClick={() => setSelected('new')}>
-            <Plus className="mr-2 h-4 w-4" /> New course
-          </Button>
-        ) : undefined
-      }
-    />
+    <>
+      <PageHeader
+        eyebrow="Rehabify Learn"
+        title="Video courses"
+        description="On-demand courses for physios who paid for the MSK Specialist Program. Their course page shows these courses and nothing else."
+        actions={
+          selected === null && courses && courses.length > 0 ? (
+            <div className="flex flex-wrap gap-2">
+              <Button className={softButtonClass} onClick={() => setFromYoutube(true)}>
+                <PlayCircle className="mr-2 h-4 w-4" /> From a YouTube link
+              </Button>
+              <Button className={primaryButtonClass} onClick={() => setSelected('new')}>
+                <Plus className="mr-2 h-4 w-4" /> New course
+              </Button>
+            </div>
+          ) : undefined
+        }
+      />
+      <YoutubeCourseDialog open={fromYoutube} onOpenChange={setFromYoutube} onCreated={(id) => setSelected(id)} />
+    </>
   )
 
   if (courses === undefined) {
@@ -832,11 +1069,16 @@ export function VideoCoursesAdmin() {
           <EmptyState
             icon={<PlayCircle />}
             title="No video courses yet"
-            description="Create a course, upload its lessons, then publish it for paid MSK learners."
+            description="Create a course and upload its lessons, or start from a YouTube link. Then publish it for paid MSK learners."
             action={
-              <Button className={primaryButtonClass} onClick={() => setSelected('new')}>
-                <Plus className="mr-2 h-4 w-4" /> Create the first course
-              </Button>
+              <div className="flex flex-wrap justify-center gap-2">
+                <Button className={primaryButtonClass} onClick={() => setSelected('new')}>
+                  <Plus className="mr-2 h-4 w-4" /> Create the first course
+                </Button>
+                <Button className={softButtonClass} onClick={() => setFromYoutube(true)}>
+                  <PlayCircle className="mr-2 h-4 w-4" /> From a YouTube link
+                </Button>
+              </div>
             }
           />
         </div>

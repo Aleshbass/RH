@@ -2,6 +2,7 @@ import { ConvexError, v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { Doc, Id } from "./_generated/dataModel";
 import { assertCanMessage } from "./chat";
+import { pushNewMessage } from "./helpers/pushNotify";
 
 // Send a message between users
 export const sendMessage = mutation({
@@ -97,6 +98,8 @@ export const sendMessage = mutation({
             targetEntityId: args.receiverId,
             details: { conversationId, messageId },
         });
+
+        await pushNewMessage(ctx, { sender, receiver, conversationId, contentType: args.contentType });
 
         return messageId;
     },

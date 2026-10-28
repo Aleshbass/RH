@@ -927,7 +927,7 @@ export function CoursePanel({ cohortId }: { cohortId: Id<'learnCohorts'> }) {
       <SessionDrawer cohortId={content.cohortId} learners={content.learners} draft={session} setDraft={setSession} />
       <WeekDrawer cohortId={content.cohortId} draft={week} setDraft={setWeek} />
       <p className="flex items-center gap-1.5 text-xs text-neutral-500 dark:text-neutral-400">
-        <Link2 className="h-3.5 w-3.5" /> Paid physios also get the 3D exercise library and the video and leaflet library until 90 days after the cohort ends.
+        <Link2 className="h-3.5 w-3.5" /> Paid physios now see only the published video courses (Learn → Courses), until 90 days after the cohort ends. The sessions and weekly materials here aren’t shown to them.
       </p>
     </div>
   )

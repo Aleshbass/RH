@@ -1,5 +1,9 @@
 import { v } from "convex/values";
 import { internalAction, internalMutation, internalQuery, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
+import { providerResponseDueAt } from "../lib/bookingResponse";
+import { issueReceipt } from "./helpers/receipts";
+import { isJoyLoginEmail } from "../lib/auth/joyLoginEmail";
+import { getService } from "../lib/rehabify-services";
 import { api, internal } from "./_generated/api";
 import { Doc, Id } from "./_generated/dataModel";
 import { ensureUserRole } from "./auth";
@@ -22,6 +26,9 @@ import {
 } from "./helpers/joyPricing";
 import { ensureMarketplaceInvoice } from "./helpers/marketplaceInvoices";
 import { calculatePaystackInboundGrossAmount } from "../lib/pricing";
+import { missingPolicies } from "./helpers/policyAcceptance";
+import { recoveryPlanForJoy } from "./helpers/patientPlans";
+import { PATIENT_CONSENT_POLICIES, consentDocumentsForJoy } from "../lib/policies";
 
 const HOUR_MS = 60 * 60 * 1000;
 const BOOKING_HOLD_MS = 30 * 60 * 1000;
@@ -556,6 +563,13 @@ export const resolveOrCreatePatientByPhone = internalMutation({
     return {
       resolution: resultResolution,
       patient_id: resolvedPatientId,
+      // Additive (Oct 2026), read-only; nothing here changes booking. `consents_required`: Terms,
+      // Privacy and health information consent to ask for at this first chat (empty when already
+      // accepted; record with operation patient_record_consents, see joyOperations.ts).
+      // `recovery_plan`: whether the patient has Flex Max, so Joy can switch on reminders and
+      // support (joy_reminders_allowed; helpers/patientPlans.ts recoveryPlanForJoy).
+      consents_required: consentDocumentsForJoy(await missingPolicies(ctx, resolvedPatientId, PATIENT_CONSENT_POLICIES), publicAppUrl()),
+      recovery_plan: await recoveryPlanForJoy(ctx, resolvedPatientId),
       display_name: resultDisplayName || `${patientFirstName} ${patientLastName}`.trim(),
       first_name: patientFirstName,
       last_name: patientLastName,
@@ -1186,8 +1200,11 @@ export const recordJoyPaymentWebhook = internalMutation({
       await logJourney(ctx, { patientId: booking.patientId, bookingId: booking._id, stage: "payment_completed", eventKey: `payment-completed-${booking._id}` });
       await logJourney(ctx, { patientId: booking.patientId, bookingId: booking._id, stage: "awaiting_admin_schedule", eventKey: `awaiting-admin-schedule-${booking._id}` });
       // Queued with the payment, so a lost delivery is retried by the outbox cron
+      const receiptUrl = await joyPaymentReceipt(ctx, booking, args.reference, args.amountKobo, now);
       await queueJoyEvent(ctx, `pay-${args.reference}`, "booking.payment_confirmed", {
         booking_id: booking._id, patient_id: booking.patientId, payment_reference: args.reference,
+        // Added Oct 2026: the receipt's link, for Joy to send on WhatsApp (Payment Policy 7)
+        receipt_url: receiptUrl,
       });
       await scheduleJoyDashboard(ctx, booking);
       return {
@@ -1199,20 +1216,25 @@ export const recordJoyPaymentWebhook = internalMutation({
         event_id: args.paystackEventId,
       };
     }
-    await ctx.db.patch(booking._id, { paymentStatus: "completed", paidAt: now, paymentReference: args.reference, paidAmountKobo: args.amountKobo, updatedAt: now, providerResponse: "pending", providerResponseDueAt: now + 5 * HOUR_MS });
+    // Booking Policy 5.4: 5 hours to answer, or 1 hour when the visit starts within 8 hours
+    const joyResponseDueAt = providerResponseDueAt(now, booking.sessionDate);
+    await ctx.db.patch(booking._id, { paymentStatus: "completed", paidAt: now, paymentReference: args.reference, paidAmountKobo: args.amountKobo, updatedAt: now, providerResponse: "pending", providerResponseDueAt: joyResponseDueAt });
     await creditPartnerForJoyPayment(ctx, booking, args.reference, now);
     await logJourney(ctx, { patientId: booking.patientId, bookingId: booking._id, stage: "payment_completed", eventKey: `payment-completed-${booking._id}` });
     await logJourney(ctx, { patientId: booking.patientId, bookingId: booking._id, stage: "provider_requested", eventKey: `provider-requested-${booking._id}-${booking.physiotherapistId}` });
     // Queued with the payment, so a lost delivery is retried by the outbox cron
+    const receiptUrl = await joyPaymentReceipt(ctx, booking, args.reference, args.amountKobo, now);
     const eventData = {
       booking_id: booking._id, patient_id: booking.patientId, physiotherapist_id: booking.physiotherapistId,
-      payment_reference: args.reference, provider_response_due_at: now + 5 * HOUR_MS,
+      payment_reference: args.reference, provider_response_due_at: joyResponseDueAt,
+      // Added Oct 2026: the receipt's link, for Joy to send on WhatsApp (Payment Policy 7)
+      receipt_url: receiptUrl,
     };
     await queueJoyEvent(ctx, `pay-${args.reference}`, "booking.payment_confirmed", eventData);
     await queueJoyEvent(ctx, `provider-response-${booking._id}`, "booking.provider_response_requested", eventData);
     await scheduleJoyDashboard(ctx, booking);
 
-    return { handled: true, duplicate: false, booking_id: booking._id, patient_id: booking.patientId, physiotherapist_id: booking.physiotherapistId, provider_response_due_at: now + 5 * HOUR_MS, event_id: args.paystackEventId };
+    return { handled: true, duplicate: false, booking_id: booking._id, patient_id: booking.patientId, physiotherapist_id: booking.physiotherapistId, provider_response_due_at: joyResponseDueAt, event_id: args.paystackEventId };
   },
 });
 
@@ -1755,6 +1777,32 @@ export const createJoyOnlineMeeting = internalAction({
   },
 });
 
+/** The receipt for a Joy payment; emailed only to a real address (not the WhatsApp login placeholder). */
+async function joyPaymentReceipt(ctx: MutationCtx, booking: Doc<"marketplaceBookings">, reference: string, amountKobo: number, paidAt: number) {
+  const patient = await ctx.db.get(booking.patientId);
+  const service = booking.serviceId ? getService(booking.serviceId) : undefined;
+  const travel = booking.travelSurchargeKobo ?? 0;
+  const email = booking.guestEmail || patient?.email;
+  const receiptId = await issueReceipt(ctx, {
+    kind: "payment",
+    payerUserId: booking.patientId,
+    email: email && !isJoyLoginEmail(email) ? email : undefined,
+    name: booking.guestName || [patient?.firstName, patient?.lastName].filter(Boolean).join(" ") || undefined,
+    relatedType: "marketplace_booking",
+    relatedId: booking._id,
+    relationship: "rehabify_care",
+    description: service?.name ?? booking.sessionType ?? "Physiotherapy session",
+    lines: travel > 0 && amountKobo > travel
+      ? [{ label: service?.name ?? "Session", amountKobo: amountKobo - travel }, { label: "Travel", amountKobo: travel }]
+      : [{ label: service?.name ?? "Session", amountKobo }],
+    reference,
+    dedupeKey: reference,
+    paidAt,
+  });
+  const receipt = await ctx.db.get(receiptId);
+  return receipt ? `${publicAppUrl()}/receipt/${receipt.accessToken}` : undefined;
+}
+
 export const expireJoyProviderResponses = internalMutation({
   args: {}, handler: async (ctx) => {
     const paid = await ctx.db.query("marketplaceBookings").withIndex("by_payment_status", q => q.eq("paymentStatus", "completed")).collect();
@@ -1878,8 +1926,8 @@ export const reassignPaidJoyBooking = internalMutation({
     )).collect();
     if (conflicts.length) throw new Error("Replacement slot is no longer available");
     const now = Date.now();
-    await ctx.db.patch(booking._id, { physiotherapistId: profile.userId, sessionDate: args.slotStart, providerResponse: "pending", providerResponseDueAt: now + 5 * HOUR_MS, replacementStatus: "not_needed", updatedAt: now });
+    await ctx.db.patch(booking._id, { physiotherapistId: profile.userId, sessionDate: args.slotStart, providerResponse: "pending", providerResponseDueAt: providerResponseDueAt(now, args.slotStart), replacementStatus: "not_needed", updatedAt: now });
     await logJourney(ctx, { patientId: booking.patientId, bookingId: booking._id, stage: "provider_requested", eventKey: `provider-requested-${booking._id}-${profile.userId}` });
-    return { booking_id: booking._id, physiotherapist_id: profile.userId, provider_response_due_at: now + 5 * HOUR_MS };
+    return { booking_id: booking._id, physiotherapist_id: profile.userId, provider_response_due_at: providerResponseDueAt(now, args.slotStart) };
   },
 });

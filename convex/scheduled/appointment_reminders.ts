@@ -1,3 +1,4 @@
+import { insertNotification } from "../helpers/pushNotify";
 import { v } from "convex/values";
 import { internalMutation } from "../_generated/server";
 import { internal } from "../_generated/api";
@@ -61,7 +62,7 @@ export const sendDailyAppointmentReminders = internalMutation({
         const rescheduleLink = `${appUrl}/dashboard/patient/appointments`;
 
         // Create the notification directly
-        const notificationId = await ctx.db.insert("notifications", {
+        const notificationId = await insertNotification(ctx, {
           userId: patient._id,
           type: "appointment_reminder" as any,
           priority: "medium" as any,

@@ -1,10 +1,15 @@
-import { mutation, query, action, internalMutation, MutationCtx, internalAction } from "./_generated/server";
-import { v } from "convex/values";
+import { insertNotification } from "./helpers/pushNotify";
+import { mutation, query, action, internalMutation, internalQuery, MutationCtx, internalAction } from "./_generated/server";
+import { ConvexError, v } from "convex/values";
+import { makeFunctionReference } from "convex/server";
+import { requireAdmin } from "./helpers/partnerAccess";
+import { paystackRequest } from "./clinicBilling";
 import { Id, Doc } from "./_generated/dataModel";
 import { api } from "./_generated/api";
 import { internal } from "./_generated/api";
 import { closeInvoicePaymentLinks } from "./helpers/paymentLinks";
 import { recordInvoicePartnerCommission } from "./helpers/partnerLedger";
+import { issueReceipt } from "./helpers/receipts";
 
 // Payment status enum (aligned with schema.payments.status)
 const paymentStatus = v.union(
@@ -578,6 +583,23 @@ async function applyPaymentStatus(
   }
   // Any other open link for this invoice must not collect again
   await closeInvoicePaymentLinks(ctx, invoice._id, { keepReference: args.paystackReference });
+  // In the patient's receipts list too (the email below is the existing invoice receipt)
+  const payer = await ctx.db.get(invoice.patientId);
+  await issueReceipt(ctx, {
+    kind: "payment",
+    payerUserId: invoice.patientId,
+    email: payer?.email ?? evidence.customer_email,
+    name: payer ? [payer.firstName, payer.lastName].filter(Boolean).join(" ") || undefined : undefined,
+    relatedType: "invoice",
+    relatedId: invoice._id,
+    relationship: invoice.clinicId ? "clinic" : invoice.invoiceNumber?.startsWith("INV-MKT-") ? "rehabify_care" : "independent",
+    description: `invoice ${invoice.invoiceNumber ?? ""}`.trim(),
+    lines: [{ label: `Invoice ${invoice.invoiceNumber ?? ""}`.trim(), amountKobo: paidKobo }],
+    reference: args.paystackReference,
+    dedupeKey: args.paystackReference,
+    paidAt: now,
+    notify: false,
+  });
   await applyPatientBalanceUpdate(ctx, { invoiceId: invoice._id, amountPaid: paidKobo });
   // A patient a partner or referring doctor sent us earns them a commission here too (e.g. a
   // referral routed to a clinic, paid on the clinic's invoice). Charged on the service, not fees.
@@ -589,7 +611,7 @@ async function applyPaymentStatus(
   });
 
   if (invoice.physiotherapistId) {
-    await ctx.db.insert("notifications", {
+    await insertNotification(ctx, {
       userId: invoice.physiotherapistId,
       type: "payment_received",
       priority: "high",
@@ -609,7 +631,7 @@ async function applyPaymentStatus(
     });
   }
 
-  await ctx.db.insert("notifications", {
+  await insertNotification(ctx, {
     userId: invoice.patientId,
     type: "payment_confirmed",
     priority: "medium",
@@ -977,3 +999,191 @@ async function getPhysiotherapistFromInvoice(ctx: any, invoiceId: Id<"invoices">
 }
 
 // Removed duplicate initializeInvoicePayment - using the action defined earlier
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Refund requests: an admin approves every refund (owner's rule). Approving sends it to
+// Paystack; Paystack's refund webhook then settles it and the patient gets a refund receipt
+// (helpers/refunds.ts settleRefundRequest). Payment Policy 5: decide within 3 business days.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const sendRefundRef = makeFunctionReference<"action", { requestId: Id<"refundRequests"> }>("payments:sendRefundToPaystack");
+const refundForSendingRef = makeFunctionReference<"query", { requestId: Id<"refundRequests"> }, { reference: string; amountKobo: number } | null>(
+  "payments:refundRequestForSending"
+);
+const markRefundRef = makeFunctionReference<"mutation", { requestId: Id<"refundRequests">; paystackRefundId?: string; error?: string }>(
+  "payments:markRefundSendResult"
+);
+const refundEmailRef = makeFunctionReference<
+  "action",
+  { to: string; subject: string; greetingName?: string; heading: string; paragraphs: string[]; buttonLabel?: string; buttonUrl?: string; footnote?: string }
+>("actions/emails/sendPatientCareEmail:sendPatientCareEmail");
+
+/** Admin: refund requests, those waiting for a decision first. */
+export const adminRefundRequests = query({
+  args: {},
+  handler: async (ctx) => {
+    await requireAdmin(ctx);
+    const byStatus = (status: Doc<"refundRequests">["status"], take: number, order: "asc" | "desc" = "desc") =>
+      ctx.db.query("refundRequests").withIndex("by_status", (q) => q.eq("status", status)).order(order).take(take);
+    const rows = [
+      ...(await byStatus("pending", 200, "asc")),
+      ...(await byStatus("failed", 100)),
+      ...(await byStatus("processing", 100)),
+      ...(await byStatus("refunded", 100)),
+      ...(await byStatus("declined", 50)),
+    ];
+    return Promise.all(
+      rows.map(async (row) => {
+        const payer = row.payerUserId ? await ctx.db.get(row.payerUserId) : null;
+        const decider = row.decidedBy ? await ctx.db.get(row.decidedBy) : null;
+        return {
+          id: row._id,
+          status: row.status,
+          amountKobo: row.amountKobo,
+          reason: row.reason,
+          reasonText: row.reasonText,
+          requestedBy: row.requestedBy,
+          relatedType: row.relatedType,
+          relatedId: row.relatedId,
+          reference: row.reference,
+          payerName: payer ? [payer.firstName, payer.lastName].filter(Boolean).join(" ") || payer.email || "Patient" : "Patient",
+          payerEmail: payer?.email ?? null,
+          payerReference: payer?.patientNumber ?? null,
+          createdAt: row.createdAt,
+          decidedAt: row.decidedAt ?? null,
+          decidedByName: decider ? [decider.firstName, decider.lastName].filter(Boolean).join(" ") || decider.email || "Admin" : null,
+          decisionNote: row.decisionNote ?? null,
+          error: row.error ?? null,
+        };
+      })
+    );
+  },
+});
+
+/** Admin: approve (sends the refund to Paystack) or decline (the patient is told why). */
+export const adminDecideRefund = mutation({
+  args: { requestId: v.id("refundRequests"), approve: v.boolean(), note: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const { user: admin } = await requireAdmin(ctx);
+    const request = await ctx.db.get(args.requestId);
+    if (!request) throw new ConvexError("Refund request not found.");
+    if (request.status !== "pending" && request.status !== "failed") throw new ConvexError("This refund has already been decided.");
+    const note = args.note?.trim().slice(0, 500) || undefined;
+    const now = Date.now();
+    if (!args.approve) {
+      if (!note) throw new ConvexError("Say why it's declined; the patient sees this.");
+      await ctx.db.patch(request._id, { status: "declined", decidedBy: admin._id, decidedAt: now, decisionNote: note, updatedAt: now });
+      const payer = request.payerUserId ? await ctx.db.get(request.payerUserId) : null;
+      if (payer?.email) {
+        await ctx.scheduler.runAfter(0, refundEmailRef, {
+          to: payer.email,
+          subject: "About your refund request",
+          greetingName: payer.firstName ?? undefined,
+          heading: "We couldn't approve your refund",
+          paragraphs: [
+            `We looked at your refund request of ₦${(request.amountKobo / 100).toLocaleString("en-NG")}: ${note}`,
+            "If you think we've got this wrong, write to support@physioaroundme.com and we'll look again.",
+          ],
+          footnote: "You're receiving this because you asked Rehabify for a refund.",
+        });
+      }
+      return { status: "declined" as const };
+    }
+    await ctx.db.patch(request._id, { status: "processing", decidedBy: admin._id, decidedAt: now, decisionNote: note, error: undefined, updatedAt: now });
+    await ctx.scheduler.runAfter(0, sendRefundRef, { requestId: request._id });
+    return { status: "processing" as const };
+  },
+});
+
+export const refundRequestForSending = internalQuery({
+  args: { requestId: v.id("refundRequests") },
+  handler: async (ctx, args) => {
+    const request = await ctx.db.get(args.requestId);
+    return request && request.status === "processing" && !request.paystackRefundId
+      ? { reference: request.reference, amountKobo: request.amountKobo }
+      : null;
+  },
+});
+
+/** Sends an approved refund to Paystack (full or partial, back to the original payment method). */
+export const sendRefundToPaystack = internalAction({
+  args: { requestId: v.id("refundRequests") },
+  handler: async (ctx, args) => {
+    const request = await ctx.runQuery(refundForSendingRef, { requestId: args.requestId });
+    if (!request) return;
+    try {
+      const data = await paystackRequest("/refund", {
+        method: "POST",
+        body: JSON.stringify({ transaction: request.reference, amount: request.amountKobo }),
+      });
+      await ctx.runMutation(markRefundRef, { requestId: args.requestId, paystackRefundId: String(data?.id ?? "") || undefined });
+    } catch (error) {
+      await ctx.runMutation(markRefundRef, {
+        requestId: args.requestId,
+        error: error instanceof Error ? error.message.slice(0, 300) : "Paystack refused the refund",
+      });
+    }
+  },
+});
+
+export const markRefundSendResult = internalMutation({
+  args: { requestId: v.id("refundRequests"), paystackRefundId: v.optional(v.string()), error: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const request = await ctx.db.get(args.requestId);
+    if (!request || request.status !== "processing") return;
+    await ctx.db.patch(
+      request._id,
+      args.error ? { status: "failed", error: args.error, updatedAt: Date.now() } : { paystackRefundId: args.paystackRefundId, updatedAt: Date.now() }
+    );
+  },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Receipts (helpers/receipts.ts issues them; Payment Policy 7)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function receiptView(row: Doc<"receipts">) {
+  return {
+    number: row.number,
+    kind: row.kind,
+    name: row.name ?? null,
+    email: row.email ?? null,
+    description: row.description,
+    lines: row.lines,
+    totalKobo: row.totalKobo,
+    reference: row.reference ?? null,
+    relationship: row.relationship ?? null,
+    paidAt: row.paidAt,
+    token: row.accessToken,
+  };
+}
+
+/** A receipt from its emailed link (/receipt/<token>). The long random token is the key. */
+export const receiptByToken = query({
+  args: { token: v.string() },
+  handler: async (ctx, { token }) => {
+    if (!/^[A-Za-z0-9]{16,64}$/.test(token)) return null;
+    const row = await ctx.db
+      .query("receipts")
+      .withIndex("by_token", (q) => q.eq("accessToken", token))
+      .unique();
+    return row ? receiptView(row) : null;
+  },
+});
+
+/** The signed-in person's receipts for payments and refunds, newest first. */
+export const myReceipts = query({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return [];
+    const user = await ctx.db.query("users").withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject)).unique();
+    if (!user) return [];
+    const rows = await ctx.db
+      .query("receipts")
+      .withIndex("by_payer", (q) => q.eq("payerUserId", user._id))
+      .order("desc")
+      .take(100);
+    return rows.map(receiptView);
+  },
+});

@@ -5,8 +5,8 @@
  *   clinic member with access to Patients whose clinic the patient belongs to. Writes also need
  *   the clinic to be approved.
  * - Library: Rehabify staff (approved physios, clinic members, admins) and members of an active
- *   library licence see everything; physios on a paid Rehabify Learn course study the 3D library
- *   and the resource library; patients see only what's in their own programmes.
+ *   library licence see everything; patients see only what's in their own programmes. A paid
+ *   Rehabify Learn course gives no library access: learners see only the published courses.
  * - Share links: a valid, unexpired, unrevoked link plus a device session created by the PIN.
  */
 import { ConvexError } from "convex/values";
@@ -22,6 +22,7 @@ import {
 import { clipIdFor } from "../exerciseLibraryContent";
 import { currentUser, findRelationship, isApproved } from "./careAccess";
 import { sha256Hex } from "./exerciseCrypto";
+import { assertClinicNotBillingReadOnly } from "./clinicSubscriptions";
 import { endOfLagosDay } from "./learnFormat";
 
 type Ctx = QueryCtx | MutationCtx;
@@ -103,6 +104,10 @@ export async function requireCareTeam(ctx: Ctx, patientId: Id<"users">, opts: { 
     if (opts.write && suspendedHere) {
       throw new ConvexError("Your access to this clinic has been suspended. Contact the clinic owner.");
     }
+    // A clinic behind on its subscription is read-only for its own patients (agreement 7.4)
+    if (opts.write && user.clinicId && rel?.clinicId === user.clinicId) {
+      await assertClinicNotBillingReadOnly(ctx, user.clinicId);
+    }
     if (rel && (rel.status === "active" || !opts.write)) {
       return { user, kind: "physio", clinicId: user.clinicId ?? undefined, senderName: displayName(user) };
     }
@@ -140,7 +145,6 @@ export async function careTeamOrNull(ctx: Ctx, patientId: Id<"users">) {
 export type LibraryAccess =
   | { kind: "staff"; user: Doc<"users">; label: string }
   | { kind: "licence"; user: Doc<"users">; label: string; licence: Doc<"libraryLicences"> }
-  | { kind: "learner"; user: Doc<"users">; label: string }
   | { kind: "patient"; user: Doc<"users">; label: string };
 
 export async function activeLicenceFor(ctx: Ctx, userId: Id<"users">) {
@@ -171,11 +175,6 @@ export async function libraryAccess(ctx: Ctx): Promise<LibraryAccess | null> {
 
   const licence = await activeLicenceFor(ctx, user._id);
   if (licence) return { kind: "licence", user, label: licence.watermarkLabel || licence.orgName, licence };
-
-  const courses = await paidLearnRegistrations(ctx, user, await verifiedIdentityEmail(ctx));
-  if (courses.some((c) => learnerAccessOpen(c.cohort))) {
-    return { kind: "learner", user, label: `${displayName(user, "Rehabify Learn")} · Rehabify Learn` };
-  }
 
   if (user.role === "patient") return { kind: "patient", user, label: initials(user) };
   return null;

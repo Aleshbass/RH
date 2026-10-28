@@ -1,3 +1,4 @@
+import { insertNotification } from "./helpers/pushNotify";
 import { mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { ConvexError, v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -383,7 +384,7 @@ export const askPhysioToInvoice = mutation({
         const now = Date.now();
         await ctx.db.patch(request._id, { status: "awaiting_invoice", invoiceRequestedAt: now, updatedAt: now });
         const patientName = `${request.patientFirstName} ${request.patientLastName}`.trim();
-        await ctx.db.insert("notifications", {
+        await insertNotification(ctx, {
             userId: request.physiotherapistId,
             type: "system_alert",
             priority: "high",
@@ -487,7 +488,7 @@ export const logInitiatedLoan = mutation({
 
         // The patient sees it on their dashboard, with the link to continue
         if (args.patientId && args.patientId !== initiator?._id) {
-            await ctx.db.insert("notifications", {
+            await insertNotification(ctx, {
                 userId: args.patientId,
                 type: "system_alert",
                 priority: "high",
@@ -642,7 +643,7 @@ async function flagLoan(ctx: MutationCtx, loan: Doc<"loanApplications">, reason:
         .withIndex("by_role", (q) => q.eq("role", "admin"))
         .collect();
     for (const admin of admins) {
-        await ctx.db.insert("notifications", {
+        await insertNotification(ctx, {
             userId: admin._id,
             type: "system_alert",
             priority: "high",
@@ -679,7 +680,7 @@ async function notifyPatientOfLoan(ctx: MutationCtx, loan: Doc<"loanApplications
     };
     const message = messages[status];
     if (!message || !loan.patientId) return;
-    await ctx.db.insert("notifications", {
+    await insertNotification(ctx, {
         userId: loan.patientId,
         type: "system_alert",
         priority: "medium",
@@ -779,7 +780,7 @@ async function settleInvoiceFromLoan(ctx: MutationCtx, loan: Doc<"loanApplicatio
         await flagLoan(ctx, loan, `MyItura paid ${paidLabel}, less than the ${naira(outstanding)} owed on invoice ${invoice.invoiceNumber}. The rest is still due from the patient.`);
     }
     if (invoice.physiotherapistId) {
-        await ctx.db.insert("notifications", {
+        await insertNotification(ctx, {
             userId: invoice.physiotherapistId,
             type: "payment_received",
             priority: "high",
@@ -796,7 +797,7 @@ async function settleInvoiceFromLoan(ctx: MutationCtx, loan: Doc<"loanApplicatio
             createdAt: now,
         });
     }
-    await ctx.db.insert("notifications", {
+    await insertNotification(ctx, {
         userId: invoice.patientId,
         type: "payment_confirmed",
         priority: "medium",

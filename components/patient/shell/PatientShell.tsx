@@ -14,6 +14,7 @@ import { NAV, PATIENT_HOME } from '@/components/patient/shell/navItems'
 import { PatientBrand, PatientMobileNav, PatientSidebar } from '@/components/patient/shell/PatientNav'
 import { PatientHelp, PatientNotifications, PatientThemeToggle } from '@/components/patient/shell/PatientControls'
 import { PatientTour } from '@/components/patient/shell/PatientTour'
+import { ConsentDialog } from '@/components/patient/ConsentDialog'
 import { WebsiteLink } from '@/components/dashboard/shared/WebsiteLink'
 
 // Staff accounts have their own dashboards; the patient pages would only show them an empty record
@@ -114,6 +115,8 @@ export function PatientShell({ children }: { children: ReactNode }) {
 
         <PatientMobileNav unreadMessages={unreadMessages} />
         <PatientTour enabled={pathname === PATIENT_HOME} firstName={user?.firstName} homeHref={PATIENT_HOME} />
+        {/* Terms, Privacy and health information consent, asked once if missing (NDPA) */}
+        {user?.role === 'patient' && <ConsentDialog />}
       </div>
     </DashboardAuthGuard>
   )

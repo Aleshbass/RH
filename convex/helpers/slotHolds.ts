@@ -24,7 +24,12 @@ export function overlaps(a: Interval, b: Interval): boolean {
 }
 
 /** A pending booking still holding its slot. */
-export function isLiveHold(booking: Pick<Doc<"marketplaceBookings">, "bookingStatus" | "holdExpiresAt">, now: number): boolean {
+export function isLiveHold(
+  booking: Pick<Doc<"marketplaceBookings">, "bookingStatus" | "holdExpiresAt"> & Partial<Pick<Doc<"marketplaceBookings">, "providerResponse">>,
+  now: number
+): boolean {
+  // A paid request waiting for the physio's answer keeps its time until they answer
+  if (booking.bookingStatus === "awaiting_physio") return booking.providerResponse === "pending";
   return booking.bookingStatus === "pending_payment" && (booking.holdExpiresAt ?? 0) > now;
 }
 

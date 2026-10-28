@@ -230,6 +230,8 @@ const initialState: OnboardingData = {
   doctorData: {}
 };
 
+const ONBOARDING_DRAFT_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+
 export const useOnboardingStore = create<OnboardingStore>()(
   persist(
     (set) => ({
@@ -360,7 +362,17 @@ export const useOnboardingStore = create<OnboardingStore>()(
     }),
     {
       name: 'rehabify-onboarding-storage',
+      // Version 2 drops everything saved before (answers from older onboarding flows, kept for
+      // months). Saved progress also expires after 30 days, so a returning user starts clean.
+      version: 2,
+      migrate: () => ({ data: initialState }) as never,
+      merge: (persisted, current) => {
+        const saved = persisted as Partial<OnboardingStore> & { savedAt?: number };
+        if (!saved?.savedAt || Date.now() - saved.savedAt > ONBOARDING_DRAFT_MAX_AGE_MS) return current;
+        return { ...current, ...saved };
+      },
       partialize: (state) => ({
+        savedAt: Date.now(),
         ...state,
         data: {
           ...state.data,

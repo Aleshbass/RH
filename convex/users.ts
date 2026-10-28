@@ -1,4 +1,5 @@
 // @ts-nocheck
+import { insertNotification } from "./helpers/pushNotify";
 import { ConvexError, v } from "convex/values";
 import { paginationOptsValidator } from "convex/server";
 import { internalMutation, mutation, query, action, QueryCtx, MutationCtx, internalQuery } from "./_generated/server";
@@ -15,6 +16,8 @@ import { matchesRehabifyId, parseRehabifyId } from "./helpers/rehabifyIdFormat";
 import { isClinicInviteApproval } from "./helpers/clinicApproval";
 import { assertSelfRoleChangeAllowed } from "./helpers/roleLock";
 import { claimJoyRecordWithLink } from "./joyAccounts";
+import { missingPolicies, recordMissingPolicyAcceptances } from "./helpers/policyAcceptance";
+import { PATIENT_CONSENT_POLICIES, POLICIES, PROFESSIONAL_SIGNUP_POLICIES } from "../lib/policies";
 
 // ==== QUERIES ====
 
@@ -58,6 +61,50 @@ export const getMyUser = query({
       .unique();
 
     return user;
+  },
+});
+
+async function signedInUser(ctx: QueryCtx | MutationCtx) {
+  const identity = await ctx.auth.getUserIdentity();
+  if (!identity) return null;
+  return await ctx.db
+    .query("users")
+    .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+    .unique();
+}
+
+/**
+ * Patients only: the Terms, Privacy Policy and health information consent (lib/policies.ts) they
+ * haven't accepted in the current version, by any channel (web, app or Joy on WhatsApp). The
+ * patient dashboard asks once for whatever is listed.
+ */
+export const myPolicyConsents = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await signedInUser(ctx);
+    if (!user || user.role !== "patient") return null;
+    const needed = await missingPolicies(ctx, user._id, PATIENT_CONSENT_POLICIES);
+    return {
+      needed,
+      documents: needed.map((id) => ({ id, title: POLICIES[id].title, href: POLICIES[id].href, version: POLICIES[id].version })),
+    };
+  },
+});
+
+/** Patients only: "Agree and continue" in the dashboard. Append-only, channel "web". */
+export const acceptPatientConsents = mutation({
+  args: { accepted: v.record(v.string(), v.string()) },
+  handler: async (ctx, args) => {
+    const user = await signedInUser(ctx);
+    if (!user || user.role !== "patient") throw new ConvexError("Sign in to your patient account to continue.");
+    const recorded = await recordMissingPolicyAcceptances(ctx, {
+      user,
+      documents: PATIENT_CONSENT_POLICIES,
+      accepted: args.accepted,
+      channel: "web",
+      contextType: "dashboard_consent",
+    });
+    return { recorded };
   },
 });
 
@@ -504,6 +551,10 @@ export const completeUserProfile = mutation({
     lastName: v.optional(v.string()),
     finalStep: v.optional(v.boolean()), // Add this parameter
     onboardingSkipped: v.optional(v.boolean()), // True if user skipped optional onboarding steps
+    // Policy versions ticked on the final step ({ terms: "2026-10-26", ... }, lib/policies.ts).
+    // Patients: Terms, Privacy and the health information consent; physios and clinic owners:
+    // Terms and Privacy. Stored append-only in policyAcceptances with channel "web".
+    acceptedPolicies: v.optional(v.record(v.string(), v.string())),
   },
   returns: v.object({
     success: v.boolean(),
@@ -534,7 +585,9 @@ export const completeUserProfile = mutation({
 
     const userUpdatePayload: Partial<Doc<"users">> = {
       role: args.role,
-      onboarded: args.finalStep === true, // Only set to true on final step
+      // Set on the final step and never cleared here: an older, already-onboarded account
+      // revisiting the application used to lose its onboarded state on the first "Continue"
+      onboarded: args.finalStep === true || user.onboarded === true,
       // An explicit flag wins (the physiotherapist skip submits finalStep + onboardingSkipped=true);
       // otherwise finishing onboarding clears a previous skip so the account leaves preview mode
       ...(args.onboardingSkipped !== undefined
@@ -688,6 +741,19 @@ export const completeUserProfile = mutation({
     }
     await ensureUserNumbers(ctx, user._id);
 
+    // Terms, Privacy (and, for patients, the explicit health information consent) ticked at sign-up
+    if (args.finalStep && args.acceptedPolicies && args.role !== "family_member") {
+      const signedUp = await ctx.db.get(user._id);
+      await recordMissingPolicyAcceptances(ctx, {
+        user: signedUp ?? user,
+        documents: args.role === "patient" ? PATIENT_CONSENT_POLICIES : PROFESSIONAL_SIGNUP_POLICIES,
+        accepted: args.acceptedPolicies,
+        channel: "web",
+        contextType: "onboarding",
+        contextId: args.role,
+      });
+    }
+
     // For physiotherapists and clinic owners, create approval request after final step
     if (args.finalStep && (args.role === "physiotherapist" || args.role === "clinic_owner")) {
 
@@ -732,7 +798,7 @@ export const completeUserProfile = mutation({
 
       if (isNewSubmission) {
       // Create notification for user about pending review
-      await ctx.db.insert("notifications", {
+      await insertNotification(ctx, {
         userId: user._id,
         type: "onboarding_complete",
         priority: "medium",
@@ -766,7 +832,7 @@ export const completeUserProfile = mutation({
 
         for (const admin of admins) {
           // In-app notification to admin
-          await ctx.db.insert("notifications", {
+          await insertNotification(ctx, {
             userId: admin._id,
             type: "onboarding_complete",
             priority: "high",
@@ -1723,7 +1789,7 @@ export const approveUser = mutation({
         : "/dashboard";
 
     // Create approval notification and send email
-    const notificationId = await ctx.db.insert("notifications", {
+    const notificationId = await insertNotification(ctx, {
       userId: args.userId,
       type: "account_approved",
       status: "pending",
@@ -1861,7 +1927,7 @@ export const declineUser = mutation({
     const supportLink = "/support";
 
     // Create decline notification
-    const notificationId = await ctx.db.insert("notifications", {
+    const notificationId = await insertNotification(ctx, {
       userId: args.userId,
       type: "account_declined",
       status: "pending",

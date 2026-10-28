@@ -2,6 +2,7 @@ import {
   Activity,
   BarChart3,
   Banknote,
+  BellRing,
   BookOpen,
   Box,
   Briefcase,
@@ -19,6 +20,8 @@ import {
   Home,
   Inbox,
   Landmark,
+  RotateCcw,
+  Layers,
   LineChart,
   Mail,
   MapPinned,
@@ -42,7 +45,7 @@ import {
 export const ADMIN_HOME = '/dashboard/admin'
 
 /** Live counts shown next to nav items. Resolved in AdminSidebar. */
-export type AdminBadgeKey = 'approvals' | 'partnerApplications' | 'openReports' | 'bankTransfers' | 'accessApplications' | 'agreements'
+export type AdminBadgeKey = 'approvals' | 'partnerApplications' | 'openReports' | 'bankTransfers' | 'accessApplications' | 'agreements' | 'refunds' | 'inquiries'
 
 export type AdminNavItem = {
   title: string
@@ -88,6 +91,7 @@ export const ADMIN_NAV: AdminNavSection[] = [
       { title: 'Declined', href: a('/declined-physios'), icon: UserX, keywords: ['rejected'] },
       { title: 'Marketplace listing', href: a('/marketplace-listing'), icon: Store, keywords: ['find a physio', 'live', 'hidden', 'setup'] },
       { title: 'Public registry', href: a('/physio-registry'), icon: ShieldCheck, keywords: ['directory', 'listing'] },
+      { title: 'Physio handbook', href: a('/handbook'), icon: BookOpen, keywords: ['sop', 'standard of practice', 'manual', 'clinical', 'pdf'] },
       { title: 'Payouts', href: a('/payouts'), icon: Banknote, keywords: ['earnings', 'paystack', 'transfers'] },
     ],
   },
@@ -99,6 +103,7 @@ export const ADMIN_NAV: AdminNavSection[] = [
       { title: 'All patients', href: a('/users?role=patient'), icon: UserRound, keywords: ['clients'] },
       { title: 'Inbound referrals', href: a('/referrals'), icon: Inbox, keywords: ['intake', 'routing'] },
       { title: 'Care follow-ups', href: a('/care-follow-ups'), icon: HeartPulse, keywords: ['check-ins', 'discharge'] },
+      { title: 'Patient plans', href: a('/patient-plans'), icon: Layers, keywords: ['flex', 'flex max', 'basic', 'launch', 'recovery', 'subscription', 'free activation'] },
       { title: 'MediLoan', href: a('/loans'), icon: WalletCards, keywords: ['myitura', 'finance', 'credit'] },
     ],
   },
@@ -107,7 +112,7 @@ export const ADMIN_NAV: AdminNavSection[] = [
     label: 'Clinics',
     icon: Building2,
     items: [
-      { title: 'All clinics', href: a('/clinics'), icon: Building2, keywords: ['practices', 'clinic owners', 'staff'] },
+      { title: 'All clinics', href: a('/clinics'), icon: Building2, keywords: ['practices', 'clinic owners', 'staff', 'subscriptions', 'clinic plans', 'past due'] },
       { title: 'Clinic fees', href: a('/clinic-fees'), icon: Percent, keywords: ['split', 'commission', 'stamp duty'] },
     ],
   },
@@ -129,6 +134,7 @@ export const ADMIN_NAV: AdminNavSection[] = [
     icon: Handshake,
     items: [
       { title: 'Partners & applications', href: a('/partnerships'), icon: Handshake, badgeKey: 'partnerApplications', keywords: ['go-live', 'inquiries', 'api'] },
+      { title: 'Demo requests & inquiries', href: a('/partnerships?tab=inquiries'), icon: Inbox, badgeKey: 'inquiries', keywords: ['demo', 'book a demo', 'clinic demo', 'contact', 'leads'] },
       { title: 'Contracts', href: a('/partner-contracts'), icon: FileSignature, keywords: ['commercial terms', 'pricing'] },
       { title: 'Partner payouts', href: a('/partnerships?tab=bulk_payouts'), icon: Banknote, keywords: ['settlements', 'monthly'] },
       { title: 'AwaDoc', href: a('/awadoc'), icon: Globe, keywords: ['integration', 'webhooks'] },
@@ -143,6 +149,7 @@ export const ADMIN_NAV: AdminNavSection[] = [
     items: [
       { title: 'Transactions', href: a('/transactions'), icon: ReceiptText, keywords: ['payments', 'invoices', 'patient id'] },
       { title: 'Bank transfers', href: a('/bank-transfers'), icon: Landmark, badgeKey: 'bankTransfers', keywords: ['confirm', 'manual payment'] },
+      { title: 'Refunds', href: a('/refunds'), icon: RotateCcw, badgeKey: 'refunds', keywords: ['refund', 'cancellation', 'paystack', 'money back'] },
       { title: 'Marketplace revenue', href: a('/marketplace-analytics'), icon: LineChart, keywords: ['earnings', 'packages', 'analytics'] },
       { title: 'Revenue settings', href: a('/partnerships?tab=revenue'), icon: Percent, keywords: ['split', 'commission'] },
     ],
@@ -174,6 +181,7 @@ export const ADMIN_NAV: AdminNavSection[] = [
       { title: 'Agreements', href: a('/agreements'), icon: FileSignature, badgeKey: 'agreements', keywords: ['contracts', 'sign', 'countersign', 'contractor', 'clinic saas', 'independent', 'e-signature'] },
       { title: 'Announcements', href: a('/announcements'), icon: Megaphone, keywords: ['broadcast', 'notify'] },
       { title: 'Email campaigns', href: a('/emails'), icon: Mail, keywords: ['marketing', 'newsletter', 'broadcast', 'resend', 'contacts'] },
+      { title: 'Push notifications', href: a('/push'), icon: BellRing, keywords: ['app', 'pwa', 'phone', 'notify', 'broadcast', 'alerts'] },
       { title: 'Careers', href: a('/careers'), icon: Briefcase, keywords: ['jobs', 'hiring', 'roles', 'applications', 'cv'] },
       { title: 'Activity & audit log', href: a('/activity'), icon: Activity, keywords: ['security', 'events', 'logs'] },
       { title: 'Settings', href: a('/system'), icon: Settings, keywords: ['maintenance', 'registrations'] },

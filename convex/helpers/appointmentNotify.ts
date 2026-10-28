@@ -2,6 +2,7 @@
  * Notifications, emails and Google Calendar follow-ups for appointment changes, shared by the
  * physio/patient flows (appointments.ts) and the clinic portal (clinicTools.ts).
  */
+import { insertNotification } from "./pushNotify";
 import type { MutationCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
 import { internal } from "../_generated/api";
@@ -38,7 +39,7 @@ export async function notifyAboutAppointment(
     actionUrl: string;
   }
 ) {
-  await ctx.db.insert("notifications", {
+  await insertNotification(ctx, {
     userId: args.userId,
     type: args.type,
     priority: "medium",

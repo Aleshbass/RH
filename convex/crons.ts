@@ -98,6 +98,14 @@ crons.daily(
 );
 
 crons.interval("expire-joy-provider-responses", { minutes: 5 }, internal.joyIntegration.dispatchExpiredJoyProviderResponses, {});
+// Website requests the physio didn't answer in time go back to the patient (Booking Policy 5.4)
+crons.interval("expire-booking-requests", { minutes: 5 }, internal.rehabifyFollowUps.expireBookingRequests, {});
+
+// Phone alerts (pushAlerts.ts): online sessions starting in 10 minutes; licences expiring or
+// expired, and patients who stopped exercising, checked each morning (08:05 / 08:15 WAT)
+crons.interval("push-session-starting", { minutes: 5 }, internal.pushAlerts.sessionStartingSoon, {});
+crons.daily("push-licence-expiry", { hourUTC: 7, minuteUTC: 5 }, internal.pushAlerts.checkLicenceExpiry, {});
+crons.daily("push-exercise-inactivity", { hourUTC: 7, minuteUTC: 15 }, internal.pushAlerts.checkExerciseInactivity, {});
 crons.interval("retry-joy-event-outbox", { minutes: 1 }, internal.joyIntegration.retryJoyEvents, {});
 
 // Partner webhooks: safety net for deliveries whose scheduled retry was lost.
@@ -145,6 +153,40 @@ crons.interval(
   "learn-session-reminders",
   { minutes: 10 },
   internal.learn.sendSessionReminders,
+  {}
+);
+
+// Clinic subscriptions: roll billing periods and issue invoices, send allowance warnings,
+// reminders and notices, and move unpaid clinics to past due and read-only. 08:00 WAT.
+crons.daily(
+  "clinic-subscriptions-daily",
+  { hourUTC: 7, minuteUTC: 0 },
+  internal.clinicBilling.runDailyClinicSubscriptions,
+  {}
+);
+
+// Flex / Flex Max: end finished 30-day periods, email a renew link ~3 days before the end (no
+// automatic renewal), and start periods that were waiting for the programme.
+crons.interval(
+  "patient-plan-sweep",
+  { hours: 1 },
+  internal.exercisePrograms.sweepPatientPlans,
+  {}
+);
+
+// Physio payouts (Payout Policy): every Friday at 07:00 WAT prepare the week's run of Available
+// payouts for an admin to review and Pay all (nothing is sent automatically), and remind a physio
+// once when a session note is more than 24 hours late.
+crons.weekly(
+  "prepare-weekly-payout-run",
+  { dayOfWeek: "friday", hourUTC: 6, minuteUTC: 0 },
+  internal.payouts.prepareWeeklyPayoutRun,
+  {}
+);
+crons.interval(
+  "payout-note-nudges",
+  { hours: 1 },
+  internal.payouts.sendPayoutNoteNudges,
   {}
 );
 

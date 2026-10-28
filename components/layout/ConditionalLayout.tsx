@@ -37,7 +37,7 @@ export default function ConditionalLayout({ children, isSubdomainHost = false }:
     pathname.startsWith('/patient') ||
     pathname.startsWith('/onboarding-complete')
   // Hide global header/footer on payment routes (e.g., /payment/callback)
-  const isPaymentRoute = pathname.startsWith('/payment')
+  const isPaymentRoute = pathname.startsWith('/payment') || pathname.startsWith('/receipt/') || pathname.startsWith('/report/')
   // Hide header/footer on booking confirmation page to prevent overlap
   const isBookingConfirmationRoute = pathname.startsWith('/marketplace/booking-confirmation')
   // Hide header/footer on Cal.com-style booking pages for clean embedded experience

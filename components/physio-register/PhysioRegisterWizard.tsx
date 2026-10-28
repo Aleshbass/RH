@@ -860,7 +860,7 @@ export default function PhysioRegisterWizard() {
                     <Button
                         type="button"
                         onClick={nextStep}
-                        disabled={isSubmitting || isUploading}
+                        disabled={isSubmitting || isUploading || (currentStep === 3 && !watch("termsAccepted"))}
                         className="bg-[#005b57] hover:bg-[#00443e] text-white min-w-[120px] h-12 rounded-xl shadow-lg shadow-teal-900/10"
                     >
                         {isSubmitting || isUploading ? (

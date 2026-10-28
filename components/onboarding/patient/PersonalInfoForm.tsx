@@ -9,13 +9,21 @@ import { ChevronRight, ChevronLeft, Check, Loader2 } from '@/components/icons';
 import LocationSearch from '@/components/marketplace/LocationSearch';
 
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { PatientData } from '@/stores/onboardingStore';
+import { HEALTH_DATA_CONSENT_TEXT, HEALTH_DATA_TRANSFER_HREF, POLICIES } from '@/lib/policies';
 import { cn } from '@/lib/utils';
+
+const policyLink = 'font-medium text-rh-ink underline underline-offset-2 hover:text-black';
 
 // Form schema with Zod validation
 const patientInfoSchema = z.object({
+  // Required at sign-up: Terms and Privacy, and (separately, explicitly) the health information
+  // consent the NDPA asks for. Recorded in Convex (users.completeUserProfile acceptedPolicies).
+  acceptTerms: z.boolean().refine((value) => value === true, 'Please agree to the Terms of Service and Privacy Policy'),
+  acceptHealthData: z.boolean().refine((value) => value === true, 'Please agree to how we use your health information'),
   firstName: z.string().min(2, 'First name must be at least 2 characters'),
   lastName: z.string().min(2, 'Last name must be at least 2 characters'),
   email: z.string().email('Please enter a valid email address'),
@@ -52,6 +60,7 @@ const steps = [
   { id: 'gender', title: 'Gender' },
   { id: 'age', title: 'Age' },
   { id: 'location', title: 'Location' },
+  { id: 'consent', title: 'Consent' },
 ];
 
 export default function PersonalInfoForm({
@@ -75,6 +84,8 @@ export default function PersonalInfoForm({
       gender: initialData?.gender || undefined,
       location: initialData?.location || '',
       therapyFor: initialData?.therapyFor || '',
+      acceptTerms: false,
+      acceptHealthData: false,
     }
   });
 
@@ -99,6 +110,8 @@ export default function PersonalInfoForm({
           gender: initialData.gender || undefined,
           location: initialData.location || '',
           therapyFor: initialData.therapyFor || '',
+          acceptTerms: Boolean(currentValues.acceptTerms),
+          acceptHealthData: Boolean(currentValues.acceptHealthData),
         });
       }
     }
@@ -126,6 +139,9 @@ export default function PersonalInfoForm({
         break;
       case 4: // Location
         fieldsToValidate = ['location'];
+        break;
+      case 5: // Consent
+        fieldsToValidate = ['acceptTerms', 'acceptHealthData'];
         break;
     }
 
@@ -431,6 +447,85 @@ export default function PersonalInfoForm({
                   </div>
                 </div>
               )}
+
+              {/* Step 6: Consent (required). Two separate ticks: the health one must be explicit. */}
+              {currentStep === 5 && (
+                <div className="space-y-4">
+                  <div className="text-center mb-6">
+                    <h2 className="text-2xl font-bold text-gray-900">Before you start</h2>
+                    <p className="text-gray-500">Please read and agree to both to continue.</p>
+                  </div>
+
+                  <Controller
+                    control={control}
+                    name="acceptTerms"
+                    render={({ field }) => (
+                      <label
+                        htmlFor="acceptTerms"
+                        className={cn(
+                          'flex cursor-pointer items-start gap-3 rounded-xl border-2 p-4 transition-colors',
+                          field.value ? 'border-rh-lime bg-rh-honeydew' : 'border-gray-100 bg-white hover:bg-gray-50'
+                        )}
+                      >
+                        <Checkbox
+                          id="acceptTerms"
+                          checked={field.value}
+                          onCheckedChange={(checked) => field.onChange(checked === true)}
+                          className="mt-0.5"
+                        />
+                        <span className="text-sm leading-relaxed text-gray-800">
+                          I agree to the{' '}
+                          <a href={POLICIES.terms.href} target="_blank" rel="noopener noreferrer" className={policyLink}>
+                            Terms of Service
+                          </a>{' '}
+                          and the{' '}
+                          <a href={POLICIES.privacy.href} target="_blank" rel="noopener noreferrer" className={policyLink}>
+                            Privacy Policy
+                          </a>
+                          .
+                        </span>
+                      </label>
+                    )}
+                  />
+                  {errors.acceptTerms && <p className="text-sm text-red-500">{errors.acceptTerms.message}</p>}
+
+                  <Controller
+                    control={control}
+                    name="acceptHealthData"
+                    render={({ field }) => (
+                      <label
+                        htmlFor="acceptHealthData"
+                        className={cn(
+                          'flex cursor-pointer items-start gap-3 rounded-xl border-2 p-4 transition-colors',
+                          field.value ? 'border-rh-lime bg-rh-honeydew' : 'border-gray-100 bg-white hover:bg-gray-50'
+                        )}
+                      >
+                        <Checkbox
+                          id="acceptHealthData"
+                          checked={field.value}
+                          onCheckedChange={(checked) => field.onChange(checked === true)}
+                          className="mt-0.5"
+                        />
+                        <span className="text-sm leading-relaxed text-gray-800">
+                          {HEALTH_DATA_CONSENT_TEXT}{' '}
+                          <a href={POLICIES.health_data.href} target="_blank" rel="noopener noreferrer" className={policyLink}>
+                            How we use it
+                          </a>
+                          {' · '}
+                          <a href={HEALTH_DATA_TRANSFER_HREF} target="_blank" rel="noopener noreferrer" className={policyLink}>
+                            Transfers outside Nigeria
+                          </a>
+                        </span>
+                      </label>
+                    )}
+                  />
+                  {errors.acceptHealthData && <p className="text-sm text-red-500">{errors.acceptHealthData.message}</p>}
+
+                  <p className="text-xs text-gray-500">
+                    You can withdraw your consent at any time by telling Joy or emailing hello@myrehabifyhealth.com.
+                  </p>
+                </div>
+              )}
             </motion.div>
           </AnimatePresence>
         </div>
@@ -450,7 +545,7 @@ export default function PersonalInfoForm({
           <Button
             type="button"
             onClick={nextStep}
-            disabled={isSubmitting}
+            disabled={isSubmitting || (currentStep === 5 && (!watch('acceptTerms') || !watch('acceptHealthData')))}
             className="bg-teal-600 hover:bg-teal-700 text-white min-w-[120px] h-12 rounded-xl shadow-lg shadow-teal-600/20"
           >
             {isSubmitting ? (

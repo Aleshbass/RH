@@ -6,7 +6,8 @@ import { ArrowRight } from '@/components/icons'
 import { displayFont } from '@/components/learn/shared'
 import { joyWhatsAppUrl } from '@/lib/joyWhatsApp'
 import { formatKobo } from '@/lib/rehabify-services'
-import { RECOVERY_PLANS, recoveryPlanStatus } from '@/lib/recoveryPlans'
+import { recoveryPlanStatus } from '@/lib/recoveryPlans'
+import { useRecoveryPlans } from '@/components/exercise-programs/flex'
 import { cn } from '@/lib/utils'
 import { CareChooser } from './CareChooser'
 import {
@@ -211,8 +212,12 @@ function PriceRow({ service }: { service: CatalogueService }) {
   )
 }
 
-/** Basic, Flex and Flex Max: support between sessions (Flex plans show as coming soon until launch). */
+/**
+ * Basic, Flex and Flex Max: support between sessions. Flex plans show as coming soon until an
+ * admin switches them on (Patient plans in the admin console); the live state comes from Convex.
+ */
 function BetweenSessions() {
+  const { plans } = useRecoveryPlans()
   return (
     <section className="px-4 pt-20 sm:px-6 lg:pt-28">
       <div className="mx-auto max-w-6xl">
@@ -223,7 +228,7 @@ function BetweenSessions() {
           />
         </FadeUp>
         <div className="mt-10 grid gap-5 lg:mt-12 lg:grid-cols-3">
-          {RECOVERY_PLANS.map((plan, i) => (
+          {plans.map((plan, i) => (
             <FadeUp key={plan.id} delay={i * 0.06} className="flex">
               <article
                 className={cn(

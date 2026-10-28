@@ -20,7 +20,16 @@ import { PdfViewer } from './PdfViewer'
 import { OwnMediaView } from './OwnMediaView'
 import { useExerciseMediaLinks } from './ownMedia'
 import { programError } from './errors'
+import { FlexUpgradeCard } from './FlexUpgradeCard'
+import type { PaidPlan } from './flex'
 import { doseLabel, isLocalImage, sideLabel, type LogInput, type ProgramForPlayer, type ProgramItem } from './types'
+
+/** How a patient gets Flex from where they are (dashboard checkout, or sign-in from a link). */
+export type FlexActions = {
+  onChoose?: (plan: PaidPlan) => void
+  busy?: PaidPlan | null
+  signInHref?: string
+}
 
 const REST_SECONDS = 20
 const PAIN_FACES = ['😀', '🙂', '🙂', '😐', '😐', '😕', '😕', '😣', '😣', '😫', '😫']
@@ -260,6 +269,7 @@ export function ProgramPlayer({
   mediaContext = STAFF_CONTEXT,
   onLog,
   readOnly,
+  flex,
 }: {
   program: ProgramForPlayer
   doneToday: number[]
@@ -268,7 +278,12 @@ export function ProgramPlayer({
   mediaContext?: GrantContext
   onLog?: (input: LogInput) => Promise<void>
   readOnly?: boolean
+  /** How the patient gets Flex when this programme needs it (program.plan) */
+  flex?: FlexActions
 }) {
+  // An independent physio's own patient without Flex: the steps stay (Basic); demonstrations and
+  // logging are replaced by the upgrade card. The server refuses them too (patientPlans.ts).
+  const locked = !readOnly && Boolean(program.plan?.locked)
   const requestMedia = useExerciseMediaLinks(mediaContext)
   const [selected, setSelected] = useState(0)
   const [rep, setRep] = useState(0)
@@ -321,13 +336,23 @@ export function ProgramPlayer({
             <h2 className="mt-0.5 text-xl font-semibold tracking-tight text-rh-ink dark:text-white">{program.title}</h2>
             <p className="text-sm text-neutral-500">From {from} · {format(program.createdAt, 'd MMM yyyy')}</p>
           </div>
-          {exerciseItems.length > 0 && (
+          {exerciseItems.length > 0 && !locked && (
             <div className="flex items-center gap-2 rounded-2xl bg-rh-canvas px-3 py-2 dark:bg-white/[0.04]">
               <CheckCircle2 className="h-4 w-4 text-rh-lime" />
               <span className="text-sm font-medium tabular-nums text-rh-ink dark:text-white">
                 {doneCount} of {exerciseItems.length} done today
               </span>
             </div>
+          )}
+          {locked && (
+            <span className="rounded-full bg-rh-canvas px-3 py-1.5 text-xs font-medium text-rh-ink dark:bg-white/[0.06] dark:text-white">
+              Basic: your steps, free
+            </span>
+          )}
+          {!readOnly && program.plan?.needsFlex && program.plan.hasFlex && program.plan.expiresAt && (
+            <span className="rounded-full bg-rh-lime px-3 py-1.5 text-xs font-semibold text-rh-ink">
+              {program.plan.plan === 'flex_max' ? 'Flex Max' : 'Flex'} until {format(program.plan.expiresAt, 'd MMM')}
+            </span>
           )}
         </div>
         {(program.voiceNoteUrl || program.note) && (
@@ -342,7 +367,7 @@ export function ProgramPlayer({
         <ol className="space-y-2">
           {program.items.map((it, i) => {
             const education = it.kind === 'education'
-            const isDone = !education && done.has(it.index)
+            const isDone = !education && !locked && done.has(it.index)
             const side = sideLabel(it.exercise?.animation?.slug, it.side)
             const detail = education
               ? it.resource
@@ -396,6 +421,8 @@ export function ProgramPlayer({
           <div ref={detailRef} className="scroll-mt-20 space-y-4">
             {isEducation ? (
               item.resource?.youtubeId ? <VideoEmbed youtubeId={item.resource.youtubeId} className="rounded-3xl" /> : null
+            ) : locked ? (
+              <FlexUpgradeCard offer={program.plan?.offer ?? []} onChoose={flex?.onChoose} busy={flex?.busy} signInHref={flex?.signInHref} />
             ) : item.exercise?.ownMedia && item.exerciseId ? (
               <OwnMediaView exerciseId={item.exerciseId} name={item.name} requestLinks={requestMedia} />
             ) : !item.clipId && item.exercise?.videoUrl ? (
@@ -453,7 +480,7 @@ export function ProgramPlayer({
                     )}
                   </div>
                 </div>
-                {!readOnly && !isEducation && (
+                {!readOnly && !isEducation && !locked && (
                   <div className="flex gap-2">
                     {/* Guided sets count reps from the animation, so they need the 3D demonstration playing */}
                     {item.animated && playing3d && dosed && !guided && (
@@ -509,7 +536,7 @@ export function ProgramPlayer({
         )}
       </div>
 
-      <LogDialog item={item} open={logOpen} onOpenChange={setLogOpen} onSubmit={log} />
+      <LogDialog item={item} open={logOpen && !locked} onOpenChange={setLogOpen} onSubmit={log} />
     </div>
   )
 }

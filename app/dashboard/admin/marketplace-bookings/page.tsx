@@ -119,6 +119,7 @@ type Stats = {
 
 type StatusFilter =
   | 'all'
+  | 'awaiting_physio'
   | 'awaiting_admin_schedule'
   | 'confirmed'
   | 'pending_payment'
@@ -128,6 +129,7 @@ type StatusFilter =
 
 const STATUS_FILTERS: { value: StatusFilter; label: string }[] = [
   { value: 'all', label: 'All' },
+  { value: 'awaiting_physio', label: 'Awaiting physio' },
   { value: 'awaiting_admin_schedule', label: 'Awaiting scheduling' },
   { value: 'confirmed', label: 'Confirmed' },
   { value: 'pending_payment', label: 'Pending payment' },
@@ -142,6 +144,7 @@ const STATUS_BADGE: Record<string, { label: string; tone: BadgeTone }> = {
   pending_payment: { label: 'Pending payment', tone: 'neutral' },
   payment_failed: { label: 'Payment failed', tone: 'red' },
   awaiting_admin_schedule: { label: 'Awaiting scheduling', tone: 'amber' },
+  awaiting_physio: { label: 'Awaiting physio', tone: 'amber' },
   completed: { label: 'Completed', tone: 'teal' },
   cancelled: { label: 'Cancelled', tone: 'red' },
   no_show: { label: 'No show', tone: 'neutral' },
@@ -250,7 +253,8 @@ function PatientCell({ booking }: { booking: BookingRow }) {
 
 /** Why a paid booking needs an admin (e.g. paid after the hold lapsed and the slot was taken). */
 function AttentionReason({ booking }: { booking: BookingRow }) {
-  if (booking.bookingStatus !== 'awaiting_admin_schedule' || !booking.adminAttentionReason) return null;
+  // Also: the patient asked the care team to find another physio after a decline
+  if ((booking.bookingStatus !== 'awaiting_admin_schedule' && booking.bookingStatus !== 'awaiting_physio') || !booking.adminAttentionReason) return null;
   return (
     <p className="mt-1.5 flex max-w-[260px] items-start gap-1.5 rounded-lg bg-rh-peach px-2 py-1.5 text-left text-[11px] font-medium leading-snug text-[#8a4b08] dark:bg-amber-400/10 dark:text-amber-200">
       <AlertTriangle className="mt-px h-3 w-3 shrink-0" />

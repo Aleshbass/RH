@@ -1,3 +1,4 @@
+import { insertNotification } from "./helpers/pushNotify";
 import { v } from "convex/values";
 import { internalMutation } from "./_generated/server";
 import { internal } from "./_generated/api";
@@ -219,7 +220,7 @@ export const sendMaintenanceAlert = internalMutation({
         );
         if (repeat) continue;
 
-        await ctx.db.insert("notifications", {
+        await insertNotification(ctx, {
           userId: user._id,
           type: "resource_maintenance",
           title: getMaintenanceAlertTitle(args.maintenanceType, args.resourceName),
@@ -282,7 +283,7 @@ export const sendConflictAlert = internalMutation({
         );
         if (repeat) continue;
 
-        await ctx.db.insert("notifications", {
+        await insertNotification(ctx, {
           userId: user._id,
           type: "resource_conflict",
           title: `Resource Conflict: ${args.resourceName}`,

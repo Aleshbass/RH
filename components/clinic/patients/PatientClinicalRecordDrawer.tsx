@@ -4,6 +4,7 @@ import { useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { useMutation, useQuery } from 'convex/react'
 import type { FunctionReturnType } from 'convex/server'
 import { api } from '@/convex/_generated/api'
+import { makeFunctionReference } from 'convex/server'
 import type { Id } from '@/convex/_generated/dataModel'
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -22,7 +23,7 @@ import {
 } from '@/components/ui/select'
 import ErrorBoundary from '@/components/ui/error-boundary'
 import { toast } from 'sonner'
-import { FileText, Loader2, Plus, Trash2, UserRound } from '@/components/icons'
+import { FileText, History, Loader2, Pencil, Plus, Trash2, UserRound } from '@/components/icons'
 import { differenceInYears, format, isValid } from 'date-fns'
 import { cn } from '@/lib/utils'
 import { useClinicAccess } from '@/components/clinic/ClinicAccessContext'
@@ -36,6 +37,8 @@ import {
 } from './patient-record-shared'
 import { ClinicianPickerDialog, EditPatientDetailsDialog } from './PatientRecordDialogs'
 import { RehabifyId } from '@/components/shared/RehabifyId'
+import { MeasureList } from '@/components/physio/notes/MeasureList'
+import { NoteHistoryDrawer } from '@/components/physio/workspace/NoteHistoryDrawer'
 import { ExerciseProgramsPanel } from '@/components/exercise-programs/ExerciseProgramsPanel'
 
 type PatientRecord = NonNullable<FunctionReturnType<typeof api.clinicTools.getClinicPatientFullRecord>>
@@ -604,6 +607,12 @@ const EMPTY_NOTE: Record<NoteField, string> = {
   planForNextSession: '',
 }
 
+const updateClinicNoteRef = makeFunctionReference<
+  'mutation',
+  { noteId: Id<'sessionLogs'> } & Partial<Record<NoteField, string>>,
+  { changed: boolean }
+>('clinicTools:updateClinicNote')
+
 /** Note values, keyed by the form field they came from. Stored `goals` maps to `goalsSummary`. */
 function noteValue(log: SessionLog, key: NoteField): string | undefined {
   const value = key === 'goalsSummary' ? log.goals : log[key as Exclude<NoteField, 'goalsSummary'>]
@@ -623,9 +632,15 @@ function NotesTab({
 }) {
   const { requireFullAccess } = useClinicAccess()
   const saveClinicalNote = useMutation(api.clinicTools.saveClinicalNote)
+  const updateClinicNote = useMutation(updateClinicNoteRef)
   const [noteType, setNoteType] = useState<NoteType>('treatment_note')
   const [values, setValues] = useState<Record<NoteField, string>>(EMPTY_NOTE)
   const [saving, setSaving] = useState(false)
+  // The note being edited in the form above, or null for a new note
+  const [editingId, setEditingId] = useState<Id<'sessionLogs'> | null>(null)
+  // The note whose earlier versions are open
+  const [historyId, setHistoryId] = useState<Id<'sessionLogs'> | null>(null)
+  const formRef = useRef<HTMLDivElement>(null)
   const me = useQuery(api.users.getMyUser) as { _id: string } | null | undefined
 
   const fields = NOTE_FIELDS[noteType]
@@ -635,8 +650,51 @@ function NotesTab({
   const isTreatingClinician = !me || !primaryClinicianId || isMissingId(primaryClinicianId) || me._id === primaryClinicianId
   const treatingName = options.find((o) => o.id === primaryClinicianId)?.label
 
+  const startEditing = (log: SessionLog) => {
+    if (!requireFullAccess('Edit note')) return
+    const type = (log.noteType ?? 'treatment_note') as NoteType
+    setNoteType(NOTE_FIELDS[type] ? type : 'treatment_note')
+    setValues({
+      ...EMPTY_NOTE,
+      diagnosis: log.diagnosis ?? '',
+      goalsSummary: log.goals ?? '',
+      subjectiveAssessment: log.subjectiveAssessment ?? '',
+      objectiveAssessment: log.objectiveAssessment ?? '',
+      treatmentAdministered: log.treatmentAdministered ?? '',
+      planForNextSession: log.planForNextSession ?? '',
+    })
+    setEditingId(log._id)
+    formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
+  const stopEditing = () => {
+    setEditingId(null)
+    setValues(EMPTY_NOTE)
+  }
+
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
+    if (editingId) {
+      if (!requireFullAccess('Edit note')) return
+      // Every field of this type is sent, so clearing a box clears it on the note
+      const changes: Partial<Record<NoteField, string>> = {}
+      for (const field of fields) changes[field.key] = values[field.key].trim()
+      if (!Object.values(changes).some(Boolean)) {
+        toast.error('Write something in at least one box before saving')
+        return
+      }
+      setSaving(true)
+      try {
+        const { changed } = await updateClinicNote({ noteId: editingId, ...changes })
+        toast.success(changed ? 'Note updated' : 'No changes to save')
+        stopEditing()
+      } catch (err) {
+        toast.error(friendlyError(err, 'Could not update the note. Please try again.'))
+      } finally {
+        setSaving(false)
+      }
+      return
+    }
     if (!requireFullAccess('Add note')) return
     const payload: Partial<Record<NoteField, string>> = {}
     for (const field of fields) {
@@ -662,10 +720,11 @@ function NotesTab({
 
   return (
     <div className="space-y-6">
+      <div ref={formRef} className="scroll-mt-4">
       <FormCard onSubmit={handleSubmit}>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <SectionHeading>Add note</SectionHeading>
-          <Select value={noteType} onValueChange={(val) => setNoteType(val as NoteType)}>
+          <SectionHeading>{editingId ? 'Edit note' : 'Add note'}</SectionHeading>
+          <Select value={noteType} onValueChange={(val) => setNoteType(val as NoteType)} disabled={Boolean(editingId)}>
             <SelectTrigger className={cn(fieldClass, 'h-9 w-full sm:w-52')} aria-label="Type of note">
               <SelectValue />
             </SelectTrigger>
@@ -679,7 +738,13 @@ function NotesTab({
           </Select>
         </div>
 
-        {noteType === 'discharge_summary' && (
+        {editingId && (
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">
+            The earlier wording is kept with the patient&apos;s record, and the note shows when it was edited.
+          </p>
+        )}
+
+        {noteType === 'discharge_summary' && !editingId && (
           <p className="text-xs text-neutral-500 dark:text-neutral-400">
             Saving a discharge summary ends this patient&apos;s care at your clinic and completes any active home
             programme.
@@ -687,7 +752,7 @@ function NotesTab({
         )}
 
         <div className="space-y-3">
-          {!isTreatingClinician && (
+          {!isTreatingClinician && !editingId && (
             <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-400/10 dark:text-amber-200">
               Notes are written by the patient&apos;s clinician
               {treatingName ? ` (${treatingName})` : ''}. To take over their care, reassign the patient to yourself first.
@@ -723,13 +788,24 @@ function NotesTab({
           })}
         </div>
 
-        <div className="flex justify-end">
-          <Button type="submit" size="sm" disabled={saving || !isTreatingClinician} className={cn(primaryButtonClass, 'h-9 w-full sm:w-auto')}>
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          {editingId && (
+            <Button type="button" variant="outline" size="sm" disabled={saving} onClick={stopEditing} className="h-9 w-full sm:w-auto">
+              Cancel
+            </Button>
+          )}
+          <Button
+            type="submit"
+            size="sm"
+            disabled={saving || (!editingId && !isTreatingClinician)}
+            className={cn(primaryButtonClass, 'h-9 w-full sm:w-auto')}
+          >
             {saving && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
-            Save note
+            {editingId ? 'Save changes' : 'Save note'}
           </Button>
         </div>
       </FormCard>
+      </div>
 
       <div className="space-y-3">
         <SectionHeading>Past notes</SectionHeading>
@@ -746,6 +822,9 @@ function NotesTab({
               .map((key) => ({ key, label: labelFor(key), value: noteValue(log, key) }))
               .filter((row) => row.value)
             const date = formatDate(log.sessionDate, 'd MMM yyyy, h:mm a')
+            // Earlier versions kept: rows in the history table plus any kept on older notes
+            const versions = (log.revisionCount ?? 0) + (log.revisions?.length ?? 0)
+            const mine = Boolean(me && me._id === log.physiotherapistId)
             return (
               <ListCard key={log._id} className="space-y-2">
                 <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
@@ -753,8 +832,39 @@ function NotesTab({
                     {log.noteTypeLabel ?? 'Note'}
                   </span>
                   <span className="min-w-0 truncate text-xs text-neutral-500 dark:text-neutral-400">
-                    {[date, log.clinicianName].filter(Boolean).join(' · ')}
+                    {[date, mine ? 'You' : log.clinicianName, log.editedAt ? `edited ${formatDate(log.editedAt, 'd MMM yyyy')}` : null]
+                      .filter(Boolean)
+                      .join(' · ')}
                   </span>
+                  {(versions > 0 || (mine && editingId !== log._id)) && (
+                    <div className="ml-auto flex items-center">
+                      {versions > 0 && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setHistoryId(log._id)}
+                          className="h-10 gap-1 px-2 text-xs text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100"
+                        >
+                          <History className="h-3 w-3" />
+                          History ({versions})
+                        </Button>
+                      )}
+                      {/* Only the clinician who wrote a note can edit it */}
+                      {mine && editingId !== log._id && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => startEditing(log)}
+                          className="h-10 gap-1 px-2 text-xs text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100"
+                        >
+                          <Pencil className="h-3 w-3" />
+                          Edit
+                        </Button>
+                      )}
+                    </div>
+                  )}
                 </div>
                 {log.diagnosis && (
                   <p className="text-sm text-neutral-900 dark:text-neutral-100">
@@ -768,11 +878,25 @@ function NotesTab({
                     <p className="whitespace-pre-line break-words text-neutral-700 dark:text-neutral-300">{row.value}</p>
                   </div>
                 ))}
+                {/* Measures a physio recorded in the note (read-only here) */}
+                {log.measures && log.measures.length > 0 && (
+                  <div className="text-sm">
+                    <p className="mb-1 text-xs text-neutral-500 dark:text-neutral-400">Measures</p>
+                    <MeasureList measures={log.measures} compact />
+                  </div>
+                )}
               </ListCard>
             )
           })
         )}
       </div>
+
+      <NoteHistoryDrawer
+        variant="clinic"
+        noteId={historyId}
+        open={historyId !== null}
+        onOpenChange={(open) => !open && setHistoryId(null)}
+      />
     </div>
   )
 }

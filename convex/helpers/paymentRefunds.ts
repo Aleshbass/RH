@@ -10,7 +10,10 @@
  *    any partner commission reversed;
  *  - Learn registration: marked refunded;
  *  - verification badge: transaction refunded and the badge it bought switched off;
- *  - Joy specialist review: marked refunded and cancelled unless already done.
+ *  - Joy specialist review: marked refunded and cancelled unless already done;
+ *  - Flex / Flex Max (FLEX_): the 30-day period marked refunded (premium features stop, Basic stays);
+ *  - clinic subscription invoice (CLINICSUB_): the refund is recorded on the invoice and the team
+ *    alerted; the invoice stays paid, so the clinic is never sent back to past due or read-only.
  * A partial refund keeps the purchase active: the refunded amount is recorded on it and the
  * team is alerted (systemLogs) to decide on any payout or commission adjustment.
  */
@@ -20,8 +23,10 @@ import { reverseCommissionsForPayment } from "./partnerLedger";
 import { transitionReferral } from "./partnerEvents";
 import { toPublicStatus } from "./partnerShared";
 import { returnAwardSession } from "./accessAwards";
+import { settleRefundRequest } from "./refunds";
+import { notifyRefundIssued } from "../pushAlerts";
 
-type RefundKind = "marketplace" | "invoice" | "learn" | "verification" | "specialist_review" | "unknown";
+type RefundKind = "marketplace" | "invoice" | "learn" | "verification" | "specialist_review" | "flex" | "clinic_subscription" | "unknown";
 
 export type RefundResult = {
   handled: boolean;
@@ -132,6 +137,8 @@ export async function applyPaystackRefund(ctx: MutationCtx, data: any): Promise<
   let kind: RefundKind = "unknown";
   let paidKobo = 0;
   let full = false;
+  // Who to tell that their patient was refunded (pushAlerts.ts)
+  let refundedFor: { physioId?: Id<"users">; clinicId?: Id<"clinics">; patientId?: Id<"users"> } | null = null;
 
   const booking = await ctx.db
     .query("marketplaceBookings")
@@ -142,6 +149,8 @@ export async function applyPaystackRefund(ctx: MutationCtx, data: any): Promise<
     paidKobo = booking.paidAmountKobo ?? booking.serviceAmount;
     full = total >= paidKobo;
     await refundBooking(ctx, booking, total, full, reference);
+    const appointment = booking.appointmentId ? await ctx.db.get(booking.appointmentId) : null;
+    refundedFor = { physioId: booking.physiotherapistId, clinicId: appointment?.clinicId, patientId: booking.patientId };
     if (full) {
       await reverseCommissionsForPayment(ctx, reference, "Patient payment refunded");
     } else {
@@ -154,6 +163,7 @@ export async function applyPaystackRefund(ctx: MutationCtx, data: any): Promise<
       kind = "invoice";
       paidKobo = Number((payment.metadata as { amount?: number } | undefined)?.amount) || payment.amount;
       full = total >= paidKobo;
+      refundedFor = { physioId: invoice.physiotherapistId, clinicId: invoice.clinicId, patientId: invoice.patientId };
       await ctx.db.patch(payment._id, {
         status: full ? "cancelled" : payment.status,
         metadata: { ...(payment.metadata ?? {}), refundedKobo: total },
@@ -230,11 +240,59 @@ export async function applyPaystackRefund(ctx: MutationCtx, data: any): Promise<
         await alert(ctx, "partial_refund_needs_review", reference, { reviewId: review._id, refundedKobo: total, paidKobo });
       }
     }
+  } else if (reference.startsWith("FLEX_")) {
+    // Flex / Flex Max (exercisePrograms.ts): one 30-day period per payment reference
+    const period = await ctx.db
+      .query("patientPlanEntitlements")
+      .withIndex("by_reference", (q) => q.eq("reference", reference))
+      .first();
+    if (period) {
+      kind = "flex";
+      paidKobo = period.amountKobo;
+      full = total >= paidKobo;
+      if (full && period.status !== "refunded") {
+        await ctx.db.patch(period._id, { status: "refunded", refundedAt: Date.now() });
+      } else if (!full) {
+        await alert(ctx, "partial_refund_needs_review", reference, { entitlementId: period._id, refundedKobo: total, paidKobo });
+      }
+    }
+  } else if (reference.startsWith("CLINICSUB_")) {
+    // Rehabify's invoice to a clinic (clinicBilling.ts). The reference carries the invoice id; a
+    // refund of a second (duplicate) payment matches the invoice too.
+    const match = /^CLINICSUB_([a-z0-9]+)_\d+$/.exec(reference);
+    const invoiceId = match ? ctx.db.normalizeId("clinicSubscriptionInvoices", match[1]) : null;
+    const invoice = invoiceId ? await ctx.db.get(invoiceId) : null;
+    if (invoice) {
+      kind = "clinic_subscription";
+      const paidThis = invoice.paidReference === reference;
+      paidKobo = paidThis ? (invoice.paidAmountKobo ?? invoice.amountKobo) : amountKobo;
+      full = total >= paidKobo;
+      if (paidThis) {
+        await ctx.db.patch(invoice._id, { refundedKobo: total, updatedAt: Date.now() });
+        await alert(ctx, full ? "clinic_subscription_refunded" : "partial_refund_needs_review", reference, {
+          clinicSubscriptionInvoiceId: invoice._id,
+          refundedKobo: total,
+          paidKobo,
+        });
+      }
+    }
   }
 
   if (kind === "unknown") {
     await alert(ctx, "refund_unmatched", reference, { refundedKobo: amountKobo, currency });
   }
+  if (refundedFor) {
+    await notifyRefundIssued(ctx, { ...refundedFor, patientName: booking?.guestName, amountKobo, full, refundKey });
+  }
+  // The admin-approved request (if any) is settled and the patient gets a refund receipt
+  await settleRefundRequest(ctx, {
+    reference,
+    amountKobo,
+    refundKey,
+    payerUserId: booking?.patientId,
+    relatedType: booking ? "marketplace_booking" : undefined,
+    relatedId: booking?._id,
+  });
   await ctx.db.insert("paymentRefunds", {
     refundKey,
     reference,

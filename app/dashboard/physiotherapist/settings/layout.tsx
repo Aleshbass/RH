@@ -27,7 +27,8 @@ const GROUPS: { label: string; items: SettingsLink[] }[] = [
             { label: 'How you work', href: `${BASE}/practice`, own: true },
             { label: 'Working hours', href: `${BASE}/availability`, setupItem: 'availability' },
             { label: 'Services & coverage', href: `${BASE}/marketplace`, setupItem: 'coverage', network: true },
-            { label: 'Network terms', href: `${BASE}/network-terms`, setupItem: 'network_terms', network: true },
+            // Every physio sees it for the handbook; the network terms on it are for network physios only
+            { label: 'Terms & handbook', href: `${BASE}/network-terms`, setupItem: 'network_terms' },
             { label: 'Agreements', href: `${BASE}/agreements`, setupItem: 'agreement', own: true },
             { label: 'Payout schedule', href: `${BASE}/fee-schedule`, network: true },
             { label: 'Payouts', href: `${BASE}/payout`, setupItem: 'payout' },
@@ -36,7 +37,10 @@ const GROUPS: { label: string; items: SettingsLink[] }[] = [
     },
     {
         label: 'Account',
-        items: [{ label: 'Account & privacy', href: `${BASE}/privacy` }],
+        items: [
+            { label: 'Notifications', href: `${BASE}/notifications` },
+            { label: 'Account & privacy', href: `${BASE}/privacy` },
+        ],
     },
 ];
 

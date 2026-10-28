@@ -51,15 +51,6 @@ const navLinks: NavItem[] = [
     ],
   },
   {
-    name: "About us",
-    items: [
-      { name: "About Rehabify", href: "/about" },
-      { name: "Blog", href: "/blog" },
-      { name: "FAQs", href: "/#faqs" },
-      { name: "Support", href: "/contact" },
-    ],
-  },
-  {
     name: "For professionals",
     items: [
       {
@@ -72,6 +63,15 @@ const navLinks: NavItem[] = [
       },
       { name: "For clinics", href: "/platform/clinics" },
       { name: "For partners", href: "/partnerships" },
+    ],
+  },
+  {
+    name: "About us",
+    items: [
+      { name: "About Rehabify", href: "/about" },
+      { name: "Blog", href: "/blog" },
+      { name: "FAQs", href: "/#faqs" },
+      { name: "Support", href: "/contact" },
     ],
   },
   { name: "Pricing", href: "/pricing" },

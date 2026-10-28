@@ -582,7 +582,7 @@ function SignFlow({ item, data }: { item: MyAgreementItem; data: MyAgreements })
 
               <button
                 type="submit"
-                disabled={busy}
+                disabled={busy || !agreed}
                 className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-rh-lime text-[15px] font-semibold text-rh-ink transition-colors hover:bg-rh-lime-deep disabled:opacity-60"
               >
                 {busy && <Loader2 className="h-4 w-4 animate-spin" />}

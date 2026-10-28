@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Image from 'next/image'
 import { useParams } from 'next/navigation'
 import { useAction, useMutation, useQuery } from 'convex/react'
@@ -8,6 +8,8 @@ import { format } from 'date-fns'
 import { Clock, Link2Off, Loader2, Lock, ShieldCheck } from '@/components/icons'
 import { api } from '@/convex/_generated/api'
 import { ProgramPlayer } from '@/components/exercise-programs/ProgramPlayer'
+import { FlexPaymentReturn } from '@/components/exercise-programs/FlexUpgradeCard'
+import { useFlexCheckout } from '@/components/exercise-programs/flex'
 import type { LinkStatus, LogInput, SharedProgramResult } from '@/components/exercise-programs/types'
 import { useViewerGrant } from '@/lib/exercise3d/useViewerGrant'
 import { cn } from '@/lib/utils'
@@ -188,6 +190,9 @@ function Unlocked({ code, session, onSessionLost }: { code: string; session: str
   const data = useQuery(api.exerciseShareLinks.sharedProgram, { code, session }) as SharedProgramResult | undefined
   const requestGrant = useViewerGrant({ kind: 'link', code, session })
   const log = useMutation(api.exercisePrograms.logExerciseFromLink)
+  // Flex from the link: pay here (Paystack brings them back to this page), or sign in
+  const share = useMemo(() => ({ code, session }), [code, session])
+  const { checkout, busy } = useFlexCheckout({ share })
 
   useEffect(() => {
     if (data && !data.ok) onSessionLost()
@@ -212,6 +217,11 @@ function Unlocked({ code, session, onSessionLost }: { code: string; session: str
         requestGrant={requestGrant}
         mediaContext={{ kind: 'link', code, session }}
         onLog={(input: LogInput) => log({ code, session, ...input })}
+        flex={{
+          onChoose: (plan) => void checkout(plan),
+          busy,
+          signInHref: `/sign-in?redirect_url=${encodeURIComponent('/dashboard/patient/exercises')}`,
+        }}
       />
     </div>
   )
@@ -270,5 +280,11 @@ export default function ShareLinkPage() {
     )
   }
 
-  return <Shell>{body}</Shell>
+  return (
+    <Shell>
+      {/* Back from a Flex payment started on this page (?reference=FLEX_…) */}
+      <FlexPaymentReturn />
+      {body}
+    </Shell>
+  )
 }

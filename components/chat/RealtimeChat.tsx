@@ -564,20 +564,23 @@ const RealtimeChat = ({ recipientId, className, embedded = false, variant = 'def
 
   // Mark messages as read when they become visible
   useEffect(() => {
-    if (!conversationId || !paginatedMessages.items.length || !onScreen) return;
+    if (!conversationId || !onScreen || messages === undefined) return;
 
-    // Only when something from the other person is unread, and once per set of unread messages
+    // Once when the conversation opens (that also clears an unread count with nothing behind it,
+    // which otherwise kept the Messages badge up), then once per new set of unread messages.
+    // The server only writes when something was unread.
     const unreadMessages = paginatedMessages.items.filter(
       (msg: ChatMessage) => !msg.isReadByReceiver && msg.senderId !== currentUser?._id
     );
-    if (unreadMessages.length === 0) return;
+    const opened = markedReadKeyRef.current?.split(':')[0] === conversationId;
+    if (opened && unreadMessages.length === 0) return;
     const key = `${conversationId}:${unreadMessages.map((m: ChatMessage) => m._id).join(',')}`;
     if (markedReadKeyRef.current === key) return;
     markedReadKeyRef.current = key;
     markMessagesAsRead({ conversationId }).catch(() => {
       markedReadKeyRef.current = null;
     });
-  }, [conversationId, paginatedMessages, markMessagesAsRead, currentUser?._id, onScreen]);
+  }, [conversationId, messages, paginatedMessages, markMessagesAsRead, currentUser?._id, onScreen]);
 
   // Scroll to bottom when new messages arrive
   useEffect(() => {

@@ -3,7 +3,8 @@
 import { useMemo, useRef, useState } from 'react'
 import { useAction, useMutation, useQuery } from 'convex/react'
 import { format, formatDistanceToNow } from 'date-fns'
-import { AlertTriangle, CheckCircle2, Copy, Download, FileText, HeartPulse, Loader2, Mail, NotebookPen, Plus, Receipt, Upload } from '@/components/icons'
+import { makeFunctionReference } from 'convex/server'
+import { AlertTriangle, CheckCircle2, Copy, Download, FileText, HeartPulse, History, Loader2, Mail, NotebookPen, Pencil, Plus, Receipt, Upload } from '@/components/icons'
 import { toast } from 'sonner'
 import { api } from '@/convex/_generated/api'
 import type { Id } from '@/convex/_generated/dataModel'
@@ -17,34 +18,46 @@ import { NoteMediaView } from '@/components/physio/NoteMedia'
 import { programError } from '@/components/exercise-programs/errors'
 import { usePracticeMode } from '@/components/physio/practiceMode'
 import { DIFFICULTY_LABELS, EXERCISES_LABELS, HIGH_PAIN, MOOD_LABELS, PainPill, type ExerciseLog, type Workspace } from './shared'
+import { NoteDrawer, type EditableNote } from './WorkspaceDrawers'
+import { NoteHistoryDrawer } from './NoteHistoryDrawer'
+import { MeasureList } from '@/components/physio/notes/MeasureList'
+import { NOTE_TYPE_LABELS, previousBySeries, type ClinicalNote } from '@/components/physio/notes/progress'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Clinical notes
 // ─────────────────────────────────────────────────────────────────────────────
 
-const NOTE_LABELS: Record<string, string> = {
-  initial_assessment: 'Assessment',
-  treatment_note: 'Treatment note',
-  follow_up: 'Follow-up',
-  discharge_summary: 'Discharge summary',
-  follow_up_outreach: 'Follow-up call',
-}
+/** A note as getClinicalNotes returns it, with who wrote it and its history count. */
+type NoteRow = ClinicalNote & { goals?: string; authorName: string; mine: boolean; revisionCount: number }
+/** A measured note from getClinicalNoteMeasures (the whole record, without text or media). */
+type MeasuredNote = Pick<ClinicalNote, '_id' | 'sessionDate' | 'noteType' | 'measures'> & { authorName: string; mine: boolean }
+
+const getClinicalNotesRef = makeFunctionReference<'query', { patientId: Id<'users'>; limit?: number }, NoteRow[]>('physioCare:getClinicalNotes')
+const getClinicalNoteMeasuresRef = makeFunctionReference<'query', { patientId: Id<'users'> }, MeasuredNote[]>(
+  'physioCare:getClinicalNoteMeasures'
+)
+
+/** Notes shown at first, and how many more each "Show older notes" adds. */
+const NOTES_PAGE = 30
 
 export function NotesTab({ workspace, onWrite }: { workspace: Workspace; onWrite: () => void }) {
-  const notes = useQuery(api.physioCare.getClinicalNotes, { patientId: workspace.patient._id }) as
-    | {
-        _id: string
-        sessionDate: number
-        noteType: string
-        subjectiveAssessment?: string
-        objectiveAssessment?: string
-        treatmentAdministered?: string
-        planForNextSession?: string
-        voiceNote?: string | null
-        attachments?: { url: string; contentType: string | null; size: number }[]
-      }[]
-    | undefined
+  const patientId = workspace.patient._id
+  const [shown, setShown] = useState(NOTES_PAGE)
+  // One more than shown, so we know whether there are older notes
+  const result = useQuery(getClinicalNotesRef, { patientId, limit: shown + 1 })
+  // Keep the list on screen while older notes load
+  const lastResult = useRef<NoteRow[] | undefined>(undefined)
+  if (result !== undefined) lastResult.current = result
+  const loaded = result ?? lastResult.current
+  const notes = loaded?.slice(0, shown)
+  const hasOlder = (loaded?.length ?? 0) > shown
+  const loadingOlder = result === undefined && loaded !== undefined
+  // Measures across the whole record, so "since last time" still works for older notes
+  const measured = useQuery(getClinicalNoteMeasuresRef, { patientId }) as ClinicalNote[] | undefined
   const isActive = workspace.episode.status === 'active'
+  const [editing, setEditing] = useState<EditableNote | null>(null)
+  const [historyId, setHistoryId] = useState<string | null>(null)
+  const hasColleagues = notes?.some((n) => !n.mine) ?? false
 
   return (
     <div className="space-y-5">
@@ -63,23 +76,79 @@ export function NotesTab({ workspace, onWrite }: { workspace: Workspace; onWrite
         <Skeleton className="h-40 rounded-2xl" />
       ) : notes.length === 0 ? (
         <Panel>
-          <EmptyState icon={<NotebookPen />} title="No clinical notes yet" description="Notes you write after each visit appear here, newest first." />
+          <EmptyState icon={<NotebookPen />} title="No clinical notes yet" description="Notes written after each visit appear here, newest first." />
         </Panel>
       ) : (
-        <ol className="space-y-3">
+        <div className="space-y-3">
+          {hasColleagues && (
+            <p className="px-1 text-xs text-pt-muted">Includes notes by your clinic colleagues. Only the person who wrote a note can edit it.</p>
+          )}
+          <ol className="space-y-3">
           {notes.map((note) => (
             <li key={note._id}>
               <Panel>
                 <div className="space-y-3 p-5">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="text-sm font-semibold text-pt-ink">{format(note.sessionDate, 'EEEE d MMMM yyyy')}</p>
-                    <StatusBadge tone={note.noteType === 'discharge_summary' ? 'violet' : 'teal'}>{NOTE_LABELS[note.noteType] ?? 'Note'}</StatusBadge>
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-pt-ink">{format(note.sessionDate, 'EEEE d MMMM yyyy')}</p>
+                      {(!note.mine || note.editedAt) && (
+                        <p className="text-xs text-pt-muted">
+                          {[
+                            note.mine ? null : `By ${note.authorName}`,
+                            note.editedAt ? `Edited ${format(note.editedAt, 'd MMM yyyy, HH:mm')}` : null,
+                          ]
+                            .filter(Boolean)
+                            .join(' · ')}
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-1">
+                      <StatusBadge tone={note.noteType === 'discharge_summary' ? 'violet' : 'teal'}>{NOTE_TYPE_LABELS[note.noteType] ?? 'Note'}</StatusBadge>
+                      {note.revisionCount > 0 && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-10 gap-1.5 px-2.5 text-pt-muted hover:text-pt-ink"
+                          onClick={() => setHistoryId(note._id)}
+                        >
+                          <History className="h-3.5 w-3.5" />
+                          History ({note.revisionCount})
+                        </Button>
+                      )}
+                      {/* Only the author edits; colleagues' notes are read-only */}
+                      {note.mine && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-10 gap-1.5 px-2.5 text-pt-muted hover:text-pt-ink"
+                          onClick={() =>
+                            setEditing({
+                              _id: note._id,
+                              sessionDate: note.sessionDate,
+                              noteType: note.noteType,
+                              subjectiveAssessment: note.subjectiveAssessment,
+                              objectiveAssessment: note.objectiveAssessment,
+                              treatmentAdministered: note.treatmentAdministered,
+                              planForNextSession: note.planForNextSession,
+                              diagnosis: note.diagnosis,
+                              measures: note.measures ?? [],
+                              hasMedia: Boolean(note.voiceNote) || Boolean(note.attachments?.length),
+                            })
+                          }
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                          Edit
+                        </Button>
+                      )}
+                    </div>
                   </div>
                   <dl className="grid grid-cols-1 gap-3 md:grid-cols-2">
                     {(
                       [
                         ['Subjective', note.subjectiveAssessment],
                         ['Objective', note.objectiveAssessment],
+                        ['Assessment', note.diagnosis],
+                        ['Goals', note.goals],
                         [note.noteType === 'discharge_summary' ? 'Summary' : 'Treatment', note.treatmentAdministered],
                         [note.noteType === 'discharge_summary' ? 'Home advice' : 'Plan', note.planForNextSession],
                       ] as const
@@ -92,13 +161,36 @@ export function NotesTab({ workspace, onWrite }: { workspace: Workspace; onWrite
                         </div>
                       ))}
                   </dl>
+                  {(note.measures?.length ?? 0) > 0 && (
+                    <div>
+                      <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-pt-faint">Measures</p>
+                      <MeasureList measures={note.measures} previous={previousBySeries(measured ?? notes, note.sessionDate, note._id)} />
+                    </div>
+                  )}
                   <NoteMediaView voiceNote={note.voiceNote} attachments={note.attachments} />
                 </div>
               </Panel>
             </li>
           ))}
-        </ol>
+          {hasOlder && (
+            <li className="flex justify-center pt-1">
+              <Button
+                variant="outline"
+                className={cn(secondaryButtonClass, 'h-10 rounded-xl')}
+                disabled={loadingOlder}
+                onClick={() => setShown((n) => n + NOTES_PAGE)}
+              >
+                {loadingOlder && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
+                Show older notes
+              </Button>
+            </li>
+          )}
+          </ol>
+        </div>
       )}
+
+      <NoteDrawer workspace={workspace} note={editing} open={editing !== null} onOpenChange={(open) => !open && setEditing(null)} />
+      <NoteHistoryDrawer noteId={historyId} open={historyId !== null} onOpenChange={(open) => !open && setHistoryId(null)} />
     </div>
   )
 }

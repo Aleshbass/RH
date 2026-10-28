@@ -1,6 +1,10 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 import { healthTables } from "./schema/health";
+import { questionnaireTables } from "./schema/questionnaires";
+import { measureValidator } from "./helpers/clinicalMeasures";
+import { goalMeasureValidator } from "./helpers/goalMeasures";
+import { reportSnapshotValidator } from "./helpers/progressReport";
 
 export default defineSchema({
   // Users table: Core user information, linked to Clerk authentication
@@ -99,9 +103,292 @@ export default defineSchema({
 
   // One row per Rehabify ID kind; `next` is the number the next person or clinic receives.
   idCounters: defineTable({
-    kind: v.union(v.literal("patient"), v.literal("staff"), v.literal("clinic")),
+    kind: v.union(v.literal("patient"), v.literal("staff"), v.literal("clinic"), v.literal("receipt")),
     next: v.number(),
   }).index("by_kind", ["kind"]),
+
+  // ─── Flex and Flex Max (digital recovery service) ─────────────────────────
+  // One row per 30-day period a patient has (bought, granted by an admin, or in a package).
+  // Only the own patients of independent physios buy it (helpers/patientPlans.ts). The period
+  // starts when the approved programme is available, not at payment; it never renews by itself.
+  patientPlanEntitlements: defineTable({
+    patientId: v.id("users"),
+    plan: v.union(v.literal("flex"), v.literal("flex_max")), // Flex Max includes Flex
+    status: v.union(
+      v.literal("pending_activation"), // paid or granted; waiting for the programme
+      v.literal("active"), // activatedAt..expiresAt (a renewal can start later, when the last one ends)
+      v.literal("expired"),
+      v.literal("refunded"),
+      v.literal("cancelled") // cancelled for a refund (Payment Policy 4.8), awaiting the admin
+    ),
+    source: v.union(v.literal("purchase"), v.literal("admin"), v.literal("welcome"), v.literal("package")),
+    amountKobo: v.number(), // what the patient paid (0 for free activations)
+    listPriceKobo: v.optional(v.number()), // the plan price then: a free activation costs Rehabify this
+    reference: v.optional(v.string()), // Paystack reference (FLEX_...)
+    programId: v.optional(v.id("exercisePrograms")),
+    physiotherapistId: v.optional(v.id("users")),
+    purchasedAt: v.number(),
+    activatedAt: v.optional(v.number()),
+    expiresAt: v.optional(v.number()),
+    reminderSentAt: v.optional(v.number()), // the "ends in 3 days" email
+    grantedBy: v.optional(v.id("users")), // the admin, for free activations
+    note: v.optional(v.string()),
+    cancelledAt: v.optional(v.number()),
+    refundRequestId: v.optional(v.id("refundRequests")),
+    refundedAt: v.optional(v.number()),
+  })
+    .index("by_patient", ["patientId", "purchasedAt"])
+    .index("by_reference", ["reference"])
+    .index("by_status_expires", ["status", "expiresAt"])
+    .index("by_purchased", ["purchasedAt"]),
+
+  // The launch switch for Flex and Flex Max (one row). Until a plan is live nobody is gated
+  // and nobody can buy it.
+  patientPlanSettings: defineTable({
+    flexLive: v.boolean(),
+    flexMaxLive: v.boolean(),
+    updatedBy: v.optional(v.id("users")),
+    updatedAt: v.number(),
+  }),
+
+  // ─── Clinic subscriptions (Clinic Master SaaS Agreement) ──────────────────
+  // A clinic's software plan: fee monthly in advance, overage (₦500 per Active Patient Programme
+  // over the allowance) monthly in arrears. Nothing applies until an admin switches billing on.
+  // Billing runs in convex/clinicBilling.ts; rules in convex/helpers/clinicSubscriptions.ts.
+  clinicSubscriptions: defineTable({
+    clinicId: v.id("clinics"),
+    plan: v.union(v.literal("starter"), v.literal("growth"), v.literal("enterprise")),
+    seatLimit: v.number(), // clinician seats (admin and reception users are unlimited)
+    programmeAllowance: v.number(), // Active Patient Programmes included per month
+    monthlyFeeKobo: v.number(), // excluding VAT
+    status: v.union(
+      v.literal("inactive"), // set up, billing not switched on: the clinic works as before
+      v.literal("active"),
+      v.literal("past_due"), // an invoice is past its due date
+      v.literal("read_only"), // notice period ran out: view and export only until paid
+      v.literal("cancelled") // billing switched off
+    ),
+    billingStartsAt: v.number(), // Lagos midnight of the first billing day
+    currentPeriodStart: v.optional(v.number()),
+    currentPeriodEnd: v.optional(v.number()), // exclusive
+    periodNumber: v.optional(v.number()), // 1 for the first period
+    // Allowance warnings sent in the current period (cleared when a new period starts)
+    warnedAt80: v.optional(v.number()),
+    warnedAt100: v.optional(v.number()),
+    activeProgrammes: v.optional(v.number()), // count at the last daily check
+    usageCheckedAt: v.optional(v.number()),
+    readOnlySince: v.optional(v.number()),
+    upgradeRequestedPlan: v.optional(v.string()),
+    upgradeRequestedAt: v.optional(v.number()),
+    // Mid-period upgrades still to bill: the rest of that period at the new fee, pro rata,
+    // added to the next invoice and then cleared
+    pendingProrations: v.optional(v.array(v.object({
+      label: v.string(),
+      amountKobo: v.number(),
+      periodStart: v.number(),
+      periodEnd: v.number(),
+      at: v.number(),
+    }))),
+    note: v.optional(v.string()), // admin's note, e.g. Enterprise terms
+    switchedOnAt: v.optional(v.number()),
+    switchedOnBy: v.optional(v.id("users")),
+    cancelledAt: v.optional(v.number()),
+    updatedBy: v.optional(v.id("users")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_clinic", ["clinicId"])
+    .index("by_status", ["status"]),
+
+  // Rehabify's invoices to a clinic: one per billing period, issued at the start of the period
+  // and payable within 7 days. Paid through Paystack (CLINICSUB_ references) or marked paid by
+  // an admin for a bank transfer.
+  clinicSubscriptionInvoices: defineTable({
+    clinicId: v.id("clinics"),
+    subscriptionId: v.id("clinicSubscriptions"),
+    number: v.string(), // "RH-SUB-100004-202611"
+    plan: v.string(),
+    periodStart: v.number(), // the period the subscription fee pays for (in advance)
+    periodEnd: v.number(), // exclusive
+    lines: v.array(v.object({
+      kind: v.union(v.literal("subscription"), v.literal("overage"), v.literal("proration")),
+      label: v.string(),
+      quantity: v.number(),
+      unitKobo: v.number(),
+      amountKobo: v.number(),
+      periodStart: v.number(), // overage lines cover the previous period (in arrears)
+      periodEnd: v.number(),
+    })),
+    amountKobo: v.number(),
+    status: v.union(v.literal("open"), v.literal("paid"), v.literal("void")),
+    issuedAt: v.number(),
+    dueAt: v.number(), // end of the 7th day after issue (Lagos)
+    // Latest Paystack checkout started for it
+    paystackReference: v.optional(v.string()),
+    authorizationUrl: v.optional(v.string()),
+    checkoutCreatedAt: v.optional(v.number()),
+    paidAt: v.optional(v.number()),
+    paidReference: v.optional(v.string()),
+    paidAmountKobo: v.optional(v.number()),
+    paymentMethod: v.optional(v.union(v.literal("paystack"), v.literal("bank_transfer"))),
+    paymentNote: v.optional(v.string()),
+    markedPaidBy: v.optional(v.id("users")),
+    receiptId: v.optional(v.id("receipts")),
+    refundedKobo: v.optional(v.number()),
+    // Late payment (clause 7.4): reminder on the due date, written notice 14 days later,
+    // read-only from readOnlyFrom (7 days after the notice)
+    remindersSent: v.number(),
+    reminderSentAt: v.optional(v.number()),
+    noticeSentAt: v.optional(v.number()),
+    readOnlyFrom: v.optional(v.number()),
+    voidedAt: v.optional(v.number()),
+    voidedBy: v.optional(v.id("users")),
+    voidReason: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_clinic", ["clinicId", "periodStart"])
+    .index("by_clinic_status", ["clinicId", "status"])
+    .index("by_status", ["status", "dueAt"])
+    .index("by_subscription_period", ["subscriptionId", "periodStart"])
+    .index("by_number", ["number"]),
+
+  // ─── Physio payout runs (Payout Policy; convex/payouts.ts) ───
+  // Every Friday a cron prepares a draft run of all Available payouts. An admin reviews it and
+  // presses Pay all: one Paystack transfer per physio for their total. Nothing is sent without
+  // that click. Payouts in a run carry its runId.
+  payoutRuns: defineTable({
+    weekOf: v.string(), // the Friday it's for, Lagos date "YYYY-MM-DD"
+    status: v.union(v.literal("draft"), v.literal("paying"), v.literal("paid"), v.literal("partially_failed")),
+    totalKobo: v.number(),
+    physioCount: v.number(),
+    lineCount: v.number(),
+    paidKobo: v.optional(v.number()),
+    failedKobo: v.optional(v.number()),
+    preparedAt: v.number(),
+    payStartedAt: v.optional(v.number()),
+    paidAt: v.optional(v.number()),
+    paidBy: v.optional(v.id("users")), // the admin who pressed Pay all
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_week", ["weekOf"])
+    .index("by_status", ["status", "createdAt"]),
+
+  // One Paystack transfer to one physio in a run: their statement.
+  payoutRunTransfers: defineTable({
+    runId: v.id("payoutRuns"),
+    userId: v.id("users"),
+    payoutIds: v.array(v.id("payouts")),
+    amountKobo: v.number(),
+    status: v.union(
+      v.literal("sending"),
+      v.literal("otp_required"),
+      v.literal("pending"),
+      v.literal("success"),
+      v.literal("failed"),
+      v.literal("reversed")
+    ),
+    reference: v.string(), // our Paystack transfer reference ("rhpo_…"); a retry gets a new one
+    transferCode: v.optional(v.string()),
+    failureReason: v.optional(v.string()),
+    attempts: v.number(),
+    bankName: v.optional(v.string()),
+    accountName: v.optional(v.string()),
+    accountLast4: v.optional(v.string()),
+    statementEmailedAt: v.optional(v.number()),
+    sentAt: v.optional(v.number()),
+    completedAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_run", ["runId"])
+    .index("by_reference", ["reference"])
+    .index("by_user", ["userId", "createdAt"]),
+
+  // Paystack transfer recipients made for physio payouts, per bank account and Paystack mode.
+  payoutRecipients: defineTable({
+    userId: v.id("users"),
+    bankCode: v.string(),
+    accountNumber: v.string(),
+    recipientCode: v.string(),
+    paystackMode: v.union(v.literal("test"), v.literal("live")),
+    createdAt: v.number(),
+  }).index("by_user", ["userId"]),
+
+  // A patient's concern about a completed Rehabify Care session (Payment Policy 4.6, within 7
+  // days). Holds the session's payout until an admin releases it.
+  sessionConcerns: defineTable({
+    appointmentId: v.id("appointments"),
+    patientId: v.id("users"),
+    physiotherapistId: v.optional(v.id("users")),
+    message: v.string(),
+    status: v.union(v.literal("open"), v.literal("resolved")),
+    resolution: v.optional(v.string()),
+    resolvedAt: v.optional(v.number()),
+    resolvedBy: v.optional(v.id("users")),
+    createdAt: v.number(),
+  })
+    .index("by_appointment", ["appointmentId"])
+    .index("by_status", ["status", "createdAt"]),
+
+  // A receipt for every payment and every refund (Payment Policy 7), shown in the account and
+  // emailed. Written by helpers/receipts.ts only; never edited after it's issued.
+  receipts: defineTable({
+    number: v.string(), // "RH-RCT-100001"
+    kind: v.union(v.literal("payment"), v.literal("refund")),
+    payerUserId: v.optional(v.id("users")),
+    email: v.optional(v.string()),
+    name: v.optional(v.string()),
+    // What it was for, e.g. "marketplace_booking" + the booking id
+    relatedType: v.string(),
+    relatedId: v.string(),
+    relationship: v.optional(v.union(v.literal("rehabify_care"), v.literal("independent"), v.literal("clinic"))),
+    description: v.string(),
+    lines: v.array(v.object({ label: v.string(), amountKobo: v.number() })), // discounts are negative
+    totalKobo: v.number(),
+    reference: v.optional(v.string()), // Paystack reference
+    dedupeKey: v.string(), // one receipt per money movement (payment reference or refund id)
+    paidAt: v.number(), // when the money moved
+    accessToken: v.string(), // for the emailed link (/receipt/<token>), so guests can open it
+    issuedAt: v.number(),
+  })
+    .index("by_dedupe", ["dedupeKey"])
+    .index("by_related", ["relatedType", "relatedId", "kind"])
+    .index("by_payer", ["payerUserId", "issuedAt"])
+    .index("by_token", ["accessToken"])
+    .index("by_issued", ["issuedAt"]),
+
+  // Refunds waiting for an admin (Payment Policy 4-5: decided within 3 business days). Anything
+  // that owes a refund files a request through helpers/refunds.ts; an admin approves it and the
+  // refund is sent through Paystack, then a refund receipt is issued.
+  refundRequests: defineTable({
+    relatedType: v.string(), // "marketplace_booking", "flex", "clinic_subscription", ...
+    relatedId: v.string(),
+    reference: v.string(), // the original Paystack payment reference
+    amountKobo: v.number(),
+    reason: v.string(), // a rule code, e.g. "patient_cancel_24h", "physio_declined"
+    reasonText: v.string(), // shown to the admin and the patient
+    requestedBy: v.union(v.literal("patient"), v.literal("physiotherapist"), v.literal("admin"), v.literal("system")),
+    payerUserId: v.optional(v.id("users")),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("processing"), // sent to Paystack
+      v.literal("refunded"),
+      v.literal("declined"),
+      v.literal("failed")
+    ),
+    decidedBy: v.optional(v.id("users")),
+    decidedAt: v.optional(v.number()),
+    decisionNote: v.optional(v.string()),
+    paystackRefundId: v.optional(v.string()),
+    error: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_status", ["status", "createdAt"])
+    .index("by_related", ["relatedType", "relatedId"])
+    .index("by_reference", ["reference"]),
 
   // Short-lived replay reservations for authenticated Joy service requests.
   // This deliberately stores no phone number or clinical request payload.
@@ -474,6 +761,40 @@ export default defineSchema({
     .index("by_status", ["status"])
     .index("by_created", ["createdAt"]),
 
+  // Web push: one row per device (browser or installed app) that turned notifications on (push.ts)
+  pushSubscriptions: defineTable({
+    userId: v.id("users"),
+    endpoint: v.string(),
+    p256dh: v.string(),
+    auth: v.string(),
+    userAgent: v.optional(v.string()),
+    installed: v.optional(v.boolean()), // subscribed from the home-screen app
+    createdAt: v.number(),
+    lastSentAt: v.optional(v.number()),
+    failures: v.optional(v.number()),
+  })
+    .index("by_user", ["userId"])
+    .index("by_endpoint", ["endpoint"]),
+
+  // Push messages admins sent from /dashboard/admin/push
+  pushBroadcasts: defineTable({
+    title: v.string(),
+    body: v.string(),
+    url: v.optional(v.string()),
+    audience: v.string(),
+    devices: v.number(),
+    sentBy: v.id("users"),
+    createdAt: v.number(),
+  }).index("by_created", ["createdAt"]),
+
+  // Phone notification settings per person (helpers/pushCategories.ts). No row: everything on.
+  pushPreferences: defineTable({
+    userId: v.id("users"),
+    off: v.array(v.string()), // categories turned off
+    quietHours: v.optional(v.object({ start: v.string(), end: v.string() })), // "HH:MM", Lagos time
+    updatedAt: v.number(),
+  }).index("by_user", ["userId"]),
+
   // Email audit logs: track outbound email events for debugging/auditing
   emailAuditLogs: defineTable({
     to: v.string(),
@@ -812,9 +1133,63 @@ export default defineSchema({
     )),
     diagnosis: v.optional(v.string()),
     goals: v.optional(v.string()),
+    // Objective measures recorded in the note (ROM, strength, tests, outcome measures)
+    measures: v.optional(v.array(measureValidator)),
+    // Edits by the author. Each earlier wording is a row in sessionLogRevisions; revisionCount
+    // counts them (convex/helpers/noteRevisions.ts).
+    editedAt: v.optional(v.number()),
+    revisionCount: v.optional(v.number()),
+    // Legacy: history kept on the note before sessionLogRevisions existed (oldest first). Still
+    // shown; moved into the table and cleared the next time the note is edited.
+    revisions: v.optional(v.array(v.object({
+      savedAt: v.number(), // when this wording was written
+      replacedAt: v.number(),
+      replacedBy: v.id("users"),
+      noteType: v.optional(v.string()),
+      diagnosis: v.optional(v.string()),
+      goals: v.optional(v.string()),
+      subjectiveAssessment: v.optional(v.string()),
+      objectiveAssessment: v.optional(v.string()),
+      treatmentAdministered: v.optional(v.string()),
+      planForNextSession: v.optional(v.string()),
+      measures: v.optional(v.array(measureValidator)),
+    }))),
   })
     .index("by_appointment_id", ["appointmentId"])
     .index("by_patient_id_and_date", ["patientId", "sessionDate"]),
+
+  // Every earlier wording of a clinical note (sessionLogs), one row per edit, all kept. Clinician
+  // only: patients never see these (convex/helpers/noteRevisions.ts, physioCare.getClinicalNoteHistory).
+  sessionLogRevisions: defineTable({
+    noteId: v.id("sessionLogs"),
+    patientId: v.id("users"),
+    savedAt: v.number(), // when this wording was written
+    replacedAt: v.number(),
+    replacedBy: v.id("users"),
+    noteType: v.optional(v.string()),
+    diagnosis: v.optional(v.string()),
+    goals: v.optional(v.string()),
+    subjectiveAssessment: v.optional(v.string()),
+    objectiveAssessment: v.optional(v.string()),
+    treatmentAdministered: v.optional(v.string()),
+    planForNextSession: v.optional(v.string()),
+    measures: v.optional(v.array(measureValidator)),
+  })
+    .index("by_note_and_replaced_at", ["noteId", "replacedAt"])
+    .index("by_patient", ["patientId"]),
+
+  // The physiotherapist handbook (Standard of Physiotherapy Practice): a private PDF on ImageKit.
+  // The newest upload is the current one; earlier versions stay on record.
+  practiceHandbooks: defineTable({
+    title: v.string(),
+    version: v.string(),
+    fileId: v.string(), // ImageKit file id
+    filePath: v.string(),
+    url: v.string(),
+    size: v.number(),
+    uploadedBy: v.id("users"),
+    uploadedAt: v.number(),
+  }).index("by_uploaded_at", ["uploadedAt"]),
 
   // Exercise Library: Central repository of exercises
   exercises: defineTable({
@@ -1081,6 +1456,8 @@ export default defineSchema({
       timeline: v.string(),
       measurable: v.boolean(),
       achieved: v.optional(v.boolean()), // Ticked off by the physio
+      // Optional link to a measure series with a numeric target and baseline (helpers/goalMeasures.ts)
+      measure: v.optional(goalMeasureValidator),
     })),
     phases: v.array(v.object({
       name: v.string(),
@@ -1121,6 +1498,31 @@ export default defineSchema({
     .index("by_clinic", ["clinicId"])
     .index("by_status", ["status"])
     .index("by_patient_and_status", ["patientId", "status"]),
+
+  // Progress reports a physio shared with the patient's referrer (convex/progressReports.ts).
+  // The snapshot is frozen at send time; the link opens without signing in until it expires
+  // or the physio withdraws it.
+  progressReports: defineTable({
+    patientId: v.id("users"),
+    physiotherapistId: v.id("users"),
+    episodeId: v.optional(v.id("careEpisodes")),
+    planId: v.optional(v.id("treatmentPlans")),
+    token: v.string(), // Random base62, in the shared link
+    snapshot: reportSnapshotValidator,
+    recipientName: v.optional(v.string()),
+    recipientEmail: v.optional(v.string()),
+    emailedAt: v.optional(v.number()),
+    // The physio confirmed the patient agreed to share this report
+    consentConfirmedBy: v.id("users"),
+    consentConfirmedAt: v.number(),
+    sentAt: v.number(),
+    expiresAt: v.number(),
+    revokedAt: v.optional(v.number()),
+    revokedBy: v.optional(v.id("users")),
+  })
+    .index("by_token", ["token"])
+    .index("by_patient", ["patientId", "sentAt"])
+    .index("by_physiotherapist", ["physiotherapistId", "sentAt"]),
 
   // Treatment plan progress tracking
   treatmentProgress: defineTable({
@@ -1774,6 +2176,24 @@ export default defineSchema({
     processedAt: v.optional(v.number()),
     completedAt: v.optional(v.number()),
     failureReason: v.optional(v.string()),
+    // Why it's owed (Payout Policy): a completed session, a late cancellation (50%) or a
+    // patient no-show / cancellation within 2 hours (full). Missing on older rows = session.
+    reason: v.optional(v.union(v.literal("session"), v.literal("late_cancellation"), v.literal("no_show"))),
+    bookingId: v.optional(v.id("marketplaceBookings")),
+    appointmentId: v.optional(v.id("appointments")),
+    sessionAt: v.optional(v.number()), // the session's start time
+    // Lifecycle (helpers/payoutStage.ts derives the stage): an admin's hold or a patient's
+    // concern, the Friday run it's in, and the one nudge for a missing session note
+    heldAt: v.optional(v.number()),
+    heldReason: v.optional(v.string()), // shown to the physio
+    heldBy: v.optional(v.id("users")),
+    heldSource: v.optional(v.union(v.literal("admin"), v.literal("patient_concern"))),
+    releasedAt: v.optional(v.number()),
+    releasedBy: v.optional(v.id("users")),
+    runId: v.optional(v.id("payoutRuns")),
+    runTransferId: v.optional(v.id("payoutRunTransfers")),
+    skipRunId: v.optional(v.id("payoutRuns")), // an admin took it out of this run
+    noteNudgedAt: v.optional(v.number()),
     // Set by admins from /dashboard/admin/payouts
     transferReference: v.optional(v.string()),
     adminNote: v.optional(v.string()),
@@ -1785,7 +2205,9 @@ export default defineSchema({
     .index("by_payment_id", ["paymentId"])
     .index("by_payout_invoice_id", ["invoiceId"])
     .index("by_status", ["status"])
-    .index("by_user_and_status", ["userId", "status"]),
+    .index("by_user_and_status", ["userId", "status"])
+    .index("by_appointment", ["appointmentId"])
+    .index("by_run", ["runId"]),
 
   // Bank accounts for physiotherapists
   bankAccountsNew: defineTable({
@@ -2825,6 +3247,9 @@ export default defineSchema({
     // Booking status
     bookingStatus: v.union(
       v.literal("pending_payment"),
+      // Paid; the physio has providerResponseDueAt to accept (Booking Policy 5.4). Website
+      // requests only: Joy bookings keep their own status and use providerResponse alone.
+      v.literal("awaiting_physio"),
       v.literal("awaiting_admin_schedule"),
       v.literal("confirmed"),
       v.literal("completed"),
@@ -2861,6 +3286,17 @@ export default defineSchema({
     providerResponse: v.optional(v.union(v.literal("pending"), v.literal("accepted"), v.literal("rejected"))),
     providerResponseDueAt: v.optional(v.number()),
     replacementStatus: v.optional(v.union(v.literal("not_needed"), v.literal("awaiting_patient_slot"), v.literal("admin_follow_up"))),
+    // Website requests: physios who declined or didn't answer (never offered again), and why
+    previousPhysioIds: v.optional(v.array(v.id("users"))),
+    providerDeclineReason: v.optional(v.string()), // "no_response", "physio_cancelled", or the physio's own words
+    // Payment Policy 4.3: one free reschedule when moving a visit within 24 hours of its start
+    freeRescheduleUsedAt: v.optional(v.number()),
+    cancellationOutcome: v.optional(v.object({
+      tier: v.union(v.literal("early"), v.literal("late"), v.literal("very_late")),
+      refundKobo: v.number(),
+      physioPayoutKobo: v.number(),
+      at: v.number(),
+    })),
     // `admin_scheduled_virtual` is the two-step consultation product: Joy
     // collects payment, then an RH administrator assigns the provider/time.
     joyBookingRoute: v.optional(v.union(v.literal("provider_selected"), v.literal("admin_scheduled_virtual"))),
@@ -3458,6 +3894,9 @@ export default defineSchema({
 
   // Health tables from health schema
   ...healthTables,
+
+  // Outcome questionnaires patients fill in (schema/questionnaires.ts)
+  ...questionnaireTables,
 
   partnershipInquiries: defineTable({
     // "demo" = Book a demo on the partners page; missing on older rows, which are partnership inquiries
@@ -4214,7 +4653,9 @@ export default defineSchema({
   })
     .index("by_patient", ["patientId", "createdAt"])
     .index("by_creator", ["createdBy", "createdAt"])
-    .index("by_clinic", ["clinicId", "createdAt"]),
+    .index("by_clinic", ["clinicId", "createdAt"])
+    // Daily "no exercises in 7 days" check (pushAlerts.ts)
+    .index("by_status", ["status", "createdAt"]),
 
   // One patient-reported completion of one exercise in a programme.
   exerciseProgramLogs: defineTable({
@@ -4521,15 +4962,25 @@ export default defineSchema({
     order: v.number(),
     title: v.string(),
     description: v.optional(v.string()),
-    video: v.object({
-      fileId: v.string(),
-      filePath: v.string(),
-      url: v.string(), // unsigned; never sent to learners
-      sizeBytes: v.number(),
-      durationSec: v.number(),
-      posterUrl: v.optional(v.string()), // public frame grabbed in the browser at upload
-      posterFileId: v.optional(v.string()),
-    }),
+    // Each lesson plays from one of these: an uploaded video, or a YouTube video
+    video: v.optional(
+      v.object({
+        fileId: v.string(),
+        filePath: v.string(),
+        url: v.string(), // unsigned; never sent to learners
+        sizeBytes: v.number(),
+        durationSec: v.number(),
+        posterUrl: v.optional(v.string()), // public frame grabbed in the browser at upload
+        posterFileId: v.optional(v.string()),
+      })
+    ),
+    youtube: v.optional(
+      v.object({
+        videoId: v.string(),
+        durationSec: v.number(), // 0 when YouTube didn't say
+        thumbnailUrl: v.string(), // YouTube's own thumbnail (i.ytimg.com)
+      })
+    ),
     createdAt: v.number(),
     updatedAt: v.number(),
   }).index("by_course_order", ["courseId", "order"]),

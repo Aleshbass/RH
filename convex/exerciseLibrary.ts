@@ -21,6 +21,7 @@ import {
   programClipIds,
   resolveShareSession,
 } from "./helpers/exerciseAccess";
+import { assertProgramUnlocked, isProgramLocked } from "./helpers/patientPlans";
 
 const HOUR = 3_600_000;
 const GRANT_LIMITS = { staff: 300, licence: 200, learner: 200, patient: 120, link: 120 } as const;
@@ -216,8 +217,8 @@ export const listLibrary = query({
         .take(2000)
     ).filter((e) => !e.isPublic && !(clinicId && e.clinicId === clinicId));
     const rows = [...publicRows, ...clinicRows, ...ownRows].filter((e) => !e.archivedAt);
-    // Licensees and Rehabify Learn physios only get the 3D library.
-    const visible = access.kind === "licence" || access.kind === "learner" ? rows.filter((e) => e.animationSlug) : rows;
+    // Licensees only get the 3D library.
+    const visible = access.kind === "licence" ? rows.filter((e) => e.animationSlug) : rows;
     const items = visible.map(libraryItem);
     items.sort((a, b) => Number(Boolean(b.animation)) - Number(Boolean(a.animation)) || a.name.localeCompare(b.name));
     return { version: EXERCISE_CATALOG.version, access: access.kind, label: access.label, items };
@@ -268,6 +269,8 @@ export const requestViewerGrant = mutation({
       access = "link";
       subject = `link:${res.link._id}`;
       linkId = res.link._id;
+      // Demonstrations are part of Flex for an independent physio's own patients (patientPlans.ts)
+      await assertProgramUnlocked(ctx, res.program, "demo");
       allowed = await programClipIds(ctx, res.program);
       watermark = `${await programLabel(ctx, res.program)} · ${initials(await ctx.db.get(res.program.patientId))}`;
       await ctx.db.patch(res.link._id, { openCount: res.link.openCount + 1, lastOpenedAt: now });
@@ -283,6 +286,7 @@ export const requestViewerGrant = mutation({
         if (!program || program.patientId !== viewer.user._id || program.status !== "active") {
           throw new ConvexError("This programme isn't available.");
         }
+        await assertProgramUnlocked(ctx, program, "demo");
         allowed = await programClipIds(ctx, program);
         watermark = `${await programLabel(ctx, program)} · ${initials(viewer.user)}`;
       } else {
@@ -570,6 +574,8 @@ export const requestExerciseMediaLinks = mutation({
     if (args.share) {
       const res = await resolveShareSession(ctx, args.share.code, args.share.session);
       if (!res.ok) throw new ConvexError(res.reason === "needs_pin" ? "Enter your PIN again to continue." : "This link is no longer available.");
+      // The physio's own photos and videos are part of Flex for their own patients (patientPlans.ts)
+      if (await isProgramLocked(ctx, res.program)) return { links: {}, expiresAt: Date.now() };
       inProgram = programExercises(res.program);
     } else {
       const access = await libraryAccess(ctx);
@@ -577,6 +583,7 @@ export const requestExerciseMediaLinks = mutation({
       if (access.kind === "patient") {
         const program = args.programId ? await ctx.db.get(args.programId) : null;
         if (!program || program.patientId !== access.user._id) throw new ConvexError("Open the exercise from your programme.");
+        if (await isProgramLocked(ctx, program)) return { links: {}, expiresAt: Date.now() };
         inProgram = programExercises(program);
       } else if (access.kind === "staff") {
         staff = access.user;

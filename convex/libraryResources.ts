@@ -88,7 +88,7 @@ export function listRow(r: Doc<"libraryResources">) {
   };
 }
 
-/** The resource library for the care team, licensees and Rehabify Learn physios (not patients). */
+/** The resource library for the care team and licensees (not patients or Rehabify Learn learners). */
 export const listResources = query({
   args: { region: v.optional(v.string()) },
   handler: async (ctx, args) => {

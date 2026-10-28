@@ -38,6 +38,7 @@ import {
   tabsTriggerClass,
   type Tone,
 } from '@/components/patient/ui';
+import { doseLabel, type MyProgram } from '@/components/exercise-programs/types';
 import { playSound } from '@/lib/sounds';
 import { cn } from '@/lib/utils';
 
@@ -371,6 +372,51 @@ function ExerciseDrawer({
   );
 }
 
+/**
+ * Exercises the physio sent as a home programme (the Exercises page), shown on the plan when the
+ * plan itself has none, so the two never disagree. Falls back to the plain empty state.
+ */
+function HomeProgrammeExercises() {
+  const programs = useQuery(api.exercisePrograms.listMine) as MyProgram[] | null | undefined;
+  const withItems = (programs ?? []).filter((program) => program.items.some((item) => item.kind !== 'education'));
+  if (programs === undefined) return <LoadingBlocks rows={2} />;
+  if (withItems.length === 0) {
+    return (
+      <Panel>
+        <EmptyState icon={Dumbbell} title="No exercises yet" description="Your physio hasn’t added exercises to this plan yet." />
+      </Panel>
+    );
+  }
+  return (
+    <Panel>
+      <div className="space-y-4 p-5">
+        {withItems.map((program) => (
+          <div key={program._id} className="space-y-2">
+            <p className="text-sm font-semibold text-pt-ink">{program.title}</p>
+            <ul className="divide-y divide-pt-line">
+              {program.items
+                .filter((item) => item.kind !== 'education')
+                .map((item, index) => (
+                  <li key={`${program._id}-${index}`} className="flex items-center justify-between gap-3 py-2.5 text-sm">
+                    <span className="flex min-w-0 items-center gap-2 text-pt-ink">
+                      <Dumbbell className="h-4 w-4 shrink-0 text-pt-muted" />
+                      <span className="truncate">{item.name}</span>
+                    </span>
+                    {doseLabel(item) && <span className="shrink-0 tabular-nums text-pt-muted">{doseLabel(item)}</span>}
+                  </li>
+                ))}
+            </ul>
+          </div>
+        ))}
+        <Link href="/dashboard/patient/exercises" className={cn(primaryButtonClass, 'inline-flex h-11 w-full items-center justify-center gap-2 sm:w-auto sm:px-5')}>
+          Do today’s exercises
+          <ArrowRight className="h-4 w-4" />
+        </Link>
+      </div>
+    </Panel>
+  );
+}
+
 function ProgressBar({ value }: { value: number }) {
   return (
     <div className="h-2.5 overflow-hidden rounded-full bg-pt-sunken" role="progressbar" aria-valuenow={Math.round(value)} aria-valuemin={0} aria-valuemax={100}>
@@ -493,9 +539,13 @@ function PlanBody({ plan, interactive }: { plan: Plan; interactive: boolean }) {
               {format(new Date(), 'EEEE d MMMM')} · tap an exercise to see how to do it
             </p>
             {today.length === 0 ? (
-              <Panel>
+              all.length === 0 ? (
+                <HomeProgrammeExercises />
+              ) : (
+                <Panel>
                 <EmptyState icon={Dumbbell} title="No exercises yet" description="Your physio hasn’t added exercises to this plan yet." />
               </Panel>
+              )
             ) : (
               <ul className="space-y-2">
                 {today.map((exercise) => (
@@ -508,9 +558,7 @@ function PlanBody({ plan, interactive }: { plan: Plan; interactive: boolean }) {
 
         <TabsContent value="all" className="mt-0 space-y-6">
           {all.length === 0 ? (
-            <Panel>
-              <EmptyState icon={Dumbbell} title="No exercises yet" description="Your physio hasn’t added exercises to this plan yet." />
-            </Panel>
+            <HomeProgrammeExercises />
           ) : (
             phases.map((phase, index) => (
               <div key={phase.order} className="space-y-2">

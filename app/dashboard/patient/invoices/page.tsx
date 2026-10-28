@@ -10,6 +10,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { AlertTriangle, CheckCircle2, ChevronRight, Copy, Download, ExternalLink, Loader2, Lock, Receipt, Wallet } from '@/components/icons'
 import { usePaystackCheckout } from '@/components/billing/PaystackCheckout'
 import { PaystackTestModeBanner } from '@/components/billing/PaystackTestModeBanner'
+import { ReceiptsPanel } from '@/components/patient/ReceiptsPanel'
 import { cn } from '@/lib/utils'
 import {
   EmptyState,
@@ -365,6 +366,8 @@ export default function PatientInvoicesPage() {
           </div>
         )}
       </PatientDrawer>
+
+      <ReceiptsPanel />
     </PageContainer>
   )
 }

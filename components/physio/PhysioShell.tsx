@@ -18,6 +18,7 @@ import { PhysioDeclined, PhysioUnderReview } from '@/components/physio/PhysioRev
 import { BookingProvider, useBooking } from '@/components/physio/schedule/BookingDrawer'
 import { CLINIC_PORTAL_HOME, clinicianBelongsInClinicPortal } from '@/components/clinic/clinician-routing'
 import { WebsiteLink } from '@/components/dashboard/shared/WebsiteLink'
+import { AppIconBadge, AppSetupButton, AppSetupPrompt } from '@/components/pwa/AppSetup'
 
 /** The top bar's main action: book a patient in, in a drawer, without leaving the page. */
 function NewAppointmentButton() {
@@ -145,6 +146,7 @@ export function PhysioShell({ children }: { children: ReactNode }) {
               <WebsiteLink tone="portal" className="hidden sm:inline-flex" />
               {!isUnderReview && <PhysioDutySwitch />}
               {!isUnderReview && <NewAppointmentButton />}
+              <AppSetupButton tone="portal" />
               <PhysioHelp />
               <PatientThemeToggle className="hidden sm:flex" />
               <PatientNotifications />
@@ -168,6 +170,9 @@ export function PhysioShell({ children }: { children: ReactNode }) {
       </div>
 
       <PhysioMobileNav limited={isUnderReview} unreadMessages={unreadMessages} />
+      {/* Home-screen app + notifications for new patients and messages, asked until done */}
+      <AppSetupPrompt />
+      {access === 'full' && <AppIconBadge />}
     </div>
     </BookingProvider>
   )

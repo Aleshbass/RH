@@ -12,9 +12,47 @@ import { programError } from '@/components/exercise-programs/errors'
 import { useMutationUntyped, useQueryUntyped } from '@/lib/convexUntyped'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
+import { goalMeasureName, goalProgress, goalValueText, type GoalMeasure, type GoalProgress, type MeasuredNote } from '@/convex/helpers/goalMeasures'
 import { Fact, Meter, workspaceApi, type Goal, type Workspace } from './shared'
+import { ReportSummary } from './ProgressReportPanel'
 
-function GoalRow({ goal, index, planId, editable }: { goal: Goal; index: number; planId: string; editable: boolean }) {
+/** Baseline → latest → target for a goal linked to a measure, with how far along it is. */
+function GoalMeasureProgress({ link, progress }: { link: GoalMeasure; progress: GoalProgress }) {
+  const text = (value: number) => goalValueText(link, value)
+  const parts = [
+    progress.baseline !== null ? `Baseline ${text(progress.baseline)}` : 'No value recorded yet',
+    progress.latest !== null && progress.latestAt !== progress.baselineAt ? `now ${text(progress.latest)}` : null,
+    `target ${text(link.target)}`,
+  ].filter(Boolean)
+  return (
+    <div className="mt-2 space-y-1.5">
+      <div className="flex items-baseline justify-between gap-3">
+        <p className="min-w-0 text-xs text-pt-muted">
+          <span className="font-medium text-pt-ink">{goalMeasureName(link)}</span> · {parts.join(' · ')}
+        </p>
+        {progress.percent !== null && <span className="shrink-0 text-xs font-semibold tabular-nums text-pt-ink">{progress.percent}%</span>}
+      </div>
+      {progress.percent !== null && <Meter value={progress.percent} max={100} />}
+    </div>
+  )
+}
+
+function GoalRow({
+  goal,
+  index,
+  planId,
+  editable,
+  notes,
+  since,
+}: {
+  goal: Goal
+  index: number
+  planId: string
+  editable: boolean
+  notes: MeasuredNote[] | undefined
+  since: number
+}) {
+  const progress = goal.measure ? goalProgress(goal.measure, notes, since) : null
   const setAchieved = useMutationUntyped(workspaceApi.physioCare.setGoalAchieved)
   const [busy, setBusy] = useState(false)
   const toggle = async () => {
@@ -43,9 +81,21 @@ function GoalRow({ goal, index, planId, editable }: { goal: Goal; index: number;
       >
         {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : goal.achieved && <Check className="h-3.5 w-3.5" />}
       </button>
-      <div className="min-w-0">
+      <div className="min-w-0 flex-1">
         <p className={cn('text-sm font-medium text-pt-ink', goal.achieved && 'text-pt-faint line-through')}>{goal.description}</p>
         {(goal.targetValue || goal.timeline) && <p className="text-xs text-pt-muted">{[goal.targetValue, goal.timeline].filter(Boolean).join(' · ')}</p>}
+        {goal.measure && progress && !goal.achieved && <GoalMeasureProgress link={goal.measure} progress={progress} />}
+        {/* Reaching the number never ticks the goal on its own: the physio decides */}
+        {progress?.reached && !goal.achieved && editable && (
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <StatusBadge tone="green" dot>
+              Target reached
+            </StatusBadge>
+            <Button size="sm" className={cn(secondaryButtonClass, 'h-9')} disabled={busy} onClick={toggle}>
+              Mark as met
+            </Button>
+          </div>
+        )}
       </div>
     </li>
   )
@@ -66,6 +116,11 @@ export function CarePlanTab({
     | undefined
   const plan = workspace.plan
   const isActive = workspace.episode.status === 'active'
+  // Measures for goals with a measured target (clinic colleagues' notes included, as on the server)
+  const hasLinkedGoal = Boolean(plan?.goals.some((g) => g.measure))
+  const measuredNotes = useQueryUntyped(workspaceApi.physioCare.getClinicalNoteMeasures, hasLinkedGoal ? { patientId: workspace.patient._id } : 'skip') as
+    | MeasuredNote[]
+    | undefined
 
   return (
     <div className="space-y-5">
@@ -124,7 +179,7 @@ export function CarePlanTab({
             </div>
             <ul className="divide-y divide-pt-line pb-2 pt-1">
               {plan.goals.map((goal, index) => (
-                <GoalRow key={index} goal={goal} index={index} planId={plan._id} editable={isActive} />
+                <GoalRow key={index} goal={goal} index={index} planId={plan._id} editable={isActive} notes={measuredNotes} since={workspace.episode.startedAt} />
               ))}
             </ul>
           </div>
@@ -145,6 +200,8 @@ export function CarePlanTab({
           />
         </Panel>
       )}
+
+      <ReportSummary patientId={workspace.patient._id} firstName={workspace.patient.firstName} />
 
       <ExerciseProgramsPanel
         patientId={workspace.patient._id}

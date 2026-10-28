@@ -150,7 +150,7 @@ export function CourseLinkFlow() {
 
   return (
     <Frame icon={<GraduationCap className="h-7 w-7" />} title={`${greeting}, your course is ready`}>
-      <p>Live session links, weekly materials and the exercise library, all in one place. No password needed.</p>
+      <p>Your video courses from the Rehabify team, all in one place. No password needed.</p>
       {failure && <p className="font-medium text-rose-600">{failure}</p>}
       <button type="button" onClick={() => void open()} disabled={opening || !signInLoaded} className={cn(pillInk, 'mt-2 h-12 w-full text-[15px]')}>
         {opening ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Open my course'}

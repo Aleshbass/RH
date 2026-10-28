@@ -7,6 +7,14 @@ import { StreamClient } from "@stream-io/node-sdk"
 import { api, internal } from "./_generated/api"
 import type { Doc, Id } from './_generated/dataModel'
 import { assertServerCaller } from "./helpers/serverSecret"
+import { makeFunctionReference } from "convex/server"
+
+// Plain reference: the generated api type is at TypeScript's depth limit (TS2589)
+const joyPatientWaitingRef = makeFunctionReference<
+  "mutation",
+  { bookingId: Id<"marketplaceBookings">; callId: string },
+  null
+>("pushAlerts:joyPatientWaiting")
 import { StreamChat } from 'stream-chat'
 
 /** How long video and chat tokens last. A session that runs longer fetches a new one on rejoin. */
@@ -353,6 +361,12 @@ export const getJoyPatientCallToken = action({
     await ctx.runMutation(internal.joyHandoff.recordJourneyEvent, {
       patientId: join.patientId, bookingId: join.bookingId, stage: 'call_joined', eventKey: `call-joined-${join.bookingId}`,
     })
+    // ...and tells the physio's phone their patient is waiting (pushAlerts.ts; near the start time only)
+    if (join.bookingId) {
+      await ctx
+        .runMutation(joyPatientWaitingRef, { bookingId: join.bookingId, callId: join.callId })
+        .catch(() => console.warn('[getJoyPatientCallToken] Could not send the patient-waiting alert'))
+    }
 
     return {
       ok: true as const,

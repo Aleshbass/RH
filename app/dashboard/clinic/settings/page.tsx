@@ -29,6 +29,7 @@ import { BankLogo } from '@/components/clinic/BankLogo'
 import { HowPayoutsWork } from '@/components/clinic/FeeBreakdown'
 import { PageShell, Panel, StatusBadge, primaryButtonClass } from '@/components/clinic/ui'
 import { RehabifyId } from '@/components/shared/RehabifyId'
+import { NotificationSettings } from '@/components/pwa/NotificationSettings'
 
 const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'] as const
 type Day = (typeof DAYS)[number]
@@ -393,6 +394,13 @@ export default function ClinicSettingsPage() {
       </Panel>
 
       <PayoutSection />
+
+      {/* Personal to whoever is signed in, not the clinic */}
+      <Panel title="Phone notifications" description="What reaches your phone, and when Rehabify should stay quiet.">
+        <div className="p-4 sm:p-5">
+          <NotificationSettings />
+        </div>
+      </Panel>
     </PageShell>
   )
 }

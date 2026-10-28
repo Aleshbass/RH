@@ -86,7 +86,7 @@ export default function StaffManagementPage() {
   }
 
   const handleRevoke = async (id: StaffInvitation['_id']) => {
-    if (!requireFullAccess('Cancel invitation')) return
+    if (!requireFullAccess('Cancel invitation', undefined, { allowBillingReadOnly: true })) return
     if (!window.confirm('Cancel this invitation? Its link will stop working.')) return
     setResendingId(id)
     try {

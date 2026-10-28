@@ -314,7 +314,8 @@ export default function StaffTable({ staff, roles, onInvite }: StaffTableProps) 
                                                             onClick={() =>
                                                                 requireFullAccess(
                                                                     isSuspended ? 'Reactivate clinician' : 'Suspend clinician',
-                                                                    () => setStatusChangeFor(member)
+                                                                    () => setStatusChangeFor(member),
+                                                                    { allowBillingReadOnly: !isSuspended }
                                                                 )
                                                             }
                                                         >
@@ -322,7 +323,7 @@ export default function StaffTable({ staff, roles, onInvite }: StaffTableProps) 
                                                         </DropdownMenuItem>
                                                         <DropdownMenuItem
                                                             className="text-red-600 focus:text-red-600 dark:text-red-400 dark:focus:text-red-400"
-                                                            onClick={() => requireFullAccess('Remove clinician', () => setRemoveFor(member))}
+                                                            onClick={() => requireFullAccess('Remove clinician', () => setRemoveFor(member), { allowBillingReadOnly: true })}
                                                         >
                                                             Remove from clinic
                                                         </DropdownMenuItem>

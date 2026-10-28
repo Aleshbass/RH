@@ -32,6 +32,7 @@ import {
 } from '@/convex/helpers/appointmentStatus'
 import { formatLagos, lagosDate, lagosTimeRange } from '@/convex/helpers/lagosTime'
 import { isVideoVisit, meetingLinkOf } from '@/components/appointments/appointment-ui'
+import { ReportSessionProblem } from '@/components/patient/AppointmentActionModals'
 import {
   DetailRow,
   PatientDrawer,
@@ -430,6 +431,9 @@ export function AppointmentDetailsDrawer({
             </div>
           </div>
         )}
+
+        {/* Rehabify Care visits only, up to 7 days after; renders nothing otherwise */}
+        {apt.status === 'completed' && <ReportSessionProblem appointmentId={apt._id} />}
       </div>
     </PatientDrawer>
   )

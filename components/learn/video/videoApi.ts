@@ -19,6 +19,10 @@ type CourseId = Id<'learnVideoCourses'>
 type LessonId = Id<'learnVideoLessons'>
 type Direction = 'up' | 'down'
 
+/** A YouTube video as a lesson: its id, length (0 when YouTube didn't say) and YouTube's thumbnail. */
+export type YoutubeVideo = { videoId: string; durationSec: number; thumbnailUrl: string }
+export type YoutubeInfo = YoutubeVideo & { title: string; channel: string; description: string }
+
 export type UploadedVideo = {
   fileId: string
   filePath: string
@@ -58,9 +62,13 @@ export const videoApi = {
   deleteCourse: makeFunctionReference<'mutation', { courseId: CourseId }, null>('learn:adminDeleteVideoCourse'),
   saveLesson: makeFunctionReference<
     'mutation',
-    { courseId: CourseId; lessonId?: LessonId; title: string; description?: string; video?: UploadedVideo },
+    { courseId: CourseId; lessonId?: LessonId; title: string; description?: string; video?: UploadedVideo; youtube?: YoutubeVideo },
     LessonId
   >('learn:adminSaveVideoLesson'),
+  youtubeInfo: makeFunctionReference<'action', { link: string }, YoutubeInfo>('learn:adminYoutubeInfo'),
+  createFromYoutube: makeFunctionReference<'mutation', { title: string; summary?: string; youtube: YoutubeVideo }, CourseId>(
+    'learn:adminCreateCourseFromYoutube'
+  ),
   moveLesson: makeFunctionReference<'mutation', { lessonId: LessonId; direction: Direction }, null>('learn:adminMoveVideoLesson'),
   deleteLesson: makeFunctionReference<'mutation', { lessonId: LessonId }, null>('learn:adminDeleteVideoLesson'),
 }

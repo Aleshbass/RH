@@ -20,6 +20,7 @@ import { NETWORK_TERMS_SUMMARY, NETWORK_TERMS_VERSION } from '@/lib/rehabify-net
 import { formatKobo } from '@/lib/rehabify-services';
 import type { NetworkTermsStatus, PayoutSchedule } from '@/lib/rehabify-api-types';
 import { PayoutScheduleTable } from '../fee-schedule/payout-schedule-table';
+import { PracticeHandbookSection } from '@/components/physio/PracticeHandbook';
 
 const SETTINGS = '/dashboard/physiotherapist/settings';
 
@@ -62,7 +63,15 @@ export default function NetworkTermsPage() {
         setLoaded(true);
     }, [status, schedule, loaded]);
 
-    if (practice.loaded && practice.isIndependent) return <OwnPatientsOnlyNotice title="Network terms" />;
+    // The handbook is for every Rehabify physio; the network terms only for network physios
+    if (practice.loaded && practice.isIndependent) {
+        return (
+            <div className="space-y-6">
+                <OwnPatientsOnlyNotice title="Terms & handbook" />
+                <PracticeHandbookSection />
+            </div>
+        );
+    }
 
     if (status === undefined || schedule === undefined || setup === undefined || (status && schedule && !loaded)) {
         return (
@@ -77,13 +86,14 @@ export default function NetworkTermsPage() {
     if (status?.isClinicMember) {
         return (
             <div className="space-y-6">
-                <SettingsPageHeader title="Network terms" />
+                <SettingsPageHeader title="Terms & handbook" />
                 <SettingsSection>
                     <p className="text-sm text-neutral-600 dark:text-neutral-400">
                         You work with a clinic, so you see patients under your clinic’s terms and prices. The Rehabify network terms don’t
                         apply to you, and there’s nothing to accept here.
                     </p>
                 </SettingsSection>
+                <PracticeHandbookSection />
             </div>
         );
     }
@@ -91,12 +101,13 @@ export default function NetworkTermsPage() {
     if (status === null || schedule === null) {
         return (
             <div className="space-y-6">
-                <SettingsPageHeader title="Network terms" />
+                <SettingsPageHeader title="Terms & handbook" />
                 <SettingsSection>
                     <p className="text-sm text-neutral-600 dark:text-neutral-400">
                         Finish your application first. The network terms appear here once your profile exists.
                     </p>
                 </SettingsSection>
+                <PracticeHandbookSection />
             </div>
         );
     }
@@ -156,7 +167,10 @@ export default function NetworkTermsPage() {
 
     return (
         <div className="space-y-6">
-            <SettingsPageHeader title="Network terms" description="The terms you work under when you treat Rehabify patients." />
+            <SettingsPageHeader
+                title="Terms & handbook"
+                description="The terms you work under when you treat Rehabify patients, and the handbook for how we practise."
+            />
 
             <SettingsSection>
                 <div className="flex items-start gap-3">
@@ -171,6 +185,8 @@ export default function NetworkTermsPage() {
                     </div>
                 </div>
             </SettingsSection>
+
+            <PracticeHandbookSection />
 
             <SettingsSection title="The terms" description={`Version ${NETWORK_TERMS_VERSION}`}>
                 <ol className="space-y-4">

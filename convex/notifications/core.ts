@@ -1,3 +1,4 @@
+import { insertNotification } from "../helpers/pushNotify";
 import { v } from "convex/values";
 import { mutation, query, internalMutation, internalQuery } from "../_generated/server";
 import { Id } from "../_generated/dataModel";
@@ -66,7 +67,7 @@ export const createNotificationWithDeduplication = internalMutation({
     }
 
     // Create new notification
-    const notificationId = await ctx.db.insert("notifications", {
+    const notificationId = await insertNotification(ctx, {
       userId: args.userId,
       type: args.type,
       priority: args.priority || "medium",
@@ -263,7 +264,7 @@ export const createPaymentNotification = internalMutation({
       : `Payment for invoice #${invoice.invoiceNumber} failed. Please try again.`;
 
     // Notify patient
-    await ctx.db.insert("notifications", {
+    await insertNotification(ctx, {
       userId: invoice.patientId,
       type: args.type as any,
       priority: args.type === "payment_failed" ? "high" : "medium",
@@ -284,7 +285,7 @@ export const createPaymentNotification = internalMutation({
 
     // Notify physiotherapist if payment successful
     if (args.type === "payment_success" && (invoice as any).physiotherapistId) {
-      await ctx.db.insert("notifications", {
+      await insertNotification(ctx, {
         userId: (invoice as any).physiotherapistId,
         type: "payment_received" as any,
         priority: "high",

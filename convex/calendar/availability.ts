@@ -26,6 +26,7 @@ import {
     DayAvailability,
 } from "./availabilityTypes";
 import { LAGOS_TIME_ZONE, startOfZonedDay, zonedDateTimeToUtc } from "../helpers/lagosTime";
+import { isLiveHold } from "../helpers/slotHolds";
 
 // ============================================================================
 // HELPER FUNCTIONS
@@ -359,8 +360,8 @@ export const getAvailableSlots = query({
             .collect();
         const holdBusy: BusyBlock[] = activeHolds
             .filter((booking) =>
-                booking.bookingStatus === "pending_payment" &&
-                (booking.holdExpiresAt ?? 0) > Date.now() &&
+                // Unpaid holds, and paid requests waiting for the physio's answer
+                isLiveHold(booking, Date.now()) &&
                 (booking.sessionDate ?? 0) < args.endDate &&
                 (booking.sessionDate ?? 0) + booking.sessionDuration * 60_000 > args.startDate
             )
@@ -437,6 +438,29 @@ export const getAvailableSlots = query({
         return bookableSlots;
     },
 });
+
+/**
+ * Whether [start, end) falls inside the physio's working hours that day (weekly hours or a date
+ * override). Bookings and calendar busy times are not checked here.
+ */
+export function isWithinWorkingHours(schedule: unknown, start: number, end: number): boolean {
+    const availability = normalizeAvailabilitySchedule(schedule);
+    const dateStr = getDateString(start, availability.timezone);
+    const override = availability.dateOverrides?.find((o) => o.date === dateStr);
+    let daySlots: TimeSlot[];
+    if (override) {
+        if (!override.isAvailable) return false;
+        daySlots = override.slots || [];
+    } else {
+        const daySchedule = availability.weeklyHours.find((d) => d.dayOfWeek === getDayOfWeek(start, availability.timezone));
+        if (!daySchedule || !daySchedule.isAvailable) return false;
+        daySlots = daySchedule.slots;
+    }
+    return daySlots.some((slot) => {
+        const window = slotToTimestamps(dateStr, slot, availability.timezone);
+        return window.start <= start && end <= window.end;
+    });
+}
 
 /**
  * Get availability schedule for a physiotherapist
@@ -695,8 +719,8 @@ export const getAvailableSlotsInternal = internalQuery({
             .collect();
         const holdBusy: BusyBlock[] = activeHolds
             .filter((booking) =>
-                booking.bookingStatus === "pending_payment" &&
-                (booking.holdExpiresAt ?? 0) > Date.now() &&
+                // Unpaid holds, and paid requests waiting for the physio's answer
+                isLiveHold(booking, Date.now()) &&
                 (booking.sessionDate ?? 0) < args.endDate &&
                 (booking.sessionDate ?? 0) + booking.sessionDuration * 60_000 > args.startDate
             )

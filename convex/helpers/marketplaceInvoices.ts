@@ -47,6 +47,10 @@ export async function ensureMarketplaceInvoice(
       if (!related.includes(appointmentId)) {
         await ctx.db.patch(existing._id, { relatedAppointmentIds: [...related, appointmentId] });
       }
+      // Re-activated with another physio (the first declined or cancelled): the payout follows
+      if (existing.physiotherapistId !== booking.physiotherapistId) {
+        await ctx.db.patch(existing._id, { physiotherapistId: booking.physiotherapistId });
+      }
       return existing._id;
     }
   }

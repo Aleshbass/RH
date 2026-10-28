@@ -1,3 +1,4 @@
+import { insertNotification } from "../helpers/pushNotify";
 import { v } from "convex/values";
 import { mutation, query, internalMutation, internalQuery } from "../_generated/server";
 import { MutationCtx } from "../_generated/server";
@@ -134,7 +135,7 @@ export const processSingleNotificationRetry = internalMutation({
     
     try {
       // Create the notification directly in the database to avoid type instantiation issues
-      const notificationId: any = await ctx.db.insert("notifications", {
+      const notificationId: any = await insertNotification(ctx, {
         userId: retry.userId,
         type: retry.type,
         priority: 'medium',

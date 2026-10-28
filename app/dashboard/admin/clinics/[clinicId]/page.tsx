@@ -33,6 +33,7 @@ import {
 import { ApprovalBadge, ClinicAvatar, ClinicStatusBadge, CLINICS_BASE, countLabel } from '@/components/admin/clinics/shared'
 import { ClinicFeesTab, ClinicOverviewTab } from '@/components/admin/clinics/ClinicOverview'
 import { ClinicPatientsTab, ClinicReferralsTab, ClinicStaffTab } from '@/components/admin/clinics/ClinicLists'
+import { ClinicSubscriptionTab } from '@/components/admin/clinics/ClinicSubscriptionTab'
 import type { ClinicDetailResult } from '@/components/admin/clinics/types'
 import { RehabifyId } from '@/components/shared/RehabifyId'
 import { playSound } from '@/lib/sounds'
@@ -231,6 +232,7 @@ export default function AdminClinicDetailPage() {
           <TabsTrigger value="patients">Patients</TabsTrigger>
           <TabsTrigger value="referrals">Referrals</TabsTrigger>
           <TabsTrigger value="fees">Fees &amp; payouts</TabsTrigger>
+          <TabsTrigger value="subscription">Subscription</TabsTrigger>
         </TabsList>
         {/* Inactive tabs unmount, so each list only loads when it's opened */}
         <TabsContent value="overview" className="mt-0">
@@ -244,6 +246,9 @@ export default function AdminClinicDetailPage() {
         </TabsContent>
         <TabsContent value="referrals" className="mt-0">
           <ClinicReferralsTab clinicId={clinicId} />
+        </TabsContent>
+        <TabsContent value="subscription" className="mt-0">
+          <ClinicSubscriptionTab clinicId={clinicId} />
         </TabsContent>
         <TabsContent value="fees" className="mt-0">
           <ClinicFeesTab data={data} />

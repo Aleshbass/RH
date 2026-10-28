@@ -33,6 +33,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import EditPatientModal from '@/components/dashboard/physiotherapist/EditPatientModal';
 import { SendProgramDialog } from '@/components/exercise-programs/SendProgramDialog';
 import { ShareLinkDialog } from '@/components/exercise-programs/ShareLinkDialog';
+import { PatientPlanBadge } from '@/components/exercise-programs/PatientPlanBadge';
 import { useBooking } from '@/components/physio/schedule/BookingDrawer';
 import { JoinVideoButton } from '@/components/physio/schedule/JoinVideoButton';
 import { needsMyAnswer, useNow, useTodaysVisits, videoJoin } from '@/components/physio/schedule/shared';
@@ -208,6 +209,8 @@ export default function PatientWorkspacePage() {
                   {episode.source === 'referred' && episode.referredBy ? ` by ${episode.referredBy}` : ''}
                 </StatusBadge>
                 <StatusBadge>Since {format(workspace.relationship.startDate, 'MMM yyyy')}</StatusBadge>
+                {/* Flex / Flex Max, for an independent physio's own patients only */}
+                <PatientPlanBadge patientId={patientId} />
               </div>
             </div>
           </div>

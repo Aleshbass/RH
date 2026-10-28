@@ -13,7 +13,38 @@ import { ConvexError } from 'convex/values';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
 import { useUser } from '@clerk/nextjs';
-import { api } from '@/convex/_generated/api';
+import { makeFunctionReference } from 'convex/server';
+import type { Id } from '@/convex/_generated/dataModel';
+
+// Plain reference: the generated `api` type is at TypeScript's depth limit (TS2589)
+const getMyUserRef = makeFunctionReference<
+    'query',
+    Record<string, never>,
+    { firstName?: string; lastName?: string; email?: string } | null
+>('users:getMyUser');
+const createClinicRef = makeFunctionReference<
+    'mutation',
+    ReturnType<typeof buildClinicDetails>,
+    { clinicId: Id<'clinics'>; success: boolean; message: string }
+>('clinics:createClinic');
+const completeUserProfileRef = makeFunctionReference<
+    'mutation',
+    {
+        role: 'clinic_owner';
+        profileData: { referralSource?: string; gender?: string; clinicLocation?: string };
+        firstName?: string;
+        lastName?: string;
+        finalStep?: boolean;
+        onboardingSkipped?: boolean;
+        acceptedPolicies?: Record<string, string>;
+    },
+    unknown
+>('users:completeUserProfile');
+const saveClinicDocumentRef = makeFunctionReference<
+    'mutation',
+    { clinicId: Id<'clinics'>; storageId: Id<'_storage'>; documentType: 'businessLicense'; fileName: string },
+    unknown
+>('files:saveClinicDocument');
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -31,6 +62,7 @@ import {
 } from '@/components/ui/dialog';
 import MapboxAddressInput, { type MapboxPlace } from '@/components/physio-register/MapboxAddressInput';
 import { cn } from '@/lib/utils';
+import { PROFESSIONAL_SIGNUP_POLICIES, policyVersions } from '@/lib/policies';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AvailabilityScheduler, type OperatingHours } from '@/components/onboarding/common/AvailabilityScheduler';
 import { useFileUpload } from '@/lib/hooks/useFileUpload';
@@ -181,12 +213,12 @@ export default function ClinicOwnerOnboardingWizard() {
     const router = useRouter();
     const { data, updateClinicOwnerData, setActualClinicId, completeOnboarding } = useOnboardingStore();
     const { clinicOwnerData, actualClinicId } = data;
-    const currentUser = useQuery(api.users.getMyUser);
+    const currentUser = useQuery(getMyUserRef, {});
     const { isSignedIn } = useUser();
 
-    const createClinicMutation = useMutation(api.clinics.createClinic);
-    const completeUserProfileMutation = useMutation(api.users.completeUserProfile);
-    const saveClinicDocument = useMutation(api.files.saveClinicDocument);
+    const createClinicMutation = useMutation(createClinicRef);
+    const completeUserProfileMutation = useMutation(completeUserProfileRef);
+    const saveClinicDocument = useMutation(saveClinicDocumentRef);
     const { uploadFile } = useFileUpload();
 
     const [currentStep, setCurrentStep] = useState(0);
@@ -436,6 +468,8 @@ export default function ClinicOwnerOnboardingWizard() {
                 firstName: formData.firstName,
                 lastName: formData.lastName,
                 finalStep: true,
+                // The ticked Terms and Privacy Policy, recorded append-only (channel "web")
+                acceptedPolicies: formData.acceptTerms ? policyVersions(PROFESSIONAL_SIGNUP_POLICIES) : undefined,
             });
 
             updateClinicOwnerData({
@@ -571,14 +605,17 @@ export default function ClinicOwnerOnboardingWizard() {
                     <span className="text-xs font-semibold text-neutral-500 uppercase tracking-wider">
                         Clinic Setup • Step {currentStep + 1} of {steps.length}
                     </span>
-                    <button
-                        type="button"
-                        onClick={() => setIsSkipModalOpen(true)}
-                        className="text-xs font-medium text-[#005b57] hover:text-[#00443e] hover:underline flex items-center gap-1 transition-colors"
-                    >
-                        <span>Skip to Preview</span>
-                        <ChevronRight className="w-3 h-3" />
-                    </button>
+                    {/* On the last step the only way on is Submit, after agreeing to the terms */}
+                    {currentStep !== REVIEW_STEP && (
+                        <button
+                            type="button"
+                            onClick={() => setIsSkipModalOpen(true)}
+                            className="text-xs font-medium text-[#005b57] hover:text-[#00443e] hover:underline flex items-center gap-1 transition-colors"
+                        >
+                            <span>Skip to Preview</span>
+                            <ChevronRight className="w-3 h-3" />
+                        </button>
+                    )}
                 </div>
                 <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
                     <motion.div
@@ -924,9 +961,13 @@ export default function ClinicOwnerOnboardingWizard() {
                                             )}
                                         />
                                         <Label htmlFor="acceptTerms" className="text-sm font-normal leading-snug">
-                                            I accept the{' '}
-                                            <Link href="/terms-and-conditions" target="_blank" className="text-[#005b57] underline">
-                                                terms and conditions
+                                            I agree to the{' '}
+                                            <Link href="/terms-and-conditions" target="_blank" className="font-medium text-rh-ink underline">
+                                                Terms of Service
+                                            </Link>{' '}
+                                            and the{' '}
+                                            <Link href="/privacy-policy" target="_blank" className="font-medium text-rh-ink underline">
+                                                Privacy Policy
                                             </Link>
                                         </Label>
                                     </div>
@@ -952,20 +993,22 @@ export default function ClinicOwnerOnboardingWizard() {
                 </Button>
 
                 <div className="flex items-center gap-2.5">
-                    <Button
-                        type="button"
-                        variant="ghost"
-                        onClick={() => setIsSkipModalOpen(true)}
-                        disabled={isSkipping || isSubmitting || isFinishing}
-                        className="text-xs text-neutral-500 hover:text-neutral-900 h-12 px-3"
-                    >
-                        Skip for now
-                    </Button>
+                    {currentStep !== REVIEW_STEP && (
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            onClick={() => setIsSkipModalOpen(true)}
+                            disabled={isSkipping || isSubmitting || isFinishing}
+                            className="text-xs text-neutral-500 hover:text-neutral-900 h-12 px-3"
+                        >
+                            Skip for now
+                        </Button>
+                    )}
 
                     <Button
                         type="button"
                         onClick={nextStep}
-                        disabled={isSubmitting || isSkipping || isFinishing}
+                        disabled={isSubmitting || isSkipping || isFinishing || (currentStep === REVIEW_STEP && !watch('acceptTerms'))}
                         className="bg-[#005b57] hover:bg-[#00443e] text-white min-w-[120px] h-12 rounded-xl shadow-lg shadow-teal-900/10"
                     >
                         {isSubmitting || isFinishing ? (

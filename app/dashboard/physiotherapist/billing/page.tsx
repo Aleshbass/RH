@@ -19,6 +19,7 @@ import { EmptyState, PageContainer, PageHeader, Panel, StatTile, StatusBadge, pr
 import { PaystackTestModeBanner } from '@/components/billing/PaystackTestModeBanner';
 import { programError } from '@/components/exercise-programs/errors';
 import { usePracticeMode } from '@/components/physio/practiceMode';
+import { PhysioPayouts } from '@/components/physio/PhysioPayouts';
 
 type InvoiceFromQuery = {
   _id: Id<'invoices'>;
@@ -117,7 +118,7 @@ export default function BillingPage() {
   const loanByInvoice = useMemo(() => new Map((invoiceLoans ?? []).map((loan) => [loan.invoiceId, loan])), [invoiceLoans]);
 
   // Independent physios only have their own patients: no Rehabify Care payouts here (the server drops them too)
-  const { isIndependent } = usePracticeMode();
+  const { isIndependent, loaded: practiceLoaded } = usePracticeMode();
 
   const filtered = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
@@ -264,6 +265,9 @@ export default function BillingPage() {
           tone={stats && stats.overdueInvoices > 0 ? 'attention' : 'default'}
         />
       </div>
+
+      {/* Rehabify Care payouts by stage and Friday statements; never for independent physios */}
+      {practiceLoaded && !isIndependent && <PhysioPayouts />}
 
       <Panel
         title="Invoices"

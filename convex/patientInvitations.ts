@@ -1,3 +1,4 @@
+import { insertNotification } from "./helpers/pushNotify";
 import { ConvexError, Infer, v } from "convex/values";
 import { query, mutation, internalQuery, MutationCtx } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
@@ -319,7 +320,7 @@ async function acceptPatientInvitation(
   });
 
   // Notify physiotherapist that patient accepted invitation
-  await ctx.db.insert("notifications", {
+  await insertNotification(ctx, {
     userId: invitation.physiotherapistId,
     type: "invitation_accepted" as any,
     priority: "high",

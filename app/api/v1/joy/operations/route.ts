@@ -10,6 +10,10 @@ const schema = z.object({
     "physio_work_summary", "physio_update_availability", "physio_session_note", "physio_visit_event", "physio_message_patient", "physio_feedback_request",
     "family_resolve", "family_grant", "family_update_grant", "family_revoke_grant", "family_care_summary", "change_physio_request",
     "admin_patient", "admin_physio", "admin_finance_summary", "admin_escalation", "admin_verify_physio", "admin_reassign",
+    // Additive (Oct 2026), patient persona; payloads documented in convex/joyOperations.ts:
+    // consents at the first chat (Terms, Privacy, health information, channel "whatsapp") and
+    // whether the patient has Flex Max (Joy reminders and support).
+    "patient_consent_status", "patient_record_consents", "patient_recovery_plan",
   ]),
   actor: actorSchema,
   data: z.record(z.string(), z.unknown()).default({}),
@@ -19,6 +23,7 @@ const schema = z.object({
 const mutations = new Set([
   "physio_update_availability", "physio_session_note", "physio_visit_event", "physio_message_patient", "physio_feedback_request",
   "family_grant", "family_update_grant", "family_revoke_grant", "change_physio_request", "admin_escalation", "admin_verify_physio", "admin_reassign",
+  "patient_record_consents",
 ]);
 
 export async function POST(request: Request) {

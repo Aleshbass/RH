@@ -1,13 +1,14 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useMutation } from 'convex/react'
+import { useMutation, useQuery } from 'convex/react'
+import { makeFunctionReference } from 'convex/server'
 import { toast } from 'sonner'
 import { api } from '@/convex/_generated/api'
 import type { Id } from '@/convex/_generated/dataModel'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
-import { Calendar, CheckCircle, Clock, Loader2 } from '@/components/icons'
+import { Calendar, CheckCircle, Clock, Flag, Loader2 } from '@/components/icons'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
 import { lagosDate, lagosDateTime, lagosTimeRange } from '@/convex/helpers/lagosTime'
@@ -71,6 +72,56 @@ interface CancelAppointmentModalProps {
   onAppointmentCancelled: () => void
 }
 
+type CancellationQuote = {
+  tier: 'early' | 'late' | 'very_late'
+  refundKobo: number
+  paidKobo: number
+  canReschedule: boolean
+  rescheduleBy: number
+}
+
+// A plain reference: the generated `api` type is at TypeScript's depth limit (TS2589)
+const cancellationQuoteRef = makeFunctionReference<'query', { appointmentId: Id<'appointments'> }, CancellationQuote | null>(
+  'rehabifyFollowUps:getCancellationQuote'
+)
+
+/** For a visit paid through Rehabify: what cancelling now gives back (Payment Policy 4.3). */
+function CancellationTerms({ appointmentId }: { appointmentId: Id<'appointments'> }) {
+  const quote = useQuery(cancellationQuoteRef, { appointmentId })
+  if (!quote) return null
+  const naira = (kobo: number) => `₦${Math.round(kobo / 100).toLocaleString('en-NG')}`
+  return (
+    <div className={cn('space-y-1.5 rounded-2xl p-4 text-sm', quote.tier === 'very_late' ? 'bg-pt-rose-bg text-pt-rose-fg' : 'bg-pt-sunken text-pt-ink')}>
+      {quote.tier === 'early' && (
+        <p>
+          <span className="font-semibold">Full refund of {naira(quote.refundKobo)}.</span> You’re cancelling 24 hours or more before. You could also move
+          it to another time for free instead.
+        </p>
+      )}
+      {quote.tier === 'late' && (
+        <p>
+          <span className="font-semibold">Refund of {naira(quote.refundKobo)}</span> (half the session fee, plus any travel charge), because it’s
+          less than 24 hours away.{' '}
+          {quote.canReschedule
+            ? 'Or move it once for free to a time within 14 days: close this and choose Reschedule.'
+            : 'You’ve already used your free move for this visit.'}
+        </p>
+      )}
+      {quote.tier === 'very_late' && (
+        <p>
+          <span className="font-semibold">No refund.</span> It’s less than 2 hours away, so your physio may already be on their way.
+        </p>
+      )}
+      <p className="text-xs opacity-75">
+        Refunds go back to how you paid, usually within 5 to 10 business days.{' '}
+        <a href="/payment-policy#cancellations-and-refunds" target="_blank" rel="noopener noreferrer" className="underline underline-offset-2">
+          Payment Policy
+        </a>
+      </p>
+    </div>
+  )
+}
+
 export function CancelAppointmentModal({ isOpen, onClose, appointment, onAppointmentCancelled }: CancelAppointmentModalProps) {
   const [reason, setReason] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -128,6 +179,7 @@ export function CancelAppointmentModal({ isOpen, onClose, appointment, onAppoint
     >
       <div className="space-y-5">
         <VisitSummary appointment={appointment} />
+        <CancellationTerms appointmentId={appointment._id as Id<'appointments'>} />
         <div className="space-y-2">
           <label htmlFor="cancel-reason" className="flex items-center gap-1 text-sm font-medium text-pt-ink">
             Reason <span className="font-normal text-pt-faint">(optional)</span>
@@ -408,5 +460,100 @@ export function RespondToProposalModal({ isOpen, onClose, appointment, accept }:
         </p>
       </div>
     </PatientDrawer>
+  )
+}
+
+/* ---------------------------------------------------------------------------------------------- */
+/* Report a problem with a visit (Payment Policy 4.6)                                             */
+/* ---------------------------------------------------------------------------------------------- */
+
+type SessionConcernState = { reported: boolean; canReport: boolean; deadline: number }
+
+const sessionConcernStateRef = makeFunctionReference<'query', { appointmentId: Id<'appointments'> }, SessionConcernState | null>(
+  'payouts:getSessionConcernState'
+)
+const reportSessionProblemRef = makeFunctionReference<
+  'mutation',
+  { appointmentId: Id<'appointments'>; message: string },
+  { success: boolean; message: string }
+>('payouts:reportSessionProblem')
+
+/**
+ * "Report a problem with this session", for a completed Rehabify Care visit up to 7 days after it.
+ * Sits inside the visit's drawer and renders nothing when it doesn't apply.
+ */
+export function ReportSessionProblem({ appointmentId }: { appointmentId: string }) {
+  const state = useQuery(sessionConcernStateRef, { appointmentId: appointmentId as Id<'appointments'> })
+  const report = useMutation(reportSessionProblemRef)
+  const [open, setOpen] = useState(false)
+  const [message, setMessage] = useState('')
+  const [sending, setSending] = useState(false)
+
+  if (!state) return null
+  if (state.reported) {
+    return (
+      <p className="rounded-2xl bg-pt-sunken p-4 text-sm text-pt-muted">
+        You reported a problem with this visit. The Rehabify team will get back to you.
+      </p>
+    )
+  }
+  if (!state.canReport) return null
+
+  const submit = async () => {
+    setSending(true)
+    try {
+      const result = await report({ appointmentId: appointmentId as Id<'appointments'>, message: message.trim() })
+      playSound('success')
+      toast.success(result.message)
+      setOpen(false)
+      setMessage('')
+    } catch (error) {
+      playSound('error')
+      toast.error(appointmentErrorMessage(error, 'We couldn’t send that. Please try again.'))
+    } finally {
+      setSending(false)
+    }
+  }
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="inline-flex items-center gap-1.5 text-sm font-medium text-pt-muted underline-offset-2 hover:text-pt-ink hover:underline"
+      >
+        <Flag className="h-3.5 w-3.5" />
+        Report a problem with this session
+      </button>
+    )
+  }
+
+  return (
+    <div className="space-y-3 rounded-2xl border border-pt-line p-4">
+      <div>
+        <p className="text-sm font-semibold text-pt-ink">Report a problem with this session</p>
+        <p className="mt-0.5 text-sm text-pt-muted">
+          Tell us what went wrong. The Rehabify team reads this, not your physio. You can report it until {lagosDate(state.deadline)}.
+        </p>
+      </div>
+      <Textarea
+        value={message}
+        onChange={(e) => setMessage(e.target.value)}
+        placeholder="e.g. My physio arrived very late and the session was cut short"
+        rows={3}
+        maxLength={1000}
+        className={fieldClass}
+        aria-label="What went wrong"
+      />
+      <div className="grid grid-cols-2 gap-2">
+        <Button className={cn(secondaryButtonClass, 'h-10')} onClick={() => setOpen(false)} disabled={sending}>
+          Cancel
+        </Button>
+        <Button className={cn(primaryButtonClass, 'h-10')} onClick={submit} disabled={sending || message.trim().length < 5}>
+          {sending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          Send
+        </Button>
+      </div>
+    </div>
   )
 }

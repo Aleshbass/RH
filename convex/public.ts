@@ -1,3 +1,4 @@
+import { insertNotification } from "./helpers/pushNotify";
 import { mutation } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
@@ -27,14 +28,15 @@ export const submitPartnershipInquiry = mutation({
 
     for (const admin of admins) {
       // 1. Create an in-app notification
-      await ctx.db.insert("notifications", {
+      await insertNotification(ctx, {
         userId: admin._id,
         type: "system_alert",
         title: "New Partnership Inquiry",
         message: `${args.name} from ${args.organization} has submitted a new partnership inquiry.`,
-        data: { 
+        data: {
           inquiryId,
-          organization: args.organization
+          organization: args.organization,
+          actionUrl: "/dashboard/admin/partnerships?tab=inquiries",
         },
         status: "pending",
         priority: "high",
@@ -94,11 +96,18 @@ export const requestDemo = mutation({
       .withIndex("by_role", q => q.eq("role", "admin"))
       .collect();
     for (const admin of admins) {
-      await ctx.db.insert("notifications", {
+      await insertNotification(ctx, {
         userId: admin._id,
         type: "system_alert",
         title: "New demo request",
         message: `${name} from ${organization} would like a demo.`,
+        // payload is what the bell and the phone show; tapping opens the inquiries list
+        payload: {
+          title: "New demo request",
+          body: `${name} from ${organization} would like a demo.`,
+          link: "/dashboard/admin/partnerships?tab=inquiries",
+          data: { inquiryId, organization, actionUrl: "/dashboard/admin/partnerships?tab=inquiries" },
+        },
         data: { inquiryId, organization },
         status: "pending",
         priority: "high",

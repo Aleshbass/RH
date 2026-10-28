@@ -56,18 +56,20 @@ export const CLINIC_PLANS: ClinicPlan[] = [
 ];
 
 export const CLINIC_PROGRAMME_OVERAGE_KOBO = 50_000;
-// Add "We let you know at 80% and 100%" once allowance warnings are built
-export const CLINIC_PROGRAMME_OVERAGE = 'Over your allowance? Each extra active patient programme is ₦500 a month.';
+// Allowance warnings at 80% and 100% are sent by convex/clinicBilling.ts
+export const CLINIC_PROGRAMME_OVERAGE =
+  'Over your allowance? Each extra active patient programme is ₦500 a month. We let you know at 80% and 100%.';
 
-// Add "Data export" once clinics can export their data
 export const CLINIC_PLAN_INCLUDES = [
   'Clinical records with assessment and SOAP templates',
   'Scheduling for in-clinic and virtual sessions',
   'Staff and role-based access',
   'Exercise library and custom exercises',
+  // A clinic's patients get their home programme as part of the plan: never charge them for Flex
   'Home programmes and progress tracking for your patients',
   'Invoicing and payment links',
   'Reporting dashboards',
+  'Data export',
   'Email support',
 ];
 

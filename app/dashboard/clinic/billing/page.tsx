@@ -6,7 +6,7 @@ import { useAction, useMutation, useQuery } from 'convex/react'
 import { ConvexError } from 'convex/values'
 import { format } from 'date-fns'
 import { toast } from 'sonner'
-import { Copy, CreditCard, Landmark, Loader2, MoreHorizontal, Plus, Send } from '@/components/icons'
+import { Copy, CreditCard, Landmark, Loader2, MoreHorizontal, Plus, ReceiptText, Send } from '@/components/icons'
 import { api } from '@/convex/_generated/api'
 import type { Id } from '@/convex/_generated/dataModel'
 import { Button } from '@/components/ui/button'
@@ -180,7 +180,7 @@ export default function ClinicBillingPage() {
   }
 
   const handleCopyLink = async (inv: (typeof billing.invoices)[number]) => {
-    if (!requireFullAccess('Copy payment link')) return
+    if (!requireFullAccess('Copy payment link', undefined, { allowBillingReadOnly: true })) return
     setBusyInvoice(inv._id)
     try {
       const link = inv.paymentLink ?? (await getLink(inv._id))
@@ -194,7 +194,7 @@ export default function ClinicBillingPage() {
   }
 
   const handleWhatsApp = async (inv: (typeof billing.invoices)[number]) => {
-    if (!requireFullAccess('Send payment link')) return
+    if (!requireFullAccess('Send payment link', undefined, { allowBillingReadOnly: true })) return
     // Open the window synchronously so mobile browsers don't block it as a popup
     const win = window.open('', '_blank')
     setBusyInvoice(inv._id)
@@ -244,14 +244,23 @@ export default function ClinicBillingPage() {
       title="Billing"
       description="Request payments, share Paystack links and track what you're owed."
       actions={
-        <Button
-          size="sm"
-          className={primaryButtonClass}
-          onClick={() => requireFullAccess('Request payment', () => setRequestOpen(true))}
-        >
-          <Plus className="mr-1.5 h-4 w-4" />
-          Request payment
-        </Button>
+        <>
+          {/* Rehabify's plan, invoices to the clinic and the data export */}
+          <Button asChild size="sm" variant="outline">
+            <Link href="/dashboard/clinic/billing/plan">
+              <ReceiptText className="mr-1.5 h-4 w-4" />
+              Your plan
+            </Link>
+          </Button>
+          <Button
+            size="sm"
+            className={primaryButtonClass}
+            onClick={() => requireFullAccess('Request payment', () => setRequestOpen(true), { allowBillingReadOnly: true })}
+          >
+            <Plus className="mr-1.5 h-4 w-4" />
+            Request payment
+          </Button>
+        </>
       }
     >
       <PaystackTestModeBanner />
@@ -408,8 +417,10 @@ export default function ClinicBillingPage() {
                           </DropdownMenuItem>
                           <DropdownMenuItem
                             onClick={() =>
-                              requireFullAccess('Mark as paid', () =>
-                                setMarkPaidFor({ id: inv._id, label: `${inv.patientName} · ${formatNaira(inv.totalAmountNaira)}` })
+                              requireFullAccess(
+                                'Mark as paid',
+                                () => setMarkPaidFor({ id: inv._id, label: `${inv.patientName} · ${formatNaira(inv.totalAmountNaira)}` }),
+                                { allowBillingReadOnly: true }
                               )
                             }
                           >
@@ -419,8 +430,10 @@ export default function ClinicBillingPage() {
                           <DropdownMenuItem
                             className="text-red-600 focus:text-red-600 dark:text-red-400 dark:focus:text-red-400"
                             onClick={() =>
-                              requireFullAccess('Cancel invoice', () =>
-                                setCancelFor({ id: inv._id, label: `${inv.patientName} · ${formatNaira(inv.totalAmountNaira)}` })
+                              requireFullAccess(
+                                'Cancel invoice',
+                                () => setCancelFor({ id: inv._id, label: `${inv.patientName} · ${formatNaira(inv.totalAmountNaira)}` }),
+                                { allowBillingReadOnly: true }
                               )
                             }
                           >

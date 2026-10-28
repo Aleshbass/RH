@@ -23,7 +23,8 @@ import { SettingsPageHeader, SettingsSection } from '@/components/physio/Setting
 import type { SetupStatus } from '@/components/physio/SetupChecklist';
 import { errorMessage } from '@/components/partners/portal/shared';
 import { modeFrom, PATIENT_SOURCES, sourcesOf, type PatientSource, type PracticeMode } from '@/lib/practiceModes';
-import { RECOVERY_PLANS, recoveryPlanStatus } from '@/lib/recoveryPlans';
+import { recoveryPlanStatus } from '@/lib/recoveryPlans';
+import { useRecoveryPlans } from '@/components/exercise-programs/flex';
 import { playSound } from '@/lib/sounds';
 import { cn } from '@/lib/utils';
 
@@ -57,6 +58,8 @@ const CONFIRM: Record<PatientSource, { on: { title: string; body: string }; off:
 export default function PracticeModePage() {
     const setup = useQuery(api.physioSetup.getMySetupStatus) as SetupStatus | null | undefined;
     const setPracticeMode = useMutation(setPracticeModeRef);
+    // Live prices once an admin launches Flex / Flex Max; "Coming soon" until then
+    const { plans: recoveryPlans } = useRecoveryPlans();
     const [change, setChange] = useState<Change | null>(null);
     const [saving, setSaving] = useState(false);
 
@@ -155,10 +158,10 @@ export default function PracticeModePage() {
             {current.includes('own') && (
                 <SettingsSection
                     title="What your patients can add"
-                    description="Support between sessions, offered to your own patients by Rehabify. You don’t need to sell or collect anything."
+                    description="Support between sessions, offered to your own patients by Rehabify. You don’t need to sell or collect anything, and Rehabify Care patients have it included."
                 >
                     <ul className="divide-y divide-neutral-100 dark:divide-white/[0.07]">
-                        {RECOVERY_PLANS.map((plan) => (
+                        {recoveryPlans.map((plan) => (
                             <li key={plan.id} className="flex items-start justify-between gap-4 py-3 first:pt-0 last:pb-0">
                                 <div className="min-w-0">
                                     <p className="text-sm font-semibold text-rh-ink dark:text-white">{plan.name}</p>

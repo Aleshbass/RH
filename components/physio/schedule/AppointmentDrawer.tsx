@@ -572,6 +572,12 @@ export function AppointmentDrawer({
     body = (
       <div className="space-y-3">
         <p className="text-sm text-pt-muted">{first} is told in the app and by email. The time becomes free again.</p>
+        {!declining && Boolean((appointment as { paidThroughRehabify?: boolean }).paidThroughRehabify) && (
+          <p className="rounded-xl bg-pt-amber-bg px-3 py-2.5 text-sm text-pt-amber-fg">
+            {first} paid for this visit through Rehabify. They’ll be offered another physiotherapist at the same time or a full refund, and
+            there’s no payout for a visit you cancel.
+          </p>
+        )}
         <Textarea
           value={message}
           onChange={(e) => setMessage(e.target.value)}

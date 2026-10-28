@@ -437,7 +437,7 @@ export default function HealthInfoForm({ onSubmit, onBack, isExternallySubmittin
           </Button>
           <Button 
             type="submit"
-            disabled={isSubmitting || !!isExternallySubmitting}
+            disabled={isSubmitting || !!isExternallySubmitting || !watch('consentToTreatment') || !watch('consentToShareMedicalInfo')}
           >
             {isSubmitting ? 'Saving...' : 'Complete'}
           </Button>

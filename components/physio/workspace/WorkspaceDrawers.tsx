@@ -5,7 +5,8 @@
  * plan (optionally from a template), save a plan as a template, and request a payment.
  */
 
-import { Component, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { Component, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useUser } from '@clerk/nextjs'
 import { toast } from 'sonner'
 import {
   Check,
@@ -21,6 +22,16 @@ import {
   WhatsApp,
 } from '@/components/icons'
 import type { Id } from '@/convex/_generated/dataModel'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
@@ -41,7 +52,23 @@ import { useCareBillingMode } from '@/components/physio/practiceMode'
 import { useMutationUntyped, useQueryUntyped, useActionUntyped } from '@/lib/convexUntyped'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
+import { ClinicalNoteEditor } from '@/components/physio/notes/ClinicalNoteEditor'
+import { clearNoteDraft, loadNoteDraft, saveNoteDraft } from '@/components/physio/notes/draftStore'
+import {
+  draftHasContent,
+  emptyDraft,
+  isEditableNoteType,
+  mergeMeasures,
+  readNotes,
+  sameDraft,
+  type ClinicalNote,
+  type NoteDraft,
+  type PendingHandle,
+} from '@/components/physio/notes/progress'
+import type { ClinicalMeasure } from '@/convex/helpers/clinicalMeasures'
+import { autoTargetText, type GoalMeasure, type MeasuredNote } from '@/convex/helpers/goalMeasures'
 import { fullName, workspaceApi, type CarePlanTemplate, type Workspace } from './shared'
+import { GoalMeasureField, linkFromDraft, measureDraftFromLink, type MeasureDraft } from './GoalMeasureField'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
@@ -92,54 +119,181 @@ function toDateInput(ms?: number | null) {
 // Clinical note
 // ─────────────────────────────────────────────────────────────────────────────
 
-type NoteType = 'initial_assessment' | 'treatment_note' | 'follow_up'
+/** A note being edited: its current wording and measures (voice notes and files stay as they are). */
+export type EditableNote = {
+  _id: string
+  sessionDate: number
+  noteType: string
+  subjectiveAssessment?: string
+  objectiveAssessment?: string
+  treatmentAdministered?: string
+  planForNextSession?: string
+  diagnosis?: string
+  measures: ClinicalMeasure[]
+  hasMedia: boolean
+}
 
-const NOTE_TYPES: { value: NoteType; label: string }[] = [
-  { value: 'treatment_note', label: 'Treatment' },
-  { value: 'initial_assessment', label: 'Assessment' },
-  { value: 'follow_up', label: 'Follow-up' },
-]
-
-const SOAP = [
-  { key: 'subjectiveAssessment', label: 'Subjective', placeholder: 'What the patient tells you: pain, function, how the week went' },
-  { key: 'objectiveAssessment', label: 'Objective', placeholder: 'What you measured or observed: ROM, strength, special tests' },
-  { key: 'treatmentAdministered', label: 'Treatment', placeholder: 'What you did today' },
-  { key: 'planForNextSession', label: 'Plan', placeholder: 'Next steps, home advice, when to review' },
-] as const
-
-export function NoteDrawer({ workspace, open, onOpenChange }: { workspace: Workspace; open: boolean; onOpenChange: (open: boolean) => void }) {
+export function NoteDrawer({
+  workspace,
+  open,
+  onOpenChange,
+  note = null,
+}: {
+  workspace: Workspace
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  /** Opens the drawer on this note to edit it, instead of a new note */
+  note?: EditableNote | null
+}) {
+  const patientId = workspace.patient._id
   const addNote = useMutationUntyped(workspaceApi.physioCare.addClinicalNote)
-  const [type, setType] = useState<NoteType>('treatment_note')
-  const [fields, setFields] = useState<Record<string, string>>({})
+  const updateNote = useMutationUntyped(workspaceApi.physioCare.updateClinicalNote)
+  // Recent notes for the last visit beside the note; every measured note on the record (the care
+  // team's, older ones too) for "last time", re-testing and quick sets
+  const notesResult = useQueryUntyped(workspaceApi.physioCare.getClinicalNotes, open ? { patientId } : 'skip')
+  const measuredResult = useQueryUntyped(workspaceApi.physioCare.getClinicalNoteMeasures, open ? { patientId } : 'skip')
+  const notes: ClinicalNote[] | undefined = useMemo(() => readNotes(notesResult), [notesResult])
+  const measuredNotes = useMemo(() => readNotes(measuredResult), [measuredResult])
+  const pending = useRef<PendingHandle | null>(null)
+  // Drafts belong to the signed-in user (a shared computer keeps each person's apart)
+  const { user } = useUser()
+  const userId = user?.id ?? null
+  const [draft, setDraft] = useState<NoteDraft>(() => emptyDraft())
+  // The note as it was when the drawer opened, so an unchanged edit saves nothing
+  const [startDraft, setStartDraft] = useState<NoteDraft | null>(null)
+  const [restored, setRestored] = useState(false)
+  const [openedAt, setOpenedAt] = useState(() => Date.now())
   const [saving, setSaving] = useState(false)
+  const [confirmClose, setConfirmClose] = useState(false)
+  const discarded = useRef(false)
   const media = useNoteMedia()
+  const editing = note !== null
+  const noteId = note?._id
+  // Discharge summaries and follow-up calls keep their type
+  const typeEditable = !editing || isEditableNoteType(note.noteType)
 
-  // A fresh note each time it opens: no text, voice note or files left from the last one
+  // The note being edited as it is now, or a new note (an initial assessment when it's the
+  // patient's first). Either way, this user's unsaved draft of it comes back if there is one.
   const resetMedia = media.reset
+  const firstNote = workspace.notesCount === 0
   useEffect(() => {
     if (!open) return
-    setType('treatment_note')
-    setFields({})
+    setOpenedAt(Date.now())
+    setConfirmClose(false)
+    discarded.current = false
+    const current: NoteDraft | null = note
+      ? {
+          noteType: isEditableNoteType(note.noteType) ? note.noteType : 'treatment_note',
+          subjective: note.subjectiveAssessment ?? '',
+          objective: note.objectiveAssessment ?? '',
+          assessment: note.diagnosis ?? '',
+          treatment: note.treatmentAdministered ?? '',
+          plan: note.planForNextSession ?? '',
+          measures: note.measures,
+        }
+      : null
+    const saved = userId ? loadNoteDraft(userId, patientId, note?._id, current ?? undefined) : null
+    setStartDraft(current)
+    setDraft(saved ?? current ?? emptyDraft(firstNote ? 'initial_assessment' : 'treatment_note'))
+    setRestored(Boolean(saved))
     resetMedia()
-  }, [open, resetMedia])
+  }, [open, note, patientId, firstNote, resetMedia, userId])
+
+  // The note is kept in this browser as it's written, so a closed tab or a crash loses nothing.
+  // An edit is kept only while it differs from the saved note.
+  useEffect(() => {
+    if (!open || !userId) return
+    const timer = setTimeout(() => {
+      if (discarded.current) return
+      if (startDraft && sameDraft(draft, startDraft)) clearNoteDraft(userId, patientId, noteId)
+      else saveNoteDraft(userId, patientId, draft, noteId, startDraft ?? undefined)
+    }, 400)
+    return () => clearTimeout(timer)
+  }, [open, userId, patientId, noteId, draft, startDraft])
+
+  const discardDraft = () => {
+    if (userId) clearNoteDraft(userId, patientId, noteId)
+    setDraft(startDraft ?? emptyDraft(draft.noteType))
+    setRestored(false)
+    setOpenedAt(Date.now())
+  }
+
+  /** Something would be lost by closing: changed text or measures, a measure being typed, or a recording or file. */
+  const unsaved = () =>
+    (startDraft ? !sameDraft(draft, startDraft) : draftHasContent(draft)) ||
+    Boolean(pending.current?.started()) ||
+    (!editing && media.hasMedia)
+
+  // Escape, a click outside, the close button and Cancel all come through here
+  const requestClose = () => {
+    if (saving || media.recording) return
+    if (unsaved()) setConfirmClose(true)
+    else onOpenChange(false)
+  }
+
+  const discardAndClose = () => {
+    discarded.current = true
+    if (userId) clearNoteDraft(userId, patientId, noteId)
+    setConfirmClose(false)
+    onOpenChange(false)
+  }
 
   const save = async () => {
-    if (!Object.values(fields).some((value) => value.trim()) && !media.hasMedia) {
-      toast.error('Write something, record a voice note or attach a file first.')
+    // A measure typed into an open form or panel but not added yet is saved with the note
+    const waiting = pending.current?.collect() ?? { kind: 'none' as const }
+    if (waiting.kind === 'invalid') {
+      toast.error(`${waiting.message} Fix it, or close that form, then save.`)
+      return
+    }
+    const final: NoteDraft = waiting.kind === 'ok' ? { ...draft, measures: mergeMeasures(draft.measures, waiting.measures) } : draft
+    const hasText = [final.subjective, final.objective, final.assessment, final.treatment, final.plan].some((text) => text.trim())
+    if (!hasText && final.measures.length === 0 && !(editing ? note.hasMedia : media.hasMedia)) {
+      toast.error(editing ? 'A note can’t be empty. Write something or add a measure first.' : 'Write something, add a measure, record a voice note or attach a file first.')
+      return
+    }
+    // Nothing changed: no new version, and the note isn't marked as edited
+    if (editing && startDraft && sameDraft(final, startDraft)) {
+      discarded.current = true
+      if (userId) clearNoteDraft(userId, patientId, noteId)
+      toast('No changes to save')
+      onOpenChange(false)
       return
     }
     setSaving(true)
     try {
+      if (editing) {
+        await updateNote({
+          noteId: note._id,
+          noteType: typeEditable ? final.noteType : undefined,
+          subjectiveAssessment: final.subjective,
+          objectiveAssessment: final.objective,
+          treatmentAdministered: final.treatment,
+          planForNextSession: final.plan,
+          diagnosis: final.assessment,
+          measures: final.measures,
+        })
+        discarded.current = true
+        if (userId) clearNoteDraft(userId, patientId, noteId)
+        playSound('success')
+        toast.success('Note updated')
+        onOpenChange(false)
+        return
+      }
       await addNote({
-        patientId: workspace.patient._id,
-        noteType: type,
-        subjectiveAssessment: fields.subjectiveAssessment || undefined,
-        objectiveAssessment: fields.objectiveAssessment || undefined,
-        treatmentAdministered: fields.treatmentAdministered || undefined,
-        planForNextSession: fields.planForNextSession || undefined,
+        patientId,
+        noteType: final.noteType,
+        subjectiveAssessment: final.subjective || undefined,
+        objectiveAssessment: final.objective || undefined,
+        treatmentAdministered: final.treatment || undefined,
+        planForNextSession: final.plan || undefined,
+        diagnosis: final.assessment || undefined,
+        measures: final.measures.length ? final.measures : undefined,
         voiceNoteStorageId: media.voiceStorageId,
         attachments: media.attachmentIds.length ? media.attachmentIds : undefined,
       })
+      discarded.current = true
+      if (userId) clearNoteDraft(userId, patientId)
+      setDraft(emptyDraft())
       playSound('success')
       toast.success('Note saved')
       onOpenChange(false)
@@ -152,49 +306,90 @@ export function NoteDrawer({ workspace, open, onOpenChange }: { workspace: Works
   }
 
   return (
+    <>
     <PhysioDrawer
       open={open}
-      onOpenChange={(next) => !saving && !media.recording && onOpenChange(next)}
-      title="New clinical note"
-      description={`${workspace.patient.firstName ?? 'Patient'} · ${new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}`}
-      className="sm:max-w-lg"
+      onOpenChange={(next) => (next ? onOpenChange(true) : requestClose())}
+      title={editing ? 'Edit clinical note' : 'New clinical note'}
+      description={`${workspace.patient.firstName ?? 'Patient'} · ${new Date(editing ? note.sessionDate : openedAt).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}`}
+      // Wide on desktop: the note beside the last visit. sm:max-w-none keeps the phone sheet full width.
+      className="sm:max-w-none md:max-w-2xl lg:max-w-3xl xl:max-w-5xl"
       footer={
         <div className="flex gap-2">
-          <Button className={cn(secondaryButtonClass, 'h-11 flex-1')} disabled={saving || media.recording} onClick={() => onOpenChange(false)}>
-            Cancel
+          <Button className={cn(secondaryButtonClass, 'h-11 flex-1 sm:flex-none sm:px-6')} disabled={saving || media.recording} onClick={requestClose}>
+            {editing ? 'Cancel' : 'Close'}
           </Button>
           <Button className={cn(primaryButtonClass, 'h-11 flex-1')} disabled={saving || media.busy} onClick={() => void save()}>
             {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Save note
+            {editing ? 'Save changes' : 'Save note'}
           </Button>
         </div>
       }
     >
-      <div className="space-y-4">
-        <Field label="Type of note" info="Assessment for a first visit or a re-assessment, Treatment after a session, Follow-up for a call or a check between sessions.">
-          <Pills options={NOTE_TYPES} value={type} onChange={setType} label="Type of note" />
-        </Field>
-        {SOAP.map((section) => (
-          <Field key={section.key} label={section.label} htmlFor={`note-${section.key}`}>
-            <Textarea
-              id={`note-${section.key}`}
-              className={cn(fieldClass, 'resize-y')}
-              rows={2}
-              value={fields[section.key] ?? ''}
-              onChange={(e) => setFields((f) => ({ ...f, [section.key]: e.target.value }))}
-              placeholder={section.placeholder}
-            />
-          </Field>
-        ))}
-        <div>
-          <p className="flex items-center gap-1 text-sm font-medium text-pt-ink">
-            Voice note and files
-            <InfoTip>Talk instead of typing, or attach photos and PDFs (a scan, a referral letter). Only you and the patient’s care team see them.</InfoTip>
-          </p>
-          <NoteMediaControls media={media} className="mt-1.5" />
+      {restored && (
+        <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl bg-pt-blue-bg px-3 py-2 text-sm text-pt-blue-fg">
+          {editing ? 'Your unsaved changes to this note are back.' : 'Your unsaved note is back where you left it.'}
+          <button type="button" onClick={discardDraft} className="font-semibold underline underline-offset-2">
+            Discard it
+          </button>
         </div>
-      </div>
+      )}
+      <ClinicalNoteEditor
+        key={openedAt}
+        draft={draft}
+        onChange={setDraft}
+        notes={notes}
+        measuredNotes={measuredNotes}
+        pendingRef={pending}
+        sessionDate={editing ? note.sessionDate : openedAt}
+        editingNoteId={note?._id}
+        condition={workspace.episode.condition}
+        typeEditable={typeEditable}
+        checkIn={workspace.checkIns[0] ?? null}
+        media={
+          editing ? (
+            <p className="text-xs text-pt-muted">
+              The earlier wording and measures are kept with the patient’s record, and the note shows when it was edited.
+              {note.hasMedia ? ' Its voice note and files stay as they are.' : ''}
+            </p>
+          ) : (
+            <div>
+              <p className="flex items-center gap-1 text-sm font-medium text-pt-ink">
+                Voice note and files
+                <InfoTip>Talk instead of typing, or attach photos and PDFs (a scan, a referral letter). Only you and the patient’s care team see them.</InfoTip>
+              </p>
+              <NoteMediaControls media={media} className="mt-1.5" />
+            </div>
+          )
+        }
+      />
     </PhysioDrawer>
+
+    <AlertDialog open={confirmClose} onOpenChange={setConfirmClose}>
+      <AlertDialogContent className="rounded-2xl border-pt-line bg-pt-surface text-pt-ink">
+        <AlertDialogHeader>
+          <AlertDialogTitle className="text-pt-ink">Discard your changes?</AlertDialogTitle>
+          <AlertDialogDescription className="text-pt-muted">
+            {editing
+              ? 'Your changes to this note haven’t been saved. The note stays as it was.'
+              : `This note hasn’t been saved${media.hasMedia ? ', and its voice note and files will be lost' : ''}.`}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel className={cn(secondaryButtonClass, 'h-11 sm:h-10')}>Keep editing</AlertDialogCancel>
+          <AlertDialogAction
+            className="h-11 rounded-xl bg-pt-rose-fg text-pt-surface hover:bg-pt-rose-fg/90 sm:h-10"
+            onClick={(event) => {
+              event.preventDefault()
+              discardAndClose()
+            }}
+          >
+            Discard
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+    </>
   )
 }
 
@@ -204,7 +399,7 @@ export function NoteDrawer({ workspace, open, onOpenChange }: { workspace: Works
 
 const FREQUENCIES = ['1 session a week', '2 sessions a week', '3 sessions a week', 'Every 2 weeks']
 
-type DraftGoal = { description: string; targetValue: string; timeline: string; achieved?: boolean }
+type DraftGoal = { description: string; targetValue: string; timeline: string; achieved?: boolean; measure?: MeasureDraft }
 
 type PlanDraft = {
   title: string
@@ -221,7 +416,14 @@ function draftFromPlan(plan: Workspace['plan']): PlanDraft {
     title: plan?.title ?? '',
     description: plan?.description ?? '',
     goals: plan?.goals.length
-      ? plan.goals.map((g) => ({ description: g.description, targetValue: g.targetValue, timeline: g.timeline, achieved: g.achieved }))
+      ? plan.goals.map((g) => ({
+          description: g.description,
+          // Text written from the target is written again on save, so a new target doesn't leave it stale
+          targetValue: g.measure && g.targetValue === autoTargetText(g.measure) ? '' : g.targetValue,
+          timeline: g.timeline,
+          achieved: g.achieved,
+          measure: g.measure ? measureDraftFromLink(g.measure) : undefined,
+        }))
       : [{ description: '', targetValue: '', timeline: '' }],
     frequency: plan?.sessionFrequency ?? '',
     planned: plan?.plannedSessions ? String(plan.plannedSessions) : '',
@@ -383,6 +585,11 @@ export function CarePlanDrawer({ workspace, open, onOpenChange }: { workspace: W
   const [templates, setTemplates] = useState<CarePlanTemplate[] | undefined>(undefined)
   const templatesFailed = useCallback(() => setTemplates([]), [])
   const plan = workspace.plan
+  // Measures on record (clinic colleagues' included), for goals with a measured target. The
+  // server reads baselines from the same notes when the plan is saved.
+  const measuredNotes = useQueryUntyped(workspaceApi.physioCare.getClinicalNoteMeasures, open ? { patientId: workspace.patient._id } : 'skip') as
+    | MeasuredNote[]
+    | undefined
 
   const [step, setStep] = useState<'start' | 'form'>('form')
   const [draft, setDraft] = useState<PlanDraft>(() => draftFromPlan(plan))
@@ -419,7 +626,16 @@ export function CarePlanDrawer({ workspace, open, onOpenChange }: { workspace: W
   }
 
   const submit = async () => {
-    const goals = draft.goals.filter((g) => g.description.trim())
+    const goals: { description: string; targetValue: string; timeline: string; achieved?: boolean; measure?: GoalMeasure }[] = []
+    for (const { measure, ...goal } of draft.goals.filter((g) => g.description.trim())) {
+      if (!measure) {
+        goals.push(goal)
+        continue
+      }
+      const linked = linkFromDraft(measure)
+      if (linked.error !== undefined) return toast.error(linked.error)
+      goals.push({ ...goal, measure: linked.link })
+    }
     if (!draft.title.trim()) return toast.error('Give the plan a title.')
     if (goals.length === 0) return toast.error('Add at least one functional goal.')
     if (plan && !reason.trim()) return toast.error('Say why the plan is changing.')
@@ -523,7 +739,10 @@ export function CarePlanDrawer({ workspace, open, onOpenChange }: { workspace: W
               <div className="flex items-center justify-between">
                 <p className="flex items-center gap-1 text-sm font-medium text-pt-ink">
                   Functional goals
-                  <InfoTip>What the patient wants to be able to do, how you’ll measure it, and by when. They tick off as you mark them met.</InfoTip>
+                  <InfoTip>
+                    What the patient wants to be able to do, how you’ll measure it, and by when. They tick off as you mark them met. Add a measured target to
+                    track a goal against the measures in your notes: the first value recorded in this course of care is its baseline.
+                  </InfoTip>
                 </p>
                 <Button type="button" variant="ghost" size="sm" className="h-8 rounded-lg text-pt-ink hover:bg-pt-hover" onClick={() => set('goals', [...draft.goals, { description: '', targetValue: '', timeline: '' }])}>
                   <Plus className="mr-1 h-4 w-4" />
@@ -548,9 +767,22 @@ export function CarePlanDrawer({ workspace, open, onOpenChange }: { workspace: W
                       </Button>
                     </div>
                     <div className="grid grid-cols-2 gap-2 pr-11">
-                      <Input className={fieldClass} value={goal.targetValue} onChange={(e) => updateGoal(index, { targetValue: e.target.value })} placeholder="Measure" aria-label="How you’ll measure it" />
+                      <Input
+                        className={fieldClass}
+                        value={goal.targetValue}
+                        onChange={(e) => updateGoal(index, { targetValue: e.target.value })}
+                        placeholder={goal.measure ? 'Measure (optional)' : 'Measure'}
+                        aria-label="How you’ll measure it"
+                      />
                       <Input className={fieldClass} value={goal.timeline} onChange={(e) => updateGoal(index, { timeline: e.target.value })} placeholder="By when" aria-label="By when" />
                     </div>
+                    <GoalMeasureField
+                      value={goal.measure}
+                      onChange={(measure) => updateGoal(index, { measure })}
+                      notes={measuredNotes}
+                      since={workspace.episode.startedAt}
+                      goalLabel={goal.description.trim() || `goal ${index + 1}`}
+                    />
                   </div>
                 ))}
               </div>

@@ -11,6 +11,8 @@
  * physio their fixed payout once the session is completed (appointments.updateAppointmentStatus).
  */
 
+import { insertNotification } from "../helpers/pushNotify";
+import { scheduleAcceptReminder } from "../pushAlerts";
 import { v, ConvexError } from "convex/values";
 import { mutation, action, internalMutation, internalQuery, query } from "../_generated/server";
 import { api, internal } from "../_generated/api";
@@ -33,6 +35,14 @@ import { lagosDateTime, lagosTimeRange } from "../helpers/lagosTime";
 import { assertServerCaller } from "../helpers/serverSecret";
 import { recordPolicyAcceptances } from "../helpers/policyAcceptance";
 import { CHECKOUT_POLICIES } from "../../lib/policies";
+import { providerResponseDueAt } from "../../lib/bookingResponse";
+import { issueReceipt } from "../helpers/receipts";
+import { makeFunctionReference } from "convex/server";
+
+const sendCareEmail = makeFunctionReference<
+    "action",
+    { to: string; subject: string; greetingName?: string; heading: string; paragraphs: string[]; buttonLabel?: string; buttonUrl?: string; footnote?: string }
+>("actions/emails/sendPatientCareEmail:sendPatientCareEmail");
 
 const MIN_NOTICE_MS = 30 * 60 * 1000;
 
@@ -636,19 +646,155 @@ export async function completeMarketplaceBookingCore(ctx: any, bookingId: any, o
             }
         }
 
-        // Update booking
+        // A patient's own request waits for the physio to accept (Booking Policy 5.4); a session
+        // the physio scheduled is confirmed by paying
+        const needsAccept = needsProviderAcceptance(booking);
+        const paidAt = Date.now();
+        const responseDueAt = needsAccept ? providerResponseDueAt(paidAt, booking.sessionDate) : undefined;
         await ctx.db.patch(args.bookingId, {
             paymentStatus: "completed",
             paymentMethod: options.paymentMethod === "bank_transfer" ? "bank_transfer" : "paystack",
-            bookingStatus: "confirmed",
+            bookingStatus: needsAccept ? "awaiting_physio" : "confirmed",
             paymentReference: args.paymentReference,
             paidAmountKobo: options.paidAmountKobo,
             paystackFeeActualKobo: paystackFeeActual,
             careMode: booking.isOnline ? "virtual" : "in_person",
-            paidAt: Date.now(),
-            updatedAt: Date.now(),
+            paidAt,
+            updatedAt: paidAt,
+            ...(needsAccept ? { providerResponse: "pending" as const, providerResponseDueAt: responseDueAt, replacementStatus: "not_needed" as const } : {}),
         });
         if (booking.accessAwardId) await useAwardSession(ctx, booking.accessAwardId);
+        await issueBookingReceipt(ctx, { ...booking, paymentReference: args.paymentReference }, options, paidAt);
+
+        if (needsAccept) {
+            await askPhysioToRespond(ctx, booking, responseDueAt!);
+            await tellPatientBookingReceived(ctx, booking, responseDueAt!);
+            return { success: true, awaitingPhysio: true };
+        }
+        return activatePaidBooking(ctx, booking, args, options, paystackFeeActual);
+}
+
+/** Patient-made Rehabify Care requests on the website or dashboard need the physio's acceptance. */
+function needsProviderAcceptance(booking: Doc<"marketplaceBookings">) {
+    return booking.sourceSystem !== "joy_ai" && booking.scheduledBy === "patient" && Boolean(booking.pricingModel);
+}
+
+/** The receipt for what the patient paid (service, travel). Idempotent per payment reference. */
+async function issueBookingReceipt(ctx: any, booking: Doc<"marketplaceBookings">, options: CompletionOptions, paidAt: number) {
+    if (options.paymentMethod === "free" || !booking.paymentReference) return;
+    const patient = (await ctx.db.get(booking.patientId)) as Doc<"users"> | null;
+    const physio = booking.physiotherapistId ? ((await ctx.db.get(booking.physiotherapistId)) as Doc<"users"> | null) : null;
+    const service = booking.serviceId ? getService(booking.serviceId) : undefined;
+    const travel = booking.travelSurchargeKobo ?? 0;
+    const paid = options.paidAmountKobo || booking.totalAmount;
+    const physioName = physio ? `${physio.firstName ?? ""} ${physio.lastName ?? ""}`.trim() : "";
+    await issueReceipt(ctx, {
+        kind: "payment",
+        payerUserId: booking.patientId,
+        email: booking.guestEmail || patient?.email,
+        name: booking.guestName || [patient?.firstName, patient?.lastName].filter(Boolean).join(" ") || undefined,
+        relatedType: "marketplace_booking",
+        relatedId: booking._id,
+        relationship: "rehabify_care",
+        description: [service?.name ?? "Physiotherapy session", physioName && `with ${physioName}`, booking.sessionDate && lagosDateTime(booking.sessionDate)]
+            .filter(Boolean)
+            .join(", "),
+        lines: travel > 0 && paid > travel ? [{ label: service?.name ?? "Session", amountKobo: paid - travel }, { label: `Travel${booking.travelZoneName ? ` (${booking.travelZoneName})` : ""}`, amountKobo: travel }] : [{ label: service?.name ?? "Session", amountKobo: paid }],
+        reference: booking.paymentReference,
+        dedupeKey: booking.paymentReference,
+        paidAt,
+    });
+}
+
+/** Straight after payment: the booking is in, and the physio confirms it by `dueAt`. */
+async function tellPatientBookingReceived(ctx: any, booking: Doc<"marketplaceBookings">, dueAt: number) {
+    const patient = (await ctx.db.get(booking.patientId)) as Doc<"users"> | null;
+    const physio = booking.physiotherapistId ? ((await ctx.db.get(booking.physiotherapistId)) as Doc<"users"> | null) : null;
+    const physioName = physio ? `${physio.firstName ?? ""} ${physio.lastName ?? ""}`.trim() || "Your physiotherapist" : "Your physiotherapist";
+    const service = booking.serviceId ? getService(booking.serviceId) : undefined;
+    const when = booking.sessionDate ? lagosDateTime(booking.sessionDate) : "your chosen time";
+    await insertNotification(ctx, {
+        userId: booking.patientId,
+        type: "appointment_scheduled",
+        priority: "medium",
+        status: "pending",
+        payload: {
+            title: "Booking received",
+            body: `${physioName} will confirm your ${service?.name ?? "session"} on ${when} by ${lagosDateTime(dueAt)}.`,
+            data: { entityType: "marketplace_booking", entityId: booking._id, actionUrl: "/dashboard/patient/appointments" },
+        },
+        createdAt: Date.now(),
+    });
+    const to = booking.guestEmail || patient?.email;
+    if (!to) return;
+    await ctx.scheduler.runAfter(0, sendCareEmail, {
+        to,
+        subject: `We've got your booking with ${physioName}`,
+        greetingName: (booking.guestName || patient?.firstName || "").split(" ")[0] || undefined,
+        heading: "Your booking is in",
+        paragraphs: [
+            `Thanks for booking ${service?.name ?? "your session"} with ${physioName} on ${when} (Lagos time). Your payment went through.`,
+            `${physioName} will confirm by ${lagosDateTime(dueAt)}. We'll email you as soon as they do${booking.isOnline ? ", with your video link" : ""}.`,
+            "If they can't make it, you can choose another physiotherapist at the same time or get a full refund.",
+        ],
+        buttonLabel: "View your booking",
+        buttonUrl: `${publicAppUrl()}/dashboard/patient/appointments`,
+    });
+}
+
+/** Tells the physio a paid request is waiting, and by when they need to answer. */
+export async function askPhysioToRespond(ctx: any, booking: Doc<"marketplaceBookings">, dueAt: number) {
+    if (!booking.physiotherapistId) return;
+    const service = booking.serviceId ? getService(booking.serviceId) : undefined;
+    const patient = (await ctx.db.get(booking.patientId)) as Doc<"users"> | null;
+    const patientName = booking.guestName || [patient?.firstName, patient?.lastName].filter(Boolean).join(" ") || "A patient";
+    const physio = (await ctx.db.get(booking.physiotherapistId)) as Doc<"users"> | null;
+    const body = `${patientName} booked ${service?.name ?? "a session"} for ${booking.sessionDate ? lagosDateTime(booking.sessionDate) : "a time to agree"}. Accept or decline by ${lagosDateTime(dueAt)}.`;
+    await insertNotification(ctx, {
+        userId: booking.physiotherapistId,
+        type: "appointment_scheduled",
+        priority: "high",
+        status: "pending",
+        payload: {
+            title: "New booking: please accept",
+            body,
+            data: { entityType: "marketplace_booking", entityId: booking._id, actionUrl: "/dashboard/physiotherapist/appointments" },
+        },
+        createdAt: Date.now(),
+    });
+    // A push 10 minutes before the request goes to someone else
+    await scheduleAcceptReminder(ctx, booking, dueAt);
+    if (physio?.email) {
+        await ctx.scheduler.runAfter(0, sendCareEmail, {
+            to: physio.email,
+            subject: `New booking from ${patientName}: accept by ${lagosDateTime(dueAt)}`,
+            greetingName: physio.firstName ?? undefined,
+            heading: "You have a new booking",
+            paragraphs: [
+                body,
+                `Your payout for this session is ₦${Math.round((booking.payoutKobo ?? booking.physiotherapistEarnings) / 100).toLocaleString("en-NG")}${booking.travelPhysioShareKobo ? ` plus ₦${Math.round(booking.travelPhysioShareKobo / 100).toLocaleString("en-NG")} travel` : ""}.`,
+                "If you don't answer in time, we'll offer the patient another physiotherapist.",
+            ],
+            buttonLabel: "Accept or decline",
+            buttonUrl: `${publicAppUrl()}/dashboard/physiotherapist/appointments`,
+            footnote: "You're receiving this because you're a Rehabify network physiotherapist.",
+        });
+    }
+}
+
+/**
+ * Makes a paid booking real: the appointment, the patient–physio link, the invoice that drives
+ * the payout, notifications and emails. Runs at payment, or when the physio accepts.
+ */
+export async function activatePaidBooking(
+    ctx: any,
+    booking: Doc<"marketplaceBookings">,
+    args: { bookingId: Id<"marketplaceBookings">; paymentReference: string },
+    options: CompletionOptions,
+    paystackFeeActual: number | undefined
+) {
+        if (!booking.physiotherapistId) throw new Error("Booking has no physiotherapist assigned");
+        await ctx.db.patch(args.bookingId, { bookingStatus: "confirmed", updatedAt: Date.now() });
 
         // Create appointment
         const service = booking.serviceId ? getService(booking.serviceId) : undefined;
@@ -981,7 +1127,7 @@ export async function completeMarketplaceBookingCore(ctx: any, bookingId: any, o
         const appointmentTimeStr = lagosTimeRange(start, end);
 
         // Notifications - patient
-        await ctx.db.insert("notifications", {
+        await insertNotification(ctx, {
             userId: booking.patientId,
             type: "appointment_scheduled",
             priority: "medium",
@@ -999,7 +1145,7 @@ export async function completeMarketplaceBookingCore(ctx: any, bookingId: any, o
         } as any);
 
         // Notifications - provider
-        await ctx.db.insert("notifications", {
+        await insertNotification(ctx, {
             userId: booking.physiotherapistId,
             type: "appointment_scheduled",
             priority: "medium",
@@ -1069,14 +1215,7 @@ export async function completeMarketplaceBookingCore(ctx: any, bookingId: any, o
             patientPhone: actualPatientPhone,
         };
 
-        if (actualPatientEmail) {
-            await ctx.scheduler.runAfter(0, api["actions/emails/sendPaymentReceiptEmail"].sendPaymentReceiptEmail as any, {
-                ...receiptData,
-                to: actualPatientEmail,
-                recipientName: actualPatientName,
-                role: "patient"
-            });
-        }
+        // The patient's receipt was issued when they paid (issueBookingReceipt)
         // The payout email waits until an admin has published (confirmed) the payout schedule
         const payoutsConfirmed = (await loadTariffs(ctx)).version >= 1;
         if (physioEmail && payoutsConfirmed) {

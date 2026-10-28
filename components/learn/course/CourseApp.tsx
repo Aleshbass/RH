@@ -1,32 +1,28 @@
 'use client'
 
 /**
- * Rehabify Learn "My course" (/learn/course): everything a paid physio needs in one place.
- * Signed-out visitors get a one-tap link by email instead of a password form.
+ * Rehabify Learn "My course" (/learn/course): the courses the Rehabify team publishes, for paid
+ * physios while their access is open. Signed-out visitors get a one-tap link by email instead of
+ * a password form.
  */
 
-import { useEffect, useState, type ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { UserButton, useClerk } from '@clerk/nextjs'
 import { useAction, useConvexAuth, useQuery } from 'convex/react'
-import { ArrowRight, BookOpen, Check, GraduationCap, Library, Loader2, LogIn, Mail, PlayCircle, SearchX } from '@/components/icons'
+import { ArrowRight, Check, GraduationCap, Loader2, LogIn, Mail, SearchX } from '@/components/icons'
 import { errorMessage } from '@/components/partners/portal/shared'
 import { api } from '@/convex/_generated/api'
-import type { Id } from '@/convex/_generated/dataModel'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
-import { displayFont, fieldClass, pillInk, pillOutline, PROGRAM } from '../shared'
-import { CourseHome } from './CourseHome'
-import { dateOnly, type CourseOk, type MyCourse } from './shared'
-import { StudyDrawer, type StudyPanel } from './StudyDrawer'
-import { StudyLibrary } from './StudyLibrary'
+import { fieldClass, pillInk, pillOutline, PROGRAM } from '../shared'
+import { dateOnly, type MyCourse } from './shared'
 import { VideoCourses } from '../video/VideoCourses'
 
-type Tab = 'course' | 'courses' | 'library'
 const SIGN_IN_HREF = `/sign-in?redirect=${encodeURIComponent('/learn/course')}`
 
-function TopBar({ tab, setTab, showTabs }: { tab?: Tab; setTab?: (tab: Tab) => void; showTabs: boolean }) {
+function TopBar() {
   return (
     <header className="sticky top-0 z-30 border-b border-rh-ink/[0.06] bg-rh-cream/90 backdrop-blur">
       <div className="mx-auto flex h-16 max-w-6xl items-center gap-3 px-4 sm:px-6">
@@ -34,32 +30,7 @@ function TopBar({ tab, setTab, showTabs }: { tab?: Tab; setTab?: (tab: Tab) => v
           <Image src="/logos/Ink%20MainRehabify.svg" alt="Rehabify" width={96} height={30} className="h-6 w-auto sm:h-7" />
           <span className="hidden rounded-full bg-rh-ink px-2 py-0.5 text-[11px] font-semibold text-rh-lime sm:inline">Learn</span>
         </Link>
-        {showTabs && tab && setTab && (
-          <nav className="mx-auto flex rounded-full bg-white p-1 shadow-sm ring-1 ring-inset ring-rh-ink/[0.06]" aria-label="Course sections">
-            {(
-              [
-                { key: 'course', label: 'My course', icon: BookOpen },
-                { key: 'courses', label: 'Courses', icon: PlayCircle },
-                { key: 'library', label: 'Library', icon: Library },
-              ] as const
-            ).map((t) => (
-              <button
-                key={t.key}
-                type="button"
-                onClick={() => setTab(t.key)}
-                aria-current={tab === t.key ? 'page' : undefined}
-                className={cn(
-                  'inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-semibold transition sm:px-4',
-                  tab === t.key ? 'bg-rh-ink text-white' : 'text-rh-ink/60 hover:text-rh-ink'
-                )}
-              >
-                <t.icon className="hidden h-3.5 w-3.5 sm:block" />
-                {t.label}
-              </button>
-            ))}
-          </nav>
-        )}
-        <div className={cn('flex shrink-0 items-center', !showTabs && 'ml-auto')}>
+        <div className="ml-auto flex shrink-0 items-center">
           <UserButton afterSignOutUrl="/learn/course" />
         </div>
       </div>
@@ -70,7 +41,7 @@ function TopBar({ tab, setTab, showTabs }: { tab?: Tab; setTab?: (tab: Tab) => v
 function Screen({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen bg-rh-cream">
-      <TopBar showTabs={false} />
+      <TopBar />
       <div className="mx-auto max-w-lg px-4 pb-20 pt-10 sm:pt-16">{children}</div>
     </div>
   )
@@ -200,7 +171,7 @@ function Ended({ course }: { course: Extract<MyCourse, { state: 'ended' }> }) {
       <StateCard icon={GraduationCap} title={`The ${course.cohort.cohortLabel} has finished`}>
         <p>
           Thank you for learning with us, {course.learner.firstName}.
-          {course.accessUntil ? ` Course materials and the library closed on ${dateOnly(course.accessUntil)}.` : ''} Join the next cohort to
+          {course.accessUntil ? ` Your courses closed on ${dateOnly(course.accessUntil)}.` : ''} Join the next cohort to
           keep going.
         </p>
         <Link href="/learn" className={cn(pillInk, 'mt-6 h-12 w-full text-[15px]')}>
@@ -220,7 +191,7 @@ function Ended({ course }: { course: Extract<MyCourse, { state: 'ended' }> }) {
 function Skeleton() {
   return (
     <div className="min-h-screen bg-rh-cream">
-      <TopBar showTabs={false} />
+      <TopBar />
       <div className="mx-auto max-w-6xl px-4 pt-8 sm:px-6">
         <div className="h-9 w-64 animate-pulse rounded-full bg-rh-ink/[0.06]" />
         <div className="mt-3 h-4 w-80 max-w-full animate-pulse rounded-full bg-rh-ink/[0.05]" />
@@ -233,96 +204,28 @@ function Skeleton() {
   )
 }
 
-function CourseView({
-  course,
-  cohortId,
-  setCohortId,
-}: {
-  course: CourseOk
-  cohortId: Id<'learnCohorts'> | undefined
-  setCohortId: (id: Id<'learnCohorts'>) => void
-}) {
-  const [tab, setTabState] = useState<Tab>('course')
-  const [stack, setStack] = useState<StudyPanel[]>([])
-  const accessUntil = course.accessUntil ? dateOnly(course.accessUntil) : null
-
-  // /learn/course#library and #courses (with a course or lesson after it) open those tabs straight away
-  useEffect(() => {
-    const sync = () => {
-      const hash = window.location.hash
-      if (hash === '#library') setTabState('library')
-      else if (hash.startsWith('#courses')) setTabState('courses')
-    }
-    sync()
-    window.addEventListener('popstate', sync)
-    return () => window.removeEventListener('popstate', sync)
-  }, [])
-  const setTab = (next: Tab) => {
-    setTabState(next)
-    const path = window.location.pathname + window.location.search
-    window.history.replaceState(null, '', next === 'course' ? path : `${path}#${next}`)
-    window.scrollTo({ top: 0, behavior: 'smooth' })
-  }
-  const open = (panel: StudyPanel) => setStack([panel])
-
+/** Paid learners see the courses the Rehabify team publishes, and nothing else. */
+function CourseView() {
   return (
     <div className="min-h-screen bg-rh-cream">
-      <TopBar tab={tab} setTab={setTab} showTabs />
+      <TopBar />
       <main className="mx-auto max-w-6xl px-4 pb-24 pt-6 sm:px-6 sm:pt-8">
-        {/* The Courses tab has its own headings (catalogue, course, lesson) */}
-        <div className={cn('mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between', tab === 'courses' && 'hidden')}>
-          <div>
-            <h1 className={cn('text-[30px] leading-tight tracking-tight text-rh-ink sm:text-[38px]', displayFont)}>
-              {tab === 'course' ? `Welcome, ${course.learner.firstName}` : 'Exercise library'}
-            </h1>
-            <p className="mt-1 text-[15px] text-rh-ink/60">
-              {tab === 'course'
-                ? `${course.cohort.cohortLabel} · ${course.cohort.dateRange}`
-                : 'Study the exercises you’ll prescribe, and the materials you can share with patients.'}
-            </p>
-          </div>
-          {course.otherCohorts.length > 0 && (
-            <label className="flex items-center gap-2 text-sm text-rh-ink/60">
-              <span className="shrink-0">Cohort</span>
-              <select
-                value={cohortId ?? course.cohort.id}
-                onChange={(e) => setCohortId(e.target.value as Id<'learnCohorts'>)}
-                className="h-10 rounded-full border border-rh-ink/10 bg-white px-3 text-sm font-medium text-rh-ink focus:outline-none focus:ring-4 focus:ring-rh-ink/[0.07]"
-              >
-                <option value={course.cohort.id}>{course.cohort.cohortLabel}</option>
-                {course.otherCohorts.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.cohortLabel}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
-        </div>
-
-        <div key={tab} className="animate-in fade-in duration-300">
-          {tab === 'course' ? (
-            <CourseHome course={course} open={open} showLibrary={() => setTab('library')} accessUntil={accessUntil} />
-          ) : tab === 'courses' ? (
-            <VideoCourses />
-          ) : (
-            <StudyLibrary open={open} accessUntil={accessUntil} />
-          )}
+        <div className="animate-in fade-in duration-300">
+          <VideoCourses />
         </div>
       </main>
-      <StudyDrawer course={course} stack={stack} setStack={setStack} />
     </div>
   )
 }
 
 export function CourseApp() {
   const { isLoading } = useConvexAuth()
-  const [cohortId, setCohortId] = useState<Id<'learnCohorts'> | undefined>(undefined)
-  const course = useQuery(api.learn.getMyCourse, isLoading ? 'skip' : cohortId ? { cohortId } : {}) as MyCourse | undefined
+  // Whether this person has paid (and their access is still open) comes from their registration
+  const course = useQuery(api.learn.getMyCourse, isLoading ? 'skip' : {}) as MyCourse | undefined
 
   if (isLoading || course === undefined) return <Skeleton />
   if (course.state === 'signed_out') return <SignedOut />
   if (course.state === 'not_registered') return <NotRegistered email={course.email} />
   if (course.state === 'ended') return <Ended course={course} />
-  return <CourseView course={course} cohortId={cohortId} setCohortId={setCohortId} />
+  return <CourseView />
 }

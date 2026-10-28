@@ -279,7 +279,8 @@ export const sharedProgram = query({
       ok: true as const,
       patientFirstName: patient?.firstName ?? null,
       expiresAt: res.link.expiresAt,
-      program: await programView(ctx, res.program),
+      // As the patient sees it: program.plan says whether Flex applies (demos and logging)
+      program: await programView(ctx, res.program, "patient"),
       doneToday: [...new Set(today.map((l) => l.itemIndex))],
     };
   },

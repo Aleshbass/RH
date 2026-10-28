@@ -60,6 +60,8 @@ interface ClinicAccessContextType {
   /** The whole clinic was suspended by Rehabify: records stay readable, changes are refused */
   isClinicSuspended: boolean
   clinicSuspendedReason: string | null
+  /** Read-only for an overdue Rehabify invoice: records stay readable and exportable, changes are refused */
+  isBillingReadOnly: boolean
   /** Whether the signed-in owner/member can use a page */
   canUse: (area: ClinicArea) => boolean
   clinicName: string | null
@@ -69,7 +71,7 @@ interface ClinicAccessContextType {
   isLoaded: boolean
   /** Signed in, but not a clinic owner or team member (the portal sends them elsewhere) */
   nonMember: NonMemberAccess | null
-  requireFullAccess: (actionName?: string, callback?: () => void) => boolean
+  requireFullAccess: (actionName?: string, callback?: () => void, options?: { allowBillingReadOnly?: boolean }) => boolean
   openOnboardingWizard: () => void
 }
 
@@ -101,6 +103,7 @@ export function ClinicAccessProvider({ children }: { children: ReactNode }) {
   const isSuspended = Boolean(member?.suspended)
   // A suspended clinic still sees its real records; changes are refused by the backend
   const isClinicSuspended = Boolean(member?.clinicSuspended)
+  const isBillingReadOnly = Boolean((member as { billingReadOnly?: boolean } | null)?.billingReadOnly)
   const clinicSuspendedReason = member?.clinicSuspendedReason ?? null
 
   const isReadOnly = !member || isOnboardingIncomplete || isPendingApproval || isDeclined || isSuspended
@@ -115,8 +118,13 @@ export function ClinicAccessProvider({ children }: { children: ReactNode }) {
     router.push('/clinic-owner')
   }
 
-  const requireFullAccess = (actionName = 'This action', callback?: () => void): boolean => {
-    if (isReadOnly || isClinicSuspended) {
+  const requireFullAccess = (
+    actionName = 'This action',
+    callback?: () => void,
+    // Billing patients and taking access away keep working while read-only for an unpaid invoice
+    options: { allowBillingReadOnly?: boolean } = {}
+  ): boolean => {
+    if (isReadOnly || isClinicSuspended || (isBillingReadOnly && !options.allowBillingReadOnly)) {
       setAttemptedAction(actionName)
       setIsModalOpen(true)
       return false
@@ -126,7 +134,9 @@ export function ClinicAccessProvider({ children }: { children: ReactNode }) {
   }
 
   // Team members can't finish the owner's setup, so they only get an explanation
-  const canFinishSetup = !isPendingApproval && !isStaff && !isClinicSuspended
+  const canFinishSetup = !isPendingApproval && !isStaff && !isClinicSuspended && !isBillingReadOnly
+  // Read-only for an unpaid invoice: people with the Billing page can go and pay it
+  const canPayToUnlock = isBillingReadOnly && !isClinicSuspended && canUse('billing')
 
   return (
     <ClinicAccessContext.Provider
@@ -144,6 +154,7 @@ export function ClinicAccessProvider({ children }: { children: ReactNode }) {
         isSuspended,
         isClinicSuspended,
         clinicSuspendedReason,
+        isBillingReadOnly,
         canUse,
         clinicName: member?.clinicName ?? null,
         logoUrl: member?.logoUrl ?? null,
@@ -164,6 +175,8 @@ export function ClinicAccessProvider({ children }: { children: ReactNode }) {
               {isPendingApproval ? <Clock className="h-4 w-4 text-amber-600" /> : <Lock className="h-4 w-4 text-neutral-400" />}
               {isClinicSuspended
                 ? 'Clinic suspended'
+                : isBillingReadOnly && !isReadOnly
+                ? 'Your clinic is read-only'
                 : isPendingApproval
                 ? 'Waiting for approval'
                 : isSuspended
@@ -175,6 +188,10 @@ export function ClinicAccessProvider({ children }: { children: ReactNode }) {
             <DialogDescription>
               {isClinicSuspended
                 ? `Rehabify has suspended this clinic, so "${attemptedAction}" is turned off. Contact support@physioaroundme.com to restore access.`
+                : isBillingReadOnly && !isReadOnly
+                ? `A Rehabify invoice is overdue, so "${attemptedAction}" is turned off. You can still view and export everything. ${
+                    canPayToUnlock ? 'Paying lifts this straight away.' : 'Ask the clinic owner to pay it.'
+                  }`
                 : isPendingApproval
                 ? `"${attemptedAction}" will work once Rehabify has verified the clinic.`
                 : isSuspended
@@ -188,6 +205,19 @@ export function ClinicAccessProvider({ children }: { children: ReactNode }) {
             <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)}>
               {canFinishSetup && !isSuspended ? 'Not now' : 'OK'}
             </Button>
+            {canPayToUnlock && !isReadOnly && (
+              <Button
+                type="button"
+                onClick={() => {
+                  setIsModalOpen(false)
+                  router.push('/dashboard/clinic/billing/plan')
+                }}
+                className="bg-rh-lime text-rh-ink hover:bg-rh-lime-deep"
+              >
+                Pay now
+                <ArrowRight className="ml-1.5 h-4 w-4" />
+              </Button>
+            )}
             {canFinishSetup && !isSuspended && (
               <Button
                 type="button"

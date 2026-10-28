@@ -20,6 +20,7 @@ import { getClinicMemberOrNull } from "./clinicTools";
 import { requireAdmin } from "./helpers/partnerAccess";
 import { sha256Hex } from "./helpers/exerciseCrypto";
 import { appLink } from "./helpers/appUrl";
+import { notifyAgreementToSign } from "./pushAlerts";
 import {
   AGREEMENTS,
   REHABIFY_SIGNATORIES,
@@ -505,6 +506,15 @@ export const adminVoidAgreementSignature = mutation({
     const why = reason.trim();
     if (why.length < 5) throw new ConvexError("Say why it's being voided.");
     await ctx.db.patch(signatureId, { status: "void", voidedAt: Date.now(), voidedBy: admin._id, voidReason: why.slice(0, 500) });
+    if (row.userId && isAgreementId(row.agreementId)) {
+      const spec = AGREEMENTS[row.agreementId];
+      await notifyAgreementToSign(ctx, {
+        userId: row.userId,
+        title: spec.title,
+        link: spec.party === "clinic" ? CLINIC_PAGE : PHYSIO_PAGE,
+        again: true,
+      });
+    }
     return { success: true };
   },
 });
@@ -550,6 +560,11 @@ export const adminSendAgreementRequest = mutation({
       buttonLabel: "Review and sign",
       buttonUrl: appLink(spec.party === "clinic" ? CLINIC_PAGE : PHYSIO_PAGE),
       footnote: PROFESSIONAL_FOOTNOTE,
+    });
+    await notifyAgreementToSign(ctx, {
+      userId: args.userId,
+      title: spec.title,
+      link: spec.party === "clinic" ? CLINIC_PAGE : PHYSIO_PAGE,
     });
     return { success: true };
   },

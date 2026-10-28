@@ -1,3 +1,4 @@
+import { insertNotification } from "./helpers/pushNotify";
 import { ConvexError, v } from "convex/values";
 import { mutation, query, type QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -526,7 +527,7 @@ export const setClinicStatus = mutation({
       details: { clinicName: clinic.name, reason, previousReason: clinic.suspendedReason },
     });
 
-    await ctx.db.insert("notifications", {
+    await insertNotification(ctx, {
       userId: clinic.ownerId,
       type: args.status === "suspended" ? "clinic_suspended" : "clinic_reactivated",
       priority: "high",

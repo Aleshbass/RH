@@ -5,6 +5,8 @@ import { useMutation, useQuery } from 'convex/react'
 import { Dumbbell } from '@/components/icons'
 import { api } from '@/convex/_generated/api'
 import { ProgramPlayer } from '@/components/exercise-programs/ProgramPlayer'
+import { FlexPaymentReturn } from '@/components/exercise-programs/FlexUpgradeCard'
+import { useFlexCheckout } from '@/components/exercise-programs/flex'
 import type { LogInput, MyProgram } from '@/components/exercise-programs/types'
 import { TodayPlanExercises } from '@/components/dashboard/patient/treatment/PatientTreatmentPlanView'
 import { EmptyState, LoadingBlocks, PageContainer, PageHeader, Panel, SectionLabel, InfoTip } from '@/components/patient/ui'
@@ -14,6 +16,8 @@ import { cn } from '@/lib/utils'
 function Program({ program }: { program: MyProgram }) {
   const requestGrant = useViewerGrant({ kind: 'program', programId: program._id })
   const log = useMutation(api.exercisePrograms.logExercise)
+  // An independent physio's own patients buy Flex for demonstrations and tracking
+  const { checkout, busy } = useFlexCheckout({ from: 'exercises' })
   return (
     <ProgramPlayer
       program={program}
@@ -21,6 +25,7 @@ function Program({ program }: { program: MyProgram }) {
       requestGrant={requestGrant}
       mediaContext={{ kind: 'program', programId: program._id }}
       onLog={(input: LogInput) => log({ programId: program._id, ...input })}
+      flex={{ onChoose: (plan) => void checkout(plan), busy }}
     />
   )
 }
@@ -36,6 +41,7 @@ export default function PatientExercisesPage() {
 
   return (
     <PageContainer>
+      <FlexPaymentReturn />
       <PageHeader
         title="Exercises"
         description="Your home exercises for today. Tap one to see how it’s done, then tell your physio how it went."

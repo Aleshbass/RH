@@ -18,7 +18,7 @@ export const getNavBadges = query({
   handler: async (ctx) => {
     await ensureUserRole(ctx, ["admin"]);
 
-    const [approvals, pendingReports, reviewingReports, pendingBookings, partners, newAccess, reviewingAccess, countersign] = await Promise.all([
+    const [approvals, pendingReports, reviewingReports, pendingBookings, partners, newAccess, reviewingAccess, countersign, refunds, newInquiries] = await Promise.all([
       ctx.db
         .query("accountApprovalStatus")
         .withIndex("by_status", (q) => q.eq("status", "pending_review"))
@@ -52,6 +52,16 @@ export const getNavBadges = query({
         .query("agreementSignatures")
         .withIndex("by_status", (q) => q.eq("status", "awaiting_countersign"))
         .take(BADGE_CAP),
+      // Refunds waiting for an admin's decision
+      ctx.db
+        .query("refundRequests")
+        .withIndex("by_status", (q) => q.eq("status", "pending"))
+        .take(BADGE_CAP),
+      // Demo requests and partnership inquiries nobody has contacted yet
+      ctx.db
+        .query("partnershipInquiries")
+        .withIndex("by_status", (q) => q.eq("status", "new"))
+        .take(BADGE_CAP),
     ]);
 
     const bankTransfers = pendingBookings.filter(
@@ -65,6 +75,8 @@ export const getNavBadges = query({
       partnerApplications: partners.filter((p) => partnerApprovalStatus(p) === "pending").length,
       accessApplications: Math.min(newAccess.length + reviewingAccess.length, BADGE_CAP),
       agreements: countersign.length,
+      refunds: refunds.length,
+      inquiries: newInquiries.length,
       cap: BADGE_CAP,
     };
   },

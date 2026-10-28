@@ -3,7 +3,8 @@ import { ConvexError, v } from "convex/values";
 import { Doc, Id } from "./_generated/dataModel";
 import { getUserByIdOrThrow } from "./users";
 import { assertPatientInClinic } from "./clinicTools";
-import { 
+import { pushNewMessage } from "./helpers/pushNotify";
+import {
   ChatMessage, 
   ChatConversation, 
   ChatFilter, 
@@ -464,6 +465,13 @@ export const sendMessage = mutation({
       unreadCount2: isParticipant1 ? conversation.unreadCount2 + 1 : conversation.unreadCount2,
     });
 
+    await pushNewMessage(ctx, {
+      sender: user,
+      receiver,
+      conversationId: args.conversationId,
+      contentType: args.contentType,
+    });
+
     return messageId;
   },
 });
@@ -907,14 +915,16 @@ export const getUnreadCount = query({
     ]);
     const conversations = [...asFirst, ...asSecond];
 
+    // Only conversations the Messages list shows (getMyConversations skips ones whose other
+    // person's account is gone), so the badge never counts something the person can't open
     let total = 0;
-    conversations.forEach((conv: any) => {
-      if (conv.participant1Id === currentUser._id) {
-        total += conv.unreadCount1 ?? 0;
-      } else {
-        total += conv.unreadCount2 ?? 0;
-      }
-    });
+    for (const conv of conversations) {
+      const mine = conv.participant1Id === currentUser._id ? conv.unreadCount1 ?? 0 : conv.unreadCount2 ?? 0;
+      if (mine <= 0) continue;
+      const otherId = conv.participant1Id === currentUser._id ? conv.participant2Id : conv.participant1Id;
+      if (!(await ctx.db.get(otherId))) continue;
+      total += mine;
+    }
     return total;
   },
 });

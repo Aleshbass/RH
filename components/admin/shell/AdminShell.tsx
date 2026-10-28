@@ -16,6 +16,7 @@ import { AdminSidebar } from './AdminSidebar'
 import { AdminCommandPalette, OPEN_ADMIN_PALETTE_EVENT } from './AdminCommandPalette'
 import { adminBreadcrumbs } from './adminNav'
 import { WebsiteLink } from '@/components/dashboard/shared/WebsiteLink'
+import { AppIconBadge, AppSetupButton, AppSetupPrompt } from '@/components/pwa/AppSetup'
 
 function ShellSkeleton() {
   return (
@@ -157,6 +158,7 @@ function ShellFrame({ children }: { children: ReactNode }) {
           <Breadcrumbs />
 
           <div className="ml-auto flex shrink-0 items-center gap-1.5">
+            <AppSetupButton tone="console" />
             <WebsiteLink tone="console" />
             <SearchButton />
             <ClinicThemeToggle className="h-10 w-10 rounded-xl bg-white shadow-soft hover:bg-white dark:bg-rh-ink-2 dark:hover:bg-rh-ink-3 md:hidden" />
@@ -170,6 +172,9 @@ function ShellFrame({ children }: { children: ReactNode }) {
       </div>
 
       <AdminCommandPalette />
+      {/* Demo requests, approvals and other alerts on the admin's phone */}
+      <AppSetupPrompt />
+      <AppIconBadge />
     </div>
   )
 }

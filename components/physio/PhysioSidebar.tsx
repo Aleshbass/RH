@@ -24,6 +24,7 @@ import {
 import { PatientDrawer, initials } from '@/components/patient/ui'
 import { PatientThemeToggle, SoundSwitchRow } from '@/components/patient/shell/PatientControls'
 import { START_PHYSIO_TOUR_EVENT } from '@/components/physio/PhysioTour'
+import { clearUserNoteDrafts } from '@/components/physio/notes/draftStore'
 import { usePracticeMode } from '@/components/physio/practiceMode'
 import { CLINIC_PORTAL_HOME } from '@/components/clinic/clinician-routing'
 import { cn } from '@/lib/utils'
@@ -78,7 +79,12 @@ function useAccount() {
   const { signOut, openUserProfile } = useClerk()
   const name = user?.fullName || user?.firstName || 'Your account'
   const email = user?.primaryEmailAddress?.emailAddress
-  return { user, name, email, openUserProfile, signOut: () => signOut({ redirectUrl: '/' }) }
+  const signOutAndClear = () => {
+    // Unsaved clinical notes stay on this device only for the person who wrote them
+    clearUserNoteDrafts(user?.id)
+    return signOut({ redirectUrl: '/' })
+  }
+  return { user, name, email, openUserProfile, signOut: signOutAndClear }
 }
 
 function Badge({ count }: { count?: number }) {

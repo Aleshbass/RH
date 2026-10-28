@@ -7,12 +7,18 @@
  * It holds the slot for a day, and the patient pays from their dashboard (OpenBookingsCard).
  * Patients of a clinic, or a physio's own private patients, are unaffected.
  */
+import { insertNotification } from "./helpers/pushNotify";
 import { ConvexError, v } from "convex/values";
-import { mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
+import { internalMutation, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { getAuthenticatedUser } from "./auth";
-import { insertServiceBooking } from "./marketplace/booking";
-import { PHYSIO_SCHEDULED_HOLD_MS } from "./helpers/slotHolds";
+import { activatePaidBooking, askPhysioToRespond, insertServiceBooking } from "./marketplace/booking";
+import { findSlotClash, PHYSIO_SCHEDULED_HOLD_MS } from "./helpers/slotHolds";
+import { createRefundRequest } from "./helpers/refunds";
+import { isPhysioNetworkEligible } from "./physioSetup";
+import { isWithinWorkingHours } from "./calendar/availability";
+import { providerResponseDueAt } from "../lib/bookingResponse";
+import { patientCancelOutcome, patientCancelTier, type CancelMoney } from "../lib/cancellationPolicy";
 import { hasPriorAssessment } from "./helpers/rehabifyPricing";
 import { awaitingConfirmationFrom } from "./helpers/appointmentStatus";
 import { emailAboutAppointment, personName, syncGoogleCalendarEvent } from "./helpers/appointmentNotify";
@@ -154,7 +160,7 @@ export const scheduleRehabifyFollowUp = mutation({
 
     const service = getService(args.serviceId);
     const physioName = `${physio.firstName ?? ""} ${physio.lastName ?? ""}`.trim() || "Your physiotherapist";
-    await ctx.db.insert("notifications", {
+    await insertNotification(ctx, {
       userId: args.patientId,
       type: "appointment_scheduled",
       priority: "high",
@@ -223,7 +229,7 @@ export const acceptRequestWithInvoice = mutation({
     const physioName = personName(physio, "Your physiotherapist");
     const price = formatKobo(result.chargeKobo);
     const payBy = lagosDateTime(result.holdExpiresAt);
-    await ctx.db.insert("notifications", {
+    await insertNotification(ctx, {
       userId: patient._id,
       type: "appointment_scheduled",
       priority: "high",
@@ -252,3 +258,484 @@ export const acceptRequestWithInvoice = mutation({
     return await physioBookingResult(ctx, result);
   },
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Paid website requests waiting for the physio (Consultation and Booking Policy 5.4-5.5)
+// The patient pays, then the physio has 5 hours (1 if the visit is within 8 hours) to accept.
+// Declined or unanswered: the patient picks another physio free at the same time, asks for a
+// full refund (an admin approves it), or asks the care team to sort it out.
+// Joy bookings follow the same rules through the Joy integration.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const PATIENT_BOOKINGS = "/dashboard/patient/appointments";
+
+function bookingPatientName(booking: Doc<"marketplaceBookings">, patient: Doc<"users"> | null) {
+  return booking.guestName || personName(patient, "Your patient");
+}
+
+/** Paid requests this physio still has to answer, soonest deadline first. */
+export const getMyBookingRequests = query({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return [];
+    const user = await ctx.db.query("users").withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject)).unique();
+    if (!user || user.role !== "physiotherapist") return [];
+    const rows = await ctx.db
+      .query("marketplaceBookings")
+      .withIndex("by_physiotherapist", (q) => q.eq("physiotherapistId", user._id))
+      .order("desc")
+      .take(200);
+    const now = Date.now();
+    const waiting = rows.filter(
+      (b) => b.bookingStatus === "awaiting_physio" && b.providerResponse === "pending" && (b.providerResponseDueAt ?? 0) > now
+    );
+    const out = await Promise.all(
+      waiting.map(async (b) => {
+        const patient = await ctx.db.get(b.patientId);
+        const service = b.serviceId ? getService(b.serviceId) : undefined;
+        return {
+          bookingId: b._id,
+          patientName: bookingPatientName(b, patient),
+          serviceName: service?.name ?? "Physiotherapy session",
+          mode: b.isOnline ? ("virtual" as const) : ("home" as const),
+          area: b.travelArea ?? b.travelZoneName ?? null,
+          sessionDate: b.sessionDate ?? null,
+          durationMinutes: b.sessionDuration,
+          // What the physio is paid: never the patient's price
+          payoutKobo: b.payoutKobo ?? b.physiotherapistEarnings,
+          travelShareKobo: b.travelPhysioShareKobo ?? 0,
+          patientNote: b.patientNotes ?? null,
+          dueAt: b.providerResponseDueAt ?? now,
+        };
+      })
+    );
+    return out.sort((a, b) => a.dueAt - b.dueAt);
+  },
+});
+
+/** The physio accepts (the visit is confirmed) or declines (the patient is offered other options). */
+export const respondToBookingRequest = mutation({
+  args: { bookingId: v.id("marketplaceBookings"), accept: v.boolean(), reason: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const physio = await getAuthenticatedUser(ctx);
+    const booking = await ctx.db.get(args.bookingId);
+    if (!booking || booking.physiotherapistId !== physio._id) throw new ConvexError("Booking not found.");
+    if (booking.bookingStatus !== "awaiting_physio" || booking.providerResponse !== "pending") {
+      throw new ConvexError("This booking isn't waiting for your answer any more.");
+    }
+    if ((booking.providerResponseDueAt ?? 0) < Date.now()) {
+      throw new ConvexError("The time to answer has passed, so we've offered the patient other options.");
+    }
+    if (args.accept) {
+      await ctx.db.patch(booking._id, { providerResponse: "accepted", updatedAt: Date.now() });
+      const paid = booking.paidAmountKobo ?? booking.totalAmount;
+      await activatePaidBooking(
+        ctx,
+        booking,
+        { bookingId: booking._id, paymentReference: booking.paymentReference ?? `MKT_${booking._id}` },
+        {
+          paymentReference: booking.paymentReference ?? `MKT_${booking._id}`,
+          paymentMethod: booking.paymentMethod === "bank_transfer" ? "bank_transfer" : paid === 0 ? "free" : "paystack",
+          paidAmountKobo: paid,
+        },
+        booking.paystackFeeActualKobo
+      );
+      return { accepted: true };
+    }
+    await releaseToPatient(ctx, booking, args.reason?.trim().slice(0, 300) || "declined");
+    return { accepted: false };
+  },
+});
+
+/** Declined or unanswered: free the physio's time and give the patient their choices. */
+async function releaseToPatient(ctx: MutationCtx, booking: Doc<"marketplaceBookings">, reason: string) {
+  const now = Date.now();
+  const previous = [...new Set([...(booking.previousPhysioIds ?? []), ...(booking.physiotherapistId ? [booking.physiotherapistId] : [])])];
+  await ctx.db.patch(booking._id, {
+    providerResponse: "rejected",
+    replacementStatus: "awaiting_patient_slot",
+    previousPhysioIds: previous,
+    providerDeclineReason: reason,
+    updatedAt: now,
+  });
+  const patient = await ctx.db.get(booking.patientId);
+  const physio = booking.physiotherapistId ? await ctx.db.get(booking.physiotherapistId) : null;
+  const physioName = personName(physio, "Your physiotherapist");
+  const when = booking.sessionDate ? lagosDateTime(booking.sessionDate) : "your chosen time";
+  await insertNotification(ctx, {
+    userId: booking.patientId,
+    type: "appointment_cancelled",
+    priority: "high",
+    status: "pending",
+    payload: {
+      title: "Choose another physiotherapist or a refund",
+      body: `${physioName} can't take your booking for ${when}. Pick another physiotherapist, or get a full refund.`,
+      data: { entityType: "marketplace_booking", entityId: booking._id, actionUrl: PATIENT_BOOKINGS },
+    },
+    createdAt: now,
+  });
+  await emailAboutAppointment(ctx, {
+    to: booking.guestEmail || patient?.email,
+    audience: "patient",
+    subject: "Your booking needs a new physiotherapist",
+    greetingName: booking.guestName?.split(" ")[0] || patient?.firstName,
+    heading: "Your physiotherapist can't make it",
+    paragraphs: [
+      `${physioName} can't take your booking for ${when}. You haven't lost anything: your payment is safe.`,
+      "Choose another physiotherapist who's free at the same time, or ask for a full refund (including any travel charge).",
+    ],
+    buttonLabel: "See your options",
+    buttonPath: PATIENT_BOOKINGS,
+  });
+}
+
+/** Every few minutes: requests nobody answered in time go back to the patient. */
+export const expireBookingRequests = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const waiting = await ctx.db
+      .query("marketplaceBookings")
+      .withIndex("by_booking_status", (q) => q.eq("bookingStatus", "awaiting_physio"))
+      .take(500);
+    const now = Date.now();
+    let expired = 0;
+    for (const booking of waiting) {
+      if (booking.providerResponse !== "pending" || (booking.providerResponseDueAt ?? Infinity) > now) continue;
+      await releaseToPatient(ctx, booking, "no_response");
+      if (booking.physiotherapistId) {
+        await insertNotification(ctx, {
+          userId: booking.physiotherapistId,
+          type: "appointment_cancelled",
+          priority: "medium",
+          status: "pending",
+          payload: {
+            title: "A booking request expired",
+            body: `You didn't answer a booking request for ${booking.sessionDate ? lagosDateTime(booking.sessionDate) : "a session"} in time, so we offered the patient someone else.`,
+            data: { entityType: "marketplace_booking", entityId: booking._id, actionUrl: "/dashboard/physiotherapist/appointments" },
+          },
+          createdAt: now,
+        });
+      }
+      expired++;
+    }
+    return { expired };
+  },
+});
+
+/** Up to three physios who offer this service (and area) and are free at the booking's time. */
+async function replacementOptions(ctx: QueryCtx, booking: Doc<"marketplaceBookings">) {
+  if (!booking.sessionDate || !booking.serviceId || !isBookableServiceId(booking.serviceId)) return [];
+  const start = booking.sessionDate;
+  const end = start + booking.sessionDuration * 60_000;
+  if (start < Date.now() + 30 * 60_000) return [];
+  const exclude = new Set<string>([...(booking.previousPhysioIds ?? []), ...(booking.physiotherapistId ? [booking.physiotherapistId] : [])]);
+  const profiles = await ctx.db
+    .query("physiotherapistProfiles")
+    .withIndex("by_marketplace_availability", (q) => q.eq("isAvailableOnMarketplace", true))
+    .take(150);
+  const options: { physiotherapistId: Id<"users">; name: string; imageUrl: string | null; yearsOfExperience: number | null }[] = [];
+  for (const profile of profiles) {
+    if (options.length >= 3) break;
+    if (exclude.has(profile.userId) || !isWithinWorkingHours(profile.availabilitySchedule, start, end)) continue;
+    const eligible = await isPhysioNetworkEligible(ctx, profile.userId, {
+      serviceId: booking.serviceId,
+      zoneId: booking.travelZoneId ?? null,
+      access: booking.accessAwardId ? { payoutKobo: booking.payoutKobo ?? booking.physiotherapistEarnings } : undefined,
+    });
+    if (!eligible || (await findSlotClash(ctx, profile.userId, { start, end }, { excludeBookingId: booking._id }))) continue;
+    const user = await ctx.db.get(profile.userId);
+    options.push({
+      physiotherapistId: profile.userId,
+      name: personName(user, "Physiotherapist"),
+      imageUrl: user?.imageUrl ?? null,
+      yearsOfExperience: profile.yearsOfExperience ?? null,
+    });
+  }
+  return options;
+}
+
+/** The patient's paid bookings waiting for a physio's answer, or for the patient's choice. */
+export const getMyBookingsAwaitingPhysio = query({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return [];
+    const user = await ctx.db.query("users").withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject)).unique();
+    if (!user) return [];
+    const rows = await ctx.db
+      .query("marketplaceBookings")
+      .withIndex("by_patient", (q) => q.eq("patientId", user._id))
+      .order("desc")
+      .take(50);
+    const open = rows.filter((b) => b.bookingStatus === "awaiting_physio" && b.paymentStatus === "completed");
+    return Promise.all(
+      open.map(async (b) => {
+        const physio = b.physiotherapistId ? await ctx.db.get(b.physiotherapistId) : null;
+        const service = b.serviceId ? getService(b.serviceId) : undefined;
+        const refunds = await ctx.db
+          .query("refundRequests")
+          .withIndex("by_related", (q) => q.eq("relatedType", "marketplace_booking").eq("relatedId", b._id))
+          .collect();
+        const choosing = b.replacementStatus === "awaiting_patient_slot";
+        return {
+          bookingId: b._id,
+          serviceName: service?.name ?? "Physiotherapy session",
+          physiotherapistName: personName(physio, "Your physiotherapist"),
+          sessionDate: b.sessionDate ?? null,
+          isOnline: b.isOnline,
+          paidKobo: b.paidAmountKobo ?? b.totalAmount,
+          state: choosing ? ("choose" as const) : b.replacementStatus === "admin_follow_up" ? ("care_team" as const) : ("waiting" as const),
+          dueAt: b.providerResponseDueAt ?? null,
+          declinedForNoResponse: b.providerDeclineReason === "no_response",
+          refundRequested: refunds.some((r) => r.status !== "declined" && r.status !== "failed"),
+          options: choosing ? await replacementOptions(ctx, b) : [],
+        };
+      })
+    );
+  },
+});
+
+async function patientBooking(ctx: MutationCtx, bookingId: Id<"marketplaceBookings">) {
+  const user = await getAuthenticatedUser(ctx);
+  const booking = await ctx.db.get(bookingId);
+  if (!booking || booking.patientId !== user._id) throw new ConvexError("Booking not found.");
+  if (booking.bookingStatus !== "awaiting_physio" || booking.paymentStatus !== "completed") {
+    throw new ConvexError("This booking doesn't need a decision any more.");
+  }
+  return { user, booking };
+}
+
+/** The patient picks one of the offered physios; they now have their own time to accept. */
+export const chooseReplacementPhysio = mutation({
+  args: { bookingId: v.id("marketplaceBookings"), physiotherapistId: v.id("users") },
+  handler: async (ctx, args) => {
+    const { booking } = await patientBooking(ctx, args.bookingId);
+    if (booking.replacementStatus !== "awaiting_patient_slot") throw new ConvexError("This booking isn't looking for a new physiotherapist.");
+    const options = await replacementOptions(ctx, booking);
+    if (!options.some((o) => o.physiotherapistId === args.physiotherapistId)) {
+      throw new ConvexError("That physiotherapist is no longer free at this time. Please choose another.");
+    }
+    const now = Date.now();
+    const dueAt = providerResponseDueAt(now, booking.sessionDate);
+    await ctx.db.patch(booking._id, {
+      physiotherapistId: args.physiotherapistId,
+      providerResponse: "pending",
+      providerResponseDueAt: dueAt,
+      replacementStatus: "not_needed",
+      providerDeclineReason: undefined,
+      updatedAt: now,
+    });
+    const updated = await ctx.db.get(booking._id);
+    if (updated) await askPhysioToRespond(ctx, updated, dueAt);
+    return { dueAt };
+  },
+});
+
+/** Full refund, including any travel charge (an admin approves it). The booking is cancelled. */
+export const requestRefundForUntakenBooking = mutation({
+  args: { bookingId: v.id("marketplaceBookings") },
+  handler: async (ctx, args) => {
+    const { user, booking } = await patientBooking(ctx, args.bookingId);
+    if (booking.providerResponse === "pending") throw new ConvexError("Your physiotherapist can still accept this booking.");
+    if (!booking.paymentReference) throw new ConvexError("We couldn't find the payment for this booking. Please contact support.");
+    const amountKobo = booking.paidAmountKobo ?? booking.totalAmount;
+    await createRefundRequest(ctx, {
+      relatedType: "marketplace_booking",
+      relatedId: booking._id,
+      reference: booking.paymentReference,
+      amountKobo,
+      reason: booking.providerDeclineReason === "no_response" ? "physio_no_response" : "physio_declined",
+      reasonText:
+        booking.providerDeclineReason === "no_response"
+          ? "The physiotherapist didn't answer in time. Full refund, including travel."
+          : booking.providerDeclineReason === "physio_cancelled"
+            ? "The physiotherapist cancelled. Full refund, including travel."
+            : "The physiotherapist declined. Full refund, including travel.",
+      requestedBy: "patient",
+      payerUserId: user._id,
+    });
+    await ctx.db.patch(booking._id, {
+      bookingStatus: "cancelled",
+      cancellationReason: "Refund requested: the physiotherapist couldn't take the booking",
+      updatedAt: Date.now(),
+    });
+    return { amountKobo };
+  },
+});
+
+/** "Please sort it out for me": the care team contacts the patient within a business day (5.5). */
+export const askCareTeamAboutBooking = mutation({
+  args: { bookingId: v.id("marketplaceBookings") },
+  handler: async (ctx, args) => {
+    const { booking } = await patientBooking(ctx, args.bookingId);
+    await ctx.db.patch(booking._id, {
+      replacementStatus: "admin_follow_up",
+      adminAttentionReason: "The patient asked the care team to find another physiotherapist or time.",
+      updatedAt: Date.now(),
+    });
+    return { success: true };
+  },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Cancelling paid Rehabify Care visits (Payment Policy 4, lib/cancellationPolicy.ts)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** The paid, standard-priced booking behind a visit, if it's Rehabify Care. */
+async function paidCareBooking(ctx: QueryCtx, appointmentId: Id<"appointments">) {
+  const booking = await ctx.db
+    .query("marketplaceBookings")
+    .withIndex("by_appointment", (q) => q.eq("appointmentId", appointmentId))
+    .first();
+  if (!booking || booking.paymentStatus !== "completed" || !booking.pricingModel || booking.bookingStatus === "cancelled") return null;
+  return booking;
+}
+
+function cancelMoney(booking: Doc<"marketplaceBookings">): CancelMoney {
+  return {
+    paidKobo: booking.paidAmountKobo ?? booking.totalAmount,
+    travelKobo: booking.travelSurchargeKobo ?? 0,
+    payoutKobo: booking.payoutKobo ?? booking.physiotherapistEarnings,
+    travelShareKobo: booking.travelPhysioShareKobo ?? 0,
+  };
+}
+
+/** What cancelling now would mean for the patient, shown before they confirm. */
+export const getCancellationQuote = query({
+  args: { appointmentId: v.id("appointments") },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return null;
+    const user = await ctx.db.query("users").withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject)).unique();
+    const appointment = await ctx.db.get(args.appointmentId);
+    if (!user || !appointment || appointment.patientId !== user._id) return null;
+    const booking = await paidCareBooking(ctx, args.appointmentId);
+    if (!booking) return null;
+    const money = cancelMoney(booking);
+    const outcome = patientCancelOutcome(money, patientCancelTier(appointment.startTime, Date.now()), Boolean(booking.freeRescheduleUsedAt));
+    return {
+      tier: outcome.tier,
+      refundKobo: outcome.refundKobo,
+      paidKobo: money.paidKobo,
+      canReschedule: outcome.canReschedule,
+      rescheduleBy: appointment.startTime + 14 * DAY_MS,
+    };
+  },
+});
+
+async function addPolicyPayout(
+  ctx: MutationCtx,
+  booking: Doc<"marketplaceBookings">,
+  appointment: Doc<"appointments">,
+  amount: number,
+  reason: "late_cancellation" | "no_show"
+) {
+  if (amount <= 0 || !booking.physiotherapistId) return;
+  const invoiceId = booking.invoiceId;
+  if (!invoiceId) {
+    await ctx.db.insert("systemLogs", {
+      type: "payment",
+      timestamp: Date.now(),
+      action: "policy_payout_without_invoice",
+      targetEntityType: "marketplace_booking",
+      targetEntityId: String(booking._id),
+      details: { amount, reason },
+    });
+    return;
+  }
+  const existing = await ctx.db
+    .query("payouts")
+    .withIndex("by_payout_invoice_id", (q) => q.eq("invoiceId", invoiceId))
+    .first();
+  if (existing) return;
+  const now = Date.now();
+  await ctx.db.insert("payouts", {
+    invoiceId,
+    amount,
+    status: "pending",
+    type: "physiotherapist_earning",
+    userId: booking.physiotherapistId,
+    reason,
+    bookingId: booking._id,
+    appointmentId: appointment._id,
+    sessionAt: appointment.startTime,
+    createdAt: now,
+    updatedAt: now,
+  });
+}
+
+/**
+ * The patient cancelled a paid Rehabify Care visit: file the refund the policy gives them (an
+ * admin approves it) and owe the physio their share. Returns what happened, or null if the visit
+ * isn't Rehabify Care.
+ */
+export async function settlePatientCancellation(ctx: MutationCtx, appointment: Doc<"appointments">) {
+  const booking = await paidCareBooking(ctx, appointment._id);
+  if (!booking) return null;
+  const now = Date.now();
+  const outcome = patientCancelOutcome(cancelMoney(booking), patientCancelTier(appointment.startTime, now), Boolean(booking.freeRescheduleUsedAt));
+  if (outcome.refundKobo > 0 && booking.paymentReference) {
+    await createRefundRequest(ctx, {
+      relatedType: "marketplace_booking",
+      relatedId: booking._id,
+      reference: booking.paymentReference,
+      amountKobo: outcome.refundKobo,
+      reason: outcome.tier === "early" ? "patient_cancel_24h" : "patient_cancel_late_50",
+      reasonText:
+        outcome.tier === "early"
+          ? "The patient cancelled 24 hours or more before. Full refund, including travel."
+          : "The patient cancelled 2 to 24 hours before. 50% of the session fee, plus travel.",
+      requestedBy: "patient",
+      payerUserId: booking.patientId,
+    });
+  }
+  await addPolicyPayout(ctx, booking, appointment, outcome.physioPayoutKobo, "late_cancellation");
+  await ctx.db.patch(booking._id, {
+    bookingStatus: "cancelled",
+    cancellationReason: "Cancelled by the patient",
+    cancellationOutcome: { tier: outcome.tier, refundKobo: outcome.refundKobo, physioPayoutKobo: outcome.physioPayoutKobo, at: now },
+    updatedAt: now,
+  });
+  return outcome;
+}
+
+/**
+ * The physio cancelled a paid Rehabify Care visit: no payout, and the patient chooses another
+ * physio at the same time or a full refund (Payment Policy 4.5). False if it isn't Rehabify Care.
+ */
+export async function releaseCancelledVisit(ctx: MutationCtx, appointment: Doc<"appointments">) {
+  const booking = await paidCareBooking(ctx, appointment._id);
+  if (!booking) return false;
+  await ctx.db.patch(booking._id, { bookingStatus: "awaiting_physio", updatedAt: Date.now() });
+  const updated = await ctx.db.get(booking._id);
+  if (updated) await releaseToPatient(ctx, updated, "physio_cancelled");
+  return true;
+}
+
+/** The patient didn't attend: no refund, and the physio is paid in full, travel too. */
+export async function settleNoShow(ctx: MutationCtx, appointment: Doc<"appointments">) {
+  const booking = await paidCareBooking(ctx, appointment._id);
+  if (!booking) return;
+  const money = cancelMoney(booking);
+  await addPolicyPayout(ctx, booking, appointment, money.payoutKobo + money.travelShareKobo, "no_show");
+  await ctx.db.patch(booking._id, { bookingStatus: "no_show", updatedAt: Date.now() });
+}
+
+/**
+ * Moving a paid visit within 24 hours of its start: once only, to a time within 14 days of the
+ * original (Payment Policy 4.3). Earlier moves are free and unlimited. Throws when not allowed.
+ */
+export async function useFreeReschedule(ctx: MutationCtx, appointment: Doc<"appointments">, newStart: number) {
+  const booking = await paidCareBooking(ctx, appointment._id);
+  if (!booking || appointment.startTime - Date.now() >= DAY_MS) return;
+  if (booking.freeRescheduleUsedAt) {
+    throw new ConvexError("You've already moved this visit once at short notice. You can still cancel it.");
+  }
+  if (newStart > appointment.startTime + 14 * DAY_MS) {
+    throw new ConvexError("Please choose a time within 14 days of the original visit.");
+  }
+  await ctx.db.patch(booking._id, { freeRescheduleUsedAt: Date.now(), updatedAt: Date.now() });
+}

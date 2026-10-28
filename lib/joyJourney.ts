@@ -52,6 +52,7 @@ export const STAGE_LABEL: Record<string, string> = {
   provider_rejected: 'Physio declined',
   provider_timeout: "Physio didn't respond in time",
   awaiting_admin_schedule: 'Waiting for Rehabify to schedule',
+  awaiting_physio: 'Waiting for the physio to accept',
   admin_scheduled: 'Scheduled by Rehabify',
   rescheduled: 'Rescheduled',
   meeting_link_sent: 'Video link sent',

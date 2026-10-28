@@ -35,6 +35,7 @@ import { AppointmentDrawer, type View } from './AppointmentDrawer'
 import { usePracticeMode } from '@/components/physio/practiceMode'
 import { useBooking } from './BookingDrawer'
 import { JoinVideoButton } from './JoinVideoButton'
+import { BookingRequests } from './BookingRequests'
 import {
   asLike,
   videoJoin,
@@ -300,6 +301,8 @@ export function ScheduleList({
           </>
         }
       />
+
+      <BookingRequests />
 
       {appointments === undefined ? (
         <LoadingBlocks rows={4} />

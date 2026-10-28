@@ -544,7 +544,7 @@ export default function PartnerReferralLandingPage({ params }: PageProps) {
           {/* Submit Button */}
           <button
             type="submit"
-            disabled={isSubmitting}
+            disabled={isSubmitting || !form.consentGranted}
             className="w-full py-4 px-6 rounded-2xl bg-[#002e2c] text-[#FAF6E7] font-semibold text-sm sm:text-base hover:bg-[#004744] active:scale-[0.99] transition-all shadow-[0_4px_20px_rgba(0,46,44,0.15)] flex items-center justify-center gap-2.5 disabled:opacity-50"
           >
             {isSubmitting ? (

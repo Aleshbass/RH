@@ -9,6 +9,7 @@
  *  - Live keys and live webhooks require approved production access (go-live).
  *  - The REST API reaches partner data only through convex/partnerGateway.ts.
  */
+import { insertNotification } from "./helpers/pushNotify";
 import { ConvexError, v } from "convex/values";
 import { action, internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { paginationOptsValidator } from "convex/server";
@@ -226,7 +227,7 @@ export const applyForPartner = mutation({
       .collect();
     const adminEmails = new Set<string>();
     for (const admin of admins) {
-      await ctx.db.insert("notifications", {
+      await insertNotification(ctx, {
         userId: admin._id,
         type: "system_alert",
         title: "New Partner Application",
@@ -1151,7 +1152,7 @@ export const requestProductionAccess = mutation({
       .withIndex("by_role", (q) => q.eq("role", "admin"))
       .collect();
     for (const admin of admins) {
-      await ctx.db.insert("notifications", {
+      await insertNotification(ctx, {
         userId: admin._id,
         type: "system_alert",
         title: "Partner go-live request",

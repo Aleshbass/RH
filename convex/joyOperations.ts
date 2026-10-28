@@ -1,6 +1,10 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery } from "./_generated/server";
 import { internal } from "./_generated/api";
+import { publicAppUrl } from "./helpers/appUrl";
+import { missingPolicies, recordMissingPolicyAcceptances } from "./helpers/policyAcceptance";
+import { recoveryPlanForJoy } from "./helpers/patientPlans";
+import { PATIENT_CONSENT_POLICIES, POLICIES, consentDocumentsForJoy } from "../lib/policies";
 
 type Operation =
   | "physio_work_summary" | "physio_update_availability" | "physio_session_note"
@@ -8,7 +12,9 @@ type Operation =
   | "family_resolve" | "family_grant" | "family_update_grant" | "family_revoke_grant"
   | "family_care_summary" | "change_physio_request" | "admin_patient"
   | "admin_physio" | "admin_finance_summary" | "admin_escalation"
-  | "admin_verify_physio" | "admin_reassign" | "patient_link_referral";
+  | "admin_verify_physio" | "admin_reassign" | "patient_link_referral"
+  // Additive (Oct 2026), patient persona, see the comment above executeQuery:
+  | "patient_consent_status" | "patient_record_consents" | "patient_recovery_plan";
 
 const activeBooking = (status: unknown) => status === "pending" || status === "confirmed" || status === "scheduled";
 const nameOf = (user: { firstName?: string; lastName?: string } | null) =>
@@ -159,14 +165,66 @@ export const executeMutation = internalMutation({
         message: data.message ? String(data.message) : undefined,
       });
     }
+    if (op === "patient_record_consents") {
+      // Terms, Privacy and the health information consent accepted on WhatsApp at the first chat.
+      // data.accepted = { terms: "<version>", privacy: "<version>", health_data: "<version>" } with
+      // the versions Joy showed (GET /api/v1/joy/policy/consents). Append-only, channel "whatsapp".
+      const patient = await patientForActor(ctx, String(data.patient_id), data.actor);
+      const accepted: Record<string, string> = {};
+      if (data.accepted && typeof data.accepted === "object" && !Array.isArray(data.accepted)) {
+        for (const [key, value] of Object.entries(data.accepted)) if (typeof value === "string") accepted[key] = value;
+      }
+      const missing = await missingPolicies(ctx, patient._id, PATIENT_CONSENT_POLICIES);
+      const current = missing.filter((id) => accepted[id] === POLICIES[id].version);
+      const outdated = missing.filter((id) => accepted[id] !== undefined && accepted[id] !== POLICIES[id].version);
+      const conversationId = typeof data.conversation_id === "string" ? data.conversation_id.slice(0, 200) : undefined;
+      const recorded = current.length
+        ? await recordMissingPolicyAcceptances(ctx, {
+            user: patient,
+            documents: current,
+            accepted,
+            channel: "whatsapp",
+            contextType: "joy_conversation",
+            contextId: conversationId,
+          })
+        : [];
+      await audit(ctx, data, op, { patientUserId: patient._id, actorUserId: patient._id, recorded, outdated });
+      const stillNeeded = missing.filter((id) => !recorded.includes(id));
+      return {
+        recorded,
+        // Versions Joy sent that are no longer current: show the documents again and resend
+        outdated,
+        consents_required: consentDocumentsForJoy(stillNeeded, publicAppUrl()),
+      };
+    }
     throw new Error("Unsupported Joy operational mutation");
   },
 });
 
+/**
+ * Patient operations added in Oct 2026 (additive; Joy's templates live outside this repo):
+ *  - patient_consent_status (query) { patient_id } -> { consents_required: [{ policy_id, title,
+ *    version, url, acceptance_text }] }: what to ask at the first chat (empty when nothing).
+ *  - patient_record_consents (mutation) { patient_id, accepted: { terms, privacy, health_data:
+ *    version }, conversation_id? } -> { recorded, outdated, consents_required }.
+ *  - patient_recovery_plan (query) { patient_id } -> { plan: "basic" | "flex" | "flex_max",
+ *    flex_max_active, expires_at, flex_max_on_sale, joy_reminders_allowed }: switch on Flex Max
+ *    reminders and support when joy_reminders_allowed (helpers/patientPlans.ts recoveryPlanForJoy).
+ * All three need actor.persona "patient" with actor.rh_user_id equal to patient_id.
+ */
 export const executeQuery = internalQuery({
   args: { operation: v.string(), data: v.any() },
   handler: async (ctx, args): Promise<any> => {
     const op = args.operation as Operation; const data = args.data ?? {};
+    if (op === "patient_consent_status") {
+      const patient = await patientForActor(ctx, String(data.patient_id), data.actor);
+      const missing = await missingPolicies(ctx, patient._id, PATIENT_CONSENT_POLICIES);
+      return { consents_required: consentDocumentsForJoy(missing, publicAppUrl()) };
+    }
+    if (op === "patient_recovery_plan") {
+      const patient = await patientForActor(ctx, String(data.patient_id), data.actor);
+      return { patient_id: patient._id, ...(await recoveryPlanForJoy(ctx, patient._id)) };
+    }
     if (op === "physio_work_summary") {
       const profile = await profileFor(ctx, String(data.physiotherapist_id), data.actor);
       const bookings = await ctx.db.query("marketplaceBookings").withIndex("by_physiotherapist", (q: any) => q.eq("physiotherapistId", profile.userId)).collect();

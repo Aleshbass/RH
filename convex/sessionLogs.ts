@@ -1,7 +1,33 @@
+import { insertNotification } from "./helpers/pushNotify";
 import { query, mutation } from "./_generated/server";
 import { ConvexError, v } from "convex/values";
 import { getAuthenticatedUser, ensureUserRole } from "./auth";
 import { currentUser, findRelationship } from "./helpers/careAccess";
+import { assertNoteTextLength, deleteRevisions, keepRevision } from "./helpers/noteRevisions";
+
+/** Files one calendar note can carry (the workspace allows 10). */
+const MAX_SESSION_ATTACHMENTS = 20;
+
+/** The text, voice-note link and files a calendar note stores, within the limits every note has. */
+function checkSessionLogContent(args: {
+  subjectiveAssessment?: string;
+  objectiveAssessment?: string;
+  treatmentAdministered?: string;
+  planForNextSession?: string;
+  voiceNoteUrl?: string;
+  attachments?: unknown[];
+}) {
+  assertNoteTextLength({
+    subjectiveAssessment: args.subjectiveAssessment,
+    objectiveAssessment: args.objectiveAssessment,
+    treatmentAdministered: args.treatmentAdministered,
+    planForNextSession: args.planForNextSession,
+    voiceNoteUrl: args.voiceNoteUrl,
+  });
+  if ((args.attachments?.length ?? 0) > MAX_SESSION_ATTACHMENTS) {
+    throw new ConvexError(`A note can have up to ${MAX_SESSION_ATTACHMENTS} attachments.`);
+  }
+}
 
 /**
  * The signed-in physio's notes for one visit, newest first (null when there are none), so the
@@ -147,6 +173,7 @@ export const createSessionLog = mutation({
     if (existingSessionLog) {
       throw new ConvexError("This visit already has notes. Close this window and open the visit again to edit them.");
     }
+    checkSessionLogContent(args);
 
     // Create the session log
     const sessionLogId = await ctx.db.insert("sessionLogs", {
@@ -172,7 +199,7 @@ export const createSessionLog = mutation({
     const patient = await ctx.db.get(appointment.patientId);
     const patientName = patient ? `${patient.firstName} ${patient.lastName}` : "Patient";
     
-    await ctx.db.insert("notifications", {
+    await insertNotification(ctx, {
       userId: appointment.patientId,
       type: "session_completed",
       priority: "medium",
@@ -228,14 +255,24 @@ export const updateSessionLog = mutation({
       throw new ConvexError("Only the physiotherapist who wrote these notes can change them.");
     }
 
-    // Update the session log
-    await ctx.db.patch(args.sessionLogId, {
+    checkSessionLogContent(args);
+
+    // Update the session log. When the wording changes, the earlier wording is kept in its history.
+    const text = {
       subjectiveAssessment: args.subjectiveAssessment,
       objectiveAssessment: args.objectiveAssessment,
       treatmentAdministered: args.treatmentAdministered,
       planForNextSession: args.planForNextSession,
+    };
+    const wordingChanged = (Object.keys(text) as (keyof typeof text)[]).some(
+      (key) => (text[key]?.trim() || undefined) !== (sessionLog[key]?.trim() || undefined)
+    );
+    const kept = wordingChanged ? await keepRevision(ctx, sessionLog, user._id, Date.now()) : {};
+    await ctx.db.patch(args.sessionLogId, {
+      ...text,
       voiceNoteUrl: args.voiceNoteUrl,
       attachments: args.attachments,
+      ...kept,
     });
 
     return {
@@ -369,9 +406,16 @@ export const getSessionLogById = query({
     const patient = await ctx.db.get(sessionLog.patientId);
     const physiotherapist = await ctx.db.get(sessionLog.physiotherapistId);
     const appointment = await ctx.db.get(sessionLog.appointmentId);
+    // Patients see the visit summary, not the clinician's working diagnosis, measures or edit history
+    const visitSummary = { ...sessionLog };
+    delete visitSummary.diagnosis;
+    delete visitSummary.goals;
+    delete visitSummary.measures;
+    delete visitSummary.revisions;
+    delete visitSummary.revisionCount;
 
     return {
-      ...sessionLog,
+      ...(user.role === "patient" ? visitSummary : sessionLog),
       patient: patient ? {
         _id: patient._id,
         firstName: patient.firstName,
@@ -478,7 +522,8 @@ export const deleteSessionLog = mutation({
       throw new Error("Access denied. Session log not created by you.");
     }
 
-    // Delete the session log
+    // Delete the session log, and its edit history with it
+    await deleteRevisions(ctx, args.sessionLogId);
     await ctx.db.delete(args.sessionLogId);
 
     // Revert appointment status back to confirmed if it was completed

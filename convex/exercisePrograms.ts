@@ -6,13 +6,25 @@
  * exerciseShareLinks.ts), follows the demonstrations and logs each exercise with a pain score.
  * The care team sees adherence.
  */
+import { insertNotification } from "./helpers/pushNotify";
 import { ConvexError, v, type Infer } from "convex/values";
-import { mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
+import { makeFunctionReference } from "convex/server";
+import {
+  action,
+  internalMutation,
+  internalQuery,
+  mutation,
+  query,
+  type MutationCtx,
+  type QueryCtx,
+} from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
+import { ensureUserRole } from "./auth";
+import { paystackRequest } from "./clinicBilling";
 import { libraryItem } from "./exerciseLibrary";
 import { EXERCISE_CATALOG } from "./exerciseLibraryCatalog";
-import { publicAppUrl } from "./helpers/appUrl";
+import { appLink, publicAppUrl } from "./helpers/appUrl";
 import { currentUser } from "./helpers/careAccess";
 import {
   careTeamOrNull,
@@ -22,6 +34,32 @@ import {
   resolveShareSession,
   type CareTeamAccess,
 } from "./helpers/exerciseAccess";
+import {
+  REMINDER_BEFORE_MS,
+  activatePendingPlans,
+  anyPlanLive,
+  assertProgramUnlocked,
+  currentEntitlement,
+  entitlementView,
+  flexReference,
+  isIndependentPair,
+  isLive,
+  newPeriod,
+  parseFlexReference,
+  patientEntitlements,
+  patientFlexContext,
+  planName,
+  planOffer,
+  planPriceKobo,
+  planSettings,
+  programNeedsFlex,
+  programPlan,
+  refundRule,
+  type PaidPlan,
+} from "./helpers/patientPlans";
+import { verifyPaystackSignature } from "./helpers/paystackSignature";
+import { issueReceipt } from "./helpers/receipts";
+import { createRefundRequest } from "./helpers/refunds";
 
 type Ctx = QueryCtx | MutationCtx;
 type StoredItem = Doc<"exercisePrograms">["items"][number];
@@ -212,15 +250,24 @@ function resourceView(resource: Doc<"libraryResources"> | null) {
   };
 }
 
-/** A programme with its items, ready to show (used by the care team, the patient and links). */
-export async function programView(ctx: Ctx, program: Doc<"exercisePrograms">) {
+/**
+ * A programme with its items, ready to show (used by the care team, the patient and links).
+ * `plan` says whether Flex applies (helpers/patientPlans.ts). For the patient (`audience`
+ * "patient"), a programme that needs Flex they don't have keeps its steps and notes (Basic) but
+ * not the video links; 3D clips and the physio's own media are refused where their keys and
+ * links are handed out (exerciseLibrary.ts).
+ */
+export async function programView(ctx: Ctx, program: Doc<"exercisePrograms">, audience: "patient" | "team" = "team") {
   const exercises = await Promise.all(program.items.map((item) => (item.exerciseId ? ctx.db.get(item.exerciseId) : null)));
   const resources = await Promise.all(
     program.items.map((item) => (item.kind === "education" && item.resourceKey ? resourceByKey(ctx, item.resourceKey) : null))
   );
   const sender = await ctx.db.get(program.createdBy);
   const clinic = program.clinicId ? await ctx.db.get(program.clinicId) : null;
+  const plan = await programPlan(ctx, program);
+  const hideDemos = audience === "patient" && plan.locked;
   return {
+    plan,
     _id: program._id,
     patientId: program.patientId,
     title: program.title,
@@ -254,7 +301,7 @@ export async function programView(ctx: Ctx, program: Doc<"exercisePrograms">) {
         clipId,
         // Patients only see approved animations; others see the poster and steps.
         animated: Boolean(clipId && exercise?.animationStatus === "approved"),
-        exercise: exercise ? libraryItem(exercise) : null,
+        exercise: exercise ? { ...libraryItem(exercise), ...(hideDemos ? { videoUrl: null } : {}) } : null,
         // Education picked from the Rehabify Library
         resourceKey: item.resourceKey ?? null,
         resource: resourceView(resources[index]),
@@ -304,7 +351,7 @@ async function notifyPatient(ctx: MutationCtx, patient: Doc<"users">, senderName
       body: `${senderName} updated "${change.title}". Have a look before your next session.`,
     },
   }[change.kind];
-  await ctx.db.insert("notifications", {
+  await insertNotification(ctx, {
     userId: patient._id,
     type: "exercise_program",
     priority: "medium",
@@ -420,6 +467,8 @@ export const createProgram = mutation({
         updatedAt: now,
       });
       if (team.clinicId) await markReferralTreatmentActive(ctx, team.clinicId, args.patientId, team.user._id);
+      // Flex bought before the programme was ready starts its 30 days now
+      await activatePendingPlans(ctx, args.patientId, now);
       await notifyPatient(ctx, patient, team.senderName, { kind: "new", title });
       return programId;
     }),
@@ -616,7 +665,7 @@ export async function patientProgramView(ctx: Ctx, program: Doc<"exerciseProgram
     .collect();
   const summary = await logsSummary(ctx, program._id);
   return {
-    ...(await programView(ctx, program)),
+    ...(await programView(ctx, program, "patient")),
     doneToday: [...new Set(today.map((l) => l.itemIndex))],
     activeDaysLast14: summary.activeDaysLast14,
   };
@@ -683,7 +732,7 @@ async function notifyHighPain(ctx: MutationCtx, program: Doc<"exercisePrograms">
   for (const userId of recipients) {
     const recipient = await ctx.db.get(userId);
     if (!recipient) continue;
-    await ctx.db.insert("notifications", {
+    await insertNotification(ctx, {
       userId,
       type: "exercise_pain_flag",
       priority: "high",
@@ -720,6 +769,8 @@ export const logExercise = mutation({
       if (!user || !program || program.patientId !== user._id || program.status !== "active") {
         throw new ConvexError("This programme isn't available.");
       }
+      // Progress tracking is part of Flex for an independent physio's own patients
+      await assertProgramUnlocked(ctx, program, "log");
       const { programId: _ignored, ...log } = args;
       await insertLog(ctx, program, log, "app");
     }),
@@ -732,7 +783,745 @@ export const logExerciseFromLink = mutation({
     guarded("save that", async () => {
       const res = await resolveShareSession(ctx, args.code, args.session);
       if (!res.ok) throw new ConvexError("Enter your PIN again to continue.");
+      await assertProgramUnlocked(ctx, res.program, "log");
       const { code: _c, session: _s, ...log } = args;
       await insertLog(ctx, res.program, log, "link", res.link._id);
     }),
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Flex and Flex Max: buying, refunds, the launch switch and the hourly sweep.
+// Who must buy and what it unlocks: helpers/patientPlans.ts.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const planValidator = v.union(v.literal("flex"), v.literal("flex_max"));
+const shareValidator = v.object({ code: v.string(), session: v.string() });
+const PLAN_FOOTNOTE = "Questions about Flex? Write to hello@myrehabifyhealth.com.";
+
+const sendCareEmail = makeFunctionReference<
+  "action",
+  {
+    to: string;
+    subject: string;
+    greetingName?: string;
+    heading: string;
+    paragraphs: string[];
+    buttonLabel?: string;
+    buttonUrl?: string;
+    footnote?: string;
+  }
+>("actions/emails/sendPatientCareEmail:sendPatientCareEmail");
+
+type FlexCheckout = {
+  patientId: Id<"users">;
+  email: string;
+  amountKobo: number;
+  plan: PaidPlan;
+  patientNumber: string | null;
+  returnPath: string;
+};
+
+type FlexCompletion =
+  | { success: true; alreadyCompleted: boolean; status: Doc<"patientPlanEntitlements">["status"]; plan: PaidPlan }
+  | { success: false; reason: string };
+
+type PaidEvidence = { amountKobo: number; currency: string; channel?: string };
+
+const prepareFlexCheckoutRef = makeFunctionReference<
+  "query",
+  { plan: PaidPlan; share?: { code: string; session: string }; from?: "dashboard" | "exercises" },
+  FlexCheckout
+>("exercisePrograms:prepareFlexCheckout");
+const completeVerifiedFlexPaymentRef = makeFunctionReference<
+  "mutation",
+  { reference: string; amountKobo: number; currency: string; channel?: string },
+  FlexCompletion
+>("exercisePrograms:completeVerifiedFlexPayment");
+const flexPurchaseByReferenceRef = makeFunctionReference<
+  "query",
+  { reference: string },
+  { status: Doc<"patientPlanEntitlements">["status"]; plan: PaidPlan } | null
+>("exercisePrograms:flexPurchaseByReference");
+
+const naira = (kobo: number) => `₦${(kobo / 100).toLocaleString("en-NG", { maximumFractionDigits: 2 })}`;
+
+/** First day of this month in Lagos, as a timestamp. */
+function startOfLagosMonth(now: number) {
+  const d = new Date(now + LAGOS_OFFSET);
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1) - LAGOS_OFFSET;
+}
+
+/** Same rule as Learn: Rehabify hosts and localhost only; anything else returns to the public site. */
+function checkoutOrigin(requested: string | undefined): string {
+  const fallback = publicAppUrl();
+  if (!requested) return fallback;
+  try {
+    const url = new URL(requested);
+    const host = url.hostname.toLowerCase();
+    const isLocal = host === "localhost" || host === "127.0.0.1";
+    const isRehabify = url.protocol === "https:" && (host === "physioaroundme.com" || host.endsWith(".physioaroundme.com"));
+    return isLocal || isRehabify || url.origin === fallback ? url.origin : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+/** Emails we can send a receipt to (not the placeholders some invited or Joy accounts carry). */
+function receiptEmail(email: string | undefined) {
+  const value = email?.trim().toLowerCase();
+  if (!value || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) return null;
+  if (value.endsWith("@placeholder.patient") || value.endsWith(".invalid")) return null;
+  return value;
+}
+
+/** Public: which plans are on sale (pricing page, physio settings, patient dashboard). */
+export const recoveryPlansLive = query({
+  args: {},
+  handler: async (ctx) => {
+    const live = await planSettings(ctx);
+    return { flexLive: live.flexLive, flexMaxLive: live.flexMaxLive };
+  },
+});
+
+/** The signed-in patient's plan for the "Your plan" card: what they have, can buy, or can get back. */
+export const myRecoveryPlan = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await currentUser(ctx);
+    if (!user || user.role !== "patient") return null;
+    const now = Date.now();
+    const live = await planSettings(ctx);
+    const rows = await patientEntitlements(ctx, user._id, 20);
+    if (!anyPlanLive(live) && rows.length === 0) return null;
+    const situation = await patientFlexContext(ctx, user._id);
+    const current = await currentEntitlement(ctx, user._id, now);
+    let refund: {
+      entitlementId: Id<"patientPlanEntitlements">;
+      name: string;
+      amountKobo: number;
+      reason: "flex_not_ready_7d" | "flex_48h";
+      until: number | null;
+    } | null = null;
+    for (const row of rows) {
+      const rule = await refundRule(ctx, row, now);
+      if (rule) {
+        refund = { entitlementId: row._id, name: planName(row.plan), amountKobo: row.amountKobo, reason: rule.reason, until: rule.until };
+        break;
+      }
+    }
+    return {
+      live: { flexLive: live.flexLive, flexMaxLive: live.flexMaxLive },
+      // An independent physio's own patient: Flex is theirs to buy (everyone else has it included)
+      mustBuy: anyPlanLive(live) && situation.independent,
+      current: current ? entitlementView(current, now) : null,
+      upcoming: rows
+        .filter((row) => row.status === "pending_activation" || (row.status === "active" && (row.activatedAt ?? 0) > now))
+        .map((row) => entitlementView(row, now)),
+      refundRequested: rows.filter((row) => row.status === "cancelled" && row.refundRequestId).map((row) => entitlementView(row, now)),
+      offer: situation.independent ? planOffer(live) : [],
+      canPay: receiptEmail(user.email) !== null,
+      refund,
+    };
+  },
+});
+
+/** Checks a checkout can go ahead and who pays. The price always comes from here. */
+export const prepareFlexCheckout = internalQuery({
+  args: {
+    plan: planValidator,
+    share: v.optional(shareValidator),
+    from: v.optional(v.union(v.literal("dashboard"), v.literal("exercises"))),
+  },
+  handler: async (ctx, args): Promise<FlexCheckout> => {
+    const live = await planSettings(ctx);
+    if (!isLive(live, args.plan)) throw new ConvexError(`${planName(args.plan)} isn't available yet.`);
+    const included = "Your care already includes everything in Flex, so there's nothing to pay.";
+    let patient: Doc<"users"> | null;
+    let returnPath: string;
+    if (args.share) {
+      const res = await resolveShareSession(ctx, args.share.code, args.share.session);
+      if (!res.ok) throw new ConvexError("Enter your PIN again to continue.");
+      if (!(await programNeedsFlex(ctx, res.program, live))) throw new ConvexError(included);
+      patient = await ctx.db.get(res.program.patientId);
+      // The code passed resolveShareSession, so it's letters and digits only
+      returnPath = `/x/${args.share.code}`;
+    } else {
+      patient = await currentUser(ctx);
+      if (!patient || patient.role !== "patient") throw new ConvexError("Sign in to your Rehabify account to get Flex.");
+      if (!(await patientFlexContext(ctx, patient._id)).independent) throw new ConvexError(included);
+      returnPath = args.from === "exercises" ? "/dashboard/patient/exercises" : "/dashboard/patient";
+    }
+    const email = receiptEmail(patient?.email);
+    if (!patient || !email) {
+      throw new ConvexError(
+        args.share
+          ? "Sign in to your Rehabify account to get Flex, so we can send your receipt."
+          : "Add your email address in Settings first, so we can send your receipt."
+      );
+    }
+    return {
+      patientId: patient._id,
+      email,
+      amountKobo: planPriceKobo(args.plan),
+      plan: args.plan,
+      patientNumber: patient.patientNumber ?? null,
+      returnPath,
+    };
+  },
+});
+
+/**
+ * Starts a Paystack checkout (reference FLEX_<patientId>_<flex|max>_<time>) and returns the
+ * payment page. Paystack sends the payer back to where they started, with ?reference=.
+ */
+export const startFlexCheckout = action({
+  args: {
+    plan: planValidator,
+    share: v.optional(shareValidator),
+    from: v.optional(v.union(v.literal("dashboard"), v.literal("exercises"))),
+    returnOrigin: v.optional(v.string()),
+  },
+  handler: async (ctx, args): Promise<{ authorizationUrl: string; reference: string }> => {
+    const prep: FlexCheckout = await ctx.runQuery(prepareFlexCheckoutRef, { plan: args.plan, share: args.share, from: args.from });
+    const back = `${checkoutOrigin(args.returnOrigin)}${prep.returnPath}`;
+    const reference = flexReference(prep.patientId, prep.plan, Date.now());
+    const data = await paystackRequest("/transaction/initialize", {
+      method: "POST",
+      body: JSON.stringify({
+        reference,
+        amount: prep.amountKobo,
+        email: prep.email,
+        currency: "NGN",
+        callback_url: back,
+        channels: ["card", "bank", "ussd", "bank_transfer"],
+        metadata: {
+          source: "rehabify_flex",
+          plan: prep.plan,
+          cancel_action: back,
+          custom_fields: [
+            { display_name: "Plan", variable_name: "plan", value: `${planName(prep.plan)} (30 days)` },
+            ...(prep.patientNumber ? [{ display_name: "Rehabify ID", variable_name: "rehabify_id", value: prep.patientNumber }] : []),
+          ],
+        },
+      }),
+    });
+    const authorizationUrl = typeof data?.authorization_url === "string" ? data.authorization_url : "";
+    if (!authorizationUrl.startsWith("https://")) throw new ConvexError("We couldn't start the payment. Please try again.");
+    return { authorizationUrl, reference };
+  },
+});
+
+/**
+ * Applies Paystack-verified payment evidence. The patient and plan come from the reference (which
+ * only our server creates), never from metadata; the amount must cover the price. One period per
+ * reference, so the webhook and the browser's own check can race safely. Issues the receipt.
+ */
+async function completeFlexPayment(ctx: MutationCtx, reference: string, paid: PaidEvidence): Promise<FlexCompletion> {
+  const parsed = parseFlexReference(reference);
+  if (!parsed) return { success: false, reason: "invalid_reference" };
+  const patientId = ctx.db.normalizeId("users", parsed.patientId);
+  const patient = patientId ? await ctx.db.get(patientId) : null;
+  if (!patientId || !patient) return { success: false, reason: "not_found" };
+
+  const existing = await ctx.db
+    .query("patientPlanEntitlements")
+    .withIndex("by_reference", (q) => q.eq("reference", reference))
+    .first();
+  if (existing) return { success: true, alreadyCompleted: true, status: existing.status, plan: existing.plan };
+
+  const now = Date.now();
+  const priceKobo = planPriceKobo(parsed.plan);
+  const flag = (action: string) =>
+    ctx.db.insert("systemLogs", {
+      type: "payment",
+      action,
+      timestamp: now,
+      userId: String(patientId),
+      targetEntityType: "payment_reference",
+      targetEntityId: reference,
+      details: { plan: parsed.plan, amountKobo: paid.amountKobo, currency: paid.currency, priceKobo },
+    });
+  if (paid.currency !== "NGN") {
+    await flag("flex_payment_currency_mismatch");
+    return { success: false, reason: "currency_mismatch" };
+  }
+  if (!Number.isFinite(paid.amountKobo) || paid.amountKobo < priceKobo) {
+    await flag("flex_payment_short");
+    return { success: false, reason: "amount_mismatch" };
+  }
+
+  const period = await newPeriod(ctx, patientId, parsed.plan, now);
+  const forPhysio = period.status === "active" ? null : await patientFlexContext(ctx, patientId);
+  const entitlementId = await ctx.db.insert("patientPlanEntitlements", {
+    patientId,
+    plan: parsed.plan,
+    status: period.status,
+    source: "purchase",
+    amountKobo: paid.amountKobo,
+    listPriceKobo: priceKobo,
+    reference,
+    programId: period.status === "active" ? period.programId : (forPhysio?.programId ?? undefined),
+    physiotherapistId: period.status === "active" ? period.physiotherapistId : (forPhysio?.physiotherapistId ?? undefined),
+    purchasedAt: now,
+    activatedAt: period.status === "active" ? period.activatedAt : undefined,
+    expiresAt: period.status === "active" ? period.expiresAt : undefined,
+  });
+
+  const name = planName(parsed.plan);
+  await issueReceipt(ctx, {
+    kind: "payment",
+    payerUserId: patientId,
+    email: patient.email,
+    name: displayName(patient, ""),
+    relatedType: "flex",
+    relatedId: entitlementId,
+    relationship: "independent",
+    description: `${name} for 30 days`,
+    lines: [{ label: `${name}, 30 days`, amountKobo: paid.amountKobo }],
+    reference,
+    dedupeKey: reference,
+    paidAt: now,
+  });
+
+  const startsLater = period.status === "active" && period.activatedAt > now;
+  await insertNotification(ctx, {
+    userId: patientId,
+    type: "patient_plan",
+    priority: "medium",
+    status: "pending",
+    payload: {
+      title: period.status === "pending_activation" ? `${name} is paid for` : startsLater ? `${name} renewed` : `${name} is on`,
+      body:
+        period.status === "pending_activation"
+          ? "Your 30 days start when your physiotherapist's programme is ready."
+          : startsLater
+            ? `Your next 30 days start on ${lagosDay(period.activatedAt)}, when your current plan ends.`
+            : "Open your exercises to watch the demonstrations and log how you get on.",
+      data: { actionUrl: "/dashboard/patient/exercises" },
+    },
+    createdAt: now,
+  });
+  await ctx.db.insert("systemLogs", {
+    type: "payment",
+    action: "flex_purchased",
+    timestamp: now,
+    userId: String(patientId),
+    targetEntityType: "patient_plan",
+    targetEntityId: String(entitlementId),
+    details: { reference, plan: parsed.plan, amountKobo: paid.amountKobo, channel: paid.channel, status: period.status },
+  });
+  return { success: true, alreadyCompleted: false, status: period.status, plan: parsed.plan };
+}
+
+export const completeVerifiedFlexPayment = internalMutation({
+  args: { reference: v.string(), amountKobo: v.number(), currency: v.string(), channel: v.optional(v.string()) },
+  handler: (ctx, args): Promise<FlexCompletion> =>
+    completeFlexPayment(ctx, args.reference, { amountKobo: args.amountKobo, currency: args.currency, channel: args.channel }),
+});
+
+export const flexPurchaseByReference = internalQuery({
+  args: { reference: v.string() },
+  handler: async (ctx, args) => {
+    const row = await ctx.db
+      .query("patientPlanEntitlements")
+      .withIndex("by_reference", (q) => q.eq("reference", args.reference))
+      .first();
+    return row ? { status: row.status, plan: row.plan } : null;
+  },
+});
+
+async function fetchPaystackTransaction(reference: string) {
+  const secret = process.env.PAYSTACK_SECRET_KEY;
+  if (!secret) throw new ConvexError("Payments are not configured yet. Please contact Rehabify support.");
+  const response = await fetch(`https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`, {
+    headers: { Authorization: `Bearer ${secret}` },
+  });
+  const data: any = await response.json().catch(() => null);
+  if (!response.ok || !data?.status || !data.data) return null;
+  return data.data as { status: string; amount: number; currency: string; reference: string; channel?: string };
+}
+
+export type FlexVerifyResult =
+  | { status: "paid"; plan: PaidPlan; activation: Doc<"patientPlanEntitlements">["status"] }
+  | { status: "pending" | "abandoned" | "failed" | "not_found" | "invalid" }
+  | { status: "needs_review"; reason: string };
+
+/**
+ * Called when Paystack sends the payer back (?reference=). Re-verifies the reference with
+ * Paystack's API before granting anything, as Learn does. Safe to call repeatedly and without
+ * signing in: only a genuinely paid reference has any effect.
+ */
+export const verifyFlexPayment = action({
+  args: { reference: v.string() },
+  handler: async (ctx, args): Promise<FlexVerifyResult> => {
+    const reference = args.reference.trim();
+    if (!parseFlexReference(reference)) return { status: "invalid" };
+    const tx = await fetchPaystackTransaction(reference);
+    if (!tx || tx.reference !== reference) {
+      // Paystack may be briefly unreachable; the webhook may already have completed it
+      const known = await ctx.runQuery(flexPurchaseByReferenceRef, { reference });
+      return known ? { status: "paid", plan: known.plan, activation: known.status } : { status: "not_found" };
+    }
+    if (tx.status === "success") {
+      const result = await ctx.runMutation(completeVerifiedFlexPaymentRef, {
+        reference,
+        amountKobo: Number(tx.amount) || 0,
+        currency: String(tx.currency || ""),
+        channel: typeof tx.channel === "string" ? tx.channel : undefined,
+      });
+      if (!result.success) return { status: "needs_review", reason: result.reason };
+      return { status: "paid", plan: result.plan, activation: result.status };
+    }
+    if (tx.status === "failed" || tx.status === "reversed") return { status: "failed" };
+    if (tx.status === "abandoned") return { status: "abandoned" };
+    return { status: "pending" };
+  },
+});
+
+/**
+ * Paystack charge webhook for FLEX_ references (app/api/webhooks/paystack). The HMAC-SHA512
+ * signature is verified here, inside Convex, before anything else, so this public entry point
+ * cannot fake a payment.
+ */
+export const recordFlexPaystackWebhook = mutation({
+  args: { rawBody: v.string(), signature: v.string() },
+  handler: async (ctx, args) => {
+    if (!(await verifyPaystackSignature(args.rawBody, args.signature))) {
+      throw new Error("Invalid Paystack webhook signature");
+    }
+    let payload: any;
+    try {
+      payload = JSON.parse(args.rawBody);
+    } catch {
+      throw new Error("Invalid webhook payload");
+    }
+    const data = payload?.data ?? {};
+    const reference = typeof data.reference === "string" ? data.reference : "";
+    if (!reference.startsWith("FLEX_")) return { handled: false };
+    if (payload.event !== "charge.success") return { handled: true, ignored: String(payload.event) };
+    if (data.status !== undefined && data.status !== "success") {
+      return { handled: true, success: false, reason: `charge_${data.status}` };
+    }
+    const result = await completeFlexPayment(ctx, reference, {
+      amountKobo: Number(data.amount) || 0,
+      currency: typeof data.currency === "string" ? data.currency : "",
+      channel: typeof data.channel === "string" ? data.channel : undefined,
+    });
+    return { handled: true, ...result };
+  },
+});
+
+/**
+ * The patient asks for their money back under Payment Policy 4.8: the programme wasn't ready
+ * within 7 days of payment, or they cancel within 48 hours of activation without substantial
+ * use. The period is cancelled now (Basic stays) and an admin approves the refund.
+ */
+export const requestFlexRefund = mutation({
+  args: { entitlementId: v.id("patientPlanEntitlements") },
+  handler: async (ctx, args) => {
+    const user = await currentUser(ctx);
+    const row = await ctx.db.get(args.entitlementId);
+    if (!user || !row || row.patientId !== user._id) throw new ConvexError("We couldn't find that plan.");
+    const now = Date.now();
+    const rule = await refundRule(ctx, row, now);
+    if (!rule || !row.reference) {
+      throw new ConvexError(
+        "This plan can't be refunded now. Payment Policy 4.8: a full refund if your programme isn't ready within 7 days of paying, or if you cancel within 48 hours of it starting, before you've used it much."
+      );
+    }
+    const refundRequestId = await createRefundRequest(ctx, {
+      relatedType: "flex",
+      relatedId: row._id,
+      reference: row.reference,
+      amountKobo: row.amountKobo,
+      reason: rule.reason,
+      reasonText: rule.reasonText,
+      requestedBy: "patient",
+      payerUserId: user._id,
+    });
+    await ctx.db.patch(row._id, { status: "cancelled", cancelledAt: now, refundRequestId });
+    return { requested: true, amountKobo: row.amountKobo };
+  },
+});
+
+/**
+ * For an independent physio's patient workspace: whether this patient has Flex or Flex Max.
+ * Null for clinic teams, Rehabify Care patients and before launch (nothing to show). Physios
+ * earn no commission on Flex.
+ */
+export const patientPlanForCareTeam = query({
+  args: { patientId: v.id("users") },
+  handler: async (ctx, args) => {
+    const team = await careTeamOrNull(ctx, args.patientId);
+    if (!team || team.kind !== "physio") return null;
+    const live = await planSettings(ctx);
+    if (!anyPlanLive(live)) return null;
+    if (!(await isIndependentPair(ctx, args.patientId, team.user._id))) return null;
+    const current = await currentEntitlement(ctx, args.patientId);
+    const waiting = (await patientEntitlements(ctx, args.patientId, 20)).some((row) => row.status === "pending_activation");
+    return {
+      plan: current?.plan ?? null,
+      name: current ? planName(current.plan) : "Basic",
+      expiresAt: current?.expiresAt ?? null,
+      waiting,
+    };
+  },
+});
+
+/**
+ * Hourly: ends finished periods (demonstrations and tracking stop, Basic stays), emails a renew
+ * link about 3 days before a period ends (no automatic renewal), and starts waiting periods
+ * whose programme is now ready.
+ */
+export const sweepPatientPlans = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const now = Date.now();
+    const ended = await ctx.db
+      .query("patientPlanEntitlements")
+      .withIndex("by_status_expires", (q) => q.eq("status", "active").lte("expiresAt", now))
+      .take(200);
+    for (const row of ended) await ctx.db.patch(row._id, { status: "expired" });
+
+    const ending = await ctx.db
+      .query("patientPlanEntitlements")
+      .withIndex("by_status_expires", (q) => q.eq("status", "active").gt("expiresAt", now).lte("expiresAt", now + REMINDER_BEFORE_MS))
+      .take(200);
+    let reminded = 0;
+    for (const row of ending) {
+      if (row.reminderSentAt || row.expiresAt === undefined) continue;
+      await ctx.db.patch(row._id, { reminderSentAt: now });
+      // Nothing to say when another period follows on (a renewal already bought)
+      const others = await patientEntitlements(ctx, row.patientId, 20);
+      const followOn = others.some(
+        (other) =>
+          other._id !== row._id &&
+          (other.status === "pending_activation" || (other.status === "active" && (other.expiresAt ?? 0) > row.expiresAt!))
+      );
+      if (followOn) continue;
+      const patient = await ctx.db.get(row.patientId);
+      if (!patient) continue;
+      const name = planName(row.plan);
+      const ends = lagosDay(row.expiresAt);
+      await insertNotification(ctx, {
+        userId: patient._id,
+        type: "patient_plan",
+        priority: "medium",
+        status: "pending",
+        payload: {
+          title: `Your ${name} ends on ${ends}`,
+          body: "It doesn't renew by itself. Renew or switch from your dashboard, or let it end: your exercises stay free.",
+          data: { actionUrl: "/dashboard/patient#your-plan" },
+        },
+        createdAt: now,
+      });
+      const to = receiptEmail(patient.email);
+      if (to) {
+        await ctx.scheduler.runAfter(0, sendCareEmail, {
+          to,
+          subject: `Your ${name} ends on ${ends}`,
+          greetingName: patient.firstName,
+          heading: `Your ${name} ends soon`,
+          paragraphs: [
+            `Your ${name} ends on ${ends}. It doesn't renew by itself.`,
+            "To keep your exercise demonstrations and progress tracking, renew it or switch plans from your dashboard. If you'd rather stop, there's nothing to do: your exercises and your physio's instructions stay free on Basic.",
+          ],
+          buttonLabel: "Renew or switch",
+          buttonUrl: appLink("/dashboard/patient#your-plan"),
+          footnote: PLAN_FOOTNOTE,
+        });
+      }
+      reminded++;
+    }
+
+    const waiting = await ctx.db
+      .query("patientPlanEntitlements")
+      .withIndex("by_status_expires", (q) => q.eq("status", "pending_activation"))
+      .take(200);
+    let started = 0;
+    for (const patientId of new Set(waiting.map((row) => row.patientId))) {
+      started += await activatePendingPlans(ctx, patientId, now);
+    }
+    return { expired: ended.length, reminded, started };
+  },
+});
+
+// ─── Admin: Patient plans page ────────────────────────────────────────────────
+
+/** The launch switches, this month's numbers and the latest periods (patients by Rehabify ID). */
+export const adminPatientPlans = query({
+  args: {},
+  handler: async (ctx) => {
+    await ensureUserRole(ctx, ["admin"]);
+    const now = Date.now();
+    const live = await planSettings(ctx);
+    const running = (
+      await ctx.db
+        .query("patientPlanEntitlements")
+        .withIndex("by_status_expires", (q) => q.eq("status", "active").gt("expiresAt", now))
+        .take(5000)
+    ).filter((row) => (row.activatedAt ?? 0) <= now);
+    const waiting = await ctx.db
+      .query("patientPlanEntitlements")
+      .withIndex("by_status_expires", (q) => q.eq("status", "pending_activation"))
+      .take(5000);
+    const thisMonth = await ctx.db
+      .query("patientPlanEntitlements")
+      .withIndex("by_purchased", (q) => q.gte("purchasedAt", startOfLagosMonth(now)))
+      .take(5000);
+    const purchases = thisMonth.filter((row) => row.source === "purchase" && row.status !== "refunded");
+    const free = thisMonth.filter((row) => row.amountKobo === 0);
+    const latest = await ctx.db.query("patientPlanEntitlements").withIndex("by_purchased").order("desc").take(200);
+    const patients = new Map<Id<"users">, string | null>();
+    for (const row of latest) {
+      if (!patients.has(row.patientId)) patients.set(row.patientId, (await ctx.db.get(row.patientId))?.patientNumber ?? null);
+    }
+    return {
+      live: { flexLive: live.flexLive, flexMaxLive: live.flexMaxLive, updatedAt: live.updatedAt },
+      stats: {
+        active: running.length,
+        activeFlexMax: running.filter((row) => row.plan === "flex_max").length,
+        waiting: waiting.length,
+        revenueThisMonthKobo: purchases.reduce((sum, row) => sum + row.amountKobo, 0),
+        purchasesThisMonth: purchases.length,
+        freeThisMonth: free.length,
+        // Free activations are a cost to Rehabify at the plan's price
+        freeValueThisMonthKobo: free.reduce((sum, row) => sum + (row.listPriceKobo ?? planPriceKobo(row.plan)), 0),
+        refundsRequested: latest.filter((row) => row.status === "cancelled" && row.refundRequestId).length,
+      },
+      rows: latest.map((row) => ({
+        ...entitlementView(row, now),
+        patientNumber: patients.get(row.patientId) ?? null,
+        reference: row.reference ?? null,
+        listPriceKobo: row.listPriceKobo ?? null,
+        note: row.note ?? null,
+      })),
+    };
+  },
+});
+
+/** Switches Flex or Flex Max on or off. Off: nobody is gated and nobody can buy it. */
+export const adminSetPlanLaunch = mutation({
+  args: { plan: planValidator, live: v.boolean() },
+  handler: async (ctx, args) => {
+    const admin = await ensureUserRole(ctx, ["admin"]);
+    const now = Date.now();
+    const row = await ctx.db.query("patientPlanSettings").order("desc").first();
+    const next = {
+      flexLive: args.plan === "flex" ? args.live : (row?.flexLive ?? false),
+      flexMaxLive: args.plan === "flex_max" ? args.live : (row?.flexMaxLive ?? false),
+      updatedBy: admin._id,
+      updatedAt: now,
+    };
+    if (row) await ctx.db.patch(row._id, next);
+    else await ctx.db.insert("patientPlanSettings", next);
+    await ctx.db.insert("systemLogs", {
+      type: "admin",
+      action: args.live ? "patient_plan_launched" : "patient_plan_paused",
+      timestamp: now,
+      userId: String(admin._id),
+      actorUserId: String(admin._id),
+      targetEntityType: "patient_plan",
+      targetEntityId: args.plan,
+      details: next,
+    });
+    return next;
+  },
+});
+
+/** Admin: find a patient by Rehabify ID (RH-P-…) or email, to grant a free activation. */
+export const adminFindPatientForPlan = query({
+  args: { search: v.string() },
+  handler: async (ctx, args) => {
+    await ensureUserRole(ctx, ["admin"]);
+    const search = args.search.trim();
+    if (search.length < 3) return [];
+    const byNumber = /^rh-p-\d+$/i.test(search)
+      ? await ctx.db
+          .query("users")
+          .withIndex("by_patient_number", (q) => q.eq("patientNumber", search.toUpperCase()))
+          .take(5)
+      : [];
+    const byEmail = search.includes("@")
+      ? await ctx.db
+          .query("users")
+          .withIndex("by_email", (q) => q.eq("email", search.toLowerCase()))
+          .take(5)
+      : [];
+    const now = Date.now();
+    const found = [...byNumber, ...byEmail].filter((user) => user.role === "patient");
+    return Promise.all(
+      found.slice(0, 5).map(async (user) => {
+        const current = await currentEntitlement(ctx, user._id, now);
+        return {
+          _id: user._id,
+          patientNumber: user.patientNumber ?? null,
+          name: displayName(user, "Patient"),
+          current: current ? { name: planName(current.plan), expiresAt: current.expiresAt ?? null } : null,
+        };
+      })
+    );
+  },
+});
+
+/**
+ * Admin: a free Flex or Flex Max activation (a welcome gift or a goodwill gesture). Recorded with
+ * amount 0 and the plan's price, which is Rehabify's cost. Starts like a paid one.
+ */
+export const adminGrantPlan = mutation({
+  args: {
+    patientId: v.id("users"),
+    plan: planValidator,
+    source: v.union(v.literal("admin"), v.literal("welcome")),
+    note: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const admin = await ensureUserRole(ctx, ["admin"]);
+    const patient = await ctx.db.get(args.patientId);
+    if (!patient || patient.role !== "patient") throw new ConvexError("That patient's account couldn't be found.");
+    const now = Date.now();
+    const period = await newPeriod(ctx, patient._id, args.plan, now);
+    const entitlementId = await ctx.db.insert("patientPlanEntitlements", {
+      patientId: patient._id,
+      plan: args.plan,
+      status: period.status,
+      source: args.source,
+      amountKobo: 0,
+      listPriceKobo: planPriceKobo(args.plan),
+      programId: period.status === "active" ? period.programId : undefined,
+      physiotherapistId: period.status === "active" ? period.physiotherapistId : undefined,
+      purchasedAt: now,
+      activatedAt: period.status === "active" ? period.activatedAt : undefined,
+      expiresAt: period.status === "active" ? period.expiresAt : undefined,
+      grantedBy: admin._id,
+      note: clean(args.note, 300),
+    });
+    const name = planName(args.plan);
+    await insertNotification(ctx, {
+      userId: patient._id,
+      type: "patient_plan",
+      priority: "medium",
+      status: "pending",
+      payload: {
+        title: `${name} is on us`,
+        body:
+          period.status === "active"
+            ? `Rehabify has given you 30 days of ${name}, free. Open your exercises to get started.`
+            : `Rehabify has given you 30 days of ${name}, free. They start when your physiotherapist's programme is ready.`,
+        data: { actionUrl: "/dashboard/patient/exercises" },
+      },
+      createdAt: now,
+    });
+    await ctx.db.insert("systemLogs", {
+      type: "admin",
+      action: "patient_plan_granted",
+      timestamp: now,
+      userId: String(patient._id),
+      actorUserId: String(admin._id),
+      targetEntityType: "patient_plan",
+      targetEntityId: String(entitlementId),
+      details: { plan: args.plan, source: args.source, costKobo: planPriceKobo(args.plan), status: period.status },
+    });
+    return { entitlementId, status: period.status, costLabel: naira(planPriceKobo(args.plan)) };
+  },
 });
