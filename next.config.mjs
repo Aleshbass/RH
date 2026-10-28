@@ -234,7 +234,9 @@ const nextConfig = {
       { source: `${physio}/patient-progress`, destination: `${physio}/patients`, permanent: true },
       { source: `${physio}/test-reminders`, destination: physio, permanent: true },
       { source: `${physio}/billing/payout-policy`, destination: '/payout-policy', permanent: true },
-      { source: `${physio}/settings/notifications`, destination: `${physio}/settings/profile`, permanent: true },
+      // Phone notification settings live at /settings/alerts: the old notifications page redirected
+      // permanently to the profile, and phones keep that redirect, so the new page needed a new address
+      { source: `${physio}/settings/notifications`, destination: `${physio}/settings/alerts`, permanent: false },
       { source: `${physio}/settings/preferences`, destination: `${physio}/settings/profile`, permanent: true },
       { source: `${physio}/settings/complete-onboarding`, destination: physio, permanent: true },
     ];

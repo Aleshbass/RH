@@ -38,7 +38,7 @@ const GROUPS: { label: string; items: SettingsLink[] }[] = [
     {
         label: 'Account',
         items: [
-            { label: 'Notifications', href: `${BASE}/notifications` },
+            { label: 'Notifications', href: `${BASE}/alerts` },
             { label: 'Account & privacy', href: `${BASE}/privacy` },
         ],
     },
