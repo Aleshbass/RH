@@ -24,8 +24,10 @@ import {
   disablePush,
   enablePush,
   isStandalone,
+  livePermission,
   notificationPermission,
   openAppSetup,
+  pushDiagnostics,
   promptInstall,
   refreshAppSetup,
   setIconBadge,
@@ -81,12 +83,15 @@ export function useAppSetup() {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const device = await currentDevice().catch(() => null);
+      const [device, permission] = await Promise.all([
+        currentDevice().catch(() => null),
+        livePermission().catch(() => notificationPermission()),
+      ]);
       if (cancelled) return;
       setEnv({
         standalone: isStandalone(),
         device: detectDevice(),
-        permission: notificationPermission(),
+        permission,
         subscribed: Boolean(device),
       });
     })();
@@ -236,6 +241,61 @@ function InstallBody({ device, canPrompt, onInstalled }: { device: Device; canPr
   );
 }
 
+/** What this phone reports about notifications, to screenshot or copy for support. */
+export function DeviceDetails({ refreshKey = 0 }: { refreshKey?: number }) {
+  const pwa = usePwaState();
+  const [open, setOpen] = useState(false);
+  const [rows, setRows] = useState<[string, string][] | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    setRows(null);
+    void pushDiagnostics().then((next) => {
+      if (!cancelled) setRows(next);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, refreshKey, pwa.revision]);
+
+  const copy = async () => {
+    if (!rows) return;
+    try {
+      await navigator.clipboard.writeText(rows.map(([k, v]) => `${k}: ${v}`).join('\n'));
+      toast.success('Copied. Paste it to Rehabify support.');
+    } catch {
+      toast.error('Couldn’t copy. Take a screenshot instead.');
+    }
+  };
+
+  return (
+    <details
+      className="rounded-xl bg-neutral-50 px-3 py-2 text-xs text-neutral-700 dark:bg-white/5 dark:text-white/70"
+      onToggle={(event) => setOpen((event.currentTarget as HTMLDetailsElement).open)}
+    >
+      <summary className="cursor-pointer select-none font-medium">Details for support</summary>
+      {rows === null ? (
+        <p className="mt-2 text-neutral-500">Checking…</p>
+      ) : (
+        <>
+          <dl className="mt-2 space-y-1">
+            {rows.map(([label, value]) => (
+              <div key={label} className="flex gap-2">
+                <dt className="w-32 shrink-0 text-neutral-500 dark:text-white/50">{label}</dt>
+                <dd className="min-w-0 break-words font-medium">{value}</dd>
+              </div>
+            ))}
+          </dl>
+          <button type="button" onClick={copy} className="mt-2 font-semibold text-rh-ink underline dark:text-rh-lime">
+            Copy details
+          </button>
+        </>
+      )}
+    </details>
+  );
+}
+
 /** Set before reloading from the "blocked" screen, so the dialog opens again after the reload. */
 const REOPEN_KEY = 'rh_app_setup_reopen';
 
@@ -306,6 +366,7 @@ function NotifyBody({ publicKey }: { publicKey: string }) {
         {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Bell className="mr-2 h-4 w-4" />}
         Turn on notifications
       </Button>
+      <DeviceDetails />
     </div>
   );
 }
@@ -349,6 +410,7 @@ function BlockedBody({ standalone, publicKey, device }: { standalone: boolean; p
           {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
           Try again
         </Button>
+        <DeviceDetails />
       </div>
     );
   }
@@ -377,6 +439,7 @@ function BlockedBody({ standalone, publicKey, device }: { standalone: boolean; p
         {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
         I’ve allowed them
       </Button>
+      <DeviceDetails />
     </div>
   );
 }

@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useAppSetup } from '@/components/pwa/AppSetup';
+import { DeviceDetails, useAppSetup } from '@/components/pwa/AppSetup';
 import { openAppSetup } from '@/lib/pwa';
 import {
   DEFAULT_QUIET_HOURS,
@@ -126,6 +126,9 @@ export function NotificationSettings() {
       <div>
         <GroupTitle>This device</GroupTitle>
         <ThisDevice />
+        <div className="mt-3">
+          <DeviceDetails />
+        </div>
       </div>
 
       <div>
