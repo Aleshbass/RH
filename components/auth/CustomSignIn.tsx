@@ -10,7 +10,14 @@ import { useEffect, useState, type FormEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth, useSignIn } from "@clerk/nextjs";
 import { toSafeInternalPath } from "@/lib/auth/ssoRedirect";
-import { PRIMARY_INTENTS, rememberIntent, SIGNUP_INTENTS, signUpHrefFor } from "@/lib/auth/signupIntent";
+import {
+  afterSignUpPathFor,
+  parseIntent,
+  PRIMARY_INTENTS,
+  rememberIntent,
+  SIGNUP_INTENTS,
+  signUpHrefFor,
+} from "@/lib/auth/signupIntent";
 import { DASHBOARD_LINK_REQUEST_URL } from "@/lib/joyWhatsApp";
 import { cn } from "@/lib/utils";
 import { AuthShell } from "./AuthShell";
@@ -76,9 +83,12 @@ export default function CustomSignIn({
   const searchParams = useSearchParams();
   const routes = authRoutes(audience, partnersHost);
   const copy = AUTH_COPY[audience].signIn;
+  // Came from a "Join as…" button (?as=): a new Google account finishes in that onboarding,
+  // and an existing account still ends up on its dashboard (role-selection forwards it)
+  const intent = audience === "partner" ? null : parseIntent(searchParams?.get("as"));
   const redirectTarget = toSafeInternalPath(
     searchParams?.get("redirect") || searchParams?.get("redirect_url"),
-    routes.defaultRedirect.signIn,
+    intent ? afterSignUpPathFor(intent) : routes.defaultRedirect.signIn,
   );
 
   const [step, setStep] = useState<Step>("identifier");
@@ -108,7 +118,10 @@ export default function CustomSignIn({
 
   const fieldError = (field: FieldName) => (error?.field === field ? error.message : undefined);
   const busy = pending !== null || google.loading;
-  const signUpHref = authHref(routes.signUp, redirectTarget, routes.defaultRedirect.signIn);
+  const signUpHref =
+    intent && redirectTarget === afterSignUpPathFor(intent)
+      ? signUpHrefFor(intent)
+      : authHref(routes.signUp, redirectTarget, routes.defaultRedirect.signIn);
 
   const fail = (err: unknown, fallback: string) => {
     const parsed = parseAuthError(err, fallback);

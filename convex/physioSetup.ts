@@ -358,8 +358,11 @@ export const getMySetupStatus = query({
       /** Reason given by the admin when an application is declined. */
       approvalComments: approval?.status === "declined" ? approval.comments ?? null : null,
       isListed: profile?.isAvailableOnMarketplace !== false,
-      /** Which patients they see (clinic members work under their clinic, shown as "network"). */
-      practiceMode: profile && !profile.clinicId && profile.practiceMode ? profile.practiceMode : ("network" as const),
+      /**
+       * Which patients they see (clinic members work under their clinic, shown as "network").
+       * null: applied before they were asked, so the dashboard asks them; treated as network meanwhile.
+       */
+      practiceMode: !profile || profile.clinicId ? ("network" as const) : (profile.practiceMode ?? null),
       isClinicMember: Boolean(profile?.clinicId),
       /** Live for patients = approved + on the network + listed + required setup done. */
       isBookable:
@@ -371,13 +374,16 @@ export const getMySetupStatus = query({
   },
 });
 
+/** Rehabify physio or independent physio: one or the other ("both" was offered before, and stays valid on old profiles). */
+const practiceChoice = v.union(v.literal("network"), v.literal("independent"));
+
 /**
- * Which patients a physio sees: Rehabify Care, their own, or both. Patients they already see stay
- * with them; switching to "own patients only" also makes those patients their own (billed by the
- * physio, not Rehabify), and no new Rehabify Care patients are matched.
+ * Rehabify physio or independent physio. Patients they already see stay with them; switching to
+ * independent also makes those patients their own (billed by the physio, not Rehabify), and no
+ * new Rehabify Care patients are matched.
  */
 export const setMyPracticeMode = mutation({
-  args: { practiceMode: v.union(v.literal("network"), v.literal("independent"), v.literal("both")) },
+  args: { practiceMode: practiceChoice },
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new ConvexError("Please sign in again.");
@@ -392,6 +398,35 @@ export const setMyPracticeMode = mutation({
     await ctx.db.patch(profile._id, {
       practiceMode: args.practiceMode,
       // Listed again when taking Rehabify Care patients (search still waits for approval and setup)
+      isAvailableOnMarketplace: args.practiceMode !== "independent",
+    });
+    return { practiceMode: args.practiceMode };
+  },
+});
+
+/**
+ * Admin: records whether a physio is a Rehabify physio or an independent physio (for older accounts
+ * that never answered, or a correction). Same effect as the physio changing it themselves.
+ */
+export const adminSetPracticeMode = mutation({
+  args: {
+    physiotherapistId: v.id("users"),
+    practiceMode: practiceChoice,
+  },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx);
+    const user = await ctx.db.get(args.physiotherapistId);
+    if (!user || user.role !== "physiotherapist") throw new ConvexError("This account isn't a physiotherapist.");
+    const profile = user.physiotherapistProfileId
+      ? await ctx.db.get(user.physiotherapistProfileId)
+      : await ctx.db
+          .query("physiotherapistProfiles")
+          .withIndex("by_user_id", (q) => q.eq("userId", user._id))
+          .first();
+    if (!profile) throw new ConvexError("They haven't started their application yet.");
+    if (profile.clinicId) throw new ConvexError("They work with a clinic, so their clinic decides how they see patients.");
+    await ctx.db.patch(profile._id, {
+      practiceMode: args.practiceMode,
       isAvailableOnMarketplace: args.practiceMode !== "independent",
     });
     return { practiceMode: args.practiceMode };

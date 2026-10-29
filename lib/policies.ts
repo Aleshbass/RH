@@ -19,9 +19,8 @@ export type PolicyDocument = { id: PolicyId; title: string; href: string; versio
 export const POLICIES: Record<PolicyId, PolicyDocument> = {
   terms: { id: 'terms', title: 'Terms of Service', href: '/terms-and-conditions', version: '2026-10-26' },
   privacy: { id: 'privacy', title: 'Privacy Policy', href: '/privacy-policy', version: '2026-10-26' },
-  // Explicit consent for health data (NDPA s.30, GAID): processing it to provide care (Privacy Policy
-  // section 3) and storing or processing it outside Nigeria through service providers (section 6).
-  // The link is the anchor PolicyPage builds from the section title (components/legal/PolicyPage.tsx).
+  // No longer asked (the owner removed it, 2026-10-29): kept only so acceptances already recorded
+  // under this id still have a title and link.
   health_data: {
     id: 'health_data',
     title: 'Health information consent',
@@ -44,7 +43,7 @@ export const POLICIES: Record<PolicyId, PolicyDocument> = {
 export const CHECKOUT_POLICIES: PolicyId[] = ['booking_policy', 'payment_policy'];
 
 /** Shown to patients in their dashboard. */
-export const PATIENT_POLICIES: PolicyId[] = ['terms', 'privacy', 'health_data', 'payment_policy', 'booking_policy', 'cookie_policy'];
+export const PATIENT_POLICIES: PolicyId[] = ['terms', 'privacy', 'payment_policy', 'booking_policy', 'cookie_policy'];
 
 /** Shown to clinicians in their dashboard (with their signed agreement). */
 export const CLINICIAN_POLICIES: PolicyId[] = ['payout_policy', 'terms', 'privacy'];
@@ -53,25 +52,14 @@ export const CLINICIAN_POLICIES: PolicyId[] = ['payout_policy', 'terms', 'privac
  * What every patient accepts before using Rehabify: at sign-up on the web, in the dashboard if they
  * joined before this was asked, or at their first chat with Joy on WhatsApp.
  */
-export const PATIENT_CONSENT_POLICIES: PolicyId[] = ['terms', 'privacy', 'health_data'];
+export const PATIENT_CONSENT_POLICIES: PolicyId[] = ['terms', 'privacy'];
 
 /** What physiotherapists and clinic owners accept when they submit their application. */
 export const PROFESSIONAL_SIGNUP_POLICIES: PolicyId[] = ['terms', 'privacy'];
 
-/** Where the transfer part of the health information consent is explained. */
-export const HEALTH_DATA_TRANSFER_HREF = '/privacy-policy#transfers-outside-nigeria';
-
-/**
- * The words of the health information consent, the same on the web and on WhatsApp. Kept apart
- * from the Terms and Privacy tick so it is explicit, as the NDPA requires for health data.
- */
-export const HEALTH_DATA_CONSENT_TEXT =
-  'I agree that Rehabify may use my health information to provide my care, and that it may be stored or processed outside Nigeria by Rehabify’s service providers, as the Privacy Policy explains.';
-
 const CONSENT_ACCEPTANCE_TEXT: Partial<Record<PolicyId, string>> = {
   terms: 'I agree to the Terms of Service.',
   privacy: 'I agree to the Privacy Policy.',
-  health_data: HEALTH_DATA_CONSENT_TEXT,
 };
 
 /**

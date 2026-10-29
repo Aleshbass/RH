@@ -117,7 +117,7 @@ export function PatientShell({ children }: { children: ReactNode }) {
 
         <PatientMobileNav unreadMessages={unreadMessages} />
         <PatientTour enabled={pathname === PATIENT_HOME && consentsSettled}firstName={user?.firstName} homeHref={PATIENT_HOME} />
-        {/* Terms, Privacy and health information consent, asked once if missing (NDPA) */}
+        {/* Terms and Privacy, asked once if missing */}
         {user?.role === 'patient' && <ConsentDialog />}
       </div>
     </DashboardAuthGuard>

@@ -10,7 +10,8 @@ import { cn } from '@/lib/utils'
 
 /** Admin physiotherapist directory (convex/admin.ts adminPhysioDirectory / adminPhysioCaseload). */
 
-export type PhysioMode = 'network' | 'independent' | 'both' | 'clinic'
+/** "unset": applied before physios were asked Rehabify vs independent (served as network meanwhile). */
+export type PhysioMode = 'network' | 'independent' | 'both' | 'clinic' | 'unset'
 export type ApprovalStatus = 'approved' | 'pending_review' | 'declined' | 'not_submitted'
 export type PatientSource = 'rehabify' | 'own' | 'clinic'
 export type CaseloadStatus = 'active_episode' | 'upcoming' | 'recent' | 'new'
@@ -124,10 +125,11 @@ export const ADMIN_BASE = '/dashboard/admin'
 export const userHref = (userId: string) => `${ADMIN_BASE}/users/${userId}`
 
 export const MODE_LABEL: Record<PhysioMode, string> = {
-  network: 'Rehabify network',
+  network: 'Rehabify physio',
   independent: 'Independent',
-  both: 'Network + own',
+  both: 'Rehabify + independent',
   clinic: 'Clinic',
+  unset: 'Not chosen',
 }
 
 /** Who they see, in a sentence. */
@@ -136,6 +138,7 @@ export const MODE_DESCRIPTION: Record<PhysioMode, string> = {
   independent: PRACTICE_MODE_LABEL.independent,
   both: PRACTICE_MODE_LABEL.both,
   clinic: 'Patients of their clinic',
+  unset: 'Rehabify Care patients until they choose',
 }
 
 const MODE_CHIP: Record<PhysioMode, string> = {
@@ -143,6 +146,7 @@ const MODE_CHIP: Record<PhysioMode, string> = {
   independent: 'bg-rh-ink text-white dark:bg-white dark:text-rh-ink',
   both: 'bg-rh-honeydew text-rh-ink ring-1 ring-inset ring-rh-lime dark:bg-white/[0.06] dark:text-rh-lime dark:ring-rh-lime/50',
   clinic: 'bg-rh-peach text-[#8a4b05] dark:bg-white/[0.06] dark:text-amber-300',
+  unset: 'border border-dashed border-neutral-300 text-neutral-600 dark:border-white/20 dark:text-neutral-300',
 }
 
 export function ModeChip({ mode, className }: { mode: PhysioMode; className?: string }) {

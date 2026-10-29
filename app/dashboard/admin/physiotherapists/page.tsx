@@ -4,7 +4,7 @@ import { Suspense, useCallback, useEffect, useMemo, useState, type ComponentType
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useQuery } from 'convex/react'
 import { format } from 'date-fns'
-import { Briefcase, Building2, ChevronRight, Download, Layers, Search, Stethoscope, Store, Users, X } from '@/components/icons'
+import { Briefcase, Building2, ChevronRight, Download, HelpCircle, Layers, Search, Stethoscope, Store, Users, X } from '@/components/icons'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -53,7 +53,7 @@ type ModeFilter = 'all' | PhysioMode
 type StatusFilter = 'all' | ApprovalStatus | 'suspended'
 type SortKey = 'patients' | 'newest' | 'name'
 
-const MODE_FILTERS: readonly ModeFilter[] = ['all', 'network', 'independent', 'both', 'clinic']
+const MODE_FILTERS: readonly ModeFilter[] = ['all', 'network', 'independent', 'both', 'clinic', 'unset']
 const STATUS_FILTERS: readonly StatusFilter[] = ['all', 'approved', 'pending_review', 'declined', 'not_submitted', 'suspended']
 const SORTS: readonly SortKey[] = ['patients', 'newest', 'name']
 const SORT_LABEL: Record<SortKey, string> = { patients: 'Most patients', newest: 'Newest', name: 'Name' }
@@ -120,6 +120,7 @@ function PhysiotherapistsDirectory() {
       independent: count((r) => r.mode === 'independent'),
       both: count((r) => r.mode === 'both'),
       clinic: count((r) => r.mode === 'clinic'),
+      unset: count((r) => r.mode === 'unset'),
       approved: count((r) => r.approvalStatus === 'approved'),
       pending_review: count((r) => r.approvalStatus === 'pending_review'),
       declined: count((r) => r.approvalStatus === 'declined'),
@@ -193,10 +194,17 @@ function PhysiotherapistsDirectory() {
 
   const tiles: { key: ModeFilter | 'patients'; label: string; value?: number; icon: ComponentType<{ className?: string }>; tone: Tone; hint?: string }[] = [
     { key: 'all', label: 'Physiotherapists', value: data ? counts.all : undefined, icon: Stethoscope, tone: 'teal', hint: data?.capped ? `Newest ${data.cap} shown` : undefined },
-    { key: 'network', label: 'Rehabify network', value: data ? counts.network : undefined, icon: Store, tone: 'mint' },
+    { key: 'network', label: 'Rehabify physios', value: data ? counts.network : undefined, icon: Store, tone: 'mint' },
     { key: 'independent', label: 'Independent', value: data ? counts.independent : undefined, icon: Briefcase, tone: 'neutral' },
-    { key: 'both', label: 'Both', value: data ? counts.both : undefined, icon: Layers, tone: 'mint', hint: 'Network and own' },
+    // Chosen before it was one or the other; served as Rehabify physios
+    ...(counts.both > 0
+      ? [{ key: 'both' as const, label: 'Both', value: counts.both, icon: Layers, tone: 'mint' as Tone, hint: 'Chosen before it was one or the other' }]
+      : []),
     { key: 'clinic', label: 'Clinic', value: data ? counts.clinic : undefined, icon: Building2, tone: 'peach' },
+    // Older accounts that haven't answered Rehabify vs independent yet (asked on their dashboard)
+    ...(counts.unset > 0
+      ? [{ key: 'unset' as const, label: 'Not chosen', value: counts.unset, icon: HelpCircle, tone: 'neutral' as Tone, hint: 'Rehabify or independent' }]
+      : []),
     {
       key: 'patients',
       label: 'Patients being handled',
@@ -220,7 +228,14 @@ function PhysiotherapistsDirectory() {
         }
       />
 
-      <Stagger className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+      <Stagger
+        // "Both" and "Not chosen" only appear while someone is in them: one row on wide screens either way
+        className={cn(
+          'grid grid-cols-2 gap-3',
+          tiles.length > 6 ? 'sm:grid-cols-4' : 'sm:grid-cols-3',
+          tiles.length > 6 ? 'xl:grid-cols-7' : tiles.length === 6 ? 'xl:grid-cols-6' : 'xl:grid-cols-5'
+        )}
+      >
         {tiles.map((tile) => (
           <StaggerItem key={tile.key} className="h-full">
             <StatTile

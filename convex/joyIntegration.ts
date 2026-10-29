@@ -564,7 +564,7 @@ export const resolveOrCreatePatientByPhone = internalMutation({
       resolution: resultResolution,
       patient_id: resolvedPatientId,
       // Additive (Oct 2026), read-only; nothing here changes booking. `consents_required`: Terms,
-      // Privacy and health information consent to ask for at this first chat (empty when already
+      // Privacy to ask for at this first chat (empty when already
       // accepted; record with operation patient_record_consents, see joyOperations.ts).
       // `recovery_plan`: whether the patient has Flex Max, so Joy can switch on reminders and
       // support (joy_reminders_allowed; helpers/patientPlans.ts recoveryPlanForJoy).

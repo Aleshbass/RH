@@ -1,44 +1,38 @@
 /**
- * Which patients a physiotherapist outside a clinic sees on Rehabify: Rehabify Care patients,
- * their own private patients, or both. Chosen in the application and changed any time in
- * Settings > How you work. Stored as physiotherapistProfiles.practiceMode ("network",
- * "independent" or "both"); see servesRehabifyNetwork in convex/physioSetup.ts.
+ * Whether a physiotherapist outside a clinic is a Rehabify physio (Rehabify sends them Rehabify
+ * Care patients) or an independent physio (their own private patients only). One or the other:
+ * chosen in the application (or, for older accounts, on the dashboard) and changed any time in
+ * Settings > How you work. Stored as physiotherapistProfiles.practiceMode, "network" or
+ * "independent"; "both" was offered before and counts as a Rehabify physio. See
+ * servesRehabifyNetwork in convex/physioSetup.ts.
  *
- * The rules follow the patient and the service, not the physio: someone who does both treats
- * each patient under that patient's rules.
+ * The rules follow the patient and the service, not the physio: a Rehabify physio who also sees
+ * private patients of their own treats each patient under that patient's rules.
  */
 
 export type PracticeMode = 'network' | 'independent' | 'both';
-export type PatientSource = 'rehabify' | 'own';
+/** What a physio can choose. */
+export type PracticeChoice = 'network' | 'independent';
 
-export const PATIENT_SOURCES: { id: PatientSource; title: string; summary: string; points: string[] }[] = [
+export const PRACTICE_CHOICES: { id: PracticeChoice; title: string; summary: string; points: string[] }[] = [
     {
-        id: 'rehabify',
-        title: 'Rehabify Care patients',
-        summary: 'Patients come to Rehabify and we match them with you. Rehabify sets the prices and pays you a fixed amount per session.',
+        id: 'network',
+        title: 'Rehabify physio',
+        summary: 'Rehabify sends you patients (Rehabify Care). We set the prices and pay you a fixed amount per session.',
         points: ['Listed on Find a Physio and matched by Joy', 'Patients pay Rehabify, not you', 'A fixed payout for every completed session'],
     },
     {
-        id: 'own',
-        title: 'My own patients',
-        summary: 'Use Rehabify with your private patients, at your own prices.',
-        points: ['Assessments, care plans and exercise programmes', 'Invoice your patients at your own rates', 'Follow-ups and progress between sessions'],
+        id: 'independent',
+        title: 'Independent physio',
+        summary: 'Bring your own private patients and run your practice on Rehabify, at your own prices.',
+        points: ['Free to use, and your invoices are all yours', 'Assessments, care plans and exercise programmes', 'Invoice your patients at your own rates'],
     },
 ];
 
-export function sourcesOf(mode: PracticeMode | null | undefined): PatientSource[] {
-    if (mode === 'independent') return ['own'];
-    if (mode === 'both') return ['rehabify', 'own'];
-    return mode === 'network' ? ['rehabify'] : [];
-}
-
-export function modeFrom(sources: PatientSource[]): PracticeMode | null {
-    const rehabify = sources.includes('rehabify');
-    const own = sources.includes('own');
-    if (rehabify && own) return 'both';
-    if (rehabify) return 'network';
-    if (own) return 'independent';
-    return null;
+/** The choice a saved mode shows as; "both" (offered before) counts as a Rehabify physio. */
+export function choiceOf(mode: PracticeMode | null | undefined): PracticeChoice | null {
+    if (!mode) return null;
+    return mode === 'independent' ? 'independent' : 'network';
 }
 
 export const PRACTICE_MODE_LABEL: Record<PracticeMode, string> = {

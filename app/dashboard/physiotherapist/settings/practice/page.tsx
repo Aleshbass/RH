@@ -17,41 +17,29 @@ import {
     AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Switch } from '@/components/ui/switch';
 import { primaryButtonClass } from '@/components/physio/ui';
 import { SettingsPageHeader, SettingsSection } from '@/components/physio/SettingsUI';
 import type { SetupStatus } from '@/components/physio/SetupChecklist';
 import { errorMessage } from '@/components/partners/portal/shared';
-import { modeFrom, PATIENT_SOURCES, sourcesOf, type PatientSource, type PracticeMode } from '@/lib/practiceModes';
+import { choiceOf, PRACTICE_CHOICES, type PracticeChoice } from '@/lib/practiceModes';
 import { recoveryPlanStatus } from '@/lib/recoveryPlans';
 import { useRecoveryPlans } from '@/components/exercise-programs/flex';
 import { playSound } from '@/lib/sounds';
 import { cn } from '@/lib/utils';
 
 // A plain reference: the generated `api` type is at TypeScript's depth limit (TS2589)
-const setPracticeModeRef = makeFunctionReference<'mutation', { practiceMode: PracticeMode }, { practiceMode: PracticeMode }>(
+const setPracticeModeRef = makeFunctionReference<'mutation', { practiceMode: PracticeChoice }, { practiceMode: PracticeChoice }>(
     'physioSetup:setMyPracticeMode'
 );
 
-type Change = { source: PatientSource; on: boolean; next: PracticeMode };
-
-const CONFIRM: Record<PatientSource, { on: { title: string; body: string }; off: { title: string; body: string } }> = {
-    rehabify: {
-        on: {
-            title: 'Take Rehabify Care patients?',
-            body: 'You’ll be listed on Find a Physio and matched with Rehabify Care patients once your setup is complete, including the network terms.',
-        },
-        off: {
-            title: 'Stop taking Rehabify Care patients?',
-            body: 'You’ll be taken off Find a Physio and won’t be matched with new Rehabify Care patients. Rehabify patients you already see stay with you.',
-        },
+const CONFIRM: Record<PracticeChoice, { title: string; body: string }> = {
+    network: {
+        title: 'Become a Rehabify physio?',
+        body: 'You’ll be listed on Find a Physio and matched with Rehabify Care patients once your setup is complete, including the network terms. Your own patients stay with you.',
     },
-    own: {
-        on: { title: 'See your own patients on Rehabify?', body: 'You can invite your private patients and invoice them at your own rates.' },
-        off: {
-            title: 'Only take Rehabify Care patients?',
-            body: 'Your current private patients and their records stay with you.',
-        },
+    independent: {
+        title: 'Become an independent physio?',
+        body: 'You’ll be taken off Find a Physio and won’t be matched with new Rehabify Care patients. Rehabify patients you already see stay with you.',
     },
 };
 
@@ -60,7 +48,7 @@ export default function PracticeModePage() {
     const setPracticeMode = useMutation(setPracticeModeRef);
     // Live prices once an admin launches Flex / Flex Max; "Coming soon" until then
     const { plans: recoveryPlans } = useRecoveryPlans();
-    const [change, setChange] = useState<Change | null>(null);
+    const [change, setChange] = useState<PracticeChoice | null>(null);
     const [saving, setSaving] = useState(false);
 
     if (setup === undefined) {
@@ -87,22 +75,15 @@ export default function PracticeModePage() {
         );
     }
 
-    const current = sourcesOf(setup.practiceMode ?? 'network');
-
-    const request = (source: PatientSource, on: boolean) => {
-        const next = modeFrom(on ? [...current, source] : current.filter((s) => s !== source));
-        if (!next) {
-            toast.error('Keep at least one on.');
-            return;
-        }
-        setChange({ source, on, next });
-    };
+    // Not chosen yet (older accounts): nothing selected until they pick
+    const current = choiceOf(setup.practiceMode);
+    const seesOwnPatients = setup.practiceMode === 'independent' || setup.practiceMode === 'both';
 
     const confirm = async () => {
         if (!change) return;
         setSaving(true);
         try {
-            await setPracticeMode({ practiceMode: change.next });
+            await setPracticeMode({ practiceMode: change });
             toast.success('Saved');
             playSound('success');
             setChange(null);
@@ -114,48 +95,61 @@ export default function PracticeModePage() {
         }
     };
 
-    const copy = change ? CONFIRM[change.source][change.on ? 'on' : 'off'] : null;
+    const copy = change ? CONFIRM[change] : null;
 
     return (
         <div className="space-y-6">
             <SettingsPageHeader
                 title="How you work"
-                description="Which patients you see on Rehabify. Each patient follows their own rules: Rehabify Care patients at Rehabify’s prices, your own at yours."
+                description="Whether you’re a Rehabify physio or an independent physio. Each patient follows their own rules: Rehabify Care patients at Rehabify’s prices, your own at yours."
             />
 
             <SettingsSection>
-                <ul className="divide-y divide-neutral-100 dark:divide-white/[0.07]">
-                    {PATIENT_SOURCES.map((source) => {
-                        const on = current.includes(source.id);
+                <div role="radiogroup" aria-label="How you work with Rehabify" className="grid gap-3">
+                    {PRACTICE_CHOICES.map((choice) => {
+                        const selected = current === choice.id;
                         return (
-                            <li key={source.id} className="flex items-start justify-between gap-4 py-4 first:pt-0 last:pb-0">
-                                <div className="min-w-0">
-                                    <label htmlFor={`source-${source.id}`} className="text-sm font-semibold text-rh-ink dark:text-white">
-                                        {source.title}
-                                    </label>
-                                    <p className="mt-0.5 text-sm text-neutral-600 dark:text-neutral-400">{source.summary}</p>
-                                    <ul className="mt-2 space-y-1">
-                                        {source.points.map((point) => (
-                                            <li key={point} className="flex gap-2 text-xs text-neutral-500 dark:text-neutral-400">
+                            <button
+                                key={choice.id}
+                                type="button"
+                                role="radio"
+                                aria-checked={selected}
+                                onClick={() => !selected && setChange(choice.id)}
+                                className={cn(
+                                    'flex w-full items-start gap-3 rounded-xl border-2 p-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-ink focus-visible:ring-offset-2 dark:focus-visible:ring-rh-lime dark:focus-visible:ring-offset-rh-ink-2',
+                                    selected
+                                        ? 'border-rh-ink dark:border-rh-lime'
+                                        : 'border-neutral-200 hover:border-neutral-400 dark:border-white/10 dark:hover:border-white/25'
+                                )}
+                            >
+                                <span
+                                    aria-hidden
+                                    className={cn(
+                                        'mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors',
+                                        selected ? 'border-rh-ink dark:border-rh-lime' : 'border-neutral-300 dark:border-white/25'
+                                    )}
+                                >
+                                    {selected && <span className="h-2.5 w-2.5 rounded-full bg-rh-ink dark:bg-rh-lime" />}
+                                </span>
+                                <span className="min-w-0">
+                                    <span className="block text-sm font-semibold text-rh-ink dark:text-white">{choice.title}</span>
+                                    <span className="mt-0.5 block text-sm text-neutral-600 dark:text-neutral-400">{choice.summary}</span>
+                                    <span className="mt-2 block space-y-1">
+                                        {choice.points.map((point) => (
+                                            <span key={point} className="flex gap-2 text-xs text-neutral-500 dark:text-neutral-400">
                                                 <Check className="mt-0.5 h-3 w-3 shrink-0" />
                                                 {point}
-                                            </li>
+                                            </span>
                                         ))}
-                                    </ul>
-                                </div>
-                                <Switch
-                                    id={`source-${source.id}`}
-                                    checked={on}
-                                    onCheckedChange={(value) => request(source.id, value)}
-                                    className="mt-0.5"
-                                />
-                            </li>
+                                    </span>
+                                </span>
+                            </button>
                         );
                     })}
-                </ul>
+                </div>
             </SettingsSection>
 
-            {current.includes('own') && (
+            {seesOwnPatients && (
                 <SettingsSection
                     title="What your patients can add"
                     description="Support between sessions, offered to your own patients by Rehabify. You don’t need to sell or collect anything, and Rehabify Care patients have it included."

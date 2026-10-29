@@ -178,7 +178,9 @@ export default async function RootLayout({
       >
         {/* Top loader is rendered in app/providers.tsx (client component) */}
         <PwaRegister />
-        <ClerkProvider>
+        {/* Clerk's own default after signing in/up is "/": anything it finishes without our
+            redirect goes to the dashboard, or to /role-selection, which opens the right onboarding */}
+        <ClerkProvider signInFallbackRedirectUrl="/dashboard" signUpFallbackRedirectUrl="/role-selection">
           <Providers>
             <ConvexClientProvider>
               <SyncUserWithConvex />

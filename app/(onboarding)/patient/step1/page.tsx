@@ -83,7 +83,7 @@ function PatientStep1Content() {
   const completeProfile = useMutation(api.users.completeUserProfile);
 
   const handleSubmit = async (formData: PatientInfoValues) => {
-    const { acceptTerms, acceptHealthData, ...details } = formData;
+    const { acceptTerms, ...details } = formData;
     // Store the form data in Zustand store
     updatePatientData({
       ...details,
@@ -112,8 +112,8 @@ function PatientStep1Content() {
         firstName: formData.firstName,
         lastName: formData.lastName,
         finalStep: true,
-        // Terms, Privacy and the health information consent, recorded append-only (channel "web")
-        acceptedPolicies: acceptTerms && acceptHealthData ? policyVersions(PATIENT_CONSENT_POLICIES) : undefined,
+        // Terms and Privacy, recorded append-only (channel "web")
+        acceptedPolicies: acceptTerms ? policyVersions(PATIENT_CONSENT_POLICIES) : undefined,
       });
 
       // Navigate to Find a Physio page

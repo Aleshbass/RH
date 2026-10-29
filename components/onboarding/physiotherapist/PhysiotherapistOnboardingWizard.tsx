@@ -3,7 +3,7 @@
 /**
  * Physiotherapist application: four short steps, only what Rehabify needs to verify someone.
  *
- *   1. How you'll work  join the Rehabify network, or run their own practice (lib/practiceModes.ts)
+ *   1. How you'll work  Rehabify physio or independent physio, one or the other (lib/practiceModes.ts)
  *   2. About you        name and phone
  *   3. Your licence     board, licence number and expiry, experience, ID and a licence document
  *   4. Your practice    where you work, what you treat, terms; then submit for review
@@ -21,6 +21,7 @@ import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@clerk/nextjs';
 import { useMutation, useQuery } from 'convex/react';
+import { makeFunctionReference } from 'convex/server';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Check, ChevronLeft, Loader2 } from '@/components/icons';
 import { toast } from 'sonner';
@@ -38,7 +39,7 @@ import {
     type PhysioDocumentType,
 } from '@/components/physio/PhysioDocuments';
 import { useOnboardingStore } from '@/stores/onboardingStore';
-import { modeFrom, PATIENT_SOURCES, sourcesOf, type PatientSource, type PracticeMode } from '@/lib/practiceModes';
+import { choiceOf, PRACTICE_CHOICES, type PracticeChoice, type PracticeMode } from '@/lib/practiceModes';
 import { PROFESSIONAL_SIGNUP_POLICIES, policyVersions } from '@/lib/policies';
 import { cn } from '@/lib/utils';
 
@@ -48,7 +49,7 @@ const MapboxLocationPicker = dynamic(() => import('@/components/onboarding/physi
 });
 
 const STEPS = [
-    { id: 'path', title: 'Your patients', subtitle: 'Which patients you’ll see on Rehabify.' },
+    { id: 'path', title: 'How you’ll work', subtitle: 'Are you joining as a Rehabify physio or an independent physio?' },
     { id: 'about', title: 'About you', subtitle: 'So patients and our team know who you are.' },
     { id: 'licence', title: 'Your licence', subtitle: 'We verify every physiotherapist before they can see patients.' },
     { id: 'practice', title: 'Your practice', subtitle: 'Where you work and what you treat.' },
@@ -90,6 +91,11 @@ type Draft = {
     referralSource: string;
     uploadedDocumentTypes: string[];
 };
+
+// A plain reference: the generated `api` type is at TypeScript's depth limit (TS2589)
+const getMyOnboardingDraftRef = makeFunctionReference<'query', Record<string, never>, Draft | null>(
+    'physioSetup:getMyOnboardingDraft'
+);
 
 type RegistryProfile = {
     fullName?: string;
@@ -147,32 +153,29 @@ function Field({
     );
 }
 
-/** Step 1: which patients they'll see on Rehabify. Either or both. */
+/** Step 1: Rehabify physio or independent physio. One or the other. */
 function PracticeModeChoice({
     value,
     onChange,
     error,
 }: {
-    value: PracticeMode | null;
-    onChange: (mode: PracticeMode | null) => void;
+    value: PracticeChoice | null;
+    onChange: (mode: PracticeChoice) => void;
     error?: string;
 }) {
-    const chosen = sourcesOf(value);
-    const toggle = (source: PatientSource) =>
-        onChange(modeFrom(chosen.includes(source) ? chosen.filter((s) => s !== source) : [...chosen, source]));
     return (
         <div>
-            <p className="mb-3 text-sm text-neutral-600">Choose one or both.</p>
-            <div role="group" aria-label="Which patients you’ll see" className="grid gap-3">
-                {PATIENT_SOURCES.map((mode) => {
-                    const selected = chosen.includes(mode.id);
+            <p className="mb-3 text-sm text-neutral-600">Choose one.</p>
+            <div role="radiogroup" aria-label="How you’ll work with Rehabify" className="grid gap-3">
+                {PRACTICE_CHOICES.map((mode) => {
+                    const selected = value === mode.id;
                     return (
                         <button
                             key={mode.id}
                             type="button"
-                            role="checkbox"
+                            role="radio"
                             aria-checked={selected}
-                            onClick={() => toggle(mode.id)}
+                            onClick={() => onChange(mode.id)}
                             className={cn(
                                 'flex w-full items-start gap-4 rounded-2xl border-2 bg-white p-5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-ink focus-visible:ring-offset-2',
                                 selected ? 'border-rh-ink' : 'border-neutral-200 hover:border-neutral-400'
@@ -181,11 +184,11 @@ function PracticeModeChoice({
                             <span
                                 aria-hidden
                                 className={cn(
-                                    'mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border-2 transition-colors',
-                                    selected ? 'border-rh-ink bg-rh-ink text-rh-lime' : 'border-neutral-300'
+                                    'mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors',
+                                    selected ? 'border-rh-ink' : 'border-neutral-300'
                                 )}
                             >
-                                {selected && <Check className="h-3 w-3" strokeWidth={3} />}
+                                {selected && <span className="h-2.5 w-2.5 rounded-full bg-rh-ink" />}
                             </span>
                             <span className="min-w-0">
                                 <span className="block text-base font-semibold text-neutral-900">{mode.title}</span>
@@ -217,7 +220,7 @@ function SignInFirst() {
         <div className="mx-auto w-full max-w-md px-4 py-10 text-center">
             <h1 className="text-2xl font-semibold tracking-tight text-neutral-900">Join Rehabify</h1>
             <p className="mt-2 text-sm leading-relaxed text-neutral-600">
-                Take Rehabify Care patients, see your own patients on Rehabify, or both. Create your account, then apply in four
+                Join as a Rehabify physio or an independent physio. Create your account, then apply in four
                 short steps. It takes about five minutes. Have your licence number and a photo of your ID ready.
             </p>
             <div className="mt-6 flex flex-col gap-2">
@@ -262,7 +265,7 @@ function Submitted({ practiceMode }: { practiceMode: PracticeMode }) {
 export default function PhysiotherapistOnboardingWizard() {
     const router = useRouter();
     const { isLoaded: authLoaded, isSignedIn } = useAuth();
-    const draft = useQuery(api.physioSetup.getMyOnboardingDraft, isSignedIn ? {} : 'skip') as Draft | null | undefined;
+    const draft = useQuery(getMyOnboardingDraftRef, isSignedIn ? {} : 'skip');
     const completeUserProfile = useMutation(api.users.completeUserProfile);
     const updatePhysioProfile = useMutation(api.users.updatePhysiotherapistProfile);
     const resetOnboardingStore = useOnboardingStore((state) => state.resetOnboarding);
@@ -279,7 +282,7 @@ export default function PhysiotherapistOnboardingWizard() {
     const initialised = useRef(false);
 
     // Answers
-    const [practiceMode, setPracticeMode] = useState<PracticeMode | null>(null);
+    const [practiceMode, setPracticeMode] = useState<PracticeChoice | null>(null);
     const [firstName, setFirstName] = useState('');
     const [lastName, setLastName] = useState('');
     const [phone, setPhone] = useState('');
@@ -345,7 +348,7 @@ export default function PhysiotherapistOnboardingWizard() {
         const savedExpiry = draft.licenseExpiryDate || r?.licenseExpiryDate || '';
         const expiryValue = savedExpiry >= todayIso() ? savedExpiry : '';
 
-        setPracticeMode(draft.practiceMode);
+        setPracticeMode(choiceOf(draft.practiceMode));
         setFirstName(first);
         setLastName(last);
         setPhone(phoneValue);
@@ -376,7 +379,8 @@ export default function PhysiotherapistOnboardingWizard() {
         const aboutDone = Boolean(draft.profileId && draft.firstName && draft.lastName && draft.phoneNumber);
         const licenceDone =
             aboutDone && Boolean(draft.licenseNumber && expiryValue) && draft.uploadedDocumentTypes.includes('nationalId') && hasProof;
-        setStep(licenceDone ? 3 : aboutDone ? 2 : draft.practiceMode ? 1 : 0);
+        // Rehabify or independent is asked first, even of returning applicants who never answered it
+        setStep(!draft.practiceMode ? 0 : licenceDone ? 3 : aboutDone ? 2 : 1);
         setReturning(Boolean(draft.profileId) && draft.approvalStatus !== 'declined');
     }, [draft, registry, registrySlug]);
 
@@ -400,7 +404,7 @@ export default function PhysiotherapistOnboardingWizard() {
 
     const validate = (): Record<string, string> => {
         const e: Record<string, string> = {};
-        if (step === 0 && !practiceMode) e.practiceMode = 'Choose at least one';
+        if (step === 0 && !practiceMode) e.practiceMode = 'Choose Rehabify physio or independent physio';
         if (step === 1) {
             if (!firstName.trim()) e.firstName = 'Enter your first name';
             if (!lastName.trim()) e.lastName = 'Enter your last name';
@@ -427,6 +431,11 @@ export default function PhysiotherapistOnboardingWizard() {
     };
 
     const next = async () => {
+        if (step === STEPS.length - 1 && !practiceMode) {
+            toast.error('Choose how you’ll work with Rehabify first');
+            go(0);
+            return;
+        }
         const e = validate();
         setErrors(e);
         if (Object.keys(e).length > 0) {

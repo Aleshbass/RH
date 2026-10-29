@@ -2,20 +2,26 @@
 
 import { useMemo, useState, type ReactNode } from 'react'
 import Link from 'next/link'
-import { useQuery } from 'convex/react'
+import { useMutation, useQuery } from 'convex/react'
+import { makeFunctionReference } from 'convex/server'
 import { format } from 'date-fns'
+import { toast } from 'sonner'
 import { ArrowUpRight, Building2, House, Mail, Phone, SearchX, Store, UserCheck, Users, Video } from '@/components/icons'
 import { Button } from '@/components/ui/button'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
-import { EmptyState, StatusBadge, cardClass, primaryButtonClass, softButtonClass } from '@/components/admin/ui'
+import { ConfirmDialog, EmptyState, StatusBadge, cardClass, primaryButtonClass, softButtonClass } from '@/components/admin/ui'
 import { RehabifyId } from '@/components/shared/RehabifyId'
+import { errorMessage } from '@/components/partners/portal/shared'
+import { choiceOf, type PracticeChoice } from '@/lib/practiceModes'
 import { cn } from '@/lib/utils'
 import {
   ADMIN_BASE,
   AccountBadges,
   CASELOAD_STATUS,
   MODE_DESCRIPTION,
+  MODE_LABEL,
   ModeChip,
   PersonAvatar,
   SourceBar,
@@ -32,6 +38,19 @@ import {
   type DirectoryRow,
   type UpcomingSession,
 } from './shared'
+
+// A plain reference: the generated `api` type is at TypeScript's depth limit (TS2589)
+const setPracticeModeRef = makeFunctionReference<
+  'mutation',
+  { physiotherapistId: string; practiceMode: PracticeChoice },
+  { practiceMode: PracticeChoice }
+>('physioSetup:adminSetPracticeMode')
+
+const PRACTICE_MODES: PracticeChoice[] = ['network', 'independent']
+const MAKE_THEM: Record<PracticeChoice, string> = {
+  network: 'a Rehabify physio',
+  independent: 'an independent physio',
+}
 
 const sectionTitle = 'text-sm font-semibold text-rh-ink dark:text-white'
 const muted = 'text-xs text-neutral-500 dark:text-neutral-400'
@@ -181,7 +200,7 @@ function QuickLinks({ userId, mode, clinicId }: { userId: string; mode: Director
           Approvals
         </Link>
       </Button>
-      {(mode === 'network' || mode === 'both') && (
+      {(mode === 'network' || mode === 'both' || mode === 'unset') && (
         <Button asChild size="sm" variant="outline" className={cn(softButtonClass, 'h-9')}>
           <Link href={`${ADMIN_BASE}/marketplace-listing`}>
             <Store className="mr-1.5 h-3.5 w-3.5" />
@@ -215,7 +234,8 @@ const AGREEMENT_TONE = { active: 'green', awaiting_countersign: 'teal', outdated
 
 function Summary({ data }: { data: CaseloadResult }) {
   const { physio } = data
-  const networkMode = physio.mode === 'network' || physio.mode === 'both'
+  // Not chosen yet is still served as a Rehabify physio
+  const networkMode = physio.mode === 'network' || physio.mode === 'both' || physio.mode === 'unset'
   const sessions = [physio.offersOnline && 'Video', physio.offersInPerson && 'In person'].filter(Boolean).join(' and ')
   return (
     <section className={cn(cardClass, 'p-4')} aria-label="Profile">
@@ -267,7 +287,60 @@ function Summary({ data }: { data: CaseloadResult }) {
           ))}
         </ul>
       )}
+      {physio.mode !== 'clinic' && <PracticeModeControl physioId={physio.userId} mode={physio.mode} />}
     </section>
+  )
+}
+
+/** Rehabify physio, independent physio or both: shown, and settable for anyone who hasn't chosen. */
+function PracticeModeControl({ physioId, mode }: { physioId: string; mode: DirectoryRow['mode'] }) {
+  const setPracticeMode = useMutation(setPracticeModeRef)
+  const [pending, setPending] = useState<PracticeChoice | null>(null)
+  // "Both" (offered before) shows as a Rehabify physio
+  const current = mode === 'unset' || mode === 'clinic' ? null : choiceOf(mode)
+
+  return (
+    <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-black/[0.05] pt-3 dark:border-white/[0.06]">
+      <div className="min-w-0">
+        <p className={sectionTitle}>Rehabify or independent</p>
+        <p className={muted}>
+          {mode === 'unset' ? 'Not chosen yet. They’re asked on their dashboard.' : 'They can also change this in their settings.'}
+        </p>
+      </div>
+      <Select value={current ?? ''} onValueChange={(value) => setPending(value as PracticeChoice)}>
+        <SelectTrigger className="h-9 w-[210px] rounded-xl" aria-label="Rehabify or independent">
+          <SelectValue placeholder="Not chosen" />
+        </SelectTrigger>
+        <SelectContent>
+          {PRACTICE_MODES.map((value) => (
+            <SelectItem key={value} value={value}>
+              {MODE_LABEL[value]}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <ConfirmDialog
+        open={pending !== null}
+        onOpenChange={(open) => !open && setPending(null)}
+        title={pending ? `Make them ${MAKE_THEM[pending]}?` : ''}
+        description={
+          pending === 'independent'
+            ? 'They’ll be taken off Find a Physio and won’t be matched with new Rehabify Care patients. Patients they already see stay with them.'
+            : 'They’ll be matched with Rehabify Care patients once they’re approved and their setup is complete.'
+        }
+        confirmLabel="Save"
+        onConfirm={async () => {
+          if (!pending) return
+          try {
+            await setPracticeMode({ physiotherapistId: physioId, practiceMode: pending })
+            toast.success('Saved')
+          } catch (error) {
+            toast.error(errorMessage(error, 'Couldn’t save that. Please try again.'))
+            throw error
+          }
+        }}
+      />
+    </div>
   )
 }
 

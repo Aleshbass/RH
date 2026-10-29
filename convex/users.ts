@@ -89,7 +89,7 @@ async function signedInUser(ctx: QueryCtx | MutationCtx) {
 }
 
 /**
- * Patients only: the Terms, Privacy Policy and health information consent (lib/policies.ts) they
+ * Patients only: the Terms of Service and Privacy Policy (lib/policies.ts) they
  * haven't accepted in the current version, by any channel (web, app or Joy on WhatsApp). The
  * patient dashboard asks once for whatever is listed.
  */
@@ -570,8 +570,7 @@ export const completeUserProfile = mutation({
     finalStep: v.optional(v.boolean()), // Add this parameter
     onboardingSkipped: v.optional(v.boolean()), // True if user skipped optional onboarding steps
     // Policy versions ticked on the final step ({ terms: "2026-10-26", ... }, lib/policies.ts).
-    // Patients: Terms, Privacy and the health information consent; physios and clinic owners:
-    // Terms and Privacy. Stored append-only in policyAcceptances with channel "web".
+    // Everyone: Terms and Privacy. Stored append-only in policyAcceptances with channel "web".
     acceptedPolicies: v.optional(v.record(v.string(), v.string())),
   },
   returns: v.object({
@@ -621,6 +620,8 @@ export const completeUserProfile = mutation({
         const { clinicId: _ignoredClinicId, ...physioData } = args.profileData as typeof physiotherapistProfileDataValidator.type;
         // Physios who only see their own patients are never listed; taking Rehabify Care patients
         // (alone or with their own) lists them again, e.g. after changing their mind mid-application
+        // It's one or the other now: "both" (from a page opened before that) is saved as a Rehabify physio
+        if (physioData.practiceMode === "both") physioData.practiceMode = "network";
         if (physioData.practiceMode) physioData.isAvailableOnMarketplace = physioData.practiceMode !== "independent";
         let physioProfileId: Id<"physiotherapistProfiles">;
         try {
@@ -759,7 +760,7 @@ export const completeUserProfile = mutation({
     }
     await ensureUserNumbers(ctx, user._id);
 
-    // Terms, Privacy (and, for patients, the explicit health information consent) ticked at sign-up
+    // Terms and Privacy ticked at sign-up
     if (args.finalStep && args.acceptedPolicies && args.role !== "family_member") {
       const signedUp = await ctx.db.get(user._id);
       await recordMissingPolicyAcceptances(ctx, {

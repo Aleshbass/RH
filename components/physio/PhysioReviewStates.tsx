@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { primaryButtonClass } from '@/components/clinic/ui'
 import { PageContainer } from '@/components/physio/ui'
 import { SetupChecklistCard, type SetupStatus } from '@/components/physio/SetupChecklist'
+import { PracticeModePrompt } from '@/components/physio/PracticeModePrompt'
 import { SUPPORT_EMAIL } from '@/lib/contact'
 
 /**
@@ -32,6 +33,8 @@ export function PhysioUnderReview({ setup }: { setup: SetupStatus | null }) {
           </div>
         </div>
       </div>
+
+      <PracticeModePrompt setup={setup} />
 
       {setup && !setup.isComplete && <SetupChecklistCard setup={setup} />}
 

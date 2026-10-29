@@ -231,7 +231,7 @@ const patientDataValidator = v.object({
   ),
   medicalHistory: v.optional(v.string()),
   emergencyContact: v.optional(v.string()),
-  /** Terms, Privacy and health information consent ticked on the invite page: policy id → version */
+  /** Terms and Privacy ticked on the invite page: policy id → version */
   acceptedPolicies: v.optional(v.record(v.string(), v.string())),
 });
 

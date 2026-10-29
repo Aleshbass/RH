@@ -5,9 +5,6 @@ import { motion } from 'framer-motion';
 import { ArrowRight, ArrowUp } from '@/components/icons';
 import Link from 'next/link';
 import Image from 'next/image';
-import { useQuery } from 'convex/react';
-import { api } from '@/convex/_generated/api';
-import { useAuth } from '@clerk/nextjs';
 import { FlipWords } from '@/components/ui/flip-words';
 import { joyWhatsAppUrl } from '@/lib/joyWhatsApp';
 
@@ -59,72 +56,9 @@ function TypingAnimation() {
   );
 }
 
+// The hero is for visitors: signed-in people reach their dashboard (or finish setting up)
+// from the header's account button
 export function LandingHero() {
-  const { isSignedIn, isLoaded } = useAuth();
-
-  const currentUser = useQuery(
-    api.users.getMyUser,
-    isLoaded && isSignedIn ? {} : "skip"
-  );
-  const approvalStatus = useQuery(
-    api.users.getUserApprovalStatus,
-    isLoaded && isSignedIn && currentUser ? {} : "skip"
-  );
-
-  // Check if the user has a partner association
-  const partnerData = useQuery(
-    api.partners.getCurrentUserPartner,
-    isLoaded && isSignedIn ? {} : "skip"
-  );
-
-  const canAccessDashboard = isSignedIn && currentUser && (
-    currentUser.role === "patient" ||
-    currentUser.role === "family_member" ||
-    currentUser.role === "admin" ||
-    (approvalStatus?.status === "approved")
-  );
-
-  const getDashboardProps = () => {
-    if (!isSignedIn) return null;
-
-    if (canAccessDashboard) {
-      if (currentUser?.role === "physiotherapist") {
-        return { href: "/dashboard/physiotherapist", text: "Go to Dashboard" };
-      } else if (currentUser?.role === "clinic_owner") {
-        return { href: "/dashboard/clinic", text: "Go to Dashboard" };
-      } else if (currentUser?.role === "admin") {
-        return { href: "/dashboard/admin", text: "Go to Dashboard" };
-      } else {
-        return { href: "/dashboard", text: "Go to Dashboard" };
-      }
-    }
-
-    if (currentUser && !currentUser.onboarded) {
-      // If user has a partner association (signed up via partner portal),
-      // direct them to the partner portal instead of role-selection
-      if (partnerData?.isAuthenticated && (partnerData.status === "no_partner" || partnerData.partner)) {
-        return { href: "/partners/portal", text: "Go to Partner Portal" };
-      }
-
-      // Only show "Complete Setup" if the user has a role (meaning they
-      // started the onboarding flow but didn't finish)
-      if (currentUser.role) {
-        return { href: "/role-selection", text: "Complete Setup" };
-      }
-
-      // User has no role and no partner intent — show "Get Started" to pick a path
-      return { href: "/role-selection", text: "Get Started" };
-    }
-
-    if (approvalStatus?.status === "pending_review") {
-      return { href: "/dashboard", text: "View Application Status" };
-    }
-
-    return { href: "/dashboard", text: "Go to Dashboard" };
-  };
-
-  const dashboardProps = getDashboardProps();
-
   const whatsappUrl = joyWhatsAppUrl("Hi Joy! 👋🏾 I need help with my recovery.");
 
   return (
@@ -162,16 +96,6 @@ export function LandingHero() {
                   <ArrowRight className="w-5 h-5" />
                 </span>
               </Link>
-            </div>
-
-            <div className="flex flex-col sm:flex-row flex-wrap items-center justify-center lg:justify-start gap-4">
-              {dashboardProps && (
-                <Link href={dashboardProps.href} className="w-full sm:w-auto">
-                  <span className="flex items-center justify-center text-white bg-rh-ink hover:bg-rh-ink-3 font-semibold py-3 px-6 rounded-full transition-colors duration-300 w-full text-sm">
-                    {dashboardProps.text}
-                  </span>
-                </Link>
-              )}
             </div>
 
           </motion.div>

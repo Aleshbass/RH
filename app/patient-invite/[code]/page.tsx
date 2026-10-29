@@ -14,13 +14,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { accentButtonClass, initials, primaryButtonClass, secondaryButtonClass } from '@/components/patient/ui'
 import { useValidateInvitationCode } from '@/lib/api/patientInvitations'
 import { usePatientOnboardingAction } from '@/lib/onboardingHelpers'
-import {
-  HEALTH_DATA_CONSENT_TEXT,
-  HEALTH_DATA_TRANSFER_HREF,
-  PATIENT_CONSENT_POLICIES,
-  POLICIES,
-  policyVersions,
-} from '@/lib/policies'
+import { PATIENT_CONSENT_POLICIES, POLICIES, policyVersions } from '@/lib/policies'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
 
@@ -134,7 +128,6 @@ export default function PatientInvitePage() {
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
   const [agreeTerms, setAgreeTerms] = useState(false)
-  const [agreeHealth, setAgreeHealth] = useState(false)
   const [accepting, setAccepting] = useState(false)
   const [acceptError, setAcceptError] = useState<string | null>(null)
 
@@ -169,8 +162,8 @@ export default function PatientInvitePage() {
       toast.error('Add your first and last name.')
       return
     }
-    if (!agreeTerms || !agreeHealth) {
-      toast.error('Tick both boxes to continue.')
+    if (!agreeTerms) {
+      toast.error('Agree to the Terms of Service and Privacy Policy to continue.')
       return
     }
     setAccepting(true)
@@ -299,28 +292,17 @@ export default function PatientInvitePage() {
               </div>
             </div>
 
-            <div className="space-y-2.5">
-              <label className="flex cursor-pointer items-start gap-3 rounded-2xl bg-pt-sunken p-4 text-sm leading-relaxed">
-                <input type="checkbox" checked={agreeTerms} onChange={(e) => setAgreeTerms(e.target.checked)} className="mt-1 h-4 w-4 shrink-0 accent-[#00cd0f]" />
-                <span>
-                  I agree to the{' '}
-                  <a href={POLICIES.terms.href} target="_blank" rel="noopener noreferrer" className={link}>Terms of Service</a>{' '}
-                  and the{' '}
-                  <a href={POLICIES.privacy.href} target="_blank" rel="noopener noreferrer" className={link}>Privacy Policy</a>.
-                </span>
-              </label>
-              <label className="flex cursor-pointer items-start gap-3 rounded-2xl bg-pt-sunken p-4 text-sm leading-relaxed">
-                <input type="checkbox" checked={agreeHealth} onChange={(e) => setAgreeHealth(e.target.checked)} className="mt-1 h-4 w-4 shrink-0 accent-[#00cd0f]" />
-                <span>
-                  {HEALTH_DATA_CONSENT_TEXT}{' '}
-                  <a href={POLICIES.health_data.href} target="_blank" rel="noopener noreferrer" className={link}>How we use it</a>
-                  {' · '}
-                  <a href={HEALTH_DATA_TRANSFER_HREF} target="_blank" rel="noopener noreferrer" className={link}>Transfers outside Nigeria</a>
-                </span>
-              </label>
-            </div>
+            <label className="flex cursor-pointer items-start gap-3 rounded-2xl bg-pt-sunken p-4 text-sm leading-relaxed">
+              <input type="checkbox" checked={agreeTerms} onChange={(e) => setAgreeTerms(e.target.checked)} className="mt-1 h-4 w-4 shrink-0 accent-[#00cd0f]" />
+              <span>
+                I agree to the{' '}
+                <a href={POLICIES.terms.href} target="_blank" rel="noopener noreferrer" className={link}>Terms of Service</a>{' '}
+                and the{' '}
+                <a href={POLICIES.privacy.href} target="_blank" rel="noopener noreferrer" className={link}>Privacy Policy</a>.
+              </span>
+            </label>
 
-            <Button onClick={() => void accept()} disabled={accepting || !agreeTerms || !agreeHealth} className={cn(accentButtonClass, 'h-12 w-full text-base')}>
+            <Button onClick={() => void accept()} disabled={accepting || !agreeTerms} className={cn(accentButtonClass, 'h-12 w-full text-base')}>
               {accepting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}
               Accept and open my portal
             </Button>

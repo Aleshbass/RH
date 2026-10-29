@@ -1,125 +1,101 @@
-// /Users/ella/rehabifyhealth/app/(onboarding)/role-selection/page.tsx
 'use client';
 
-import { FileText, User, Building2, Heart, HeartHandshake } from '@/components/icons'
+/**
+ * Where every sign-in and sign-up without a fixed destination lands. It works out who the person
+ * is and opens their onboarding without asking: the ?as= they picked, the role they already started
+ * with, a partner organisation waiting for them, or the choice remembered from "Get started"
+ * (browser, then Clerk sign-up metadata). Only someone we know nothing about sees the picker.
+ */
 import React, { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useAuth } from '@clerk/nextjs';
-import { useOnboardingStore, UserRole } from '@/stores/onboardingStore';
-// Add this type that excludes 'admin' from UserRole
-type OnboardingRole = Exclude<UserRole, 'admin'>;
-import { useMutation } from 'convex/react';
+import { useAuth, useUser } from '@clerk/nextjs';
+import { useMutation, useQuery } from 'convex/react';
 import { api } from '@/convex/_generated/api';
-import { useQuery } from 'convex/react';
+import { Loader2 } from '@/components/icons';
+import { INTENT_ICONS } from '@/components/auth/GetStartedMenu';
+import { useOnboardingStore, UserRole } from '@/stores/onboardingStore';
 import { programError } from '@/components/exercise-programs/errors';
+import { cn } from '@/lib/utils';
 import {
   forgetIntent,
   onboardingPathFor,
   parseIntent,
+  PRIMARY_INTENTS,
   readRememberedIntent,
   roleForIntent,
+  SECONDARY_INTENTS,
+  SIGNUP_INTENTS,
   type SignupIntent,
 } from '@/lib/auth/signupIntent';
+
+type OnboardingRole = Exclude<UserRole, 'admin'>;
 
 // A simple way to generate a unique ID for the onboarding session
 const generateOnboardingId = () => `onboarding_${new Date().getTime()}_${Math.random().toString(36).substring(2, 10)}`;
 
-type CardIntent = Exclude<SignupIntent, 'partner'>;
+const DASHBOARD_ROLES = new Set(['physiotherapist', 'clinic_owner', 'patient', 'family_member', 'doctor', 'admin', 'clinic_staff']);
 
-const SETTING_UP_LABELS: Record<CardIntent, string> = {
-  patient: 'patient',
-  physiotherapist: 'physiotherapist',
-  clinic_owner: 'clinic',
-  doctor: 'referring doctor',
-  family: 'caregiver',
-};
+type AccountLike = { role?: string | null; patientProfileId?: unknown };
 
-const DASHBOARD_ROLES = new Set(['physiotherapist', 'clinic_owner', 'patient', 'doctor', 'admin', 'clinic_staff']);
-
-const CARDS: { intent: CardIntent; title: string; body: string; icon: React.ComponentType<{ className?: string }>; tone: string }[] = [
-  { intent: 'patient', title: 'Patient', body: 'I need care or have an invitation link.', icon: Heart, tone: 'blue' },
-  { intent: 'physiotherapist', title: 'Physiotherapist', body: 'I treat patients and want to manage my practice.', icon: User, tone: 'teal' },
-  { intent: 'clinic_owner', title: 'Clinic Owner', body: 'I run a facility and manage multiple staff.', icon: Building2, tone: 'emerald' },
-  { intent: 'doctor', title: 'Referring Doctor', body: 'I want to refer my patients for physio.', icon: FileText, tone: 'green' },
-  { intent: 'family', title: 'Family / Caregiver', body: 'I want to arrange care for someone I look after.', icon: HeartHandshake, tone: 'rose' },
-];
-
-// Full class names so Tailwind keeps them
-const TONES: Record<string, { idle: string; active: string; icon: string }> = {
-  blue: { idle: 'border-blue-100 hover:border-blue-500', active: 'border-blue-500 ring-2 ring-blue-200', icon: 'bg-blue-50 text-blue-600 group-hover:bg-blue-500' },
-  teal: { idle: 'border-teal-100 hover:border-teal-500', active: 'border-teal-500 ring-2 ring-teal-200', icon: 'bg-teal-50 text-teal-600 group-hover:bg-teal-500' },
-  emerald: { idle: 'border-emerald-100 hover:border-emerald-500', active: 'border-emerald-500 ring-2 ring-emerald-200', icon: 'bg-emerald-50 text-emerald-600 group-hover:bg-emerald-500' },
-  green: { idle: 'border-green-100 hover:border-green-500', active: 'border-green-500 ring-2 ring-green-200', icon: 'bg-green-50 text-green-600 group-hover:bg-green-500' },
-  rose: { idle: 'border-rose-100 hover:border-rose-400', active: 'border-rose-400 ring-2 ring-rose-200', icon: 'bg-rose-50 text-rose-500 group-hover:bg-rose-400' },
-};
+/** Where an account that already has a role, but hasn't finished setting up, carries on. */
+function resumePathFor(user: AccountLike): string | null {
+  switch (user.role) {
+    case 'physiotherapist':
+    case 'clinic_owner':
+    case 'doctor':
+    case 'partner':
+      return onboardingPathFor(user.role);
+    case 'patient':
+      return user.patientProfileId ? '/dashboard/patient' : onboardingPathFor('patient');
+    case 'family_member':
+      return onboardingPathFor('family');
+    case 'admin':
+    case 'clinic_staff':
+      return '/dashboard';
+    default:
+      return null;
+  }
+}
 
 function RoleSelectionContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { isLoaded: authLoaded, isSignedIn } = useAuth();
+  const { user: clerkUser, isLoaded: clerkUserLoaded } = useUser();
   const { setRoleAndStep, setCurrentOnboardingId, setActualClinicId } = useOnboardingStore();
   const updateUserRole = useMutation(api.users.updateUserRole);
-  const [loadingIntent, setLoadingIntent] = useState<CardIntent | null>(null);
   const currentUser = useQuery(api.users.getMyUser);
+  const partnerData = useQuery(api.partners.getCurrentUserPartner, isSignedIn ? {} : 'skip');
   // Admins can pause new registrations per role (/dashboard/admin/system); the server enforces it too
   const platform = useQuery(api.platformSettings.getPublicPlatformStatus);
   const isPaused = (role: OnboardingRole) => {
     if (!platform || currentUser?.role === role) return false;
-    if (role === 'patient') return !platform.allowPatientSignups;
+    if (role === 'patient' || role === 'family_member') return !platform.allowPatientSignups;
     if (role === 'physiotherapist') return !platform.allowPhysioSignups;
     if (role === 'clinic_owner') return !platform.allowClinicSignups;
+    if (role === 'doctor') return platform.allowDoctorSignups === false;
     return false;
   };
 
   // Chosen before sign-up ("Get started", the sign-up page, or ?role= on older links)
   const urlIntent = parseIntent(searchParams.get('as')) ?? parseIntent(searchParams.get('role'));
-  const [suggested, setSuggested] = useState<SignupIntent | null>(urlIntent);
-  useEffect(() => {
-    if (!urlIntent) setSuggested(readRememberedIntent());
-  }, [urlIntent]);
-  const autoAppliedRef = useRef(false);
+  const [remembered, setRemembered] = useState<SignupIntent | null | undefined>(undefined);
+  useEffect(() => setRemembered(readRememberedIntent()), []);
+  const signupMetadata = clerkUser?.unsafeMetadata?.signupIntent;
+  const metadataIntent = parseIntent(typeof signupMetadata === 'string' ? signupMetadata : null);
 
-  // If user already completed onboarding, check their approval status
-  useEffect(() => {
-    // Check for pending patient invitation first
-    const pendingInvite = typeof window !== 'undefined' ? localStorage.getItem('rehabify_pending_invite') : null
-    // Patient invites are only for new or patient accounts; a staff account just drops the stale code
-    if (pendingInvite && currentUser?.role && currentUser.role !== 'patient') {
-      localStorage.removeItem('rehabify_pending_invite')
-    } else if (pendingInvite && currentUser !== undefined) {
-      // User has a pending invitation, redirect to complete it
-      router.replace(`/patient-invite/${pendingInvite}`)
-      return
-    }
+  const [loadingIntent, setLoadingIntent] = useState<SignupIntent | null>(null);
+  const [showPicker, setShowPicker] = useState(false);
+  const [suggested, setSuggested] = useState<SignupIntent | null>(null);
+  const decidedRef = useRef(false);
 
-    // A finished account never picks again; the dashboard routes it by role (and checks approval).
-    // Only roles /dashboard knows, or it would send the user straight back here.
-    if (currentUser && currentUser.onboarded && currentUser.role) {
-      if (currentUser.role === 'partner') router.replace('/partners/portal');
-      else if (DASHBOARD_ROLES.has(currentUser.role)) router.replace('/dashboard');
+  const handleSelect = async (intent: SignupIntent) => {
+    if (intent === 'partner') {
+      forgetIntent();
+      router.push(onboardingPathFor('partner'));
       return;
     }
-
-    // Arriving signed out (an old link): sign up first, keeping the choice
-    if (authLoaded && !isSignedIn && urlIntent) {
-      router.replace(`/sign-up?as=${urlIntent}`);
-      return;
-    }
-
-    // They already said who they are before signing up: set it up without asking again
-    if (!urlIntent || autoAppliedRef.current || !currentUser || platform === undefined) return;
-    autoAppliedRef.current = true;
-    if (urlIntent === 'partner') {
-      router.replace(onboardingPathFor('partner'));
-      return;
-    }
-    const role = roleForIntent(urlIntent) as OnboardingRole;
-    if (!isPaused(role)) void handleSelect(urlIntent);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs once the user and platform status have loaded
-  }, [currentUser, router, authLoaded, isSignedIn, urlIntent, platform]);
-
-  const handleSelect = async (intent: CardIntent) => {
     const role = roleForIntent(intent) as OnboardingRole;
     if (isPaused(role)) {
       import('sonner').then(({ toast }) => toast.error('New registrations for this account type are paused right now.'));
@@ -132,8 +108,7 @@ function RoleSelectionContent() {
       await updateUserRole({ role });
 
       // Update the client-side store
-      const newOnboardingId = generateOnboardingId();
-      setCurrentOnboardingId(newOnboardingId); // Store the unique ID for this onboarding attempt
+      setCurrentOnboardingId(generateOnboardingId()); // Store the unique ID for this onboarding attempt
       setActualClinicId(undefined); // Clear any previous clinic ID to prevent auth errors
       setRoleAndStep(role, 1); // Set role and start at step 1
       forgetIntent();
@@ -144,67 +119,152 @@ function RoleSelectionContent() {
       console.error('Error updating user role:', error);
       import('sonner').then(({ toast }) => toast.error(programError(error, 'Failed to update role. Please try again.')));
       setLoadingIntent(null);
+      setShowPicker(true);
     }
   };
 
-  const settingUp = loadingIntent ? SETTING_UP_LABELS[loadingIntent] : null;
+  // They already said who they are: set it up without asking (a paused role shows the picker instead)
+  const applyIntent = (intent: SignupIntent) => {
+    const role = roleForIntent(intent);
+    if (role && isPaused(role as OnboardingRole)) {
+      setSuggested(intent);
+      setShowPicker(true);
+      return;
+    }
+    void handleSelect(intent);
+  };
 
-  return (
-    <div className="flex flex-col items-center justify-center min-h-screen p-4 bg-rh-canvas">
-      <div className="w-full max-w-2xl shadow-xl bg-white/80 backdrop-blur-md rounded-xl p-8">
-        <div className="text-center mb-6">
-          <h1 className="text-3xl font-semibold text-rh-ink">
-            Welcome to Rehabify Health!
-          </h1>
-          <p className="text-lg text-rh-ink/70 pt-2" role="status">
-            {settingUp ? `Setting up your ${settingUp} account…` : 'Please select your role to get started.'}
-          </p>
-        </div>
-        <div className="grid gap-4 mt-8 sm:grid-cols-2">
-          {CARDS.map(({ intent, title, body, icon: Icon, tone }) => {
-            const role = roleForIntent(intent) as OnboardingRole;
-            const paused = isPaused(role);
-            const styles = TONES[tone];
-            const isSuggested = suggested === intent && !loadingIntent;
-            return (
-              <button
-                key={intent}
-                onClick={() => void handleSelect(intent)}
-                disabled={loadingIntent !== null || paused}
-                className={`p-6 bg-white border-2 rounded-2xl text-left transition-all duration-200 group relative overflow-hidden ${
-                  loadingIntent === intent ? `${styles.active} opacity-80` : isSuggested ? `${styles.active} hover:shadow-md` : `${styles.idle} hover:shadow-md`
-                }`}
-              >
-                {isSuggested && (
-                  <span className="absolute right-4 top-4 rounded-full bg-teal-700 px-2 py-0.5 text-[10px] font-bold text-white">Your choice</span>
-                )}
-                <div className={`w-12 h-12 rounded-xl flex items-center justify-center mb-4 group-hover:text-white transition-colors ${styles.icon}`}>
-                  <Icon className="w-6 h-6" />
-                </div>
-                <h3 className="text-xl font-bold text-gray-900 mb-1">{title}</h3>
-                <p className="text-sm text-gray-500">{body}</p>
-                {paused && <p className="mt-2 text-xs font-medium text-amber-700">New registrations are paused</p>}
-              </button>
-            );
-          })}
-        </div>
-        <p className="mt-6 text-center text-sm text-gray-600">
-          Representing an HMO, insurer or employer?{' '}
-          <Link href={onboardingPathFor('partner')} className="font-semibold text-teal-700 hover:underline">
-            Apply for partner access
-          </Link>
+  useEffect(() => {
+    if (decidedRef.current || !authLoaded) return;
+
+    // Arriving signed out (an old link): sign up first, keeping the choice
+    if (!isSignedIn) {
+      decidedRef.current = true;
+      router.replace(urlIntent ? `/sign-up?as=${urlIntent}` : '/sign-up');
+      return;
+    }
+
+    // Wait for the account (created just after sign-up) and everything that decides where it goes
+    if (!currentUser || platform === undefined || partnerData === undefined || remembered === undefined || !clerkUserLoaded) return;
+    decidedRef.current = true;
+
+    // A pending patient invitation comes first. Invites are only for new or patient accounts;
+    // a staff account just drops the stale code
+    const pendingInvite = localStorage.getItem('rehabify_pending_invite');
+    if (pendingInvite && currentUser.role && currentUser.role !== 'patient') {
+      localStorage.removeItem('rehabify_pending_invite');
+    } else if (pendingInvite) {
+      router.replace(`/patient-invite/${pendingInvite}`);
+      return;
+    }
+
+    // A finished account never picks again; the dashboard routes it by role (and checks approval)
+    if (currentUser.onboarded && currentUser.role) {
+      const done =
+        currentUser.role === 'partner' ? '/partners/portal' : DASHBOARD_ROLES.has(currentUser.role) ? '/dashboard' : resumePathFor(currentUser);
+      if (done) {
+        router.replace(done);
+        return;
+      }
+    }
+
+    if (urlIntent) {
+      applyIntent(urlIntent);
+      return;
+    }
+
+    // Started setting up as someone already: carry on there
+    const resume = currentUser.role ? resumePathFor(currentUser) : null;
+    if (resume) {
+      router.replace(resume);
+      return;
+    }
+
+    // An organisation is waiting for them (created by our team, or applied for already)
+    if (partnerData?.partner) {
+      router.replace(onboardingPathFor('partner'));
+      return;
+    }
+
+    const known = remembered ?? metadataIntent;
+    if (known) applyIntent(known);
+    else setShowPicker(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- decides once, when everything has loaded
+  }, [authLoaded, isSignedIn, currentUser, platform, partnerData, remembered, clerkUserLoaded, metadataIntent, urlIntent, router]);
+
+  if (!showPicker || loadingIntent) {
+    const settingUp = loadingIntent ? SIGNUP_INTENTS[loadingIntent].chip.toLowerCase() : null;
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-rh-canvas px-4 text-center" role="status">
+        <Loader2 className="h-6 w-6 animate-spin text-rh-ink/60" />
+        <p className="text-sm font-medium text-rh-ink/70">
+          {settingUp ? `Setting up your ${settingUp} account…` : 'Setting up your account…'}
         </p>
       </div>
-      <p className="mt-8 text-sm text-gray-600">
-        Rehabify Health © {new Date().getFullYear()}
-      </p>
+    );
+  }
+
+  const row = (intent: SignupIntent, compact: boolean) => {
+    const Icon = INTENT_ICONS[intent];
+    const details = SIGNUP_INTENTS[intent];
+    const role = roleForIntent(intent);
+    const paused = role ? isPaused(role as OnboardingRole) : false;
+    return (
+      <button
+        key={intent}
+        type="button"
+        onClick={() => void handleSelect(intent)}
+        disabled={paused}
+        className={cn(
+          'group flex w-full items-center gap-3 rounded-xl px-3 text-left transition-colors hover:bg-rh-canvas focus-visible:bg-rh-canvas focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent',
+          compact ? 'py-2' : 'py-3',
+          suggested === intent && 'bg-rh-canvas ring-1 ring-inset ring-rh-ink/10'
+        )}
+      >
+        <span
+          className={cn(
+            'flex shrink-0 items-center justify-center rounded-lg bg-rh-canvas text-rh-ink transition-colors group-hover:bg-rh-lime',
+            compact ? 'h-8 w-8' : 'h-10 w-10'
+          )}
+        >
+          <Icon className={compact ? 'h-3.5 w-3.5' : 'h-4 w-4'} />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className={cn('block font-semibold text-rh-ink', compact ? 'text-sm' : 'text-[15px]')}>{details.menuLabel}</span>
+          {!compact && <span className="mt-0.5 block text-[13px] text-rh-ink/55">{details.description}</span>}
+          {paused && <span className="mt-0.5 block text-xs font-medium text-amber-700">New registrations are paused</span>}
+        </span>
+      </button>
+    );
+  };
+
+  return (
+    <div className="flex min-h-screen flex-col items-center justify-center bg-rh-canvas px-4 pb-10 pt-28">
+      <div className="w-full max-w-md">
+        <h1 className="text-center text-2xl font-semibold tracking-tight text-rh-ink sm:text-3xl">Who are you joining as?</h1>
+        <p className="mt-2 text-center text-sm text-rh-ink/60">We&apos;ll open the right setup for you.</p>
+        <div className="mt-6 rounded-3xl bg-white p-2 shadow-soft">
+          <div className="space-y-1">{PRIMARY_INTENTS.map((intent) => row(intent, false))}</div>
+          <div className="mx-3 my-2 h-px bg-rh-ink/[0.06]" role="separator" />
+          <div className="space-y-0.5">{SECONDARY_INTENTS.map((intent) => row(intent, true))}</div>
+        </div>
+        <p className="mt-6 text-center text-xs text-rh-ink/50">
+          Need help? <Link href="/contact" className="font-semibold text-rh-ink underline-offset-4 hover:underline">Contact us</Link>
+        </p>
+      </div>
     </div>
   );
 }
 
 export default function RoleSelectionPage() {
   return (
-    <React.Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-rh-canvas">Loading...</div>}>
+    <React.Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center bg-rh-canvas">
+          <Loader2 className="h-6 w-6 animate-spin text-rh-ink/60" />
+        </div>
+      }
+    >
       <RoleSelectionContent />
     </React.Suspense>
   );

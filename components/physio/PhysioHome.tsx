@@ -41,6 +41,7 @@ import { isVideoVisit, type AppointmentLike } from '@/components/appointments/ap
 import { isOpenAppointment } from '@/convex/helpers/appointmentStatus'
 import { lagosTime } from '@/convex/helpers/lagosTime'
 import { SetupChecklistCard, type SetupStatus } from '@/components/physio/SetupChecklist'
+import { PracticeModePrompt } from '@/components/physio/PracticeModePrompt'
 import { PHYSIO_HOME } from '@/components/physio/PhysioSidebar'
 import { PainPill } from '@/components/physio/workspace/shared'
 import { RehabifyId } from '@/components/shared/RehabifyId'
@@ -642,6 +643,8 @@ export function PhysioHome({ setup }: { setup: SetupStatus | null | undefined })
   return (
     <PageContainer className="max-w-7xl">
       <Hero firstName={user?.firstName} clinicName={clinicInfo?.name} todayCount={todayActive?.length} attentionCount={attention?.length} />
+
+      <PracticeModePrompt setup={setup} />
 
       {setup && <SetupChecklistCard setup={setup} />}
 

@@ -22,7 +22,8 @@ export type SetupStatus = {
   isListed: boolean
   isBookable: boolean
   /** "independent" sees only their own patients (never listed or matched to Rehabify patients). */
-  practiceMode?: 'network' | 'independent' | 'both'
+  /** null: applied before the question existed and hasn't answered yet (treated as network). */
+  practiceMode?: 'network' | 'independent' | 'both' | null
   isClinicMember?: boolean
 }
 

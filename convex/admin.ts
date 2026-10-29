@@ -1321,7 +1321,8 @@ const HELD_STATUSES = new Set<string>(["scheduled", "confirmed", "completed", "n
 
 type CaseloadSource = "rehabify" | "own" | "clinic";
 type CaseloadStatus = "active_episode" | "upcoming" | "recent" | "new";
-type DirectoryMode = "network" | "independent" | "both" | "clinic";
+/** "unset": applied before physios were asked Rehabify vs independent (still served as network). */
+type DirectoryMode = "network" | "independent" | "both" | "clinic" | "unset";
 type DirectoryApproval = "approved" | "pending_review" | "declined" | "not_submitted";
 type Relationship = Doc<"patientPhysiotherapistRelationships">;
 
@@ -1367,7 +1368,7 @@ function physioClinicId(user: Doc<"users">, profile: Doc<"physiotherapistProfile
 
 function directoryMode(profile: Doc<"physiotherapistProfiles"> | null, clinicId: Id<"clinics"> | null): DirectoryMode {
   if (clinicId) return "clinic";
-  return profile?.practiceMode ?? "network";
+  return profile?.practiceMode ?? "unset";
 }
 
 /** Suspended or removed: the same test marketplace search uses. */

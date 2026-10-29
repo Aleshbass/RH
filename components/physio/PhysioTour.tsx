@@ -8,6 +8,7 @@ import { PlayCircle, X } from '@/components/icons'
 import { api } from '@/convex/_generated/api'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { isDialogOpen, markTourOpen } from '@/lib/overlayTurn'
 import { primaryButtonClass } from '@/components/clinic/ui'
 import { PhysioGuideVideoModal } from '@/components/dashboard/shared/PhysioGuideVideoModal'
 
@@ -124,10 +125,24 @@ export function PhysioTour({ firstName, enabled }: { firstName?: string; enabled
       writeLocalVersion()
       return
     }
-    // Let the page settle first so the greeting doesn't flash in during loading
-    const timer = window.setTimeout(() => setPhase((p) => (p === 'hidden' ? 'welcome' : p)), 700)
+    // Let the page settle first so the greeting doesn't flash in during loading, and wait for a
+    // dialog that's already open (app setup): two overlays at once block each other's buttons
+    let timer = 0
+    const greet = () => {
+      if (isDialogOpen()) timer = window.setTimeout(greet, 1000)
+      else setPhase((p) => (p === 'hidden' ? 'welcome' : p))
+    }
+    timer = window.setTimeout(greet, 700)
     return () => window.clearTimeout(timer)
   }, [enabled, status])
+
+  // While the tour is on screen, the app setup prompt waits for it
+  const showing = phase !== 'hidden'
+  useEffect(() => {
+    if (!showing) return
+    markTourOpen(true)
+    return () => markTourOpen(false)
+  }, [showing])
 
   const finish = useCallback(() => {
     setPhase('hidden')

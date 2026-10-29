@@ -166,8 +166,13 @@ export default function CustomSignUp({
   };
 
   const busy = pending !== null || google.loading;
-  // Returning users go to their own dashboard; only a page's explicit redirect carries over
-  const signInHref = explicitRedirect ? authHref(routes.signIn, redirectTarget, routes.defaultRedirect.signUp) : routes.signIn;
+  // A page's explicit redirect carries over, else the chosen role (so a new Google account made from
+  // "Sign in" still opens its onboarding); returning users still end up on their own dashboard
+  const signInHref = explicitRedirect
+    ? authHref(routes.signIn, redirectTarget, routes.defaultRedirect.signUp)
+    : !isPartner && intent
+      ? `${routes.signIn}?as=${intent}`
+      : routes.signIn;
 
   const clearFieldError = (field: FieldName) => {
     if (fieldErrors[field]) setFieldErrors((current) => ({ ...current, [field]: undefined }));

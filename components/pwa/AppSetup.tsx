@@ -36,6 +36,7 @@ import {
   type Device,
   type SavedDevice,
 } from '@/lib/pwa';
+import { whenNoTourOpen } from '@/lib/overlayTurn';
 import { cn } from '@/lib/utils';
 
 // Plain references: the generated api type is at TypeScript's depth limit (TS2589)
@@ -514,8 +515,15 @@ export function AppSetupPrompt() {
     if (need === 'blocked') return;
     autoOpened.current = true;
     if (appSetupSnoozed()) return;
-    const timer = window.setTimeout(openAppSetup, 1500);
-    return () => window.clearTimeout(timer);
+    // A welcome tour on screen goes first: two overlays at once block each other's buttons
+    let cancelWait: () => void = () => undefined;
+    const timer = window.setTimeout(() => {
+      cancelWait = whenNoTourOpen(() => window.setTimeout(openAppSetup, 600));
+    }, 1500);
+    return () => {
+      window.clearTimeout(timer);
+      cancelWait();
+    };
   }, [need]);
 
   // Notifications already on: make sure this device is saved for whoever is signed in now

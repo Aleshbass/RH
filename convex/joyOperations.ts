@@ -166,8 +166,8 @@ export const executeMutation = internalMutation({
       });
     }
     if (op === "patient_record_consents") {
-      // Terms, Privacy and the health information consent accepted on WhatsApp at the first chat.
-      // data.accepted = { terms: "<version>", privacy: "<version>", health_data: "<version>" } with
+      // Terms and Privacy accepted on WhatsApp at the first chat (a health_data entry from older
+      // templates is ignored). data.accepted = { terms: "<version>", privacy: "<version>" } with
       // the versions Joy showed (GET /api/v1/joy/policy/consents). Append-only, channel "whatsapp".
       const patient = await patientForActor(ctx, String(data.patient_id), data.actor);
       const accepted: Record<string, string> = {};
@@ -205,8 +205,8 @@ export const executeMutation = internalMutation({
  * Patient operations added in Oct 2026 (additive; Joy's templates live outside this repo):
  *  - patient_consent_status (query) { patient_id } -> { consents_required: [{ policy_id, title,
  *    version, url, acceptance_text }] }: what to ask at the first chat (empty when nothing).
- *  - patient_record_consents (mutation) { patient_id, accepted: { terms, privacy, health_data:
- *    version }, conversation_id? } -> { recorded, outdated, consents_required }.
+ *  - patient_record_consents (mutation) { patient_id, accepted: { terms, privacy: version },
+ *    conversation_id? } -> { recorded, outdated, consents_required }.
  *  - patient_recovery_plan (query) { patient_id } -> { plan: "basic" | "flex" | "flex_max",
  *    flex_max_active, expires_at, flex_max_on_sale, joy_reminders_allowed }: switch on Flex Max
  *    reminders and support when joy_reminders_allowed (helpers/patientPlans.ts recoveryPlanForJoy).

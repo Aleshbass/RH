@@ -246,8 +246,10 @@ export const GUIDES: Record<string, Guide> = {
   'outcome:mskhq': {
     how: 'The patient answers the 14 questions on the official form about the last two weeks. Each scores 0–4; enter the total (0–56). Higher is better.',
     form: {
-      label: 'Official form',
-      url: 'https://innovation.ox.ac.uk/wp-content/uploads/2017/04/FINAL_OFFICIAL_ARUK_MSK-HQ_English_UK_Sample-COPY.pdf',
+      label: 'Official form and licence',
+      // Oxford University Innovation's page (sample form, scoring guide, licence request). Its PDFs
+      // move when the site changes (the old /wp-content/ link went 404); this page address redirects.
+      url: 'https://innovation.ox.ac.uk/licence-details/arthritis-uk-musculoskeletal-health-questionnaire-msk-hq',
     },
   },
   'outcome:lefs': {
