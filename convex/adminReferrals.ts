@@ -5,6 +5,7 @@ import { Doc, Id } from "./_generated/dataModel";
 import { markProviderMatched, transitionReferral } from "./helpers/partnerEvents";
 import { referralEnv } from "./helpers/partnerShared";
 import { notifyReferralAssigned } from "./pushAlerts";
+import { notifyDoctorOfCareTeam } from "./helpers/doctorReferralUpdates";
 
 type ReferralStatus = Doc<"inboundReferrals">["status"];
 
@@ -175,6 +176,8 @@ export const getInboundReferrals = query({
                     partnerLogoUrl: partner?.logoUrl || null,
                     assignedPhysiotherapistName: personName(physio),
                     assignedClinicName: clinic?.name ?? null,
+                    // Letter a referring doctor attached (opens from the referral dialog)
+                    referralLetterUrl: referral.referralLetterStorageId ? await ctx.storage.getUrl(referral.referralLetterStorageId) : null,
                 };
             })
         );
@@ -367,6 +370,8 @@ export const assignReferralToClinic = mutation({
         // Newly routed here: the clinic hears about it on their phones (pushAlerts.ts)
         if (clinic && args.clinicId !== referral.assignedClinicId) {
             await notifyReferralAssigned(ctx, clinic, referral);
+            // A referring doctor sees which clinic is looking after their patient
+            await notifyDoctorOfCareTeam(ctx, args.referralId, { clinicId: clinic._id });
         }
 
         await ctx.db.insert("referralEvents", {

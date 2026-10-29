@@ -1088,10 +1088,40 @@ export default defineSchema({
     status: v.union(v.literal("pending"), v.literal("active"), v.literal("revoked")), // Access status
     grantedAt: v.number(),             // Timestamp when access was granted/requested
     expiresAt: v.optional(v.number()), // Optional expiry for access
+    // Care circle (convex/careCircle.ts). Permissions: "view_progress" always; "book" and "pay"
+    // (book visits and pay for them); "message" (write to the care team). Joy uses the same words.
+    /** The caregiver set this person up and manages their profile (e.g. an elderly parent) */
+    managed: v.optional(v.boolean()),
+    /** How access started: the patient (or their clinic) invited them, the caregiver added the person, or Joy */
+    source: v.optional(v.union(v.literal("invite"), v.literal("caregiver"), v.literal("joy"))),
+    invitedBy: v.optional(v.id("users")),
+    updatedAt: v.optional(v.number()),
   })
     .index("by_patient_user_id", ["patientUserId"])
     .index("by_family_member_user_id", ["familyMemberUserId"])
     .index("by_patient_and_family_member", ["patientUserId", "familyMemberUserId"]),
+
+  // Care circle invites: a patient (or their clinic) invites a family member or caregiver by link.
+  // Accepting creates (or reuses) a familyAccessGrants row for whoever signs in with the link.
+  careCircleInvites: defineTable({
+    patientUserId: v.id("users"),
+    code: v.string(),
+    name: v.string(),
+    email: v.optional(v.string()),
+    phone: v.optional(v.string()),
+    relationship: v.string(),
+    permissions: v.array(v.string()),
+    invitedBy: v.id("users"),
+    /** Set when the patient's clinic sent it (shown on the invite page) */
+    clinicId: v.optional(v.id("clinics")),
+    status: v.union(v.literal("pending"), v.literal("accepted"), v.literal("cancelled")),
+    createdAt: v.number(),
+    expiresAt: v.number(),
+    acceptedBy: v.optional(v.id("users")),
+    acceptedAt: v.optional(v.number()),
+  })
+    .index("by_code", ["code"])
+    .index("by_patient", ["patientUserId"]),
 
   // Appointments table
   appointments: defineTable({
@@ -1858,6 +1888,11 @@ export default defineSchema({
     preferredCareMode: v.optional(v.string()), // "remote", "face_to_face", "patient_choice"
     preferredContactChannel: v.optional(v.string()), // "whatsapp", "email", "sms"
     nextStep: v.optional(v.string()), // "contact_me" or "start_joy"
+    // Where a referring doctor wants the patient seen (preferredCareMode can't tell clinic from home)
+    careSetting: v.optional(v.union(v.literal("clinic"), v.literal("home"), v.literal("online"))),
+    // Referral letter a referring doctor attached (PDF or photo)
+    referralLetterStorageId: v.optional(v.id("_storage")),
+    referralLetterName: v.optional(v.string()),
 
     // Consent tracking
     consentGranted: v.optional(v.boolean()),
@@ -4682,6 +4717,8 @@ export default defineSchema({
     allowPatientSignups: v.boolean(),
     allowPhysioSignups: v.boolean(),
     allowClinicSignups: v.boolean(),
+    // Referring doctors (partners of type "doctor"); missing on older rows = open
+    allowDoctorSignups: v.optional(v.boolean()),
     marketplaceEnabled: v.boolean(),
     supportEmail: v.optional(v.string()),
     updatedAt: v.number(),

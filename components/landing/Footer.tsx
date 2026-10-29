@@ -37,6 +37,7 @@ const Footer = () => {
             <ul className="space-y-2 text-sm">
               <li><Link href="/platform/physiotherapists" className="text-gray-300 hover:text-white transition-colors">For Physiotherapists</Link></li>
               <li><Link href="/platform/clinics" className="text-gray-300 hover:text-white transition-colors">For Clinics</Link></li>
+              <li><Link href="/platform/doctors" className="text-gray-300 hover:text-white transition-colors">For Referring Doctors</Link></li>
               <li><Link href="/physio-register" className="text-gray-300 hover:text-white transition-colors">Physio Register</Link></li>
               <li><a href="https://docs.physioaroundme.com" className="text-gray-300 hover:text-white transition-colors">Integrations</a></li>
             </ul>

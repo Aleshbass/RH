@@ -174,18 +174,20 @@ export default function FindAPhysioPage() {
             )}
           >
             {isFirstLoad && (
-              <div className={cn("grid gap-5", viewMode === "list" && "sm:grid-cols-2 xl:grid-cols-3")}>
+              <div className={cn("grid grid-cols-1 gap-5", viewMode === "list" && "sm:grid-cols-2 xl:grid-cols-3")}>
                 {Array.from({ length: 6 }, (_, index) => (
                   <div key={index} className="h-64 animate-pulse rounded-2xl bg-white/70" />
                 ))}
               </div>
             )}
 
+            {/* grid-cols-1: one column that shrinks to the phone; an auto column grows to a card's longest line */}
             {physios.length > 0 && (
-              <div className={cn("grid gap-5", viewMode === "list" && "sm:grid-cols-2 xl:grid-cols-3")}>
+              <div className={cn("grid grid-cols-1 gap-5", viewMode === "list" && "sm:grid-cols-2 xl:grid-cols-3")}>
                 {physios.map((physio) => (
                   <div
                     key={physio.id}
+                    className="min-w-0"
                     onMouseEnter={() => setHoveredPhysioId(physio.id)}
                     onMouseLeave={() => setHoveredPhysioId(null)}
                   >

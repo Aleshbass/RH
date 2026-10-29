@@ -1,5 +1,6 @@
 import { insertNotification } from "./helpers/pushNotify";
 import { query, mutation, internalMutation, internalQuery, QueryCtx, MutationCtx } from "./_generated/server";
+import { caregiverCan } from "./helpers/careCircleAccess";
 import { ConvexError, v } from "convex/values";
 import { api } from "./_generated/api";
 import { Doc, Id } from "./_generated/dataModel";
@@ -24,6 +25,8 @@ async function isInvoiceParty(ctx: QueryCtx | MutationCtx, invoice: Doc<"invoice
   if (!viewer) return false;
   if (viewer.role === "admin") return true;
   if (viewer._id === invoice.patientId || viewer._id === invoice.physiotherapistId) return true;
+  // A family member or caregiver the patient lets pay for their care
+  if (await caregiverCan(ctx, viewer._id, invoice.patientId, "pay")) return true;
   if (!invoice.clinicId) return false;
   const clinic = await ctx.db.get(invoice.clinicId);
   if (clinic && clinic.ownerId === viewer._id) return true;
@@ -931,7 +934,8 @@ export const getInvoiceById = query({
     // Physios never see what a patient paid Rehabify for Rehabify Care (patients and admins do)
     if (!fromServer && isRehabifyCareInvoice(invoice)) {
       const viewer = await getAuthenticatedUser(ctx).catch(() => null);
-      if (!viewer || (viewer._id !== invoice.patientId && viewer.role !== "admin")) return null;
+      const payer = viewer && (viewer._id === invoice.patientId || viewer.role === "admin" || (await caregiverCan(ctx, viewer._id, invoice.patientId, "pay")));
+      if (!payer) return null;
     }
     return await loadInvoicePaymentView(ctx, invoice);
   },

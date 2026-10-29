@@ -84,8 +84,9 @@ export default function CustomSignUp({
   // ?as= from "Get started" (or the older ?role=), else what the page they're returning to is for
   // (e.g. /clinic-owner); failing both, the visitor's remembered choice
   const pageIntent = intentForPath(explicitRedirect?.split("?")[0]);
-  // Invited by a clinic or physio: a patient account, with no other Rehabify options in the way
-  const invited = Boolean(explicitRedirect?.startsWith("/patient-invite/"));
+  // Invited (by a clinic or physio as a patient, to a relative's care circle, or to a clinic team):
+  // the invite already says who they'll be, so no other Rehabify options get in the way
+  const invited = Boolean(explicitRedirect && /^\/(patient-invite|care-invite|staff-invite)\//.test(explicitRedirect));
   const urlIntent = isPartner
     ? null
     : (parseIntent(searchParams?.get("as")) ??

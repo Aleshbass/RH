@@ -89,11 +89,7 @@ export async function requirePartnerAccess(
     .first();
   if (!partner) throw new ConvexError("Partner organisation not found.");
 
-  let isOwner = partner.ownerClerkId === viewer.identity.subject;
-  if (!isOwner && !partner.ownerClerkId) {
-    const email = verifiedEmail(viewer.identity);
-    isOwner = Boolean(email && partner.ownerEmail?.toLowerCase().trim() === email);
-  }
+  const isOwner = ownsPartner(partner, viewer.identity);
   if (!isOwner && !viewer.isAdmin) {
     throw new ConvexError("You do not have access to this partner organisation.");
   }
@@ -103,8 +99,35 @@ export async function requirePartnerAccess(
   if (options.requireProduction && !hasProductionAccess(partner)) {
     throw new ConvexError("Production access has not been approved yet. Request go-live from the Partner Portal.");
   }
-  const actor = viewer.isAdmin && !isOwner ? `admin:${viewer.user?._id ?? viewer.identity.subject}` : `owner:${viewer.identity.subject}`;
-  return { partner, viewer, isAdmin: viewer.isAdmin, actor };
+  return { partner, viewer, isAdmin: viewer.isAdmin, actor: actorFor(viewer, isOwner) };
+}
+
+function ownsPartner(partner: Doc<"partners">, identity: UserIdentity): boolean {
+  if (partner.ownerClerkId) return partner.ownerClerkId === identity.subject;
+  const email = verifiedEmail(identity);
+  return Boolean(email && partner.ownerEmail?.toLowerCase().trim() === email);
+}
+
+function actorFor(viewer: Viewer, isOwner: boolean): string {
+  return viewer.isAdmin && !isOwner ? `admin:${viewer.user?._id ?? viewer.identity.subject}` : `owner:${viewer.identity.subject}`;
+}
+
+/**
+ * As requirePartnerAccess (no approval checks), but null instead of an error when the viewer is
+ * signed out, the organisation doesn't exist or isn't theirs. For live queries the portal keeps
+ * subscribed to: signing out must not crash the page.
+ */
+export async function findPartnerAccess(ctx: Ctx, partnerCode: string): Promise<PartnerAccess | null> {
+  const viewer = await getViewer(ctx);
+  if (!viewer) return null;
+  const partner = await ctx.db
+    .query("partners")
+    .withIndex("by_code", (q) => q.eq("code", partnerCode))
+    .first();
+  if (!partner) return null;
+  const isOwner = ownsPartner(partner, viewer.identity);
+  if (!isOwner && !viewer.isAdmin) return null;
+  return { partner, viewer, isAdmin: viewer.isAdmin, actor: actorFor(viewer, isOwner) };
 }
 
 /** Environment-aware access: live requires production approval. */

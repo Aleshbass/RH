@@ -115,8 +115,9 @@ function nonMemberHome(role: string | null): string | null {
     case 'physiotherapist':
       return '/dashboard/physiotherapist'
     case 'patient':
-    case 'family_member':
       return '/dashboard/patient'
+    case 'family_member':
+      return '/dashboard/family'
     case 'admin':
       return '/dashboard/admin'
     case 'doctor':

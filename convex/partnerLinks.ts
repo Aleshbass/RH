@@ -18,7 +18,7 @@ import {
   toPublicStatus,
 } from "./helpers/partnerShared";
 import { referralLinkView } from "./helpers/partnerReferralCore";
-import { attributeUserToLink } from "./helpers/partnerAttribution";
+import { attributeUserToLink, attributeUserToReferral, findOpenReferralForPatient } from "./helpers/partnerAttribution";
 
 const envV = v.union(v.literal("sandbox"), v.literal("live"));
 
@@ -166,6 +166,13 @@ export const claimReferralAttribution = mutation({
     const viewer = await requireViewer(ctx);
     if (!viewer.user) return { attributed: false, reason: "user_not_ready" };
     const result = await attributeUserToLink(ctx, viewer.user, args.publicCode, "referral_link", { countSignup: true });
+    // The request they sent from that link (same phone) now belongs to their account, so it moves
+    // along with their care and the referrer sees it
+    const me = await ctx.db.get(viewer.user._id);
+    if (me && !me.linkedReferralId) {
+      const lead = await findOpenReferralForPatient(ctx, me);
+      if (lead && lead.partnerId === me.referredByPartnerCode) await attributeUserToReferral(ctx, me._id, lead);
+    }
     return { attributed: result.attributed, reason: result.reason ?? null };
   },
 });

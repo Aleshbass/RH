@@ -4,7 +4,8 @@ import { v } from "convex/values";
 import { internalAction } from "../../_generated/server";
 import { Resend } from 'resend';
 import { escapeHtml } from "../../helpers/escapeHtml";
-import { actions, button, emailDate, greeting, linkFallback, paragraph, qrCode, renderEmail } from "../../../lib/email/layout";
+import { actions, button, emailDate, greeting, linkFallback, paragraph, renderEmail } from "../../../lib/email/layout";
+import { qrBlock } from "./qrImage";
 
 /**
  * Patient invitation emails. These are internal actions: they are run by
@@ -64,10 +65,8 @@ export const sendPatientInvitationEmail = internalAction({
         normalizedInvitationLink = `${PRODUCTION_BASE}/patient-invite/${args.invitationCode}`;
       }
 
-      // Create QR code URL (external service) and email HTML content
-      const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(
-        normalizedInvitationLink
-      )}`;
+      // The QR is made here and stored with us: the link carries the invite's secret code
+      const qr = await qrBlock(ctx, normalizedInvitationLink, 'Or scan to begin', escapeHtml);
       const link = escapeHtml(normalizedInvitationLink);
       const emailHtml = renderEmail({
         eyebrow: 'Invitation',
@@ -77,7 +76,7 @@ export const sendPatientInvitationEmail = internalAction({
           greeting(escapeHtml(args.patientName || args.patientEmail.split('@')[0] || 'there')),
           paragraph(`<strong>${escapeHtml(inviter)}</strong> has invited you to your patient portal on Rehabify Health: your appointments, home exercises and messages with them in one place.`),
           actions(button('Open your patient portal', link)),
-          qrCode(escapeHtml(qrUrl), 'Or scan to begin'),
+          qr,
           linkFallback(link),
           paragraph(`This invitation expires on <strong>${emailDate(args.expiresAt)}</strong>. If you have any questions, please contact your physiotherapist directly.`, { muted: true, size: 15 }),
         ].join(''),
@@ -188,9 +187,7 @@ export const sendInvitationReminderEmail = internalAction({
         normalizedInvitationLink = `${PRODUCTION_BASE}/patient-invite/${args.invitationCode}`;
       }
 
-      const reminderQrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(
-        normalizedInvitationLink
-      )}`;
+      const qr = await qrBlock(ctx, normalizedInvitationLink, 'Or scan to continue', escapeHtml);
       const link = escapeHtml(normalizedInvitationLink);
       const emailHtml = renderEmail({
         eyebrow: 'Reminder',
@@ -200,7 +197,7 @@ export const sendInvitationReminderEmail = internalAction({
           greeting(escapeHtml(args.patientName || args.patientEmail.split('@')[0] || 'there')),
           paragraph(`A friendly reminder that <strong>${escapeHtml(args.physiotherapistName)}</strong> has invited you to join Rehabify Health as their patient.`),
           actions(button('Complete registration now', link)),
-          qrCode(escapeHtml(reminderQrUrl), 'Or scan to continue'),
+          qr,
           linkFallback(link),
           paragraph(`This invitation expires on <strong>${emailDate(args.expiresAt)}</strong>.`, { muted: true, size: 15 }),
         ].join(''),

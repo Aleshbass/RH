@@ -28,6 +28,7 @@ import {
   whatsappIntakeUrl,
 } from "./partnerShared";
 import { emitReferralEvent, markProviderMatched, transitionReferral } from "./partnerEvents";
+import { notifyDoctorOfLinkLead } from "./doctorReferralUpdates";
 import { bumpLinkCounter } from "./partnerAttribution";
 import { platformAdminEmails } from "./adminRecipients";
 
@@ -496,6 +497,8 @@ export async function submitLeadCore(
       partnerCode: partner.code,
       publicCode,
     });
+    // A referring doctor hears straight away that their link worked
+    if (partner.type === "doctor") await notifyDoctorOfLinkLead(ctx, referralId);
   }
   await emitReferralEvent(ctx, referralId, "referral.created", null);
   return { ok: true, duplicate: false, trackingCode, environment: env };

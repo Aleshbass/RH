@@ -18,6 +18,7 @@ import { senderIdentity } from "./helpers/displayIdentity";
 import { assertCanMessage } from "./chat";
 import { assertSelfRoleChangeAllowed } from "./helpers/roleLock";
 import { claimJoyRecordWithLink } from "./joyAccounts";
+import { handOverManagedProfile } from "./helpers/careCircleAccess";
 import { missingPolicies, recordMissingPolicyAcceptances } from "./helpers/policyAcceptance";
 import { PATIENT_CONSENT_POLICIES, POLICIES, PROFESSIONAL_SIGNUP_POLICIES } from "../lib/policies";
 
@@ -262,7 +263,8 @@ export const updateOrCreateUser = internalMutation({
 
 // ==== PUBLIC MUTATION: Store User from Clerk (Client-Side Sync) ====
 // Records created for a patient before they had a Clerk account.
-const PLACEHOLDER_CLERK_ID_PREFIXES = ["clinic_patient_", "rehabify_ref_", "joy-whatsapp:"];
+// managed_: a profile a family member or caregiver set up (convex/careCircle.ts)
+const PLACEHOLDER_CLERK_ID_PREFIXES = ["clinic_patient_", "rehabify_ref_", "joy-whatsapp:", "managed_"];
 
 /** A Joy (WhatsApp) patient record for this verified phone number, if exactly one exists. */
 async function joyPlaceholderByPhone(ctx: MutationCtx, verifiedPhone: string) {
@@ -332,6 +334,8 @@ async function claimPlaceholderPatient(
     // A Joy patient already has their role and profile; don't send them through onboarding again
     ...(isJoyRecord && placeholder.role === "patient" ? { onboarded: true } : {}),
   });
+  // Someone a caregiver set up now has their own login: they run their care circle from here on
+  if (placeholder.clerkId.startsWith("managed_")) await handOverManagedProfile(ctx, placeholder._id);
   return placeholder._id;
 }
 

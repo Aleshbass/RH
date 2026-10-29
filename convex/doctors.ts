@@ -1,11 +1,40 @@
 import { insertNotification } from "./helpers/pushNotify";
 import { ConvexError, v } from "convex/values";
-import { internalMutation, mutation, query, type MutationCtx } from "./_generated/server";
+import { internalMutation, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { assertSelfRoleChangeAllowed } from "./helpers/roleLock";
 import { generateTrackingCode, normalizePhone, partnerApprovalStatus } from "./helpers/partnerShared";
 import { attributeUserToReferral } from "./helpers/partnerAttribution";
+import { doctorSignupsOpen } from "./platformSettings";
+
+const DOCTOR_SIGNUPS_PAUSED_MESSAGE =
+    "We're not taking new referring doctors right now. Please try again soon, or email partners@physioaroundme.com and we'll let you know when we open again.";
+
+/** A doctor who already has a referral account (any status) is never a "new" sign-up. */
+async function ownsDoctorPartner(ctx: { db: QueryCtx["db"] }, clerkId: string) {
+    const partner = await ctx.db
+        .query("partners")
+        .withIndex("by_owner_clerk_id", (q) => q.eq("ownerClerkId", clerkId))
+        .first();
+    return Boolean(partner);
+}
+
+/**
+ * Whether the signed-in person can send the doctor profile form. Closed only while an admin has
+ * paused new doctor sign-ups and this person has no referral account yet (existing doctors can
+ * always update their details).
+ */
+export const getDoctorSignupStatus = query({
+    args: {},
+    handler: async (ctx) => {
+        const open = await doctorSignupsOpen(ctx);
+        if (open) return { open: true };
+        const identity = await ctx.auth.getUserIdentity();
+        if (!identity) return { open: false };
+        return { open: await ownsDoctorPartner(ctx, identity.subject) };
+    },
+});
 
 /**
  * Referring doctors.
@@ -213,6 +242,10 @@ export const setupDoctorProfile = mutation({
             throw new ConvexError("We couldn't find your account. Please sign in again.");
         }
         assertSelfRoleChangeAllowed(user, "doctor");
+        // Admin Settings can pause new referring doctors; existing ones can still update their details
+        if (!(await doctorSignupsOpen(ctx)) && !(await ownsDoctorPartner(ctx, identity.subject))) {
+            throw new ConvexError(DOCTOR_SIGNUPS_PAUSED_MESSAGE);
+        }
         if (!args.medicalLicenseNumber?.trim()) {
             throw new ConvexError("Enter your MDCN folio or licence number so we can verify you.");
         }

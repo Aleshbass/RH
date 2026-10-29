@@ -178,6 +178,42 @@ export async function insertNotification(
         urgent: URGENT_PUSH_TYPES.has(doc.type) || doc.priority === "urgent",
       }
     );
+    await tellCareCircle(ctx, doc, title);
   }
   return id;
+}
+
+/** News about a patient's care that their family and caregivers also hear (never messages or notes). */
+const CARE_CIRCLE_TYPES = /appointment|booking|visit|payment|invoice|program|programme|care_plan|discharge|follow_up|questionnaire/;
+
+/**
+ * A patient's care news also goes to their care circle (convex/careCircle.ts): "Ada: Visit
+ * confirmed for Tue 10:00". Payments only reach people allowed to pay. This is how a caregiver
+ * looking after someone without a phone hears about their care at all.
+ */
+async function tellCareCircle(ctx: Pick<MutationCtx, "db" | "scheduler">, doc: WithoutSystemFields<Doc<"notifications">>, title: string) {
+  if (!CARE_CIRCLE_TYPES.test(doc.type) || doc.type.startsWith("care_circle")) return;
+  const grants = await ctx.db
+    .query("familyAccessGrants")
+    .withIndex("by_patient_user_id", (q) => q.eq("patientUserId", doc.userId))
+    .take(20);
+  const now = Date.now();
+  const live = grants.filter((g) => g.status === "active" && (!g.expiresAt || g.expiresAt > now));
+  if (live.length === 0) return;
+  const patient = await ctx.db.get(doc.userId);
+  if (!patient || patient.role !== "patient") return;
+  const name = patient.firstName?.trim() || "Your family member";
+  const money = /payment|invoice/.test(doc.type);
+  const link = `/dashboard/family?person=${patient._id}`;
+  for (const grant of live) {
+    if (money && !grant.permissions.includes("pay")) continue;
+    await insertNotification(ctx, {
+      userId: grant.familyMemberUserId,
+      type: `care_circle:${doc.type}`,
+      priority: doc.priority,
+      status: "pending",
+      payload: { title: `${name}: ${title}`, body: doc.payload?.body ?? doc.message ?? "", link, data: { actionUrl: link } },
+      createdAt: now,
+    });
+  }
 }

@@ -4,7 +4,8 @@ import { v } from "convex/values";
 import { internalAction } from "../../_generated/server";
 import { Resend } from 'resend';
 import { escapeHtml, plainSubject } from "../../helpers/escapeHtml";
-import { actions, button, emailDate, greeting, highlight, linkFallback, paragraph, qrCode, quote, renderEmail } from "../../../lib/email/layout";
+import { actions, button, emailDate, greeting, highlight, linkFallback, paragraph, quote, renderEmail } from "../../../lib/email/layout";
+import { qrBlock } from "./qrImage";
 
 /**
  * Clinic staff invitation emails. Internal actions: they are only run by the
@@ -27,7 +28,7 @@ export const sendClinicStaffInvitationEmail = internalAction({
     expiresAt: v.number(),
     message: v.optional(v.string()),
   },
-  handler: async (_ctx, args) => {
+  handler: async (ctx, args) => {
 
     try {
       // Check for Resend API key
@@ -46,8 +47,8 @@ export const sendClinicStaffInvitationEmail = internalAction({
       const fromName = 'Rehabify Health';
 
 
-      // Create QR code URL
-      const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(args.invitationLink)}`;
+      // Made here and stored with us: the link carries the invite's secret code
+      const qr = await qrBlock(ctx, args.invitationLink, 'Or scan to accept', escapeHtml);
 
       const clinicName = args.clinicName ? escapeHtml(args.clinicName) : undefined;
       const greetingName = escapeHtml(args.inviteeName || args.inviteeEmail.split('@')[0]);
@@ -65,7 +66,7 @@ export const sendClinicStaffInvitationEmail = internalAction({
           args.message ? quote(escapeHtml(args.message), ownerName) : '',
           highlight({ label: 'Invitation code', value: escapeHtml(args.invitationCode), mono: true, sub: `Expires ${emailDate(args.expiresAt)}` }),
           actions(button('Accept invitation', link)),
-          qrCode(escapeHtml(qrUrl), 'Or scan to accept'),
+          qr,
           linkFallback(link),
         ].join(''),
         footerNote: "If you didn't expect this invitation, you can safely ignore this email.",
@@ -115,7 +116,7 @@ export const sendClinicStaffInvitationReminderEmail = internalAction({
     invitationLink: v.string(),
     expiresAt: v.number(),
   },
-  handler: async (_ctx, args) => {
+  handler: async (ctx, args) => {
 
     try {
       // Check for Resend API key
@@ -132,7 +133,7 @@ export const sendClinicStaffInvitationReminderEmail = internalAction({
       const fromEmail = 'info@physioaroundme.com';
       const fromName = 'Rehabify Health';
 
-      const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(args.invitationLink)}`;
+      const qr = await qrBlock(ctx, args.invitationLink, 'Or scan to accept', escapeHtml);
 
       const clinicName = args.clinicName ? escapeHtml(args.clinicName) : undefined;
       const greetingName = escapeHtml(args.inviteeName || args.inviteeEmail.split('@')[0]);
@@ -148,7 +149,7 @@ export const sendClinicStaffInvitationReminderEmail = internalAction({
           paragraph(`A friendly reminder that <strong>${ownerName}</strong> has invited you to join <strong>${clinicName || 'their clinic'}</strong> as a physiotherapist on Rehabify Health.`),
           highlight({ label: 'Invitation code', value: escapeHtml(args.invitationCode), mono: true, sub: `Expires ${emailDate(args.expiresAt)}` }),
           actions(button('Accept invitation', link)),
-          qrCode(escapeHtml(qrUrl), 'Or scan to accept'),
+          qr,
           linkFallback(link),
         ].join(''),
         footerNote: "If you didn't expect this invitation, you can safely ignore this email.",

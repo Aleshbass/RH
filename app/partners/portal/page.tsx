@@ -68,6 +68,7 @@ export default function PartnerPortalPage() {
   if (me.isAdmin) return <PartnerDashboard ownCode={me.partner?.code ?? null} ownType={me.partner?.type ?? null} isAdmin />;
 
   if (me.status === "no_partner" || !me.partner) return <PartnerApplicationForm />;
+  // Doctors get their own pending / declined screens (components/partners/doctor/DoctorStatusScreens.tsx)
   if (me.status === "pending") return <PartnerPendingScreen partner={me.partner} />;
   if (me.status === "rejected") return <PartnerRejectedScreen rejectionReason={me.partner.rejectionReason} partnerType={me.partner.type} />;
 

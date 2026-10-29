@@ -10,6 +10,7 @@ import {
   Settings,
   Stethoscope,
   TrendingUp,
+  Users,
   Video,
   type IconComponent,
 } from '@/components/icons'
@@ -44,6 +45,7 @@ export const NAV = {
   progress: item('Progress', 'insights', TrendingUp, 'How your recovery is going'),
   records: item('Records', 'records', FolderOpen, 'Scans, reports and letters'),
   invoices: item('Invoices', 'invoices', Receipt, 'Bills, payments and receipts'),
+  careCircle: item('Care circle', 'care-circle', Users, 'Family and carers who help with your care'),
   settings: item('Settings', 'settings', Settings, 'Profile, reminders, privacy and display'),
 } as const
 
@@ -52,6 +54,7 @@ export const PATIENT_NAV: PatientNavGroup[] = [
   { items: [NAV.home, NAV.appointments, NAV.messages] },
   { label: 'My care', items: [NAV.physio, NAV.videoCalls, NAV.plan, NAV.exercises, NAV.progress] },
   { label: 'Records & payments', items: [NAV.records, NAV.invoices] },
+  { label: 'Family', items: [NAV.careCircle] },
 ]
 
 /** Bottom bar on phones and tablets; everything else lives under "More". */

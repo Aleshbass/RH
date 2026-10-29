@@ -103,6 +103,7 @@ export const ADMIN_NAV: AdminNavSection[] = [
       { title: 'All patients', href: a('/users?role=patient'), icon: UserRound, keywords: ['clients'] },
       { title: 'Inbound referrals', href: a('/referrals'), icon: Inbox, keywords: ['intake', 'routing'] },
       { title: 'Care follow-ups', href: a('/care-follow-ups'), icon: HeartPulse, keywords: ['check-ins', 'discharge'] },
+      { title: 'Family & caregivers', href: a('/caregivers'), icon: Users, keywords: ['care circle', 'family', 'carer', 'relative', 'guardian'] },
       { title: 'Patient plans', href: a('/patient-plans'), icon: Layers, keywords: ['flex', 'flex max', 'basic', 'launch', 'recovery', 'subscription', 'free activation'] },
       { title: 'MediLoan', href: a('/loans'), icon: WalletCards, keywords: ['myitura', 'finance', 'credit'] },
     ],

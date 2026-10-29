@@ -304,10 +304,10 @@ export default function PersonalInfoForm({
                     render={({ field }) => (
                       <div className="grid grid-cols-1 gap-3">
                         {[
-                          { value: 'myself', label: 'For myself', desc: 'I am looking for therapy for myself' },
-                          { value: 'partner', label: 'For me and my partner', desc: 'We are looking for couples therapy' },
-                          { value: 'child', label: 'For my child', desc: 'I am looking for therapy for my child' },
-                          { value: 'family_member', label: 'For a family member', desc: 'I am looking for therapy for a relative' }
+                          { value: 'myself', label: 'For myself', desc: 'I need physiotherapy myself' },
+                          { value: 'partner', label: 'For my partner', desc: 'My husband or wife needs physiotherapy' },
+                          { value: 'child', label: 'For my child', desc: 'My child needs physiotherapy' },
+                          { value: 'family_member', label: 'For a family member', desc: 'A parent or relative needs physiotherapy' }
                         ].map((option) => (
                           <div
                             key={option.value}

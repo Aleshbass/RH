@@ -3,14 +3,21 @@
 import { api } from "@/convex/_generated/api";
 import { useAuth, useUser } from "@clerk/nextjs";
 import { useMutation, useQuery } from "convex/react";
+import { makeFunctionReference } from "convex/server";
 import { useEffect, useRef } from "react";
 import { clearPartnerReferralCookie, getReferralPublicCode } from "@/lib/referralCookie";
 import { clearDashboardClaim, readDashboardClaim } from "@/lib/auth/dashboardClaim";
+import { useSignOutCleanup } from "@/components/auth/SignOutCleanup";
+
+// By name: the generated api type is at TypeScript's depth limit here (TS2589)
+const recordSignInRef = makeFunctionReference<"mutation", { sessionId: string }, unknown>("securityEvents:recordSignIn");
 
 export default function SyncUserWithConvex() {
+  // Whenever someone signs out (anywhere) or another account signs in: tidy this device
+  useSignOutCleanup();
   const { user, isLoaded } = useUser();
   const { sessionId } = useAuth();
-  const recordSignIn = useMutation(api.securityEvents.recordSignIn);
+  const recordSignIn = useMutation(recordSignInRef);
   const loggedSessionRef = useRef<string | null>(null);
   const storeUserInConvex = useMutation(api.users.storeUserFromClerk);
   const claimReferralAttribution = useMutation(api.partnerLinks.claimReferralAttribution);

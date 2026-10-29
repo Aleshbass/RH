@@ -12,7 +12,8 @@ import type { api } from "@/convex/_generated/api";
 
 export type Env = "sandbox" | "live";
 export type CurrentUserPartner = FunctionReturnType<typeof api.partners.getCurrentUserPartner>;
-export type DashboardOverview = FunctionReturnType<typeof api.partners.getPartnerDashboardOverview>;
+/** The overview once loaded (the query returns null when signed out or not the viewer's organisation). */
+export type DashboardOverview = NonNullable<FunctionReturnType<typeof api.partners.getPartnerDashboardOverview>>;
 export type PartnerInfo = DashboardOverview["partnerInfo"];
 export type ReferralRow = DashboardOverview["recentReferrals"][number];
 export type ProductionStatus = PartnerInfo["productionStatus"];

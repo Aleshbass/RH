@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery } from 'convex/react'
 import type { FunctionReturnType } from 'convex/server'
-import { Building2, Check, Loader2, MapPin, Monitor, Search, Stethoscope } from '@/components/icons'
+import { Building2, Check, FileText, Loader2, MapPin, Monitor, Search, Stethoscope } from '@/components/icons'
 import { toast } from 'sonner'
 import { api } from '@/convex/_generated/api'
 import type { Id } from '@/convex/_generated/dataModel'
@@ -64,6 +64,18 @@ export const STATUS_LABEL: Record<ReferralStatus, string> = {
 }
 
 const LEGACY_STATUSES: ReferralStatus[] = ['pending', 'in_treatment', 'paid_out']
+
+/** Where a referring doctor asked for the patient to be seen. */
+const CARE_SETTING_LABEL: Record<'clinic' | 'home' | 'online', string> = {
+  clinic: 'Clinic near them',
+  home: 'Home visit',
+  online: 'Online',
+}
+
+// The referral row's type can degrade to `any` in the full build (Convex api depth limit), so narrow here
+function careSettingLabel(value: unknown): string {
+  return value === 'clinic' || value === 'home' || value === 'online' ? CARE_SETTING_LABEL[value] : 'Not specified'
+}
 
 export function statusTone(status: ReferralStatus): 'neutral' | 'teal' | 'green' | 'amber' | 'red' {
   if (status === 'cancelled' || status === 'not_suitable' || status === 'refunded' || status === 'redirected_for_safety') return 'red'
@@ -201,6 +213,30 @@ function ManageForm({ referral, onClose, onBusyChange }: { referral: ReferralRow
       </DialogHeader>
 
       <div className="space-y-5">
+        {/* What a referring doctor asked for: where to be seen, and their letter */}
+        {(referral.careSetting || referral.referralLetterUrl) && (
+          <div className={cn(insetClass, 'flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-neutral-600 dark:text-neutral-300')}>
+            {referral.careSetting && (
+              <span className="inline-flex items-center gap-1.5">
+                <MapPin className="h-3.5 w-3.5" />
+                {careSettingLabel(referral.careSetting)}
+                {referral.city ? `, ${referral.city}` : ''}
+              </span>
+            )}
+            {referral.referralLetterUrl && (
+              <a
+                href={referral.referralLetterUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 font-semibold text-rh-ink underline-offset-2 hover:underline dark:text-white"
+              >
+                <FileText className="h-3.5 w-3.5" />
+                Referral letter
+              </a>
+            )}
+          </div>
+        )}
+
         {/* Status */}
         <section className="space-y-3">
           <div className="space-y-1.5">

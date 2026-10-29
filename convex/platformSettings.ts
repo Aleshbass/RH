@@ -137,6 +137,7 @@ export const DEFAULT_PLATFORM_CONTROLS = {
   allowPatientSignups: true,
   allowPhysioSignups: true,
   allowClinicSignups: true,
+  allowDoctorSignups: true,
   marketplaceEnabled: true,
   supportEmail: "",
 };
@@ -158,6 +159,7 @@ export async function loadPlatformControls(ctx: ReaderCtx) {
         allowPatientSignups: row.allowPatientSignups,
         allowPhysioSignups: row.allowPhysioSignups,
         allowClinicSignups: row.allowClinicSignups,
+        allowDoctorSignups: row.allowDoctorSignups ?? true,
         marketplaceEnabled: row.marketplaceEnabled,
         supportEmail: row.supportEmail ?? "",
       }
@@ -170,7 +172,14 @@ const SIGNUP_FLAG_BY_ROLE: Record<string, keyof PlatformControls> = {
   patient: "allowPatientSignups",
   physiotherapist: "allowPhysioSignups",
   clinic_owner: "allowClinicSignups",
+  doctor: "allowDoctorSignups",
 };
+
+/** False while an admin has paused new referring-doctor sign-ups. */
+export async function doctorSignupsOpen(ctx: ReaderCtx): Promise<boolean> {
+  const { controls } = await loadPlatformControls(ctx);
+  return controls.allowDoctorSignups !== false;
+}
 
 /**
  * Throws when an admin has paused new registrations for this role. Call it from the
@@ -208,14 +217,18 @@ export const updatePlatformControls = mutation({
     allowPatientSignups: v.boolean(),
     allowPhysioSignups: v.boolean(),
     allowClinicSignups: v.boolean(),
+    // Optional so a Settings page loaded before this switch existed can still save
+    allowDoctorSignups: v.optional(v.boolean()),
     marketplaceEnabled: v.boolean(),
     supportEmail: v.string(),
   },
   handler: async (ctx, args) => {
     const admin = await ensureUserRole(ctx, ["admin"]);
 
+    const { controls: previous, row } = await loadPlatformControls(ctx);
     const next: PlatformControls = {
       ...args,
+      allowDoctorSignups: args.allowDoctorSignups ?? previous.allowDoctorSignups,
       maintenanceMessage: args.maintenanceMessage.trim(),
       supportEmail: args.supportEmail.trim(),
     };
@@ -226,7 +239,6 @@ export const updatePlatformControls = mutation({
       throw new ConvexError("Enter a valid support email address, or leave it empty.");
     }
 
-    const { controls: previous, row } = await loadPlatformControls(ctx);
     const changes = (Object.keys(next) as (keyof PlatformControls)[])
       .filter((key) => previous[key] !== next[key])
       .map((key) => ({ field: key, from: previous[key], to: next[key] }));
@@ -267,6 +279,7 @@ export const getPublicPlatformStatus = query({
       allowPatientSignups: controls.allowPatientSignups,
       allowPhysioSignups: controls.allowPhysioSignups,
       allowClinicSignups: controls.allowClinicSignups,
+      allowDoctorSignups: controls.allowDoctorSignups,
       marketplaceEnabled: controls.marketplaceEnabled,
     };
   },

@@ -7,6 +7,7 @@
  * The care team sees adherence.
  */
 import { insertNotification } from "./helpers/pushNotify";
+import { advancePatientReferrals } from "./helpers/partnerAttribution";
 import { ConvexError, v, type Infer } from "convex/values";
 import { makeFunctionReference } from "convex/server";
 import {
@@ -380,36 +381,6 @@ async function notifyPatient(ctx: MutationCtx, patient: Doc<"users">, senderName
   });
 }
 
-const REFERRAL_PROGRESS = ["booked", "attended", "treatment_active", "completed"] as const;
-
-/**
- * A Rehabify referral to this clinic moves to "treatment active" once the patient is given a home
- * programme, as it did when clinics gave programmes through clinicTools.assignHomeProgramme (this
- * mirrors advanceClinicReferral there). It only ever moves forward.
- */
-async function markReferralTreatmentActive(ctx: MutationCtx, clinicId: Id<"clinics">, patientId: Id<"users">, actorId: Id<"users">) {
-  const referrals = await ctx.db
-    .query("inboundReferrals")
-    .withIndex("by_patient", (q) => q.eq("patientId", patientId))
-    .collect();
-  const target = REFERRAL_PROGRESS.indexOf("treatment_active");
-  const now = Date.now();
-  for (const referral of referrals) {
-    if (referral.assignedClinicId !== clinicId) continue;
-    const current = REFERRAL_PROGRESS.indexOf(referral.status as (typeof REFERRAL_PROGRESS)[number]);
-    if (current === -1 || current >= target) continue;
-    await ctx.db.patch(referral._id, { status: "treatment_active", updatedAt: now });
-    await ctx.db.insert("referralEvents", {
-      referralId: referral._id,
-      eventName: "clinic.treatment_active",
-      occurredAt: now,
-      actorType: "clinic_owner",
-      actorId: String(actorId),
-      metadata: { clinicId, previousStatus: referral.status, newStatus: "treatment_active", via: "home_programme" },
-    });
-  }
-}
-
 async function patientOrThrow(ctx: MutationCtx, patientId: Id<"users">) {
   const patient = await ctx.db.get(patientId);
   if (!patient || patient.role !== "patient") throw new ConvexError("This patient's account couldn't be found.");
@@ -468,7 +439,8 @@ export const createProgram = mutation({
         createdAt: now,
         updatedAt: now,
       });
-      if (team.clinicId) await markReferralTreatmentActive(ctx, team.clinicId, args.patientId, team.user._id);
+      // A referred patient with a home programme is in treatment (any physio: clinic, network or own)
+      await advancePatientReferrals(ctx, args.patientId, "treatment_active", { actorType: "physiotherapist", actorId: String(team.user._id) });
       // Flex bought before the programme was ready starts its 30 days now
       await activatePendingPlans(ctx, args.patientId, now);
       await notifyPatient(ctx, patient, team.senderName, { kind: "new", title });

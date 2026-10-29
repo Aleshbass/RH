@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { primaryButtonClass, useIsPhone } from '@/components/clinic/ui'
 import { playSound } from '@/lib/sounds'
+import { isDialogOpen, markTourOpen } from '@/lib/overlayTurn'
 
 /** Bump to show the tour again to everyone who finished an older one. */
 const CLINIC_TOUR_VERSION = 1
@@ -103,10 +104,24 @@ export function ClinicTour({ firstName, clinicName, enabled }: { firstName?: str
 
   useEffect(() => {
     if (!enabled || readLocalVersion() >= CLINIC_TOUR_VERSION) return
-    // Let Home settle first so the greeting doesn't flash in during loading
-    const timer = window.setTimeout(() => setPhase((p) => (p === 'hidden' ? 'welcome' : p)), 900)
+    // Let Home settle first so the greeting doesn't flash in during loading, and wait for a dialog
+    // that's already open (app setup): two overlays at once block each other's buttons
+    let timer = 0
+    const greet = () => {
+      if (isDialogOpen()) timer = window.setTimeout(greet, 1000)
+      else setPhase((p) => (p === 'hidden' ? 'welcome' : p))
+    }
+    timer = window.setTimeout(greet, 900)
     return () => window.clearTimeout(timer)
   }, [enabled])
+
+  // While the tour is on screen, the app setup prompt waits for it (lib/overlayTurn.ts)
+  const showing = phase !== 'hidden'
+  useEffect(() => {
+    if (!showing) return
+    markTourOpen(true)
+    return () => markTourOpen(false)
+  }, [showing])
 
   const finish = useCallback(() => {
     setPhase('hidden')

@@ -35,6 +35,7 @@ export default function ConditionalLayout({ children, isSubdomainHost = false }:
     pathname.startsWith('/physiotherapist') ||
     pathname.startsWith('/clinic-owner') ||
     pathname.startsWith('/patient') ||
+    pathname.startsWith('/care-invite') ||
     pathname.startsWith('/onboarding-complete')
   // Hide global header/footer on payment routes (e.g., /payment/callback)
   const isPaymentRoute = pathname.startsWith('/payment') || pathname.startsWith('/receipt/') || pathname.startsWith('/report/')

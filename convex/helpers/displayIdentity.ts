@@ -36,6 +36,7 @@ const ROLE_SUBTITLES: Record<string, string> = {
   admin: "Rehabify support",
   doctor: "Doctor",
   partner: "Partner",
+  family_member: "Family / caregiver",
 };
 
 async function ownedClinic(ctx: Ctx, ownerId: Id<"users">) {

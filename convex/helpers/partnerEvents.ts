@@ -9,7 +9,7 @@
 import type { MutationCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
 import { makeFunctionReference } from "convex/server";
-import { notifyReferringDoctor } from "./doctorReferralUpdates";
+import { notifyDoctorOfCareTeam, notifyReferringDoctor } from "./doctorReferralUpdates";
 
 const deliverPartnerWebhookRef = makeFunctionReference<"action", { deliveryId: Id<"partnerWebhookDeliveries"> }>(
   "actions/partners/dispatchWebhook:deliverPartnerWebhook"
@@ -173,8 +173,10 @@ export async function transitionReferral(
 
   if (fromPublic !== toPublic && toPublic !== "received") {
     await emitReferralEvent(ctx, referralId, `referral.${toPublic}` as WebhookEventType, fromPublic);
-    // Referring doctors have no webhook; they get an email instead
-    await notifyReferringDoctor(ctx, referralId, toPublic);
+  }
+  // Referring doctors have no webhook: an in-app update at each step and an email at each milestone
+  if (referral.status !== toStatus) {
+    await notifyReferringDoctor(ctx, referralId, { fromStatus: referral.status, toStatus });
   }
   return { from: fromPublic, to: toPublic };
 }
@@ -211,6 +213,8 @@ export async function markProviderMatched(
 
   if (!unchanged) {
     await emitReferralEvent(ctx, referralId, "referral.provider_matched", toPublicStatus(referral.status));
+    // A referring doctor sees who is treating their patient
+    if (!sandbox && physiotherapistUserId) await notifyDoctorOfCareTeam(ctx, referralId, { physioUserId: physiotherapistUserId });
   }
   return { changed: !unchanged };
 }

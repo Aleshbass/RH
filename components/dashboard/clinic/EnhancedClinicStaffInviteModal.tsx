@@ -35,8 +35,15 @@ async function copyLink(link: string) {
   }
 }
 
-const showQr = (link: string) =>
-  window.open(`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(link)}`, '_blank')
+/** Opens the invite's QR code, drawn here (the link carries the invite's secret code, so it never goes to an outside service). */
+const showQr = async (link: string) => {
+  const win = window.open('', '_blank', 'width=420,height=480')
+  if (!win) return
+  const QRCode = (await import('qrcode')).default
+  const svg = await QRCode.toString(link, { type: 'svg', margin: 2, errorCorrectionLevel: 'M', color: { dark: '#16181c', light: '#ffffff' } })
+  win.document.write(`<!doctype html><title>Invite QR code</title><body style="margin:0;display:grid;place-items:center;min-height:100vh;background:#fff"><div style="width:300px;height:300px">${svg}</div></body>`)
+  win.document.close()
+}
 
 export default function EnhancedClinicStaffInviteModal({
   isOpen,
@@ -126,7 +133,7 @@ function InviteForm({
 
       const link = buildLink(res.code)
       const copied = link ? await copyLink(link) : false
-      const qrAction = link ? { label: 'Show QR', onClick: () => showQr(link) } : undefined
+      const qrAction = link ? { label: 'Show QR', onClick: () => void showQr(link) } : undefined
 
       if (res.message === 'Invitation already sent') {
         // The backend returns the existing pending invitation instead of making a second one

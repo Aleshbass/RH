@@ -681,7 +681,7 @@ export const addClinicPatient = mutation({
 
 // Records a clinic, referral or Joy created before the patient had an account
 // (kept in step with PLACEHOLDER_CLERK_ID_PREFIXES in convex/users.ts)
-const PLACEHOLDER_CLERK_ID_PREFIXES = ["clinic_patient_", "rehabify_ref_", "joy-whatsapp:"];
+const PLACEHOLDER_CLERK_ID_PREFIXES = ["clinic_patient_", "rehabify_ref_", "joy-whatsapp:", "managed_"];
 
 /** True once the patient has signed up and owns the account. */
 function patientHasAccount(patient: Doc<"users">) {
@@ -2669,7 +2669,7 @@ export const getClinicRehabifyReferrals = query({
       .order("desc")
       .take(100);
 
-    return matched.map((ref: any) => ({
+    return await Promise.all(matched.map(async (ref: any) => ({
       _id: ref._id,
       trackingCode: ref.trackingCode || `RHB-${ref._creationTime.toString().slice(-5)}`,
       patientName: `${ref.patientFirstName} ${ref.patientLastName}`,
@@ -2686,7 +2686,11 @@ export const getClinicRehabifyReferrals = query({
       // Set once accepted: the patient record it became, so the Patients list can show its progress
       patientId: ref.patientId ?? null,
       isRehabifyReferral: true, // Distinguishes from direct clinic patients
-    }));
+      // From a referring doctor: where they asked for care, and their letter
+      careSetting: ref.careSetting ?? null,
+      referralLetterName: ref.referralLetterStorageId ? ref.referralLetterName || "Referral letter" : null,
+      referralLetterUrl: ref.referralLetterStorageId ? await ctx.storage.getUrl(ref.referralLetterStorageId) : null,
+    })));
   },
 });
 

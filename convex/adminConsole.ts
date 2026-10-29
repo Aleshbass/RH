@@ -16,6 +16,9 @@ const BADGE_CAP = 100;
 export const getNavBadges = query({
   args: {},
   handler: async (ctx) => {
+    // The sidebar stays mounted for a moment while an admin signs out: no badges, not an error
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return null;
     await ensureUserRole(ctx, ["admin"]);
 
     const [approvals, pendingReports, reviewingReports, pendingBookings, partners, newAccess, reviewingAccess, countersign, refunds, newInquiries] = await Promise.all([

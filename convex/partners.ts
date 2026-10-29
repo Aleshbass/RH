@@ -18,6 +18,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import {
   adminDisplayName,
   findOwnedPartner,
+  findPartnerAccess,
   getViewer,
   requireAdmin,
   requirePartnerAccess,
@@ -387,7 +388,11 @@ export const adminCreatePartner = mutation({
 export const getPartnerDashboardOverview = query({
   args: { partnerCode: v.string(), environment: envV },
   handler: async (ctx, args) => {
-    const { partner } = await requirePartnerAccess(ctx, args.partnerCode);
+    // Null (not an error) when signed out or not this viewer's organisation: the portal stays
+    // subscribed while someone signs out
+    const access = await findPartnerAccess(ctx, args.partnerCode);
+    if (!access) return null;
+    const { partner } = access;
     const referrals = await ctx.db
       .query("inboundReferrals")
       .withIndex("by_partner_and_environment", (q) => q.eq("partnerId", partner.code).eq("environment", args.environment))
@@ -572,6 +577,9 @@ export const createSandboxReferral = mutation({
 /** Referrals that are still open (not finished, cancelled or turned away). */
 const CLOSED_PUBLIC_STATUSES = new Set(["completed", "not_suitable", "cancelled", "closed"]);
 const DUPLICATE_WINDOW_MS = 90 * 24 * 60 * 60 * 1000;
+/** A referral letter a doctor attaches: a PDF or a photo of it. */
+const MAX_LETTER_BYTES = 10 * 1024 * 1024;
+const LETTER_TYPES = new Set(["application/pdf", "image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"]);
 
 /**
  * A real (live) referral typed into the portal: how referring doctors refer, and a manual
@@ -592,11 +600,23 @@ export const createPortalReferral = mutation({
     recommendedSessions: v.optional(v.number()),
     preferredMode: v.optional(v.union(v.literal("remote"), v.literal("in_person"), v.literal("patient_choice"))),
     consentGranted: v.boolean(),
+    // The referring doctor's form: urgency in three steps, where to be seen, and a letter
+    urgency: v.optional(v.union(v.literal("routine"), v.literal("soon"), v.literal("urgent"))),
+    careSetting: v.optional(v.union(v.literal("clinic"), v.literal("home"), v.literal("online"))),
+    letterStorageId: v.optional(v.id("_storage")),
+    letterName: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const { partner, actor } = await requirePartnerAccess(ctx, args.partnerCode, { requireApproved: true, requireProduction: true });
     if (!args.firstName.trim()) throw new ConvexError("Enter the patient's first name.");
     if (!args.consentGranted) throw new ConvexError("Confirm the patient agreed to be contacted by Rehabify.");
+    if ((args.notes?.length ?? 0) > 3000) throw new ConvexError("Keep the notes under 3,000 characters.");
+    if (args.letterStorageId) {
+      const file = await ctx.db.system.get(args.letterStorageId);
+      if (!file) throw new ConvexError("The referral letter didn't upload. Attach it again.");
+      if (file.size > MAX_LETTER_BYTES) throw new ConvexError("The referral letter must be smaller than 10 MB.");
+      if (!LETTER_TYPES.has((file.contentType ?? "").toLowerCase())) throw new ConvexError("Attach the letter as a PDF or a photo (JPG, PNG, WebP or HEIC).");
+    }
     const email = args.email?.trim().toLowerCase();
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new ConvexError("That email address doesn't look right.");
     const phone = normalizePhone(args.phone);
@@ -635,17 +655,27 @@ export const createPortalReferral = mutation({
         clinical: {
           condition: args.condition,
           notes: args.notes,
-          priority: args.priority,
+          priority: args.urgency ? (args.urgency === "urgent" ? "urgent" : "standard") : args.priority,
           recommendedSessions: args.recommendedSessions,
           referringClinician: isDoctor
             ? [partner.name, profile?.hospitalAffiliation].filter(Boolean).join(", ")
             : undefined,
         },
-        care: { preferredMode: args.preferredMode },
+        care: { preferredMode: args.careSetting ? (args.careSetting === "online" ? "remote" : "in_person") : args.preferredMode },
         consent: { granted: true, method: isDoctor ? "doctor_attested" : "partner_portal_attested", capturedAt: Date.now() },
       },
     });
     if (!result.ok) throw new ConvexError(result.message);
+    // What the shared pipeline has no field for: "soon" (stored as high priority), clinic vs home, the letter
+    const extra: Partial<Doc<"inboundReferrals">> = {};
+    if (args.urgency === "soon") extra.priority = "high";
+    if (args.careSetting) extra.careSetting = args.careSetting;
+    if (args.letterStorageId) {
+      extra.referralLetterStorageId = args.letterStorageId;
+      extra.referralLetterName = args.letterName?.trim().slice(0, 200) || "Referral letter";
+    }
+    const referralId = ctx.db.normalizeId("inboundReferrals", String((result.referral as { id?: string }).id ?? ""));
+    if (referralId && Object.keys(extra).length > 0) await ctx.db.patch(referralId, extra);
     await logPortalActivity(ctx, partner, "live", "referral.created_in_portal", {
       actor,
       trackingCode: (result.referral as { tracking_code?: string }).tracking_code,

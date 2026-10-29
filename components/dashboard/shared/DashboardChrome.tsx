@@ -14,7 +14,8 @@ export function hasOwnPortalShell(pathname: string) {
     pathname.startsWith('/dashboard/clinic') ||
     pathname.startsWith('/dashboard/physiotherapist') ||
     pathname.startsWith('/dashboard/admin') ||
-    pathname.startsWith('/dashboard/patient')
+    pathname.startsWith('/dashboard/patient') ||
+    pathname.startsWith('/dashboard/family')
   )
 }
 

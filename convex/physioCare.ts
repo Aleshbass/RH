@@ -10,6 +10,7 @@
  * - Follow-up admin functions are for Rehabify admins.
  */
 import { insertNotification } from "./helpers/pushNotify";
+import { advancePatientReferrals } from "./helpers/partnerAttribution";
 import { ConvexError, v } from "convex/values";
 import { internalMutation, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -1687,6 +1688,8 @@ export const completeCare = mutation({
 
     // The patient leaves the active list; records stay readable for the physio
     await ctx.db.patch(relationship._id, { status: "inactive", endDate: now });
+    // A referred patient's referral is complete (the referring doctor is told)
+    await advancePatientReferrals(ctx, args.patientId, "completed", { actorType: "physiotherapist", actorId: String(physio._id) });
 
     const patient = await ctx.db.get(args.patientId);
     const physioName = fullName(physio);
@@ -1766,77 +1769,103 @@ async function primaryPhysioFor(ctx: Ctx, patientId: Id<"users">) {
   return active.find((r) => r.isPrimaryPhysiotherapist) ?? active.sort((a, b) => b.startDate - a.startDate)[0] ?? null;
 }
 
+export const checkInArgs = {
+  painScore: v.number(),
+  functionScore: v.optional(v.number()),
+  mood: v.optional(v.union(v.literal("great"), v.literal("good"), v.literal("okay"), v.literal("low"))),
+  exercisesDone: v.union(v.literal("all"), v.literal("some"), v.literal("none")),
+  note: v.optional(v.string()),
+  // The patient ticked "I'm worried about something" (their note says what)
+  concern: v.optional(v.boolean()),
+};
+
 export const submitCheckIn = mutation({
-  args: {
-    painScore: v.number(),
-    functionScore: v.optional(v.number()),
-    mood: v.optional(v.union(v.literal("great"), v.literal("good"), v.literal("okay"), v.literal("low"))),
-    exercisesDone: v.union(v.literal("all"), v.literal("some"), v.literal("none")),
-    note: v.optional(v.string()),
-    // The patient ticked "I'm worried about something" (their note says what)
-    concern: v.optional(v.boolean()),
-  },
+  args: checkInArgs,
   handler: async (ctx, args) => {
     const patient = await requirePatient(ctx);
-    const pain = Math.max(0, Math.min(10, Math.round(args.painScore)));
-    const note = args.note?.trim().slice(0, 1000) || undefined;
-    const fn = args.functionScore === undefined ? undefined : Math.max(0, Math.min(10, Math.round(args.functionScore)));
-    const now = Date.now();
-
-    const previous = (
-      await ctx.db
-        .query("patientCheckIns")
-        .withIndex("by_patient", (q) => q.eq("patientId", patient._id))
-        .order("desc")
-        .take(1)
-    )[0];
-    if (previous && now - previous.createdAt < 10 * 60 * 1000) {
-      throw new ConvexError("You checked in a few minutes ago. Check in again tomorrow.");
-    }
-
-    const relationship = await primaryPhysioFor(ctx, patient._id);
-    const physioId = relationship?.physiotherapistId;
-    const episode = physioId
-      ? (await episodesFor(ctx, physioId, patient._id, relationship?.clinicId)).find((e) => e.status === "active")
-      : undefined;
-
-    const reasons: string[] = [];
-    if (pain >= HIGH_PAIN) reasons.push(`Pain ${pain}/10`);
-    else if (previous && pain - previous.painScore >= 3) reasons.push(`Pain up from ${previous.painScore} to ${pain}`);
-    if (args.mood === "low") reasons.push("Feeling low");
-    // Something written for the physio is flagged whatever the pain score, so it gets read
-    if (args.concern) reasons.push("Raised a concern");
-    else if (note) reasons.push("Left a note");
-    const flagged = reasons.length > 0;
-
-    const id = await ctx.db.insert("patientCheckIns", {
-      patientId: patient._id,
-      physiotherapistId: physioId,
-      episodeId: episode?._id,
-      painScore: pain,
-      functionScore: fn,
-      mood: args.mood,
-      exercisesDone: args.exercisesDone,
-      note,
-      flagged,
-      flagReason: flagged ? reasons.join(" · ") : undefined,
-      createdAt: now,
-    });
-
-    if (flagged && physioId) {
-      await notify(
-        ctx,
-        physioId,
-        "patient_check_in",
-        `${fullName(patient)} needs your attention`,
-        `${reasons.join(", ")} in today's check-in.${note ? ` They wrote: "${note.length > 140 ? `${note.slice(0, 140)}…` : note}"` : ""}`,
-        `/dashboard/physiotherapist/patients/${patient._id}?tab=checkins`,
-        pain >= HIGH_PAIN || args.concern ? "high" : "medium"
-      );
-    }
-    return { checkInId: id, flagged };
+    return await recordPatientCheckIn(ctx, patient, args);
   },
 });
+
+type CheckInInput = {
+  painScore: number;
+  functionScore?: number;
+  mood?: "great" | "good" | "okay" | "low";
+  exercisesDone: "all" | "some" | "none";
+  note?: string;
+  concern?: boolean;
+};
+
+/**
+ * Saves a check-in for the patient and alerts their physio when something needs attention.
+ * `reportedBy`: a family member or caregiver checked in for them (convex/careCircle.ts); the physio
+ * sees who it came from.
+ */
+export async function recordPatientCheckIn(
+  ctx: MutationCtx,
+  patient: Doc<"users">,
+  args: CheckInInput,
+  reportedBy?: { name: string; relationship: string }
+) {
+  const pain = Math.max(0, Math.min(10, Math.round(args.painScore)));
+  const written = args.note?.trim().slice(0, 1000) || undefined;
+  const note = reportedBy ? `From ${reportedBy.name} (${reportedBy.relationship}): ${written ?? "no note"}` : written;
+  const fn = args.functionScore === undefined ? undefined : Math.max(0, Math.min(10, Math.round(args.functionScore)));
+  const now = Date.now();
+
+  const previous = (
+    await ctx.db
+      .query("patientCheckIns")
+      .withIndex("by_patient", (q) => q.eq("patientId", patient._id))
+      .order("desc")
+      .take(1)
+  )[0];
+  if (previous && now - previous.createdAt < 10 * 60 * 1000) {
+    throw new ConvexError(reportedBy ? "A check-in was sent a few minutes ago. Try again tomorrow." : "You checked in a few minutes ago. Check in again tomorrow.");
+  }
+
+  const relationship = await primaryPhysioFor(ctx, patient._id);
+  const physioId = relationship?.physiotherapistId;
+  const episode = physioId
+    ? (await episodesFor(ctx, physioId, patient._id, relationship?.clinicId)).find((e) => e.status === "active")
+    : undefined;
+
+  const reasons: string[] = [];
+  if (pain >= HIGH_PAIN) reasons.push(`Pain ${pain}/10`);
+  else if (previous && pain - previous.painScore >= 3) reasons.push(`Pain up from ${previous.painScore} to ${pain}`);
+  if (args.mood === "low") reasons.push("Feeling low");
+  // Something written for the physio is flagged whatever the pain score, so it gets read
+  if (args.concern) reasons.push("Raised a concern");
+  else if (written) reasons.push("Left a note");
+  const flagged = reasons.length > 0;
+
+  const id = await ctx.db.insert("patientCheckIns", {
+    patientId: patient._id,
+    physiotherapistId: physioId,
+    episodeId: episode?._id,
+    painScore: pain,
+    functionScore: fn,
+    mood: args.mood,
+    exercisesDone: args.exercisesDone,
+    note,
+    flagged,
+    flagReason: flagged ? reasons.join(" · ") : undefined,
+    createdAt: now,
+  });
+
+  if (flagged && physioId) {
+    await notify(
+      ctx,
+      physioId,
+      "patient_check_in",
+      `${fullName(patient)} needs your attention`,
+      `${reasons.join(", ")} in today's check-in${reportedBy ? ` (sent by ${reportedBy.name}, their ${reportedBy.relationship.toLowerCase()})` : ""}.${written ? ` They wrote: "${written.length > 140 ? `${written.slice(0, 140)}…` : written}"` : ""}`,
+      `/dashboard/physiotherapist/patients/${patient._id}?tab=checkins`,
+      pain >= HIGH_PAIN || args.concern ? "high" : "medium"
+    );
+  }
+  return { checkInId: id, flagged };
+}
 
 /** The patient's own recent check-ins and whether they've checked in today. */
 export const getMyCheckIns = query({

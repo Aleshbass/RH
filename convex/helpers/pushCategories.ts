@@ -47,6 +47,8 @@ const CATEGORY_OF: Record<string, PushCategory> = {
   patient_inactive: "patients",
   invitation_accepted: "patients",
   referral_assigned: "patients",
+  // A referring doctor's patient moved on (contacted, booked, seen...) or a report was shared
+  referral_update: "patients",
   exercise_pain_flag: "patients",
   exercise_completed: "patients",
   treatment_plan_accepted: "patients",

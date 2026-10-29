@@ -47,6 +47,8 @@ import {
   secondaryButtonClass,
 } from '@/components/clinic/ui'
 import { ClinicDocumentsTab, ClinicFollowUpsTab, type ClinicDocument, type FollowUpCall } from '@/components/clinic/patients/ClinicRecordTabs'
+import { CareCircleManager } from '@/components/family/CareCircleManager'
+import { PatientDrawer } from '@/components/patient/ui'
 import { ClinicianPickerDialog, EditPatientDetailsDialog } from '@/components/clinic/patients/PatientRecordDialogs'
 import { friendlyError, useClinicianOptions } from '@/components/clinic/patients/patient-record-shared'
 import { OverviewTab } from '@/components/physio/workspace/OverviewTab'
@@ -124,7 +126,7 @@ function ClinicPatientRecord({ patientId }: { patientId: Id<'users'> }) {
 
   const initialTab = searchParams.get('tab') as TabId | null
   const [tab, setTab] = useState<TabId>(initialTab && TABS.some((t) => t.id === initialTab) ? initialTab : 'overview')
-  const [dialog, setDialog] = useState<'edit' | 'reopen' | 'clinician' | null>(null)
+  const [dialog, setDialog] = useState<'edit' | 'reopen' | 'clinician' | 'family' | null>(null)
   const [sendingInvite, setSendingInvite] = useState(false)
 
   useEffect(() => {
@@ -313,6 +315,9 @@ function ClinicPatientRecord({ patientId }: { patientId: Id<'users'> }) {
                   <DropdownMenuItem className="rounded-xl px-3 py-2.5 focus:bg-pt-hover" onSelect={() => go('documents')}>
                     Upload a document
                   </DropdownMenuItem>
+                  <DropdownMenuItem className="rounded-xl px-3 py-2.5 focus:bg-pt-hover" onSelect={() => setDialog('family')}>
+                    Family and caregivers
+                  </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
@@ -419,6 +424,15 @@ function ClinicPatientRecord({ patientId }: { patientId: Id<'users'> }) {
         )}
 
         <EditPatientDetailsDialog record={record} open={dialog === 'edit'} onOpenChange={(open) => setDialog(open ? 'edit' : null)} />
+        <PatientDrawer
+          open={dialog === 'family'}
+          onOpenChange={(open) => setDialog(open ? 'family' : null)}
+          title={`${patient.firstName ?? 'Their'} family and caregivers`}
+          description="Invite a relative or carer to follow their care, or change what they can do"
+          className="sm:max-w-xl"
+        >
+          <CareCircleManager patientId={patientId} audience="clinic" />
+        </PatientDrawer>
         <ClinicianPickerDialog
           open={dialog === 'reopen'}
           onOpenChange={(open) => setDialog(open ? 'reopen' : null)}

@@ -33,6 +33,7 @@ type Controls = {
   allowPatientSignups: boolean
   allowPhysioSignups: boolean
   allowClinicSignups: boolean
+  allowDoctorSignups: boolean
   marketplaceEnabled: boolean
   supportEmail: string
 }
@@ -43,6 +44,7 @@ const FIELDS: (keyof Controls)[] = [
   'allowPatientSignups',
   'allowPhysioSignups',
   'allowClinicSignups',
+  'allowDoctorSignups',
   'marketplaceEnabled',
   'supportEmail',
 ]
@@ -190,6 +192,12 @@ export default function AdminSettingsPage() {
               description="Controls the Clinic owner choice on the role-selection page."
               checked={draft.allowClinicSignups}
               onChange={(v) => set('allowClinicSignups', v)}
+            />
+            <SwitchRow
+              label="Referring doctors can sign up"
+              description="Controls the Doctor choice on the role-selection page and the doctor profile form. Approved doctors keep referring."
+              checked={draft.allowDoctorSignups}
+              onChange={(v) => set('allowDoctorSignups', v)}
             />
             <p className="px-5 pb-4 pt-1 text-xs text-neutral-500 dark:text-neutral-400">
               A paused choice is greyed out and the server refuses it too. Patient invites, guest bookings and Joy referrals

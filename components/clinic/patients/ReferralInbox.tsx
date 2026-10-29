@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react'
 import { useMutation } from 'convex/react'
 import { format, formatDistanceToNow } from 'date-fns'
 import { toast } from 'sonner'
-import { Inbox, Loader2, Mail, MapPin, Phone } from '@/components/icons'
+import { FileText, Inbox, Loader2, Mail, MapPin, Phone } from '@/components/icons'
 import { api } from '@/convex/_generated/api'
 import type { Id } from '@/convex/_generated/dataModel'
 import { Button } from '@/components/ui/button'
@@ -41,7 +41,13 @@ export type ClinicReferral = {
   assignedPhysiotherapistId?: string | null
   /** The patient record an accepted referral became */
   patientId?: string | null
+  /** From a referring doctor: clinic visit, home visit or online */
+  careSetting?: 'clinic' | 'home' | 'online' | null
+  referralLetterName?: string | null
+  referralLetterUrl?: string | null
 }
+
+const CARE_SETTING: Record<string, string> = { clinic: 'Clinic visit', home: 'Home visit', online: 'Online session' }
 
 type ClinicianOption = { id: string; name: string }
 
@@ -62,7 +68,7 @@ function sourceLabel(raw?: string) {
 
 function priorityBadge(priority?: string) {
   if (priority === 'urgent') return <StatusBadge tone="red">Urgent</StatusBadge>
-  if (priority === 'high') return <StatusBadge tone="amber">High priority</StatusBadge>
+  if (priority === 'high') return <StatusBadge tone="ink">High priority</StatusBadge>
   return null
 }
 
@@ -71,7 +77,7 @@ export function ReferralProgressBadge({ status }: { status: string }) {
   switch (status) {
     case 'received':
     case 'pending':
-      return <StatusBadge tone="amber">Awaiting response</StatusBadge>
+      return <StatusBadge tone="ink">Awaiting response</StatusBadge>
     case 'accepted':
     case 'booked':
       return <StatusBadge tone="teal">Referral accepted</StatusBadge>
@@ -269,6 +275,22 @@ function WaitingCard({
             <p className="whitespace-pre-line text-pt-ink">
               {ref.clinicalNotes?.trim() || 'No clinical notes were included.'}
             </p>
+            {(ref.careSetting || ref.referralLetterUrl) && (
+              <div className="flex flex-wrap items-center gap-2">
+                {ref.careSetting && <StatusBadge>{CARE_SETTING[ref.careSetting] ?? ref.careSetting}</StatusBadge>}
+                {ref.referralLetterUrl && (
+                  <a
+                    href={ref.referralLetterUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 rounded-full border border-pt-line px-3 py-1 text-xs font-medium text-pt-ink hover:bg-pt-hover"
+                  >
+                    <FileText className="h-3.5 w-3.5" />
+                    {ref.referralLetterName || 'Referral letter'}
+                  </a>
+                )}
+              </div>
+            )}
             <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-pt-muted">
               {ref.patientEmail && (
                 <a

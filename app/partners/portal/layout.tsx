@@ -2,9 +2,9 @@ import { ReactNode } from "react";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Partner Portal | Rehabify Health Developer & Hospital Dashboard",
+  title: "Partner & Referral Portal | Rehabify Health",
   description:
-    "Enterprise Partner Portal for HMOs, hospitals, clinics, and developers to manage patient referrals, track care journeys, configure API keys, and monitor webhooks.",
+    "Partner Portal for referring doctors, HMOs, hospitals, clinics and developers: refer patients, track their care, configure API keys and monitor webhooks.",
   keywords: [
     "Rehabify Partner Portal",
     "Physiotherapy API",

@@ -8,7 +8,7 @@
  */
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
-import { isPartnerApproved, linkEnv, referralEnv, toPublicStatus } from "./partnerShared";
+import { isPartnerApproved, linkEnv, normalizePhone, phonesMatch, referralEnv, toPublicStatus } from "./partnerShared";
 import { transitionReferral } from "./partnerEvents";
 
 type LinkCounter = "clicks" | "leads" | "joyStarts" | "signups" | "bookings" | "payments";
@@ -69,6 +69,8 @@ export async function attributeUserToReferral(ctx: MutationCtx, userId: Id<"user
   if (!referral.partnerId || referralEnv(referral) !== "live") return;
   const user = await ctx.db.get(userId);
   if (!user) return;
+  // The referral knows its patient too, so the referrer's portal can show sessions and reports
+  if (!referral.patientId) await ctx.db.patch(referral._id, { patientId: userId, updatedAt: Date.now() });
   const patch: Partial<Doc<"users">> = {};
   if (!user.linkedReferralId) {
     patch.linkedReferralId = referral._id;
@@ -98,6 +100,14 @@ export async function attributionForBooking(
     const result = await attributeUserToLink(ctx, current, referralPublicCode, "referral_link");
     if (result.attributed) current = (await ctx.db.get(patient._id)) ?? current;
   }
+  // A doctor referred them but they booked on the website (not through Joy): find that referral by phone
+  if (!current.referredByPartnerCode || !current.linkedReferralId) {
+    const open = await findOpenReferralForPatient(ctx, current);
+    if (open && (!current.referredByPartnerCode || current.referredByPartnerCode === open.partnerId)) {
+      await attributeUserToReferral(ctx, current._id, open);
+      current = (await ctx.db.get(patient._id)) ?? current;
+    }
+  }
   if (!current.referredByPartnerCode) return {};
   let referralId = current.linkedReferralId;
   if (referralId) {
@@ -107,26 +117,92 @@ export async function attributionForBooking(
   return { partnerId: current.referredByPartnerCode, referralId, referralLinkId: current.referralLinkId };
 }
 
-/** A completed appointment moves the patient's booked live referral into treatment. */
-export async function onPatientSessionCompleted(ctx: MutationCtx, patientId: Id<"users">) {
+/**
+ * The patient's open live referral that came in by phone (a doctor's form or link) and hasn't been
+ * booked yet: the last 90 days, newest first. Lets a patient who books on the website (not through
+ * Joy) still count for the doctor who referred them.
+ */
+export async function findOpenReferralForPatient(ctx: MutationCtx | QueryCtx, patient: Doc<"users">) {
+  const phone = normalizePhone(patient.phoneNumber);
+  if (!phone) return null;
+  const cutoff = Date.now() - 90 * 24 * 60 * 60 * 1000;
+  const candidates = await ctx.db
+    .query("inboundReferrals")
+    .withIndex("by_phone_normalized", (q) => q.eq("patientPhoneNormalized", phone))
+    .order("desc")
+    .take(10);
+  return (
+    candidates.find(
+      (r) =>
+        referralEnv(r) === "live" &&
+        Boolean(r.partnerId) &&
+        (r.createdAt ?? r._creationTime) >= cutoff &&
+        (!r.patientId || r.patientId === patient._id) &&
+        phonesMatch(r.patientPhone, phone) &&
+        ["received", "contacted"].includes(toPublicStatus(r.status))
+    ) ?? null
+  );
+}
+
+/** The care path a referral moves along; later steps only, never back. */
+const CARE_PATH: InternalStatus[] = [
+  "received",
+  "consent_pending",
+  "contacted",
+  "intake_started",
+  "intake_completed",
+  "qualified",
+  "booked",
+  "attended",
+  "treatment_active",
+  "completed",
+];
+type InternalStatus = Doc<"inboundReferrals">["status"];
+
+/** The patient's live referrals: the one linked to their account and any naming them. */
+async function liveReferralsOf(ctx: MutationCtx, patientId: Id<"users">) {
   const patient = await ctx.db.get(patientId);
-  const candidates: Doc<"inboundReferrals">[] = [];
+  const found: Doc<"inboundReferrals">[] = [];
   if (patient?.linkedReferralId) {
     const linked = await ctx.db.get(patient.linkedReferralId);
-    if (linked) candidates.push(linked);
+    if (linked) found.push(linked);
   }
   const byPatient = await ctx.db
     .query("inboundReferrals")
     .withIndex("by_patient", (q) => q.eq("patientId", patientId))
     .take(10);
-  for (const referral of byPatient) if (!candidates.some((c) => c._id === referral._id)) candidates.push(referral);
-  for (const referral of candidates) {
-    if (referralEnv(referral) !== "live") continue;
-    if (toPublicStatus(referral.status) === "booked") {
-      await transitionReferral(ctx, referral._id, "treatment_active", {
-        actorType: "system",
-        actorId: "appointment.completed",
-      });
-    }
+  for (const referral of byPatient) if (!found.some((r) => r._id === referral._id)) found.push(referral);
+  return found.filter((r) => referralEnv(r) === "live");
+}
+
+/**
+ * Moves the patient's referrals forward to `to` (never back, never out of a closed state such as
+ * cancelled or not suitable). Each move goes through transitionReferral, so the milestone time,
+ * the partner's webhook and the referring doctor's update all happen.
+ */
+export async function advancePatientReferrals(
+  ctx: MutationCtx,
+  patientId: Id<"users">,
+  to: "attended" | "treatment_active" | "completed",
+  actor: { actorType: string; actorId: string }
+) {
+  const target = CARE_PATH.indexOf(to);
+  for (const referral of await liveReferralsOf(ctx, patientId)) {
+    const current = CARE_PATH.indexOf(referral.status);
+    if (current === -1 || current >= target) continue;
+    await transitionReferral(ctx, referral._id, to, actor);
+  }
+}
+
+/**
+ * A completed visit: the first one means the patient was seen ("attended"), the next ones that
+ * they're in treatment. Referrals not booked yet catch up too (e.g. booked outside Rehabify).
+ */
+export async function onPatientSessionCompleted(ctx: MutationCtx, patientId: Id<"users">) {
+  for (const referral of await liveReferralsOf(ctx, patientId)) {
+    const current = CARE_PATH.indexOf(referral.status);
+    if (current === -1) continue;
+    const next = current < CARE_PATH.indexOf("attended") ? "attended" : referral.status === "attended" ? "treatment_active" : null;
+    if (next) await transitionReferral(ctx, referral._id, next, { actorType: "system", actorId: "appointment.completed" });
   }
 }

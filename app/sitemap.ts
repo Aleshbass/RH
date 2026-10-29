@@ -46,6 +46,7 @@ const STATIC_ROUTES: StaticRoute[] = [
   { path: '/platform/family', changeFrequency: 'monthly', priority: 0.5 },
   { path: '/platform/physiotherapists', changeFrequency: 'monthly', priority: 0.6 },
   { path: '/platform/clinics', changeFrequency: 'monthly', priority: 0.6 },
+  { path: '/platform/doctors', changeFrequency: 'monthly', priority: 0.6 },
   { path: '/partnerships', changeFrequency: 'monthly', priority: 0.6 },
   { path: '/physio-register', changeFrequency: 'weekly', priority: 0.6 },
   { path: '/learn', changeFrequency: 'weekly', priority: 0.7 }, // MSK Specialist Program (cohort dates change per intake)

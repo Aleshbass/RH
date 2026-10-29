@@ -85,6 +85,12 @@ export default function DashboardPage() {
         router.replace('/dashboard/patient')
         return
       }
+      // Family and caregivers: their portal welcomes them and asks who they care for
+      if (effectiveRole === 'family_member') {
+        if (!isRedirecting) setIsRedirecting(true)
+        router.replace('/dashboard/family')
+        return
+      }
       // Referring doctors finish a short profile, then work from the partner portal
       if (effectiveRole === 'doctor') {
         if (!isRedirecting) setIsRedirecting(true)
@@ -123,6 +129,9 @@ export default function DashboardPage() {
           break
         case 'patient':
           router.replace('/dashboard/patient')
+          break
+        case 'family_member':
+          router.replace('/dashboard/family')
           break
         case 'doctor':
           // Referring doctors use the partner portal (referrals, referral link, commissions)

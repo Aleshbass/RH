@@ -267,7 +267,9 @@ export default clerkMiddleware(async (auth, req) => {
   return NextResponse.next({
     request: { headers: requestHeaders },
   });
-});
+  // Signed-out visitors to a protected page go to our own sign-in (not Clerk's hosted page), and
+  // come back to that page afterwards (lib/auth/ssoRedirect.ts keeps same-site addresses)
+}, { signInUrl: "/sign-in", signUpUrl: "/sign-up" });
 
 export const config = {
   matcher: [

@@ -1,0 +1,41 @@
+'use client'
+
+import { useEffect, useRef } from 'react'
+import { useAuth } from '@clerk/nextjs'
+import { clearUserNoteDrafts } from '@/components/physio/notes/draftStore'
+import { disablePush, setIconBadge } from '@/lib/pwa'
+
+/** Saved in this browser for one person; never carried over to whoever signs in next. */
+const PERSONAL_KEYS = ['rh_signup_intent', 'rh_app_setup_snoozed_until']
+
+/**
+ * Tidies the device whenever someone stops being signed in, however it happened: a sign-out
+ * button in any portal, Clerk's account menu, an expired session, or a different account signing
+ * in. Their push notifications stop coming to this device, the app-icon count clears, and their
+ * unsaved clinical-note drafts and saved choices are removed. The next person turns notifications
+ * on for themselves (the app-setup prompt asks).
+ */
+export function useSignOutCleanup() {
+  const { isLoaded, isSignedIn, userId } = useAuth()
+  const lastUserId = useRef<string | null>(null)
+
+  useEffect(() => {
+    if (!isLoaded) return
+    const current = isSignedIn && userId ? userId : null
+    const previous = lastUserId.current
+    lastUserId.current = current
+    if (previous && previous !== current) void cleanUpAfter(previous)
+  }, [isLoaded, isSignedIn, userId])
+}
+
+async function cleanUpAfter(clerkUserId: string) {
+  setIconBadge(0)
+  clearUserNoteDrafts(clerkUserId)
+  try {
+    for (const key of PERSONAL_KEYS) window.localStorage.removeItem(key)
+  } catch {
+    // Storage blocked: nothing was saved there
+  }
+  // The server forgets the old endpoint the first time a push to it fails
+  await disablePush().catch(() => null)
+}

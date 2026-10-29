@@ -96,6 +96,8 @@ async function isClinicPatient(ctx: QueryCtx, clinicId: Id<"clinics">, patientId
 export async function assertCanMessage(ctx: QueryCtx, me: Doc<"users">, other: Doc<"users">) {
   if (me._id === other._id) throw new ConvexError("You can't send a message to yourself.");
   if (me.role === "admin" || other.role === "admin") return;
+  // A family member or caregiver allowed to message the care team of someone they look after
+  if ((await caregiverMayMessage(ctx, me, other)) || (await caregiverMayMessage(ctx, other, me))) return;
 
   const patient = me.role === "patient" ? me : other.role === "patient" ? other : null;
   const staff = patient === me ? other : me;
@@ -118,6 +120,25 @@ export async function assertCanMessage(ctx: QueryCtx, me: Doc<"users">, other: D
     throw new ConvexError("You can only message members of your own clinic team.");
   }
   throw new ConvexError("Messages are for patients and their care team.");
+}
+
+/** The carer has "message" access for a patient whom this staff member treats (or whose clinic they work for). */
+async function caregiverMayMessage(ctx: QueryCtx, carer: Doc<"users">, staff: Doc<"users">) {
+  if (!staff.role || !CLINIC_TEAM_ROLES.has(staff.role)) return false;
+  const now = Date.now();
+  const grants = (
+    await ctx.db
+      .query("familyAccessGrants")
+      .withIndex("by_family_member_user_id", (q) => q.eq("familyMemberUserId", carer._id))
+      .take(20)
+  ).filter((g) => g.status === "active" && (!g.expiresAt || g.expiresAt > now) && g.permissions.includes("message"));
+  if (grants.length === 0) return false;
+  const clinicId = staff.role === "physiotherapist" && !staff.clinicId ? null : await clinicIdOf(ctx, staff);
+  for (const grant of grants) {
+    if (staff.role === "physiotherapist" && (await hasCareLink(ctx, grant.patientUserId, staff._id))) return true;
+    if (clinicId && (await isClinicPatient(ctx, clinicId, grant.patientUserId))) return true;
+  }
+  return false;
 }
 
 /**
@@ -917,17 +938,14 @@ export const getUnreadCount = query({
   args: {},
   returns: v.number(),
   handler: async (ctx) => {
+    // Badges stay mounted for a moment while someone signs out: nothing to count, not an error
     const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
-    }
+    if (!identity) return 0;
     const currentUser = await ctx.db
       .query("users")
       .withIndex("by_clerk_id", (q: any) => q.eq("clerkId", identity.subject))
       .unique();
-    if (!currentUser) {
-      throw new Error("User not found");
-    }
+    if (!currentUser) return 0;
     // Sum unread counts in conversations where current user is participant1 or 2 (by index)
     const [asFirst, asSecond] = await Promise.all([
       ctx.db.query("conversations").withIndex("by_participant1", (q: any) => q.eq("participant1Id", currentUser._id)).take(300),

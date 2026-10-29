@@ -15,6 +15,7 @@ import { makeFunctionReference } from "convex/server";
 import { mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { appLink } from "./helpers/appUrl";
+import { notifyDoctorOfReport } from "./helpers/doctorReferralUpdates";
 import { randomToken } from "./helpers/exerciseCrypto";
 import { findRelationship, physioOrNull, requirePhysio } from "./helpers/careAccess";
 import { physioNoteReader } from "./helpers/noteAccess";
@@ -470,6 +471,9 @@ export const sendProgressReport = mutation({
       sentAt: now,
       expiresAt,
     });
+
+    // A report for the referring doctor also shows in their referral portal, with an in-app alert
+    await notifyDoctorOfReport(ctx, { patientId: args.patientId, recipientEmail: email, snapshot });
 
     const url = appLink(`/report/${token}`);
     if (email) {

@@ -23,6 +23,8 @@ import { JoyHandoffPanel } from './JoyHandoffPanel'
 import { ProgressPanel } from '@/components/physio/notes/ProgressPanel'
 import { goalTargets } from '@/convex/helpers/goalMeasures'
 import { QuestionnairesPanel } from '@/components/questionnaires/QuestionnairesPanel'
+import { useQuery } from 'convex/react'
+import { careRefs } from '@/components/family/refs'
 
 export function OverviewTab({
   workspace,
@@ -45,6 +47,8 @@ export function OverviewTab({
   const reviewOverdue = plan?.reviewDate ? isPast(plan.reviewDate) : false
   // The clinic owner reading the record: everything shows, nothing clinical is edited
   const readOnly = useWorkspaceReadOnly()
+  // Family and carers who help (convex/careCircle.ts): who to call, who sends check-ins for them
+  const careCircle = useQuery(careRefs.forStaff, { patientId: workspace.patient._id })
 
   return (
     <div className="space-y-5">
@@ -340,6 +344,26 @@ export function OverviewTab({
                 )}
               </Fact>
               {profile?.city && <Fact label="City">{profile.city}</Fact>}
+              {careCircle && careCircle.length > 0 && (
+                <Fact label="Family and carers">
+                  <span className="block space-y-0.5">
+                    {careCircle.map((member) => (
+                      <span key={member.grantId} className="block">
+                        {member.name} ({member.relationship.toLowerCase()})
+                        {member.phone && (
+                          <>
+                            {' · '}
+                            <a href={`tel:${member.phone.replace(/[^\d+]/g, '')}`} className="text-rh-ink underline-offset-2 hover:underline dark:text-rh-lime">
+                              {member.phone}
+                            </a>
+                          </>
+                        )}
+                        {member.managed && <span className="text-pt-muted"> · manages their care</span>}
+                      </span>
+                    ))}
+                  </span>
+                </Fact>
+              )}
             </dl>
           </Panel>
         )}

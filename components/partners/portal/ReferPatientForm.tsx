@@ -5,7 +5,7 @@ import { useMutation } from "convex/react";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import { CheckCircle2, ExternalLink, Send, ShieldCheck, UserPlus, WhatsApp } from "@/components/icons";
-import { Busy, CopyButton, Modal, btnPrimary, btnSecondary, cardCls, errorMessage, inputCls, labelCls, selectCls, type PortalContext } from "./shared";
+import { Busy, CopyButton, Modal, btnPrimary, btnSecondary, errorMessage, inputCls, labelCls, selectCls, type PortalContext } from "./shared";
 
 type CreatedReferral = {
   id: string;
@@ -252,51 +252,11 @@ export function ReferPatientForm({ ctx, onDone, compact = false }: { ctx: Portal
   );
 }
 
-/** The form in a card, for the "Refer a patient" tab. */
-export function ReferPatientPanel({ ctx }: { ctx: PortalContext }) {
-  return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-      <div className={`${cardCls} p-5 sm:p-6 lg:col-span-2`}>
-        <h3 className="text-sm font-semibold">Refer a patient</h3>
-        <p className="text-xs text-[#52706e] mt-1 mb-5">Takes a minute. We contact the patient, match them with a physiotherapist and keep you updated.</p>
-        <ReferPatientForm ctx={ctx} />
-      </div>
-      <HowItWorks ctx={ctx} />
-    </div>
-  );
-}
-
-/** The form in a pop-up (bottom sheet on phones). */
+/** The form in a pop-up (bottom sheet on phones), for partner organisations with live access. */
 export function ReferPatientModal({ ctx, open, onClose }: { ctx: PortalContext; open: boolean; onClose: () => void }) {
   return (
     <Modal open={open} onClose={onClose} size="lg" title="Refer a patient" description="We contact the patient, match them with a physiotherapist and keep you updated.">
       {open && <ReferPatientForm ctx={ctx} onDone={onClose} compact />}
     </Modal>
-  );
-}
-
-export function HowItWorks({ ctx }: { ctx: PortalContext }) {
-  const steps = [
-    ["You refer", "Send the patient's details here, or share your referral link."],
-    ["We reach them", "Our care team contacts the patient on WhatsApp."],
-    ["They start care", "The patient books and pays for sessions with a verified physiotherapist."],
-    ["You earn", ctx.isDoctor ? "Commission on their payments, under the terms Rehabify agreed with you." : "Commission on their payments, under your agreement."],
-    ["Monthly payout", "Approved commissions are paid to your bank account each month."],
-  ];
-  return (
-    <div className={`${cardCls} p-5 sm:p-6`}>
-      <h3 className="text-sm font-semibold">How it works</h3>
-      <ol className="mt-4 space-y-3.5">
-        {steps.map(([title, body], i) => (
-          <li key={title} className="flex gap-3">
-            <span className="w-6 h-6 rounded-full bg-rh-ink text-[#FAF6E7] text-[11px] font-bold flex items-center justify-center shrink-0">{i + 1}</span>
-            <span className="min-w-0">
-              <span className="block text-xs font-semibold text-rh-ink">{title}</span>
-              <span className="block text-xs text-[#52706e] leading-relaxed">{body}</span>
-            </span>
-          </li>
-        ))}
-      </ol>
-    </div>
   );
 }

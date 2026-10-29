@@ -85,9 +85,9 @@ export function parseIntent(value: string | null | undefined): SignupIntent | nu
   return (value && ALIASES[value.trim().toLowerCase()]) || null;
 }
 
-/** The account role an intent creates. Family members get a patient account set up for a relative. */
-export function roleForIntent(intent: SignupIntent): "patient" | "physiotherapist" | "clinic_owner" | "doctor" | null {
-  if (intent === "family") return "patient";
+/** The account role an intent creates. Family members and caregivers get their own (care circle) account. */
+export function roleForIntent(intent: SignupIntent): "patient" | "physiotherapist" | "clinic_owner" | "doctor" | "family_member" | null {
+  if (intent === "family") return "family_member";
   if (intent === "partner") return null;
   return intent;
 }
@@ -98,7 +98,8 @@ export function onboardingPathFor(intent: SignupIntent): string {
     case "patient":
       return "/patient/step1";
     case "family":
-      return "/patient/step1?for=family";
+      // The family portal asks who they care for (or opens their invite)
+      return "/dashboard/family";
     case "physiotherapist":
       return "/physiotherapist";
     case "clinic_owner":
@@ -123,6 +124,9 @@ export function afterSignUpPathFor(intent: SignupIntent | null): string {
 const PATH_INTENTS: [RegExp, SignupIntent][] = [
   // A clinic or physio invited them: they join as a patient, nothing else to choose
   [/^\/patient-invite(\/|$)/, "patient"],
+  // Someone invited them to help with a relative's care
+  [/^\/care-invite(\/|$)/, "family"],
+  [/^\/platform\/doctors(\/|$)/, "doctor"],
   [/^\/(platform\/clinics|clinic-owner)(\/|$)/, "clinic_owner"],
   [/^\/(platform\/physiotherapists|physiotherapist|payout-policy|physio-register)(\/|$)/, "physiotherapist"],
   [/^\/platform\/family(\/|$)/, "family"],
