@@ -23,6 +23,8 @@ type Receipt = {
   reference: string | null
   relationship: 'rehabify_care' | 'independent' | 'clinic' | null
   paidAt: number
+  /** The clinic a clinic payment went to */
+  paidTo?: string | null
 }
 
 // A plain reference: the generated `api` type is at TypeScript's depth limit (TS2589)
@@ -103,7 +105,9 @@ export default async function ReceiptPage({ params }: { params: Promise<{ token:
           <footer className="mt-10 border-t border-rh-ink/10 pt-5 text-xs leading-5 text-rh-ink/50">
             <p>Rehabify Limited · RC 6989173 · Okeoffa, Babasale, Oje, Ibadan, Oyo State, Nigeria</p>
             {receipt.relationship === 'rehabify_care' && <p>Medical services are exempt from VAT under the Nigeria Tax Act 2025.</p>}
-            {receipt.relationship === 'clinic' && <p>Paid to the clinic through Rehabify. The clinic’s own payment terms apply.</p>}
+            {receipt.relationship === 'clinic' && (
+              <p>Paid to {receipt.paidTo ?? 'the clinic'} through Rehabify. The clinic’s own payment terms apply.</p>
+            )}
             {receipt.relationship === 'independent' && <p>Paid to your physiotherapist through Rehabify. Their own payment terms apply.</p>}
             <p>Questions? support@physioaroundme.com, quoting {receipt.number}.</p>
           </footer>

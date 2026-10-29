@@ -18,7 +18,8 @@ import { publicAppUrl } from "./helpers/appUrl";
 import { awaitingConfirmationFrom, hasPendingProposal } from "./helpers/appointmentStatus";
 import { lagosDateTime } from "./helpers/lagosTime";
 import { assertNoteTextLength, earlierVersions, keepRevision, revisionCountOf } from "./helpers/noteRevisions";
-import { canReadNote, noteReaderFor, physioNoteReader, type NoteReader } from "./helpers/noteAccess";
+import { canReadNote, clinicNoteReader, noteReaderFor, physioNoteReader, type NoteReader } from "./helpers/noteAccess";
+import { getClinicMember, getClinicStaffUserIds } from "./clinicTools";
 import { cleanMeasures, measureValidator, sameMeasures } from "./helpers/clinicalMeasures";
 import { autoTargetText, cleanGoalMeasure, firstValueSince, goalMeasureValidator, type GoalMeasure } from "./helpers/goalMeasures";
 import { physioMeasuredNotes } from "./helpers/measuredNotes";
@@ -29,6 +30,7 @@ import {
   isApproved,
   physioOrNull,
   requireActiveRelationship,
+  requireClinicCareAccess,
   requirePhysio,
 } from "./helpers/careAccess";
 
@@ -98,11 +100,23 @@ function sourceFromRelationship(relationship: Doc<"patientPhysiotherapistRelatio
   }
 }
 
-async function episodesFor(ctx: Ctx, physioId: Id<"users">, patientId: Id<"users">) {
-  const rows = await ctx.db
-    .query("careEpisodes")
-    .withIndex("by_patient_and_physiotherapist", (q) => q.eq("patientId", patientId).eq("physiotherapistId", physioId))
-    .collect();
+/**
+ * The patient's courses of care with this physio, newest first. A clinic's patient (`clinicId`):
+ * the clinic's courses, whoever on its team opened them, so care continues where it left off when
+ * the patient moves to another clinician.
+ */
+async function episodesFor(ctx: Ctx, physioId: Id<"users">, patientId: Id<"users">, clinicId?: Id<"clinics">) {
+  const rows = clinicId
+    ? (
+        await ctx.db
+          .query("careEpisodes")
+          .withIndex("by_patient_and_physiotherapist", (q) => q.eq("patientId", patientId))
+          .collect()
+      ).filter((e) => e.clinicId === clinicId || (!e.clinicId && e.physiotherapistId === physioId))
+    : await ctx.db
+        .query("careEpisodes")
+        .withIndex("by_patient_and_physiotherapist", (q) => q.eq("patientId", patientId).eq("physiotherapistId", physioId))
+        .collect();
   return rows.sort((a, b) => b.startedAt - a.startedAt);
 }
 
@@ -112,7 +126,7 @@ async function ensureActiveEpisode(
   physio: Doc<"users">,
   relationship: Doc<"patientPhysiotherapistRelationships">
 ) {
-  const episodes = await episodesFor(ctx, physio._id, relationship.patientId);
+  const episodes = await episodesFor(ctx, physio._id, relationship.patientId, relationship.clinicId);
   const open = episodes.find((e) => e.status === "active");
   if (open) return open;
   const now = Date.now();
@@ -130,12 +144,15 @@ async function ensureActiveEpisode(
   return (await ctx.db.get(id))!;
 }
 
-async function activePlanFor(ctx: Ctx, physioId: Id<"users">, patientId: Id<"users">) {
+/** The care plan in use. A clinic's patient (`clinicId`): the clinic's, whoever on its team wrote it. */
+async function activePlanFor(ctx: Ctx, physioId: Id<"users">, patientId: Id<"users">, clinicId?: Id<"clinics">) {
   const plans = await ctx.db
     .query("treatmentPlans")
     .withIndex("by_patient", (q) => q.eq("patientId", patientId))
     .collect();
-  const mine = plans.filter((p) => p.physiotherapistId === physioId);
+  const mine = plans.filter((p) =>
+    clinicId ? p.clinicId === clinicId || (!p.clinicId && p.physiotherapistId === physioId) : p.physiotherapistId === physioId
+  );
   return (
     mine.filter((p) => p.status === "active").sort((a, b) => b.updatedAt - a.updatedAt)[0] ??
     mine.filter((p) => p.status === "draft" || p.status === "on_hold").sort((a, b) => b.updatedAt - a.updatedAt)[0] ??
@@ -268,13 +285,48 @@ async function describeProgramLogs(ctx: Ctx, logs: Doc<"exerciseProgramLogs">[])
 // Physio: reading a patient's workspace
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Who is reading a patient's workspace, and through which care relationship:
+ * - the signed-in physio, through their own relationship (they may work on it);
+ * - or, for one of the clinic's own patients, the clinic owner or a front-desk member with
+ *   Patients access, read-only (the owner manages but doesn't treat). Records are scoped as for
+ *   the patient's clinician (`scopeId`), so they see exactly the clinic's record.
+ * Clinicians always read as physios: a colleague's patient they don't treat stays closed.
+ */
+async function workspaceReader(ctx: QueryCtx, patientId: Id<"users">) {
+  const physio = await physioOrNull(ctx);
+  if (physio) {
+    const relationship = await findRelationship(ctx, physio._id, patientId);
+    return relationship ? { viewer: physio, scopeId: physio._id, relationship, readOnly: false as const } : null;
+  }
+  let member;
+  try {
+    member = await getClinicMember(ctx, "patients");
+  } catch {
+    return null;
+  }
+  if (member.kind === "clinician") return null;
+  const clinic = member.clinic;
+  const rows = (
+    await ctx.db
+      .query("patientPhysiotherapistRelationships")
+      .withIndex("by_patient", (q) => q.eq("patientId", patientId))
+      .collect()
+  ).filter((r) => r.clinicId === clinic._id);
+  if (rows.length === 0) return null;
+  const relationship =
+    rows.find((r) => r.status === "active") ?? rows.sort((a, b) => (b.endDate ?? b.startDate) - (a.endDate ?? a.startDate))[0];
+  return { viewer: member.user, scopeId: relationship.physiotherapistId, relationship, readOnly: true as const, clinic };
+}
+
 export const getPatientWorkspace = query({
   args: { patientId: v.id("users"), now: v.optional(v.number()) },
   handler: async (ctx, args) => {
-    const physio = await physioOrNull(ctx);
-    if (!physio) return null;
-    const relationship = await findRelationship(ctx, physio._id, args.patientId);
-    if (!relationship) return null;
+    const access = await workspaceReader(ctx, args.patientId);
+    if (!access) return null;
+    const { relationship } = access;
+    // Whose records these are: the physio's own, or (read-only clinic view) the treating clinician's
+    const physio = { _id: access.scopeId };
     const patient = await ctx.db.get(args.patientId);
     if (!patient) return null;
 
@@ -285,7 +337,7 @@ export const getPatientWorkspace = query({
       .first();
 
     // Episodes (synthesised for patients who joined before episodes existed)
-    const episodes = await episodesFor(ctx, physio._id, args.patientId);
+    const episodes = await episodesFor(ctx, physio._id, args.patientId, relationship.clinicId);
     const storedCurrent = episodes.find((e) => e.status === "active") ?? episodes[0] ?? null;
     const episode = storedCurrent
       ? { ...storedCurrent, synthetic: false }
@@ -298,9 +350,14 @@ export const getPatientWorkspace = query({
           synthetic: true,
         };
     const episodeStart = episode.startedAt;
+    // A clinic's patient: the clinic's whole record (whoever on its team wrote it), so care
+    // continues across clinicians. Anyone else: only this physio's own work.
+    const clinicId = relationship.clinicId;
+    const ours = (rec: { clinicId?: Id<"clinics">; physiotherapistId?: Id<"users"> }) =>
+      clinicId ? rec.clinicId === clinicId || rec.physiotherapistId === physio._id : rec.physiotherapistId === physio._id;
 
     // Care plan
-    const plan = await activePlanFor(ctx, physio._id, args.patientId);
+    const plan = await activePlanFor(ctx, physio._id, args.patientId, relationship.clinicId);
     const totalExercises = plan ? plan.phases.reduce((n, phase) => n + phase.exercises.length, 0) : 0;
     const goalsAchieved = plan ? plan.goals.filter((g) => g.achieved).length : 0;
 
@@ -310,7 +367,7 @@ export const getPatientWorkspace = query({
         .query("appointments")
         .withIndex("by_patient_id_and_time", (q) => q.eq("patientId", args.patientId))
         .collect()
-    ).filter((a) => a.physiotherapistId === physio._id && !a.isRecordOnly);
+    ).filter((a) => ours(a) && !a.isRecordOnly);
     const nextAppointment =
       appointments
         .filter((a) => a.startTime >= now - 30 * 60 * 1000 && UPCOMING_STATUSES.has(a.status))
@@ -322,12 +379,14 @@ export const getPatientWorkspace = query({
     // (exerciseProgramLogs) are the main source; the older care-plan exercises
     // (exerciseCompletions) only count towards the target while the patient still logs them.
     const since = now - 7 * DAY;
-    const programs = (
+    const scopedPrograms = (
       await ctx.db
         .query("exercisePrograms")
         .withIndex("by_patient", (q) => q.eq("patientId", args.patientId))
         .collect()
-    ).filter((p) => p.status === "active");
+    ).filter((p) => (clinicId ? p.clinicId === clinicId : !p.clinicId && p.createdBy === physio._id));
+    const scopedProgramIds = new Set<string>(scopedPrograms.map((p) => p._id));
+    const programs = scopedPrograms.filter((p) => p.status === "active");
     const programExercises = programs.reduce((n, p) => n + p.items.filter((i) => i.kind !== "education").length, 0);
     const activeProgramIds = new Set<string>(programs.map((p) => p._id));
     const weekLogs = await ctx.db
@@ -364,30 +423,36 @@ export const getPatientWorkspace = query({
         : null;
 
     // Recent home-programme logs (pain, difficulty, note) for the Check-ins tab and Overview
-    const recentLogs = await ctx.db
-      .query("exerciseProgramLogs")
-      .withIndex("by_patient", (q) => q.eq("patientId", args.patientId))
-      .order("desc")
-      .take(30);
+    const recentLogs = (
+      await ctx.db
+        .query("exerciseProgramLogs")
+        .withIndex("by_patient", (q) => q.eq("patientId", args.patientId))
+        .order("desc")
+        .take(60)
+    )
+      .filter((l) => scopedProgramIds.has(l.programId))
+      .slice(0, 30);
     const exerciseLogs = await describeProgramLogs(ctx, recentLogs);
 
-    // Check-ins addressed to this physio (or to nobody in particular)
+    // Check-ins addressed to this physio (or to nobody in particular); the clinic view: to anyone on its team
+    const clinicStaff = access.readOnly ? await getClinicStaffUserIds(ctx, access.clinic) : null;
     const checkIns = (
       await ctx.db
         .query("patientCheckIns")
         .withIndex("by_patient", (q) => q.eq("patientId", args.patientId))
         .order("desc")
         .take(40)
-    ).filter((c) => !c.physiotherapistId || c.physiotherapistId === physio._id);
+    ).filter((c) => !c.physiotherapistId || (clinicStaff ? clinicStaff.has(c.physiotherapistId) : c.physiotherapistId === physio._id));
 
-    // Money
+    // Money: the physio's invoices; the clinic view: the clinic's invoices for this patient
+    const clinicView = access.readOnly ? access.clinic : null;
     const invoices = (
       await ctx.db
         .query("invoices")
         .withIndex("by_patient_id", (q) => q.eq("patientId", args.patientId))
         .order("desc")
         .take(200)
-    ).filter((i) => i.physiotherapistId === physio._id);
+    ).filter((i) => (clinicView ? i.clinicId === clinicView._id : i.physiotherapistId === physio._id));
     const unpaid = invoices.filter((i) => i.status === "sent" || i.status === "partial_payment" || i.status === "overdue");
 
     // Only the count and the latest date are shown here: read up to 200 notes, newest first
@@ -396,7 +461,7 @@ export const getPatientWorkspace = query({
       .withIndex("by_patient_id_and_date", (q) => q.eq("patientId", args.patientId))
       .order("desc")
       .take(200);
-    const myNotes = notes.filter((n) => n.physiotherapistId === physio._id);
+    const myNotes = notes.filter(ours);
 
     return {
       patient: {
@@ -489,9 +554,23 @@ export const getPatientWorkspace = query({
               respondedAt: storedCurrent.followUpRespondedAt,
             }
           : null,
+      // The clinic's read-only view: who treats the patient (none yet while they're with the owner)
+      clinicView: clinicView
+        ? {
+            clinicianId: treatingClinicianId(relationship, clinicView),
+            clinicianName: treatingClinicianId(relationship, clinicView) ? fullName(await ctx.db.get(relationship.physiotherapistId)) : null,
+            /** False while they haven't opened their invite (still the clinic's placeholder account) */
+            hasAccount: !(patient.clerkId ?? "").startsWith("clinic_patient_"),
+          }
+        : null,
     };
   },
 });
+
+/** The clinician treating a clinic's patient; null while they wait with the owner, who doesn't treat. */
+function treatingClinicianId(relationship: Doc<"patientPhysiotherapistRelationships">, clinic: Doc<"clinics">) {
+  return relationship.status === "active" && relationship.physiotherapistId !== clinic.ownerId ? relationship.physiotherapistId : null;
+}
 
 /** Notes getClinicalNotes returns when no limit is sent, and the most it returns at once. */
 const NOTES_PAGE = 50;
@@ -538,7 +617,8 @@ function nameLookup(ctx: QueryCtx) {
 export const getClinicalNotes = query({
   args: { patientId: v.id("users"), limit: v.optional(v.number()) },
   handler: async (ctx, args) => {
-    const reader = await physioNoteReader(ctx, args.patientId);
+    // Physios as usual; the clinic owner and front desk read their clinic's notes (read-only)
+    const reader = (await physioNoteReader(ctx, args.patientId)) ?? (await clinicNoteReader(ctx, args.patientId));
     if (!reader) return [];
     const limit = Math.min(MAX_NOTES_PAGE, Math.max(1, Math.floor(args.limit ?? NOTES_PAGE)));
     const notes = await readableNotes(ctx, reader, args.patientId, limit);
@@ -584,7 +664,7 @@ export const getClinicalNotes = query({
 export const getClinicalNoteMeasures = query({
   args: { patientId: v.id("users") },
   handler: async (ctx, args) => {
-    const reader = await physioNoteReader(ctx, args.patientId);
+    const reader = (await physioNoteReader(ctx, args.patientId)) ?? (await clinicNoteReader(ctx, args.patientId));
     if (!reader) return [];
     const notes = (await readableNotes(ctx, reader, args.patientId, MAX_MEASURED_NOTES)).filter((n) => n.measures?.length);
     const nameOf = nameLookup(ctx);
@@ -667,15 +747,16 @@ async function resolveStoredUrl(ctx: QueryCtx, value: string): Promise<string | 
 export const getCarePlanHistory = query({
   args: { patientId: v.id("users") },
   handler: async (ctx, args) => {
-    const physio = await physioOrNull(ctx);
-    if (!physio) return [];
-    if (!(await findRelationship(ctx, physio._id, args.patientId))) return [];
+    const access = await workspaceReader(ctx, args.patientId);
+    if (!access) return [];
+    // A clinic's patient: the clinic's plans, whoever on its team wrote them (care continues)
+    const clinicId = access.relationship.clinicId;
     const plans = (
       await ctx.db
         .query("treatmentPlans")
         .withIndex("by_patient", (q) => q.eq("patientId", args.patientId))
         .collect()
-    ).filter((p) => p.physiotherapistId === physio._id);
+    ).filter((p) => (clinicId ? p.clinicId === clinicId || (!p.clinicId && p.physiotherapistId === access.scopeId) : p.physiotherapistId === access.scopeId));
 
     const history: {
       planId: Id<"treatmentPlans">;
@@ -1015,9 +1096,16 @@ type GoalInput = { description: string; targetValue: string; timeline: string; a
  * began, in any note the physio can read (none yet: it's read from the notes until the next save). A linked goal with no
  * "measure" text gets one written from the link, so the patient's app has something to show.
  */
-async function cleanPlanGoals(ctx: MutationCtx, physioId: Id<"users">, patientId: Id<"users">, since: number, input: GoalInput[]) {
+async function cleanPlanGoals(
+  ctx: MutationCtx,
+  physioId: Id<"users">,
+  patientId: Id<"users">,
+  since: number,
+  input: GoalInput[],
+  clinicId?: Id<"clinics">
+) {
   const linked = input.some((g) => g.measure && g.description.trim());
-  const previous = linked ? (await activePlanFor(ctx, physioId, patientId))?.goals ?? [] : [];
+  const previous = linked ? (await activePlanFor(ctx, physioId, patientId, clinicId))?.goals ?? [] : [];
   // The same notes getClinicalNoteMeasures shows the physio (clinic colleagues' included)
   const notes = linked ? await physioMeasuredNotes(ctx, patientId) : [];
   return input
@@ -1071,7 +1159,7 @@ export const saveCarePlan = mutation({
 
     const title = args.title.trim();
     if (!title) throw new ConvexError("Give the plan a title.");
-    const goals = await cleanPlanGoals(ctx, physio._id, args.patientId, episode.startedAt, args.goals);
+    const goals = await cleanPlanGoals(ctx, physio._id, args.patientId, episode.startedAt, args.goals, relationship.clinicId);
     if (goals.length === 0) throw new ConvexError("Add at least one functional goal.");
     const now = Date.now();
     const fields = {
@@ -1083,7 +1171,7 @@ export const saveCarePlan = mutation({
       reviewDate: args.reviewDate,
       precautions: args.precautions?.trim() || undefined,
     };
-    const existing = await activePlanFor(ctx, physio._id, args.patientId);
+    const existing = await activePlanFor(ctx, physio._id, args.patientId, relationship.clinicId);
 
     if (existing) {
       const reason = args.changeReason?.trim();
@@ -1540,6 +1628,8 @@ export const completeCare = mutation({
     const now = Date.now();
     const followUpDays = Math.min(90, Math.max(3, Math.round(args.followUpInDays ?? DEFAULT_FOLLOW_UP_DAYS)));
 
+    // A clinic's patient stays with the clinic after discharge: Rehabify doesn't follow them up
+    const clinicCare = Boolean(relationship.clinicId);
     const episode = await ensureActiveEpisode(ctx, physio, relationship);
     await ctx.db.patch(episode._id, {
       status: "completed",
@@ -1547,18 +1637,21 @@ export const completeCare = mutation({
       outcome: args.outcome,
       dischargeSummary: summary,
       homeAdvice: args.homeAdvice?.trim() || undefined,
-      followUpDueAt: now + followUpDays * DAY,
-      followUpStatus: "scheduled",
+      ...(clinicCare ? {} : { followUpDueAt: now + followUpDays * DAY, followUpStatus: "scheduled" as const }),
       updatedAt: now,
     });
 
-    // Care plans with this physio are finished
+    // Care plans of this course of care are finished (a clinic's, whoever on its team wrote them)
     const plans = (
       await ctx.db
         .query("treatmentPlans")
         .withIndex("by_patient", (q) => q.eq("patientId", args.patientId))
         .collect()
-    ).filter((p) => p.physiotherapistId === physio._id && (p.status === "active" || p.status === "draft" || p.status === "on_hold"));
+    ).filter(
+      (p) =>
+        (clinicCare ? p.clinicId === relationship.clinicId : p.physiotherapistId === physio._id) &&
+        (p.status === "active" || p.status === "draft" || p.status === "on_hold")
+    );
     for (const plan of plans) {
       await ctx.db.patch(plan._id, { status: "completed", completedAt: now, updatedAt: now });
     }
@@ -1611,7 +1704,7 @@ export const completeCare = mutation({
       paragraphs: [
         `${physioName} has marked your course of physiotherapy as complete. Well done on the work you've put in.`,
         ...(args.homeAdvice?.trim() ? [`Their advice for you from here: ${args.homeAdvice.trim()}`] : []),
-        `In about ${followUpDays} days the Rehabify team will check in to ask how you're getting on.`,
+        ...(clinicCare ? [] : [`In about ${followUpDays} days the Rehabify team will check in to ask how you're getting on.`]),
       ],
       buttonLabel: "Open Rehabify",
       buttonPath: "/dashboard/patient",
@@ -1628,7 +1721,9 @@ export const startNewEpisode = mutation({
     const physio = await requirePhysio(ctx);
     const relationship = await findRelationship(ctx, physio._id, args.patientId);
     if (!relationship) throw new ConvexError("This patient isn't on your list.");
-    const episodes = await episodesFor(ctx, physio._id, args.patientId);
+    // A clinic's patient comes back through the clinic: only its current team can reopen care
+    if (relationship.clinicId) await requireClinicCareAccess(ctx, physio, relationship.clinicId, { area: "patients" });
+    const episodes = await episodesFor(ctx, physio._id, args.patientId, relationship.clinicId);
     if (episodes.some((e) => e.status === "active") && relationship.status === "active") {
       throw new ConvexError("This patient already has an open course of care.");
     }
@@ -1702,7 +1797,7 @@ export const submitCheckIn = mutation({
     const relationship = await primaryPhysioFor(ctx, patient._id);
     const physioId = relationship?.physiotherapistId;
     const episode = physioId
-      ? (await episodesFor(ctx, physioId, patient._id)).find((e) => e.status === "active")
+      ? (await episodesFor(ctx, physioId, patient._id, relationship?.clinicId)).find((e) => e.status === "active")
       : undefined;
 
     const reasons: string[] = [];

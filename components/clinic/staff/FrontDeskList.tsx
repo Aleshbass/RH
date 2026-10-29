@@ -28,6 +28,7 @@ import { EmptyState, StatusBadge } from '@/components/clinic/ui'
 import { isMissingId } from '@/components/clinic/patients/patient-record-shared'
 import { MemberRoleSelect } from './MemberRoleSelect'
 import { teamError, type ClinicRole, type FrontDeskMember } from './team-shared'
+import { playSound } from '@/lib/sounds'
 
 const fullName = (m: FrontDeskMember | null) => (m ? `${m.firstName} ${m.lastName}`.trim() : '')
 
@@ -76,6 +77,7 @@ export default function FrontDeskList({
         staffId: statusChangeFor.userId,
         newStatus: suspending ? 'suspended' : 'active',
       })
+      playSound(suspending ? 'reject' : 'approve')
       toast.success(`${fullName(statusChangeFor)} ${suspending ? 'suspended' : 'reactivated'}`)
       setStatusChangeFor(null)
     } catch (err) {
@@ -90,6 +92,7 @@ export default function FrontDeskList({
     setBusy(true)
     try {
       await removeFrontDesk({ memberId: removeFor.userId })
+      playSound('reject')
       toast.success(`${fullName(removeFor) || removeFor.email} removed from your clinic`)
       setRemoveFor(null)
     } catch (err) {
@@ -118,28 +121,28 @@ export default function FrontDeskList({
 
   return (
     <div>
-      <ul className="divide-y divide-neutral-200 dark:divide-neutral-800">
+      <ul className="divide-y divide-pt-line">
         {staff.map((member) => {
           const name = fullName(member) || member.email || 'Team member'
           const isSuspended = member.status === 'suspended'
           return (
             <li
               key={member.userId}
-              className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:gap-4 sm:px-5"
+              className="flex flex-col gap-3 px-5 py-3 sm:flex-row sm:items-center sm:gap-4 sm:px-6"
             >
               <div className="flex min-w-0 flex-1 items-center gap-3">
                 <div
                   aria-hidden
-                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-neutral-100 text-xs font-medium text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300"
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-pt-sunken text-xs font-medium text-pt-ink"
                 >
                   {(member.firstName?.[0] || member.email?.[0] || 'T').toUpperCase()}
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <p className="truncate text-sm font-medium text-neutral-900 dark:text-white">{name}</p>
+                    <p className="truncate text-sm font-medium text-pt-ink">{name}</p>
                     {statusBadge(member.status)}
                   </div>
-                  <p className="break-all text-xs text-neutral-500 dark:text-neutral-400 sm:truncate sm:break-normal">
+                  <p className="break-all text-xs text-pt-muted sm:truncate sm:break-normal">
                     {member.email || 'No email'}
                     {member.joinedAt ? ` · Joined ${format(new Date(member.joinedAt), 'd MMM yyyy')}` : ''}
                   </p>
@@ -159,7 +162,7 @@ export default function FrontDeskList({
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button variant="ghost" size="sm" className="h-8 w-8 shrink-0 p-0">
-                        <MoreHorizontal className="h-4 w-4 text-neutral-500" />
+                        <MoreHorizontal className="h-4 w-4 text-pt-muted" />
                         <span className="sr-only">Actions for {name}</span>
                       </Button>
                     </DropdownMenuTrigger>
@@ -174,7 +177,7 @@ export default function FrontDeskList({
                         {isSuspended ? 'Reactivate' : 'Suspend'}
                       </DropdownMenuItem>
                       <DropdownMenuItem
-                        className="text-red-600 focus:text-red-600 dark:text-red-400 dark:focus:text-red-400"
+                        className="text-pt-rose-fg focus:text-pt-rose-fg"
                         onClick={() => ownerAction(member, 'Remove team member', () => setRemoveFor(member))}
                       >
                         Remove from clinic
@@ -229,7 +232,7 @@ export default function FrontDeskList({
             <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
             <AlertDialogAction
               disabled={busy}
-              className="bg-red-600 text-white hover:bg-red-700"
+              className="bg-pt-rose-bg text-pt-rose-fg hover:brightness-95"
               onClick={(e) => {
                 e.preventDefault()
                 void handleRemove()

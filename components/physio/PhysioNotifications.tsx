@@ -28,9 +28,9 @@ type NotificationDoc = {
 }
 
 /** Physio-portal links opened from the clinic portal go to the same thing there */
-function toClinicPortal(url: string) {
+export function toClinicPortal(url: string) {
   const patient = url.match(/^\/dashboard\/physiotherapist\/patients\/([^/?#]+)/)
-  if (patient) return `/dashboard/clinic/patients?patient=${patient[1]}`
+  if (patient) return `/dashboard/clinic/patients/${patient[1]}`
   if (url.startsWith('/dashboard/physiotherapist/billing')) return '/dashboard/clinic/billing'
   if (url.startsWith('/dashboard/physiotherapist/appointments') || url.startsWith('/dashboard/physiotherapist/calendar')) {
     return '/dashboard/clinic/appointments'

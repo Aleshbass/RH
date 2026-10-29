@@ -79,7 +79,8 @@ export async function POST(request: NextRequest) {
 
     // Calculate amounts (all in kobo)
     const baseAmount = invoice.totalAmount || 0;
-    const platformFee = invoice.platformFeeAmount ?? 100000; // ₦1,000 in kobo unless the invoice says otherwise
+    // Rehabify takes no fee unless the invoice says so (independents' and clinics' own patients pay nothing extra)
+    const platformFee = invoice.platformFeeAmount ?? 0;
     // Paystack fee: 1.5% + ₦100 (10000 kobo), capped at ₦2,000 (200000 kobo)
     const paystackFee = Math.min(Math.round((baseAmount + platformFee) * 0.015) + 10000, 200000);
     // Prefer using feeBreakdown.total when available
@@ -96,6 +97,8 @@ export async function POST(request: NextRequest) {
     let subaccountCode: string | null = null;
     // Kobo kept by Rehabify's account; the subaccount receives exactly the provider's share
     let mainAccountCharge = platformFee;
+    let clinicName: string | null = null;
+    let clinicNotConnected = false;
     try {
       const settlement = await getConvexClient().query(api.clinicBilling.getInvoiceSettlement, {
         invoiceId: invoiceId as Id<'invoices'>
@@ -104,8 +107,17 @@ export async function POST(request: NextRequest) {
       if (typeof settlement?.mainAccountChargeKobo === 'number') {
         mainAccountCharge = settlement.mainAccountChargeKobo;
       }
+      clinicName = settlement?.clinicName ?? null;
+      clinicNotConnected = Boolean(settlement?.clinicNotConnected);
     } catch {
       console.log('No payout subaccount found for invoice');
+    }
+    // A clinic's patients pay the clinic directly; until it connects its bank there's no online payment
+    if (clinicNotConnected) {
+      return NextResponse.json(
+        { error: `${clinicName ?? 'Your clinic'} can't take online payments yet. Pay the clinic directly, or ask them for a payment link.` },
+        { status: 400 }
+      );
     }
 
     // Never from the request Host header (api./partners. subdomains give broken links)
@@ -125,6 +137,7 @@ export async function POST(request: NextRequest) {
         patientId: invoice.patientId,
         physiotherapistId: invoice.physiotherapistId || null,
         custom_fields: [
+          ...(clinicName ? [{ display_name: "Clinic", variable_name: "clinic", value: clinicName }] : []),
           {
             display_name: "Invoice Number",
             variable_name: "invoice_number",

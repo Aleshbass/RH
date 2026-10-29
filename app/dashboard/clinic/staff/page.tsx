@@ -21,6 +21,7 @@ import {
 import { TourGuide } from '@/components/shared/TourGuide'
 import { useClinicAccess } from '@/components/clinic/ClinicAccessContext'
 import { PageShell, Panel, StatTile, StatusBadge, primaryButtonClass } from '@/components/clinic/ui'
+import { playSound } from '@/lib/sounds'
 
 const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? '' : 's'}`
 
@@ -73,6 +74,7 @@ export default function StaffManagementPage() {
     try {
       const res = await resendStaffInvitation({ inviteeEmail, inviteeName })
       if (res?.success) {
+        playSound('send')
         toast.success('Invitation resent')
       } else {
         toast.error(res?.message || 'Could not resend invitation')
@@ -91,6 +93,7 @@ export default function StaffManagementPage() {
     setResendingId(id)
     try {
       await revokeStaffInvitation({ invitationId: id })
+      playSound('reject')
       toast.success('Invitation cancelled')
     } catch (error) {
       toast.error(teamError(error, 'Could not cancel the invitation'))
@@ -111,6 +114,7 @@ export default function StaffManagementPage() {
     <PageShell
       title="Team"
       description="The clinicians at your clinic, which pages they can open, and invitations you've sent."
+      info="Clinicians treat your patients in their own workspace. Roles decide which clinic pages each person opens. When someone leaves, you choose who takes over their patients."
       actions={
         <Button id="staff-invite-button" size="sm" className={primaryButtonClass} onClick={openInvite}>
           <UserPlus className="mr-1.5 h-4 w-4" />
@@ -146,21 +150,21 @@ export default function StaffManagementPage() {
 
           {openInvitations.length > 0 && (
             <Panel title="Pending invitations" description="Sent, but not yet accepted.">
-              <ul className="divide-y divide-neutral-200 dark:divide-neutral-800">
+              <ul className="divide-y divide-pt-line">
                 {openInvitations.map((invitation) => (
                   <li
                     key={invitation._id}
-                    className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3 sm:px-5"
+                    className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 py-3 sm:px-6"
                   >
                     <div className="min-w-0 flex-1 basis-48">
-                      <p className="truncate text-sm font-medium text-neutral-900 dark:text-white">
+                      <p className="truncate text-sm font-medium text-pt-ink">
                         {invitation.inviteeName || invitation.inviteeEmail}
                       </p>
-                      <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">
+                      <p className="truncate text-xs text-pt-muted">
                         {invitation.inviteeName ? `${invitation.inviteeEmail} · ` : ''}
                         Sent {format(new Date(invitation._creationTime), 'd MMM')}
                       </p>
-                      <p className="text-xs text-neutral-600 dark:text-neutral-400">
+                      <p className="text-xs text-pt-muted">
                         {roleLabel(invitation.clinicRoleId, roles)}
                       </p>
                     </div>
@@ -184,7 +188,7 @@ export default function StaffManagementPage() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="h-8 text-neutral-500 hover:text-rose-600"
+                        className="h-8 text-pt-muted hover:text-pt-rose-fg"
                         disabled={resendingId === invitation._id}
                         onClick={() => handleRevoke(invitation._id)}
                       >

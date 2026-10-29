@@ -190,4 +190,12 @@ crons.interval(
   {}
 );
 
+// Clinic inventory: low stock and maintenance coming up, once per item. 07:30 WAT.
+crons.daily(
+  "clinic-inventory-alerts",
+  { hourUTC: 6, minuteUTC: 30 },
+  internal.clinicInventory.sendInventoryAlerts,
+  {}
+);
+
 export default crons;

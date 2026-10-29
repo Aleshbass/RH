@@ -9,7 +9,7 @@ import {
     DialogHeader,
     DialogTitle,
     DialogDescription,
-} from '@/components/ui/dialog'
+} from '@/components/clinic/drawerDialog'
 import {
     Select,
     SelectContent,
@@ -25,6 +25,7 @@ import { toast } from 'sonner'
 import { Id } from '@/convex/_generated/dataModel'
 import { EmptyState, StatusBadge, primaryButtonClass } from '@/components/clinic/ui'
 import { useClinicAccess } from '@/components/clinic/ClinicAccessContext'
+import { playSound } from '@/lib/sounds'
 
 /** Accepts both getClinicCliniciansWithCaseload rows and getClinicStaff rows. */
 interface StaffOption {
@@ -91,6 +92,7 @@ export default function PatientListModal({
                 reason: "Clinic owner reassignment"
             })
 
+            playSound('success')
             toast.success('Patient reassigned')
             resetReassign()
         } catch (error) {
@@ -145,24 +147,24 @@ export default function PatientListModal({
                     />
                 ) : (
                     <div className="-mx-1 min-h-0 flex-1 overflow-y-auto px-1">
-                        <ul className="divide-y divide-neutral-200 rounded-xl border border-neutral-200 dark:divide-neutral-800 dark:border-neutral-800">
+                        <ul className="divide-y divide-pt-line rounded-xl border border-pt-line">
                             {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                             {patients.map((patient: any) => (
                                 <li key={patient._id} className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center sm:justify-between">
                                     <div className="flex min-w-0 items-center gap-3">
                                         <Avatar className="h-9 w-9 shrink-0">
                                             <AvatarImage src={patient.imageUrl} alt="" />
-                                            <AvatarFallback className="bg-neutral-100 text-xs dark:bg-neutral-800">
+                                            <AvatarFallback className="bg-pt-sunken text-xs">
                                                 {patient.firstName?.[0]}{patient.lastName?.[0]}
                                             </AvatarFallback>
                                         </Avatar>
                                         <div className="min-w-0">
-                                            <p className="truncate text-sm font-medium text-neutral-900 dark:text-white">
+                                            <p className="truncate text-sm font-medium text-pt-ink">
                                                 {patient.firstName} {patient.lastName}
                                             </p>
                                             <div className="mt-0.5 flex flex-wrap items-center gap-2">
                                                 {patient.stage && <StatusBadge tone={stageTone(patient.stage)}>{patient.stage}</StatusBadge>}
-                                                <span className="text-xs text-neutral-500 dark:text-neutral-400">
+                                                <span className="text-xs text-pt-muted">
                                                     {patient.sessionCount ?? 0} sessions
                                                 </span>
                                             </div>
@@ -172,7 +174,7 @@ export default function PatientListModal({
                                     {reassigningPatientId === patient._id ? (
                                         <div className="flex flex-wrap gap-2">
                                             {reassignOptions.length === 0 ? (
-                                                <p className="w-full text-xs text-neutral-500 sm:w-[200px]">No one else to reassign to.</p>
+                                                <p className="w-full text-xs text-pt-muted sm:w-[200px]">No one else to reassign to.</p>
                                             ) : (
                                                 <Select value={targetPhysioId} onValueChange={setTargetPhysioId}>
                                                     <SelectTrigger className="w-full sm:w-[200px]">

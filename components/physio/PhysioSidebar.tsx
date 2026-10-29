@@ -10,9 +10,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useClerk, useUser } from '@clerk/nextjs'
-import { useQuery } from 'convex/react'
 import { ArrowLeftRight, ArrowRight, Building2, ChevronRight, LogOut, Menu, MoreVertical, PlayCircle, ShieldCheck, Store, UserRound } from '@/components/icons'
-import { api } from '@/convex/_generated/api'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
   DropdownMenu,
@@ -26,7 +24,7 @@ import { PatientThemeToggle, SoundSwitchRow } from '@/components/patient/shell/P
 import { START_PHYSIO_TOUR_EVENT } from '@/components/physio/PhysioTour'
 import { clearUserNoteDrafts } from '@/components/physio/notes/draftStore'
 import { usePracticeMode } from '@/components/physio/practiceMode'
-import { CLINIC_PORTAL_HOME } from '@/components/clinic/clinician-routing'
+import { useClinicMode } from '@/components/physio/clinicMode'
 import { cn } from '@/lib/utils'
 import {
   LIMITED_NAV,
@@ -63,15 +61,41 @@ export function PhysioBrand({ className, onBrand = false }: { className?: string
 }
 
 /**
- * The clinic this physiotherapist also works at, if any, so they can switch to its workspace.
- * Their personal Rehabify account and the clinic's dashboard stay separate.
+ * Clinic mode: the clinic's name (and logo) with "on Rehabify" under it, so the physio always
+ * knows whose patients they're working with.
  */
-function useClinicWorkspace() {
-  const access = useQuery(api.clinicTools.getMyClinicAccess) as
-    | { mode: string; staffKind?: string; clinicName?: string }
-    | undefined
-  if (!access || access.mode !== 'staff' || access.staffKind !== 'clinician' || !access.clinicName) return null
-  return { name: access.clinicName }
+export function ClinicBrand({ name, logoUrl, className }: { name: string; logoUrl: string | null; className?: string }) {
+  return (
+    <span className={cn('flex min-w-0 items-center gap-2.5', className)}>
+      {logoUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={logoUrl} alt="" className="h-8 w-8 shrink-0 rounded-lg object-cover" />
+      ) : (
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-pt-primary text-xs font-bold text-pt-on-primary">
+          {initials(name)}
+        </span>
+      )}
+      <span className="min-w-0">
+        <span className="block truncate text-sm font-semibold leading-tight text-pt-ink">{name}</span>
+        <span className="block text-[11px] leading-tight text-pt-faint">on Rehabify</span>
+      </span>
+    </span>
+  )
+}
+
+/** The portal's brand: the clinic's in clinic mode, otherwise Rehabify's. */
+export function PortalBrand({ className }: { className?: string }) {
+  const clinic = useClinicMode()
+  if (clinic.active && clinic.clinicName) return <ClinicBrand name={clinic.clinicName} logoUrl={clinic.logoUrl} className={className} />
+  return <PhysioBrand className={className} />
+}
+
+/** Menu groups for this physio: Money only when a clinic member's role includes Billing. */
+function useNavGroups(limited: boolean) {
+  const clinic = useClinicMode()
+  const groups = limited ? LIMITED_NAV : PHYSIO_NAV
+  if (!clinic.active || clinic.canUse('billing')) return groups
+  return groups.map((group) => ({ ...group, items: group.items.filter((item) => item.href !== NAV.money.href) }))
 }
 
 function useAccount() {
@@ -117,7 +141,7 @@ function NavLink({ item, active, badge, onNavigate }: { item: PhysioNavItem; act
 
 function AccountMenu() {
   const { user, name, email, openUserProfile, signOut } = useAccount()
-  const clinicWorkspace = useClinicWorkspace()
+  const clinic = useClinicMode()
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -154,11 +178,11 @@ function AccountMenu() {
           <PlayCircle className="mr-2 h-4 w-4" />
           Take the tour
         </DropdownMenuItem>
-        {clinicWorkspace && (
+        {clinic.adminHref && (
           <DropdownMenuItem asChild className="rounded-xl px-3 py-2.5 focus:bg-pt-hover">
-            <Link href={CLINIC_PORTAL_HOME}>
+            <Link href={clinic.adminHref}>
               <Building2 className="mr-2 h-4 w-4 shrink-0" />
-              <span className="truncate">Switch to {clinicWorkspace.name}</span>
+              <span className="truncate">{clinic.clinicName} admin</span>
             </Link>
           </DropdownMenuItem>
         )}
@@ -174,22 +198,26 @@ function AccountMenu() {
   )
 }
 
-/** A card at the foot of the menu: the clinic workspace if they have one, else their booking page. */
+/**
+ * A card at the foot of the menu: clinic pages their role adds (Billing, Team…) in clinic mode,
+ * otherwise their booking page.
+ */
 function FooterCard({ onNavigate }: { onNavigate?: () => void }) {
-  const clinicWorkspace = useClinicWorkspace()
+  const clinic = useClinicMode()
   const practice = usePracticeMode()
-  if (clinicWorkspace) {
+  if (!clinic.loaded) return null
+  if (clinic.active) {
+    if (!clinic.adminHref) return null
     return (
       <Link
-        href={CLINIC_PORTAL_HOME}
+        href={clinic.adminHref}
         onClick={onNavigate}
-        aria-label={`Switch to the ${clinicWorkspace.name} clinic workspace`}
         className="group flex items-center gap-3 rounded-2xl bg-pt-sunken p-4 transition-colors hover:bg-pt-hover"
       >
         <Building2 className="h-4 w-4 shrink-0 text-pt-muted" />
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-semibold text-pt-ink">{clinicWorkspace.name}</span>
-          <span className="block text-xs text-pt-muted">Switch to the clinic workspace</span>
+          <span className="block truncate text-sm font-semibold text-pt-ink">Clinic admin</span>
+          <span className="block text-xs text-pt-muted">Billing, team and settings</span>
         </span>
         <ArrowLeftRight className="h-4 w-4 shrink-0 text-pt-faint" />
       </Link>
@@ -227,14 +255,15 @@ export function PhysioSidebar({
   unreadMessages?: number
 }) {
   const pathname = usePathname() ?? ''
+  const groups = useNavGroups(limited)
   return (
     <aside data-tour="navigation" className={cn('flex w-64 flex-col rounded-3xl border border-pt-line bg-pt-surface shadow-pt dark:shadow-none', className)}>
-      <Link href={PHYSIO_HOME} className="px-5 pb-4 pt-6" aria-label="Rehabify home">
-        <PhysioBrand />
+      <Link href={PHYSIO_HOME} className="px-5 pb-4 pt-6" aria-label="Home">
+        <PortalBrand />
       </Link>
 
       <nav className="flex-1 space-y-5 overflow-y-auto px-3 pb-3" aria-label="Main">
-        {(limited ? LIMITED_NAV : PHYSIO_NAV).map((group, i) => (
+        {groups.map((group, i) => (
           <div key={group.label ?? i} className="space-y-0.5">
             {group.label && <p className="px-3 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-pt-faint">{group.label}</p>}
             {group.items.map((item) => (
@@ -267,7 +296,8 @@ export function PhysioMobileNav({ limited = false, unreadMessages }: { limited?:
   const tabs = limited ? [NAV.today] : MOBILE_TABS
   const tabHrefs = new Set(tabs.map((tab) => tab.href))
   const moreActive = !tabs.some((tab) => isActiveItem(pathname, tab))
-  const groups = limited ? [{ items: [NAV.settings] }] : PHYSIO_NAV
+  const navGroups = useNavGroups(false)
+  const groups = limited ? [{ items: [NAV.settings] }] : navGroups
 
   return (
     <>
@@ -411,13 +441,17 @@ export function PhysioMobileNav({ limited = false, unreadMessages }: { limited?:
 /** Tabs across the top of sections made of several pages (Schedule, Money, Library). */
 export function SectionTabs() {
   const pathname = usePathname() ?? ''
+  const clinic = useClinicMode()
   const section = sectionTabsFor(pathname)
   if (!section) return null
+  // Clinic members are paid by their clinic: no Rehabify earnings
+  const tabs = clinic.active ? section.tabs.filter((tab) => tab.href !== `${PHYSIO_HOME}/insights`) : section.tabs
+  if (tabs.length < 2) return null
   return (
     <nav aria-label={section.section.title} className="mx-auto mb-5 w-full max-w-6xl">
       <div className="-mx-4 overflow-x-auto px-4 [scrollbar-width:none] sm:mx-0 sm:px-0 [&::-webkit-scrollbar]:hidden">
         <div className="inline-flex gap-1 rounded-2xl bg-pt-sunken p-1">
-          {section.tabs.map((tab) => {
+          {tabs.map((tab) => {
             const active = isActiveTab(pathname, tab.href)
             return (
               <Link

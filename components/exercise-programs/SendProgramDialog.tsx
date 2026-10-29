@@ -297,6 +297,11 @@ export function SendProgramDialog({
 }) {
   const editing = mode === 'edit' && Boolean(program)
   const library = useQuery(api.exerciseLibrary.listLibrary, open ? {} : 'skip') as LibraryData | null | undefined
+  // Clinic plans: where a new programme leaves the clinic's monthly allowance (null otherwise)
+  const allowance = useQuery(api.exercisePrograms.programmeAllowanceFor, open && mode === 'send' ? { patientId } : 'skip') as
+    | { allowance: number; count: number; alreadyCounted: boolean; overage: boolean; unitKobo: number }
+    | null
+    | undefined
   const programs = useQuery(api.exercisePrograms.listForPatient, open && mode === 'send' ? { patientId } : 'skip') as
     | CareTeamProgram[]
     | null
@@ -773,6 +778,14 @@ export function SendProgramDialog({
                   </p>
                   <p className="mt-0.5 text-neutral-500">{drafts.map((d) => d.name.trim() || (d.type === 'education' ? 'Education' : 'Exercise')).join(' · ')}</p>
                 </div>
+
+                {creating && allowance && !allowance.alreadyCounted && allowance.count * 5 >= allowance.allowance * 4 && (
+                  <p className={cn('rounded-xl px-3 py-2.5 text-xs leading-relaxed', allowance.overage ? 'bg-pt-primary text-pt-on-primary' : 'bg-pt-sunken text-pt-muted')}>
+                    {allowance.overage
+                      ? `This is patient programme ${allowance.count} of ${allowance.allowance} on your clinic's plan this month. ₦${(allowance.unitKobo / 100).toLocaleString('en-NG')} is added to the clinic's next invoice.`
+                      : `Patient programme ${allowance.count} of ${allowance.allowance} on your clinic's plan this month. Past ${allowance.allowance}, each new patient programme is ₦${(allowance.unitKobo / 100).toLocaleString('en-NG')} extra.`}
+                  </p>
+                )}
               </div>
             )}
           </div>

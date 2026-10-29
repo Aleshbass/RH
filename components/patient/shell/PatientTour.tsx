@@ -196,6 +196,8 @@ export function PatientTour({ firstName, enabled, homeHref }: { firstName?: stri
   useEffect(() => {
     if (phase === 'hidden') return
     const onKey = (event: KeyboardEvent) => {
+      // Something above us (a dialog) already handled it
+      if (event.defaultPrevented) return
       if (event.key === 'Escape') finish()
       if (phase !== 'touring') return
       if (event.key === 'ArrowRight') next()

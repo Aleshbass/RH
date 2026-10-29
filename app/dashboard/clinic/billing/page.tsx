@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useAction, useMutation, useQuery } from 'convex/react'
 import { ConvexError } from 'convex/values'
@@ -21,7 +21,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog'
+} from '@/components/clinic/drawerDialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
   DropdownMenu,
@@ -43,6 +43,8 @@ import {
 } from '@/components/clinic/ui'
 import { cn } from '@/lib/utils'
 import { PaystackTestModeBanner } from '@/components/billing/PaystackTestModeBanner'
+import { playSound } from '@/lib/sounds'
+import { CLINIC_REQUEST_PAYMENT_EVENT, listenForShortcut, takeQueryParam } from '@/components/clinic/clinicEvents'
 
 type Filter = 'unpaid' | 'paid' | 'all'
 type SourceFilter = 'all' | 'clinic_direct' | 'rehabify_referral'
@@ -128,13 +130,15 @@ function whatsappLink(phone: string | null, message: string) {
   return number ? `https://wa.me/${number}?text=${text}` : `https://wa.me/?text=${text}`
 }
 
-function paymentMessage(patientName: string, service: string, amountNaira: number, link: string) {
+/** The WhatsApp text: from the clinic, by name, so the patient knows who's asking. */
+function paymentMessage(patientName: string, service: string, amountNaira: number, link: string, clinicName: string | null) {
   const first = patientName.split(' ')[0] || 'there'
-  return `Hello ${first}, here is your payment link for ${service} (${formatNaira(amountNaira)}): ${link}`
+  const from = clinicName ? ` from ${clinicName}` : ''
+  return `Hello ${first}, here is your payment link${from} for ${service} (${formatNaira(amountNaira)}). It goes straight to the clinic: ${link}`
 }
 
 export default function ClinicBillingPage() {
-  const { requireFullAccess, isOwner } = useClinicAccess()
+  const { requireFullAccess, isOwner, clinicName } = useClinicAccess()
   const billing = useQuery(api.clinicTools.getClinicBillingSummary)
   const createPaymentLink = useAction(api.clinicBilling.createPaymentLink)
   const markInvoicePaid = useMutation(api.clinicBilling.markInvoicePaid)
@@ -147,6 +151,14 @@ export default function ClinicBillingPage() {
   const [markPaidFor, setMarkPaidFor] = useState<{ id: string; label: string } | null>(null)
   const [offlineMethod, setOfflineMethod] = useState<OfflineMethod>('cash')
   const [cancelFor, setCancelFor] = useState<{ id: string; label: string } | null>(null)
+  // "Request a payment" on a patient's record (?request=1&patient=<id>): the form opens for them
+  const [requestPatientId, setRequestPatientId] = useState<string | null>(null)
+  const openRequestRef = useRef<() => void>(() => undefined)
+  openRequestRef.current = () => {
+    setRequestPatientId(takeQueryParam('patient'))
+    requireFullAccess('Request payment', () => setRequestOpen(true), { allowBillingReadOnly: true })
+  }
+  useEffect(() => listenForShortcut(CLINIC_REQUEST_PAYMENT_EVENT, 'request', () => openRequestRef.current()), [])
 
   const invoices = useMemo(() => {
     if (!billing) return []
@@ -185,6 +197,7 @@ export default function ClinicBillingPage() {
     try {
       const link = inv.paymentLink ?? (await getLink(inv._id))
       await navigator.clipboard.writeText(link)
+      playSound('send')
       toast.success('Payment link copied')
     } catch (err) {
       toast.error(errorText(err, 'Could not create a payment link'))
@@ -200,7 +213,7 @@ export default function ClinicBillingPage() {
     setBusyInvoice(inv._id)
     try {
       const link = inv.paymentLink ?? (await getLink(inv._id))
-      const url = whatsappLink(inv.patientPhone, paymentMessage(inv.patientName, inv.serviceName, inv.totalAmountNaira, link))
+      const url = whatsappLink(inv.patientPhone, paymentMessage(inv.patientName, inv.serviceName, inv.totalAmountNaira, link, clinicName))
       if (win) win.location.href = url
       else window.location.href = url
     } catch (err) {
@@ -216,6 +229,7 @@ export default function ClinicBillingPage() {
     setBusyInvoice(markPaidFor.id)
     try {
       await markInvoicePaid({ invoiceId: markPaidFor.id as Id<'invoices'>, method: offlineMethod })
+      playSound('paid')
       toast.success('Invoice marked as paid')
       setMarkPaidFor(null)
     } catch (err) {
@@ -230,6 +244,7 @@ export default function ClinicBillingPage() {
     setBusyInvoice(cancelFor.id)
     try {
       await voidInvoice({ invoiceId: cancelFor.id as Id<'invoices'> })
+      playSound('reject')
       toast.success('Invoice cancelled')
       setCancelFor(null)
     } catch (err) {
@@ -243,6 +258,7 @@ export default function ClinicBillingPage() {
     <PageShell
       title="Billing"
       description="Request payments, share Paystack links and track what you're owed."
+      info="Payment requests go to the patient from your clinic. Money paid online goes straight to the bank account in Settings → Payouts."
       actions={
         <>
           {/* Rehabify's plan, invoices to the clinic and the data export */}
@@ -266,9 +282,9 @@ export default function ClinicBillingPage() {
       <PaystackTestModeBanner />
 
       {!billing.payoutAccount && (
-        <div className="flex flex-col gap-3 rounded-xl border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900 sm:flex-row sm:items-center">
-          <Landmark className="h-5 w-5 shrink-0 text-neutral-400 dark:text-neutral-500" />
-          <p className="min-w-0 flex-1 text-sm text-neutral-600 dark:text-neutral-300">
+        <div className="flex flex-col gap-3 rounded-2xl border border-pt-line bg-pt-surface p-4 sm:flex-row sm:items-center">
+          <Landmark className="h-5 w-5 shrink-0 text-pt-faint" />
+          <p className="min-w-0 flex-1 text-sm text-pt-muted">
             {isOwner
               ? 'Connect your bank account so Paystack pays your share straight to you. Until then, online payments settle to Rehabify and we transfer your share manually.'
               : 'No bank account is connected yet, so online payments settle to Rehabify and are transferred to the clinic manually. The clinic owner can connect one in Clinic settings.'}
@@ -308,13 +324,13 @@ export default function ClinicBillingPage() {
             value={sourceFilter}
             onChange={(e) => setSourceFilter(e.target.value as SourceFilter)}
             aria-label="Which patients"
-            className="h-8 rounded-lg border border-neutral-200 bg-white px-2 text-sm text-neutral-700 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-200"
+            className="h-8 rounded-lg border border-pt-line bg-pt-surface px-2 text-sm text-pt-ink"
           >
             <option value="all">All patients</option>
             <option value="clinic_direct">Clinic&apos;s own patients</option>
             <option value="rehabify_referral">Referred by Rehabify</option>
           </select>
-          <div className="flex rounded-lg border border-neutral-200 p-0.5 text-sm dark:border-neutral-800">
+          <div className="flex rounded-lg border border-pt-line p-0.5 text-sm">
             {(['unpaid', 'paid', 'all'] as Filter[]).map((option) => (
               <button
                 key={option}
@@ -323,8 +339,8 @@ export default function ClinicBillingPage() {
                 className={cn(
                   'rounded-md px-2.5 py-1 capitalize',
                   filter === option
-                    ? 'bg-neutral-100 font-medium text-neutral-900 dark:bg-neutral-800 dark:text-white'
-                    : 'text-neutral-500 hover:text-neutral-900 dark:hover:text-white'
+                    ? 'bg-pt-sunken font-medium text-pt-ink'
+                    : 'text-pt-muted hover:text-pt-ink'
                 )}
               >
                 {option}
@@ -342,7 +358,7 @@ export default function ClinicBillingPage() {
             description="Request a payment and send the patient a Paystack link they can pay from their phone."
           />
         ) : (
-          <ul className="divide-y divide-neutral-200 dark:divide-neutral-800">
+          <ul className="divide-y divide-pt-line">
             {invoices.map((inv: any) => {
               const badge = statusBadge[inv.status] ?? { label: inv.status, tone: 'neutral' as const }
               const unpaid = ['sent', 'overdue', 'partial_payment'].includes(inv.status)
@@ -350,23 +366,23 @@ export default function ClinicBillingPage() {
               const showFee = unpaid || (inv.status === 'paid' && inv.paymentMethod === 'paystack')
               const payout = inv.status === 'paid' && inv.payoutStatus ? payoutLabel[inv.payoutStatus] : undefined
               return (
-                <li key={inv._id} className="flex items-start gap-3 px-4 py-3 sm:items-center sm:px-5">
+                <li key={inv._id} className="flex items-start gap-3 px-5 py-3 sm:items-center sm:px-6">
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                      <p className="truncate text-sm font-medium text-neutral-900 dark:text-white">{inv.patientName}</p>
+                      <p className="truncate text-sm font-medium text-pt-ink">{inv.patientName}</p>
                       <StatusBadge tone={badge.tone}>{badge.label}</StatusBadge>
                       {inv.patientSource === 'rehabify_referral' && <StatusBadge tone="neutral">Referred by Rehabify</StatusBadge>}
                     </div>
-                    <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">
+                    <p className="truncate text-xs text-pt-muted">
                       {inv.serviceName} · {inv.invoiceNumber}
                     </p>
-                    <p className="text-xs text-neutral-400 dark:text-neutral-500">
+                    <p className="text-xs text-pt-faint">
                       {inv.status === 'paid' && inv.paidAt
                         ? `Paid ${safeFormat(inv.paidAt, 'd MMM yyyy')}${inv.paymentMethod ? ` by ${methodLabel[inv.paymentMethod] ?? inv.paymentMethod}` : ''}`
                         : `Issued ${safeFormat(inv.createdAt, 'd MMM yyyy')} · due ${safeFormat(inv.dueDate, 'd MMM')}`}
                     </p>
                     {showFee && (
-                      <p className="text-xs tabular-nums text-neutral-500 dark:text-neutral-400">
+                      <p className="text-xs tabular-nums text-pt-muted">
                         {unpaid ? `If paid online: ${feeLine(inv)}` : feeLine(inv)}
                       </p>
                     )}
@@ -375,8 +391,8 @@ export default function ClinicBillingPage() {
                         className={cn(
                           'text-xs',
                           payout.attention
-                            ? 'text-amber-700 dark:text-amber-400'
-                            : 'text-neutral-500 dark:text-neutral-400'
+                            ? 'text-pt-amber-fg'
+                            : 'text-pt-muted'
                         )}
                       >
                         {payout.label}
@@ -385,7 +401,7 @@ export default function ClinicBillingPage() {
                   </div>
 
                   <div className="shrink-0 text-right">
-                    <p className="text-sm font-semibold tabular-nums text-neutral-900 dark:text-white">
+                    <p className="text-sm font-semibold tabular-nums text-pt-ink">
                       {formatNaira(inv.totalAmountNaira)}
                     </p>
                   </div>
@@ -428,7 +444,7 @@ export default function ClinicBillingPage() {
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />
                           <DropdownMenuItem
-                            className="text-red-600 focus:text-red-600 dark:text-red-400 dark:focus:text-red-400"
+                            className="text-pt-rose-fg focus:text-pt-rose-fg"
                             onClick={() =>
                               requireFullAccess(
                                 'Cancel invoice',
@@ -456,8 +472,12 @@ export default function ClinicBillingPage() {
 
       <RequestPaymentDialog
         open={requestOpen}
-        onOpenChange={setRequestOpen}
+        onOpenChange={(open) => {
+          setRequestOpen(open)
+          if (!open) setRequestPatientId(null)
+        }}
         priceList={billing.priceList}
+        initialPatientId={requestPatientId}
       />
 
       <Dialog open={markPaidFor !== null} onOpenChange={(open) => !open && setMarkPaidFor(null)}>
@@ -478,7 +498,7 @@ export default function ClinicBillingPage() {
                 <SelectItem value="bank_transfer">Bank transfer</SelectItem>
               </SelectContent>
             </Select>
-            <p className="text-xs text-neutral-500 dark:text-neutral-400">
+            <p className="text-xs text-pt-muted">
               No fees on payments you collect yourself. You keep the full amount.
             </p>
           </div>
@@ -519,14 +539,18 @@ function RequestPaymentDialog({
   open,
   onOpenChange,
   priceList,
+  initialPatientId,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   priceList: { name: string; priceNaira: number }[]
+  /** Opened from a patient's record: that patient is already chosen */
+  initialPatientId?: string | null
 }) {
   const patients = useQuery(api.clinics.getClinicPatients, open ? {} : 'skip')
   const createRequest = useMutation(api.clinicTools.createClinicPaymentRequest)
   const createPaymentLink = useAction(api.clinicBilling.createPaymentLink)
+  const { clinicName } = useClinicAccess()
 
   const [patientId, setPatientId] = useState('')
   const [service, setService] = useState(priceList[0]?.name ?? CUSTOM_SERVICE)
@@ -549,6 +573,10 @@ function RequestPaymentDialog({
     if (!next) reset()
     onOpenChange(next)
   }
+
+  useEffect(() => {
+    if (open && initialPatientId) setPatientId(initialPatientId)
+  }, [open, initialPatientId])
 
   const chooseService = (value: string) => {
     setService(value)
@@ -608,14 +636,15 @@ function RequestPaymentDialog({
             </DialogHeader>
             {result.link ? (
               <div className="space-y-3">
-                <div className="flex items-center gap-2 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 dark:border-neutral-800 dark:bg-neutral-900">
-                  <p className="min-w-0 flex-1 truncate text-sm text-neutral-700 dark:text-neutral-300">{result.link}</p>
+                <div className="flex items-center gap-2 rounded-lg border border-pt-line bg-pt-sunken px-3 py-2">
+                  <p className="min-w-0 flex-1 truncate text-sm text-pt-ink">{result.link}</p>
                   <Button
                     size="sm"
                     variant="ghost"
                     className="h-7 shrink-0 px-2"
                     onClick={async () => {
                       await navigator.clipboard.writeText(result.link!)
+                      playSound('send')
                       toast.success('Payment link copied')
                     }}
                   >
@@ -624,19 +653,19 @@ function RequestPaymentDialog({
                 </div>
                 <Button asChild className={cn('w-full', primaryButtonClass)}>
                   <a
-                    href={whatsappLink(result.phone, paymentMessage(result.patientName, result.service, result.amount, result.link))}
+                    href={whatsappLink(result.phone, paymentMessage(result.patientName, result.service, result.amount, result.link, clinicName))}
                     target="_blank"
                     rel="noreferrer"
                   >
                     <Send className="mr-1.5 h-4 w-4" /> Send on WhatsApp
                   </a>
                 </Button>
-                <p className="text-xs text-neutral-500">
+                <p className="text-xs text-pt-muted">
                   The invoice is marked paid automatically once the patient pays.
                 </p>
               </div>
             ) : (
-              <p className="text-sm text-amber-700 dark:text-amber-400">{result.error}</p>
+              <p className="text-sm text-pt-amber-fg">{result.error}</p>
             )}
             <DialogFooter>
               <Button variant="outline" onClick={() => close(false)}>
@@ -666,7 +695,7 @@ function RequestPaymentDialog({
                 </SelectContent>
               </Select>
               {patients?.length === 0 && (
-                <p className="text-xs text-neutral-500">
+                <p className="text-xs text-pt-muted">
                   Add a patient first on the <Link href="/dashboard/clinic/patients" className="underline">Patients</Link> page.
                 </p>
               )}
@@ -695,7 +724,7 @@ function RequestPaymentDialog({
                 />
               )}
               {priceList.length === 0 && (
-                <p className="text-xs text-neutral-500">
+                <p className="text-xs text-pt-muted">
                   Save your services in <Link href="/dashboard/clinic/settings#prices" className="underline">Clinic settings</Link> to pick them here.
                 </p>
               )}
@@ -713,7 +742,7 @@ function RequestPaymentDialog({
               {amountNaira > 0 && (
                 <div className="pt-1">
                   <FeeBreakdown amountNaira={amountNaira} className="sm:max-w-xs" />
-                  <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+                  <p className="mt-1 text-xs text-pt-muted">
                     Paystack fee and stamp duty are estimates. Cash, POS and transfer payments have no fees.
                   </p>
                 </div>

@@ -4,6 +4,7 @@ import { Doc, Id } from "./_generated/dataModel";
 import { getUserByIdOrThrow } from "./users";
 import { assertPatientInClinic } from "./clinicTools";
 import { pushNewMessage } from "./helpers/pushNotify";
+import { senderIdentity } from "./helpers/displayIdentity";
 import {
   ChatMessage, 
   ChatConversation, 
@@ -467,6 +468,7 @@ export const sendMessage = mutation({
 
     await pushNewMessage(ctx, {
       sender: user,
+      senderLabel: (await senderIdentity(ctx, user)).label,
       receiver,
       conversationId: args.conversationId,
       contentType: args.contentType,
@@ -490,6 +492,9 @@ export const getMyConversations = query({
       role: v.optional(v.string()),
       imageUrl: v.optional(v.string()),
       isOnline: v.boolean(),
+      /** How they appear (helpers/displayIdentity.ts): the clinic for its owner, "Mary — Clinic" for a clinician */
+      displayName: v.optional(v.string()),
+      subtitle: v.optional(v.string()),
     }),
     lastMessage: v.optional(v.object({
       content: v.string(),
@@ -531,6 +536,7 @@ export const getMyConversations = query({
         
         const otherParticipant = await ctx.db.get(otherParticipantId);
         if (!otherParticipant) continue;
+        const identity = await senderIdentity(ctx, otherParticipant);
 
         // Get last message
         const lastMessage = await ctx.db
@@ -550,13 +556,15 @@ export const getMyConversations = query({
             firstName: otherParticipant.firstName,
             lastName: otherParticipant.lastName,
             role: otherParticipant.role,
-            imageUrl: otherParticipant.imageUrl,
+            imageUrl: identity.imageUrl ?? undefined,
             isOnline: isUserOnline(otherParticipant.lastLoginAt),
+            displayName: identity.name,
+            subtitle: identity.subtitle ?? undefined,
           },
           lastMessage: lastMessage ? {
             content: lastMessage.content,
             timestamp: lastMessage._creationTime,
-            senderName: `${otherParticipant.firstName || ""} ${otherParticipant.lastName || ""}`.trim(),
+            senderName: lastMessage.senderId === currentUser._id ? "You" : identity.name,
           } : undefined,
           unreadCount,
           updatedAt: conversation.updatedAt,
@@ -761,10 +769,22 @@ export const getConversation = query({
       : conversation.participant1Id;
     
     const otherParticipant = await ctx.db.get(otherParticipantId);
+    // Display details only: never their email, phone or account ids
+    const shown = otherParticipant ? await senderIdentity(ctx, otherParticipant) : null;
 
     return {
       ...conversation,
-      otherParticipant,
+      otherParticipant: otherParticipant
+        ? {
+            _id: otherParticipant._id,
+            firstName: otherParticipant.firstName,
+            lastName: otherParticipant.lastName,
+            role: otherParticipant.role,
+            imageUrl: shown?.imageUrl ?? undefined,
+            displayName: shown?.name,
+            subtitle: shown?.subtitle ?? undefined,
+          }
+        : null,
     };
   },
 });

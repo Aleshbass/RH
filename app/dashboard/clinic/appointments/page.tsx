@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useQuery, useMutation } from 'convex/react'
 import { api } from '@/convex/_generated/api'
@@ -17,7 +17,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog'
+} from '@/components/clinic/drawerDialog'
 import {
   Select,
   SelectContent,
@@ -53,7 +53,9 @@ import {
 } from 'date-fns'
 import { cn } from '@/lib/utils'
 import { playSound } from '@/lib/sounds'
+import { CLINIC_BOOK_EVENT, listenForShortcut, takeQueryParam } from '@/components/clinic/clinicEvents'
 import { useClinicAccess } from '@/components/clinic/ClinicAccessContext'
+import { BookingRequests } from '@/components/clinic/appointments/BookingRequests'
 import {
   EmptyState,
   PageShell,
@@ -250,6 +252,7 @@ export default function ClinicAppointmentsPage() {
         cancelled: 'Appointment cancelled',
         no_show: 'Marked as no-show',
       } as const
+      playSound(status === 'cancelled' || status === 'no_show' ? 'reject' : status === 'confirmed' ? 'approve' : 'success')
       toast.success(done[status])
       return true
     } catch (err: any) {
@@ -259,6 +262,22 @@ export default function ClinicAppointmentsPage() {
   }
 
   const openBook = () => requireFullAccess('Book appointment', () => setBookOpen(true))
+  // "Book appointment" in the top bar or on Home (?book=1) opens the form here
+  // A patient's request (Requests panel): the booking form opens with them already chosen
+  const [bookPreset, setBookPreset] = useState<{ patientId: string; clinicianId: string | null } | null>(null)
+  const bookFor = (patientId: string, clinicianId: string | null) =>
+    requireFullAccess('Book appointment', () => {
+      setBookPreset({ patientId, clinicianId })
+      setBookOpen(true)
+    })
+  // From a patient's record (?book=1&patient=<id>) the form opens with them chosen
+  const openBookRef = useRef<() => void>(() => undefined)
+  openBookRef.current = () => {
+    const patientId = takeQueryParam('patient')
+    if (patientId) bookFor(patientId, null)
+    else openBook()
+  }
+  useEffect(() => listenForShortcut(CLINIC_BOOK_EVENT, 'book', () => openBookRef.current()), [])
 
   const actionsMenu = (apt: Appointment, trigger: React.ReactNode) => {
     const isOpen = OPEN_STATUSES.has(apt.status)
@@ -282,7 +301,7 @@ export default function ClinicAppointmentsPage() {
               <DropdownMenuItem onClick={() => setStatus(apt, 'no_show')}>Mark no-show</DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem
-                className="text-red-600 focus:text-red-600 dark:text-red-400"
+                className="text-pt-rose-fg focus:text-pt-rose-fg"
                 onClick={() => requireFullAccess('Cancel appointment', () => setCancelTarget(apt))}
               >
                 Cancel appointment
@@ -308,7 +327,7 @@ export default function ClinicAppointmentsPage() {
     return (
       <PageShell title="Appointments" actions={bookButton}>
         <Skeleton className="h-9 w-64 rounded-lg" />
-        <div className="space-y-2 rounded-xl border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900">
+        <div className="space-y-2 rounded-2xl border border-pt-line bg-pt-surface p-4">
           {[0, 1, 2, 3].map((i) => (
             <Skeleton key={i} className="h-14 w-full rounded-lg" />
           ))}
@@ -325,8 +344,11 @@ export default function ClinicAppointmentsPage() {
     <PageShell
       title="Appointments"
       description="Book, move and track visits for your patients."
+      info="Every visit at your clinic, for every clinician. Patients book their own clinician in their portal; requests for other times or clinicians show at the top."
       actions={bookButton}
     >
+      <BookingRequests onBook={bookFor} />
+
       {/* View switch */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2">
@@ -343,7 +365,7 @@ export default function ClinicAppointmentsPage() {
               <SelectTrigger
                 size="sm"
                 aria-label="Filter by clinician"
-                className="w-48 max-w-full rounded-lg border-neutral-200 bg-white text-sm text-neutral-700 shadow-none dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-200"
+                className="w-48 max-w-full rounded-lg border-pt-line bg-pt-surface text-sm text-pt-ink shadow-none"
               >
                 <SelectValue />
               </SelectTrigger>
@@ -397,7 +419,7 @@ export default function ClinicAppointmentsPage() {
             >
               <ChevronRight className="h-4 w-4" />
             </Button>
-            <span className="ml-1 text-sm font-medium text-neutral-700 dark:text-neutral-300">
+            <span className="ml-1 text-sm font-medium text-pt-ink">
               {format(weekStart, 'd MMM')} – {format(weekEnd, 'd MMM yyyy')}
             </span>
           </div>
@@ -405,7 +427,7 @@ export default function ClinicAppointmentsPage() {
       </div>
 
       {view === 'list' ? (
-        <Panel bodyClassName="divide-y divide-neutral-200 dark:divide-neutral-800">
+        <Panel bodyClassName="divide-y divide-pt-line">
           {listItems.length === 0 ? (
             <EmptyState
               icon={<CalendarDays className="h-8 w-8" />}
@@ -436,7 +458,7 @@ export default function ClinicAppointmentsPage() {
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-8 w-8 shrink-0 text-neutral-500"
+                    className="h-8 w-8 shrink-0 text-pt-muted"
                     aria-label="Appointment actions"
                   >
                     <MoreHorizontal className="h-4 w-4" />
@@ -461,13 +483,13 @@ export default function ClinicAppointmentsPage() {
                 className={cn(
                   'min-w-0 rounded-xl border md:min-h-[220px]',
                   closed
-                    ? 'border-neutral-200 bg-neutral-50 dark:border-neutral-800 dark:bg-neutral-950'
-                    : 'border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900'
+                    ? 'border-pt-line bg-pt-sunken'
+                    : 'border-pt-line bg-pt-surface'
                 )}
               >
-                <div className="flex items-center justify-between gap-2 border-b border-neutral-200 px-3 py-2 dark:border-neutral-800 md:flex-col md:items-start md:gap-0.5">
+                <div className="flex items-center justify-between gap-2 border-b border-pt-line px-3 py-2 md:flex-col md:items-start md:gap-0.5">
                   <div className="flex items-center gap-2">
-                    <span className="text-xs font-medium text-neutral-500 dark:text-neutral-400">
+                    <span className="text-xs font-medium text-pt-muted">
                       {format(day, 'EEE')}
                     </span>
                     <span
@@ -475,19 +497,19 @@ export default function ClinicAppointmentsPage() {
                         'inline-flex h-6 min-w-6 items-center justify-center rounded-md px-1 text-sm font-semibold tabular-nums',
                         today
                           ? 'bg-rh-lime text-rh-ink dark:bg-rh-lime dark:text-neutral-950'
-                          : 'text-neutral-900 dark:text-white'
+                          : 'text-pt-ink'
                       )}
                     >
                       {format(day, 'd')}
                     </span>
                   </div>
-                  <span className="text-[11px] text-neutral-500 dark:text-neutral-400">
+                  <span className="text-[11px] text-pt-muted">
                     {closed ? 'Closed' : hours ? `${hours.open}–${hours.close}` : ''}
                   </span>
                 </div>
                 <div className="space-y-1.5 p-2">
                   {dayApts.length === 0 ? (
-                    <p className="px-1 py-1 text-xs text-neutral-400 dark:text-neutral-500">
+                    <p className="px-1 py-1 text-xs text-pt-faint">
                       {closed ? '' : 'No visits'}
                     </p>
                   ) : (
@@ -500,26 +522,26 @@ export default function ClinicAppointmentsPage() {
                             <button
                               type="button"
                               className={cn(
-                                'w-full min-w-0 rounded-lg border px-2 py-1.5 text-left transition-colors hover:border-neutral-300 dark:hover:border-neutral-700',
+                                'w-full min-w-0 rounded-lg border px-2 py-1.5 text-left transition-colors hover:border-pt-line-strong',
                                 OPEN_STATUSES.has(apt.status)
-                                  ? 'border-l-2 border-neutral-200 border-l-rh-lime bg-white dark:border-neutral-800 dark:border-l-rh-lime dark:bg-neutral-900'
-                                  : 'border-neutral-200 bg-neutral-50 dark:border-neutral-800 dark:bg-neutral-950',
+                                  ? 'border-l-2 border-pt-line border-l-rh-lime bg-pt-surface dark:border-l-rh-lime'
+                                  : 'border-pt-line bg-pt-sunken',
                                 inactive && 'opacity-60'
                               )}
                             >
-                              <p className="text-[11px] font-medium tabular-nums text-neutral-500 dark:text-neutral-400">
+                              <p className="text-[11px] font-medium tabular-nums text-pt-muted">
                                 {format(new Date(apt.startTime), 'HH:mm')}
                                 {apt.appointmentType === 'telehealth' && ' · Video'}
                               </p>
                               <p
                                 className={cn(
-                                  'truncate text-xs font-medium text-neutral-900 dark:text-white',
+                                  'truncate text-xs font-medium text-pt-ink',
                                   inactive && 'line-through'
                                 )}
                               >
                                 {personName(apt.patient, 'Patient')}
                               </p>
-                              <p className="truncate text-[11px] text-neutral-500 dark:text-neutral-400">
+                              <p className="truncate text-[11px] text-pt-muted">
                                 {personName(apt.physiotherapist, 'Clinician')}
                               </p>
                             </button>
@@ -537,7 +559,11 @@ export default function ClinicAppointmentsPage() {
 
       <BookDialog
         open={bookOpen}
-        onOpenChange={setBookOpen}
+        onOpenChange={(open) => {
+          setBookOpen(open)
+          if (!open) setBookPreset(null)
+        }}
+        preset={bookPreset}
         patients={patients}
         patientsLoading={patientsRaw === undefined}
         clinicians={clinicians}
@@ -580,7 +606,7 @@ function Segmented({
     <div className="max-w-full overflow-x-auto">
       <div
         role="tablist"
-        className="inline-flex whitespace-nowrap rounded-lg border border-neutral-200 bg-white p-0.5 dark:border-neutral-800 dark:bg-neutral-900"
+        className="inline-flex whitespace-nowrap rounded-lg border border-pt-line bg-pt-surface p-0.5"
       >
         {options.map((o) => {
           const active = o.value === value
@@ -594,8 +620,8 @@ function Segmented({
               className={cn(
                 'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
                 active
-                  ? 'bg-neutral-900 text-white dark:bg-white dark:text-neutral-900'
-                  : 'text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white'
+                  ? 'bg-pt-primary text-pt-on-primary'
+                  : 'text-pt-muted hover:text-pt-ink'
               )}
             >
               {o.label}
@@ -620,23 +646,23 @@ function AppointmentRow({
   const minutes = Math.round((apt.endTime - apt.startTime) / 60000)
   const isVideo = apt.appointmentType === 'telehealth'
   return (
-    <div className="flex items-start gap-3 px-4 py-3 sm:items-center sm:px-5">
+    <div className="flex items-start gap-3 px-5 py-3 sm:items-center sm:px-6">
       <div className="w-16 shrink-0 sm:w-20">
-        <p className="text-sm font-semibold tabular-nums text-neutral-900 dark:text-white">
+        <p className="text-sm font-semibold tabular-nums text-pt-ink">
           {format(start, 'HH:mm')}
         </p>
-        <p className="text-xs text-neutral-500 dark:text-neutral-400">
+        <p className="text-xs text-pt-muted">
           {showDate ? format(start, 'EEE d MMM') : durationLabel(minutes)}
         </p>
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <p className="truncate text-sm font-medium text-neutral-900 dark:text-white">
+          <p className="truncate text-sm font-medium text-pt-ink">
             {personName(apt.patient, 'Patient')}
           </p>
           {statusBadge(apt)}
         </div>
-        <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs text-neutral-500 dark:text-neutral-400">
+        <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs text-pt-muted">
           <span className="truncate">with {personName(apt.physiotherapist, 'clinician')}</span>
           <span aria-hidden>·</span>
           <span className="inline-flex items-center gap-1">
@@ -668,9 +694,12 @@ function BookDialog({
   clinicians,
   services,
   workingHours,
+  preset,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
+  /** Open with this patient (and clinician) already chosen */
+  preset?: { patientId: string; clinicianId: string | null } | null
   patients: { id: string; name: string; email: string }[]
   patientsLoading: boolean
   clinicians: ClinicianOption[]
@@ -693,6 +722,9 @@ function BookDialog({
   const [form, setForm] = useState(empty)
   const [search, setSearch] = useState('')
   const [saving, setSaving] = useState(false)
+  useEffect(() => {
+    if (open && preset) setForm((current) => ({ ...current, patientId: preset.patientId, clinicianId: preset.clinicianId ?? '' }))
+  }, [open, preset])
 
   const filteredPatients = search.trim()
     ? patients.filter((p) =>
@@ -759,7 +791,7 @@ function BookDialog({
           <div className="space-y-1.5">
             <Label className="text-sm">Patient</Label>
             {!patientsLoading && patients.length === 0 ? (
-              <p className="rounded-lg border border-neutral-200 px-3 py-2 text-sm text-neutral-600 dark:border-neutral-800 dark:text-neutral-400">
+              <p className="rounded-lg border border-pt-line px-3 py-2 text-sm text-pt-muted">
                 You have no patients yet.{' '}
                 <Link href="/dashboard/clinic/patients" className="font-medium text-rh-ink underline dark:text-rh-lime">
                   Add a patient
@@ -784,13 +816,13 @@ function BookDialog({
                   </SelectTrigger>
                   <SelectContent>
                     {filteredPatients.length === 0 ? (
-                      <p className="px-2 py-1.5 text-sm text-neutral-500">No match</p>
+                      <p className="px-2 py-1.5 text-sm text-pt-muted">No match</p>
                     ) : (
                       filteredPatients.slice(0, 100).map((p) => (
                         <SelectItem key={p.id} value={p.id}>
                           <span className="block truncate">
                             {p.name}
-                            {p.email && <span className="text-neutral-500"> · {p.email}</span>}
+                            {p.email && <span className="text-pt-muted"> · {p.email}</span>}
                           </span>
                         </SelectItem>
                       ))
@@ -809,7 +841,7 @@ function BookDialog({
               </SelectTrigger>
               <SelectContent>
                 {clinicians.length === 0 ? (
-                  <p className="px-2 py-1.5 text-sm text-neutral-500">No clinicians yet</p>
+                  <p className="px-2 py-1.5 text-sm text-pt-muted">No clinicians yet</p>
                 ) : (
                   clinicians.map((c) => (
                     <SelectItem key={c.id} value={c.id}>
@@ -824,7 +856,7 @@ function BookDialog({
           {services.length > 0 && (
             <div className="space-y-1.5">
               <Label className="text-sm">
-                Service <span className="font-normal text-neutral-500">(optional)</span>
+                Service <span className="font-normal text-pt-muted">(optional)</span>
               </Label>
               <Select
                 value={form.service}
@@ -893,7 +925,7 @@ function BookDialog({
               </Select>
             </div>
           </div>
-          {warning && <p className="text-xs text-amber-700 dark:text-amber-400">{warning}</p>}
+          {warning && <p className="text-xs text-pt-amber-fg">{warning}</p>}
 
           <div className="space-y-1.5">
             <Label className="text-sm">Where</Label>
@@ -912,10 +944,10 @@ function BookDialog({
                     onClick={() => setForm({ ...form, mode: m.value })}
                     aria-pressed={active}
                     className={cn(
-                      'h-9 rounded-lg border text-sm font-medium transition-colors',
+                      'h-9 rounded-xl border text-sm font-medium transition-colors',
                       active
-                        ? 'border-rh-lime bg-rh-lime/5 text-rh-ink dark:border-rh-lime dark:bg-white/[0.06] dark:text-rh-lime'
-                        : 'border-neutral-200 text-neutral-700 hover:border-neutral-300 dark:border-neutral-800 dark:text-neutral-300'
+                        ? 'border-pt-primary bg-pt-primary text-pt-on-primary'
+                        : 'border-pt-line text-pt-ink hover:border-pt-line-strong'
                     )}
                   >
                     {m.label}
@@ -927,7 +959,7 @@ function BookDialog({
 
           <div className="space-y-1.5">
             <Label className="text-sm">
-              Note for the clinician <span className="font-normal text-neutral-500">(optional)</span>
+              Note for the clinician <span className="font-normal text-pt-muted">(optional)</span>
             </Label>
             <Textarea
               rows={2}
@@ -1041,6 +1073,7 @@ function RescheduleForm({
         reason: reason.trim() || undefined,
         physiotherapistId: clinicianChanged ? (clinicianId as Id<'users'>) : undefined,
       })
+      playSound('booked')
       toast.success(
         clinicianChanged
           ? `Moved to ${format(start, 'EEE d MMM, HH:mm')} with ${newClinicianName ?? 'the new clinician'}`
@@ -1113,10 +1146,10 @@ function RescheduleForm({
             </Select>
           </div>
         </div>
-        {warning && <p className="text-xs text-amber-700 dark:text-amber-400">{warning}</p>}
+        {warning && <p className="text-xs text-pt-amber-fg">{warning}</p>}
         <div className="space-y-1.5">
           <Label className="text-sm">
-            Reason <span className="font-normal text-neutral-500">(optional)</span>
+            Reason <span className="font-normal text-pt-muted">(optional)</span>
           </Label>
           <Textarea
             rows={2}
@@ -1173,7 +1206,7 @@ function CancelDialog({
         </DialogHeader>
         <div className="space-y-1.5">
           <Label className="text-sm">
-            Reason <span className="font-normal text-neutral-500">(optional)</span>
+            Reason <span className="font-normal text-pt-muted">(optional)</span>
           </Label>
           <Textarea rows={2} value={reason} onChange={(e) => setReason(e.target.value)} className="text-sm" />
         </div>
@@ -1195,7 +1228,7 @@ function CancelDialog({
             type="button"
             size="sm"
             disabled={saving}
-            className="h-9 bg-red-600 text-white hover:bg-red-700"
+            className="h-9 bg-pt-rose-bg text-pt-rose-fg hover:brightness-95"
             onClick={async () => {
               setSaving(true)
               try {

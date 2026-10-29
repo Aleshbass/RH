@@ -30,10 +30,12 @@ import {
   careTeamOrNull,
   displayName,
   itemClipId,
+  programmeInScope,
   requireCareTeam,
   resolveShareSession,
   type CareTeamAccess,
 } from "./helpers/exerciseAccess";
+import { programmeAllowanceInfo } from "./helpers/clinicSubscriptions";
 import {
   REMINDER_BEFORE_MS,
   activatePendingPlans,
@@ -607,7 +609,22 @@ export const listForPatient = query({
       .order("desc")
       .collect();
     const now = Date.now();
-    return await Promise.all(programs.map((program) => careTeamProgramView(ctx, program, now)));
+    return await Promise.all(
+      programs.filter((program) => programmeInScope(team, program)).map((program) => careTeamProgramView(ctx, program, now))
+    );
+  },
+});
+
+/**
+ * Clinic plans: what sending this patient a new programme does to the clinic's allowance, so the
+ * send sheet can say so first. Null for anyone not on a billed clinic plan.
+ */
+export const programmeAllowanceFor = query({
+  args: { patientId: v.id("users") },
+  handler: async (ctx, args) => {
+    const team = await careTeamOrNull(ctx, args.patientId);
+    if (!team?.clinicId) return null;
+    return await programmeAllowanceInfo(ctx, team.clinicId, args.patientId, Date.now());
   },
 });
 

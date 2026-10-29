@@ -104,12 +104,18 @@ export function planOffer(live: RecoveryPlansLive): PlanOffer[] {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * A physio's own patient: the physio isn't in a clinic and the pair isn't Rehabify Care.
- * Programmes from clinics, clinic members or admins never make a pair that pays.
+ * A physio's own patient: the physio isn't in a clinic, the care isn't a clinic's, and the pair
+ * isn't Rehabify Care. Programmes from clinics, clinic members or admins never make a pair that
+ * pays: a clinic's patients get their home programme as part of the clinic's plan.
  */
 export async function isIndependentPair(ctx: Ctx, patientId: Id<"users">, physiotherapistId: Id<"users">): Promise<boolean> {
   const physio = await ctx.db.get(physiotherapistId);
   if (!physio || physio.role !== "physiotherapist" || physio.clinicId) return false;
+  const care = await ctx.db
+    .query("patientPhysiotherapistRelationships")
+    .withIndex("by_patient_and_physiotherapist", (q) => q.eq("patientId", patientId).eq("physiotherapistId", physiotherapistId))
+    .collect();
+  if (care.some((relationship) => relationship.clinicId && relationship.status === "active")) return false;
   const profile = physio.physiotherapistProfileId ? await ctx.db.get(physio.physiotherapistProfileId) : null;
   if (!profile || profile.clinicId) return false;
   return !(await isRehabifyCare(ctx, patientId, physiotherapistId));

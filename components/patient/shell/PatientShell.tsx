@@ -14,7 +14,7 @@ import { NAV, PATIENT_HOME } from '@/components/patient/shell/navItems'
 import { PatientBrand, PatientMobileNav, PatientSidebar } from '@/components/patient/shell/PatientNav'
 import { PatientHelp, PatientNotifications, PatientThemeToggle } from '@/components/patient/shell/PatientControls'
 import { PatientTour } from '@/components/patient/shell/PatientTour'
-import { ConsentDialog } from '@/components/patient/ConsentDialog'
+import { ConsentDialog, useConsentsSettled } from '@/components/patient/ConsentDialog'
 import { WebsiteLink } from '@/components/dashboard/shared/WebsiteLink'
 
 // Staff accounts have their own dashboards; the patient pages would only show them an empty record
@@ -58,6 +58,8 @@ export function PatientShell({ children }: { children: ReactNode }) {
   const user = useQuery(api.users.getMyUser) as { role?: string; firstName?: string } | null | undefined
   const isStaff = Boolean(user?.role && STAFF_ROLES.has(user.role))
   const unreadMessages = useQuery(api.chat.getUnreadCount, user?.role === 'patient' ? {} : 'skip') as number | undefined
+  // The welcome tour waits until consent is done: two overlays at once block each other's buttons
+  const consentsSettled = useConsentsSettled(user?.role === 'patient')
 
   useEffect(() => {
     if (isStaff) router.replace('/dashboard')
@@ -114,7 +116,7 @@ export function PatientShell({ children }: { children: ReactNode }) {
         </div>
 
         <PatientMobileNav unreadMessages={unreadMessages} />
-        <PatientTour enabled={pathname === PATIENT_HOME} firstName={user?.firstName} homeHref={PATIENT_HOME} />
+        <PatientTour enabled={pathname === PATIENT_HOME && consentsSettled}firstName={user?.firstName} homeHref={PATIENT_HOME} />
         {/* Terms, Privacy and health information consent, asked once if missing (NDPA) */}
         {user?.role === 'patient' && <ConsentDialog />}
       </div>

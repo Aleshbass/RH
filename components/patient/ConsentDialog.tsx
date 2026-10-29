@@ -26,6 +26,15 @@ const acceptRef = makeFunctionReference<'mutation', { accepted: Record<string, s
 const link = 'font-medium text-pt-ink underline underline-offset-2 hover:opacity-80'
 
 /**
+ * True once we know nothing is waiting to be agreed to. Anything else that opens on top of the
+ * page (the welcome tour) waits for this, so it never stacks on the dialog below.
+ */
+export function useConsentsSettled(enabled = true) {
+  const consents = useQuery(consentsRef, enabled ? {} : 'skip')
+  return consents !== undefined && (consents?.needed.length ?? 0) === 0
+}
+
+/**
  * Patients who joined before Rehabify asked (or whose Terms, Privacy Policy or health information
  * consent has a new version) are asked once, here, before using the dashboard. It can't be
  * dismissed, but there's nothing else to do: read if they like, then "Agree and continue".

@@ -8,6 +8,7 @@ import { requireAdmin } from "./helpers/partnerAccess";
 import { isPhysioBookable, servesRehabifyNetwork } from "./physioSetup";
 import { physioAgreementStates } from "./agreements";
 import type { Doc, Id } from "./_generated/dataModel";
+import { isRehabifyCareInvoice } from "./helpers/marketplaceInvoices";
 
 /**
  * Admin console backend: home overview, platform status, analytics, activity log,
@@ -566,6 +567,24 @@ export const getRevenueAnalytics = query({
         .take(SERIES_SCAN_CAP + 1),
     ]);
 
+    // Each revenue line kept apart (business model): Rehabify Care, clinics' own patients, Rehabify
+    // patients referred to clinics, independent physios' own patients, and clinic subscriptions.
+    // Payments taken outside Rehabify (cash, POS, transfer recorded by hand) are shown on their own
+    // and aren't counted as money through the platform.
+    type Stream = "rehabify_care" | "clinic_own" | "clinic_referral" | "independent" | "clinic_subscription";
+    const streamOf = (inv: (typeof invoices)[number]): Stream =>
+      inv.clinicId
+        ? inv.patientSource === "rehabify_referral"
+          ? "clinic_referral"
+          : "clinic_own"
+        : isRehabifyCareInvoice(inv)
+          ? "rehabify_care"
+          : "independent";
+    const emptyStreams = (): Record<Stream, number> => ({ rehabify_care: 0, clinic_own: 0, clinic_referral: 0, independent: 0, clinic_subscription: 0 });
+    const streams = emptyStreams();
+    let offlineKobo = 0;
+    const byClinic = new Map<string, number>();
+
     const revenue = new Map(starts.map((s) => [monthKey(s), { grossKobo: 0, platformFeeKobo: 0, paidInvoices: 0 }]));
     for (const inv of invoices.slice(0, SERIES_SCAN_CAP)) {
       if (inv.status !== "paid") continue;
@@ -573,10 +592,36 @@ export const getRevenueAnalytics = query({
       if (paidAt < rangeStart || paidAt >= rangeEnd) continue;
       const bucket = revenue.get(monthKey(paidAt));
       if (!bucket) continue;
+      if (inv.paymentMethod && inv.paymentMethod !== "paystack") {
+        offlineKobo += inv.totalAmount || 0;
+        continue;
+      }
       bucket.grossKobo += inv.totalAmount || 0;
       bucket.platformFeeKobo += inv.platformFeeAmount || 0;
       bucket.paidInvoices++;
+      streams[streamOf(inv)] += inv.totalAmount || 0;
+      if (inv.clinicId) byClinic.set(inv.clinicId, (byClinic.get(inv.clinicId) ?? 0) + (inv.totalAmount || 0));
     }
+
+    // Clinics' Rehabify subscriptions: invoices paid in the window
+    const subscriptionInvoices = await ctx.db
+      .query("clinicSubscriptionInvoices")
+      .withIndex("by_creation_time", (q) => q.gte("_creationTime", rangeStart - 62 * DAY))
+      .take(SERIES_SCAN_CAP);
+    for (const sub of subscriptionInvoices) {
+      if (sub.status !== "paid" || !sub.paidAt || sub.paidAt < rangeStart || sub.paidAt >= rangeEnd) continue;
+      streams.clinic_subscription += sub.amountKobo;
+    }
+
+    const topClinics = await Promise.all(
+      [...byClinic.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 10)
+        .map(async ([clinicId, kobo]) => {
+          const clinic = await ctx.db.get(clinicId as Id<"clinics">);
+          return { clinicId, name: clinic?.name ?? "Clinic", clinicNumber: clinic?.clinicNumber ?? null, kobo };
+        })
+    );
 
     const bookingMonths = new Map(starts.map((s) => [monthKey(s), { created: 0, paid: 0, cancelled: 0 }]));
     for (const b of bookings.slice(0, SERIES_SCAN_CAP)) {
@@ -594,6 +639,9 @@ export const getRevenueAnalytics = query({
       bookingsCapped: bookings.length > SERIES_SCAN_CAP,
       revenueByMonth: starts.map((s) => ({ month: monthKey(s), monthStart: s, ...revenue.get(monthKey(s))! })),
       bookingsByMonth: starts.map((s) => ({ month: monthKey(s), monthStart: s, ...bookingMonths.get(monthKey(s))! })),
+      streams,
+      offlineKobo,
+      topClinics,
     };
   },
 });

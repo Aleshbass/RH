@@ -32,6 +32,8 @@ export const sendPendingInvitationReminders = internalAction({
 
     let sent = 0;
     for (const inv of pending) {
+      // Clinic invitations last a month and the clinic resends them itself
+      if (inv.invitedByClinic) continue;
       try {
         const physio = await ctx.runQuery(internal.scheduled.invitation_reminders.getPhysiotherapist, {
           physiotherapistId: inv.physiotherapistId,

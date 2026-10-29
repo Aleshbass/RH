@@ -20,9 +20,8 @@ import {
   type ClinicMember,
 } from "../clinicTools";
 import { clipIdFor } from "../exerciseLibraryContent";
-import { currentUser, findRelationship, isApproved } from "./careAccess";
+import { currentUser, findRelationship, isApproved, requireClinicCareAccess } from "./careAccess";
 import { sha256Hex } from "./exerciseCrypto";
-import { assertClinicNotBillingReadOnly } from "./clinicSubscriptions";
 import { endOfLagosDay } from "./learnFormat";
 
 type Ctx = QueryCtx | MutationCtx;
@@ -99,17 +98,15 @@ export async function requireCareTeam(ctx: Ctx, patientId: Id<"users">, opts: { 
   let careEnded = false;
   if (user.role === "physiotherapist" && (await isApproved(ctx, user._id))) {
     const rel = await findRelationship(ctx, user._id, patientId);
-    // A clinician the clinic has suspended can still read, but not change, the clinic's patients
-    const suspendedHere = Boolean(user.clinicId && rel?.clinicId === user.clinicId && user.status && user.status !== "active");
-    if (opts.write && suspendedHere) {
-      throw new ConvexError("Your access to this clinic has been suspended. Contact the clinic owner.");
-    }
-    // A clinic behind on its subscription is read-only for its own patients (agreement 7.4)
-    if (opts.write && user.clinicId && rel?.clinicId === user.clinicId) {
-      await assertClinicNotBillingReadOnly(ctx, user.clinicId);
-    }
+    // A clinic's patient follows the clinic's rules (team, suspension, read-only for an unpaid
+    // invoice under agreement 7.4, role); reading is never blocked
+    if (opts.write && rel?.clinicId) await requireClinicCareAccess(ctx, user, rel.clinicId, { area: "patients" });
     if (rel && (rel.status === "active" || !opts.write)) {
-      return { user, kind: "physio", clinicId: user.clinicId ?? undefined, senderName: displayName(user) };
+      // The programme belongs to the care relationship's clinic, never the physio's other work.
+      // A clinic's patient sees who and where: "Mary Okafor — Lighthouse Physiotherapy".
+      const clinic = rel.clinicId ? await ctx.db.get(rel.clinicId) : null;
+      const senderName = clinic ? `${displayName(user)} — ${clinic.name}` : displayName(user);
+      return { user, kind: "physio", clinicId: rel.clinicId ?? undefined, senderName };
     }
     careEnded = Boolean(rel);
   }
@@ -131,6 +128,16 @@ export async function requireCareTeam(ctx: Ctx, patientId: Id<"users">, opts: { 
       ? "Your care of this patient has ended. Start a new course of care before changing their exercises."
       : "This patient isn't in your care."
   );
+}
+
+/**
+ * Which of a patient's programmes this care team may see. A clinic's patient: every programme
+ * from that clinic, whoever on the team wrote it, so a new clinician carries on where the last one
+ * left off. Anyone else: only their own; another clinic's or provider's programmes stay theirs.
+ */
+export function programmeInScope(team: CareTeamAccess, program: Pick<Doc<"exercisePrograms">, "clinicId" | "createdBy">) {
+  if (team.clinicId) return program.clinicId === team.clinicId;
+  return !program.clinicId && program.createdBy === team.user._id;
 }
 
 /** Like requireCareTeam but returns null instead of throwing (for queries). */

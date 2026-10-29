@@ -181,11 +181,13 @@ interface PatientAppointmentBookingModalProps {
   onClose: () => void
   preselectedPhysiotherapistId?: Id<'users'>
   onAppointmentBooked?: () => void
+  /** Clinic mode: ask the clinic for another time, clinician or service instead */
+  onAskClinic?: () => void
 }
 
 type Step = 'when' | 'details' | 'success'
 type AppointmentType = 'telehealth' | 'in-person'
-type CareTeamMember = { physiotherapist: { _id: string; firstName?: string; lastName?: string } } | null
+type CareTeamMember = { physiotherapist: { _id: string; firstName?: string; lastName?: string }; isClinicDesk?: boolean } | null
 
 const SERVICE_TYPES = [
   'Initial Consultation',
@@ -237,6 +239,7 @@ export function PatientAppointmentBookingModal({
   onClose,
   preselectedPhysiotherapistId,
   onAppointmentBooked,
+  onAskClinic,
 }: PatientAppointmentBookingModalProps) {
   const [step, setStep] = useState<Step>('when')
   const [slot, setSlot] = useState<Slot | null>(null)
@@ -249,9 +252,11 @@ export function PatientAppointmentBookingModal({
   const [paidServiceId, setPaidServiceId] = useState<string>('')
 
   // Typed from the query itself: the generated `api` type degrades to `any` in the full app build
-  const careTeam = useQuery(api.patients.getPatientCareTeam, isOpen ? {} : 'skip') as
+  const fullCareTeam = useQuery(api.patients.getPatientCareTeam, isOpen ? {} : 'skip') as
     | QueryResult<typeof getPatientCareTeam>
     | undefined as CareTeamMember[] | undefined
+  // Bookable people only: a clinic's own account stands in while it picks a clinician for them
+  const careTeam = useMemo(() => fullCareTeam?.filter((member) => member && !member.isClinicDesk), [fullCareTeam])
   const requestAppointment = useMutation(api.appointments.requestAppointment)
 
   // Rehabify patients pay per visit: they choose from the price list, and paying the physio's invoice confirms it
@@ -402,6 +407,16 @@ export function PatientAppointmentBookingModal({
 
       {step === 'when' &&
         (noCareTeam ? (
+          onAskClinic ? (
+            <div className="flex flex-col items-center py-8 text-center">
+              <IconChip icon={User} tone="sun" size="lg" />
+              <p className="mt-3 text-[15px] font-semibold text-pt-ink">Your clinic is choosing your physiotherapist</p>
+              <p className="mt-1 max-w-xs text-sm text-pt-muted">Ask the clinic to book you in. They&apos;ll pick a time with the right clinician.</p>
+              <Button className={cn(primaryButtonClass, 'mt-5 h-11 px-5')} onClick={onAskClinic}>
+                Ask the clinic
+              </Button>
+            </div>
+          ) : (
           <div className="flex flex-col items-center py-8 text-center">
             <IconChip icon={User} tone="sun" size="lg" />
             <p className="mt-3 text-[15px] font-semibold text-pt-ink">You&apos;re not linked to a physiotherapist yet</p>
@@ -413,6 +428,7 @@ export function PatientAppointmentBookingModal({
               </Link>
             </Button>
           </div>
+          )
         ) : (
           <div className="space-y-5">
             {!preselectedPhysiotherapistId && (careTeam?.length ?? 0) > 1 && (
@@ -456,6 +472,13 @@ export function PatientAppointmentBookingModal({
               <div className="flex items-center justify-center gap-2 rounded-2xl bg-pt-sunken py-10 text-sm text-pt-muted">
                 <Loader2 className="h-4 w-4 animate-spin" /> Loading…
               </div>
+            )}
+
+            {onAskClinic && (
+              <button type="button" onClick={onAskClinic} className="w-full rounded-2xl bg-pt-sunken px-4 py-3 text-left text-sm transition-colors hover:bg-pt-hover">
+                <span className="block font-semibold text-pt-ink">None of these work?</span>
+                <span className="block text-xs text-pt-muted">Ask the clinic for another time, a different clinician or a service.</span>
+              </button>
             )}
           </div>
         ))}

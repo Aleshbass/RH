@@ -10,12 +10,13 @@ import type { Id } from '@/convex/_generated/dataModel'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/clinic/drawerDialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 import { useClinicAccess } from '@/components/clinic/ClinicAccessContext'
 import { Panel, StatusBadge, primaryButtonClass } from '@/components/clinic/ui'
 import { friendlyError, useClinicianOptions } from '@/components/clinic/patients/patient-record-shared'
+import { playSound } from '@/lib/sounds'
 
 /**
  * Rehabify referrals inside the Patients page ("Referred by Rehabify"): new referrals to accept
@@ -120,13 +121,13 @@ export function ReferralInbox({
   return (
     <>
       <section className="space-y-3" aria-labelledby="referrals-waiting">
-        <h2 id="referrals-waiting" className="text-sm font-semibold text-neutral-900 dark:text-white">
+        <h2 id="referrals-waiting" className="text-sm font-semibold text-pt-ink">
           New referrals from Rehabify{' '}
-          <span className="font-normal text-neutral-500 dark:text-neutral-400">({sorted.length})</span>
+          <span className="font-normal text-pt-muted">({sorted.length})</span>
         </h2>
         {sorted.length === 0 ? (
-          <p className="flex items-center gap-2 rounded-xl border border-neutral-200 bg-white px-4 py-3 text-sm text-neutral-500 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-400">
-            <Inbox className="h-4 w-4 shrink-0 text-neutral-400" />
+          <p className="flex items-center gap-2 rounded-2xl border border-pt-line bg-pt-surface px-4 py-3 text-sm text-pt-muted">
+            <Inbox className="h-4 w-4 shrink-0 text-pt-faint" />
             Nothing waiting. New referrals from Rehabify appear here for you to accept.
           </p>
         ) : (
@@ -143,27 +144,27 @@ export function ReferralInbox({
 
       {others.length > 0 && (
         <Panel title="Earlier referrals" description="Referrals that aren't in the patient list below.">
-          <ul className="divide-y divide-neutral-200 dark:divide-neutral-800">
+          <ul className="divide-y divide-pt-line">
             {others.map((ref) => {
               const clinician = ref.assignedPhysiotherapistId
                 ? clinicianNames.get(String(ref.assignedPhysiotherapistId))
                 : undefined
               const source = sourceLabel(ref.partnerSource)
               return (
-                <li key={ref._id} className="flex items-start gap-3 px-4 py-3 sm:px-5">
+                <li key={ref._id} className="flex items-start gap-3 px-5 py-3 sm:px-6">
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                      <p className="truncate text-sm font-medium text-neutral-900 dark:text-white">{ref.patientName}</p>
+                      <p className="truncate text-sm font-medium text-pt-ink">{ref.patientName}</p>
                       <ReferralProgressBadge status={ref.status} />
                     </div>
-                    <p className="mt-0.5 truncate text-xs text-neutral-500 dark:text-neutral-400">
+                    <p className="mt-0.5 truncate text-xs text-pt-muted">
                       {[ref.condition, clinician ? `with ${clinician}` : null].filter(Boolean).join(' · ')}
                     </p>
                     {source && (
-                      <p className="mt-0.5 truncate text-xs text-neutral-400 dark:text-neutral-500">Source: {source}</p>
+                      <p className="mt-0.5 truncate text-xs text-pt-faint">Source: {source}</p>
                     )}
                   </div>
-                  <p className="shrink-0 text-xs text-neutral-500 dark:text-neutral-400">
+                  <p className="shrink-0 text-xs text-pt-muted">
                     {format(new Date(ref.createdAt), 'd MMM yyyy')}
                   </p>
                 </li>
@@ -212,19 +213,19 @@ function WaitingCard({
   return (
     <div
       className={cn(
-        'rounded-xl border bg-white p-4 dark:bg-neutral-900 sm:p-5',
-        ref.priority === 'urgent' ? 'border-red-200 dark:border-red-900/60' : 'border-neutral-200 dark:border-neutral-800'
+        'rounded-2xl border bg-pt-surface p-4 sm:p-5',
+        ref.priority === 'urgent' ? 'border-pt-line-strong' : 'border-pt-line'
       )}
     >
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0 flex-1 space-y-1">
           <div className="flex flex-wrap items-center gap-2">
-            <h3 className="truncate text-sm font-semibold text-neutral-900 dark:text-white">{ref.patientName}</h3>
+            <h3 className="truncate text-sm font-semibold text-pt-ink">{ref.patientName}</h3>
             <StatusBadge tone="teal">Referred by Rehabify</StatusBadge>
             {priorityBadge(ref.priority)}
           </div>
-          {ref.condition && <p className="text-sm text-neutral-700 dark:text-neutral-300">{ref.condition}</p>}
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-neutral-500 dark:text-neutral-400">
+          {ref.condition && <p className="text-sm text-pt-ink">{ref.condition}</p>}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-pt-muted">
             <span>Received {formatDistanceToNow(new Date(ref.createdAt), { addSuffix: true })}</span>
             {ref.city && (
               <span className="inline-flex items-center gap-1">
@@ -235,7 +236,7 @@ function WaitingCard({
             {ref.patientPhone && (
               <a
                 href={`tel:${ref.patientPhone.replace(/\s+/g, '')}`}
-                className="inline-flex items-center gap-1 hover:text-neutral-900 dark:hover:text-white"
+                className="inline-flex items-center gap-1 hover:text-pt-ink"
               >
                 <Phone className="h-3 w-3" />
                 {ref.patientPhone}
@@ -254,25 +255,25 @@ function WaitingCard({
         </div>
       </div>
 
-      <div className="mt-3 border-t border-neutral-200 pt-3 dark:border-neutral-800">
+      <div className="mt-3 border-t border-pt-line pt-3">
         <button
           type="button"
           onClick={() => setShowDetails((v) => !v)}
           aria-expanded={showDetails}
-          className="text-xs font-medium text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white"
+          className="text-xs font-medium text-pt-muted hover:text-pt-ink"
         >
           {showDetails ? 'Hide details' : 'Show details'}
         </button>
         {showDetails && (
           <div className="mt-2 space-y-2 text-sm">
-            <p className="whitespace-pre-line text-neutral-700 dark:text-neutral-300">
+            <p className="whitespace-pre-line text-pt-ink">
               {ref.clinicalNotes?.trim() || 'No clinical notes were included.'}
             </p>
-            <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-neutral-500 dark:text-neutral-400">
+            <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-pt-muted">
               {ref.patientEmail && (
                 <a
                   href={`mailto:${ref.patientEmail}`}
-                  className="inline-flex min-w-0 items-center gap-1 break-all hover:text-neutral-900 dark:hover:text-white"
+                  className="inline-flex min-w-0 items-center gap-1 break-all hover:text-pt-ink"
                 >
                   <Mail className="h-3 w-3 shrink-0" />
                   {ref.patientEmail}
@@ -315,6 +316,7 @@ function AcceptForm({
         assignedClinicianId: clinicianId as Id<'users'>,
         notes: note.trim() || undefined,
       })
+      playSound('approve')
       toast.success(`${referral.patientName} accepted and added to your patients`)
       onClose()
     } catch (err: unknown) {
@@ -341,7 +343,7 @@ function AcceptForm({
             </SelectTrigger>
             <SelectContent>
               {clinicians.length === 0 ? (
-                <p className="px-2 py-1.5 text-sm text-neutral-500">No clinicians available</p>
+                <p className="px-2 py-1.5 text-sm text-pt-muted">No clinicians available</p>
               ) : (
                 clinicians.map((c) => (
                   <SelectItem key={c.id} value={c.id}>
@@ -354,7 +356,7 @@ function AcceptForm({
         </div>
         <div className="space-y-1.5">
           <Label className="text-sm">
-            Note <span className="font-normal text-neutral-500">(optional)</span>
+            Note <span className="font-normal text-pt-muted">(optional)</span>
           </Label>
           <Textarea
             rows={2}
@@ -394,6 +396,7 @@ function DeclineForm({ referral, onClose }: { referral: ClinicReferral; onClose:
         action: 'decline',
         notes: reason.trim() || undefined,
       })
+      playSound('reject')
       toast.success('Referral declined and returned to Rehabify')
       onClose()
     } catch (err: unknown) {
@@ -415,7 +418,7 @@ function DeclineForm({ referral, onClose }: { referral: ClinicReferral; onClose:
       <form onSubmit={submit} className="space-y-4">
         <div className="space-y-1.5">
           <Label className="text-sm">
-            Reason <span className="font-normal text-neutral-500">(optional)</span>
+            Reason <span className="font-normal text-pt-muted">(optional)</span>
           </Label>
           <Textarea
             rows={2}
@@ -429,7 +432,7 @@ function DeclineForm({ referral, onClose }: { referral: ClinicReferral; onClose:
           <Button type="button" variant="outline" size="sm" className="h-9" disabled={saving} onClick={onClose}>
             Keep it
           </Button>
-          <Button type="submit" size="sm" disabled={saving} className="h-9 bg-red-600 text-white hover:bg-red-700">
+          <Button type="submit" size="sm" disabled={saving} className="h-9 bg-pt-rose-bg text-pt-rose-fg hover:brightness-95">
             {saving && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
             {saving ? 'Declining…' : 'Decline referral'}
           </Button>

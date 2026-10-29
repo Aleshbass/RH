@@ -17,6 +17,8 @@ export type CareTeamMember = {
   relationship: { isPrimary?: boolean; startDate?: number; status?: string }
   recentAppointments: number
   lastAppointment?: number
+  /** The clinic itself (its owner account) while it picks a clinician for them */
+  isClinicDesk?: boolean
 }
 
 export function physioName(member: CareTeamMember) {

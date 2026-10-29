@@ -21,10 +21,14 @@ import {
 import { PhysioPhoto } from '@/components/patient/PhysioPhoto'
 import { cn } from '@/lib/utils'
 import { physioName, type CareTeamMember } from '@/components/patient/careTeam'
+import { useCareHome } from '@/components/patient/careHome'
 
 export default function MyPhysiotherapistPage() {
   const router = useRouter()
-  const careTeam = useQuery(api.patients.getPatientCareTeam) as CareTeamMember[] | undefined
+  const fullTeam = useQuery(api.patients.getPatientCareTeam) as CareTeamMember[] | undefined
+  // People only: a clinic's own account stands in while it picks a clinician for them
+  const careTeam = fullTeam?.filter((member) => !member.isClinicDesk)
+  const { clinic } = useCareHome()
 
   // With one physiotherapist there's nothing to choose: go straight to them
   const onlyOne = careTeam?.length === 1 ? careTeam[0].physiotherapist._id : null
@@ -46,15 +50,25 @@ export default function MyPhysiotherapistPage() {
         <Panel>
           <EmptyState
             icon={Stethoscope}
-            title="No physiotherapist yet"
-            description="Once you book a session or accept an invitation from a physio, they'll appear here."
+            title={clinic ? `${clinic.name} is choosing your physiotherapist` : 'No physiotherapist yet'}
+            description={
+              clinic
+                ? 'They’ll appear here as soon as the clinic assigns them. Message the clinic if you have a question.'
+                : 'Once you book a session or accept an invitation from a physio, they’ll appear here.'
+            }
             action={
-              <Button asChild className={primaryButtonClass}>
-                <Link href="/find-a-physio">
-                  <Search className="mr-2 h-4 w-4" />
-                  Find a physio
-                </Link>
-              </Button>
+              clinic ? (
+                <Button asChild className={primaryButtonClass}>
+                  <Link href="/dashboard/patient/messages">Message the clinic</Link>
+                </Button>
+              ) : (
+                <Button asChild className={primaryButtonClass}>
+                  <Link href="/find-a-physio">
+                    <Search className="mr-2 h-4 w-4" />
+                    Find a physio
+                  </Link>
+                </Button>
+              )
             }
           />
         </Panel>

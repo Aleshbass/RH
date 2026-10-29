@@ -11,7 +11,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/clinic/drawerDialog'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -45,6 +45,7 @@ import {
   teamError,
   type ClinicRole,
 } from './team-shared'
+import { playSound } from '@/lib/sounds'
 
 interface RoleDraft {
   roleId?: Id<'clinicRoles'>
@@ -55,7 +56,7 @@ interface RoleDraft {
 const EMPTY_DRAFT: RoleDraft = { name: '', permissions: [] }
 
 const chipClass =
-  'inline-flex items-center gap-1 rounded-md border border-neutral-200 bg-white px-2.5 py-1 text-xs font-medium text-neutral-700 transition-colors hover:bg-neutral-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-rh-lime dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:focus-visible:ring-rh-lime'
+  'inline-flex items-center gap-1 rounded-md border border-pt-line bg-pt-surface px-2.5 py-1 text-xs font-medium text-pt-ink transition-colors hover:bg-pt-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-rh-lime dark:focus-visible:ring-rh-lime'
 
 /**
  * Dashboard roles: named sets of pages the owner can give team members.
@@ -88,6 +89,7 @@ export default function RolesPanel({ roles }: { roles: ClinicRole[] | undefined 
     setSaving(true)
     try {
       await saveRole({ roleId: value.roleId, name: value.name, permissions: value.permissions })
+      playSound('success')
       toast.success(value.roleId ? 'Role updated' : `${value.name.trim()} role created`)
       setDialogOpen(false)
     } catch (err) {
@@ -110,6 +112,7 @@ export default function RolesPanel({ roles }: { roles: ClinicRole[] | undefined 
     setDeleting(true)
     try {
       await deleteRole({ roleId: deleteFor._id })
+      playSound('reject')
       toast.success(`${deleteFor.name} role deleted`)
       setDeleteFor(null)
     } catch (err) {
@@ -139,19 +142,19 @@ export default function RolesPanel({ roles }: { roles: ClinicRole[] | undefined 
         }
       >
         {roles === undefined ? (
-          <div className="space-y-2 px-4 py-4 sm:px-5">
+          <div className="space-y-2 px-5 py-4 sm:px-6">
             <Skeleton className="h-10 rounded-md" />
             <Skeleton className="h-10 rounded-md" />
           </div>
         ) : roles.length === 0 ? (
-          <div className="px-4 py-5 sm:px-5">
-            <p className="text-sm text-neutral-700 dark:text-neutral-300">
+          <div className="px-5 py-5 sm:px-6">
+            <p className="text-sm text-pt-ink">
               No roles yet. Clinicians can open Appointments and Patients; give them a role to add clinic pages
               such as Referrals, Billing, Team or Reports.
             </p>
             {canManage && (
               <div className="mt-3 flex flex-wrap items-center gap-2">
-                <span className="text-xs text-neutral-500 dark:text-neutral-400">Start from</span>
+                <span className="text-xs text-pt-muted">Start from</span>
                 {ROLE_TEMPLATES.map((template) => (
                   <button
                     key={template.name}
@@ -169,21 +172,21 @@ export default function RolesPanel({ roles }: { roles: ClinicRole[] | undefined 
             )}
           </div>
         ) : (
-          <ul className="divide-y divide-neutral-200 dark:divide-neutral-800">
+          <ul className="divide-y divide-pt-line">
             {roles.map((role) => (
-              <li key={role._id} className="flex items-center gap-3 px-4 py-3 sm:px-5">
+              <li key={role._id} className="flex items-center gap-3 px-5 py-3 sm:px-6">
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-neutral-900 dark:text-white">{role.name}</p>
-                  <p className="text-xs text-neutral-500 dark:text-neutral-400">{roleSummary(role.permissions)}</p>
+                  <p className="truncate text-sm font-medium text-pt-ink">{role.name}</p>
+                  <p className="text-xs text-pt-muted">{roleSummary(role.permissions)}</p>
                 </div>
-                <p className="shrink-0 text-xs tabular-nums text-neutral-500 dark:text-neutral-400">
+                <p className="shrink-0 text-xs tabular-nums text-pt-muted">
                   {role.memberCount > 0 ? pluralPeople(role.memberCount) : 'No one yet'}
                 </p>
                 {canManage && (
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button variant="ghost" size="sm" className="h-8 w-8 shrink-0 p-0">
-                        <MoreHorizontal className="h-4 w-4 text-neutral-500" />
+                        <MoreHorizontal className="h-4 w-4 text-pt-muted" />
                         <span className="sr-only">Actions for {role.name}</span>
                       </Button>
                     </DropdownMenuTrigger>
@@ -199,7 +202,7 @@ export default function RolesPanel({ roles }: { roles: ClinicRole[] | undefined 
                         Edit
                       </DropdownMenuItem>
                       <DropdownMenuItem
-                        className="text-red-600 focus:text-red-600 dark:text-red-400 dark:focus:text-red-400"
+                        className="text-pt-rose-fg focus:text-pt-rose-fg"
                         onClick={() => askDelete(role)}
                       >
                         Delete
@@ -215,12 +218,12 @@ export default function RolesPanel({ roles }: { roles: ClinicRole[] | undefined 
 
       {/* Create / edit */}
       <Dialog open={dialogOpen} onOpenChange={(open) => !open && !saving && setDialogOpen(false)}>
-        <DialogContent className="w-[calc(100vw-2rem)] max-w-lg space-y-5 border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900 sm:p-6">
+        <DialogContent className="w-[calc(100vw-2rem)] max-w-lg space-y-5 border-pt-line bg-pt-surface p-4 sm:p-6">
           <DialogHeader className="space-y-1 text-left">
-            <DialogTitle className="text-base font-semibold text-neutral-900 dark:text-neutral-50">
+            <DialogTitle className="text-base font-semibold text-pt-ink">
               {draft.roleId ? 'Edit role' : 'New role'}
             </DialogTitle>
-            <DialogDescription className="text-sm text-neutral-500 dark:text-neutral-400">
+            <DialogDescription className="text-sm text-pt-muted">
               People with this role only see the pages you tick.
             </DialogDescription>
           </DialogHeader>
@@ -249,7 +252,7 @@ export default function RolesPanel({ roles }: { roles: ClinicRole[] | undefined 
             <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
             <AlertDialogAction
               disabled={deleting}
-              className="bg-red-600 text-white hover:bg-red-700"
+              className="bg-pt-rose-bg text-pt-rose-fg hover:brightness-95"
               onClick={(e) => {
                 e.preventDefault()
                 void handleDelete()
@@ -316,7 +319,7 @@ function RoleForm({
           {CLINIC_AREAS.map((area) => (
             <label
               key={area}
-              className="flex min-w-0 cursor-pointer items-center gap-2.5 rounded-md border border-neutral-200 px-3 py-2 text-sm text-neutral-800 transition-colors hover:bg-neutral-50 dark:border-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-800/60"
+              className="flex min-w-0 cursor-pointer items-center gap-2.5 rounded-md border border-pt-line px-3 py-2 text-sm text-pt-ink transition-colors hover:bg-pt-hover"
             >
               <Checkbox
                 checked={permissions.includes(area)}
@@ -328,7 +331,7 @@ function RoleForm({
             </label>
           ))}
         </div>
-        <p className="text-xs text-neutral-500 dark:text-neutral-400">
+        <p className="text-xs text-pt-muted">
           Leave all unticked to give full access. Home is always visible.
         </p>
       </div>

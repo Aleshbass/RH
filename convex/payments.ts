@@ -631,13 +631,31 @@ async function applyPaymentStatus(
     });
   }
 
+  // The clinician who asked for a clinic payment hears it too (the owner got it above)
+  if (invoice.issuedById && invoice.issuedById !== invoice.physiotherapistId) {
+    await insertNotification(ctx, {
+      userId: invoice.issuedById,
+      type: "payment_received",
+      priority: "medium",
+      status: "pending",
+      payload: {
+        title: "Payment received",
+        body: `Invoice #${invoice.invoiceNumber} has been paid (₦${(paidKobo / 100).toLocaleString()})`,
+        data: { entityId: invoice._id, entityType: "invoice", actionUrl: "/dashboard/physiotherapist/billing" },
+      },
+      createdAt: now,
+    });
+  }
+
+  // Patients hear it from whoever they paid: their clinic by name, or their physio
+  const paidTo = invoice.clinicId ? (await ctx.db.get(invoice.clinicId))?.name ?? null : null;
   await insertNotification(ctx, {
     userId: invoice.patientId,
     type: "payment_confirmed",
     priority: "medium",
     status: "pending",
     payload: {
-      title: "Payment Confirmed",
+      title: paidTo ? `${paidTo} received your payment` : "Payment Confirmed",
       body: `Your payment for invoice #${invoice.invoiceNumber} has been confirmed`,
       data: {
         entityId: invoice._id,
@@ -1167,7 +1185,15 @@ export const receiptByToken = query({
       .query("receipts")
       .withIndex("by_token", (q) => q.eq("accessToken", token))
       .unique();
-    return row ? receiptView(row) : null;
+    if (!row) return null;
+    // A clinic payment's receipt names the clinic it was paid to
+    let paidTo: string | null = null;
+    if (row.relationship === "clinic" && row.relatedType === "invoice") {
+      const invoiceId = ctx.db.normalizeId("invoices", row.relatedId);
+      const invoice = invoiceId ? await ctx.db.get(invoiceId) : null;
+      paidTo = invoice?.clinicId ? ((await ctx.db.get(invoice.clinicId))?.name ?? null) : null;
+    }
+    return { ...receiptView(row), paidTo };
   },
 });
 

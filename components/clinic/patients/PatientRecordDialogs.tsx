@@ -10,7 +10,7 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog'
+} from '@/components/clinic/drawerDialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -35,18 +35,19 @@ import {
   labelClass,
   type ClinicianOption,
 } from './patient-record-shared'
+import { playSound } from '@/lib/sounds'
 
 type PatientRecord = NonNullable<FunctionReturnType<typeof api.clinicTools.getClinicPatientFullRecord>>
 type Gender = 'male' | 'female' | 'other' | 'prefer_not_to_say'
 
 const dialogClass =
-  'w-[calc(100vw-2rem)] max-h-[90vh] overflow-y-auto border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900 sm:p-6'
+  'w-[calc(100vw-2rem)] max-h-[90vh] overflow-y-auto border-pt-line bg-pt-surface p-4 sm:p-6'
 
 function DialogHead({ title, description }: { title: string; description: string }) {
   return (
     <DialogHeader className="space-y-1 text-left">
-      <DialogTitle className="text-base font-semibold text-neutral-900 dark:text-neutral-50">{title}</DialogTitle>
-      <DialogDescription className="text-sm text-neutral-500 dark:text-neutral-400">{description}</DialogDescription>
+      <DialogTitle className="text-base font-semibold text-pt-ink">{title}</DialogTitle>
+      <DialogDescription className="text-sm text-pt-muted">{description}</DialogDescription>
     </DialogHeader>
   )
 }
@@ -178,8 +179,10 @@ function EditDetailsForm({ record, onDone }: { record: PatientRecord; onDone: ()
       if (emailChanged) {
         // The first invite went to the old address, so send it to the corrected one
         await resendInvite({ patientId: patient._id })
+        playSound('send')
         toast.success('Details saved', { description: `Invite email sent to ${newEmail}.` })
       } else {
+        playSound('success')
         toast.success('Patient details saved')
       }
       onDone()
@@ -233,7 +236,7 @@ function EditDetailsForm({ record, onDone }: { record: PatientRecord; onDone: ()
                 onChange={set('email')}
                 className={cn(fieldClass, 'h-9')}
               />
-              <p className="text-xs text-neutral-500 dark:text-neutral-400">
+              <p className="text-xs text-pt-muted">
                 They haven&apos;t created their account yet. If you change this, we&apos;ll send the invite to the new
                 address.
               </p>
@@ -245,9 +248,9 @@ function EditDetailsForm({ record, onDone }: { record: PatientRecord; onDone: ()
                 value={patient.email ?? ''}
                 readOnly
                 disabled
-                className={cn(fieldClass, 'h-9 text-neutral-500 dark:text-neutral-400')}
+                className={cn(fieldClass, 'h-9 text-pt-muted')}
               />
-              <p className="text-xs text-neutral-500 dark:text-neutral-400">
+              <p className="text-xs text-pt-muted">
                 The patient signs in with this, so only they can change it.
               </p>
             </>
@@ -334,8 +337,8 @@ function EditDetailsForm({ record, onDone }: { record: PatientRecord; onDone: ()
         />
       </div>
 
-      <fieldset className="space-y-3 rounded-lg border border-neutral-200 p-3 dark:border-neutral-800">
-        <legend className="px-1 text-xs font-medium text-neutral-700 dark:text-neutral-300">Emergency contact</legend>
+      <fieldset className="space-y-3 rounded-lg border border-pt-line p-3">
+        <legend className="px-1 text-xs font-medium text-pt-ink">Emergency contact</legend>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div className="space-y-1.5">
             <Label htmlFor="edit-ec-name" className={labelClass}>
@@ -459,7 +462,7 @@ function ClinicianPickerForm({
       <div className="space-y-1.5">
         <Label className={labelClass}>Clinician</Label>
         {options.length === 0 ? (
-          <p className="text-sm text-neutral-500 dark:text-neutral-400">No other clinicians are available.</p>
+          <p className="text-sm text-pt-muted">No other clinicians are available.</p>
         ) : (
           <Select value={value} onValueChange={setPicked}>
             <SelectTrigger className={cn(fieldClass, 'h-9')} aria-label="Clinician">

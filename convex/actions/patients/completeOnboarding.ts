@@ -31,6 +31,7 @@ export const completePatientOnboardingWithNotification = action({
       ),
       medicalHistory: v.optional(v.string()),
       emergencyContact: v.optional(v.string()),
+      acceptedPolicies: v.optional(v.record(v.string(), v.string())),
     }),
     sendEmail: v.optional(v.boolean()),
   },

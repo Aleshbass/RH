@@ -1,7 +1,49 @@
 'use client'
 
+import type { ComponentType, ReactNode } from 'react'
 import { useClinicAccess } from './ClinicAccessContext'
 import { Clock, AlertCircle, ShieldOff } from '@/components/icons'
+import { cn } from '@/lib/utils'
+
+/**
+ * A rounded strip at the top of the page: ink when something needs the clinic, rose when Rehabify
+ * suspended it. Shared by the clinic banners so they look alike.
+ */
+export function ClinicNotice({
+  tone,
+  icon: Icon,
+  children,
+  action,
+}: {
+  tone: 'ink' | 'rose' | 'quiet'
+  icon: ComponentType<{ className?: string }>
+  children: ReactNode
+  action?: ReactNode
+}) {
+  return (
+    <div
+      role="status"
+      className={cn(
+        'flex flex-wrap items-center gap-x-3 gap-y-2 rounded-2xl px-5 py-3 sm:px-6',
+        tone === 'ink' && 'bg-pt-primary text-pt-on-primary',
+        tone === 'rose' && 'bg-pt-rose-bg text-pt-rose-fg',
+        tone === 'quiet' && 'border border-pt-line bg-pt-surface text-pt-ink'
+      )}
+    >
+      <Icon className={cn('h-4 w-4 shrink-0', tone === 'ink' ? 'text-pt-accent' : tone === 'quiet' && 'text-pt-muted')} />
+      <div className={cn('min-w-0 flex-1 text-sm leading-relaxed', tone === 'ink' && '[&_.notice-muted]:opacity-75')}>{children}</div>
+      {action}
+    </div>
+  )
+}
+
+/** The lime action at the end of a notice (Pay now, Finish setup). */
+export const noticeActionClass =
+  'inline-flex h-9 shrink-0 items-center rounded-xl bg-pt-accent px-3.5 text-sm font-semibold text-[#06210a] transition hover:bg-[#00b80e] active:scale-[0.98]'
+
+/** A quieter action for a notice (See your plan). */
+export const noticeSecondaryClass =
+  'inline-flex h-9 shrink-0 items-center rounded-xl border border-pt-line-strong bg-pt-surface px-3.5 text-sm font-medium text-pt-ink transition hover:bg-pt-hover'
 
 /**
  * One calm line explaining why changes are turned off (clinic not set up or not yet approved,
@@ -26,23 +68,18 @@ export default function ClinicStatusBanner() {
   // Rehabify suspended the whole clinic: the most important thing to say, so it wins
   if (isClinicSuspended) {
     return (
-      <div className="border-b border-rose-200 bg-rose-50 px-4 py-2.5 dark:border-rose-900/50 dark:bg-rose-950/30 sm:px-6">
-        <div className="mx-auto flex max-w-6xl items-start gap-3">
-          <ShieldOff className="mt-0.5 h-4 w-4 shrink-0 text-rose-700 dark:text-rose-400" />
-          <p className="min-w-0 flex-1 text-sm text-rose-900 dark:text-rose-200">
-            <span className="font-medium">Rehabify has suspended this clinic.</span> You can still view your records, but
-            changes, bookings and payouts are turned off.
-            {clinicSuspendedReason && <span className="mt-0.5 block text-rose-800/90 dark:text-rose-300/90">Reason: {clinicSuspendedReason}</span>}
-            <span className="mt-0.5 block">
-              Contact{' '}
-              <a href="mailto:support@physioaroundme.com" className="font-medium underline underline-offset-2">
-                support@physioaroundme.com
-              </a>{' '}
-              to restore access.
-            </span>
-          </p>
-        </div>
-      </div>
+      <ClinicNotice tone="rose" icon={ShieldOff}>
+        <span className="font-semibold">Rehabify has suspended this clinic.</span> You can still view your records, but changes,
+        bookings and payouts are turned off.
+        {clinicSuspendedReason && <span className="mt-0.5 block opacity-90">Reason: {clinicSuspendedReason}</span>}
+        <span className="mt-0.5 block">
+          Contact{' '}
+          <a href="mailto:support@physioaroundme.com" className="font-semibold underline underline-offset-2">
+            support@physioaroundme.com
+          </a>{' '}
+          to restore access.
+        </span>
+      </ClinicNotice>
     )
   }
 
@@ -60,22 +97,19 @@ export default function ClinicStatusBanner() {
       : "We're reviewing your clinic. You can look around; booking, billing and patient records unlock once you're approved."
     : 'Finish setting up your clinic to add patients and take payments.'
 
-  const Icon = isSuspended || isDeclined ? AlertCircle : Clock
-
   return (
-    <div className="border-b border-amber-200 bg-amber-50 px-4 py-2.5 dark:border-amber-900/50 dark:bg-amber-950/30 sm:px-6">
-      <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-3 gap-y-2">
-        <Icon className="h-4 w-4 shrink-0 text-amber-700 dark:text-amber-400" />
-        <p className="min-w-0 flex-1 text-sm text-amber-900 dark:text-amber-200">{content}</p>
-        {isOnboardingIncomplete && !isStaff && !isDeclined && !isSuspended && (
-          <a
-            href="/clinic-owner"
-            className="rounded-md bg-rh-lime px-3 py-1.5 text-sm font-medium text-rh-ink hover:bg-rh-lime-deep"
-          >
+    <ClinicNotice
+      tone="ink"
+      icon={isSuspended || isDeclined ? AlertCircle : Clock}
+      action={
+        isOnboardingIncomplete && !isStaff && !isDeclined && !isSuspended ? (
+          <a href="/clinic-owner" className={noticeActionClass}>
             Finish setup
           </a>
-        )}
-      </div>
-    </div>
+        ) : undefined
+      }
+    >
+      {content}
+    </ClinicNotice>
   )
 }

@@ -1,5 +1,5 @@
 import { ConvexError, v } from "convex/values";
-import { mutation, query, QueryCtx, MutationCtx } from "./_generated/server";
+import { internalMutation, mutation, query, QueryCtx, MutationCtx } from "./_generated/server";
 import { Doc, Id } from "./_generated/dataModel";
 import { getAuthenticatedUser } from "./auth";
 import { internal } from "./_generated/api";
@@ -24,6 +24,9 @@ import { lagosDateTime, lagosTimeRange, zonedDateKey, zonedTimeKey } from "./hel
 import { transitionReferral } from "./helpers/partnerEvents";
 import { attributeUserToReferral } from "./helpers/partnerAttribution";
 import { assertNoteTextLength, keepRevision } from "./helpers/noteRevisions";
+import { createClinicPatientInvitation } from "./patientInvitations";
+import { insertNotification } from "./helpers/pushNotify";
+import { publicAppUrl } from "./helpers/appUrl";
 
 /** Section names as the clinic's note form shows them, for "too long" messages. */
 const CLINIC_NOTE_LABELS: Record<string, string> = {
@@ -42,7 +45,7 @@ const CLINIC_NOTE_LABELS: Record<string, string> = {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Pages a clinic role can be given. Home is always available. */
-export const CLINIC_AREAS = ["appointments", "patients", "referrals", "billing", "team", "reports", "settings"] as const;
+export const CLINIC_AREAS = ["appointments", "patients", "referrals", "billing", "team", "reports", "settings", "inventory"] as const;
 export type ClinicArea = (typeof CLINIC_AREAS)[number];
 
 const AREA_LABELS: Record<ClinicArea, string> = {
@@ -53,6 +56,7 @@ const AREA_LABELS: Record<ClinicArea, string> = {
   team: "Team",
   reports: "Reports",
   settings: "Clinic settings",
+  inventory: "Inventory",
 };
 
 export const isClinicArea = (value: string): value is ClinicArea => (CLINIC_AREAS as readonly string[]).includes(value);
@@ -207,6 +211,24 @@ export async function getClinicStaffUserIds(ctx: QueryCtx, clinic: Doc<"clinics"
   return new Set<Id<"users">>([clinic.ownerId, ...profiles.map((p) => p.userId)]);
 }
 
+/**
+ * The clinician who treats a patient. Every clinic patient has one, picked by the clinic, and it's
+ * never the owner's account: the owner runs the clinic and doesn't treat (owner decision, 28 Oct
+ * 2026). Patients stay the clinic's either way, so another clinician can take over later.
+ */
+export async function requireAssignedClinician(
+  ctx: QueryCtx,
+  clinic: Doc<"clinics">,
+  clinicianId: Id<"users"> | undefined
+): Promise<Id<"users">> {
+  if (!clinicianId) throw new ConvexError("Choose the clinician who'll treat this patient.");
+  if (clinicianId === clinic.ownerId) {
+    throw new ConvexError("Choose a clinician from your team. The owner account runs the clinic and doesn't treat patients.");
+  }
+  await assertStaffInClinic(ctx, clinic, clinicianId);
+  return clinicianId;
+}
+
 export async function assertStaffInClinic(ctx: QueryCtx, clinic: Doc<"clinics">, userId: Id<"users">) {
   const staffIds = await getClinicStaffUserIds(ctx, clinic);
   if (!staffIds.has(userId)) {
@@ -219,8 +241,9 @@ export async function assertStaffInClinic(ctx: QueryCtx, clinic: Doc<"clinics">,
 }
 
 /**
- * True when the patient belongs to this clinic: linked directly, through their profile,
- * or through an active care relationship with one of the clinic's clinicians.
+ * True when the patient belongs to this clinic: linked directly, through their profile, or by a
+ * care relationship tagged with the clinic. A clinician's own private patients (relationships
+ * without the clinic) are theirs, not the clinic's.
  */
 async function isPatientInClinic(ctx: QueryCtx, clinic: Doc<"clinics">, patientId: Id<"users">) {
   const patient = await ctx.db.get(patientId);
@@ -237,22 +260,23 @@ async function isPatientInClinic(ctx: QueryCtx, clinic: Doc<"clinics">, patientI
     .query("patientPhysiotherapistRelationships")
     .withIndex("by_patient", (q: any) => q.eq("patientId", patientId))
     .collect();
-  if (rels.some((r) => r.clinicId === clinic._id)) return true;
-
-  const staffIds = await getClinicStaffUserIds(ctx, clinic);
-  return rels.some((r) => r.status === "active" && staffIds.has(r.physiotherapistId));
+  return rels.some((r) => r.clinicId === clinic._id);
 }
 
 /**
  * Clinical records (notes, assessments, programmes) are written by the patient's own clinician,
  * under their own name. The owner and colleagues can read them; to take over someone's care,
- * the patient is reassigned first. An owner who treats patients is their clinician too.
+ * the patient is reassigned first. The owner runs the clinic and doesn't treat (owner decision,
+ * 28 Oct 2026): their clinicians write the records.
  */
 export async function requireTreatingClinician(
   ctx: QueryCtx,
   member: ClinicMember,
   patientId: Id<"users">
 ): Promise<Id<"users">> {
+  if (member.kind === "owner") {
+    throw new ConvexError("Clinical records are written by the patient's clinician. Assign this patient to a clinician on your team.");
+  }
   if (member.kind === "front_desk") {
     throw new ConvexError("Only the patient's clinician can write clinical records.");
   }
@@ -285,32 +309,21 @@ async function getClinicAppointmentOrThrow(
   if (!appointment) {
     throw new ConvexError("Appointment not found");
   }
+  // Only the clinic's own visits: never a clinician's private practice
   if (appointment.clinicId !== clinic._id) {
-    const staffIds = await getClinicStaffUserIds(ctx, clinic);
-    if (!staffIds.has(appointment.physiotherapistId)) {
-      throw new ConvexError("Appointment not found");
-    }
+    throw new ConvexError("Appointment not found");
   }
   return appointment;
 }
 
-/** Patients with an active care relationship at this clinic (linked directly or via a clinician). */
+/** Patients with an active care relationship tagged with this clinic. */
 export async function getActiveClinicPatientIds(ctx: QueryCtx, clinic: Doc<"clinics">): Promise<Id<"users">[]> {
-  const staffIds = await getClinicStaffUserIds(ctx, clinic);
-  const rels = await Promise.all([
-    ctx.db
-      .query("patientPhysiotherapistRelationships")
-      .withIndex("by_clinic", (q: any) => q.eq("clinicId", clinic._id))
-      .collect(),
-    ...Array.from(staffIds).map((id) =>
-      ctx.db
-        .query("patientPhysiotherapistRelationships")
-        .withIndex("by_physiotherapist", (q: any) => q.eq("physiotherapistId", id))
-        .collect()
-    ),
-  ]);
+  const rels = await ctx.db
+    .query("patientPhysiotherapistRelationships")
+    .withIndex("by_clinic", (q: any) => q.eq("clinicId", clinic._id))
+    .collect();
   const ids = new Set<Id<"users">>();
-  for (const rel of rels.flat()) {
+  for (const rel of rels) {
     if (rel.status === "active") ids.add(rel.patientId);
   }
   return Array.from(ids);
@@ -369,13 +382,12 @@ async function closeCareEpisode(
   if (reason === "discharged") {
     await advanceClinicReferral(ctx, clinic, patientId, "completed", actorId);
   }
-  const staffIds = await getClinicStaffUserIds(ctx, clinic);
   const rels = await ctx.db
     .query("patientPhysiotherapistRelationships")
     .withIndex("by_patient", (q: any) => q.eq("patientId", patientId))
     .collect();
   for (const rel of rels) {
-    if (rel.status === "active" && (rel.clinicId === clinic._id || staffIds.has(rel.physiotherapistId))) {
+    if (rel.status === "active" && rel.clinicId === clinic._id) {
       await ctx.db.patch(rel._id, { status: "inactive", endDate: now, notes: reason === "discharged" ? "Discharged" : "Care paused" });
     }
   }
@@ -482,13 +494,12 @@ async function getCareStatus(
   clinic: Doc<"clinics">,
   patientId: Id<"users">
 ): Promise<"active" | "paused" | "discharged"> {
-  const staffIds = await getClinicStaffUserIds(ctx, clinic);
   const rels = (
     await ctx.db
       .query("patientPhysiotherapistRelationships")
       .withIndex("by_patient", (q: any) => q.eq("patientId", patientId))
       .collect()
-  ).filter((rel) => rel.clinicId === clinic._id || staffIds.has(rel.physiotherapistId));
+  ).filter((rel) => rel.clinicId === clinic._id);
   if (rels.some((rel) => rel.status === "active")) return "active";
   const latest = rels.sort((a, b) => (b.endDate ?? 0) - (a.endDate ?? 0))[0];
   return latest?.notes === "Care paused" ? "paused" : "discharged";
@@ -627,8 +638,8 @@ export const addClinicPatient = mutation({
       });
     }
 
-    // Assign to clinician or clinic owner
-    const targetClinicianId = args.assignedClinicianId || defaultClinicianId(member);
+    // Every clinic patient has a treating clinician from the team
+    const targetClinicianId = await requireAssignedClinician(ctx, clinic, args.assignedClinicianId);
     const patientId = patientUser._id;
 
     // Check existing relationship
@@ -654,8 +665,8 @@ export const addClinicPatient = mutation({
       await ctx.db.patch(existingRel._id, { status: "active", clinicId: clinic._id });
     }
 
-    // Let the patient know, with a link to create (or sign in to) their account
-    const emailSent = alreadyInCare ? false : await schedulePatientInviteEmail(ctx, clinic, patientUser);
+    // Let the patient know, with their invitation link (it names the clinic and their clinician)
+    const emailSent = alreadyInCare ? false : await schedulePatientInviteEmail(ctx, clinic, patientUser, targetClinicianId);
 
     return {
       success: true,
@@ -678,14 +689,24 @@ function patientHasAccount(patient: Doc<"users">) {
 }
 
 /** Email the patient that this clinic added them. Returns false when there's no email to send to. */
-async function schedulePatientInviteEmail(ctx: MutationCtx, clinic: Doc<"clinics">, patient: Doc<"users">) {
+async function schedulePatientInviteEmail(
+  ctx: MutationCtx,
+  clinic: Doc<"clinics">,
+  patient: Doc<"users">,
+  clinicianId: Id<"users"> | undefined
+) {
   if (!patient.email) return false;
+  // The invitation page shows the clinic and their clinician, then links their account
+  const inviteCode = clinicianId ? await createClinicPatientInvitation(ctx, { clinic, clinicianId, patient }) : undefined;
+  const clinician = clinicianId ? await ctx.db.get(clinicianId) : null;
   await ctx.scheduler.runAfter(0, internal.actions.emails.sendClinicPatientInviteEmail.sendClinicPatientInviteEmail, {
     patientEmail: patient.email,
     patientFirstName: patient.firstName,
     clinicName: clinic.name,
     clinicPhone: clinic.contactPhone,
     hasAccount: patientHasAccount(patient),
+    inviteCode,
+    clinicianName: clinician ? personName(clinician, "") || undefined : undefined,
   });
   return true;
 }
@@ -701,7 +722,13 @@ export const resendClinicPatientInvite = mutation({
     if (!patient.email) {
       throw new ConvexError("This patient has no email address. Add one under Edit details first.");
     }
-    await schedulePatientInviteEmail(ctx, clinic, patient);
+    const care = (
+      await ctx.db
+        .query("patientPhysiotherapistRelationships")
+        .withIndex("by_patient", (q: any) => q.eq("patientId", args.patientId))
+        .collect()
+    ).find((rel) => rel.status === "active" && rel.clinicId === clinic._id);
+    await schedulePatientInviteEmail(ctx, clinic, patient, care?.physiotherapistId);
     return { success: true, email: patient.email };
   },
 });
@@ -738,24 +765,24 @@ export const getClinicPatientFullRecord = query({
     await assertPatientInClinic(ctx, clinic, args.patientId);
 
     // Only surface records written by this clinic, not the patient's history at other providers
+    // or a clinician's private work: untagged (older) records count only when written by someone
+    // whose care of this patient is the clinic's
     const staffIds = await getClinicStaffUserIds(ctx, clinic);
+    const patientRels = await ctx.db
+      .query("patientPhysiotherapistRelationships")
+      .withIndex("by_patient", (q: any) => q.eq("patientId", args.patientId))
+      .collect();
+    const clinicCarers = new Set(patientRels.filter((rel) => rel.clinicId === clinic._id).map((rel) => rel.physiotherapistId));
     const belongsToClinic = (rec: { clinicId?: Id<"clinics">; physiotherapistId: Id<"users"> }) =>
-      rec.clinicId === clinic._id || (!rec.clinicId && staffIds.has(rec.physiotherapistId));
+      rec.clinicId === clinic._id || (!rec.clinicId && staffIds.has(rec.physiotherapistId) && clinicCarers.has(rec.physiotherapistId));
 
     const profile = await ctx.db
       .query("patientProfiles")
       .withIndex("by_user_id", (q: any) => q.eq("userId", args.patientId))
       .first();
 
-    // This clinic's active care relationship (not one at another provider)
-    const relationship = (
-      await ctx.db
-        .query("patientPhysiotherapistRelationships")
-        .withIndex("by_patient", (q: any) => q.eq("patientId", args.patientId))
-        .collect()
-    ).find(
-      (rel) => rel.status === "active" && (rel.clinicId === clinic._id || staffIds.has(rel.physiotherapistId))
-    );
+    // This clinic's active care relationship (not one at another provider, or a private one)
+    const relationship = patientRels.find((rel) => rel.status === "active" && rel.clinicId === clinic._id);
     const careStatus = await getCareStatus(ctx, clinic, args.patientId);
 
     let primaryClinician = null;
@@ -1101,10 +1128,7 @@ export const reopenPatientCare = mutation({
     const { user, clinic } = member;
     await assertPatientInClinic(ctx, clinic, args.patientId);
 
-    const clinicianId = args.clinicianId ?? defaultClinicianId(member);
-    if (args.clinicianId) {
-      await assertStaffInClinic(ctx, clinic, args.clinicianId);
-    }
+    const clinicianId = await requireAssignedClinician(ctx, clinic, args.clinicianId);
     if ((await getCareStatus(ctx, clinic, args.patientId)) === "active") {
       throw new ConvexError("This patient is already in active care");
     }
@@ -1169,7 +1193,8 @@ export const bookClinicAppointment = mutation({
     const member = await requireClinicWrite(ctx, "appointments");
     const { user, clinic } = member;
     await assertPatientInClinic(ctx, clinic, args.patientId);
-    await assertStaffInClinic(ctx, clinic, args.physiotherapistId);
+    // Visits are with a clinician on the team (the owner account doesn't treat)
+    await requireAssignedClinician(ctx, clinic, args.physiotherapistId);
 
     if (args.endTime <= args.startTime) {
       throw new ConvexError("Appointment end time must be after the start time");
@@ -1791,7 +1816,7 @@ async function buildFollowUpRows(ctx: QueryCtx, clinic: Doc<"clinics">, patientI
           .query("patientPhysiotherapistRelationships")
           .withIndex("by_patient", (q: any) => q.eq("patientId", patientId))
           .collect()
-      ).filter((rel) => rel.status === "active" && (rel.clinicId === clinic._id || staffIds.has(rel.physiotherapistId)));
+      ).filter((rel) => rel.status === "active" && rel.clinicId === clinic._id);
       const nextCheckInAt = activeRels.map((rel) => rel.nextCheckInAt).find((at) => at !== undefined) ?? null;
 
       // A scheduled check-in date wins. Otherwise: nothing booked and not seen for a week.
@@ -1858,13 +1883,12 @@ export const logPatientFollowUp = mutation({
       // Unreachable patients come back tomorrow unless a date was picked
       const nextCheckInAt =
         args.nextCheckInAt ?? (args.outcome === "unreachable" ? Date.now() + 24 * 60 * 60 * 1000 : undefined);
-      const staffIds = await getClinicStaffUserIds(ctx, clinic);
       const rels = await ctx.db
         .query("patientPhysiotherapistRelationships")
         .withIndex("by_patient", (q: any) => q.eq("patientId", args.patientId))
         .collect();
       for (const rel of rels) {
-        if (rel.status === "active" && (rel.clinicId === clinic._id || staffIds.has(rel.physiotherapistId))) {
+        if (rel.status === "active" && rel.clinicId === clinic._id) {
           await ctx.db.patch(rel._id, { nextCheckInAt });
         }
       }
@@ -1900,16 +1924,17 @@ export async function insertClinicInvoice(
     notes?: string;
     dueDate?: number;
     appointmentIds?: Id<"appointments">[];
+    /** Who on the team asked for it (for their own records and the paid notification) */
+    issuedById?: Id<"users">;
   }
 ) {
     // Clinic-owned and Rehabify-referred patients are billed apart, so the invoice keeps the source
-    const clinicStaffIds = await getClinicStaffUserIds(ctx, clinic);
     const careRelationship = (
       await ctx.db
         .query("patientPhysiotherapistRelationships")
         .withIndex("by_patient", (q: any) => q.eq("patientId", input.patientId))
         .collect()
-    ).find((rel) => rel.status === "active" && (rel.clinicId === clinic._id || clinicStaffIds.has(rel.physiotherapistId)));
+    ).find((rel) => rel.status === "active" && rel.clinicId === clinic._id);
     const patientSource = careRelationship?.source === "rehabify_referral" ? "rehabify_referral" : "clinic_direct";
 
     const totalKobo = input.items.reduce((sum, item) => sum + item.totalPrice, 0);
@@ -1952,6 +1977,7 @@ export async function insertClinicInvoice(
       // The owner gets the "payment received" notification for clinic invoices
       physiotherapistId: clinic.ownerId,
       clinicId: clinic._id,
+      issuedById: input.issuedById,
       invoiceNumber,
       issueDate: now,
       dueDate: due,
@@ -1983,7 +2009,50 @@ export async function insertClinicInvoice(
       },
     });
 
+    // The patient hears it from their clinic, by name, wherever they are
+    await notifyPatientOfClinicInvoice(ctx, clinic, input.patientId, invoiceId, totalKobo, input.items[0]?.description);
+
     return { success: true, invoiceId, invoiceNumber };
+}
+
+async function notifyPatientOfClinicInvoice(
+  ctx: MutationCtx,
+  clinic: Doc<"clinics">,
+  patientId: Id<"users">,
+  invoiceId: Id<"invoices">,
+  totalKobo: number,
+  what: string | undefined
+) {
+  const amount = `₦${(totalKobo / 100).toLocaleString("en-NG", { maximumFractionDigits: 2 })}`;
+  const path = `/dashboard/patient/invoices/${invoiceId}`;
+  await insertNotification(ctx, {
+    userId: patientId,
+    type: "invoice_created",
+    priority: "high",
+    status: "pending",
+    createdAt: Date.now(),
+    payload: {
+      title: `${clinic.name} sent you a payment request`,
+      body: `${amount}${what ? ` for ${what}` : ""}. Pay by card, transfer or USSD.`,
+      data: { entityId: String(invoiceId), entityType: "invoice" },
+      link: path,
+    },
+  });
+  const patient = await ctx.db.get(patientId);
+  if (patient?.email && patientHasAccount(patient)) {
+    await ctx.scheduler.runAfter(0, internal.actions.emails.sendPatientCareEmail.sendPatientCareEmail, {
+      to: patient.email,
+      subject: `${clinic.name}: payment request for ${amount}`,
+      greetingName: patient.firstName,
+      heading: `${clinic.name} sent you a payment request`,
+      paragraphs: [
+        `${amount}${what ? ` for ${what}` : ""}. You can pay by card, bank transfer or USSD, and the payment goes straight to ${clinic.name}.`,
+        clinic.contactPhone ? `Questions about it? Call ${clinic.name} on ${clinic.contactPhone}.` : `Questions about it? Message ${clinic.name} in your patient portal.`,
+      ],
+      buttonLabel: "View and pay",
+      buttonUrl: `${publicAppUrl()}${path}`,
+    });
+  }
 }
 
 /**
@@ -2028,6 +2097,7 @@ export const createClinicPaymentRequest = mutation({
       notes: args.notes,
       dueDate: args.dueDate,
       appointmentIds: args.appointmentId ? [args.appointmentId] : undefined,
+      issuedById: member.user._id,
     });
   },
 });
@@ -2126,6 +2196,7 @@ export const getClinicBillingSummary = query({
 
         return {
           _id: inv._id,
+          patientId: inv.patientId,
           invoiceNumber: inv.invoiceNumber,
           payoutStatus,
           serviceName: inv.items?.[0]?.description || "Physiotherapy",
@@ -2179,11 +2250,13 @@ export const getClinicBillingSummary = query({
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Remove a clinician from the clinic. Their active patients move to the clinic owner
- * so nobody is left without a clinician.
+ * Remove a clinician from the clinic. Patients belong to the clinic, not the clinician: their
+ * active patients move to the clinician the owner picks (`reassignToId`), who carries on with the
+ * same care plan, notes and programmes. Without one they wait with the owner, shown as needing a
+ * clinician, until the owner reassigns them.
  */
 export const removeClinician = mutation({
-  args: { clinicianId: v.id("users") },
+  args: { clinicianId: v.id("users"), reassignToId: v.optional(v.id("users")) },
   handler: async (ctx, args) => {
     // Taking someone's access away always works, even while the clinic is read-only
     const { user, clinic } = await getOwnerClinic(ctx, { allowBillingReadOnly: true });
@@ -2191,6 +2264,11 @@ export const removeClinician = mutation({
     if (args.clinicianId === user._id) {
       throw new ConvexError("You can't remove yourself from your own clinic");
     }
+    if (args.reassignToId === args.clinicianId) {
+      throw new ConvexError("Pick someone else to take over their patients.");
+    }
+    if (args.reassignToId) await assertStaffInClinic(ctx, clinic, args.reassignToId);
+    const takeoverId = args.reassignToId ?? user._id;
 
     const profile = await ctx.db
       .query("physiotherapistProfiles")
@@ -2208,18 +2286,18 @@ export const removeClinician = mutation({
     for (const rel of rels) {
       // Only the clinic's patients move; the clinician's own private patients stay with them
       if (rel.status !== "active" || rel.clinicId !== clinic._id) continue;
-      const ownerRel = await ctx.db
+      const takeoverRel = await ctx.db
         .query("patientPhysiotherapistRelationships")
         .withIndex("by_patient_and_physiotherapist", (q: any) =>
-          q.eq("patientId", rel.patientId).eq("physiotherapistId", user._id)
+          q.eq("patientId", rel.patientId).eq("physiotherapistId", takeoverId)
         )
         .first();
-      if (ownerRel) {
-        await ctx.db.patch(ownerRel._id, { status: "active", clinicId: clinic._id });
+      if (takeoverRel) {
+        await ctx.db.patch(takeoverRel._id, { status: "active", clinicId: clinic._id, endDate: undefined });
       } else {
         await ctx.db.insert("patientPhysiotherapistRelationships", {
           patientId: rel.patientId,
-          physiotherapistId: user._id,
+          physiotherapistId: takeoverId,
           clinicId: clinic._id,
           isPrimaryPhysiotherapist: true,
           startDate: Date.now(),
@@ -2249,6 +2327,8 @@ export const removeClinician = mutation({
         submittedAt: Date.now(),
         comments: "Left their clinic; independent practice needs review",
       });
+      // Clinic work skipped the physio application; working on their own starts with it
+      await ctx.db.patch(args.clinicianId, { onboarded: false });
     }
 
     return { success: true, patientsMoved: moved };
@@ -2635,10 +2715,7 @@ export const respondToRehabifyReferral = mutation({
     const now = Date.now();
 
     if (args.action === "accept") {
-      const clinicianId = args.assignedClinicianId || defaultClinicianId(member);
-      if (args.assignedClinicianId) {
-        await assertStaffInClinic(ctx, clinic, args.assignedClinicianId);
-      }
+      const clinicianId = await requireAssignedClinician(ctx, clinic, args.assignedClinicianId);
 
       // Reuse an existing account for this patient where one exists (email first, then phone)
       const email = referral.patientEmail?.toLowerCase().trim();
@@ -2999,15 +3076,47 @@ export const getClinicPatientReports = query({
 export const getClinicNavCounts = query({
   args: {},
   handler: async (ctx) => {
+    const counts = { newReferrals: 0, bookingRequests: 0, needsClinician: 0, invitesPending: 0 };
     const auth = await getClinicMemberOrNull(ctx);
-    if (!auth || !canUseArea(auth, "referrals")) return { newReferrals: 0 };
-    const referrals = await ctx.db
-      .query("inboundReferrals")
-      .withIndex("by_assigned_clinic", (q: any) => q.eq("assignedClinicId", auth.clinic._id))
-      .collect();
-    return {
-      newReferrals: referrals.filter((ref) => CLINIC_ACCEPTABLE_REFERRAL.has(ref.status)).length,
-    };
+    if (!auth) return counts;
+    const clinic = auth.clinic;
+
+    if (canUseArea(auth, "referrals")) {
+      const referrals = await ctx.db
+        .query("inboundReferrals")
+        .withIndex("by_assigned_clinic", (q: any) => q.eq("assignedClinicId", clinic._id))
+        .collect();
+      counts.newReferrals = referrals.filter((ref) => CLINIC_ACCEPTABLE_REFERRAL.has(ref.status)).length;
+    }
+
+    // Patients asking the clinic for a visit, another clinician or a service
+    if (canUseArea(auth, "appointments")) {
+      const open = await ctx.db
+        .query("clinicBookingRequests")
+        .withIndex("by_clinic_and_status", (q) => q.eq("clinicId", clinic._id).eq("status", "open"))
+        .take(100);
+      counts.bookingRequests = open.length;
+    }
+
+    if (canUseArea(auth, "patients")) {
+      const rels = await ctx.db
+        .query("patientPhysiotherapistRelationships")
+        .withIndex("by_clinic", (q) => q.eq("clinicId", clinic._id))
+        .collect();
+      // Per patient in care: is anyone other than the owner (who doesn't treat) looking after them?
+      const hasClinician = new Map<Id<"users">, boolean>();
+      for (const rel of rels) {
+        if (rel.status !== "active") continue;
+        hasClinician.set(rel.patientId, (hasClinician.get(rel.patientId) ?? false) || rel.physiotherapistId !== clinic.ownerId);
+      }
+      for (const [patientId, treated] of hasClinician) {
+        if (!treated) counts.needsClinician += 1;
+        const patient = await ctx.db.get(patientId);
+        if ((patient?.clerkId ?? "").startsWith("clinic_patient_")) counts.invitesPending += 1;
+      }
+    }
+
+    return counts;
   },
 });
 
@@ -3451,19 +3560,10 @@ export const exportClinicData = query({
       .collect();
 
     if (args.kind === "patients") {
-      const staffIds = await getClinicStaffUserIds(ctx, clinic);
-      const staffRels = await Promise.all(
-        Array.from(staffIds).map((id) =>
-          ctx.db
-            .query("patientPhysiotherapistRelationships")
-            .withIndex("by_physiotherapist", (q: any) => q.eq("physiotherapistId", id))
-            .filter((q: any) => q.eq(q.field("status"), "active"))
-            .collect()
-        )
-      );
-      // One row per patient: the active relationship when there is one, else the latest
+      // One row per patient: the active relationship when there is one, else the latest. Only the
+      // clinic's: a clinician's private patients aren't the clinic's records
       const best = new Map<Id<"users">, Doc<"patientPhysiotherapistRelationships">>();
-      for (const rel of [...clinicRels, ...staffRels.flat()]) {
+      for (const rel of clinicRels) {
         const current = best.get(rel.patientId);
         if (
           !current ||
@@ -3563,5 +3663,131 @@ export const exportClinicData = query({
       });
     }
     return { rows, capped: invoices.length > EXPORT_CAP };
+  },
+});
+
+/**
+ * One-off (28 Oct 2026): clinics now see only care tagged with the clinic, never a clinician's
+ * private patients. Older care links made inside a clinic could be untagged; this tags those:
+ * the owner's (they have no private practice), the patient's clinic matching, or a clinician's
+ * started after they joined the clinic. Run once after deploying:
+ * npx convex run --prod clinicTools:backfillClinicRelationshipTags
+ */
+export const backfillClinicRelationshipTags = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    let tagged = 0;
+    for (const clinic of await ctx.db.query("clinics").collect()) {
+      const profiles = await ctx.db
+        .query("physiotherapistProfiles")
+        .withIndex("by_clinic_id", (q: any) => q.eq("clinicId", clinic._id))
+        .collect();
+      const staff = [clinic.ownerId, ...profiles.map((p) => p.userId)];
+      for (const staffId of new Set(staff)) {
+        const member = await ctx.db.get(staffId);
+        if (!member) continue;
+        const rels = await ctx.db
+          .query("patientPhysiotherapistRelationships")
+          .withIndex("by_physiotherapist", (q: any) => q.eq("physiotherapistId", staffId))
+          .collect();
+        for (const rel of rels) {
+          if (rel.clinicId) continue;
+          const patient = await ctx.db.get(rel.patientId);
+          const profile = await ctx.db
+            .query("patientProfiles")
+            .withIndex("by_user_id", (q: any) => q.eq("userId", rel.patientId))
+            .first();
+          const clinicsPatient = patient?.clinicId === clinic._id || profile?.clinicId === clinic._id;
+          const sinceJoining = member.clinicId === clinic._id && member.joinedAt !== undefined && rel.startDate >= member.joinedAt;
+          if (staffId === clinic.ownerId || clinicsPatient || sinceJoining) {
+            await ctx.db.patch(rel._id, { clinicId: clinic._id });
+            tagged++;
+          }
+        }
+      }
+    }
+    return { tagged };
+  },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Patients' requests to the clinic (another appointment, clinician or service)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const REQUEST_KIND_LABELS: Record<string, string> = {
+  appointment: "Another appointment",
+  change_clinician: "A different clinician",
+  service: "A service",
+};
+
+/** Open requests from the clinic's patients (Appointments → Requests), oldest first. */
+export const getClinicBookingRequests = query({
+  args: {},
+  handler: async (ctx) => {
+    const member = await getClinicMemberOrNull(ctx, "appointments");
+    if (!member) return [];
+    const rows = await ctx.db
+      .query("clinicBookingRequests")
+      .withIndex("by_clinic_and_status", (q: any) => q.eq("clinicId", member.clinic._id).eq("status", "open"))
+      .take(100);
+    return await Promise.all(
+      rows.map(async (row) => {
+        const patient = await ctx.db.get(row.patientId);
+        const care = (
+          await ctx.db
+            .query("patientPhysiotherapistRelationships")
+            .withIndex("by_patient", (q: any) => q.eq("patientId", row.patientId))
+            .collect()
+        ).find((rel) => rel.status === "active" && rel.clinicId === member.clinic._id && rel.physiotherapistId !== member.clinic.ownerId);
+        const clinician = care ? await ctx.db.get(care.physiotherapistId) : null;
+        return {
+          _id: row._id,
+          patientId: row.patientId,
+          patientName: patient ? `${patient.firstName ?? ""} ${patient.lastName ?? ""}`.trim() || "Patient" : "Patient",
+          patientPhone: patient?.phoneNumber ?? null,
+          kind: row.kind,
+          kindLabel: REQUEST_KIND_LABELS[row.kind] ?? "Request",
+          message: row.message ?? null,
+          preferredTimes: row.preferredTimes ?? null,
+          service: row.service ?? null,
+          clinicianId: clinician?._id ?? null,
+          clinicianName: clinician ? `${clinician.firstName ?? ""} ${clinician.lastName ?? ""}`.trim() : null,
+          createdAt: row.createdAt,
+        };
+      })
+    );
+  },
+});
+
+/** Close a patient's request: booked or sorted ("done"), or not possible ("declined", with a reason). */
+export const resolveClinicBookingRequest = mutation({
+  args: {
+    requestId: v.id("clinicBookingRequests"),
+    outcome: v.union(v.literal("done"), v.literal("declined")),
+    response: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const { user, clinic } = await requireClinicWrite(ctx, "appointments");
+    const request = await ctx.db.get(args.requestId);
+    if (!request || request.clinicId !== clinic._id) throw new ConvexError("Request not found");
+    if (request.status !== "open") return { changed: false };
+    const response = args.response?.trim().slice(0, 500) || undefined;
+    if (args.outcome === "declined" && !response) throw new ConvexError("Tell the patient why, so they know what to do next.");
+    const now = Date.now();
+    await ctx.db.patch(request._id, { status: args.outcome, handledAt: now, handledBy: user._id, response });
+    await insertNotification(ctx, {
+      userId: request.patientId,
+      type: "clinic_booking_request",
+      priority: "medium",
+      status: "pending",
+      createdAt: now,
+      payload: {
+        title: args.outcome === "done" ? `${clinic.name} sorted your request` : `${clinic.name} replied to your request`,
+        body: response ?? (args.outcome === "done" ? "Check your appointments for the details." : "They couldn't do this one."),
+        data: { entityId: String(request._id), entityType: "clinic_booking_request" },
+        link: "/dashboard/patient/appointments",
+      },
+    });
+    return { changed: true };
   },
 });

@@ -1,15 +1,17 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { useMutation } from 'convex/react'
 import { api } from '@/convex/_generated/api'
+import type { Id } from '@/convex/_generated/dataModel'
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogDescription,
-} from '@/components/ui/dialog'
+} from '@/components/clinic/drawerDialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -25,6 +27,7 @@ import { toast } from 'sonner'
 import { UserPlus, Loader2 } from '@/components/icons'
 import { primaryButtonClass } from '@/components/clinic/ui'
 import { friendlyError, useClinicianOptions } from './patient-record-shared'
+import { playSound } from '@/lib/sounds'
 
 interface AddPatientModalProps {
   isOpen: boolean
@@ -57,6 +60,11 @@ export default function AddPatientModal({ isOpen, onClose, onSuccess }: AddPatie
       toast.error('Enter first name, last name and email')
       return
     }
+    const clinicianId = formData.assignedClinicianId || clinicianOptions.defaultId
+    if (!clinicianId) {
+      toast.error('Choose the clinician who will treat this patient')
+      return
+    }
 
     setIsSubmitting(true)
     try {
@@ -71,12 +79,13 @@ export default function AddPatientModal({ isOpen, onClose, onSuccess }: AddPatie
         city: formData.city.trim() || undefined,
         medicalHistorySummary: formData.medicalHistorySummary.trim() || undefined,
         initialDiagnosis: formData.initialDiagnosis.trim() || undefined,
-        assignedClinicianId: formData.assignedClinicianId ? (formData.assignedClinicianId as any) : undefined,
+        assignedClinicianId: clinicianId as Id<'users'>,
       })
 
       const emailNote = result?.emailSent
         ? `We've emailed ${formData.email.trim()} a link to see their appointments and exercises.`
         : undefined
+      playSound('success')
       toast.success(result?.patientNumber ? `Patient added · ${result.patientNumber}` : 'Patient added', {
         description: result?.existingAccount
           ? `Already on Rehabify, so their existing record was linked instead of making a duplicate.${emailNote ? ` ${emailNote}` : ''}`
@@ -107,12 +116,12 @@ export default function AddPatientModal({ isOpen, onClose, onSuccess }: AddPatie
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="w-[calc(100vw-2rem)] max-w-xl max-h-[90vh] overflow-y-auto bg-white dark:bg-neutral-900 border-neutral-200 dark:border-neutral-800 p-4 sm:p-6 space-y-5">
+      <DialogContent className="w-[calc(100vw-2rem)] max-w-xl max-h-[90vh] overflow-y-auto bg-pt-surface border-pt-line p-4 sm:p-6 space-y-5">
         <DialogHeader className="space-y-1 text-left">
-          <DialogTitle className="text-lg font-semibold tracking-tight text-neutral-900 dark:text-neutral-50">
+          <DialogTitle className="text-lg font-semibold tracking-tight text-pt-ink">
             Add patient
           </DialogTitle>
-          <DialogDescription className="text-sm text-neutral-500">
+          <DialogDescription className="text-sm text-pt-muted">
             Creates a record for this patient at your clinic and emails them a link to their Rehabify account.
             Only name and email are required.
           </DialogDescription>
@@ -122,7 +131,7 @@ export default function AddPatientModal({ isOpen, onClose, onSuccess }: AddPatie
           {/* Name Row */}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
-              <Label className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
+              <Label className="text-xs font-medium text-pt-ink">
                 First name *
               </Label>
               <Input
@@ -130,11 +139,11 @@ export default function AddPatientModal({ isOpen, onClose, onSuccess }: AddPatie
                 placeholder="e.g. Chinedu"
                 value={formData.firstName}
                 onChange={(e) => setFormData({ ...formData, firstName: e.target.value })}
-                className="h-9 text-sm bg-white dark:bg-neutral-950 border-neutral-200 dark:border-neutral-800"
+                className="h-9 text-sm bg-pt-surface border-pt-line"
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
+              <Label className="text-xs font-medium text-pt-ink">
                 Last name *
               </Label>
               <Input
@@ -142,7 +151,7 @@ export default function AddPatientModal({ isOpen, onClose, onSuccess }: AddPatie
                 placeholder="e.g. Okafor"
                 value={formData.lastName}
                 onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
-                className="h-9 text-sm bg-white dark:bg-neutral-950 border-neutral-200 dark:border-neutral-800"
+                className="h-9 text-sm bg-pt-surface border-pt-line"
               />
             </div>
           </div>
@@ -150,7 +159,7 @@ export default function AddPatientModal({ isOpen, onClose, onSuccess }: AddPatie
           {/* Contact Row */}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
-              <Label className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
+              <Label className="text-xs font-medium text-pt-ink">
                 Email *
               </Label>
               <Input
@@ -159,18 +168,18 @@ export default function AddPatientModal({ isOpen, onClose, onSuccess }: AddPatie
                 placeholder="patient@example.com"
                 value={formData.email}
                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                className="h-9 text-sm bg-white dark:bg-neutral-950 border-neutral-200 dark:border-neutral-800"
+                className="h-9 text-sm bg-pt-surface border-pt-line"
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
+              <Label className="text-xs font-medium text-pt-ink">
                 Phone number
               </Label>
               <Input
                 placeholder="+234 801 234 5678"
                 value={formData.phoneNumber}
                 onChange={(e) => setFormData({ ...formData, phoneNumber: e.target.value })}
-                className="h-9 text-sm bg-white dark:bg-neutral-950 border-neutral-200 dark:border-neutral-800"
+                className="h-9 text-sm bg-pt-surface border-pt-line"
               />
             </div>
           </div>
@@ -178,25 +187,25 @@ export default function AddPatientModal({ isOpen, onClose, onSuccess }: AddPatie
           {/* Demographics Row */}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
-              <Label className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
+              <Label className="text-xs font-medium text-pt-ink">
                 Date of birth
               </Label>
               <Input
                 type="date"
                 value={formData.dateOfBirth}
                 onChange={(e) => setFormData({ ...formData, dateOfBirth: e.target.value })}
-                className="h-9 text-sm bg-white dark:bg-neutral-950 border-neutral-200 dark:border-neutral-800"
+                className="h-9 text-sm bg-pt-surface border-pt-line"
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
+              <Label className="text-xs font-medium text-pt-ink">
                 Gender
               </Label>
               <Select
                 value={formData.gender}
                 onValueChange={(val: any) => setFormData({ ...formData, gender: val })}
               >
-                <SelectTrigger className="h-9 text-sm bg-white dark:bg-neutral-950 border-neutral-200 dark:border-neutral-800">
+                <SelectTrigger className="h-9 text-sm bg-pt-surface border-pt-line">
                   <SelectValue placeholder="Select gender" />
                 </SelectTrigger>
                 <SelectContent>
@@ -209,45 +218,54 @@ export default function AddPatientModal({ isOpen, onClose, onSuccess }: AddPatie
             </div>
           </div>
 
-          {/* Assign Clinician */}
+          {/* Every clinic patient has a treating clinician; the patient stays the clinic's */}
           <div className="space-y-1.5">
-            <Label className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
-              Clinician
+            <Label className="text-xs font-medium text-pt-ink">
+              Clinician <span className="text-pt-rose-fg">*</span>
             </Label>
-            <Select
-              value={formData.assignedClinicianId}
-              onValueChange={(val) => setFormData({ ...formData, assignedClinicianId: val })}
-            >
-              <SelectTrigger className="h-9 text-sm bg-white dark:bg-neutral-950 border-neutral-200 dark:border-neutral-800">
-                <SelectValue placeholder="Choose a clinician (optional)" />
-              </SelectTrigger>
-              <SelectContent>
-                {/* Owner and active clinicians only: suspended clinicians would be rejected */}
-                {clinicianOptions.options.map((option) => (
-                  <SelectItem key={option.id} value={option.id}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            {!clinicianOptions.loading && clinicianOptions.options.length === 0 ? (
+              <p className="rounded-lg bg-pt-amber-bg px-3 py-2 text-xs text-pt-amber-fg">
+                Invite a clinician first: every patient is looked after by someone on your team.{' '}
+                <Link href="/dashboard/clinic/staff" className="font-medium underline">
+                  Go to Team
+                </Link>
+              </p>
+            ) : (
+              <Select
+                value={formData.assignedClinicianId || clinicianOptions.defaultId || ''}
+                onValueChange={(val) => setFormData({ ...formData, assignedClinicianId: val })}
+              >
+                <SelectTrigger className="h-9 text-sm bg-pt-surface border-pt-line">
+                  <SelectValue placeholder="Choose a clinician" />
+                </SelectTrigger>
+                <SelectContent>
+                  {/* Active clinicians only: suspended clinicians would be rejected */}
+                  {clinicianOptions.options.map((option) => (
+                    <SelectItem key={option.id} value={option.id}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
           </div>
 
           {/* Clinical Impression / Presenting Condition */}
           <div className="space-y-1.5">
-            <Label className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
+            <Label className="text-xs font-medium text-pt-ink">
               Main complaint
             </Label>
             <Input
               placeholder="e.g. Low back pain going down the left leg"
               value={formData.initialDiagnosis}
               onChange={(e) => setFormData({ ...formData, initialDiagnosis: e.target.value })}
-              className="h-9 text-sm bg-white dark:bg-neutral-950 border-neutral-200 dark:border-neutral-800"
+              className="h-9 text-sm bg-pt-surface border-pt-line"
             />
           </div>
 
           {/* Medical History Summary */}
           <div className="space-y-1.5">
-            <Label className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
+            <Label className="text-xs font-medium text-pt-ink">
               Medical history
             </Label>
             <Textarea
@@ -255,7 +273,7 @@ export default function AddPatientModal({ isOpen, onClose, onSuccess }: AddPatie
               value={formData.medicalHistorySummary}
               onChange={(e) => setFormData({ ...formData, medicalHistorySummary: e.target.value })}
               rows={3}
-              className="text-sm bg-white dark:bg-neutral-950 border-neutral-200 dark:border-neutral-800"
+              className="text-sm bg-pt-surface border-pt-line"
             />
           </div>
 

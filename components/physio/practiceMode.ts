@@ -8,7 +8,10 @@
  *   Rehabify services, travel zones, Rehabify Access or the network terms.
  * - both: Rehabify Care rules only for a Rehabify Care patient (useCareBillingMode), own-patient
  *   rules for everyone else.
- * - network (or unset): unchanged. Clinic members work under their clinic and are neither.
+ * - network (or unset): unchanged.
+ * - Clinic members work under their clinic: like independents they never see Rehabify prices,
+ *   payouts or network pages (`isIndependent` is true for them), and clinicMode.ts adds the
+ *   clinic's name and rules.
  */
 
 import { api } from '@/convex/_generated/api'
@@ -26,7 +29,7 @@ export type PracticeInfo = {
   loaded: boolean
   mode: PracticeMode
   isClinicMember: boolean
-  /** Own patients only: no Rehabify prices, payouts or network pages anywhere. */
+  /** Own (or their clinic's) patients only: no Rehabify prices, payouts or network pages anywhere. */
   isIndependent: boolean
 }
 
@@ -34,7 +37,7 @@ export function usePracticeMode(): PracticeInfo {
   const setup = useQueryUntyped(root.physioSetup.getMySetupStatus, {}) as SetupStatus | null | undefined
   const isClinicMember = Boolean(setup?.isClinicMember)
   const mode: PracticeMode = isClinicMember ? 'network' : (setup?.practiceMode ?? 'network')
-  return { loaded: setup !== undefined, mode, isClinicMember, isIndependent: mode === 'independent' }
+  return { loaded: setup !== undefined, mode, isClinicMember, isIndependent: mode === 'independent' || isClinicMember }
 }
 
 /** What an independent physio's patients always are: their own, at their own prices. */

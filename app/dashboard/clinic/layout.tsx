@@ -2,12 +2,12 @@
 
 import { useAuth, useClerk } from '@clerk/nextjs'
 import { usePathname, useRouter } from 'next/navigation'
-import { useEffect, useState } from 'react'
+import { useEffect, type ReactNode } from 'react'
+import Link from 'next/link'
 import { Skeleton } from '@/components/ui/skeleton'
-import { AlertCircle, Lock, Menu, Settings } from '@/components/icons'
+import { AlertCircle, CalendarPlus, Lock } from '@/components/icons'
 import { Button } from '@/components/ui/button'
-import { Sheet, SheetContent, SheetTrigger, SheetTitle, SheetHeader } from '@/components/ui/sheet'
-import ClinicSidebar from '@/components/clinic/ClinicSidebar'
+import ClinicSidebar, { CLINIC_HOME, ClinicMobileNav } from '@/components/clinic/ClinicSidebar'
 import ClinicStatusBanner from '@/components/clinic/ClinicStatusBanner'
 import ClinicBillingBanner from '@/components/clinic/ClinicBillingBanner'
 import {
@@ -16,15 +16,20 @@ import {
   useClinicAccess,
   type ClinicArea,
 } from '@/components/clinic/ClinicAccessContext'
-import { ClinicThemeProvider, ClinicThemeToggle } from '@/components/clinic/ClinicTheme'
-import { ClinicBrand, PoweredByRehabify } from '@/components/clinic/ClinicBrand'
-import { EmptyState } from '@/components/clinic/ui'
-import { PhysioNotifications } from '@/components/physio/PhysioNotifications'
-import Link from 'next/link'
+import { ClinicThemeProvider } from '@/components/clinic/ClinicTheme'
+import { ClinicBrand } from '@/components/clinic/ClinicBrand'
+import { ClinicHelp } from '@/components/clinic/ClinicHelp'
+import { ClinicTour } from '@/components/clinic/ClinicTour'
+import { CLINIC_BOOK_EVENT } from '@/components/clinic/clinicEvents'
+import { EmptyState, primaryButtonClass, secondaryButtonClass } from '@/components/clinic/ui'
+import { PatientNotifications, PatientThemeToggle } from '@/components/patient/shell/PatientControls'
+import { toClinicPortal } from '@/components/physio/PhysioNotifications'
 import { WebsiteLink } from '@/components/dashboard/shared/WebsiteLink'
+import { physioPortalPageFor } from '@/components/clinic/clinician-routing'
 import { AppIconBadge, AppSetupButton, AppSetupPrompt } from '@/components/pwa/AppSetup'
+import { cn } from '@/lib/utils'
 
-export default function ClinicLayout({ children }: { children: React.ReactNode }) {
+export default function ClinicLayout({ children }: { children: ReactNode }) {
   return (
     <ClinicThemeProvider>
       <ClinicAccessProvider>
@@ -44,6 +49,7 @@ const PAGE_AREAS: { prefix: string; area: ClinicArea; orArea?: ClinicArea }[] = 
   { prefix: '/dashboard/clinic/staff', area: 'team' },
   { prefix: '/dashboard/clinic/analytics', area: 'reports' },
   { prefix: '/dashboard/clinic/settings', area: 'settings' },
+  { prefix: '/dashboard/clinic/inventory', area: 'inventory' },
 ]
 
 function pageForPath(pathname: string) {
@@ -52,23 +58,46 @@ function pageForPath(pathname: string) {
 
 function PortalSkeleton() {
   return (
-    <div className="flex h-screen bg-neutral-50 dark:bg-neutral-950">
-      <div className="hidden md:block w-60 border-r border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 p-4">
-        <Skeleton className="h-10 w-full mb-6 rounded-xl" />
-        <div className="space-y-3">
-          {[...Array(6)].map((_, i) => (
-            <Skeleton key={i} className="h-8 w-full rounded-lg" />
+    <div className="flex min-h-screen bg-pt-canvas">
+      <div className="hidden p-3 pr-0 lg:block">
+        <div className="h-[calc(100vh-1.5rem)] w-64 space-y-3 rounded-3xl border border-pt-line bg-pt-surface p-5">
+          <Skeleton className="mb-6 h-8 w-36 rounded-lg bg-pt-sunken" />
+          {[...Array(7)].map((_, i) => (
+            <Skeleton key={i} className="h-9 w-full rounded-xl bg-pt-sunken" />
           ))}
         </div>
       </div>
-      <div className="flex-1 p-6 sm:p-10 space-y-6">
-        <Skeleton className="h-10 w-64 rounded-xl" />
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="flex-1 space-y-6 p-4 pt-20 sm:p-8 sm:pt-20">
+        <Skeleton className="h-9 w-64 rounded-xl bg-pt-sunken" />
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           {[...Array(4)].map((_, i) => (
-            <Skeleton key={i} className="h-28 rounded-xl" />
+            <Skeleton key={i} className="h-28 rounded-3xl bg-pt-sunken" />
           ))}
         </div>
-        <Skeleton className="h-96 rounded-xl" />
+        <Skeleton className="h-80 rounded-3xl bg-pt-sunken" />
+      </div>
+    </div>
+  )
+}
+
+/** A full-page message card (declined, not a member). */
+function StateCard({ icon, title, body, action, tone = 'neutral' }: { icon: ReactNode; title: string; body: string; action: ReactNode; tone?: 'neutral' | 'rose' }) {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-pt-canvas p-4 text-pt-ink">
+      <div className="w-full max-w-md space-y-4 rounded-3xl border border-pt-line bg-pt-surface p-8 text-center shadow-pt dark:shadow-none">
+        <div
+          className={cn(
+            'mx-auto flex h-12 w-12 items-center justify-center rounded-2xl [&_svg]:h-6 [&_svg]:w-6',
+            tone === 'rose' ? 'bg-pt-rose-bg text-pt-rose-fg' : 'bg-pt-sunken text-pt-muted'
+          )}
+        >
+          {icon}
+        </div>
+        <div>
+          <h2 className="text-xl font-semibold tracking-tight text-pt-ink">{title}</h2>
+          <p className="mt-1 text-sm leading-relaxed text-pt-muted">{body}</p>
+        </div>
+        {action}
       </div>
     </div>
   )
@@ -98,173 +127,170 @@ function nonMemberHome(role: string | null): string | null {
   }
 }
 
-function ClinicPortal({ children }: { children: React.ReactNode }) {
+/** The one main action in the top bar: book a visit, from any page. */
+function BookButton() {
   const router = useRouter()
-  const pathname = usePathname()
+  const pathname = usePathname() ?? ''
+  const { canUse, isClinician } = useClinicAccess()
+  if (isClinician || !canUse('appointments')) return null
+  const href = `${CLINIC_HOME}/appointments`
+  return (
+    <Button
+      className={cn(primaryButtonClass, 'hidden h-10 px-4 sm:inline-flex')}
+      onClick={() => {
+        // On the diary the form opens in place; elsewhere the diary opens with it
+        if (pathname === href) window.dispatchEvent(new Event(CLINIC_BOOK_EVENT))
+        else router.push(`${href}?book=1`)
+      }}
+    >
+      <CalendarPlus className="mr-2 h-4 w-4" />
+      Book appointment
+    </Button>
+  )
+}
+
+/**
+ * The clinic portal, built like the physio and patient portals: a floating sidebar (desktop), a
+ * bottom tab bar (phones and tablets), a top bar with the main action, help, theme and
+ * notifications. Colours come from app/patient-portal.css; <html data-portal="clinic"> lets older
+ * screens follow them.
+ */
+function ClinicPortal({ children }: { children: ReactNode }) {
+  const router = useRouter()
+  const pathname = usePathname() ?? ''
   const { isLoaded: authLoaded, isSignedIn } = useAuth()
   const { signOut } = useClerk()
-  const { isLoaded, isReadOnly, isDeclined, isOwner, canUse, isClinicSuspended, isBillingReadOnly, nonMember } = useClinicAccess()
+  const {
+    isLoaded,
+    isReadOnly,
+    isDeclined,
+    isOwner,
+    isClinician,
+    canUse,
+    isClinicSuspended,
+    isBillingReadOnly,
+    isOnboardingIncomplete,
+    nonMember,
+    firstName,
+    clinicName,
+  } = useClinicAccess()
   const nonMemberDestination = nonMember ? nonMemberHome(nonMember.role) : null
+  // Clinicians do their clinical work in the physio portal; only clinic pages their role adds
+  // (Billing, Team, Reports, Settings) open here
+  const clinicianDestination = isClinician ? physioPortalPageFor(pathname) : null
 
   // The clinic portal is for clinic owners and their teams only
   useEffect(() => {
     if (!authLoaded) return
     if (!isSignedIn) {
-      router.replace(`/sign-in?redirect_url=${encodeURIComponent(pathname || '/dashboard/clinic')}`)
+      router.replace(`/sign-in?redirect_url=${encodeURIComponent(pathname || CLINIC_HOME)}`)
     } else if (nonMemberDestination) {
       router.replace(nonMemberDestination)
+    } else if (clinicianDestination) {
+      router.replace(clinicianDestination)
     }
-  }, [authLoaded, isSignedIn, nonMemberDestination, pathname, router])
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
+  }, [authLoaded, isSignedIn, nonMemberDestination, clinicianDestination, pathname, router])
+
+  useEffect(() => {
+    const root = document.documentElement
+    root.dataset.portal = 'clinic'
+    return () => {
+      if (root.dataset.portal === 'clinic') delete root.dataset.portal
+    }
+  }, [])
 
   if (nonMember && !nonMemberDestination) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-neutral-50 dark:bg-neutral-950 p-4">
-        <div className="max-w-md w-full bg-white dark:bg-neutral-900 p-8 rounded-xl border border-neutral-200 dark:border-neutral-800 shadow-sm text-center space-y-4">
-          <div className="w-12 h-12 rounded-2xl bg-neutral-100 text-neutral-500 mx-auto flex items-center justify-center dark:bg-white/[0.06] dark:text-neutral-400">
-            <Lock className="w-6 h-6" />
-          </div>
-          <div>
-            <h2 className="text-xl font-semibold tracking-tight text-neutral-950 dark:text-white">You're not part of a clinic team</h2>
-            <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-1 leading-relaxed">
-              Ask the clinic owner to invite you again, or sign in with a different account.
-            </p>
-          </div>
-          <Button variant="outline" onClick={() => signOut({ redirectUrl: '/sign-in' })} className="w-full">
+      <StateCard
+        icon={<Lock />}
+        title="You're not part of a clinic team"
+        body="Ask the clinic owner to invite you again, or sign in with a different account."
+        action={
+          <Button onClick={() => signOut({ redirectUrl: '/sign-in' })} className={cn(secondaryButtonClass, 'w-full')}>
             Sign out
           </Button>
-        </div>
-      </div>
+        }
+      />
     )
   }
 
-  if (!authLoaded || !isLoaded || !isSignedIn || nonMember) {
+  if (!authLoaded || !isLoaded || !isSignedIn || nonMember || clinicianDestination) {
     return <PortalSkeleton />
   }
 
   // The owner's application was declined by Rehabify
   if (isDeclined && isOwner) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-neutral-50 dark:bg-neutral-950 p-4">
-        <div className="max-w-md w-full bg-white dark:bg-neutral-900 p-8 rounded-xl border border-red-200 dark:border-red-900/50 shadow-sm text-center space-y-4">
-          <div className="w-12 h-12 rounded-2xl bg-red-50 text-red-600 mx-auto flex items-center justify-center dark:bg-red-500/10 dark:text-red-400">
-            <AlertCircle className="w-6 h-6" />
-          </div>
-          <div>
-            <h2 className="text-xl font-semibold tracking-tight text-neutral-950 dark:text-white">
-              Application not approved
-            </h2>
-            <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-1 leading-relaxed">
-              We couldn&apos;t verify your clinic. Contact support@physioaroundme.com with updated documents.
-            </p>
-          </div>
-          <Button variant="outline" onClick={() => router.push('/clinic-owner')} className="w-full">
+      <StateCard
+        tone="rose"
+        icon={<AlertCircle />}
+        title="Application not approved"
+        body="We couldn't verify your clinic. Contact support@physioaroundme.com with updated documents."
+        action={
+          <Button onClick={() => router.push('/clinic-owner')} className={cn(secondaryButtonClass, 'w-full')}>
             Update application
           </Button>
-        </div>
-      </div>
+        }
+      />
     )
   }
 
   const page = pageForPath(pathname)
   const area = page?.area ?? null
   const blocked = page !== null && !canUse(page.area) && !(page.orArea && canUse(page.orArea))
+  const statusChip = isClinicSuspended ? 'Suspended' : isBillingReadOnly ? 'Read-only' : isReadOnly ? 'Not live yet' : null
 
   return (
-    <div className="flex min-h-screen bg-neutral-50 dark:bg-neutral-950 text-neutral-900 dark:text-neutral-50">
-      {/* Desktop sidebar */}
-      <div className="hidden md:flex shrink-0">
-        <ClinicSidebar className="sticky top-0 h-screen" />
+    <div className="flex min-h-screen bg-pt-canvas text-pt-ink">
+      <div className="hidden shrink-0 p-3 pr-0 lg:flex">
+        <ClinicSidebar className="sticky top-3 h-[calc(100vh-1.5rem)]" />
       </div>
 
-      {/* Main content */}
-      <div className="flex-1 flex flex-col min-w-0">
-        {/* Mobile top bar (< 768px) */}
-        <header className="md:hidden sticky top-0 z-40 bg-white dark:bg-neutral-950 border-b border-neutral-200 dark:border-neutral-800 px-4 h-14 flex items-center justify-between gap-2">
-          <div className="flex min-w-0 items-center gap-3">
-            <Sheet open={isMobileMenuOpen} onOpenChange={setIsMobileMenuOpen}>
-              <SheetTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-9 w-9 shrink-0 p-0 rounded-xl text-neutral-700 dark:text-neutral-200 hover:bg-black/[0.05] dark:hover:bg-white/[0.06]"
-                  aria-label="Open navigation menu"
-                >
-                  <Menu className="h-5 w-5" />
-                </Button>
-              </SheetTrigger>
-              <SheetContent side="left" className="p-0 w-64 bg-white dark:bg-neutral-950 border-r border-neutral-200 dark:border-neutral-800">
-                <SheetHeader className="sr-only">
-                  <SheetTitle>Clinic navigation</SheetTitle>
-                </SheetHeader>
-                <ClinicSidebar
-                  className="w-full border-r-0"
-                  collapsible={false}
-                  onNavigate={() => setIsMobileMenuOpen(false)}
-                />
-              </SheetContent>
-            </Sheet>
-
-            <Link href="/dashboard/clinic" className="min-w-0">
+      <div className="flex min-w-0 flex-1 flex-col">
+        <header className="sticky top-0 z-30 bg-pt-canvas/90 backdrop-blur-xl">
+          <div className="flex h-16 items-center justify-between gap-2 px-4 sm:px-6 lg:px-8">
+            <Link href={CLINIC_HOME} aria-label="Home" className="min-w-0 lg:hidden">
               <ClinicBrand />
             </Link>
-          </div>
+            <div className="hidden min-w-0 flex-1 lg:block" />
 
-          <div className="flex shrink-0 items-center gap-1">
-            {isClinicSuspended ? (
-              <span className="rounded-md bg-rose-50 px-1.5 py-0.5 text-[11px] font-medium text-rose-700 dark:bg-rose-500/10 dark:text-rose-300">
-                Suspended
-              </span>
-            ) : isReadOnly ? (
-              <span className="rounded-md bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-800 dark:bg-amber-500/10 dark:text-amber-400">
-                Not live yet
-              </span>
-            ) : isBillingReadOnly ? (
-              <span className="rounded-md bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-800 dark:bg-amber-500/10 dark:text-amber-400">
-                Read-only
-              </span>
-            ) : null}
-
-            <AppSetupButton tone="console" className="h-9 px-2.5 shadow-none ring-1 ring-inset ring-black/[0.06]" />
-            <WebsiteLink tone="console" className="h-9 px-2.5 shadow-none ring-1 ring-inset ring-black/[0.06]" />
-            <ClinicThemeToggle />
-            {!isReadOnly && <PhysioNotifications portal="clinic" />}
-
-            {canUse('settings') && (
-              <Link
-                href="/dashboard/clinic/settings"
-                className="h-9 w-9 rounded-lg flex items-center justify-center text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800"
-                aria-label="Clinic settings"
-              >
-                <Settings className="h-4 w-4" />
-              </Link>
-            )}
+            <div className="flex shrink-0 items-center gap-2">
+              {statusChip && (
+                <span
+                  className={cn(
+                    'hidden rounded-full px-2.5 py-1 text-[11px] font-semibold sm:inline-flex',
+                    isClinicSuspended ? 'bg-pt-rose-bg text-pt-rose-fg' : 'bg-pt-primary text-pt-on-primary'
+                  )}
+                >
+                  {statusChip}
+                </span>
+              )}
+              <WebsiteLink tone="portal" className="hidden sm:inline-flex" />
+              {!isReadOnly && <BookButton />}
+              <AppSetupButton tone="portal" />
+              <ClinicHelp />
+              <PatientThemeToggle className="hidden sm:flex" />
+              {!isReadOnly && <PatientNotifications mapLink={toClinicPortal} />}
+            </div>
           </div>
         </header>
 
-        {/* Desktop: notifications (patient check-ins, pain alerts, payments) */}
-        {!isReadOnly && (
-          <div className="hidden md:flex justify-end gap-2 px-6 pt-3">
-            <AppSetupButton tone="console" />
-            <PhysioNotifications portal="clinic" />
+        {/* Bottom room so the last card clears the tab bar and the phone's home indicator */}
+        <main className="w-full min-w-0 flex-1 px-4 pb-[calc(6rem+env(safe-area-inset-bottom))] pt-2 sm:px-6 lg:px-8 lg:pb-16 lg:pt-4">
+          {/* Set-up / verification / suspension status, and Rehabify's own billing */}
+          <div className="mx-auto w-full max-w-6xl space-y-3 empty:hidden [&:has(>*)]:mb-5">
+            <ClinicStatusBanner />
+            <ClinicBillingBanner />
           </div>
-        )}
-
-        {/* Set-up / verification / suspension status */}
-        <ClinicStatusBanner />
-        {/* Rehabify's own billing: allowance warnings, overdue invoice, read-only */}
-        <ClinicBillingBanner />
-
-        <main className="flex-1 w-full min-w-0">
           {blocked && area ? (
-            <div className="mx-auto w-full max-w-6xl px-4 py-16 sm:px-6">
+            <div className="mx-auto w-full max-w-6xl py-16">
               <EmptyState
-                icon={<Lock className="h-8 w-8" />}
+                icon={<Lock />}
                 title={`${CLINIC_AREA_LABELS[area]} isn't part of your role`}
                 description="Ask the clinic owner if you need access to this page."
                 action={
-                  <Button asChild variant="outline" size="sm">
-                    <Link href="/dashboard/clinic">Go to Home</Link>
+                  <Button asChild className={secondaryButtonClass}>
+                    <Link href={CLINIC_HOME}>Go to Home</Link>
                   </Button>
                 }
               />
@@ -273,14 +299,14 @@ function ClinicPortal({ children }: { children: React.ReactNode }) {
             children
           )}
         </main>
-
-        {/* The desktop sidebar carries this; on phones it sits under the page */}
-        <PoweredByRehabify className="md:hidden px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] text-center" />
       </div>
 
+      <ClinicMobileNav />
+      {/* First visit: a short tour of Home, for the owner (after set-up, so it never fights the wizard) */}
+      <ClinicTour enabled={isOwner && pathname === CLINIC_HOME && !isOnboardingIncomplete} firstName={firstName} clinicName={clinicName} />
       {/* Home-screen app + notifications for new patients and messages, asked until done */}
       <AppSetupPrompt />
-      <AppIconBadge />
+      {!isReadOnly && <AppIconBadge />}
     </div>
   )
 }

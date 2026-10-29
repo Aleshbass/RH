@@ -1,6 +1,6 @@
 'use client'
 
-import type { ReactNode } from 'react'
+import { createContext, useContext, type ReactNode } from 'react'
 import { api } from '@/convex/_generated/api'
 import type { Id } from '@/convex/_generated/dataModel'
 import type { listCarePlanTemplates } from '@/convex/physioCare'
@@ -158,6 +158,24 @@ export type Workspace = {
     comment?: string
     respondedAt?: number
   } | null
+  /** Set when the clinic owner or front desk reads the record (read-only) */
+  clinicView?: {
+    /** Who treats the patient; null while they wait for a clinician */
+    clinicianId: Id<'users'> | null
+    clinicianName: string | null
+    /** False until they open their invite */
+    hasAccount: boolean
+  } | null
+}
+
+/**
+ * Read-only: the clinic owner (or front desk) reading a patient's record. They see everything the
+ * clinician sees but write nothing clinical: the clinician treats, the owner manages.
+ */
+const ReadOnlyContext = createContext(false)
+export const WorkspaceReadOnly = ReadOnlyContext.Provider
+export function useWorkspaceReadOnly() {
+  return useContext(ReadOnlyContext)
 }
 
 export const SOURCE_LABELS: Record<EpisodeSource, string> = {

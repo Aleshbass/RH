@@ -218,7 +218,7 @@ async function programmeActiveBetween(ctx: Ctx, program: Doc<"exercisePrograms">
  * created, updated, logged or opened by the patient in the 30 days before `at`. The agreement
  * counts patient records, so a patient with two programmes counts once.
  */
-export async function countActiveProgrammes(ctx: Ctx, clinicId: Id<"clinics">, at: number): Promise<number> {
+async function activeProgrammePatients(ctx: Ctx, clinicId: Id<"clinics">, at: number): Promise<Set<Id<"users">>> {
   const since = at - ACTIVE_PROGRAMME_WINDOW_DAYS * DAY_MS;
   const programmes = await ctx.db
     .query("exercisePrograms")
@@ -229,7 +229,32 @@ export async function countActiveProgrammes(ctx: Ctx, clinicId: Id<"clinics">, a
     if (patients.has(program.patientId) || program.createdAt >= at) continue;
     if (await programmeActiveBetween(ctx, program, since, at)) patients.add(program.patientId);
   }
-  return patients.size;
+  return patients;
+}
+
+export async function countActiveProgrammes(ctx: Ctx, clinicId: Id<"clinics">, at: number): Promise<number> {
+  return (await activeProgrammePatients(ctx, clinicId, at)).size;
+}
+
+/**
+ * What sending this patient a programme does to the clinic's allowance. Null while billing is off
+ * (a pilot has no limits) or read-only (sending is refused anyway). Over the allowance a
+ * programme still goes out and is billed as overage (Schedule 1); this is for warning first.
+ */
+export async function programmeAllowanceInfo(ctx: Ctx, clinicId: Id<"clinics">, patientId: Id<"users">, at: number) {
+  const sub = await subscriptionForClinic(ctx, clinicId);
+  if (!sub || (sub.status !== "active" && sub.status !== "past_due")) return null;
+  const patients = await activeProgrammePatients(ctx, clinicId, at);
+  const alreadyCounted = patients.has(patientId);
+  const count = patients.size + (alreadyCounted ? 0 : 1);
+  return {
+    allowance: sub.programmeAllowance,
+    /** Active patient programmes once this one is sent */
+    count,
+    alreadyCounted,
+    overage: !alreadyCounted && count > sub.programmeAllowance,
+    unitKobo: OVERAGE_UNIT_KOBO,
+  };
 }
 
 /** 80% and 100% of the allowance (integer maths, so 24 of 30 is exactly 80%). */

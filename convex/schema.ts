@@ -620,6 +620,8 @@ export default defineSchema({
     code: v.string(), // Unique invitation code
     physiotherapistId: v.id("users"), // The physiotherapist who created the invitation
     clinicId: v.optional(v.id("clinics")), // Optional: null for independent physiotherapists, set for clinic physiotherapists
+    // Sent by the clinic itself (Add patient): the invite page shows the clinic first
+    invitedByClinic: v.optional(v.boolean()),
     patientEmail: v.optional(v.string()), // Optional pre-filled email for the invitation
     patientName: v.optional(v.string()), // Optional pre-filled name for the invitation
     status: v.union(
@@ -640,6 +642,106 @@ export default defineSchema({
     .index("by_patient_email", ["patientEmail"])
     .index("by_patient_user", ["patientUserId"])
     .index("by_physiotherapist", ["physiotherapistId"]),
+
+  // Clinic inventory (Enterprise plan, and clinics on the pilot): consumables with stock levels
+  // and restock alerts, equipment with its location, condition and maintenance, and purchases.
+  clinicInventoryItems: defineTable({
+    clinicId: v.id("clinics"),
+    kind: v.union(v.literal("consumable"), v.literal("equipment")),
+    name: v.string(),
+    category: v.optional(v.string()),
+    // Consumables: how many are on hand, in what unit, and when to restock
+    unit: v.optional(v.string()),
+    quantity: v.optional(v.number()),
+    minStock: v.optional(v.number()),
+    // Equipment: where it is, what state it's in, when it's next serviced, who looks after it
+    location: v.optional(v.string()),
+    condition: v.optional(v.union(v.literal("good"), v.literal("needs_service"), v.literal("out_of_service"))),
+    maintenanceDueAt: v.optional(v.number()),
+    responsibleUserId: v.optional(v.id("users")),
+    notes: v.optional(v.string()),
+    archived: v.optional(v.boolean()),
+    // The daily alert tells the clinic once, until it's restocked or serviced
+    lowStockAlertedAt: v.optional(v.number()),
+    maintenanceAlertedAt: v.optional(v.number()),
+    createdBy: v.id("users"),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_clinic", ["clinicId"]),
+
+  clinicInventoryMovements: defineTable({
+    clinicId: v.id("clinics"),
+    itemId: v.id("clinicInventoryItems"),
+    change: v.number(),
+    reason: v.union(v.literal("used"), v.literal("restocked"), v.literal("adjusted"), v.literal("purchase")),
+    note: v.optional(v.string()),
+    userId: v.id("users"),
+    createdAt: v.number(),
+  }).index("by_item", ["itemId", "createdAt"]),
+
+  clinicPurchases: defineTable({
+    clinicId: v.id("clinics"),
+    supplier: v.string(),
+    purchasedAt: v.number(),
+    lines: v.array(v.object({
+      itemId: v.optional(v.id("clinicInventoryItems")),
+      name: v.string(),
+      quantity: v.number(),
+      unitCostKobo: v.optional(v.number()),
+    })),
+    totalKobo: v.optional(v.number()),
+    notes: v.optional(v.string()),
+    createdBy: v.id("users"),
+    createdAt: v.number(),
+  }).index("by_clinic_and_date", ["clinicId", "purchasedAt"]),
+
+  // Clinic team chat (staff only, patients never see it): one "team" group per clinic for the owner
+  // and every clinician, and one thread per patient for the owner and that patient's clinicians
+  // ("Ask about this patient"). Who's in a thread follows the clinic team and the patient's care.
+  clinicThreads: defineTable({
+    clinicId: v.id("clinics"),
+    kind: v.union(v.literal("team"), v.literal("patient")),
+    patientId: v.optional(v.id("users")),
+    createdBy: v.id("users"),
+    createdAt: v.number(),
+    lastMessageAt: v.number(),
+    lastMessagePreview: v.optional(v.string()),
+    lastSenderId: v.optional(v.id("users")),
+  })
+    .index("by_clinic_and_last", ["clinicId", "lastMessageAt"])
+    .index("by_clinic_kind_patient", ["clinicId", "kind", "patientId"]),
+
+  clinicThreadMessages: defineTable({
+    threadId: v.id("clinicThreads"),
+    clinicId: v.id("clinics"),
+    senderId: v.id("users"),
+    body: v.string(),
+    createdAt: v.number(),
+  }).index("by_thread", ["threadId", "createdAt"]),
+
+  clinicThreadReads: defineTable({
+    threadId: v.id("clinicThreads"),
+    userId: v.id("users"),
+    lastReadAt: v.number(),
+  }).index("by_user_and_thread", ["userId", "threadId"]),
+
+  // A clinic's patient asking the clinic for another appointment, a different clinician or a
+  // service (patient portal, clinic mode). The clinic answers from Appointments → Requests.
+  clinicBookingRequests: defineTable({
+    clinicId: v.id("clinics"),
+    patientId: v.id("users"),
+    kind: v.union(v.literal("appointment"), v.literal("change_clinician"), v.literal("service")),
+    message: v.optional(v.string()),
+    preferredTimes: v.optional(v.string()),
+    service: v.optional(v.string()),
+    status: v.union(v.literal("open"), v.literal("done"), v.literal("declined")),
+    createdAt: v.number(),
+    handledAt: v.optional(v.number()),
+    handledBy: v.optional(v.id("users")),
+    response: v.optional(v.string()),
+  })
+    .index("by_clinic_and_status", ["clinicId", "status"])
+    .index("by_patient", ["patientId"]),
 
   // Clinic Staff Invitations: Manages invitations for physiotherapists to join clinics
   clinicStaffInvitations: defineTable({
@@ -1633,6 +1735,15 @@ export default defineSchema({
     patientId: v.id("users"),
     physiotherapistId: v.optional(v.id("users")), // The physiotherapist who created the invoice
     clinicId: v.optional(v.id("clinics")), // Optional for independent physiotherapists
+    // A clinic invoice: who on the team asked for it (physiotherapistId is the clinic owner)
+    issuedById: v.optional(v.id("users")),
+    // Money Rehabify held for a clinic (paid before it connected its bank) and sent on by hand
+    clinicTransferredAt: v.optional(v.number()),
+    clinicTransferReference: v.optional(v.string()),
+    clinicTransferredBy: v.optional(v.id("users")),
+    // The clinic payout subaccount the current payment link pays into: a link made before the
+    // clinic connected (or changed) its bank account is replaced, so money always reaches it
+    paymentLinkSubaccount: v.optional(v.string()),
     invoiceNumber: v.string(), // Should be unique per clinic
     issueDate: v.float64(), // Timestamp
     dueDate: v.float64(), // Timestamp

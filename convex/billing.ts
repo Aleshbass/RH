@@ -8,15 +8,16 @@ import { closeInvoicePaymentLinks } from "./helpers/paymentLinks";
 import { recordInvoicePartnerCommission } from "./helpers/partnerLedger";
 import { getAuthenticatedUser } from "./auth";
 import { isServerCaller } from "./helpers/serverSecret";
-import { insertClinicInvoice } from "./clinicTools";
+import { canUseArea, insertClinicInvoice, resolveClinicMember } from "./clinicTools";
+import { requireClinicCareAccess } from "./helpers/careAccess";
 import { isRehabifyCare } from "./rehabifyFollowUps";
 import { isRehabifyCareInvoice, rehabifyCarePayoutKobo } from "./helpers/marketplaceInvoices";
 import { isIndependentPractice } from "./physioSetup";
 
 /**
  * True when the signed-in caller is a party to the invoice: its patient, its
- * physiotherapist, a physiotherapist of its clinic (they see clinic invoices on their
- * billing page), the clinic owner, or an admin. Signed-out callers are never parties.
+ * physiotherapist, a physiotherapist of its clinic whose clinic role includes Billing, the
+ * clinic owner, or an admin. Signed-out callers are never parties.
  */
 async function isInvoiceParty(ctx: QueryCtx | MutationCtx, invoice: Doc<"invoices">): Promise<boolean> {
   const viewer = await getAuthenticatedUser(ctx).catch(() => null);
@@ -26,13 +27,7 @@ async function isInvoiceParty(ctx: QueryCtx | MutationCtx, invoice: Doc<"invoice
   if (!invoice.clinicId) return false;
   const clinic = await ctx.db.get(invoice.clinicId);
   if (clinic && clinic.ownerId === viewer._id) return true;
-  if (viewer.role === "physiotherapist") {
-    const profile = await ctx.db
-      .query("physiotherapistProfiles")
-      .withIndex("by_user_id", (q) => q.eq("userId", viewer._id))
-      .first();
-    return profile?.clinicId === invoice.clinicId;
-  }
+  if (viewer.role === "physiotherapist") return (await billingClinicOf(ctx, viewer)) === invoice.clinicId;
   return false;
 }
 
@@ -93,10 +88,8 @@ export const createInvoice = mutation({
       throw new ConvexError("Physiotherapist profile not found");
     }
 
-    // Determine if physiotherapist is independent or clinic-based
-    // A physiotherapist is clinic-based ONLY if they accepted a clinic invitation
-    const isIndependentPractice = !physiotherapistProfile.clinicId;
-    const clinicId = physiotherapistProfile.clinicId; // undefined for independent physiotherapists
+    // Who bills follows the patient, not the physio: a clinic's patient is billed by that clinic
+    // (below); anyone else is the physio's own patient, billed by them with no clinic attached
 
     // Verify patient relationship exists
     const relationship = await ctx.db
@@ -130,9 +123,12 @@ export const createInvoice = mutation({
       }
     }
 
-    // Clinic clinicians bill for their clinic: the clinic's fee split, and its payout account
-    if (clinicId && (!relationship.clinicId || relationship.clinicId === clinicId)) {
-      const clinic = await ctx.db.get(clinicId);
+    // A clinic's patient is billed by the clinic: its fee split and payout account. Only a
+    // clinician whose clinic role includes Billing can ask (the clinic administers its invoices);
+    // patients billing is allowed while the clinic is read-only for Rehabify's own invoice
+    if (relationship.clinicId) {
+      await requireClinicCareAccess(ctx, physiotherapist, relationship.clinicId, { area: "billing", allowBillingReadOnly: true });
+      const clinic = await ctx.db.get(relationship.clinicId);
       if (clinic) {
         const created = await insertClinicInvoice(ctx, clinic, {
           patientId: args.patientId,
@@ -145,6 +141,7 @@ export const createInvoice = mutation({
           notes: args.notes,
           dueDate: args.dueDate,
           appointmentIds: args.appointmentIds,
+          issuedById: physiotherapist._id,
         });
         return {
           success: true,
@@ -197,7 +194,7 @@ export const createInvoice = mutation({
     const platformShare = platformFeeAmount; // Nothing: Rehabify takes no share of a physio's own invoices
 
     // Generate invoice number
-    const invoiceNumber = await generateInvoiceNumber(ctx, clinicId);
+    const invoiceNumber = await generateInvoiceNumber(ctx, undefined);
 
     // Validate clinic ID exists
 
@@ -205,7 +202,7 @@ export const createInvoice = mutation({
     const invoiceData = {
       invoiceNumber,
       patientId: args.patientId,
-      clinicId: clinicId, // Can be undefined for independent physiotherapists
+      clinicId: undefined, // The physio's own patient: no clinic
       physiotherapistId: physiotherapist._id,
       issueDate: Date.now(),
       dueDate: args.dueDate,
@@ -237,12 +234,11 @@ export const createInvoice = mutation({
     // Insert invoice into database
     const invoiceId = await ctx.db.insert("invoices", invoiceData);
 
-    // Get patient and clinic details for notification
+    // Get patient details for notification
     const patient = await ctx.db.get(args.patientId);
-    const clinic = clinicId ? await ctx.db.get(clinicId) : null;
-    
-        // Create enhanced notification for patient
-    const practitionerName = clinic?.name || `${physiotherapist.firstName} ${physiotherapist.lastName}`;
+
+    // Create enhanced notification for patient
+    const practitionerName = `${physiotherapist.firstName ?? ""} ${physiotherapist.lastName ?? ""}`.trim() || "Your physiotherapist";
     
     await insertNotification(ctx, {
       userId: args.patientId,
@@ -560,10 +556,8 @@ async function assertCanRecordManualPayment(ctx: any, user: Doc<"users">, invoic
   if (invoice.clinicId) {
     const clinic = await ctx.db.get(invoice.clinicId);
     if (clinic && clinic.ownerId === user._id) return;
-    if (
-      user.clinicId === invoice.clinicId &&
-      (user.role === "physiotherapist" || user.role === "clinic_staff")
-    ) {
+    // The clinic administers its invoices: team members only with Billing in their role
+    if ((user.role === "physiotherapist" || user.role === "clinic_staff") && (await billingClinicOf(ctx, user)) === invoice.clinicId) {
       return;
     }
   }
@@ -656,20 +650,37 @@ export const processPayment = mutation({
 /** Most invoices the billing list and stats read: the newest 1,000 keeps big clinics fast. */
 const INVOICE_SCOPE_CAP = 1000;
 
-/** Invoices a physiotherapist can see: their clinic's, or their own when independent (newest first). */
-async function myInvoiceScope(ctx: any, physiotherapistId: Id<"users">, clinicId?: Id<"clinics">): Promise<Doc<"invoices">[]> {
-  if (clinicId) {
-    return await ctx.db
+/**
+ * The clinic whose invoices this physio administers: their clinic, only when their clinic role
+ * includes Billing (the clinic owner administers invoices; clinicians need to be given access).
+ */
+async function billingClinicOf(ctx: QueryCtx, physio: Doc<"users">): Promise<Id<"clinics"> | undefined> {
+  if (!physio.clinicId) return undefined;
+  const member = await resolveClinicMember(ctx, physio);
+  return member && member.clinic._id === physio.clinicId && canUseArea(member, "billing") ? physio.clinicId : undefined;
+}
+
+/** Whether a physio sees this invoice: their own (no clinic), or their clinic's with Billing access. */
+function inInvoiceScope(invoice: Doc<"invoices">, physiotherapistId: Id<"users">, billingClinicId?: Id<"clinics">) {
+  return invoice.clinicId ? invoice.clinicId === billingClinicId : invoice.physiotherapistId === physiotherapistId;
+}
+
+/** Invoices a physiotherapist can see (newest first): their own, plus their clinic's with Billing access. */
+async function myInvoiceScope(ctx: any, physiotherapistId: Id<"users">, billingClinicId?: Id<"clinics">): Promise<Doc<"invoices">[]> {
+  const own: Doc<"invoices">[] = (
+    await ctx.db
       .query("invoices")
-      .withIndex("by_clinic_id", (q: any) => q.eq("clinicId", clinicId))
+      .withIndex("by_physiotherapist_id", (q: any) => q.eq("physiotherapistId", physiotherapistId))
       .order("desc")
-      .take(INVOICE_SCOPE_CAP);
-  }
-  return await ctx.db
+      .take(INVOICE_SCOPE_CAP)
+  ).filter((invoice: Doc<"invoices">) => !invoice.clinicId);
+  if (!billingClinicId) return own;
+  const clinic: Doc<"invoices">[] = await ctx.db
     .query("invoices")
-    .withIndex("by_physiotherapist_id", (q: any) => q.eq("physiotherapistId", physiotherapistId))
+    .withIndex("by_clinic_id", (q: any) => q.eq("clinicId", billingClinicId))
     .order("desc")
     .take(INVOICE_SCOPE_CAP);
+  return [...own, ...clinic].sort((a, b) => b._creationTime - a._creationTime).slice(0, INVOICE_SCOPE_CAP);
 }
 
 export const getMyInvoices = query({
@@ -726,9 +737,8 @@ export const getMyInvoices = query({
       .withIndex("by_user_id", (q: any) => q.eq("userId", physiotherapist._id))
       .unique();
 
-    // Clinic physios see their clinic's invoices; independent physios own theirs directly
-    // (they have no clinicId, so a clinic-only lookup returned nothing for them)
-    const clinicId = physiotherapistProfile?.clinicId;
+    // Their own patients' invoices, plus their clinic's when their clinic role includes Billing
+    const billingClinicId = await billingClinicOf(ctx, physiotherapist);
     const scoped = args.patientId
       ? (
           await ctx.db
@@ -736,10 +746,8 @@ export const getMyInvoices = query({
             .withIndex("by_patient_id", (q: any) => q.eq("patientId", args.patientId))
             .order("desc")
             .take(200)
-        ).filter((invoice: Doc<"invoices">) =>
-          clinicId ? invoice.clinicId === clinicId : invoice.physiotherapistId === physiotherapist._id
-        )
-      : await myInvoiceScope(ctx, physiotherapist._id, clinicId);
+        ).filter((invoice: Doc<"invoices">) => inInvoiceScope(invoice, physiotherapist._id, billingClinicId))
+      : await myInvoiceScope(ctx, physiotherapist._id, billingClinicId);
     const now = Date.now();
     // Physios who see only their own patients never see Rehabify Care payouts
     const independent = isIndependentPractice(physiotherapistProfile);
@@ -977,7 +985,7 @@ export const getBillingStats = query({
       .query("physiotherapistProfiles")
       .withIndex("by_user_id", (q: any) => q.eq("userId", user._id))
       .unique();
-    const allInvoices = await myInvoiceScope(ctx, user._id, profile?.clinicId);
+    const allInvoices = await myInvoiceScope(ctx, user._id, await billingClinicOf(ctx, user));
 
     const now = Date.now();
     const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).getTime();

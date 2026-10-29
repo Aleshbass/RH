@@ -16,6 +16,7 @@ import {
   RECOVERY_LABELS,
   SOURCE_LABELS,
   Sparkline,
+  useWorkspaceReadOnly,
   type Workspace,
 } from './shared'
 import { JoyHandoffPanel } from './JoyHandoffPanel'
@@ -42,19 +43,25 @@ export function OverviewTab({
   const painPoints = checkIns.slice(0, 10).map((c) => c.painScore).reverse()
   const planned = sessions.planned ?? undefined
   const reviewOverdue = plan?.reviewDate ? isPast(plan.reviewDate) : false
+  // The clinic owner reading the record: everything shows, nothing clinical is edited
+  const readOnly = useWorkspaceReadOnly()
 
   return (
     <div className="space-y-5">
       {/* Only for patients who booked through Joy on WhatsApp */}
-      <JoyHandoffPanel patientId={workspace.patient._id} />
+      {!readOnly && <JoyHandoffPanel patientId={workspace.patient._id} />}
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
         {/* Current care episode */}
         <Panel
           title="Current care"
-          info="This course of treatment: what you’re treating, where the patient came from, and sessions so far. When you finish, use Complete care in the … menu."
+          info={
+            readOnly
+              ? 'This course of treatment: what the clinician is treating, where the patient came from, and sessions so far.'
+              : 'This course of treatment: what you’re treating, where the patient came from, and sessions so far. When you finish, use Complete care in the … menu.'
+          }
           actions={
-            isActive && (
+            isActive && !readOnly && (
               <Button variant="ghost" size="sm" className="h-8 rounded-lg text-neutral-500" onClick={onEditEpisode}>
                 <Pencil className="mr-1.5 h-3.5 w-3.5" />
                 Edit
@@ -71,7 +78,7 @@ export function OverviewTab({
               </StatusBadge>
             </div>
             <p className="text-[15px] font-semibold leading-snug text-rh-ink dark:text-white">
-              {episode.condition || (isActive ? 'Add what you’re treating' : 'Course of care')}
+              {episode.condition || (isActive && !readOnly ? 'Add what you’re treating' : 'Course of care')}
             </p>
             <div>
               <div className="flex items-baseline justify-between text-sm">
@@ -101,7 +108,7 @@ export function OverviewTab({
           info="Goals, frequency, review date and precautions. The patient sees it in their app. Start a new one from your templates."
           actions={
             <Button variant="ghost" size="sm" className="h-8 rounded-lg text-rh-ink dark:text-rh-lime" onClick={onOpenPlan}>
-              {plan ? 'Open plan' : isActive ? 'Create plan' : 'View'}
+              {plan ? 'Open plan' : isActive && !readOnly ? 'Create plan' : 'View'}
             </Button>
           }
         >
@@ -152,14 +159,19 @@ export function OverviewTab({
           ) : (
             <div className="px-5 pb-6 pt-3">
               <p className="text-sm text-neutral-500 dark:text-neutral-400">
-                No care plan yet. Set out functional goals, how often you’ll see them, when to review, and any precautions.
+                {readOnly
+                  ? 'No care plan yet. Their clinician sets the goals, how often they’ll be seen, when to review, and any precautions.'
+                  : 'No care plan yet. Set out functional goals, how often you’ll see them, when to review, and any precautions.'}
               </p>
             </div>
           )}
         </Panel>
 
         {/* Next appointment */}
-        <Panel title="Next appointment" info="The next session booked with this patient. Open Schedule to accept, move or join it.">
+        <Panel
+          title="Next appointment"
+          info={readOnly ? 'The next visit booked for this patient, with any clinician at your clinic.' : 'The next session booked with this patient. Open Schedule to accept, move or join it.'}
+        >
           <div className="px-5 pb-5 pt-3">
             {nextAppointment ? (
               <div className="space-y-3">
@@ -253,7 +265,9 @@ export function OverviewTab({
                 </>
               ) : (
                 <p className="text-sm text-neutral-500 dark:text-neutral-400">
-                  Send a home exercise programme from the Care plan tab to track this. Each exercise the patient logs counts here.
+                  {readOnly
+                    ? 'No home programme yet. When their clinician sends one, each exercise the patient logs counts here.'
+                    : 'Send a home exercise programme from the Care plan tab to track this. Each exercise the patient logs counts here.'}
                 </p>
               )}
               {latestLog && (

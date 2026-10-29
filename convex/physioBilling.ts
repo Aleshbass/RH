@@ -6,7 +6,7 @@
 import { ConvexError, v } from "convex/values";
 import { action, internalQuery } from "./_generated/server";
 import { internal } from "./_generated/api";
-import { mainAccountChargeKobo, paystackRequest } from "./clinicBilling";
+import { createClinicPaymentLink, mainAccountChargeKobo, paystackRequest } from "./clinicBilling";
 import { publicAppUrl } from "./helpers/appUrl";
 import { activePaymentLink } from "./helpers/paymentLinks";
 import { usableSubaccount } from "./helpers/paystackMode";
@@ -21,7 +21,10 @@ export const getPhysioInvoiceForPaymentLink = internalQuery({
       .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
       .unique();
     const invoice = await ctx.db.get(args.invoiceId);
-    if (!user || !invoice || invoice.physiotherapistId !== user._id) {
+    if (!user || !invoice) throw new ConvexError("Invoice not found");
+    // A clinic's invoice is the clinic's: its own link path checks Billing access and pays the clinic
+    if (invoice.clinicId) return { clinicInvoice: true as const };
+    if (invoice.physiotherapistId !== user._id) {
       throw new ConvexError("Invoice not found");
     }
     const patient = await ctx.db.get(invoice.patientId);
@@ -51,9 +54,12 @@ export const getPhysioInvoiceForPaymentLink = internalQuery({
 export const createPhysioPaymentLink = action({
   args: { invoiceId: v.id("invoices"), emailPatient: v.optional(v.boolean()) },
   handler: async (ctx, args): Promise<{ paymentLink: string; emailed: boolean }> => {
-    const invoice = await ctx.runQuery(internal.physioBilling.getPhysioInvoiceForPaymentLink, {
+    const found = await ctx.runQuery(internal.physioBilling.getPhysioInvoiceForPaymentLink, {
       invoiceId: args.invoiceId,
     });
+    // Clinic invoices: the clinic's link (the patient already got the request from the clinic)
+    if ("clinicInvoice" in found) return { ...(await createClinicPaymentLink(ctx, args.invoiceId)), emailed: false };
+    const invoice = found;
     if (invoice.status === "paid") throw new ConvexError("This invoice is already paid");
     if (invoice.status === "void") throw new ConvexError("This invoice was cancelled");
 

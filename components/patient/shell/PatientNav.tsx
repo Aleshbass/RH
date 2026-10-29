@@ -5,6 +5,8 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useClerk, useUser } from '@clerk/nextjs'
+import { useQuery } from 'convex/react'
+import { api } from '@/convex/_generated/api'
 import { ArrowRight, ChevronRight, LogOut, Menu, MoreVertical, PlayCircle, Settings } from '@/components/icons'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
@@ -27,14 +29,74 @@ import {
 } from '@/components/patient/shell/navItems'
 import { PatientThemeToggle, SoundSwitchRow } from '@/components/patient/shell/PatientControls'
 import { START_PATIENT_TOUR_EVENT } from '@/components/patient/shell/PatientTour'
+import { useCareHome } from '@/components/patient/careHome'
 
-/** Rehabify wordmark in ink, or white in dark mode. */
+/**
+ * The portal's brand: Rehabify's wordmark (ink, or white in dark mode), or in clinic mode the
+ * clinic's logo and name with "on Rehabify" under it: the clinic leads, Rehabify is the platform.
+ */
 export function PatientBrand({ className }: { className?: string }) {
+  const { clinic } = useCareHome()
+  if (clinic) {
+    return (
+      <span className={cn('flex min-w-0 items-center gap-2.5', className)}>
+        {clinic.logoUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={clinic.logoUrl} alt="" className="h-8 w-8 shrink-0 rounded-lg object-cover" />
+        ) : (
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-pt-primary text-xs font-bold text-pt-on-primary">
+            {initials(clinic.name)}
+          </span>
+        )}
+        <span className="min-w-0">
+          <span className="block truncate text-sm font-semibold leading-tight text-pt-ink">{clinic.name}</span>
+          <span className="block text-[11px] leading-tight text-pt-faint">on Rehabify</span>
+        </span>
+      </span>
+    )
+  }
   return (
     <span className={cn('flex items-center', className)}>
       <Image src="/logos/Black%20MainRehabify.svg" alt="Rehabify" width={112} height={28} className="h-6 w-auto dark:hidden" priority />
       <Image src="/logos/White%20MainRehabify.svg" alt="Rehabify" width={112} height={28} className="hidden h-6 w-auto dark:block" priority />
     </span>
+  )
+}
+
+/**
+ * The card at the foot of the menu: the clinic and how to reach it in clinic mode, otherwise
+ * "Need a physio?" (a clinic's patients never get sent to the Rehabify marketplace).
+ */
+function FooterCard({ onNavigate, className }: { onNavigate?: () => void; className?: string }) {
+  const { clinic, showMarketplace } = useCareHome()
+  if (clinic) {
+    return (
+      <Link
+        href={NAV.messages.href}
+        onClick={onNavigate}
+        className={cn('group flex items-center justify-between gap-3 rounded-2xl bg-pt-sunken p-4 transition-colors hover:bg-pt-hover', className)}
+      >
+        <span className="min-w-0">
+          <span className="block truncate text-sm font-semibold text-pt-ink">Need {clinic.name}?</span>
+          <span className="block truncate text-xs text-pt-muted">{clinic.phone ? `Call ${clinic.phone} or send a message` : 'Send the clinic a message'}</span>
+        </span>
+        <ArrowRight className="h-4 w-4 shrink-0 text-pt-faint transition-transform group-hover:translate-x-0.5" />
+      </Link>
+    )
+  }
+  if (!showMarketplace) return null
+  return (
+    <Link
+      href={FIND_A_PHYSIO.href}
+      onClick={onNavigate}
+      className={cn('group flex items-center justify-between gap-3 rounded-2xl bg-pt-sun-bg p-4 text-pt-sun-fg transition-colors hover:brightness-[0.98]', className)}
+    >
+      <span>
+        <span className="block text-sm font-semibold">Need a physio?</span>
+        <span className="block text-xs opacity-80">Browse physiotherapists near you</span>
+      </span>
+      <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+    </Link>
   )
 }
 
@@ -69,7 +131,11 @@ function NavLink({ item, active, badge, onNavigate }: { item: PatientNavItem; ac
 function useAccount() {
   const { user } = useUser()
   const { signOut } = useClerk()
-  const name = user?.fullName || user?.firstName || 'Your account'
+  // The name from their Rehabify profile (what Settings saves and their care team sees), not the
+  // one on their Google account
+  const me = useQuery(api.users.getMyUser) as { firstName?: string; lastName?: string } | null | undefined
+  const profileName = [me?.firstName, me?.lastName].filter(Boolean).join(' ').trim()
+  const name = profileName || user?.fullName || user?.firstName || 'Your account'
   const email = user?.primaryEmailAddress?.emailAddress
   // Joy patients start with a placeholder login address; don't show it
   const shownEmail = email && !email.endsWith('@patients.physioaroundme.com') ? email : undefined
@@ -130,7 +196,7 @@ export function PatientSidebar({ unreadMessages, className }: { unreadMessages?:
       data-tour="navigation"
       className={cn('flex w-64 flex-col rounded-3xl border border-pt-line bg-pt-surface shadow-pt dark:shadow-none', className)}
     >
-      <Link href={PATIENT_HOME} className="px-5 pb-4 pt-6" aria-label="Rehabify home">
+      <Link href={PATIENT_HOME} className="px-5 pb-4 pt-6" aria-label="Home">
         <PatientBrand />
       </Link>
 
@@ -151,16 +217,7 @@ export function PatientSidebar({ unreadMessages, className }: { unreadMessages?:
       </nav>
 
       <div className="space-y-2 p-3">
-        <Link
-          href={FIND_A_PHYSIO.href}
-          className="group block rounded-2xl bg-pt-sun-bg p-4 transition-colors hover:brightness-[0.98]"
-        >
-          <p className="text-sm font-semibold text-pt-sun-fg">Need a physio?</p>
-          <p className="mt-0.5 flex items-center gap-1 text-xs text-pt-sun-fg/80">
-            Browse physiotherapists near you
-            <ArrowRight className="h-3 w-3 transition-transform group-hover:translate-x-0.5" />
-          </p>
-        </Link>
+        <FooterCard />
         <div className="border-t border-pt-line pt-2">
           <AccountMenu />
         </div>
@@ -276,17 +333,7 @@ export function PatientMobileNav({ unreadMessages }: { unreadMessages?: number }
             )
           })}
 
-          <Link
-            href={FIND_A_PHYSIO.href}
-            onClick={() => setMoreOpen(false)}
-            className="flex items-center justify-between rounded-2xl bg-pt-sun-bg p-4 text-pt-sun-fg"
-          >
-            <span>
-              <span className="block text-sm font-semibold">Need a physio?</span>
-              <span className="block text-xs opacity-80">Browse physiotherapists near you</span>
-            </span>
-            <ArrowRight className="h-4 w-4" />
-          </Link>
+          <FooterCard onNavigate={() => setMoreOpen(false)} />
 
           <div className="rounded-2xl border border-pt-line p-1.5">
             <Link

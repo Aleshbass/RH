@@ -110,12 +110,17 @@ export const createPatientInvitationWithNotification = action({
         const invitationLink = `${baseUrl}/patient-invite/${result.invitationCode}`;
         const expiresAt = Date.now() + (args.expirationDays || 7) * 24 * 60 * 60 * 1000;
         
+        // A clinic's clinician invites patients to the clinic: the email names it
+        const access = (await (ctx.runQuery as any)(api.clinicTools.getMyClinicAccess, {})) as { mode?: string; clinicName?: string } | null;
+        const clinicName = access?.mode === 'staff' ? access.clinicName : undefined;
+
         // Send email using the dedicated email action
         try {
           await ctx.runAction(internal.actions.emails.sendInvitationEmail.sendPatientInvitationEmail, {
             patientEmail: args.patientEmail,
             patientName: args.patientName,
             physiotherapistName,
+            clinicName,
             invitationCode: result.invitationCode,
             invitationLink,
             expiresAt,

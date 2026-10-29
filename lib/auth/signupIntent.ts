@@ -121,6 +121,8 @@ export function afterSignUpPathFor(intent: SignupIntent | null): string {
 }
 
 const PATH_INTENTS: [RegExp, SignupIntent][] = [
+  // A clinic or physio invited them: they join as a patient, nothing else to choose
+  [/^\/patient-invite(\/|$)/, "patient"],
   [/^\/(platform\/clinics|clinic-owner)(\/|$)/, "clinic_owner"],
   [/^\/(platform\/physiotherapists|physiotherapist|payout-policy|physio-register)(\/|$)/, "physiotherapist"],
   [/^\/platform\/family(\/|$)/, "family"],

@@ -18,6 +18,7 @@ import {
   type ClinicRole,
   type TeamMemberKind,
 } from './team-shared'
+import { playSound } from '@/lib/sounds'
 
 /**
  * A team member's dashboard role. The owner picks it from a compact select;
@@ -49,8 +50,8 @@ export function MemberRoleSelect({
   // Team members and anyone still loading get a plain label
   if (!isOwner && (isStaff || !isLoaded)) {
     return (
-      <p className={cn('truncate text-xs text-neutral-600 dark:text-neutral-400 sm:w-44', className)}>
-        Role: <span className="font-medium text-neutral-900 dark:text-neutral-100">{label}</span>
+      <p className={cn('truncate text-xs text-pt-muted sm:w-44', className)}>
+        Role: <span className="font-medium text-pt-ink">{label}</span>
       </p>
     )
   }
@@ -67,6 +68,7 @@ export function MemberRoleSelect({
     setSaving(true)
     try {
       await setMemberRole({ memberId, roleId: nextRoleId })
+      playSound('success')
       toast.success(
         nextRoleId
           ? `${memberName} now has the ${roleLabel(nextRoleId, roles, kind)} role`

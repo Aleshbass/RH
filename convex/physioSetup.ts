@@ -97,16 +97,19 @@ export async function computePhysioSetup(
   const bioLength = profile?.bio?.trim().length ?? 0;
   // Independent physios aren't listed, so only verification and getting paid are required
   const independent = isIndependentPractice(profile);
+  // Clinic clinicians were vetted by their clinic, which also bills and pays: only their profile
+  // and working hours matter (the clinic's patients book those hours)
+  const clinicMember = Boolean(profile?.clinicId);
   const items: PhysioSetupItem[] = [
     {
       id: "profile",
       title: "Add a photo and short bio",
-      description: independent
+      description: independent || clinicMember
         ? "Your patients see this in their app. A photo and a few lines about how you work."
         : "Patients choose physios they can picture. A photo and a few lines about how you work.",
       href: `${SETTINGS}/profile`,
       done: Boolean(user.imageUrl) && bioLength >= MIN_BIO_LENGTH,
-      required: !independent,
+      required: !independent && !clinicMember,
     },
     {
       id: "availability",
@@ -116,6 +119,12 @@ export async function computePhysioSetup(
       done: hasAvailability(profile?.availabilitySchedule),
       required: !independent,
     },
+  ];
+  if (clinicMember) {
+    const requiredRemaining = items.filter((item) => item.required && !item.done).length;
+    return { items, requiredRemaining, isComplete: requiredRemaining === 0 };
+  }
+  items.push(
     {
       id: "payout",
       title: "Add a payout account",
@@ -131,8 +140,8 @@ export async function computePhysioSetup(
       href: `${SETTINGS}/documents`,
       done: FOLLOW_UP_DOCUMENTS.every((type) => uploaded.has(type)),
       required: true,
-    },
-  ];
+    }
+  );
   if (!independent) {
     items.push(
       {

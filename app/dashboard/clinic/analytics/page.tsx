@@ -17,15 +17,15 @@ function signedPct(value: number) {
 
 function Row({ label, value, strong }: { label: string; value: ReactNode; strong?: boolean }) {
   return (
-    <div className="flex items-center justify-between gap-3 px-4 py-3 sm:px-5">
-      <span className={strong ? 'text-sm font-medium text-neutral-900 dark:text-white' : 'text-sm text-neutral-600 dark:text-neutral-400'}>
+    <div className="flex items-center justify-between gap-3 px-5 py-3 sm:px-6">
+      <span className={strong ? 'text-sm font-medium text-pt-ink' : 'text-sm text-pt-muted'}>
         {label}
       </span>
       <span
         className={
           strong
-            ? 'text-sm font-semibold tabular-nums text-neutral-900 dark:text-white'
-            : 'text-sm tabular-nums text-neutral-900 dark:text-neutral-100'
+            ? 'text-sm font-semibold tabular-nums text-pt-ink'
+            : 'text-sm tabular-nums text-pt-ink'
         }
       >
         {value}
@@ -90,7 +90,7 @@ export default function OwnerAnalyticsPage() {
   }
 
   return (
-    <PageShell title="Reports" description={description}>
+    <PageShell title="Reports" description={description} info="Figures for your clinic only: your own patients and the ones Rehabify referred to you.">
       <div id="analytics-key-metrics" className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <StatTile
           label="Revenue this month"
@@ -116,7 +116,7 @@ export default function OwnerAnalyticsPage() {
 
       <div id="analytics-detailed" className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Panel title="Revenue" description="Paid invoices">
-          <div className="divide-y divide-neutral-200 dark:divide-neutral-800">
+          <div className="divide-y divide-pt-line">
             <Row label="This month" value={formatNaira(revenueData.thisMonth ?? 0)} />
             <Row label="Last month" value={formatNaira(revenueData.lastMonth ?? 0)} />
             <Row label="Unpaid invoices" value={formatNaira(revenueData.pendingPayments ?? 0)} />
@@ -125,7 +125,7 @@ export default function OwnerAnalyticsPage() {
         </Panel>
 
         <Panel title="Appointments" description="This month">
-          <div className="divide-y divide-neutral-200 dark:divide-neutral-800">
+          <div className="divide-y divide-pt-line">
             <Row label="Booked" value={totalAppointments} />
             <Row label="Completed" value={appointmentStats.completed ?? 0} />
             <Row label="Cancelled" value={appointmentStats.cancelled ?? 0} />
@@ -136,7 +136,7 @@ export default function OwnerAnalyticsPage() {
         </Panel>
 
         <Panel title="Patients">
-          <div className="divide-y divide-neutral-200 dark:divide-neutral-800">
+          <div className="divide-y divide-pt-line">
             <Row label="All patients" value={analyticsData.patients?.total ?? 0} />
             <Row label="In active care" value={analyticsData.patients?.active ?? 0} />
             <Row label="New this month" value={analyticsData.patients?.newThisMonth ?? 0} />
@@ -145,7 +145,7 @@ export default function OwnerAnalyticsPage() {
         </Panel>
 
         <Panel title="Team">
-          <div className="divide-y divide-neutral-200 dark:divide-neutral-800">
+          <div className="divide-y divide-pt-line">
             <Row label="Clinicians" value={staffMetrics.total ?? 0} />
             <Row label="Active" value={staffMetrics.active ?? 0} />
             <Row label="Joined this month" value={staffMetrics.newThisMonth ?? 0} />
@@ -157,9 +157,9 @@ export default function OwnerAnalyticsPage() {
       {tips.length > 0 && (
         <div id="analytics-insights">
           <Panel title="Tips">
-            <ul className="divide-y divide-neutral-200 dark:divide-neutral-800">
+            <ul className="divide-y divide-pt-line">
               {tips.map((tip) => (
-                <li key={tip} className="px-4 py-3 text-sm text-neutral-700 dark:text-neutral-300 sm:px-5">
+                <li key={tip} className="px-5 py-3 text-sm text-pt-ink sm:px-6">
                   {tip}
                 </li>
               ))}

@@ -7,7 +7,7 @@ import { makeFunctionReference } from 'convex/server'
 import { format } from 'date-fns'
 import { AlertCircle, Info, Lock } from '@/components/icons'
 import { formatKobo, type ClinicBillingBanner as Banner } from '@/lib/clinicSubscriptions'
-import { cn } from '@/lib/utils'
+import { ClinicNotice, noticeActionClass, noticeSecondaryClass } from '@/components/clinic/ClinicStatusBanner'
 
 const bannerRef = makeFunctionReference<'query', Record<string, never>, Banner>('clinicBilling:getMyClinicBillingBanner')
 
@@ -27,11 +27,11 @@ export default function ClinicBillingBanner() {
   const content =
     banner.kind === 'read_only'
       ? {
-          tone: 'amber' as const,
+          tone: 'ink' as const,
           icon: Lock,
           text: (
             <>
-              <span className="font-medium">Your clinic is read-only because a Rehabify invoice is overdue.</span> You can still view and
+              <span className="font-semibold">Your clinic is read-only because a Rehabify invoice is overdue.</span> You can still view and
               export everything, bill your patients and remove team members, and your patients keep their programmes.{' '}
               {banner.canPay ? 'Paying lifts this straight away.' : 'Ask the clinic owner to pay it.'}
             </>
@@ -40,11 +40,11 @@ export default function ClinicBillingBanner() {
         }
       : banner.kind === 'past_due'
         ? {
-            tone: 'amber' as const,
+            tone: 'ink' as const,
             icon: AlertCircle,
             text: (
               <>
-                <span className="font-medium">A Rehabify invoice of {owed} is overdue.</span>{' '}
+                <span className="font-semibold">A Rehabify invoice of {owed} is overdue.</span>{' '}
                 {banner.readOnlyFrom
                   ? `Please pay it before ${format(new Date(banner.readOnlyFrom), 'd MMMM')}, when your account would become read-only.`
                   : 'Please pay it to keep everything running.'}
@@ -54,64 +54,41 @@ export default function ClinicBillingBanner() {
           }
         : banner.kind === 'allowance_100'
           ? {
-              tone: 'amber' as const,
+              tone: 'ink' as const,
               icon: Info,
               text: (
                 <>
-                  <span className="font-medium">You&apos;ve reached your {banner.allowance} active patient programmes.</span> Each extra one is
+                  <span className="font-semibold">You&apos;ve reached your {banner.allowance} active patient programmes.</span> Each extra one is
                   ₦500 this month, or you can ask to upgrade.
                 </>
               ),
               action: 'See your plan',
             }
           : {
-              tone: 'neutral' as const,
+              tone: 'quiet' as const,
               icon: Info,
               text: (
                 <>
-                  <span className="font-medium">You&apos;ve used 80% of your active patient programmes.</span> Each one over {banner.allowance} is
+                  <span className="font-semibold">You&apos;ve used 80% of your active patient programmes.</span> Each one over {banner.allowance} is
                   ₦500 a month.
                 </>
               ),
               action: 'See your plan',
             }
 
-  const Icon = content.icon
   return (
-    <div
-      className={cn(
-        'border-b px-4 py-2.5 sm:px-6',
-        content.tone === 'amber'
-          ? 'border-amber-200 bg-amber-50 dark:border-amber-900/50 dark:bg-amber-950/30'
-          : 'border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900'
-      )}
-    >
-      <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-3 gap-y-2">
-        <Icon
-          className={cn('h-4 w-4 shrink-0', content.tone === 'amber' ? 'text-amber-700 dark:text-amber-400' : 'text-neutral-500 dark:text-neutral-400')}
-        />
-        <p
-          className={cn(
-            'min-w-0 flex-1 text-sm',
-            content.tone === 'amber' ? 'text-amber-900 dark:text-amber-200' : 'text-neutral-700 dark:text-neutral-200'
-          )}
-        >
-          {content.text}
-        </p>
-        {content.action && !onPlanPage && (
-          <Link
-            href={CLINIC_PLAN_PATH}
-            className={cn(
-              'rounded-md px-3 py-1.5 text-sm font-medium',
-              content.action === 'Pay now'
-                ? 'bg-rh-lime text-rh-ink hover:bg-rh-lime-deep'
-                : 'border border-neutral-200 text-neutral-800 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-100 dark:hover:bg-neutral-800'
-            )}
-          >
+    <ClinicNotice
+      tone={content.tone}
+      icon={content.icon}
+      action={
+        content.action && !onPlanPage ? (
+          <Link href={CLINIC_PLAN_PATH} className={content.action === 'Pay now' ? noticeActionClass : noticeSecondaryClass}>
             {content.action}
           </Link>
-        )}
-      </div>
-    </div>
+        ) : undefined
+      }
+    >
+      {content.text}
+    </ClinicNotice>
   )
 }

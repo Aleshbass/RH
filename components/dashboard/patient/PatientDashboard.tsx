@@ -55,6 +55,7 @@ import { BookingDecisionCard } from '@/components/patient/BookingDecisionCard'
 import { MediLoanCard } from '@/components/patient/MediLoanCard'
 import { AccessAwardCard } from '@/components/patient/AccessAwardCard'
 import { YourPlanCard } from '@/components/patient/YourPlanCard'
+import { YourClinicCard } from '@/components/patient/YourClinicCard'
 import { cn } from '@/lib/utils'
 
 interface PatientDashboardProps {
@@ -410,6 +411,9 @@ export function PatientDashboard({ initialUser, initialAppointments, initialStat
         </h1>
         <p className="mt-1 text-sm text-pt-muted sm:text-[15px]">Here’s what’s next for your recovery.</p>
       </div>
+
+      {/* Clinic mode: the clinic looking after them leads */}
+      <YourClinicCard />
 
       {/* Things waiting on the patient come first */}
       <BookingDecisionCard />

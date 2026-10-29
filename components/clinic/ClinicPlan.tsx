@@ -19,6 +19,7 @@ import {
   type MyClinicPlan,
 } from '@/lib/clinicSubscriptions'
 import { cn } from '@/lib/utils'
+import { playSound } from '@/lib/sounds'
 
 const planRef = makeFunctionReference<'query', Record<string, never>, MyClinicPlan>('clinicBilling:getMyClinicPlan')
 const payRef = makeFunctionReference<'action', { invoiceId: string }, { authorizationUrl: string }>(
@@ -51,23 +52,23 @@ function Meter({ label, used, limit, hint }: { label: string; used: number; limi
   return (
     <div className="min-w-0">
       <div className="flex items-baseline justify-between gap-3">
-        <p className="text-sm font-medium text-neutral-900 dark:text-white">{label}</p>
-        <p className="text-sm tabular-nums text-neutral-600 dark:text-neutral-300">
-          <span className="font-semibold text-neutral-900 dark:text-white">{used.toLocaleString('en-NG')}</span> of{' '}
+        <p className="text-sm font-medium text-pt-ink">{label}</p>
+        <p className="text-sm tabular-nums text-pt-muted">
+          <span className="font-semibold text-pt-ink">{used.toLocaleString('en-NG')}</span> of{' '}
           {limit.toLocaleString('en-NG')}
         </p>
       </div>
       <div
-        className="mt-2 h-2 overflow-hidden rounded-full bg-neutral-100 dark:bg-neutral-800"
+        className="mt-2 h-2 overflow-hidden rounded-full bg-pt-sunken"
         role="meter"
         aria-label={label}
         aria-valuemin={0}
         aria-valuemax={limit}
         aria-valuenow={used}
       >
-        <div className={cn('h-full rounded-full', full ? 'bg-amber-500' : 'bg-rh-lime')} style={{ width: `${pct}%` }} />
+        <div className={cn('h-full rounded-full', full ? 'bg-pt-primary' : 'bg-pt-accent')} style={{ width: `${pct}%` }} />
       </div>
-      {hint && <p className="mt-1.5 text-xs text-neutral-500 dark:text-neutral-400">{hint}</p>}
+      {hint && <p className="mt-1.5 text-xs text-pt-muted">{hint}</p>}
     </div>
   )
 }
@@ -92,6 +93,7 @@ function usePaymentReturn() {
     done.current = true
     verify({ reference })
       .then(({ status }) => {
+        if (status === 'paid') playSound('paid')
         if (status === 'paid') toast.success('Thanks, your payment went through. Your receipt is on its way.')
         else if (status === 'pending') toast.message('Your payment is still processing. This page updates when it clears.')
         else if (status === 'failed') toast.error("That payment didn't go through. You can try again.")
@@ -114,6 +116,7 @@ export function ClinicDataExport() {
         return
       }
       downloadRowsAsCsv(`clinic-${kind}-${format(new Date(), 'yyyy-MM-dd')}`, rows)
+      playSound('success')
       toast.success(capped ? `Exported the latest ${rows.length.toLocaleString('en-NG')} ${kind}` : `Exported ${rows.length.toLocaleString('en-NG')} ${kind}`)
     } catch (err) {
       toast.error(errorText(err, 'Could not export. Please try again.'))
@@ -123,7 +126,7 @@ export function ClinicDataExport() {
   }
   return (
     <Panel title="Export your data" description="Download your records as CSV files. Included in every plan, and always available.">
-      <div className="flex flex-wrap gap-2 px-4 py-4 sm:px-5">
+      <div className="flex flex-wrap gap-2 px-5 py-4 sm:px-6">
         {(['patients', 'appointments', 'invoices'] as const).map((kind) => (
           <Button key={kind} variant="outline" size="sm" disabled={busy !== null} onClick={() => run(kind)} className="capitalize">
             {busy === kind ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Download className="mr-1.5 h-4 w-4" />}
@@ -181,6 +184,7 @@ export default function ClinicPlan() {
     setUpgrading(true)
     try {
       await requestUpgrade({ plan: next.plan })
+      playSound('success')
       toast.success(`Thanks. We'll be in touch about moving to ${next.name}.`)
     } catch (err) {
       toast.error(errorText(err, 'Could not send your request. Please try again.'))
@@ -193,7 +197,7 @@ export default function ClinicPlan() {
     <div className="space-y-6">
       {!sub ? (
         <Panel title="Your plan">
-          <p className="px-4 py-4 text-sm text-neutral-600 dark:text-neutral-300 sm:px-5">
+          <p className="px-5 py-4 text-sm text-pt-muted sm:px-6">
             Your clinic isn&apos;t billed for Rehabify yet. We&apos;ll email you before that changes.
           </p>
         </Panel>
@@ -202,39 +206,39 @@ export default function ClinicPlan() {
           title="Your plan"
           actions={<StatusBadge tone={sub.status === 'active' ? 'green' : sub.status === 'cancelled' ? 'neutral' : sub.status === 'read_only' ? 'red' : 'amber'}>{SUBSCRIPTION_STATUS_LABEL[sub.status]}</StatusBadge>}
         >
-          <div className="grid gap-6 px-4 py-5 sm:px-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
+          <div className="grid gap-6 px-5 py-5 sm:px-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
             <div className="min-w-0 space-y-3">
               <div>
-                <p className="text-lg font-semibold tracking-tight text-neutral-900 dark:text-white">{sub.planName}</p>
-                <p className="text-sm text-neutral-600 dark:text-neutral-300">
-                  <span className="font-semibold tabular-nums text-neutral-900 dark:text-white">{formatKobo(sub.monthlyFeeKobo)}</span> a
+                <p className="text-lg font-semibold tracking-tight text-pt-ink">{sub.planName}</p>
+                <p className="text-sm text-pt-muted">
+                  <span className="font-semibold tabular-nums text-pt-ink">{formatKobo(sub.monthlyFeeKobo)}</span> a
                   month, excluding VAT
                 </p>
               </div>
               <dl className="space-y-1.5 text-sm">
                 {sub.currentPeriodLabel && (
                   <div className="flex justify-between gap-3">
-                    <dt className="text-neutral-500 dark:text-neutral-400">This period</dt>
-                    <dd className="text-right text-neutral-900 dark:text-white">{sub.currentPeriodLabel}</dd>
+                    <dt className="text-pt-muted">This period</dt>
+                    <dd className="text-right text-pt-ink">{sub.currentPeriodLabel}</dd>
                   </div>
                 )}
                 {billingOn && sub.nextInvoiceAt && (
                   <div className="flex justify-between gap-3">
-                    <dt className="text-neutral-500 dark:text-neutral-400">{sub.currentPeriodStart ? 'Next invoice' : 'First invoice'}</dt>
-                    <dd className="text-right text-neutral-900 dark:text-white">{day(sub.nextInvoiceAt)}</dd>
+                    <dt className="text-pt-muted">{sub.currentPeriodStart ? 'Next invoice' : 'First invoice'}</dt>
+                    <dd className="text-right text-pt-ink">{day(sub.nextInvoiceAt)}</dd>
                   </div>
                 )}
                 {data.owedKobo > 0 && (
                   <div className="flex justify-between gap-3">
-                    <dt className="text-neutral-500 dark:text-neutral-400">To pay</dt>
-                    <dd className="text-right font-semibold tabular-nums text-neutral-900 dark:text-white">{formatKobo(data.owedKobo)}</dd>
+                    <dt className="text-pt-muted">To pay</dt>
+                    <dd className="text-right font-semibold tabular-nums text-pt-ink">{formatKobo(data.owedKobo)}</dd>
                   </div>
                 )}
               </dl>
               {billingOn && next && (
                 <div className="pt-1">
                   {sub.upgradeRequestedPlan ? (
-                    <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                    <p className="text-xs text-pt-muted">
                       You asked to move to a bigger plan{sub.upgradeRequestedAt ? ` on ${day(sub.upgradeRequestedAt)}` : ''}. We&apos;ll be in
                       touch.
                     </p>
@@ -247,12 +251,12 @@ export default function ClinicPlan() {
                 </div>
               )}
               {sub.status === 'cancelled' && (
-                <p className="text-xs text-neutral-500 dark:text-neutral-400">Billing has stopped. No new invoices will be issued.</p>
+                <p className="text-xs text-pt-muted">Billing has stopped. No new invoices will be issued.</p>
               )}
             </div>
 
             {usage && (
-              <div className="min-w-0 space-y-5 lg:border-l lg:border-neutral-200 lg:pl-6 lg:dark:border-neutral-800">
+              <div className="min-w-0 space-y-5 lg:border-l lg:border-pt-line lg:pl-6">
                 <Meter
                   label="Clinician seats"
                   used={usage.seatsUsed}
@@ -280,15 +284,15 @@ export default function ClinicPlan() {
           title="Invoices from Rehabify"
           description={openInvoices.length > 0 ? 'Each invoice is payable within 7 days.' : 'All paid. Thank you.'}
         >
-          <ul className="divide-y divide-neutral-200 dark:divide-neutral-800">
+          <ul className="divide-y divide-pt-line">
             {data.invoices.map((inv) => (
-              <li key={inv._id} className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:px-5">
+              <li key={inv._id} className="flex flex-col gap-3 px-5 py-3 sm:flex-row sm:items-center sm:px-6">
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                    <p className="text-sm font-medium text-neutral-900 dark:text-white">{inv.periodLabel}</p>
+                    <p className="text-sm font-medium text-pt-ink">{inv.periodLabel}</p>
                     <InvoiceStatus inv={inv} />
                   </div>
-                  <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                  <p className="text-xs text-pt-muted">
                     {inv.number} ·{' '}
                     {inv.status === 'paid'
                       ? `Paid ${day(inv.paidAt)}${inv.paymentMethod === 'bank_transfer' ? ' by bank transfer' : ''}`
@@ -297,17 +301,17 @@ export default function ClinicPlan() {
                         : `Issued ${day(inv.issuedAt)} · due ${day(inv.dueAt)}`}
                   </p>
                   {inv.lines.map((line, i) => (
-                    <p key={i} className="text-xs text-neutral-500 dark:text-neutral-400">
+                    <p key={i} className="text-xs text-pt-muted">
                       {line.kind === 'overage' ? `${line.quantity} extra programme${line.quantity === 1 ? '' : 's'} × ${formatKobo(line.unitKobo)}` : line.label}
                       {inv.lines.length > 1 ? ` · ${formatKobo(line.amountKobo)}` : ''}
                     </p>
                   ))}
                   {inv.status === 'open' && inv.readOnlyFrom && (
-                    <p className="text-xs text-amber-700 dark:text-amber-400">Your account becomes read-only on {day(inv.readOnlyFrom)} if this is unpaid.</p>
+                    <p className="text-xs text-pt-amber-fg">Your account becomes read-only on {day(inv.readOnlyFrom)} if this is unpaid.</p>
                   )}
                 </div>
                 <div className="flex shrink-0 items-center justify-between gap-3 sm:justify-end">
-                  <p className="text-sm font-semibold tabular-nums text-neutral-900 dark:text-white">{formatKobo(inv.amountKobo)}</p>
+                  <p className="text-sm font-semibold tabular-nums text-pt-ink">{formatKobo(inv.amountKobo)}</p>
                   {inv.status === 'open' ? (
                     <Button size="sm" className={primaryButtonClass} disabled={paying !== null} onClick={() => payInvoice(inv._id)}>
                       {paying === inv._id && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
@@ -326,7 +330,7 @@ export default function ClinicPlan() {
             ))}
           </ul>
           {openInvoices.length > 0 && (
-            <p className="border-t border-neutral-200 px-4 py-3 text-xs text-neutral-500 dark:border-neutral-800 dark:text-neutral-400 sm:px-5">
+            <p className="border-t border-pt-line px-5 py-3 text-xs text-pt-muted sm:px-6">
               Pay by card, bank transfer or USSD through Paystack. Paying by direct bank transfer instead? Email{' '}
               <a href="mailto:hello@myrehabifyhealth.com" className="font-medium underline underline-offset-2">
                 hello@myrehabifyhealth.com

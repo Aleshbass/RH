@@ -6,12 +6,13 @@ import { cn } from '@/lib/utils'
 import { useClinicAccess } from '@/components/clinic/ClinicAccessContext'
 
 /**
- * The clinic's logo (or initials) and name. Falls back to "Rehabify Clinic" while loading.
+ * The clinic's logo (or initials) and name, with "on Rehabify" under it, as in the physio
+ * portal's clinic mode. Falls back to "Your clinic" while loading.
  */
 export function ClinicBrand({ compact = false, className }: { compact?: boolean; className?: string }) {
   const { clinicName, logoUrl } = useClinicAccess()
   const [logoFailed, setLogoFailed] = useState(false)
-  const name = clinicName || 'Rehabify Clinic'
+  const name = clinicName || 'Your clinic'
   const initials = clinicName
     ? clinicName
         .split(/\s+/)
@@ -22,39 +23,42 @@ export function ClinicBrand({ compact = false, className }: { compact?: boolean;
     : null
 
   return (
-    <span className={cn('flex min-w-0 items-center gap-2', className)}>
+    <span className={cn('flex min-w-0 items-center gap-2.5', className)}>
       {logoUrl && !logoFailed ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
           src={logoUrl}
           alt=""
           onError={() => setLogoFailed(true)}
-          className="h-7 w-7 shrink-0 rounded-md border border-neutral-200 bg-white object-cover dark:border-neutral-800"
+          className="h-8 w-8 shrink-0 rounded-lg border border-pt-line bg-pt-surface object-cover"
         />
       ) : (
-        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-rh-lime text-[11px] font-semibold text-rh-ink">
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-pt-primary text-xs font-bold text-pt-on-primary">
           {initials || <Building2 className="h-3.5 w-3.5" />}
         </span>
       )}
       {!compact && (
-        <span className="truncate text-sm font-semibold text-neutral-900 dark:text-white" title={name}>
-          {name}
+        <span className="min-w-0">
+          <span className="block truncate text-sm font-semibold leading-tight text-pt-ink" title={name}>
+            {name}
+          </span>
+          <span className="block text-[11px] leading-tight text-pt-faint">on Rehabify</span>
         </span>
       )}
     </span>
   )
 }
 
-/** Small attribution shown at the bottom of the clinic dashboard. */
+/** Small attribution at the foot of the clinic menu. */
 export function PoweredByRehabify({ className }: { className?: string }) {
   return (
-    <p className={cn('text-[11px] text-neutral-400 dark:text-neutral-500', className)}>
+    <p className={cn('text-[11px] text-pt-faint', className)}>
       Powered by{' '}
       <a
         href="https://physioaroundme.com"
         target="_blank"
         rel="noopener noreferrer"
-        className="font-medium text-neutral-500 hover:text-rh-ink dark:text-neutral-400 dark:hover:text-rh-lime"
+        className="font-medium text-pt-muted hover:text-pt-ink"
       >
         Rehabify Health
       </a>

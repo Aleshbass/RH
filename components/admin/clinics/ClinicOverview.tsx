@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button'
 import { EmptyState, IconChip, Panel, StatusBadge, formatNaira, softButtonClass } from '@/components/admin/ui'
 import { ApprovalBadge, initialsOf, tintFor, userHref } from '@/components/admin/clinics/shared'
 import { cn } from '@/lib/utils'
+import { HeldTransfer } from '@/components/admin/clinics/HeldTransfer'
 
 export type ClinicDetail = NonNullable<ClinicDetailResult>
 
@@ -286,6 +287,7 @@ export function ClinicFeesTab({ data }: { data: ClinicDetail }) {
               <p className="mt-0.5 text-[11px] leading-4 text-neutral-500 dark:text-neutral-400">{m.hint}</p>
             </div>
           ))}
+          <HeldTransfer clinicId={data.clinic._id} heldKobo={billing.heldByRehabifyKobo} />
           {billing.lastPaidAt && (
             <p className="col-span-full text-xs text-neutral-500 dark:text-neutral-400">
               Last payment {format(billing.lastPaidAt, 'd MMM yyyy')}

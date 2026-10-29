@@ -17,9 +17,10 @@ const escapeHtml = (value: string) =>
 
 /**
  * Tell a patient their clinic has added them to Rehabify.
- * New patients are asked to create an account with this exact email: sign-up links their
- * account to the record the clinic made (users.claimPlaceholderPatient), so they see their
- * appointments and exercises. Patients who already have an account are asked to sign in.
+ * With `inviteCode`, the button opens their invitation (/patient-invite/<code>): it shows the
+ * clinic and their clinician, then creates or signs in to their account and links it, with no
+ * other Rehabify options in the way. Older links (no code) go to sign-up/sign-in, which links the
+ * account to the clinic's record by email (users.claimPlaceholderPatient).
  */
 export const sendClinicPatientInviteEmail = internalAction({
   args: {
@@ -28,6 +29,8 @@ export const sendClinicPatientInviteEmail = internalAction({
     clinicName: v.string(),
     clinicPhone: v.optional(v.string()),
     hasAccount: v.boolean(),
+    inviteCode: v.optional(v.string()),
+    clinicianName: v.optional(v.string()),
   },
   handler: async (_ctx, args) => {
     const apiKey = process.env.RESEND_API_KEY;
@@ -38,9 +41,12 @@ export const sendClinicPatientInviteEmail = internalAction({
 
     const base = publicAppUrl();
     const destination = encodeURIComponent("/dashboard/patient");
-    const link = args.hasAccount
-      ? `${base}/sign-in?redirect_url=${destination}`
-      : `${base}/sign-up?redirect_url=${destination}`;
+    const link = args.inviteCode
+      ? `${base}/patient-invite/${encodeURIComponent(args.inviteCode)}`
+      : args.hasAccount
+        ? `${base}/sign-in?redirect_url=${destination}&as=patient`
+        : `${base}/sign-up?redirect_url=${destination}&as=patient`;
+    const clinician = args.clinicianName?.trim() ? escapeHtml(args.clinicianName.trim()) : null;
 
     const clinic = escapeHtml(args.clinicName);
     const greetingName = escapeHtml(args.patientFirstName?.trim() || "there");
@@ -48,7 +54,7 @@ export const sendClinicPatientInviteEmail = internalAction({
     const contactLine = args.clinicPhone?.trim()
       ? `If you have questions, call ${clinic} on ${escapeHtml(args.clinicPhone.trim())}.`
       : `If you have questions, contact ${clinic} directly.`;
-    const actionText = args.hasAccount ? "Sign in" : "Create your account";
+    const actionText = args.inviteCode ? "Open your patient portal" : args.hasAccount ? "Sign in" : "Create your account";
     const instruction = args.hasAccount
       ? `Sign in with <strong>${email}</strong> to see them.`
       : `Create your free account with <strong>${email}</strong> (use this exact email address) and everything ${clinic} adds will be there.`;
@@ -59,7 +65,9 @@ export const sendClinicPatientInviteEmail = internalAction({
       preheader: `${args.clinicName} uses Rehabify Health for your physiotherapy.`,
       body: [
         greeting(greetingName),
-        paragraph(`<strong>${clinic}</strong> uses Rehabify Health for your physiotherapy. Your appointments, home exercises and progress notes from the clinic will appear in your Rehabify account.`),
+        paragraph(
+          `<strong>${clinic}</strong> uses Rehabify Health for your physiotherapy. Your appointments, home exercises and progress notes from the clinic will appear in your patient portal${clinician ? `, and you can message ${clinician}, your physiotherapist, there` : ""}.`
+        ),
         paragraph(instruction),
         actions(button(actionText, link)),
         linkFallback(link),
@@ -71,7 +79,7 @@ export const sendClinicPatientInviteEmail = internalAction({
     const text = [
       `Hello ${args.patientFirstName?.trim() || "there"},`,
       ``,
-      `${args.clinicName} added you on Rehabify Health. Your appointments, home exercises and progress notes from the clinic will appear in your Rehabify account.`,
+      `${args.clinicName} added you on Rehabify Health. Your appointments, home exercises and progress notes from the clinic will appear in your patient portal.${args.clinicianName?.trim() ? ` Your physiotherapist is ${args.clinicianName.trim()}.` : ""}`,
       ``,
       args.hasAccount
         ? `Sign in with ${args.patientEmail}: ${link}`

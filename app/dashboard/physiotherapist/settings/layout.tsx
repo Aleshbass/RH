@@ -9,15 +9,18 @@ import type { SetupStatus } from '@/components/physio/SetupChecklist';
 
 const BASE = '/dashboard/physiotherapist/settings';
 
-/** `network`: only for Rehabify network physios. `own`: not for clinic members. */
-type SettingsLink = { label: string; href: string; setupItem?: string; network?: boolean; own?: boolean };
+/**
+ * `network`: only for Rehabify network physios. `own`: not for clinic members. `clinic`: also shown
+ * to clinic members, whose clinic vets, bills and pays them (everything else is hidden for them).
+ */
+type SettingsLink = { label: string; href: string; setupItem?: string; network?: boolean; own?: boolean; clinic?: boolean };
 
 /** Grouped like Apple's Settings: who you are, how you practise, then the account itself. */
 const GROUPS: { label: string; items: SettingsLink[] }[] = [
     {
         label: 'You',
         items: [
-            { label: 'Profile', href: `${BASE}/profile`, setupItem: 'profile' },
+            { label: 'Profile', href: `${BASE}/profile`, setupItem: 'profile', clinic: true },
             { label: 'Documents', href: `${BASE}/documents`, setupItem: 'documents' },
         ],
     },
@@ -25,21 +28,21 @@ const GROUPS: { label: string; items: SettingsLink[] }[] = [
         label: 'Practice',
         items: [
             { label: 'How you work', href: `${BASE}/practice`, own: true },
-            { label: 'Working hours', href: `${BASE}/availability`, setupItem: 'availability' },
+            { label: 'Working hours', href: `${BASE}/availability`, setupItem: 'availability', clinic: true },
             { label: 'Services & coverage', href: `${BASE}/marketplace`, setupItem: 'coverage', network: true },
             // Every physio sees it for the handbook; the network terms on it are for network physios only
             { label: 'Terms & handbook', href: `${BASE}/network-terms`, setupItem: 'network_terms' },
             { label: 'Agreements', href: `${BASE}/agreements`, setupItem: 'agreement', own: true },
             { label: 'Payout schedule', href: `${BASE}/fee-schedule`, network: true },
             { label: 'Payouts', href: `${BASE}/payout`, setupItem: 'payout' },
-            { label: 'Calendar sync', href: `${BASE}/calendar` },
+            { label: 'Calendar sync', href: `${BASE}/calendar`, clinic: true },
         ],
     },
     {
         label: 'Account',
         items: [
-            { label: 'Notifications', href: `${BASE}/alerts` },
-            { label: 'Account & privacy', href: `${BASE}/privacy` },
+            { label: 'Notifications', href: `${BASE}/alerts`, clinic: true },
+            { label: 'Account & privacy', href: `${BASE}/privacy`, clinic: true },
         ],
     },
 ];
@@ -49,9 +52,10 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
     const setup = useQuery(api.physioSetup.getMySetupStatus) as SetupStatus | null | undefined;
     // Independent physios don't see network pages; clinic members don't choose how they work
     const independent = setup?.practiceMode === 'independent';
+    const clinicMember = Boolean(setup?.isClinicMember);
     const groups = GROUPS.map((group) => ({
         ...group,
-        items: group.items.filter((link) => !(link.network && independent) && !(link.own && setup?.isClinicMember)),
+        items: group.items.filter((link) => (clinicMember ? link.clinic : !(link.network && independent))),
     }));
     const ALL_LINKS = groups.flatMap((group) => group.items);
     // Small dot beside settings that still block bookings

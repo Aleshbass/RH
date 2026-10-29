@@ -1,9 +1,9 @@
 
 import { insertNotification } from "./helpers/pushNotify";
 import { ConvexError, v } from "convex/values";
-import { internalQuery, mutation, query } from "./_generated/server";
+import { internalQuery, mutation, query, type QueryCtx } from "./_generated/server";
 import { getAuthenticatedUser, ensureClinicOwner, ensureUserRole, ensureIsClinicOwner } from "./auth";
-import { Id } from "./_generated/dataModel";
+import { Doc, Id } from "./_generated/dataModel";
 import { getClinicMember, requireClinicWrite } from "./clinicTools";
 import { normalizePhone } from "./helpers/partnerShared";
 
@@ -932,11 +932,10 @@ export const getPatientCareTeam = query({
           .withIndex("by_user_id", (q) => q.eq("userId", physiotherapist._id))
           .unique();
 
-        // Get clinic information if applicable
-        let clinicInfo = null;
-        if (physiotherapistProfile?.clinicId) {
-          clinicInfo = await ctx.db.get(physiotherapistProfile.clinicId);
-        }
+        // The clinic this care belongs to (the care link says; the physio's profile is a fallback
+        // for older links). A clinic's owner account stands in while they assign a clinician.
+        const clinicId = relationship.clinicId ?? physiotherapistProfile?.clinicId;
+        const clinicInfo = clinicId ? await ctx.db.get(clinicId) : null;
 
         // Get recent appointments with this physiotherapist
         const recentAppointments = await ctx.db
@@ -984,6 +983,8 @@ export const getPatientCareTeam = query({
             startDate: relationship.startDate,
             status: relationship.status,
           },
+          /** The clinic itself (its owner account) while it picks a clinician for them */
+          isClinicDesk: Boolean(clinicInfo && clinicInfo.ownerId === physiotherapist._id),
           recentAppointments: recentAppointments.length,
           lastAppointment: recentAppointments[0]?.startTime,
         };
@@ -1256,6 +1257,10 @@ export const reassignPatient = mutation({
     }
     if (args.currentPhysiotherapistId === args.newPhysiotherapistId) {
       throw new ConvexError("The patient is already with this clinician");
+    }
+    // The owner account runs the clinic and doesn't treat (owner decision, 28 Oct 2026)
+    if (args.newPhysiotherapistId === clinic.ownerId) {
+      throw new ConvexError("Choose a clinician from your team. The owner account doesn't treat patients.");
     }
 
     // Find the active relationship
@@ -1628,5 +1633,174 @@ export const getClinicPatientDetails = internalQuery({
       patientRecord,
       sessionLogs: enrichedLogs,
     };
+  },
+});
+/**
+ * The clinic a patient's care lives with, when it lives with exactly one: every active care link
+ * is that clinic's, or (between courses of care) the clinic they last belonged to. Null when they
+ * see independent physios, Rehabify Care, or a clinic and others at once.
+ */
+async function careHomeClinic(ctx: QueryCtx, user: Doc<"users">) {
+  const relationships = await ctx.db
+    .query("patientPhysiotherapistRelationships")
+    .withIndex("by_patient", (q) => q.eq("patientId", user._id))
+    .collect();
+  const active = relationships.filter((r) => r.status === "active");
+  const activeClinics = [...new Set(active.map((r) => r.clinicId).filter((id): id is Id<"clinics"> => Boolean(id)))];
+  const otherCare = active.some((r) => !r.clinicId);
+
+  let clinicId: Id<"clinics"> | null = null;
+  if (activeClinics.length === 1 && !otherCare) clinicId = activeClinics[0];
+  else if (active.length === 0) {
+    const profile = await ctx.db
+      .query("patientProfiles")
+      .withIndex("by_user_id", (q) => q.eq("userId", user._id))
+      .first();
+    const latestClinicCare = relationships
+      .filter((r) => r.clinicId)
+      .sort((a, b) => (b.endDate ?? b.startDate) - (a.endDate ?? a.startDate))[0];
+    clinicId = profile?.clinicId ?? user.clinicId ?? latestClinicCare?.clinicId ?? null;
+  }
+  const clinic = clinicId ? await ctx.db.get(clinicId) : null;
+  return { clinic, active, mixed: activeClinics.length > 0 && !clinic };
+}
+
+async function signedInPatient(ctx: QueryCtx) {
+  const identity = await ctx.auth.getUserIdentity();
+  if (!identity) return null;
+  const user = await ctx.db
+    .query("users")
+    .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+    .unique();
+  return user?.role === "patient" ? user : null;
+}
+
+/**
+ * Where the signed-in patient's care lives, which sets how their portal looks and what it offers:
+ * - "clinic": their care is with one clinic. The clinic leads the portal (its name and logo, its
+ *   clinicians, its contact details) and the Rehabify marketplace stays out of the way.
+ * - "mixed": a clinic and other care at once. Normal portal; clinic items carry the clinic's name.
+ * - "rehabify": everyone else (independent physios, Rehabify Care, or no one yet).
+ */
+export const getMyCareHome = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await signedInPatient(ctx);
+    if (!user) return null;
+    const { clinic, active, mixed } = await careHomeClinic(ctx, user);
+    if (!clinic) return { kind: mixed ? ("mixed" as const) : ("rehabify" as const), clinic: null, clinicians: [] };
+
+    // Their clinicians at this clinic (the owner's account only stands in while they assign one)
+    const clinicians = [];
+    for (const rel of active) {
+      if (rel.clinicId !== clinic._id || rel.physiotherapistId === clinic.ownerId) continue;
+      const person = await ctx.db.get(rel.physiotherapistId);
+      if (!person) continue;
+      clinicians.push({
+        _id: person._id,
+        name: [person.firstName, person.lastName].filter(Boolean).join(" ") || "Your physiotherapist",
+        imageUrl: person.imageUrl ?? null,
+      });
+    }
+
+    return {
+      kind: "clinic" as const,
+      clinic: {
+        _id: clinic._id,
+        name: clinic.name,
+        logoUrl: clinic.logoUrl ?? null,
+        address: clinic.address ?? null,
+        city: clinic.city ?? null,
+        phone: clinic.contactPhone ?? null,
+        email: clinic.contactEmail ?? null,
+        /** Who patients message to reach the clinic itself */
+        deskUserId: clinic.ownerId,
+        services: (clinic.priceList ?? []).map((s) => s.name).filter(Boolean),
+      },
+      clinicians,
+    };
+  },
+});
+
+const MAX_OPEN_CLINIC_REQUESTS = 3;
+const REQUEST_LABELS = {
+  appointment: "an appointment",
+  change_clinician: "a different clinician",
+  service: "a service",
+} as const;
+
+/**
+ * A clinic's patient asks their clinic for another appointment, a different clinician or a
+ * service. The clinic owner is told, and answers from Appointments → Requests.
+ */
+export const requestFromClinic = mutation({
+  args: {
+    kind: v.union(v.literal("appointment"), v.literal("change_clinician"), v.literal("service")),
+    message: v.optional(v.string()),
+    preferredTimes: v.optional(v.string()),
+    service: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const user = await signedInPatient(ctx);
+    if (!user) throw new ConvexError("Sign in to your patient account to continue.");
+    const { clinic } = await careHomeClinic(ctx, user);
+    if (!clinic) throw new ConvexError("Requests go to your clinic, and you aren't with one.");
+    const open = (
+      await ctx.db
+        .query("clinicBookingRequests")
+        .withIndex("by_patient", (q) => q.eq("patientId", user._id))
+        .collect()
+    ).filter((r) => r.status === "open" && r.clinicId === clinic._id);
+    if (open.length >= MAX_OPEN_CLINIC_REQUESTS) {
+      throw new ConvexError(`${clinic.name} hasn't answered your last requests yet. They'll be in touch soon.`);
+    }
+    const clean = (value: string | undefined, max: number) => value?.trim().slice(0, max) || undefined;
+    const now = Date.now();
+    const requestId = await ctx.db.insert("clinicBookingRequests", {
+      clinicId: clinic._id,
+      patientId: user._id,
+      kind: args.kind,
+      message: clean(args.message, 1000),
+      preferredTimes: clean(args.preferredTimes, 300),
+      service: clean(args.service, 120),
+      status: "open",
+      createdAt: now,
+    });
+    const patientName = [user.firstName, user.lastName].filter(Boolean).join(" ") || "A patient";
+    await insertNotification(ctx, {
+      userId: clinic.ownerId,
+      type: "clinic_booking_request",
+      priority: "high",
+      status: "pending",
+      createdAt: now,
+      payload: {
+        title: "New request from a patient",
+        body: `${patientName} asked for ${REQUEST_LABELS[args.kind]}.`,
+        data: { entityId: String(requestId), entityType: "clinic_booking_request" },
+        link: "/dashboard/clinic/appointments?requests=1",
+      },
+    });
+    return { requestId, clinicName: clinic.name };
+  },
+});
+
+/** The patient's own requests to their clinic, newest first (to show what's waiting). */
+export const getMyClinicRequests = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await signedInPatient(ctx);
+    if (!user) return [];
+    const rows = await ctx.db
+      .query("clinicBookingRequests")
+      .withIndex("by_patient", (q) => q.eq("patientId", user._id))
+      .order("desc")
+      .take(10);
+    return rows.map((r) => ({
+      _id: r._id,
+      kind: r.kind,
+      status: r.status,
+      createdAt: r.createdAt,
+      response: r.response ?? null,
+    }));
   },
 });

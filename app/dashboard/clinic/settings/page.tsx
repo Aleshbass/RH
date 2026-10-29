@@ -30,6 +30,7 @@ import { HowPayoutsWork } from '@/components/clinic/FeeBreakdown'
 import { PageShell, Panel, StatusBadge, primaryButtonClass } from '@/components/clinic/ui'
 import { RehabifyId } from '@/components/shared/RehabifyId'
 import { NotificationSettings } from '@/components/pwa/NotificationSettings'
+import { playSound } from '@/lib/sounds'
 
 const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'] as const
 type Day = (typeof DAYS)[number]
@@ -190,6 +191,7 @@ export default function ClinicSettingsPage() {
       })
       setForm((prev) => (prev ? { ...prev, services, facilities } : prev))
       setDrafts({ services: '', facilities: '' })
+      playSound('success')
       toast.success('Saved')
     } catch (err) {
       toast.error(errorText(err, 'Could not save your changes'))
@@ -215,7 +217,7 @@ export default function ClinicSettingsPage() {
         title="Verification"
         actions={<StatusBadge tone={approval.tone}>{approval.label}</StatusBadge>}
       >
-        <p className="px-4 py-3 text-sm text-neutral-600 dark:text-neutral-400 sm:px-5">
+        <p className="px-5 py-3 text-sm text-pt-muted sm:px-6">
           {setup.approvalStatus === 'approved'
             ? 'Your clinic is verified. Booking, billing and referrals are switched on.'
             : setup.approvalStatus === 'pending_review'
@@ -295,18 +297,18 @@ export default function ClinicSettingsPage() {
       </Panel>
 
       <Panel title="Opening hours" actions={saveButton('hours')}>
-        <ul id="hours" className="scroll-mt-20 divide-y divide-neutral-200 dark:divide-neutral-800">
+        <ul id="hours" className="scroll-mt-20 divide-y divide-pt-line">
           {DAYS.map((day) => {
             const hours = form.workingHours[day]
             return (
-              <li key={day} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 sm:px-5">
+              <li key={day} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-3 sm:px-6">
                 <div className="flex w-32 items-center gap-3">
                   <Switch
                     checked={hours.active}
                     onCheckedChange={(checked) => updateDay(day, { active: checked })}
                     aria-label={`Open on ${day}`}
                   />
-                  <span className="text-sm capitalize text-neutral-900 dark:text-white">{day}</span>
+                  <span className="text-sm capitalize text-pt-ink">{day}</span>
                 </div>
                 {hours.active ? (
                   <div className="flex items-center gap-2">
@@ -317,7 +319,7 @@ export default function ClinicSettingsPage() {
                       onChange={(e) => updateDay(day, { open: e.target.value })}
                       aria-label={`${day} opening time`}
                     />
-                    <span className="text-sm text-neutral-400">to</span>
+                    <span className="text-sm text-pt-faint">to</span>
                     <Input
                       type="time"
                       className="h-9 w-[7.5rem]"
@@ -327,7 +329,7 @@ export default function ClinicSettingsPage() {
                     />
                   </div>
                 ) : (
-                  <span className="text-sm text-neutral-400 dark:text-neutral-500">Closed</span>
+                  <span className="text-sm text-pt-faint">Closed</span>
                 )}
               </li>
             )
@@ -342,7 +344,7 @@ export default function ClinicSettingsPage() {
       >
         <div id="prices" className="scroll-mt-20 space-y-3 p-4 sm:p-5">
           {form.priceList.length === 0 && (
-            <p className="text-sm text-neutral-500 dark:text-neutral-400">
+            <p className="text-sm text-pt-muted">
               No services yet. Add what you charge for, e.g. &quot;Initial assessment&quot;.
             </p>
           )}
@@ -374,7 +376,7 @@ export default function ClinicSettingsPage() {
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-9 w-9 self-end p-0 text-neutral-400 hover:text-red-600 dark:hover:text-red-400"
+                className="h-9 w-9 self-end p-0 text-pt-faint hover:text-pt-rose-fg"
                 aria-label={`Remove ${item.name || 'service'}`}
                 onClick={() => update('priceList', form.priceList.filter((_, i) => i !== index))}
               >
@@ -420,7 +422,7 @@ function Field({
     <div className={className}>
       {label && <Label className="mb-1.5 block text-sm">{label}</Label>}
       {children}
-      {hint && <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">{hint}</p>}
+      {hint && <p className="mt-1 text-xs text-pt-muted">{hint}</p>}
     </div>
   )
 }
@@ -482,14 +484,14 @@ function TagListInput({
           {values.map((value) => (
             <li
               key={value}
-              className="inline-flex max-w-full items-center gap-1 rounded-md border border-neutral-200 bg-neutral-50 py-0.5 pl-2 pr-0.5 text-sm text-neutral-700 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-200"
+              className="inline-flex max-w-full items-center gap-1 rounded-md border border-pt-line bg-pt-sunken py-0.5 pl-2 pr-0.5 text-sm text-pt-ink"
             >
               <span className="min-w-0 truncate">{value}</span>
               <button
                 type="button"
                 aria-label={`Remove ${value}`}
                 onClick={() => onChange(values.filter((item) => item !== value))}
-                className="shrink-0 rounded p-0.5 text-neutral-400 hover:bg-neutral-200 hover:text-neutral-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-rh-lime dark:text-neutral-500 dark:hover:bg-neutral-700 dark:hover:text-white dark:focus-visible:ring-rh-lime"
+                className="shrink-0 rounded p-0.5 text-pt-faint hover:bg-pt-hover hover:text-pt-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-rh-lime dark:focus-visible:ring-rh-lime"
               >
                 <X className="h-3.5 w-3.5" />
               </button>
@@ -497,9 +499,9 @@ function TagListInput({
           ))}
         </ul>
       ) : (
-        <p className="mt-2 text-xs text-neutral-500 dark:text-neutral-400">{emptyText}</p>
+        <p className="mt-2 text-xs text-pt-muted">{emptyText}</p>
       )}
-      {full && <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">You can add up to {MAX_TAGS}.</p>}
+      {full && <p className="mt-1 text-xs text-pt-muted">You can add up to {MAX_TAGS}.</p>}
     </div>
   )
 }
@@ -538,6 +540,7 @@ function LogoSection({ logoUrl }: { logoUrl: string | null }) {
       if (!response.ok) throw new Error('Upload failed')
       const { storageId } = (await response.json()) as { storageId: Id<'_storage'> }
       await updateLogo({ storageId })
+      playSound('success')
       toast.success('Logo updated')
     } catch (err) {
       toast.error(errorText(err, 'Could not upload the logo. Please try again.'))
@@ -551,6 +554,7 @@ function LogoSection({ logoUrl }: { logoUrl: string | null }) {
       setBusy('remove')
       try {
         await updateLogo({ storageId: null })
+        playSound('reject')
         toast.success('Logo removed')
       } catch (err) {
         toast.error(errorText(err, 'Could not remove the logo'))
@@ -568,10 +572,10 @@ function LogoSection({ logoUrl }: { logoUrl: string | null }) {
             src={logoUrl}
             alt="Clinic logo"
             onError={() => setFailedUrl(logoUrl)}
-            className="h-16 w-16 shrink-0 rounded-lg border border-neutral-200 bg-white object-cover dark:border-neutral-800"
+            className="h-16 w-16 shrink-0 rounded-lg border border-pt-line bg-pt-surface object-cover"
           />
         ) : (
-          <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-lg border border-dashed border-neutral-300 bg-neutral-50 text-neutral-400 dark:border-neutral-700 dark:bg-neutral-800/50 dark:text-neutral-500">
+          <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-lg border border-dashed border-pt-line-strong bg-pt-sunken text-pt-faint">
             <Building2 className="h-6 w-6" />
           </div>
         )}
@@ -589,7 +593,7 @@ function LogoSection({ logoUrl }: { logoUrl: string | null }) {
               <Button
                 size="sm"
                 variant="ghost"
-                className="text-neutral-600 hover:text-red-600 dark:text-neutral-300 dark:hover:text-red-400"
+                className="text-pt-muted hover:text-pt-rose-fg"
                 onClick={remove}
                 disabled={busy !== null}
               >
@@ -598,7 +602,7 @@ function LogoSection({ logoUrl }: { logoUrl: string | null }) {
               </Button>
             )}
           </div>
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">
+          <p className="text-xs text-pt-muted">
             PNG, JPG or WebP, up to 2 MB. A square image works best.
           </p>
         </div>
@@ -690,6 +694,7 @@ function PayoutSection() {
     setBusy('connect')
     try {
       await connectAccount({ bankCode, bankName: bank.name, bankSlug: bank.slug ?? undefined, accountNumber })
+      playSound('approve')
       toast.success('Bank account connected')
       resetForm()
     } catch (err) {
@@ -703,6 +708,7 @@ function PayoutSection() {
     setBusy('remove')
     try {
       await removeAccount({})
+      playSound('reject')
       toast.success('Bank account removed')
       setConfirmRemove(false)
       resetForm()
@@ -733,8 +739,8 @@ function PayoutSection() {
             <div className="flex min-w-0 flex-1 items-center gap-3">
               <BankLogo name={account.bankName} slug={account.bankSlug} />
               <div className="min-w-0">
-                <p className="truncate text-sm font-medium text-neutral-900 dark:text-white">{account.accountName}</p>
-                <p className="truncate text-sm tabular-nums text-neutral-500 dark:text-neutral-400">
+                <p className="truncate text-sm font-medium text-pt-ink">{account.accountName}</p>
+                <p className="truncate text-sm tabular-nums text-pt-muted">
                   {account.bankName} ••{account.accountNumberLast4}
                 </p>
               </div>
@@ -751,18 +757,18 @@ function PayoutSection() {
                 <Button
                   size="sm"
                   variant="ghost"
-                  className="text-neutral-600 hover:text-red-600 dark:text-neutral-300 dark:hover:text-red-400"
+                  className="text-pt-muted hover:text-pt-rose-fg"
                   onClick={() => requireFullAccess('Remove bank account', () => setConfirmRemove(true))}
                 >
                   Remove account
                 </Button>
               </div>
             ) : (
-              <p className="text-xs text-neutral-500 dark:text-neutral-400">Only the clinic owner can change this.</p>
+              <p className="text-xs text-pt-muted">Only the clinic owner can change this.</p>
             )}
           </div>
         ) : !isOwner ? (
-          <p className="text-sm text-neutral-500 dark:text-neutral-400">
+          <p className="text-sm text-pt-muted">
             No bank account is connected. Only the clinic owner can connect one.
           </p>
         ) : (
@@ -785,7 +791,7 @@ function PayoutSection() {
                   </SelectContent>
                 </Select>
                 {bankError && (
-                  <p className="mt-1 text-xs text-red-600 dark:text-red-400">
+                  <p className="mt-1 text-xs text-pt-rose-fg">
                     {bankError}.{' '}
                     <button
                       type="button"
@@ -813,9 +819,9 @@ function PayoutSection() {
             </div>
 
             {resolvedName ? (
-              <div className="flex flex-col gap-3 rounded-lg border border-neutral-200 p-3 dark:border-neutral-800 sm:flex-row sm:items-center">
-                <p className="min-w-0 flex-1 text-sm text-neutral-700 dark:text-neutral-300">
-                  Account name: <span className="font-medium text-neutral-900 dark:text-white">{resolvedName}</span>
+              <div className="flex flex-col gap-3 rounded-lg border border-pt-line p-3 sm:flex-row sm:items-center">
+                <p className="min-w-0 flex-1 text-sm text-pt-ink">
+                  Account name: <span className="font-medium text-pt-ink">{resolvedName}</span>
                 </p>
                 <Button size="sm" className={primaryButtonClass} onClick={connect} disabled={busy !== null}>
                   {busy === 'connect' && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
@@ -859,7 +865,7 @@ function PayoutSection() {
             <AlertDialogCancel disabled={busy === 'remove'}>Keep account</AlertDialogCancel>
             <AlertDialogAction
               disabled={busy === 'remove'}
-              className="bg-red-600 text-white hover:bg-red-700"
+              className="bg-pt-rose-bg text-pt-rose-fg hover:brightness-95"
               onClick={(e) => {
                 e.preventDefault()
                 void remove()

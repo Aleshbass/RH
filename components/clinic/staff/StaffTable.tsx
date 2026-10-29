@@ -28,12 +28,13 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/clinic/drawerDialog'
 import { AvailabilityScheduler, type OperatingHours } from '@/components/onboarding/common/AvailabilityScheduler'
 import { EmptyState, StatusBadge, primaryButtonClass } from '@/components/clinic/ui'
 import { useClinicAccess } from '@/components/clinic/ClinicAccessContext'
 import { MemberRoleSelect } from './MemberRoleSelect'
 import { teamError, type ClinicRole } from './team-shared'
+import { playSound } from '@/lib/sounds'
 
 /** Shape returned by api.clinicTools.getClinicCliniciansWithCaseload */
 export interface TeamMember {
@@ -100,6 +101,9 @@ export default function StaffTable({ staff, roles, onInvite }: StaffTableProps) 
     const [messageFor, setMessageFor] = useState<TeamMember | null>(null)
     const [statusChangeFor, setStatusChangeFor] = useState<TeamMember | null>(null)
     const [removeFor, setRemoveFor] = useState<TeamMember | null>(null)
+    // Who carries on with their patients ("" = decide later: they wait with the owner)
+    const [takeoverId, setTakeoverId] = useState<string>('')
+    const takeoverOptions = staff.filter((m) => removeFor && m.userId !== removeFor.userId && m.status === 'active')
     const [busy, setBusy] = useState(false)
 
     const updateStaffStatus = useMutation(api.clinics.updateStaffStatus)
@@ -128,6 +132,7 @@ export default function StaffTable({ staff, roles, onInvite }: StaffTableProps) 
                 clinicianId: availabilityFor.userId,
                 availabilitySchedule: draftSchedule,
             })
+            playSound('success')
             toast.success(`Working hours saved for ${fullName(availabilityFor)}`)
             closeAvailability()
         } catch (error) {
@@ -153,6 +158,7 @@ export default function StaffTable({ staff, roles, onInvite }: StaffTableProps) 
                 staffId: statusChangeFor.userId,
                 newStatus: suspending ? 'suspended' : 'active',
             })
+            playSound(suspending ? 'reject' : 'approve')
             toast.success(suspending ? `${fullName(statusChangeFor)} suspended` : `${fullName(statusChangeFor)} reactivated`)
             setStatusChangeFor(null)
         } catch (error) {
@@ -166,14 +172,23 @@ export default function StaffTable({ staff, roles, onInvite }: StaffTableProps) 
         if (!removeFor) return
         setBusy(true)
         try {
-            const result = await removeClinician({ clinicianId: removeFor.userId })
+            const takeover = takeoverOptions.find((m) => m.userId === takeoverId) ?? null
+            const result = await removeClinician({
+                clinicianId: removeFor.userId,
+                ...(takeover ? { reassignToId: takeover.userId } : {}),
+            })
             const moved = result?.patientsMoved ?? 0
+            const patients = `${moved} patient${moved === 1 ? '' : 's'}`
+            playSound('reject')
             toast.success(
-                moved > 0
-                    ? `${fullName(removeFor)} removed. ${moved} patient${moved === 1 ? '' : 's'} moved to you.`
-                    : `${fullName(removeFor)} removed from your clinic`
+                moved === 0
+                    ? `${fullName(removeFor)} removed from your clinic`
+                    : takeover
+                      ? `${fullName(removeFor)} removed. ${fullName(takeover)} now looks after ${patients}, with their notes and plans.`
+                      : `${fullName(removeFor)} removed. ${patients} need${moved === 1 ? 's' : ''} a clinician: assign them under Patients.`
             )
             setRemoveFor(null)
+            setTakeoverId('')
         } catch (error) {
             toast.error(teamError(error, 'Could not remove clinician'))
         } finally {
@@ -201,9 +216,9 @@ export default function StaffTable({ staff, roles, onInvite }: StaffTableProps) 
     return (
         <div>
             {staff.length > 5 && (
-                <div className="border-b border-neutral-200 px-4 py-3 dark:border-neutral-800 sm:px-5">
+                <div className="border-b border-pt-line px-5 py-3 sm:px-6">
                     <div className="relative w-full sm:max-w-xs">
-                        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+                        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-pt-faint" />
                         <Input
                             placeholder="Search by name or email"
                             value={searchTerm}
@@ -217,7 +232,7 @@ export default function StaffTable({ staff, roles, onInvite }: StaffTableProps) 
             {filteredStaff.length === 0 ? (
                 <EmptyState title="No matches" description="Try a different name or email." />
             ) : (
-                <ul className="divide-y divide-neutral-200 dark:divide-neutral-800">
+                <ul className="divide-y divide-pt-line">
                     {filteredStaff.map((member) => {
                         const name = fullName(member) || 'Clinician'
                         const isSuspended = member.status === 'suspended'
@@ -228,25 +243,25 @@ export default function StaffTable({ staff, roles, onInvite }: StaffTableProps) 
                         return (
                             <li
                                 key={member.profileId}
-                                className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:gap-4 sm:px-5"
+                                className="flex flex-col gap-3 px-5 py-3 sm:flex-row sm:items-center sm:gap-4 sm:px-6"
                             >
                                 <div className="flex min-w-0 flex-1 items-center gap-3">
                                     <Avatar className="h-9 w-9 shrink-0">
                                         <AvatarImage src={member.imageUrl} alt="" />
-                                        <AvatarFallback className="bg-neutral-100 text-xs font-medium text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300">
+                                        <AvatarFallback className="bg-pt-sunken text-xs font-medium text-pt-ink">
                                             {(member.firstName?.[0] || member.email?.[0] || 'C').toUpperCase()}
                                         </AvatarFallback>
                                     </Avatar>
                                     <div className="min-w-0 flex-1">
                                         <div className="flex flex-wrap items-center gap-2">
-                                            <p className="truncate text-sm font-medium text-neutral-900 dark:text-white">{name}</p>
+                                            <p className="truncate text-sm font-medium text-pt-ink">{name}</p>
                                             {statusBadge(member.status)}
                                         </div>
-                                        <p className="break-all text-xs text-neutral-500 dark:text-neutral-400 sm:truncate sm:break-normal">
+                                        <p className="break-all text-xs text-pt-muted sm:truncate sm:break-normal">
                                             {member.email || 'No email'}
                                         </p>
                                         {hasLicense(member) && (
-                                            <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                                            <p className="text-xs text-pt-muted">
                                                 License {member.licenseNumber}
                                             </p>
                                         )}
@@ -255,7 +270,7 @@ export default function StaffTable({ staff, roles, onInvite }: StaffTableProps) 
 
                                 <div className="flex min-w-0 flex-col gap-3 pl-12 sm:flex-row sm:items-center sm:gap-4 sm:pl-0">
                                     {isOwnerRow ? (
-                                        <p className="text-xs text-neutral-600 dark:text-neutral-400 sm:w-44">
+                                        <p className="text-xs text-pt-muted sm:w-44">
                                             Owner, full access
                                         </p>
                                     ) : (
@@ -268,15 +283,15 @@ export default function StaffTable({ staff, roles, onInvite }: StaffTableProps) 
                                     )}
 
                                     <div className="flex items-center justify-between gap-4 sm:justify-end">
-                                        <div className="flex gap-5 text-xs text-neutral-500 dark:text-neutral-400">
+                                        <div className="flex gap-5 text-xs text-pt-muted">
                                             <div>
-                                                <p className="text-sm font-medium tabular-nums text-neutral-900 dark:text-white">
+                                                <p className="text-sm font-medium tabular-nums text-pt-ink">
                                                     {member.activeCaseload}
                                                 </p>
                                                 <p>Active patients</p>
                                             </div>
                                             <div>
-                                                <p className="text-sm font-medium tabular-nums text-neutral-900 dark:text-white">
+                                                <p className="text-sm font-medium tabular-nums text-pt-ink">
                                                     {member.monthlyAppointmentsCount}
                                                 </p>
                                                 <p>Visits this month</p>
@@ -286,25 +301,25 @@ export default function StaffTable({ staff, roles, onInvite }: StaffTableProps) 
                                         <DropdownMenu>
                                             <DropdownMenuTrigger asChild>
                                                 <Button variant="ghost" size="sm" className="h-8 w-8 shrink-0 p-0">
-                                                    <MoreHorizontal className="h-4 w-4 text-neutral-500" />
+                                                    <MoreHorizontal className="h-4 w-4 text-pt-muted" />
                                                     <span className="sr-only">Actions for {name}</span>
                                                 </Button>
                                             </DropdownMenuTrigger>
                                             <DropdownMenuContent align="end" className="w-52">
                                                 <DropdownMenuItem onClick={() => setAvailabilityFor(member)}>
-                                                    <Calendar className="mr-2 h-4 w-4 text-neutral-500" />
+                                                    <Calendar className="mr-2 h-4 w-4 text-pt-muted" />
                                                     Working hours
                                                 </DropdownMenuItem>
                                                 <DropdownMenuItem
                                                     onClick={() => setPatientsFor(member)}
                                                 >
-                                                    <Users className="mr-2 h-4 w-4 text-neutral-500" />
+                                                    <Users className="mr-2 h-4 w-4 text-pt-muted" />
                                                     View patients
                                                 </DropdownMenuItem>
                                                 <DropdownMenuItem
                                                     onClick={() => requireFullAccess('Message clinician', () => setMessageFor(member))}
                                                 >
-                                                    <MessageSquare className="mr-2 h-4 w-4 text-neutral-500" />
+                                                    <MessageSquare className="mr-2 h-4 w-4 text-pt-muted" />
                                                     Message
                                                 </DropdownMenuItem>
                                                 {canManageMember && (
@@ -322,7 +337,7 @@ export default function StaffTable({ staff, roles, onInvite }: StaffTableProps) 
                                                             {isSuspended ? 'Reactivate' : 'Suspend'}
                                                         </DropdownMenuItem>
                                                         <DropdownMenuItem
-                                                            className="text-red-600 focus:text-red-600 dark:text-red-400 dark:focus:text-red-400"
+                                                            className="text-pt-rose-fg focus:text-pt-rose-fg"
                                                             onClick={() => requireFullAccess('Remove clinician', () => setRemoveFor(member), { allowBillingReadOnly: true })}
                                                         >
                                                             Remove from clinic
@@ -424,15 +439,36 @@ export default function StaffTable({ staff, roles, onInvite }: StaffTableProps) 
                         <AlertDialogTitle>Remove {fullName(removeFor)} from your clinic?</AlertDialogTitle>
                         <AlertDialogDescription>
                             {removeFor && removeFor.activeCaseload > 0
-                                ? `Their ${removeFor.activeCaseload} active patient${removeFor.activeCaseload === 1 ? '' : 's'} will be moved to you. You can reassign them to another clinician afterwards.`
+                                ? `Their ${removeFor.activeCaseload} active patient${removeFor.activeCaseload === 1 ? '' : 's'} stay with your clinic. Whoever takes over sees the same care plan, notes and programmes, and carries on from there.`
                                 : 'They have no active patients. Their account stays, but they will no longer be part of your clinic.'}
                         </AlertDialogDescription>
                     </AlertDialogHeader>
+                    {removeFor && removeFor.activeCaseload > 0 && (
+                        <div className="space-y-1.5">
+                            <label htmlFor="takeover" className="text-sm font-medium text-pt-ink">
+                                Who takes over their patients?
+                            </label>
+                            <select
+                                id="takeover"
+                                value={takeoverId}
+                                onChange={(e) => setTakeoverId(e.target.value)}
+                                disabled={busy}
+                                className="h-10 w-full rounded-lg border border-pt-line bg-pt-surface px-3 text-sm text-pt-ink"
+                            >
+                                <option value="">Decide later (they show as needing a clinician)</option>
+                                {takeoverOptions.map((m) => (
+                                    <option key={m.userId} value={m.userId}>
+                                        {fullName(m)}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                    )}
                     <AlertDialogFooter>
                         <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
                         <AlertDialogAction
                             disabled={busy}
-                            className="bg-red-600 text-white hover:bg-red-700"
+                            className="bg-pt-rose-bg text-pt-rose-fg hover:brightness-95"
                             onClick={(e) => {
                                 e.preventDefault()
                                 void handleRemove()

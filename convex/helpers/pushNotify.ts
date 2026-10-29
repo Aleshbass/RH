@@ -108,18 +108,20 @@ const MESSAGES_PATH: Partial<Record<NonNullable<Doc<"users">["role"]>, string>> 
 
 /**
  * Push for a new chat message. Only the sender's name is shown, never the message itself:
- * notifications can appear on a locked screen.
+ * notifications can appear on a locked screen. `senderLabel` is how they appear
+ * (helpers/displayIdentity.ts: the clinic for its owner, "Mary — Clinic" for a clinician).
  */
 export async function pushNewMessage(
   ctx: Pick<MutationCtx, "db" | "scheduler">,
   args: {
     sender: Pick<Doc<"users">, "firstName" | "lastName">;
+    senderLabel?: string;
     receiver: Pick<Doc<"users">, "_id" | "role">;
     conversationId: Id<"conversations">;
     contentType: "text" | "image" | "file" | "audio";
   }
 ): Promise<void> {
-  const name = [args.sender.firstName, args.sender.lastName].filter(Boolean).join(" ") || "Someone";
+  const name = args.senderLabel || [args.sender.firstName, args.sender.lastName].filter(Boolean).join(" ") || "Your care team";
   const what =
     args.contentType === "image" ? "a photo" : args.contentType === "file" ? "a file" : args.contentType === "audio" ? "a voice note" : "a message";
   await queuePush(

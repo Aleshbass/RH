@@ -8,6 +8,7 @@ import { isRehabifyCare, mustPayToConfirm, needsInvoiceOnAccept, releaseCancelle
 import { lagosDate, lagosDateTime, lagosShortDate, lagosTime, lagosTimeRange, startOfZonedDay, zonedDateTimeToUtc } from "./helpers/lagosTime";
 import { awaitingConfirmationFrom, isOpenAppointment } from "./helpers/appointmentStatus";
 import { isGoogleBusy } from "./helpers/slotHolds";
+import { requireClinicCareAccess } from "./helpers/careAccess";
 import {
   CLEAR_PROPOSAL,
   emailAboutAppointment,
@@ -143,6 +144,8 @@ export const createAppointment = mutation({
     if (!relationship) {
       throw new Error("Access denied. Patient not assigned to you.");
     }
+    // A clinic's patient: the clinic's rules apply (team, suspension, read-only, role)
+    if (relationship.clinicId) await requireClinicCareAccess(ctx, user, relationship.clinicId, { area: "appointments" });
 
     // Rehabify patients pay for each session: their follow-ups go through scheduleRehabifyFollowUp
     if (await isRehabifyCare(ctx, args.patientId, user._id)) {
@@ -189,7 +192,8 @@ export const createAppointment = mutation({
     const appointmentId = await ctx.db.insert("appointments", {
       patientId: args.patientId,
       physiotherapistId: user._id,
-      clinicId: (physiotherapistProfile as any)?.clinicId || undefined,
+      // The visit belongs to the care relationship's clinic, never the physio's other work
+      clinicId: relationship.clinicId,
       startTime: args.startTime,
       endTime: args.endTime,
       serviceType: args.serviceType,
@@ -698,8 +702,9 @@ export const updateAppointmentStatus = mutation({
 
       // Only money Rehabify holds is paid out: marketplace bookings, Paystack payments that weren't
       // split straight to the provider, and MediLoan. Cash or transfers the provider took directly
-      // (no payoutRoute) are already theirs.
-      if (invoice && invoice.payoutRoute === "held_by_platform") {
+      // (no payoutRoute) are already theirs. A clinic's invoice is the clinic's money, never the
+      // individual clinician's: what Rehabify held for it is transferred to the clinic (admin Finance).
+      if (invoice && invoice.payoutRoute === "held_by_platform" && !invoice.clinicId) {
         // Check if payout already exists for this invoice to prevent duplicates
         const existingPayout = await ctx.db
           .query("payouts")

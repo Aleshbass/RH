@@ -48,7 +48,7 @@ export function FeeBreakdown({
   ]
 
   return (
-    <dl className={cn('space-y-0.5 text-xs tabular-nums text-neutral-500 dark:text-neutral-400', className)}>
+    <dl className={cn('space-y-0.5 text-xs tabular-nums text-pt-muted', className)}>
       {rows
         .filter((row) => row.show)
         .map((row) => (
@@ -57,7 +57,7 @@ export function FeeBreakdown({
             <dd className="shrink-0">{row.value}</dd>
           </div>
         ))}
-      <div className="flex items-baseline justify-between gap-3 border-t border-neutral-200 pt-1 font-medium text-neutral-900 dark:border-neutral-800 dark:text-white">
+      <div className="flex items-baseline justify-between gap-3 border-t border-pt-line pt-1 font-medium text-pt-ink">
         <dt className="min-w-0">You receive</dt>
         <dd className="shrink-0">{naira(split.clinicKobo)}</dd>
       </div>
@@ -85,15 +85,15 @@ export function HowPayoutsWork({
   return (
     <details
       className={cn(
-        'group rounded-xl border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900',
+        'group rounded-2xl border border-pt-line bg-pt-surface',
         className
       )}
     >
-      <summary className="flex cursor-pointer list-none items-center gap-2 rounded-xl px-4 py-3 text-sm font-medium text-neutral-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-rh-lime dark:text-white dark:focus-visible:ring-rh-lime sm:px-5 [&::-webkit-details-marker]:hidden">
-        <ChevronRight className="h-4 w-4 shrink-0 text-neutral-400 transition-transform group-open:rotate-90" />
+      <summary className="flex cursor-pointer list-none items-center gap-2 rounded-xl px-5 py-3 text-sm font-medium text-pt-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-rh-lime dark:focus-visible:ring-rh-lime sm:px-6 [&::-webkit-details-marker]:hidden">
+        <ChevronRight className="h-4 w-4 shrink-0 text-pt-faint transition-transform group-open:rotate-90" />
         How payouts work
       </summary>
-      <div className="space-y-3 border-t border-neutral-200 px-4 py-3 text-sm text-neutral-600 dark:border-neutral-800 dark:text-neutral-400 sm:px-5">
+      <div className="space-y-3 border-t border-pt-line px-5 py-3 text-sm text-pt-muted sm:px-6">
         <p>
           When your patient pays online with a Paystack link, Paystack&apos;s fee comes off first and the rest is yours:
           Rehabify takes nothing from what your patients pay. Stamp duty is taken when it&apos;s paid into your bank.
@@ -107,7 +107,7 @@ export function HowPayoutsWork({
         <p>Cash, POS and bank transfer payments you mark as paid have no fees. You keep all of it.</p>
 
         <div className="max-w-xs">
-          <p className="mb-1 text-xs font-medium text-neutral-900 dark:text-white">
+          <p className="mb-1 text-xs font-medium text-pt-ink">
             Example: a {formatNaira(exampleNaira)} online payment
           </p>
           <FeeBreakdown amountNaira={exampleNaira} />

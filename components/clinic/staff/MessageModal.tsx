@@ -8,7 +8,7 @@ import {
     DialogContent,
     DialogHeader,
     DialogTitle,
-} from '@/components/ui/dialog'
+} from '@/components/clinic/drawerDialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -73,7 +73,7 @@ export default function MessageModal({ recipientId, recipientName, isOpen, onClo
     return (
         <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
             <DialogContent className="sm:max-w-[500px] h-[min(600px,85dvh)] flex flex-col p-0 gap-0">
-                <DialogHeader className="p-4 border-b border-neutral-200 dark:border-neutral-800">
+                <DialogHeader className="p-4 border-b border-pt-line">
                     <DialogTitle className="flex items-center gap-2">
                         <Avatar className="h-8 w-8">
                             <AvatarFallback>
@@ -87,7 +87,7 @@ export default function MessageModal({ recipientId, recipientName, isOpen, onClo
                 <ScrollArea className="flex-1 p-4" ref={scrollRef}>
                     <div className="space-y-4">
                         {messages?.length === 0 && (
-                            <div className="text-center text-neutral-500 py-8 text-sm">
+                            <div className="text-center text-pt-muted py-8 text-sm">
                                 No messages yet.
                             </div>
                         )}
@@ -101,11 +101,11 @@ export default function MessageModal({ recipientId, recipientName, isOpen, onClo
                                     <div
                                         className={`max-w-[80%] rounded-lg px-4 py-2 text-sm ${isMe
                                             ? 'bg-rh-lime text-rh-ink'
-                                            : 'bg-neutral-100 text-neutral-900 dark:bg-neutral-800 dark:text-neutral-100'
+                                            : 'bg-pt-sunken text-pt-ink'
                                             }`}
                                     >
                                         <p>{msg.content}</p>
-                                        <span className={`text-[10px] block mt-1 ${isMe ? 'text-white/70 dark:text-neutral-950/60' : 'text-neutral-500'
+                                        <span className={`text-[10px] block mt-1 ${isMe ? 'text-white/70 dark:text-neutral-950/60' : 'text-pt-muted'
                                             }`}>
                                             {format(new Date(msg.timestamp), 'HH:mm')}
                                         </span>
@@ -116,7 +116,7 @@ export default function MessageModal({ recipientId, recipientName, isOpen, onClo
                     </div>
                 </ScrollArea>
 
-                <form onSubmit={handleSend} className="p-4 border-t border-neutral-200 dark:border-neutral-800 flex gap-2">
+                <form onSubmit={handleSend} className="p-4 border-t border-pt-line flex gap-2">
                     <Input
                         value={newMessage}
                         onChange={(e) => setNewMessage(e.target.value)}

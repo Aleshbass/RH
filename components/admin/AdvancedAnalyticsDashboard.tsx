@@ -47,6 +47,59 @@ type RevenueResult = {
   bookingsCapped: boolean
   revenueByMonth: (MonthBase & { grossKobo: number; platformFeeKobo: number; paidInvoices: number })[]
   bookingsByMonth: (MonthBase & { created: number; paid: number; cancelled: number })[]
+  /** Paid online in the window, per revenue line (each kept apart) */
+  streams?: Record<'rehabify_care' | 'clinic_own' | 'clinic_referral' | 'independent' | 'clinic_subscription', number>
+  /** Payments recorded by hand (cash, POS, transfer): not money through Rehabify */
+  offlineKobo?: number
+  topClinics?: { clinicId: string; name: string; clinicNumber: string | null; kobo: number }[]
+}
+
+const STREAM_LABELS: { key: keyof NonNullable<RevenueResult['streams']>; label: string; hint: string }[] = [
+  { key: 'rehabify_care', label: 'Rehabify Care', hint: 'Patients who pay Rehabify' },
+  { key: 'clinic_subscription', label: 'Clinic subscriptions', hint: 'Clinics paying for their plan' },
+  { key: 'clinic_own', label: 'Clinics: own patients', hint: 'Paid straight to the clinics' },
+  { key: 'clinic_referral', label: 'Clinics: referrals', hint: 'Rehabify patients sent to clinics' },
+  { key: 'independent', label: 'Independent physios', hint: 'Their own patients, paid to them' },
+]
+
+/** Money by revenue line, so clinic, independent and Rehabify Care money are never mixed. */
+function RevenueStreams({ revenue }: { revenue: RevenueResult | undefined }) {
+  if (!revenue?.streams) return null
+  const streams = revenue.streams
+  return (
+    <Panel title="Money by revenue line" description={`Paid online over the last ${revenue.months} months`} bodyClassName="space-y-4 px-5 pb-5 pt-3">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        {STREAM_LABELS.map((s) => (
+          <div key={s.key} className="rounded-xl bg-rh-canvas p-3 dark:bg-white/[0.03]">
+            <p className="text-xs text-neutral-500 dark:text-neutral-400">{s.label}</p>
+            <p className="mt-1 text-lg font-semibold tabular-nums text-rh-ink dark:text-white">{nairaFromKobo(streams[s.key])}</p>
+            <p className="mt-0.5 text-[11px] leading-4 text-neutral-500 dark:text-neutral-400">{s.hint}</p>
+          </div>
+        ))}
+      </div>
+      {(revenue.offlineKobo ?? 0) > 0 && (
+        <p className="text-xs text-neutral-500 dark:text-neutral-400">
+          Plus {nairaFromKobo(revenue.offlineKobo ?? 0)} recorded as paid outside Rehabify (cash, POS or transfer), not counted above.
+        </p>
+      )}
+      {(revenue.topClinics?.length ?? 0) > 0 && (
+        <div>
+          <p className="pb-1.5 text-xs font-medium text-neutral-500 dark:text-neutral-400">By clinic</p>
+          <ul className="divide-y divide-black/[0.05] text-sm dark:divide-white/[0.06]">
+            {revenue.topClinics!.map((c) => (
+              <li key={c.clinicId} className="flex items-baseline justify-between gap-3 py-1.5">
+                <span className="min-w-0 truncate text-rh-ink dark:text-white">
+                  {c.name}
+                  {c.clinicNumber && <span className="ml-2 font-mono text-xs text-neutral-500">{c.clinicNumber}</span>}
+                </span>
+                <span className="shrink-0 tabular-nums text-rh-ink dark:text-white">{nairaFromKobo(c.kobo)}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </Panel>
+  )
 }
 
 /**
@@ -316,6 +369,8 @@ export function AdvancedAnalyticsDashboard() {
 
         <UsersByRole roles={roles} />
       </div>
+
+      <RevenueStreams revenue={revenue} />
 
       <Panel title="Monthly table" description="The numbers behind the charts" bodyClassName="pb-2">
         {!monthly ? (

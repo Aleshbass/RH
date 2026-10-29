@@ -1,7 +1,7 @@
 'use client'
 
-import { Suspense, useEffect, useMemo, useState } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useQuery } from 'convex/react'
 import { api } from '@/convex/_generated/api'
 import { Button } from '@/components/ui/button'
@@ -12,7 +12,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { ChevronRight, Inbox, Phone, Search, UserPlus, Users } from '@/components/icons'
 import { differenceInCalendarDays, format } from 'date-fns'
 import AddPatientModal from '@/components/clinic/patients/AddPatientModal'
-import PatientClinicalRecordDrawer from '@/components/clinic/patients/PatientClinicalRecordDrawer'
 import {
   ReferralInbox,
   ReferralProgressBadge,
@@ -24,19 +23,23 @@ import { EmptyState, PageShell, Panel, StatusBadge, primaryButtonClass } from '@
 import { RehabifyId } from '@/components/shared/RehabifyId'
 import { matchesRehabifyId } from '@/convex/helpers/rehabifyIdFormat'
 import { cn } from '@/lib/utils'
+import { CLINIC_ADD_PATIENT_EVENT, listenForShortcut } from '@/components/clinic/clinicEvents'
 
-type SourceFilter = 'all' | 'referred' | 'clinic'
+type SourceFilter = 'all' | 'needs-clinician' | 'invited' | 'referred' | 'clinic'
 
-const FILTERS: { value: SourceFilter; label: string }[] = [
+/** "Needs a clinician" and "Invite sent" only show while someone is in them */
+const FILTERS: { value: SourceFilter; label: string; onlyWhenUsed?: boolean }[] = [
   { value: 'all', label: 'All' },
+  { value: 'needs-clinician', label: 'Needs a clinician', onlyWhenUsed: true },
+  { value: 'invited', label: 'Invite sent', onlyWhenUsed: true },
   { value: 'referred', label: 'Referred by Rehabify' },
   { value: 'clinic', label: 'Clinic patients' },
 ]
 
-/** ?filter=referred (old links used "rehabify"), ?filter=clinic, otherwise all */
+/** ?filter=referred (old links used "rehabify"), ?filter=clinic, ?filter=needs-clinician, ?filter=invited, otherwise all */
 function parseFilter(value: string | null): SourceFilter {
   if (value === 'referred' || value === 'rehabify' || value === 'referrals') return 'referred'
-  if (value === 'clinic') return 'clinic'
+  if (value === 'clinic' || value === 'needs-clinician' || value === 'invited') return value
   return 'all'
 }
 
@@ -70,6 +73,8 @@ const STATUS_NOUN: Record<StatusFilter, { one: string; many: string }> = {
 
 const SOURCE_SUFFIX: Record<SourceFilter, string> = {
   all: '',
+  'needs-clinician': ' waiting for a clinician',
+  invited: ' who haven’t opened their invite',
   referred: ' referred by Rehabify',
   clinic: ' from your clinic',
 }
@@ -88,6 +93,10 @@ interface PatientRow {
   referralStatus: string | null
   lastVisit: number | null
   careStatus: CareStatus
+  /** In care but still with the owner, who doesn't treat */
+  needsClinician: boolean
+  /** Added by the clinic, hasn't opened their invite yet */
+  invitePending: boolean
 }
 
 function fullName(first?: string, last?: string) {
@@ -133,22 +142,21 @@ function ClinicPatients() {
   const [searchTerm, setSearchTerm] = useState('')
   const [filter, setFilterState] = useState<SourceFilter>(urlFilter)
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('active')
-  const [selectedPatientId, setSelectedPatientId] = useState<string | null>(urlPatient)
   const [isAddPatientOpen, setIsAddPatientOpen] = useState(false)
+  const router = useRouter()
+  // Each patient has their own page: the clinician's workspace, read-only, plus the clinic's tools
+  const openRecord = (patientId: string, tab?: string) =>
+    router.push(`/dashboard/clinic/patients/${encodeURIComponent(patientId)}${tab ? `?tab=${tab}` : ''}`)
 
-  // Links like ?filter=referred (old Referrals page) and ?patient=<id> (clinician home)
+  // Links like ?filter=referred (old Referrals page); older ?patient=<id> links open the record page
   useEffect(() => setFilterState(urlFilter), [urlFilter])
   useEffect(() => {
-    if (urlPatient) setSelectedPatientId(urlPatient)
-  }, [urlPatient])
+    if (urlPatient) router.replace(`/dashboard/clinic/patients/${encodeURIComponent(urlPatient)}`)
+  }, [urlPatient, router])
 
   const setFilter = (next: SourceFilter) => {
     setFilterState(next)
     replaceQuery({ filter: next === 'all' ? null : next })
-  }
-  const closeRecord = () => {
-    setSelectedPatientId(null)
-    if (urlPatient) replaceQuery({ patient: null })
   }
 
   // Patients needs the Patients page; the referral inbox needs Referrals (a role can have either)
@@ -171,6 +179,8 @@ function ClinicPatients() {
     }
     return map
   }, [referralsRaw])
+
+  const waitingReferrals = useMemo(() => (referralsRaw ?? []).filter(isWaitingReferral), [referralsRaw])
 
   const rows = useMemo<PatientRow[]>(() => {
     if (!clinicPatients) return []
@@ -195,11 +205,12 @@ function ClinicPatients() {
         lastVisit: lastSession && lastSession <= now ? lastSession : null,
         // Patients without a care status are in care
         careStatus: p.careStatus === 'paused' || p.careStatus === 'discharged' ? p.careStatus : 'active',
+        needsClinician: Boolean(p.needsClinician),
+        invitePending: Boolean(p.invitePending),
       }
     })
   }, [clinicPatients, referralByPatient])
 
-  const waitingReferrals = useMemo(() => (referralsRaw ?? []).filter(isWaitingReferral), [referralsRaw])
   // Earlier referrals with no matching row (e.g. the patient record is gone), so none drop out of sight
   const unmatchedReferrals = useMemo(() => {
     const earlier = (referralsRaw ?? []).filter((ref) => !isWaitingReferral(ref))
@@ -219,6 +230,8 @@ function ClinicPatients() {
     return statusRows.filter((p) => {
       if (filter === 'referred' && !p.isReferral) return false
       if (filter === 'clinic' && p.isReferral) return false
+      if (filter === 'needs-clinician' && !p.needsClinician) return false
+      if (filter === 'invited' && !p.invitePending) return false
       if (!term) return true
       return (
         fullName(p.firstName, p.lastName).toLowerCase().includes(term) ||
@@ -230,6 +243,16 @@ function ClinicPatients() {
   }, [statusRows, filter, searchTerm])
 
   const openAddPatient = () => requireFullAccess('Add patient', () => setIsAddPatientOpen(true))
+  // "Add patient" from Home or the setup checklist (?add=1) opens the form here
+  const openAddRef = useRef(openAddPatient)
+  openAddRef.current = openAddPatient
+  useEffect(() => listenForShortcut(CLINIC_ADD_PATIENT_EVENT, 'add', () => openAddRef.current()), [])
+
+  const filterCounts: Partial<Record<SourceFilter, number>> = {
+    'needs-clinician': rows.filter((p) => p.needsClinician).length,
+    invited: rows.filter((p) => p.invitePending && p.careStatus === 'active').length,
+    referred: waitingReferrals.length,
+  }
 
   const addButton = (
     <Button size="sm" onClick={openAddPatient} className={cn(primaryButtonClass, 'h-9')}>
@@ -271,28 +294,33 @@ function ClinicPatients() {
   }
 
   return (
-    <PageShell title="Patients" description={description} actions={addButton}>
+    <PageShell
+      title="Patients"
+      description={description}
+      actions={addButton}
+      info="Patients belong to the clinic. Each has a clinician who treats them; their notes, plans and programmes stay with them if that changes."
+    >
       {dueForCheckIn.length > 0 && (
         <Panel
           title="Due for a check-in"
           description="Check-in date reached, or nothing booked and not seen for a week."
           actions={
             followUpQueue && followUpQueue.length > 5 ? (
-              <span className="text-xs text-neutral-500 dark:text-neutral-400">
+              <span className="text-xs text-pt-muted">
                 Showing 5 of {followUpQueue.length}
               </span>
             ) : undefined
           }
         >
-          <ul className="divide-y divide-neutral-100 dark:divide-neutral-800">
+          <ul className="divide-y divide-pt-line">
             {dueForCheckIn.map((item: any) => (
               <li
                 key={item.patientId}
-                className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5"
+                className="flex flex-col gap-2 px-5 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6"
               >
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-neutral-900 dark:text-white">{item.patientName}</p>
-                  <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                  <p className="truncate text-sm font-medium text-pt-ink">{item.patientName}</p>
+                  <p className="text-xs text-pt-muted">
                     {[
                       typeof item.checkInDueAt === 'number' ? describeCheckInDue(item.checkInDueAt) : null,
                       describeLastVisit(item.daysSinceLastVisit),
@@ -315,7 +343,7 @@ function ClinicPatients() {
                     variant="outline"
                     size="sm"
                     className="h-8 text-xs"
-                    onClick={() => setSelectedPatientId(String(item.patientId))}
+                    onClick={() => openRecord(String(item.patientId), 'followups')}
                   >
                     Open record
                   </Button>
@@ -328,13 +356,13 @@ function ClinicPatients() {
 
       <div className="space-y-3">
         <div className="relative">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-pt-faint" />
           <Input
             type="search"
             placeholder="Search by name, phone, email or patient ID"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="h-10 border-neutral-200 bg-white pl-9 text-sm dark:border-neutral-800 dark:bg-neutral-900"
+            className="h-10 border-pt-line bg-pt-surface pl-9 text-sm"
             aria-label="Search patients"
           />
         </div>
@@ -342,6 +370,8 @@ function ClinicPatients() {
           <div className="flex flex-wrap gap-2" role="tablist" aria-label="Filter patients by source">
             {FILTERS.map((f) => {
               const active = filter === f.value
+              const count = filterCounts[f.value] ?? 0
+              if (f.onlyWhenUsed && count === 0 && !active) return null
               return (
                 <button
                   key={f.value}
@@ -350,19 +380,19 @@ function ClinicPatients() {
                   aria-selected={active}
                   onClick={() => setFilter(f.value)}
                   className={cn(
-                    'shrink-0 rounded-lg border px-3 py-1.5 text-sm transition-colors',
+                    'shrink-0 rounded-full border px-3.5 py-1.5 text-sm transition-colors',
                     active
-                      ? 'border-rh-lime bg-rh-lime/10 font-medium text-rh-ink dark:border-rh-lime dark:bg-white/[0.06] dark:text-rh-lime'
-                      : 'border-neutral-200 bg-white text-neutral-600 hover:border-neutral-300 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:border-neutral-700'
+                      ? 'border-pt-primary bg-pt-primary font-medium text-pt-on-primary'
+                      : 'border-pt-line bg-pt-surface text-pt-muted hover:border-pt-line-strong'
                   )}
                 >
                   {f.label}
-                  {f.value === 'referred' && waitingReferrals.length > 0 && (
+                  {count > 0 && f.value !== 'invited' && (
                     <span
-                      className="ml-1.5 inline-block min-w-5 rounded-full bg-rh-lime px-1.5 text-center text-[11px] font-medium leading-5 text-rh-ink dark:bg-rh-lime dark:text-neutral-950"
-                      aria-label={`${waitingReferrals.length} new`}
+                      className="ml-1.5 inline-block min-w-5 rounded-full bg-pt-accent px-1.5 text-center text-[11px] font-bold leading-5 text-[#06210a]"
+                      aria-label={`${count} waiting`}
                     >
-                      {waitingReferrals.length}
+                      {count}
                     </span>
                   )}
                 </button>
@@ -372,7 +402,7 @@ function ClinicPatients() {
           <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as StatusFilter)}>
             <SelectTrigger
               aria-label="Filter patients by care status"
-              className="h-9 w-full border-neutral-200 bg-white text-sm text-neutral-700 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-200 sm:ml-auto sm:w-40"
+              className="h-9 w-full border-pt-line bg-pt-surface text-sm text-pt-ink sm:ml-auto sm:w-40"
             >
               <SelectValue />
             </SelectTrigger>
@@ -395,26 +425,26 @@ function ClinicPatients() {
           <button
             type="button"
             onClick={() => setFilter('referred')}
-            className="flex w-full items-center gap-3 rounded-xl border border-amber-300 bg-white px-4 py-3 text-left text-sm text-neutral-700 transition-colors hover:bg-neutral-50 dark:border-amber-700/60 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800/50"
+            className="flex w-full items-center gap-3 rounded-2xl border border-pt-line-strong bg-pt-surface px-4 py-3 text-left text-sm text-pt-ink transition-colors hover:bg-pt-hover"
           >
-            <Inbox className="h-4 w-4 shrink-0 text-neutral-400" />
+            <Inbox className="h-4 w-4 shrink-0 text-pt-faint" />
             <span className="min-w-0 flex-1">
               {waitingReferrals.length} new referral{waitingReferrals.length === 1 ? '' : 's'} from Rehabify waiting for
               your response
             </span>
-            <ChevronRight className="h-4 w-4 shrink-0 text-neutral-400" aria-hidden />
+            <ChevronRight className="h-4 w-4 shrink-0 text-pt-faint" aria-hidden />
           </button>
         ) : null)}
 
       {filter === 'referred' && seesReferrals && (
-        <h2 className="text-sm font-semibold text-neutral-900 dark:text-white">Referred patients</h2>
+        <h2 className="text-sm font-semibold text-pt-ink">Referred patients</h2>
       )}
 
       <Panel>
         {clinicPatients === undefined ? (
-          <div className="divide-y divide-neutral-100 dark:divide-neutral-800">
+          <div className="divide-y divide-pt-line">
             {[0, 1, 2, 3, 4].map((i) => (
-              <div key={i} className="flex items-center gap-3 px-4 py-3 sm:px-5">
+              <div key={i} className="flex items-center gap-3 px-5 py-3 sm:px-6">
                 <Skeleton className="h-9 w-9 shrink-0 rounded-full" />
                 <div className="flex-1 space-y-2">
                   <Skeleton className="h-4 w-40 max-w-full" />
@@ -458,13 +488,13 @@ function ClinicPatients() {
             />
           )
         ) : (
-          <ul className="divide-y divide-neutral-100 dark:divide-neutral-800">
+          <ul className="divide-y divide-pt-line">
             {filtered.map((p) => {
               const name = fullName(p.firstName, p.lastName) || p.email || 'Patient'
               const initials = `${p.firstName[0] ?? ''}${p.lastName[0] ?? ''}`.toUpperCase() || 'P'
               const meta = [
                 p.phoneNumber,
-                p.clinician || 'No clinician',
+                p.needsClinician ? 'No clinician yet' : p.clinician || 'No clinician',
                 p.lastVisit ? `Last visit ${format(new Date(p.lastVisit), 'd MMM yyyy')}` : 'No visit yet',
               ]
                 .filter(Boolean)
@@ -473,29 +503,31 @@ function ClinicPatients() {
                 <li key={p._id}>
                   <button
                     type="button"
-                    onClick={() => setSelectedPatientId(p._id)}
-                    className="flex w-full min-w-0 items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-neutral-50 focus-visible:bg-neutral-50 focus-visible:outline-none dark:hover:bg-neutral-800/50 dark:focus-visible:bg-neutral-800/50 sm:px-5"
+                    onClick={() => openRecord(p._id)}
+                    className="flex w-full min-w-0 items-center gap-3 px-5 py-3 text-left transition-colors hover:bg-pt-hover focus-visible:bg-pt-sunken focus-visible:outline-none sm:px-6"
                   >
-                    <Avatar className="h-9 w-9 shrink-0 border border-neutral-200 dark:border-neutral-800">
+                    <Avatar className="h-9 w-9 shrink-0 border border-pt-line">
                       <AvatarImage src={p.imageUrl} alt="" />
-                      <AvatarFallback className="bg-neutral-100 text-xs font-medium text-neutral-700 dark:bg-neutral-800 dark:text-neutral-200">
+                      <AvatarFallback className="bg-pt-sunken text-xs font-medium text-pt-ink">
                         {initials}
                       </AvatarFallback>
                     </Avatar>
                     <div className="min-w-0 flex-1">
                       <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-                        <span className="min-w-0 truncate text-sm font-medium text-neutral-900 dark:text-white">
+                        <span className="min-w-0 truncate text-sm font-medium text-pt-ink">
                           {name}
                         </span>
                         <RehabifyId value={p.patientNumber} copyable={false} />
+                        {p.needsClinician && <StatusBadge tone="ink">Needs a clinician</StatusBadge>}
+                        {p.invitePending && p.careStatus === 'active' && <StatusBadge tone="blue">Invite sent</StatusBadge>}
                         {p.careStatus === 'paused' && <StatusBadge>Paused</StatusBadge>}
                         {p.careStatus === 'discharged' && <StatusBadge>Discharged</StatusBadge>}
                         {p.isReferral && <StatusBadge tone="teal">Referred by Rehabify</StatusBadge>}
                         {p.referralStatus && <ReferralProgressBadge status={p.referralStatus} />}
                       </div>
-                      <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">{meta}</p>
+                      <p className="truncate text-xs text-pt-muted">{meta}</p>
                     </div>
-                    <ChevronRight className="h-4 w-4 shrink-0 text-neutral-400" aria-hidden />
+                    <ChevronRight className="h-4 w-4 shrink-0 text-pt-faint" aria-hidden />
                   </button>
                 </li>
               )
@@ -505,12 +537,6 @@ function ClinicPatients() {
       </Panel>
 
       <AddPatientModal isOpen={isAddPatientOpen} onClose={() => setIsAddPatientOpen(false)} />
-
-      <PatientClinicalRecordDrawer
-        patientId={selectedPatientId}
-        isOpen={!!selectedPatientId}
-        onClose={closeRecord}
-      />
     </PageShell>
   )
 }

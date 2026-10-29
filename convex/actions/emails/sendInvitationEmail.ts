@@ -22,11 +22,16 @@ export const sendPatientInvitationEmail = internalAction({
     patientEmail: v.string(),
     patientName: v.optional(v.string()),
     physiotherapistName: v.string(),
+    /** Their clinic, when the physio works for one: the patient is joining that clinic */
+    clinicName: v.optional(v.string()),
     invitationCode: v.string(),
     invitationLink: v.string(),
     expiresAt: v.number(),
   },
   handler: async (ctx, args) => {
+    const inviter = args.clinicName?.trim()
+      ? `${args.physiotherapistName} at ${args.clinicName.trim()}`
+      : args.physiotherapistName;
     
     try {
       // Check for Resend API key
@@ -66,12 +71,12 @@ export const sendPatientInvitationEmail = internalAction({
       const link = escapeHtml(normalizedInvitationLink);
       const emailHtml = renderEmail({
         eyebrow: 'Invitation',
-        title: 'You are invited to Rehabify',
-        preheader: `${args.physiotherapistName} invited you to join Rehabify Health.`,
+        title: args.clinicName?.trim() ? `${escapeHtml(args.clinicName.trim())} invited you` : `${escapeHtml(args.physiotherapistName)} invited you`,
+        preheader: `${inviter} invited you to your patient portal on Rehabify Health.`,
         body: [
           greeting(escapeHtml(args.patientName || args.patientEmail.split('@')[0] || 'there')),
-          paragraph(`<strong>${escapeHtml(args.physiotherapistName)}</strong> has invited you to join Rehabify Health as their patient.`),
-          actions(button('Complete registration', link)),
+          paragraph(`<strong>${escapeHtml(inviter)}</strong> has invited you to your patient portal on Rehabify Health: your appointments, home exercises and messages with them in one place.`),
+          actions(button('Open your patient portal', link)),
           qrCode(escapeHtml(qrUrl), 'Or scan to begin'),
           linkFallback(link),
           paragraph(`This invitation expires on <strong>${emailDate(args.expiresAt)}</strong>. If you have any questions, please contact your physiotherapist directly.`, { muted: true, size: 15 }),
@@ -83,7 +88,7 @@ export const sendPatientInvitationEmail = internalAction({
       const { data, error } = await resend.emails.send({
         from: `${fromName} <${fromEmail}>`,
         to: [args.patientEmail],
-        subject: `You've been invited to join Rehabify Health`,
+        subject: `${inviter} invited you to your patient portal`,
         html: emailHtml,
       });
       

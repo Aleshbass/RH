@@ -14,9 +14,10 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { ArrowRight, Lock, Clock } from '@/components/icons'
+import { primaryButtonClass } from '@/components/clinic/ui'
 
 /** Pages a clinic role can be given (matches CLINIC_AREAS in convex/clinicTools.ts). Home is always available. */
-export const CLINIC_AREAS = ['appointments', 'patients', 'referrals', 'billing', 'team', 'reports', 'settings'] as const
+export const CLINIC_AREAS = ['appointments', 'patients', 'referrals', 'billing', 'team', 'reports', 'settings', 'inventory'] as const
 export type ClinicArea = (typeof CLINIC_AREAS)[number]
 
 export type ClinicStaffKind = 'owner' | 'clinician' | 'front_desk'
@@ -29,6 +30,7 @@ export const CLINIC_AREA_LABELS: Record<ClinicArea, string> = {
   team: 'Team',
   reports: 'Reports',
   settings: 'Clinic settings',
+  inventory: 'Inventory',
 }
 
 /** api.clinicTools.getMyClinicAccess for someone who isn't a clinic owner or team member. */
@@ -172,7 +174,7 @@ export function ClinicAccessProvider({ children }: { children: ReactNode }) {
         <DialogContent className="sm:max-w-md">
           <DialogHeader className="text-left">
             <DialogTitle className="flex items-center gap-2">
-              {isPendingApproval ? <Clock className="h-4 w-4 text-amber-600" /> : <Lock className="h-4 w-4 text-neutral-400" />}
+              {isPendingApproval ? <Clock className="h-4 w-4 text-pt-amber-fg" /> : <Lock className="h-4 w-4 text-pt-faint" />}
               {isClinicSuspended
                 ? 'Clinic suspended'
                 : isBillingReadOnly && !isReadOnly
@@ -212,7 +214,7 @@ export function ClinicAccessProvider({ children }: { children: ReactNode }) {
                   setIsModalOpen(false)
                   router.push('/dashboard/clinic/billing/plan')
                 }}
-                className="bg-rh-lime text-rh-ink hover:bg-rh-lime-deep"
+                className={primaryButtonClass}
               >
                 Pay now
                 <ArrowRight className="ml-1.5 h-4 w-4" />
@@ -222,7 +224,7 @@ export function ClinicAccessProvider({ children }: { children: ReactNode }) {
               <Button
                 type="button"
                 onClick={openOnboardingWizard}
-                className="bg-rh-lime text-rh-ink hover:bg-rh-lime-deep"
+                className={primaryButtonClass}
               >
                 Finish setup
                 <ArrowRight className="ml-1.5 h-4 w-4" />

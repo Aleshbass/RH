@@ -7,14 +7,42 @@ import { PatientDrawer, primaryButtonClass, secondaryButtonClass } from '@/compo
 import { topBarButtonClass } from '@/components/patient/shell/PatientControls'
 import { START_PHYSIO_TOUR_EVENT } from '@/components/physio/PhysioTour'
 import { usePracticeMode } from '@/components/physio/practiceMode'
+import { useClinicMode } from '@/components/physio/clinicMode'
 import { cn } from '@/lib/utils'
 
 const SUPPORT_EMAIL = 'support@physioaroundme.com'
 
 type HelpTopic = { q: string; a: string }
 
-/** Answers depend on which patients the physio sees: independents never get Rehabify booking or payout answers. */
-function helpTopics(independent: boolean): HelpTopic[] {
+/**
+ * Answers depend on which patients the physio sees: independents never get Rehabify booking or
+ * payout answers, and a clinic's clinicians get their clinic's (`clinicName`).
+ */
+function helpTopics(independent: boolean, clinicName: string | null): HelpTopic[] {
+  if (clinicName) {
+    return [
+      {
+        q: 'Whose patients are these?',
+        a: `${clinicName}'s. You see the patients the clinic gives you, with their full record: earlier notes, plans and programmes stay with the patient, so you carry on where care left off.`,
+      },
+      {
+        q: 'How do I book my patients?',
+        a: 'Tap New appointment, or open a patient. Patients book the hours you set in Settings → Working hours.',
+      },
+      {
+        q: 'How do I send exercises?',
+        a: 'Open a patient, go to Care plan and send exercises, or start from the Library: choose 3D exercises and send them to a patient.',
+      },
+      {
+        q: 'How do I join a video session?',
+        a: 'From 15 minutes before an online session, a green Join button appears at the top of every page, on Today, in your Schedule and on the patient’s page. It stays until the session ends.',
+      },
+      {
+        q: 'Who bills the patients?',
+        a: `${clinicName} does. If your role includes Billing you can send payment requests from Money or a patient's page; they're paid to the clinic.`,
+      },
+    ]
+  }
   return [
     {
       q: 'How do I answer a booking request?',
@@ -57,7 +85,8 @@ function helpTopics(independent: boolean): HelpTopic[] {
 export function PhysioHelp({ className }: { className?: string }) {
   const [open, setOpen] = useState(false)
   const { isIndependent } = usePracticeMode()
-  const HELP_TOPICS = helpTopics(isIndependent)
+  const clinic = useClinicMode()
+  const HELP_TOPICS = helpTopics(isIndependent, clinic.active ? (clinic.clinicName ?? 'Your clinic') : null)
   return (
     <>
       <button type="button" onClick={() => setOpen(true)} aria-label="Help" title="Help" className={cn(topBarButtonClass, className)}>

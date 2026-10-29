@@ -13,7 +13,7 @@ import { useMutationUntyped, useQueryUntyped } from '@/lib/convexUntyped'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
 import { goalMeasureName, goalProgress, goalValueText, type GoalMeasure, type GoalProgress, type MeasuredNote } from '@/convex/helpers/goalMeasures'
-import { Fact, Meter, workspaceApi, type Goal, type Workspace } from './shared'
+import { Fact, Meter, useWorkspaceReadOnly, workspaceApi, type Goal, type Workspace } from './shared'
 import { ReportSummary } from './ProgressReportPanel'
 
 /** Baseline → latest → target for a goal linked to a measure, with how far along it is. */
@@ -116,6 +116,8 @@ export function CarePlanTab({
     | undefined
   const plan = workspace.plan
   const isActive = workspace.episode.status === 'active'
+  // The clinic owner reading the record: the plan, goals and programmes show; only the clinician changes them
+  const readOnly = useWorkspaceReadOnly()
   // Measures for goals with a measured target (clinic colleagues' notes included, as on the server)
   const hasLinkedGoal = Boolean(plan?.goals.some((g) => g.measure))
   const measuredNotes = useQueryUntyped(workspaceApi.physioCare.getClinicalNoteMeasures, hasLinkedGoal ? { patientId: workspace.patient._id } : 'skip') as
@@ -128,8 +130,13 @@ export function CarePlanTab({
         <Panel
           title={plan.title}
           description={`Version ${plan.version} · updated ${formatDistanceToNow(plan.updatedAt, { addSuffix: true })}`}
-          info="The patient sees this plan in their app. Each revision is kept as a new version with your reason, and they’re told when it changes."
+          info={
+            readOnly
+              ? 'The patient sees this plan in their app. Each revision is kept as a new version with the clinician’s reason.'
+              : 'The patient sees this plan in their app. Each revision is kept as a new version with your reason, and they’re told when it changes.'
+          }
           actions={
+            !readOnly && (
             <>
               <Button size="sm" className={cn(secondaryButtonClass, 'h-9')} onClick={onSaveTemplate}>
                 <Layers className="mr-1.5 h-3.5 w-3.5" />
@@ -141,6 +148,7 @@ export function CarePlanTab({
                 </Button>
               )}
             </>
+            )
           }
         >
           <div className="space-y-5 px-5 pb-5 pt-3">
@@ -179,7 +187,7 @@ export function CarePlanTab({
             </div>
             <ul className="divide-y divide-pt-line pb-2 pt-1">
               {plan.goals.map((goal, index) => (
-                <GoalRow key={index} goal={goal} index={index} planId={plan._id} editable={isActive} notes={measuredNotes} since={workspace.episode.startedAt} />
+                <GoalRow key={index} goal={goal} index={index} planId={plan._id} editable={isActive && !readOnly} notes={measuredNotes} since={workspace.episode.startedAt} />
               ))}
             </ul>
           </div>
@@ -189,9 +197,13 @@ export function CarePlanTab({
           <EmptyState
             icon={<ShieldAlert />}
             title={isActive ? 'No care plan yet' : 'No care plan on record'}
-            description="Set out functional goals, how often you’ll see them, when to review, and any precautions. Start blank or from one of your templates. Your patient sees it in their app."
+            description={
+              readOnly
+                ? 'Their clinician sets the functional goals, how often they’ll be seen, when to review, and any precautions. It shows here as soon as it’s written.'
+                : 'Set out functional goals, how often you’ll see them, when to review, and any precautions. Start blank or from one of your templates. Your patient sees it in their app.'
+            }
             action={
-              isActive && (
+              isActive && !readOnly && (
                 <Button className={primaryButtonClass} onClick={onEditPlan}>
                   Create care plan
                 </Button>
@@ -201,16 +213,16 @@ export function CarePlanTab({
         </Panel>
       )}
 
-      <ReportSummary patientId={workspace.patient._id} firstName={workspace.patient.firstName} />
+      {!readOnly && <ReportSummary patientId={workspace.patient._id} firstName={workspace.patient.firstName} />}
 
       <ExerciseProgramsPanel
         patientId={workspace.patient._id}
         patientName={workspace.patient.firstName || 'your patient'}
         hasPhone={Boolean(workspace.patient.phoneNumber?.replace(/\D/g, '').length)}
-        canWrite={isActive}
+        canWrite={isActive && !readOnly}
       />
 
-      {plan && plan.totalExercises > 0 && (
+      {plan && plan.totalExercises > 0 && !readOnly && (
         <section className="space-y-3">
           <h3 className="px-1 text-[15px] font-semibold tracking-tight text-pt-ink">Exercises in the care plan</h3>
           <InteractiveTreatmentPlan patientId={workspace.patient._id} variant="exercises" />

@@ -19,6 +19,7 @@ import { EmptyState, PageContainer, PageHeader, Panel, StatTile, StatusBadge, pr
 import { PaystackTestModeBanner } from '@/components/billing/PaystackTestModeBanner';
 import { programError } from '@/components/exercise-programs/errors';
 import { usePracticeMode } from '@/components/physio/practiceMode';
+import { useClinicMode } from '@/components/physio/clinicMode';
 import { PhysioPayouts } from '@/components/physio/PhysioPayouts';
 
 type InvoiceFromQuery = {
@@ -118,7 +119,8 @@ export default function BillingPage() {
   const loanByInvoice = useMemo(() => new Map((invoiceLoans ?? []).map((loan) => [loan.invoiceId, loan])), [invoiceLoans]);
 
   // Independent physios only have their own patients: no Rehabify Care payouts here (the server drops them too)
-  const { isIndependent, loaded: practiceLoaded } = usePracticeMode();
+  const { isIndependent, isClinicMember, loaded: practiceLoaded } = usePracticeMode();
+  const clinic = useClinicMode();
 
   const filtered = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
@@ -233,7 +235,9 @@ export default function BillingPage() {
         title="Invoices"
         description="Invoices you’ve sent and payments you’ve received."
         info={
-          isIndependent
+          isClinicMember
+            ? `Payment requests for ${clinic.clinicName ?? 'your clinic'}'s patients. The patient gets a link to pay by card, transfer or USSD, and the money goes straight to the clinic's account.`
+            : isIndependent
             ? 'Invoice your patients at your own prices. They get a link to pay by card, transfer or USSD, and paid invoices go to the bank account in Settings → Payouts. If they pay you directly, record it as paid. Rehabify takes nothing.'
             : 'Send an invoice and the patient gets a link to pay by card, transfer or USSD. Paid invoices go to the bank account in Settings → Payouts. Rehabify Care patients pay through Rehabify, so their sessions don’t need an invoice from you.'
         }

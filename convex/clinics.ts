@@ -372,13 +372,12 @@ export const acceptClinicInvitation = mutation({
       }
     }
 
-    // Join the clinic. Existing accounts keep their onboarding state: clinic work never
-    // requires the physio marketplace onboarding, so nobody is sent back through it.
+    // Join the clinic. Clinic work never needs the physio marketplace onboarding: clinicians go
+    // straight to the physio portal in clinic mode (components/clinic/clinician-routing.ts).
     await ctx.db.patch(user._id, {
       // A physiotherapist stays a physiotherapist even when joining as front desk
       role: isClinician || user.role === "physiotherapist" ? "physiotherapist" : "clinic_staff",
-      // Front-desk staff have nothing else to set up
-      onboarded: user.role ? user.onboarded : !isClinician,
+      onboarded: true,
       clinicId: invitation.clinicId,
       clinicRoleId: invitation.clinicRoleId,
       status: "active",
@@ -445,6 +444,14 @@ export const acceptClinicInvitation = mutation({
         userId: user._id,
         status: "approved",
         submittedAt: Date.now(),
+        reviewedAt: Date.now(),
+        comments: CLINIC_INVITE_APPROVAL_NOTE,
+      });
+    } else if (existingApproval.status === "pending_review" && (isClinician || user.role === "physiotherapist")) {
+      // Their own application is still waiting: the clinic's vetting covers clinic work now, and
+      // leaving the clinic puts the application back in review (clinicTools.removeClinician)
+      await ctx.db.patch(existingApproval._id, {
+        status: "approved",
         reviewedAt: Date.now(),
         comments: CLINIC_INVITE_APPROVAL_NOTE,
       });
@@ -2176,31 +2183,14 @@ export const getClinicPatients = query({
 
     if (!clinic) return [];
 
-    // Get all physiotherapists in this clinic
-    const physiotherapistProfiles = await ctx.db
-      .query("physiotherapistProfiles")
-      .withIndex("by_clinic_id", (q) => q.eq("clinicId", clinic._id))
-      .collect();
-
-    const physiotherapistIds = Array.from(
-      new Set([clinic.ownerId, ...physiotherapistProfiles.map(p => p.userId)])
-    );
-
-    // Every care relationship at this clinic, past or present, plus active ones held by
-    // a clinic clinician. Discharged and paused patients stay on the list.
-    const patientRelationships = await Promise.all([
-      ctx.db
+    // Every care relationship at this clinic, past or present (discharged and paused patients stay
+    // on the list). A clinician's private patients aren't the clinic's.
+    const patientRelationships = [
+      await ctx.db
         .query("patientPhysiotherapistRelationships")
         .withIndex("by_clinic", (q) => q.eq("clinicId", clinic._id))
         .collect(),
-      ...physiotherapistIds.map(physioId =>
-        ctx.db
-          .query("patientPhysiotherapistRelationships")
-          .withIndex("by_physiotherapist", (q) => q.eq("physiotherapistId", physioId))
-          .filter((q) => q.eq(q.field("status"), "active"))
-          .collect()
-      ),
-    ]);
+    ];
 
     // One row per patient: the active relationship when there is one, else the latest
     const uniquePatientMap = new Map<Id<"users">, Doc<"patientPhysiotherapistRelationships">>();
@@ -2268,6 +2258,10 @@ export const getClinicPatients = query({
             status: rel.status,
           },
           source: rel.source ?? "clinic_direct",
+          // Left with the owner (e.g. their clinician left): the owner doesn't treat, so assign someone
+          needsClinician: rel.status === "active" && rel.physiotherapistId === clinic.ownerId,
+          // Added by the clinic and hasn't opened their invite yet (still the placeholder account)
+          invitePending: (patient.clerkId ?? "").startsWith("clinic_patient_"),
           careStatus:
             rel.status === "active"
               ? ("active" as const)
@@ -2350,13 +2344,22 @@ export const getClinicAppointments = query({
       })
     );
 
-    // Merge, deduplicate and sort by start time
+    // Merge, deduplicate and sort by start time. Older visits saved without the clinic count only
+    // for the clinic's own patients, never a clinician's private practice.
+    const clinicPatientIds = new Set(
+      (
+        await ctx.db
+          .query("patientPhysiotherapistRelationships")
+          .withIndex("by_clinic", (q) => q.eq("clinicId", clinic._id))
+          .collect()
+      ).map((rel) => rel.patientId)
+    );
     const byId = new Map<Id<"appointments">, Doc<"appointments">>();
-    for (const apt of [
-      ...clinicAppointments.filter(apt => args.endDate === undefined || apt.startTime <= args.endDate),
-      ...allAppointments.flat(),
-    ]) {
+    for (const apt of clinicAppointments.filter(apt => args.endDate === undefined || apt.startTime <= args.endDate)) {
       byId.set(apt._id, apt);
+    }
+    for (const apt of allAppointments.flat()) {
+      if (apt.clinicId === undefined && clinicPatientIds.has(apt.patientId)) byId.set(apt._id, apt);
     }
     const flatAppointments = Array.from(byId.values())
       .filter(apt => !apt.isRecordOnly) // note/check-in anchors are not visits

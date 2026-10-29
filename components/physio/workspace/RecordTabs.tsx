@@ -17,7 +17,7 @@ import { cn } from '@/lib/utils'
 import { NoteMediaView } from '@/components/physio/NoteMedia'
 import { programError } from '@/components/exercise-programs/errors'
 import { usePracticeMode } from '@/components/physio/practiceMode'
-import { DIFFICULTY_LABELS, EXERCISES_LABELS, HIGH_PAIN, MOOD_LABELS, PainPill, type ExerciseLog, type Workspace } from './shared'
+import { DIFFICULTY_LABELS, EXERCISES_LABELS, HIGH_PAIN, MOOD_LABELS, PainPill, useWorkspaceReadOnly, type ExerciseLog, type Workspace } from './shared'
 import { NoteDrawer, type EditableNote } from './WorkspaceDrawers'
 import { NoteHistoryDrawer } from './NoteHistoryDrawer'
 import { MeasureList } from '@/components/physio/notes/MeasureList'
@@ -58,10 +58,12 @@ export function NotesTab({ workspace, onWrite }: { workspace: Workspace; onWrite
   const [editing, setEditing] = useState<EditableNote | null>(null)
   const [historyId, setHistoryId] = useState<string | null>(null)
   const hasColleagues = notes?.some((n) => !n.mine) ?? false
+  // The clinic owner reading the record: notes are written by the clinicians
+  const readOnly = useWorkspaceReadOnly()
 
   return (
     <div className="space-y-5">
-      {isActive && (
+      {isActive && !readOnly && (
         <button
           type="button"
           onClick={onWrite}
@@ -76,12 +78,20 @@ export function NotesTab({ workspace, onWrite }: { workspace: Workspace; onWrite
         <Skeleton className="h-40 rounded-2xl" />
       ) : notes.length === 0 ? (
         <Panel>
-          <EmptyState icon={<NotebookPen />} title="No clinical notes yet" description="Notes written after each visit appear here, newest first." />
+          <EmptyState
+            icon={<NotebookPen />}
+            title="No clinical notes yet"
+            description={readOnly ? 'Notes your clinicians write after each visit appear here, newest first.' : 'Notes written after each visit appear here, newest first.'}
+          />
         </Panel>
       ) : (
         <div className="space-y-3">
-          {hasColleagues && (
-            <p className="px-1 text-xs text-pt-muted">Includes notes by your clinic colleagues. Only the person who wrote a note can edit it.</p>
+          {readOnly ? (
+            <p className="px-1 text-xs text-pt-muted">Written by your clinicians. Only the person who wrote a note can change it, and every earlier wording is kept.</p>
+          ) : (
+            hasColleagues && (
+              <p className="px-1 text-xs text-pt-muted">Includes notes by your clinic colleagues. Only the person who wrote a note can edit it.</p>
+            )
           )}
           <ol className="space-y-3">
           {notes.map((note) => (
@@ -202,6 +212,7 @@ export function NotesTab({ workspace, onWrite }: { workspace: Workspace; onWrite
 /** What the patient reported while doing their home programme: pain, difficulty and notes. */
 function ExerciseLogsPanel({ logs }: { logs: ExerciseLog[] }) {
   const markReviewed = useMutation(api.physioCare.markExerciseLogReviewed)
+  const readOnly = useWorkspaceReadOnly()
   if (logs.length === 0) return null
   return (
     <Panel title="Home exercise logs" description="Pain and notes the patient gave after each exercise in their programme">
@@ -228,6 +239,8 @@ function ExerciseLogsPanel({ logs }: { logs: ExerciseLog[] }) {
                     <CheckCircle2 className="mr-1 h-3.5 w-3.5" />
                     Reviewed
                   </span>
+                ) : readOnly ? (
+                  <StatusBadge tone="ink">Not reviewed yet</StatusBadge>
                 ) : (
                   <Button
                     size="sm"
@@ -248,6 +261,7 @@ function ExerciseLogsPanel({ logs }: { logs: ExerciseLog[] }) {
 
 export function CheckInsTab({ workspace }: { workspace: Workspace }) {
   const markReviewed = useMutation(api.physioCare.markCheckInReviewed)
+  const readOnly = useWorkspaceReadOnly()
   const checkIns = workspace.checkIns
   const exerciseLogs = workspace.exerciseLogs ?? []
   const points = useMemo(() => checkIns.slice(0, 14).reverse(), [checkIns])
@@ -318,6 +332,8 @@ export function CheckInsTab({ workspace }: { workspace: Workspace }) {
                     <CheckCircle2 className="mr-1 h-3.5 w-3.5" />
                     Reviewed
                   </span>
+                ) : readOnly ? (
+                  <StatusBadge tone="ink">Not reviewed yet</StatusBadge>
                 ) : (
                   <Button
                     size="sm"

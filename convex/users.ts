@@ -14,6 +14,8 @@ import { logSecurityEvent } from "./helpers/securityLog";
 import { ensureClinicNumber, ensureUserNumbers, findUserByRehabifyId } from "./helpers/rehabifyIds";
 import { matchesRehabifyId, parseRehabifyId } from "./helpers/rehabifyIdFormat";
 import { isClinicInviteApproval } from "./helpers/clinicApproval";
+import { senderIdentity } from "./helpers/displayIdentity";
+import { assertCanMessage } from "./chat";
 import { assertSelfRoleChangeAllowed } from "./helpers/roleLock";
 import { claimJoyRecordWithLink } from "./joyAccounts";
 import { missingPolicies, recordMissingPolicyAcceptances } from "./helpers/policyAcceptance";
@@ -29,16 +31,28 @@ import { PATIENT_CONSENT_POLICIES, POLICIES, PROFESSIONAL_SIGNUP_POLICIES } from
 export const getUserPublicProfile = query({
   args: { userId: v.id("users") },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) return null;
+    const viewer = await signedInUser(ctx);
+    if (!viewer) return null;
     const user = await ctx.db.get(args.userId);
     if (!user) return null;
+    // Only people who may message each other (a care link, the same clinic team, support)
+    if (viewer._id !== user._id) {
+      try {
+        await assertCanMessage(ctx, viewer, user);
+      } catch {
+        return null;
+      }
+    }
+    // The clinic's name and logo for its owner, "Mary — Clinic" for its clinicians
+    const shown = await senderIdentity(ctx, user);
     return {
       _id: user._id,
       firstName: user.firstName,
       lastName: user.lastName,
-      imageUrl: user.imageUrl,
+      imageUrl: shown.imageUrl ?? user.imageUrl,
       role: user.role,
+      displayName: shown.name,
+      subtitle: shown.subtitle,
     };
   },
 });

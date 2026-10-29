@@ -8,7 +8,9 @@ import { api } from '@/convex/_generated/api'
 import type { Id } from '@/convex/_generated/dataModel'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Calendar, CalendarPlus, CalendarX, ChevronRight, History, MapPin, Search, Video } from '@/components/icons'
+import { Calendar, CalendarPlus, CalendarX, ChevronRight, History, MapPin, MessageSquare, Search, Video } from '@/components/icons'
+import { useCareHome } from '@/components/patient/careHome'
+import { ClinicRequestDrawer } from '@/components/patient/ClinicRequestDrawer'
 import { formatLagos, lagosTime, zonedDateKey } from '@/convex/helpers/lagosTime'
 import { isVideoVisit, meetingLinkOf } from '@/components/appointments/appointment-ui'
 import { cn } from '@/lib/utils'
@@ -203,6 +205,9 @@ function AppointmentsView() {
 
   const [tab, setTab] = useState<Tab>('upcoming')
   const [bookingOpen, setBookingOpen] = useState(false)
+  // Clinic mode: "Ask the clinic" instead of the Rehabify marketplace
+  const { clinic, showMarketplace } = useCareHome()
+  const [askOpen, setAskOpen] = useState(false)
   const [detailsId, setDetailsId] = useState<string | null>(null)
   const [detailsOpen, setDetailsOpen] = useState(false)
   const [cancelTarget, setCancelTarget] = useState<PatientAppointment | null>(null)
@@ -269,10 +274,18 @@ function AppointmentsView() {
         description="Book, change or join your visits."
         info="All times are Lagos time (WAT). A visit you ask for waits for your physio to confirm it. A visit your physio books for you needs your confirmation."
         actions={
-          <Button className={cn(primaryButtonClass, 'h-11 px-5')} onClick={() => setBookingOpen(true)}>
-            <CalendarPlus className="mr-2 h-4 w-4" />
-            Book a session
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            {clinic && (
+              <Button className={cn(secondaryButtonClass, 'h-11 px-4')} onClick={() => setAskOpen(true)}>
+                <MessageSquare className="mr-2 h-4 w-4" />
+                Ask the clinic
+              </Button>
+            )}
+            <Button className={cn(primaryButtonClass, 'h-11 px-5')} onClick={() => setBookingOpen(true)}>
+              <CalendarPlus className="mr-2 h-4 w-4" />
+              Book a session
+            </Button>
+          </div>
         }
       />
 
@@ -329,12 +342,19 @@ function AppointmentsView() {
                       <CalendarPlus className="mr-2 h-4 w-4" />
                       Book a session
                     </Button>
-                    <Button asChild className={cn(secondaryButtonClass, 'h-10 px-4')}>
-                      <Link href="/find-a-physio">
-                        <Search className="mr-2 h-4 w-4" />
-                        Find a physio
-                      </Link>
-                    </Button>
+                    {clinic ? (
+                      <Button className={cn(secondaryButtonClass, 'h-10 px-4')} onClick={() => setAskOpen(true)}>
+                        <MessageSquare className="mr-2 h-4 w-4" />
+                        Ask {clinic.name}
+                      </Button>
+                    ) : showMarketplace ? (
+                      <Button asChild className={cn(secondaryButtonClass, 'h-10 px-4')}>
+                        <Link href="/find-a-physio">
+                          <Search className="mr-2 h-4 w-4" />
+                          Find a physio
+                        </Link>
+                      </Button>
+                    ) : null}
                   </div>
                 }
               />
@@ -377,7 +397,19 @@ function AppointmentsView() {
         onRateVisit={fromDetails(setFeedbackTarget)}
       />
 
-      <PatientAppointmentBookingModal isOpen={bookingOpen} onClose={closeBooking} />
+      <PatientAppointmentBookingModal
+        isOpen={bookingOpen}
+        onClose={closeBooking}
+        onAskClinic={
+          clinic
+            ? () => {
+                closeBooking()
+                setAskOpen(true)
+              }
+            : undefined
+        }
+      />
+      {clinic && <ClinicRequestDrawer open={askOpen} onOpenChange={setAskOpen} />}
 
       <CancelAppointmentModal
         isOpen={cancelTarget !== null}

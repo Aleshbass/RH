@@ -14,20 +14,23 @@ import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState, InfoTip } from '@/components/physio/ui';
 import { cn } from '@/lib/utils';
+import { useClinicMode } from '@/components/physio/clinicMode';
+import { TeamChat } from '@/components/clinic/team/TeamChat';
 
 type Conversation = {
   _id: Id<'conversations'>;
-  otherParticipant: { _id: Id<'users'>; firstName?: string; lastName?: string };
+  otherParticipant: { _id: Id<'users'>; firstName?: string; lastName?: string; displayName?: string };
   lastMessage?: { content: string };
   unreadCount: number;
 };
 
 type PatientLite = { _id: Id<'users'>; firstName?: string; lastName?: string; email?: string };
 
-const fullName = (p?: { firstName?: string; lastName?: string }) =>
-  [p?.firstName, p?.lastName].filter(Boolean).join(' ') || 'Unknown';
-const initials = (p?: { firstName?: string; lastName?: string }) =>
-  `${p?.firstName?.[0] ?? ''}${p?.lastName?.[0] ?? ''}`.toUpperCase() || '?';
+// How they appear (convex/helpers/displayIdentity.ts): patients by their profile name
+const fullName = (p?: { firstName?: string; lastName?: string; displayName?: string }) =>
+  p?.displayName || [p?.firstName, p?.lastName].filter(Boolean).join(' ') || 'Patient';
+const initials = (p?: { firstName?: string; lastName?: string; displayName?: string }) =>
+  fullName(p).split(/\s+/).slice(0, 2).map((word) => word[0] ?? '').join('').toUpperCase() || '?';
 
 export default function PhysiotherapistMessagesPage() {
   const router = useRouter();
@@ -64,10 +67,49 @@ export default function PhysiotherapistMessagesPage() {
     if (searchParams.get('with')) router.replace('/dashboard/physiotherapist/messages');
   };
 
+  // Clinic mode: patients, or the clinic's staff-only team chat (?team=team | ?team=patient:<id>)
+  const clinic = useClinicMode();
+  const teamParam = searchParams.get('team');
+  const [tab, setTab] = useState<'patients' | 'team'>(teamParam ? 'team' : 'patients');
+  useEffect(() => {
+    if (teamParam) setTab('team');
+  }, [teamParam]);
+  const showTeam = clinic.active && tab === 'team';
+
   return (
-    // Fills the screen under the top bar; on phones the list and the chat take turns
-    // (on phones it also clears the bottom tab bar and the home indicator)
-    <div className="mx-auto flex h-[calc(100dvh-10.5rem-env(safe-area-inset-bottom))] w-full max-w-6xl min-h-[24rem] overflow-hidden rounded-3xl border border-pt-line bg-pt-surface shadow-pt dark:shadow-none lg:h-[calc(100dvh-10rem)]">
+    <div className="mx-auto w-full max-w-6xl">
+    {clinic.active && (
+      <div className="mb-3 inline-flex rounded-2xl bg-pt-sunken p-1" role="tablist" aria-label="Messages">
+        {(
+          [
+            ['patients', 'Patients'],
+            ['team', `${clinic.clinicName ?? 'Clinic'} team`],
+          ] as const
+        ).map(([value, label]) => (
+          <button
+            key={value}
+            type="button"
+            role="tab"
+            aria-selected={tab === value}
+            onClick={() => setTab(value)}
+            className={cn(
+              'max-w-[14rem] truncate rounded-xl px-3.5 py-2 text-sm font-medium transition',
+              tab === value ? 'bg-pt-surface text-pt-ink shadow-pt dark:shadow-none' : 'text-pt-muted hover:text-pt-ink'
+            )}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+    )}
+    {showTeam && (
+      <div className="h-[calc(100dvh-13.5rem-env(safe-area-inset-bottom))] min-h-[24rem] overflow-hidden rounded-3xl border border-pt-line bg-pt-surface shadow-pt dark:shadow-none lg:h-[calc(100dvh-13rem)]">
+        <TeamChat initial={teamParam ?? 'team'} />
+      </div>
+    )}
+    {/* Fills the screen under the top bar; on phones the list and the chat take turns
+        (on phones it also clears the bottom tab bar and the home indicator) */}
+    <div className={cn('mx-auto flex w-full max-w-6xl min-h-[24rem] overflow-hidden rounded-3xl border border-pt-line bg-pt-surface shadow-pt dark:shadow-none', clinic.active ? 'h-[calc(100dvh-13.5rem-env(safe-area-inset-bottom))] lg:h-[calc(100dvh-13rem)]' : 'h-[calc(100dvh-10.5rem-env(safe-area-inset-bottom))] lg:h-[calc(100dvh-10rem)]', showTeam && 'hidden')}>
       <aside
         className={cn(
           'flex w-full flex-col border-r border-neutral-200 dark:border-white/[0.07] md:w-80 md:shrink-0',
@@ -204,6 +246,7 @@ export default function PhysiotherapistMessagesPage() {
           </ul>
         </DialogContent>
       </Dialog>
+    </div>
     </div>
   );
 }

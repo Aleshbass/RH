@@ -211,6 +211,8 @@ const RealtimeChat = ({ recipientId, className, embedded = false, variant = 'def
   // Memoize paginated messages to prevent unnecessary re-renders
   // Get recipient user information
   const recipientUser = useQueryUntyped(usersModule['getUserPublicProfile'], { userId: recipientId });
+  // How they appear (convex/helpers/displayIdentity.ts): the clinic for its owner, their own name otherwise
+  const recipientName: string = recipientUser?.displayName || recipientUser?.firstName || 'Your care team';
 
   const paginatedMessages = useMemo(() => {
     if (!messages) {
@@ -227,7 +229,7 @@ const RealtimeChat = ({ recipientId, className, embedded = false, variant = 'def
     const transformedItems = (messages.items as ChatMessage[])
       .map((message: ChatMessage) => ({
         ...message,
-        senderName: message.senderId === currentUser?._id ? 'You' : recipientUser?.firstName || 'User',
+        senderName: message.senderId === currentUser?._id ? 'You' : recipientName,
       }))
       .reverse(); // Reverse to show oldest first (WhatsApp style)
     
@@ -235,7 +237,7 @@ const RealtimeChat = ({ recipientId, className, embedded = false, variant = 'def
       ...messages,
       items: transformedItems,
     };
-  }, [messages, currentUser, recipientUser]);
+  }, [messages, currentUser, recipientName]);
 
   // Auto-scroll to bottom when new messages arrive (only if user is near bottom)
   useEffect(() => {
@@ -460,9 +462,10 @@ const RealtimeChat = ({ recipientId, className, embedded = false, variant = 'def
 
 
   // Get user initials for avatar fallback
-  const getUserInitials = (user: { firstName?: string; lastName?: string } | null | undefined) => {
-    if (!user) return 'U';
-    return `${user.firstName?.charAt(0) || ''}${user.lastName?.charAt(0) || ''}`.toUpperCase();
+  const getUserInitials = (user: { firstName?: string; lastName?: string; displayName?: string } | null | undefined) => {
+    if (!user) return '?';
+    const words = (user.displayName || `${user.firstName ?? ''} ${user.lastName ?? ''}`).trim().split(/\s+/).filter(Boolean);
+    return words.slice(0, 2).map((word) => word.charAt(0)).join('').toUpperCase() || '?';
   };
 
   // Handle file selection
@@ -700,7 +703,7 @@ const RealtimeChat = ({ recipientId, className, embedded = false, variant = 'def
                         <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-0.5">Replying to</p>
                         <p className="text-xs font-medium opacity-80">
                           {message.replyToMessage
-                            ? (message.replyToMessage.senderId === currentUser?._id ? 'You' : (recipientUser?.firstName || 'User'))
+                            ? (message.replyToMessage.senderId === currentUser?._id ? 'You' : recipientName)
                             : 'Message'}
                         </p>
                         {message.replyToMessage?.content && (
@@ -1022,7 +1025,7 @@ const RealtimeChat = ({ recipientId, className, embedded = false, variant = 'def
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-xs font-medium text-muted-foreground mb-1">
-                    Replying to {replyingTo.senderId === currentUser?._id ? 'yourself' : recipientUser?.firstName || 'User'}
+                    Replying to {replyingTo.senderId === currentUser?._id ? 'yourself' : recipientName}
                   </p>
                   <p className="text-sm truncate max-w-[300px]">{replyingTo.content}</p>
                 </div>

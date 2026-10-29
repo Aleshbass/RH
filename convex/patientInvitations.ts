@@ -1,8 +1,62 @@
 import { insertNotification } from "./helpers/pushNotify";
 import { ConvexError, Infer, v } from "convex/values";
 import { query, mutation, internalQuery, MutationCtx } from "./_generated/server";
-import { Id } from "./_generated/dataModel";
+import { Doc, Id } from "./_generated/dataModel";
 import { ensureUserNumbers } from "./helpers/rehabifyIds";
+import { recordMissingPolicyAcceptances } from "./helpers/policyAcceptance";
+import { PATIENT_CONSENT_POLICIES } from "../lib/policies";
+
+/** An unguessable invitation code (the link is what lets someone accept it). */
+function newInvitationCode(): string {
+  const bytes = new Uint8Array(12);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(36).padStart(2, "0")).join("").slice(0, 20);
+}
+
+/** "a•••@gmail.com": enough to recognise your own address without showing it to whoever holds the link. */
+function maskEmail(email: string | undefined): string | null {
+  if (!email) return null;
+  const [name, domain] = email.trim().split("@");
+  if (!name || !domain) return null;
+  return `${name[0]}•••@${domain}`;
+}
+
+const CLINIC_INVITE_DAYS = 30;
+
+/**
+ * A clinic's invitation link for a patient it added (clinicTools.addClinicPatient): the same
+ * /patient-invite/<code> page physios use, showing the clinic and the patient's clinician.
+ * Earlier unused links for this patient at this clinic stop working, so only the newest email counts.
+ */
+export async function createClinicPatientInvitation(
+  ctx: MutationCtx,
+  input: { clinic: Doc<"clinics">; clinicianId: Id<"users">; patient: Doc<"users"> }
+): Promise<string> {
+  const email = input.patient.email?.trim().toLowerCase();
+  if (email) {
+    const earlier = await ctx.db
+      .query("patientInvitations")
+      .withIndex("by_patient_email", (q) => q.eq("patientEmail", email))
+      .collect();
+    for (const row of earlier) {
+      if (row.status === "pending" && row.clinicId === input.clinic._id) await ctx.db.patch(row._id, { status: "expired" });
+    }
+  }
+  const now = Date.now();
+  const code = newInvitationCode();
+  await ctx.db.insert("patientInvitations", {
+    code,
+    physiotherapistId: input.clinicianId,
+    clinicId: input.clinic._id,
+    invitedByClinic: true,
+    patientEmail: email,
+    patientName: [input.patient.firstName, input.patient.lastName].filter(Boolean).join(" ") || undefined,
+    status: "pending",
+    createdAt: now,
+    expiresAt: now + CLINIC_INVITE_DAYS * 86_400_000,
+  });
+  return code;
+}
 
 /**
  * Validate a patient invitation code
@@ -43,27 +97,32 @@ export const validateInvitationCode = query({
       clinic = await ctx.db.get(invitation.clinicId);
     }
 
+    // Public (anyone with the link): who invited them, never anyone's email address or contact
+    // details beyond the clinic's own
     return {
       valid: true,
       invitation: {
         _id: invitation._id,
         code: invitation.code,
-        patientEmail: invitation.patientEmail,
+        maskedEmail: maskEmail(invitation.patientEmail),
         patientName: invitation.patientName,
         notes: invitation.notes,
         createdAt: invitation.createdAt,
         expiresAt: invitation.expiresAt,
+        invitedByClinic: Boolean(invitation.invitedByClinic),
       },
       physiotherapist: {
         _id: physiotherapist._id,
         firstName: physiotherapist.firstName,
         lastName: physiotherapist.lastName,
-        email: physiotherapist.email,
+        imageUrl: physiotherapist.imageUrl,
       },
       clinic: clinic ? {
         _id: clinic._id,
         name: clinic.name,
-        address: clinic.address,
+        logoUrl: clinic.logoUrl ?? null,
+        city: clinic.city ?? null,
+        phone: clinic.contactPhone ?? null,
       } : null,
     };
   },
@@ -112,20 +171,37 @@ export const getMyPhysiotherapists = query({
           .withIndex("by_user_id", (q) => q.eq("userId", physiotherapist._id))
           .first();
 
-        // Get clinic information if applicable
-        let clinicInfo = null;
-        if (physiotherapistProfile?.clinicId) {
-          clinicInfo = await ctx.db.get(physiotherapistProfile.clinicId);
-        }
+        // The clinic this care belongs to: the care link says, the physio's profile is a fallback
+        const clinicId = relationship.clinicId ?? physiotherapistProfile?.clinicId;
+        const clinicInfo = clinicId ? await ctx.db.get(clinicId) : null;
 
+        // Patient-facing: public profile fields only, and the clinic's public details
         return {
           _id: physiotherapist._id,
           firstName: physiotherapist.firstName,
           lastName: physiotherapist.lastName,
-          email: physiotherapist.email,
           imageUrl: physiotherapist.imageUrl,
-          profile: physiotherapistProfile,
-          clinic: clinicInfo,
+          profile: physiotherapistProfile
+            ? {
+                specializations: physiotherapistProfile.specializations,
+                bio: physiotherapistProfile.bio,
+                yearsOfExperience: physiotherapistProfile.yearsOfExperience,
+                offersOnlineSessions: physiotherapistProfile.offersOnlineSessions,
+                offersInPersonSessions: physiotherapistProfile.offersInPersonSessions,
+              }
+            : null,
+          clinic: clinicInfo
+            ? {
+                _id: clinicInfo._id,
+                name: clinicInfo.name,
+                address: clinicInfo.address,
+                city: clinicInfo.city,
+                contactPhone: clinicInfo.contactPhone,
+                logoUrl: clinicInfo.logoUrl,
+              }
+            : null,
+          /** The clinic itself (its owner account) while it picks a clinician for them */
+          isClinicDesk: Boolean(clinicInfo && clinicInfo.ownerId === physiotherapist._id),
           relationship: {
             isPrimary: relationship.isPrimaryPhysiotherapist,
             startDate: relationship.startDate,
@@ -155,6 +231,8 @@ const patientDataValidator = v.object({
   ),
   medicalHistory: v.optional(v.string()),
   emergencyContact: v.optional(v.string()),
+  /** Terms, Privacy and health information consent ticked on the invite page: policy id → version */
+  acceptedPolicies: v.optional(v.record(v.string(), v.string())),
 });
 
 /**
@@ -234,12 +312,13 @@ async function acceptPatientInvitation(
       throw new Error("Failed to create user");
     }
   } else {
-    // Ensure existing account is provisioned as a patient
+    // Ensure existing account is provisioned as a patient. The name they confirmed on the invite
+    // page is the one their clinic and clinician see (not necessarily their Google name).
     await ctx.db.patch(user._id, {
       role: "patient",
       onboarded: true,
-      firstName: user.firstName ?? patientData.firstName,
-      lastName: user.lastName ?? patientData.lastName,
+      firstName: patientData.firstName.trim() || user.firstName,
+      lastName: patientData.lastName.trim() || user.lastName,
       email: user.email ?? patientData.email,
       phoneNumber: user.phoneNumber ?? patientData.phoneNumber,
     });
@@ -278,6 +357,22 @@ async function acceptPatientInvitation(
     patientProfileId,
   });
   await ensureUserNumbers(ctx, ensuredUser._id);
+  // A clinic's invitation makes them the clinic's patient (their portal shows the clinic)
+  if (invitation.clinicId) {
+    const profile = await ctx.db.get(patientProfileId);
+    if (profile && !profile.clinicId) await ctx.db.patch(profile._id, { clinicId: invitation.clinicId });
+  }
+  // Agreed on the invite page, so the dashboard doesn't ask again (append-only, NDPA)
+  if (patientData.acceptedPolicies) {
+    await recordMissingPolicyAcceptances(ctx, {
+      user: ensuredUser,
+      documents: PATIENT_CONSENT_POLICIES,
+      accepted: patientData.acceptedPolicies,
+      channel: "web",
+      contextType: "patient_invite",
+      contextId: String(invitation._id),
+    });
+  }
 
   // Re-link an earlier relationship with this clinician (a past booking, an older invite)
   // instead of adding a second one

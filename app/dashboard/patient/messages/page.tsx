@@ -22,6 +22,7 @@ import {
 } from '@/components/patient/ui'
 import { PhysioPhoto } from '@/components/patient/PhysioPhoto'
 import { programError } from '@/components/exercise-programs/errors'
+import { useCareHome } from '@/components/patient/careHome'
 import { cn } from '@/lib/utils'
 
 // Shape returned by api.chat.getMyConversations
@@ -34,6 +35,10 @@ interface ConversationWithParticipant {
     role?: string
     imageUrl?: string
     isOnline?: boolean
+    /** How they appear: the clinic for its owner, the person's name otherwise */
+    displayName?: string
+    /** Their clinic (a clinician), or what they are */
+    subtitle?: string
   }
   lastMessage?: {
     content: string
@@ -51,6 +56,10 @@ type MyPhysiotherapist = {
   lastName?: string
   imageUrl?: string
   clinic?: { name?: string } | null
+  /** The clinic's own account, standing in while it picks a clinician */
+  isClinicDesk?: boolean
+  /** Clinic mode: the clinic itself, so patients can always reach the clinic team */
+  isClinic?: boolean
 }
 
 const ROLE_LABELS: Record<string, string> = {
@@ -60,8 +69,8 @@ const ROLE_LABELS: Record<string, string> = {
   admin: 'Rehabify support',
 }
 
-const fullName = (p: { firstName?: string; lastName?: string }) =>
-  [p.firstName, p.lastName].filter(Boolean).join(' ') || 'Your physiotherapist'
+const fullName = (p: { firstName?: string; lastName?: string; displayName?: string }) =>
+  p.displayName || [p.firstName, p.lastName].filter(Boolean).join(' ') || 'Your physiotherapist'
 
 /**
  * Card height: the screen minus the top bar and the page padding (and the tab bar on phones),
@@ -88,6 +97,16 @@ function MessagesPage() {
     currentUser?.role === 'patient' ? {} : 'skip'
   ) as MyPhysiotherapist[] | undefined
   const getOrCreateConversation = useMutation(api.chat.getOrCreateConversation)
+  // Who they can message: their physios, and in clinic mode the clinic itself (first)
+  const { clinic, showMarketplace } = useCareHome()
+  const contacts = useMemo<MyPhysiotherapist[] | undefined>(() => {
+    if (myPhysiotherapists === undefined) return undefined
+    const people = myPhysiotherapists.filter((p) => !p.isClinicDesk)
+    if (clinic && !people.some((p) => p._id === clinic.deskUserId)) {
+      people.unshift({ _id: clinic.deskUserId as Id<'users'>, firstName: clinic.name, imageUrl: clinic.logoUrl ?? undefined, isClinic: true })
+    }
+    return people
+  }, [myPhysiotherapists, clinic])
 
   const selected = useMemo(
     () => conversations?.find((c) => c._id === selectedId) ?? null,
@@ -108,8 +127,8 @@ function MessagesPage() {
   // Physios the patient can message who don't have a conversation yet
   const notYetMessaged = useMemo(() => {
     const talking = new Set((conversations ?? []).map((c) => c.otherParticipant._id))
-    return (myPhysiotherapists ?? []).filter((p) => !talking.has(p._id))
-  }, [conversations, myPhysiotherapists])
+    return (contacts ?? []).filter((p) => !talking.has(p._id))
+  }, [conversations, contacts])
 
   const openConversation = (id: Id<'conversations'>) => {
     setSelectedId(id)
@@ -138,19 +157,19 @@ function MessagesPage() {
   // ?with=<physio user id> (from My physiotherapist): open or start that chat once everything has loaded
   const handledWith = useRef(false)
   useEffect(() => {
-    if (!withParam || handledWith.current || conversations === undefined || myPhysiotherapists === undefined) return
+    if (!withParam || handledWith.current || conversations === undefined || contacts === undefined) return
     handledWith.current = true
     const existing = conversations.find((c) => c.otherParticipant._id === withParam)
     if (existing) {
       openConversation(existing._id)
       return
     }
-    if (myPhysiotherapists.some((p) => p._id === withParam)) void startWith(withParam as Id<'users'>)
+    if (contacts.some((p) => p._id === withParam)) void startWith(withParam as Id<'users'>)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [withParam, conversations, myPhysiotherapists])
+  }, [withParam, conversations, contacts])
 
   const loading = currentUser === undefined || (currentUser && conversations === undefined)
-  const canMessageSomeone = (myPhysiotherapists?.length ?? 0) > 0
+  const canMessageSomeone = (contacts?.length ?? 0) > 0
 
   return (
     <div className="mx-auto w-full max-w-6xl">
@@ -210,11 +229,11 @@ function MessagesPage() {
                     <Button className={primaryButtonClass} onClick={() => setNewOpen(true)}>
                       Start a conversation
                     </Button>
-                  ) : (
+                  ) : showMarketplace ? (
                     <Button asChild className={primaryButtonClass}>
                       <Link href="/find-a-physio">Find a physio</Link>
                     </Button>
-                  )
+                  ) : undefined
                 }
               />
             ) : (
@@ -293,7 +312,9 @@ function MessagesPage() {
                   <p className="text-xs text-pt-muted">
                     {selected.otherParticipant.isOnline
                       ? 'Online now'
-                      : (selected.otherParticipant.role && ROLE_LABELS[selected.otherParticipant.role]) || 'Care team'}
+                      : selected.otherParticipant.subtitle ||
+                        (selected.otherParticipant.role && ROLE_LABELS[selected.otherParticipant.role]) ||
+                        'Care team'}
                   </p>
                 </div>
                 {selected.otherParticipant.role === 'physiotherapist' && (
@@ -329,22 +350,24 @@ function MessagesPage() {
         title="New message"
         description="Who would you like to message?"
       >
-        {myPhysiotherapists === undefined ? (
+        {contacts === undefined ? (
           <LoadingBlocks rows={2} />
-        ) : myPhysiotherapists.length === 0 ? (
+        ) : contacts.length === 0 ? (
           <EmptyState
             icon={Stethoscope}
             title="No physiotherapist yet"
             description="You can message a physiotherapist once you’re under their care: after you book a session or accept their invitation."
             action={
-              <Button asChild className={primaryButtonClass}>
-                <Link href="/find-a-physio">Find a physio</Link>
-              </Button>
+              showMarketplace ? (
+                <Button asChild className={primaryButtonClass}>
+                  <Link href="/find-a-physio">Find a physio</Link>
+                </Button>
+              ) : undefined
             }
           />
         ) : (
           <ul className="-mx-2 space-y-1">
-            {[...notYetMessaged, ...myPhysiotherapists.filter((p) => !notYetMessaged.includes(p))].map((p) => (
+            {[...notYetMessaged, ...contacts.filter((p) => !notYetMessaged.includes(p))].map((p) => (
               <li key={p._id}>
                 <button
                   type="button"
@@ -355,7 +378,9 @@ function MessagesPage() {
                   <PhysioPhoto name={fullName(p)} imageUrl={p.imageUrl} size={44} />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-semibold text-pt-ink">{fullName(p)}</span>
-                    <span className="block truncate text-xs text-pt-muted">{p.clinic?.name ?? 'Physiotherapist'}</span>
+                    <span className="block truncate text-xs text-pt-muted">
+                      {p.isClinic ? 'The clinic team' : p.clinic?.name ? `Your physio at ${p.clinic.name}` : 'Physiotherapist'}
+                    </span>
                   </span>
                   {starting === p._id ? (
                     <Loader2 className="h-4 w-4 animate-spin text-pt-muted" />

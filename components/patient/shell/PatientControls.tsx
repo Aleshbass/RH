@@ -13,6 +13,7 @@ import {
   HelpCircle,
   MessageSquare,
   Moon,
+  Phone,
   PlayCircle,
   Sun,
   Video,
@@ -30,6 +31,7 @@ import { playSound, setSoundsEnabled, soundsEnabled, SOUND_SETTING_EVENT } from 
 import { joyWhatsAppUrl } from '@/lib/joyWhatsApp'
 import { cn } from '@/lib/utils'
 import { START_PATIENT_TOUR_EVENT } from '@/components/patient/shell/PatientTour'
+import { useCareHome } from '@/components/patient/careHome'
 
 /** Square icon button used in the top bar. */
 export const topBarButtonClass =
@@ -125,11 +127,11 @@ type NotificationDoc = {
   }
 }
 
-function linkFor(notification: NotificationDoc) {
+function linkFor(notification: NotificationDoc, mapLink?: (url: string) => string) {
   const url = notification.payload?.data?.actionUrl || notification.payload?.link
   // Only follow links inside the app
   if (!url || !url.startsWith('/')) return null
-  return url
+  return mapLink ? mapLink(url) : url
 }
 
 function iconFor(type?: string) {
@@ -141,11 +143,21 @@ function iconFor(type?: string) {
   return Bell
 }
 
+/** A gentle sound that says what kind of news it is: money in, a booking, a message. */
+function soundFor(type?: string) {
+  const kind = type ?? ''
+  if (kind.includes('declined') || kind.includes('cancel')) playSound('reject')
+  else if (kind.includes('payment') || kind.includes('paid')) playSound('paid')
+  else if (kind.includes('appointment') || kind.includes('booking')) playSound('booked')
+  else playSound('receive')
+}
+
 /**
  * Bell with the unread count. Opens a drawer with recent notifications, and toasts (with a
- * little sound) anything that arrives while the page is open.
+ * little sound) anything that arrives while the page is open. `mapLink` points links written for
+ * another portal at this one (the clinic portal opens physio links on its own pages).
  */
-export function PatientNotifications({ className }: { className?: string }) {
+export function PatientNotifications({ className, mapLink }: { className?: string; mapLink?: (url: string) => string }) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const notifications = useQuery(api.notifications.getMyNotifications, { limit: 20, includeRead: true }) as
@@ -166,16 +178,13 @@ export function PatientNotifications({ className }: { className?: string }) {
     if (latest._id === lastSeenId.current) return
     lastSeenId.current = latest._id
     if (latest.readAt || latest.status === 'read') return
-    const kind = latest.type ?? ''
-    if (kind.includes('payment')) playSound('paid')
-    else if (kind.includes('appointment') || kind.includes('booking')) playSound('booked')
-    else playSound('receive')
-    const href = linkFor(latest)
+    soundFor(latest.type)
+    const href = linkFor(latest, mapLink)
     toast(latest.payload?.title ?? 'New notification', {
       description: latest.payload?.body,
       action: href ? { label: 'Open', onClick: () => router.push(href) } : undefined,
     })
-  }, [notifications, router])
+  }, [notifications, router, mapLink])
 
   const openNotification = (notification: NotificationDoc) => {
     if (!notification.readAt && notification.status !== 'read') {
@@ -183,7 +192,7 @@ export function PatientNotifications({ className }: { className?: string }) {
         // Stays unread; not worth interrupting
       })
     }
-    const href = linkFor(notification)
+    const href = linkFor(notification, mapLink)
     if (href) {
       setOpen(false)
       router.push(href)
@@ -285,11 +294,18 @@ export function PatientNotifications({ className }: { className?: string }) {
 /* Help                                                                                           */
 /* ---------------------------------------------------------------------------------------------- */
 
-const HELP_TOPICS: { q: string; a: string }[] = [
-  {
-    q: 'How do I book a session?',
-    a: 'Go to Appointments and tap “Book a session”. Pick a time that suits you, then pay to confirm it.',
-  },
+/** Quick answers. A clinic's patients get their clinic's (`clinicName`): no Rehabify booking or payment rules. */
+function helpTopics(clinicName: string | null): { q: string; a: string }[] {
+  return [
+  clinicName
+    ? {
+        q: 'How do I book a session?',
+        a: `Go to Appointments and tap “Book a session”. Pick a time with your physiotherapist, or ask ${clinicName} for another time, clinician or service.`,
+      }
+    : {
+        q: 'How do I book a session?',
+        a: 'Go to Appointments and tap “Book a session” and pick a time that suits you. Your physio confirms it; Rehabify Care visits are confirmed once they’re paid.',
+      },
   {
     q: 'How do I join a video call?',
     a: 'When your physio has confirmed an online visit, a “Join call” button appears on Home and in Appointments. Use a phone or laptop with a camera and a quiet spot.',
@@ -306,11 +322,15 @@ const HELP_TOPICS: { q: string; a: string }[] = [
     q: 'What is the daily check-in for?',
     a: 'It tells your physio how your pain and day-to-day activity are going between visits, so they can adjust your plan early.',
   },
-]
+  ]
+}
 
 /** “?” in the top bar: quick answers, the tour, and a direct line to Joy on WhatsApp. */
 export function PatientHelp({ className }: { className?: string }) {
   const [open, setOpen] = useState(false)
+  // A clinic's patients ask their clinic, not Joy
+  const { clinic } = useCareHome()
+  const topics = helpTopics(clinic?.name ?? null)
   return (
     <>
       <button type="button" onClick={() => setOpen(true)} aria-label="Help" title="Help" className={cn(topBarButtonClass, className)}>
@@ -333,17 +353,26 @@ export function PatientHelp({ className }: { className?: string }) {
               <PlayCircle className="mr-2 h-4 w-4" />
               Take the tour
             </Button>
-            <Button asChild className={cn(primaryButtonClass, 'w-full')}>
-              <a href={joyWhatsAppUrl('Hi Joy, I need help with my Rehabify dashboard.')} target="_blank" rel="noopener noreferrer">
-                <WhatsApp className="mr-2 h-4 w-4" />
-                Ask Joy on WhatsApp
-              </a>
-            </Button>
+            {clinic ? (
+              <Button asChild className={cn(primaryButtonClass, 'w-full')}>
+                <a href={clinic.phone ? `tel:${clinic.phone.replace(/\s+/g, '')}` : '/dashboard/patient/messages'}>
+                  <Phone className="mr-2 h-4 w-4" />
+                  <span className="truncate">{clinic.phone ? `Call ${clinic.name}` : `Message ${clinic.name}`}</span>
+                </a>
+              </Button>
+            ) : (
+              <Button asChild className={cn(primaryButtonClass, 'w-full')}>
+                <a href={joyWhatsAppUrl('Hi Joy, I need help with my Rehabify dashboard.')} target="_blank" rel="noopener noreferrer">
+                  <WhatsApp className="mr-2 h-4 w-4" />
+                  Ask Joy on WhatsApp
+                </a>
+              </Button>
+            )}
           </div>
         }
       >
         <div className="space-y-2">
-          {HELP_TOPICS.map((topic) => (
+          {topics.map((topic) => (
             <details key={topic.q} className="group rounded-2xl bg-pt-sunken px-4 py-3 [&_summary::-webkit-details-marker]:hidden">
               <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-semibold text-pt-ink">
                 {topic.q}

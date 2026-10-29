@@ -52,7 +52,7 @@ export function BankLogo({
         referrerPolicy="no-referrer"
         onError={() => setFailedSrc(src)}
         className={cn(
-          'shrink-0 rounded-full border border-neutral-200 bg-white object-contain dark:border-neutral-700',
+          'shrink-0 rounded-full border border-pt-line bg-pt-surface object-contain',
           sizes[size],
           className
         )}
@@ -64,7 +64,7 @@ export function BankLogo({
     <span
       aria-hidden="true"
       className={cn(
-        'inline-flex shrink-0 items-center justify-center rounded-full bg-neutral-100 font-semibold text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300',
+        'inline-flex shrink-0 items-center justify-center rounded-full bg-pt-sunken font-semibold text-pt-muted',
         sizes[size],
         className
       )}

@@ -8,10 +8,13 @@ import {
   internalQuery,
   mutation,
   query,
+  type ActionCtx,
   type MutationCtx,
   type QueryCtx,
 } from "./_generated/server";
 import { internal } from "./_generated/api";
+import { clinicPaymentSplit } from "./clinicFees";
+import { loadClinicFeeConfig } from "./clinicFeeSettings";
 import { Doc, Id } from "./_generated/dataModel";
 import {
   canUseArea,
@@ -304,6 +307,9 @@ export const getInvoiceSettlement = query({
       subaccountCode,
       platformFeeKobo: invoice.feeBreakdown?.platformFee ?? invoice.platformFeeAmount,
       mainAccountChargeKobo: mainAccountChargeKobo(invoice),
+      clinicName: clinic?.name ?? null,
+      // Clinic patients pay the clinic directly: without its bank account there's no online payment
+      clinicNotConnected: Boolean(invoice.clinicId) && !subaccountCode,
     };
   },
 });
@@ -327,20 +333,64 @@ export const getInvoiceForPaymentLink = internalQuery({
       .query("clinicPayoutAccounts")
       .withIndex("by_clinic_id", (q) => q.eq("clinicId", clinic._id))
       .first();
+    // Patients pay the clinic directly: no bank account connected, no payment link (the clinic
+    // can still record cash, POS or transfer payments)
+    const subaccountCode = usableSubaccount(payout);
+    if (!subaccountCode) {
+      throw new ConvexError(
+        "Connect your clinic's bank account first (Clinic settings → Payouts), so patients' payments go straight to you."
+      );
+    }
     return {
       invoiceId: invoice._id,
       invoiceNumber: invoice.invoiceNumber,
       status: invoice.status,
       totalKobo: invoice.feeBreakdown?.total ?? invoice.totalAmount,
       mainAccountChargeKobo: mainAccountChargeKobo(invoice),
-      // Expired or out-of-date links are replaced with a fresh one
-      paymentLink: activePaymentLink(invoice),
+      // An older split (80/20 for the clinic's own patients) is brought up to today's rule first
+      staleSplit: invoice.patientSource !== "rehabify_referral" && (invoice.clinicSharePercent ?? 100) !== 100,
+      // Expired or out-of-date links are replaced with a fresh one, and so is a link that pays
+      // into an older (or no) bank account
+      paymentLink: invoice.paymentLinkSubaccount === subaccountCode ? activePaymentLink(invoice) : null,
       patientId: invoice.patientId,
       patientEmail: patient?.email || null,
       fallbackEmail: clinic.contactEmail || user.email || null,
       clinicName: clinic.name,
-      subaccountCode: usableSubaccount(payout),
+      subaccountCode,
     };
+  },
+});
+
+/**
+ * The clinic's own patients pay the clinic in full (no Rehabify cut since the subscription model):
+ * an unpaid invoice made under the older 80/20 split is recalculated before its payment link.
+ */
+export const refreshClinicInvoiceSplit = internalMutation({
+  args: { invoiceId: v.id("invoices") },
+  handler: async (ctx, args) => {
+    const invoice = await ctx.db.get(args.invoiceId);
+    if (!invoice?.clinicId || invoice.status === "paid" || invoice.patientSource === "rehabify_referral") return;
+    if ((invoice.clinicSharePercent ?? 100) === 100) return;
+    const feeConfig = await loadClinicFeeConfig(ctx);
+    const total = invoice.feeBreakdown?.total ?? invoice.totalAmount;
+    const split = clinicPaymentSplit(total, { ...feeConfig, clinicSharePercent: 100 });
+    await ctx.db.patch(invoice._id, {
+      platformFeeAmount: split.rehabifyKobo,
+      paystackFeeAmount: split.paystackFeeKobo,
+      stampDutyAmount: split.stampDutyKobo,
+      clinicSharePercent: split.clinicSharePercent,
+      physiotherapistShare: split.clinicShareKobo,
+      platformShare: split.rehabifyKobo,
+      feeBreakdown: {
+        ...(invoice.feeBreakdown ?? { subtotal: total, discount: 0, paystackPercentage: feeConfig.paystackPercent, total }),
+        platformFee: split.rehabifyKobo,
+        paystackFlat: split.paystackFeeKobo,
+        physiotherapistEarnings: split.clinicShareKobo,
+      },
+      // A link made for the old split would settle the wrong amounts
+      paymentLink: undefined,
+      paymentLinkExpiresAt: undefined,
+    });
   },
 });
 
@@ -351,6 +401,8 @@ export const recordPaymentLink = internalMutation({
     reference: v.string(),
     amountKobo: v.number(),
     paymentLink: v.string(),
+    /** The clinic subaccount the link pays into (clinic links only) */
+    subaccountCode: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const now = Date.now();
@@ -373,6 +425,7 @@ export const recordPaymentLink = internalMutation({
       paymentLink: args.paymentLink,
       paymentLinkExpiresAt: now + PAYMENT_LINK_TTL_MS,
       paymentLinkAmount: args.amountKobo,
+      paymentLinkSubaccount: args.subaccountCode,
     });
   },
 });
@@ -383,10 +436,19 @@ export const recordPaymentLink = internalMutation({
  */
 export const createPaymentLink = action({
   args: { invoiceId: v.id("invoices") },
-  handler: async (ctx, args): Promise<{ paymentLink: string }> => {
-    const invoice = await ctx.runQuery(internal.clinicBilling.getInvoiceForPaymentLink, {
-      invoiceId: args.invoiceId,
-    });
+  handler: async (ctx, args): Promise<{ paymentLink: string }> => createClinicPaymentLink(ctx, args.invoiceId),
+});
+
+/**
+ * The clinic invoice's checkout link (shared by the clinic portal and clinicians with Billing in
+ * the physio portal). Access: the clinic owner or a team member whose role includes Billing.
+ */
+export async function createClinicPaymentLink(ctx: ActionCtx, invoiceId: Id<"invoices">): Promise<{ paymentLink: string }> {
+    let invoice = await ctx.runQuery(internal.clinicBilling.getInvoiceForPaymentLink, { invoiceId });
+    if (invoice.staleSplit && invoice.status !== "paid" && invoice.status !== "void") {
+      await ctx.runMutation(internal.clinicBilling.refreshClinicInvoiceSplit, { invoiceId });
+      invoice = await ctx.runQuery(internal.clinicBilling.getInvoiceForPaymentLink, { invoiceId });
+    }
     if (invoice.status === "paid") {
       throw new ConvexError("This invoice is already paid");
     }
@@ -440,11 +502,11 @@ export const createPaymentLink = action({
       reference,
       amountKobo: invoice.totalKobo,
       paymentLink: data.authorization_url,
+      subaccountCode: invoice.subaccountCode,
     });
 
     return { paymentLink: data.authorization_url as string };
-  },
-});
+}
 
 /** Record a payment taken outside Paystack (cash, POS, bank transfer). */
 export const markInvoicePaid = mutation({

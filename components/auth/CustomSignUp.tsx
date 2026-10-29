@@ -84,6 +84,8 @@ export default function CustomSignUp({
   // ?as= from "Get started" (or the older ?role=), else what the page they're returning to is for
   // (e.g. /clinic-owner); failing both, the visitor's remembered choice
   const pageIntent = intentForPath(explicitRedirect?.split("?")[0]);
+  // Invited by a clinic or physio: a patient account, with no other Rehabify options in the way
+  const invited = Boolean(explicitRedirect?.startsWith("/patient-invite/"));
   const urlIntent = isPartner
     ? null
     : (parseIntent(searchParams?.get("as")) ??
@@ -310,7 +312,7 @@ export default function CustomSignUp({
         {step === "details" ? (
           <>
             <StepHeading eyebrow={copy.eyebrow} title={heading.title} subtitle={heading.subtitle} optionalSubtitle />
-            {!isPartner && (
+            {!isPartner && !invited && (
               <div className={SPACE.section}>
                 <IntentPicker value={intent} onChange={pickIntent} disabled={busy} />
               </div>

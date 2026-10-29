@@ -4,19 +4,22 @@ import { useEffect, type ReactNode } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useQuery } from 'convex/react'
+import { makeFunctionReference } from 'convex/server'
 import { CalendarPlus } from '@/components/icons'
 import { api } from '@/convex/_generated/api'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { primaryButtonClass } from '@/components/patient/ui'
 import { PatientNotifications, PatientThemeToggle } from '@/components/patient/shell/PatientControls'
-import { PhysioBrand, PhysioMobileNav, PhysioSidebar, SectionTabs, PHYSIO_HOME } from '@/components/physio/PhysioSidebar'
+import { PortalBrand, PhysioMobileNav, PhysioSidebar, SectionTabs, PHYSIO_HOME } from '@/components/physio/PhysioSidebar'
+import { ClinicModeBanner } from '@/components/physio/shell/ClinicModeBanner'
+import { useClinicMode } from '@/components/physio/clinicMode'
 import { PhysioHelp } from '@/components/physio/shell/PhysioHelp'
 import { LiveSessionBanner } from '@/components/physio/shell/LiveSessionBanner'
 import { PhysioDutySwitch } from '@/components/physio/PhysioDutySwitch'
 import { PhysioDeclined, PhysioUnderReview } from '@/components/physio/PhysioReviewStates'
 import { BookingProvider, useBooking } from '@/components/physio/schedule/BookingDrawer'
-import { CLINIC_PORTAL_HOME, clinicianBelongsInClinicPortal } from '@/components/clinic/clinician-routing'
+import { isClinicClinician } from '@/components/clinic/clinician-routing'
 import { WebsiteLink } from '@/components/dashboard/shared/WebsiteLink'
 import { AppIconBadge, AppSetupButton, AppSetupPrompt } from '@/components/pwa/AppSetup'
 
@@ -57,6 +60,8 @@ function ShellSkeleton() {
 
 type Access = 'loading' | 'redirecting' | 'declined' | 'review' | 'full'
 
+const teamUnreadRef = makeFunctionReference<'query', Record<string, never>, number>('clinicTeamChat:getTeamUnreadCount')
+
 /**
  * Decides what a signed-in user may see in the physiotherapist portal.
  * - Not a physio / not onboarded: sent to the right place.
@@ -74,11 +79,9 @@ function usePhysioAccess(pathname: string) {
   else if (user) {
     const u = user as typeof user & { clinicId?: string; onboardingSkipped?: boolean }
     if (u.role !== 'physiotherapist') redirectTo = '/dashboard'
-    // Clinic clinicians without their own approved Rehabify account work from the clinic portal
-    // (same rule as /dashboard: components/clinic/clinician-routing.ts)
-    else if (clinicianBelongsInClinicPortal(u, setup === undefined ? undefined : (setup?.approvalStatus ?? null)))
-      redirectTo = CLINIC_PORTAL_HOME
-    else if (!u.onboarded && !u.onboardingSkipped) redirectTo = '/physiotherapist'
+    // Clinic clinicians work here too (clinic mode); the clinic vetted them, so there's no
+    // marketplace application to finish (components/clinic/clinician-routing.ts)
+    else if (!u.onboarded && !u.onboardingSkipped && !isClinicClinician(u)) redirectTo = '/physiotherapist'
     // Onboarded but never submitted for review (older accounts): finish the application,
     // which creates the review request. Without one, every approved-only query would fail.
     else if (setup && setup.approvalStatus === null) redirectTo = '/physiotherapist'
@@ -109,7 +112,12 @@ function usePhysioAccess(pathname: string) {
 export function PhysioShell({ children }: { children: ReactNode }) {
   const pathname = usePathname() ?? ''
   const { access, setup, isUnderReview } = usePhysioAccess(pathname)
-  const unreadMessages = useQuery(api.chat.getUnreadCount, access === 'full' ? {} : 'skip') as number | undefined
+  const patientUnread = useQuery(api.chat.getUnreadCount, access === 'full' ? {} : 'skip') as number | undefined
+  // Clinic members work the clinic's hours, not Rehabify's on-duty matching
+  const clinic = useClinicMode()
+  // Clinic members also have the team chat under Messages
+  const teamUnread = useQuery(teamUnreadRef, access === 'full' && clinic.active ? {} : 'skip')
+  const unreadMessages = (patientUnread ?? 0) + (teamUnread ?? 0)
   // Approved physios only: getMyAppointments needs an approved account
   const liveSessions = access === 'full' && !isUnderReview
 
@@ -134,8 +142,8 @@ export function PhysioShell({ children }: { children: ReactNode }) {
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-30 bg-pt-canvas/90 backdrop-blur-xl">
           <div className="flex h-16 items-center justify-between gap-2 px-4 sm:px-6 lg:px-8">
-            <Link href={PHYSIO_HOME} aria-label="Rehabify home" className="lg:hidden">
-              <PhysioBrand />
+            <Link href={PHYSIO_HOME} aria-label="Home" className="min-w-0 lg:hidden">
+              <PortalBrand />
             </Link>
             {/* An online session starting within 15 minutes (or under way): one tap to join, on every page */}
             <div className="hidden min-w-0 flex-1 lg:flex">
@@ -144,7 +152,7 @@ export function PhysioShell({ children }: { children: ReactNode }) {
 
             <div className="flex shrink-0 items-center gap-2">
               <WebsiteLink tone="portal" className="hidden sm:inline-flex" />
-              {!isUnderReview && <PhysioDutySwitch />}
+              {!isUnderReview && clinic.loaded && !clinic.active && <PhysioDutySwitch />}
               {!isUnderReview && <NewAppointmentButton />}
               <AppSetupButton tone="portal" />
               <PhysioHelp />
@@ -162,6 +170,7 @@ export function PhysioShell({ children }: { children: ReactNode }) {
             <PhysioUnderReview setup={setup ?? null} />
           ) : (
             <>
+              <ClinicModeBanner />
               <SectionTabs />
               {children}
             </>

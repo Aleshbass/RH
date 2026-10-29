@@ -19,8 +19,8 @@ export function friendlyError(err: unknown, fallback: string) {
   return message
 }
 
-export const fieldClass = 'text-sm bg-white dark:bg-neutral-950 border-neutral-200 dark:border-neutral-800'
-export const labelClass = 'text-xs font-medium text-neutral-700 dark:text-neutral-300'
+export const fieldClass = 'rounded-xl text-sm bg-pt-surface text-pt-ink border-pt-line-strong placeholder:text-pt-faint'
+export const labelClass = 'text-xs font-medium text-pt-ink'
 
 /** No id to send to the backend (nothing chosen yet). */
 export const isMissingId = (id: string | null | undefined) => !id
@@ -34,29 +34,27 @@ export interface ClinicianOption {
 type ClinicianRow = { id: string; name: string; isOwner: boolean; isMe: boolean }
 
 /**
- * Everyone who can take on a patient: the owner and active clinicians, with the
- * signed-in person shown as "You" first.
+ * Everyone who can take on a patient: the clinic's active clinicians. The owner's account runs
+ * the clinic and doesn't treat (owner decision, 28 Oct 2026), so it's never offered.
  *
- * `ownerId` is the clinician the backend uses when none is passed: the signed-in person
- * if they treat patients, otherwise (front-desk staff) the clinic owner.
+ * `ownerId` is the clinic owner's id (patients waiting for a clinician sit with them), and
+ * `defaultId` the clinician to preselect when there's only one.
  */
 export function useClinicianOptions() {
   const clinicians = useQuery(api.clinicTools.getClinicClinicianOptions)
 
   const list = (clinicians ?? []) as ClinicianRow[]
-  const me = list.find((c) => c.isMe) ?? null
+  const me = list.find((c) => c.isMe && !c.isOwner) ?? null
   const owner = list.find((c) => c.isOwner) ?? null
-  const options: ClinicianOption[] = [
-    ...(me ? [{ id: me.id as string, label: 'You' }] : []),
-    ...list
-      .filter((c) => !c.isMe)
-      .map((c) => ({ id: c.id as string, label: c.isOwner ? `${c.name} (owner)` : c.name })),
-  ].filter((o) => !isMissingId(o.id))
+  const options: ClinicianOption[] = list
+    .filter((c) => !c.isOwner)
+    .map((c) => ({ id: c.id as string, label: c.isMe ? 'You' : c.name }))
+    .filter((o) => !isMissingId(o.id))
 
-  const defaultId = me?.id ?? owner?.id ?? null
   return {
-    ownerId: defaultId && !isMissingId(defaultId) ? (defaultId as string) : null,
+    ownerId: owner && !isMissingId(owner.id) ? (owner.id as string) : null,
     meId: me && !isMissingId(me.id) ? (me.id as string) : null,
+    defaultId: options.length === 1 ? options[0].id : null,
     options,
     loading: clinicians === undefined,
   }

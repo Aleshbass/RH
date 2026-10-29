@@ -1,8 +1,8 @@
 'use client'
 
 import { useAuth } from '@clerk/nextjs'
-import { useQuery } from 'convex/react'
 import { api } from '@/convex/_generated/api'
+import { useQueryUntyped } from '@/lib/convexUntyped'
 import { useRouter } from 'next/navigation'
 import { Loader2 } from '@/components/icons'
 import { useEffect, useState } from 'react'
@@ -12,31 +12,31 @@ import { Button } from '@/components/ui/button'
 import {
   CLINIC_PORTAL_HOME,
   PHYSIO_PORTAL_HOME,
-  clinicianBelongsInClinicPortal,
   isClinicClinician,
   isClinicFrontDesk,
 } from '@/components/clinic/clinician-routing'
 
 type UserRole = 'physiotherapist' | 'clinic_owner' | 'patient' | 'family_member' | 'doctor' | 'admin' | 'partner';
 
+// Plain references: the generated `api` type is at TypeScript's depth limit here (TS2589)
+const root = api as unknown as Record<string, Record<string, unknown>>
+
+/** queries.checkDashboardAccess */
+type DashboardAccess = { canAccess: boolean; reason?: string; approvalStatus?: string }
+
 export default function DashboardPage() {
   const { isLoaded, isSignedIn } = useAuth()
   const router = useRouter()
   // Only fetch Convex data once Clerk auth is ready to avoid null results while still loading
-  const user: User | null | undefined = useQuery(
-    api.users.getMyUser,
+  const user: User | null | undefined = useQueryUntyped(
+    root.users.getMyUser,
     isLoaded && isSignedIn ? {} : "skip"
-  ) as unknown as User | null | undefined
-  const dashboardAccess = useQuery(
-    api.queries.checkDashboardAccess,
+  ) as User | null | undefined
+  const dashboardAccess = useQueryUntyped(
+    root.queries.checkDashboardAccess,
     isLoaded && isSignedIn ? {} : "skip"
-  )
-  // Clinic clinicians: the same approval the physio portal reads, so both agree where they belong
+  ) as DashboardAccess | undefined
   const isClinicianOnTeam = isClinicClinician(user as unknown as { clinicId?: string; role?: string } | null | undefined)
-  const physioSetup = useQuery(
-    api.physioSetup.getMySetupStatus,
-    isLoaded && isSignedIn && isClinicianOnTeam ? {} : "skip"
-  ) as { approvalStatus: string | null } | null | undefined
   const [isRedirecting, setIsRedirecting] = useState(false)
 
   // Handle redirects based on user role and approval status
@@ -52,22 +52,15 @@ export default function DashboardPage() {
     if (user === null) return // Will show error message below
 
     // Clinic team members (components/clinic/clinician-routing.ts): front-desk staff work in the
-    // clinic portal; clinicians do too unless they have their own approved Rehabify physio account,
-    // in which case they land on the physio portal and switch to the clinic from its sidebar.
+    // clinic portal, clinicians in the physio portal (clinic mode).
     const clinicTeam = user as unknown as { clinicId?: string; role?: string; onboarded?: boolean }
     if (isClinicFrontDesk(clinicTeam)) {
       if (!isRedirecting) setIsRedirecting(true)
       router.replace(CLINIC_PORTAL_HOME)
       return
     }
+    // Clinicians work in the physio portal, in clinic mode
     if (isClinicClinician(clinicTeam)) {
-      const approvalStatus = physioSetup === undefined ? undefined : (physioSetup?.approvalStatus ?? null)
-      if (clinicianBelongsInClinicPortal(clinicTeam, approvalStatus)) {
-        if (!isRedirecting) setIsRedirecting(true)
-        router.replace(CLINIC_PORTAL_HOME)
-        return
-      }
-      if (approvalStatus === undefined) return // Still loading
       if (!isRedirecting) setIsRedirecting(true)
       router.replace(PHYSIO_PORTAL_HOME)
       return
@@ -146,7 +139,7 @@ export default function DashboardPage() {
           router.replace('/role-selection')
       }
     }
-  }, [isLoaded, isSignedIn, user, dashboardAccess, physioSetup, isRedirecting, router])
+  }, [isLoaded, isSignedIn, user, dashboardAccess, isRedirecting, router])
 
   // Loading state while checking auth and user data
   if (!isLoaded || user === undefined || dashboardAccess === undefined) {

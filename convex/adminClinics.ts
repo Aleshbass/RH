@@ -230,9 +230,8 @@ export const getClinic = query({
       billing.onlinePaidKobo += total;
       const fee = inv.feeBreakdown?.platformFee ?? inv.platformFeeAmount ?? 0;
       billing.rehabifyFeesKobo += fee;
-      if (inv.payoutRoute === "held_by_platform") {
-        const clinicShare = inv.feeBreakdown?.physiotherapistEarnings ?? inv.physiotherapistShare ?? total - fee;
-        billing.heldByRehabifyKobo += clinicShare - (inv.stampDutyAmount ?? 0);
+      if (inv.payoutRoute === "held_by_platform" && !inv.clinicTransferredAt) {
+        billing.heldByRehabifyKobo += heldForClinicKobo(inv);
       }
     }
 
@@ -548,5 +547,57 @@ export const setClinicStatus = mutation({
     });
 
     return { changed: true };
+  },
+});
+
+/** What Rehabify holds for the clinic from one online payment (its share, less stamp duty). */
+function heldForClinicKobo(inv: Doc<"invoices">): number {
+  const total = inv.totalAmount || 0;
+  const fee = inv.feeBreakdown?.platformFee ?? inv.platformFeeAmount ?? 0;
+  const clinicShare = inv.feeBreakdown?.physiotherapistEarnings ?? inv.physiotherapistShare ?? total - fee;
+  return Math.max(0, clinicShare - (inv.stampDutyAmount ?? 0));
+}
+
+/**
+ * Admin: money Rehabify held for a clinic (patients paid before the clinic connected its bank)
+ * has been sent to the clinic by hand. Marks every held payment as transferred, with the
+ * transfer reference, and tells the clinic owner. New payments go straight to the clinic.
+ */
+export const recordClinicTransfer = mutation({
+  args: { clinicId: v.id("clinics"), reference: v.string() },
+  handler: async (ctx, args) => {
+    const admin = await ensureUserRole(ctx, ["admin"]);
+    const reference = args.reference.trim();
+    if (!reference) throw new ConvexError("Add the bank transfer reference.");
+    const clinic = await ctx.db.get(args.clinicId);
+    if (!clinic) throw new ConvexError("Clinic not found");
+    const invoices = await ctx.db
+      .query("invoices")
+      .withIndex("by_clinic_id", (q) => q.eq("clinicId", clinic._id))
+      .collect();
+    const now = Date.now();
+    let kobo = 0;
+    let count = 0;
+    for (const inv of invoices) {
+      if (inv.status !== "paid" || inv.payoutRoute !== "held_by_platform" || inv.clinicTransferredAt) continue;
+      if (inv.paymentMethod && inv.paymentMethod !== "paystack") continue;
+      kobo += heldForClinicKobo(inv);
+      count += 1;
+      await ctx.db.patch(inv._id, { clinicTransferredAt: now, clinicTransferReference: reference, clinicTransferredBy: admin._id });
+    }
+    if (count === 0) return { count, kobo };
+    await insertNotification(ctx, {
+      userId: clinic.ownerId,
+      type: "payment_received",
+      priority: "medium",
+      status: "pending",
+      createdAt: now,
+      payload: {
+        title: "Rehabify sent your patients' payments",
+        body: `₦${(kobo / 100).toLocaleString("en-NG", { maximumFractionDigits: 2 })} from ${count} online payment${count === 1 ? "" : "s"}, reference ${reference}.`,
+        data: { entityId: String(clinic._id), entityType: "clinic", actionUrl: "/dashboard/clinic/billing" },
+      },
+    });
+    return { count, kobo };
   },
 });
