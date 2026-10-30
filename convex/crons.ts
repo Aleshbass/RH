@@ -97,6 +97,18 @@ crons.daily(
   {}
 );
 
+// Outcome tracking (outcomes.ts): "how's the pain?" an hour before each confirmed visit and after each finished one
+crons.interval("send-outcome-session-checks", { minutes: 15 }, internal.outcomes.sendSessionChecks, {});
+
+// Weekly "how are you getting on?" for patients in care that nothing else asked, 10:00 WAT; closes unused links
+crons.daily("send-outcome-weekly-checks", { hourUTC: 9, minuteUTC: 0 }, internal.outcomes.sendWeeklyChecks, {});
+
+// Reward points older than 12 months expire; finished referral boosts and featured profiles end. 02:00 WAT
+crons.daily("run-daily-rewards", { hourUTC: 1, minuteUTC: 0 }, internal.rewards.runDailyRewards, {});
+
+// Community: Case of the Week closes on its date and logs CPD for those who voted and answered
+crons.interval("close-community-cases", { hours: 1 }, internal.community.closeDueCases, {});
+
 crons.interval("expire-joy-provider-responses", { minutes: 5 }, internal.joyIntegration.dispatchExpiredJoyProviderResponses, {});
 // Website requests the physio didn't answer in time go back to the patient (Booking Policy 5.4)
 crons.interval("expire-booking-requests", { minutes: 5 }, internal.rehabifyFollowUps.expireBookingRequests, {});

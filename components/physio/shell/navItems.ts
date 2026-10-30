@@ -2,8 +2,10 @@ import {
   CalendarDays,
   Dumbbell,
   Home,
+  MessageCircle,
   MessageSquare,
   Settings,
+  UserRound,
   Users,
   Wallet,
   type IconComponent,
@@ -36,11 +38,23 @@ export const NAV = {
   },
   patients: { title: 'Patients', href: path('patients'), icon: Users, hint: 'Everyone in your care and their records' },
   messages: { title: 'Messages', href: path('messages'), icon: MessageSquare, hint: 'Chat with your patients' },
+  community: {
+    title: 'Community',
+    href: path('community'),
+    icon: MessageCircle,
+    hint: 'Case of the Week, questions and CPD with other physios',
+  },
   library: {
     title: 'Library',
     href: path('exercise-library'),
     icon: Dumbbell,
     hint: '3D exercises to preview and send',
+  },
+  me: {
+    title: 'Me',
+    href: path('me'),
+    icon: UserRound,
+    hint: 'Your outcomes, reward points and CPD',
   },
   money: {
     title: 'Money',
@@ -60,15 +74,15 @@ export const NAV = {
 
 /** Sidebar order: the day's work first, then the practice. */
 export const PHYSIO_NAV: PhysioNavGroup[] = [
-  { items: [NAV.today, NAV.schedule, NAV.patients, NAV.messages] },
-  { label: 'Practice', items: [NAV.library, NAV.money, NAV.settings] },
+  { items: [NAV.today, NAV.schedule, NAV.patients, NAV.messages, NAV.community] },
+  { label: 'Practice', items: [NAV.library, NAV.me, NAV.money, NAV.settings] },
 ]
 
 /** While an application is under review only these are open. */
 export const LIMITED_NAV: PhysioNavGroup[] = [{ items: [NAV.today, NAV.settings] }]
 
-/** Bottom bar on phones and tablets; everything else lives under "More". */
-export const MOBILE_TABS: PhysioNavItem[] = [NAV.today, NAV.schedule, NAV.patients, NAV.messages]
+/** Bottom bar on phones and tablets; Messages is in the top bar, everything else under "More". */
+export const MOBILE_TABS: PhysioNavItem[] = [NAV.today, NAV.schedule, NAV.patients, NAV.community]
 
 function under(pathname: string, href: string) {
   if (href === PHYSIO_HOME) return pathname === href

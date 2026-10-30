@@ -20,6 +20,7 @@ import {
 } from "@/components/icons";
 import { PhysioHostCard } from "@/components/booking/PhysioHostCard";
 import { BookingShell, PoweredBy } from "@/components/booking/BookingShell";
+import { PublicProof } from "@/components/outcomes/PublicProof";
 import { ServiceOption } from "@/components/booking/ServiceOption";
 import {
     bookableServices,
@@ -363,6 +364,8 @@ export default function PhysioBookingPage() {
                     booking is confirmed once paid.
                 </p>
             </section>
+
+            {resolvedUserId && <PublicProof physiotherapistId={resolvedUserId as Id<"users">} className="mt-4" />}
 
             <MediLoanWidget physiotherapistName={profile.fullName} physiotherapistId={resolvedUserId ?? undefined} />
 

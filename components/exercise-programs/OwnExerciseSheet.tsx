@@ -11,10 +11,12 @@ import { Switch } from '@/components/ui/switch'
 import { PhysioDrawer, fieldClass, primaryButtonClass } from '@/components/physio/ui'
 import type { Id } from '@/convex/_generated/dataModel'
 import { inspectVideo, uploadToImagekit, type ImagekitFile } from '@/components/learn/video/videoApi'
-import { OWN_MEDIA_CONSENT, OWN_MEDIA_LIMITS, type OwnMediaConsent } from '@/lib/ownExerciseMedia'
+import { OWN_MEDIA_CONSENT, OWN_MEDIA_LIMITS, formatMegabytes, type OwnMediaConsent } from '@/lib/ownExerciseMedia'
+import { canRecordInApp, canShrinkVideo, shrinkVideo } from '@/lib/video/shrink'
 import { cn } from '@/lib/utils'
 import { formatDuration, preparePhoto, type RequestMediaLinks } from './ownMedia'
 import { OwnMediaView } from './OwnMediaView'
+import { VideoRecorder } from './VideoRecorder'
 import type { LibraryEntry } from './types'
 
 export type OwnExercise = LibraryEntry & { libraryShare: 'pending' | 'approved' | 'declined' | null }
@@ -61,6 +63,9 @@ export function OwnExerciseSheet({
   const [video, setVideo] = useState<NewVideo | null>(null)
   const [photos, setPhotos] = useState<NewPhoto[]>([])
   const [progress, setProgress] = useState<number | null>(null)
+  // Shrinking a video that's too big, before it uploads (0–100)
+  const [shrinking, setShrinking] = useState<number | null>(null)
+  const [recorderOpen, setRecorderOpen] = useState(false)
   const [consent, setConsent] = useState<OwnMediaConsent | null>(null)
   const [name, setName] = useState('')
   const [steps, setSteps] = useState<string[]>([''])
@@ -104,11 +109,25 @@ export function OwnExerciseSheet({
   const uploadVideo = async (file: File | undefined) => {
     if (!file) return
     if (!file.type.startsWith('video/')) return toast.error('Choose a video file.')
-    if (file.size > OWN_MEDIA_LIMITS.videoBytes) return toast.error('Videos can be up to 50 MB. Record a shorter clip.')
+    const limit = formatMegabytes(OWN_MEDIA_LIMITS.videoBytes)
+    if (file.size > OWN_MEDIA_LIMITS.videoBytes && !canShrinkVideo()) {
+      return toast.error(`Videos can be up to ${limit}. Record it here in the app, which keeps clips small, or trim it.`)
+    }
     setProgress(0)
     try {
       const { durationSec, poster } = await inspectVideo(file)
-      if (durationSec > OWN_MEDIA_LIMITS.videoSeconds) throw new Error('Keep videos under 5 minutes.')
+      if (durationSec > OWN_MEDIA_LIMITS.videoSeconds) throw new Error('Keep videos under 3 minutes.')
+      // Phone camera apps record big files: shrink it here first (takes as long as the video)
+      if (file.size > OWN_MEDIA_LIMITS.videoBytes) {
+        setProgress(null)
+        setShrinking(0)
+        try {
+          file = await shrinkVideo(file, OWN_MEDIA_LIMITS.videoBytes, (f) => setShrinking(Math.round(f * 100)))
+        } finally {
+          setShrinking(null)
+        }
+        setProgress(0)
+      }
       const uploaded = await uploadToImagekit(file, file.name || 'exercise.mp4', await getUploadAuth({ kind: 'video' }), {
         isPrivate: true,
         onProgress: (fraction) => setProgress(Math.round(fraction * 95)),
@@ -289,7 +308,12 @@ export function OwnExerciseSheet({
             </ul>
           ) : (
             <div className="flex gap-2">
-              <button type="button" disabled={uploading} onClick={() => (mode === 'video' ? recordVideo : takePhoto).current?.click()} className={tileClass}>
+              <button
+                type="button"
+                disabled={uploading || shrinking !== null}
+                onClick={() => (mode === 'video' && canRecordInApp() ? setRecorderOpen(true) : (mode === 'video' ? recordVideo : takePhoto).current?.click())}
+                className={tileClass}
+              >
                 <span className="flex h-11 w-11 items-center justify-center rounded-full bg-rh-lime text-rh-ink">
                   <Camera className="h-5 w-5" />
                 </span>
@@ -304,6 +328,14 @@ export function OwnExerciseSheet({
             </div>
           )}
 
+          {shrinking !== null && (
+            <div className="mt-3" role="status">
+              <div className="h-1.5 overflow-hidden rounded-full bg-pt-sunken">
+                <div className="h-full rounded-full bg-pt-ink transition-[width]" style={{ width: `${shrinking}%` }} />
+              </div>
+              <p className="mt-1.5 text-xs text-pt-muted">Making it smaller for patients’ phones… {shrinking}%. Keep this open.</p>
+            </div>
+          )}
           {uploading && (
             <div className="mt-3" role="status">
               <div className="h-1.5 overflow-hidden rounded-full bg-pt-sunken">
@@ -313,9 +345,17 @@ export function OwnExerciseSheet({
             </div>
           )}
           {!hasMedia && !uploading && (
-            <p className="mt-2 text-xs text-pt-muted">Optional. A video up to 5 minutes, or up to 5 photos of the key positions.</p>
+            <p className="mt-2 text-xs text-pt-muted">Optional. A short video (up to {formatMegabytes(OWN_MEDIA_LIMITS.videoBytes)}; filming here keeps it small), or up to 5 photos of the key positions.</p>
           )}
 
+          <VideoRecorder
+            open={recorderOpen}
+            onClose={() => setRecorderOpen(false)}
+            onDone={(file) => {
+              setRecorderOpen(false)
+              void uploadVideo(file)
+            }}
+          />
           <input ref={recordVideo} type="file" accept="video/*" capture="environment" hidden onChange={(e) => { void uploadVideo(e.target.files?.[0]); e.target.value = '' }} />
           <input ref={pickVideo} type="file" accept="video/mp4,video/quicktime,video/webm,video/*" hidden onChange={(e) => { void uploadVideo(e.target.files?.[0]); e.target.value = '' }} />
           <input ref={takePhoto} type="file" accept="image/*" capture="environment" hidden onChange={(e) => { void uploadPhotos(e.target.files); e.target.value = '' }} />
@@ -429,8 +469,8 @@ export function OwnExerciseSheet({
             <span className="block text-sm font-semibold text-pt-ink">Offer it to the Rehabify library</span>
             <span className="mt-0.5 block text-xs leading-5 text-pt-muted">
               {exercise?.libraryShare === 'approved'
-                ? 'It’s in the library. Other physios can use it.'
-                : 'The Rehabify team reviews it first. Then other physios can send it too.'}
+                ? 'It’s in the library with your name on it. You earn 5 points each time another physio prescribes it.'
+                : 'The Rehabify team reviews it first. Then other physios can send it, credited to you: 25 points when it’s accepted, 5 each time someone prescribes it.'}
             </span>
           </span>
           <Switch checked={share} onCheckedChange={setShare} disabled={exercise?.libraryShare === 'approved'} />

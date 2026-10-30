@@ -2,7 +2,9 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { BookOpen, Camera, Loader2, Rotate3d, Search, Send } from '@/components/icons'
+import { useQuery } from 'convex/react'
+import { makeFunctionReference } from 'convex/server'
+import { BookOpen, Camera, Layers, Loader2, Rotate3d, Search, Send } from '@/components/icons'
 import { api } from '@/convex/_generated/api'
 import type { Id } from '@/convex/_generated/dataModel'
 import { Button } from '@/components/ui/button'
@@ -14,6 +16,7 @@ import { LibraryPicker } from '@/components/exercise-programs/LibraryPicker'
 import { OwnExercisesTab } from '@/components/exercise-programs/OwnExercisesTab'
 import { SendProgramDialog } from '@/components/exercise-programs/SendProgramDialog'
 import { ShareLinkDialog } from '@/components/exercise-programs/ShareLinkDialog'
+import { TemplatesTab } from '@/components/exercise-programs/templates'
 import type { LibraryData, LibraryEntry, LibraryResourceRow } from '@/components/exercise-programs/types'
 import { fieldClass, PageContainer, PageHeader, Panel, primaryButtonClass } from '@/components/physio/ui'
 import { useQueryUntyped } from '@/lib/convexUntyped'
@@ -24,12 +27,14 @@ const root = api as unknown as Record<string, Record<string, unknown>>
 
 type PatientOption = { _id: Id<'users'>; firstName?: string; lastName?: string; email?: string; phoneNumber?: string }
 
-/** What's being sent: a 3D exercise or a piece of education. */
-type Choice = { entry?: LibraryEntry; resource?: LibraryResourceRow }
+/** What's being sent: a 3D exercise, a piece of education, or a whole programme template. */
+type Choice = { entry?: LibraryEntry; resource?: LibraryResourceRow; templateId?: Id<'programTemplates'> }
 
-type Tab = '3d' | 'education' | 'mine'
+type Tab = '3d' | 'education' | 'mine' | 'templates'
 
-const TABS: Tab[] = ['3d', 'education', 'mine']
+const TABS: Tab[] = ['3d', 'education', 'mine', 'templates']
+
+const currentUserRef = makeFunctionReference<'query', Record<string, never>, { clinicId?: Id<'clinics'> } | null>('queries:getCurrentUser')
 const tabFrom = (value: string | null): Tab => (TABS.includes(value as Tab) ? (value as Tab) : '3d')
 
 function PatientChooser({ open, onOpenChange, onChoose }: { open: boolean; onOpenChange: (open: boolean) => void; onChoose: (p: PatientOption) => void }) {
@@ -84,6 +89,9 @@ export default function ExerciseLibraryPage() {
   const [choosing, setChoosing] = useState<Choice | null>(null)
   const [target, setTarget] = useState<{ patient: PatientOption; pick: Choice } | null>(null)
   const [shareFor, setShareFor] = useState<{ programId: Id<'exercisePrograms'>; patient: PatientOption } | null>(null)
+  // Building or editing a programme template (no patient)
+  const [templateEditor, setTemplateEditor] = useState<{ templateId?: Id<'programTemplates'> } | null>(null)
+  const me = useQuery(currentUserRef, {})
   const count3d = library?.items.filter((i) => i.animation).length ?? 0
 
   useEffect(() => {
@@ -113,6 +121,7 @@ export default function ExerciseLibraryPage() {
             { key: '3d', label: '3D exercises', icon: Rotate3d, count: count3d },
             { key: 'education', label: 'Education', icon: BookOpen, count: null },
             { key: 'mine', label: 'My exercises', icon: Camera, count: null },
+            { key: 'templates', label: 'Templates', icon: Layers, count: null },
           ] as const
         ).map((t) => (
           <button
@@ -149,9 +158,18 @@ export default function ExerciseLibraryPage() {
         <Panel bodyClassName="p-4 sm:p-5">
           <EducationBrowser mode="browse" onSend={(resource) => setChoosing({ resource })} />
         </Panel>
-      ) : (
+      ) : tab === 'mine' ? (
         <Panel bodyClassName="p-4 sm:p-5">
           <OwnExercisesTab onSend={(entry) => setChoosing({ entry })} />
+        </Panel>
+      ) : (
+        <Panel bodyClassName="p-4 sm:p-5">
+          <TemplatesTab
+            hasClinic={Boolean(me?.clinicId)}
+            onUse={(templateId) => setChoosing({ templateId })}
+            onNew={() => setTemplateEditor({})}
+            onEdit={(templateId) => setTemplateEditor({ templateId })}
+          />
         </Panel>
       )}
 
@@ -187,8 +205,18 @@ export default function ExerciseLibraryPage() {
           open
           initial={target.pick.entry ? [target.pick.entry] : undefined}
           initialResources={target.pick.resource ? [target.pick.resource] : undefined}
+          templateId={target.pick.templateId}
           onOpenChange={(o) => !o && setTarget(null)}
           onSent={(programId) => setShareFor({ programId, patient: target.patient })}
+        />
+      )}
+      {templateEditor && (
+        <SendProgramDialog
+          mode="template"
+          patientName="your patient"
+          open
+          templateId={templateEditor.templateId}
+          onOpenChange={(o) => !o && setTemplateEditor(null)}
         />
       )}
       <ShareLinkDialog

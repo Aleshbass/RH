@@ -134,6 +134,7 @@ export function LibraryPicker({
                   <div className="space-y-1 p-3 pt-2">
                     <p className="line-clamp-1 text-sm font-semibold text-rh-ink dark:text-white">{entry.name}</p>
                     <p className="line-clamp-1 text-xs text-neutral-500">{entry.bodyParts.filter((b) => !['Legs', 'Arms'].includes(b)).join(' · ') || entry.bodyParts.join(' · ')}</p>
+                    {entry.author && <p className="line-clamp-1 text-xs text-neutral-500">By {entry.author.name}</p>}
                     <div className="flex flex-wrap gap-1">
                       {entry.sided && <StatusBadge tone="neutral">Left / right</StatusBadge>}
                       {entry.animation?.status === 'draft' && <StatusBadge>Awaiting sign-off</StatusBadge>}

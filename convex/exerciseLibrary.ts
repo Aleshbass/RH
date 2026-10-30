@@ -22,6 +22,7 @@ import {
   resolveShareSession,
 } from "./helpers/exerciseAccess";
 import { assertProgramUnlocked, isProgramLocked } from "./helpers/patientPlans";
+import { awardPoints, tierOf } from "./rewards";
 
 const HOUR = 3_600_000;
 const GRANT_LIMITS = { staff: 300, licence: 200, learner: 200, patient: 120, link: 120 } as const;
@@ -68,7 +69,31 @@ export function libraryItem(exercise: Doc<"exercises">) {
     videoUrl: exercise.videoUrl ?? null,
     // A physio's own photos or video (links come from requestExerciseMediaLinks)
     ownMedia: ownMediaSummary(exercise),
+    // Who made it, for exercises a physio shared to the library (filled in by exerciseAuthor)
+    author: null as ExerciseAuthor | null,
   };
+}
+
+export type ExerciseAuthor = { name: string; tierKey: string; tierName: string };
+
+/**
+ * Credit for an exercise a physio made and the library accepted: "Chidera N." and their tier.
+ * Null for Rehabify's own exercises and for anything still private.
+ */
+export async function exerciseAuthor(
+  ctx: QueryCtx | MutationCtx,
+  exercise: Doc<"exercises">,
+  cache = new Map<string, ExerciseAuthor | null>()
+): Promise<ExerciseAuthor | null> {
+  if (!exercise.createdBy || !exercise.isPublic || exercise.libraryShare?.status !== "approved") return null;
+  if (cache.has(exercise.createdBy)) return cache.get(exercise.createdBy)!;
+  const user = await ctx.db.get(exercise.createdBy);
+  const tier = await tierOf(ctx, exercise.createdBy);
+  const author = user?.firstName
+    ? { name: `${user.firstName}${user.lastName ? ` ${user.lastName[0]}.` : ""}`, tierKey: tier.key, tierName: tier.name }
+    : null;
+  cache.set(exercise.createdBy, author);
+  return author;
 }
 
 export type LibraryItem = ReturnType<typeof libraryItem>;
@@ -219,7 +244,8 @@ export const listLibrary = query({
     const rows = [...publicRows, ...clinicRows, ...ownRows].filter((e) => !e.archivedAt);
     // Licensees only get the 3D library.
     const visible = access.kind === "licence" ? rows.filter((e) => e.animationSlug) : rows;
-    const items = visible.map(libraryItem);
+    const authors = new Map<string, ExerciseAuthor | null>();
+    const items = await Promise.all(visible.map(async (e) => ({ ...libraryItem(e), author: await exerciseAuthor(ctx, e, authors) })));
     items.sort((a, b) => Number(Boolean(b.animation)) - Number(Boolean(a.animation)) || a.name.localeCompare(b.name));
     return { version: EXERCISE_CATALOG.version, access: access.kind, label: access.label, items };
   },
@@ -656,6 +682,17 @@ export const adminReviewOwnExercise = mutation({
         note: args.note?.trim().slice(0, 500) || undefined,
       },
     });
+    // Reward points for a physio's exercise joining the library (once per exercise)
+    if (args.approve && exercise.createdBy) {
+      await awardPoints(ctx, {
+        userId: exercise.createdBy,
+        reason: "exercise_approved",
+        dedupeKey: `exercise_approved:${exercise._id}`,
+        label: `“${exercise.name}” joined the Rehabify library`,
+        refType: "exercises",
+        refId: exercise._id,
+      });
+    }
     return { success: true };
   },
 });

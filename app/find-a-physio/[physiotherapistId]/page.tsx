@@ -12,6 +12,7 @@ import BookingWidget from "@/components/marketplace/BookingWidget";
 import ReviewsList from "@/components/marketplace/ReviewsList";
 import RatingBreakdown from "@/components/marketplace/RatingBreakdown";
 import { cn } from "@/lib/utils";
+import { PublicProof } from "@/components/outcomes/PublicProof";
 
 function titleCase(value: string): string {
   return value.toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase());
@@ -199,6 +200,7 @@ export default function PhysiotherapistProfilePage() {
 
             {activeSection === "about" && (
               <div className="space-y-5">
+                <PublicProof physiotherapistId={physiotherapistId} />
                 <div className={cardClass}>
                   <h2 className="text-lg font-semibold">About</h2>
                   <p className="mt-3 whitespace-pre-line text-[15px] leading-relaxed text-rh-ink/75">

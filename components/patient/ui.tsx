@@ -393,6 +393,7 @@ export function PatientDrawer({
   children,
   footer,
   className,
+  keepOpenOnOutsideClick = false,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -401,12 +402,18 @@ export function PatientDrawer({
   children: ReactNode
   footer?: ReactNode
   className?: string
+  /**
+   * For long forms (a clinical note): a tap or click beside the drawer does nothing, so a stray
+   * touch never interrupts writing. It closes with its buttons, the ✕ or Escape.
+   */
+  keepOpenOnOutsideClick?: boolean
 }) {
   const isPhone = useIsPhone()
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side={isPhone ? 'bottom' : 'right'}
+        onInteractOutside={keepOpenOnOutsideClick ? (event) => event.preventDefault() : undefined}
         className={cn(
           'gap-0 border-pt-line bg-pt-surface p-0 text-pt-ink [&>button:last-child]:right-4 [&>button:last-child]:top-4 [&>button:last-child]:rounded-full [&>button:last-child]:p-1.5 [&>button:last-child]:hover:bg-pt-hover',
           isPhone ? 'max-h-[92dvh] rounded-t-3xl' : 'w-full sm:max-w-md',

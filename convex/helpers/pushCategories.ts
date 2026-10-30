@@ -18,6 +18,11 @@ export const PUSH_CATEGORIES = [
     description: "Approval, licence expiry, agreements to sign and news from Rehabify.",
   },
   { id: "reminders", label: "Reminders", description: "Sessions about to start and other reminders." },
+  {
+    id: "community",
+    label: "Community",
+    description: "Case of the Week, answers to your questions, and when your answer is marked helpful.",
+  },
 ] as const;
 
 export type PushCategory = (typeof PUSH_CATEGORIES)[number]["id"];
@@ -30,6 +35,8 @@ const BELL_ONLY = new Set([
   "invitation_created",
   "onboarding_complete",
   "notification_created",
+  // Points earned: shown in the bell and on Me, never a phone buzz
+  "reward_points",
 ]);
 
 const CATEGORY_OF: Record<string, PushCategory> = {
@@ -54,6 +61,8 @@ const CATEGORY_OF: Record<string, PushCategory> = {
   treatment_plan_accepted: "patients",
   video_call_scheduled: "patients",
   questionnaire_completed: "patients",
+  outcome_alert: "patients",
+  outcome_feedback: "patients",
   // Messages
   message_received: "messages",
   // Payments
@@ -74,6 +83,11 @@ const CATEGORY_OF: Record<string, PushCategory> = {
   session_completed: "reminders",
   questionnaire_requested: "reminders",
   questionnaire_reminder: "reminders",
+  outcome_check: "reminders",
+  // Community
+  community_case: "community",
+  community_answer: "community",
+  community_helpful: "community",
 };
 
 /**

@@ -2,6 +2,9 @@ import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 import { healthTables } from "./schema/health";
 import { questionnaireTables } from "./schema/questionnaires";
+import { outcomeTables } from "./schema/outcomes";
+import { rewardTables } from "./schema/rewards";
+import { communityTables } from "./schema/community";
 import { measureValidator } from "./helpers/clinicalMeasures";
 import { goalMeasureValidator } from "./helpers/goalMeasures";
 import { reportSnapshotValidator } from "./helpers/progressReport";
@@ -567,6 +570,9 @@ export default defineSchema({
       featuredUntil: v.optional(v.number()),
       lastPayment: v.optional(v.number()),
     })),
+    // Referral boost bought with reward points (rewards.ts): a tie-breaker in Find a physio and
+    // first in the admin's assignment list until then. Never overrides fit or the admin's choice.
+    referralBoostUntil: v.optional(v.number()),
 
     // Analytics
     profileViews: v.optional(v.number()), // legacy: new views go to physioProfileViews
@@ -1540,13 +1546,16 @@ export default defineSchema({
     followUpNotes: v.optional(v.string()), // Internal notes by the Rehabify team
     followUpHandledBy: v.optional(v.id("users")),
     followUpClosedAt: v.optional(v.number()),
+    // The physio paused Rehabify's automatic "how are you?" checks for this course (outcomes.ts)
+    autoChecksPaused: v.optional(v.boolean()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
     .index("by_patient", ["patientId"])
     .index("by_patient_and_physiotherapist", ["patientId", "physiotherapistId"])
     .index("by_physiotherapist_and_status", ["physiotherapistId", "status"])
-    .index("by_follow_up", ["followUpStatus", "followUpDueAt"]),
+    .index("by_follow_up", ["followUpStatus", "followUpDueAt"])
+    .index("by_status", ["status"]),
 
   // How a patient is doing between sessions, in their own words
   patientCheckIns: defineTable({
@@ -4044,6 +4053,15 @@ export default defineSchema({
   // Outcome questionnaires patients fill in (schema/questionnaires.ts)
   ...questionnaireTables,
 
+  // Automatic "how are you?" checks and each physio's outcome figures (schema/outcomes.ts)
+  ...outcomeTables,
+
+  // Reward points, tiers, the rewards shop and CPD (schema/rewards.ts)
+  ...rewardTables,
+
+  // Clinician Community: Case of the Week, questions, votes, reports, leads (schema/community.ts)
+  ...communityTables,
+
   partnershipInquiries: defineTable({
     // "demo" = Book a demo on the partners page; missing on older rows, which are partnership inquiries
     kind: v.optional(v.union(v.literal("partnership"), v.literal("demo"))),
@@ -4804,6 +4822,59 @@ export default defineSchema({
     .index("by_clinic", ["clinicId", "createdAt"])
     // Daily "no exercises in 7 days" check (pushAlerts.ts)
     .index("by_status", ["status", "createdAt"]),
+
+  // A named home programme a physio keeps to reuse ("Knee OA, early loading"): private, shared
+  // with their clinic, or public so any physio can use or copy it. The author earns reward points
+  // the first time each other physio sends it (exercisePrograms.ts, rewards.ts).
+  programTemplates: defineTable({
+    title: v.string(),
+    description: v.optional(v.string()),
+    bodyRegion: v.optional(v.string()), // lib/outcomes/stats.ts Region
+    goals: v.optional(v.array(v.string())),
+    note: v.optional(v.string()), // Note to the patient that comes with it
+    // The same items as exercisePrograms.items
+    items: v.array(v.object({
+      exerciseId: v.optional(v.id("exercises")),
+      kind: v.optional(v.union(v.literal("exercise"), v.literal("education"))),
+      name: v.optional(v.string()),
+      side: v.optional(v.union(v.literal("L"), v.literal("R"))),
+      sets: v.optional(v.number()),
+      reps: v.optional(v.number()),
+      holdSeconds: v.optional(v.number()),
+      frequency: v.optional(v.string()),
+      note: v.optional(v.string()),
+      resourceKey: v.optional(v.string()),
+    })),
+    createdBy: v.id("users"),
+    clinicId: v.optional(v.id("clinics")),
+    visibility: v.union(v.literal("private"), v.literal("clinic"), v.literal("public")),
+    // A copy of someone else's template keeps who made the original, for credit and points
+    copiedFromId: v.optional(v.id("programTemplates")),
+    rootTemplateId: v.optional(v.id("programTemplates")),
+    originalAuthorId: v.optional(v.id("users")),
+    sendCount: v.number(), // Programmes sent from it (and its copies, on the original)
+    copyCount: v.number(),
+    usedBy: v.number(), // Different physios who sent it
+    // Moderation: reports from physios; 3 hide it from Community until an admin looks
+    reports: v.optional(v.array(v.object({ by: v.id("users"), reason: v.string(), at: v.number() }))),
+    hiddenAt: v.optional(v.number()),
+    hiddenBy: v.optional(v.id("users")),
+    archivedAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_creator", ["createdBy", "updatedAt"])
+    .index("by_visibility", ["visibility", "sendCount"])
+    .index("by_clinic", ["clinicId", "updatedAt"]),
+
+  // Who used a template and how, so its author is credited once per physio.
+  programTemplateUses: defineTable({
+    templateId: v.id("programTemplates"), // The original (root) template
+    userId: v.id("users"),
+    kind: v.union(v.literal("send"), v.literal("copy")),
+    programId: v.optional(v.id("exercisePrograms")),
+    createdAt: v.number(),
+  }).index("by_template_and_user", ["templateId", "userId", "kind"]),
 
   // One patient-reported completion of one exercise in a programme.
   exerciseProgramLogs: defineTable({

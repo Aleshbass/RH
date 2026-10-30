@@ -105,6 +105,8 @@ type PhysioOption = {
   location: string;
   offersOnline: boolean;
   offersInPerson: boolean;
+  /** Bought a referral boost with reward points: listed first, you still choose. */
+  boosted?: boolean;
 };
 
 type Stats = {
@@ -450,7 +452,10 @@ function ReassignDialog({ booking, onClose }: { booking: BookingRow; onClose: ()
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-rh-ink dark:text-white">{p.name}</p>
+                        <p className="flex items-center gap-1.5 truncate text-sm font-semibold text-rh-ink dark:text-white">
+                          {p.name}
+                          {p.boosted && <span className="rounded-full bg-rh-lime px-1.5 py-px text-[10px] font-semibold text-rh-ink">Boosted</span>}
+                        </p>
                         {p.email && <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">{p.email}</p>}
                         <PhysioLocationBadge location={p.location} offersOnline={p.offersOnline} offersInPerson={p.offersInPerson} />
                       </div>
@@ -583,6 +588,7 @@ function ScheduleVirtualDialog({ booking, onClose }: { booking: BookingRow; onCl
                 {onlinePhysios.map((p) => (
                   <SelectItem key={p.id} value={p.id}>
                     {p.name}
+                    {p.boosted ? " · Boosted" : ""}
                   </SelectItem>
                 ))}
               </SelectContent>

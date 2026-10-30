@@ -11,6 +11,7 @@
  */
 import { insertNotification } from "./helpers/pushNotify";
 import { advancePatientReferrals } from "./helpers/partnerAttribution";
+import { createOutcomeCheck } from "./outcomes";
 import { ConvexError, v } from "convex/values";
 import { internalMutation, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -106,7 +107,7 @@ function sourceFromRelationship(relationship: Doc<"patientPhysiotherapistRelatio
  * the clinic's courses, whoever on its team opened them, so care continues where it left off when
  * the patient moves to another clinician.
  */
-async function episodesFor(ctx: Ctx, physioId: Id<"users">, patientId: Id<"users">, clinicId?: Id<"clinics">) {
+export async function episodesFor(ctx: Ctx, physioId: Id<"users">, patientId: Id<"users">, clinicId?: Id<"clinics">) {
   const rows = clinicId
     ? (
         await ctx.db
@@ -122,7 +123,7 @@ async function episodesFor(ctx: Ctx, physioId: Id<"users">, patientId: Id<"users
 }
 
 /** The open episode, created on first use for patients who joined before episodes existed. */
-async function ensureActiveEpisode(
+export async function ensureActiveEpisode(
   ctx: MutationCtx,
   physio: Doc<"users">,
   relationship: Doc<"patientPhysiotherapistRelationships">
@@ -1693,13 +1694,21 @@ export const completeCare = mutation({
 
     const patient = await ctx.db.get(args.patientId);
     const physioName = fullName(physio);
+    // Final scores, a rating and feedback (outcomes.ts): the link goes in this message, not a second one
+    const finalScores = patient
+      ? await createOutcomeCheck(
+          ctx,
+          { patient, physio, clinicId: relationship.clinicId, episodeId: episode._id, moment: "discharge" },
+          { email: false, app: false }
+        )
+      : null;
     await notify(
       ctx,
       args.patientId,
       "care_completed",
       "Your treatment is complete",
-      `${physioName} has marked your course of physiotherapy as complete.${args.homeAdvice?.trim() ? " Keep going with the home advice they left you." : ""}`,
-      "/dashboard/patient"
+      `${physioName} has marked your course of physiotherapy as complete.${finalScores ? " Tell them how you are now: 2 minutes." : args.homeAdvice?.trim() ? " Keep going with the home advice they left you." : ""}`,
+      finalScores?.path ?? "/dashboard/patient"
     );
     await emailPatient(ctx, patient, {
       subject: `Your physiotherapy with ${physioName} is complete`,
@@ -1707,11 +1716,16 @@ export const completeCare = mutation({
       paragraphs: [
         `${physioName} has marked your course of physiotherapy as complete. Well done on the work you've put in.`,
         ...(args.homeAdvice?.trim() ? [`Their advice for you from here: ${args.homeAdvice.trim()}`] : []),
+        ...(finalScores ? ["One last thing: how are you now, and how was your care? It takes 2 minutes and shows you how far you've come."] : []),
         ...(clinicCare ? [] : [`In about ${followUpDays} days the Rehabify team will check in to ask how you're getting on.`]),
       ],
-      buttonLabel: "Open Rehabify",
-      buttonPath: "/dashboard/patient",
+      buttonLabel: finalScores ? "Share how I'm doing" : "Open Rehabify",
+      buttonPath: finalScores?.path ?? "/dashboard/patient",
     });
+    if (finalScores) {
+      await ctx.db.patch(finalScores.checkId, { sentVia: [...new Set([...finalScores.via, ...(patient?.email ? ["email"] : []), "app"])] });
+    }
+    await ctx.scheduler.runAfter(0, internal.outcomes.recomputeSummary, { physiotherapistId: physio._id });
 
     return { cancelledAppointments: cancelled, followUpDueAt: now + followUpDays * DAY };
   },

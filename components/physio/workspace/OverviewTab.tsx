@@ -25,6 +25,7 @@ import { goalTargets } from '@/convex/helpers/goalMeasures'
 import { QuestionnairesPanel } from '@/components/questionnaires/QuestionnairesPanel'
 import { useQuery } from 'convex/react'
 import { careRefs } from '@/components/family/refs'
+import { OutcomesCard } from '@/components/outcomes/OutcomesCard'
 
 export function OverviewTab({
   workspace,
@@ -54,6 +55,9 @@ export function OverviewTab({
     <div className="space-y-5">
       {/* Only for patients who booked through Joy on WhatsApp */}
       {!readOnly && <JoyHandoffPanel patientId={workspace.patient._id} />}
+
+      {/* Pain and function from intake to discharge, collected automatically (convex/outcomes.ts) */}
+      <OutcomesCard patientId={workspace.patient._id} episodeId={episode._id} patientFirstName={workspace.patient.firstName ?? null} />
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
         {/* Current care episode */}

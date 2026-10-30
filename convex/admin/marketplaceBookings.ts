@@ -326,11 +326,15 @@ export const adminGetAllPhysiosForSelect = query({
           location: profile?.location || "",
           offersOnline: profile?.offersOnlineSessions ?? false,
           offersInPerson: profile?.offersInPersonSessions ?? false,
+          // Referral boost bought with reward points (rewards.ts): listed first, the admin still decides
+          boosted: (profile?.referralBoostUntil ?? 0) > Date.now(),
         };
       })
     );
 
-    return physioUsers.filter(Boolean);
+    return physioUsers
+      .filter((p): p is NonNullable<typeof p> => p !== null)
+      .sort((a, b) => Number(b.boosted) - Number(a.boosted));
   },
 });
 

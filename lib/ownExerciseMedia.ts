@@ -1,13 +1,14 @@
 /**
  * A physio's own exercise photos and videos: limits and the consent wording, shared by Convex
- * and the app. Limits are the fair-use limits in the company business model (Oct 2026).
+ * and the app. Limits are the fair-use limits in the company business model (Oct 2026), with
+ * videos capped at 20 MB each (owner, 29 Oct 2026) so they stay light on patients' mobile data.
  * Files are private on ImageKit and only open through short-lived signed links.
  */
 
 export const OWN_MEDIA_LIMITS = {
   videos: 20,
-  videoBytes: 50 * 1024 * 1024,
-  videoSeconds: 5 * 60,
+  videoBytes: 20 * 1024 * 1024,
+  videoSeconds: 3 * 60,
   photosPerExercise: 5,
   photoBytes: 10 * 1024 * 1024,
   totalBytes: 2 * 1024 * 1024 * 1024,

@@ -424,7 +424,11 @@ export function ProgramPlayer({
             ) : locked ? (
               <FlexUpgradeCard offer={program.plan?.offer ?? []} onChoose={flex?.onChoose} busy={flex?.busy} signInHref={flex?.signInHref} />
             ) : item.exercise?.ownMedia && item.exerciseId ? (
-              <OwnMediaView exerciseId={item.exerciseId} name={item.name} requestLinks={requestMedia} />
+              <div className="space-y-1.5">
+                <OwnMediaView exerciseId={item.exerciseId} name={item.name} requestLinks={requestMedia} />
+                {/* Credit for a physio who shared their exercise to the Rehabify library */}
+                {item.exercise.author && <p className="px-1 text-xs text-pt-muted">Demonstrated by {item.exercise.author.name}</p>}
+              </div>
             ) : !item.clipId && item.exercise?.videoUrl ? (
               // A video link the physio added (YouTube or a direct file)
               <VideoEmbed

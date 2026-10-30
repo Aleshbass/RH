@@ -2,7 +2,9 @@
 
 import Image from "next/image";
 import { AnimatePresence, motion, useReducedMotion, type Variants } from "framer-motion";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useConvex } from "convex/react";
+import { makeFunctionReference } from "convex/server";
 import { Pause, Play } from "@/components/icons";
 import { cn } from "@/lib/utils";
 
@@ -20,8 +22,13 @@ type Testimonial = { quote: string; name: string; detail: string };
 /**
  * Real words only, shared with the person's permission. Each one becomes a slide that flips in
  * after the figures. Keep quotes under ~180 characters so they fit the band without resizing it.
+ * Patients' words featured by an admin (Admin › Patient feedback, convex/outcomes.ts) join these.
  */
 const TESTIMONIALS: Testimonial[] = [];
+
+const featuredRef = makeFunctionReference<"query", Record<string, never>, (Testimonial & { id: string })[]>(
+  "outcomes:getFeaturedTestimonials"
+);
 
 const PARTNERS = [
   { name: "AwaDoc", logo: "https://www.awadoc.com/_next/image?url=%2Fawadoc.png&w=256&q=75", width: 128, height: 56 },
@@ -30,11 +37,13 @@ const PARTNERS = [
 
 type Slide = { kind: "stats" } | { kind: "testimonial"; item: Testimonial } | { kind: "partners" };
 
-const SLIDES: Slide[] = [
-  { kind: "stats" },
-  ...TESTIMONIALS.map((item): Slide => ({ kind: "testimonial", item })),
-  { kind: "partners" },
-];
+function slidesWith(testimonials: Testimonial[]): Slide[] {
+  return [
+    { kind: "stats" },
+    ...testimonials.map((item): Slide => ({ kind: "testimonial", item })),
+    { kind: "partners" },
+  ];
+}
 
 // How long each kind of slide stays up
 const DWELL: Record<Slide["kind"], number> = { stats: 6500, testimonial: 7500, partners: 5000 };
@@ -134,8 +143,25 @@ export function ProofBand() {
   const [holding, setHolding] = useState(false);
   const [onScreen, setOnScreen] = useState(false);
   const ref = useRef<HTMLElement>(null);
+  // Fetched once, and never allowed to break the home page if it fails
+  const convex = useConvex();
+  const [featured, setFeatured] = useState<Testimonial[]>([]);
+  useEffect(() => {
+    let live = true;
+    convex
+      .query(featuredRef, {})
+      .then((rows) => live && setFeatured(rows))
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [convex]);
+  const SLIDES = useMemo(
+    () => slidesWith([...TESTIMONIALS, ...featured.filter((t) => t.quote.length <= 180).slice(0, 6)]),
+    [featured]
+  );
 
-  const slide = SLIDES[index];
+  const slide = SLIDES[index] ?? SLIDES[0];
   const running = !reduce && !paused && !holding && onScreen && SLIDES.length > 1;
 
   useEffect(() => {
@@ -150,7 +176,7 @@ export function ProofBand() {
     if (!running) return;
     const timer = window.setTimeout(() => setIndex((i) => (i + 1) % SLIDES.length), DWELL[slide.kind]);
     return () => window.clearTimeout(timer);
-  }, [running, index, slide.kind]);
+  }, [running, index, slide.kind, SLIDES.length]);
 
   return (
     <section

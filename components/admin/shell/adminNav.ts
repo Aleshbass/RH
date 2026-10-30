@@ -1,5 +1,6 @@
 import {
   Activity,
+  Award,
   BarChart3,
   Banknote,
   BellRing,
@@ -26,7 +27,9 @@ import {
   Mail,
   MapPinned,
   Megaphone,
+  MessageCircle,
   Percent,
+  Quote,
   PlayCircle,
   ReceiptText,
   Settings,
@@ -91,6 +94,8 @@ export const ADMIN_NAV: AdminNavSection[] = [
       { title: 'Declined', href: a('/declined-physios'), icon: UserX, keywords: ['rejected'] },
       { title: 'Marketplace listing', href: a('/marketplace-listing'), icon: Store, keywords: ['find a physio', 'live', 'hidden', 'setup'] },
       { title: 'Public registry', href: a('/physio-registry'), icon: ShieldCheck, keywords: ['directory', 'listing'] },
+      { title: 'Community', href: a('/community'), icon: MessageCircle, keywords: ['case of the week', 'forum', 'questions', 'reports', 'moderation', 'case lead', 'templates'] },
+      { title: 'Rewards & points', href: a('/rewards'), icon: Award, keywords: ['points', 'tiers', 'masterclass', 'featured', 'boost', 'cpd', 'gamification'] },
       { title: 'Physio handbook', href: a('/handbook'), icon: BookOpen, keywords: ['sop', 'standard of practice', 'manual', 'clinical', 'pdf'] },
       { title: 'Payouts', href: a('/payouts'), icon: Banknote, keywords: ['earnings', 'paystack', 'transfers'] },
     ],
@@ -102,6 +107,7 @@ export const ADMIN_NAV: AdminNavSection[] = [
     items: [
       { title: 'All patients', href: a('/users?role=patient'), icon: UserRound, keywords: ['clients'] },
       { title: 'Inbound referrals', href: a('/referrals'), icon: Inbox, keywords: ['intake', 'routing'] },
+      { title: 'Patient feedback', href: a('/patient-feedback'), icon: Quote, keywords: ['testimonials', 'reviews', 'feedback cards', 'home page', 'consent'] },
       { title: 'Care follow-ups', href: a('/care-follow-ups'), icon: HeartPulse, keywords: ['check-ins', 'discharge'] },
       { title: 'Family & caregivers', href: a('/caregivers'), icon: Users, keywords: ['care circle', 'family', 'carer', 'relative', 'guardian'] },
       { title: 'Patient plans', href: a('/patient-plans'), icon: Layers, keywords: ['flex', 'flex max', 'basic', 'launch', 'recovery', 'subscription', 'free activation'] },

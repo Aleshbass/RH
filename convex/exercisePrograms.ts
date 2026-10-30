@@ -23,10 +23,11 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { ensureUserRole } from "./auth";
 import { paystackRequest } from "./clinicBilling";
-import { libraryItem } from "./exerciseLibrary";
+import { exerciseAuthor, libraryItem, type ExerciseAuthor } from "./exerciseLibrary";
 import { EXERCISE_CATALOG } from "./exerciseLibraryCatalog";
 import { appLink, publicAppUrl } from "./helpers/appUrl";
-import { currentUser } from "./helpers/careAccess";
+import { currentUser, physioOrNull, requirePhysio } from "./helpers/careAccess";
+import { awardPoints, tierOf } from "./rewards";
 import {
   careTeamOrNull,
   displayName,
@@ -172,7 +173,9 @@ async function cleanItems(ctx: MutationCtx, team: CareTeamAccess, input: ItemInp
     if (item.exerciseId) {
       const exercise = await ctx.db.get(item.exerciseId);
       if (!exercise) throw new ConvexError(`${position} is no longer in the exercise library. Remove it and choose another.`);
-      if (!exercise.isPublic && exercise.clinicId !== team.clinicId) {
+      // Library exercises, the clinic's, and the sender's own (not another physio's private ones)
+      const ownedHere = exercise.createdBy === team.user._id || (exercise.clinicId !== undefined && exercise.clinicId === team.clinicId);
+      if (!exercise.isPublic && !ownedHere) {
         throw new ConvexError(`${exercise.name} isn't available to you. Remove it and choose another.`);
       }
       if (exercise.sided && !item.side) throw new ConvexError(`Choose a side for ${exercise.name}.`);
@@ -269,6 +272,9 @@ export async function programView(ctx: Ctx, program: Doc<"exercisePrograms">, au
   const clinic = program.clinicId ? await ctx.db.get(program.clinicId) : null;
   const plan = await programPlan(ctx, program);
   const hideDemos = audience === "patient" && plan.locked;
+  // "Demonstrated by": credit for exercises other physios shared to the library
+  const authorCache = new Map<string, ExerciseAuthor | null>();
+  const authors = await Promise.all(exercises.map((e) => (e ? exerciseAuthor(ctx, e, authorCache) : null)));
   return {
     plan,
     _id: program._id,
@@ -304,7 +310,7 @@ export async function programView(ctx: Ctx, program: Doc<"exercisePrograms">, au
         clipId,
         // Patients only see approved animations; others see the poster and steps.
         animated: Boolean(clipId && exercise?.animationStatus === "approved"),
-        exercise: exercise ? { ...libraryItem(exercise), ...(hideDemos ? { videoUrl: null } : {}) } : null,
+        exercise: exercise ? { ...libraryItem(exercise), author: authors[index], ...(hideDemos ? { videoUrl: null } : {}) } : null,
         // Education picked from the Rehabify Library
         resourceKey: item.resourceKey ?? null,
         resource: resourceView(resources[index]),
@@ -410,6 +416,8 @@ export const createProgram = mutation({
     voiceNoteStorageId: v.optional(v.id("_storage")),
     voiceNoteSeconds: v.optional(v.number()),
     items: v.array(itemInput),
+    // Sent from a programme template (its author is credited)
+    templateId: v.optional(v.id("programTemplates")),
   },
   handler: (ctx, args) =>
     guarded("send the programme", async () => {
@@ -444,6 +452,7 @@ export const createProgram = mutation({
       // Flex bought before the programme was ready starts its 30 days now
       await activatePendingPlans(ctx, args.patientId, now);
       await notifyPatient(ctx, patient, team.senderName, { kind: "new", title });
+      await creditAuthors(ctx, team.user._id, items, args.templateId, programId);
       return programId;
     }),
 });
@@ -460,6 +469,7 @@ export const addExercisesToProgram = mutation({
     note: v.optional(v.string()),
     voiceNoteStorageId: v.optional(v.id("_storage")),
     voiceNoteSeconds: v.optional(v.number()),
+    templateId: v.optional(v.id("programTemplates")),
   },
   handler: (ctx, args) =>
     guarded("add to the programme", async () => {
@@ -485,6 +495,7 @@ export const addExercisesToProgram = mutation({
       await ctx.db.patch(program._id, patch);
       const patient = await ctx.db.get(program.patientId);
       if (patient) await notifyPatient(ctx, patient, team.senderName, { kind: "added", title: program.title, what: countLabel(added) });
+      await creditAuthors(ctx, team.user._id, added, args.templateId, program._id);
       return program._id;
     }),
 });
@@ -1514,3 +1525,386 @@ export const adminGrantPlan = mutation({
     return { entitlementId, status: period.status, costLabel: naira(planPriceKobo(args.plan)) };
   },
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Programme templates
+// ─────────────────────────────────────────────────────────────────────────────
+
+const MAX_TEMPLATES = 200;
+const HIDE_AFTER_REPORTS = 3;
+const templateVisibility = v.union(v.literal("private"), v.literal("clinic"), v.literal("public"));
+
+/** Whether a physio can use an exercise in their own programmes. */
+function canUseExercise(exercise: Doc<"exercises"> | null, viewer: Doc<"users">) {
+  if (!exercise || exercise.archivedAt) return false;
+  return exercise.isPublic || exercise.createdBy === viewer._id || (exercise.clinicId !== undefined && exercise.clinicId === viewer.clinicId);
+}
+
+function canSeeTemplate(template: Doc<"programTemplates">, viewer: Doc<"users">) {
+  if (template.archivedAt) return false;
+  if (template.createdBy === viewer._id) return true;
+  if (template.visibility === "clinic") return template.clinicId !== undefined && template.clinicId === viewer.clinicId;
+  return template.visibility === "public" && !template.hiddenAt;
+}
+
+async function templateAuthor(ctx: Ctx, template: Doc<"programTemplates">) {
+  const authorId = template.originalAuthorId ?? template.createdBy;
+  const author = await ctx.db.get(authorId);
+  const tier = await tierOf(ctx, authorId);
+  const short = author?.firstName ? `${author.firstName}${author.lastName ? ` ${author.lastName[0]}.` : ""}` : "A physio";
+  return { name: short, tierKey: tier.key, tierName: tier.name };
+}
+
+/** The list row: enough to choose one, without loading every exercise. */
+async function templateRow(ctx: Ctx, template: Doc<"programTemplates">, viewer: Doc<"users">) {
+  const exercises = template.items.filter((i) => i.kind !== "education");
+  const names = await Promise.all(
+    template.items.slice(0, 4).map(async (i) => (i.exerciseId ? (await ctx.db.get(i.exerciseId))?.name : undefined) ?? i.name ?? "Item")
+  );
+  return {
+    _id: template._id,
+    title: template.title,
+    description: template.description ?? null,
+    bodyRegion: template.bodyRegion ?? null,
+    visibility: template.visibility,
+    mine: template.createdBy === viewer._id,
+    copied: Boolean(template.copiedFromId),
+    author: await templateAuthor(ctx, template),
+    sendCount: template.sendCount,
+    copyCount: template.copyCount,
+    usedBy: template.usedBy,
+    exerciseCount: exercises.length,
+    educationCount: template.items.length - exercises.length,
+    preview: names,
+    hidden: Boolean(template.hiddenAt),
+    updatedAt: template.updatedAt,
+  };
+}
+
+/**
+ * A template's items in the same shape as a programme's (programView), so the programme builder
+ * can load it. Another physio's private exercises become plain named exercises: the dose and
+ * steps travel, the photos and video stay with their owner.
+ */
+async function templateItems(ctx: Ctx, template: Doc<"programTemplates">, viewer: Doc<"users">) {
+  return await Promise.all(
+    template.items.map(async (item, index) => {
+      const kind = item.kind === "education" ? ("education" as const) : ("exercise" as const);
+      const exercise = item.exerciseId ? await ctx.db.get(item.exerciseId) : null;
+      const usable = canUseExercise(exercise, viewer);
+      const resource = kind === "education" && item.resourceKey ? await resourceByKey(ctx, item.resourceKey) : null;
+      return {
+        index,
+        kind,
+        name: exercise?.name ?? item.name ?? (kind === "education" ? "Information" : "Exercise"),
+        custom: kind === "exercise" && !(exercise && usable),
+        exerciseId: exercise && usable ? exercise._id : null,
+        sets: item.sets ?? null,
+        reps: item.reps ?? null,
+        holdSeconds: item.holdSeconds ?? null,
+        frequency: item.frequency ?? null,
+        note: item.note ?? null,
+        side: item.side ?? null,
+        exercise: exercise && usable ? libraryItem(exercise) : null,
+        resourceKey: item.resourceKey ?? null,
+        resource: resourceView(resource),
+      };
+    })
+  );
+}
+
+export const listProgramTemplates = query({
+  args: { scope: v.union(v.literal("mine"), v.literal("clinic"), v.literal("community")) },
+  handler: async (ctx, args) => {
+    const viewer = await physioOrNull(ctx);
+    if (!viewer) return null;
+    let rows: Doc<"programTemplates">[];
+    if (args.scope === "mine") {
+      rows = await ctx.db
+        .query("programTemplates")
+        .withIndex("by_creator", (q) => q.eq("createdBy", viewer._id))
+        .order("desc")
+        .take(MAX_TEMPLATES);
+    } else if (args.scope === "clinic") {
+      rows = viewer.clinicId
+        ? (
+            await ctx.db
+              .query("programTemplates")
+              .withIndex("by_clinic", (q) => q.eq("clinicId", viewer.clinicId))
+              .order("desc")
+              .take(300)
+          ).filter((t) => t.createdBy !== viewer._id && t.visibility !== "private")
+        : [];
+    } else {
+      rows = await ctx.db
+        .query("programTemplates")
+        .withIndex("by_visibility", (q) => q.eq("visibility", "public"))
+        .order("desc")
+        .take(300);
+    }
+    const visible = rows.filter((t) => canSeeTemplate(t, viewer));
+    return await Promise.all(visible.map((t) => templateRow(ctx, t, viewer)));
+  },
+});
+
+export const getProgramTemplate = query({
+  args: { templateId: v.id("programTemplates") },
+  handler: async (ctx, args) => {
+    const viewer = await physioOrNull(ctx);
+    const template = await ctx.db.get(args.templateId);
+    if (!viewer || !template || !canSeeTemplate(template, viewer)) return null;
+    const items = await templateItems(ctx, template, viewer);
+    // The owner is told which of their own exercises others can't see yet
+    const privateOwn =
+      template.createdBy === viewer._id && template.visibility !== "private"
+        ? (await Promise.all(template.items.map(async (i) => (i.exerciseId ? await ctx.db.get(i.exerciseId) : null))))
+            .filter((e): e is Doc<"exercises"> => Boolean(e && e.createdBy === viewer._id && !e.isPublic))
+            .map((e) => ({ _id: e._id, name: e.name, inReview: e.libraryShare?.status === "pending" }))
+        : [];
+    return {
+      ...(await templateRow(ctx, template, viewer)),
+      goals: template.goals ?? [],
+      note: template.note ?? null,
+      items,
+      privateOwn,
+    };
+  },
+});
+
+export const saveProgramTemplate = mutation({
+  args: {
+    templateId: v.optional(v.id("programTemplates")),
+    title: v.string(),
+    description: v.optional(v.string()),
+    bodyRegion: v.optional(v.string()),
+    goals: v.optional(v.array(v.string())),
+    note: v.optional(v.string()),
+    items: v.array(itemInput),
+    visibility: templateVisibility,
+  },
+  handler: (ctx, args) =>
+    guarded("save the template", async () => {
+      const user = await requirePhysio(ctx);
+      const title = clean(args.title, 120);
+      if (!title) throw new ConvexError("Give the template a name, e.g. Knee OA, early loading.");
+      if (args.items.length === 0) throw new ConvexError("Add at least one exercise or education item.");
+      if (args.items.length > MAX_ITEMS) throw new ConvexError(`A template can have up to ${MAX_ITEMS} items.`);
+      if (args.visibility === "clinic" && !user.clinicId) throw new ConvexError("You’re not on a clinic team. Choose private or everyone.");
+      const items = await cleanItems(ctx, { user, kind: "physio", clinicId: user.clinicId, senderName: "" }, args.items);
+      const now = Date.now();
+      const fields = {
+        title,
+        description: clean(args.description, 300),
+        bodyRegion: clean(args.bodyRegion, 40),
+        goals: cleanGoals(args.goals),
+        note: clean(args.note),
+        items,
+        visibility: args.visibility,
+        clinicId: user.clinicId,
+        updatedAt: now,
+      };
+      if (args.templateId) {
+        const existing = await ctx.db.get(args.templateId);
+        if (!existing || existing.createdBy !== user._id || existing.archivedAt) throw new ConvexError("You can only change your own templates.");
+        await ctx.db.patch(existing._id, fields);
+        return { templateId: existing._id };
+      }
+      const count = (
+        await ctx.db
+          .query("programTemplates")
+          .withIndex("by_creator", (q) => q.eq("createdBy", user._id))
+          .take(MAX_TEMPLATES + 1)
+      ).filter((t) => !t.archivedAt).length;
+      if (count >= MAX_TEMPLATES) throw new ConvexError(`You can keep up to ${MAX_TEMPLATES} templates. Remove one first.`);
+      const templateId = await ctx.db.insert("programTemplates", {
+        ...fields,
+        createdBy: user._id,
+        sendCount: 0,
+        copyCount: 0,
+        usedBy: 0,
+        createdAt: now,
+      });
+      return { templateId };
+    }),
+});
+
+/** An editable private copy of someone else's template; the original author keeps the credit. */
+export const copyProgramTemplate = mutation({
+  args: { templateId: v.id("programTemplates") },
+  handler: (ctx, args) =>
+    guarded("copy the template", async () => {
+      const user = await requirePhysio(ctx);
+      const template = await ctx.db.get(args.templateId);
+      if (!template || !canSeeTemplate(template, user)) throw new ConvexError("This template isn’t available.");
+      if (template.createdBy === user._id) throw new ConvexError("This is already yours.");
+      const now = Date.now();
+      // Another physio's private exercises travel as named exercises with their dose and steps
+      const items = await Promise.all(
+        template.items.map(async (item) => {
+          if (!item.exerciseId) return item;
+          const exercise = await ctx.db.get(item.exerciseId);
+          if (canUseExercise(exercise, user)) return item;
+          return {
+            name: exercise?.name ?? item.name ?? "Exercise",
+            sets: item.sets,
+            reps: item.reps,
+            holdSeconds: item.holdSeconds,
+            frequency: item.frequency,
+            note: item.note,
+          };
+        })
+      );
+      const rootId = template.rootTemplateId ?? template._id;
+      const copyId = await ctx.db.insert("programTemplates", {
+        title: template.title,
+        description: template.description,
+        bodyRegion: template.bodyRegion,
+        goals: template.goals,
+        note: template.note,
+        items,
+        createdBy: user._id,
+        clinicId: user.clinicId,
+        visibility: "private",
+        copiedFromId: template._id,
+        rootTemplateId: rootId,
+        originalAuthorId: template.originalAuthorId ?? template.createdBy,
+        sendCount: 0,
+        copyCount: 0,
+        usedBy: 0,
+        createdAt: now,
+        updatedAt: now,
+      });
+      const root = rootId === template._id ? template : await ctx.db.get(rootId);
+      if (root) await ctx.db.patch(root._id, { copyCount: root.copyCount + 1 });
+      await ctx.db.insert("programTemplateUses", { templateId: rootId, userId: user._id, kind: "copy", createdAt: now });
+      return { templateId: copyId };
+    }),
+});
+
+export const archiveProgramTemplate = mutation({
+  args: { templateId: v.id("programTemplates") },
+  handler: async (ctx, args) => {
+    const user = await requirePhysio(ctx);
+    const template = await ctx.db.get(args.templateId);
+    if (!template || template.createdBy !== user._id) throw new ConvexError("You can only remove your own templates.");
+    await ctx.db.patch(template._id, { archivedAt: Date.now() });
+    return { ok: true };
+  },
+});
+
+/** "Something's wrong with this": three reports hide a public template until an admin looks. */
+export const reportProgramTemplate = mutation({
+  args: { templateId: v.id("programTemplates"), reason: v.string() },
+  handler: async (ctx, args) => {
+    const user = await requirePhysio(ctx);
+    const template = await ctx.db.get(args.templateId);
+    if (!template || !canSeeTemplate(template, user) || template.createdBy === user._id) throw new ConvexError("You can’t report this template.");
+    const reason = clean(args.reason, 300);
+    if (!reason) throw new ConvexError("Say what’s wrong, in a few words.");
+    const reports = template.reports ?? [];
+    if (reports.some((r) => r.by === user._id)) return { ok: true };
+    const next = [...reports, { by: user._id, reason, at: Date.now() }];
+    await ctx.db.patch(template._id, {
+      reports: next,
+      ...(next.length >= HIDE_AFTER_REPORTS && !template.hiddenAt ? { hiddenAt: Date.now() } : {}),
+    });
+    return { ok: true };
+  },
+});
+
+/** Admin: public templates that were reported or hidden. */
+export const adminReportedTemplates = query({
+  args: {},
+  handler: async (ctx) => {
+    await ensureUserRole(ctx, ["admin"]);
+    const rows = (
+      await ctx.db
+        .query("programTemplates")
+        .withIndex("by_visibility", (q) => q.eq("visibility", "public"))
+        .collect()
+    ).filter((t) => (t.reports?.length ?? 0) > 0 || t.hiddenAt);
+    return await Promise.all(
+      rows.map(async (t) => ({
+        _id: t._id,
+        title: t.title,
+        author: (await templateAuthor(ctx, t)).name,
+        reports: t.reports ?? [],
+        hidden: Boolean(t.hiddenAt),
+        items: t.items.length,
+      }))
+    );
+  },
+});
+
+export const adminSetTemplateHidden = mutation({
+  args: { templateId: v.id("programTemplates"), hidden: v.boolean() },
+  handler: async (ctx, args) => {
+    const admin = await ensureUserRole(ctx, ["admin"]);
+    const template = await ctx.db.get(args.templateId);
+    if (!template) throw new ConvexError("Template not found.");
+    await ctx.db.patch(
+      template._id,
+      args.hidden ? { hiddenAt: Date.now(), hiddenBy: admin._id } : { hiddenAt: undefined, hiddenBy: undefined, reports: [] }
+    );
+    return { ok: true };
+  },
+});
+
+/**
+ * After a programme goes out: counts the template's use, and gives points to the author of the
+ * template (once per physio who sends it) and to the authors of library exercises from other
+ * physios (once per exercise per physio). Never for the sender's own work.
+ */
+async function creditAuthors(
+  ctx: MutationCtx,
+  senderId: Id<"users">,
+  items: StoredItem[],
+  templateId: Id<"programTemplates"> | undefined,
+  programId: Id<"exercisePrograms">
+) {
+  const now = Date.now();
+  if (templateId) {
+    const template = await ctx.db.get(templateId);
+    if (template && !template.archivedAt) {
+      await ctx.db.patch(template._id, { sendCount: template.sendCount + 1 });
+      const rootId = template.rootTemplateId ?? template._id;
+      const root = rootId === template._id ? null : await ctx.db.get(rootId);
+      if (root) await ctx.db.patch(root._id, { sendCount: root.sendCount + 1 });
+      const before = await ctx.db
+        .query("programTemplateUses")
+        .withIndex("by_template_and_user", (q) => q.eq("templateId", rootId).eq("userId", senderId).eq("kind", "send"))
+        .first();
+      await ctx.db.insert("programTemplateUses", { templateId: rootId, userId: senderId, kind: "send", programId, createdAt: now });
+      if (!before) {
+        const original = root ?? template;
+        await ctx.db.patch(original._id, { usedBy: original.usedBy + 1 });
+        const authorId = template.originalAuthorId ?? template.createdBy;
+        if (authorId !== senderId) {
+          await awardPoints(ctx, {
+            userId: authorId,
+            reason: "template_used",
+            dedupeKey: `template_used:${rootId}:${senderId}`,
+            label: `Another physio used “${original.title}”`,
+            refType: "programTemplates",
+            refId: rootId,
+          });
+        }
+      }
+    }
+  }
+  const seen = new Set<string>();
+  for (const item of items) {
+    if (!item.exerciseId || seen.has(item.exerciseId)) continue;
+    seen.add(item.exerciseId);
+    const exercise = await ctx.db.get(item.exerciseId);
+    if (!exercise?.createdBy || exercise.createdBy === senderId || exercise.libraryShare?.status !== "approved") continue;
+    await awardPoints(ctx, {
+      userId: exercise.createdBy,
+      reason: "exercise_prescribed",
+      dedupeKey: `exercise_prescribed:${exercise._id}:${senderId}`,
+      label: `Another physio prescribed “${exercise.name}”`,
+      refType: "exercises",
+      refId: exercise._id,
+    });
+  }
+}

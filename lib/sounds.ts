@@ -15,7 +15,20 @@
  *   error    – an action failed (low double tap)
  *   certified – a big achievement, e.g. a Rehabify Learn certificate (short fanfare)
  */
-export type SoundName = 'send' | 'receive' | 'booked' | 'paid' | 'success' | 'approve' | 'reject' | 'error' | 'certified'
+export type SoundName =
+  | 'send'
+  | 'receive'
+  | 'booked'
+  | 'paid'
+  | 'success'
+  | 'approve'
+  | 'reject'
+  | 'error'
+  | 'certified'
+  | 'points'
+  | 'vote'
+  | 'helpful'
+  | 'share'
 
 const STORAGE_KEY = 'rehabify:sounds'
 export const SOUND_SETTING_EVENT = 'rehabify:sounds-changed'
@@ -150,5 +163,37 @@ export function playSound(name: SoundName) {
       note(ctx, 2093.0, t + 0.45, 0.45, 0.018) // C7
       note(ctx, 2637.02, t + 0.56, 0.4, 0.013) // E7
       break
+    case 'points':
+      // Reward points: a bright two-note coin chime
+      note(ctx, 1567.98, t, 0.14, 0.045, 'triangle') // G6
+      note(ctx, 2093.0, t + 0.07, 0.42, 0.04) // C7
+      break
+    case 'vote':
+      // A light tick for a vote or "found this useful"
+      note(ctx, 1174.66, t, 0.08, 0.04, 'triangle') // D6
+      break
+    case 'helpful':
+      // An answer marked helpful: a warm, settled chord
+      note(ctx, 659.25, t, 0.5, 0.04) // E5
+      note(ctx, 830.61, t + 0.05, 0.5, 0.035) // G#5
+      note(ctx, 987.77, t + 0.1, 0.6, 0.035) // B5
+      break
+    case 'share': {
+      // Sharing a card: a soft upward whoosh into a note
+      const gain = ctx.createGain()
+      gain.gain.setValueAtTime(0.0001, t)
+      gain.gain.exponentialRampToValueAtTime(0.05, t + 0.03)
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.22)
+      gain.connect(ctx.destination)
+      const osc = ctx.createOscillator()
+      osc.type = 'sine'
+      osc.frequency.setValueAtTime(440, t)
+      osc.frequency.exponentialRampToValueAtTime(1320, t + 0.18)
+      osc.connect(gain)
+      osc.start(t)
+      osc.stop(t + 0.25)
+      note(ctx, 1318.51, t + 0.16, 0.35, 0.035) // E6
+      break
+    }
   }
 }

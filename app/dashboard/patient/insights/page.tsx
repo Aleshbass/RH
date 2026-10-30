@@ -25,6 +25,7 @@ import {
   StatTile,
   primaryButtonClass,
 } from '@/components/patient/ui'
+import { PatientProgressSection } from '@/components/outcomes/PatientProgressSection'
 
 /** api.analytics.getPatientStats */
 type PatientStats = {
@@ -146,6 +147,9 @@ export default function PatientProgressPage() {
         description="How your recovery is going, from your visits and daily check-ins."
         info="Built from your visits, exercise logs and check-ins. The more often you check in, the clearer the picture for you and your physio."
       />
+
+      {/* Pain from the start of care to now, and questions from the physio (convex/outcomes.ts) */}
+      <PatientProgressSection />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatTile

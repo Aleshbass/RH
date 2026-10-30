@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Image from 'next/image'
 import { useMutation, useQuery } from 'convex/react'
+import { makeFunctionReference } from 'convex/server'
 import {
   ArrowDown,
   ArrowLeft,
@@ -10,6 +11,7 @@ import {
   ArrowUp,
   BookOpen,
   Dumbbell,
+  Layers,
   Library,
   Loader2,
   Mic,
@@ -39,6 +41,7 @@ import { programError } from './errors'
 import { EducationBrowser } from './EducationLibrary'
 import { ExercisePreviewDialog } from './ExercisePreviewDialog'
 import { LibraryPicker, entryPoster } from './LibraryPicker'
+import { RegionChips, TemplatePickerDrawer, VisibilityChoice, templateRefs, type TemplateDetail, type TemplateVisibility } from './templates'
 import {
   isLocalImage,
   itemsSummary,
@@ -134,7 +137,9 @@ function draftFor(entry: LibraryEntry): Draft {
   }
 }
 
-function draftsFromProgram(program: CareTeamProgram): Draft[] {
+const currentUserRef = makeFunctionReference<'query', Record<string, never>, { _id: Id<'users'>; clinicId?: Id<'clinics'> } | null>('queries:getCurrentUser')
+
+function draftsFromProgram(program: Pick<CareTeamProgram, 'items'>): Draft[] {
   return program.items.map((item) => {
     const dose = {
       sets: clampInt(item.sets, 1, 10, 3),
@@ -260,7 +265,7 @@ function ResourcePickerDialog({
   )
 }
 
-export type ProgramDialogMode = 'send' | 'new' | 'edit'
+export type ProgramDialogMode = 'send' | 'new' | 'edit' | 'template'
 
 /**
  * Builds a home programme in three steps: 1 choose exercises from the library (or add your own
@@ -270,7 +275,9 @@ export type ProgramDialogMode = 'send' | 'new' | 'edit'
  * - mode "send" (default): step 3 picks one of the patient's programmes, or creates a new one.
  * - mode "new": always creates a new programme.
  * - mode "edit": changes `program` (title, goals, notes and every item).
- * Pass `program` with mode "send" to preselect it ("Add exercises" on a programme).
+ * - mode "template": builds a programme template instead (no patient); `templateId` edits one.
+ * Pass `program` with mode "send" to preselect it ("Add exercises" on a programme), and
+ * `templateId` with mode "send" or "new" to start from a template.
  */
 export function SendProgramDialog({
   patientId,
@@ -282,8 +289,10 @@ export function SendProgramDialog({
   onSent,
   mode = 'send',
   program,
+  templateId,
 }: {
-  patientId: Id<'users'>
+  /** Not needed when building a template */
+  patientId?: Id<'users'>
   patientName: string
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -294,21 +303,27 @@ export function SendProgramDialog({
   onSent?: (programId: Id<'exercisePrograms'>) => void
   mode?: ProgramDialogMode
   program?: CareTeamProgram | null
+  /** A template to start from (send, new) or to edit (template) */
+  templateId?: Id<'programTemplates'>
 }) {
   const editing = mode === 'edit' && Boolean(program)
+  const templateMode = mode === 'template'
+  const me = useQuery(currentUserRef, open ? {} : 'skip')
+  const hasClinic = Boolean(me?.clinicId)
   const library = useQuery(api.exerciseLibrary.listLibrary, open ? {} : 'skip') as LibraryData | null | undefined
   // Clinic plans: where a new programme leaves the clinic's monthly allowance (null otherwise)
-  const allowance = useQuery(api.exercisePrograms.programmeAllowanceFor, open && mode === 'send' ? { patientId } : 'skip') as
+  const allowance = useQuery(api.exercisePrograms.programmeAllowanceFor, open && mode === 'send' && patientId ? { patientId } : 'skip') as
     | { allowance: number; count: number; alreadyCounted: boolean; overage: boolean; unitKobo: number }
     | null
     | undefined
-  const programs = useQuery(api.exercisePrograms.listForPatient, open && mode === 'send' ? { patientId } : 'skip') as
+  const programs = useQuery(api.exercisePrograms.listForPatient, open && mode === 'send' && patientId ? { patientId } : 'skip') as
     | CareTeamProgram[]
     | null
     | undefined
   const create = useMutation(api.exercisePrograms.createProgram)
   const addTo = useMutation(api.exercisePrograms.addExercisesToProgram)
   const update = useMutation(api.exercisePrograms.updateProgram)
+  const saveTemplate = useMutation(templateRefs.save)
   const media = useNoteMedia()
   const listEndRef = useRef<HTMLDivElement>(null)
 
@@ -322,6 +337,19 @@ export function SendProgramDialog({
   const [preview, setPreview] = useState<LibraryEntry | null>(null)
   const [saving, setSaving] = useState(false)
   const [resourcePickerOpen, setResourcePickerOpen] = useState(false)
+  // Templates: the one this programme started from (credited on send), and saving as one
+  const [templatePickerOpen, setTemplatePickerOpen] = useState(false)
+  const [pickedTemplate, setPickedTemplate] = useState<Id<'programTemplates'> | null>(null)
+  const [usedTemplate, setUsedTemplate] = useState<Id<'programTemplates'> | null>(null)
+  const [editingTemplate, setEditingTemplate] = useState<Id<'programTemplates'> | null>(null)
+  const [saveAsTemplate, setSaveAsTemplate] = useState(false)
+  const [templateName, setTemplateName] = useState('')
+  const [templateDescription, setTemplateDescription] = useState('')
+  const [templateRegion, setTemplateRegion] = useState<string | null>(null)
+  const [templateVisibility, setTemplateVisibility] = useState<TemplateVisibility>('private')
+  const appliedTemplate = useRef<string | null>(null)
+  const loadTemplateId = pickedTemplate ?? (open ? (templateId ?? null) : null)
+  const loadedTemplate = useQuery(templateRefs.get, open && loadTemplateId ? { templateId: loadTemplateId } : 'skip')
 
   useEffect(() => {
     if (!open) return
@@ -342,9 +370,45 @@ export function SendProgramDialog({
       setKeepVoice(false)
     }
     setTarget(mode === 'new' ? NEW_PROGRAMME : (program?._id ?? null))
+    setPickedTemplate(null)
+    setUsedTemplate(null)
+    setEditingTemplate(null)
+    setSaveAsTemplate(false)
+    setTemplateName('')
+    setTemplateDescription('')
+    setTemplateRegion(null)
+    setTemplateVisibility('private')
+    appliedTemplate.current = null
     media.reset()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
+
+  /** Loads a template into the builder: to send it, to start a new template from it, or to edit your own. */
+  const applyTemplate = (t: TemplateDetail) => {
+    setDrafts(draftsFromProgram(t).map(({ fromIndex: _from, ...d }) => d))
+    setStep(2)
+    setGoals(t.goals)
+    setNote((current) => current || (t.note ?? ''))
+    if (templateMode) {
+      setTemplateName(t.title)
+      setTemplateRegion(t.bodyRegion)
+      if (t.mine) {
+        setEditingTemplate(t._id)
+        setTemplateDescription(t.description ?? '')
+        setTemplateVisibility(t.visibility)
+      }
+    } else {
+      setUsedTemplate(t._id)
+      setTitle((current) => current || t.title)
+    }
+  }
+
+  useEffect(() => {
+    if (!open || !loadedTemplate || appliedTemplate.current === loadedTemplate._id) return
+    appliedTemplate.current = loadedTemplate._id
+    applyTemplate(loadedTemplate)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, loadedTemplate])
 
   const activePrograms = useMemo(
     () => (programs ?? []).filter((p) => p.status === 'active').sort((a, b) => b.updatedAt - a.updatedAt),
@@ -425,16 +489,52 @@ export function SendProgramDialog({
       playSound('error')
       return toast.error(issue)
     }
-    if ((creating || editing) && !title.trim()) {
+    if (templateMode ? !templateName.trim() : (creating || editing) && !title.trim()) {
       playSound('error')
-      return toast.error('Give the programme a title.')
+      return toast.error(templateMode ? 'Give the template a name, e.g. Knee OA, early loading.' : 'Give the programme a title.')
     }
     if (media.busy) return toast.error('Wait for the voice note to finish uploading.')
     const withIndex = payloadItems()
     const items = withIndex.map(({ fromIndex: _from, ...item }) => item)
     const voice = media.voiceStorageId ? { voiceNoteStorageId: media.voiceStorageId, voiceNoteSeconds: media.voice?.seconds } : {}
+    const cleanGoals = goals.map((g) => g.trim()).filter(Boolean)
+    // "Save as a template" after sending: a failure here never undoes the send
+    const keepAsTemplate = async (fallbackTitle: string) => {
+      if (!saveAsTemplate) return
+      try {
+        await saveTemplate({
+          title: templateName.trim() || fallbackTitle,
+          bodyRegion: templateRegion ?? undefined,
+          goals: cleanGoals,
+          note: note.trim() || undefined,
+          items,
+          visibility: templateVisibility,
+        })
+        toast.success('Saved as a template', { description: 'Find it in Library › Templates.' })
+      } catch (error) {
+        toast.error(programError(error, 'The programme went out, but the template didn’t save.'))
+      }
+    }
     setSaving(true)
     try {
+      if (templateMode) {
+        await saveTemplate({
+          templateId: editingTemplate ?? undefined,
+          title: templateName.trim(),
+          description: templateDescription.trim() || undefined,
+          bodyRegion: templateRegion ?? undefined,
+          goals: cleanGoals,
+          note: note.trim() || undefined,
+          items,
+          visibility: templateVisibility,
+        })
+        playSound('success')
+        toast.success(editingTemplate ? 'Template saved' : 'Template created', {
+          description: templateVisibility === 'public' ? 'Every physio can use it now, with credit to you.' : undefined,
+        })
+        onOpenChange(false)
+        return
+      }
       if (editing && program) {
         await update({
           programId: program._id,
@@ -449,13 +549,16 @@ export function SendProgramDialog({
         toast.success('Programme saved', { description: `${patientName} sees the changes in their app now.` })
         onOpenChange(false)
       } else if (existing) {
-        await addTo({ programId: existing._id, items, note: note.trim() || undefined, ...voice })
+        await addTo({ programId: existing._id, items, note: note.trim() || undefined, templateId: usedTemplate ?? undefined, ...voice })
         playSound('send')
         toast.success(`Added to “${existing.title}”`, { description: `${patientName} can see the new ${itemsSummary(items)} in their app now.` })
+        await keepAsTemplate(existing.title)
         onOpenChange(false)
       } else {
+        if (!patientId) throw new Error('no patient')
         const programId = await create({
           patientId,
+          templateId: usedTemplate ?? undefined,
           title: title.trim(),
           note: note.trim() || undefined,
           goals: goals.map((g) => g.trim()).filter(Boolean),
@@ -464,6 +567,7 @@ export function SendProgramDialog({
         })
         playSound('send')
         toast.success('Programme sent', { description: `${patientName} can see it in their app now.` })
+        await keepAsTemplate(title.trim())
         onOpenChange(false)
         onSent?.(programId)
       }
@@ -476,9 +580,17 @@ export function SendProgramDialog({
   }
 
   const isPhone = useIsPhone()
-  const steps = ['Choose exercises', 'Set the dose', editing ? 'Programme details' : 'Programme & notes']
-  const heading = editing ? `Edit “${program?.title}”` : mode === 'new' ? `New home programme for ${patientName}` : `Send exercises to ${patientName}`
-  const submitLabel = editing ? 'Save changes' : existing ? `Add to “${existing.title}”` : `Send to ${patientName}`
+  const steps = ['Choose exercises', 'Set the dose', templateMode ? 'Name & sharing' : editing ? 'Programme details' : 'Programme & notes']
+  const heading = templateMode
+    ? editingTemplate
+      ? `Edit template “${templateName || '…'}”`
+      : 'New programme template'
+    : editing
+      ? `Edit “${program?.title}”`
+      : mode === 'new'
+        ? `New home programme for ${patientName}`
+        : `Send exercises to ${patientName}`
+  const submitLabel = templateMode ? (editingTemplate ? 'Save template' : 'Create template') : editing ? 'Save changes' : existing ? `Add to “${existing.title}”` : `Send to ${patientName}`
 
   return (
     <>
@@ -495,7 +607,9 @@ export function SendProgramDialog({
           <SheetHeader className="gap-1 border-b border-pt-line px-6 pb-4 pt-5 text-left">
             <SheetTitle className="pr-8 text-[17px] font-semibold tracking-tight text-pt-ink">{heading}</SheetTitle>
             <SheetDescription className="text-sm text-pt-muted">
-              Exercises from the library come with a 3D demonstration. Add your own exercises or education too; everything shows in {patientName}&apos;s app.
+              {templateMode
+                ? 'Build it once, name it, and use it for any patient with one tap. Share it with every physio to earn points when they use it.'
+                : `Exercises from the library come with a 3D demonstration. Add your own exercises or education too; everything shows in ${patientName}'s app.`}
             </SheetDescription>
             <ol className="mt-3 flex flex-wrap gap-2 text-xs">
               {steps.map((label, i) => (
@@ -524,6 +638,9 @@ export function SendProgramDialog({
             {step === 1 && (
               <div className="space-y-4">
                 <div className="flex flex-wrap items-center gap-2 rounded-2xl bg-rh-canvas px-4 py-3 text-sm dark:bg-white/[0.03]">
+                  <Button type="button" size="sm" className={cn(primaryButtonClass, 'h-8 rounded-full')} onClick={() => setTemplatePickerOpen(true)}>
+                    <Layers className="mr-1.5 h-3.5 w-3.5" /> Start from a template
+                  </Button>
                   <span className="text-neutral-600 dark:text-neutral-300">Not in the library?</span>
                   <Button type="button" size="sm" variant="outline" className="h-8 rounded-full" onClick={() => addOwn('custom')}>
                     <Dumbbell className="mr-1.5 h-3.5 w-3.5 text-rh-ink dark:text-rh-lime" /> Add your own exercise
@@ -716,12 +833,39 @@ export function SendProgramDialog({
                   </div>
                 )}
 
-                {(creating || editing) && !(mode === 'send' && programs === undefined) && (
+                {templateMode && (
                   <>
                     <div>
-                      <Label htmlFor="hep-title">Programme title</Label>
-                      <Input id="hep-title" className="mt-1.5 rounded-xl" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Knee strength, weeks 1–2" />
+                      <Label htmlFor="tpl-name">Template name</Label>
+                      <Input id="tpl-name" className="mt-1.5 rounded-xl" value={templateName} onChange={(e) => setTemplateName(e.target.value)} placeholder="e.g. Knee OA, early loading" />
                     </div>
+                    <div>
+                      <Label htmlFor="tpl-desc">When to use it (optional)</Label>
+                      <Textarea id="tpl-desc" className="mt-1.5 resize-none rounded-xl" rows={2} value={templateDescription} onChange={(e) => setTemplateDescription(e.target.value)} placeholder="e.g. Weeks 1–3 after diagnosis, pain under 5/10" />
+                    </div>
+                    <div>
+                      <Label>Body area</Label>
+                      <div className="mt-2">
+                        <RegionChips value={templateRegion} onChange={setTemplateRegion} />
+                      </div>
+                    </div>
+                    <div>
+                      <Label>Who can use it</Label>
+                      <div className="mt-2">
+                        <VisibilityChoice value={templateVisibility} onChange={setTemplateVisibility} hasClinic={hasClinic} />
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                {(creating || editing) && !(mode === 'send' && programs === undefined) && (
+                  <>
+                    {!templateMode && (
+                      <div>
+                        <Label htmlFor="hep-title">Programme title</Label>
+                        <Input id="hep-title" className="mt-1.5 rounded-xl" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Knee strength, weeks 1–2" />
+                      </div>
+                    )}
                     <div>
                       <Label>Goals (optional)</Label>
                       <p className="mb-2 text-xs text-neutral-500 dark:text-neutral-400">Shown at the top of the programme in {patientName}&apos;s app.</p>
@@ -736,6 +880,7 @@ export function SendProgramDialog({
                   <Textarea id="hep-note" className="mt-1.5 resize-none rounded-xl" rows={4} value={note} onChange={(e) => setNote(e.target.value)} placeholder="How to fit these into the day, what to expect, when to stop…" />
                 </div>
 
+                {!templateMode && (
                 <div>
                   <Label>Voice note (optional)</Label>
                   <p className="text-xs text-neutral-500 dark:text-neutral-400">
@@ -771,6 +916,26 @@ export function SendProgramDialog({
                     </div>
                   )}
                 </div>
+                )}
+
+                {!templateMode && !editing && (
+                  <div className="rounded-2xl border border-pt-line p-4">
+                    <label className="flex cursor-pointer items-start gap-3">
+                      <input type="checkbox" className="mt-1 h-4 w-4 accent-[#16181c]" checked={saveAsTemplate} onChange={(e) => setSaveAsTemplate(e.target.checked)} />
+                      <span>
+                        <span className="block text-sm font-semibold text-pt-ink">Also save as a template</span>
+                        <span className="block text-xs text-pt-muted">Reuse it for the next patient with the same problem in one tap.</span>
+                      </span>
+                    </label>
+                    {saveAsTemplate && (
+                      <div className="mt-4 space-y-4">
+                        <Input className="rounded-xl" value={templateName} onChange={(e) => setTemplateName(e.target.value)} placeholder={title.trim() || existing?.title || 'Template name, e.g. Knee OA, early loading'} aria-label="Template name" />
+                        <RegionChips value={templateRegion} onChange={setTemplateRegion} />
+                        <VisibilityChoice value={templateVisibility} onChange={setTemplateVisibility} hasClinic={hasClinic} />
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 <div className="rounded-2xl bg-rh-canvas p-4 text-sm dark:bg-white/[0.03]">
                   <p className="font-medium text-rh-ink dark:text-white">
@@ -814,6 +979,16 @@ export function SendProgramDialog({
       </Sheet>
       <ExercisePreviewDialog entry={preview} onOpenChange={(o) => !o && setPreview(null)} />
       <ResourcePickerDialog open={resourcePickerOpen} onOpenChange={closeResourcePicker} added={addedResources} onAdd={addResource} />
+      <TemplatePickerDrawer
+        open={templatePickerOpen}
+        onOpenChange={setTemplatePickerOpen}
+        hasClinic={hasClinic}
+        onPick={(id) => {
+          setTemplatePickerOpen(false)
+          appliedTemplate.current = null
+          setPickedTemplate(id)
+        }}
+      />
     </>
   )
 }

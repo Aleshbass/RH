@@ -153,10 +153,18 @@ export const searchPhysiotherapists = query({
 
     // Sorting
     const sortBy = args.sortBy || "verified";
+    // Bought with reward points (rewards.ts): featured goes first on the default sort among
+    // physios who already match; a referral boost only breaks ties.
+    const now = Date.now();
+    const featured = (p: (typeof filteredPhysios)[number]) =>
+      p.featuredStatus?.isFeatured && (p.featuredStatus.featuredUntil ?? 0) > now ? 1 : 0;
+    const boosted = (p: (typeof filteredPhysios)[number]) => ((p.referralBoostUntil ?? 0) > now ? 1 : 0);
 
     filteredPhysios.sort((a, b) => {
       // For verified sort, prioritize verified first
       if (sortBy === "verified") {
+        if (featured(a) !== featured(b)) return featured(b) - featured(a);
+
         const aVerified = a.verificationBadge?.status !== "none" ? 1 : 0;
         const bVerified = b.verificationBadge?.status !== "none" ? 1 : 0;
 
@@ -165,20 +173,20 @@ export const searchPhysiotherapists = query({
         }
 
         // Secondary: highest rated
-        return (b.averageRating || 0) - (a.averageRating || 0);
+        return (b.averageRating || 0) - (a.averageRating || 0) || boosted(b) - boosted(a);
       }
 
       // For other sorts, apply directly
       switch (sortBy) {
         case "experience":
-          return (b.yearsOfExperience || 0) - (a.yearsOfExperience || 0);
+          return (b.yearsOfExperience || 0) - (a.yearsOfExperience || 0) || boosted(b) - boosted(a);
         case "rating":
           const ratingDiff = (b.averageRating || 0) - (a.averageRating || 0);
           if (ratingDiff !== 0) return ratingDiff;
           // Secondary: more reviews
-          return (b.reviewCount || 0) - (a.reviewCount || 0);
+          return (b.reviewCount || 0) - (a.reviewCount || 0) || boosted(b) - boosted(a);
         default:
-          return 0;
+          return boosted(b) - boosted(a);
       }
     });
 
@@ -211,6 +219,7 @@ export const searchPhysiotherapists = query({
         p.verificationBadge?.status === "verified" ||
         p.verificationBadge?.status === "pro_verified",
       verificationBadge: p.verificationBadge,
+      isFeatured: featured(p) === 1,
       offersOnlineSessions: p.offersOnlineSessions !== false,
       offersInPersonSessions: p.offersInPersonSessions || false,
       profileViews: p.profileViews || 0,

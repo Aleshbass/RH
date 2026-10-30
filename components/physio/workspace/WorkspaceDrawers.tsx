@@ -310,6 +310,9 @@ export function NoteDrawer({
     <PhysioDrawer
       open={open}
       onOpenChange={(next) => (next ? onOpenChange(true) : requestClose())}
+      // A stray tap beside the drawer must not interrupt a note. On touch screens it also made
+      // "Keep editing" count as a tap outside, so "Discard your changes?" came straight back.
+      keepOpenOnOutsideClick
       title={editing ? 'Edit clinical note' : 'New clinical note'}
       description={`${workspace.patient.firstName ?? 'Patient'} · ${new Date(editing ? note.sessionDate : openedAt).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}`}
       // Wide on desktop: the note beside the last visit. sm:max-w-none keeps the phone sheet full width.

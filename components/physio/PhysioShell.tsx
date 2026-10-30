@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useQuery } from 'convex/react'
 import { makeFunctionReference } from 'convex/server'
-import { CalendarPlus } from '@/components/icons'
+import { CalendarPlus, MessageSquare } from '@/components/icons'
 import { api } from '@/convex/_generated/api'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -157,6 +157,21 @@ export function PhysioShell({ children }: { children: ReactNode }) {
               <AppSetupButton tone="portal" />
               <PhysioHelp />
               <PatientThemeToggle className="hidden sm:flex" />
+              {/* Phones: Messages lives here, the bottom bar has Community */}
+              {!isUnderReview && (
+                <Link
+                  href={`${PHYSIO_HOME}/messages`}
+                  aria-label={unreadMessages ? `Messages, ${unreadMessages} unread` : 'Messages'}
+                  className="relative flex h-9 w-9 items-center justify-center rounded-full text-pt-muted transition-colors hover:bg-pt-hover hover:text-pt-ink lg:hidden"
+                >
+                  <MessageSquare className="h-4 w-4" />
+                  {unreadMessages > 0 && (
+                    <span className="absolute -right-0.5 -top-0.5 min-w-[16px] rounded-full bg-pt-accent px-1 text-center text-[9px] font-bold leading-4 text-[#06210a]">
+                      {unreadMessages > 9 ? '9+' : unreadMessages}
+                    </span>
+                  )}
+                </Link>
+              )}
               <PatientNotifications />
             </div>
           </div>
