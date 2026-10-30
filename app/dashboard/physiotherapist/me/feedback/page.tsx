@@ -53,11 +53,11 @@ export default function MyFeedbackPage() {
   return (
     <PageContainer>
       <PageHeader
-        eyebrow="Me"
+        eyebrow="About me"
         title="Patient feedback"
         description="What patients say when care ends. Share the words they allow as a card that links to your booking page."
         info="At discharge Rehabify asks each patient for their final scores, a rating and a few words, and whether those words may be shared (first name and area only). Patients can take that back at any time; their card stops being available."
-        back={{ href: '/dashboard/physiotherapist/me', label: 'Me' }}
+        back={{ href: '/dashboard/physiotherapist/me', label: 'About me' }}
       />
 
       <div className="grid grid-cols-3 gap-3">

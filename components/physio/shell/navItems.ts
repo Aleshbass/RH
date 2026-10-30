@@ -51,7 +51,7 @@ export const NAV = {
     hint: '3D exercises to preview and send',
   },
   me: {
-    title: 'Me',
+    title: 'About me',
     href: path('me'),
     icon: UserRound,
     hint: 'Your outcomes, reward points and CPD',
@@ -72,10 +72,12 @@ export const NAV = {
   },
 } satisfies Record<string, PhysioNavItem>
 
-/** Sidebar order: the day's work first, then the practice. */
+/** Sidebar order: the day's work, the practice, learning and standing, then settings. */
 export const PHYSIO_NAV: PhysioNavGroup[] = [
-  { items: [NAV.today, NAV.schedule, NAV.patients, NAV.messages, NAV.community] },
-  { label: 'Practice', items: [NAV.library, NAV.me, NAV.money, NAV.settings] },
+  { items: [NAV.today, NAV.schedule, NAV.patients, NAV.messages] },
+  { label: 'Practice', items: [NAV.library, NAV.money] },
+  { label: 'Learn', items: [NAV.community, NAV.me] },
+  { items: [NAV.settings] },
 ]
 
 /** While an application is under review only these are open. */

@@ -51,11 +51,11 @@ export default function MyOutcomesPage() {
   return (
     <PageContainer>
       <PageHeader
-        eyebrow="Me"
+        eyebrow="About me"
         title="Your outcomes"
         description="How your patients improve, in their own words and scores."
         info="Rehabify asks each patient how they are when care starts, around sessions and at discharge. Figures cover the last 2 years and update after every answer. Medians, so one unusual patient doesn’t skew them."
-        back={{ href: '/dashboard/physiotherapist/me', label: 'Me' }}
+        back={{ href: '/dashboard/physiotherapist/me', label: 'About me' }}
       />
 
       {!s || (s.courses === 0 && s.ratingCount === 0) ? (

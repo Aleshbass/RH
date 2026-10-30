@@ -52,7 +52,7 @@ export default function MePage() {
   return (
     <PageContainer>
       <PageHeader
-        title="Me"
+        title="About me"
         actions={
           <>
             <Button asChild variant="outline" className={cn(secondaryButtonClass, 'h-10 rounded-full px-4')}>
