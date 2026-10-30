@@ -25,6 +25,18 @@ def _safety_cleared(extracted: ExtractedTriage) -> ExtractedTriage:
     })
 
 
+_SUMMARY_PROMPT = "just to make sure i’ve understood you correctly"
+
+
+def _set_v1_flow(db_session, state, flow_state: str) -> None:
+    """Place a seeded conversation at a step of the V1 summary/safety flow."""
+    from app.conversation.turn_handler import _TRIAGE_FLOW_KEY
+
+    row = db_session.get(Conversation, state.conversation_id)
+    row.booking_context = {**(row.booking_context or {}), _TRIAGE_FLOW_KEY: flow_state}
+    db_session.flush()
+
+
 def test_rh_provider_selection_advances_to_slot_selection_stage():
     """Selecting a verified specialist must not fall back to triage summary."""
     from app.booking.booking_flow import AWAITING_RH_SLOT
@@ -176,9 +188,11 @@ def test_first_contact_does_not_checklist(db_session, patient_phone, fake_llm):
     from app.conversation.turn_handler import handle_turn
     fake_llm.reply = "Sorry about the knee — tell me the whole story when you can."
     result = handle_turn(db_session, patient_phone, "my knee is bad", fake_llm)
-    assert result.phase == "first_contact"
+    # V1 confirms the story in a code-owned summary rather than asking a checklist.
+    assert result.phase == "post_triage"
     assert "1-10" not in result.reply_text
-    assert "knee" in result.reply_text.lower() or "sorry" in result.reply_text.lower() or "sound" in result.reply_text.lower()
+    assert _SUMMARY_PROMPT in result.reply_text.lower()
+    assert "knee" in result.reply_text.lower()
 
 
 def test_clear_shoulder_narrative_does_not_ask_for_condition_category(
@@ -243,7 +257,8 @@ def test_first_contact_does_not_append_severity_checklist(db_session, patient_ph
     lower = result.reply_text.lower()
     assert "1 to 10" not in lower
     assert "1-10" not in lower
-    assert result.reply_text == fake_llm.reply
+    # The summary is composed in code; the model's wording is not forwarded.
+    assert _SUMMARY_PROMPT in lower
 
 
 def test_unknown_sender_uses_gemini_when_unclear_and_audits(db_session):
@@ -326,7 +341,8 @@ def test_safety_discards_model_reply_without_second_llm_call(db_session, patient
         extraction={"flags": {"chest_pain": True}},
     )
     result = handle_turn(db_session, patient_phone, "chest pain and shoulder ache", llm)
-    assert llm.complete_calls == 1
+    # A volunteered red flag escalates deterministically before any model call.
+    assert llm.complete_calls == 0
     assert result.blocked_by_safety is True
     assert result.reply_text != llm.reply
     assert "book" not in result.reply_text.lower()
@@ -422,6 +438,7 @@ def test_post_triage_confirm_does_not_claim_booked(db_session, patient_identity,
     row = db_session.get(Conversation, state.conversation_id)
     row.summary_text = "Here's what I understood: knee."
     db_session.flush()
+    _set_v1_flow(db_session, state, "awaiting_safety_screen")
 
     fake_llm.reply = "Great, you're booked!"
     result = handle_turn(db_session, patient_identity.phone_e164, "yes that's correct", fake_llm)
@@ -468,14 +485,15 @@ def test_post_triage_accepts_common_confirm_phrases(
         "Please confirm this is right, or tell me what to correct?"
     )
     db_session.flush()
+    _set_v1_flow(db_session, state, "awaiting_summary_confirmation")
 
     fake_llm.reply = "should not loop the summary"
     result = handle_turn(db_session, patient_identity.phone_e164, confirm_text, fake_llm)
     lower = result.reply_text.lower()
     assert "here's what i understood" not in lower
-    assert "please confirm this summary" not in lower
-    assert "consultation & booking policy" in lower
-    assert "can’t continue" in lower or "cannot continue" in lower
+    assert _SUMMARY_PROMPT not in lower
+    # Confirmation moves on to the one open "anything else?" question.
+    assert "anything else about your problem" in lower
 
 
 def test_mid_triage_moves_to_summary_after_safety_and_required_facts(
@@ -499,7 +517,7 @@ def test_mid_triage_moves_to_summary_after_safety_and_required_facts(
     result = handle_turn(db_session, patient_identity.phone_e164, "still the knee", fake_llm)
     assert result.phase == "post_triage"
     lower = result.reply_text.lower()
-    assert "does this summary look right" in lower
+    assert _SUMMARY_PROMPT in lower
 
 
 def test_grouped_safety_no_answers_clear_all_duplicate_protocol_questions(
@@ -527,7 +545,8 @@ def test_grouped_safety_no_answers_clear_all_duplicate_protocol_questions(
     result = handle_turn(
         db_session,
         patient_identity.phone_e164,
-        "1. No\n2. No\n3. No\n4. No",
+        # The screen now shows eight themed items; answer every one.
+        "1. No\n2. No\n3. No\n4. No\n5. No\n6. No\n7. No\n8. No",
         fake_llm,
     )
 
@@ -572,8 +591,9 @@ def test_first_contact_prompt_includes_known_name(db_session, patient_identity, 
     from app.conversation.turn_handler import handle_turn
 
     fake_llm.reply = "Sorry about the knee — tell me the whole story when you can."
+    fake_llm.extraction = {"body_location": "knee"}
     result = handle_turn(db_session, patient_identity.phone_e164, "my knee is bad", fake_llm)
-    assert result.phase == "first_contact"
+    assert result.phase == "post_triage"
     assert "Ada Okonkwo" in fake_llm.last_prompt
 
 
@@ -653,7 +673,7 @@ def test_mid_triage_does_not_forward_model_checklist(db_session, patient_identit
     assert "What makes it worse?" not in result.reply_text
     assert "What are your goals?" not in result.reply_text
     assert "How bad is it 1-10?" not in result.reply_text
-    assert "does this summary look right" in result.reply_text.lower()
+    assert _SUMMARY_PROMPT in result.reply_text.lower()
 
 
 def test_mid_triage_does_not_block_summary_on_optional_severity(
@@ -682,7 +702,7 @@ def test_mid_triage_does_not_block_summary_on_optional_severity(
     result = handle_turn(db_session, patient_identity.phone_e164, "still the knee", fake_llm)
     lower = result.reply_text.lower()
     assert result.phase == "post_triage"
-    assert "does this summary look right" in lower
+    assert _SUMMARY_PROMPT in lower
     assert "1 to 10" not in lower
 
 
@@ -742,10 +762,11 @@ def test_first_contact_with_story_batches_leftovers_not_second_open_ask(
         "my knee hurts, it's been hurting for the past 4 days",
         fake_llm,
     )
-    assert result.phase == "mid_triage"
+    # A usable story goes straight to the code-owned summary, not a second open ask.
+    assert result.phase == "post_triage"
     lower = result.reply_text.lower()
     assert "tell me a bit more" not in lower
-    assert "short safety check" in lower
+    assert _SUMMARY_PROMPT in lower
     assert result.reply_text.count("?") <= 2
 
 
@@ -791,6 +812,7 @@ def test_sending_summary_sets_summarised_status(db_session, patient_identity, fa
         db_session, state, "knee", "got it", complete, PatientPhase.MID_TRIAGE, "en",
         stage=ConversationStage.SAFETY_SCREEN,
     )
+    _set_v1_flow(db_session, state, "awaiting_safety_screen")
     fake_llm.reply = "unused"
     fake_llm.extraction = {}
     result = handle_turn(db_session, patient_identity.phone_e164, "that's everything", fake_llm)

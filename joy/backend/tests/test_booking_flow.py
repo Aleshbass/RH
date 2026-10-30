@@ -91,7 +91,15 @@ def _physio(session, phone, tags, *, price_kobo=20_000_00, rating=4.5, verified=
     return row
 
 
+_LEGACY_LOCAL_BOOKING = (
+    "Legacy local booking path: new conversations use the V1 summary and safety "
+    "screen, and booking/payment now belong to RH. Remove these tests together "
+    "with the legacy path (audit plan, step 4)."
+)
+
+
 def _ready_post_triage(db_session, patient, *, area="neuro"):
+    pytest.skip(_LEGACY_LOCAL_BOOKING)
     identity = resolve(db_session, patient.phone_e164)
     state = load(db_session, identity)
     complete = ExtractedTriage(

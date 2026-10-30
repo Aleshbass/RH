@@ -62,6 +62,16 @@ _ALLOWED: dict[ConversationStage, set[ConversationStage]] = {
 }
 
 
+# Safety escalation must be reachable from every stage: a red flag reported
+# mid-booking or mid-payment cannot be refused by the conversation machine.
+# RED (emergency) also supersedes an earlier ORANGE (medical) escalation.
+for _stage, _targets in _ALLOWED.items():
+    if _stage is not ConversationStage.EMERGENCY_ESCALATION:
+        _targets.add(ConversationStage.EMERGENCY_ESCALATION)
+    if _stage not in {ConversationStage.EMERGENCY_ESCALATION, ConversationStage.MEDICAL_ESCALATION}:
+        _targets.add(ConversationStage.MEDICAL_ESCALATION)
+
+
 def assert_transition(current: ConversationStage, target: ConversationStage) -> ConversationStage:
     if target not in _ALLOWED[current]:
         raise ValueError(f"unauthorised conversation stage transition: {current} -> {target}")

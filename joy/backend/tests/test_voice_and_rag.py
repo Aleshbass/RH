@@ -88,7 +88,9 @@ def test_handle_turn_injects_neuro_rag(db_session, patient_identity, fake_llm):
     # Triage turns use one extraction call. RAG is reserved for explicit
     # education/service moments, never the safety or routing path.
     assert "rag:\n(none)" in prompt
-    assert "neurological physiotherapy" in prompt or "stroke rehabilitation" in prompt
+    # The glossary is deliberately not injected on the triage path (see
+    # commit 705fdeb), so the neuro specialty text must not appear either.
+    assert "neurological physiotherapy" not in prompt
 
 
 def test_extraction_complete_excludes_rag_glossary_flags(

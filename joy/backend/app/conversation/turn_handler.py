@@ -78,6 +78,7 @@ from app.safety.semantic_normalization import (
 )
 from app.safety.escalation import notify_family_on_safety, patient_message, specialist_review_offer
 from app.safety.evaluator import evaluate
+from app.safety.volunteered_red_flags import detect_volunteered_red_flags
 from app.physio.availability import apply_availability_turn
 from app.physio.booking_alerts import apply_physio_reply
 from app.physio.home_visit_checkin import apply_checkin_turn
@@ -498,6 +499,17 @@ def _set_triage_status(session: Session, state: ConversationState, status: str) 
         triage.status = status
 
 
+_BARE_SEVERITY_RE = re.compile(
+    r"\s*(?:it'?s\s+|about\s+|around\s+)?\d{1,2}(?:\s*(?:/|out\s+of)\s*10)?\s*[.!]?\s*",
+    re.IGNORECASE,
+)
+
+_ESCALATION_STAGES = {
+    ConversationStage.EMERGENCY_ESCALATION,
+    ConversationStage.MEDICAL_ESCALATION,
+}
+
+
 def _is_escalated(session: Session, state: ConversationState) -> bool:
     if state.triage_session_id is None:
         return False
@@ -565,6 +577,17 @@ def _resend_safety_block(
     target_stage = _stage_for_booking_substate(
         conversation.booking_substate if conversation is not None else None
     ) or ConversationStage.SPECIALIST_REVIEW
+    if _is_escalated(session, state) and not _is_specialist_review(session, state):
+        # An escalated patient stays in escalation. Replying "ok" after RED or
+        # ORANGE guidance used to request SPECIALIST_REVIEW, which the stage
+        # machine rejects, so the worker crashed and the patient got nothing.
+        target_stage = (
+            state.stage
+            if state.stage in _ESCALATION_STAGES
+            else ConversationStage.EMERGENCY_ESCALATION
+            if (safety.risk_level or "").upper() == "RED"
+            else ConversationStage.MEDICAL_ESCALATION
+        )
     # Conversations created before the booking-state/stage split can retain
     # STORY_CAPTURE even though their persisted booking substate proves they
     # are already in policy or payment. Reconcile only that stale metadata;
@@ -1033,13 +1056,22 @@ def _safety_group(question: ScheduledQuestion) -> str:
 
 
 _SAFETY_SCREEN_ITEMS = (
-    ("New or worsening weakness in your arms or legs", ("weakness",)),
-    ("New loss of feeling or significant numbness", ("numbness", "tingling", "loss of feeling")),
+    # Every protocol question must match at least one item, or a patient who
+    # answers by number is asked the same screen again indefinitely
+    # (tests/test_safety_screen_coverage.py). Phrase additions below await
+    # clinical-lead review.
+    ("New or worsening weakness in your arms or legs", (
+        "weakness", "strength", "unable to use", "unable to take", "normal use",
+        "lift the arm", "walking, balance", "using your hands",
+    )),
+    ("New loss of feeling or significant numbness", ("numbness", "tingling", "loss of feeling", "sensation")),
     ("New problems controlling your bladder or bowel", ("bladder", "bowel")),
     ("New numbness around your groin, genitals or anus", ("groin", "genital", "anus", "saddle", "bottom")),
     ("A serious accident, fall or significant injury related to this problem", ("accident", "fall", "injury", "trauma")),
     ("Fever, feeling very unwell, or another significant illness alongside the problem", ("fever", "unwell", "chills", "night sweats", "infection")),
-    ("Symptoms getting significantly worse very quickly", ("rapid", "worsen", "deteriorat")),
+    ("Symptoms getting significantly worse very quickly", (
+        "rapid", "worsen", "deteriorat", "worse very quickly", "worse over a short period",
+    )),
     ("Something else about your symptoms that feels unusual or concerning", ("unusual", "severe", "rest", "night", "weight", "cancer", "general health")),
 )
 
@@ -1477,6 +1509,10 @@ def provider_unavailable_reply(
     reply, phase = _reply_after_extract(
         session, state, user_text, "", extracted, state.phase, identity, wa_message_id=wa_message_id,
     )
+    if not reply.strip():
+        # With no story yet there is nothing deterministic to continue, and the
+        # model's wording is unavailable. Never send an empty WhatsApp message.
+        reply = "Sorry, I had a brief hiccup. Please send that again in a moment."
     append(
         session,
         kind=AuditKind.TRIAGE,
@@ -1911,6 +1947,22 @@ def handle_turn(
             wa_message_id,
         )
 
+    # Emergency symptoms the patient volunteers are checked deterministically
+    # on every patient message, before summary, safety-screen or booking
+    # logic. Gemini's own flags are discarded by design, so without this an
+    # opening "chest pain" would wait behind summary confirmation.
+    if identity.persona == Persona.PATIENT:
+        volunteered = detect_volunteered_red_flags(user_text)
+        if volunteered:
+            flagged = merge_extraction(state.extracted, {"flags": volunteered})
+            flagged = _record_fact_sources(flagged, wa_message_id)
+            volunteered_safety = evaluate(flagged)
+            if volunteered_safety.fired:
+                return _safety_fire_reply(
+                    session, identity, state, user_text, flagged,
+                    volunteered_safety, phase, language, wa_message_id,
+                )
+
     # An active booking flow is code-owned. Do this before Gemini extraction:
     # compact replies such as ``online``, ``3``, and a receipt email are not
     # new clinical narratives and must never be reinterpreted as triage.
@@ -1998,8 +2050,11 @@ def handle_turn(
     # entirely code-owned. Calling Gemini for it adds latency and makes this
     # critical triage transition depend on provider availability.
     reported_severity = parse_severity_from_text(user_text)
+    # Only a bare score may skip the model. "8 / I want to run again" carries
+    # other facts (a goal) that would otherwise be silently dropped.
     can_skip_model_for_severity = (
         reported_severity is not None
+        and _BARE_SEVERITY_RE.fullmatch(user_text or "") is not None
         and has_narrative(state.extracted)
         and not schedule_questions(state.extracted)
     )

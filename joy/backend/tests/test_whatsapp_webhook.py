@@ -228,7 +228,8 @@ def test_simulate_turn_audio_url_feeds_transcript(
     )
     assert response.status_code == 200
     assert seen == [(b"ogg-bytes", "audio/ogg")]
-    assert response.json()["reply"] == fake_llm.reply
+    # The transcript feeds the same pipeline as text, so it reaches the summary.
+    assert "understood you correctly" in response.json()["reply"].lower()
     stored = db_session.scalar(select(Message).where(Message.role == "user"))
     assert stored is not None
     assert stored.text == "my knee still hurts"

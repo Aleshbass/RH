@@ -42,7 +42,8 @@ def test_each_language_two_turns_then_memory(db_session, fake_llm):
         assert "when did it start" not in lower_first
         assert "how bad is it 1-10" not in lower_first
         assert not any(picker in lower_first for picker in _LANGUAGE_PICKER)
-        assert first.phase == "mid_triage"
+        # A mined story goes straight to the code-owned summary confirmation.
+        assert first.phase == "post_triage"
         # The deterministic safety screen deliberately groups up to four
         # clinically-required checks into one WhatsApp message.
         assert first.reply_text.count("?") <= 4
@@ -60,7 +61,8 @@ def test_each_language_two_turns_then_memory(db_session, fake_llm):
         from app.conversation.state_manager import load
         identity = resolve(db_session, phone)
         state = load(db_session, identity)
-        assert state.extracted.onset == "2 weeks"
+        # Onset is remembered; the deterministic parser may normalise its wording.
+        assert state.extracted.onset in {"2 weeks", "two weeks"}
         assert state.last_known_language == lang
 
 

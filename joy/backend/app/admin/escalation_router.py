@@ -10,6 +10,7 @@ from app.models.conversation import Conversation, Message
 from app.models.patient import Patient
 from app.models.types import PatientPhase, Persona, SafetyResult
 from app.queue.tasks import ADMIN_ESCALATION_QUEUE, TAKEOVER_QUEUE
+from app.safety.volunteered_red_flags import detect_volunteered_red_flags, is_negated
 
 logger = logging.getLogger(__name__)
 
@@ -78,11 +79,25 @@ def detect_off_platform(text: str) -> str | None:
     return None
 
 
+def _reported(lower: str, keyword: str) -> bool:
+    start = lower.find(keyword)
+    while start != -1:
+        if not is_negated(lower, start):
+            return True
+        start = lower.find(keyword, start + 1)
+    return False
+
+
 def flags_from_triage_text(text: str) -> dict[str, bool]:
+    """Keyword flags used during takeover and provider outages.
+
+    Includes the RED phrases matched on every patient turn, and ignores a
+    keyword the patient denies ("no chest pain").
+    """
     lower = (text or "").lower()
-    flags: dict[str, bool] = {}
+    flags: dict[str, bool] = dict(detect_volunteered_red_flags(text))
     for key, keywords in _FLAG_KEYWORDS.items():
-        if any(keyword in lower for keyword in keywords):
+        if key not in flags and any(_reported(lower, keyword) for keyword in keywords):
             flags[key] = True
     return flags
 
