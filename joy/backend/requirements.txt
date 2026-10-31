@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+sqlalchemy
+alembic
+asyncpg
+psycopg[binary]
+pydantic-settings
+redis
+httpx
+google-genai

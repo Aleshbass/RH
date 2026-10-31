@@ -1,0 +1,17 @@
+---
+description: Contract §4 acceptance checklist — plans must cover every item
+alwaysApply: true
+---
+
+# Definition of Done (Contract §4)
+
+A plan set is incomplete if any box is missing. Demo these, do not only unit-test them.
+
+- [ ] Patient completes **MSK and non-MSK** triage end-to-end, in **English, Pidgin, Yoruba, Igbo, Hausa**, with **specialty-based** matching (never default a non-MSK case to the nearest MSK generalist)
+- [ ] Red-flag detection fires immediately, independent of the LLM, **reasoning shown to the patient**
+- [ ] Booking status only advances on confirmed **Paystack webhook** events
+- [ ] Physio onboarding, availability, booking alerts, session notes, payouts — **all via WhatsApp**
+- [ ] Family add / permission / revoke and physio-relay questions work via WhatsApp
+- [ ] Partner referral tracking and fee confirmation fire via webhook/WhatsApp
+- [ ] Every triage / match / payout decision is in the append-only audit log, independently queryable
+- [ ] Context persists across sessions and personas — nothing already on record is re-asked

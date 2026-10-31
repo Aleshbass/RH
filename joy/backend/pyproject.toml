@@ -1,0 +1,32 @@
+[project]
+name = "joy-ai"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "sqlalchemy",
+    "alembic",
+    "asyncpg",
+    "psycopg[binary]",
+    "pydantic-settings",
+    "redis",
+    "httpx",
+    "pytest",
+    "google-genai",
+]
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
+
+[tool.setuptools.package-data]
+"app.llm.rag" = ["knowledge_base/*.md"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

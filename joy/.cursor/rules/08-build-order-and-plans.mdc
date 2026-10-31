@@ -1,0 +1,23 @@
+---
+description: Merged A+B — full-contract product, intelligence-core-first plans
+alwaysApply: true
+---
+
+# Build order (A + B)
+
+**A (product):** `joy-ai` is the full Phase 1 backend. Module tree, data model, and frontend-facing APIs are designed up front. Do not ship a throwaway brain.
+
+**B (sequence):** implement in slices. Each plan is working, testable software that plugs into the same tree.
+
+| Plan | Delivers | Unlocks DoD |
+|---|---|---|
+| 1 Intelligence core | Identity, memory, language, prompt fragments, Gemini, deterministic safety, batched MSK/non-MSK triage, WhatsApp, audit of triage/safety | Triage + safety + context persistence (partial: no match/pay yet) |
+| 2 Match + book | Specialty matching, ranking, teleconsult/home visit, Paystack, booking state machine | Matching + webhook booking |
+| 3 Physio WhatsApp | Onboarding, availability, alerts, notes, check-in, payouts | Physio WhatsApp DoD |
+| 4 Family | Direct-phone add/revoke, view-only vs full, relay | Family DoD |
+| 5 Partner | Referral attribution, ₦2,000 fee confirm, urgent flag | Partner DoD |
+| 6 Admin + internal APIs | Escalations, verification quick-reply, broadcasts, stats, remaining internal APIs, audit query surface | Admin + queryable audit + API debt |
+
+Later plans must not rewrite Plan 1. They implement empty interfaces (`matching/`, `booking/`, personas) already reserved in the tree.
+
+Plans live in `joy-ai/docs/superpowers/plans/`. One plan file per row. Do not start Plan N+1 until Plan N meets its tests. No application code until Vance approves these rules and the plan in play.

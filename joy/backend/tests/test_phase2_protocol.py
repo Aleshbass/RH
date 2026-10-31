@@ -1,0 +1,79 @@
+from app.models.types import ConversationStage, ExtractedTriage
+from app.safety.protocol_runtime import NO, YES, evaluate_protocol, schedule_questions, validate_active_protocol
+
+
+def test_protocol_is_valid_and_schedules_approved_questions_only():
+    validate_active_protocol()
+    extracted = ExtractedTriage(body_location="lower back pain")
+    questions = schedule_questions(extracted)
+    assert questions
+    assert all(question.id.startswith(("GEN-", "LB-")) for question in questions)
+    assert questions == schedule_questions(extracted)
+
+
+def test_protocol_evaluates_cauda_equina_from_question_answers():
+    extracted = ExtractedTriage(
+        body_location="low back",
+        safety_answers={"LB-001-Q1": YES, "LB-001-Q2": NO},
+        safety_question_order=["LB-001-Q1", "LB-001-Q2"],
+    )
+    result = evaluate_protocol(extracted)
+    assert result["risk_level"] == "RED"
+    assert result["action"] == "escalate_doctor"
+    assert "LB-001" in result["rule_ids"]
+
+
+def test_natural_language_affirmative_warning_answer_is_not_repeated():
+    """A clear answer to a displayed safety group must route safely, not loop."""
+    from app.conversation.turn_handler import _narrative_yes_answers, _safety_screen
+
+    extracted = ExtractedTriage(body_location="lower back pain")
+    screen = _safety_screen(extracted)
+    answers = _narrative_yes_answers("Yes, the pain is rapidly worsening", screen)
+    assert answers
+    resolved = extracted.model_copy(update={"safety_answers": answers})
+    result = evaluate_protocol(resolved)
+    assert result["risk_level"] in {"AMBER", "ORANGE", "RED"}
+    assert result["action"] != "continue"
+
+
+def test_negated_warning_list_is_never_misread_as_an_affirmative_answer():
+    """Ordinary pain wording before an explicit denial must not cause a RED route."""
+    from app.conversation.turn_handler import _narrative_yes_answers, _safety_screen
+
+    extracted = ExtractedTriage(body_location="lower back")
+    answers = _narrative_yes_answers(
+        "I have had a sharp pain in my lower back for 3 days. "
+        "I have not had an injury, numbness, weakness, fever, bladder/bowel changes, "
+        "or other emergency symptoms.",
+        _safety_screen(extracted),
+    )
+
+    assert answers == {}
+
+
+def test_stage_machine_rejects_unsafe_shortcut():
+    from app.conversation.stage_machine import assert_transition
+    import pytest
+
+    with pytest.raises(ValueError):
+        assert_transition(ConversationStage.STORY_CAPTURE, ConversationStage.BOOKING_CONFIRMED)
+
+
+def test_policy_acceptance_can_atomically_start_matching():
+    """A valid acceptance can produce options in the same WhatsApp turn."""
+    from app.conversation.stage_machine import assert_transition
+
+    assert assert_transition(
+        ConversationStage.POLICY_REVIEW,
+        ConversationStage.SPECIALIST_MATCHING,
+    ) == ConversationStage.SPECIALIST_MATCHING
+
+
+def test_slot_recovery_can_return_to_specialist_selection():
+    from app.conversation.stage_machine import assert_transition
+
+    assert assert_transition(
+        ConversationStage.SLOT_SELECTION,
+        ConversationStage.SPECIALIST_MATCHING,
+    ) == ConversationStage.SPECIALIST_MATCHING

@@ -1,0 +1,29 @@
+---
+description: Deterministic red-flag engine — no LLM inside safety/
+globs: joy-ai/**/safety/**
+alwaysApply: true
+---
+
+# Safety module
+
+`safety/` must contain **zero** Gemini/LLM calls. Tests in `test_safety_rules.py` run with no network.
+
+Every patient triage turn:
+
+1. Extract structured fields (`triage/extraction.py`).
+2. `safety/evaluator.py` runs `red_flag_rules.py` against those fields.
+3. If a rule fires, `escalation.py` wins. Drop or override model advice. Do not send the candidate to another LLM to “make it kinder.”
+4. Patient-facing message (code): **care, then reasoning, then** see-a-doctor. Never instruction-only. Never a booking offer on a fired turn.
+5. If a family member has access, notify them too (PRD).
+6. Audit the decision.
+
+```python
+# ❌ BAD — prompt-only safety
+system = "If this sounds like cauda equina, tell them to go to A&E"
+
+# ✅ GOOD
+result = evaluator.evaluate(extracted)
+if result.fired:
+    audit.safety(result)
+    return patient_message(result)  # care + reason + instruction; no LLM
+```
