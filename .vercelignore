@@ -3,3 +3,6 @@ assets-src
 *.fbx
 scripts/exercise-3d/out
 .tools
+# Joy (Python WhatsApp agent) deploys from here to Railway, not Vercel.
+# Anchored with / so app/api/v1/joy (the website's Joy API) is still deployed.
+/joy

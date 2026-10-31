@@ -3,7 +3,10 @@ name: CI
 on:
   push:
     branches: [main]
+    # Joy has its own workflow (joy.yml)
+    paths-ignore: ['joy/**']
   pull_request:
+    paths-ignore: ['joy/**']
   # Vercel reports each deployment to GitHub; smoke tests run after a production deploy succeeds
   deployment_status:
   workflow_dispatch:

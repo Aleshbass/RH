@@ -1,3 +1,4 @@
 {
-  "installCommand": "pnpm install --ignore-scripts"
+  "installCommand": "pnpm install --ignore-scripts",
+  "ignoreCommand": "if git diff --quiet \"${VERCEL_GIT_PREVIOUS_SHA:-HEAD^}\" HEAD -- . ':(exclude)joy'; then exit 0; else exit 1; fi"
 }
