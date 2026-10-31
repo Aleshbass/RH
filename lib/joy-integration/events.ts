@@ -6,9 +6,12 @@ export async function deliverJoyEvent(eventId: string, eventType: string, data: 
   const secret = process.env.JOY_EVENT_HMAC_SECRET;
   const occurredAt = new Date().toISOString();
   const payload = { event_id: eventId, event_type: eventType, api_version: "1", occurred_at: occurredAt, data };
-  await callJoyConvexGateway("enqueue_event", { event_id: eventId, event_type: eventType, payload });
+  // Send the stored copy when the event was already queued (Joy keeps only the first copy of
+  // an id, and e.g. a payment's queued copy carries receipt_url); skip it once delivered.
+  const queued = await callJoyConvexGateway("enqueue_event", { event_id: eventId, event_type: eventType, payload }) as { status?: string; payload?: unknown } | null;
+  if (queued?.status === "delivered") return { delivered: true, deferred: false };
   if (!url || !secret) return { delivered: false, deferred: true };
-  const body = JSON.stringify(payload);
+  const body = JSON.stringify(queued?.payload && typeof queued.payload === "object" ? queued.payload : payload);
   const timestamp = Math.floor(Date.now() / 1000).toString();
   const signature = createHmac("sha256", secret).update([timestamp, eventId, body].join("\n"), "utf8").digest("hex");
   try {

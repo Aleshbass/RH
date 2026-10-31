@@ -45,8 +45,8 @@ def test_grounded_ack_replaces_generic_provider_fallback():
 def test_grounded_ack_without_any_clinical_facts_is_a_welcome_not_a_triage_ack():
     reply = grounded_triage_ack("", ExtractedTriage())
 
-    assert "hi, i’m joy" in reply.lower()
-    assert "tell me what is bothering you" in reply.lower()
+    assert "welcome to rehabify" in reply.lower()
+    assert "what’s going on today" in reply.lower()
     assert "thanks for explaining" not in reply.lower()
 
 

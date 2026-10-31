@@ -79,7 +79,38 @@ def enqueue_inbound(
         payload,
         str(_WAMID_TTL_SECONDS),
     )
+    _mark_service_window(client, phone)
     return bool(result)
+
+
+# WhatsApp only accepts free-form messages within 24 hours of the person's last
+# message (the customer service window); after that only approved templates are
+# delivered. Kept slightly shorter than 24h so a send near the edge stays safe.
+_SERVICE_WINDOW_SECONDS = 60 * 60 * 24 - 15 * 60
+
+
+def _service_window_key(phone: str) -> str:
+    return f"joy:wa_window:{phone.lstrip('+')}"
+
+
+def _mark_service_window(client: redis.Redis, phone: str) -> None:
+    try:
+        client.set(_service_window_key(phone), "1", ex=_SERVICE_WINDOW_SECONDS)
+    except redis.RedisError:
+        pass  # Never lose an inbound message over window bookkeeping.
+
+
+def _in_service_window(phone: str) -> bool:
+    try:
+        return bool(_redis().exists(_service_window_key(phone)))
+    except redis.RedisError:
+        return True  # Unknown: fall back to a plain message, as before.
+
+
+def _template_body_parameter(text: str) -> str:
+    # Template parameters may not contain newlines, tabs or long runs of spaces.
+    flat = " ".join(text.split())
+    return flat if len(flat) <= 900 else flat[:899].rstrip() + "…"
 
 
 BOOKING_CONFIRMED_QUEUE = "joy:booking_confirmed"
@@ -282,15 +313,25 @@ def send_whatsapp_text(phone: str, text: str) -> None:
         # A silent no-op is indistinguishable from a delivered reply and leaves
         # the patient waiting forever.  Let the worker retry and record this.
         raise RuntimeError("WhatsApp delivery is not configured")
+    message: dict = {"messaging_product": "whatsapp", "to": phone.lstrip("+"), "type": "text", "text": {"body": text}}
+    template = settings.whatsapp_update_template.strip()
+    if template and not _in_service_window(phone):
+        # Outside the 24-hour window (reminders, alerts, links sent later), Meta
+        # delivers only an approved template: its body carries the text as {{1}}.
+        message = {
+            "messaging_product": "whatsapp",
+            "to": phone.lstrip("+"),
+            "type": "template",
+            "template": {
+                "name": template,
+                "language": {"code": settings.whatsapp_update_template_language or "en"},
+                "components": [{"type": "body", "parameters": [{"type": "text", "text": _template_body_parameter(text)}]}],
+            },
+        }
     response = httpx.post(
         f"https://graph.facebook.com/v21.0/{settings.whatsapp_phone_number_id}/messages",
         headers={"Authorization": f"Bearer {settings.whatsapp_access_token}"},
-        json={
-            "messaging_product": "whatsapp",
-            "to": phone.lstrip("+"),
-            "type": "text",
-            "text": {"body": text},
-        },
+        json=message,
         timeout=15.0,
     )
     try:

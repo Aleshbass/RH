@@ -61,7 +61,7 @@ _PAYMENT_EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 
 TREATMENT_OPTIONS = {
     "quick_initial": {"label": "Quick Initial Consultation", "amount_kobo": 600_000, "duration_minutes": 20},
-    "full_virtual": {"label": "Full Virtual Consultation", "amount_kobo": 1_500_000, "duration_minutes": 60},
+    "full_virtual": {"label": "Full Virtual Consultation", "amount_kobo": 2_000_000, "duration_minutes": 60},
     "home_visit": {"label": "Face-to-Face Home Session", "amount_kobo": None, "duration_minutes": 60},
 }
 
@@ -205,7 +205,7 @@ def treatment_options_prompt(summary: str) -> str:
         "Here are your options for what happens next:\n\n"
         "1. Quick Initial Consultation — ₦6,000\n"
         "A brief online call with a clinician for initial advice and guidance on the best next step.\n\n"
-        "2. Full Virtual Consultation — ₦15,000\n"
+        "2. Full Virtual Consultation — ₦20,000\n"
         "A detailed online assessment with a clinician, including questions and a personalised treatment and rehabilitation plan.\n\n"
         "3. Face-to-Face Home Session\n"
         "A clinician comes to you for an in-person assessment and treatment. The price depends on the clinician and your location.\n\n"
@@ -341,6 +341,8 @@ def begin_selected_treatment(
         "rh_patient_id": rh_patient_id,
         "booking_route": "admin_scheduled_virtual",
         "consultation_type": option,
+        # RH prices from its catalogue; quote that amount, not the menu figure.
+        "rh_amount_kobo": booking.amount_kobo,
     })
     if booking.payment_status == "completed":
         ctx["rh_payment_status"] = "succeeded"
@@ -666,7 +668,7 @@ def _continue_rh_slot(session: Session, conversation: Conversation, patient: Pat
     # Paystack needs a deliverable receipt address. Never synthesize one from
     # a phone number: the hold is valid, but payment must wait for the patient
     # to provide an address they control.
-    ctx.update({"rh_booking_id": booking.booking_id})
+    ctx.update({"rh_booking_id": booking.booking_id, "rh_amount_kobo": booking.amount_kobo})
     _set_substate(conversation, AWAITING_RH_PAYMENT_EMAIL, ctx)
     append(session, kind=AuditKind.BOOKING, actor_phone=patient.phone_e164, person_id=patient.id,
            payload={"decision": "rh_booking_hold_created", "rh_booking_id": booking.booking_id})
@@ -711,9 +713,16 @@ def _continue_rh_payment_email(session: Session, conversation: Conversation, pat
     _set_substate(conversation, AWAITING_RH_PAYMENT, ctx)
     append(session, kind=AuditKind.BOOKING, actor_phone=patient.phone_e164, person_id=patient.id,
            payload={"decision": "rh_pending_payment_created", "rh_booking_id": str(booking_id)})
+    amount = _amount_text(ctx)
     if ctx.get("booking_route") == "admin_scheduled_virtual":
-        return f"Your virtual consultation booking is ready. Complete payment securely here: {payment.authorization_url}"
-    return f"Your time is held. Complete payment securely here: {payment.authorization_url}"
+        return f"Your virtual consultation booking is ready.{amount} Complete payment securely here: {payment.authorization_url}"
+    return f"Your time is held.{amount} Complete payment securely here: {payment.authorization_url}"
+
+
+def _amount_text(ctx: dict) -> str:
+    """The amount RH will charge, as stored from its booking response."""
+    amount = ctx.get("rh_amount_kobo")
+    return f" Amount: ₦{int(amount) // 100:,}." if isinstance(amount, int) and amount > 0 else ""
 
 
 def _rh_payment_status(conversation: Conversation, user_text: str) -> str | None:

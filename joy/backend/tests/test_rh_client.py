@@ -243,3 +243,25 @@ def test_direct_convex_gateway_prepares_specialist_review_payment_without_callin
         "/joy-integration/prepare_specialist_review_payment",
         "/joy-integration/record_specialist_review_payment_initialization",
     ]
+
+
+def test_direct_convex_gateway_operations_carry_the_actor_in_data() -> None:
+    # RH authorizes operations from data.actor; without it every physio and
+    # family command fails with "not authorized" in gateway mode.
+    seen: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path in {"/joy-integration/operational_query", "/joy-integration/operational_mutation"}
+        seen.append(json.loads(request.content))
+        return httpx.Response(200, json={"ok": True})
+
+    gateway = RHConvexGatewayClient(
+        "https://convex.test", "gateway-test-secret", client=httpx.Client(transport=httpx.MockTransport(handler))
+    )
+    client = RHClient("https://rh.test", "joy-test", "adapter-secret", gateway_client=gateway)
+    actor = RHActor(persona="physiotherapist", sender_phone="+2348012345678", rh_user_id="physio-user-1")
+    client.operational_query("physio_work_summary", actor=actor, data={"physiotherapist_id": "profile-1"})
+    client.operational_mutation("physio_message_patient", actor=actor, data={"booking_id": "b-1", "message": "Hi"}, idempotency_key="k-1")
+    assert [body["data"]["actor"]["rh_user_id"] for body in seen] == ["physio-user-1", "physio-user-1"]
+    assert seen[0]["data"]["physiotherapist_id"] == "profile-1"
+    assert seen[1]["data"]["message"] == "Hi" and isinstance(seen[1]["request_id"], str)

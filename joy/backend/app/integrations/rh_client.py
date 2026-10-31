@@ -652,7 +652,8 @@ class RHClient:
     # from constructing raw Convex requests or trusting browser credentials.
     def operational_query(self, operation: str, *, actor: RHActor, data: dict[str, Any]) -> dict[str, Any]:
         if self.gateway_client:
-            return self._gateway("operational_query", {"operation": operation, "data": data})
+            # RH authorizes every operation from data.actor (the Next route adds it the same way).
+            return self._gateway("operational_query", {"operation": operation, "data": {**data, "actor": actor.as_payload()}})
         payload = {"operation": operation, "mutation": False, "actor": actor.as_payload(), "data": data}
         return self._request("POST", "/api/v1/joy/operations", payload=payload)
 
@@ -665,7 +666,7 @@ class RHClient:
         idempotency_key: str,
     ) -> dict[str, Any]:
         if self.gateway_client:
-            return self._gateway("operational_mutation", {"operation": operation, "data": data, "request_id": str(uuid4())})
+            return self._gateway("operational_mutation", {"operation": operation, "data": {**data, "actor": actor.as_payload()}, "request_id": str(uuid4())})
         payload = {"operation": operation, "mutation": True, "actor": actor.as_payload(), "data": data}
         return self._request("POST", "/api/v1/joy/operations", payload=payload, idempotency_key=idempotency_key)
 

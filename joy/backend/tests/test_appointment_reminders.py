@@ -37,7 +37,7 @@ def test_treatment_options_default_help_to_quick_consultation():
     assert "Quick Initial Consultation" in prompt
     assert "₦6,000" in prompt
     assert "Full Virtual Consultation" in prompt
-    assert "₦15,000" in prompt
+    assert "₦20,000" in prompt
     assert _treatment_option("help me choose") == "quick_initial"
     assert _treatment_option("2") == "full_virtual"
     assert _treatment_option("3") == "home_visit"
@@ -75,3 +75,26 @@ def test_rescheduled_message_has_the_new_appointment_details():
     assert "1st Oct at 12pm WAT" in text
     assert "20 minutes" in text
     assert "https://physioaroundme.com/v/JOY-TEST-123" in text
+
+
+def test_home_visit_messages_show_booking_details_not_a_call_to_join():
+    start = datetime(2026, 10, 1, 11, 0, tzinfo=timezone.utc)
+    url = "https://physioaroundme.com/v/K7P3XQ9M"
+    confirmation = appointment_confirmation_text(
+        provider_name="Test Ada Okafor", session_start=start, duration_minutes=60,
+        service_mode="home_visit", booking_code="K7P3XQ9M", meeting_url=url,
+    )
+    assert "Join" not in confirmation and f"Your booking details: {url}" in confirmation
+    assert "before your physiotherapist arrives" in confirmation
+
+    reminder = appointment_reminder_text(SimpleNamespace(
+        reminder_kind=AT_APPOINTMENT_START, service_mode="home_visit", provider_name="Test Ada Okafor",
+        rh_booking_id="JOY-TEST-123", booking_code="K7P3XQ9M", meeting_url=url,
+    ))
+    assert "Join" not in reminder and "on the way" in reminder and url in reminder
+
+    rescheduled = appointment_rescheduled_text(
+        provider_name="Test Ada Okafor", session_start=start, duration_minutes=60,
+        service_mode="clinic", booking_code="K7P3XQ9M", meeting_url=None,
+    )
+    assert "joining link" not in rescheduled

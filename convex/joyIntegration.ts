@@ -1464,10 +1464,12 @@ export const enqueueJoyEvent = internalMutation({
   args: { eventId: v.string(), eventType: v.string(), payload: v.any() },
   handler: async (ctx, args) => {
     const existing = await ctx.db.query("joyEventOutbox").withIndex("by_event_id", (q) => q.eq("eventId", args.eventId)).first();
-    if (existing) return { event_id: existing.eventId, status: existing.status };
+    // The stored payload is the one to send: Joy keeps only the first copy of an event id,
+    // and a payment's queued copy carries fields (receipt_url) a later caller may not have.
+    if (existing) return { event_id: existing.eventId, status: existing.status, payload: existing.payload };
     const now = Date.now();
     await ctx.db.insert("joyEventOutbox", { eventId: args.eventId, eventType: args.eventType, payload: args.payload, status: "pending", attempts: 0, createdAt: now, updatedAt: now });
-    return { event_id: args.eventId, status: "pending" };
+    return { event_id: args.eventId, status: "pending", payload: args.payload };
   },
 });
 
@@ -1640,12 +1642,13 @@ async function signEvent(timestamp: string, eventId: string, body: string, secre
 export const deliverJoyEvent = internalAction({
   args: { eventId: v.string(), eventType: v.string(), data: v.any() },
   handler: async (ctx, args) => {
-    const payload = { event_id: args.eventId, event_type: args.eventType, api_version: "1", occurred_at: new Date().toISOString(), data: args.data };
-    await ctx.runMutation(internal.joyIntegration.enqueueJoyEvent, { eventId: args.eventId, eventType: args.eventType, payload });
+    const fresh = { event_id: args.eventId, event_type: args.eventType, api_version: "1", occurred_at: new Date().toISOString(), data: args.data };
+    const queued: { status: string; payload: unknown } = await ctx.runMutation(internal.joyIntegration.enqueueJoyEvent, { eventId: args.eventId, eventType: args.eventType, payload: fresh });
+    if (queued.status === "delivered") return { delivered: true };
     const url = process.env.JOY_EVENT_URL;
     const secret = process.env.JOY_EVENT_HMAC_SECRET;
     if (!url || !secret) return { delivered: false, reason: "event_receiver_not_configured" };
-    const body = JSON.stringify(payload);
+    const body = JSON.stringify(queued.payload ?? fresh);
     const timestamp = Math.floor(Date.now() / 1000).toString();
     try {
       const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json", "X-RH-Event-Timestamp": timestamp, "X-RH-Event-Signature": await signEvent(timestamp, args.eventId, body, secret) }, body });

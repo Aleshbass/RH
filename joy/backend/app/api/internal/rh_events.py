@@ -92,6 +92,10 @@ async def receive_event(request: Request, settings: Settings = Depends(get_setti
                 )
             else:
                 text = "Your payment has been received. I’ll confirm the appointment here after the specialist accepts it."
+            # RH issues the receipt with the payment (Payment Policy 7).
+            receipt_url = str(data.get("receipt_url") or "").strip()
+            if receipt_url.startswith("https://"):
+                text += f"\n\nYour receipt: {receipt_url}"
             enqueue_booking_confirmed(patient.phone_e164, booking_id, text, email=_appointment_email(session, patient))
     elif event_type == "booking.payment_failed":
         data = payload.get("data") or {}

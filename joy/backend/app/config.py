@@ -36,6 +36,10 @@ class Settings(BaseSettings):
     whatsapp_app_secret: str = ""
     whatsapp_access_token: str = ""
     whatsapp_phone_number_id: str = ""
+    # Approved Meta template (one body variable {{1}}) used for messages sent more
+    # than 24 hours after the person last wrote. Empty: always send plain text.
+    whatsapp_update_template: str = ""
+    whatsapp_update_template_language: str = "en"
     resend_api_key: str = ""
     from_email: str = ""
     from_name: str = "Rehabify Joy"

@@ -5,6 +5,7 @@ import { publicAppUrl } from "./helpers/appUrl";
 import { missingPolicies, recordMissingPolicyAcceptances } from "./helpers/policyAcceptance";
 import { recoveryPlanForJoy } from "./helpers/patientPlans";
 import { PATIENT_CONSENT_POLICIES, POLICIES, consentDocumentsForJoy } from "../lib/policies";
+import { assertJoyActorPersona } from "../lib/joy-integration/operationPersona";
 
 type Operation =
   | "physio_work_summary" | "physio_update_availability" | "physio_session_note"
@@ -65,6 +66,7 @@ export const executeMutation = internalMutation({
   handler: async (ctx, args): Promise<any> => {
     const op = args.operation as Operation;
     const data = { ...(args.data ?? {}), request_id: args.requestId };
+    assertJoyActorPersona(op, data.actor);
 
     if (op === "physio_update_availability") {
       const profile = await profileFor(ctx, String(data.physiotherapist_id), data.actor);
@@ -105,6 +107,13 @@ export const executeMutation = internalMutation({
       // The body is delivered through the signed event channel, not copied to
       // a broadly queryable operational audit record.
       await audit(ctx, data, op, { actorUserId: profile.userId, physiotherapistUserId: profile.userId, patientUserId: booking.patientId, bookingId: booking._id, appointmentId: booking.appointmentId, message_length: body.length });
+      // Delivered here so the direct gateway path and the Next route both reach the patient;
+      // the event is queued in the outbox first, so the retry cron covers a Joy outage.
+      const eventKey = args.requestId && args.requestId !== "unknown" ? args.requestId : `${booking._id}-${Date.now()}`;
+      await ctx.scheduler.runAfter(0, (internal as any).joyIntegration.deliverJoyEvent, {
+        eventId: `physio-message-${eventKey}`, eventType: "physio.patient_message",
+        data: { booking_id: String(booking._id), patient_id: String(booking.patientId), message: body },
+      });
       return { accepted: true, delivery_content: body, patient_id: booking.patientId };
     }
     if (op === "physio_feedback_request") {
@@ -216,6 +225,7 @@ export const executeQuery = internalQuery({
   args: { operation: v.string(), data: v.any() },
   handler: async (ctx, args): Promise<any> => {
     const op = args.operation as Operation; const data = args.data ?? {};
+    assertJoyActorPersona(op, data.actor);
     if (op === "patient_consent_status") {
       const patient = await patientForActor(ctx, String(data.patient_id), data.actor);
       const missing = await missingPolicies(ctx, patient._id, PATIENT_CONSENT_POLICIES);

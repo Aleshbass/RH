@@ -55,18 +55,31 @@ def appointment_confirmation_text(
     if booking_code:
         lines.append(f"Your booking code is: {booking_code}.")
     if meeting_url:
-        lines.append(f"Join securely here: {meeting_url}")
+        # Every booking has a /v/<code> page, but only online visits have a call to join.
+        lines.append(f"Join securely here: {meeting_url}" if service_mode == "online" else f"Your booking details: {meeting_url}")
     lines.extend([
-        "Please join a few minutes early. Missed appointments are not refundable.",
+        f"{_early_instruction(service_mode)} Missed appointments are not refundable.",
         "Looking forward to supporting your recovery — see you then!",
     ])
     return "\n\n".join(lines)
 
 
+def _early_instruction(service_mode: str) -> str:
+    if service_mode == "online":
+        return "Please join a few minutes early."
+    if service_mode == "home_visit":
+        return "Please be ready a few minutes before your physiotherapist arrives."
+    return "Please arrive a few minutes early."
+
+
 def appointment_reminder_text(reminder: AppointmentReminder) -> str:
     mode = "online " if reminder.service_mode == "online" else ""
-    attendance_instruction = "Please join now." if reminder.service_mode == "online" else "Please arrive now."
-    early_instruction = "Please join a few minutes early." if reminder.service_mode == "online" else "Please arrive a few minutes early."
+    attendance_instruction = (
+        "Please join now." if reminder.service_mode == "online"
+        else "Your physiotherapist is on the way." if reminder.service_mode == "home_visit"
+        else "Please arrive now."
+    )
+    early_instruction = _early_instruction(reminder.service_mode)
     if reminder.reminder_kind == AT_APPOINTMENT_START:
         text = (
             f"Your {mode}appointment with {reminder.provider_name} starts now. "
@@ -80,8 +93,8 @@ def appointment_reminder_text(reminder: AppointmentReminder) -> str:
         )
     if reminder.booking_code:
         text += f" Your booking code is {reminder.booking_code}."
-    if reminder.service_mode == "online" and reminder.meeting_url:
-        text += f" Join here: {reminder.meeting_url}"
+    if reminder.meeting_url:
+        text += f" Join here: {reminder.meeting_url}" if reminder.service_mode == "online" else f" Booking details: {reminder.meeting_url}"
     return text
 
 
@@ -94,8 +107,14 @@ def appointment_rescheduled_text(
         f"Your {mode}appointment with {provider_name} has been rescheduled to "
         f"{format_lagos_appointment_time(session_start)} and will last {format_duration(duration_minutes)}. "
         + (f" Your booking code is: {booking_code}." if booking_code else "")
-        + (f" Join securely here: {meeting_url}" if service_mode == "online" and meeting_url else " Your secure joining link remains the same.")
+        + _rescheduled_link_text(service_mode, meeting_url)
     )
+
+
+def _rescheduled_link_text(service_mode: str, meeting_url: str | None) -> str:
+    if service_mode == "online":
+        return f" Join securely here: {meeting_url}" if meeting_url else " Your secure joining link remains the same."
+    return f" Booking details: {meeting_url}" if meeting_url else ""
 
 
 def schedule_appointment_reminder(

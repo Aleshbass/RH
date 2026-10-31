@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { actorSchema, authenticatedJson, errorResponse, success } from "@/lib/joy-integration/http";
 import { callJoyConvexGateway } from "@/lib/joy-integration/convex-gateway";
-import { deliverJoyEvent } from "@/lib/joy-integration/events";
+import { assertJoyActorPersona } from "@/lib/joy-integration/operationPersona";
 
 export const runtime = "nodejs";
 
@@ -33,25 +33,12 @@ export async function POST(request: Request) {
     const isMutation = mutations.has(authenticated.data.operation);
     const operationData = authenticated.data.data ?? {};
     if (isMutation !== authenticated.data.mutation) throw new Error("Operation mutation flag is invalid");
-    const expectedPersona = authenticated.data.operation.startsWith("physio_") ? "physiotherapist"
-      : authenticated.data.operation.startsWith("family_") ? "family"
-      : authenticated.data.operation.startsWith("admin_") ? "admin" : "patient";
-    if (authenticated.data.actor.persona !== expectedPersona) throw new Error("Actor is not authorized for this operation");
+    assertJoyActorPersona(authenticated.data.operation, authenticated.data.actor);
+    // Convex sends patient-facing messages (physio.patient_message) itself, so the
+    // direct gateway path and this route deliver them the same way.
     const result = await callJoyConvexGateway(isMutation ? "operational_mutation" : "operational_query", {
       operation: authenticated.data.operation, data: { ...operationData, actor: authenticated.data.actor }, request_id: requestId,
     });
-    // Patient-facing operational messages travel as durable RH events.  A
-    // delivery outage is retried from the outbox and never changes the result
-    // of the authorised physio operation.
-    if (authenticated.data.operation === "physio_message_patient" && result && typeof result === "object") {
-      const message = String(operationData.message ?? "").trim();
-      const patientId = (result as { patient_id?: unknown }).patient_id;
-      if (message && typeof patientId === "string") {
-        await deliverJoyEvent(`physio-message-${requestId}`, "physio.patient_message", {
-          booking_id: String(operationData.booking_id ?? ""), patient_id: patientId, message,
-        });
-      }
-    }
     return success(requestId, result);
   } catch (error) { return errorResponse(requestId, error); }
 }
