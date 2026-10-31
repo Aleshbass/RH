@@ -67,3 +67,8 @@ node_modules/
 /scripts/exercise-3d/out/
 /.tools/
 __pycache__/
+
+# Built by Serwist from app/sw.ts
+public/sw.js
+public/sw.js.map
+public/swe-worker-*.js

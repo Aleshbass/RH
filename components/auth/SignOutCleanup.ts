@@ -3,10 +3,13 @@
 import { useEffect, useRef } from 'react'
 import { useAuth } from '@clerk/nextjs'
 import { clearUserNoteDrafts } from '@/components/physio/notes/draftStore'
-import { disablePush, setIconBadge } from '@/lib/pwa'
+import { clearStoredPages, disablePush, setIconBadge } from '@/lib/pwa'
 
 /** Saved in this browser for one person; never carried over to whoever signs in next. */
 const PERSONAL_KEYS = ['rh_signup_intent', 'rh_app_setup_snoozed_until']
+
+/** Who last used this browser, so a different person never sees their offline pages, even after a restart. */
+const LAST_USER_KEY = 'rh_last_user'
 
 /**
  * Tidies the device whenever someone stops being signed in, however it happened: a sign-out
@@ -25,12 +28,35 @@ export function useSignOutCleanup() {
     const previous = lastUserId.current
     lastUserId.current = current
     if (previous && previous !== current) void cleanUpAfter(previous)
+    // A different person signed in on this browser since the page last ran
+    if (current) {
+      const stored = readLastUser()
+      if (stored && stored !== current) void clearStoredPages()
+      writeLastUser(current)
+    }
   }, [isLoaded, isSignedIn, userId])
+}
+
+function readLastUser(): string | null {
+  try {
+    return window.localStorage.getItem(LAST_USER_KEY)
+  } catch {
+    return null
+  }
+}
+
+function writeLastUser(clerkUserId: string) {
+  try {
+    window.localStorage.setItem(LAST_USER_KEY, clerkUserId)
+  } catch {
+    // Storage blocked: offline pages can't be kept either
+  }
 }
 
 async function cleanUpAfter(clerkUserId: string) {
   setIconBadge(0)
   clearUserNoteDrafts(clerkUserId)
+  await clearStoredPages()
   try {
     for (const key of PERSONAL_KEYS) window.localStorage.removeItem(key)
   } catch {

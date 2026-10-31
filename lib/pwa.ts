@@ -22,12 +22,14 @@ type PwaState = {
   setupOpen: boolean;
   /** Bumped when notification settings change, so every screen re-checks them */
   revision: number;
+  /** A new version of the app is installed and waiting for the person to switch */
+  updateReady: boolean;
 };
 
 let deferredPrompt: BeforeInstallPromptEvent | null = null;
-let state: PwaState = { canPrompt: false, justInstalled: false, setupOpen: false, revision: 0 };
+let state: PwaState = { canPrompt: false, justInstalled: false, setupOpen: false, revision: 0, updateReady: false };
 const listeners = new Set<() => void>();
-const SERVER_STATE: PwaState = { canPrompt: false, justInstalled: false, setupOpen: false, revision: 0 };
+const SERVER_STATE: PwaState = { canPrompt: false, justInstalled: false, setupOpen: false, revision: 0, updateReady: false };
 
 function update(patch: Partial<PwaState>) {
   state = { ...state, ...patch };
@@ -89,9 +91,96 @@ export function startPwa() {
   }
 
   if ('serviceWorker' in navigator && (process.env.NODE_ENV === 'production' || process.env.NEXT_PUBLIC_ENABLE_SW === '1')) {
-    const register = () => navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => undefined);
+    const register = () =>
+      navigator.serviceWorker
+        .register('/sw.js', { scope: '/', updateViaCache: 'none' })
+        .then((reg) => {
+          watchForUpdates(reg);
+          void sendOfflineSwitch();
+        })
+        .catch(() => undefined);
     if (document.readyState === 'complete') register();
     else window.addEventListener('load', register, { once: true });
+  }
+}
+
+/**
+ * A new version installs in the background and waits; the person chooses when to switch
+ * (applyUpdate), so a reload never interrupts something they're typing or syncing.
+ */
+function watchForUpdates(reg: ServiceWorkerRegistration) {
+  const offer = () => {
+    if (reg.waiting && navigator.serviceWorker.controller) update({ updateReady: true });
+  };
+  offer();
+  reg.addEventListener('updatefound', () => {
+    const next = reg.installing;
+    next?.addEventListener('statechange', () => {
+      if (next.state === 'installed') offer();
+    });
+  });
+  // Long-lived home-screen apps: look for a new version when brought back to the front
+  let lastCheck = Date.now();
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible' || Date.now() - lastCheck < 30 * 60 * 1000) return;
+    lastCheck = Date.now();
+    reg.update().catch(() => undefined);
+  });
+}
+
+/** Switches to the waiting version and reloads once it has taken over. */
+export async function applyUpdate() {
+  const reg = await navigator.serviceWorker.getRegistration('/');
+  if (!reg?.waiting) return;
+  navigator.serviceWorker.addEventListener('controllerchange', () => window.location.reload(), { once: true });
+  reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+}
+
+/**
+ * Whether dashboard pages are kept for offline use on this device. Off unless the build turns it on
+ * (NEXT_PUBLIC_OFFLINE_MODE=on); turning it off again is the kill switch: the service worker wipes
+ * the stored pages and keeps only push and the "You're offline" page.
+ */
+export function offlineModeOn(): boolean {
+  return process.env.NEXT_PUBLIC_OFFLINE_MODE === 'on';
+}
+
+/** Tells the service worker whether to keep pages (it remembers, so a cold start offline works). */
+async function sendOfflineSwitch() {
+  try {
+    const reg = await withTimeout(navigator.serviceWorker.ready, 15000, 'The service worker');
+    reg.active?.postMessage({ type: 'rehabify:offline-pages', on: offlineModeOn() });
+  } catch {
+    // Not running yet: it starts with offline mode off
+  }
+}
+
+/**
+ * "Reset offline data": clears every copy this device keeps (pages, app files, images) and reloads.
+ * For a stuck or broken cache; sign-in, notifications and anything not yet synced are kept.
+ */
+export async function resetOfflineData() {
+  try {
+    navigator.serviceWorker?.controller?.postMessage({ type: 'rehabify:clear-pages' });
+    const keys = await caches.keys();
+    await Promise.all(
+      keys.filter((key) => /^rh-(pages|static|images|assets)/.test(key)).map((key) => caches.delete(key))
+    );
+  } catch {
+    // No Cache Storage here: nothing was kept
+  }
+  window.location.reload();
+}
+
+/** Removes the dashboard pages kept for offline use (sign-out, or someone else signed in). */
+export async function clearStoredPages() {
+  if (typeof window === 'undefined') return;
+  try {
+    navigator.serviceWorker?.controller?.postMessage({ type: 'rehabify:clear-pages' });
+    const keys = await caches.keys();
+    await Promise.all(keys.filter((key) => key.startsWith('rh-pages-')).map((key) => caches.delete(key)));
+  } catch {
+    // No Cache Storage here: nothing was kept
   }
 }
 

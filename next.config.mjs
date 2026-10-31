@@ -1,4 +1,6 @@
 import path from 'path';
+import { createHash } from 'crypto';
+import { readFileSync } from 'fs';
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
@@ -254,9 +256,37 @@ const nextConfig = {
 };
 
 import { createMDX } from 'fumadocs-mdx/next';
+import withSerwistInit from '@serwist/next';
 
 const withMDX = createMDX();
 
-export default withMDX(nextConfig);
+/** Content hash, so a changed public file is downloaded again by the service worker. */
+const revisionOf = (file) => createHash('md5').update(readFileSync(path.join('public', file))).digest('hex');
+
+// Service worker (app/sw.ts -> public/sw.js): offline dashboard pages + push. Production builds only.
+// The first download stays small for 3G: only the offline page, icons and Next's build manifest.
+// Page code is stored as people use the app online (runtime caching in app/sw.ts).
+const withSerwist = withSerwistInit({
+  swSrc: 'app/sw.ts',
+  swDest: 'public/sw.js',
+  additionalPrecacheEntries: ['offline.html', 'icons/icon-192.png', 'icons/badge-96.png'].map((file) => ({
+    url: `/${file}`,
+    revision: revisionOf(file),
+  })),
+  manifestTransforms: [
+    async (entries) => ({
+      manifest: entries.filter((entry) => /static\/[^/]+\/_(build|ssg)Manifest\.js$/.test(entry.url)),
+      warnings: [],
+    }),
+  ],
+  // lib/pwa.ts registers it and offers new versions
+  register: false,
+  // Never reload under someone who is typing
+  reloadOnOnline: false,
+  cacheOnNavigation: false,
+  disable: process.env.NODE_ENV !== 'production',
+});
+
+export default withSerwist(withMDX(nextConfig));
 
 
