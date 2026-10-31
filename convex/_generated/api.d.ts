@@ -273,6 +273,7 @@ import type * as therapistDashboard from "../therapistDashboard.js";
 import type * as travelZones from "../travelZones.js";
 import type * as treatmentPlanSync from "../treatmentPlanSync.js";
 import type * as treatmentPlans from "../treatmentPlans.js";
+import type * as userNameBackfill from "../userNameBackfill.js";
 import type * as users from "../users.js";
 import type * as videoCalls from "../videoCalls.js";
 
@@ -548,6 +549,7 @@ declare const fullApi: ApiFromModules<{
   travelZones: typeof travelZones;
   treatmentPlanSync: typeof treatmentPlanSync;
   treatmentPlans: typeof treatmentPlans;
+  userNameBackfill: typeof userNameBackfill;
   users: typeof users;
   videoCalls: typeof videoCalls;
 }>;
