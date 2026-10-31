@@ -7,6 +7,7 @@ import { getAuthenticatedUser, ensureClinicOwner, ensureUserRole, ensureIsClinic
 import { assertClinicNotSuspended, getClinicMember, getClinicMemberOrNull, getOwnerClinic } from "./clinicTools";
 import { ensureClinicNumber, ensureUserNumbers } from "./helpers/rehabifyIds";
 import { CLINIC_INVITE_APPROVAL_NOTE } from "./helpers/clinicApproval";
+import { personName } from "./helpers/displayIdentity";
 import { assertClinicianSeatFree, assertClinicNotBillingReadOnly } from "./helpers/clinicSubscriptions";
 
 /**
@@ -372,9 +373,17 @@ export const acceptClinicInvitation = mutation({
       }
     }
 
+    // Skipping onboarding also skips its name step: a sign-up without a name takes the one the
+    // clinic typed on the invitation, so patients never see "undefined undefined"
+    const [invitedFirst, ...invitedRest] = (invitation.inviteeName ?? "").trim().split(/\s+/);
+    const missingName: { firstName?: string; lastName?: string } = {};
+    if (!user.firstName?.trim() && invitedFirst) missingName.firstName = invitedFirst;
+    if (!user.lastName?.trim() && invitedRest.length > 0) missingName.lastName = invitedRest.join(" ");
+
     // Join the clinic. Clinic work never needs the physio marketplace onboarding: clinicians go
     // straight to the physio portal in clinic mode (components/clinic/clinician-routing.ts).
     await ctx.db.patch(user._id, {
+      ...missingName,
       // A physiotherapist stays a physiotherapist even when joining as front desk
       role: isClinician || user.role === "physiotherapist" ? "physiotherapist" : "clinic_staff",
       onboarded: true,
@@ -422,7 +431,7 @@ export const acceptClinicInvitation = mutation({
       priority: "medium",
       payload: {
         title: "Staff Invitation Accepted",
-        body: `${user.firstName} ${user.lastName} has joined your clinic as a physiotherapist`,
+        body: `${personName({ ...user, ...missingName }, user.email ?? "A new team member")} has joined your clinic as a physiotherapist`,
         data: {
           entityId: invitation._id,
           entityType: "clinic_staff_invitation",
@@ -640,7 +649,7 @@ export const declineClinicInvitation = mutation({
       status: "pending",
       payload: {
         title: "Staff Invitation Declined",
-        body: `${user.firstName} ${user.lastName} has declined your clinic invitation`,
+        body: `${personName(user, invitation.inviteeName || invitation.inviteeEmail)} has declined your clinic invitation`,
         data: {
           entityId: invitation._id,
           entityType: "clinic_staff_invitation",

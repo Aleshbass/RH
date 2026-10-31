@@ -67,11 +67,16 @@ export default function SyncUserWithConvex() {
     const syncUserData = async () => {
       try {
         syncedRef.current = true;
+        // Sign-up keeps the names in unsafeMetadata too: Clerk's name fields can be switched off
+        const metadataName = (key: "firstName" | "lastName") => {
+          const value = user.unsafeMetadata?.[key];
+          return typeof value === "string" && value.trim() ? value.trim() : undefined;
+        };
         await storeUserInConvex({
           clerkId: user.id,
           email: user.emailAddresses[0]?.emailAddress ?? "",
-          firstName: user.firstName ?? undefined,
-          lastName: user.lastName ?? undefined,
+          firstName: user.firstName || metadataName("firstName"),
+          lastName: user.lastName || metadataName("lastName"),
           imageUrl: user.imageUrl ?? undefined,
           // Only the referral-link code is sent; the partner is resolved server-side.
           referralPublicCode: getReferralPublicCode(),

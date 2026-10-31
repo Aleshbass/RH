@@ -174,6 +174,11 @@ export async function getUserByIdOrThrow(ctx: QueryCtx, userId: Id<"users">): Pr
   return user;
 }
 
+/** A trimmed name from Clerk data or metadata; undefined when blank or not text. */
+function clerkName(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
 // ==== INTERNAL MUTATION: Create or Update User from Clerk Data ====
 // This should ideally be triggered by a Clerk webhook or an action
 // that securely verifies the Clerk session upon first login/signup.
@@ -189,10 +194,12 @@ export const updateOrCreateUser = internalMutation({
       id: clerkId,
       email_addresses,
       primary_email_address_id,
-      first_name,
-      last_name,
-      image_url
+      image_url,
+      unsafe_metadata,
     } = args.clerkUserData as any; // Cast to any or a more specific Clerk User type
+    // Our sign-up form also keeps the names in unsafeMetadata: Clerk's own name fields can be switched off
+    const first_name = clerkName(args.clerkUserData?.first_name) ?? clerkName(unsafe_metadata?.firstName);
+    const last_name = clerkName(args.clerkUserData?.last_name) ?? clerkName(unsafe_metadata?.lastName);
 
     if (!clerkId) {
       throw new Error("Clerk User ID (id) is missing in webhook data");
@@ -217,13 +224,15 @@ export const updateOrCreateUser = internalMutation({
       if (email && existingUser.email !== email) {
         updates.email = email;
       }
-      if (existingUser.firstName !== (first_name || undefined)) {
-        updates.firstName = first_name || undefined;
+      // The Rehabify profile name wins (onboarding, Settings): Clerk only fills a missing one.
+      // Copying Clerk over it blanked names whenever Clerk had none ("undefined undefined").
+      if (!existingUser.firstName?.trim() && first_name) {
+        updates.firstName = first_name;
       }
-      if (existingUser.lastName !== (last_name || undefined)) {
-        updates.lastName = last_name || undefined;
+      if (!existingUser.lastName?.trim() && last_name) {
+        updates.lastName = last_name;
       }
-      
+
       const isConvexImage = existingUser.imageUrl?.includes("convex.cloud") || existingUser.imageUrl?.includes("convex.site");
       if (!isConvexImage && existingUser.imageUrl !== (image_url || undefined)) {
         updates.imageUrl = image_url || undefined;

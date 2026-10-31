@@ -213,7 +213,7 @@ export const createAppointment = mutation({
 
     // Create notifications for both patient and therapist
     const patient = await ctx.db.get(args.patientId);
-    const patientName = patient ? `${patient.firstName} ${patient.lastName}` : "Patient";
+    const patientName = personName(patient, "Patient");
     const physiotherapistName = `${(user as any)?.firstName || ''} ${(user as any)?.lastName || ''}`.trim() || 'Physiotherapist';
     // Compute clinic information for emails (best-effort)
     let clinicName = 'Rehabify Health';
@@ -576,7 +576,7 @@ export const updateAppointmentStatus = mutation({
 
     // Create notification for patient
     const patient = await ctx.db.get(appointment.patientId);
-    const patientName = patient ? `${patient.firstName} ${patient.lastName}` : "Patient";
+    const patientName = personName(patient, "Patient");
 
     let notificationTitle = "";
     let notificationMessage = "";
@@ -656,8 +656,8 @@ export const updateAppointmentStatus = mutation({
         const physiotherapist = appointment.physiotherapistId
           ? await ctx.db.get(appointment.physiotherapistId)
           : null;
-        const physiotherapistName = physiotherapist ? `${physiotherapist.firstName} ${physiotherapist.lastName}` : "your physiotherapist";
-        const patientNameForEmail = `${patient.firstName} ${patient.lastName}`;
+        const physiotherapistName = personName(physiotherapist, "your physiotherapist");
+        const patientNameForEmail = personName(patient, "Your patient");
         const appointmentTimeStr = lagosTimeRange(appointment.startTime, appointment.endTime);
 
         await ctx.scheduler.runAfter(0, internal.actions.emails.sendAppointmentCanceledPatientEmail.sendAppointmentCanceledPatientEmail, {
@@ -878,8 +878,8 @@ export const rescheduleAppointment = mutation({
       ? await ctx.db.get(appointment.physiotherapistId)
       : null;
     const physioEmail = physiotherapist?.email as string | undefined;
-    const physiotherapistName = physiotherapist ? `${physiotherapist.firstName} ${physiotherapist.lastName}` : "Physiotherapist";
-    const patientNameForEmail = patient ? `${patient.firstName} ${patient.lastName}` : "Patient";
+    const physiotherapistName = personName(physiotherapist, "Physiotherapist");
+    const patientNameForEmail = personName(patient, "Patient");
     const oldTimeStr = lagosTimeRange(oldStart, oldEnd);
     const newTimeStr = lagosTimeRange(args.newStartTime, args.newEndTime);
     if (physioEmail) {
@@ -1334,7 +1334,7 @@ export const getPatientAppointments = query({
 
         return {
           ...appointment,
-          physiotherapistName: `${physiotherapist.firstName} ${physiotherapist.lastName}`,
+          physiotherapistName: personName(physiotherapist, "Your physiotherapist"),
           physiotherapistEmail: physiotherapist.email,
           feedbackSubmitted,
         };
@@ -1566,8 +1566,8 @@ export const requestAppointment = mutation({
       location: args.appointmentType === "in-person" ? args.location?.trim() : undefined,
     });
 
-    const patientName = `${patient.firstName} ${patient.lastName}`;
-    const physiotherapistName = `${physiotherapist.firstName} ${physiotherapist.lastName}`;
+    const patientName = personName(patient, "Your patient");
+    const physiotherapistName = personName(physiotherapist, "your physiotherapist");
 
     // Generate Google Meet link if telehealth
     let googleMeetLink: string | undefined;
@@ -1729,8 +1729,8 @@ export const cancelAppointmentAsPatient = mutation({
 
     // Get physiotherapist info for notification
     const physiotherapist = await ctx.db.get(appointment.physiotherapistId);
-    const patientName = `${patient.firstName} ${patient.lastName}`;
-    const physiotherapistName = physiotherapist ? `${physiotherapist.firstName} ${physiotherapist.lastName}` : "your physiotherapist";
+    const patientName = personName(patient, "Your patient");
+    const physiotherapistName = personName(physiotherapist, "your physiotherapist");
 
     // Create notification for physiotherapist
     await insertNotification(ctx, {
@@ -1860,8 +1860,8 @@ export const confirmAppointmentAsPatient = mutation({
 
     // Get physiotherapist info for notification
     const physiotherapist = await ctx.db.get(appointment.physiotherapistId);
-    const patientName = `${patient.firstName} ${patient.lastName}`;
-    const physiotherapistName = physiotherapist ? `${physiotherapist.firstName} ${physiotherapist.lastName}` : "your physiotherapist";
+    const patientName = personName(patient, "Your patient");
+    const physiotherapistName = personName(physiotherapist, "your physiotherapist");
 
     // Create notification for physiotherapist
     const notificationId = await insertNotification(ctx, {
@@ -1998,8 +1998,8 @@ export const requestAppointmentReschedule = mutation({
 
     // Get physiotherapist info for notification
     const physiotherapist = await ctx.db.get(appointment.physiotherapistId);
-    const patientName = `${patient.firstName} ${patient.lastName}`;
-    const physiotherapistName = physiotherapist ? `${physiotherapist.firstName} ${physiotherapist.lastName}` : "your physiotherapist";
+    const patientName = personName(patient, "Your patient");
+    const physiotherapistName = personName(physiotherapist, "your physiotherapist");
 
     // Create notification for physiotherapist
     await insertNotification(ctx, {
@@ -2335,12 +2335,12 @@ export const submitPatientFeedback = mutation({
       status: "pending",
       payload: {
         title: "New Patient Feedback",
-        body: `${patient.firstName} ${patient.lastName} left ${args.rating}-star feedback for your appointment`,
+        body: `${personName(patient, "Your patient")} left ${args.rating}-star feedback for your appointment`,
         data: {
           entityId: args.appointmentId,
           entityType: "appointment_feedback",
           feedbackId,
-          patientName: `${patient.firstName} ${patient.lastName}`,
+          patientName: personName(patient, "Your patient"),
           rating: args.rating,
         },
       },

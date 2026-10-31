@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { mutation, query, internalMutation, internalQuery } from "../_generated/server";
 import { Doc, Id } from "../_generated/dataModel";
 import { api } from "../_generated/api";
+import { personName } from "../helpers/displayIdentity";
 
 interface AppointmentWithCalendar {
   appointment: Doc<"appointments">;
@@ -57,11 +58,11 @@ export const createAppointmentWithCalendar = internalMutation({
           attendees: [
             {
               email: patient.email,
-              displayName: `${patient.firstName} ${patient.lastName}`,
+              displayName: personName(patient, "Patient"),
             },
             {
               email: physiotherapist.email,
-              displayName: `${physiotherapist.firstName} ${physiotherapist.lastName}`,
+              displayName: personName(physiotherapist, "Physiotherapist"),
             },
           ],
         };
