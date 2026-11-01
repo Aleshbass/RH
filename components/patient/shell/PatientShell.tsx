@@ -7,6 +7,8 @@ import { useQuery } from 'convex/react'
 import { CalendarPlus } from '@/components/icons'
 import { api } from '@/convex/_generated/api'
 import DashboardAuthGuard from '@/components/auth/DashboardAuthGuard'
+import { OfflineGate } from '@/components/offline/OfflineGate'
+import { usePortalHome } from '@/lib/pwa'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { primaryButtonClass } from '@/components/patient/ui'
@@ -53,7 +55,18 @@ function ShellSkeleton() {
  * app/patient-portal.css; <html data-portal="patient"> lets shared components follow them.
  */
 export function PatientShell({ children }: { children: ReactNode }) {
+  // Offline, the PIN opens the data saved on this phone before anything shows
+  return (
+    <OfflineGate>
+      <PatientPortal>{children}</PatientPortal>
+    </OfflineGate>
+  )
+}
+
+function PatientPortal({ children }: { children: ReactNode }) {
   const pathname = usePathname() ?? ''
+  // Offline, the app opens on the exercises (the patient home isn't kept: its data is in the page)
+  usePortalHome(NAV.exercises.href)
   const router = useRouter()
   const user = useQuery(api.users.getMyUser) as { role?: string; firstName?: string } | null | undefined
   const isStaff = Boolean(user?.role && STAFF_ROLES.has(user.role))

@@ -3,9 +3,10 @@
  * shows the "You're offline" page. The service worker stays installed (push keeps working).
  */
 import { expect, test } from '@playwright/test';
-import { PHYSIO_ID, cacheNames, signIn, startWebsite, stopWebsite, visitAndStore } from './helpers';
+import { PHYSIO_ID, cacheNames, signIn, snoozePrompts, startWebsite, stopWebsite, visitAndStore } from './helpers';
 
 test('turning offline mode off wipes stored pages and keeps the worker', async ({ page, context }) => {
+  await snoozePrompts(page);
   await signIn(page, PHYSIO_ID);
   await visitAndStore(page, '/dashboard/physiotherapist');
   expect((await cacheNames(page)).some((name) => name.startsWith('rh-pages-')), 'page stored while on').toBe(true);

@@ -81,6 +81,7 @@ const ClinicAccessContext = createContext<ClinicAccessContextType | undefined>(u
 
 export function ClinicAccessProvider({ children }: { children: ReactNode }) {
   const router = useRouter()
+  // Offline, this comes from the phone's saved answers (lib/offline/convexClient.ts)
   const access = useQuery(api.clinicTools.getMyClinicAccess)
 
   const [isModalOpen, setIsModalOpen] = useState(false)

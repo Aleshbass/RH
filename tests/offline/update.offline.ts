@@ -5,11 +5,12 @@
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
-import { PHYSIO_ID, signIn, visitAndStore } from './helpers';
+import { PHYSIO_ID, signIn, snoozePrompts, visitAndStore } from './helpers';
 
 const SW_FILE = 'public/sw.js';
 
 test('a new version waits for Refresh and never reloads by itself', async ({ page }) => {
+  await snoozePrompts(page);
   await signIn(page, PHYSIO_ID);
   await visitAndStore(page, '/dashboard/physiotherapist');
   const original = readFileSync(SW_FILE, 'utf8');
@@ -25,15 +26,37 @@ test('a new version waits for Refresh and never reloads by itself', async ({ pag
         timeout: 60_000,
       })
       .toBe(true);
-    const prompt = page.getByText('A new version of Rehabify is ready').first();
+    const prompt = page.getByRole('status').filter({ hasText: 'A new version of Rehabify is ready' });
     await expect(prompt).toBeVisible({ timeout: 30_000 });
 
     // Nothing happens on its own
     await page.waitForTimeout(10_000);
     expect(await page.evaluate(() => (window as any).__rhUnsaved)).toBe('typing a note');
 
+    // "Later" hides the offer without switching; it comes back on the next page load
+    await prompt.getByRole('button', { name: 'Later' }).click();
+    await expect(prompt).toBeHidden();
+    expect(await page.evaluate(() => (window as any).__rhUnsaved)).toBe('typing a note');
+    await page.reload();
+    await page.evaluate(() => ((window as any).__rhUnsaved = 'typing a note'));
+    await expect(prompt).toBeVisible({ timeout: 30_000 });
+
     // The person taps Refresh: the new version takes over and the page reloads once
-    await page.getByRole('button', { name: 'Refresh' }).first().click();
+    const workers = () =>
+      page
+        .evaluate(() =>
+          navigator.serviceWorker.getRegistration('/').then((reg) => ({
+            controlled: Boolean(navigator.serviceWorker.controller),
+            installing: reg?.installing?.state ?? null,
+            waiting: reg?.waiting?.state ?? null,
+            active: reg?.active?.state ?? null,
+          }))
+        )
+        .catch(() => 'reloading');
+    console.log('before Refresh', JSON.stringify(await workers()));
+    await prompt.getByRole('button', { name: 'Refresh' }).click();
+    await page.waitForTimeout(3000);
+    console.log('3 s after Refresh', JSON.stringify(await workers()));
     await expect
       .poll(
         // Mid-reload the page can't be read yet: keep asking until the new page answers

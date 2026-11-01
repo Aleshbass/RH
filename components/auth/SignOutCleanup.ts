@@ -4,6 +4,7 @@ import { useEffect, useRef } from 'react'
 import { useAuth } from '@clerk/nextjs'
 import { clearUserNoteDrafts } from '@/components/physio/notes/draftStore'
 import { clearStoredPages, disablePush, setIconBadge } from '@/lib/pwa'
+import { wipeUser } from '@/lib/offline/vault'
 
 /** Saved in this browser for one person; never carried over to whoever signs in next. */
 const PERSONAL_KEYS = ['rh_signup_intent', 'rh_app_setup_snoozed_until']
@@ -15,8 +16,8 @@ const LAST_USER_KEY = 'rh_last_user'
  * Tidies the device whenever someone stops being signed in, however it happened: a sign-out
  * button in any portal, Clerk's account menu, an expired session, or a different account signing
  * in. Their push notifications stop coming to this device, the app-icon count clears, and their
- * unsaved clinical-note drafts and saved choices are removed. The next person turns notifications
- * on for themselves (the app-setup prompt asks).
+ * unsaved clinical-note drafts, saved choices, stored pages and encrypted offline data are removed.
+ * The next person turns notifications on for themselves (the app-setup prompt asks).
  */
 export function useSignOutCleanup() {
   const { isLoaded, isSignedIn, userId } = useAuth()
@@ -31,7 +32,10 @@ export function useSignOutCleanup() {
     // A different person signed in on this browser since the page last ran
     if (current) {
       const stored = readLastUser()
-      if (stored && stored !== current) void clearStoredPages()
+      if (stored && stored !== current) {
+        void clearStoredPages()
+        void wipeUser(stored).catch(() => undefined)
+      }
       writeLastUser(current)
     }
   }, [isLoaded, isSignedIn, userId])
@@ -57,6 +61,8 @@ async function cleanUpAfter(clerkUserId: string) {
   setIconBadge(0)
   clearUserNoteDrafts(clerkUserId)
   await clearStoredPages()
+  // Their encrypted offline copy on this phone (lib/offline/vault.ts)
+  await wipeUser(clerkUserId).catch(() => undefined)
   try {
     for (const key of PERSONAL_KEYS) window.localStorage.removeItem(key)
   } catch {

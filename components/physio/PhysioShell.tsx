@@ -7,6 +7,8 @@ import { useQuery } from 'convex/react'
 import { makeFunctionReference } from 'convex/server'
 import { CalendarPlus, MessageSquare } from '@/components/icons'
 import { api } from '@/convex/_generated/api'
+import { OfflineGate } from '@/components/offline/OfflineGate'
+import { usePortalHome } from '@/lib/pwa'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { primaryButtonClass } from '@/components/patient/ui'
@@ -70,6 +72,7 @@ const teamUnreadRef = makeFunctionReference<'query', Record<string, never>, numb
  */
 function usePhysioAccess(pathname: string) {
   const router = useRouter()
+  // Offline, both come from this phone's saved answers (lib/offline/convexClient.ts)
   const user = useQuery(api.users.getMyUser)
   // Loaded alongside the user, not after it (it returns null for anyone who isn't a physio)
   const setup = useQuery(api.physioSetup.getMySetupStatus, {})
@@ -110,7 +113,17 @@ function usePhysioAccess(pathname: string) {
  * app/patient-portal.css; <html data-portal="physio"> lets older screens follow them.
  */
 export function PhysioShell({ children }: { children: ReactNode }) {
+  // Offline, the PIN opens the data saved on this phone before anything shows
+  return (
+    <OfflineGate>
+      <PhysioPortal>{children}</PhysioPortal>
+    </OfflineGate>
+  )
+}
+
+function PhysioPortal({ children }: { children: ReactNode }) {
   const pathname = usePathname() ?? ''
+  usePortalHome(PHYSIO_HOME)
   const { access, setup, isUnderReview } = usePhysioAccess(pathname)
   const patientUnread = useQuery(api.chat.getUnreadCount, access === 'full' ? {} : 'skip') as number | undefined
   // Clinic members work the clinic's hours, not Rehabify's on-duty matching

@@ -5,6 +5,7 @@ import { questionnaireTables } from "./schema/questionnaires";
 import { outcomeTables } from "./schema/outcomes";
 import { rewardTables } from "./schema/rewards";
 import { communityTables } from "./schema/community";
+import { offlineTables } from "./schema/offline";
 import { measureValidator } from "./helpers/clinicalMeasures";
 import { goalMeasureValidator } from "./helpers/goalMeasures";
 import { reportSnapshotValidator } from "./helpers/progressReport";
@@ -4061,6 +4062,9 @@ export default defineSchema({
 
   // Clinician Community: Case of the Week, questions, votes, reports, leads (schema/community.ts)
   ...communityTables,
+
+  // Phones keeping encrypted data for offline use (schema/offline.ts)
+  ...offlineTables,
 
   partnershipInquiries: defineTable({
     // "demo" = Book a demo on the partners page; missing on older rows, which are partnership inquiries

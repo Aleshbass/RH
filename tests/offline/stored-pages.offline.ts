@@ -3,7 +3,7 @@
  * opened, and online-only pages, show the "You're offline" page (never the browser's error screen).
  */
 import { expect, test, type Page } from '@playwright/test';
-import { CLINIC_OWNER_ID, PHYSIO_ID, signIn, startWebsite, stopWebsite, visitAndStore, websiteUp } from './helpers';
+import { CLINIC_OWNER_ID, PHYSIO_ID, signIn, snoozePrompts, startWebsite, stopWebsite, visitAndStore, websiteUp } from './helpers';
 
 async function offlineCheck(page: Page, opened: string, neverOpened: string, onlineOnly: string) {
   await page.context().setOffline(true);
@@ -28,6 +28,7 @@ async function offlineCheck(page: Page, opened: string, neverOpened: string, onl
 }
 
 test('physio pages offline', async ({ page }) => {
+  await snoozePrompts(page);
   await signIn(page, PHYSIO_ID);
   await visitAndStore(page, '/dashboard/physiotherapist');
   await offlineCheck(
@@ -39,6 +40,7 @@ test('physio pages offline', async ({ page }) => {
 });
 
 test('clinic pages offline', async ({ page }) => {
+  await snoozePrompts(page);
   await signIn(page, CLINIC_OWNER_ID);
   await visitAndStore(page, '/dashboard/clinic');
   await offlineCheck(page, '/dashboard/clinic', '/dashboard/clinic/appointments', '/dashboard/clinic/billing');

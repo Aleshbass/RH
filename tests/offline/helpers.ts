@@ -1,4 +1,4 @@
-import { execSync, spawn } from 'node:child_process';
+import { execFileSync, execSync, spawn } from 'node:child_process';
 import type { Locator, Page } from '@playwright/test';
 import dotenv from 'dotenv';
 
@@ -12,6 +12,27 @@ if (!SECRET.startsWith('sk_test_')) {
 export const PORT = 3100;
 export const PHYSIO_ID = process.env.OFFLINE_TEST_PHYSIO_CLERK_ID ?? '';
 export const CLINIC_OWNER_ID = process.env.OFFLINE_TEST_CLINIC_CLERK_ID ?? '';
+
+/** Runs a Convex function as a test user (isolated offline test project only). */
+function convexRunAs(clerkUserId: string, fn: string, args: Record<string, unknown>): string {
+  if (!(process.env.CONVEX_DEPLOYMENT ?? '').startsWith('dev:energized-mosquito')) {
+    throw new Error('Refusing: CONVEX_DEPLOYMENT is not the isolated offline test project');
+  }
+  return execFileSync(
+    process.execPath,
+    ['node_modules/convex/bin/main.js', 'run', '--identity', JSON.stringify({ subject: clerkUserId }), fn, JSON.stringify(args)],
+    { encoding: 'utf8', timeout: 180_000 }
+  );
+}
+
+/**
+ * Each test run is a fresh browser, so a new "device": switch the test user's devices off first,
+ * or repeated runs reach the 10-device limit (convex/offline.ts).
+ */
+export function clearTestDevices(clerkUserId: string) {
+  const devices = JSON.parse(convexRunAs(clerkUserId, 'offline:listMyDevices', {}) || '[]') as { deviceId: string }[];
+  for (const device of devices) convexRunAs(clerkUserId, 'offline:revokeDevice', { deviceId: device.deviceId });
+}
 
 /** Signs in with a one-time Clerk ticket (no password or email code needed). */
 export async function signIn(page: Page, clerkUserId: string) {
@@ -30,6 +51,25 @@ export async function signIn(page: Page, clerkUserId: string) {
     const attempt = await clerk.client.signIn.create({ strategy: 'ticket', ticket });
     await clerk.setActive({ session: attempt.createdSessionId });
   }, token);
+}
+
+/**
+ * For tests that aren't about them: the self-opening prompts (offline PIN, app install) start
+ * snoozed, as after "Not now".
+ */
+export async function snoozePrompts(page: Page) {
+  await page.addInitScript(() => {
+    const day = String(Date.now() + 24 * 60 * 60 * 1000);
+    localStorage.setItem('rh_offline_pin_snoozed_until', day);
+    localStorage.setItem('rh_app_setup_snoozed_until', day);
+  });
+}
+
+/** Only the app-install prompt starts snoozed (the offline PIN prompt still opens). */
+export async function snoozeAppSetup(page: Page) {
+  await page.addInitScript(() => {
+    localStorage.setItem('rh_app_setup_snoozed_until', String(Date.now() + 24 * 60 * 60 * 1000));
+  });
 }
 
 /** Opens a page twice: the first visit installs the service worker, the second is stored by it. */

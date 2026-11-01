@@ -10,6 +10,7 @@ import Providers from "./providers";
 import '@fortawesome/fontawesome-svg-core/styles.css';
 import ConditionalLayout from '@/components/layout/ConditionalLayout';
 import PwaRegister from '@/components/pwa/PwaRegister';
+import OfflineBridge from '@/components/offline/OfflineBridge';
 
 const calSans = localFont({
   src: '../public/fonts/CalSans-SemiBold.woff2',
@@ -184,6 +185,8 @@ export default async function RootLayout({
           <Providers>
             <ConvexClientProvider>
               <SyncUserWithConvex />
+              {/* Offline mode: opens the phone's encrypted copy when signed in (lib/offline) */}
+              <OfflineBridge />
               <PlatformStatusGate />
 
               {/* Cookie banner and settings; also loads analytics (Umami) only once allowed */}

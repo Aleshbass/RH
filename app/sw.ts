@@ -45,7 +45,15 @@ const BUILD_ID =
 const PAGE_CACHE = `rh-pages-${BUILD_ID}`;
 const CONFIG_CACHE = 'rh-config';
 const OFFLINE_PAGES_KEY = '/__rehabify/offline-pages';
+const PORTAL_HOME_KEY = '/__rehabify/portal-home';
 const OFFLINE_URL = '/offline.html';
+
+/**
+ * Pages the app opens on that aren't stored: /dashboard (the app's start page, which only sends
+ * people to their portal) and the patient home (its patient data is in the page itself). Offline,
+ * they go to the stored home of the portal last used instead.
+ */
+const LAUNCH_PAGES = new Set(['/dashboard', '/dashboard/patient']);
 
 /** Dashboard pages that open offline with their last-loaded data (physio, clinic, patient portals). */
 const OFFLINE_PAGES = [/^\/dashboard\/physiotherapist(\/|$)/, /^\/dashboard\/clinic(\/|$)/, /^\/dashboard\/patient\/.+/];
@@ -133,15 +141,37 @@ async function offlineFallback(): Promise<Response> {
   return (await serwist.matchPrecache(OFFLINE_URL)) ?? Response.error();
 }
 
+async function setPortalHome(path: string) {
+  if (!isOfflinePage(path)) return;
+  const cache = await caches.open(CONFIG_CACHE);
+  await cache.put(PORTAL_HOME_KEY, new Response(JSON.stringify({ path }), { headers: { 'Content-Type': 'application/json' } }));
+}
+
+/** Offline launch: the stored home of the portal last used, if it's stored. */
+async function storedPortalHome(): Promise<string | null> {
+  try {
+    const saved = await (await caches.open(CONFIG_CACHE)).match(PORTAL_HOME_KEY);
+    const path = saved ? ((await saved.json()) as { path?: unknown }).path : null;
+    if (typeof path !== 'string' || !isOfflinePage(path)) return null;
+    const stored = await (await caches.open(PAGE_CACHE)).match(path, { ignoreSearch: true });
+    return stored ? path : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Every page of ours: stored copy for offline-capable pages (when on), otherwise the offline page. */
 async function handlePage(options: RouteHandlerCallbackOptions): Promise<Response> {
   const { url } = options;
+  const on = await offlinePagesOn();
   try {
-    if (await offlinePagesOn()) {
-      if (isOfflinePage(url.pathname)) return await storedPage.handle(options);
-    }
+    if (on && isOfflinePage(url.pathname)) return await storedPage.handle(options);
     return await networkOnly.handle(options);
   } catch {
+    if (on && LAUNCH_PAGES.has(url.pathname)) {
+      const home = await storedPortalHome();
+      if (home) return Response.redirect(new URL(home, self.location.origin).href, 302);
+    }
     return offlineFallback();
   }
 }
@@ -212,13 +242,17 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-type PageMessage = { type?: string; on?: unknown };
+type PageMessage = { type?: string; on?: unknown; path?: unknown };
 
 self.addEventListener('message', (event) => {
   const data = event.data as PageMessage | null;
   // Offline mode switched on or off for this device (off also wipes stored pages)
   if (data?.type === 'rehabify:offline-pages' && typeof data.on === 'boolean') {
     event.waitUntil(setOfflinePages(data.on));
+  }
+  // The portal being used (physio, clinic or patient): where an offline launch goes
+  if (data?.type === 'rehabify:portal-home' && typeof data.path === 'string') {
+    event.waitUntil(setPortalHome(data.path));
   }
   // Sign-out, or someone else signed in: their stored pages go
   if (data?.type === 'rehabify:clear-pages') {

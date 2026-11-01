@@ -1,10 +1,12 @@
 "use client";
 
 import { ReactNode } from "react";
-import { ConvexReactClient } from "convex/react";
 import { ConvexProviderWithClerk } from "convex/react-clerk";
 import { useAuth } from "@clerk/nextjs";
-const convex = new ConvexReactClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
+import { OfflineConvexClient } from "@/lib/offline/convexClient";
+
+// Convex's client plus saved answers for offline use (lib/offline/convexClient.ts)
+const convex = new OfflineConvexClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
 
 export default function ConvexClientProvider({
   children,

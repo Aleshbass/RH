@@ -7,17 +7,7 @@ import { DashboardHeader } from '@/components/dashboard/shared/DashboardHeader'
 import NotificationToaster from '@/components/dashboard/shared/NotificationToaster'
 import { DashboardSidebarWrapper } from '@/components/dashboard/shared/DashboardSidebarWrapper'
 import DashboardAuthGuard from '@/components/auth/DashboardAuthGuard'
-
-/** Portals that render their own shell, theme and access rules. */
-export function hasOwnPortalShell(pathname: string) {
-  return (
-    pathname.startsWith('/dashboard/clinic') ||
-    pathname.startsWith('/dashboard/physiotherapist') ||
-    pathname.startsWith('/dashboard/admin') ||
-    pathname.startsWith('/dashboard/patient') ||
-    pathname.startsWith('/dashboard/family')
-  )
-}
+import { hasOwnPortalShell } from '@/components/dashboard/shared/portalShells'
 
 /**
  * The shared header + sidebar used by the doctor dashboard and the other shared /dashboard pages.

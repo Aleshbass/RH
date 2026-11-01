@@ -4,7 +4,7 @@
  * and everything stored is a plain 200 from our own site.
  */
 import { expect, test, type Page } from '@playwright/test';
-import { CLINIC_OWNER_ID, PHYSIO_ID, cachedEntries, signIn, visitAndStore } from './helpers';
+import { CLINIC_OWNER_ID, PHYSIO_ID, cachedEntries, signIn, snoozePrompts, visitAndStore } from './helpers';
 
 const NEVER_STORED: [string, RegExp][] = [
   ['API route', /\/api\//],
@@ -42,6 +42,7 @@ async function audit(page: Page) {
 }
 
 test('physio session stores nothing it must not', async ({ page }) => {
+  await snoozePrompts(page);
   await signIn(page, PHYSIO_ID);
   for (const path of [
     '/dashboard/physiotherapist',
@@ -65,6 +66,7 @@ test('physio session stores nothing it must not', async ({ page }) => {
 });
 
 test('clinic owner session stores nothing it must not', async ({ page }) => {
+  await snoozePrompts(page);
   await signIn(page, CLINIC_OWNER_ID);
   for (const path of [
     '/dashboard/clinic',

@@ -210,6 +210,7 @@ import type * as notifications_email from "../notifications/email.js";
 import type * as notifications_production from "../notifications/production.js";
 import type * as notifications_retry from "../notifications/retry.js";
 import type * as notifications_service from "../notifications/service.js";
+import type * as offline from "../offline.js";
 import type * as outcomes from "../outcomes.js";
 import type * as partnerApi from "../partnerApi.js";
 import type * as partnerBankAccounts from "../partnerBankAccounts.js";
@@ -256,6 +257,7 @@ import type * as scheduled_notification_retry from "../scheduled/notification_re
 import type * as schema_calendar from "../schema/calendar.js";
 import type * as schema_community from "../schema/community.js";
 import type * as schema_health from "../schema/health.js";
+import type * as schema_offline from "../schema/offline.js";
 import type * as schema_outcomes from "../schema/outcomes.js";
 import type * as schema_questionnaires from "../schema/questionnaires.js";
 import type * as schema_rewards from "../schema/rewards.js";
@@ -486,6 +488,7 @@ declare const fullApi: ApiFromModules<{
   "notifications/production": typeof notifications_production;
   "notifications/retry": typeof notifications_retry;
   "notifications/service": typeof notifications_service;
+  offline: typeof offline;
   outcomes: typeof outcomes;
   partnerApi: typeof partnerApi;
   partnerBankAccounts: typeof partnerBankAccounts;
@@ -532,6 +535,7 @@ declare const fullApi: ApiFromModules<{
   "schema/calendar": typeof schema_calendar;
   "schema/community": typeof schema_community;
   "schema/health": typeof schema_health;
+  "schema/offline": typeof schema_offline;
   "schema/outcomes": typeof schema_outcomes;
   "schema/questionnaires": typeof schema_questionnaires;
   "schema/rewards": typeof schema_rewards;

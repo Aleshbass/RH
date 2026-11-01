@@ -27,14 +27,20 @@ import { toClinicPortal } from '@/components/physio/PhysioNotifications'
 import { WebsiteLink } from '@/components/dashboard/shared/WebsiteLink'
 import { physioPortalPageFor } from '@/components/clinic/clinician-routing'
 import { AppIconBadge, AppSetupButton, AppSetupPrompt } from '@/components/pwa/AppSetup'
+import { OfflineGate } from '@/components/offline/OfflineGate'
+import { useOfflineSession } from '@/lib/offline/session'
+import { usePortalHome } from '@/lib/pwa'
 import { cn } from '@/lib/utils'
 
 export default function ClinicLayout({ children }: { children: ReactNode }) {
   return (
     <ClinicThemeProvider>
-      <ClinicAccessProvider>
-        <ClinicPortal>{children}</ClinicPortal>
-      </ClinicAccessProvider>
+      {/* Offline, the PIN opens the data saved on this phone before anything shows */}
+      <OfflineGate>
+        <ClinicAccessProvider>
+          <ClinicPortal>{children}</ClinicPortal>
+        </ClinicAccessProvider>
+      </OfflineGate>
     </ClinicThemeProvider>
   )
 }
@@ -160,6 +166,8 @@ function ClinicPortal({ children }: { children: ReactNode }) {
   const router = useRouter()
   const pathname = usePathname() ?? ''
   const { isLoaded: authLoaded, isSignedIn } = useAuth()
+  const session = useOfflineSession()
+  usePortalHome(CLINIC_HOME)
   const { signOut } = useClerk()
   const {
     isLoaded,
@@ -215,7 +223,11 @@ function ClinicPortal({ children }: { children: ReactNode }) {
     )
   }
 
-  if (!authLoaded || !isLoaded || !isSignedIn || nonMember || clinicianDestination) {
+  // Online, Clerk says who's signed in; offline (Clerk can't load) it's the person whose PIN
+  // opened this phone's saved data (components/offline/OfflineGate.tsx)
+  const signedIn =
+    session.mode === 'online' ? session.userId !== null : session.mode === 'offline' && session.unlocked
+  if (!signedIn || !isLoaded || nonMember || clinicianDestination) {
     return <PortalSkeleton />
   }
 

@@ -12,7 +12,8 @@ export default defineConfig({
   testDir: '.',
   testMatch: /.*\.offline\.ts/,
   timeout: 480_000,
-  retries: 0,
+  // One retry: this machine's network is flaky; anything that only passes on retry is reported as "flaky"
+  retries: 1,
   workers: 1,
   reporter: 'list',
   outputDir: '../../test-results/offline',

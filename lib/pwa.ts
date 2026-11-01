@@ -6,7 +6,8 @@
  * PwaRegister (root layout) registers the service worker and keeps the browser's install
  * prompt for later; components/pwa/AppSetup.tsx shows it and turns notifications on.
  */
-import { useSyncExternalStore } from 'react';
+import { useEffect, useSyncExternalStore } from 'react';
+import { wipeAll } from '@/lib/offline/vault';
 
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
@@ -91,6 +92,16 @@ export function startPwa() {
   }
 
   if ('serviceWorker' in navigator && (process.env.NODE_ENV === 'production' || process.env.NEXT_PUBLIC_ENABLE_SW === '1')) {
+    // Returning visitors: watch for new versions straight away. Registering waits for the page's
+    // "load", which a slow script on a weak connection can hold back for a long time.
+    navigator.serviceWorker
+      .getRegistration('/')
+      .then((reg) => {
+        if (!reg) return;
+        watchForUpdates(reg);
+        void sendOfflineSwitch();
+      })
+      .catch(() => undefined);
     const register = () =>
       navigator.serviceWorker
         .register('/sw.js', { scope: '/', updateViaCache: 'none' })
@@ -104,11 +115,15 @@ export function startPwa() {
   }
 }
 
+const watched = new WeakSet<ServiceWorkerRegistration>();
+
 /**
  * A new version installs in the background and waits; the person chooses when to switch
  * (applyUpdate), so a reload never interrupts something they're typing or syncing.
  */
 function watchForUpdates(reg: ServiceWorkerRegistration) {
+  if (watched.has(reg)) return;
+  watched.add(reg);
   const offer = () => {
     if (reg.waiting && navigator.serviceWorker.controller) update({ updateReady: true });
   };
@@ -128,11 +143,24 @@ function watchForUpdates(reg: ServiceWorkerRegistration) {
   });
 }
 
-/** Switches to the waiting version and reloads once it has taken over. */
+/**
+ * Switches to the waiting version and reloads once it has taken over. Never leaves the person
+ * stuck: if another tab already switched, or the switch doesn't confirm in 10 seconds, it reloads.
+ */
 export async function applyUpdate() {
-  const reg = await navigator.serviceWorker.getRegistration('/');
-  if (!reg?.waiting) return;
-  navigator.serviceWorker.addEventListener('controllerchange', () => window.location.reload(), { once: true });
+  const reg = await navigator.serviceWorker.getRegistration('/').catch(() => undefined);
+  if (!reg?.waiting) {
+    window.location.reload();
+    return;
+  }
+  let reloaded = false;
+  const reload = () => {
+    if (reloaded) return;
+    reloaded = true;
+    window.location.reload();
+  };
+  navigator.serviceWorker.addEventListener('controllerchange', reload, { once: true });
+  window.setTimeout(reload, 10_000);
   reg.waiting.postMessage({ type: 'SKIP_WAITING' });
 }
 
@@ -157,7 +185,9 @@ async function sendOfflineSwitch() {
 
 /**
  * "Reset offline data": clears every copy this device keeps (pages, app files, images) and reloads.
- * For a stuck or broken cache; sign-in, notifications and anything not yet synced are kept.
+ * For a stuck or broken cache; sign-in and notifications are kept, and the encrypted offline copy
+ * is saved again as pages are opened. (Once offline changes can be queued, unsynced ones must be
+ * sent or confirmed first.)
  */
 export async function resetOfflineData() {
   try {
@@ -169,7 +199,19 @@ export async function resetOfflineData() {
   } catch {
     // No Cache Storage here: nothing was kept
   }
+  // The encrypted copy is all on the server too: it's saved again as pages are opened
+  await wipeAll().catch(() => undefined);
   window.location.reload();
+}
+
+/** The portal in use (its home page): opening the app offline goes there (app/sw.ts). */
+export function usePortalHome(path: string) {
+  useEffect(() => {
+    if (!offlineModeOn() || !('serviceWorker' in navigator)) return;
+    navigator.serviceWorker.ready
+      .then((reg) => reg.active?.postMessage({ type: 'rehabify:portal-home', path }))
+      .catch(() => undefined);
+  }, [path]);
 }
 
 /** Removes the dashboard pages kept for offline use (sign-out, or someone else signed in). */
