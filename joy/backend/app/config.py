@@ -20,8 +20,9 @@ class Settings(BaseSettings):
     gemini_api_key: str = ""
     # Keep local/default deployments on current, supported Gemini models. The
     # production environment can still override these explicitly.
-    gemini_text_model: str = "gemini-3.8-flash"
-    gemini_live_model: str = "gemini-3.8-live"
+    gemini_text_model: str = "gemini-3.6-flash"
+    # Voice notes use generate_content; Live-only models (e.g. gemini-3.8-live) reject it.
+    gemini_live_model: str = "gemini-3.6-flash"
     # Gemini remains Joy's default.  The other adapters are explicit
     # server-side fallbacks; clients never receive any provider credential.
     llm_provider: str = "gemini"
