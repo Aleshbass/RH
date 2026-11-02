@@ -3,13 +3,47 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { StreamVideo, StreamVideoClient, StreamCall, StreamTheme, CallingState } from '@stream-io/video-react-sdk'
 import '@stream-io/video-react-sdk/dist/css/styles.css'
 import { useUser } from '@clerk/nextjs'
-import { api } from '@/convex/_generated/api'
 import { Loader2, PhoneOff } from '@/components/icons'
 import { toast } from 'sonner'
 import { StreamChat } from 'stream-chat'
 import { useAction, useMutation, useQuery } from 'convex/react'
+import { makeFunctionReference } from 'convex/server'
 import { CallLobby, CallRoom, CallStatusScreen } from '@/components/video/room'
 import { useActiveCall } from '@/components/video/activeCall/ActiveCallProvider'
+
+// By name: the generated api type is at TypeScript's depth limit (TS2589)
+const myUserRef = makeFunctionReference<
+  'query',
+  Record<string, never>,
+  { _id: string; firstName?: string; lastName?: string; imageUrl?: string } | null
+>('users:getMyUser')
+const getStreamTokenRef = makeFunctionReference<
+  'action',
+  { userId: string; userName: string; userImage?: string; callId?: string; callType?: string },
+  { token: string; apiKey: string; userId: string; chatToken?: string }
+>('stream:getStreamToken')
+const createStreamCallRef = makeFunctionReference<
+  'action',
+  {
+    callId: string
+    callType?: 'default' | 'livestream' | 'audio_room' | 'development'
+    participants: Array<{ userId: string; userName: string; userImage?: string; role?: 'host' | 'participant' }>
+    settings?: { recordingEnabled?: boolean; transcriptionEnabled?: boolean; maxDuration?: number; geoFencing?: boolean }
+  },
+  unknown
+>('stream:createStreamCall')
+const endStreamCallRef = makeFunctionReference<'action', { callId: string; callType?: string }, unknown>(
+  'stream:endStreamCall'
+)
+const ensureChatMembershipRef = makeFunctionReference<'action', { callId: string; userId?: string }, unknown>(
+  'stream:ensureChatMembership'
+)
+const setMyRsvpStatusRef = makeFunctionReference<
+  'mutation',
+  { roomId: string; status: 'invited' | 'accepted' | 'declined' | 'tentative' },
+  unknown
+>('videoCalls:setMyRsvpStatus')
+const joinVideoCallRef = makeFunctionReference<'mutation', { roomId: string }, unknown>('videoCalls:joinVideoCall')
 
 interface StreamVideoCallProps {
   callId: string
@@ -49,7 +83,7 @@ export default function StreamVideoCall({
 }: StreamVideoCallProps) {
   const { user, isLoaded } = useUser()
   // Prefer the Convex profile (uploaded photo, full name) over Clerk's.
-  const convexUser = useQuery(api.users.getMyUser)
+  const convexUser = useQuery(myUserRef)
   const active = useActiveCall()
   // This call is already joined and kept going (back from the small call window)
   const resumed = active.session?.callId === callId ? active.session : null
@@ -70,12 +104,12 @@ export default function StreamVideoCall({
   const [joining, setJoining] = useState(false)
   const initializedRef = useRef(false)
 
-  const getStreamToken = useAction(api.stream.getStreamToken)
-  const createStreamCall = useAction(api.stream.createStreamCall)
-  const endStreamCall = useAction(api.stream.endStreamCall)
-  const ensureChatMembership = useAction(api.stream.ensureChatMembership)
-  const setMyRsvpStatus = useMutation(api.videoCalls.setMyRsvpStatus)
-  const joinVideoCallMutation = useMutation(api.videoCalls.joinVideoCall)
+  const getStreamToken = useAction(getStreamTokenRef)
+  const createStreamCall = useAction(createStreamCallRef)
+  const endStreamCall = useAction(endStreamCallRef)
+  const ensureChatMembership = useAction(ensureChatMembershipRef)
+  const setMyRsvpStatus = useMutation(setMyRsvpStatusRef)
+  const joinVideoCallMutation = useMutation(joinVideoCallRef)
 
   // Participant IDs come from the call's Convex record (Convex user IDs), not Clerk.
   const isMe = (id: string) => id === user?.id || id === convexUser?._id

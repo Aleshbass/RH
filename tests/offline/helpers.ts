@@ -76,19 +76,33 @@ export async function signIn(page: Page, clerkUserId: string) {
 }
 
 /**
+ * The welcome tours count as already seen on this phone, and the physio setup reminder as already
+ * shown this visit (prompts take turns with them).
+ */
+export async function skipTours(page: Page) {
+  await page.addInitScript(() => {
+    localStorage.setItem('rehabify:physio-tour-version', '99');
+    localStorage.setItem('rehabify:clinic-tour-version', '99');
+    sessionStorage.setItem('rehabify:physio-setup-reminder', '1');
+  });
+}
+
+/**
  * For tests that aren't about them: the self-opening prompts (offline PIN, app install) start
- * snoozed, as after "Not now".
+ * snoozed, as after "Not now", and the welcome tours as seen.
  */
 export async function snoozePrompts(page: Page) {
+  await skipTours(page);
   await page.addInitScript(() => {
     const day = String(Date.now() + 24 * 60 * 60 * 1000);
-    localStorage.setItem('rh_offline_pin_snoozed_until', day);
+    localStorage.setItem('rh_offline_pin_snoozed_until_v2', day);
     localStorage.setItem('rh_app_setup_snoozed_until', day);
   });
 }
 
-/** Only the app-install prompt starts snoozed (the offline PIN prompt still opens). */
+/** Only the app-install prompt starts snoozed (the offline PIN prompt still opens); tours seen. */
 export async function snoozeAppSetup(page: Page) {
+  await skipTours(page);
   await page.addInitScript(() => {
     localStorage.setItem('rh_app_setup_snoozed_until', String(Date.now() + 24 * 60 * 60 * 1000));
   });

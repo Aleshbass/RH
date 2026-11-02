@@ -36,7 +36,7 @@ import {
   type Device,
   type SavedDevice,
 } from '@/lib/pwa';
-import { whenNoTourOpen } from '@/lib/overlayTurn';
+import { endPromptTurn, whenPromptTurn } from '@/lib/overlayTurn';
 import { cn } from '@/lib/utils';
 
 // Plain references: the generated api type is at TypeScript's depth limit (TS2589)
@@ -515,10 +515,11 @@ export function AppSetupPrompt() {
     if (need === 'blocked') return;
     autoOpened.current = true;
     if (appSetupSnoozed()) return;
-    // A welcome tour on screen goes first: two overlays at once block each other's buttons
+    // One self-opening prompt at a time (a welcome tour, the offline PIN offer...): two overlays
+    // at once block each other's buttons
     let cancelWait: () => void = () => undefined;
     const timer = window.setTimeout(() => {
-      cancelWait = whenNoTourOpen(() => window.setTimeout(openAppSetup, 600));
+      cancelWait = whenPromptTurn('app-setup', openAppSetup);
     }, 1500);
     return () => {
       window.clearTimeout(timer);
@@ -543,6 +544,12 @@ export function AppSetupPrompt() {
     },
     [need]
   );
+
+  // Closed (by any route): the next waiting prompt may open
+  useEffect(() => {
+    if (!pwa.setupOpen) endPromptTurn('app-setup');
+  }, [pwa.setupOpen]);
+  useEffect(() => () => endPromptTurn('app-setup'), []);
 
   if (!need || !env) return null;
   const copy = TITLES[need];

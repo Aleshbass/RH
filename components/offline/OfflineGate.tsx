@@ -23,7 +23,7 @@ import {
   unlockWithPin,
   useVault,
 } from '@/lib/offline/vault';
-import { isDialogOpen, whenNoTourOpen } from '@/lib/overlayTurn';
+import { endPromptTurn, whenPromptTurn } from '@/lib/overlayTurn';
 import { cn } from '@/lib/utils';
 
 export function OfflineGate({ children }: { children: ReactNode }) {
@@ -164,7 +164,8 @@ function OfflineUnavailable({ wipedForPins }: { wipedForPins: boolean }) {
   );
 }
 
-const SNOOZE_KEY = 'rh_offline_pin_snoozed_until';
+// "v2": snoozes saved before prompts took turns came from taps on another prompt, not "Not now"
+const SNOOZE_KEY = 'rh_offline_pin_snoozed_until_v2';
 
 function snoozed(): boolean {
   try {
@@ -189,17 +190,22 @@ function PinSetupPrompt({ userId }: { userId: string }) {
   useEffect(() => {
     if (!needsPin || offered.current || snoozed()) return;
     offered.current = true;
-    let timer = 0;
-    // One self-opening overlay at a time: wait for tours and other dialogs (app setup, consent)
-    const offerWhenFree = () => {
-      timer = window.setTimeout(() => (isDialogOpen() ? offerWhenFree() : setOpen(true)), 1500);
-    };
-    const cancel = whenNoTourOpen(offerWhenFree);
+    // One self-opening prompt at a time: it waits for tours, the app setup prompt, consent...
+    let cancel: () => void = () => undefined;
+    const timer = window.setTimeout(() => {
+      cancel = whenPromptTurn('offline-pin', () => setOpen(true));
+    }, 1500);
     return () => {
-      cancel();
       window.clearTimeout(timer);
+      cancel();
     };
   }, [needsPin]);
+
+  // Closed (set up, "Not now", or no longer needed): the next waiting prompt may open
+  useEffect(() => {
+    if (!open || !needsPin) endPromptTurn('offline-pin');
+  }, [open, needsPin]);
+  useEffect(() => () => endPromptTurn('offline-pin'), []);
 
   function notNow() {
     try {
@@ -240,7 +246,12 @@ function PinSetupPrompt({ userId }: { userId: string }) {
   if (!needsPin) return null;
   return (
     <Dialog open={open} onOpenChange={(next) => (next ? setOpen(true) : notNow())}>
-      <DialogContent className="max-w-sm rounded-3xl border-pt-line bg-pt-surface">
+      {/* Taps outside (e.g. on another prompt) don't count as "Not now": only its own buttons do */}
+      <DialogContent
+        className="max-w-sm rounded-3xl border-pt-line bg-pt-surface"
+        onPointerDownOutside={(event) => event.preventDefault()}
+        onInteractOutside={(event) => event.preventDefault()}
+      >
         <DialogTitle className="text-pt-ink">Use Rehabify without internet</DialogTitle>
         <DialogDescription className="text-pt-muted">
           Choose a 4–6 digit PIN. Pages you open are saved on this phone, encrypted, and the PIN opens them when you’re

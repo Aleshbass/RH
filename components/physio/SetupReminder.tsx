@@ -5,6 +5,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Button } from '@/components/ui/button'
 import { primaryButtonClass } from '@/components/physio/ui'
 import { hasSeenPhysioTour } from '@/components/physio/PhysioTour'
+import { endPromptTurn, whenPromptTurn } from '@/lib/overlayTurn'
 import {
   SetupChecklistRows,
   SetupProgressBar,
@@ -42,12 +43,25 @@ export function SetupReminder({ setup }: { setup: SetupStatus | null | undefined
 
   useEffect(() => {
     if (!shouldRemind || shownThisSession() || !hasSeenPhysioTour()) return
+    // Takes turns with the other self-opening prompts (offline PIN, app setup): one at a time
+    let cancel: () => void = () => undefined
     const timer = window.setTimeout(() => {
-      markShown()
-      setOpen(true)
+      cancel = whenPromptTurn('setup-reminder', () => {
+        markShown()
+        setOpen(true)
+      })
     }, 800)
-    return () => window.clearTimeout(timer)
+    return () => {
+      window.clearTimeout(timer)
+      cancel()
+    }
   }, [shouldRemind])
+
+  // Closed: the next waiting prompt may open
+  useEffect(() => {
+    if (!open) endPromptTurn('setup-reminder')
+  }, [open])
+  useEffect(() => () => endPromptTurn('setup-reminder'), [])
 
   if (!setup) return null
   const { done, total } = setupProgress(setup)

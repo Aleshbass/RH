@@ -87,3 +87,49 @@ test('in the pilot, then taken out: the phone wipes its offline copy and pages',
     setPilot(PHYSIO_ID, true);
   }
 });
+
+test('the PIN offer and the app setup prompt take turns; tapping one never dismisses the other', async ({ page }) => {
+  clearTestDevices(PHYSIO_ID);
+  // A real first visit: nothing snoozed
+  await signIn(page, PHYSIO_ID);
+  await page.goto('/dashboard/physiotherapist');
+  // Prompts and the welcome tour (its dialog has no data-state)
+  const openDialogs = page.locator('[role="dialog"]:visible');
+  const pinOffer = page.getByRole('dialog', { name: 'Use Rehabify without internet' });
+  const tour = page.locator('[role="dialog"][aria-labelledby="physio-tour-title"]');
+  const reminder = page.getByRole('dialog', { name: /book you yet|Almost ready/ });
+  const neverTwoAtOnce = async (seconds: number) => {
+    for (let second = 0; second < seconds; second++) {
+      expect(await openDialogs.count(), 'one prompt at a time').toBeLessThanOrEqual(1);
+      await page.waitForTimeout(1000);
+    }
+  };
+  await expect(openDialogs.first()).toBeVisible({ timeout: 90_000 });
+  await neverTwoAtOnce(8);
+
+  // The welcome tour and the setup reminder may come first (depends on the account); they take
+  // turns with the other prompts too
+  for (let round = 0; round < 3; round++) {
+    const first = (await tour.isVisible()) ? tour : (await reminder.isVisible()) ? reminder : null;
+    if (!first) break;
+    await first.getByRole('button', { name: first === tour ? 'Not now' : 'Later' }).click();
+    await expect(first).toBeHidden({ timeout: 10_000 });
+    await expect(openDialogs.first(), 'the next prompt comes after it').toBeVisible({ timeout: 30_000 });
+    await neverTwoAtOnce(6);
+  }
+
+  if (await pinOffer.isVisible()) {
+    // PIN first: the app setup prompt waits until the PIN is set
+    await pinOffer.getByLabel('New PIN').fill(PIN);
+    await pinOffer.getByLabel('Type it again').fill(PIN);
+    await pinOffer.getByRole('button', { name: 'Turn on' }).click();
+    await expect(pinOffer).toBeHidden({ timeout: 60_000 });
+    await expect(openDialogs.first(), 'app setup prompt comes next').toBeVisible({ timeout: 30_000 });
+  } else {
+    // App setup first: working with it doesn't touch the PIN offer, which comes right after
+    await openDialogs.first().click({ position: { x: 20, y: 20 } });
+    await page.keyboard.press('Escape');
+    await expect(pinOffer, 'PIN offer comes next, not snoozed').toBeVisible({ timeout: 30_000 });
+  }
+  expect(await openDialogs.count()).toBeLessThanOrEqual(1);
+});
