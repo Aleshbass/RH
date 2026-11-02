@@ -8,6 +8,7 @@
 import { ConvexError, v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { getAuthenticatedUser } from "./auth";
+import { requireAdmin } from "./helpers/partnerAccess";
 
 /** lib/offline/vault.ts makes these: 24 random bytes, base64url */
 const DEVICE_ID = /^[A-Za-z0-9_-]{16,64}$/;
@@ -92,6 +93,31 @@ export const listMyDevices = query({
         createdAt: device.createdAt,
         lastSeenAt: device.lastSeenAt,
       }));
+  },
+});
+
+/**
+ * Admin: puts an account in the offline pilot, or takes it out. Taking it out also switches off
+ * every phone of theirs, so each one wipes its offline copy the next time it's online.
+ */
+export const setOfflinePilot = mutation({
+  args: { userId: v.id("users"), on: v.boolean() },
+  handler: async (ctx, { userId, on }) => {
+    await requireAdmin(ctx);
+    const user = await ctx.db.get(userId);
+    if (!user) throw new ConvexError("Account not found");
+    await ctx.db.patch(userId, { offlinePilot: on ? true : undefined });
+    if (!on) {
+      const now = Date.now();
+      const devices = await ctx.db
+        .query("offlineDevices")
+        .withIndex("by_user", (q) => q.eq("userId", userId))
+        .collect();
+      for (const device of devices) {
+        if (!device.revokedAt) await ctx.db.patch(device._id, { revokedAt: now, wrapSecret: "" });
+      }
+    }
+    return { offlinePilot: on };
   },
 });
 

@@ -4,6 +4,9 @@ import { useState, type ComponentType, type ReactNode } from 'react'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { useMutation, useQuery } from 'convex/react'
+import { makeFunctionReference } from 'convex/server'
+import type { getAdminUserDetails } from '@/convex/admin'
+import { useQueryUntyped, type QueryResult } from '@/lib/convexUntyped'
 import { format } from 'date-fns'
 import { toast } from 'sonner'
 import {
@@ -39,10 +42,10 @@ import {
   XCircle,
 } from '@/components/icons'
 
-import { api } from '@/convex/_generated/api'
 import type { Id } from '@/convex/_generated/dataModel'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   AdminPage,
@@ -163,6 +166,57 @@ function appointmentTone(status: string) {
   return 'neutral' as const
 }
 
+/** Accounts whose portal can work offline (physio, clinic and patient portals). */
+const OFFLINE_PILOT_ROLES = new Set(['physiotherapist', 'clinic_owner', 'clinic_staff', 'patient'])
+
+// By name: the generated api type is at TypeScript's depth limit (TS2589)
+const setOfflinePilotRef = makeFunctionReference<'mutation', { userId: Id<'users'>; on: boolean }, { offlinePilot: boolean }>(
+  'offline:setOfflinePilot'
+)
+const adminUserDetailsRef = makeFunctionReference<'query'>('admin:getAdminUserDetails')
+const myUserRef = makeFunctionReference<'query', Record<string, never>, { _id: Id<'users'> } | null>('users:getMyUser')
+const adminDeleteUserRef = makeFunctionReference<'mutation', { userId: Id<'users'> }, unknown>('users:adminDeleteUser')
+
+/**
+ * Offline mode pilot for one account (with the app's offline mode on "pilot"). Off also switches
+ * off their phones, which wipe their offline copy next time they're online.
+ */
+function OfflinePilotSwitch({ userId, on, name }: { userId: Id<'users'>; on: boolean; name: string }) {
+  const setOfflinePilot = useMutation(setOfflinePilotRef)
+  const [saving, setSaving] = useState(false)
+
+  const change = async (next: boolean) => {
+    setSaving(true)
+    try {
+      await setOfflinePilot({ userId, on: next })
+      toast.success(next ? 'Added to the offline pilot' : 'Removed from the offline pilot', {
+        description: next
+          ? `${name} can turn on offline use with a PIN next time they open Rehabify.`
+          : `${name}'s phones will wipe their offline copy next time they're online.`,
+      })
+    } catch (error) {
+      playSound('error')
+      toast.error('Could not change the offline pilot', {
+        description: error instanceof Error ? error.message : 'Please try again.',
+      })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="mt-4 flex items-center justify-between gap-3 rounded-xl bg-rh-canvas p-3 dark:bg-white/[0.04]">
+      <div className="min-w-0">
+        <p className="text-xs font-semibold text-rh-ink dark:text-white">Offline pilot</p>
+        <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
+          {on ? 'Can use Rehabify without internet (PIN-locked)' : 'Offline use is off for this account'}
+        </p>
+      </div>
+      <Switch checked={on} disabled={saving} onCheckedChange={(next) => void change(next)} aria-label="Offline pilot" />
+    </div>
+  )
+}
+
 export default function AdminUserDetailPage() {
   const params = useParams()
   const router = useRouter()
@@ -172,9 +226,11 @@ export default function AdminUserDetailPage() {
   const [roleOpen, setRoleOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
 
-  const details = useQuery(api.admin.getAdminUserDetails, userId ? { userId: userId as Id<'users'> } : 'skip')
-  const me = useQuery(api.users.getMyUser)
-  const deleteUser = useMutation(api.users.adminDeleteUser)
+  const details = useQueryUntyped(adminUserDetailsRef, userId ? { userId: userId as Id<'users'> } : 'skip') as
+    | QueryResult<typeof getAdminUserDetails>
+    | undefined
+  const me = useQuery(myUserRef)
+  const deleteUser = useMutation(adminDeleteUserRef)
 
   const copyToClipboard = async (text: string, fieldName: string) => {
     try {
@@ -394,6 +450,10 @@ export default function AdminUserDetailPage() {
                     </StatusBadge>
                   </div>
                 </div>
+              )}
+
+              {OFFLINE_PILOT_ROLES.has(user.role ?? '') && (
+                <OfflinePilotSwitch userId={user._id} on={user.offlinePilot === true} name={user.firstName || 'They'} />
               )}
 
               {user.email && (

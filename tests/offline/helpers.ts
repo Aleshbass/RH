@@ -34,6 +34,18 @@ export function clearTestDevices(clerkUserId: string) {
   for (const device of devices) convexRunAs(clerkUserId, 'offline:revokeDevice', { deviceId: device.deviceId });
 }
 
+/** Puts a test account in or out of the offline pilot (local test helper convex/testOnlyOffline.ts). */
+export function setPilot(clerkUserId: string, on: boolean) {
+  if (!(process.env.CONVEX_DEPLOYMENT ?? '').startsWith('dev:energized-mosquito')) {
+    throw new Error('Refusing: CONVEX_DEPLOYMENT is not the isolated offline test project');
+  }
+  execFileSync(
+    process.execPath,
+    ['node_modules/convex/bin/main.js', 'run', 'testOnlyOffline:setPilotByClerkId', JSON.stringify({ clerkId: clerkUserId, on })],
+    { encoding: 'utf8', timeout: 180_000 }
+  );
+}
+
 /** Signs in with a one-time Clerk ticket (no password or email code needed). */
 export async function signIn(page: Page, clerkUserId: string) {
   if (!clerkUserId) throw new Error('Missing test user id in .env.local');
@@ -72,10 +84,28 @@ export async function snoozeAppSetup(page: Page) {
   });
 }
 
-/** Opens a page twice: the first visit installs the service worker, the second is stored by it. */
-export async function visitAndStore(page: Page, path: string) {
+/**
+ * Opens a page twice: the first visit installs the service worker, the second is stored by it.
+ * With offline mode on "pilot", offline use starts a moment after sign-in (once the account's pilot
+ * switch has loaded), so it waits for that first, unless the account isn't expected to be in it.
+ */
+export async function visitAndStore(page: Page, path: string, { offline = true }: { offline?: boolean } = {}) {
   await page.goto(path);
   await page.evaluate(() => navigator.serviceWorker.ready.then(() => undefined));
+  if (offline && process.env.NEXT_PUBLIC_OFFLINE_MODE === 'pilot') {
+    await page.waitForFunction(() => localStorage.getItem('rh_offline_pilot') === '1', null, { timeout: 60_000 });
+  }
+  if (offline) {
+    // The service worker has the switch (it keeps it in rh-config), so this reload is stored
+    await page.waitForFunction(
+      async () => {
+        const saved = await (await caches.open('rh-config')).match('/__rehabify/offline-pages');
+        return saved ? ((await saved.json()) as { on?: boolean }).on === true : false;
+      },
+      null,
+      { timeout: 60_000, polling: 500 }
+    );
+  }
   await page.reload();
   // Let the service worker hear the offline-mode switch and store the page
   await page.waitForTimeout(1500);

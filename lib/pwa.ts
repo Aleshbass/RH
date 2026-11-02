@@ -164,13 +164,57 @@ export async function applyUpdate() {
   reg.waiting.postMessage({ type: 'SKIP_WAITING' });
 }
 
+const PILOT_KEY = 'rh_offline_pilot';
+let pilot: boolean | null = null;
+const offlineModeListeners = new Set<() => void>();
+
+function pilotOn(): boolean {
+  if (pilot === null) {
+    try {
+      pilot = window.localStorage.getItem(PILOT_KEY) === '1';
+    } catch {
+      pilot = false;
+    }
+  }
+  return pilot;
+}
+
 /**
- * Whether dashboard pages are kept for offline use on this device. Off unless the build turns it on
- * (NEXT_PUBLIC_OFFLINE_MODE=on); turning it off again is the kill switch: the service worker wipes
- * the stored pages and keeps only push and the "You're offline" page.
+ * Whether this device keeps pages and data for offline use. NEXT_PUBLIC_OFFLINE_MODE is the master
+ * switch: "on" for everyone, "pilot" only for accounts an admin put in the pilot (users.offlinePilot,
+ * remembered here so it holds offline), anything else off. Off is also the kill switch: stored
+ * pages and the encrypted copy are wiped, and only push and the "You're offline" page remain.
  */
 export function offlineModeOn(): boolean {
-  return process.env.NEXT_PUBLIC_OFFLINE_MODE === 'on';
+  const mode = process.env.NEXT_PUBLIC_OFFLINE_MODE;
+  if (mode === 'on') return true;
+  if (mode === 'pilot') return typeof window !== 'undefined' && pilotOn();
+  return false;
+}
+
+/** The signed-in account's pilot switch, seen online (components/offline/OfflineBridge.tsx). */
+export function setOfflinePilot(on: boolean) {
+  if (typeof window === 'undefined' || pilotOn() === on) return;
+  pilot = on;
+  try {
+    if (on) window.localStorage.setItem(PILOT_KEY, '1');
+    else window.localStorage.removeItem(PILOT_KEY);
+  } catch {
+    // Storage blocked: it holds for this visit only
+  }
+  offlineModeListeners.forEach((listener) => listener());
+  void sendOfflineSwitch();
+}
+
+export function useOfflineMode(): boolean {
+  return useSyncExternalStore(
+    (listener) => {
+      offlineModeListeners.add(listener);
+      return () => offlineModeListeners.delete(listener);
+    },
+    offlineModeOn,
+    () => false
+  );
 }
 
 /** Tells the service worker whether to keep pages (it remembers, so a cold start offline works). */

@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/compone
 import { Loader2, Lock, WifiOff } from '@/components/icons';
 import { primaryButtonClass, secondaryButtonClass } from '@/components/patient/ui';
 import { unlockDeviceRef } from '@/components/offline/OfflineBridge';
-import { offlineModeOn } from '@/lib/pwa';
+import { useOfflineMode } from '@/lib/pwa';
 import { lastSignedInUser, useOfflineSession, useOnline } from '@/lib/offline/session';
 import {
   MAX_PIN_ATTEMPTS,
@@ -30,7 +30,8 @@ export function OfflineGate({ children }: { children: ReactNode }) {
   const session = useOfflineSession();
   const online = useOnline();
   const vault = useVault();
-  if (!offlineModeOn()) return <>{children}</>;
+  const offlineMode = useOfflineMode();
+  if (!offlineMode) return <>{children}</>;
   if (session.mode === 'offline' && !session.unlocked) return <PinUnlockScreen userId={session.userId} />;
   // Offline with nothing saved on this phone (never set up, or just wiped): say so, instead of a
   // loading screen that would never finish

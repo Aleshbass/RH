@@ -54,12 +54,18 @@ async function savedAnswerCount(page: Page): Promise<number> {
       new Promise<number>((resolve) => {
         const request = indexedDB.open('rehabify-vault');
         request.onsuccess = () => {
+          const db = request.result;
+          // Closed straight after, or this connection would hold up the app's wipe
+          const done = (value: number) => {
+            db.close();
+            resolve(value);
+          };
           try {
-            const count = request.result.transaction('queries').objectStore('queries').count();
-            count.onsuccess = () => resolve(count.result);
-            count.onerror = () => resolve(-1);
+            const count = db.transaction('queries').objectStore('queries').count();
+            count.onsuccess = () => done(count.result);
+            count.onerror = () => done(-1);
           } catch {
-            resolve(0);
+            done(0);
           }
         };
         request.onerror = () => resolve(-1);

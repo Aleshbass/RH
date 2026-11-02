@@ -7,7 +7,7 @@
  */
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { useAuth } from '@clerk/nextjs';
-import { offlineModeOn } from '@/lib/pwa';
+import { useOfflineMode } from '@/lib/pwa';
 import { useVault } from './vault';
 
 const LAST_USER_KEY = 'rh_last_user';
@@ -48,6 +48,7 @@ export function useOfflineSession(): OfflineSession {
   const { isLoaded, isSignedIn, userId } = useAuth();
   const online = useOnline();
   const vault = useVault();
+  const offlineMode = useOfflineMode();
   const [clerkStalled, setClerkStalled] = useState(false);
 
   useEffect(() => {
@@ -61,7 +62,7 @@ export function useOfflineSession(): OfflineSession {
 
   if (isLoaded) return { mode: 'online', userId: isSignedIn && userId ? userId : null };
 
-  if (offlineModeOn() && (!online || clerkStalled)) {
+  if (offlineMode && (!online || clerkStalled)) {
     const last = lastSignedInUser();
     if (last && vault.userId === last && (vault.status === 'locked' || vault.status === 'unlocked')) {
       return { mode: 'offline', userId: last, unlocked: vault.status === 'unlocked' };

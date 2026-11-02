@@ -93,6 +93,10 @@ export default defineSchema({
     // A user can hold both: a patient who later becomes a physio keeps RH-P and gains RH-C.
     patientNumber: v.optional(v.string()), // "RH-P-100001"
     staffNumber: v.optional(v.string()), // "RH-C-100001"
+
+    // Offline mode pilot: set by an admin (offline.ts setOfflinePilot). With the app's offline
+    // mode on "pilot", only these accounts keep encrypted data on their phones for offline use.
+    offlinePilot: v.optional(v.boolean()),
   })
     .index("by_clerk_id", ["clerkId"])
     .index("by_email", ["email"])

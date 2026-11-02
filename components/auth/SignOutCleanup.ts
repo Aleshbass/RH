@@ -3,7 +3,7 @@
 import { useEffect, useRef } from 'react'
 import { useAuth } from '@clerk/nextjs'
 import { clearUserNoteDrafts } from '@/components/physio/notes/draftStore'
-import { clearStoredPages, disablePush, setIconBadge } from '@/lib/pwa'
+import { clearStoredPages, disablePush, setIconBadge, setOfflinePilot } from '@/lib/pwa'
 import { wipeUser } from '@/lib/offline/vault'
 
 /** Saved in this browser for one person; never carried over to whoever signs in next. */
@@ -61,8 +61,9 @@ async function cleanUpAfter(clerkUserId: string) {
   setIconBadge(0)
   clearUserNoteDrafts(clerkUserId)
   await clearStoredPages()
-  // Their encrypted offline copy on this phone (lib/offline/vault.ts)
+  // Their encrypted offline copy on this phone (lib/offline/vault.ts) and their pilot switch
   await wipeUser(clerkUserId).catch(() => undefined)
+  setOfflinePilot(false)
   try {
     for (const key of PERSONAL_KEYS) window.localStorage.removeItem(key)
   } catch {
