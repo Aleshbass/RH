@@ -172,7 +172,7 @@ export default function PhysioProfilePage() {
               <span className="text-amber-800 font-medium">Are you a Patient looking for a Physiotherapist?</span>
             </div>
             <a
-              href={`https://wa.me/2348061525811?text=${encodeURIComponent("Hi Joy! 👋🏾 I'm looking for a verified physiotherapist to help with my recovery.")}`}
+              href={`https://wa.me/2348122615453?text=${encodeURIComponent("Hi Joy! 👋🏾 I'm looking for a verified physiotherapist to help with my recovery.")}`}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-1.5 font-bold text-[#005b57] hover:underline transition-colors"

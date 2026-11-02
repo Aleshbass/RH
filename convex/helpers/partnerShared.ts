@@ -249,7 +249,7 @@ export function partnerApiBaseUrl(): string {
 }
 
 export function joyWhatsAppNumber(): string {
-  return (process.env.JOY_WHATSAPP_NUMBER || "2348061525811").replace(/\D/g, "");
+  return (process.env.JOY_WHATSAPP_NUMBER || "2348122615453").replace(/\D/g, "");
 }
 
 export function trackingUrl(trackingCode: string): string {

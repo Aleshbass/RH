@@ -103,7 +103,7 @@ export default function PhysioRegisterDirectoryPage() {
             </span>
           </div>
           <a
-            href={`https://wa.me/2348061525811?text=${encodeURIComponent("Hi Joy! 👋🏾 I need help getting matched with a verified physiotherapist for my recovery.")}`}
+            href={`https://wa.me/2348122615453?text=${encodeURIComponent("Hi Joy! 👋🏾 I need help getting matched with a verified physiotherapist for my recovery.")}`}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-1.5 font-bold text-[#005b57] hover:text-teal-700 hover:underline transition-colors"

@@ -316,7 +316,7 @@ function PartnerInquiryForm() {
     // Build WhatsApp message with form data
     const waMessage = `Hi! 👋🏾 I'm interested in partnering with RehabifyHealth.\n\nCompany: ${formData.companyName}\nContact: ${formData.contactName}\nEmail: ${formData.email}\nPartner Type: ${formData.partnerType}\n\n${formData.message}`;
     window.open(
-      `https://wa.me/2348061525811?text=${encodeURIComponent(waMessage)}`,
+      `https://wa.me/2348122615453?text=${encodeURIComponent(waMessage)}`,
       "_blank"
     );
   };

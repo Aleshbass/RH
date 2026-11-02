@@ -1,4 +1,4 @@
-const JOY_NUMBER = (process.env.NEXT_PUBLIC_JOY_WHATSAPP_NUMBER || "2348061525811").replace(/\D/g, "");
+const JOY_NUMBER = (process.env.NEXT_PUBLIC_JOY_WHATSAPP_NUMBER || "2348122615453").replace(/\D/g, "");
 
 /** A WhatsApp chat with Joy, opened with `text` already typed. */
 export function joyWhatsAppUrl(text: string) {

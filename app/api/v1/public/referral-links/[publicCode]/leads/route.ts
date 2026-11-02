@@ -16,7 +16,7 @@ const CORS = {
 };
 
 function joyNumber(): string {
-  return (process.env.NEXT_PUBLIC_JOY_WHATSAPP_NUMBER || "2348061525811").replace(/\D/g, "");
+  return (process.env.NEXT_PUBLIC_JOY_WHATSAPP_NUMBER || "2348122615453").replace(/\D/g, "");
 }
 
 export function OPTIONS() {

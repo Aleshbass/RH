@@ -56,7 +56,7 @@ Partners embed a customized smart WhatsApp link in their app, email, SMS, or phy
 
 * **Format**:
   ```http
-  https://wa.me/2348061525811?text=REHAB_REF_{PARTNER_CODE}_{PATIENT_ID}_{CASE_TYPE}
+  https://wa.me/2348122615453?text=REHAB_REF_{PARTNER_CODE}_{PATIENT_ID}_{CASE_TYPE}
   ```
 * **User Flow**:
   1. Patient clicks the link or scans a clinic QR code.

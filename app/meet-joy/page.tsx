@@ -9,7 +9,7 @@ export const metadata: Metadata = {
 };
 
 const WHATSAPP_PRE_MESSAGE = "Hi Joy! 👋🏾 I need help with my recovery.";
-const WHATSAPP_URL = `https://wa.me/2348061525811?text=${encodeURIComponent(WHATSAPP_PRE_MESSAGE)}`;
+const WHATSAPP_URL = `https://wa.me/2348122615453?text=${encodeURIComponent(WHATSAPP_PRE_MESSAGE)}`;
 
 export default function MeetJoyPage() {
   return (

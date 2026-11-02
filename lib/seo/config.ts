@@ -46,8 +46,8 @@ export const SITE_CONFIG = {
     // As listed on /about ("Contact grid") and the homepage FAQ
     supportEmail: 'support@physioaroundme.com',
     partnersEmail: 'partners@physioaroundme.com',
-    supportPhone: '+234 806 152 5811', // Patient support + Joy on WhatsApp
-    whatsappUrl: 'https://wa.me/2348061525811',
+    supportPhone: '+234 812 261 5453', // Patient support + Joy on WhatsApp
+    whatsappUrl: 'https://wa.me/2348122615453',
     officeHours: 'Mon-Fri 8AM-6PM WAT',
     country: 'Nigeria',
     /**
