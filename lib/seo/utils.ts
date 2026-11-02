@@ -8,6 +8,16 @@
 import type { Metadata } from 'next';
 import { SITE_CONFIG } from './config';
 
+export type OgImage = { url: string; width?: number; height?: number; alt?: string };
+
+/** The site-wide 1200x630 card from app/opengraph-image.tsx. */
+export const DEFAULT_OG_IMAGE: OgImage = {
+  url: SITE_CONFIG.ogImage,
+  width: 1200,
+  height: 630,
+  alt: SITE_CONFIG.ogImageAlt,
+};
+
 /**
  * Metadata for one public page: title, description, its own canonical URL and Open Graph /
  * Twitter cards. Use it in a page's or a pass-through layout's `export const metadata`.
@@ -32,13 +42,13 @@ export function pageMetadata({
   description: string;
   path: string;
   noIndex?: boolean;
-  ogImage?: string;
+  /** A URL (no size known) or a sized image such as physioOgCard() */
+  ogImage?: string | OgImage;
   ogType?: 'website' | 'profile' | 'article';
 }): Metadata {
   const socialTitle = `${title} | ${SITE_CONFIG.name}`;
-  const image = ogImage
-    ? { url: ogImage, alt: title }
-    : { url: SITE_CONFIG.ogImage, width: 1200, height: 630, alt: SITE_CONFIG.name };
+  const image: OgImage =
+    typeof ogImage === 'string' ? { url: ogImage, alt: title } : ogImage ?? DEFAULT_OG_IMAGE;
 
   return {
     title,
@@ -60,6 +70,39 @@ export function pageMetadata({
       images: [image.url],
     },
     ...(noIndex && { robots: { index: false, follow: true } }),
+  };
+}
+
+/**
+ * Link preview for a private, per-person link (join links, one-tap sign-in links, trackers).
+ * WhatsApp shows og:* to everyone in the chat, so the text must be generic: no names, no
+ * condition, no clinic. Never indexed or followed, and no canonical.
+ */
+export function privateLinkMetadata(args: { title: string; description: string; path: string }): Metadata {
+  return {
+    ...pageMetadata({ ...args, noIndex: true }),
+    alternates: null,
+    robots: { index: false, follow: false },
+  };
+}
+
+/**
+ * 1200x630 physiotherapist card from app/api/og/booking (name, focus, photo), for profile and
+ * booking links: a raw profile photo is square and has no size, so previews crop or shrink it.
+ */
+export function physioOgCard(profile: {
+  fullName: string;
+  specializations?: string[];
+  imageUrl?: string | null;
+}): OgImage {
+  const params = new URLSearchParams({ name: profile.fullName, duration: '60' });
+  if (profile.specializations?.[0]) params.set('spec', profile.specializations[0]);
+  if (profile.imageUrl) params.set('image', profile.imageUrl);
+  return {
+    url: `/api/og/booking?${params.toString()}`,
+    width: 1200,
+    height: 630,
+    alt: `Book a session with ${profile.fullName}`,
   };
 }
 

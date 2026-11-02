@@ -3,7 +3,7 @@ import { cache } from 'react';
 import { api } from '@/convex/_generated/api';
 import type { Id } from '@/convex/_generated/dataModel';
 import { getConvexClient } from '@/lib/convex-client';
-import { pageMetadata, truncateDescription } from '@/lib/seo/utils';
+import { pageMetadata, physioOgCard, truncateDescription } from '@/lib/seo/utils';
 import {
   PhysioProfileSchema,
   formatPhysioLocation,
@@ -109,7 +109,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     description: describe(profile),
     path,
     ogType: 'profile',
-    ogImage: profile.imageUrl,
+    // 1200x630 card with the photo in it (same as booking links), not the raw square photo
+    ogImage: physioOgCard(profile),
   });
 }
 

@@ -12,6 +12,8 @@ import ConditionalLayout from '@/components/layout/ConditionalLayout';
 import PwaRegister from '@/components/pwa/PwaRegister';
 import OfflineBridge from '@/components/offline/OfflineBridge';
 import { ActiveCallProvider } from '@/components/video/activeCall/ActiveCallProvider';
+import { publicAppUrl } from '@/lib/public-app-url';
+import { SITE_CONFIG } from '@/lib/seo/config';
 
 const calSans = localFont({
   src: '../public/fonts/CalSans-SemiBold.woff2',
@@ -42,7 +44,9 @@ const matter = localFont({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || 'https://physioaroundme.com'),
+  // Same origin as every link we hand out: www.physioaroundme.com has no DNS, so og:image
+  // URLs built on a www. base would never load
+  metadataBase: new URL(publicAppUrl()),
   title: {
     default: "Physio Around Me by Rehabify Health — Book a Verified Physiotherapist in Nigeria",
     template: "%s | Physio Around Me by Rehabify Health",
@@ -91,17 +95,17 @@ export const metadata: Metadata = {
   manifest: '/manifest.json',
   openGraph: {
     type: 'website',
-    locale: 'en_US',
+    locale: SITE_CONFIG.locale,
     // No og:url here: like a canonical, it would be inherited by every page (pages set their own)
     title: 'Physio Around Me by Rehabify Health — Book a Verified Physiotherapist in Nigeria',
     description: 'Find and book licensed, verified physiotherapists in Nigeria. Online video sessions or in-person care at home or in clinic.',
-    siteName: 'Physio Around Me by Rehabify Health',
+    siteName: SITE_CONFIG.name,
     images: [
       {
         url: '/opengraph-image', // Next.js auto-generates from opengraph-image.tsx
         width: 1200,
         height: 630,
-        alt: 'Physio Around Me by Rehabify Health - Expert Physical Therapy & Rehabilitation',
+        alt: SITE_CONFIG.ogImageAlt,
       },
     ],
   },

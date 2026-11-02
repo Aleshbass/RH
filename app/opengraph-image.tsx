@@ -1,23 +1,31 @@
 /**
- * Static Open Graph Image for Homepage
- * 
- * Next.js automatically uses this for og:image meta tags
- * This provides a consistent, branded OG image for the homepage
- * 
+ * Site-wide Open Graph image (1200x630), served at /opengraph-image.
+ *
+ * The root layout and lib/seo pageMetadata() point og:image at it, so it is the card WhatsApp,
+ * X, LinkedIn and Facebook show for any page without its own image. No request data is read
+ * and the default Node runtime is used, so Next renders it once at build time (static).
+ * Text only, no emoji: emoji are fetched from a CDN at render time.
+ *
  * @see https://nextjs.org/docs/app/api-reference/file-conventions/metadata/opengraph-image
  */
 
 import { ImageResponse } from 'next/og';
+import { SITE_CONFIG } from '@/lib/seo/config';
 
-export const runtime = 'edge';
-export const alt = 'Rehabify Health - AI-Powered Physical Therapy Platform';
+export const alt = SITE_CONFIG.ogImageAlt;
 export const size = {
   width: 1200,
   height: 630,
 };
 export const contentType = 'image/png';
 
-export default async function Image() {
+const INK = '#0b1312';
+const LIME = '#00cd0f';
+const CANVAS = '#f4ede3';
+
+const POINTS = ['Licensed physiotherapists', 'Online or in person', 'Secure payment by Paystack'];
+
+export default function Image() {
   return new ImageResponse(
     (
       <div
@@ -25,211 +33,64 @@ export default async function Image() {
           height: '100%',
           width: '100%',
           display: 'flex',
-          position: 'relative',
-          backgroundColor: '#005b57',
+          flexDirection: 'column',
+          justifyContent: 'space-between',
+          padding: '64px 80px',
+          backgroundColor: INK,
+          color: CANVAS,
         }}
       >
-        {/* Background gradient overlay */}
-        <div
-          style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            background: 'linear-gradient(135deg, rgba(0, 91, 87, 0.95) 0%, rgba(0, 135, 126, 0.85) 100%)',
-            display: 'flex',
-          }}
-        />
+        {/* Brand line */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+            <div style={{ display: 'flex', width: '20px', height: '20px', borderRadius: '50%', backgroundColor: LIME }} />
+            <div style={{ display: 'flex', fontSize: '34px', fontWeight: 700, color: '#ffffff' }}>Physio Around Me</div>
+            <div style={{ display: 'flex', fontSize: '30px', color: 'rgba(244, 237, 227, 0.6)' }}>by Rehabify Health</div>
+          </div>
+          <div style={{ display: 'flex', fontSize: '24px', color: 'rgba(244, 237, 227, 0.6)' }}>physioaroundme.com</div>
+        </div>
 
-        {/* Decorative elements (platform-inspired) */}
-        <div
-          style={{
-            position: 'absolute',
-            top: '-100px',
-            right: '-100px',
-            width: '400px',
-            height: '400px',
-            borderRadius: '50%',
-            background: 'rgba(255, 255, 255, 0.08)',
-            display: 'flex',
-          }}
-        />
-        <div
-          style={{
-            position: 'absolute',
-            bottom: '-80px',
-            left: '-80px',
-            width: '300px',
-            height: '300px',
-            borderRadius: '50%',
-            background: 'rgba(255, 255, 255, 0.06)',
-            display: 'flex',
-          }}
-        />
-
-        {/* Main content container */}
-        <div
-          style={{
-            position: 'relative',
-            width: '100%',
-            height: '100%',
-            display: 'flex',
-            flexDirection: 'column',
-            padding: '60px 80px',
-            justifyContent: 'space-between',
-          }}
-        >
-          {/* Header with logo/brand */}
+        {/* Headline */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
           <div
             style={{
               display: 'flex',
-              flexDirection: 'column',
-              gap: '12px',
+              fontSize: '84px',
+              fontWeight: 700,
+              lineHeight: 1.05,
+              letterSpacing: '-0.02em',
+              color: '#ffffff',
+              maxWidth: '980px',
             }}
           >
-            <div
-              style={{
-                fontSize: '72px',
-                fontWeight: 'bold',
-                color: '#ffffff',
-                letterSpacing: '-0.03em',
-                display: 'flex',
-                textShadow: '0 2px 10px rgba(0, 0, 0, 0.2)',
-              }}
-            >
-              Rehabify Health
-            </div>
-            <div
-              style={{
-                fontSize: '24px',
-                color: 'rgba(255, 255, 255, 0.9)',
-                fontWeight: '500',
-                display: 'flex',
-                letterSpacing: '0.5px',
-              }}
-            >
-              AI-Powered Physiotherapy Platform
-            </div>
+            Book a Verified Physiotherapist
           </div>
-
-          {/* Main title content */}
-          <div
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '24px',
-              flex: 1,
-              justifyContent: 'center',
-              maxWidth: '900px',
-            }}
-          >
-            <div
-              style={{
-                fontSize: '52px',
-                fontWeight: 'bold',
-                color: '#ffffff',
-                lineHeight: 1.2,
-                display: 'flex',
-                textShadow: '0 2px 15px rgba(0, 0, 0, 0.3)',
-              }}
-            >
-              Connect with Licensed Physiotherapists Online
-            </div>
-
-            <div
-              style={{
-                fontSize: '26px',
-                color: 'rgba(255, 255, 255, 0.85)',
-                lineHeight: 1.4,
-                display: 'flex',
-              }}
-            >
-              Personalized treatment plans • AI exercise monitoring • Telehealth appointments
-            </div>
+          <div style={{ display: 'flex', fontSize: '32px', lineHeight: 1.35, color: 'rgba(244, 237, 227, 0.78)', maxWidth: '920px' }}>
+            Online video sessions or in-person care at home or in clinic, across Nigeria.
           </div>
+        </div>
 
-          {/* Footer with features/badges */}
-          <div
-            style={{
-              display: 'flex',
-              gap: '40px',
-              alignItems: 'center',
-              flexWrap: 'wrap',
-            }}
-          >
+        {/* Footer */}
+        <div style={{ display: 'flex', gap: '14px' }}>
+          {POINTS.map((point, i) => (
             <div
+              key={point}
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: '12px',
-                backgroundColor: 'rgba(255, 255, 255, 0.15)',
-                padding: '12px 24px',
-                borderRadius: '50px',
-                backdropFilter: 'blur(10px)',
+                padding: '10px 20px',
+                borderRadius: '999px',
+                // First point in green with ink text, the rest outlined
+                backgroundColor: i === 0 ? LIME : 'transparent',
+                border: i === 0 ? `2px solid ${LIME}` : '2px solid rgba(244, 237, 227, 0.18)',
+                fontSize: '21px',
+                fontWeight: i === 0 ? 700 : 400,
+                color: i === 0 ? INK : CANVAS,
               }}
             >
-              <div style={{ fontSize: '24px', display: 'flex' }}>🏥</div>
-              <div
-                style={{
-                  fontSize: '18px',
-                  color: '#ffffff',
-                  fontWeight: '600',
-                  display: 'flex',
-                }}
-              >
-                Licensed Physiotherapists
-              </div>
+              {point}
             </div>
-
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '12px',
-                backgroundColor: 'rgba(255, 255, 255, 0.15)',
-                padding: '12px 24px',
-                borderRadius: '50px',
-                backdropFilter: 'blur(10px)',
-              }}
-            >
-              <div style={{ fontSize: '24px', display: 'flex' }}>🤖</div>
-              <div
-                style={{
-                  fontSize: '18px',
-                  color: '#ffffff',
-                  fontWeight: '600',
-                  display: 'flex',
-                }}
-              >
-                AI Exercise Monitoring
-              </div>
-            </div>
-
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '12px',
-                backgroundColor: 'rgba(255, 255, 255, 0.15)',
-                padding: '12px 24px',
-                borderRadius: '50px',
-                backdropFilter: 'blur(10px)',
-              }}
-            >
-              <div style={{ fontSize: '24px', display: 'flex' }}>📱</div>
-              <div
-                style={{
-                  fontSize: '18px',
-                  color: '#ffffff',
-                  fontWeight: '600',
-                  display: 'flex',
-                }}
-              >
-                Telehealth Ready
-              </div>
-            </div>
-          </div>
+          ))}
         </div>
       </div>
     ),

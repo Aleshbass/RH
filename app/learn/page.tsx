@@ -4,28 +4,19 @@ import { api } from '@/convex/_generated/api'
 import type { PublicCohort } from '@/convex/learn'
 import { MskProgramPage } from '@/components/learn/MskProgramPage'
 import { learnUrl } from '@/lib/site-hosts'
+import { pageMetadata } from '@/lib/seo/utils'
 
 export const revalidate = 60
 
 const description =
   'Become a Rehabify Certified MSK Specialist in 5 weeks. Structured online learning, weekly live clinical sessions, case-based discussions and a final assessment for physiotherapists.'
 
-export const metadata: Metadata = {
-  title: 'MSK Specialist Program — Rehabify Learn',
+// The root template adds the brand, so the title carries none of its own
+export const metadata: Metadata = pageMetadata({
+  title: 'MSK Specialist Program for physiotherapists',
   description,
-  alternates: { canonical: learnUrl() },
-  openGraph: {
-    title: 'Rehabify MSK Specialist Program',
-    description,
-    url: learnUrl(),
-    type: 'website',
-  },
-  twitter: {
-    card: 'summary_large_image',
-    title: 'Rehabify MSK Specialist Program',
-    description,
-  },
-}
+  path: learnUrl(),
+})
 
 /** Server-rendered so the cohort dates are in the HTML; the client query keeps them live. */
 async function loadCohort(): Promise<PublicCohort | null | undefined> {

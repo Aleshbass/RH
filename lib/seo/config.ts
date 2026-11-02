@@ -34,6 +34,7 @@ export const SITE_CONFIG = {
   description:
     'Find and book licensed, verified physiotherapists in Nigeria. Online video sessions or in-person care at home or in clinic, with secure payment by Paystack.',
   ogImage: '/opengraph-image', // app/opengraph-image.tsx
+  ogImageAlt: 'Physio Around Me by Rehabify Health — Book a Verified Physiotherapist',
   locale: 'en_NG',
 
   organization: {
@@ -100,7 +101,11 @@ export const AI_AND_SEARCH_CRAWLERS = [
   'CCBot',
 ];
 
-/** Private, per-user or transactional areas: never crawled by anyone. */
+/**
+ * Private, per-user or transactional areas: never crawled by anyone. Partner referral links
+ * (/r/) are left out on purpose: they are made to be shared, and link-preview bots that honour
+ * robots.txt need to read their og:* tags. Those pages are still noindex (app/r/[code]/layout.tsx).
+ */
 export const PRIVATE_PATHS = [
   '/api/',
   '/dashboard',
@@ -115,7 +120,6 @@ export const PRIVATE_PATHS = [
   '/video/',
   '/v/', // patient join links
   '/x/', // PIN-protected exercise programme links
-  '/r/', // partner referral links (set an attribution cookie)
   '/go/', // one-tap dashboard links from Joy (carry a sign-in code)
   '/track/', // individual referral tracking pages
   '/invoices',

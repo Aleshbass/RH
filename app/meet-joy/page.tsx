@@ -2,11 +2,13 @@ import React from 'react';
 import { Bell, Eye, LineChart, MessageCircle } from '@/components/icons';
 import { WhatsApp } from '@/components/icons';
 import type { Metadata } from 'next';
+import { pageMetadata } from '@/lib/seo/utils';
 
-export const metadata: Metadata = {
-  title: 'Meet Joy | Rehabify',
+export const metadata: Metadata = pageMetadata({
+  title: 'Meet Joy, your recovery companion on WhatsApp',
   description: 'Joy is your AI recovery companion on WhatsApp. Daily exercise reminders, AI form correction, adherence tracking, and direct access to your physiotherapist.',
-};
+  path: '/meet-joy',
+});
 
 const WHATSAPP_PRE_MESSAGE = "Hi Joy! 👋🏾 I need help with my recovery.";
 const WHATSAPP_URL = `https://wa.me/2348122615453?text=${encodeURIComponent(WHATSAPP_PRE_MESSAGE)}`;
