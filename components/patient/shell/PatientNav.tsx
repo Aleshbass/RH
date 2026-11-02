@@ -226,6 +226,9 @@ export function PatientSidebar({ unreadMessages, className }: { unreadMessages?:
   )
 }
 
+/** Shorter names where the full one doesn't fit a bottom tab. */
+const TAB_LABELS: Record<string, string> = { Appointments: 'Visits', 'My care plan': 'Care plan' }
+
 /**
  * Bottom tab bar on phones and tablets: the four places people go most, plus "More" for the rest.
  */
@@ -266,7 +269,7 @@ export function PatientMobileNav({ unreadMessages }: { unreadMessages?: number }
                     </span>
                   )}
                 </span>
-                {tab.title === 'Appointments' ? 'Visits' : tab.title}
+                {TAB_LABELS[tab.title] ?? tab.title}
               </Link>
             )
           })}

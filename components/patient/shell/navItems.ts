@@ -1,7 +1,6 @@
 import {
   Calendar,
   ClipboardList,
-  Dumbbell,
   FolderOpen,
   Home,
   MessageSquare,
@@ -40,8 +39,8 @@ export const NAV = {
   messages: item('Messages', 'messages', MessageSquare, 'Chat with your physiotherapist'),
   physio: item('My physiotherapist', 'my-physiotherapist', Stethoscope, 'Who is treating you and how to reach them'),
   videoCalls: item('Video calls', 'video-calls', Video, 'Join online sessions'),
-  plan: item('Treatment plan', 'treatment-plans', ClipboardList, 'Your goals and what your physio prescribed'),
-  exercises: item('Exercises', 'exercises', Dumbbell, 'Your home exercise programme'),
+  // Treatment plan and home exercises in one place (/exercises redirects here)
+  carePlan: item('My care plan', 'treatment-plans', ClipboardList, 'Today’s exercises, your goals and your physio’s plan'),
   progress: item('Progress', 'insights', TrendingUp, 'How your recovery is going'),
   records: item('Records', 'records', FolderOpen, 'Scans, reports and letters'),
   invoices: item('Invoices', 'invoices', Receipt, 'Bills, payments and receipts'),
@@ -52,13 +51,13 @@ export const NAV = {
 /** Sidebar order: everyday things first, then care, then paperwork. */
 export const PATIENT_NAV: PatientNavGroup[] = [
   { items: [NAV.home, NAV.appointments, NAV.messages] },
-  { label: 'My care', items: [NAV.physio, NAV.videoCalls, NAV.plan, NAV.exercises, NAV.progress] },
+  { label: 'My care', items: [NAV.physio, NAV.videoCalls, NAV.carePlan, NAV.progress] },
   { label: 'Records & payments', items: [NAV.records, NAV.invoices] },
   { label: 'Family', items: [NAV.careCircle] },
 ]
 
 /** Bottom bar on phones and tablets; everything else lives under "More". */
-export const MOBILE_TABS: PatientNavItem[] = [NAV.home, NAV.appointments, NAV.messages, NAV.exercises]
+export const MOBILE_TABS: PatientNavItem[] = [NAV.home, NAV.appointments, NAV.messages, NAV.carePlan]
 
 export const FIND_A_PHYSIO = { title: 'Find a physio', href: '/find-a-physio', icon: Search }
 

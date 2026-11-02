@@ -56,6 +56,7 @@ import { MediLoanCard } from '@/components/patient/MediLoanCard'
 import { AccessAwardCard } from '@/components/patient/AccessAwardCard'
 import { YourPlanCard } from '@/components/patient/YourPlanCard'
 import { YourClinicCard } from '@/components/patient/YourClinicCard'
+import { TodayCarePlanCard } from '@/components/patient/TodayCarePlanCard'
 import { cn } from '@/lib/utils'
 
 interface PatientDashboardProps {
@@ -255,7 +256,7 @@ function NextVisitCard({
 const QUICK_ACTIONS: { title: string; hint: string; href: string; icon: typeof Calendar; tone: Tone }[] = [
   { title: 'Book a session', hint: 'Pick a time that suits you', href: BOOK_SESSION_HREF, icon: CalendarPlus, tone: 'green' },
   { title: 'Message my physio', hint: 'Ask a question', href: NAV.messages.href, icon: MessageSquare, tone: 'blue' },
-  { title: 'My exercises', hint: 'Today’s home programme', href: NAV.exercises.href, icon: Dumbbell, tone: 'violet' },
+  { title: 'My exercises', hint: 'Today’s care plan', href: `${NAV.carePlan.href}#today`, icon: Dumbbell, tone: 'violet' },
   { title: 'Upload a record', hint: 'Scans, reports, letters', href: NAV.records.href, icon: Upload, tone: 'amber' },
 ]
 
@@ -430,6 +431,8 @@ export function PatientDashboard({ initialUser, initialAppointments, initialStat
           <QuickActions />
         </div>
       </div>
+
+      <TodayCarePlanCard />
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         <StatTile

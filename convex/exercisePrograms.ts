@@ -666,6 +666,8 @@ export async function patientProgramView(ctx: Ctx, program: Doc<"exerciseProgram
   const summary = await logsSummary(ctx, program._id);
   return {
     ...(await programView(ctx, program, "patient")),
+    // The treatment plan it was sent with: My care plan lists that plan's programmes first
+    treatmentPlanId: program.treatmentPlanId ?? null,
     doneToday: [...new Set(today.map((l) => l.itemIndex))],
     activeDaysLast14: summary.activeDaysLast14,
   };

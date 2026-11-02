@@ -65,6 +65,7 @@ export const OFFLINE_QUERIES: Record<string, OfflineQueryRule> = {
   // Patient portal
   'exercisePrograms:listMine': same,
   'treatmentPlans:getPatientActivePlan': same,
+  'treatmentPlans:getPatientTreatmentPlans': same, // My care plan: earlier plans
   'treatmentPlans:getExerciseCompletionMap': same,
   'appointments:getPatientAppointments': same,
   'rehabifyFollowUps:getMyBookingsAwaitingPhysio': same,

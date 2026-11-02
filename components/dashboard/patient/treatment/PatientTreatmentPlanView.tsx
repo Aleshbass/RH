@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { useMutation, useQuery } from 'convex/react';
 import { format } from 'date-fns';
@@ -22,7 +22,6 @@ import { api } from '@/convex/_generated/api';
 import type { Id } from '@/convex/_generated/dataModel';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   EmptyState,
   InfoTip,
@@ -34,56 +33,28 @@ import {
   cardClass,
   fieldClass,
   primaryButtonClass,
-  tabsListClass,
-  tabsTriggerClass,
   type Tone,
 } from '@/components/patient/ui';
-import { doseLabel, type MyProgram } from '@/components/exercise-programs/types';
+import type { MyProgram } from '@/components/exercise-programs/types';
 import { playSound } from '@/lib/sounds';
 import { cn } from '@/lib/utils';
+import { HomeProgrammes } from './HomeProgrammes';
+import {
+  flatten,
+  keyOf,
+  orderProgrammes,
+  programmeTotals,
+  todaysExercises,
+  type Exercise,
+  type Plan,
+  type PlanExercise,
+  type PlanGoal,
+  type PlanPhase,
+} from './carePlanToday';
 
 /* -------------------------------------------------------------------------------------------- */
-/* Types and helpers                                                                            */
+/* Helpers                                                                                      */
 /* -------------------------------------------------------------------------------------------- */
-
-/** One exercise in a plan phase (treatmentPlans.phases[].exercises[]), plus library details. */
-type PlanExercise = {
-  exerciseId: string;
-  name?: string;
-  libraryName?: string;
-  instructions?: string;
-  libraryInstructions?: string | string[];
-  sets: number;
-  reps: number;
-  duration?: string;
-  frequency: string;
-  notes?: string;
-  videoUrl?: string;
-  youtubeId?: string;
-};
-
-type PlanPhase = { name: string; description: string; duration: string; order: number; exercises: PlanExercise[] };
-type PlanGoal = { description: string; targetValue: string; timeline: string; measurable: boolean; achieved?: boolean };
-
-/** treatmentPlans row as the patient queries return it (the fields used here) */
-type Plan = {
-  _id: string;
-  title: string;
-  description?: string;
-  status: string;
-  startDate: number;
-  endDate?: number;
-  goals: PlanGoal[];
-  phases: PlanPhase[];
-  sessionFrequency?: string;
-  plannedSessions?: number;
-  reviewDate?: number;
-  precautions?: string;
-  physiotherapist?: { firstName?: string; lastName?: string } | null;
-};
-
-/** An exercise with the stage it belongs to (completions are keyed by both). */
-type Exercise = PlanExercise & { phaseOrder: number; phaseName: string };
 
 const PLAN_STATUS: Record<string, { label: string; tone: Tone }> = {
   active: { label: 'Active', tone: 'green' },
@@ -119,28 +90,17 @@ function videoLink(exercise: PlanExercise) {
   return null;
 }
 
-function flatten(plan: Plan): Exercise[] {
-  return (plan.phases ?? []).flatMap((phase) =>
-    (phase.exercises ?? []).map((exercise) => ({ ...exercise, phaseOrder: phase.order ?? 0, phaseName: phase.name }))
-  );
-}
-
-/** Exercises with a daily-type frequency (or none) are today's; if none are, all of them. */
-function todaysExercises(all: Exercise[]) {
-  const daily = all.filter((exercise) => {
-    const freq = (exercise.frequency ?? '').toLowerCase();
-    return !freq || freq.includes('daily') || freq.includes('day') || freq.includes('today');
-  });
-  return daily.length > 0 ? daily : all;
-}
-
-const keyOf = (exercise: Exercise) => `${exercise.phaseOrder}-${exercise.exerciseId}`;
-
 function painTone(score: number, selected: boolean) {
   if (!selected) return 'border-pt-line-strong bg-pt-surface text-pt-muted hover:bg-pt-hover';
   if (score >= 7) return 'border-transparent bg-pt-rose-fg text-white dark:text-[#16181c]';
   if (score >= 4) return 'border-transparent bg-pt-amber-fg text-white dark:text-[#16181c]';
   return 'border-transparent bg-pt-green-fg text-white dark:text-[#16181c]';
+}
+
+/** The active-plan query has the exercise details but not the physio's name; the list has the name. */
+function withPhysioName(plan: Plan | null, allPlans: Plan[] | undefined): Plan | null {
+  if (!plan) return null;
+  return { ...plan, physiotherapist: plan.physiotherapist ?? allPlans?.find((p) => p._id === plan._id)?.physiotherapist ?? null };
 }
 
 /* -------------------------------------------------------------------------------------------- */
@@ -372,51 +332,6 @@ function ExerciseDrawer({
   );
 }
 
-/**
- * Exercises the physio sent as a home programme (the Exercises page), shown on the plan when the
- * plan itself has none, so the two never disagree. Falls back to the plain empty state.
- */
-function HomeProgrammeExercises() {
-  const programs = useQuery(api.exercisePrograms.listMine) as MyProgram[] | null | undefined;
-  const withItems = (programs ?? []).filter((program) => program.items.some((item) => item.kind !== 'education'));
-  if (programs === undefined) return <LoadingBlocks rows={2} />;
-  if (withItems.length === 0) {
-    return (
-      <Panel>
-        <EmptyState icon={Dumbbell} title="No exercises yet" description="Your physio hasn’t added exercises to this plan yet." />
-      </Panel>
-    );
-  }
-  return (
-    <Panel>
-      <div className="space-y-4 p-5">
-        {withItems.map((program) => (
-          <div key={program._id} className="space-y-2">
-            <p className="text-sm font-semibold text-pt-ink">{program.title}</p>
-            <ul className="divide-y divide-pt-line">
-              {program.items
-                .filter((item) => item.kind !== 'education')
-                .map((item, index) => (
-                  <li key={`${program._id}-${index}`} className="flex items-center justify-between gap-3 py-2.5 text-sm">
-                    <span className="flex min-w-0 items-center gap-2 text-pt-ink">
-                      <Dumbbell className="h-4 w-4 shrink-0 text-pt-muted" />
-                      <span className="truncate">{item.name}</span>
-                    </span>
-                    {doseLabel(item) && <span className="shrink-0 tabular-nums text-pt-muted">{doseLabel(item)}</span>}
-                  </li>
-                ))}
-            </ul>
-          </div>
-        ))}
-        <Link href="/dashboard/patient/exercises" className={cn(primaryButtonClass, 'inline-flex h-11 w-full items-center justify-center gap-2 sm:w-auto sm:px-5')}>
-          Do today’s exercises
-          <ArrowRight className="h-4 w-4" />
-        </Link>
-      </div>
-    </Panel>
-  );
-}
-
 function ProgressBar({ value }: { value: number }) {
   return (
     <div className="h-2.5 overflow-hidden rounded-full bg-pt-sunken" role="progressbar" aria-valuenow={Math.round(value)} aria-valuemin={0} aria-valuemax={100}>
@@ -425,24 +340,24 @@ function ProgressBar({ value }: { value: number }) {
   );
 }
 
+function SectionHeading({ id, title, info, aside }: { id?: string; title: string; info?: ReactNode; aside?: ReactNode }) {
+  return (
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-1">
+      <h2 id={id} className="flex items-center gap-1.5 text-lg font-semibold tracking-tight text-pt-ink">
+        {title}
+        {info && <InfoTip>{info}</InfoTip>}
+      </h2>
+      {aside && <span className="ml-auto text-sm text-pt-muted">{aside}</span>}
+    </div>
+  );
+}
+
 /* -------------------------------------------------------------------------------------------- */
-/* Plan                                                                                         */
+/* Sections                                                                                     */
 /* -------------------------------------------------------------------------------------------- */
 
-function PlanBody({ plan, interactive }: { plan: Plan; interactive: boolean }) {
-  const completionMap = useQuery(
-    api.treatmentPlans.getExerciseCompletionMap,
-    interactive ? { treatmentPlanId: plan._id as Id<'treatmentPlans'> } : 'skip'
-  ) as Record<string, boolean> | undefined;
-  const [open, setOpen] = useState<Exercise | null>(null);
-
-  const all = flatten(plan);
-  const today = todaysExercises(all);
-  const isDone = (exercise: Exercise) => Boolean(completionMap?.[keyOf(exercise)]);
-  const doneToday = today.filter(isDone).length;
-  const progress = today.length > 0 ? (doneToday / today.length) * 100 : 0;
-  const goals = (plan.goals ?? []).filter((goal) => goal?.description);
-  const phases = [...(plan.phases ?? [])].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+/** Title, physio, dates, today's progress (both exercise kinds), visit plan and precautions. */
+function PlanSummary({ plan, today }: { plan: Plan; today: { done: number; total: number } | null }) {
   const status = PLAN_STATUS[plan.status] ?? { label: plan.status, tone: 'neutral' as Tone };
   const physio = [plan.physiotherapist?.firstName, plan.physiotherapist?.lastName].filter(Boolean).join(' ');
 
@@ -457,211 +372,249 @@ function PlanBody({ plan, interactive }: { plan: Plan; interactive: boolean }) {
   ].filter(Boolean) as { label: string; value: string; help: string }[];
 
   return (
-    <div className="space-y-6">
-      {/* Summary */}
-      <section className={cn(cardClass, 'p-5 sm:p-6')} data-tour="plan-summary">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-xl font-semibold tracking-tight text-pt-ink">{plan.title}</h2>
-              <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
+    <section className={cn(cardClass, 'p-5 sm:p-6')} data-tour="plan-summary" aria-label="Summary">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-xl font-semibold tracking-tight text-pt-ink">{plan.title}</h2>
+            <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
+          </div>
+          <p className="mt-1 text-sm text-pt-muted">
+            {physio ? `From ${physio} · ` : ''}
+            Started {format(plan.startDate, 'd MMM yyyy')}
+            {plan.endDate ? ` · until ${format(plan.endDate, 'd MMM yyyy')}` : ''}
+          </p>
+        </div>
+      </div>
+      {plan.description && <p className="mt-3 text-sm leading-relaxed text-pt-muted">{plan.description}</p>}
+
+      {today && today.total > 0 && (
+        <div className="mt-5 space-y-2">
+          <div className="flex items-center justify-between text-sm">
+            <span className="flex items-center gap-1 font-medium text-pt-ink">
+              Today’s exercises
+              <InfoTip>
+                Everything set for today, from your plan and your home programme. Ticks reset every morning. Doing your exercises regularly
+                (your physio calls this adherence) is one of the biggest things you can do to recover faster.
+              </InfoTip>
+            </span>
+            <span className="tabular-nums text-pt-muted">
+              {today.done} of {today.total} done
+            </span>
+          </div>
+          <ProgressBar value={(today.done / today.total) * 100} />
+        </div>
+      )}
+
+      {facts.length > 0 && (
+        <dl className="mt-5 grid grid-cols-1 gap-2 sm:grid-cols-3">
+          {facts.map((fact) => (
+            <div key={fact.label} className="rounded-2xl bg-pt-sunken px-4 py-3">
+              <dt className="flex items-center gap-1 text-xs text-pt-muted">
+                {fact.label}
+                <InfoTip>{fact.help}</InfoTip>
+              </dt>
+              <dd className="mt-0.5 text-sm font-semibold text-pt-ink">{fact.value}</dd>
             </div>
-            <p className="mt-1 text-sm text-pt-muted">
-              {physio ? `From ${physio} · ` : ''}
-              Started {format(plan.startDate, 'd MMM yyyy')}
-              {plan.endDate ? ` · until ${format(plan.endDate, 'd MMM yyyy')}` : ''}
-            </p>
+          ))}
+        </dl>
+      )}
+
+      {plan.precautions && (
+        <div className="mt-4 flex gap-3 rounded-2xl bg-pt-amber-bg px-4 py-3 text-sm text-pt-amber-fg">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <div>
+            <p className="font-semibold">Take care</p>
+            <p className="mt-0.5 leading-relaxed">{plan.precautions}</p>
           </div>
         </div>
-        {plan.description && <p className="mt-3 text-sm leading-relaxed text-pt-muted">{plan.description}</p>}
+      )}
+    </section>
+  );
+}
 
-        {interactive && today.length > 0 && (
-          <div className="mt-5 space-y-2">
-            <div className="flex items-center justify-between text-sm">
-              <span className="flex items-center gap-1 font-medium text-pt-ink">
-                Today’s exercises
-                <InfoTip>
-                  Ticks reset every morning. Doing your exercises regularly (your physio calls this adherence) is one of the biggest things you can
-                  do to recover faster.
-                </InfoTip>
+/** The plan's goals, then the goals written on home programmes. */
+function GoalsPanel({ goals, programmeGoals }: { goals: PlanGoal[]; programmeGoals: { goal: string; from: string }[] }) {
+  const empty = goals.length === 0 && programmeGoals.length === 0;
+  return (
+    <Panel
+      title="Your goals"
+      info="What you and your physio are working towards. Your physio ticks a goal off when you reach it."
+      bodyClassName="px-3 pb-3 pt-2 sm:px-4"
+    >
+      {empty ? (
+        <EmptyState icon={Target} title="No goals yet" description="Your physio hasn’t added goals yet." className="py-8" />
+      ) : (
+        <ul className="space-y-1">
+          {goals.map((goal, i) => (
+            <li key={`plan-${i}`} className="flex gap-3 rounded-2xl px-2 py-3">
+              <span
+                className={cn(
+                  'flex h-9 w-9 shrink-0 items-center justify-center rounded-xl',
+                  goal.achieved ? 'bg-pt-accent text-[#06210a]' : 'bg-pt-blue-bg text-pt-blue-fg'
+                )}
+              >
+                {goal.achieved ? <Check className="h-4 w-4" /> : <Target className="h-4 w-4" />}
               </span>
-              <span className="tabular-nums text-pt-muted">
-                {doneToday} of {today.length} done
-              </span>
-            </div>
-            <ProgressBar value={progress} />
-          </div>
-        )}
-
-        {facts.length > 0 && (
-          <dl className="mt-5 grid grid-cols-1 gap-2 sm:grid-cols-3">
-            {facts.map((fact) => (
-              <div key={fact.label} className="rounded-2xl bg-pt-sunken px-4 py-3">
-                <dt className="flex items-center gap-1 text-xs text-pt-muted">
-                  {fact.label}
-                  <InfoTip>{fact.help}</InfoTip>
-                </dt>
-                <dd className="mt-0.5 text-sm font-semibold text-pt-ink">{fact.value}</dd>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-pt-ink">{goal.description}</p>
+                <p className="mt-0.5 text-xs text-pt-muted">
+                  {[goal.targetValue && `Target: ${goal.targetValue}`, goal.timeline && `By: ${goal.timeline}`].filter(Boolean).join(' · ')}
+                </p>
               </div>
-            ))}
-          </dl>
-        )}
+              {goal.achieved && <StatusBadge tone="green">Reached</StatusBadge>}
+            </li>
+          ))}
+          {programmeGoals.map(({ goal, from }, i) => (
+            <li key={`programme-${i}`} className="flex gap-3 rounded-2xl px-2 py-3">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-pt-blue-bg text-pt-blue-fg">
+                <Target className="h-4 w-4" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-pt-ink">{goal}</p>
+                <p className="mt-0.5 truncate text-xs text-pt-muted">From your home programme: {from}</p>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Panel>
+  );
+}
 
-        {plan.precautions && (
-          <div className="mt-4 flex gap-3 rounded-2xl bg-pt-amber-bg px-4 py-3 text-sm text-pt-amber-fg">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-            <div>
-              <p className="font-semibold">Take care</p>
-              <p className="mt-0.5 leading-relaxed">{plan.precautions}</p>
-            </div>
-          </div>
-        )}
-      </section>
+/** Each stage with its focus and all of its exercises (not only today's). */
+function StagesPanel({
+  phases,
+  isDone,
+  onOpen,
+}: {
+  phases: PlanPhase[];
+  isDone: (exercise: Exercise) => boolean;
+  onOpen: (exercise: Exercise) => void;
+}) {
+  return (
+    <Panel
+      title="Stages of your plan"
+      info="Your recovery is planned in stages. Each one builds on the last, and your physio moves you on when you’re ready."
+      bodyClassName="px-5 pb-5 pt-3 sm:px-6"
+    >
+      <ol className="relative space-y-6 border-l-2 border-pt-line pl-5">
+        {phases.map((phase, index) => {
+          const exercises: Exercise[] = (phase.exercises ?? []).map((ex) => ({ ...ex, phaseOrder: phase.order ?? 0, phaseName: phase.name }));
+          return (
+            <li key={phase.order ?? index} className="relative">
+              <span className="absolute -left-[29px] top-0 flex h-6 w-6 items-center justify-center rounded-full bg-pt-primary text-[11px] font-semibold text-pt-on-primary">
+                {index + 1}
+              </span>
+              <p className="text-sm font-semibold text-pt-ink">{phase.name}</p>
+              <p className="text-xs text-pt-muted">
+                {[phase.duration, `${exercises.length} exercise${exercises.length === 1 ? '' : 's'}`].filter(Boolean).join(' · ')}
+              </p>
+              {phase.description && <p className="mt-1 text-sm leading-relaxed text-pt-muted">{phase.description}</p>}
+              {exercises.length > 0 && (
+                <ul className="mt-3 space-y-2">
+                  {exercises.map((exercise) => (
+                    <ExerciseRow key={keyOf(exercise)} exercise={exercise} done={isDone(exercise)} onOpen={() => onOpen(exercise)} />
+                  ))}
+                </ul>
+              )}
+            </li>
+          );
+        })}
+      </ol>
+    </Panel>
+  );
+}
 
-      <Tabs defaultValue={interactive ? 'today' : 'all'} className="space-y-4">
-        <TabsList className={tabsListClass}>
-          {interactive && (
-            <TabsTrigger value="today" className={tabsTriggerClass}>
-              Today
-            </TabsTrigger>
-          )}
-          <TabsTrigger value="all" className={tabsTriggerClass}>
-            All exercises
-          </TabsTrigger>
-          <TabsTrigger value="goals" className={tabsTriggerClass}>
-            Goals & stages
-          </TabsTrigger>
-        </TabsList>
+/**
+ * My care plan, in order: Summary, Today (plan exercises, then home programmes), Goals, Stages.
+ * `plan` is null when the patient only has home programmes. Not `interactive` for an earlier
+ * plan: no Today, nothing can be ticked off.
+ */
+function CarePlanSections({ plan, interactive, programs = [] }: { plan: Plan | null; interactive: boolean; programs?: MyProgram[] }) {
+  const completionMap = useQuery(
+    api.treatmentPlans.getExerciseCompletionMap,
+    interactive && plan ? { treatmentPlanId: plan._id as Id<'treatmentPlans'> } : 'skip'
+  ) as Record<string, boolean> | undefined;
+  const [open, setOpen] = useState<Exercise | null>(null);
 
-        {interactive && (
-          <TabsContent value="today" className="mt-0 space-y-3">
-            <p className="px-1 text-sm text-pt-muted">
-              {format(new Date(), 'EEEE d MMMM')} · tap an exercise to see how to do it
-            </p>
-            {today.length === 0 ? (
-              all.length === 0 ? (
-                <HomeProgrammeExercises />
-              ) : (
-                <Panel>
-                <EmptyState icon={Dumbbell} title="No exercises yet" description="Your physio hasn’t added exercises to this plan yet." />
-              </Panel>
-              )
-            ) : (
+  const today = plan ? todaysExercises(flatten(plan)) : [];
+  const isDone = (exercise: Exercise) => interactive && Boolean(completionMap?.[keyOf(exercise)]);
+  const planDone = today.filter(isDone).length;
+  const programmes = programmeTotals(programs);
+  const goals = (plan?.goals ?? []).filter((goal) => goal?.description);
+  const programmeGoals = programs.flatMap((program) =>
+    (program.goals ?? []).filter((goal) => goal.trim()).map((goal) => ({ goal, from: program.title }))
+  );
+  const phases = [...(plan?.phases ?? [])].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+
+  return (
+    <div className="space-y-6">
+      {plan && (
+        <PlanSummary
+          plan={plan}
+          today={interactive ? { done: planDone + programmes.done, total: today.length + programmes.total } : null}
+        />
+      )}
+
+      {interactive && (
+        <section id="today" aria-labelledby="care-plan-today" className="scroll-mt-24 space-y-3">
+          <SectionHeading
+            id="care-plan-today"
+            title="Today"
+            info="Tap an exercise to see how it’s done, then mark it done or log how it went. Your physio sees what you’ve done and how it felt."
+            aside={format(new Date(), 'EEEE d MMMM')}
+          />
+
+          {plan && today.length > 0 && (
+            <Panel
+              title={
+                <span className="flex items-center gap-2">
+                  <Repeat className="h-4 w-4 text-pt-muted" />
+                  From your treatment plan
+                </span>
+              }
+              description={`${planDone} of ${today.length} done`}
+              info="Exercises from the plan your physio wrote for you. Tap one to see how to do it, then mark it done. Ticks reset every morning."
+            >
+              <div className="mb-3">
+                <ProgressBar value={(planDone / today.length) * 100} />
+              </div>
               <ul className="space-y-2">
                 {today.map((exercise) => (
                   <ExerciseRow key={keyOf(exercise)} exercise={exercise} done={isDone(exercise)} onOpen={() => setOpen(exercise)} />
                 ))}
               </ul>
-            )}
-          </TabsContent>
-        )}
-
-        <TabsContent value="all" className="mt-0 space-y-6">
-          {all.length === 0 ? (
-            <HomeProgrammeExercises />
-          ) : (
-            phases.map((phase, index) => (
-              <div key={phase.order} className="space-y-2">
-                <div className="flex items-center gap-1 px-1">
-                  <SectionLabel>
-                    {phases.length > 1 ? `Stage ${index + 1} · ` : ''}
-                    {phase.name}
-                  </SectionLabel>
-                  {index === 0 && phases.length > 1 && (
-                    <InfoTip>
-                      Your plan is split into stages. Each one builds on the last, and your physio moves you on when you’re ready.
-                    </InfoTip>
-                  )}
-                </div>
-                {(phase.exercises ?? []).length === 0 ? (
-                  <p className="px-1 text-sm text-pt-muted">No exercises in this stage yet.</p>
-                ) : (
-                  <ul className="space-y-2">
-                    {phase.exercises.map((ex) => {
-                      const exercise: Exercise = { ...ex, phaseOrder: phase.order ?? 0, phaseName: phase.name };
-                      return (
-                        <ExerciseRow
-                          key={keyOf(exercise)}
-                          exercise={exercise}
-                          done={interactive && isDone(exercise)}
-                          onOpen={() => setOpen(exercise)}
-                        />
-                      );
-                    })}
-                  </ul>
-                )}
-              </div>
-            ))
-          )}
-        </TabsContent>
-
-        <TabsContent value="goals" className="mt-0 space-y-6">
-          <Panel
-            title="Your goals"
-            info="What you and your physio are working towards. Your physio ticks a goal off when you reach it."
-            bodyClassName="px-3 pb-3 pt-2 sm:px-4"
-          >
-            {goals.length === 0 ? (
-              <EmptyState icon={Target} title="No goals yet" description="Your physio hasn’t added goals to this plan." className="py-8" />
-            ) : (
-              <ul className="space-y-1">
-                {goals.map((goal, i) => (
-                  <li key={i} className="flex gap-3 rounded-2xl px-2 py-3">
-                    <span
-                      className={cn(
-                        'flex h-9 w-9 shrink-0 items-center justify-center rounded-xl',
-                        goal.achieved ? 'bg-pt-accent text-[#06210a]' : 'bg-pt-blue-bg text-pt-blue-fg'
-                      )}
-                    >
-                      {goal.achieved ? <Check className="h-4 w-4" /> : <Target className="h-4 w-4" />}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-semibold text-pt-ink">{goal.description}</p>
-                      <p className="mt-0.5 text-xs text-pt-muted">
-                        {[goal.targetValue && `Target: ${goal.targetValue}`, goal.timeline && `By: ${goal.timeline}`].filter(Boolean).join(' · ')}
-                      </p>
-                    </div>
-                    {goal.achieved && <StatusBadge tone="green">Reached</StatusBadge>}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Panel>
-
-          {phases.length > 0 && (
-            <Panel
-              title="Stages of your plan"
-              info="Your recovery is planned in stages. Each stage has its own focus and exercises."
-              bodyClassName="px-5 pb-5 pt-3 sm:px-6"
-            >
-              <ol className="relative space-y-5 border-l-2 border-pt-line pl-5">
-                {phases.map((phase, index) => (
-                  <li key={phase.order} className="relative">
-                    <span className="absolute -left-[29px] top-0 flex h-6 w-6 items-center justify-center rounded-full bg-pt-primary text-[11px] font-semibold text-pt-on-primary">
-                      {index + 1}
-                    </span>
-                    <p className="text-sm font-semibold text-pt-ink">{phase.name}</p>
-                    <p className="text-xs text-pt-muted">
-                      {[phase.duration, `${phase.exercises?.length ?? 0} exercise${phase.exercises?.length === 1 ? '' : 's'}`]
-                        .filter(Boolean)
-                        .join(' · ')}
-                    </p>
-                    {phase.description && <p className="mt-1 text-sm leading-relaxed text-pt-muted">{phase.description}</p>}
-                  </li>
-                ))}
-              </ol>
             </Panel>
           )}
-        </TabsContent>
-      </Tabs>
 
-      <ExerciseDrawer
-        exercise={open}
-        planId={plan._id}
-        done={open ? interactive && isDone(open) : false}
-        readOnly={!interactive}
-        onClose={() => setOpen(null)}
-      />
+          <HomeProgrammes programs={programs} />
+
+          {today.length === 0 && programs.length === 0 && (
+            <Panel>
+              <EmptyState
+                icon={Dumbbell}
+                title="No exercises yet"
+                description="Your physio hasn’t added home exercises yet. When they do, they’ll appear here."
+              />
+            </Panel>
+          )}
+        </section>
+      )}
+
+      {(plan || programmeGoals.length > 0) && <GoalsPanel goals={goals} programmeGoals={programmeGoals} />}
+
+      {phases.length > 0 && <StagesPanel phases={phases} isDone={isDone} onOpen={setOpen} />}
+
+      {plan && (
+        <ExerciseDrawer
+          exercise={open}
+          planId={plan._id}
+          done={open ? isDone(open) : false}
+          readOnly={!interactive}
+          onClose={() => setOpen(null)}
+        />
+      )}
     </div>
   );
 }
@@ -697,71 +650,41 @@ function OtherPlans({ plans }: { plans: Plan[] }) {
   );
 }
 
+/* -------------------------------------------------------------------------------------------- */
+/* Pages                                                                                        */
+/* -------------------------------------------------------------------------------------------- */
+
 /**
- * The patient's treatment plan. Without `planId`: the active plan (exercises can be ticked off)
- * and any earlier plans. With `planId`: that plan, read-only unless it is the active one.
+ * My care plan (/dashboard/patient/treatment-plans): the active treatment plan and the home
+ * programmes in one place, programmes sent with the active plan first, then earlier plans.
  */
-export function PatientTreatmentPlanView({ planId }: { planId?: string }) {
+export function PatientCarePlan() {
   const user = useQuery(api.users.getMyUser) as { _id: Id<'users'> } | null | undefined;
   const activePlan = useQuery(api.treatmentPlans.getPatientActivePlan) as Plan | null | undefined;
   const allPlans = useQuery(api.treatmentPlans.getPatientTreatmentPlans, user ? { patientId: user._id } : 'skip') as
     | Plan[]
     | undefined;
+  const programs = useQuery(api.exercisePrograms.listMine) as MyProgram[] | null | undefined;
+  const ready = activePlan !== undefined && programs !== undefined;
 
-  if (activePlan === undefined || (planId && allPlans === undefined)) return <LoadingBlocks rows={4} />;
+  // Reminders and old /exercises links open #today, which only exists once the data is in
+  useEffect(() => {
+    if (ready && window.location.hash === '#today') document.getElementById('today')?.scrollIntoView({ block: 'start' });
+  }, [ready]);
 
-  // The active-plan query has the exercise details but not the physio's name; the list has the name
-  const current = activePlan
-    ? { ...activePlan, physiotherapist: activePlan.physiotherapist ?? allPlans?.find((p) => p._id === activePlan._id)?.physiotherapist ?? null }
-    : null;
+  if (!ready) return <LoadingBlocks rows={4} />;
 
-  // A specific plan
-  if (planId) {
-    if (current && current._id === planId) return <PlanBody plan={current} interactive />;
-    const plan = allPlans?.find((p) => p._id === planId);
-    if (!plan) {
-      return (
-        <Panel>
-          <EmptyState
-            icon={ClipboardList}
-            title="Plan not found"
-            description="This plan may have been removed, or the link is out of date."
-            action={
-              <Button asChild className={primaryButtonClass}>
-                <Link href="/dashboard/patient/treatment-plans">Go to my plan</Link>
-              </Button>
-            }
-          />
-        </Panel>
-      );
-    }
-    return (
-      <div className="space-y-4">
-        {activePlan && (
-          <Link
-            href="/dashboard/patient/treatment-plans"
-            className="flex items-center justify-between gap-3 rounded-2xl bg-pt-sun-bg px-4 py-3 text-sm text-pt-sun-fg"
-          >
-            <span>
-              You’re looking at an older plan. Your current one is <span className="font-semibold">{activePlan.title}</span>.
-            </span>
-            <ArrowRight className="h-4 w-4 shrink-0" />
-          </Link>
-        )}
-        <PlanBody plan={plan} interactive={false} />
-      </div>
-    );
-  }
-
+  const current = withPhysioName(activePlan, allPlans);
   const others = (allPlans ?? []).filter((p) => p._id !== activePlan?._id && p.status !== 'draft');
+  const ordered = orderProgrammes(programs ?? [], activePlan?._id);
 
-  if (activePlan === null) {
+  if (!current && ordered.length === 0) {
     return (
       <div className="space-y-6">
         <Panel>
           <EmptyState
             icon={ClipboardList}
-            title="No active plan yet"
+            title="No care plan yet"
             description="After your assessment, your physio writes a plan with your goals and home exercises. It will appear here."
             action={
               <Button asChild className={primaryButtonClass}>
@@ -780,62 +703,62 @@ export function PatientTreatmentPlanView({ planId }: { planId?: string }) {
 
   return (
     <div className="space-y-6">
-      <PlanBody plan={current ?? activePlan} interactive />
+      <CarePlanSections plan={current} interactive programs={ordered} />
       <OtherPlans plans={others} />
     </div>
   );
 }
 
 /**
- * Today's exercises from the active treatment plan, for the Exercises page. Renders `fallback`
- * when there is no active plan or it has no exercises.
+ * One treatment plan (/dashboard/patient/treatment-plans/[planId]): the active one as on My care
+ * plan, an earlier one read-only.
  */
-export function TodayPlanExercises({ fallback = null }: { fallback?: ReactNode }) {
-  const plan = useQuery(api.treatmentPlans.getPatientActivePlan) as Plan | null | undefined;
-  const completionMap = useQuery(
-    api.treatmentPlans.getExerciseCompletionMap,
-    plan?._id ? { treatmentPlanId: plan._id as Id<'treatmentPlans'> } : 'skip'
-  ) as Record<string, boolean> | undefined;
-  const [open, setOpen] = useState<Exercise | null>(null);
+export function PatientTreatmentPlanView({ planId }: { planId: string }) {
+  const user = useQuery(api.users.getMyUser) as { _id: Id<'users'> } | null | undefined;
+  const activePlan = useQuery(api.treatmentPlans.getPatientActivePlan) as Plan | null | undefined;
+  const allPlans = useQuery(api.treatmentPlans.getPatientTreatmentPlans, user ? { patientId: user._id } : 'skip') as
+    | Plan[]
+    | undefined;
+  const programs = useQuery(api.exercisePrograms.listMine) as MyProgram[] | null | undefined;
 
-  if (plan === undefined) return null;
-  if (!plan) return <>{fallback}</>;
-  const today = todaysExercises(flatten(plan));
-  if (today.length === 0) return <>{fallback}</>;
-  const isDone = (exercise: Exercise) => Boolean(completionMap?.[keyOf(exercise)]);
-  const doneCount = today.filter(isDone).length;
+  if (activePlan === undefined || allPlans === undefined || programs === undefined) return <LoadingBlocks rows={4} />;
 
+  const current = withPhysioName(activePlan, allPlans);
+  if (current && current._id === planId) {
+    return <CarePlanSections plan={current} interactive programs={orderProgrammes(programs ?? [], current._id)} />;
+  }
+
+  const plan = allPlans.find((p) => p._id === planId);
+  if (!plan) {
+    return (
+      <Panel>
+        <EmptyState
+          icon={ClipboardList}
+          title="Plan not found"
+          description="This plan may have been removed, or the link is out of date."
+          action={
+            <Button asChild className={primaryButtonClass}>
+              <Link href="/dashboard/patient/treatment-plans">Go to my care plan</Link>
+            </Button>
+          }
+        />
+      </Panel>
+    );
+  }
   return (
-    <Panel
-      title={
-        <span className="flex items-center gap-2">
-          <Repeat className="h-4 w-4 text-pt-muted" />
-          Today from your treatment plan
-        </span>
-      }
-      description={`${plan.title} · ${doneCount} of ${today.length} done`}
-      info="Exercises from the plan your physio wrote for you. Tap one to see how to do it, then mark it done. Ticks reset every morning."
-      actions={
-        <Link href="/dashboard/patient/treatment-plans" className="text-sm font-medium text-pt-muted hover:text-pt-ink">
-          Full plan
+    <div className="space-y-4">
+      {activePlan && (
+        <Link
+          href="/dashboard/patient/treatment-plans"
+          className="flex items-center justify-between gap-3 rounded-2xl bg-pt-sun-bg px-4 py-3 text-sm text-pt-sun-fg"
+        >
+          <span>
+            You’re looking at an older plan. Your current one is <span className="font-semibold">{activePlan.title}</span>.
+          </span>
+          <ArrowRight className="h-4 w-4 shrink-0" />
         </Link>
-      }
-    >
-      <div className="mb-3">
-        <ProgressBar value={(doneCount / today.length) * 100} />
-      </div>
-      <ul className="space-y-2">
-        {today.map((exercise) => (
-          <ExerciseRow key={keyOf(exercise)} exercise={exercise} done={isDone(exercise)} onOpen={() => setOpen(exercise)} />
-        ))}
-      </ul>
-      <ExerciseDrawer
-        exercise={open}
-        planId={plan._id}
-        done={open ? isDone(open) : false}
-        readOnly={false}
-        onClose={() => setOpen(null)}
-      />
-    </Panel>
+      )}
+      <CarePlanSections plan={plan} interactive={false} />
+    </div>
   );
 }

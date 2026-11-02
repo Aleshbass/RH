@@ -56,6 +56,15 @@ const OFFLINE_URL = '/offline.html';
  */
 const LAUNCH_PAGES = new Set(['/dashboard', '/dashboard/patient']);
 
+/**
+ * Old addresses that the server now redirects to another page (redirects are never stored).
+ * Offline, they open that page's stored copy, e.g. an exercise reminder tapped without signal.
+ */
+const MOVED_PAGES: Record<string, { path: string; hash?: string }> = {
+  // Exercises joined the treatment plan on My care plan (app/dashboard/patient/exercises/page.tsx)
+  '/dashboard/patient/exercises': { path: '/dashboard/patient/treatment-plans', hash: '#today' },
+};
+
 /** Dashboard pages that open offline with their last-loaded data (physio, clinic, patient portals). */
 const OFFLINE_PAGES = [/^\/dashboard\/physiotherapist(\/|$)/, /^\/dashboard\/clinic(\/|$)/, /^\/dashboard\/patient\/.+/];
 
@@ -172,6 +181,10 @@ async function handlePage(options: RouteHandlerCallbackOptions): Promise<Respons
     if (on && LAUNCH_PAGES.has(url.pathname)) {
       const home = await storedPortalHome();
       if (home) return Response.redirect(new URL(home, self.location.origin).href, 302);
+    }
+    const moved = MOVED_PAGES[url.pathname];
+    if (on && moved && (await (await caches.open(PAGE_CACHE)).match(moved.path, { ignoreSearch: true }))) {
+      return Response.redirect(new URL(`${moved.path}${url.search}${moved.hash ?? ''}`, self.location.origin).href, 302);
     }
     return offlineFallback();
   }

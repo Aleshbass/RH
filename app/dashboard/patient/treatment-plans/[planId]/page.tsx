@@ -10,8 +10,8 @@ export default function PatientTreatmentPlanPage() {
   const planId = params.planId as string
 
   return (
-    <PageContainer className="max-w-4xl">
-      <PageHeader title="Treatment plan" back={{ href: '/dashboard/patient/treatment-plans', label: 'My treatment plan' }} />
+    <PageContainer>
+      <PageHeader title="Treatment plan" back={{ href: '/dashboard/patient/treatment-plans', label: 'My care plan' }} />
       <PatientTreatmentPlanView planId={planId} />
     </PageContainer>
   )

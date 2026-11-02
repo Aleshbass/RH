@@ -180,7 +180,7 @@ export default function PatientProgressPage() {
           value={stats?.treatment.completedExercises ?? 0}
           icon={Dumbbell}
           tone="amber"
-          href="/dashboard/patient/exercises"
+          href="/dashboard/patient/treatment-plans#today"
           info="Each time you mark a home exercise as done, it counts here."
         />
       </div>

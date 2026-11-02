@@ -65,8 +65,8 @@ export function PatientShell({ children }: { children: ReactNode }) {
 
 function PatientPortal({ children }: { children: ReactNode }) {
   const pathname = usePathname() ?? ''
-  // Offline, the app opens on the exercises (the patient home isn't kept: its data is in the page)
-  usePortalHome(NAV.exercises.href)
+  // Offline, the app opens on My care plan (the patient home isn't kept: its data is in the page)
+  usePortalHome(NAV.carePlan.href)
   const router = useRouter()
   const user = useQuery(api.users.getMyUser) as { role?: string; firstName?: string } | null | undefined
   const isStaff = Boolean(user?.role && STAFF_ROLES.has(user.role))
