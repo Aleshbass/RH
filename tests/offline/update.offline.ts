@@ -1,6 +1,6 @@
 /**
- * Safe updates: a new version installs and waits; the page is never reloaded on its own; the person
- * sees "A new version of Rehabify is ready" and only their "Refresh" switches versions.
+ * Quiet updates: a new version installs and takes over by itself, with no prompt and no reload,
+ * so whatever the person is doing carries on; the next page load is the new version.
  * The new version is simulated by changing public/sw.js on disk (restored afterwards).
  */
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -9,66 +9,42 @@ import { PHYSIO_ID, signIn, snoozePrompts, visitAndStore } from './helpers';
 
 const SW_FILE = 'public/sw.js';
 
-test('a new version waits for Refresh and never reloads by itself', async ({ page }) => {
+test('a new version takes over quietly: no prompt, no reload', async ({ page }) => {
   await snoozePrompts(page);
   await signIn(page, PHYSIO_ID);
   await visitAndStore(page, '/dashboard/physiotherapist');
   const original = readFileSync(SW_FILE, 'utf8');
   try {
-    // Something the person is in the middle of: a marker that a reload would wipe
-    await page.evaluate(() => ((window as any).__rhUnsaved = 'typing a note'));
+    // Something the person is in the middle of: a marker that a reload would wipe; and a flag set
+    // only when a different version takes over this page
+    await page.evaluate(() => {
+      (window as any).__rhUnsaved = 'typing a note';
+      navigator.serviceWorker.addEventListener('controllerchange', () => ((window as any).__rhNewVersion = true));
+    });
+    const before = await page.evaluate(() => navigator.serviceWorker.controller?.scriptURL ?? null);
 
-    writeFileSync(SW_FILE, `${original}\n// test update ${Date.now()}\n`);
+    const marker = `// test update ${Date.now()}`;
+    writeFileSync(SW_FILE, `${original}\n${marker}\n`);
     await page.evaluate(() => navigator.serviceWorker.getRegistration('/').then((reg) => reg?.update()));
 
-    await expect
-      .poll(() => page.evaluate(() => navigator.serviceWorker.getRegistration('/').then((reg) => Boolean(reg?.waiting))), {
-        timeout: 60_000,
-      })
-      .toBe(true);
-    const prompt = page.getByRole('status').filter({ hasText: 'A new version of Rehabify is ready' });
-    await expect(prompt).toBeVisible({ timeout: 30_000 });
+    // The new version takes over this page by itself (nothing left waiting), with no prompt
+    await expect.poll(() => page.evaluate(() => (window as any).__rhNewVersion === true), { timeout: 60_000 }).toBe(true);
+    expect(
+      await page.evaluate(() => navigator.serviceWorker.getRegistration('/').then((reg) => Boolean(reg?.waiting)))
+    ).toBe(false);
+    await page.waitForTimeout(5_000);
+    await expect(page.getByText(/new version of Rehabify/i)).toHaveCount(0);
 
-    // Nothing happens on its own
-    await page.waitForTimeout(10_000);
+    // And nothing was reloaded: the half-typed note is still there
     expect(await page.evaluate(() => (window as any).__rhUnsaved)).toBe('typing a note');
+    expect(before).not.toBeNull();
 
-    // "Later" hides the offer without switching; it comes back on the next page load
-    await prompt.getByRole('button', { name: 'Later' }).click();
-    await expect(prompt).toBeHidden();
-    expect(await page.evaluate(() => (window as any).__rhUnsaved)).toBe('typing a note');
+    // The next page load is served by the new version
     await page.reload();
-    await page.evaluate(() => ((window as any).__rhUnsaved = 'typing a note'));
-    await expect(prompt).toBeVisible({ timeout: 30_000 });
-
-    // The person taps Refresh: the new version takes over and the page reloads once
-    const workers = () =>
-      page
-        .evaluate(() =>
-          navigator.serviceWorker.getRegistration('/').then((reg) => ({
-            controlled: Boolean(navigator.serviceWorker.controller),
-            installing: reg?.installing?.state ?? null,
-            waiting: reg?.waiting?.state ?? null,
-            active: reg?.active?.state ?? null,
-          }))
-        )
-        .catch(() => 'reloading');
-    console.log('before Refresh', JSON.stringify(await workers()));
-    await prompt.getByRole('button', { name: 'Refresh' }).click();
-    await page.waitForTimeout(3000);
-    console.log('3 s after Refresh', JSON.stringify(await workers()));
-    await expect
-      .poll(
-        // Mid-reload the page can't be read yet: keep asking until the new page answers
-        () => page.evaluate(() => (window as any).__rhUnsaved ?? null).catch(() => 'reloading'),
-        { timeout: 60_000 }
-      )
-      .toBe(null);
-    await page.waitForLoadState('load');
-    const state = await page.evaluate(() =>
-      navigator.serviceWorker.getRegistration('/').then((reg) => ({ waiting: Boolean(reg?.waiting), active: reg?.active?.state }))
+    const active = await page.evaluate(() =>
+      navigator.serviceWorker.getRegistration('/').then((reg) => reg?.active?.state ?? null)
     );
-    expect(state).toEqual({ waiting: false, active: 'activated' });
+    expect(active).toBe('activated');
   } finally {
     writeFileSync(SW_FILE, original);
   }

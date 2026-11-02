@@ -12,7 +12,8 @@
  * - Never stored: /api, sign-in, Clerk, Convex, payments, patient files (Convex storage, private
  *   ImageKit links), React Server Component fetches (offline, Next falls back to a full page load,
  *   which is served from the stored page), and online-only pages (money, e-signing, chat, calls).
- * - A new version waits until the person taps "Refresh" (lib/pwa.ts), so nothing is interrupted.
+ * - A new version takes over quietly as soon as it's installed, without reloading anything: open
+ *   pages carry on as they are, and the next page load is the new version (no prompt).
  */
 import type { PrecacheEntry, RouteHandlerCallbackOptions, SerwistGlobalConfig } from 'serwist';
 import {
@@ -178,8 +179,8 @@ async function handlePage(options: RouteHandlerCallbackOptions): Promise<Respons
 
 const serwist = new Serwist({
   precacheEntries: manifest,
-  // A new version waits for the person's "Refresh" (lib/pwa.ts sends SKIP_WAITING)
-  skipWaiting: false,
+  // Quiet updates: a new version takes over at once, but never reloads a page
+  skipWaiting: true,
   clientsClaim: true,
   navigationPreload: false,
   disableDevLogs: true,

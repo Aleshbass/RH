@@ -23,14 +23,12 @@ type PwaState = {
   setupOpen: boolean;
   /** Bumped when notification settings change, so every screen re-checks them */
   revision: number;
-  /** A new version of the app is installed and waiting for the person to switch */
-  updateReady: boolean;
 };
 
 let deferredPrompt: BeforeInstallPromptEvent | null = null;
-let state: PwaState = { canPrompt: false, justInstalled: false, setupOpen: false, revision: 0, updateReady: false };
+let state: PwaState = { canPrompt: false, justInstalled: false, setupOpen: false, revision: 0 };
 const listeners = new Set<() => void>();
-const SERVER_STATE: PwaState = { canPrompt: false, justInstalled: false, setupOpen: false, revision: 0, updateReady: false };
+const SERVER_STATE: PwaState = { canPrompt: false, justInstalled: false, setupOpen: false, revision: 0 };
 
 function update(patch: Partial<PwaState>) {
   state = { ...state, ...patch };
@@ -92,13 +90,13 @@ export function startPwa() {
   }
 
   if ('serviceWorker' in navigator && (process.env.NODE_ENV === 'production' || process.env.NEXT_PUBLIC_ENABLE_SW === '1')) {
-    // Returning visitors: watch for new versions straight away. Registering waits for the page's
-    // "load", which a slow script on a weak connection can hold back for a long time.
+    // Returning visitors: set things up straight away. Registering waits for the page's "load",
+    // which a slow script on a weak connection can hold back for a long time.
     navigator.serviceWorker
       .getRegistration('/')
       .then((reg) => {
         if (!reg) return;
-        watchForUpdates(reg);
+        keepUpToDate(reg);
         void sendOfflineSwitch();
       })
       .catch(() => undefined);
@@ -106,7 +104,7 @@ export function startPwa() {
       navigator.serviceWorker
         .register('/sw.js', { scope: '/', updateViaCache: 'none' })
         .then((reg) => {
-          watchForUpdates(reg);
+          keepUpToDate(reg);
           void sendOfflineSwitch();
         })
         .catch(() => undefined);
@@ -118,50 +116,19 @@ export function startPwa() {
 const watched = new WeakSet<ServiceWorkerRegistration>();
 
 /**
- * A new version installs in the background and waits; the person chooses when to switch
- * (applyUpdate), so a reload never interrupts something they're typing or syncing.
+ * New versions install and take over quietly (app/sw.ts): nothing is reloaded or asked, and the
+ * next page load is the new version. Long-lived home-screen apps also look for one when brought
+ * back to the front.
  */
-function watchForUpdates(reg: ServiceWorkerRegistration) {
+function keepUpToDate(reg: ServiceWorkerRegistration) {
   if (watched.has(reg)) return;
   watched.add(reg);
-  const offer = () => {
-    if (reg.waiting && navigator.serviceWorker.controller) update({ updateReady: true });
-  };
-  offer();
-  reg.addEventListener('updatefound', () => {
-    const next = reg.installing;
-    next?.addEventListener('statechange', () => {
-      if (next.state === 'installed') offer();
-    });
-  });
-  // Long-lived home-screen apps: look for a new version when brought back to the front
   let lastCheck = Date.now();
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState !== 'visible' || Date.now() - lastCheck < 30 * 60 * 1000) return;
     lastCheck = Date.now();
     reg.update().catch(() => undefined);
   });
-}
-
-/**
- * Switches to the waiting version and reloads once it has taken over. Never leaves the person
- * stuck: if another tab already switched, or the switch doesn't confirm in 10 seconds, it reloads.
- */
-export async function applyUpdate() {
-  const reg = await navigator.serviceWorker.getRegistration('/').catch(() => undefined);
-  if (!reg?.waiting) {
-    window.location.reload();
-    return;
-  }
-  let reloaded = false;
-  const reload = () => {
-    if (reloaded) return;
-    reloaded = true;
-    window.location.reload();
-  };
-  navigator.serviceWorker.addEventListener('controllerchange', reload, { once: true });
-  window.setTimeout(reload, 10_000);
-  reg.waiting.postMessage({ type: 'SKIP_WAITING' });
 }
 
 const PILOT_KEY = 'rh_offline_pilot';

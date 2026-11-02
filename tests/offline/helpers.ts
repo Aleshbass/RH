@@ -13,16 +13,33 @@ export const PORT = 3100;
 export const PHYSIO_ID = process.env.OFFLINE_TEST_PHYSIO_CLERK_ID ?? '';
 export const CLINIC_OWNER_ID = process.env.OFFLINE_TEST_CLINIC_CLERK_ID ?? '';
 
-/** Runs a Convex function as a test user (isolated offline test project only). */
-function convexRunAs(clerkUserId: string, fn: string, args: Record<string, unknown>): string {
+/**
+ * Runs the Convex CLI against the isolated offline test project and returns what it printed.
+ * On Windows, Node sometimes crashes while the CLI exits ("UV_HANDLE_CLOSING"), after the work is
+ * done: a printed result counts, otherwise it tries again.
+ */
+function convexCli(args: string[]): string {
   if (!(process.env.CONVEX_DEPLOYMENT ?? '').startsWith('dev:energized-mosquito')) {
     throw new Error('Refusing: CONVEX_DEPLOYMENT is not the isolated offline test project');
   }
-  return execFileSync(
-    process.execPath,
-    ['node_modules/convex/bin/main.js', 'run', '--identity', JSON.stringify({ subject: clerkUserId }), fn, JSON.stringify(args)],
-    { encoding: 'utf8', timeout: 180_000 }
-  );
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      return execFileSync(process.execPath, ['node_modules/convex/bin/main.js', ...args], { encoding: 'utf8', timeout: 180_000 });
+    } catch (error) {
+      lastError = error;
+      const failed = error as { stdout?: string; stderr?: string };
+      const crashedOnExit = /UV_HANDLE_CLOSING/.test(`${failed.stderr ?? ''}${String(error)}`);
+      if (crashedOnExit && failed.stdout?.trim()) return failed.stdout;
+      if (!crashedOnExit) throw error;
+    }
+  }
+  throw lastError;
+}
+
+/** Runs a Convex function as a test user (isolated offline test project only). */
+function convexRunAs(clerkUserId: string, fn: string, args: Record<string, unknown>): string {
+  return convexCli(['run', '--identity', JSON.stringify({ subject: clerkUserId }), fn, JSON.stringify(args)]);
 }
 
 /**
@@ -36,14 +53,7 @@ export function clearTestDevices(clerkUserId: string) {
 
 /** Puts a test account in or out of the offline pilot (local test helper convex/testOnlyOffline.ts). */
 export function setPilot(clerkUserId: string, on: boolean) {
-  if (!(process.env.CONVEX_DEPLOYMENT ?? '').startsWith('dev:energized-mosquito')) {
-    throw new Error('Refusing: CONVEX_DEPLOYMENT is not the isolated offline test project');
-  }
-  execFileSync(
-    process.execPath,
-    ['node_modules/convex/bin/main.js', 'run', 'testOnlyOffline:setPilotByClerkId', JSON.stringify({ clerkId: clerkUserId, on })],
-    { encoding: 'utf8', timeout: 180_000 }
-  );
+  convexCli(['run', 'testOnlyOffline:setPilotByClerkId', JSON.stringify({ clerkId: clerkUserId, on })]);
 }
 
 /** Signs in with a one-time Clerk ticket (no password or email code needed). */
