@@ -27,6 +27,17 @@ import {
 } from "../../lib/email/marketing";
 
 const REQUEST_GAP_MS = 250; // ~4 requests a second, well under Resend's 10
+
+/** Resend caps a broadcast's name at 70 characters (it only shows in Resend, never to recipients). */
+const BROADCAST_NAME_MAX = 70;
+
+/** "Subject · Physiotherapists", with a long subject shortened so the whole name fits. */
+function broadcastName(subject: string, audienceLabel: string): string {
+  const suffix = ` · ${audienceLabel}`;
+  const room = BROADCAST_NAME_MAX - suffix.length;
+  const title = subject.length > room ? `${subject.slice(0, room - 1).trimEnd()}…` : subject;
+  return `${title}${suffix}`;
+}
 const SYNC_CHUNK = 100; // contacts added or removed per run (~25s), then the next run continues
 const DIRECT_BATCH = 50;
 const MAX_ATTEMPTS = 5;
@@ -236,7 +247,7 @@ export const processCampaign = internalAction({
             from: fromAddress(),
             subject: content.subject,
             previewText: content.previewText,
-            name: `${content.subject} · ${AUDIENCE_LABEL[segment]}`,
+            name: broadcastName(content.subject, AUDIENCE_LABEL[segment]),
             html: renderMarketingEmail(content, { greetingName: RESEND_FIRST_NAME, unsubscribeUrl: RESEND_UNSUBSCRIBE_URL }),
           })
         );
