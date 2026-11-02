@@ -8,12 +8,22 @@ import { Loader2, PhoneOff } from '@/components/icons'
 import { toast } from 'sonner'
 import { StreamChat } from 'stream-chat'
 import { useAction, useMutation, useQuery } from 'convex/react'
-import { CallLobby, CallRoom, CallStatusScreen, type CallChat } from '@/components/video/room'
+import { CallLobby, CallRoom, CallStatusScreen } from '@/components/video/room'
+import { useActiveCall } from '@/components/video/activeCall/ActiveCallProvider'
 
 interface StreamVideoCallProps {
   callId: string
   callType?: 'default' | 'livestream' | 'audio_room' | 'development'
+  /** After leaving from this page: where to go next */
   onCallEnd: () => void
+  /** After leaving from anywhere, this page or the small call window (e.g. tell AwaDoc) */
+  afterLeave?: () => void
+  /** Physios: the patient's record, opened with the call carrying on in a small window */
+  recordHref?: string
+  /** Where "Use the app" goes, with the call carrying on in a small window */
+  appHref?: string
+  /** Navigates within the app (the call keeps going) */
+  navigate?: (href: string) => void
   isFullscreen?: boolean
   onToggleFullscreen?: () => void
   participants?: Array<{
@@ -30,20 +40,34 @@ export default function StreamVideoCall({
   callId,
   callType = 'default',
   onCallEnd,
+  afterLeave,
+  recordHref,
+  appHref,
+  navigate,
   isFullscreen = false,
   participants,
 }: StreamVideoCallProps) {
   const { user, isLoaded } = useUser()
   // Prefer the Convex profile (uploaded photo, full name) over Clerk's.
   const convexUser = useQuery(api.users.getMyUser)
+  const active = useActiveCall()
+  // This call is already joined and kept going (back from the small call window)
+  const resumed = active.session?.callId === callId ? active.session : null
+  const showingCall = resumed !== null
+  const { showFull } = active
+
+  // Shown full-size here, so no small call window on top of it
+  useEffect(() => {
+    if (!showingCall) return
+    return showFull(callId)
+  }, [showingCall, callId, showFull])
+
   const [client, setClient] = useState<StreamVideoClient | null>(null)
   const [call, setCall] = useState<StreamCallHandle | null>(null)
   const [chatToken, setChatToken] = useState<string | undefined>()
   const [apiKey, setApiKey] = useState<string | undefined>()
   const [error, setError] = useState<string | null>(null)
   const [joining, setJoining] = useState(false)
-  const [joined, setJoined] = useState(false)
-  const [chat, setChat] = useState<CallChat | null>(null)
   const initializedRef = useRef(false)
 
   const getStreamToken = useAction(api.stream.getStreamToken)
@@ -67,12 +91,12 @@ export default function StreamVideoCall({
 
   // Connect and prepare the call (without joining) so the lobby can preview devices.
   useEffect(() => {
-    if (!isLoaded || !user || initializedRef.current) return
+    if (resumed || !isLoaded || !user || initializedRef.current) return
     initializedRef.current = true
 
     const prepare = async () => {
       try {
-        // The token only works for this call, so each call page gets its own client
+        // The token only works for this call, so each call gets its own client
         // (a cached client would still hold the token for a previous call)
         const res = await getStreamToken({ userId: user.id, userName: displayName, userImage: displayImage, callId, callType })
         const streamClient = new StreamVideoClient({
@@ -90,7 +114,7 @@ export default function StreamVideoCall({
       }
     }
     void prepare()
-  }, [isLoaded, user, callId, callType, getStreamToken, displayName, displayImage])
+  }, [resumed, isLoaded, user, callId, callType, getStreamToken, displayName, displayImage])
 
   const connectChat = useCallback(async () => {
     if (!chatToken || !apiKey || !user) return
@@ -114,16 +138,21 @@ export default function StreamVideoCall({
         try { await ensureChatMembership({ callId, userId: user.id }) } catch { }
         try { await channel.watch() } catch { }
       }
-      setChat({ client: chatClient, channel })
+      active.updateSession({ chat: { client: chatClient, channel } })
     } catch (err) {
       console.warn('In-call chat unavailable:', err)
     }
-  }, [chatToken, apiKey, user, displayName, displayImage, callId, ensureChatMembership])
+  }, [chatToken, apiKey, user, displayName, displayImage, callId, ensureChatMembership, active])
 
   const join = async () => {
-    if (!call || !user) return
+    if (!call || !client || !user) return
     setJoining(true)
     try {
+      // Only one call at a time: leave any other call still going in the small window
+      if (active.session && active.session.callId !== callId) {
+        await active.endSession()
+        toast.info('You left your other call')
+      }
       try {
         // Ensures the call exists with this user as host; harmless if it already exists.
         await createStreamCall({
@@ -136,7 +165,17 @@ export default function StreamVideoCall({
         console.debug('[stream] createStreamCall (likely already exists):', e)
       }
       await call.join({ create: true })
-      setJoined(true)
+      // From here the call belongs to the whole app: it keeps going on other pages
+      active.setSession({
+        callId,
+        callType,
+        client,
+        call,
+        chat: null,
+        joinedAt: Date.now(),
+        withName: others.length === 1 ? others[0].userName : undefined,
+        afterLeave,
+      })
       void joinVideoCallMutation({ roomId: callId }).catch((e) => console.warn('[stream] joinVideoCall failed:', e))
       void setMyRsvpStatus({ roomId: callId, status: 'accepted' }).catch((e) => console.warn('[rsvp] failed:', e))
       void connectChat()
@@ -148,7 +187,16 @@ export default function StreamVideoCall({
     }
   }
 
+  // Left from this page (or the call ended here): disconnect, then go on
+  const [ended, setEnded] = useState(false)
+  const left = useCallback(async () => {
+    setEnded(true)
+    await active.endSession()
+    onCallEnd()
+  }, [active, onCallEnd])
+
   const endForAll = async () => {
+    const current = active.session
     try {
       await endStreamCall({ callId, callType })
     } catch (err) {
@@ -157,25 +205,10 @@ export default function StreamVideoCall({
       return
     }
     try {
-      const state = call?.state.callingState
-      if (state !== CallingState.LEFT) await call?.leave()
+      if (current && current.call.state.callingState !== CallingState.LEFT) await current.call.leave()
     } catch { }
-    onCallEnd()
+    await left()
   }
-
-  // Disconnect only on real page unload so Strict Mode remounts don't drop the call.
-  useEffect(() => {
-    const handleUnload = () => {
-      try { void chat?.client.disconnectUser() } catch { }
-      try { void client?.disconnectUser() } catch { }
-    }
-    window.addEventListener('beforeunload', handleUnload)
-    window.addEventListener('pagehide', handleUnload)
-    return () => {
-      window.removeEventListener('beforeunload', handleUnload)
-      window.removeEventListener('pagehide', handleUnload)
-    }
-  }, [client, chat])
 
   if (error) {
     return (
@@ -191,21 +224,30 @@ export default function StreamVideoCall({
     )
   }
 
-  if (!isLoaded || !client || !call) {
+  if (ended) {
+    return <CallStatusScreen icon={<PhoneOff className="h-6 w-6" />} title="Call ended" />
+  }
+
+  const shownClient = resumed?.client ?? client
+  const shownCall = resumed?.call ?? call
+  if (!isLoaded || !shownClient || !shownCall) {
     return <CallStatusScreen icon={<Loader2 className="h-6 w-6 animate-spin text-rh-ink" />} title="Getting your call ready" />
   }
 
   return (
     <div className={isFullscreen ? 'fixed inset-0 z-50' : 'h-[100dvh]'}>
-      <StreamVideo client={client}>
-        <StreamCall call={call}>
+      <StreamVideo client={shownClient}>
+        <StreamCall call={shownCall}>
           <StreamTheme className="h-full">
-            {joined ? (
+            {resumed ? (
               <CallRoom
-                onLeft={onCallEnd}
+                onLeft={() => void left()}
                 onEndForAll={canEndForAll ? () => void endForAll() : undefined}
                 waitingFor={others.length === 1 ? others[0].userName : undefined}
-                chat={chat}
+                chat={resumed.chat}
+                startedAt={resumed.joinedAt}
+                onOpenRecord={recordHref && navigate ? () => navigate(recordHref) : undefined}
+                onMinimize={appHref && navigate ? () => navigate(appHref) : undefined}
               />
             ) : (
               <CallLobby

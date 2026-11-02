@@ -5,7 +5,7 @@ import { CallingState, hasScreenShare, useCall, useCallStateHooks } from '@strea
 import type { Channel as ChatChannel, StreamChat } from 'stream-chat'
 import { Chat, Channel, MessageInput, MessageList, Window } from 'stream-chat-react'
 import 'stream-chat-react/dist/css/v2/index.css'
-import { Loader2, MonitorUp, Users, WifiOff, X } from '@/components/icons'
+import { FileText, Loader2, Minimize, MonitorUp, Users, WifiOff, X } from '@/components/icons'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { CallBackdrop, CallBrandMark } from './CallBackdrop'
@@ -14,9 +14,9 @@ import { RoomTile, participantName } from './RoomTile'
 
 export type CallChat = { client: StreamChat; channel: ChatChannel }
 
-function useElapsed() {
-  const [start] = useState(() => Date.now())
-  const [now, setNow] = useState(start)
+function useElapsed(since?: number) {
+  const [start] = useState(() => since ?? Date.now())
+  const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(id)
@@ -66,6 +66,9 @@ export function CallRoom({
   onLeft,
   onEndForAll,
   chat,
+  startedAt,
+  onOpenRecord,
+  onMinimize,
 }: {
   /** Heading, e.g. "Appointment with David Falola". Defaults to the other participants' names. */
   title?: string
@@ -76,6 +79,12 @@ export function CallRoom({
   /** Hosts only: ends the call for every participant. */
   onEndForAll?: () => void
   chat?: CallChat | null
+  /** When you joined, so the timer carries on after coming back to the full call */
+  startedAt?: number
+  /** Physios: opens the patient's record, with the call carrying on in a small window */
+  onOpenRecord?: () => void
+  /** Keeps the call going in a small window while you use the rest of the app */
+  onMinimize?: () => void
 }) {
   const call = useCall()
   const { useCallCallingState, useParticipants, useLocalParticipant, useRemoteParticipants, useMicrophoneState } = useCallStateHooks()
@@ -84,7 +93,7 @@ export function CallRoom({
   const local = useLocalParticipant()
   const remotes = useRemoteParticipants()
   const { isSpeakingWhileMuted } = useMicrophoneState()
-  const elapsed = useElapsed()
+  const elapsed = useElapsed(startedAt)
 
   const [swapped, setSwapped] = useState(false)
   const [chatOpen, setChatOpen] = useState(false)
@@ -232,6 +241,28 @@ export function CallRoom({
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          {onOpenRecord && (
+            <button
+              type="button"
+              onClick={onOpenRecord}
+              className="flex items-center gap-1.5 rounded-full bg-white/80 px-3 py-1.5 text-xs font-medium text-neutral-700 ring-1 ring-black/5 backdrop-blur transition-colors hover:bg-white"
+            >
+              <FileText className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Patient record</span>
+              <span className="sm:hidden">Record</span>
+            </button>
+          )}
+          {onMinimize && (
+            <button
+              type="button"
+              onClick={onMinimize}
+              aria-label="Use the app while the call carries on in a small window"
+              className="flex items-center gap-1.5 rounded-full bg-white/80 px-3 py-1.5 text-xs font-medium text-neutral-700 ring-1 ring-black/5 backdrop-blur transition-colors hover:bg-white"
+            >
+              <Minimize className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Use the app</span>
+            </button>
+          )}
           {reconnecting && (
             <span className="flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700 ring-1 ring-amber-200">
               <Loader2 className="h-3.5 w-3.5 animate-spin" /> Reconnecting

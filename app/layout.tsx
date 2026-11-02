@@ -11,6 +11,7 @@ import '@fortawesome/fontawesome-svg-core/styles.css';
 import ConditionalLayout from '@/components/layout/ConditionalLayout';
 import PwaRegister from '@/components/pwa/PwaRegister';
 import OfflineBridge from '@/components/offline/OfflineBridge';
+import { ActiveCallProvider } from '@/components/video/activeCall/ActiveCallProvider';
 
 const calSans = localFont({
   src: '../public/fonts/CalSans-SemiBold.woff2',
@@ -191,9 +192,12 @@ export default async function RootLayout({
 
               {/* Cookie banner and settings; also loads analytics (Umami) only once allowed */}
               <ConsentProvider>
-                <ConditionalLayout isSubdomainHost={isSubdomainHost}>
-                  {children}
-                </ConditionalLayout>
+                {/* A joined video call keeps going in a small window while you use the app */}
+                <ActiveCallProvider>
+                  <ConditionalLayout isSubdomainHost={isSubdomainHost}>
+                    {children}
+                  </ConditionalLayout>
+                </ActiveCallProvider>
               </ConsentProvider>
             </ConvexClientProvider>
           </Providers>

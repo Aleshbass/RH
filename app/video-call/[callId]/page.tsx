@@ -27,8 +27,9 @@ export default function VideoCallPage() {
   // Track whether we've already sent the completion callback
   const completionSentRef = useRef(false)
 
-  const handleCallEnd = useCallback(async () => {
-    // If this is an AwaDoc session and the user is a physio, send completion callback
+  // AwaDoc sessions: tell AwaDoc the physio finished. Runs wherever they leave from, including
+  // the small call window on another page (components/video/activeCall).
+  const completeAwadoc = useCallback(async () => {
     if (
       isAwadocSession &&
       !completionSentRef.current &&
@@ -47,18 +48,22 @@ export default function VideoCallPage() {
         console.error('[AwaDoc] Failed to send completion:', err)
       }
     }
+  }, [user?.publicMetadata?.role, isAwadocSession, callId, awadocSession?.status])
 
-    // Redirect based on user role
-    if (user?.publicMetadata?.role === 'physiotherapist') {
-      router.push('/dashboard/physiotherapist')
-    } else if (user?.publicMetadata?.role === 'patient') {
-      router.push('/dashboard/patient')
-    } else if (user?.publicMetadata?.role === 'clinic_owner') {
-      router.push('/dashboard/clinic')
-    } else {
-      router.push('/dashboard')
-    }
-  }, [router, user?.publicMetadata?.role, isAwadocSession, callId, awadocSession?.status])
+  const role = user?.publicMetadata?.role
+  const home =
+    role === 'physiotherapist'
+      ? '/dashboard/physiotherapist'
+      : role === 'patient'
+        ? '/dashboard/patient'
+        : role === 'clinic_owner'
+          ? '/dashboard/clinic'
+          : '/dashboard'
+
+  const handleCallEnd = useCallback(async () => {
+    await completeAwadoc()
+    router.push(home)
+  }, [completeAwadoc, router, home])
 
   // If the backend marks the call as ended (e.g., host clicked "End for Everyone"),
   // redirect all participants back to their dashboards.
@@ -96,11 +101,18 @@ export default function VideoCallPage() {
     role: callMetadata.initiatorId === p.id ? 'host' : 'participant',
   })) || []
 
+  // Physios: open the call's patient's record (the call carries on in a small window)
+  const patientId = role === 'physiotherapist' ? (callMetadata?.patientId ?? null) : null
+
   return (
     <StreamVideoCall
       callId={callId}
       callType="default"
       onCallEnd={handleCallEnd}
+      afterLeave={() => void completeAwadoc()}
+      recordHref={patientId ? `/dashboard/physiotherapist/patients/${patientId}` : undefined}
+      appHref={home}
+      navigate={(href) => router.push(href)}
       participants={participants}
       isFullscreen={true}
     />
