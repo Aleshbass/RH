@@ -117,8 +117,8 @@ export const resolvePhysiotherapist = httpAction(async (ctx, request) => {
 
 /**
  * Where a patient's shared WhatsApp location pin is (state, town, area), for Joy to pick the
- * travel zone. Server-side reverse geocoding, so no key leaves Convex: Mapbox when
- * MAPBOX_ACCESS_TOKEN is set, otherwise LocationIQ (the key the website's search uses).
+ * travel zone. Server-side reverse geocoding, so no key leaves Convex: LocationIQ (the key the
+ * website's search uses), with Mapbox (MAPBOX_ACCESS_TOKEN) as the backup.
  * Only the coordinates are sent; nothing is stored here.
  */
 type PinPlace = { state: string | null; town: string | null; area: string | null };
@@ -167,10 +167,15 @@ export const placeForPin = httpAction(async (ctx, request) => {
   const locationIq = process.env.LOCATIONIQ_API_KEY;
   if (!mapbox && !locationIq) return Response.json({ found: false, reason: "not_configured" });
   try {
-    const fromMapbox = mapbox ? await mapboxPlace(mapbox, pin.latitude, pin.longitude).catch(() => null) : null;
-    const place = fromMapbox ?? (locationIq ? await locationIqPlace(locationIq, pin.latitude, pin.longitude) : null);
+    // LocationIQ first: in Nigeria it names the neighbourhood (Lekki Phase I, Oregun, Wuse II),
+    // which picks the right travel zone; Mapbox often returns only the city. Mapbox is the
+    // backup when LocationIQ fails or finds no neighbourhood (tested Nov 2026).
+    const fromLocationIq = locationIq ? await locationIqPlace(locationIq, pin.latitude, pin.longitude).catch(() => null) : null;
+    const fromMapbox = mapbox && !fromLocationIq?.area ? await mapboxPlace(mapbox, pin.latitude, pin.longitude).catch(() => null) : null;
+    const useMapbox = Boolean(fromMapbox && (!fromLocationIq || (!fromLocationIq.area && fromMapbox.area)));
+    const place = useMapbox ? fromMapbox : fromLocationIq;
     if (!place || !(place.state || place.town)) return Response.json({ found: false, reason: "lookup_failed" });
-    return Response.json({ found: true, ...place, source: fromMapbox ? "mapbox" : "locationiq" });
+    return Response.json({ found: true, ...place, source: useMapbox ? "mapbox" : "locationiq" });
   } catch {
     return Response.json({ found: false, reason: "lookup_failed" });
   }
