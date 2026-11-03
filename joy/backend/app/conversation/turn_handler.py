@@ -2,6 +2,7 @@ import json
 import logging
 import re
 import hashlib
+from datetime import datetime, timedelta, timezone
 from time import perf_counter
 from uuid import NAMESPACE_URL, uuid5
 
@@ -19,6 +20,7 @@ from app.admin.escalation_router import (
 from app.admin.verification_queue import apply_admin_turn
 from app.audit.logger import append
 from app.flows.signup import WELCOME_WITH_FORM, is_signup_request, signup_interactive, signup_offer
+from app.identity.greetings import is_greeting_only
 from app.exercises.programme import asks_for_programme, done_command, reminder_command, show_programme
 from app.booking.booking_flow import (
     AWAITING_PAYMENT,
@@ -164,7 +166,8 @@ _FIRST_CONTACT_WELCOME = (
     "• how long you’ve had it\n"
     "• whether you’ve seen anyone about it\n"
     "• anything you’ve already tried\n\n"
-    "Just tell me in your own words. There’s no need to fill out a form."
+    "Just tell me in your own words. There’s no need to fill out a form.\n\n"
+    "If you're a physiotherapist, reply *PT*. Messaging for someone else? Just tell me who it's for."
 )
 _TRIAGE_FLOW_KEY = "triage_flow_state"
 _AWAITING_SUMMARY_CONFIRMATION = "awaiting_summary_confirmation"
@@ -211,8 +214,8 @@ _PHYSIO_BOOKING_REPLY_RE = re.compile(r"^\s*(?:ACCEPT|REJECT)\s+[A-Za-z0-9_-]{6,
 
 
 def _is_greeting_only(user_text: str) -> bool:
-    """Keep a greeting out of the clinical-triage and model paths."""
-    return bool(_GREETING_ONLY_RE.fullmatch(user_text or ""))
+    """Keep a greeting out of the clinical-triage and model paths (all five languages)."""
+    return is_greeting_only(user_text)
 
 
 _LINK_REQUEST_RE = re.compile(
@@ -336,6 +339,46 @@ def _booked_patient_reply(state: ConversationState) -> str:
             lines.append(f"{label} {details['meeting_url']}")
     lines.append(_BOOKED_GUIDANCE)
     return "\n\n".join(lines)
+
+
+_WELCOME_BACK_AFTER = timedelta(hours=6)
+_TRIAGE_STEPS_WAITING = {"awaiting_summary_confirmation", "awaiting_summary_correction", "awaiting_additional_details", "collecting_additional_details"}
+
+
+def _returning_greeting(session: Session, identity: Identity, state: ConversationState) -> tuple[str, dict | None] | None:
+    """Hello from someone Joy already knows: pick up where they are, in code (no model).
+
+    None when there's nothing to come back to (Joy then answers as for a first hello).
+    """
+    from app.conversation.interactive import reply_buttons
+    from app.flows.signup import _last_joy_question
+
+    patient = session.get(Patient, identity.person_id)
+    first = ((patient.name or "").split(" ")[0] if patient is not None else "").strip()
+    first = "" if first.casefold() in {"", "patient"} else first
+    last_at = max((m.created_at for m in state.recent_messages if m.created_at is not None), default=None)
+    now = datetime.now(timezone.utc)
+    away = last_at is not None and now - (last_at if last_at.tzinfo else last_at.replace(tzinfo=timezone.utc)) >= _WELCOME_BACK_AFTER
+    hello = (f"Welcome back, {first} 👋" if first else "Welcome back 👋") if away else (f"Hi {first} 👋" if first else "Hi 👋")
+    conversation = session.get(Conversation, state.conversation_id)
+    context = dict(conversation.booking_context or {}) if conversation is not None else {}
+
+    if state.stage == ConversationStage.BOOKING_CONFIRMED and not decide_booking_substate(state):
+        return f"{hello}\n\n{_booked_patient_reply(state)}", None
+    mid_flow = bool(conversation is not None and conversation.booking_substate) or context.get(_TRIAGE_FLOW_KEY) in _TRIAGE_STEPS_WAITING
+    if mid_flow:
+        question = _last_joy_question(session, conversation)
+        if question:
+            return f"{hello}. Let's carry on from where we stopped:\n\n{question}", None
+        return f"{hello}. Let's carry on from where we stopped. Tell me if anything has changed.", None
+    if not has_narrative(state.extracted) and state.phase == PatientPhase.FIRST_CONTACT:
+        return None
+    return (
+        f"{hello}. How can I help today?\n\n"
+        "You can tell me about a new problem or how you're getting on, ask for *my exercises*, "
+        "or ask for your *dashboard link*.",
+        reply_buttons(("my exercises", "My exercises"), ("send me my dashboard link", "My dashboard")),
+    )
 
 
 def _is_thanks_only(user_text: str) -> bool:
@@ -2168,6 +2211,20 @@ def handle_turn(
                     session, identity, state, user_text, flagged,
                     volunteered_safety, phase, language, wa_message_id,
                 )
+
+    # A returning patient who just says hello: welcome them back where they left off
+    if identity.persona == Persona.PATIENT and _is_greeting_only(user_text) and state.recent_messages:
+        returning = _returning_greeting(session, identity, state)
+        if returning is not None:
+            returning_text, returning_buttons = returning
+            save_turn(
+                session, state, user_text, returning_text, state.extracted, state.phase,
+                language, wa_message_id, stage=state.stage,
+            )
+            return TurnResult(
+                reply_text=returning_text, language=language, phase=state.phase,
+                extracted=state.extracted, interactive=returning_buttons,
+            )
 
     # The physio's exercise plan ("my exercises") and DONE replies that log today's session
     if identity.persona == Persona.PATIENT and len(user_text or "") <= 80:

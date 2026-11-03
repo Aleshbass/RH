@@ -354,6 +354,21 @@ class RHClient:
             account_email_hint=hint if isinstance(hint, str) else None,
         )
 
+    def upsert_intake(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """The WhatsApp assessment for the physio, attached to the booking (joyHandoff.upsertJoyIntake)."""
+        if not self.gateway_client:
+            raise RHIntegrationError("INTEGRATION_NOT_CONFIGURED", "RH Convex gateway is not configured")
+        return self._gateway("upsert_intake", payload)
+
+    def record_journey_event(self, *, patient_id: str, stage: str, event_id: str, booking_id: str | None = None) -> dict[str, Any]:
+        """A stage on the patient's tracking timeline (JOY_REPORTED_STAGES in convex/joyHandoff.ts)."""
+        if not self.gateway_client:
+            raise RHIntegrationError("INTEGRATION_NOT_CONFIGURED", "RH Convex gateway is not configured")
+        payload: dict[str, Any] = {"patient_id": patient_id, "stage": stage, "event_id": event_id}
+        if booking_id:
+            payload["booking_id"] = booking_id
+        return self._gateway("record_journey_event", payload)
+
     def dashboard_link(self, *, patient_id: str, sender_phone: str) -> dict[str, Any]:
         """A fresh one-tap /go link into the patient's Rehabify dashboard (RH checks the number)."""
         if not self.gateway_client:

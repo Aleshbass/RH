@@ -240,6 +240,9 @@ class _HTTPJSONTextClient:
             "response_format": {"type": "json_object"},
         }
 
+    def _extra(self, model: str) -> dict[str, Any]:
+        return {}
+
     def complete(self, prompt: str, user_text: str) -> LLMResponse:
         url, headers = self._url_and_headers()
         models = self._models()
@@ -249,7 +252,7 @@ class _HTTPJSONTextClient:
                 response = httpx.post(
                     url,
                     headers=headers,
-                    json=self._payload(model, prompt, user_text),
+                    json={**self._payload(model, prompt, user_text), **self._extra(model)},
                     timeout=self._settings.llm_provider_timeout_seconds,
                 )
                 if response.status_code in {429, 502, 503, 504} and index < len(models) - 1:
@@ -266,6 +269,9 @@ class _HTTPJSONTextClient:
                 if not payload:
                     raise RuntimeError(f"{self.provider_name} returned invalid JSON")
                 return _response_from_payload(payload)
+            except httpx.TimeoutException:
+                # A slow provider gets no second model: the next provider answers sooner
+                raise
             except Exception as exc:
                 last_error = exc
                 if index == len(models) - 1:
@@ -284,7 +290,32 @@ class OpenAIClient(_HTTPJSONTextClient):
     def _models(self) -> list[str]:
         if not self._settings.openai_api_key:
             raise RuntimeError("OPENAI_API_KEY is required when LLM_PROVIDER=openai")
-        return [self._settings.openai_text_model]
+        fallbacks = [m.strip() for m in self._settings.openai_fallback_models.split(",") if m.strip()]
+        return list(dict.fromkeys([self._settings.openai_text_model, *fallbacks]))[:2]
+
+    def _extra(self, model: str) -> dict[str, Any]:
+        # GPT-5 models reason before answering; Joy's turns need speed, not long reasoning
+        family = model.split("-")[1] if model.startswith("gpt-5") and "-" in model else ""
+        if not family:
+            return {}
+        return {"reasoning_effort": "none" if "." in family else "minimal"}
+
+    def complete_voice(self, audio_bytes: bytes, mime: str) -> LLMResponse:
+        """Transcribe a WhatsApp voice note with OpenAI (the transcript is all Joy uses)."""
+        extension = {"audio/ogg": "ogg", "audio/opus": "ogg", "audio/mpeg": "mp3", "audio/mp4": "m4a",
+                     "audio/aac": "m4a", "audio/amr": "amr", "audio/wav": "wav", "audio/webm": "webm"}.get(mime, "ogg")
+        response = httpx.post(
+            "https://api.openai.com/v1/audio/transcriptions",
+            headers={"Authorization": f"Bearer {self._settings.openai_api_key}"},
+            data={"model": self._settings.openai_transcribe_model},
+            files={"file": (f"voice.{extension}", audio_bytes, mime or "audio/ogg")},
+            timeout=30.0,
+        )
+        response.raise_for_status()
+        text = str((response.json() or {}).get("text") or "").strip()
+        if not text:
+            raise RuntimeError("openai returned an empty transcript")
+        return LLMResponse(reply_text=text, extraction_json={}, triage_decision_json={}, language="")
 
     def _url_and_headers(self) -> tuple[str, dict[str, str]]:
         return (
@@ -313,15 +344,58 @@ class OpenRouterClient(_HTTPJSONTextClient):
         )
 
 
+class ProviderChainClient:
+    """The first provider that answers. A busy, slow or failing provider moves on to the next,
+    so one provider's outage doesn't become "Sorry, I had a brief hiccup"."""
+
+    def __init__(self, text_clients: list[Any], voice_clients: list[Any]) -> None:
+        self._text = text_clients
+        self._voice = voice_clients
+
+    @staticmethod
+    def _first(clients: list[Any], call: Callable[[Any], LLMResponse]) -> LLMResponse:
+        last: Exception | None = None
+        for index, client in enumerate(clients):
+            try:
+                return call(client)
+            except Exception as exc:
+                last = exc
+                if index < len(clients) - 1:
+                    logger.warning(
+                        "joy_llm_provider_failed provider=%s error=%s trying=%s",
+                        type(client).__name__, type(exc).__name__, type(clients[index + 1]).__name__,
+                    )
+        assert last is not None
+        raise last
+
+    def complete(self, prompt: str, user_text: str) -> LLMResponse:
+        return self._first(self._text, lambda client: client.complete(prompt, user_text))
+
+    def complete_voice(self, audio_bytes: bytes, mime: str) -> LLMResponse:
+        return self._first(self._voice, lambda client: client.complete_voice(audio_bytes, mime))
+
+
 @lru_cache(maxsize=1)
 def get_configured_llm_client() -> LLMClient:
-    """Return the explicitly selected text provider behind Joy's protocol."""
+    """The selected provider first, then the other configured ones as backups.
+
+    LLM_PROVIDER=openai (the paid plan, owner's choice): text and voice notes on OpenAI first,
+    Gemini only as the backup.
+    """
     settings = get_settings()
     provider = settings.llm_provider.casefold().strip()
-    if provider == "gemini":
-        return GeminiClient(settings)
+    gemini = GeminiClient(settings) if settings.gemini_api_key else None
+    openai = OpenAIClient(settings) if settings.openai_api_key else None
     if provider == "openai":
-        return OpenAIClient(settings)
+        if openai is None:
+            raise RuntimeError("OPENAI_API_KEY is required when LLM_PROVIDER=openai")
+        chain = [openai, *([gemini] if gemini else [])]
+        return ProviderChainClient(chain, chain)
+    if provider == "gemini":
+        if openai is None:
+            return GeminiClient(settings)
+        primary = gemini or GeminiClient(settings)
+        return ProviderChainClient([primary, openai], [primary, openai])
     if provider == "openrouter":
         return OpenRouterClient(settings)
     raise RuntimeError("LLM_PROVIDER must be gemini, openai, or openrouter")

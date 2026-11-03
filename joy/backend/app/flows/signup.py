@@ -54,7 +54,8 @@ WELCOME_WITH_FORM = (
     "Tap *Get started* to set up your profile in about a minute: your name, age and where you are, "
     "so I don't have to ask later.\n\n"
     "Or just tell me in your own words what's going on today: what's bothering you, which part of "
-    "your body, and how long you've had it. You can type or send a voice note."
+    "your body, and how long you've had it. You can type or send a voice note.\n\n"
+    "If you're a physiotherapist, reply *PT*. Messaging for someone else? Just tell me who it's for."
 )
 SIGNUP_OFFER = (
     "Tap *Get started* to fill in your details. It takes about a minute, and you can change them "

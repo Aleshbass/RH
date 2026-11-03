@@ -30,7 +30,12 @@ class Settings(BaseSettings):
     # server-side fallbacks; clients never receive any provider credential.
     llm_provider: str = "gemini"
     openai_api_key: str = ""
-    openai_text_model: str = "gpt-5-mini"
+    # Benchmarked on Joy's patient prompt (Nov 2026): gpt-5.4-mini answered in ~2.5s with valid
+    # JSON in English, Pidgin and Yoruba; gpt-4.1-mini ~3.5s. Tried in order on 429/5xx.
+    openai_text_model: str = "gpt-5.4-mini"
+    openai_fallback_models: str = "gpt-4.1-mini"
+    # Voice notes with LLM_PROVIDER=openai: OpenAI transcription first, Gemini as the backup
+    openai_transcribe_model: str = "gpt-4o-transcribe"
     openrouter_api_key: str = ""
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     openrouter_text_model: str = ""

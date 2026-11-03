@@ -7,6 +7,10 @@ from pathlib import Path
 
 from sqlalchemy.orm import Session
 
+from app.identity.greetings import is_greeting_only
+
+# Same pattern as turn_handler._REFERRAL_CODE_RE (RH referral codes are RHB-<digits>)
+_REFERRAL_CODE_RE = re.compile(r"\bRHB\s*[-–—]\s*\d{4,}\b", re.IGNORECASE)
 from app.llm.gemini_client import LLMClient
 from app.models.patient import Patient
 from app.models.physiotherapist import Physiotherapist
@@ -244,6 +248,22 @@ def resolve_unknown_sender(
                 reply_text="",
                 identity=_provision_patient(session, phone_e164),
             )
+    # A referral code from a doctor or partner link ("START RHB-1234567890"): a patient, so the
+    # code is checked and the referral attributed (turn_handler._verified_referral_turn)
+    if _REFERRAL_CODE_RE.search(user_text or ""):
+        return UnknownSenderDecision(
+            intent="patient",
+            reply_text="",
+            identity=_provision_patient(session, phone_e164),
+        )
+    # Just "Hi" (in any of Joy's languages): almost everyone who writes is a patient, so start
+    # them on the patient welcome. The welcome tells physios to reply PT and family to say so.
+    if is_greeting_only(user_text):
+        return UnknownSenderDecision(
+            intent="patient",
+            reply_text="",
+            identity=_provision_patient(session, phone_e164),
+        )
     if looks_like_family_intent(user_text):
         response = llm.complete(_classify_prompt(), user_text)
         reply = (response.reply_text or "").strip() or _FAMILY_FALLBACK

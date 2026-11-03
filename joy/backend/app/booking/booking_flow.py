@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session, object_session
 from app.audit.logger import append
 from app.booking.paystack_client import initialize_transaction
 from app.booking.state import cancel, create_draft, get_active_booking, mark_awaiting_payment
+from app.booking.intake import journey, send_intake
 from app.config import get_settings
 from app.conversation.state_manager import ConversationState
 from app.matching.ranking import rank
@@ -341,6 +342,7 @@ def begin_selected_treatment(
             },
         )
         return "I can’t create your virtual consultation right now. No booking has been made; please try again shortly."
+    send_intake(session, conversation, patient, rh_patient_id=str(rh_patient_id), booking_id=booking.booking_id, policy=policy)
     ctx.update({
         "rh_booking_id": booking.booking_id,
         "rh_patient_id": rh_patient_id,
@@ -580,6 +582,7 @@ def _find_rh_matches(session: Session, conversation: Conversation, patient: Pati
     _set_substate(conversation, AWAITING_RH_PROVIDER, context)
     append(session, kind=AuditKind.MATCH, actor_phone=patient.phone_e164, person_id=patient.id,
            payload={"decision": "rh_matches_presented", "service_mode": mode, "provider_ids": [m.physiotherapist_id for m in matches]})
+    journey(rh_patient_id, "matches_shown", f"matches-{conversation.id}-{mode}")
     return "\n".join(lines)
 
 
@@ -874,6 +877,7 @@ def _continue_rh_slot(session: Session, conversation: Conversation, patient: Pat
     # a phone number: the hold is valid, but payment must wait for the patient
     # to provide an address they control.
     ctx.update({"rh_booking_id": booking.booking_id, "rh_amount_kobo": booking.amount_kobo})
+    send_intake(session, conversation, patient, rh_patient_id=str(rh_patient_id), booking_id=booking.booking_id, policy=policy)
     known_email = _known_email(patient)
     if known_email:
         ctx["suggested_email"] = known_email
@@ -940,6 +944,7 @@ def _continue_rh_payment_email(session: Session, conversation: Conversation, pat
         return "Your time is held, but I can’t start secure payment right now. Please try again shortly."
     ctx.update({"payment_email": email, "authorization_url": payment.authorization_url})
     _set_substate(conversation, AWAITING_RH_PAYMENT, ctx)
+    journey(str(rh_patient_id), "payment_link_sent", f"payment-link-{booking_id}-{retry_count}", booking_id=str(booking_id))
     append(session, kind=AuditKind.BOOKING, actor_phone=patient.phone_e164, person_id=patient.id,
            payload={"decision": "rh_pending_payment_created", "rh_booking_id": str(booking_id)})
     amount = _amount_text(ctx)

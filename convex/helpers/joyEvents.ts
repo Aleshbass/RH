@@ -1,5 +1,6 @@
 import type { Doc } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
+import { logJourney } from "../joyHandoff";
 
 /**
  * Tells Joy (the WhatsApp assistant) that one of its patients' bookings was cancelled, wherever
@@ -18,6 +19,8 @@ export async function queueJoyBookingCancelled(
   },
 ) {
   if (booking.sourceSystem !== "joy_ai") return;
+  // The tracking timeline (partner, doctor and patient views) shows the cancellation too
+  await logJourney(ctx, { patientId: booking.patientId, bookingId: booking._id, stage: "cancelled", eventKey: `booking-cancelled-${booking._id}` });
   const eventId = `booking-cancelled-${booking._id}`;
   const existing = await ctx.db.query("joyEventOutbox").withIndex("by_event_id", (q) => q.eq("eventId", eventId)).first();
   if (existing) return;
