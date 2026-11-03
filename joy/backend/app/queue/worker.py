@@ -620,7 +620,51 @@ def _wait_for_redis(*, retry_seconds: int = 5) -> None:
             time.sleep(retry_seconds)
 
 
+def _code_schema_head() -> str | None:
+    """The newest Alembic revision this code expects (None if it can't be read)."""
+    from pathlib import Path
+
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
+    backend = Path(__file__).resolve().parents[2]
+    config = Config(str(backend / "alembic.ini"))
+    config.set_main_option("script_location", str(backend / "alembic"))
+    return ScriptDirectory.from_config(config).get_current_head()
+
+
+def wait_for_schema(*, max_wait_seconds: int = 300, retry_seconds: int = 5) -> bool:
+    """Wait until the database is migrated to this code's revision.
+
+    The API service runs the migrations before it starts; the worker can come up first on the
+    same deploy, and new columns would then be missing for a few seconds. Gives up (and carries
+    on) after max_wait_seconds, so a stuck migration never stops message delivery entirely.
+    """
+    from sqlalchemy import text
+
+    try:
+        head = _code_schema_head()
+    except Exception:
+        logger.warning("joy_schema_head_unknown", exc_info=True)
+        return False
+    deadline = time.monotonic() + max_wait_seconds
+    while True:
+        try:
+            with SessionLocal() as db:
+                current = db.execute(text("select version_num from alembic_version")).scalar()
+            if current == head:
+                return True
+        except Exception:
+            current = None
+        if time.monotonic() >= deadline:
+            logger.warning("joy_schema_not_current current=%s head=%s", current, head)
+            return False
+        logger.info("joy_waiting_for_migrations current=%s head=%s", current, head)
+        time.sleep(retry_seconds)
+
+
 def run_forever(timeout: int = 5) -> None:
+    wait_for_schema()
     while True:
         _wait_for_redis()
         try:
