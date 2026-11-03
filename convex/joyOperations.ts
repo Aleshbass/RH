@@ -11,6 +11,7 @@ import {
   LINK_CODE_MAX_ATTEMPTS, LINK_CODE_TTL_MS, LINK_REQUESTS_PER_HOUR, emailHint, hashLinkCode,
   isPlaceholderUser, linkableEmail, patientsByPhone, sixDigitCode,
 } from "./helpers/whatsappLink";
+import { ZONE_CITY_STATE } from "./helpers/startingZones";
 
 type Operation =
   | "physio_work_summary" | "physio_update_availability" | "physio_session_note"
@@ -22,7 +23,9 @@ type Operation =
   // Additive (Oct 2026), patient persona, see the comment above executeQuery:
   | "patient_consent_status" | "patient_record_consents" | "patient_recovery_plan"
   // Additive (Nov 2026): link the WhatsApp number to a website account with an emailed code
-  | "patient_link_request" | "patient_link_confirm";
+  | "patient_link_request" | "patient_link_confirm"
+  // Additive (Nov 2026): home-visit areas by city, for Joy's area list and sign-up form
+  | "service_areas";
 
 const activeBooking = (status: unknown) => status === "pending" || status === "confirmed" || status === "scheduled";
 const nameOf = (user: { firstName?: string; lastName?: string } | null) =>
@@ -300,6 +303,20 @@ export const executeQuery = internalQuery({
   handler: async (ctx, args): Promise<any> => {
     const op = args.operation as Operation; const data = args.data ?? {};
     assertJoyActorPersona(op, data.actor);
+    if (op === "service_areas") {
+      // Home-visit areas by city (Admin › Travel zones), for Joy's area list and sign-up form.
+      // No patient data; the travel charge is shown with the price, not here.
+      const zones = (await ctx.db.query("travelZones").collect())
+        .filter((zone) => zone.active)
+        .sort((x, y) => x.city.localeCompare(y.city) || (x.sortOrder ?? 0) - (y.sortOrder ?? 0) || x.name.localeCompare(y.name));
+      const cities = new Map<string, { city: string; state: string; zones: { name: string; areas: string[] }[] }>();
+      for (const zone of zones) {
+        const entry = cities.get(zone.city) ?? { city: zone.city, state: ZONE_CITY_STATE[zone.city] ?? zone.city, zones: [] };
+        entry.zones.push({ name: zone.name, areas: [...zone.areas] });
+        cities.set(zone.city, entry);
+      }
+      return { cities: [...cities.values()] };
+    }
     if (op === "patient_consent_status") {
       const patient = await patientForActor(ctx, String(data.patient_id), data.actor);
       const missing = await missingPolicies(ctx, patient._id, PATIENT_CONSENT_POLICIES);

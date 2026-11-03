@@ -20,6 +20,7 @@ from app.booking.appointment_reminders import LAGOS
 from app.booking.booking_flow import (
     AWAITING_INITIAL_CONSULTATION_CONFIRMATION,
     AWAITING_POLICY_ACCEPTANCE,
+    AWAITING_RH_LOCATION,
     AWAITING_RH_PROVIDER,
     AWAITING_RH_SERVICE_MODE,
     AWAITING_RH_SLOT,
@@ -83,6 +84,13 @@ def interactive_for(conversation: Conversation | None) -> dict[str, Any] | None:
         ])
     if step == AWAITING_RH_SERVICE_MODE:
         return reply_buttons(("online", "Online"), ("home visit", "Home visit"), ("clinic", "Clinic"))
+    if step == AWAITING_RH_LOCATION:
+        zones = [z for z in context.get("location_zones") or [] if isinstance(z, dict) and z.get("id")]
+        if zones:
+            return list_menu("Choose your area", [
+                (str(z["id"]), str(z.get("title") or z["id"]), z.get("description")) for z in zones
+            ], section=str(context.get("location_city") or "Areas"))
+        return reply_buttons(("Lagos", "Lagos"), ("Abuja", "Abuja"), ("other city", "Other city"))
     if step == AWAITING_RH_PROVIDER:
         providers = [p for p in context.get("providers") or [] if isinstance(p, dict)]
         if providers:

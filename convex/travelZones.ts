@@ -4,9 +4,14 @@
  * active zone isn't covered for home visits yet. Managed in Admin › Travel zones.
  */
 import { ConvexError, v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { internalMutation, mutation, query } from "./_generated/server";
+import { internal } from "./_generated/api";
+import type { Id } from "./_generated/dataModel";
 import { ensureUserRole } from "./auth";
 import { servesRehabifyNetwork } from "./physioSetup";
+import { STARTING_ZONES } from "./helpers/startingZones";
+import { insertNotification } from "./helpers/pushNotify";
+import { publicAppUrl } from "./helpers/appUrl";
 
 /** Public: active zones and their areas, grouped by city, for the area picker. */
 export const listZones = query({
@@ -115,5 +120,78 @@ export const adminUpdateZone = mutation({
       updatedBy: admin.email ?? undefined,
     });
     return { success: true };
+  },
+});
+
+
+/**
+ * One-time setup of the owner-approved starting zones (helpers/startingZones.ts). Creates only the
+ * zones whose city + name don't exist yet, so it is safe to run again; edit them in Admin.
+ *   npx convex run travelZones:seedStartingZones --prod
+ */
+export const seedStartingZones = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const existing = await ctx.db.query("travelZones").collect();
+    const key = (city: string, name: string) => `${city.toLowerCase()}|${name.toLowerCase()}`;
+    const have = new Set(existing.map((zone) => key(zone.city, zone.name)));
+    const now = Date.now();
+    let created = 0;
+    for (const [index, zone] of STARTING_ZONES.entries()) {
+      if (have.has(key(zone.city, zone.name))) continue;
+      const clean = cleanZone({ ...zone, surchargeKobo: zone.surchargeNaira * 100, physioTravelSharePercent: 100 });
+      await assertAreasUnique(ctx, clean.city, clean.areas);
+      await ctx.db.insert("travelZones", { ...clean, active: true, sortOrder: index, createdAt: now, updatedAt: now, updatedBy: "starting-zones" });
+      created++;
+    }
+    return { created, skipped: STARTING_ZONES.length - created };
+  },
+});
+
+/**
+ * Physios who offer home visits but have no zones yet: tick every active zone in their city so
+ * they are bookable straight away, then ask them to untick the areas they won't travel to.
+ * Their city comes from their profile location or their old Joy area list (Lagos / Abuja).
+ *   npx convex run travelZones:assignStartingZonesToPhysios --prod
+ */
+export const assignStartingZonesToPhysios = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const zones = (await ctx.db.query("travelZones").collect()).filter((zone) => zone.active);
+    const byCity = new Map<string, Id<"travelZones">[]>();
+    for (const zone of zones) byCity.set(zone.city.toLowerCase(), [...(byCity.get(zone.city.toLowerCase()) ?? []), zone._id]);
+    const profiles = await ctx.db.query("physiotherapistProfiles").collect();
+    const settingsUrl = `${publicAppUrl()}/dashboard/physiotherapist/settings/marketplace`;
+    let assigned = 0;
+    let skipped = 0;
+    for (const profile of profiles) {
+      const offersHome = profile.offersInPersonSessions === true || (profile.joyServiceModes ?? []).includes("home_visit");
+      if (!offersHome || !servesRehabifyNetwork(profile) || (profile.coveredZoneIds ?? []).length) continue;
+      const hints = [profile.location ?? "", ...(profile.joyServiceAreas ?? [])].map((text) => text.toLowerCase());
+      const cities = [...byCity.keys()].filter((city) => hints.some((hint) => hint.includes(city)));
+      const zoneIds = cities.flatMap((city) => byCity.get(city) ?? []);
+      if (!zoneIds.length) { skipped++; continue; }
+      await ctx.db.patch(profile._id, { coveredZoneIds: zoneIds });
+      assigned++;
+      const title = "Choose the areas you'll travel to";
+      const body = "Home visits are now booked by area. We've started you with every area in your city. Untick any you won't travel to, so you only get visits that work for you.";
+      await insertNotification(ctx, {
+        userId: profile.userId, type: "marketplace_zones_review", priority: "high", status: "pending",
+        payload: { title, body, link: settingsUrl, data: { actionUrl: settingsUrl } }, createdAt: Date.now(),
+      });
+      const user = await ctx.db.get(profile.userId);
+      if (user?.email) {
+        await ctx.scheduler.runAfter(0, internal.actions.emails.sendPatientCareEmail.sendPatientCareEmail, {
+          to: user.email, subject: title, greetingName: user.firstName, heading: title,
+          paragraphs: [
+            "Rehabify home visits are now booked by area, each with a fixed travel charge that you keep in full.",
+            "To get you started, we've ticked every area in your city. Please review them and untick any area you won't travel to, so you only receive home visits that work for you.",
+          ],
+          buttonLabel: "Review my areas", buttonUrl: settingsUrl,
+          footnote: "You're receiving this because you offer home visits on Rehabify. Questions? Write to support@physioaroundme.com.",
+        });
+      }
+    }
+    return { assigned, skipped };
   },
 });

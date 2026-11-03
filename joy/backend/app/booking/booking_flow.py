@@ -457,7 +457,10 @@ def _parse_city_area(user_text: str) -> tuple[str, str] | None:
 
 
 def _location_prompt() -> str:
-    return "For a home visit, what city and area are you in? Reply in this format: Area, City — for example, Jabi, Abuja."
+    return (
+        "For a home visit, which city are you in? Tap your city below, or reply Area, City — for "
+        "example, Lekki, Lagos."
+    )
 
 
 def _find_rh_matches(session: Session, conversation: Conversation, patient: Patient, extracted: ExtractedTriage, *, mode: str, rh_patient_id: str, tags: list[str]) -> str:
@@ -514,12 +517,59 @@ def _continue_rh_service_mode(session: Session, conversation: Conversation, pati
     return _find_rh_matches(session, conversation, patient, extracted, mode=mode, rh_patient_id=rh_patient_id, tags=tags)
 
 
+_SERVICE_CITIES = {"lagos": "Lagos", "lagos state": "Lagos", "abuja": "Abuja", "fct": "Abuja", "abuja fct": "Abuja"}
+_OTHER_CITY = {"other city", "other", "another city", "somewhere else", "not lagos or abuja"}
+
+
+def _offer_city_areas(conversation: Conversation, patient: Patient, ctx: dict, city: str) -> str:
+    """After the city tap: that city's home-visit areas (Admin › Travel zones) as a list."""
+    rh_patient_id = str(ctx.get("rh_patient_id") or "") or None
+    try:
+        result = configured_rh_client().service_areas(actor=_rh_actor(patient, rh_patient_id))
+    except RHIntegrationError:
+        result = {}
+    entry = next((c for c in result.get("cities") or [] if str(c.get("city") or "").casefold() == city.casefold()), None)
+    zones = [z for z in (entry or {}).get("zones") or [] if isinstance(z, dict) and z.get("areas")]
+    if not zones:
+        _set_substate(conversation, AWAITING_RH_SERVICE_MODE, ctx)
+        return (
+            f"Home visits aren’t available in {city} yet. You can still see a physiotherapist online from "
+            "anywhere: reply Online."
+        )
+    ctx["location_city"] = city
+    # Each row sends back "Area, City" for one area of that zone, which _parse_city_area reads
+    # and RH prices and matches by zone.
+    ctx["location_zones"] = [
+        {"id": f"{z['areas'][0]}, {city}", "title": str(z.get("name") or z["areas"][0]), "description": ", ".join(z["areas"][:4])}
+        for z in zones[:10]
+    ]
+    _set_substate(conversation, AWAITING_RH_LOCATION, ctx)
+    return f"Which part of {city} are you in? Tap to choose your area, or type it (for example, {zones[0]['areas'][0]})."
+
+
 def _continue_rh_location(session: Session, conversation: Conversation, patient: Patient, extracted: ExtractedTriage, user_text: str) -> str:
-    parsed = _parse_city_area(user_text)
-    if parsed is None:
-        return _location_prompt()
-    city, area = parsed
     ctx = dict(conversation.booking_context or {})
+    text = " ".join((user_text or "").strip().split())
+    parsed = _parse_city_area(text)
+    if parsed is None:
+        city = _SERVICE_CITIES.get(text.casefold().strip(" ."))
+        if city:
+            return _offer_city_areas(conversation, patient, ctx, city)
+        if text.casefold().strip(" .") in _OTHER_CITY:
+            ctx.pop("location_city", None)
+            ctx.pop("location_zones", None)
+            _set_substate(conversation, AWAITING_RH_SERVICE_MODE, ctx)
+            return (
+                "Home visits are available in Lagos and Abuja for now. You can still see a physiotherapist "
+                "online from anywhere: reply Online, or Clinic if you can travel to one."
+            )
+        if ctx.get("location_city") and len(text) >= 2:
+            parsed = (str(ctx["location_city"]), text)  # an area typed after choosing the city
+        else:
+            return _location_prompt()
+    city, area = parsed
+    ctx.pop("location_city", None)
+    ctx.pop("location_zones", None)
     rh_patient_id = str(ctx.get("rh_patient_id") or "")
     mode = str(ctx.get("service_mode") or "")
     tags = list(ctx.get("required_specialties") or [])
@@ -531,6 +581,7 @@ def _continue_rh_location(session: Session, conversation: Conversation, patient:
     except RHIntegrationError:
         return "I can’t securely save your booking location right now. Please try again shortly."
     patient.city, patient.area, patient.location = city, area, f"{area}, {city}"
+    conversation.booking_context = ctx  # drop the area list now that the area is chosen
     session.flush()
     append(session, kind=AuditKind.MATCH, actor_phone=patient.phone_e164, person_id=patient.id,
            payload={"decision": "patient_booking_location_saved", "city": city, "area": area})

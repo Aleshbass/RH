@@ -353,6 +353,10 @@ class RHClient:
             account_email_hint=hint if isinstance(hint, str) else None,
         )
 
+    def service_areas(self, *, actor: RHActor) -> dict[str, Any]:
+        """Home-visit areas by city from RH's travel zones (no patient data)."""
+        return self.operational_query("service_areas", actor=actor, data={})
+
     def request_account_link(self, *, patient_id: str, actor: RHActor) -> dict[str, Any]:
         """Ask RH to email a one-time code to the website account that uses this WhatsApp number."""
         return self.operational_mutation(

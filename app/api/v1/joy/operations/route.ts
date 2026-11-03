@@ -16,6 +16,8 @@ const schema = z.object({
     "patient_consent_status", "patient_record_consents", "patient_recovery_plan",
     // Additive (Nov 2026): link this WhatsApp number to a website account with an emailed code
     "patient_link_request", "patient_link_confirm",
+    // Additive (Nov 2026): home-visit areas by city
+    "service_areas",
   ]),
   actor: actorSchema,
   data: z.record(z.string(), z.unknown()).default({}),

@@ -43,17 +43,80 @@ export async function loadPricingSettings(ctx: QueryCtx) {
   };
 }
 
-const normalise = (value: string) => value.trim().toLowerCase().replace(/\s+/g, " ");
+/** Lower-case, punctuation and hyphens as spaces, single spaces: "Ikeja G.R.A." → "ikeja g r a". */
+const normalise = (value: string) =>
+  value.toLowerCase().replace(/[.,;:'’"()/\\-]/g, " ").replace(/\s+/g, " ").trim();
 
-/** The active zone in this city that lists the area (case-insensitive), if any. */
+// How people write cities and areas on WhatsApp and forms, mapped to the zone spelling
+const CITY_ALIASES: Record<string, string> = {
+  "lagos state": "lagos", lag: "lagos", eko: "lagos",
+  fct: "abuja", "abuja fct": "abuja", "fct abuja": "abuja", "federal capital territory": "abuja",
+};
+const AREA_ALIASES: Record<string, string> = {
+  vi: "victoria island", "v i": "victoria island", cbd: "central business district",
+  "lekki phase one": "lekki phase 1", "lekki ph 1": "lekki phase 1", "lekki phase i": "lekki phase 1",
+  "lekki phase two": "lekki phase 2", "lekki ph 2": "lekki phase 2",
+  "ikeja g r a": "ikeja gra", "gra ikeja": "ikeja gra", "festac town": "festac", amuwo: "amuwo odofin",
+  satellite: "satellite town", "wuse ii": "wuse 2", "wuse zone 2": "wuse 2", "garki ii": "garki 2",
+  "ibeju lekki": "ibeju lekki", "allen avenue": "allen", "ogba ikeja": "ogba",
+};
+
+/** Edit distance, for small typos ("Surelere" → "Surulere"). */
+function editDistance(a: string, b: string): number {
+  const row = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    let previous = row[0];
+    row[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const current = row[j];
+      row[j] = Math.min(row[j] + 1, row[j - 1] + 1, previous + (a[i - 1] === b[j - 1] ? 0 : 1));
+      previous = current;
+    }
+  }
+  return row[b.length];
+}
+
+const containsWords = (text: string, phrase: string) => ` ${text} `.includes(` ${phrase} `);
+
+/**
+ * The active zone in this city that covers the area. Exact names first, then common spellings
+ * ("VI", "Lekki Phase One", "Ikeja G.R.A."), then an area named inside what was typed ("No 5,
+ * Ikeja GRA" → Ikeja GRA, the longest match winning), then a small typo. Never another city.
+ */
 export function zoneForArea<Z extends Pick<Doc<"travelZones">, "city" | "areas" | "active">>(
   zones: Z[],
   city: string,
   area: string
 ): Z | null {
-  const c = normalise(city);
-  const a = normalise(area);
-  return zones.find((zone) => zone.active && normalise(zone.city) === c && zone.areas.some((x) => normalise(x) === a)) ?? null;
+  const c = CITY_ALIASES[normalise(city)] ?? normalise(city);
+  const typed = normalise(area);
+  const a = AREA_ALIASES[typed] ?? typed;
+  if (!c || !a) return null;
+  const inCity = zones.filter((zone) => zone.active && normalise(zone.city) === c);
+  const entries = inCity.flatMap((zone) => zone.areas.map((name) => ({ zone, key: normalise(name) })));
+
+  const exact = entries.find((entry) => entry.key === a);
+  if (exact) return exact.zone;
+
+  const named = entries.filter((entry) => containsWords(a, entry.key)).sort((x, y) => y.key.length - x.key.length);
+  if (named.length) return named[0].zone;
+
+  if (a.length >= 4) {
+    const partOf = entries.filter((entry) => containsWords(entry.key, a));
+    if (partOf.length && new Set(partOf.map((entry) => entry.zone)).size === 1) return partOf[0].zone;
+  }
+
+  const allowed = a.length > 6 ? 2 : a.length >= 4 ? 1 : 0;
+  if (allowed) {
+    const close = entries
+      .map((entry) => ({ ...entry, distance: editDistance(a, entry.key) }))
+      .filter((entry) => entry.distance <= allowed)
+      .sort((x, y) => x.distance - y.distance);
+    if (close.length && (close.length === 1 || close[0].distance < close[1].distance || close[0].zone === close[1].zone)) {
+      return close[0].zone;
+    }
+  }
+  return null;
 }
 
 export type BookingQuote = RehabifyQuote & {
