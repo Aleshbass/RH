@@ -170,6 +170,10 @@ def process_inbound(
             phase=PatientPhase.FIRST_CONTACT,
         )
 
+    # The turn runs inside a savepoint: if it fails partway, its half-made changes are undone
+    # before the fallback answers, so the fallback never re-reads the message against a state
+    # the failed attempt had already moved on (a "Yes" tap was once taken as an email address).
+    turn = session.begin_nested()
     try:
         result = handle_turn(
             session,
@@ -180,17 +184,28 @@ def process_inbound(
             media=media,
             location=location,
         )
+        turn.commit()
         log_event("inbound.turn_completed", latency_ms=elapsed_ms(turn_started), channel="whatsapp")
         return result
     except (GeminiTimeoutError, httpx.HTTPError, OSError):
+        _undo_turn(turn)
         log_event("inbound.provider_recovery", latency_ms=elapsed_ms(turn_started), error_type="transient")
         return provider_unavailable_reply(session, phone, user_text, wa_message_id)
     except Exception:
         # A model-provider validation or availability error must not put a
         # patient message through retry/dead-letter without a WhatsApp reply.
+        _undo_turn(turn)
         logger.exception("text triage provider failure for %s", wa_message_id)
         log_event("inbound.provider_recovery", latency_ms=elapsed_ms(turn_started), error_type="unexpected")
         return provider_unavailable_reply(session, phone, user_text, wa_message_id)
+
+
+def _undo_turn(turn) -> None:
+    try:
+        if turn.is_active:
+            turn.rollback()
+    except Exception:
+        logger.warning("joy_turn_undo_failed", exc_info=True)
 
 
 def _claim(timeout: int) -> str | None:

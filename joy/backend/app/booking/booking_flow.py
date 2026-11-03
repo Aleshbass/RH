@@ -358,7 +358,15 @@ def begin_selected_treatment(
             "Your payment has already been received. Our care team will assign your clinician, date, and time shortly. "
             "I’ll send your appointment details and joining link here once that is done."
         )
+    known_email = _known_email(patient)
+    if known_email:
+        ctx["suggested_email"] = known_email
     _set_substate(conversation, AWAITING_RH_PAYMENT_EMAIL, ctx)
+    if known_email:
+        return (
+            f"Your {config['label'].casefold()} booking is ready. Shall I send your secure payment "
+            f"receipt to {known_email}? Reply YES, or send a different email address."
+        )
     return (
         f"Your {config['label'].casefold()} booking is ready. "
         "Please reply with the email address you want to use for your secure payment receipt."

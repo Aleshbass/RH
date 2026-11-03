@@ -12,15 +12,24 @@ _ALLOWED: dict[ConversationStage, set[ConversationStage]] = {
         ConversationStage.MEDICAL_ESCALATION, ConversationStage.EMERGENCY_ESCALATION,
     },
     ConversationStage.SAFETY_INTRODUCTION: {ConversationStage.SAFETY_SCREEN, ConversationStage.EMERGENCY_ESCALATION},
+    # A clear safety screen ("No to all") presents the booking policy in the same turn, so the
+    # policy, booking and payment stages follow it directly (V1 has no separate summary turn
+    # after the screen). Refusing these crashed every turn after the safety questions (Nov 2026).
     ConversationStage.SAFETY_SCREEN: {
         ConversationStage.SAFETY_SCREEN, ConversationStage.TRIAGE_SUMMARY,
         ConversationStage.SPECIALIST_REVIEW, ConversationStage.MEDICAL_ESCALATION,
         ConversationStage.EMERGENCY_ESCALATION,
+        ConversationStage.POLICY_REVIEW, ConversationStage.POLICY_ACCEPTANCE,
+        ConversationStage.SPECIALIST_MATCHING, ConversationStage.SLOT_SELECTION,
+        ConversationStage.AWAITING_PAYMENT,
     },
     ConversationStage.TRIAGE_SUMMARY: {
         ConversationStage.TRIAGE_SUMMARY,
         ConversationStage.SAFETY_SCREEN,
         ConversationStage.POLICY_REVIEW,
+        ConversationStage.POLICY_ACCEPTANCE,
+        ConversationStage.SPECIALIST_MATCHING,
+        ConversationStage.AWAITING_PAYMENT,
     },
     # Policy acceptance is verified deterministically in the same turn that
     # may fetch matching options.  Permit that atomic transition instead of
