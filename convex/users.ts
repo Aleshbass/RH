@@ -536,6 +536,7 @@ const physiotherapistProfileDataValidator = v.object({
 
 const patientProfileDataValidator = v.object({
   dateOfBirth: v.optional(v.string()),
+  birthdayMonthDay: v.optional(v.string()), // "MM-DD", confirmed at sign-up (helpers/careMoments.ts)
   gender: v.optional(v.union(v.literal("male"), v.literal("female"), v.literal("other"), v.literal("prefer_not_to_say"))),
   address: v.optional(v.string()),
   phoneNumber: v.optional(v.string()),

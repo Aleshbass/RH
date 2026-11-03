@@ -210,4 +210,19 @@ crons.daily(
   {}
 );
 
+// Birthdays, care anniversaries and 3-month check-ins (careMoments.ts): plan the next two weeks
+// at 06:00 WAT, then send automatic birthday wishes and each care team's heads-up at 08:00 WAT.
+crons.daily(
+  "care-moments-plan",
+  { hourUTC: 5, minuteUTC: 0 },
+  internal.careMoments.planDaily,
+  {}
+);
+crons.daily(
+  "care-moments-send",
+  { hourUTC: 7, minuteUTC: 0 },
+  internal.careMoments.sendDueToday,
+  {}
+);
+
 export default crons;

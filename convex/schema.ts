@@ -30,6 +30,10 @@ export default defineSchema({
     )),
     // Set when the person deleted their account; their personal data has been erased (users.ts)
     deletedAt: v.optional(v.number()),
+    // Physios, clinic owners and clinic teams: their birthday "MM-DD" and year, so Rehabify and
+    // their clinic can wish them (careMoments.ts). Patients keep theirs on patientProfiles.
+    birthdayMonthDay: v.optional(v.string()),
+    birthYear: v.optional(v.number()),
     // When the user joined the clinic (if applicable)
     joinedAt: v.optional(v.number()),
 
@@ -607,6 +611,10 @@ export default defineSchema({
     userId: v.id("users"),
     clinicId: v.optional(v.id("clinics")), // Clinic they are primarily associated with, if any
     dateOfBirth: v.optional(v.string()), // ISO string or timestamp
+    // Confirmed birthday "MM-DD" (helpers/careMoments.ts): sign-up used to store an age as 1 January
+    birthdayMonthDay: v.optional(v.string()),
+    // No birthday or milestone messages from the care team (careMoments.ts)
+    celebrationsOptOut: v.optional(v.boolean()),
     gender: v.optional(v.union(v.literal("male"), v.literal("female"), v.literal("other"), v.literal("prefer_not_to_say"))),
     address: v.optional(v.string()),
     city: v.optional(v.string()),
@@ -1567,6 +1575,52 @@ export default defineSchema({
     .index("by_physiotherapist_and_status", ["physiotherapistId", "status"])
     .index("by_follow_up", ["followUpStatus", "followUpDueAt"])
     .index("by_status", ["status"]),
+
+  // Birthdays, care anniversaries and 3-month post-discharge check-ins (careMoments.ts), for
+  // patients, and birthdays for physios, clinic owners and clinic teams. The daily planner writes
+  // the next two weeks; each row then records what was done about it.
+  careMoments: defineTable({
+    // Who acts on it: "clinic:<id>", "physio:<id>", or "rehabify" (patients with no care team, and
+    // every physio, clinic owner and clinic team member's own birthday)
+    ownerKey: v.string(),
+    clinicId: v.optional(v.id("clinics")),
+    physiotherapistId: v.optional(v.id("users")),
+    personId: v.id("users"), // the patient, or the team member whose birthday it is
+    kind: v.union(
+      v.literal("birthday"),
+      v.literal("care_anniversary"),
+      v.literal("discharge_checkin"),
+      v.literal("team_birthday") // a clinic team member's birthday, for the clinic owner to wish
+    ),
+    date: v.string(), // Lagos calendar day, "YYYY-MM-DD"
+    occurrence: v.string(), // the year (birthday, anniversary) or the care episode (check-in)
+    years: v.optional(v.number()), // the age they turn, or years since the first visit
+    status: v.union(v.literal("upcoming"), v.literal("sent"), v.literal("called"), v.literal("skipped")),
+    autoSent: v.optional(v.boolean()),
+    handledBy: v.optional(v.id("users")),
+    handledAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_owner_and_date", ["ownerKey", "date"])
+    .index("by_person_and_occurrence", ["personId", "kind", "occurrence"])
+    .index("by_date_and_status", ["date", "status"]),
+
+  // A clinic's or physio's choices for moments; no row means the defaults (all on)
+  careMomentSettings: defineTable({
+    ownerKey: v.string(),
+    autoBirthday: v.boolean(),
+    birthdayMessage: v.optional(v.string()),
+    includePastPatients: v.boolean(),
+    anniversaries: v.boolean(),
+    dischargeCheckins: v.boolean(),
+    // Counted by the daily planner, for "12 patients haven't shared a birthday"
+    patientCount: v.optional(v.number()),
+    missingBirthdayCount: v.optional(v.number()),
+    statsAt: v.optional(v.number()),
+    updatedBy: v.optional(v.id("users")),
+    updatedAt: v.number(),
+  }).index("by_owner", ["ownerKey"]),
 
   // How a patient is doing between sessions, in their own words
   patientCheckIns: defineTable({

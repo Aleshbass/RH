@@ -1114,16 +1114,21 @@ export const updateMyPatientProfile = mutation({
 
     await ctx.db.patch(user._id, { firstName, lastName, phoneNumber });
 
+    const profile =
+      (user.patientProfileId ? await ctx.db.get(user.patientProfileId) : null) ??
+      (await ctx.db.query("patientProfiles").withIndex("by_user_id", (q) => q.eq("userId", user._id)).first());
     const profileFields = {
       dateOfBirth: args.dateOfBirth || undefined,
+      // A date they changed here is their real birthday; an untouched one may be sign-up's
+      // old "1 January of the year you were born" (helpers/careMoments.ts)
+      ...(args.dateOfBirth && args.dateOfBirth !== profile?.dateOfBirth?.slice(0, 10)
+        ? { birthdayMonthDay: args.dateOfBirth.slice(5, 10) }
+        : {}),
       gender: args.gender,
       address: args.address?.trim() || undefined,
       city: args.city?.trim() || undefined,
       emergencyContact: args.emergencyContact?.name.trim() ? args.emergencyContact : undefined,
     };
-    const profile =
-      (user.patientProfileId ? await ctx.db.get(user.patientProfileId) : null) ??
-      (await ctx.db.query("patientProfiles").withIndex("by_user_id", (q) => q.eq("userId", user._id)).first());
     if (profile) {
       await ctx.db.patch(profile._id, profileFields);
       if (user.patientProfileId !== profile._id) await ctx.db.patch(user._id, { patientProfileId: profile._id });

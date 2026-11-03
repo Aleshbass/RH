@@ -23,6 +23,11 @@ export const PUSH_CATEGORIES = [
     label: "Community",
     description: "Case of the Week, answers to your questions, and when your answer is marked helpful.",
   },
+  {
+    id: "celebrations",
+    label: "Birthdays and milestones",
+    description: "Patients' birthdays, care anniversaries and check-ins due, and wishes from your care team.",
+  },
 ] as const;
 
 export type PushCategory = (typeof PUSH_CATEGORIES)[number]["id"];
@@ -88,6 +93,9 @@ const CATEGORY_OF: Record<string, PushCategory> = {
   community_case: "community",
   community_answer: "community",
   community_helpful: "community",
+  // Birthdays and milestones (careMoments.ts)
+  care_moment: "celebrations",
+  care_moment_digest: "celebrations",
 };
 
 /**

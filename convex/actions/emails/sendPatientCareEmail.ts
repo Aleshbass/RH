@@ -24,6 +24,10 @@ export const sendPatientCareEmail = internalAction({
     to: v.string(),
     subject: v.string(),
     greetingName: v.optional(v.string()),
+    // The message greets them itself (a birthday wish), so no "Hello there,"
+    skipGreeting: v.optional(v.boolean()),
+    // Shown as the sender: "King's Clinic via Rehabify" (careMoments.ts)
+    fromName: v.optional(v.string()),
     heading: v.string(),
     paragraphs: v.array(v.string()),
     buttonLabel: v.optional(v.string()),
@@ -46,7 +50,7 @@ export const sendPatientCareEmail = internalAction({
       title: escapeHtml(args.heading),
       preheader: args.paragraphs[0],
       body: [
-        greeting(args.greetingName?.trim() ? escapeHtml(args.greetingName.trim()) : undefined),
+        args.skipGreeting ? "" : greeting(args.greetingName?.trim() ? escapeHtml(args.greetingName.trim()) : undefined),
         ...args.paragraphs.map((text) => paragraph(escapeHtml(text))),
         cta,
       ].join(""),
@@ -58,7 +62,9 @@ export const sendPatientCareEmail = internalAction({
     try {
       const resend = new Resend(apiKey);
       // Same verified sender as the other Rehabify emails
-      const from = `${process.env.FROM_NAME || "Rehabify Health"} <info@physioaroundme.com>`;
+      // A display name can't carry quotes, commas or angle brackets
+      const fromName = args.fromName?.replace(/["<>,;\\]/g, "").trim().slice(0, 60);
+      const from = `${fromName ? `${fromName} via Rehabify` : process.env.FROM_NAME || "Rehabify Health"} <info@physioaroundme.com>`;
       await resend.emails.send({ from, to: args.to, subject: args.subject, html });
       return { success: true };
     } catch (error) {
