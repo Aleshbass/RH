@@ -56,6 +56,12 @@ async def inbound_webhook(
                 if msg_type == "text":
                     text = str((message.get("text") or {}).get("body") or "")
                     enqueue_inbound(wa_message_id, phone, text)
+                elif msg_type in {"interactive", "button"}:
+                    # A tapped button or list row: its id is the reply Joy would accept typed
+                    # (app/conversation/interactive.py), so it follows the same path as text.
+                    text = _tapped_reply(message)
+                    if text:
+                        enqueue_inbound(wa_message_id, phone, text)
                 elif msg_type == "audio":
                     audio = message.get("audio") or {}
                     media_id = str(audio.get("id") or "")
@@ -99,6 +105,19 @@ async def inbound_webhook(
                             location_lng=float(lng),
                         )
     return {"status": "ok"}
+
+
+def _tapped_reply(message: dict) -> str:
+    """The reply a tap stands for: a button or list row id, or a template quick-reply payload."""
+    if message.get("type") == "button":  # quick-reply button on a template message
+        button = message.get("button") or {}
+        return str(button.get("payload") or button.get("text") or "").strip()
+    interactive = message.get("interactive") or {}
+    kind = interactive.get("type")
+    if kind in {"button_reply", "list_reply"}:
+        reply = interactive.get(kind) or {}
+        return str(reply.get("id") or reply.get("title") or "").strip()
+    return ""
 
 
 def _media_ref(blob: dict) -> str:

@@ -1,5 +1,6 @@
 import logging
 import re
+from zoneinfo import ZoneInfo
 from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
@@ -26,6 +27,7 @@ from app.queue.tasks import _redis, enqueue_booking_confirmed
 
 logger = logging.getLogger(__name__)
 
+_LAGOS = ZoneInfo("Africa/Lagos")
 OFFERING_MATCHES = "offering_matches"
 AWAITING_SLOT_MODE = "awaiting_slot_mode"
 AWAITING_PAYMENT = "awaiting_payment"
@@ -60,7 +62,7 @@ _PAY_NUDGE_RE = re.compile(r"\b(pay|payment|processing)\b", re.I)
 _PAYMENT_EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 
 TREATMENT_OPTIONS = {
-    "quick_initial": {"label": "Quick Initial Consultation", "amount_kobo": 600_000, "duration_minutes": 20},
+    "quick_initial": {"label": "Quick Initial Consultation (online)", "amount_kobo": 600_000, "duration_minutes": 20},
     "full_virtual": {"label": "Full Virtual Consultation", "amount_kobo": 2_000_000, "duration_minutes": 60},
     "home_visit": {"label": "Face-to-Face Home Session", "amount_kobo": None, "duration_minutes": 60},
 }
@@ -203,12 +205,13 @@ def treatment_options_prompt(summary: str) -> str:
         f"Here’s a quick summary of what you’ve told me:\n{summary}\n\n"
         "Based on your answers, I haven’t picked up anything that would stop you from continuing with the Rehabify MSK pathway.\n\n"
         "Here are your options for what happens next:\n\n"
-        "1. Quick Initial Consultation — ₦6,000\n"
-        "A brief online call with a clinician for initial advice and guidance on the best next step.\n\n"
-        "2. Full Virtual Consultation — ₦20,000\n"
-        "A detailed online assessment with a clinician, including questions and a personalised treatment and rehabilitation plan.\n\n"
-        "3. Face-to-Face Home Session\n"
-        "A clinician comes to you for an in-person assessment and treatment. The price depends on the clinician and your location.\n\n"
+        "1. Quick Initial Consultation — ₦6,000 (online only)\n"
+        "A short video call with a clinician from your phone, for initial advice and the best next step. "
+        "Nobody comes to your home for this one.\n\n"
+        "2. Full Virtual Consultation — ₦20,000 (online only)\n"
+        "A detailed video assessment with a clinician from your phone, including a personalised treatment and rehabilitation plan.\n\n"
+        "3. Face-to-Face Home Session (in person)\n"
+        "A clinician comes to your home for an in-person assessment and treatment. The price depends on your area.\n\n"
         "Reply 1, 2, or 3. You can also say ‘help me choose’ — I’ll start you with option 1."
     )
 
@@ -218,8 +221,9 @@ def initial_consultation_offer() -> str:
     return (
         "Thanks — you’re all set.\n\n"
         "Initial Consultation with a Clinician — ₦6,000\n\n"
-        "This is a short remote consultation designed to make sure you’re speaking to the right clinician "
-        "and getting the right next step.\n\n"
+        "📱 This is an online video call, not a home visit. Nobody will come to your house: you join from your "
+        "phone using a secure link I’ll send you here. It’s short, and it makes sure you’re speaking to the right "
+        "clinician and getting the right next step.\n\n"
         "During the consultation, the clinician will:\n"
         "• understand your problem in more detail\n"
         "• review your symptoms and concerns\n"
@@ -227,10 +231,11 @@ def initial_consultation_offer() -> str:
         "• decide whether an MSK physiotherapist is appropriate\n"
         "• recommend the most appropriate next step\n"
         "• refer you elsewhere if another type of clinician would be more appropriate\n\n"
-        "This is not a full physiotherapy consultation.\n\n"
+        "This is not a full physiotherapy consultation. If you need hands-on care, the clinician will recommend "
+        "it, and home visits can be arranged after this call.\n\n"
         "We offer this first because we don’t want you paying for a full consultation when you may need a "
         "different type of care.\n\n"
-        "Would you like to continue with the ₦6,000 Initial Consultation?\n\n"
+        "Would you like to continue with the ₦6,000 online Initial Consultation?\n\n"
         "Reply Yes to continue."
     )
 
@@ -565,9 +570,10 @@ def _render_rh_slots(provider: dict, slots: list[dict], *, refreshed: bool = Fal
     prefix = "I refreshed the specialist’s live availability.\n\n" if refreshed else ""
     # Joy currently books the standard consultation length. State it plainly
     # so patients do not infer that the numbered choices are arbitrary blocks.
-    lines = [f"Available 60-minute times with {provider.get('display_name') or 'this specialist'}:"]
+    lines = [f"Available 60-minute times (Lagos time) with {provider.get('display_name') or 'this specialist'}:"]
     for index, slot in enumerate(slots, 1):
-        when = datetime.fromtimestamp(slot["start"] / 1000, timezone.utc).astimezone()
+        # Lagos time, not the server's zone (Railway runs on UTC, an hour behind Lagos)
+        when = datetime.fromtimestamp(slot["start"] / 1000, timezone.utc).astimezone(_LAGOS)
         lines.append(f"{index}. {when.strftime('%a %d %b, %I:%M %p')}")
     lines.append("Reply with the time number you prefer.")
     return prefix + "\n".join(lines)

@@ -44,6 +44,7 @@ from app.queue.tasks import (
     _redis,
     appointment_email_idempotency_key,
     send_appointment_email,
+    send_whatsapp_interactive,
     send_whatsapp_text,
 )
 
@@ -285,7 +286,11 @@ def process_queue_once(
         )
         if not reply:
             raise RuntimeError("Joy produced no outbound reply")
-        send_whatsapp_text(payload["phone"], reply)
+        interactive = _interactive_reply(db, payload["phone"], result)
+        if interactive:
+            send_whatsapp_interactive(payload["phone"], reply, interactive, text_sender=send_whatsapp_text)
+        else:
+            send_whatsapp_text(payload["phone"], reply)
         logger.info(
             "joy_outbound_delivered wa_message_id=%s reply_length=%d processing_ms=%d",
             payload["wa_message_id"],
@@ -513,6 +518,19 @@ def process_appointment_reminders_once(
     finally:
         if own_session:
             db.close()
+
+
+def _interactive_reply(db, phone: str, result) -> dict | None:
+    """Tap-to-answer buttons for the step this reply asks about (never on safety replies)."""
+    if result is None or getattr(result, "blocked_by_safety", False):
+        return None
+    try:
+        from app.conversation.interactive import interactive_for_phone
+
+        return interactive_for_phone(db, phone)
+    except Exception:  # Buttons are a convenience: never block or fail the reply over them.
+        logger.warning("joy_interactive_lookup_failed", exc_info=True)
+        return None
 
 
 def _drain_text_queue(queue: str, timeout: int = 1) -> bool:

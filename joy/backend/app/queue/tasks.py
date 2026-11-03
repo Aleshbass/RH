@@ -328,6 +328,49 @@ def send_whatsapp_text(phone: str, text: str) -> None:
                 "components": [{"type": "body", "parameters": [{"type": "text", "text": _template_body_parameter(text)}]}],
             },
         }
+    _post_message(settings, message)
+
+
+_INTERACTIVE_BODY_LIMIT = 1024
+
+
+def send_whatsapp_interactive(phone: str, text: str, interactive: dict, *, text_sender=None) -> None:
+    """Send ``text`` with tap-to-answer buttons or a list (app/conversation/interactive.py).
+
+    Buttons only work inside the 24-hour window. A text longer than WhatsApp's 1024-character
+    button body goes out first as a plain message, followed by the buttons under a short prompt.
+    In development with delivery disabled, outside the window, or if Meta rejects the
+    interactive message, the text goes out as a plain message: typed replies always work, so
+    nothing is lost. ``text_sender`` is that plain-text sender (the worker passes its own).
+    """
+    send_text = text_sender or send_whatsapp_text
+    settings = get_settings()
+    if (
+        settings.disable_whatsapp_delivery
+        or not settings.whatsapp_access_token
+        or not settings.whatsapp_phone_number_id
+        or not _in_service_window(phone)
+    ):
+        send_text(phone, text)
+        return
+    body = text
+    if len(text) > _INTERACTIVE_BODY_LIMIT:
+        send_text(phone, text)
+        body = "Tap an option below, or type your reply."
+    message = {
+        "messaging_product": "whatsapp",
+        "to": phone.lstrip("+"),
+        "type": "interactive",
+        "interactive": {**interactive, "body": {"text": body}},
+    }
+    try:
+        _post_message(settings, message)
+    except httpx.HTTPError:
+        if body == text:
+            send_text(phone, text)
+
+
+def _post_message(settings, message: dict) -> None:
     response = httpx.post(
         f"https://graph.facebook.com/v21.0/{settings.whatsapp_phone_number_id}/messages",
         headers={"Authorization": f"Bearer {settings.whatsapp_access_token}"},
