@@ -131,13 +131,33 @@ def test_gemini_client_text_timeout_is_not_retried(monkeypatch):
             self.models = _Models()
 
     monkeypatch.setattr("app.llm.gemini_client.genai.Client", _Client)
-    client = GeminiClient(Settings(gemini_api_key="not-a-real-key"))
+    client = GeminiClient(Settings(gemini_api_key="not-a-real-key", gemini_fallback_models=""))
     try:
         client.complete("assembled prompt", "hello")
         raise AssertionError("expected GeminiTimeoutError")
     except GeminiTimeoutError:
         pass
     assert calls["n"] == 1
+
+
+def test_a_timeout_gets_one_try_on_the_next_model_within_the_budget(monkeypatch):
+    from app.llm import gemini_client
+
+    now = [0.0]
+    monkeypatch.setattr(gemini_client, "monotonic", lambda: now[0])
+
+    def slow_timeout(model):
+        now[0] += 10.0  # each model call uses its full 10-second deadline
+        return TimeoutError("deadline")
+
+    client, used = _client_with(monkeypatch, slow_timeout)
+    try:
+        client.complete("prompt", "hello")
+        raise AssertionError("expected GeminiTimeoutError")
+    except gemini_client.GeminiTimeoutError:
+        pass
+    # main timed out at 10s: backup-1 tried; at 20s the budget is spent, so no backup-2
+    assert used == ["main", "backup-1"]
 
 
 def test_provider_deadline_error_is_treated_as_timeout():
@@ -171,3 +191,70 @@ def test_gemini_client_voice_succeeds_on_timeout_retry(monkeypatch):
     response = client.complete_voice(b"fake-audio", "audio/ogg")
     assert response.reply_text == "Hi"
     assert calls["n"] == 2
+
+
+
+class _BusyError(Exception):
+    code = 503
+
+    def __str__(self):
+        return "503 UNAVAILABLE. This model is currently experiencing high demand."
+
+
+def _client_with(monkeypatch, behaviour):
+    from app.config import Settings
+    from app.llm.gemini_client import GeminiClient
+
+    models_used = []
+
+    class _Resp:
+        text = '{"reply_text": "Tell me more.", "extraction": {}, "language": "en"}'
+
+    class _Models:
+        def generate_content(self, **kwargs):
+            models_used.append(kwargs["model"])
+            outcome = behaviour(kwargs["model"])
+            if isinstance(outcome, BaseException):
+                raise outcome
+            return _Resp()
+
+    class _Client:
+        def __init__(self, **kwargs):
+            self.models = _Models()
+
+    monkeypatch.setattr("app.llm.gemini_client.genai.Client", _Client)
+    settings = Settings(gemini_api_key="not-a-real-key", gemini_text_model="main", gemini_live_model="main",
+                        gemini_fallback_models="backup-1,backup-2")
+    return GeminiClient(settings), models_used
+
+
+def test_a_busy_model_falls_back_to_the_next(monkeypatch):
+    client, used = _client_with(monkeypatch, lambda model: _BusyError() if model == "main" else None)
+    assert client.complete("prompt", "my knee hurts").reply_text == "Tell me more."
+    assert used == ["main", "backup-1"]
+
+
+def test_voice_notes_fall_back_too(monkeypatch):
+    client, used = _client_with(monkeypatch, lambda model: _BusyError() if model != "backup-2" else None)
+    assert client.complete_voice(b"audio", "audio/ogg").reply_text == "Tell me more."
+    assert used == ["main", "backup-1", "backup-2"]
+
+
+def test_when_every_model_is_busy_the_error_reaches_the_worker(monkeypatch):
+    client, used = _client_with(monkeypatch, lambda model: _BusyError())
+    try:
+        client.complete("prompt", "hello")
+        raise AssertionError("expected the busy error")
+    except _BusyError:
+        pass
+    assert used == ["main", "backup-1", "backup-2"]
+
+
+def test_other_errors_do_not_try_other_models(monkeypatch):
+    client, used = _client_with(monkeypatch, lambda model: ValueError("bad request"))
+    try:
+        client.complete("prompt", "hello")
+        raise AssertionError("expected ValueError")
+    except ValueError:
+        pass
+    assert used == ["main"]

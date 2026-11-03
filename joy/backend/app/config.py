@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     gemini_text_model: str = "gemini-3.6-flash"
     # Voice notes use generate_content; Live-only models (e.g. gemini-3.8-live) reject it.
     gemini_live_model: str = "gemini-3.6-flash"
+    # Tried in order when the model above is busy (Google's 503 "high demand", 429 quota),
+    # so a Gemini spike doesn't turn into "Sorry, I had a brief hiccup".
+    gemini_fallback_models: str = "gemini-3.1-flash-lite,gemini-3.5-flash"
     # Gemini remains Joy's default.  The other adapters are explicit
     # server-side fallbacks; clients never receive any provider credential.
     llm_provider: str = "gemini"

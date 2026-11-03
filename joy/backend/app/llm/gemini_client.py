@@ -86,6 +86,24 @@ def _is_timeout(exc: BaseException) -> bool:
     return "timeout" in detail or "deadline_exceeded" in detail
 
 
+def _is_busy(exc: BaseException) -> bool:
+    """Google is overloaded or the quota is used up: another model may well answer."""
+    code = getattr(exc, "code", None)
+    if code in {429, 500, 503}:
+        return True
+    detail = f"{type(exc).__name__} {exc}".casefold()
+    return any(
+        marker in detail
+        for marker in ("503", "unavailable", "429", "resource_exhausted", "overloaded", "high demand", "500 internal")
+    )
+
+
+# A busy model moves on straight away; a timed-out one (a full 10-second deadline) gets one
+# more try on the next model only while the whole reply stays inside this budget, so an outage
+# means a slower answer rather than "please send that again" (about 20 seconds at worst).
+_FALLBACK_BUDGET_SECONDS = 12.0
+
+
 def _with_timeout_retry(call: Callable[[], LLMResponse], *, retry_on_timeout: bool = True) -> LLMResponse:
     try:
         return call()
@@ -124,11 +142,29 @@ class GeminiClient:
             http_options=types.HttpOptions(timeout=_TEXT_TIMEOUT_MS),
         )
 
+    def _models(self, primary: str) -> list[str]:
+        fallbacks = [m.strip() for m in self._settings.gemini_fallback_models.split(",") if m.strip()]
+        return list(dict.fromkeys([primary, *fallbacks]))[:3]
+
+    def _with_busy_fallback(self, primary: str, attempt: Callable[[str], LLMResponse]) -> LLMResponse:
+        """Try the primary model, then the fallbacks while Google reports it's busy."""
+        started = monotonic()
+        models = self._models(primary)
+        for index, model in enumerate(models):
+            try:
+                return attempt(model)
+            except Exception as exc:
+                last = index == len(models) - 1
+                if not (_is_busy(exc) or _is_timeout(exc)) or last or monotonic() - started > _FALLBACK_BUDGET_SECONDS:
+                    raise
+                logger.warning("joy_gemini_busy model=%s trying=%s", model, models[index + 1])
+        raise RuntimeError("unreachable")
+
     def complete(self, prompt: str, user_text: str) -> LLMResponse:
-        def _call() -> LLMResponse:
+        def _call(model: str) -> LLMResponse:
             system = f"{prompt}\n\n{_JSON_INSTRUCTION}"
             response = self._client.models.generate_content(
-                model=self._settings.gemini_text_model,
+                model=model,
                 contents=user_text,
                 config=types.GenerateContentConfig(
                     system_instruction=system,
@@ -143,13 +179,17 @@ class GeminiClient:
             # A retry could consume another full deadline and violate the
             # WhatsApp triage response target. The worker sends its concise
             # fallback immediately when this single bounded request times out.
-            return _with_timeout_retry(_call, retry_on_timeout=False)
+            # A busy model (fast 503/429) moves on to the next model instead.
+            return self._with_busy_fallback(
+                self._settings.gemini_text_model,
+                lambda model: _with_timeout_retry(lambda: _call(model), retry_on_timeout=False),
+            )
         finally:
             logger.info("joy_gemini_text_complete latency_ms=%d", int((monotonic() - started) * 1000))
 
     def complete_voice(self, audio_bytes: bytes, mime: str) -> LLMResponse:
         # Plan 1: send audio bytes via generate_content on gemini_live_model (no Live websocket).
-        def _call() -> LLMResponse:
+        def _call(model: str) -> LLMResponse:
             audio_part = types.Part.from_bytes(data=audio_bytes, mime_type=mime)
             prompt = (
                 "Transcribe this voice note exactly. "
@@ -157,7 +197,7 @@ class GeminiClient:
                 "reply_text must be the transcript."
             )
             response = self._client.models.generate_content(
-                model=self._settings.gemini_live_model,
+                model=model,
                 contents=[prompt, audio_part],
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json",
@@ -166,7 +206,9 @@ class GeminiClient:
             payload = _parse_model_json(response.text or "")
             return _response_from_payload(payload)
 
-        return _with_timeout_retry(_call)
+        return self._with_busy_fallback(
+            self._settings.gemini_live_model, lambda model: _with_timeout_retry(lambda: _call(model))
+        )
 
 
 class _HTTPJSONTextClient:
