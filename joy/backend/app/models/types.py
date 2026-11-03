@@ -140,3 +140,9 @@ class TurnResult(BaseModel):
     extracted: ExtractedTriage | None = None
     safety: SafetyResult | None = None
     blocked_by_safety: bool = False
+    # A WhatsApp interactive message to send with the reply (e.g. the sign-up form button),
+    # used instead of the step buttons from app/conversation/interactive.py
+    interactive: dict | None = None
+    # Messages sent after the reply, in order: {"image_url", "caption"} pictures, or
+    # {"text", "interactive"} (e.g. the exercise plan's pictures, then its buttons)
+    after: list[dict] | None = None

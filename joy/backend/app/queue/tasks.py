@@ -48,6 +48,7 @@ def enqueue_inbound(
     media: list[str] | None = None,
     location_lat: float | None = None,
     location_lng: float | None = None,
+    flow_response: dict | None = None,
 ) -> bool:
     client = _redis()
     lock_key = f"joy:wamid:{wa_message_id}"
@@ -70,6 +71,8 @@ def enqueue_inbound(
         payload_body["location_lat"] = location_lat
     if location_lng is not None:
         payload_body["location_lng"] = location_lng
+    if flow_response is not None:
+        payload_body["flow_response"] = flow_response
     payload = json.dumps(payload_body)
     result = client.eval(
         _ENQUEUE_LUA,

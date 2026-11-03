@@ -104,6 +104,7 @@ class RHMatch:
     service_modes: list[str]
     amount_kobo: int
     match_reasons: list[str]
+    distance_km: float | None = None  # from the patient's shared pin, when both locations are known
 
 
 @dataclass(frozen=True)
@@ -353,6 +354,18 @@ class RHClient:
             account_email_hint=hint if isinstance(hint, str) else None,
         )
 
+    def dashboard_link(self, *, patient_id: str, sender_phone: str) -> dict[str, Any]:
+        """A fresh one-tap /go link into the patient's Rehabify dashboard (RH checks the number)."""
+        if not self.gateway_client:
+            raise RHIntegrationError("INTEGRATION_NOT_CONFIGURED", "RH Convex gateway is not configured")
+        return self._gateway("issue_dashboard_link", {"patient_id": patient_id, "sender_phone": sender_phone})
+
+    def place_for_pin(self, latitude: float, longitude: float) -> dict[str, Any]:
+        """State, town and area for a shared WhatsApp location pin (coordinates only)."""
+        if not self.gateway_client:
+            return {"found": False, "reason": "not_configured"}
+        return self._gateway("place_for_pin", {"latitude": float(latitude), "longitude": float(longitude)})
+
     def service_areas(self, *, actor: RHActor) -> dict[str, Any]:
         """Home-visit areas by city from RH's travel zones (no patient data)."""
         return self.operational_query("service_areas", actor=actor, data={})
@@ -449,7 +462,7 @@ class RHClient:
             idempotency_key=f"joy-patient-location-{patient_id}-{city.casefold()}-{area.casefold()}",
         )
 
-    def match_physios(self, *, patient_id: str, assessment_id: str, assessment_revision: int, required_specialties: list[str], service_mode: str, actor: RHActor, city: str | None = None, area: str | None = None) -> list[RHMatch]:
+    def match_physios(self, *, patient_id: str, assessment_id: str, assessment_revision: int, required_specialties: list[str], service_mode: str, actor: RHActor, city: str | None = None, area: str | None = None, latitude: float | None = None, longitude: float | None = None) -> list[RHMatch]:
         payload: dict[str, Any] = {
             "patient_id": patient_id, "assessment_id": assessment_id,
             "assessment_revision": assessment_revision, "required_specialties": required_specialties,
@@ -459,6 +472,9 @@ class RHClient:
             payload["city"] = city
         if area:
             payload["area"] = area
+        if latitude is not None and longitude is not None:
+            # The patient's shared pin: RH lists in-person physios nearest first
+            payload["latitude"], payload["longitude"] = float(latitude), float(longitude)
         if self.gateway_client:
             direct_payload = {key: value for key, value in payload.items() if key not in {"actor", "assessment_id", "assessment_revision"}}
             data = {"providers": self._gateway("find_matches", direct_payload)}
@@ -479,6 +495,7 @@ class RHClient:
             physiotherapist_id=item["physiotherapist_id"], display_name=item.get("display_name"),
             specialties=list(item.get("specialties") or []), service_modes=list(item.get("service_modes") or []),
             amount_kobo=int(item["amount_kobo"]), match_reasons=list(item.get("match_reasons") or []),
+            distance_km=float(item["distance_km"]) if isinstance(item.get("distance_km"), (int, float)) else None,
         ) for item in providers if isinstance(item, dict)]
 
     def availability(self, physiotherapist_id: str, *, start_ms: int, end_ms: int, duration_minutes: int, service_mode: str) -> dict[str, Any]:

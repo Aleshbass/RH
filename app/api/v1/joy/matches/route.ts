@@ -13,6 +13,9 @@ const requestSchema = z.object({
   service_mode: z.enum(["home_visit", "clinic", "online"]),
   city: z.string().min(2).max(80).optional(),
   area: z.string().min(2).max(80).optional(),
+  // The patient's shared WhatsApp location pin (nearest physios first)
+  latitude: z.number().min(4).max(14.5).optional(),
+  longitude: z.number().min(2.5).max(15).optional(),
   actor: actorSchema,
 }).strict().superRefine((value, ctx) => {
   if (value.service_mode === "home_visit" && (!value.city || !value.area)) {
@@ -31,7 +34,8 @@ export async function POST(request: Request) {
     }
     const providers = await callJoyConvexGateway("find_matches", {
       patient_id: input.patient_id, required_specialties: input.required_specialties,
-      service_mode: input.service_mode, city: input.city, area: input.area, limit: 3,
+      service_mode: input.service_mode, city: input.city, area: input.area,
+      latitude: input.latitude, longitude: input.longitude, limit: 3,
     });
     return success(requestId, { providers });
   } catch (error) {

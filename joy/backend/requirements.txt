@@ -8,3 +8,4 @@ pydantic-settings
 redis
 httpx
 google-genai
+Pillow

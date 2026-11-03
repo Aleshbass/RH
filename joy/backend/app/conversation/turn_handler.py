@@ -18,6 +18,8 @@ from app.admin.escalation_router import (
 )
 from app.admin.verification_queue import apply_admin_turn
 from app.audit.logger import append
+from app.flows.signup import WELCOME_WITH_FORM, is_signup_request, signup_interactive, signup_offer
+from app.exercises.programme import asks_for_programme, done_command, reminder_command, show_programme
 from app.booking.booking_flow import (
     AWAITING_PAYMENT,
     AWAITING_RH_LOCATION,
@@ -33,6 +35,7 @@ from app.booking.booking_flow import (
     begin_selected_treatment,
     booking_policy_acceptance_prompt,
     handle_booking_turn,
+    location_pin_turn,
     initial_consultation_offer,
     offer_matches,
     _set_substate,
@@ -174,6 +177,39 @@ _AWAITING_SAFETY_SCREEN = "awaiting_safety_screen"
 _TRIAGE_QUESTIONNAIRE_ENABLED = True
 
 
+_DASHBOARD_LINK_RE = re.compile(
+    r"\b(?:dashboard|log\s*in\s+link|login\s+link|sign\s*in\s+link|my\s+(?:rehabify\s+)?account\s+link|"
+    r"(?:open|access)\s+my\s+(?:rehabify\s+)?account)\b",
+    re.IGNORECASE,
+)
+
+
+def _dashboard_link_reply(session: Session, identity: Identity) -> str:
+    from app.api.internal.rh_events import dashboard_link_text
+    from app.booking.booking_flow import _rh_patient_id
+
+    patient = session.get(Patient, identity.person_id)
+    rh_patient_id = _rh_patient_id(session, patient) if patient is not None else None
+    if not rh_patient_id:
+        return "I can't reach your Rehabify record right now. Please try again in a few minutes."
+    try:
+        result = configured_rh_client().dashboard_link(patient_id=rh_patient_id, sender_phone=identity.phone_e164)
+    except RHIntegrationError:
+        return "I can't make a dashboard link right now. Please try again in a few minutes."
+    url = str(result.get("dashboard_url") or "") if isinstance(result, dict) and result.get("ok") else ""
+    if not url.startswith("https://"):
+        return (
+            "I couldn't make a dashboard link for this number. You can sign in at "
+            "https://physioaroundme.com/sign-in, or email hello@myrehabifyhealth.com and we'll help."
+        )
+    append(session, kind=AuditKind.IDENTITY, actor_phone=identity.phone_e164, person_id=identity.person_id,
+           payload={"decision": "dashboard_link_issued_on_request"})
+    return dashboard_link_text(url)
+
+
+_PHYSIO_BOOKING_REPLY_RE = re.compile(r"^\s*(?:ACCEPT|REJECT)\s+[A-Za-z0-9_-]{6,64}\s*$", re.IGNORECASE)
+
+
 def _is_greeting_only(user_text: str) -> bool:
     """Keep a greeting out of the clinical-triage and model paths."""
     return bool(_GREETING_ONLY_RE.fullmatch(user_text or ""))
@@ -268,7 +304,12 @@ def _account_link_turn(session: Session, identity: Identity, state: Conversation
 # Wording pending clinical-lead review.
 _BOOKED_GUIDANCE = (
     "If your symptoms get much worse before then, please seek medical care and let your "
-    "physiotherapist know. For any change to your appointment, email hello@myrehabifyhealth.com."
+    "physiotherapist know. To change the appointment, reply *reschedule* or *cancel*."
+)
+_BOOKING_CHANGE_RE = re.compile(
+    r"\b(?:cancel\w*|reschedul\w*|postpone|move\s+(?:my|the)\s+(?:appointment|session|booking)|"
+    r"change\s+(?:my|the)\s+(?:appointment|session|booking|time|date))\b",
+    re.IGNORECASE,
 )
 
 
@@ -1884,21 +1925,31 @@ def handle_turn(
     identity = resolve(session, phone)
     # `PT` is discovery, never local physiotherapist provisioning. RH's exact
     # verified phone lookup is the only way an unknown sender enters this flow.
-    if identity is None and user_text.strip().upper() == "PT":
+    # A physio answering Joy's booking request ("ACCEPT <booking ID>") may never have written to
+    # Joy before, or may also be a patient here: RH verifies the number before anything is applied.
+    physio_reply = bool(_PHYSIO_BOOKING_REPLY_RE.fullmatch(user_text or ""))
+    if (identity is None and user_text.strip().upper() == "PT") or (
+        physio_reply and (identity is None or identity.persona == Persona.PATIENT)
+    ):
+        fallback_identity = identity
         try:
             resolved = configured_rh_client().resolve_physiotherapist(
                 phone, RHActor(persona="physiotherapist", sender_phone=phone)
             )
         except RHIntegrationError:
-            return TurnResult(reply_text="I can’t verify physiotherapist access right now. Please try again shortly.", language="en", phase=PatientPhase.FIRST_CONTACT)
-        if resolved.resolution != "MATCH" or not resolved.physiotherapist_id or not resolved.rh_user_id:
-            return TurnResult(reply_text="This WhatsApp number is not linked to an active, verified Rehabify physiotherapist account.", language="en", phase=PatientPhase.FIRST_CONTACT)
-        person_id = uuid5(NAMESPACE_URL, f"rehabify:physio:{resolved.physiotherapist_id}")
-        mapping = session.scalar(select(RHIdentityMapping).where(RHIdentityMapping.persona == Persona.PHYSIO.value, RHIdentityMapping.joy_person_id == person_id))
-        if mapping is None:
-            session.add(RHIdentityMapping(persona=Persona.PHYSIO.value, joy_person_id=person_id, rh_record_id=resolved.physiotherapist_id, rh_user_id=resolved.rh_user_id))
-            session.flush()
-        identity = Identity(persona=Persona.PHYSIO, person_id=person_id, phone_e164=phone)
+            resolved = None
+            if fallback_identity is None:
+                return TurnResult(reply_text="I can’t verify physiotherapist access right now. Please try again shortly.", language="en", phase=PatientPhase.FIRST_CONTACT)
+        if resolved is None or resolved.resolution != "MATCH" or not resolved.physiotherapist_id or not resolved.rh_user_id:
+            if fallback_identity is None:
+                return TurnResult(reply_text="This WhatsApp number is not linked to an active, verified Rehabify physiotherapist account.", language="en", phase=PatientPhase.FIRST_CONTACT)
+        else:
+            person_id = uuid5(NAMESPACE_URL, f"rehabify:physio:{resolved.physiotherapist_id}")
+            mapping = session.scalar(select(RHIdentityMapping).where(RHIdentityMapping.persona == Persona.PHYSIO.value, RHIdentityMapping.joy_person_id == person_id))
+            if mapping is None:
+                session.add(RHIdentityMapping(persona=Persona.PHYSIO.value, joy_person_id=person_id, rh_record_id=resolved.physiotherapist_id, rh_user_id=resolved.rh_user_id))
+                session.flush()
+            identity = Identity(persona=Persona.PHYSIO, person_id=person_id, phone_e164=phone)
     if identity is None:
         try:
             resolved = configured_rh_client().operational_query(
@@ -1988,6 +2039,33 @@ def handle_turn(
     state = load(session, identity)
     language = mirror_language(user_text, state.last_known_language)
 
+    # A shared WhatsApp location pin (often from the "Send location" button)
+    if identity.persona == Persona.PATIENT and location is not None:
+        pin_patient = session.get(Patient, identity.person_id)
+        if pin_patient is not None:
+            pin_text, pin_reply = location_pin_turn(
+                session, session.get(Conversation, state.conversation_id), pin_patient,
+                location[0], location[1], has_story=has_narrative(state.extracted),
+            )
+            if pin_reply is not None:
+                save_turn(
+                    session, state, "[Shared location]", pin_reply, state.extracted, state.phase,
+                    language, wa_message_id, stage=state.stage,
+                )
+                return TurnResult(reply_text=pin_reply, language=language, phase=state.phase, extracted=state.extracted)
+            user_text = pin_text or user_text
+
+    # Exercise reminder settings work in any state: STOP / PAUSE / START / "remind me at 7am"
+    if identity.persona == Persona.PATIENT and len(user_text or "") <= 60:
+        reminder_patient = session.get(Patient, identity.person_id)
+        reminder_reply = reminder_command(session, reminder_patient, user_text) if reminder_patient is not None else None
+        if reminder_reply is not None:
+            save_turn(
+                session, state, user_text, reminder_reply, state.extracted, state.phase,
+                language, wa_message_id, stage=state.stage,
+            )
+            return TurnResult(reply_text=reminder_reply, language=language, phase=state.phase, extracted=state.extracted)
+
     # A greeting contains no clinical narrative. Handle it locally so Gemini
     # cannot turn “hey Joy” into a misleading acknowledgement that implies the
     # person has already described a problem.
@@ -1997,11 +2075,20 @@ def handle_turn(
         and not has_narrative(state.extracted)
         and _is_greeting_only(user_text)
     ):
+        # With the sign-up form set up, the welcome carries a "Get started" button for it.
+        # It never blocks typing: the patient can just describe the problem instead.
+        welcome_patient = session.get(Patient, identity.person_id)
+        form = (
+            signup_interactive(state.conversation_id, identity.phone_e164)
+            if welcome_patient is not None and welcome_patient.signup_completed_at is None
+            else None
+        )
+        welcome = WELCOME_WITH_FORM if form else _FIRST_CONTACT_WELCOME
         save_turn(
             session,
             state,
             user_text,
-            _FIRST_CONTACT_WELCOME,
+            welcome,
             state.extracted,
             PatientPhase.FIRST_CONTACT,
             language,
@@ -2009,10 +2096,11 @@ def handle_turn(
             stage=ConversationStage.STORY_CAPTURE,
         )
         return TurnResult(
-            reply_text=_FIRST_CONTACT_WELCOME,
+            reply_text=welcome,
             language=language,
             phase=PatientPhase.FIRST_CONTACT,
             extracted=state.extracted,
+            interactive=form,
         )
 
     if identity.persona == Persona.PATIENT and _is_thanks_only(user_text):
@@ -2081,6 +2169,47 @@ def handle_turn(
                     volunteered_safety, phase, language, wa_message_id,
                 )
 
+    # The physio's exercise plan ("my exercises") and DONE replies that log today's session
+    if identity.persona == Persona.PATIENT and len(user_text or "") <= 80:
+        exercise_patient = session.get(Patient, identity.person_id)
+        exercise_reply, exercise_buttons, exercise_after = None, None, None
+        if exercise_patient is not None and asks_for_programme(user_text):
+            exercise_reply, exercise_buttons, exercise_after = show_programme(session, exercise_patient)
+        elif exercise_patient is not None:
+            exercise_reply = done_command(session, exercise_patient, user_text)
+        if exercise_reply is not None:
+            save_turn(
+                session, state, user_text, exercise_reply, state.extracted, state.phase,
+                language, wa_message_id, stage=state.stage,
+            )
+            return TurnResult(
+                reply_text=exercise_reply, language=language, phase=state.phase,
+                extracted=state.extracted, interactive=exercise_buttons, after=exercise_after or None,
+            )
+
+    # "send me my dashboard link": a fresh one-tap login link from Rehabify
+    if identity.persona == Persona.PATIENT and _DASHBOARD_LINK_RE.search(user_text or "") and len(user_text) <= 120:
+        dashboard_reply = _dashboard_link_reply(session, identity)
+        save_turn(
+            session, state, user_text, dashboard_reply, state.extracted, state.phase,
+            language, wa_message_id, stage=state.stage,
+        )
+        return TurnResult(reply_text=dashboard_reply, language=language, phase=state.phase, extracted=state.extracted)
+
+    # "sign up" / "update my details": the WhatsApp sign-up form (app/flows/signup.py)
+    if identity.persona == Persona.PATIENT and is_signup_request(user_text):
+        offer = signup_offer(session, identity)
+        if offer is not None:
+            offer_text, form = offer
+            save_turn(
+                session, state, user_text, offer_text, state.extracted, state.phase,
+                language, wa_message_id, stage=state.stage,
+            )
+            return TurnResult(
+                reply_text=offer_text, language=language, phase=state.phase,
+                extracted=state.extracted, interactive=form,
+            )
+
     # Linking this WhatsApp number to a website account (LINK, then the emailed code)
     if identity.persona == Persona.PATIENT:
         link_reply = _account_link_turn(session, identity, state, user_text)
@@ -2102,7 +2231,16 @@ def handle_turn(
         and state.stage == ConversationStage.BOOKING_CONFIRMED
         and not decide_booking_substate(state)
     ):
-        reply = _booked_patient_reply(state)
+        booked_context = state.booking_context or {}
+        change = _BOOKING_CHANGE_RE.search(user_text or "")
+        booked_patient = session.get(Patient, identity.person_id)
+        if change and booked_context.get("rh_patient_id") and booked_patient is not None:
+            from app.booking.booking_flow import paid_booking_change_reply
+
+            action = "cancel" if change.group(0).lower().startswith("cancel") else "reschedule"
+            reply = paid_booking_change_reply(booked_patient, str(booked_context["rh_patient_id"]), action)
+        else:
+            reply = _booked_patient_reply(state)
         save_turn(
             session, state, user_text, reply, state.extracted, state.phase,
             language, wa_message_id, stage=state.stage,

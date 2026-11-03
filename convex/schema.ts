@@ -620,6 +620,8 @@ export default defineSchema({
     city: v.optional(v.string()),
     // Neighbourhood/LGA, used with city for Joy home-visit matching.
     area: v.optional(v.string()),
+    // State (e.g. "Oyo", "FCT"), from the WhatsApp sign-up form (joyOperations patient_update_profile)
+    state: v.optional(v.string()),
     country: v.optional(v.string()),
     medicalHistorySummary: v.optional(v.string()), // Brief summary
     // Detailed medical history could be a separate table or structured object
@@ -4966,7 +4968,8 @@ export default defineSchema({
     painScore: v.optional(v.number()), // 0-10
     difficulty: v.optional(v.union(v.literal("easy"), v.literal("ok"), v.literal("hard"))),
     note: v.optional(v.string()),
-    source: v.union(v.literal("app"), v.literal("link")),
+    // "whatsapp": the patient replied DONE to Joy's exercise reminder (joyOperations patient_log_exercise)
+    source: v.union(v.literal("app"), v.literal("link"), v.literal("whatsapp")),
     linkId: v.optional(v.id("exerciseShareLinks")),
     createdAt: v.number(),
     // A clinician has seen a high-pain log (it leaves Needs attention)

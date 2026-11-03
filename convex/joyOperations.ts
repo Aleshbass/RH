@@ -12,6 +12,9 @@ import {
   isPlaceholderUser, linkableEmail, patientsByPhone, sixDigitCode,
 } from "./helpers/whatsappLink";
 import { ZONE_CITY_STATE } from "./helpers/startingZones";
+import { insertLog, patientProgramView, startOfLagosDay } from "./exercisePrograms";
+import { posterUrl } from "./exerciseLibraryCatalog";
+import { assertProgramUnlocked } from "./helpers/patientPlans";
 
 type Operation =
   | "physio_work_summary" | "physio_update_availability" | "physio_session_note"
@@ -25,7 +28,11 @@ type Operation =
   // Additive (Nov 2026): link the WhatsApp number to a website account with an emailed code
   | "patient_link_request" | "patient_link_confirm"
   // Additive (Nov 2026): home-visit areas by city, for Joy's area list and sign-up form
-  | "service_areas";
+  | "service_areas"
+  // Additive (Nov 2026): answers from Joy's WhatsApp sign-up form
+  | "patient_update_profile"
+  // Additive (Nov 2026): the physio's exercise programme on WhatsApp, and DONE replies
+  | "patient_programme" | "patient_log_exercise";
 
 const activeBooking = (status: unknown) => status === "pending" || status === "confirmed" || status === "scheduled";
 const nameOf = (user: { firstName?: string; lastName?: string } | null) =>
@@ -216,6 +223,86 @@ export const executeMutation = internalMutation({
         consents_required: consentDocumentsForJoy(stillNeeded, publicAppUrl()),
       };
     }
+    if (op === "patient_update_profile") {
+      // Answers from Joy's WhatsApp sign-up form. Fills the WhatsApp-only record; on a website
+      // account it only fills blanks, so it never overwrites what the owner entered themselves.
+      const patient = await patientForActor(ctx, String(data.patient_id), data.actor);
+      const text = (value: unknown, max: number) => (typeof value === "string" ? value.trim().slice(0, max) : "");
+      const joyRecord = String(patient.clerkId ?? "").startsWith("joy-whatsapp:");
+      const firstName = text(data.first_name, 60);
+      const lastName = text(data.last_name, 60);
+      const email = text(data.email, 120).toLowerCase();
+      const userPatch: Record<string, unknown> = {};
+      if (firstName && (joyRecord || !patient.firstName || patient.firstName === "Patient")) userPatch.firstName = firstName;
+      if (lastName && (joyRecord || !patient.lastName)) userPatch.lastName = lastName;
+      // Only a WhatsApp-only record takes the email (a later sign-up with it claims this record)
+      if (email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && joyRecord && !patient.email) userPatch.email = email;
+      if (Object.keys(userPatch).length) await ctx.db.patch(patient._id, userPatch);
+
+      const dob = text(data.date_of_birth, 10);
+      const gender = ["male", "female", "other", "prefer_not_to_say"].includes(String(data.gender)) ? String(data.gender) : undefined;
+      const conditions = Array.isArray(data.health_conditions)
+        ? data.health_conditions.map((item: unknown) => text(item, 60)).filter(Boolean).slice(0, 12)
+        : [];
+      const other = text(data.other_conditions, 600);
+      const summary = [conditions.length ? conditions.join(", ") : "", other].filter(Boolean).join(". ");
+      const profile: any =
+        (patient.patientProfileId ? await ctx.db.get(patient.patientProfileId) : null) ??
+        (await ctx.db.query("patientProfiles").withIndex("by_user_id", (q: any) => q.eq("userId", patient._id)).first());
+      const fill = (current: unknown, next: unknown) => (next !== undefined && next !== "" && (joyRecord || !current) ? next : undefined);
+      const profilePatch: Record<string, unknown> = {};
+      const set = (key: string, next: unknown) => { const value = fill(profile?.[key], next); if (value !== undefined) profilePatch[key] = value; };
+      if (/^\d{4}-\d{2}-\d{2}$/.test(dob)) { set("dateOfBirth", dob); set("birthdayMonthDay", dob.slice(5, 10)); }
+      set("gender", gender);
+      set("state", text(data.state, 40) || undefined);
+      set("city", text(data.city, 60) || undefined);
+      set("area", text(data.area, 80) || undefined);
+      if (summary) {
+        const noted = `From WhatsApp sign-up: ${summary}`;
+        profilePatch.medicalHistorySummary = (
+          profile?.medicalHistorySummary && !joyRecord ? `${profile.medicalHistorySummary}\n${noted}` : noted
+        ).slice(0, 2000);
+      }
+      if (profile) { if (Object.keys(profilePatch).length) await ctx.db.patch(profile._id, profilePatch); }
+      else {
+        const profileId = await ctx.db.insert("patientProfiles", { userId: patient._id, country: "Nigeria", ...profilePatch } as any);
+        await ctx.db.patch(patient._id, { patientProfileId: profileId });
+      }
+      await audit(ctx, data, op, { actorUserId: patient._id, patientUserId: patient._id, fields: [...Object.keys(userPatch), ...Object.keys(profilePatch)] });
+      return { updated: true };
+    }
+    if (op === "patient_log_exercise") {
+      // The patient replied DONE to an exercise reminder: log today's session, for one exercise
+      // (item_index) or every exercise not yet logged today. Same rules as the app (Flex gate,
+      // high pain alerts the physio). { patient_id, programme_id?, item_index?, pain_score? }
+      const patient = await patientForActor(ctx, String(data.patient_id), data.actor);
+      const programs = (await ctx.db.query("exercisePrograms").withIndex("by_patient", (q: any) => q.eq("patientId", patient._id)).order("desc").collect())
+        .filter((p: any) => p.status === "active" && (!data.programme_id || p._id === data.programme_id));
+      const program = programs[0];
+      if (!program) return { logged: 0, reason: "no_programme" };
+      try {
+        await assertProgramUnlocked(ctx, program, "log");
+      } catch {
+        return { logged: 0, reason: "locked" };
+      }
+      const today = await ctx.db.query("exerciseProgramLogs").withIndex("by_program", (q: any) => q.eq("programId", program._id).gt("createdAt", startOfLagosDay())).collect();
+      const done = new Set(today.map((log: any) => log.itemIndex));
+      const wanted = typeof data.item_index === "number" ? [data.item_index] : program.items.map((_: unknown, index: number) => index);
+      const pain = typeof data.pain_score === "number" ? data.pain_score : undefined;
+      let logged = 0;
+      for (const index of wanted) {
+        if (!Number.isInteger(index) || index < 0 || index >= program.items.length) continue;
+        if (program.items[index].kind === "education" || (typeof data.item_index !== "number" && done.has(index))) continue;
+        try {
+          await insertLog(ctx, program, { itemIndex: index, painScore: pain }, "whatsapp");
+          logged++;
+        } catch {
+          // Logged in the last 2 minutes already: not an error for a DONE reply
+        }
+      }
+      await audit(ctx, data, op, { patientUserId: patient._id, actorUserId: patient._id, programId: program._id, logged });
+      return { logged, programme_id: program._id, already_done: logged === 0 && wanted.length > 0 };
+    }
     if (op === "patient_link_request") {
       // The patient replied LINK: email a one-time code to the website account that uses their
       // WhatsApp number. Proves they control both the number and the account's mailbox.
@@ -316,6 +403,37 @@ export const executeQuery = internalQuery({
         cities.set(zone.city, entry);
       }
       return { cities: [...cities.values()] };
+    }
+    if (op === "patient_programme") {
+      // The physio's active exercise programmes as sent (names, doses and their own notes only),
+      // for Joy to show on WhatsApp. Joy never writes exercise instructions itself.
+      const patient = await patientForActor(ctx, String(data.patient_id), data.actor);
+      const programs = (await ctx.db.query("exercisePrograms").withIndex("by_patient", (q: any) => q.eq("patientId", patient._id)).order("desc").collect())
+        .filter((p: any) => p.status === "active").slice(0, 3);
+      const views = await Promise.all(programs.map((program: any) => patientProgramView(ctx, program)));
+      return {
+        care_plan_url: `${publicAppUrl()}/dashboard/patient/treatment-plans#today`,
+        programmes: views.map((view: any) => ({
+          programme_id: view._id,
+          title: view.title,
+          note: view.note,
+          goals: view.goals,
+          sender_name: view.senderName,
+          updated_at: view.updatedAt,
+          locked: Boolean(view.plan?.locked),
+          done_today: view.doneToday,
+          items: view.items.map((item: any) => ({
+            index: item.index, kind: item.kind, name: item.name, sets: item.sets, reps: item.reps,
+            hold_seconds: item.holdSeconds, frequency: item.frequency, note: item.note, side: item.side,
+            // The library's picture (a WebP poster of the 3D demo, or a photo) and its approved
+            // how-to steps, so the exercise can be shown in the chat. Joy adds nothing of its own.
+            image_url: item.clipId
+              ? `${publicAppUrl()}${posterUrl(item.clipId)}`
+              : typeof item.exercise?.imageUrl === "string" && item.exercise.imageUrl.startsWith("https://") ? item.exercise.imageUrl : null,
+            steps: Array.isArray(item.exercise?.instructions) ? item.exercise.instructions.slice(0, 5) : [],
+          })),
+        })),
+      };
     }
     if (op === "patient_consent_status") {
       const patient = await patientForActor(ctx, String(data.patient_id), data.actor);

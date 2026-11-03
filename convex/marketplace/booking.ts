@@ -38,6 +38,7 @@ import { CHECKOUT_POLICIES } from "../../lib/policies";
 import { providerResponseDueAt } from "../../lib/bookingResponse";
 import { issueReceipt } from "../helpers/receipts";
 import { makeFunctionReference } from "convex/server";
+import { queueJoyBookingCancelled } from "../helpers/joyEvents";
 
 const sendCareEmail = makeFunctionReference<
     "action",
@@ -1521,6 +1522,9 @@ export const cancelMarketplaceBooking = mutation({
             bookingStatus: "cancelled",
             cancellationReason: args.cancellationReason,
             updatedAt: Date.now(),
+        });
+        await queueJoyBookingCancelled(ctx, booking, {
+            cancelledBy: user._id === booking.patientId ? "patient" : "physiotherapist",
         });
 
         if (booking.appointmentId) {

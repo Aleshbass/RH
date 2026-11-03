@@ -21,6 +21,7 @@ from app.booking.appointment_reminders import (
     appointment_confirmation_text,
     appointment_rescheduled_text,
     appointment_start_from_ms,
+    format_lagos_appointment_time,
     schedule_appointment_reminder,
 )
 
@@ -189,6 +190,14 @@ async def receive_event(request: Request, settings: Settings = Depends(get_setti
             )
     elif event_type == "booking.provider_rejected":
         _prepare_replacement(session, payload.get("data") or {})
+    elif event_type == "patient.dashboard_ready":
+        _send_dashboard_link(session, payload.get("data") or {})
+    elif event_type == "booking.provider_response_requested":
+        _nudge_physio(session, payload.get("data") or {})
+    elif event_type == "booking.cancelled":
+        _booking_cancelled(session, payload.get("data") or {})
+    elif event_type == "outcome.requested":
+        _outcome_requested(session, payload.get("data") or {})
     elif event_type == "physio.patient_message":
         data = payload.get("data") or {}
         rh_patient_id = str(data.get("patient_id") or "")
@@ -304,6 +313,147 @@ def _schedule_reminder_from_details(
            payload={"event": "appointment_reminders_scheduled", "booking_id": booking_id,
                     "reminder_at": (details["session_start"] - timedelta(minutes=30)).isoformat(),
                     "start_reminder_at": details["session_start"].isoformat()})
+
+
+def _patient_for_rh(session: Session, rh_patient_id: str) -> Patient | None:
+    mapping = session.scalar(select(RHIdentityMapping).where(
+        RHIdentityMapping.persona == "patient", RHIdentityMapping.rh_record_id == rh_patient_id,
+    )) if rh_patient_id else None
+    return session.get(Patient, mapping.joy_person_id) if mapping else None
+
+
+def dashboard_link_text(url: str) -> str:
+    return (
+        f"Your Rehabify dashboard is ready: {url}\n\n"
+        "It has your appointments, receipts and care plan. The link signs you in on this phone, "
+        "so please don't share it. Ask me for a new link any time."
+    )
+
+
+def _send_dashboard_link(session: Session, data: dict) -> None:
+    """RH made the patient's dashboard login after payment: send the one-tap link."""
+    patient = _patient_for_rh(session, str(data.get("patient_id") or ""))
+    url = str(data.get("dashboard_url") or "").strip()
+    if patient is None or not url.startswith("https://"):
+        return
+    enqueue_booking_confirmed(patient.phone_e164, str(data.get("booking_id") or ""), dashboard_link_text(url))
+    append(session, kind=AuditKind.BOOKING, actor_phone="rh-service", person_id=patient.id,
+           payload={"event": "dashboard_link_sent", "booking_id": str(data.get("booking_id") or "")})
+
+
+_MODES = {"home_visit": "home visit", "online": "online session", "clinic": "clinic session"}
+
+
+def physio_request_text(data: dict) -> str | None:
+    booking_id = str(data.get("booking_id") or "").strip()
+    if not booking_id or len(booking_id) > 64:
+        return None
+    who = str(data.get("patient_first_name") or "").strip()[:40] or "A patient"
+    what = _MODES.get(str(data.get("service_mode") or ""), "session")
+    when = ""
+    if isinstance(data.get("start_time"), (int, float)):
+        when = f" on {format_lagos_appointment_time(appointment_start_from_ms(data['start_time']))}"
+    where = str(data.get("area") or "").strip()[:60]
+    due = ""
+    if isinstance(data.get("provider_response_due_at"), (int, float)):
+        due = f" by {format_lagos_appointment_time(appointment_start_from_ms(data['provider_response_due_at']))}"
+    code = _short_booking_code(data.get("booking_code"))
+    return (
+        f"New paid Rehabify booking{f' {code}' if code else ''}: {who}, {what}{when}{f' in {where}' if where else ''}.\n\n"
+        f"Please reply ACCEPT {booking_id} or REJECT {booking_id}{due}. "
+        "If you don't answer in time, we'll offer the patient another physiotherapist."
+    )
+
+
+def _nudge_physio(session: Session, data: dict) -> None:
+    """A paid booking waits for the physio: ask them on WhatsApp (RH also sends push and email)."""
+    phone = str(data.get("physiotherapist_phone") or "").strip()
+    text = physio_request_text(data)
+    if not text or not phone.startswith("+") or not phone[1:].isdigit():
+        return
+    enqueue_booking_confirmed(phone, str(data.get("booking_id") or ""), text)
+    append(session, kind=AuditKind.BOOKING, actor_phone="rh-service", person_id=None,
+           payload={"event": "physio_response_requested_on_whatsapp", "booking_id": str(data.get("booking_id") or "")})
+
+
+def booking_cancelled_text(data: dict) -> str:
+    code = _short_booking_code(data.get("booking_code"))
+    when = ""
+    if isinstance(data.get("start_time"), (int, float)):
+        when = f" on {format_lagos_appointment_time(appointment_start_from_ms(data['start_time']))}"
+    which = f"Your appointment{f' {code}' if code else ''}{when}"
+    by = str(data.get("cancelled_by") or "")
+    if by == "system" and not data.get("paid"):
+        return (
+            f"{which} wasn't paid for in time, so the time has been released. "
+            "If you'd still like to book, tell me and I'll find you a new time."
+        )
+    if by == "patient":
+        text = f"{which} has been cancelled as you asked."
+    else:
+        text = f"I'm sorry, {which[0].lower()}{which[1:]} has been cancelled by our care team."
+    refund = str(data.get("refund_status") or "")
+    if refund in {"pending", "processing", "approved"}:
+        text += " Your refund is being processed, and you'll get a message when it's sent."
+    elif refund == "refunded":
+        text += " Your payment has been refunded."
+    elif data.get("paid"):
+        text += " If you paid, our care team will contact you about your payment under our cancellation policy."
+    return text + " Reply here if you'd like to book another time."
+
+
+def _booking_cancelled(session: Session, data: dict) -> None:
+    """RH cancelled a booking (patient, physio, care team or an expired hold)."""
+    from app.models.appointment_reminder import AppointmentReminder
+
+    booking_id = str(data.get("booking_id") or "")
+    if not booking_id:
+        return
+    for reminder in session.scalars(select(AppointmentReminder).where(
+        AppointmentReminder.rh_booking_id == booking_id, AppointmentReminder.status == "pending",
+    )):
+        reminder.status = "cancelled"
+    patient = _patient_for_rh(session, str(data.get("patient_id") or ""))
+    if patient is None:
+        return
+    conversation = _patient_conversation(session, patient)
+    if conversation is not None and (conversation.booking_context or {}).get("rh_booking_id") == booking_id:
+        context = dict(conversation.booking_context or {})
+        context["rh_booking_status"] = "cancelled"
+        conversation.booking_context = context
+        if conversation.booking_substate in {"rh_awaiting_payment_email", "rh_awaiting_payment"}:
+            conversation.booking_substate = None
+    if data.get("notify_patient", True):
+        enqueue_booking_confirmed(patient.phone_e164, booking_id, booking_cancelled_text(data), email=_appointment_email(session, patient))
+    append(session, kind=AuditKind.BOOKING, actor_phone="rh-service", person_id=patient.id,
+           payload={"event": "booking_cancelled_disclosed", "booking_id": booking_id, "cancelled_by": str(data.get("cancelled_by") or "")})
+
+
+# lib/outcomes/moments.ts OutcomeMoment
+_OUTCOME_MOMENTS = {
+    "intake": "before your treatment starts",
+    "pre_session": "before your next session",
+    "post_session": "after your session",
+    "check_in": "on how you're getting on",
+    "discharge": "at the end of your treatment",
+}
+
+
+def _outcome_requested(session: Session, data: dict) -> None:
+    """The physio's progress check-in (a short form): send its link on WhatsApp."""
+    patient = _patient_for_rh(session, str(data.get("patient_id") or ""))
+    url = str(data.get("url") or "").strip()
+    if patient is None or not url.startswith("https://"):
+        return
+    physio = str(data.get("physio_name") or "").strip()[:60] or "Your physiotherapist"
+    when = _OUTCOME_MOMENTS.get(str(data.get("moment") or ""), "")
+    text = (
+        f"📋 {physio} would like a quick progress check-in{f' {when}' if when else ''}. "
+        f"It takes about 2 minutes and helps them plan your care:\n{url}"
+    )
+    enqueue_booking_confirmed(patient.phone_e164, "", text)
+    append(session, kind=AuditKind.TRIAGE, actor_phone="rh-service", person_id=patient.id,
+           payload={"event": "outcome_check_sent", "moment": str(data.get("moment") or "")})
 
 
 def _short_booking_code(value: object) -> str | None:

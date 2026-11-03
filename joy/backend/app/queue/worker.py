@@ -98,11 +98,17 @@ def process_inbound(
     media: list[str] | None = None,
     location_lat: float | None = None,
     location_lng: float | None = None,
+    flow_response: dict | None = None,
 ) -> TurnResult | None:
     turn_started = timer_start()
     existing = session.scalar(select(Message.id).where(Message.wa_message_id == wa_message_id))
     if existing is not None:
         return None
+    if flow_response is not None:
+        # A completed WhatsApp Flow: no model call, the answers are saved in code
+        from app.flows.signup import apply_signup_response
+
+        return apply_signup_response(session, phone, flow_response, wa_message_id)
     client = llm or get_llm_client()
     location = None
     if location_lat is not None and location_lng is not None:
@@ -275,6 +281,7 @@ def process_queue_once(
             media=_payload_media(payload),
             location_lat=payload.get("location_lat"),
             location_lng=payload.get("location_lng"),
+            flow_response=payload.get("flow_response") if isinstance(payload.get("flow_response"), dict) else None,
         )
         if own_session:
             db.commit()
@@ -291,6 +298,7 @@ def process_queue_once(
             send_whatsapp_interactive(payload["phone"], reply, interactive, text_sender=send_whatsapp_text)
         else:
             send_whatsapp_text(payload["phone"], reply)
+        _send_after(payload["phone"], result)
         logger.info(
             "joy_outbound_delivered wa_message_id=%s reply_length=%d processing_ms=%d",
             payload["wa_message_id"],
@@ -298,6 +306,7 @@ def process_queue_once(
             int((time.monotonic() - started) * 1000),
         )
         _ack(raw)
+        _retry_pending_signup(db, payload["phone"], own_session)
         return result
     except Exception as exc:
         if own_session and not committed:
@@ -520,10 +529,57 @@ def process_appointment_reminders_once(
             db.close()
 
 
+_EXERCISE_TICK_SECONDS = 60
+_last_exercise_tick = 0.0
+
+
+def _exercise_reminders_tick() -> None:
+    """Daily exercise reminders (app/exercises/programme.py), checked once a minute."""
+    global _last_exercise_tick
+    if time.monotonic() - _last_exercise_tick < _EXERCISE_TICK_SECONDS:
+        return
+    _last_exercise_tick = time.monotonic()
+    from app.exercises.programme import process_exercise_reminders_once
+
+    process_exercise_reminders_once()
+
+
+def _send_after(phone: str, result) -> None:
+    """Follow-up messages after the reply (exercise pictures, then buttons). Never fails a turn."""
+    for item in getattr(result, "after", None) or []:
+        try:
+            if item.get("image_url"):
+                from app.exercises.media import send_exercise_image
+
+                send_exercise_image(phone, str(item["image_url"]), str(item.get("caption") or ""))
+            elif item.get("text"):
+                if item.get("interactive"):
+                    send_whatsapp_interactive(phone, str(item["text"]), item["interactive"], text_sender=send_whatsapp_text)
+                else:
+                    send_whatsapp_text(phone, str(item["text"]))
+        except Exception:
+            logger.warning("joy_followup_message_failed", exc_info=True)
+
+
+def _retry_pending_signup(db, phone: str, own_session: bool) -> None:
+    """Form answers that couldn't reach Rehabify earlier get another try (never fails a turn)."""
+    try:
+        from app.flows.signup import sync_pending_signup
+
+        if sync_pending_signup(db, phone) and own_session:
+            db.commit()
+    except Exception:
+        logger.warning("joy_signup_retry_skipped", exc_info=True)
+        if own_session:
+            db.rollback()
+
+
 def _interactive_reply(db, phone: str, result) -> dict | None:
     """Tap-to-answer buttons for the step this reply asks about (never on safety replies)."""
     if result is None or getattr(result, "blocked_by_safety", False):
         return None
+    if getattr(result, "interactive", None):
+        return result.interactive
     try:
         from app.conversation.interactive import interactive_for_phone
 
@@ -586,6 +642,10 @@ def run_forever(timeout: int = 5) -> None:
             process_appointment_reminders_once()
         except Exception:
             logger.exception("appointment reminder job failed")
+        try:
+            _exercise_reminders_tick()
+        except Exception:
+            logger.exception("exercise reminder job failed")
         try:
             process_booking_confirmed_once(timeout=0)
         except Exception:

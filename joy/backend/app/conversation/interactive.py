@@ -21,10 +21,12 @@ from app.booking.booking_flow import (
     AWAITING_INITIAL_CONSULTATION_CONFIRMATION,
     AWAITING_POLICY_ACCEPTANCE,
     AWAITING_RH_LOCATION,
+    AWAITING_RH_PAYMENT_EMAIL,
     AWAITING_RH_PROVIDER,
     AWAITING_RH_SERVICE_MODE,
     AWAITING_RH_SLOT,
     AWAITING_TREATMENT_OPTION,
+    pin_lookup_enabled,
 )
 from app.models.conversation import Conversation
 from app.models.types import Persona
@@ -43,6 +45,11 @@ def reply_buttons(*options: tuple[str, str]) -> dict[str, Any]:
     }
 
 
+def location_request() -> dict[str, Any]:
+    """WhatsApp's "Send location" button: the reply is a location pin."""
+    return {"type": "location_request_message", "action": {"name": "send_location"}}
+
+
 def list_menu(button: str, rows: list[tuple[str, str, str | None]], *, section: str = "Choose one") -> dict[str, Any]:
     """A tap-to-open list; each row is (id the tap sends back, title, optional description)."""
     return {
@@ -58,6 +65,16 @@ def list_menu(button: str, rows: list[tuple[str, str, str | None]], *, section: 
             }],
         },
     }
+
+
+def _provider_detail(provider: dict) -> str | None:
+    parts = []
+    if isinstance(provider.get("amount_kobo"), int):
+        parts.append(f"₦{int(provider['amount_kobo']) // 100:,}")
+    if isinstance(provider.get("distance_km"), (int, float)):
+        km = float(provider["distance_km"])
+        parts.append("about 1 km away" if km < 1.5 else f"about {round(km):,} km away")
+    return " · ".join(parts) or None
 
 
 def slot_label(start_ms: int | float) -> str:
@@ -90,15 +107,18 @@ def interactive_for(conversation: Conversation | None) -> dict[str, Any] | None:
             return list_menu("Choose your area", [
                 (str(z["id"]), str(z.get("title") or z["id"]), z.get("description")) for z in zones
             ], section=str(context.get("location_city") or "Areas"))
+        if pin_lookup_enabled() and not context.get("location_asked_state"):
+            return location_request()  # one tap shares the pin; typing still works
         if context.get("location_city") or context.get("location_asked_state"):
             return None  # waiting for a typed town or state
         return reply_buttons(("Lagos", "Lagos"), ("Abuja", "Abuja"), ("other state", "Other state"))
+    if step == AWAITING_RH_PAYMENT_EMAIL and context.get("suggested_email"):
+        return reply_buttons(("yes", "Yes, use that email"))
     if step == AWAITING_RH_PROVIDER:
         providers = [p for p in context.get("providers") or [] if isinstance(p, dict)]
         if providers:
             return list_menu("Choose a physio", [
-                (str(index), str(p.get("display_name") or "Physiotherapist"),
-                 f"₦{int(p['amount_kobo']) // 100:,}" if isinstance(p.get("amount_kobo"), int) else None)
+                (str(index), str(p.get("display_name") or "Physiotherapist"), _provider_detail(p))
                 for index, p in enumerate(providers, 1)
             ], section="Verified specialists")
     if step == AWAITING_RH_SLOT:

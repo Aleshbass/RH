@@ -30,6 +30,7 @@ import { calculatePaystackInboundGrossAmount } from "../lib/pricing";
 import { missingPolicies } from "./helpers/policyAcceptance";
 import { recoveryPlanForJoy } from "./helpers/patientPlans";
 import { PATIENT_CONSENT_POLICIES, consentDocumentsForJoy } from "../lib/policies";
+import { askPhysioToRespond } from "./marketplace/booking";
 
 const HOUR_MS = 60 * 60 * 1000;
 const BOOKING_HOLD_MS = 30 * 60 * 1000;
@@ -723,6 +724,16 @@ export const resolvePhysiotherapistByPhone = internalQuery({
   },
 });
 
+/** Straight-line distance in km between two points; null if either point is missing or invalid. */
+function kmBetween(lat1?: number, lng1?: number, lat2?: number, lng2?: number): number | null {
+  if ([lat1, lng1, lat2, lng2].some((value) => typeof value !== "number" || !Number.isFinite(value))) return null;
+  const rad = (deg: number) => (deg * Math.PI) / 180;
+  const dLat = rad(lat2! - lat1!);
+  const dLng = rad(lng2! - lng1!);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(lat1!)) * Math.cos(rad(lat2!)) * Math.sin(dLng / 2) ** 2;
+  return 6371 * 2 * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+
 /**
  * Read-only, conservative provider matching for Joy. It never reads a bio to
  * infer eligibility and excludes unapproved, unmodeled, or incomplete data.
@@ -734,6 +745,9 @@ export const findMatches = internalQuery({
     serviceMode: v.union(v.literal("home_visit"), v.literal("clinic"), v.literal("online")),
     city: v.optional(v.string()),
     area: v.optional(v.string()),
+    // The patient's shared WhatsApp location pin: in-person matches are listed nearest first
+    latitude: v.optional(v.number()),
+    longitude: v.optional(v.number()),
     limit: v.number(),
   },
   handler: async (ctx, args) => {
@@ -766,6 +780,7 @@ export const findMatches = internalQuery({
       if (!profile.availabilitySchedule) continue;
       const user = await ctx.db.get(profile.userId);
       if (!user) continue;
+      const distanceKm = args.serviceMode !== "online" ? kmBetween(args.latitude, args.longitude, profile.latitude, profile.longitude) : null;
       results.push({
         physiotherapist_id: profile._id,
         physiotherapist_user_id: profile.userId,
@@ -773,8 +788,13 @@ export const findMatches = internalQuery({
         specialties: tags,
         service_modes: modes,
         amount_kobo: amountKobo,
+        ...(distanceKm !== null ? { distance_km: Math.round(distanceKm * 10) / 10 } : {}),
         match_reasons: ["verified specialty", "approved marketplace provider", "configured service mode", ...(args.serviceMode === "home_visit" ? ["covers your area"] : [])],
       });
+    }
+    // Nearest first when the patient shared a pin; physios without a map location keep their place after
+    if (args.latitude !== undefined && args.longitude !== undefined) {
+      results.sort((a: any, b: any) => (a.distance_km ?? Infinity) - (b.distance_km ?? Infinity));
     }
     return results.slice(0, Math.min(Math.max(args.limit, 1), 3));
   },
@@ -1247,7 +1267,19 @@ export const recordJoyPaymentWebhook = internalMutation({
       receipt_url: receiptUrl,
     };
     await queueJoyEvent(ctx, `pay-${args.reference}`, "booking.payment_confirmed", eventData);
-    await queueJoyEvent(ctx, `provider-response-${booking._id}`, "booking.provider_response_requested", eventData);
+    // Joy asks the physio on WhatsApp (ACCEPT / REJECT); the dashboard, push and email ask too
+    const physioUser = booking.physiotherapistId ? await ctx.db.get(booking.physiotherapistId) : null;
+    const patientUser = await ctx.db.get(booking.patientId);
+    await queueJoyEvent(ctx, `provider-response-${booking._id}`, "booking.provider_response_requested", {
+      ...eventData,
+      booking_code: booking.bookingCode ?? null,
+      start_time: booking.sessionDate ?? null,
+      service_mode: booking.joyServiceMode ?? (booking.isOnline ? "online" : "home_visit"),
+      area: booking.joyServiceMode === "home_visit" ? (booking.travelArea ?? null) : null,
+      patient_first_name: patientUser?.firstName && patientUser.firstName !== "Patient" ? patientUser.firstName : null,
+      physiotherapist_phone: normalizePhone(physioUser?.phoneNumber) ?? null,
+    });
+    await askPhysioToRespond(ctx, { ...booking, paymentStatus: "completed", providerResponse: "pending", providerResponseDueAt: joyResponseDueAt }, joyResponseDueAt);
     await scheduleJoyDashboard(ctx, booking);
 
     return { handled: true, duplicate: false, booking_id: booking._id, patient_id: booking.patientId, physiotherapist_id: booking.physiotherapistId, provider_response_due_at: joyResponseDueAt, event_id: args.paystackEventId };

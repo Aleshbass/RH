@@ -56,6 +56,11 @@ async def inbound_webhook(
                 if msg_type == "text":
                     text = str((message.get("text") or {}).get("body") or "")
                     enqueue_inbound(wa_message_id, phone, text)
+                elif msg_type == "interactive" and (message.get("interactive") or {}).get("type") == "nfm_reply":
+                    # A completed WhatsApp Flow (the sign-up form, app/flows/signup.py)
+                    response = _flow_response(message)
+                    if response is not None:
+                        enqueue_inbound(wa_message_id, phone, "", flow_response=response)
                 elif msg_type in {"interactive", "button"}:
                     # A tapped button or list row: its id is the reply Joy would accept typed
                     # (app/conversation/interactive.py), so it follows the same path as text.
@@ -118,6 +123,19 @@ def _tapped_reply(message: dict) -> str:
         reply = interactive.get(kind) or {}
         return str(reply.get("id") or reply.get("title") or "").strip()
     return ""
+
+
+def _flow_response(message: dict) -> dict | None:
+    """The answers of a completed Flow: nfm_reply.response_json is a JSON string."""
+    reply = (message.get("interactive") or {}).get("nfm_reply") or {}
+    raw = reply.get("response_json")
+    try:
+        data = json.loads(raw) if isinstance(raw, str) else raw
+    except ValueError:
+        return None
+    if not isinstance(data, dict) or len(raw or "") > 20_000:
+        return None
+    return data
 
 
 def _media_ref(blob: dict) -> str:

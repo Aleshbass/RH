@@ -25,6 +25,7 @@ import { requireAdmin } from "./helpers/partnerAccess";
 import { getClinicMemberOrNull } from "./clinicTools";
 import { ensureActiveEpisode, episodesFor } from "./physioCare";
 import { awardPoints } from "./rewards";
+import { isJoyLoginEmail } from "../lib/auth/joyLoginEmail";
 import { CHECK_LINK_DAYS, MOMENT_QUESTIONS, SHARE_CONSENT_VERSION, momentMessage, quoteOptions, type OutcomeMoment } from "../lib/outcomes/moments";
 import {
   PUBLIC_MIN_COURSES,
@@ -155,8 +156,14 @@ export async function createOutcomeCheck(ctx: MutationCtx, input: NewCheck, send
     });
     via.push("app");
   }
-  // WhatsApp: Joy sends it once its template is approved and the switch is on
-  if (process.env.JOY_OUTCOME_EVENTS === "on" && input.patient.clerkId?.startsWith("joy-whatsapp:")) {
+  // WhatsApp: Joy sends it once its template is approved and the switch is on. A Joy patient
+  // keeps WhatsApp after paying, when their record gets a login (placeholder email) or is linked
+  // to a website account, so the clerkId prefix alone missed most paid patients.
+  const onWhatsApp =
+    input.patient.clerkId?.startsWith("joy-whatsapp:") ||
+    isJoyLoginEmail(input.patient.email) ||
+    Boolean(input.patient.whatsappLinkedAt);
+  if (process.env.JOY_OUTCOME_EVENTS === "on" && onWhatsApp) {
     const eventId = `outcome-${checkId}`;
     const payload = {
       event_id: eventId,

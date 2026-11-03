@@ -112,7 +112,7 @@ def handle_booking_turn(
     if cancelled is not None:
         return cancelled
 
-    rescheduled = _maybe_reschedule(session, patient, user_text)
+    rescheduled = _maybe_reschedule(session, patient, user_text, conversation)
     if rescheduled is not None:
         return rescheduled
 
@@ -456,11 +456,83 @@ def _parse_city_area(user_text: str) -> tuple[str, str] | None:
     return None
 
 
+def pin_lookup_enabled() -> bool:
+    """Rehabify can turn a shared location pin into an area (needs the direct RH gateway)."""
+    settings = get_settings()
+    return bool(settings.rh_convex_gateway_base_url and settings.rh_convex_gateway_hmac_secret)
+
+
 def _location_prompt() -> str:
+    if pin_lookup_enabled():
+        return (
+            "For a home visit, where are you? Tap *Send location* to share your pin, the quickest and "
+            "most accurate way. Or type your area and city, for example Lekki, Lagos, or just your state "
+            "or town if you're outside Lagos and Abuja."
+        )
     return (
         "For a home visit, where are you? Tap Lagos or Abuja, or Other state for anywhere else in "
         "Nigeria. You can also reply Area, City — for example, Lekki, Lagos."
     )
+
+
+def _pin_hint() -> str:
+    return " You can also tap *Send location* to share your pin." if pin_lookup_enabled() else ""
+
+
+def _same_place(a: str | None, b: str | None) -> bool:
+    return bool(a and b) and _place_key(a) == _place_key(b)
+
+
+def place_from_pin(session: Session, patient: Patient, ctx: dict, lat: float, lng: float) -> tuple[str, str] | None:
+    """(city, area) in travel-zone terms for a shared pin. Also keeps the pin on the patient."""
+    from app.integrations.geocode import place_for_pin
+
+    patient.lat, patient.lng = float(lat), float(lng)
+    place = place_for_pin(lat, lng)
+    if place is None:
+        return None
+    cities = _service_areas(patient, ctx)
+    in_state = [c for c in cities if _same_place(str(c.get("state") or ""), place.state)]
+    for name in place.names():
+        places, _ = _resolve_place(name, in_state or cities)
+        found = {str(c.get("city") or "") for c in places}
+        if len(found) == 1:
+            return found.pop(), place.area or name
+    if len(in_state) == 1:
+        return str(in_state[0].get("city")), place.area or place.town or str(place.state)
+    # A town outside the state's split city (e.g. Iseyin in Oyo): the rest-of-state zone
+    rest = [c for c in in_state if str(c.get("city") or "").endswith(" State")]
+    if rest and place.state:
+        return str(rest[0].get("city")), place.area or place.town or str(place.state)
+    return None
+
+
+def location_pin_turn(session: Session, conversation: Conversation | None, patient: Patient, lat: float, lng: float, *, has_story: bool) -> tuple[str | None, str | None]:
+    """A shared location pin: (text to carry on the booking with, or a direct reply)."""
+    ctx = dict(conversation.booking_context or {}) if conversation is not None else {}
+    found = place_from_pin(session, patient, ctx, lat, lng)
+    at_location_step = conversation is not None and conversation.booking_substate == AWAITING_RH_LOCATION
+    if at_location_step:
+        if found is None:
+            return None, (
+                "Thanks for the pin. I couldn't work out the area from it, so please type your area and "
+                "city, for example Lekki, Lagos."
+            )
+        city, area = found
+        ctx["pin_place"] = f"{area}, {city}"
+        conversation.booking_context = ctx
+        session.flush()
+        return f"{area}, {city}", None
+    if found is None:
+        reply = "Thanks, I've saved your location pin. I'll use it to find physiotherapists near you."
+    else:
+        city, area = found
+        patient.city, patient.area, patient.location = city, area, f"{area}, {city}"
+        reply = f"Thanks, I've saved your location as {area}, {city}. I'll use it to find physiotherapists near you for a home visit."
+    session.flush()
+    if not has_story:
+        reply += "\n\nNow, tell me what's going on: what's bothering you, which part of your body, and how long you've had it."
+    return None, reply
 
 
 def _find_rh_matches(session: Session, conversation: Conversation, patient: Patient, extracted: ExtractedTriage, *, mode: str, rh_patient_id: str, tags: list[str]) -> str:
@@ -472,6 +544,11 @@ def _find_rh_matches(session: Session, conversation: Conversation, patient: Pati
         context.update({
             "rh_patient_id": rh_patient_id, "service_mode": mode, "required_specialties": tags,
         })
+        if patient.city:
+            # The city is known (e.g. from the sign-up form): ask only for the town or area
+            context["location_city"] = patient.city
+            _set_substate(conversation, AWAITING_RH_LOCATION, context)
+            return f"For the home visit, which town or area in {patient.city} are you in?{_pin_hint()}"
         _set_substate(conversation, AWAITING_RH_LOCATION, context)
         return _location_prompt()
     try:
@@ -479,6 +556,7 @@ def _find_rh_matches(session: Session, conversation: Conversation, patient: Pati
             patient_id=rh_patient_id, assessment_id=str(_current_assessment(session, patient)), assessment_revision=1,
             required_specialties=tags, service_mode=mode, city=patient.city if mode == "home_visit" else None,
             area=patient.area if mode == "home_visit" else None, actor=_rh_actor(patient, rh_patient_id),
+            latitude=patient.lat if mode != "online" else None, longitude=patient.lng if mode != "online" else None,
         )
     except RHIntegrationError:
         return "I can’t retrieve live specialist availability right now. Please try again shortly."
@@ -488,9 +566,12 @@ def _find_rh_matches(session: Session, conversation: Conversation, patient: Pati
             return "There are no verified specialists currently serving your area for this care. I can’t offer a home visit there right now. You can ask about clinic or online care instead."
         return NO_SPECIALIST_YET
     providers = [m.__dict__ for m in matches]
-    lines = ["Here are the verified specialists available for your care:"]
+    pin_place = context.pop("pin_place", None)
+    lines = [f"From your pin, you're in {pin_place}." if pin_place else None, "Here are the verified specialists available for your care:"]
+    lines = [line for line in lines if line]
     for index, match in enumerate(matches, 1):
-        lines.append(f"{index}. {match.display_name or 'Physiotherapist'} — ₦{match.amount_kobo // 100:,}")
+        near = f" · about {_km(match.distance_km)} away" if match.distance_km is not None else ""
+        lines.append(f"{index}. {match.display_name or 'Physiotherapist'} — ₦{match.amount_kobo // 100:,}{near}")
     lines.append("Reply with the number of the specialist you prefer.")
     context.update({
         "rh_patient_id": rh_patient_id, "service_mode": mode, "required_specialties": tags,
@@ -500,6 +581,10 @@ def _find_rh_matches(session: Session, conversation: Conversation, patient: Pati
     append(session, kind=AuditKind.MATCH, actor_phone=patient.phone_e164, person_id=patient.id,
            payload={"decision": "rh_matches_presented", "service_mode": mode, "provider_ids": [m.physiotherapist_id for m in matches]})
     return "\n".join(lines)
+
+
+def _km(distance: float) -> str:
+    return "1 km" if distance < 1.5 else f"{round(distance):,} km"
 
 
 def _continue_rh_service_mode(session: Session, conversation: Conversation, patient: Patient, extracted: ExtractedTriage, user_text: str) -> str:
@@ -576,7 +661,7 @@ def _offer_place(conversation: Conversation, ctx: dict, places: list[dict], type
         _set_substate(conversation, AWAITING_RH_LOCATION, ctx)
         named = [a for a in zone.get("areas") or [] if a != "*"]
         example = f" (for example, {named[0]})" if named else ""
-        return f"Which town or area in {city} are you in{example}?"
+        return f"Which town or area in {city} are you in{example}?{_pin_hint()}"
     label = str(places[0].get("state") or places[0].get("city") or "") if len(places) > 1 else str(places[0].get("city") or "")
     ctx["location_city"] = str(places[0].get("city") or "")
     ctx["location_zones"] = [_zone_row(zone, city) for zone, city in zones[:10]]
@@ -789,16 +874,40 @@ def _continue_rh_slot(session: Session, conversation: Conversation, patient: Pat
     # a phone number: the hold is valid, but payment must wait for the patient
     # to provide an address they control.
     ctx.update({"rh_booking_id": booking.booking_id, "rh_amount_kobo": booking.amount_kobo})
+    known_email = _known_email(patient)
+    if known_email:
+        ctx["suggested_email"] = known_email
     _set_substate(conversation, AWAITING_RH_PAYMENT_EMAIL, ctx)
     append(session, kind=AuditKind.BOOKING, actor_phone=patient.phone_e164, person_id=patient.id,
            payload={"decision": "rh_booking_hold_created", "rh_booking_id": booking.booking_id})
+    if known_email:
+        return (
+            f"Your time is held. Shall I send your secure payment receipt to {known_email}? "
+            "Reply YES, or send a different email address."
+        )
     return "Your time is held. Please reply with the email address you want to use for your secure payment receipt."
+
+
+_USE_EMAIL = {"yes", "y", "yes please", "ok", "okay", "yes, use it", "use it", "use that", "use that email", "correct", "sure"}
+
+
+def _known_email(patient: Patient) -> str | None:
+    """The email the patient gave in the sign-up form, if it is a real address."""
+    email = (getattr(patient, "email", None) or "").strip().casefold()
+    return email if _PAYMENT_EMAIL_RE.fullmatch(email) and not email.endswith(".invalid") else None
 
 
 def _continue_rh_payment_email(session: Session, conversation: Conversation, patient: Patient, user_text: str) -> str:
     email = user_text.strip().casefold()
+    suggested = str((conversation.booking_context or {}).get("suggested_email") or "")
+    if suggested and email.strip(" .!") in _USE_EMAIL:
+        email = suggested
     if not _PAYMENT_EMAIL_RE.fullmatch(email) or email.endswith(".invalid"):
+        if suggested:
+            return f"Reply YES to use {suggested}, or send the email address you'd like for your payment receipt."
         return "Please reply with a valid email address for your secure payment receipt."
+    if email != suggested and not _known_email(patient):
+        patient.email = email  # remembered for next time (the sign-up form can change it)
     ctx = dict(conversation.booking_context or {})
     booking_id = ctx.get("rh_booking_id")
     rh_patient_id = ctx.get("rh_patient_id")
@@ -958,6 +1067,8 @@ def _maybe_cancel(
     context = dict(conversation.booking_context or {})
     rh_booking_id = context.get("rh_booking_id")
     rh_patient_id = context.get("rh_patient_id")
+    if rh_booking_id and rh_patient_id and _rh_booking_paid(context):
+        return paid_booking_change_reply(patient, str(rh_patient_id), "cancel")
     if rh_booking_id and rh_patient_id:
         try:
             configured_rh_client().cancel_booking(
@@ -983,9 +1094,34 @@ def _maybe_cancel(
     return reply
 
 
-def _maybe_reschedule(session: Session, patient: Patient, user_text: str) -> str | None:
+def _rh_booking_paid(context: dict) -> bool:
+    return context.get("rh_payment_status") == "succeeded" or context.get("rh_booking_status") == "confirmed"
+
+
+def paid_booking_change_reply(patient: Patient, rh_patient_id: str, action: str) -> str:
+    """Paid bookings are cancelled or moved in the dashboard, where the policy is applied."""
+    verb = "cancel" if action == "cancel" else "move"
+    text = (
+        f"Your appointment is paid, so you {verb} it from your Rehabify dashboard. It shows exactly "
+        "what happens under our cancellation policy before you confirm: 24 hours or more before the "
+        "session you get a full refund, and from 2 to 24 hours before, half the session fee plus travel."
+    )
+    try:
+        result = configured_rh_client().dashboard_link(patient_id=rh_patient_id, sender_phone=patient.phone_e164)
+    except RHIntegrationError:
+        result = {}
+    url = str(result.get("dashboard_url") or "") if isinstance(result, dict) and result.get("ok") else ""
+    if url.startswith("https://"):
+        return f"{text}\n\nOpen your dashboard: {url}\n\nOr reply here and our care team will help."
+    return f"{text}\n\nSign in at https://physioaroundme.com/sign-in, or reply here and our care team will help."
+
+
+def _maybe_reschedule(session: Session, patient: Patient, user_text: str, conversation: Conversation | None = None) -> str | None:
     if not _RESCHEDULE_RE.search(user_text):
         return None
+    context = dict(conversation.booking_context or {}) if conversation is not None else {}
+    if context.get("rh_booking_id") and context.get("rh_patient_id") and _rh_booking_paid(context):
+        return paid_booking_change_reply(patient, str(context["rh_patient_id"]), "reschedule")
     booking = _mutable_booking(session, patient.id)
     if booking is None:
         return None

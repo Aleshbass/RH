@@ -41,6 +41,15 @@ class Settings(BaseSettings):
     # than 24 hours after the person last wrote. Empty: always send plain text.
     whatsapp_update_template: str = ""
     whatsapp_update_template_language: str = "en"
+    # The published sign-up WhatsApp Flow (scripts/publish_signup_flow.py). Empty: no form,
+    # Joy collects details in the chat as before. Mode "draft" lets the owner test an
+    # unpublished form on their own phone.
+    whatsapp_signup_flow_id: str = ""
+    whatsapp_signup_flow_mode: str = "published"
+    # In draft mode the form goes only to these numbers (comma-separated, +234...), so patients
+    # never see an unpublished form
+    whatsapp_signup_flow_testers: str = ""
+    whatsapp_business_account_id: str = ""
     resend_api_key: str = ""
     from_email: str = ""
     from_name: str = "Rehabify Joy"

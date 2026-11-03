@@ -5,7 +5,7 @@ import {
   resolveAvailabilityProfile, createPendingBooking, createAdminScheduledVirtualBooking, resolvePartnerAttribution, getBooking,
   preparePaymentAttempt, recordPaymentInitialization, recordPaymentWebhook, recordPaymentFailedWebhook, createSpecialistReview, prepareSpecialistReviewPayment, recordSpecialistReviewPaymentInitialization, recordSpecialistReviewPaymentWebhook, cancelBooking, enqueueEvent, markEventDelivery, respondToBooking, replacementCandidates, reassignBooking,
 } from "./joyGateway";
-import { readResolvePhysiotherapist, readFindMatches, readAvailability, readBooking, operationalQuery, operationalMutation, upsertIntake, recordJourneyEvent, issueDashboardLink } from "./joyGateway";
+import { readResolvePhysiotherapist, readFindMatches, readAvailability, readBooking, operationalQuery, operationalMutation, upsertIntake, recordJourneyEvent, issueDashboardLink, placeForPin } from "./joyGateway";
 import { rpc as partnerGatewayRpc } from "./partnerGateway";
 
 const http = httpRouter();
@@ -33,6 +33,7 @@ http.route({ path: "/joy-integration/resolve_referral_context", method: "POST", 
 http.route({ path: "/joy-integration/update_patient_location", method: "POST", handler: updatePatientLocation });
 http.route({ path: "/joy-integration/resolve_physiotherapist", method: "POST", handler: resolvePhysiotherapist });
 http.route({ path: "/joy-integration/find_matches", method: "POST", handler: findMatches });
+http.route({ path: "/joy-integration/place_for_pin", method: "POST", handler: placeForPin });
 http.route({ path: "/joy-integration/resolve_availability_profile", method: "POST", handler: resolveAvailabilityProfile });
 http.route({ path: "/joy-integration/create_pending_booking", method: "POST", handler: createPendingBooking });
 http.route({ path: "/joy-integration/create_admin_scheduled_virtual_booking", method: "POST", handler: createAdminScheduledVirtualBooking });

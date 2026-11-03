@@ -115,15 +115,84 @@ export const resolvePhysiotherapist = httpAction(async (ctx, request) => {
   return Response.json(await ctx.runQuery((internal as any).joyIntegration.resolvePhysiotherapistByPhone, { phone: parsed.data.phone }));
 });
 
+/**
+ * Where a patient's shared WhatsApp location pin is (state, town, area), for Joy to pick the
+ * travel zone. Server-side reverse geocoding, so no key leaves Convex: Mapbox when
+ * MAPBOX_ACCESS_TOKEN is set, otherwise LocationIQ (the key the website's search uses).
+ * Only the coordinates are sent; nothing is stored here.
+ */
+type PinPlace = { state: string | null; town: string | null; area: string | null };
+
+async function mapboxPlace(token: string, latitude: number, longitude: number): Promise<PinPlace | null> {
+  const response = await fetch(
+    `https://api.mapbox.com/search/geocode/v6/reverse?longitude=${longitude}&latitude=${latitude}&country=ng&language=en` +
+      `&types=neighborhood,locality,place,district,region&access_token=${encodeURIComponent(token)}`,
+  );
+  if (!response.ok) return null;
+  const feature: any = (await response.json())?.features?.[0];
+  if (!feature) return null;
+  const props = feature.properties ?? {};
+  const named = (kind: string): string | null => {
+    const value = props.context?.[kind]?.name ?? (props.feature_type === kind ? props.name : null);
+    return typeof value === "string" && value.trim() ? value.trim() : null;
+  };
+  return { state: named("region"), town: named("place") ?? named("district"), area: named("neighborhood") ?? named("locality") };
+}
+
+async function locationIqPlace(key: string, latitude: number, longitude: number): Promise<PinPlace | null> {
+  const response = await fetch(
+    `https://us1.locationiq.com/v1/reverse?key=${encodeURIComponent(key)}&lat=${latitude}&lon=${longitude}` +
+      "&format=json&normalizeaddress=1&accept-language=en",
+    { headers: { "User-Agent": "RehabifyHealth/1.0" } },
+  );
+  if (!response.ok) return null;
+  const data: any = await response.json();
+  const address = data?.address ?? {};
+  if (address.country_code && String(address.country_code).toLowerCase() !== "ng") return null;
+  const first = (...keys: string[]) => keys.map((k) => address[k]).find((value) => typeof value === "string" && value.trim())?.trim() ?? null;
+  return {
+    state: first("state"),
+    town: first("city", "town", "village", "county"),
+    area: first("neighbourhood", "suburb", "quarter", "city_district", "hamlet"),
+  };
+}
+
+export const placeForPin = httpAction(async (ctx, request) => {
+  const parsed = await readJson(request, "/joy-integration/place_for_pin");
+  if (parsed instanceof Response) return parsed;
+  if (!(await reserveNonce(ctx, parsed.nonce))) return new Response("Replay detected", { status: 409 });
+  const pin = pinArgs(parsed.data.latitude, parsed.data.longitude);
+  if (pin.latitude === undefined || pin.longitude === undefined) return new Response("Invalid payload", { status: 400 });
+  const mapbox = process.env.MAPBOX_ACCESS_TOKEN;
+  const locationIq = process.env.LOCATIONIQ_API_KEY;
+  if (!mapbox && !locationIq) return Response.json({ found: false, reason: "not_configured" });
+  try {
+    const fromMapbox = mapbox ? await mapboxPlace(mapbox, pin.latitude, pin.longitude).catch(() => null) : null;
+    const place = fromMapbox ?? (locationIq ? await locationIqPlace(locationIq, pin.latitude, pin.longitude) : null);
+    if (!place || !(place.state || place.town)) return Response.json({ found: false, reason: "lookup_failed" });
+    return Response.json({ found: true, ...place, source: fromMapbox ? "mapbox" : "locationiq" });
+  } catch {
+    return Response.json({ found: false, reason: "lookup_failed" });
+  }
+});
+
+/** A shared location pin, only when both coordinates are real numbers inside Nigeria's box. */
+function pinArgs(latitude: unknown, longitude: unknown): { latitude?: number; longitude?: number } {
+  if (typeof latitude !== "number" || typeof longitude !== "number") return {};
+  if (!(latitude >= 4 && latitude <= 14.5 && longitude >= 2.5 && longitude <= 15)) return {};
+  return { latitude, longitude };
+}
+
 export const findMatches = httpAction(async (ctx, request) => {
   const parsed = await readJson(request, "/joy-integration/find_matches");
   if (parsed instanceof Response) return parsed;
   if (!(await reserveNonce(ctx, parsed.nonce))) return new Response("Replay detected", { status: 409 });
-  const { patient_id, required_specialties, service_mode, city, area, limit } = parsed.data;
+  const { patient_id, required_specialties, service_mode, city, area, limit, latitude, longitude } = parsed.data;
   if (typeof patient_id !== "string" || !Array.isArray(required_specialties) || !required_specialties.every((value) => typeof value === "string") || !["home_visit", "clinic", "online"].includes(String(service_mode))) return new Response("Invalid payload", { status: 400 });
   return Response.json(await ctx.runQuery((internal as any).joyIntegration.findMatches, {
     patientId: patient_id, requiredSpecialties: required_specialties, serviceMode: service_mode,
     city: typeof city === "string" ? city : undefined, area: typeof area === "string" ? area : undefined,
+    ...pinArgs(latitude, longitude),
     limit: typeof limit === "number" ? limit : 3,
   }));
 });
@@ -154,11 +223,12 @@ export const readResolvePhysiotherapist = httpAction(async (ctx, request) => {
 export const readFindMatches = httpAction(async (ctx, request) => {
   const parsed = await readReadOnlyJson(request, "/joy-read/find_matches");
   if (parsed instanceof Response) return parsed;
-  const { patient_id, required_specialties, service_mode, city, area, limit } = parsed.data;
+  const { patient_id, required_specialties, service_mode, city, area, limit, latitude, longitude } = parsed.data;
   if (typeof patient_id !== "string" || !Array.isArray(required_specialties) || !required_specialties.every((value) => typeof value === "string") || !["home_visit", "clinic", "online"].includes(String(service_mode))) return new Response("Invalid payload", { status: 400 });
   return Response.json(await ctx.runQuery((internal as any).joyIntegration.findMatches, {
     patientId: patient_id, requiredSpecialties: required_specialties, serviceMode: service_mode,
     city: typeof city === "string" ? city : undefined, area: typeof area === "string" ? area : undefined,
+    ...pinArgs(latitude, longitude),
     limit: typeof limit === "number" ? limit : 3,
   }));
 });

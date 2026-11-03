@@ -673,11 +673,11 @@ export async function patientProgramView(ctx: Ctx, program: Doc<"exerciseProgram
   };
 }
 
-async function insertLog(
+export async function insertLog(
   ctx: MutationCtx,
   program: Doc<"exercisePrograms">,
   args: { itemIndex: number; setsDone?: number; painScore?: number; difficulty?: "easy" | "ok" | "hard"; note?: string },
-  source: "app" | "link",
+  source: "app" | "link" | "whatsapp",
   linkId?: Id<"exerciseShareLinks">
 ) {
   if (!Number.isInteger(args.itemIndex) || args.itemIndex < 0 || args.itemIndex >= program.items.length) {

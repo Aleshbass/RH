@@ -24,6 +24,7 @@ import { awaitingConfirmationFrom } from "./helpers/appointmentStatus";
 import { emailAboutAppointment, personName, syncGoogleCalendarEvent } from "./helpers/appointmentNotify";
 import { formatKobo, getService, isBookableServiceId } from "../lib/rehabify-services";
 import { lagosDate, lagosDateTime, lagosTimeRange } from "./helpers/lagosTime";
+import { queueJoyBookingCancelled } from "./helpers/joyEvents";
 
 const REHABIFY_SOURCES = new Set(["marketplace", "joy_whatsapp", "booking_link"]);
 
@@ -560,6 +561,7 @@ export const requestRefundForUntakenBooking = mutation({
       cancellationReason: "Refund requested: the physiotherapist couldn't take the booking",
       updatedAt: Date.now(),
     });
+    await queueJoyBookingCancelled(ctx, booking, { cancelledBy: "physiotherapist", refundStatus: "pending" });
     return { amountKobo };
   },
 });
@@ -699,6 +701,7 @@ export async function settlePatientCancellation(ctx: MutationCtx, appointment: D
     cancellationOutcome: { tier: outcome.tier, refundKobo: outcome.refundKobo, physioPayoutKobo: outcome.physioPayoutKobo, at: now },
     updatedAt: now,
   });
+  await queueJoyBookingCancelled(ctx, booking, { cancelledBy: "patient", refundStatus: outcome.refundKobo > 0 ? "pending" : "none" });
   return outcome;
 }
 
