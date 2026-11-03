@@ -458,8 +458,8 @@ def _parse_city_area(user_text: str) -> tuple[str, str] | None:
 
 def _location_prompt() -> str:
     return (
-        "For a home visit, which city are you in? Tap your city below, or reply Area, City — for "
-        "example, Lekki, Lagos."
+        "For a home visit, where are you? Tap Lagos or Abuja, or Other state for anywhere else in "
+        "Nigeria. You can also reply Area, City — for example, Lekki, Lagos."
     )
 
 
@@ -517,34 +517,72 @@ def _continue_rh_service_mode(session: Session, conversation: Conversation, pati
     return _find_rh_matches(session, conversation, patient, extracted, mode=mode, rh_patient_id=rh_patient_id, tags=tags)
 
 
-_SERVICE_CITIES = {"lagos": "Lagos", "lagos state": "Lagos", "abuja": "Abuja", "fct": "Abuja", "abuja fct": "Abuja"}
-_OTHER_CITY = {"other city", "other", "another city", "somewhere else", "not lagos or abuja"}
+_OTHER_PLACE = {"other state", "other city", "other", "another state", "another city", "somewhere else"}
+_PLACE_ALIASES = {"fct": "abuja", "abuja fct": "abuja", "federal capital territory": "abuja", "lag": "lagos", "ph": "port harcourt"}
 
 
-def _offer_city_areas(conversation: Conversation, patient: Patient, ctx: dict, city: str) -> str:
-    """After the city tap: that city's home-visit areas (Admin › Travel zones) as a list."""
+def _place_key(text: str) -> str:
+    """Lower-case, no punctuation, no trailing "state": "Ondo State." → "ondo"."""
+    key = " ".join("".join(ch if ch.isalnum() else " " for ch in (text or "").casefold()).split())
+    key = key[:-6] if key.endswith(" state") else key
+    return _PLACE_ALIASES.get(key, key)
+
+
+def _service_areas(patient: Patient, ctx: dict) -> list[dict]:
     rh_patient_id = str(ctx.get("rh_patient_id") or "") or None
     try:
         result = configured_rh_client().service_areas(actor=_rh_actor(patient, rh_patient_id))
     except RHIntegrationError:
-        result = {}
-    entry = next((c for c in result.get("cities") or [] if str(c.get("city") or "").casefold() == city.casefold()), None)
-    zones = [z for z in (entry or {}).get("zones") or [] if isinstance(z, dict) and z.get("areas")]
-    if not zones:
-        _set_substate(conversation, AWAITING_RH_SERVICE_MODE, ctx)
-        return (
-            f"Home visits aren’t available in {city} yet. You can still see a physiotherapist online from "
-            "anywhere: reply Online."
-        )
-    ctx["location_city"] = city
-    # Each row sends back "Area, City" for one area of that zone, which _parse_city_area reads
-    # and RH prices and matches by zone.
-    ctx["location_zones"] = [
-        {"id": f"{z['areas'][0]}, {city}", "title": str(z.get("name") or z["areas"][0]), "description": ", ".join(z["areas"][:4])}
-        for z in zones[:10]
+        return []
+    return [c for c in result.get("cities") or [] if isinstance(c, dict) and c.get("zones")]
+
+
+def _resolve_place(text: str, cities: list[dict]) -> tuple[list[dict], bool]:
+    """The zone cities a typed city, state or town belongs to, and whether it was a town."""
+    key = _place_key(text)
+    if not key:
+        return [], False
+    # A state first, so "Oyo" offers Ibadan's zones and the rest of Oyo State together
+    by_state = [c for c in cities if _place_key(str(c.get("state") or "")) == key]
+    if by_state:
+        return by_state, False
+    by_city = [c for c in cities if _place_key(str(c.get("city") or "")) == key]
+    if by_city:
+        return by_city, False
+    by_town = [
+        c for c in cities
+        if any(_place_key(area) == key for zone in c.get("zones") or [] for area in zone.get("areas") or [] if area != "*")
     ]
+    return (by_town, True) if len({c.get("city") for c in by_town}) == 1 else ([], False)
+
+
+def _zone_row(zone: dict, city: str) -> dict:
+    """A list row whose id is "Area, City" for one area of the zone (RH matches it by zone)."""
+    named = [a for a in zone.get("areas") or [] if a != "*"]
+    first = named[0] if named else "Other areas"
+    description = ", ".join(named[:4]) if named else "Anywhere else in " + city
+    return {"id": f"{first}, {city}", "title": str(zone.get("name") or first), "description": description}
+
+
+def _offer_place(conversation: Conversation, ctx: dict, places: list[dict], typed: str, *, was_town: bool) -> str | tuple[str, str]:
+    """A list of zones, or a request for the area; a typed town with one zone goes straight on."""
+    zones = [(zone, str(place.get("city") or "")) for place in places for zone in place.get("zones") or []]
+    if len(zones) == 1:
+        zone, city = zones[0]
+        if was_town:
+            return (city, typed)  # e.g. "Akure": the whole of Ondo State is one zone
+        ctx["location_city"] = city
+        ctx.pop("location_zones", None)
+        _set_substate(conversation, AWAITING_RH_LOCATION, ctx)
+        named = [a for a in zone.get("areas") or [] if a != "*"]
+        example = f" (for example, {named[0]})" if named else ""
+        return f"Which town or area in {city} are you in{example}?"
+    label = str(places[0].get("state") or places[0].get("city") or "") if len(places) > 1 else str(places[0].get("city") or "")
+    ctx["location_city"] = str(places[0].get("city") or "")
+    ctx["location_zones"] = [_zone_row(zone, city) for zone, city in zones[:10]]
     _set_substate(conversation, AWAITING_RH_LOCATION, ctx)
-    return f"Which part of {city} are you in? Tap to choose your area, or type it (for example, {zones[0]['areas'][0]})."
+    example = ctx["location_zones"][0]["id"].split(",")[0]
+    return f"Which part of {label} are you in? Tap to choose your area, or type it (for example, {example})."
 
 
 def _continue_rh_location(session: Session, conversation: Conversation, patient: Patient, extracted: ExtractedTriage, user_text: str) -> str:
@@ -552,24 +590,36 @@ def _continue_rh_location(session: Session, conversation: Conversation, patient:
     text = " ".join((user_text or "").strip().split())
     parsed = _parse_city_area(text)
     if parsed is None:
-        city = _SERVICE_CITIES.get(text.casefold().strip(" ."))
-        if city:
-            return _offer_city_areas(conversation, patient, ctx, city)
-        if text.casefold().strip(" .") in _OTHER_CITY:
-            ctx.pop("location_city", None)
+        key = _place_key(text)
+        if key in _OTHER_PLACE:
+            ctx["location_asked_state"] = True
             ctx.pop("location_zones", None)
+            conversation.booking_context = ctx
+            return "Which state or town are you in? For example: Oyo, Rivers or Akure."
+        places, was_town = _resolve_place(text, _service_areas(patient, ctx)) if key else ([], False)
+        if places and not (ctx.get("location_city") and not ctx.get("location_asked_state")):
+            ctx.pop("location_asked_state", None)
+            offered = _offer_place(conversation, ctx, places, text, was_town=was_town)
+            if isinstance(offered, str):
+                return offered
+            parsed = offered
+        elif ctx.get("location_city") and len(text) >= 2:
+            # An area typed after choosing the place; a town that belongs to another offered
+            # city (Ogbomoso after "Oyo") goes to that one.
+            offered = {str(z.get("id", "")).split(", ", 1)[-1] for z in ctx.get("location_zones") or []}
+            town_city = str(places[0].get("city") or "") if was_town and places else ""
+            parsed = (town_city if town_city in offered else str(ctx["location_city"]), text)
+        elif ctx.get("location_asked_state"):
             _set_substate(conversation, AWAITING_RH_SERVICE_MODE, ctx)
             return (
-                "Home visits are available in Lagos and Abuja for now. You can still see a physiotherapist "
+                "I couldn’t find that place in our home-visit areas yet. You can still see a physiotherapist "
                 "online from anywhere: reply Online, or Clinic if you can travel to one."
             )
-        if ctx.get("location_city") and len(text) >= 2:
-            parsed = (str(ctx["location_city"]), text)  # an area typed after choosing the city
         else:
             return _location_prompt()
     city, area = parsed
-    ctx.pop("location_city", None)
-    ctx.pop("location_zones", None)
+    for key in ("location_city", "location_zones", "location_asked_state"):
+        ctx.pop(key, None)
     rh_patient_id = str(ctx.get("rh_patient_id") or "")
     mode = str(ctx.get("service_mode") or "")
     tags = list(ctx.get("required_specialties") or [])

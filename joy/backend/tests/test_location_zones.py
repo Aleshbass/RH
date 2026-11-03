@@ -1,4 +1,4 @@
-"""Home-visit location in two taps: city buttons, then that city's travel-zone areas as a list."""
+"""Home-visit location anywhere in Nigeria: Lagos / Abuja / Other state, then the right areas."""
 
 import pytest
 
@@ -10,10 +10,19 @@ from app.models.conversation import Conversation
 from app.models.patient import Patient
 from app.models.types import ExtractedTriage
 
-LAGOS = {"cities": [{"city": "Lagos", "state": "Lagos", "zones": [
-    {"name": "Lekki", "areas": ["Lekki", "Ikate", "Osapa"]},
-    {"name": "Ikeja & Ogba", "areas": ["Ikeja", "Ogba"]},
-]}]}
+AREAS = {"cities": [
+    {"city": "Lagos", "state": "Lagos", "zones": [
+        {"name": "Lekki", "areas": ["Lekki", "Ikate", "Osapa"]},
+        {"name": "Ikeja & Ogba", "areas": ["Ikeja", "Ogba"]},
+        {"name": "Lagos, other areas", "areas": ["*", "Epe"]},
+    ]},
+    {"city": "Ibadan", "state": "Oyo", "zones": [
+        {"name": "Ibadan North", "areas": ["Bodija", "Agodi"]},
+        {"name": "Ibadan, other areas", "areas": ["*"]},
+    ]},
+    {"city": "Oyo State", "state": "Oyo", "zones": [{"name": "Oyo State (outside Ibadan)", "areas": ["*", "Ogbomoso"]}]},
+    {"city": "Ondo State", "state": "Ondo", "zones": [{"name": "Ondo State", "areas": ["*", "Akure", "Owo"]}]},
+]}
 
 
 class _FakeRH:
@@ -35,58 +44,69 @@ def setup(db_session, patient_identity, monkeypatch):
     conversation.booking_substate = booking_flow.AWAITING_RH_LOCATION
     conversation.booking_context = {"rh_patient_id": "rh-1", "service_mode": "home_visit", "required_specialties": ["msk"]}
     db_session.flush()
-    fake = _FakeRH(LAGOS)
-    matched: list[tuple[str, str]] = []
+    fake = _FakeRH(AREAS)
     monkeypatch.setattr(booking_flow, "configured_rh_client", lambda: fake)
-    monkeypatch.setattr(
-        booking_flow, "_find_rh_matches",
-        lambda session, conversation, patient, extracted, **kw: matched.append((patient.city, patient.area)) or "MATCHES",
-    )
+    monkeypatch.setattr(booking_flow, "_find_rh_matches", lambda *args, **kw: "MATCHES")
     patient = db_session.get(Patient, patient_identity.person_id)
-    patient.city = patient.area = None
 
     def say(text):
         return booking_flow._continue_rh_location(db_session, conversation, patient, ExtractedTriage(), text)
 
-    return conversation, fake, matched, say
+    return conversation, fake, say
 
 
-def test_city_buttons_first_then_the_city_areas_as_a_list(setup):
-    conversation, fake, matched, say = setup
-    assert [b["reply"]["id"] for b in interactive_for(conversation)["action"]["buttons"]] == ["Lagos", "Abuja", "other city"]
+def _rows(conversation):
+    return interactive_for(conversation)["action"]["sections"][0]["rows"]
 
+
+def test_lagos_tap_then_an_area_from_the_list(setup):
+    conversation, fake, say = setup
+    assert [b["reply"]["id"] for b in interactive_for(conversation)["action"]["buttons"]] == ["Lagos", "Abuja", "other state"]
     assert say("Lagos").startswith("Which part of Lagos")
-    rows = interactive_for(conversation)["action"]["sections"][0]["rows"]
-    assert rows[0] == {"id": "Lekki, Lagos", "title": "Lekki", "description": "Lekki, Ikate, Osapa"}
-
-    assert say(rows[0]["id"]) == "MATCHES"
-    assert fake.saved == [("Lagos", "Lekki")] and matched == [("Lagos", "Lekki")]
+    rows = _rows(conversation)
+    assert rows[0]["id"] == "Lekki, Lagos" and rows[-1] == {"id": "Epe, Lagos", "title": "Lagos, other areas", "description": "Epe"}
+    assert say(rows[0]["id"]) == "MATCHES" and fake.saved == [("Lagos", "Lekki")]
     assert "location_zones" not in conversation.booking_context
 
 
-def test_an_area_typed_after_choosing_the_city(setup):
-    conversation, fake, matched, say = setup
+def test_area_typed_after_choosing_the_city(setup):
+    conversation, fake, say = setup
     say("lagos")
-    assert say("Ikate") == "MATCHES"
-    assert fake.saved == [("Lagos", "Ikate")]
+    assert say("Ikate") == "MATCHES" and fake.saved == [("Lagos", "Ikate")]
 
 
-def test_other_city_moves_to_online_or_clinic(setup):
-    conversation, fake, matched, say = setup
-    reply = say("Other city")
-    assert "Lagos and Abuja" in reply and "Online" in reply
-    assert conversation.booking_substate == booking_flow.AWAITING_RH_SERVICE_MODE
+def test_other_state_then_a_state_with_one_zone_asks_for_the_town(setup):
+    conversation, fake, say = setup
+    assert "Which state or town" in say("Other state")
+    assert interactive_for(conversation) is None  # waiting for typing
+    assert say("Ondo State") == "Which town or area in Ondo State are you in (for example, Akure)?"
+    assert interactive_for(conversation) is None
+    assert say("Owo") == "MATCHES" and fake.saved == [("Ondo State", "Owo")]
 
 
-def test_a_city_without_zones_offers_online(setup):
-    conversation, fake, matched, say = setup
-    fake.areas = {"cities": []}
-    reply = say("Abuja")
-    assert "aren’t available in Abuja yet" in reply
+def test_a_town_typed_goes_straight_to_its_state_zone(setup):
+    conversation, fake, say = setup
+    say("other state")
+    assert say("Akure") == "MATCHES" and fake.saved == [("Ondo State", "Akure")]
+
+
+def test_a_state_with_several_zones_lists_them_all(setup):
+    conversation, fake, say = setup
+    say("Other state")
+    assert say("Oyo").startswith("Which part of Oyo")
+    ids = [row["id"] for row in _rows(conversation)]
+    assert ids == ["Bodija, Ibadan", "Other areas, Ibadan", "Ogbomoso, Oyo State"]
+    assert say("Ogbomoso") == "MATCHES" and fake.saved == [("Oyo State", "Ogbomoso")]
+
+
+def test_an_unknown_place_offers_online(setup):
+    conversation, fake, say = setup
+    say("other state")
+    reply = say("Atlantis")
+    assert "couldn’t find that place" in reply and "Online" in reply
     assert conversation.booking_substate == booking_flow.AWAITING_RH_SERVICE_MODE
 
 
 def test_typed_area_and_city_still_works(setup):
-    conversation, fake, matched, say = setup
-    assert say("Lekki Phase 1, Lagos") == "MATCHES"
-    assert fake.saved == [("Lagos", "Lekki Phase 1")]
+    conversation, fake, say = setup
+    assert say("Lekki Phase 1, Lagos") == "MATCHES" and fake.saved == [("Lagos", "Lekki Phase 1")]

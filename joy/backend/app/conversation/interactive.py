@@ -90,7 +90,9 @@ def interactive_for(conversation: Conversation | None) -> dict[str, Any] | None:
             return list_menu("Choose your area", [
                 (str(z["id"]), str(z.get("title") or z["id"]), z.get("description")) for z in zones
             ], section=str(context.get("location_city") or "Areas"))
-        return reply_buttons(("Lagos", "Lagos"), ("Abuja", "Abuja"), ("other city", "Other city"))
+        if context.get("location_city") or context.get("location_asked_state"):
+            return None  # waiting for a typed town or state
+        return reply_buttons(("Lagos", "Lagos"), ("Abuja", "Abuja"), ("other state", "Other state"))
     if step == AWAITING_RH_PROVIDER:
         providers = [p for p in context.get("providers") or [] if isinstance(p, dict)]
         if providers:

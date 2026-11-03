@@ -9,7 +9,7 @@ import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { ensureUserRole } from "./auth";
 import { servesRehabifyNetwork } from "./physioSetup";
-import { STARTING_ZONES } from "./helpers/startingZones";
+import { CITY_KEYWORDS, OTHER_AREAS, STARTING_ZONES } from "./helpers/startingZones";
 import { insertNotification } from "./helpers/pushNotify";
 import { publicAppUrl } from "./helpers/appUrl";
 
@@ -25,7 +25,8 @@ export const listZones = query({
         id: zone._id,
         city: zone.city,
         name: zone.name,
-        areas: [...zone.areas].sort((a, b) => a.localeCompare(b)),
+        // "*" (every other area in the city or state) shows as "Other areas" in pickers
+        areas: zone.areas.map((area) => (area === OTHER_AREAS ? "Other areas" : area)).sort((a, b) => a.localeCompare(b)),
         surchargeKobo: zone.surchargeKobo,
         physioTravelSharePercent: zone.physioTravelSharePercent,
       }));
@@ -158,8 +159,14 @@ export const assignStartingZonesToPhysios = internalMutation({
   args: {},
   handler: async (ctx) => {
     const zones = (await ctx.db.query("travelZones").collect()).filter((zone) => zone.active);
+    // Per city, every zone except the far "other areas" catch-all of a multi-zone city (opt-in)
     const byCity = new Map<string, Id<"travelZones">[]>();
-    for (const zone of zones) byCity.set(zone.city.toLowerCase(), [...(byCity.get(zone.city.toLowerCase()) ?? []), zone._id]);
+    for (const zone of zones) {
+      const siblings = zones.filter((other) => other.city === zone.city).length;
+      if (siblings > 1 && zone.areas.includes(OTHER_AREAS)) continue;
+      byCity.set(zone.city, [...(byCity.get(zone.city) ?? []), zone._id]);
+    }
+    const words = (text: string) => ` ${text.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()} `;
     const profiles = await ctx.db.query("physiotherapistProfiles").collect();
     const settingsUrl = `${publicAppUrl()}/dashboard/physiotherapist/settings/marketplace`;
     let assigned = 0;
@@ -167,8 +174,10 @@ export const assignStartingZonesToPhysios = internalMutation({
     for (const profile of profiles) {
       const offersHome = profile.offersInPersonSessions === true || (profile.joyServiceModes ?? []).includes("home_visit");
       if (!offersHome || !servesRehabifyNetwork(profile) || (profile.coveredZoneIds ?? []).length) continue;
-      const hints = [profile.location ?? "", ...(profile.joyServiceAreas ?? [])].map((text) => text.toLowerCase());
-      const cities = [...byCity.keys()].filter((city) => hints.some((hint) => hint.includes(city)));
+      const hint = words([profile.location ?? "", ...(profile.joyServiceAreas ?? [])].join(" "));
+      const cities = [...byCity.keys()].filter((city) =>
+        (CITY_KEYWORDS[city] ?? [city.toLowerCase()]).some((keyword) => hint.includes(words(keyword))),
+      );
       const zoneIds = cities.flatMap((city) => byCity.get(city) ?? []);
       if (!zoneIds.length) { skipped++; continue; }
       await ctx.db.patch(profile._id, { coveredZoneIds: zoneIds });

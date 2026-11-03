@@ -88,12 +88,14 @@ export function zoneForArea<Z extends Pick<Doc<"travelZones">, "city" | "areas" 
   city: string,
   area: string
 ): Z | null {
-  const c = CITY_ALIASES[normalise(city)] ?? normalise(city);
   const typed = normalise(area);
   const a = AREA_ALIASES[typed] ?? typed;
-  if (!c || !a) return null;
-  const inCity = zones.filter((zone) => zone.active && normalise(zone.city) === c);
-  const entries = inCity.flatMap((zone) => zone.areas.map((name) => ({ zone, key: normalise(name) })));
+  const active = zones.filter((zone) => zone.active);
+  const inCity = zonesForPlace(active, city);
+  if (!inCity.length || !a) return null;
+  const entries = inCity.flatMap((zone) =>
+    zone.areas.filter((name) => name !== OTHER_AREAS_MARK).map((name) => ({ zone, key: normalise(name) })),
+  );
 
   const exact = entries.find((entry) => entry.key === a);
   if (exact) return exact.zone;
@@ -116,7 +118,33 @@ export function zoneForArea<Z extends Pick<Doc<"travelZones">, "city" | "areas" 
       return close[0].zone;
     }
   }
-  return null;
+  // A state typed as the city ("Oyo"): an area named in exactly one zone anywhere wins, so
+  // "Bodija" in Oyo is Ibadan North rather than the rest-of-state zone. A real city keeps its own.
+  if (inCity.every((zone) => / state$/.test(normalise(zone.city)))) {
+    const namedElsewhere = new Set(active.filter((zone) => zone.areas.some((name) => normalise(name) === a)));
+    if (namedElsewhere.size === 1) return [...namedElsewhere][0];
+  }
+  // Anywhere else in this city or state: its "*" zone, or the only zone a city has
+  return inCity.find((zone) => zone.areas.includes(OTHER_AREAS_MARK)) ?? (inCity.length === 1 ? inCity[0] : null);
+}
+
+/** "*" in a zone's areas: every other area in that city or state (helpers/startingZones.ts). */
+const OTHER_AREAS_MARK = "*";
+
+/**
+ * The active zones for a place someone typed as their city: the city itself ("Lagos", "Lag"),
+ * a state ("Ondo", "Ondo State", "FCT"), or a town named in a zone ("Akure", "Warri").
+ */
+function zonesForPlace<Z extends Pick<Doc<"travelZones">, "city" | "areas" | "active">>(zones: Z[], place: string): Z[] {
+  const c = CITY_ALIASES[normalise(place)] ?? normalise(place);
+  if (!c) return [];
+  const byCity = zones.filter((zone) => normalise(zone.city) === c);
+  if (byCity.length) return byCity;
+  const bare = (value: string) => normalise(value).replace(/ state$/, "");
+  const byState = zones.filter((zone) => bare(zone.city) === bare(c));
+  if (byState.length) return byState;
+  const cities = new Set(zones.filter((zone) => zone.areas.some((name) => normalise(name) === c)).map((zone) => zone.city));
+  return cities.size === 1 ? zones.filter((zone) => cities.has(zone.city)) : [];
 }
 
 export type BookingQuote = RehabifyQuote & {
