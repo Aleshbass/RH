@@ -64,10 +64,6 @@ function controlledTags(profile: { joySpecialtyTags?: string[]; specializations?
     .filter((tag): tag is string => Boolean(tag)))];
 }
 
-function normalized(value: string): string {
-  return value.trim().toLowerCase().replace(/\s+/g, " ");
-}
-
 function samePhone(left: string, right: string): boolean {
   const a = left.replace(/\D/g, "");
   const b = right.replace(/\D/g, "");
@@ -746,12 +742,14 @@ export const findMatches = internalQuery({
     const profiles = await ctx.db.query("physiotherapistProfiles")
       .withIndex("by_marketplace_availability", (q) => q.eq("isAvailableOnMarketplace", true))
       .collect();
-    const requestedCity = args.city ? normalized(args.city) : "";
-    const requestedArea = args.area ? normalized(args.area) : "";
-    // Every provider charges the same Rehabify price, so the amount is worked out once
+    // Every provider charges the same Rehabify price, so the amount is worked out once; for a home
+    // visit this also finds the patient's travel zone (the same zones the website and prices use)
     let amountKobo: number;
+    let zoneId: Id<"travelZones"> | null = null;
     try {
-      amountKobo = (await quoteJoyProviderBooking(ctx, { patientId: args.patientId, serviceMode: args.serviceMode, city: args.city, area: args.area })).quote.chargeKobo;
+      const priced = await quoteJoyProviderBooking(ctx, { patientId: args.patientId, serviceMode: args.serviceMode, city: args.city, area: args.area });
+      amountKobo = priced.quote.chargeKobo;
+      zoneId = priced.zoneId;
     } catch (error) {
       if (error instanceof JoyPricingError) return [];
       throw error;
@@ -763,11 +761,8 @@ export const findMatches = internalQuery({
       if (!modes.includes(args.serviceMode)) continue;
       const tags = controlledTags(profile);
       if (!args.requiredSpecialties.every((tag) => tags.includes(tag))) continue;
-      if (args.serviceMode === "home_visit") {
-        const areas = (profile.joyServiceAreas ?? []).map(normalized);
-        const coverage = areas.includes(requestedArea) ? requestedArea : areas.includes(requestedCity) ? requestedCity : null;
-        if (!requestedCity || !requestedArea || !coverage) continue;
-      }
+      // Home visits: only physios who cover the patient's travel zone (ticked in Settings → Marketplace)
+      if (args.serviceMode === "home_visit" && (!zoneId || !(profile.coveredZoneIds ?? []).includes(zoneId))) continue;
       if (!profile.availabilitySchedule) continue;
       const user = await ctx.db.get(profile.userId);
       if (!user) continue;
@@ -778,7 +773,7 @@ export const findMatches = internalQuery({
         specialties: tags,
         service_modes: modes,
         amount_kobo: amountKobo,
-        match_reasons: ["verified specialty", "approved marketplace provider", "configured service mode", ...(args.serviceMode === "home_visit" ? ["serves your city or area"] : [])],
+        match_reasons: ["verified specialty", "approved marketplace provider", "configured service mode", ...(args.serviceMode === "home_visit" ? ["covers your area"] : [])],
       });
     }
     return results.slice(0, Math.min(Math.max(args.limit, 1), 3));

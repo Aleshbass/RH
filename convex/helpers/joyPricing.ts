@@ -51,7 +51,7 @@ export class JoyPricingError extends Error {
 export async function quoteJoyProviderBooking(
   ctx: QueryCtx,
   input: { patientId: Id<"users">; serviceMode: JoyServiceMode; durationMinutes?: number; city?: string; area?: string }
-): Promise<{ serviceId: BookableServiceId; quote: BookingQuote; area?: string }> {
+): Promise<{ serviceId: BookableServiceId; quote: BookingQuote; area?: string; zoneId: Id<"travelZones"> | null }> {
   const assessed = await hasPriorAssessment(ctx, input.patientId);
   const serviceId = joyServiceFor(input.serviceMode, { durationMinutes: input.durationMinutes, assessed });
   if (!serviceId) throw new JoyPricingError("SERVICE_UNAVAILABLE", "Clinic visits aren't booked through Rehabify");
@@ -73,7 +73,7 @@ export async function quoteJoyProviderBooking(
   }
   try {
     const quote = await quoteBooking(ctx, { serviceId, zoneId });
-    return { serviceId, quote, area };
+    return { serviceId, quote, area, zoneId };
   } catch {
     throw new JoyPricingError("SERVICE_UNAVAILABLE", "This service isn't available right now");
   }
