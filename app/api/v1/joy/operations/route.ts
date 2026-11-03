@@ -14,6 +14,8 @@ const schema = z.object({
     // consents at the first chat (Terms, Privacy, health information, channel "whatsapp") and
     // whether the patient has Flex Max (Joy reminders and support).
     "patient_consent_status", "patient_record_consents", "patient_recovery_plan",
+    // Additive (Nov 2026): link this WhatsApp number to a website account with an emailed code
+    "patient_link_request", "patient_link_confirm",
   ]),
   actor: actorSchema,
   data: z.record(z.string(), z.unknown()).default({}),
@@ -23,7 +25,7 @@ const schema = z.object({
 const mutations = new Set([
   "physio_update_availability", "physio_session_note", "physio_visit_event", "physio_message_patient", "physio_feedback_request",
   "family_grant", "family_update_grant", "family_revoke_grant", "change_physio_request", "admin_escalation", "admin_verify_physio", "admin_reassign",
-  "patient_record_consents",
+  "patient_record_consents", "patient_link_request", "patient_link_confirm",
 ]);
 
 export async function POST(request: Request) {

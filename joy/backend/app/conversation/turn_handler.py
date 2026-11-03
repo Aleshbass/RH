@@ -179,6 +179,92 @@ def _is_greeting_only(user_text: str) -> bool:
     return bool(_GREETING_ONLY_RE.fullmatch(user_text or ""))
 
 
+_LINK_REQUEST_RE = re.compile(
+    r"^\s*(?:link|link\s+(?:my\s+)?(?:rehabify\s+)?account|connect\s+(?:my\s+)?(?:rehabify\s+)?account)\s*[.!]?\s*$",
+    re.IGNORECASE,
+)
+_LINK_CODE_RE = re.compile(r"^\s*(\d{3})\s?(\d{3})\s*$")
+_LINK_PENDING_KEY = "account_link_pending_until"
+_LINK_WINDOW_SECONDS = 15 * 60
+_LINK_REQUEST_FAILURES = {
+    "no_account": "I couldn't find another Rehabify account for this WhatsApp number, so there's nothing to link. You're all set.",
+    "no_email": (
+        "Your Rehabify account doesn't have an email I can send a code to. Please email "
+        "hello@myrehabifyhealth.com and our team will link it for you."
+    ),
+    "ambiguous": (
+        "More than one Rehabify account uses this number, so I can't tell which to link. Please email "
+        "hello@myrehabifyhealth.com and our team will link the right one."
+    ),
+    "rate_limited": "I've already sent a few codes in the last hour. Please use the latest email, or try again later.",
+}
+
+
+def _account_link_turn(session: Session, identity: Identity, state: ConversationState, user_text: str) -> str | None:
+    """LINK, then the 6-digit code emailed to the website account: links it to this WhatsApp number.
+
+    Joy never attaches a WhatsApp chat to a website account on a phone match alone; the owner
+    proves control of both the number and the account's mailbox. Code-owned, never the model.
+    """
+    import time
+
+    from app.booking.booking_flow import _rh_actor, _rh_patient_id
+
+    conversation = session.get(Conversation, state.conversation_id)
+    if conversation is None:
+        return None
+    context = dict(conversation.booking_context or {})
+    pending_until = context.get(_LINK_PENDING_KEY)
+    code_match = _LINK_CODE_RE.match(user_text or "")
+    awaiting_code = isinstance(pending_until, (int, float)) and pending_until > time.time()
+    if not (_LINK_REQUEST_RE.match(user_text or "") or (code_match and awaiting_code)):
+        return None
+    patient = session.get(Patient, identity.person_id)
+    rh_patient_id = _rh_patient_id(session, patient) if patient is not None else None
+    if patient is None or not rh_patient_id:
+        return "I can't reach Rehabify's records right now. Please try again shortly."
+    actor = _rh_actor(patient, rh_patient_id)
+    try:
+        if code_match and awaiting_code:
+            result = configured_rh_client().confirm_account_link(
+                patient_id=rh_patient_id, code=code_match.group(1) + code_match.group(2), actor=actor,
+            )
+        else:
+            result = configured_rh_client().request_account_link(patient_id=rh_patient_id, actor=actor)
+    except RHIntegrationError:
+        return "I can't reach Rehabify's records right now. Please try again shortly."
+
+    if code_match and awaiting_code:
+        if result.get("linked") is True and isinstance(result.get("patient_id"), str):
+            mapping = session.scalar(select(RHIdentityMapping).where(
+                RHIdentityMapping.persona == "patient", RHIdentityMapping.joy_person_id == patient.id,
+            ))
+            if mapping is not None:
+                mapping.rh_record_id = result["patient_id"]
+            context.pop(_LINK_PENDING_KEY, None)
+            conversation.booking_context = context
+            append(session, kind=AuditKind.IDENTITY, actor_phone=patient.phone_e164, person_id=patient.id,
+                   payload={"decision": "rh_account_linked"})
+            return "Done. Your WhatsApp is now linked to your Rehabify account, so your bookings and care are in one place."
+        reason = result.get("reason")
+        if reason == "wrong_code" and int(result.get("attempts_left") or 0) > 0:
+            return "That code doesn't match. Please check the latest email from Rehabify and send the 6 digits again."
+        context.pop(_LINK_PENDING_KEY, None)
+        conversation.booking_context = context
+        return "That code has expired or was tried too many times. Reply LINK and I'll email you a new one."
+
+    if result.get("sent") is True:
+        context[_LINK_PENDING_KEY] = time.time() + _LINK_WINDOW_SECONDS
+        conversation.booking_context = context
+        hint = result.get("email_hint")
+        where = f" to {hint}" if isinstance(hint, str) and hint else ""
+        return (
+            f"I've emailed a 6-digit code{where}. Reply here with the code to link your Rehabify account. "
+            "It expires in 15 minutes."
+        )
+    return _LINK_REQUEST_FAILURES.get(str(result.get("reason")), _LINK_REQUEST_FAILURES["no_account"])
+
+
 # Wording pending clinical-lead review.
 _BOOKED_GUIDANCE = (
     "If your symptoms get much worse before then, please seek medical care and let your "
@@ -1994,6 +2080,18 @@ def handle_turn(
                     session, identity, state, user_text, flagged,
                     volunteered_safety, phase, language, wa_message_id,
                 )
+
+    # Linking this WhatsApp number to a website account (LINK, then the emailed code)
+    if identity.persona == Persona.PATIENT:
+        link_reply = _account_link_turn(session, identity, state, user_text)
+        if link_reply is not None:
+            save_turn(
+                session, state, user_text, link_reply, state.extracted, state.phase,
+                language, wa_message_id, stage=state.stage,
+            )
+            return TurnResult(
+                reply_text=link_reply, language=language, phase=state.phase, extracted=state.extracted,
+            )
 
     # After RH confirms the booking, later messages get a code-owned reply with
     # the appointment details. Re-entering triage or matching from

@@ -22,7 +22,7 @@ from app.models.triage_session import TriageSession
 from app.models.types import AuditKind, BookingStatus, ExtractedTriage
 from app.integrations.rh_client import RHActor, RHIntegrationError, configured_rh_client
 from app.api.internal.rh_safety_eligibility import EligibilityRequest, issue_eligibility_reference
-from app.queue.tasks import _redis
+from app.queue.tasks import _redis, enqueue_booking_confirmed
 
 logger = logging.getLogger(__name__)
 
@@ -394,7 +394,20 @@ def _rh_patient_id(session: Session, patient: Patient) -> str | None:
         return None
     session.add(RHIdentityMapping(persona="patient", joy_person_id=patient.id, rh_record_id=resolved.patient_id))
     session.flush()
+    if resolved.account_link_available:
+        # A website account uses this number but its owner hasn't confirmed the link, so Joy
+        # works on a WhatsApp-only record. Offer the link once; it is never done silently.
+        enqueue_booking_confirmed(patient.phone_e164, "", account_link_offer_text(resolved.account_email_hint))
     return resolved.patient_id
+
+
+def account_link_offer_text(email_hint: str | None) -> str:
+    where = f" (email {email_hint})" if email_hint else ""
+    return (
+        f"I found a Rehabify account that uses this WhatsApp number{where}. "
+        "To keep your bookings and care in one place, reply LINK and I'll email you a 6-digit code. "
+        "You can carry on here without linking."
+    )
 
 
 def _required_specialties(extracted: ExtractedTriage) -> list[str]:

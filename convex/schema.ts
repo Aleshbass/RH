@@ -97,6 +97,12 @@ export default defineSchema({
     // Offline mode pilot: set by an admin (offline.ts setOfflinePilot). With the app's offline
     // mode on "pilot", only these accounts keep encrypted data on their phones for offline use.
     offlinePilot: v.optional(v.boolean()),
+
+    // Joy (WhatsApp): set when the account owner confirms linking this WhatsApp number with a
+    // code emailed to the account (joyOperations patient_link_confirm). Until then Joy never
+    // attaches its records to a website account that merely has the same phone number.
+    whatsappLinkedAt: v.optional(v.number()),
+    whatsappLinkedPhone: v.optional(v.string()),
   })
     .index("by_clerk_id", ["clerkId"])
     .index("by_email", ["email"])
@@ -3680,6 +3686,19 @@ export default defineSchema({
     nextAttemptAt: v.optional(v.number()),
     updatedAt: v.number(),
   }).index("by_event_id", ["eventId"]).index("by_status", ["status"]),
+
+  // One-time codes Joy emails to a website account's owner to link it to their WhatsApp number
+  // (joyOperations patient_link_request / patient_link_confirm). Only a hash of the code is kept.
+  whatsappLinkRequests: defineTable({
+    userId: v.id("users"), // the website account to link
+    placeholderId: v.id("users"), // the WhatsApp-only record Joy was using for this number
+    phone: v.string(), // E.164 WhatsApp sender
+    codeHash: v.string(),
+    expiresAt: v.number(),
+    attempts: v.number(),
+    createdAt: v.number(),
+    usedAt: v.optional(v.number()),
+  }).index("by_phone", ["phone", "createdAt"]),
 
   joyAdminFollowUps: defineTable({
     bookingId: v.id("marketplaceBookings"),

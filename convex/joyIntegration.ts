@@ -14,6 +14,7 @@ import { attributeUserToLink, attributeUserToReferral, bumpLinkCounter } from ".
 import { recordPartnerCommission } from "./helpers/partnerLedger";
 import { ensureJoyCareLink, logJourney } from "./joyHandoff";
 import { ensureUserNumbers } from "./helpers/rehabifyIds";
+import { JOY_PLACEHOLDER_PREFIX, emailHint, isPlaceholderUser, isWhatsAppLinked, linkableEmail, patientsByPhone } from "./helpers/whatsappLink";
 import { servesRehabifyNetwork } from "./physioSetup";
 import { loadTariffs, quoteBooking, quoteSnapshot } from "./helpers/rehabifyPricing";
 import {
@@ -401,19 +402,35 @@ export const resolveOrCreatePatientByPhone = internalMutation({
   },
   handler: async (ctx, args) => {
     const phone = args.phone.trim();
-    const matches = await ctx.db.query("users").withIndex("by_phone_number", (q) => q.eq("phoneNumber", phone)).collect();
-    const patients = matches.filter((user) => user.role === "patient");
-    if (patients.length > 1) return { resolution: "AMBIGUOUS" as const };
+    // Joy's own record for this WhatsApp person, then every patient stored under any spelling
+    // of the number (+234…, 234…, 0…).
+    const joyRecord = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", `${JOY_PLACEHOLDER_PREFIX}${args.joyPersonId}`))
+      .unique();
+    const patients = await patientsByPhone(ctx, phone);
+    const websiteAccounts = patients.filter((user) => !isPlaceholderUser(user));
+    const linkedAccounts: Doc<"users">[] = [];
+    for (const account of websiteAccounts) if (await isWhatsAppLinked(ctx, account)) linkedAccounts.push(account);
+    const unlinkedAccounts = websiteAccounts.filter((account) => !linkedAccounts.includes(account));
+    const joyRecords = patients.filter((user) => user.clerkId.startsWith(JOY_PLACEHOLDER_PREFIX));
+    if (linkedAccounts.length > 1) return { resolution: "AMBIGUOUS" as const };
+    // A website account is used only once its owner linked it (emailed code) or it already has
+    // Joy bookings. A number that merely matches gets a WhatsApp-only record and an offer to link.
+    const existing =
+      linkedAccounts[0] ?? (joyRecord?.role === "patient" ? joyRecord : null) ?? (joyRecords.length === 1 ? joyRecords[0] : null);
+    if (!existing && joyRecords.length > 1) return { resolution: "AMBIGUOUS" as const };
+    const linkOffer =
+      !linkedAccounts.length && unlinkedAccounts.length === 1 ? linkableEmail(unlinkedAccounts[0]) : null;
 
     let resolvedPatientId: Id<"users">;
     let resultResolution: "EXISTING" | "CREATED";
     let resultDisplayName: string | undefined;
 
-    if (patients.length === 1) {
-      const user = patients[0];
-      resolvedPatientId = user._id;
+    if (existing) {
+      resolvedPatientId = existing._id;
       resultResolution = "EXISTING";
-      resultDisplayName = displayName(user);
+      resultDisplayName = displayName(existing);
     } else {
       const [firstName, ...remainingNames] = (args.name ?? "").trim().split(/\s+/).filter(Boolean);
       resolvedPatientId = await ctx.db.insert("users", {
@@ -563,6 +580,10 @@ export const resolveOrCreatePatientByPhone = internalMutation({
     return {
       resolution: resultResolution,
       patient_id: resolvedPatientId,
+      // Additive (Nov 2026): a website account uses this number but isn't linked yet. Joy offers
+      // "reply LINK" (operations patient_link_request / patient_link_confirm). No name is shared.
+      account_link_available: Boolean(linkOffer),
+      account_email_hint: linkOffer ? emailHint(linkOffer) : null,
       // Additive (Oct 2026), read-only; nothing here changes booking. `consents_required`: Terms,
       // Privacy to ask for at this first chat (empty when already
       // accepted; record with operation patient_record_consents, see joyOperations.ts).

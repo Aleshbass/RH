@@ -51,6 +51,9 @@ class PatientResolution:
     resolution: Literal["EXISTING", "CREATED", "NOT_FOUND", "AMBIGUOUS"]
     patient_id: str | None = None
     display_name: str | None = None
+    # A website account uses this number but isn't linked yet (Joy offers "reply LINK").
+    account_link_available: bool = False
+    account_email_hint: str | None = None
 
 
 @dataclass(frozen=True)
@@ -343,7 +346,26 @@ class RHClient:
             data = self._gateway("resolve_patient", {key: value for key, value in payload.items() if key != "actor"})
         else:
             data = self._request("POST", "/api/v1/joy/patients/resolve", payload=payload)
-        return PatientResolution(resolution=data["resolution"], patient_id=data.get("patient_id"), display_name=data.get("display_name"))
+        hint = data.get("account_email_hint")
+        return PatientResolution(
+            resolution=data["resolution"], patient_id=data.get("patient_id"), display_name=data.get("display_name"),
+            account_link_available=data.get("account_link_available") is True,
+            account_email_hint=hint if isinstance(hint, str) else None,
+        )
+
+    def request_account_link(self, *, patient_id: str, actor: RHActor) -> dict[str, Any]:
+        """Ask RH to email a one-time code to the website account that uses this WhatsApp number."""
+        return self.operational_mutation(
+            "patient_link_request", actor=actor, data={"patient_id": patient_id},
+            idempotency_key=f"joy-link-request-{uuid4()}",
+        )
+
+    def confirm_account_link(self, *, patient_id: str, code: str, actor: RHActor) -> dict[str, Any]:
+        """Send the code the patient typed; on success RH returns the linked account's patient_id."""
+        return self.operational_mutation(
+            "patient_link_confirm", actor=actor, data={"patient_id": patient_id, "code": code},
+            idempotency_key=f"joy-link-confirm-{uuid4()}",
+        )
 
     def resolve_referral_context(
         self, tracking_code: str, *, phone: str, joy_person_id: str, actor: RHActor

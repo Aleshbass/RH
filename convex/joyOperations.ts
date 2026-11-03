@@ -6,6 +6,11 @@ import { missingPolicies, recordMissingPolicyAcceptances } from "./helpers/polic
 import { recoveryPlanForJoy } from "./helpers/patientPlans";
 import { PATIENT_CONSENT_POLICIES, POLICIES, consentDocumentsForJoy } from "../lib/policies";
 import { assertJoyActorPersona } from "../lib/joy-integration/operationPersona";
+import { normalizePhone } from "./helpers/partnerShared";
+import {
+  LINK_CODE_MAX_ATTEMPTS, LINK_CODE_TTL_MS, LINK_REQUESTS_PER_HOUR, emailHint, hashLinkCode,
+  isPlaceholderUser, linkableEmail, patientsByPhone, sixDigitCode,
+} from "./helpers/whatsappLink";
 
 type Operation =
   | "physio_work_summary" | "physio_update_availability" | "physio_session_note"
@@ -15,7 +20,9 @@ type Operation =
   | "admin_physio" | "admin_finance_summary" | "admin_escalation"
   | "admin_verify_physio" | "admin_reassign" | "patient_link_referral"
   // Additive (Oct 2026), patient persona, see the comment above executeQuery:
-  | "patient_consent_status" | "patient_record_consents" | "patient_recovery_plan";
+  | "patient_consent_status" | "patient_record_consents" | "patient_recovery_plan"
+  // Additive (Nov 2026): link the WhatsApp number to a website account with an emailed code
+  | "patient_link_request" | "patient_link_confirm";
 
 const activeBooking = (status: unknown) => status === "pending" || status === "confirmed" || status === "scheduled";
 const nameOf = (user: { firstName?: string; lastName?: string } | null) =>
@@ -205,6 +212,73 @@ export const executeMutation = internalMutation({
         outdated,
         consents_required: consentDocumentsForJoy(stillNeeded, publicAppUrl()),
       };
+    }
+    if (op === "patient_link_request") {
+      // The patient replied LINK: email a one-time code to the website account that uses their
+      // WhatsApp number. Proves they control both the number and the account's mailbox.
+      const patient = await patientForActor(ctx, String(data.patient_id), data.actor);
+      const phone = normalizePhone(String(data.actor?.sender_phone ?? ""));
+      if (!phone) return { sent: false, reason: "no_account" };
+      const accounts = (await patientsByPhone(ctx, phone)).filter(
+        (user) => user._id !== patient._id && !isPlaceholderUser(user) && !user.whatsappLinkedAt,
+      );
+      if (accounts.length !== 1) return { sent: false, reason: accounts.length ? "ambiguous" : "no_account" };
+      const account = accounts[0];
+      const email = linkableEmail(account);
+      if (!email) return { sent: false, reason: "no_email" };
+      const now = Date.now();
+      const recent = await ctx.db
+        .query("whatsappLinkRequests")
+        .withIndex("by_phone", (q) => q.eq("phone", phone).gt("createdAt", now - 3_600_000))
+        .collect();
+      if (recent.length >= LINK_REQUESTS_PER_HOUR) return { sent: false, reason: "rate_limited" };
+      const code = sixDigitCode();
+      await ctx.db.insert("whatsappLinkRequests", {
+        userId: account._id, placeholderId: patient._id, phone,
+        codeHash: await hashLinkCode(account._id, code),
+        expiresAt: now + LINK_CODE_TTL_MS, attempts: 0, createdAt: now,
+      });
+      await ctx.scheduler.runAfter(0, internal.actions.emails.sendPatientCareEmail.sendPatientCareEmail, {
+        to: email,
+        subject: `${code} is your code to link WhatsApp to Rehabify`,
+        greetingName: account.firstName,
+        heading: "Link your WhatsApp to your Rehabify account",
+        paragraphs: [
+          `Your code is ${code}.`,
+          "Reply with this code to Joy on WhatsApp to connect your WhatsApp number to this Rehabify account, so your bookings and care are in one place. The code expires in 15 minutes.",
+          "If you didn't ask for this, ignore this email. Nothing changes unless the code is sent to Joy.",
+        ],
+      });
+      await audit(ctx, data, op, { actorUserId: patient._id, patientUserId: account._id });
+      return { sent: true, email_hint: emailHint(email) };
+    }
+    if (op === "patient_link_confirm") {
+      const patient = await patientForActor(ctx, String(data.patient_id), data.actor);
+      const phone = normalizePhone(String(data.actor?.sender_phone ?? ""));
+      const code = String(data.code ?? "").replace(/\D/g, "");
+      const request = phone
+        ? await ctx.db.query("whatsappLinkRequests").withIndex("by_phone", (q) => q.eq("phone", phone)).order("desc").first()
+        : null;
+      const now = Date.now();
+      if (!request || request.usedAt || request.expiresAt < now || request.placeholderId !== patient._id) {
+        return { linked: false, reason: "expired" };
+      }
+      if (request.attempts >= LINK_CODE_MAX_ATTEMPTS) return { linked: false, reason: "too_many_attempts" };
+      if (code.length !== 6 || (await hashLinkCode(request.userId, code)) !== request.codeHash) {
+        await ctx.db.patch(request._id, { attempts: request.attempts + 1 });
+        return { linked: false, reason: "wrong_code", attempts_left: Math.max(0, LINK_CODE_MAX_ATTEMPTS - request.attempts - 1) };
+      }
+      const account: any = await ctx.db.get(request.userId);
+      if (!account || account.role !== "patient") return { linked: false, reason: "no_account" };
+      await ctx.db.patch(request._id, { usedAt: now });
+      await ctx.db.patch(account._id, { whatsappLinkedAt: now, whatsappLinkedPhone: phone ?? undefined });
+      // The audit row is the consent record. Anything Joy already did on the WhatsApp-only
+      // record stays there (placeholder_user_id) for an admin to merge if needed.
+      await audit(ctx, data, op, {
+        actorUserId: account._id, patientUserId: account._id,
+        placeholder_user_id: String(patient._id), consent: "whatsapp_link_email_code",
+      });
+      return { linked: true, patient_id: account._id, display_name: nameOf(account) };
     }
     throw new Error("Unsupported Joy operational mutation");
   },
