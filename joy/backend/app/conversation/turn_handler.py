@@ -179,6 +179,38 @@ def _is_greeting_only(user_text: str) -> bool:
     return bool(_GREETING_ONLY_RE.fullmatch(user_text or ""))
 
 
+# Wording pending clinical-lead review.
+_BOOKED_GUIDANCE = (
+    "If your symptoms get much worse before then, please seek medical care and let your "
+    "physiotherapist know. For any change to your appointment, email hello@myrehabifyhealth.com."
+)
+
+
+def _booked_patient_reply(state: ConversationState) -> str:
+    """Code-owned reply for a patient whose RH booking is already confirmed."""
+    from app.api.internal.rh_events import _appointment_details
+    from app.booking.appointment_reminders import format_lagos_appointment_time
+
+    context = state.booking_context or {}
+    booking_id = str(context.get("rh_booking_id") or "")
+    rh_patient_id = str(context.get("rh_patient_id") or "")
+    details = _appointment_details(booking_id, rh_patient_id) if booking_id and rh_patient_id else None
+    if details is None:
+        lines = ["Your appointment is confirmed. I’ll send your reminders here before the session."]
+    else:
+        lines = [
+            f"Your appointment with {details['provider_name']} is confirmed for "
+            f"{format_lagos_appointment_time(details['session_start'])}."
+        ]
+        if details.get("booking_code"):
+            lines.append(f"Your booking code is {details['booking_code']}.")
+        if details.get("meeting_url"):
+            label = "Join here when it’s time:" if details.get("service_mode") == "online" else "Your booking details:"
+            lines.append(f"{label} {details['meeting_url']}")
+    lines.append(_BOOKED_GUIDANCE)
+    return "\n\n".join(lines)
+
+
 def _is_thanks_only(user_text: str) -> bool:
     """Acknowledge gratitude without treating it as a clinical update."""
     return bool(_THANKS_ONLY_RE.fullmatch(user_text or ""))
@@ -1962,6 +1994,24 @@ def handle_turn(
                     session, identity, state, user_text, flagged,
                     volunteered_safety, phase, language, wa_message_id,
                 )
+
+    # After RH confirms the booking, later messages get a code-owned reply with
+    # the appointment details. Re-entering triage or matching from
+    # BOOKING_CONFIRMED is (rightly) refused by the stage machine, which used to
+    # crash the turn so the patient got no reply at all.
+    if (
+        identity.persona == Persona.PATIENT
+        and state.stage == ConversationStage.BOOKING_CONFIRMED
+        and not decide_booking_substate(state)
+    ):
+        reply = _booked_patient_reply(state)
+        save_turn(
+            session, state, user_text, reply, state.extracted, state.phase,
+            language, wa_message_id, stage=state.stage,
+        )
+        return TurnResult(
+            reply_text=reply, language=language, phase=state.phase, extracted=state.extracted,
+        )
 
     # An active booking flow is code-owned. Do this before Gemini extraction:
     # compact replies such as ``online``, ``3``, and a receipt email are not

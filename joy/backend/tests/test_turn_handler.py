@@ -820,3 +820,58 @@ def test_sending_summary_sets_summarised_status(db_session, patient_identity, fa
     triage = db_session.get(TriageSession, state.triage_session_id)
     assert triage is not None
     assert triage.status == "summarised"
+
+
+def _seed_confirmed_booking(db_session, patient_identity):
+    """A conversation exactly as RH's booking.confirmed event leaves it."""
+    complete = _safety_cleared(ExtractedTriage(
+        onset="3 days", severity=4, body_location="knee", goals="walk again", condition_area="msk",
+    ))
+    state = load(db_session, patient_identity)
+    save_turn(
+        db_session, state, "knee", "summary", complete, PatientPhase.POST_TRIAGE, "en",
+        stage=ConversationStage.AWAITING_PAYMENT,
+    )
+    row = db_session.get(Conversation, state.conversation_id)
+    row.booking_context = {
+        **(row.booking_context or {}),
+        "rh_booking_id": "rh-booking-1", "rh_booking_status": "confirmed", "policy_accepted": {"version": "v1"},
+    }
+    row.booking_substate = None
+    row.phase = PatientPhase.POST_TRIAGE
+    row.stage = ConversationStage.BOOKING_CONFIRMED.value
+    db_session.flush()
+
+
+@pytest.mark.parametrize("text", [
+    "what time is my session?",
+    "ok",
+    "my knee still hurts a bit",
+])
+def test_booked_patient_message_gets_a_reply_not_a_crash(db_session, patient_identity, fake_llm, text):
+    """Regression: any non-thanks message after booking.confirmed raised an
+    unauthorised BOOKING_CONFIRMED -> SPECIALIST_MATCHING transition, so the
+    worker dead-lettered it and the patient got nothing."""
+    from app.conversation.turn_handler import handle_turn
+
+    _seed_confirmed_booking(db_session, patient_identity)
+    fake_llm.reply = "Let's find you a physiotherapist!"
+
+    result = handle_turn(db_session, patient_identity.phone_e164, text, fake_llm)
+
+    lower = result.reply_text.lower()
+    assert "confirmed" in lower
+    assert "find you a physiotherapist" not in lower
+    row = db_session.scalar(select(Conversation).where(Conversation.person_id == patient_identity.person_id))
+    assert row.stage == ConversationStage.BOOKING_CONFIRMED.value
+
+
+def test_booked_patient_red_flag_still_escalates(db_session, patient_identity, fake_llm):
+    from app.conversation.turn_handler import handle_turn
+
+    _seed_confirmed_booking(db_session, patient_identity)
+    fake_llm.extraction = {}
+
+    result = handle_turn(db_session, patient_identity.phone_e164, "I now have chest pain", fake_llm)
+
+    assert result.blocked_by_safety is True
