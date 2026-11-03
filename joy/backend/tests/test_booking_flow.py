@@ -479,11 +479,11 @@ def test_booking_flow_and_turn_handler_do_not_call_advance_to_confirmed():
     offenders = [
         str(path.relative_to(root))
         for path in root.rglob("*.py")
-        if path.resolve() not in allowed and "advance_to_confirmed" in path.read_text()
+        if path.resolve() not in allowed and "advance_to_confirmed" in path.read_text(encoding="utf-8")
     ]
     assert offenders == []
-    flow = (root / "booking" / "booking_flow.py").read_text()
-    handler = (root / "conversation" / "turn_handler.py").read_text()
+    flow = (root / "booking" / "booking_flow.py").read_text(encoding="utf-8")
+    handler = (root / "conversation" / "turn_handler.py").read_text(encoding="utf-8")
     assert "advance_to_confirmed" not in flow
     assert "advance_to_confirmed" not in handler
     assert "booking.status = BookingStatus.CANCELLED" not in flow
@@ -644,7 +644,7 @@ def test_paystack_callback_comes_from_settings_not_railway(
         paystack=paystack,
     )
     assert paystack.last_callback_url == "https://example.test/paystack/callback"
-    flow = (Path(__file__).resolve().parents[1] / "app" / "booking" / "booking_flow.py").read_text()
+    flow = (Path(__file__).resolve().parents[1] / "app" / "booking" / "booking_flow.py").read_text(encoding="utf-8")
     assert "joy-ai-production.up.railway.app" not in flow
 
 
