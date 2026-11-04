@@ -124,6 +124,7 @@ import type * as helpers_accessAwards from "../helpers/accessAwards.js";
 import type * as helpers_adminRecipients from "../helpers/adminRecipients.js";
 import type * as helpers_appUrl from "../helpers/appUrl.js";
 import type * as helpers_appointmentNotify from "../helpers/appointmentNotify.js";
+import type * as helpers_awadocCore from "../helpers/awadocCore.js";
 import type * as helpers_appointmentStatus from "../helpers/appointmentStatus.js";
 import type * as helpers_callAccess from "../helpers/callAccess.js";
 import type * as helpers_careAccess from "../helpers/careAccess.js";
@@ -407,6 +408,7 @@ declare const fullApi: ApiFromModules<{
   "helpers/adminRecipients": typeof helpers_adminRecipients;
   "helpers/appUrl": typeof helpers_appUrl;
   "helpers/appointmentNotify": typeof helpers_appointmentNotify;
+  "helpers/awadocCore": typeof helpers_awadocCore;
   "helpers/appointmentStatus": typeof helpers_appointmentStatus;
   "helpers/callAccess": typeof helpers_callAccess;
   "helpers/careAccess": typeof helpers_careAccess;

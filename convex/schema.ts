@@ -4044,7 +4044,8 @@ export default defineSchema({
     .index("by_level", ["currentLevel"]),
 
   // ─── AwaDoc Integration ───────────────────────────────────────
-  // Tracks each AwaDoc-initiated therapy session from discovery to completion
+  // LEGACY (replaced Nov 2026 by awadocTherapies / awadocVisits). Nothing reads or writes it;
+  // kept only so the deploy doesn't trip over its old test rows. Clear them, then delete this.
   awadocSessions: defineTable({
     // AwaDoc identifiers
     queryId: v.optional(v.string()),        // From availability.query
@@ -4126,6 +4127,122 @@ export default defineSchema({
     .index("by_direction", ["direction"])
     .index("by_processed_at", ["processedAt"])
     .index("by_created_at", ["createdAt"]),
+
+  // AwaDoc offer settings (latest row wins; code defaults until an admin saves).
+  awadocSettings: defineTable({
+    enabled: v.boolean(),
+    modes: v.array(v.union(v.literal("virtual"), v.literal("home_visit"), v.literal("office_visit"))),
+    serviceId: v.string(), // Rehabify tariff that sets the price and the physio payout
+    minLeadMinutes: v.number(), // earliest start, counted from the request
+    updatedAt: v.number(),
+    updatedBy: v.optional(v.id("users")),
+  }),
+
+  // One AwaDoc booking (therapy.request → therapy.confirmed → visits). AwaDoc owns the patient,
+  // the payment and the patient messages; we supply and track the physio.
+  awadocTherapies: defineTable({
+    therapyId: v.string(), // ours, "thp-…", sent to AwaDoc
+    requestId: v.string(), // AwaDoc meta.request_id: one row per request
+    eventId: v.optional(v.string()),
+    traceId: v.optional(v.string()),
+    env: v.union(v.literal("production"), v.literal("test")), // which AwaDoc key signed it
+    awadocUserId: v.string(),
+    patientName: v.string(),
+    patientPhone: v.optional(v.string()),
+    address: v.optional(v.string()),
+    complaint: v.optional(v.string()),
+    specialistType: v.string(),
+    sessionType: v.optional(v.string()),
+    mode: v.union(v.literal("virtual"), v.literal("home_visit"), v.literal("office_visit")),
+    preferredLang: v.optional(v.string()),
+    requestedTime: v.optional(v.number()),
+    scheduledStart: v.number(),
+    scheduledEnd: v.number(),
+    serviceId: v.string(),
+    priceKobo: v.number(), // quoted to AwaDoc (physios never see it)
+    payoutKobo: v.number(), // per completed visit
+    paidAmountKobo: v.optional(v.number()), // from therapy.confirmed
+    currency: v.string(),
+    status: v.union(
+      v.literal("declined"), // we said no to the request
+      v.literal("reschedule_proposed"), // we offered another time
+      v.literal("quoted"), // confirmed to AwaDoc, waiting for the patient to pay
+      v.literal("needs_physio"), // paid, nobody free: an admin assigns
+      v.literal("active"), // paid and a physio is on it
+      v.literal("followup_pending"), // physio asked AwaDoc for more sessions
+      v.literal("completed"), // single session done
+      v.literal("plan_completed"), // multi-session plan done
+      v.literal("cancelled")
+    ),
+    declineReason: v.optional(v.string()),
+    response: v.any(), // our answer to therapy.request, replayed if AwaDoc retries
+    physiotherapistId: v.optional(v.id("users")),
+    guestToken: v.optional(v.string()), // patient's video link token (virtual visits)
+    sessionsCompleted: v.number(),
+    sessionsRemaining: v.optional(v.number()), // set once a follow-up was requested
+    followupNotes: v.optional(v.string()),
+    paidAt: v.optional(v.number()),
+    completedAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_request_id", ["requestId"])
+    .index("by_therapy_id", ["therapyId"])
+    .index("by_status", ["status"])
+    .index("by_physio", ["physiotherapistId"]),
+
+  // Each session of an AwaDoc booking (the first, then any follow-ups AwaDoc confirms).
+  awadocVisits: defineTable({
+    therapyDocId: v.id("awadocTherapies"),
+    therapyId: v.string(),
+    visitNumber: v.number(),
+    callId: v.string(), // video room id for virtual visits: "<therapyId>-<visitNumber>"
+    physiotherapistId: v.optional(v.id("users")),
+    scheduledStart: v.optional(v.number()), // missing until the physio picks a follow-up time
+    scheduledEnd: v.optional(v.number()),
+    status: v.union(
+      v.literal("needs_time"),
+      v.literal("scheduled"),
+      v.literal("started"),
+      v.literal("completed"),
+      v.literal("cancelled")
+    ),
+    startedAt: v.optional(v.number()),
+    completedAt: v.optional(v.number()),
+    remindedAt: v.optional(v.number()), // "starts soon" push sent to the physio
+    summary: v.optional(v.string()), // sent to AwaDoc with session.completed
+    payoutKobo: v.number(),
+    payoutStatus: v.union(v.literal("not_due"), v.literal("owed"), v.literal("paid")),
+    payoutPaidAt: v.optional(v.number()),
+    payoutPaidBy: v.optional(v.id("users")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_therapy", ["therapyDocId"])
+    .index("by_call_id", ["callId"])
+    .index("by_physio_and_start", ["physiotherapistId", "scheduledStart"])
+    .index("by_status", ["status"])
+    .index("by_payout_status", ["payoutStatus"]),
+
+  // Callbacks to AwaDoc waiting to be signed and sent by the Next.js server (which holds the
+  // AwaDoc secret). Sent in order per booking; retried with backoff, then left for an admin.
+  awadocOutbox: defineTable({
+    therapyId: v.string(),
+    env: v.union(v.literal("production"), v.literal("test")),
+    eventType: v.string(),
+    body: v.any(), // the exact JSON sent
+    dedupeKey: v.string(),
+    status: v.union(v.literal("pending"), v.literal("sent"), v.literal("failed")),
+    attempts: v.number(),
+    nextAttemptAt: v.number(),
+    lastError: v.optional(v.string()),
+    lastHttpStatus: v.optional(v.number()),
+    sentAt: v.optional(v.number()),
+    createdAt: v.number(),
+  })
+    .index("by_status_and_next", ["status", "nextAttemptAt"])
+    .index("by_dedupe", ["dedupeKey"])
+    .index("by_therapy", ["therapyId"]),
 
   // Health tables from health schema
   ...healthTables,

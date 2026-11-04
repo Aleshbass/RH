@@ -202,7 +202,6 @@ export const ADMIN_NAV: AdminNavSection[] = [
     devOnly: true,
     items: [
       { title: 'Reminder tests', href: a('/test-reminders'), icon: ClipboardCheck },
-      { title: 'AwaDoc webhook test', href: a('/awadoc/test'), icon: Globe },
       { title: 'Approvals debug', href: a('/approvals/debug'), icon: UserCheck },
       { title: 'Marketplace migration', href: a('/marketplace-migration'), icon: Store },
     ],

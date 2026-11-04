@@ -39,7 +39,7 @@ export default function GuestVideoCallPage() {
         const res = await fetch('/api/awadoc/validate-guest', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ therapyId: callId, guestToken }),
+          body: JSON.stringify({ callId, guestToken }),
           signal: controller.signal,
         })
         const data = await res.json()

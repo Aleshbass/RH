@@ -225,4 +225,10 @@ crons.daily(
   {}
 );
 
+// AwaDoc (awadoc.ts): retry callbacks that failed, push "starts soon" to the physio 15 minutes
+// before a visit, and keep 90 days of the webhook log.
+crons.interval("awadoc-outbox-retry", { minutes: 5 }, internal.awadoc.kickOutbox, {});
+crons.interval("awadoc-visit-reminders", { minutes: 5 }, internal.awadoc.remindUpcomingVisits, {});
+crons.daily("awadoc-purge-event-log", { hourUTC: 2, minuteUTC: 15 }, internal.awadoc.purgeOldEvents, {});
+
 export default crons;

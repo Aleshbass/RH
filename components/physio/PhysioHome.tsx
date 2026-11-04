@@ -36,6 +36,7 @@ import { useBooking } from '@/components/physio/schedule/BookingDrawer'
 import { AppointmentDrawer } from '@/components/physio/schedule/AppointmentDrawer'
 import { JoinVideoButton } from '@/components/physio/schedule/JoinVideoButton'
 import { BookingRequests } from '@/components/physio/schedule/BookingRequests'
+import { AwadocVisits } from '@/components/physio/AwadocVisits'
 import { needsMyAnswer, useNow, useTodaysVisits, videoJoin, visitStatus, type PhysioAppointment } from '@/components/physio/schedule/shared'
 import { isVideoVisit, type AppointmentLike } from '@/components/appointments/appointment-ui'
 import { isOpenAppointment } from '@/convex/helpers/appointmentStatus'
@@ -649,6 +650,9 @@ export function PhysioHome({ setup }: { setup: SetupStatus | null | undefined })
       {setup && <SetupChecklistCard setup={setup} />}
 
       <BookingRequests />
+
+      {/* Shows only when AwaDoc has assigned them a patient */}
+      <AwadocVisits />
 
       {setup?.practiceMode === 'independent' && setup.approvalStatus === 'approved' && (
         <div className="flex flex-col gap-2 rounded-2xl bg-white px-5 py-3 text-sm shadow-soft dark:bg-rh-ink-2 sm:flex-row sm:items-center sm:justify-between">

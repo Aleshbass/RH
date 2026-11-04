@@ -4,7 +4,7 @@ import { useEffect, useRef, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useUser } from '@clerk/nextjs'
 import StreamVideoCall from '@/components/video/StreamVideoCall'
-import { useQuery } from 'convex/react'
+import { useMutation, useQuery } from 'convex/react'
 import { api } from '@/convex/_generated/api'
 import { Loader2 } from '@/components/icons'
 
@@ -17,38 +17,20 @@ export default function VideoCallPage() {
   // Get call metadata from Convex
   const callMetadata = useQuery(api.stream_queries.getCallMetadata, { callId })
 
-  // Check if this is an AwaDoc session (therapy IDs start with "thp-")
-  const isAwadocSession = callId.startsWith('thp-')
-  const awadocSession = useQuery(
-    api.awadoc.getSessionByTherapyId,
-    isAwadocSession ? { therapyId: callId } : "skip"
-  )
-
-  // Track whether we've already sent the completion callback
-  const completionSentRef = useRef(false)
-
-  // AwaDoc sessions: tell AwaDoc the physio finished. Runs wherever they leave from, including
-  // the small call window on another page (components/video/activeCall).
-  const completeAwadoc = useCallback(async () => {
-    if (
-      isAwadocSession &&
-      !completionSentRef.current &&
-      user?.publicMetadata?.role === 'physiotherapist' &&
-      awadocSession?.status !== 'completed'
-    ) {
-      completionSentRef.current = true
-      try {
-        await fetch('/api/awadoc/complete-session', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ therapyId: callId }),
-        })
-        console.log('[AwaDoc] Session completion callback sent')
-      } catch (err) {
-        console.error('[AwaDoc] Failed to send completion:', err)
-      }
-    }
-  }, [user?.publicMetadata?.role, isAwadocSession, callId, awadocSession?.status])
+  // AwaDoc visits (rooms "thp-…-<n>"): joining tells AwaDoc the session started; when the call
+  // ends the physio lands on the visit to write the summary AwaDoc needs (convex/awadoc.ts).
+  const isAwadocRoom = callId.startsWith('thp-')
+  const awadocVisit = useQuery((api as any).awadoc.visitForCall, isAwadocRoom ? { callId } : 'skip') as
+    | { visitId: string; status: string }
+    | null
+    | undefined
+  const startAwadocVisit = useMutation((api as any).awadoc.startVisitByCall)
+  const awadocStartedRef = useRef(false)
+  useEffect(() => {
+    if (!isAwadocRoom || !awadocVisit || awadocVisit.status !== 'scheduled' || awadocStartedRef.current) return
+    awadocStartedRef.current = true
+    void startAwadocVisit({ callId }).catch(() => undefined)
+  }, [isAwadocRoom, awadocVisit, callId, startAwadocVisit])
 
   const role = user?.publicMetadata?.role
   const home =
@@ -61,9 +43,9 @@ export default function VideoCallPage() {
           : '/dashboard'
 
   const handleCallEnd = useCallback(async () => {
-    await completeAwadoc()
-    router.push(home)
-  }, [completeAwadoc, router, home])
+    const openAwadocVisit = awadocVisit && (awadocVisit.status === 'scheduled' || awadocVisit.status === 'started')
+    router.push(role === 'physiotherapist' && openAwadocVisit ? `/dashboard/physiotherapist?awadoc=${awadocVisit.visitId}` : home)
+  }, [router, home, role, awadocVisit])
 
   // If the backend marks the call as ended (e.g., host clicked "End for Everyone"),
   // redirect all participants back to their dashboards.
@@ -109,7 +91,6 @@ export default function VideoCallPage() {
       callId={callId}
       callType="default"
       onCallEnd={handleCallEnd}
-      afterLeave={() => void completeAwadoc()}
       recordHref={patientId ? `/dashboard/physiotherapist/patients/${patientId}` : undefined}
       appHref={home}
       navigate={(href) => router.push(href)}
