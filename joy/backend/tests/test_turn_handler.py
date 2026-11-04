@@ -261,6 +261,17 @@ def test_first_contact_does_not_append_severity_checklist(db_session, patient_ph
     assert _SUMMARY_PROMPT in lower
 
 
+def test_unknown_sender_hello_gets_the_fixed_welcome_without_the_model(db_session):
+    """Owner decision (Nov 2026): a plain hello from a new number is a patient, answered with
+    the Rehabify welcome (which tells physios to reply PT), not a model-written menu."""
+    from app.conversation.turn_handler import handle_turn
+
+    llm = _CountingLLM(reply="MODEL MENU", extraction={"intent": "unclear"})
+    result = handle_turn(db_session, "+2348000001098", "hello", llm)
+    assert result.reply_text.startswith("Hello 👋 Welcome to Rehabify.")
+    assert llm.complete_calls == 0
+
+
 def test_unknown_sender_uses_gemini_when_unclear_and_audits(db_session):
     from app.conversation.turn_handler import handle_turn
 
@@ -269,7 +280,7 @@ def test_unknown_sender_uses_gemini_when_unclear_and_audits(db_session):
         reply="Hey — are you here for physio care, joining as a physiotherapist, or helping family?",
         extraction={"intent": "unclear"},
     )
-    result = handle_turn(db_session, phone, "hello", llm)
+    result = handle_turn(db_session, phone, "Who is this?", llm)
     assert result.reply_text == llm.reply
     assert llm.complete_calls == 1
     events = db_session.scalars(
