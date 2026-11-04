@@ -10,7 +10,8 @@
  * environment it came from, and every callback for that booking goes back to the same one.
  *
  * Server only (reads secrets). Env vars live in Vercel:
- *   AWADOC_PARTNER_ID        partner id in the callback path
+ *   AWADOC_PARTNER_ID        AwaDoc business id in the callback path (default: Rehabify's,
+ *                            69764afe2c6108f861514a29, the businessId AwaDoc sends our events for)
  *   AWADOC_SECRET_KEY        production secret (comma-separated to overlap a rotation)
  *   AWADOC_BASE_URL          production API base (default https://partners-api.awadoc.com; the guide's
  *                            partners-prod-001 host does not exist, checked Nov 2026)
@@ -38,7 +39,7 @@ function stripTrailingSlash(url: string): string {
 }
 
 export function awadocEnvConfig(env: AwadocEnv) {
-    const partnerId = process.env.AWADOC_PARTNER_ID?.trim() ?? "";
+    const partnerId = process.env.AWADOC_PARTNER_ID?.trim() || "69764afe2c6108f861514a29";
     if (env === "test") {
         return {
             secrets: secretList(process.env.AWADOC_TEST_SECRET_KEY),
