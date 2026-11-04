@@ -303,6 +303,11 @@ export default function AwadocAdminPage() {
             <code>AWADOC_PARTNER_ID</code>, <code>AWADOC_SECRET_KEY</code> (production) and optionally <code>AWADOC_TEST_SECRET_KEY</code>. Events signed with the test key show a Test badge and their updates go to AwaDoc&apos;s sandbox.
           </span>
         </Detail>
+        <Detail label="Where updates go">
+          <span className="text-xs">
+            <code>https://partners-api.awadoc.com/api/partners/&lt;AWADOC_PARTNER_ID&gt;/callback</code>. The guide&apos;s partners-prod-001 host doesn&apos;t exist; override with <code>AWADOC_BASE_URL</code> only if AwaDoc gives you a new one.
+          </span>
+        </Detail>
         <Detail label="AwaDoc guide">
           <a href="https://partners.awadoc.com/api-documentation/therapy-provider-guide" target="_blank" rel="noopener noreferrer" className={cn(linkClass, 'inline-flex items-center gap-1 text-sm')}>
             Therapy Provider Guide <ExternalLink className="h-3 w-3" />
