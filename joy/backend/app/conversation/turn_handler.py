@@ -386,6 +386,33 @@ def _is_thanks_only(user_text: str) -> bool:
     return bool(_THANKS_ONLY_RE.fullmatch(user_text or ""))
 
 
+_REFERRAL_NAME_KEY = "referral_name_check"
+# Two to five words of letters (accents, apostrophes and hyphens allowed): a name, not a story
+_REFERRAL_NAME_RE = re.compile(r"^[^\W\d_][^\W\d_'’.-]*(?:[\s'’.-]+[^\W\d_][^\W\d_'’.-]*){1,4}$")
+
+
+def _looks_like_name(text: str) -> bool:
+    """A name in any of Joy's languages: tone marks (Adébáyọ̀) are dropped before matching."""
+    import unicodedata
+
+    plain = "".join(ch for ch in unicodedata.normalize("NFKD", text or "") if not unicodedata.combining(ch))
+    return bool(_REFERRAL_NAME_RE.fullmatch(plain.strip()))
+
+
+def _set_referral_name_check(conversation: Conversation, code: str, attempts: int) -> None:
+    context = dict(conversation.booking_context or {})
+    context[_REFERRAL_NAME_KEY] = {"code": code, "attempts": attempts}
+    conversation.booking_context = context
+
+
+def _clear_referral_name_check(conversation: Conversation | None) -> None:
+    if conversation is None or _REFERRAL_NAME_KEY not in (conversation.booking_context or {}):
+        return
+    context = dict(conversation.booking_context or {})
+    context.pop(_REFERRAL_NAME_KEY, None)
+    conversation.booking_context = context
+
+
 def _verified_referral_turn(
     session: Session,
     identity: Identity,
@@ -394,14 +421,30 @@ def _verified_referral_turn(
     language: str,
     wa_message_id: str | None,
 ) -> TurnResult | None:
-    """Apply a referral only after RH verifies code ownership for this sender."""
-    match = _REFERRAL_CODE_RE.search(user_text or "")
-    if identity.persona != Persona.PATIENT or match is None:
+    """Apply a referral only after RH verifies code ownership for this sender.
+
+    From a different WhatsApp number than the one on the referral (a family phone, a second
+    SIM), Joy asks for the patient's full name as the referrer wrote it; RH links the referral
+    only if the code and the name both match. Two tries, then the patient is pointed to support.
+    """
+    if identity.persona != Persona.PATIENT:
         return None
-    tracking_code = f"RHB-{match.group(1)}"
-    patient = session.get(Patient, identity.person_id)
+    match = _REFERRAL_CODE_RE.search(user_text or "")
     conversation = session.get(Conversation, state.conversation_id)
-    if patient is None or conversation is None:
+    pending = (conversation.booking_context or {}).get(_REFERRAL_NAME_KEY) if conversation is not None else None
+    confirm_name: str | None = None
+    if match is None:
+        if not isinstance(pending, dict):
+            return None
+        if not _looks_like_name(user_text):
+            _clear_referral_name_check(conversation)  # they moved on: carry on normally
+            return None
+        tracking_code = str(pending.get("code") or "")
+        confirm_name = " ".join((user_text or "").split())
+    else:
+        tracking_code = f"RHB-{match.group(1)}"
+    patient = session.get(Patient, identity.person_id)
+    if patient is None or conversation is None or not tracking_code:
         return None
     actor = RHActor(persona="patient", sender_phone=patient.phone_e164)
     try:
@@ -429,6 +472,7 @@ def _verified_referral_turn(
                 persona="patient", sender_phone=patient.phone_e164,
                 rh_user_id=resolved_patient.patient_id,
             ),
+            confirm_name=confirm_name,
         )
     except RHIntegrationError:
         # A dependency problem must not be represented as an invalid referral.
@@ -438,13 +482,33 @@ def _verified_referral_turn(
         )
 
     if referral_result.resolution != "MATCH" or not referral_result.referral:
-        return TurnResult(
-            reply_text=(
-                "I couldn’t verify that referral code for this WhatsApp number. "
-                "Please check the code or contact Rehabify support."
-            ),
-            language=language, phase=state.phase, extracted=state.extracted, safety=evaluate(state.extracted),
+        attempts = int(pending.get("attempts") or 0) + 1 if isinstance(pending, dict) and confirm_name else 0
+        if confirm_name is None:
+            # Maybe sent from another number: ask for the name once rather than giving up
+            _set_referral_name_check(conversation, tracking_code, 0)
+            reply = (
+                "That referral code was set up for a different WhatsApp number. To use it from this "
+                "number, reply with the patient's full name exactly as the doctor or partner wrote it "
+                "(first name and surname)."
+            )
+        elif attempts < 2:
+            _set_referral_name_check(conversation, tracking_code, attempts)
+            reply = "That name doesn't match the referral. Please check the spelling and send the full name once more."
+        else:
+            _clear_referral_name_check(conversation)
+            reply = (
+                "I couldn't match that name to the referral. Please ask the person who referred you to "
+                "check the WhatsApp number they used, or email hello@myrehabifyhealth.com and we'll help. "
+                "You can still tell me what's going on and I'll help you here."
+            )
+        save_turn(
+            session, state, user_text, reply, state.extracted, state.phase, language, wa_message_id, stage=state.stage,
         )
+        return TurnResult(
+            reply_text=reply, language=language, phase=state.phase, extracted=state.extracted, safety=evaluate(state.extracted),
+        )
+    if isinstance(pending, dict):
+        _clear_referral_name_check(conversation)
 
     referral = referral_result.referral
     patient_context = referral.get("patient") if isinstance(referral.get("patient"), dict) else {}

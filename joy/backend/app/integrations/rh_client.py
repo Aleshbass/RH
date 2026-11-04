@@ -400,7 +400,7 @@ class RHClient:
         )
 
     def resolve_referral_context(
-        self, tracking_code: str, *, phone: str, joy_person_id: str, actor: RHActor
+        self, tracking_code: str, *, phone: str, joy_person_id: str, actor: RHActor, confirm_name: str | None = None
     ) -> RHReferralContext:
         """Resolve a referral only for its verified WhatsApp sender.
 
@@ -415,6 +415,8 @@ class RHClient:
                 "phone": phone,
                 "joy_person_id": joy_person_id,
                 "actor": actor.as_payload(),
+                # From a different number than the referral's: RH also checks the patient's name
+                **({"confirm_name": confirm_name} if confirm_name else {}),
             },
         )
         resolution = data.get("resolution")

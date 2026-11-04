@@ -631,13 +631,58 @@ export const resolveOrCreatePatientByPhone = internalMutation({
  * read and never returns clinicalNotes, callback URLs, partner finance, or
  * unrelated patient records.
  */
+/** Letters only, no accents, lower case: "Adébáyọ̀ O." → ["adebayo", "o"]. */
+function nameTokens(value: string | undefined | null): string[] {
+  return String(value ?? "")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z\s'-]/g, " ")
+    .split(/[\s'-]+/)
+    .filter((token) => token.length > 1);
+}
+
+/** The name the patient typed contains the referral's first name and surname (any order). */
+function referralNameMatches(typed: string, referral: { patientFirstName?: string; patientLastName?: string }) {
+  const given = new Set(nameTokens(typed));
+  const first = nameTokens(referral.patientFirstName);
+  const last = nameTokens(referral.patientLastName);
+  if (!first.length || !last.length) return false;
+  return first.every((token) => given.has(token)) && last.every((token) => given.has(token));
+}
+
+const NAME_CONFIRM_FAILS_PER_DAY = 5;
+
 export const resolveReferralContextForJoy = internalMutation({
-  args: { phone: v.string(), trackingCode: v.string(), joyPersonId: v.string(), patientId: v.id("users") },
+  args: {
+    phone: v.string(), trackingCode: v.string(), joyPersonId: v.string(), patientId: v.id("users"),
+    // The patient's full name, when they write from a different number than the referral's
+    confirmName: v.optional(v.string()),
+  },
   handler: async (ctx, args) => {
     const referral = await findReferralByCode(ctx, args.trackingCode);
     // Do not disclose whether a code exists when it does not belong to the
     // verified sender.
-    if (!referral || !samePhone(referral.patientPhone, args.phone)) return { resolution: "MISMATCH" as const };
+    if (!referral) return { resolution: "MISMATCH" as const };
+    let verifiedBy: "phone" | "name" = "phone";
+    if (!samePhone(referral.patientPhone, args.phone)) {
+      // A different WhatsApp number (a family phone, a second SIM): the code plus the
+      // patient's name as the referrer wrote it. Limited attempts; never reveals a match exists.
+      if (!args.confirmName || (referral.patientId && referral.patientId !== args.patientId)) return { resolution: "MISMATCH" as const };
+      const dayAgo = Date.now() - 24 * 60 * 60 * 1000;
+      const fails = (await ctx.db.query("referralEvents").withIndex("by_referral_id", (q) => q.eq("referralId", referral._id)).collect())
+        .filter((event) => event.eventName === "patient.whatsapp_referral_name_mismatch" && event.occurredAt > dayAgo).length;
+      if (fails >= NAME_CONFIRM_FAILS_PER_DAY || !referralNameMatches(args.confirmName, referral)) {
+        if (fails < NAME_CONFIRM_FAILS_PER_DAY) {
+          await ctx.db.insert("referralEvents", {
+            referralId: referral._id, eventName: "patient.whatsapp_referral_name_mismatch", occurredAt: Date.now(),
+            actorType: "system", actorId: "joy_ai", metadata: { joyPersonId: args.joyPersonId, channel: "whatsapp" },
+          });
+        }
+        return { resolution: "MISMATCH" as const };
+      }
+      verifiedBy = "name";
+    }
     if (referral.patientId && referral.patientId !== args.patientId) return { resolution: "CONFLICT" as const };
 
     const now = Date.now();
@@ -645,11 +690,11 @@ export const resolveReferralContextForJoy = internalMutation({
       await ctx.db.patch(referral._id, { patientId: args.patientId, updatedAt: now });
       await ctx.db.insert("referralEvents", {
         referralId: referral._id,
-        eventName: "patient.whatsapp_referral_verified",
+        eventName: verifiedBy === "name" ? "patient.whatsapp_referral_verified_by_name" : "patient.whatsapp_referral_verified",
         occurredAt: now,
         actorType: "system",
         actorId: "joy_ai",
-        metadata: { joyPersonId: args.joyPersonId, channel: "whatsapp" },
+        metadata: { joyPersonId: args.joyPersonId, channel: "whatsapp", ...(verifiedBy === "name" ? { differentNumber: true } : {}) },
       });
       await markReferralContacted(ctx, referral, { strategy: "verified_sender" });
     }

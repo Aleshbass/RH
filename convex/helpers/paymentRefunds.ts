@@ -19,7 +19,8 @@
  */
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
-import { reverseCommissionsForPayment } from "./partnerLedger";
+import { adjustCommissionsForPartialRefund, reverseCommissionsForPayment } from "./partnerLedger";
+import { queueJoyBookingCancelled } from "./joyEvents";
 import { transitionReferral } from "./partnerEvents";
 import { toPublicStatus } from "./partnerShared";
 import { returnAwardSession } from "./accessAwards";
@@ -94,6 +95,11 @@ async function refundBooking(ctx: MutationCtx, booking: Doc<"marketplaceBookings
     return;
   }
   if (booking.paymentStatus === "refunded") return;
+  // A refund that cancels the booking (also one made straight in the Paystack dashboard) must
+  // reach Joy too, or it keeps sending appointment reminders (no-op for non-Joy bookings)
+  if (booking.bookingStatus !== "completed" && booking.bookingStatus !== "cancelled") {
+    await queueJoyBookingCancelled(ctx, booking, { cancelledBy: "care_team", refundStatus: "refunded" });
+  }
   await ctx.db.patch(booking._id, {
     paymentStatus: "refunded",
     refundedAmountKobo: total,
@@ -154,6 +160,8 @@ export async function applyPaystackRefund(ctx: MutationCtx, data: any): Promise<
     if (full) {
       await reverseCommissionsForPayment(ctx, reference, "Patient payment refunded");
     } else {
+      // e.g. 50% back for a late cancellation: the partner's commission drops by the same share
+      await adjustCommissionsForPartialRefund(ctx, reference, total, paidKobo, "Patient partly refunded");
       await alert(ctx, "partial_refund_needs_review", reference, { bookingId: booking._id, refundedKobo: total, paidKobo });
     }
   } else if (/^(INV|CLN|PHY|RH)_/.test(reference)) {
@@ -178,6 +186,7 @@ export async function applyPaystackRefund(ctx: MutationCtx, data: any): Promise<
           refundedAmount: total,
           paidAmount: Math.max(0, (invoice.paidAmount ?? invoice.totalAmount) - amountKobo),
         });
+        await adjustCommissionsForPartialRefund(ctx, reference, total, paidKobo, "Patient partly refunded");
         await alert(ctx, "partial_refund_needs_review", reference, { invoiceId: invoice._id, refundedKobo: total, paidKobo });
       }
     }

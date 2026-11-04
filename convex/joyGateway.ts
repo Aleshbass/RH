@@ -100,10 +100,11 @@ export const resolveReferralContext = httpAction(async (ctx, request) => {
   const parsed = await readJson(request, "/joy-integration/resolve_referral_context");
   if (parsed instanceof Response) return parsed;
   if (!(await reserveNonce(ctx, parsed.nonce))) return new Response("Replay detected", { status: 409 });
-  const { phone, tracking_code, joy_person_id, patient_id } = parsed.data;
+  const { phone, tracking_code, joy_person_id, patient_id, confirm_name } = parsed.data;
   if (![phone, tracking_code, joy_person_id, patient_id].every((value) => typeof value === "string")) return new Response("Invalid payload", { status: 400 });
   return Response.json(await ctx.runMutation((internal as any).joyIntegration.resolveReferralContextForJoy, {
     phone, trackingCode: tracking_code, joyPersonId: joy_person_id, patientId: patient_id,
+    ...(typeof confirm_name === "string" && confirm_name.trim() ? { confirmName: confirm_name.trim().slice(0, 120) } : {}),
   }));
 });
 

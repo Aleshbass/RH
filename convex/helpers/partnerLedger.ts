@@ -277,6 +277,70 @@ export async function reverseCommissionsForPayment(
 }
 
 /**
+ * A partial refund (e.g. 50% for a late cancellation) reduces the partner's commission in the
+ * same proportion: commission follows the money Rehabify keeps. `refundedKobo` is the total
+ * refunded so far; earlier partial adjustments are netted, so repeated webhooks or a second
+ * partial refund adjust only the difference. A full refund still goes through
+ * reverseCommissionsForPayment.
+ */
+export async function adjustCommissionsForPartialRefund(
+  ctx: MutationCtx,
+  paymentReference: string,
+  refundedKobo: number,
+  paidKobo: number,
+  reason: string
+): Promise<{ adjusted: number }> {
+  if (!(paidKobo > 0) || !(refundedKobo > 0)) return { adjusted: 0 };
+  const share = Math.min(1, refundedKobo / paidKobo);
+  const rows = await ctx.db
+    .query("partnerCommissions")
+    .withIndex("by_payment_reference", (q) => q.eq("paymentReference", paymentReference))
+    .collect();
+  const now = Date.now();
+  let adjusted = 0;
+  for (const commission of rows) {
+    if (commission.eventType !== "payment") continue;
+    if (commission.status === "reversed" || commission.status === "cancelled") continue;
+    const earlier = rows.filter((row) => row.reversesCommissionId === commission._id && row.source === "partial_refund");
+    const alreadyCut = -earlier.reduce((sum, row) => sum + row.commissionAmount, 0);
+    const shouldCut = Math.round(commission.commissionAmount * share);
+    const cut = shouldCut - alreadyCut;
+    if (cut <= 0) continue;
+    const scale = commission.commissionAmount > 0 ? cut / commission.commissionAmount : 0;
+    await ctx.db.insert("partnerCommissions", {
+      partnerId: commission.partnerId,
+      contractId: commission.contractId,
+      referralId: commission.referralId,
+      trackingCode: commission.trackingCode,
+      patientName: commission.patientName,
+      eventType: "refund_adjustment",
+      environment: "live",
+      bookingId: commission.bookingId,
+      linkId: commission.linkId,
+      patientUserId: commission.patientUserId,
+      idempotencyKey: `partial-refund:${commission._id}:${refundedKobo}`,
+      source: "partial_refund",
+      reversesCommissionId: commission._id,
+      grossTransactionAmount: -Math.round(commission.grossTransactionAmount * scale),
+      commissionRate: commission.commissionRate,
+      commissionAmount: -cut,
+      netPayable: -Math.round(commission.netPayable * scale),
+      partnerAmount: -Math.round((commission.partnerAmount ?? commission.commissionAmount) * scale),
+      netPartnerAmount: -Math.round(commission.netPayable * scale),
+      paymentMethod: commission.paymentMethod,
+      paymentReference: commission.paymentReference,
+      billingPeriod: billingPeriodOf(now),
+      bulkPayoutStatus: "accrued",
+      status: "approved",
+      notes: `Partial refund adjustment (${Math.round(share * 100)}% refunded): ${reason}`,
+      earnedAt: now,
+    });
+    adjusted++;
+  }
+  return { adjusted };
+}
+
+/**
  * Commission on a paid clinic or physiotherapist invoice, for a patient a partner (or a
  * referring doctor) sent us. Covers referrals routed to a clinic, where the patient pays the
  * clinic's invoice rather than a marketplace booking.
