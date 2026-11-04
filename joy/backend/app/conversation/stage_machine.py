@@ -56,7 +56,14 @@ _ALLOWED: dict[ConversationStage, set[ConversationStage]] = {
         ConversationStage.SPECIALIST_MATCHING,
         ConversationStage.AWAITING_PAYMENT,
     },
-    ConversationStage.AWAITING_PAYMENT: {ConversationStage.AWAITING_PAYMENT, ConversationStage.BOOKING_CONFIRMED},
+    # A patient whose answers turn AMBER while a payment link is open is moved to the
+    # specialist review (and its policy) instead of crashing the turn.
+    ConversationStage.AWAITING_PAYMENT: {
+        ConversationStage.AWAITING_PAYMENT,
+        ConversationStage.BOOKING_CONFIRMED,
+        ConversationStage.SPECIALIST_REVIEW,
+        ConversationStage.POLICY_REVIEW,
+    },
     ConversationStage.BOOKING_CONFIRMED: {ConversationStage.BOOKING_CONFIRMED},
     # A patient who chooses the specialist-review route must review the
     # booking policy before we collect a receipt email or initialise payment.

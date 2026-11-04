@@ -59,6 +59,7 @@ from app.integrations.rh_client import RHPaymentInitialization, RHActor, RHInteg
 from app.integrations.typesafe_client import TypeSafeClient, TypeSafeError
 from app.config import get_settings
 from app.booking.paystack_client import initialize_transaction
+from app.booking.step_help import booking_step_help
 from app.api.internal.rh_safety_eligibility import EligibilityRequest, issue_eligibility_reference
 from app.models.admin import Admin
 from app.models.conversation import Conversation
@@ -1582,6 +1583,41 @@ def _offer_initial_consultation(
     )
 
 
+def _undo_mistaken_specialist_offer(session: Session, identity: Identity, state: ConversationState) -> bool:
+    """Put a patient with no warning signs back on their booking after the old fallback.
+
+    Until Nov 2026 any message a booking step didn't expect offered the paid specialist review
+    and marked the triage "specialist_review", so every later reply ("Yes") repeated the offer.
+    Only that fallback set "specialist_review_offered"; real AMBER results never do, and a review
+    the patient has started (requested or paid) is left alone.
+    """
+    if not _is_specialist_review(session, state):
+        return False
+    conversation = session.get(Conversation, state.conversation_id)
+    if conversation is None:
+        return False
+    context = dict(conversation.booking_context or {})
+    if context.get(_TRIAGE_FLOW_KEY) != "specialist_review_offered":
+        return False
+    if context.get("amber_review_requested") or context.get("amber_review_id"):
+        return False
+    safety = evaluate(state.extracted)
+    if safety.fired or safety.action == "specialist_review" or (safety.risk_level or "").upper() in {"AMBER", "ORANGE", "RED"}:
+        return False
+    context[_TRIAGE_FLOW_KEY] = "initial_consultation_offered"
+    conversation.booking_context = context
+    state.booking_context = context
+    _set_triage_status(session, state, "summarised")
+    append(
+        session,
+        kind=AuditKind.TRIAGE,
+        actor_phone=identity.phone_e164,
+        person_id=identity.person_id,
+        payload={"event": "mistaken_specialist_offer_undone", "conversation_id": str(conversation.id)},
+    )
+    return True
+
+
 def _offer_specialist_triage_review(session: Session, state: ConversationState) -> str:
     """Route the completed initial account to the fixed-price clinician review."""
     conversation = session.get(Conversation, state.conversation_id)
@@ -1625,6 +1661,7 @@ def _reply_after_extract(
     identity: Identity,
     paystack=None,
     wa_message_id: str | None = None,
+    llm=None,
 ) -> tuple[str, PatientPhase]:
     if not has_narrative(extracted):
         return candidate_reply, PatientPhase.FIRST_CONTACT
@@ -1717,7 +1754,18 @@ def _reply_after_extract(
     )
     if booking_reply is not None:
         return booking_reply, PatientPhase.POST_TRIAGE
-    return _offer_specialist_triage_review(session, state), PatientPhase.POST_TRIAGE
+    safety = evaluate(extracted)
+    if safety.action == "specialist_review" or (safety.risk_level or "").upper() == "AMBER":
+        return _offer_specialist_triage_review(session, state), PatientPhase.POST_TRIAGE
+    # A question the current step wasn't waiting for ("What if I need a home visit?" while a
+    # payment link is open). This used to offer the paid specialist review to everyone.
+    conversation = session.get(Conversation, state.conversation_id)
+    return booking_step_help(
+        conversation.booking_substate if conversation is not None else None,
+        dict(conversation.booking_context or {}) if conversation is not None else {},
+        user_text,
+        llm=llm,
+    ), PatientPhase.POST_TRIAGE
 
 
 def provider_unavailable_reply(
@@ -2238,6 +2286,7 @@ def handle_turn(
         apply_inbound_code(session, identity.person_id, user_text)
         _maybe_route_off_platform(session, user_text, patient_id=identity.person_id)
     phase = decide_phase(state)
+    _undo_mistaken_specialist_offer(session, identity, state)
     if _is_escalated(session, state) or _is_specialist_review(session, state):
         return _resend_safety_block(
             session, identity, state, user_text, phase, language, wa_message_id
@@ -2665,6 +2714,7 @@ def handle_turn(
         identity,
         paystack=paystack,
         wa_message_id=wa_message_id,
+        llm=llm,
     )
     _audit_turn(session, identity, extracted, safety, outgoing)
     conversation = session.get(Conversation, state.conversation_id)

@@ -165,7 +165,8 @@ def handle_booking_turn(
         # that hold without making the patient start over.
         if _PAYMENT_EMAIL_RE.fullmatch(user_text.strip().casefold()) and not user_text.strip().casefold().endswith(".invalid"):
             return _continue_rh_payment_email(session, conversation, patient, user_text)
-        return _rh_payment_status(conversation, user_text)
+        # Anything else is a question: the caller answers it (app/booking/step_help.py)
+        return None
     if sub == OFFERING_MATCHES:
         return _continue_offering(session, conversation, patient, user_text, paystack)
     if sub == AWAITING_SLOT_MODE:
@@ -967,12 +968,19 @@ def _amount_text(ctx: dict) -> str:
     return f" Amount: ₦{int(amount) // 100:,}." if isinstance(amount, int) and amount > 0 else ""
 
 
-def _rh_payment_status(conversation: Conversation, user_text: str) -> str | None:
-    if _PAY_NUDGE_RE.search(user_text) or _PAID_RE.search(user_text):
-        if (conversation.booking_context or {}).get("booking_route") == "admin_scheduled_virtual":
-            return "Your payment is being verified. Once it is received, our care team will send your appointment details shortly."
-        return "Your payment is being verified. I’ll confirm the appointment here after the specialist accepts it."
-    return None
+def _payment_received_reply(context: dict) -> str:
+    if context.get("booking_route") == "admin_scheduled_virtual":
+        return "Your payment has been received. Our care team will assign your clinician, date and time, and I’ll send them here shortly."
+    return "Your payment has been received. I’ll confirm the appointment here after the specialist accepts it."
+
+
+def _not_paid_yet_reply(context: dict) -> str:
+    """Honest status for an unpaid booking: never say a payment is being verified when none has arrived."""
+    text = "I haven’t received your payment yet. If you’ve just paid, it can take a minute to come through, and I’ll message you here as soon as it does."
+    url = str(context.get("authorization_url") or "")
+    if url.startswith("https://"):
+        text += f"\n\nIf you haven’t paid yet, you can pay securely here: {url}"
+    return text
 
 
 def _continue_rh_replacement(session: Session, conversation: Conversation, patient: Patient, user_text: str) -> str:
@@ -1164,9 +1172,9 @@ def _maybe_paid_status(
         if status.get("booking_status") == "confirmed":
             _set_substate(conversation, None, dict(context))
             return "Your appointment is confirmed. I’ll send the details here."
-        if context.get("booking_route") == "admin_scheduled_virtual":
-            return "Your payment is being verified. Once it is received, our care team will send your appointment details shortly."
-        return "Your payment is being verified. I’ll confirm the appointment here after the specialist accepts it."
+        if status.get("payment_status") == "completed" or context.get("rh_payment_status") == "succeeded":
+            return _payment_received_reply(context)
+        return _not_paid_yet_reply(context)
     booking = _payment_booking(session, conversation, patient)
     if booking is not None and booking.status == BookingStatus.CONFIRMED:
         _set_substate(conversation, None, {})
