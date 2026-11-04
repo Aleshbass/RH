@@ -243,7 +243,7 @@ export function guestLink(therapy: Doc<"awadocTherapies">, visit: Doc<"awadocVis
 /** Every event we send is in the therapy.* namespace (owner decision, Nov 2026). */
 const eventName = (action: string) => `therapy.${action}`;
 
-/** Envelope for events 4 and 5. */
+/** Every callback: AwaDoc accepts exactly event_id, event_type, timestamp (ISO) and context. */
 function envelope(action: string, context: Record<string, unknown>) {
     return {
         event_id: newEventId(),
@@ -284,14 +284,18 @@ export function scheduledBody(therapy: Doc<"awadocTherapies">, visit: Doc<"awado
     });
 }
 
-/** Events 6, 7, 8 and 10 use AwaDoc's flat shape. */
+/**
+ * Events 6, 7, 8 and 10. The guide shows a flat body, but AwaDoc's API (checked Nov 2026)
+ * accepts only event_id / event_type / timestamp / context at the top level, so the guide's
+ * fields go inside context.
+ */
 export function flatBody(therapy: Doc<"awadocTherapies">, action: string, fields: Record<string, unknown>) {
-    return {
+    return envelope(action, {
+        therapy: { id: therapy.therapyId },
         request_id: therapy.requestId,
         therapy_id: therapy.therapyId,
-        event: eventName(action),
         ...fields,
-    };
+    });
 }
 
 // ── Outbox ──────────────────────────────────────────────

@@ -12,7 +12,8 @@
  * Server only (reads secrets). Env vars live in Vercel:
  *   AWADOC_PARTNER_ID        partner id in the callback path
  *   AWADOC_SECRET_KEY        production secret (comma-separated to overlap a rotation)
- *   AWADOC_BASE_URL          production API base (default https://partners-prod-001.awadoc.com)
+ *   AWADOC_BASE_URL          production API base (default https://partners-api.awadoc.com; the guide's
+ *                            partners-prod-001 host does not exist, checked Nov 2026)
  *   AWADOC_TEST_SECRET_KEY   optional sandbox secret
  *   AWADOC_TEST_BASE_URL     sandbox API base (default https://partners-staging.awadoc.com)
  *   AWADOC_TEST_PARTNER_ID   optional, when the sandbox partner id differs
@@ -47,7 +48,7 @@ export function awadocEnvConfig(env: AwadocEnv) {
     }
     return {
         secrets: secretList(process.env.AWADOC_SECRET_KEY),
-        baseUrl: stripTrailingSlash(process.env.AWADOC_BASE_URL?.trim() || "https://partners-prod-001.awadoc.com"),
+        baseUrl: stripTrailingSlash(process.env.AWADOC_BASE_URL?.trim() || "https://partners-api.awadoc.com"),
         partnerId,
     };
 }
@@ -140,9 +141,21 @@ export async function postCallback(env: AwadocEnv, body: unknown): Promise<Callb
             signal: controller.signal,
         });
         const responseText = (await response.text().catch(() => "")).slice(0, 1000);
-        return response.ok
-            ? { ok: true, status: response.status, responseText }
-            : { ok: false, status: response.status, responseText, error: `HTTP ${response.status}` };
+        if (!response.ok) return { ok: false, status: response.status, responseText, error: `HTTP ${response.status}` };
+        // AwaDoc answers 201 even when it couldn't use the event: the outcome is in the body
+        // ({ success, data: { status: "acknowledged" | "unacknowledged", reason } })
+        let parsed: any = null;
+        try {
+            parsed = JSON.parse(responseText);
+        } catch {
+            // not JSON: trust the HTTP status
+        }
+        const outcome = parsed?.data?.status ?? parsed?.status;
+        if (parsed?.success === false || (typeof outcome === "string" && outcome !== "acknowledged")) {
+            const reason = parsed?.data?.reason ?? parsed?.message ?? outcome;
+            return { ok: false, status: response.status, responseText, error: `AwaDoc: ${outcome ?? "failed"}${reason && reason !== outcome ? ` (${reason})` : ""}` };
+        }
+        return { ok: true, status: response.status, responseText };
     } catch (err) {
         const aborted = err instanceof Error && err.name === "AbortError";
         return { ok: false, error: aborted ? `Timed out after ${CALLBACK_TIMEOUT_MS / 1000}s` : err instanceof Error ? err.message : String(err) };
