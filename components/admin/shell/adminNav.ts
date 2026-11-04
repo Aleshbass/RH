@@ -82,6 +82,7 @@ export const ADMIN_NAV: AdminNavSection[] = [
     items: [
       { title: 'Home', href: ADMIN_HOME, icon: Home, keywords: ['dashboard', 'start'] },
       { title: 'Analytics', href: a('/analytics'), icon: BarChart3, keywords: ['stats', 'growth', 'revenue'] },
+      { title: 'Website analytics', href: a('/web-analytics'), icon: LineChart, keywords: ['umami', 'posthog', 'visitors', 'traffic', 'tracking'] },
     ],
   },
   {

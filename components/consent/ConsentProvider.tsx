@@ -23,6 +23,7 @@ import {
   type ConsentChoices,
 } from '@/lib/consent'
 import { startPosthog, stopPosthog } from '@/lib/analytics/posthog'
+import { UMAMI_BEFORE_SEND, UMAMI_SRC, UMAMI_WEBSITE_ID } from '@/lib/analytics/umami'
 import { CookieBanner } from './CookieBanner'
 import { CookieSettings } from './CookieSettings'
 
@@ -38,8 +39,6 @@ const mineRef = makeFunctionReference<
   { consentId: string; version: number; analytics: boolean; action: ConsentAction; decidedAt: number } | null
 >('cookieConsent:mine')
 
-const UMAMI_SRC = 'https://yoursiteanalytics.vercel.app/script.js'
-const UMAMI_WEBSITE_ID = process.env.NEXT_PUBLIC_UMAMI_WEBSITE_ID || '051e7953-f174-41aa-a2b7-96106c6f3d0d'
 // Umami checks this flag before every hit, so a withdrawn "yes" takes effect without a reload
 const UMAMI_DISABLED_KEY = 'umami.disabled'
 
@@ -205,7 +204,17 @@ export function ConsentProvider({ children }: { children: ReactNode }) {
         onSave={api.save}
         onAcceptAll={api.acceptAll}
       />
-      {consent?.analytics && <Script src={UMAMI_SRC} data-website-id={UMAMI_WEBSITE_ID} data-do-not-track="true" strategy="afterInteractive" />}
+      {consent?.analytics && (
+        <Script
+          src={UMAMI_SRC}
+          data-website-id={UMAMI_WEBSITE_ID}
+          data-do-not-track="true"
+          data-exclude-search="true"
+          data-exclude-hash="true"
+          data-before-send={UMAMI_BEFORE_SEND}
+          strategy="afterInteractive"
+        />
+      )}
     </ConsentContext.Provider>
   )
 }

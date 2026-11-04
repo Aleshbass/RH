@@ -8,36 +8,16 @@
  * In PostHog's project settings, also turn on "Discard client IP data".
  */
 import type { CaptureResult, PostHog } from 'posthog-js'
+import { PRIVATE_PATHS, scrubPath, scrubUrl } from './privacy'
 
 const TOKEN = process.env.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN
 const HOST = process.env.NEXT_PUBLIC_POSTHOG_HOST || 'https://eu.i.posthog.com'
 
-// Patient care, private links (/v, /go, /x, /r, /track) and calls: never sent
-const PRIVATE_PATHS = /^\/(?:dashboard\/patient|v|go|x|r|track|video-call)(?:\/|$)/
-// Record ids, codes and tokens in a path (e.g. /patients/<id>) become ":id"
-const ID_SEGMENT = /^(?=.*\d)[A-Za-z0-9_-]{12,}$/
 // Page titles can name a patient
 const DROPPED_PROPERTIES = ['$title', 'title']
 
 let client: PostHog | null = null
 let loading: Promise<PostHog | null> | null = null
-
-function scrubPath(path: string): string {
-  return path
-    .split(/[?#]/)[0]
-    .split('/')
-    .map((segment) => (ID_SEGMENT.test(segment) ? ':id' : segment))
-    .join('/')
-}
-
-function scrubUrl(value: string): string {
-  try {
-    const url = new URL(value)
-    return `${url.origin}${scrubPath(url.pathname)}`
-  } catch {
-    return scrubPath(value)
-  }
-}
 
 /** URLs and paths lose query strings, fragments and ids; titles are dropped. */
 function scrubProperties(properties: Record<string, unknown> | undefined) {
