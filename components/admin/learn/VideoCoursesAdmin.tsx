@@ -53,6 +53,7 @@ import {
   uploadToImagekit,
   videoApi,
   type AdminVideoCourse,
+  type CourseAccess,
   type AdminVideoLesson,
   type UploadedVideo,
   type YoutubeInfo,
@@ -277,6 +278,10 @@ function CourseForm({
   const [uploading, setUploading] = useState(false)
   const [saving, setSaving] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
+  // Who can watch: included for MSK learners, free for anyone who enrols, or paid
+  const [access, setAccess] = useState<CourseAccess>(course?.access ?? 'msk')
+  const [rehabifyPrice, setRehabifyPrice] = useState(course?.rehabifyPrice ? String(course.rehabifyPrice) : '')
+  const [externalPrice, setExternalPrice] = useState(course?.externalPrice ? String(course.externalPrice) : '')
 
   const pickCover = async (file: File | undefined) => {
     if (!file) return
@@ -308,6 +313,9 @@ function CourseForm({
         benefits: benefits.map((b) => b.trim()).filter(Boolean),
         coverUrl: cover?.url,
         coverFileId: cover?.fileId,
+        access,
+        rehabifyPrice: access === 'paid' ? Number(rehabifyPrice.replace(/[^\d.]/g, '')) || undefined : undefined,
+        externalPrice: access === 'paid' ? Number(externalPrice.replace(/[^\d.]/g, '')) || undefined : undefined,
       })
       toast.success(course ? 'Course saved' : 'Course created. Now add its lessons.')
       playSound('success')
@@ -382,6 +390,64 @@ function CourseForm({
               )}
             </div>
           </Field>
+          <Field
+            label="Who can watch"
+            hint={
+              access === 'msk'
+                ? 'Included for paid MSK Specialist learners, as before.'
+                : access === 'free'
+                  ? 'Anyone with a Rehabify login enrols in one tap at /learn/courses.'
+                  : 'Learners pay with Paystack. Approved Rehabify physiotherapists pay the Rehabify rate.'
+            }
+          >
+            <div className="flex flex-wrap gap-2">
+              {(
+                [
+                  ['msk', 'MSK learners'],
+                  ['free', 'Free'],
+                  ['paid', 'Paid'],
+                ] as const
+              ).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setAccess(value)}
+                  aria-pressed={access === value}
+                  className={
+                    access === value
+                      ? 'rounded-full bg-rh-ink px-4 py-1.5 text-sm font-medium text-white dark:bg-rh-lime dark:text-rh-ink'
+                      : 'rounded-full border border-black/10 px-4 py-1.5 text-sm font-medium text-rh-ink hover:border-black/25 dark:border-white/15 dark:text-white'
+                  }
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </Field>
+          {access === 'paid' && (
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Rehabify physio rate (₦)" htmlFor="vc-price-rehabify">
+                <Input
+                  id="vc-price-rehabify"
+                  inputMode="numeric"
+                  value={rehabifyPrice}
+                  onChange={(e) => setRehabifyPrice(e.target.value)}
+                  placeholder="15000"
+                  className={inputClass}
+                />
+              </Field>
+              <Field label="External rate (₦)" htmlFor="vc-price-external">
+                <Input
+                  id="vc-price-external"
+                  inputMode="numeric"
+                  value={externalPrice}
+                  onChange={(e) => setExternalPrice(e.target.value)}
+                  placeholder="25000"
+                  className={inputClass}
+                />
+              </Field>
+            </div>
+          )}
         </div>
 
         <Field label="Cover image" hint="Landscape works best. Without one, the first lesson's frame is used.">
@@ -1104,9 +1170,15 @@ export function VideoCoursesAdmin() {
                       </StatusBadge>
                     </div>
                     <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
-                      {course.lessonCount} {course.lessonCount === 1 ? 'lesson' : 'lessons'} · {formatLength(course.durationSec)}
+                      {course.lessonCount} {course.lessonCount === 1 ? 'lesson' : 'lessons'} · {formatLength(course.durationSec)} ·{' '}
+                      {course.access === 'msk'
+                        ? 'MSK learners'
+                        : course.access === 'free'
+                          ? 'Free'
+                          : `Paid · ₦${(course.rehabifyPrice ?? 0).toLocaleString('en-NG')} / ₦${(course.externalPrice ?? 0).toLocaleString('en-NG')}`}
                     </p>
                     <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                      {course.access !== 'msk' && `${course.enrolledCount} enrolled · `}
                       {course.learnerCount} {course.learnerCount === 1 ? 'learner' : 'learners'} · {course.completedCount} completed
                     </p>
                   </div>

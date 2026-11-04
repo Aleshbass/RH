@@ -190,6 +190,23 @@ export async function applyPaystackRefund(ctx: MutationCtx, data: any): Promise<
         await alert(ctx, "partial_refund_needs_review", reference, { invoiceId: invoice._id, refundedKobo: total, paidKobo });
       }
     }
+  } else if (reference.startsWith("LEARNC_")) {
+    // A paid video course (learn.ts › Course enrolment): a full refund ends access
+    const match = /^LEARNC_([a-z0-9]+)_\d+$/.exec(reference);
+    const enrollmentId = match ? ctx.db.normalizeId("learnCourseEnrollments", match[1]) : null;
+    const enrollment = enrollmentId ? await ctx.db.get(enrollmentId) : null;
+    if (enrollment && enrollment.paidReference === reference) {
+      kind = "learn";
+      paidKobo = enrollment.paidAmountKobo ?? enrollment.amountKobo;
+      full = total >= paidKobo;
+      if (full && enrollment.status === "active") {
+        await ctx.db.patch(enrollment._id, { status: "refunded", refundedAt: Date.now(), updatedAt: Date.now() });
+        const course = await ctx.db.get(enrollment.courseId);
+        if (course) await ctx.db.patch(course._id, { enrolledCount: Math.max(0, (course.enrolledCount ?? 1) - 1) });
+      } else if (!full) {
+        await alert(ctx, "partial_refund_needs_review", reference, { enrollmentId: enrollment._id, refundedKobo: total, paidKobo });
+      }
+    }
   } else if (reference.startsWith("LEARN_")) {
     const match = /^LEARN_([a-z0-9]+)_\d+$/.exec(reference);
     const registrationId = match ? ctx.db.normalizeId("learnRegistrations", match[1]) : null;

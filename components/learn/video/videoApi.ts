@@ -4,7 +4,7 @@
  */
 
 import { makeFunctionReference } from 'convex/server'
-import type { adminVideoCourses, getVideoCourse, getVideoLibrary } from '@/convex/learn'
+import type { adminVideoCourses, getCourseCatalog, getCourseOfferPage, getVideoCourse, getVideoLibrary } from '@/convex/learn'
 import type { Id } from '@/convex/_generated/dataModel'
 import type { QueryResult } from '@/lib/convexUntyped'
 
@@ -14,6 +14,9 @@ export type VideoCourse = NonNullable<QueryResult<typeof getVideoCourse>>
 export type VideoLesson = VideoCourse['lessons'][number]
 export type AdminVideoCourse = QueryResult<typeof adminVideoCourses>[number]
 export type AdminVideoLesson = AdminVideoCourse['lessons'][number]
+export type CourseOffer = QueryResult<typeof getCourseCatalog>[number]
+export type CourseOfferPage = NonNullable<QueryResult<typeof getCourseOfferPage>>
+export type CourseAccess = 'msk' | 'free' | 'paid'
 
 type CourseId = Id<'learnVideoCourses'>
 type LessonId = Id<'learnVideoLessons'>
@@ -38,6 +41,20 @@ export const videoApi = {
   library: makeFunctionReference<'query', Record<string, never>, VideoLibrary>('learn:getVideoLibrary'),
   course: makeFunctionReference<'query', { courseId: CourseId }, VideoCourse | null>('learn:getVideoCourse'),
   playback: makeFunctionReference<'action', { lessonId: LessonId }, { url: string; expiresAt: number }>('learn:getLessonPlayback'),
+  // Enrolment: the public catalogue, one course's page, a free enrol and Paystack for paid ones
+  catalog: makeFunctionReference<'query', Record<string, never>, CourseOffer[]>('learn:getCourseCatalog'),
+  offer: makeFunctionReference<'query', { courseId: string }, CourseOfferPage | null>('learn:getCourseOfferPage'),
+  enrolFree: makeFunctionReference<'mutation', { courseId: CourseId }, { enrolled: boolean; alreadyEnrolled: boolean }>(
+    'learn:enrollInFreeCourse'
+  ),
+  startPayment: makeFunctionReference<
+    'action',
+    { courseId: CourseId; returnOrigin?: string },
+    { authorizationUrl: string; reference: string }
+  >('learn:startCoursePayment'),
+  verifyPayment: makeFunctionReference<'action', { reference: string }, { status: 'paid' | 'pending' | 'failed' }>(
+    'learn:verifyCoursePayment'
+  ),
   saveProgress: makeFunctionReference<
     'mutation',
     { lessonId: LessonId; positionSec: number; completed: boolean },
@@ -52,7 +69,17 @@ export const videoApi = {
   >('learn:adminVideoUploadAuth'),
   saveCourse: makeFunctionReference<
     'mutation',
-    { courseId?: CourseId; title: string; summary: string; benefits: string[]; coverUrl?: string; coverFileId?: string },
+    {
+      courseId?: CourseId
+      title: string
+      summary: string
+      benefits: string[]
+      coverUrl?: string
+      coverFileId?: string
+      access?: CourseAccess
+      rehabifyPrice?: number
+      externalPrice?: number
+    },
     CourseId
   >('learn:adminSaveVideoCourse'),
   setStatus: makeFunctionReference<'mutation', { courseId: CourseId; status: 'draft' | 'published' }, null>(

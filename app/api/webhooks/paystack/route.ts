@@ -26,7 +26,7 @@ import { SERVER_SECRET_HEADER } from '@/app/api/emails/_auth'
  * PAYSTACK_SECRET_KEY, so Vercel and Convex must hold the same key (same account and mode).
  */
 
-const OUR_PREFIXES = ['JOYREV_', 'JOY_', 'MKT_', 'VERIFICATION_', 'LEARN_', 'FLEX_', 'CLINICSUB_', 'INV_', 'CLN_', 'PHY_', 'RH_']
+const OUR_PREFIXES = ['JOYREV_', 'JOY_', 'MKT_', 'VERIFICATION_', 'LEARNC_', 'LEARN_', 'FLEX_', 'CLINICSUB_', 'INV_', 'CLN_', 'PHY_', 'RH_']
 const INVOICE_PREFIXES = ['INV_', 'CLN_', 'PHY_', 'RH_']
 const EMAIL_TIMEOUT_MS = 10_000
 
@@ -225,6 +225,19 @@ async function handlePaymentSuccess(data: {
         // Rehabify Learn registrations (LEARN_ references): Convex re-verifies the signature,
         // takes the registration from the reference, checks the amount and emails the
         // confirmation (idempotent with the browser's own verify call).
+        // Rehabify Learn video courses (LEARNC_ references): same checks, completes the enrolment
+        if (reference.startsWith('LEARNC_')) {
+            const result = await convex.mutation(api.learn.recordCoursePaystackWebhook, {
+                rawBody,
+                signature,
+            })
+            log.info('Learn course payment processed', {
+                action: 'paystack_learn_course_payment',
+                metadata: { reference, result },
+            })
+            return
+        }
+
         if (reference.startsWith('LEARN_')) {
             const result = await convex.mutation(api.learn.recordLearnPaystackWebhook, {
                 rawBody,

@@ -8,6 +8,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import Image from 'next/image'
+import Link from 'next/link'
 import { useQuery } from 'convex/react'
 import { useReducedMotion } from 'framer-motion'
 import { ArrowLeft, Check, Play, PlayCircle } from '@/components/icons'
@@ -218,6 +219,28 @@ function Catalog({
             ))}
           </div>
         </>
+      )}
+
+      {library.available.length > 0 && (
+        <section className="mt-10">
+          <h2 className={cn('text-xl tracking-tight text-rh-ink', displayFont)}>More courses</h2>
+          <p className="mt-1 text-sm text-rh-ink/60">Enrol to add them here.</p>
+          <ul className="mt-4 flex flex-wrap gap-2">
+            {library.available.map((course) => (
+              <li key={course.id}>
+                <Link
+                  href={`/learn/courses/${course.id}`}
+                  className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-medium text-rh-ink shadow-soft hover:shadow-lift"
+                >
+                  {course.title}
+                  <span className="rounded-full bg-rh-ink/[0.06] px-2 py-0.5 text-[11px] font-semibold text-rh-ink/70">
+                    {course.access === 'free' ? 'Free' : 'Paid'}
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
     </div>
   )

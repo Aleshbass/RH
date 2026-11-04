@@ -32,6 +32,7 @@ import { IMAGEKIT_URL, imagekitUploadAuth, removeImagekitFilesLater, signedImage
 import { lagosDateTime, lagosShortDate, lagosTime, zonedDateKey, zonedDateTimeToUtc, zonedTimeKey } from "./helpers/lagosTime";
 import { getViewer, requireAdmin } from "./helpers/partnerAccess";
 import { verifyPaystackSignature } from "./helpers/paystackSignature";
+import { isJoyLoginEmail } from "../lib/auth/joyLoginEmail";
 import {
   defaultCohortLabel,
   endOfLagosDay,
@@ -2320,17 +2321,44 @@ const cleanText = (value: string | undefined | null, max: number) =>
     .trim()
     .slice(0, max);
 
-/** Whose progress this is, or null when they can't watch. Admins can always watch (to preview). */
-async function videoLearner(ctx: Ctx): Promise<{ email: string; userId?: Id<"users">; isAdmin: boolean } | null> {
+type VideoViewer = { email: string; userId?: Id<"users">; isAdmin: boolean; isMskLearner: boolean };
+
+/**
+ * Who is watching (null when signed out). Progress is kept by email: a paid MSK learner's
+ * registration email (as before), otherwise the account's email.
+ */
+async function videoViewer(ctx: Ctx): Promise<VideoViewer | null> {
   const viewer = await getViewer(ctx);
   if (!viewer) return null;
   const courses = await paidLearnRegistrations(ctx, viewer.user, await verifiedIdentityEmail(ctx));
   const open = courses.find((c) => learnerAccessOpen(c.cohort));
-  if (open) return { email: open.registration.email, userId: viewer.user?._id, isAdmin: viewer.isAdmin };
-  if (viewer.isAdmin && viewer.user) {
-    return { email: (viewer.user.email ?? `admin-${viewer.user._id}`).toLowerCase(), userId: viewer.user._id, isAdmin: true };
-  }
-  return null;
+  const email = (open?.registration.email ?? viewer.user?.email ?? (viewer.user ? `user-${viewer.user._id}` : "")).toLowerCase();
+  if (!email) return null;
+  return { email, userId: viewer.user?._id, isAdmin: viewer.isAdmin, isMskLearner: Boolean(open) };
+}
+
+const courseAccessType = (course: Doc<"learnVideoCourses">) => course.access ?? "msk";
+
+async function activeEnrollment(ctx: Ctx, userId: Id<"users">, courseId: Id<"learnVideoCourses">) {
+  const row = await ctx.db
+    .query("learnCourseEnrollments")
+    .withIndex("by_user_course", (q) => q.eq("userId", userId).eq("courseId", courseId))
+    .first();
+  return row?.status === "active" ? row : null;
+}
+
+/** Admins can always watch (to preview); MSK courses need an open MSK seat; others an enrolment. */
+async function canWatchCourse(ctx: Ctx, viewer: VideoViewer, course: Doc<"learnVideoCourses">) {
+  if (viewer.isAdmin) return true;
+  if (courseAccessType(course) === "msk") return viewer.isMskLearner;
+  return Boolean(viewer.userId && (await activeEnrollment(ctx, viewer.userId, course._id)));
+}
+
+/** The viewer when they may watch this course, else null. */
+async function videoLearnerFor(ctx: Ctx, course: Doc<"learnVideoCourses"> | null) {
+  const viewer = await videoViewer(ctx);
+  if (!viewer || !course || !(await canWatchCourse(ctx, viewer, course))) return null;
+  return viewer;
 }
 
 async function courseLessons(ctx: Ctx, courseId: Id<"learnVideoCourses">) {
@@ -2410,22 +2438,29 @@ function courseCard(course: Doc<"learnVideoCourses">, lessons: Doc<"learnVideoLe
 export const getVideoLibrary = query({
   args: {},
   handler: async (ctx) => {
-    const learner = await videoLearner(ctx);
+    const learner = await videoViewer(ctx);
     if (!learner) return { state: "no_access" as const };
     const courses = await ctx.db
       .query("learnVideoCourses")
       .withIndex("by_status_order", (q) => q.eq("status", "published"))
       .take(100);
     const cards = [];
+    // Free and paid courses this learner hasn't enrolled in yet (shown as "More courses")
+    const available: { id: Id<"learnVideoCourses">; title: string; access: "free" | "paid" }[] = [];
     for (const course of courses) {
       const lessons = await courseLessons(ctx, course._id);
       if (lessons.length === 0) continue;
-      cards.push(courseCard(course, lessons, await videoProgressRow(ctx, learner.email, course._id)));
+      if (await canWatchCourse(ctx, learner, course)) {
+        cards.push(courseCard(course, lessons, await videoProgressRow(ctx, learner.email, course._id)));
+      } else if (courseAccessType(course) !== "msk") {
+        available.push({ id: course._id, title: course.title, access: courseAccessType(course) as "free" | "paid" });
+      }
     }
+    if (cards.length === 0 && available.length === 0 && !learner.isMskLearner) return { state: "no_access" as const };
     const resume = cards
       .filter((c) => c.progress.started && !c.progress.isComplete)
       .sort((a, b) => (b.progress.updatedAt ?? 0) - (a.progress.updatedAt ?? 0))[0];
-    return { state: "ok" as const, courses: cards, resumeCourseId: resume?.id ?? null };
+    return { state: "ok" as const, courses: cards, available, resumeCourseId: resume?.id ?? null };
   },
 });
 
@@ -2433,10 +2468,9 @@ export const getVideoLibrary = query({
 export const getVideoCourse = query({
   args: { courseId: v.id("learnVideoCourses") },
   handler: async (ctx, args) => {
-    const learner = await videoLearner(ctx);
-    if (!learner) return null;
     const course = await ctx.db.get(args.courseId);
-    if (!course || (course.status !== "published" && !learner.isAdmin)) return null;
+    const learner = await videoLearnerFor(ctx, course);
+    if (!learner || !course || (course.status !== "published" && !learner.isAdmin)) return null;
     const lessons = await courseLessons(ctx, course._id);
     const row = await videoProgressRow(ctx, learner.email, course._id);
     const done = new Set<string>(row?.completedLessonIds ?? []);
@@ -2447,10 +2481,10 @@ export const getVideoCourse = query({
 export const lessonForPlayback = internalQuery({
   args: { lessonId: v.id("learnVideoLessons") },
   handler: async (ctx, args) => {
-    const learner = await videoLearner(ctx);
-    if (!learner) throw new ConvexError("Your course access has ended.");
     const lesson = await ctx.db.get(args.lessonId);
     const course = lesson ? await ctx.db.get(lesson.courseId) : null;
+    const learner = await videoLearnerFor(ctx, course);
+    if (!learner) throw new ConvexError("Your course access has ended.");
     if (!lesson || !course || (course.status !== "published" && !learner.isAdmin)) {
       throw new ConvexError("This lesson isn't available.");
     }
@@ -2475,10 +2509,10 @@ export const getLessonPlayback = action({
 export const saveLessonProgress = mutation({
   args: { lessonId: v.id("learnVideoLessons"), positionSec: v.number(), completed: v.boolean() },
   handler: async (ctx, args) => {
-    const learner = await videoLearner(ctx);
-    if (!learner) throw new ConvexError("Your course access has ended.");
     const lesson = await ctx.db.get(args.lessonId);
     const course = lesson ? await ctx.db.get(lesson.courseId) : null;
+    const learner = await videoLearnerFor(ctx, course);
+    if (!learner) throw new ConvexError("Your course access has ended.");
     if (!lesson || !course) return { completedCourse: false };
     const now = Date.now();
     // YouTube may not have said how long a video is (0); then only the lower bound applies
@@ -2584,6 +2618,10 @@ export const adminVideoCourses = query({
         coverFileId: course.coverFileId ?? null,
         status: course.status,
         order: course.order,
+        access: courseAccessType(course),
+        rehabifyPrice: course.rehabifyPriceKobo !== undefined ? course.rehabifyPriceKobo / 100 : null,
+        externalPrice: course.externalPriceKobo !== undefined ? course.externalPriceKobo / 100 : null,
+        enrolledCount: course.enrolledCount ?? 0,
         learnerCount: course.learnerCount,
         completedCount: progress.filter((p) => p.completedAt).length,
         lessonCount: lessons.length,
@@ -2614,9 +2652,21 @@ export const adminSaveVideoCourse = mutation({
     benefits: v.array(v.string()),
     coverUrl: v.optional(v.string()),
     coverFileId: v.optional(v.string()),
+    // Who can watch, and the two prices in naira for a paid course
+    access: v.optional(v.union(v.literal("msk"), v.literal("free"), v.literal("paid"))),
+    rehabifyPrice: v.optional(v.number()),
+    externalPrice: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const { user } = await requireAdmin(ctx);
+    const access = args.access ?? "msk";
+    const toKobo = (naira: number | undefined) =>
+      typeof naira === "number" && Number.isFinite(naira) && naira > 0 ? Math.round(naira * 100) : undefined;
+    const rehabifyPriceKobo = access === "paid" ? toKobo(args.rehabifyPrice) : undefined;
+    const externalPriceKobo = access === "paid" ? toKobo(args.externalPrice) : undefined;
+    if (access === "paid" && (!rehabifyPriceKobo || !externalPriceKobo)) {
+      throw new ConvexError("A paid course needs both prices: the Rehabify physiotherapist rate and the external rate.");
+    }
     const title = clean(args.title, 120);
     const summary = cleanText(args.summary, 600);
     const benefits = args.benefits.map((b) => clean(b, 160)).filter(Boolean).slice(0, 12);
@@ -2636,6 +2686,9 @@ export const adminSaveVideoCourse = mutation({
         benefits,
         coverUrl: args.coverUrl,
         coverFileId: args.coverFileId,
+        access,
+        rehabifyPriceKobo,
+        externalPriceKobo,
         updatedBy: user._id,
         updatedAt: now,
       });
@@ -2649,6 +2702,9 @@ export const adminSaveVideoCourse = mutation({
       benefits,
       coverUrl: args.coverUrl,
       coverFileId: args.coverFileId,
+      access,
+      rehabifyPriceKobo,
+      externalPriceKobo,
       status: "draft",
       order: last + 1,
       learnerCount: 0,
@@ -2889,5 +2945,334 @@ export const adminDeleteVideoLesson = mutation({
     }
     await ctx.db.delete(lesson._id);
     await removeFilesLater(ctx, lessonFiles(lesson));
+  },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Course enrolment (Nov 2026): free and paid video courses
+//
+// One Rehabify login covers every course. A free course enrols in one tap; a paid one goes
+// through Paystack (reference LEARNC_<enrollmentId>_<timestamp>) at the Rehabify physiotherapist
+// rate or the external rate, like the MSK program. Courses with access "msk" stay included for
+// paid MSK learners. The webhook (recordCoursePaystackWebhook) and the return page
+// (verifyCoursePayment) both complete the enrolment; whichever is first wins.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const COURSE_REFERENCE = /^LEARNC_([a-z0-9]+)_\d+$/;
+const MAX_COURSE_CHECKOUTS_PER_HOUR = 6;
+
+type CourseOffer = {
+  id: Id<"learnVideoCourses">;
+  title: string;
+  summary: string;
+  benefits: string[];
+  coverUrl: string | null;
+  lessonCount: number;
+  durationSec: number;
+  access: "msk" | "free" | "paid";
+  prices: { rehabify: number; external: number } | null;
+  viewer: {
+    signedIn: boolean;
+    canWatch: boolean;
+    enrolment: "none" | "pending" | "active" | "refunded" | "cancelled";
+    rehabifyRate: boolean;
+    priceToPay: number | null;
+  };
+};
+
+async function courseOffer(ctx: Ctx, course: Doc<"learnVideoCourses">, lessons: Doc<"learnVideoLessons">[]): Promise<CourseOffer> {
+  const viewer = await getViewer(ctx);
+  const watcher = await videoViewer(ctx);
+  const access = courseAccessType(course);
+  const row = viewer?.user
+    ? await ctx.db
+        .query("learnCourseEnrollments")
+        .withIndex("by_user_course", (q) => q.eq("userId", viewer.user!._id).eq("courseId", course._id))
+        .first()
+    : null;
+  const rehabifyRate = Boolean(viewer?.user && (await isRehabifyPhysio(ctx, viewer.user)));
+  const prices =
+    access === "paid" && course.rehabifyPriceKobo && course.externalPriceKobo
+      ? { rehabify: course.rehabifyPriceKobo / 100, external: course.externalPriceKobo / 100 }
+      : null;
+  return {
+    id: course._id,
+    title: course.title,
+    summary: course.summary,
+    benefits: course.benefits,
+    coverUrl: course.coverUrl ?? lessons.map((l) => lessonMedia(l).posterUrl).find(Boolean) ?? null,
+    lessonCount: lessons.length,
+    durationSec: lessons.reduce((sum, l) => sum + lessonMedia(l).durationSec, 0),
+    access,
+    prices,
+    viewer: {
+      signedIn: Boolean(viewer?.user),
+      canWatch: Boolean(watcher && (await canWatchCourse(ctx, watcher, course))),
+      enrolment: row?.status ?? "none",
+      rehabifyRate,
+      priceToPay: prices ? (rehabifyRate ? prices.rehabify : prices.external) : null,
+    },
+  };
+}
+
+/** Every published course with lessons, for /learn/courses (public; signed-in viewers see their state). */
+export const getCourseCatalog = query({
+  args: {},
+  handler: async (ctx): Promise<CourseOffer[]> => {
+    const courses = await ctx.db
+      .query("learnVideoCourses")
+      .withIndex("by_status_order", (q) => q.eq("status", "published"))
+      .take(100);
+    const offers: CourseOffer[] = [];
+    for (const course of courses) {
+      const lessons = await courseLessons(ctx, course._id);
+      if (lessons.length === 0) continue;
+      offers.push(await courseOffer(ctx, course, lessons));
+    }
+    return offers;
+  },
+});
+
+/** One course's page: what it covers, its lessons (titles only) and how to get it. */
+export const getCourseOfferPage = query({
+  args: { courseId: v.string() },
+  handler: async (ctx, args) => {
+    const courseId = ctx.db.normalizeId("learnVideoCourses", args.courseId);
+    const course = courseId ? await ctx.db.get(courseId) : null;
+    if (!course || course.status !== "published") return null;
+    const lessons = await courseLessons(ctx, course._id);
+    if (lessons.length === 0) return null;
+    return {
+      ...(await courseOffer(ctx, course, lessons)),
+      lessons: lessons.map((l) => ({ id: l._id, title: l.title, durationSec: lessonMedia(l).durationSec })),
+    };
+  },
+});
+
+async function enrolmentLearner(ctx: Ctx) {
+  const viewer = await getViewer(ctx);
+  if (!viewer?.user) throw new ConvexError("Please sign in to enrol.");
+  const email = (viewer.user.email ?? "").trim().toLowerCase();
+  if (!email || isJoyLoginEmail(email)) {
+    throw new ConvexError("Add your email address in your account settings first, so we can send your course details.");
+  }
+  return { user: viewer.user, email };
+}
+
+async function publishedCourse(ctx: Ctx, courseId: Id<"learnVideoCourses">) {
+  const course = await ctx.db.get(courseId);
+  if (!course || course.status !== "published") throw new ConvexError("This course isn't available.");
+  return course;
+}
+
+async function countEnrolment(ctx: MutationCtx, course: Doc<"learnVideoCourses">) {
+  await ctx.db.patch(course._id, { enrolledCount: (course.enrolledCount ?? 0) + 1 });
+}
+
+/** One tap for a free course. */
+export const enrollInFreeCourse = mutation({
+  args: { courseId: v.id("learnVideoCourses") },
+  handler: async (ctx, args) => {
+    const { user, email } = await enrolmentLearner(ctx);
+    const course = await publishedCourse(ctx, args.courseId);
+    if (courseAccessType(course) !== "free") throw new ConvexError("This course isn't free.");
+    const now = Date.now();
+    const existing = await ctx.db
+      .query("learnCourseEnrollments")
+      .withIndex("by_user_course", (q) => q.eq("userId", user._id).eq("courseId", course._id))
+      .first();
+    if (existing?.status === "active") return { enrolled: true, alreadyEnrolled: true };
+    if (existing) {
+      await ctx.db.patch(existing._id, { status: "active", track: "free", amountKobo: 0, updatedAt: now });
+    } else {
+      await ctx.db.insert("learnCourseEnrollments", {
+        courseId: course._id, userId: user._id, email, track: "free", status: "active",
+        amountKobo: 0, currency: "NGN", createdAt: now, updatedAt: now,
+      });
+    }
+    await countEnrolment(ctx, course);
+    return { enrolled: true, alreadyEnrolled: false };
+  },
+});
+
+/** A pending enrolment for a paid course, at the rate this learner pays. */
+export const prepareCourseEnrollment = internalMutation({
+  args: { courseId: v.id("learnVideoCourses") },
+  handler: async (ctx, args) => {
+    const { user, email } = await enrolmentLearner(ctx);
+    const course = await publishedCourse(ctx, args.courseId);
+    if (courseAccessType(course) !== "paid" || !course.rehabifyPriceKobo || !course.externalPriceKobo) {
+      throw new ConvexError("This course can't be bought right now.");
+    }
+    const track: "rehabify" | "external" = (await isRehabifyPhysio(ctx, user)) ? "rehabify" : "external";
+    const amountKobo = track === "rehabify" ? course.rehabifyPriceKobo : course.externalPriceKobo;
+    const now = Date.now();
+    const existing = await ctx.db
+      .query("learnCourseEnrollments")
+      .withIndex("by_user_course", (q) => q.eq("userId", user._id).eq("courseId", course._id))
+      .first();
+    if (existing?.status === "active") throw new ConvexError("You're already enrolled. Open the course from My courses.");
+    const attempts = (existing?.attemptTimes ?? []).filter((t) => t > now - HOUR_MS);
+    if (attempts.length >= MAX_COURSE_CHECKOUTS_PER_HOUR) {
+      throw new ConvexError("Too many payment attempts. Please wait a little and try again.");
+    }
+    let enrollmentId: Id<"learnCourseEnrollments">;
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        status: "pending", track, amountKobo, currency: "NGN", email, attemptTimes: [...attempts, now], updatedAt: now,
+      });
+      enrollmentId = existing._id;
+    } else {
+      enrollmentId = await ctx.db.insert("learnCourseEnrollments", {
+        courseId: course._id, userId: user._id, email, track, status: "pending", amountKobo, currency: "NGN",
+        attemptTimes: [now], createdAt: now, updatedAt: now,
+      });
+    }
+    return { enrollmentId, amountKobo, email, track, courseTitle: course.title };
+  },
+});
+
+export const recordCoursePaymentAttempt = internalMutation({
+  args: { enrollmentId: v.id("learnCourseEnrollments"), reference: v.string() },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.enrollmentId, { paymentReference: args.reference, updatedAt: Date.now() });
+  },
+});
+
+/** Starts Paystack checkout for a paid course and returns the payment page. */
+export const startCoursePayment = action({
+  args: { courseId: v.id("learnVideoCourses"), returnOrigin: v.optional(v.string()) },
+  handler: async (ctx, args): Promise<{ authorizationUrl: string; reference: string }> => {
+    const prepared: { enrollmentId: Id<"learnCourseEnrollments">; amountKobo: number; email: string; track: "rehabify" | "external"; courseTitle: string } =
+      await ctx.runMutation(internal.learn.prepareCourseEnrollment, { courseId: args.courseId });
+    const origin = checkoutOrigin(args.returnOrigin);
+    const reference = `LEARNC_${prepared.enrollmentId}_${Date.now()}`;
+    const data = await paystackRequest("/transaction/initialize", {
+      method: "POST",
+      body: JSON.stringify({
+        reference,
+        amount: prepared.amountKobo,
+        email: prepared.email,
+        currency: "NGN",
+        callback_url: `${origin}/learn/courses/${args.courseId}`,
+        channels: ["card", "bank", "ussd", "bank_transfer"],
+        metadata: {
+          source: "rehabify_learn_course",
+          courseId: args.courseId,
+          enrollmentId: prepared.enrollmentId,
+          track: prepared.track,
+          cancel_action: `${origin}/learn/courses/${args.courseId}?cancelled=1`,
+          custom_fields: [
+            { display_name: "Course", variable_name: "course", value: prepared.courseTitle },
+            { display_name: "Rate", variable_name: "rate", value: TRACK_LABEL[prepared.track] },
+          ],
+        },
+      }),
+    });
+    const authorizationUrl = typeof data?.authorization_url === "string" ? data.authorization_url : "";
+    if (!authorizationUrl.startsWith("https://")) throw new ConvexError("We couldn't start the payment. Please try again.");
+    await ctx.runMutation(internal.learn.recordCoursePaymentAttempt, { enrollmentId: prepared.enrollmentId, reference });
+    return { authorizationUrl, reference };
+  },
+});
+
+async function completeCoursePayment(ctx: MutationCtx, reference: string, paid: PaidEvidence) {
+  const match = COURSE_REFERENCE.exec(reference);
+  const enrollmentId = match ? ctx.db.normalizeId("learnCourseEnrollments", match[1]) : null;
+  const enrollment = enrollmentId ? await ctx.db.get(enrollmentId) : null;
+  if (!enrollmentId || !enrollment) return { success: false as const, reason: "not_found" };
+  const now = Date.now();
+  const flag = async (action: string) => {
+    const known = enrollment.extraPayments ?? [];
+    if (known.some((p) => p.reference === reference)) return;
+    await ctx.db.patch(enrollmentId, { extraPayments: [...known, { reference, amountKobo: paid.amountKobo, at: now }], updatedAt: now });
+    await ctx.db.insert("systemLogs", {
+      action, type: "learn", timestamp: now, userId: String(enrollment.userId),
+      targetEntityType: "learn_course_enrollment", targetEntityId: String(enrollmentId),
+      details: { reference, amountKobo: paid.amountKobo, currency: paid.currency, priceKobo: enrollment.amountKobo },
+    });
+  };
+  if (enrollment.status === "active") {
+    if (enrollment.paidReference !== reference) await flag("learn_course_duplicate_payment");
+    return { success: true as const, alreadyCompleted: true };
+  }
+  if (paid.currency !== enrollment.currency) {
+    await flag("learn_course_payment_currency_mismatch");
+    return { success: false as const, reason: "currency_mismatch" };
+  }
+  if (!Number.isFinite(paid.amountKobo) || paid.amountKobo < enrollment.amountKobo) {
+    await flag("learn_course_payment_short");
+    return { success: false as const, reason: "amount_mismatch" };
+  }
+  await ctx.db.patch(enrollmentId, {
+    status: "active", paidReference: reference, paidAmountKobo: paid.amountKobo,
+    paymentChannel: paid.channel, paidAt: now, updatedAt: now,
+  });
+  const course = await ctx.db.get(enrollment.courseId);
+  if (course) await countEnrolment(ctx, course);
+  await ctx.db.insert("systemLogs", {
+    action: "learn_course_paid", type: "learn", timestamp: now, userId: String(enrollment.userId),
+    targetEntityType: "learn_course_enrollment", targetEntityId: String(enrollmentId),
+    details: { reference, amountKobo: paid.amountKobo, track: enrollment.track, courseId: String(enrollment.courseId) },
+  });
+  const user = await ctx.db.get(enrollment.userId);
+  if (course) {
+    await ctx.scheduler.runAfter(0, internal.actions.emails.sendPatientCareEmail.sendPatientCareEmail, {
+      to: enrollment.email,
+      subject: `You're enrolled: ${course.title}`,
+      greetingName: user?.firstName ?? undefined,
+      heading: "You're enrolled",
+      paragraphs: [
+        `Thank you for joining ${course.title}. Your payment of ${formatNairaFromKobo(paid.amountKobo)} is confirmed, and the course is now in My courses.`,
+        "Watch at your own pace; your place in each lesson is saved as you go.",
+      ],
+      buttonLabel: "Start the course",
+      buttonUrl: appLink(`/learn/courses/${course._id}`),
+      footnote: "Paystack also emails you a payment receipt.",
+    });
+  }
+  return { success: true as const, alreadyCompleted: false };
+}
+
+export const completeCoursePaymentVerified = internalMutation({
+  args: { reference: v.string(), amountKobo: v.number(), currency: v.string(), channel: v.optional(v.string()) },
+  handler: (ctx, args) => completeCoursePayment(ctx, args.reference, { amountKobo: args.amountKobo, currency: args.currency, channel: args.channel }),
+});
+
+/** The return page after Paystack: checks the payment with Paystack and completes the enrolment. */
+export const verifyCoursePayment = action({
+  args: { reference: v.string() },
+  handler: async (ctx, args): Promise<{ status: "paid" | "pending" | "failed" }> => {
+    if (!COURSE_REFERENCE.test(args.reference)) return { status: "failed" };
+    const transaction = await fetchPaystackTransaction(args.reference);
+    if (!transaction) return { status: "pending" };
+    if (transaction.status !== "success") return { status: transaction.status === "abandoned" || transaction.status === "ongoing" ? "pending" : "failed" };
+    const result: { success: boolean } = await ctx.runMutation(internal.learn.completeCoursePaymentVerified, {
+      reference: args.reference, amountKobo: transaction.amount, currency: transaction.currency, channel: transaction.channel,
+    });
+    return { status: result.success ? "paid" : "failed" };
+  },
+});
+
+/** Paystack's webhook for LEARNC_ payments (app/api/webhooks/paystack forwards it here). */
+export const recordCoursePaystackWebhook = mutation({
+  args: { rawBody: v.string(), signature: v.string() },
+  handler: async (ctx, args) => {
+    if (!(await verifyPaystackSignature(args.rawBody, args.signature))) throw new Error("Invalid Paystack webhook signature");
+    let payload: any;
+    try {
+      payload = JSON.parse(args.rawBody);
+    } catch {
+      throw new Error("Invalid webhook payload");
+    }
+    const data = payload?.data ?? {};
+    const reference = typeof data.reference === "string" ? data.reference : "";
+    if (!reference.startsWith("LEARNC_")) return { handled: false };
+    if (payload.event !== "charge.success") return { handled: true, ignored: String(payload.event) };
+    if (data.status !== undefined && data.status !== "success") return { handled: true, success: false, reason: `charge_${data.status}` };
+    const result = await completeCoursePayment(ctx, reference, {
+      amountKobo: Number(data.amount), currency: String(data.currency ?? ""), channel: typeof data.channel === "string" ? data.channel : undefined,
+    });
+    return { handled: true, ...result };
   },
 });

@@ -5253,12 +5253,44 @@ export default defineSchema({
     status: v.union(v.literal("draft"), v.literal("published")),
     order: v.number(),
     learnerCount: v.number(), // learners who have started it
+    // Who can watch (Nov 2026): "msk" = included for paid MSK Specialist learners (the original
+    // rule, also when unset); "free" = anyone signed in who enrols; "paid" = enrolment through
+    // Paystack at the Rehabify physio or external rate (learnCourseEnrollments)
+    access: v.optional(v.union(v.literal("msk"), v.literal("free"), v.literal("paid"))),
+    rehabifyPriceKobo: v.optional(v.number()),
+    externalPriceKobo: v.optional(v.number()),
+    enrolledCount: v.optional(v.number()), // active enrolments (free and paid)
     publishedAt: v.optional(v.number()),
     createdBy: v.id("users"),
     updatedBy: v.optional(v.id("users")),
     createdAt: v.number(),
     updatedAt: v.number(),
   }).index("by_status_order", ["status", "order"]),
+
+  // A learner's place on a free or paid video course (learn.ts › Course enrolment). One row per
+  // learner per course; a paid one is "pending" until Paystack confirms the LEARNC_ payment.
+  learnCourseEnrollments: defineTable({
+    courseId: v.id("learnVideoCourses"),
+    userId: v.id("users"),
+    email: v.string(),
+    track: v.union(v.literal("free"), v.literal("rehabify"), v.literal("external")),
+    status: v.union(v.literal("pending"), v.literal("active"), v.literal("refunded"), v.literal("cancelled")),
+    amountKobo: v.number(),
+    currency: v.string(),
+    paymentReference: v.optional(v.string()), // the latest checkout started
+    paidReference: v.optional(v.string()),
+    paidAmountKobo: v.optional(v.number()),
+    paymentChannel: v.optional(v.string()),
+    paidAt: v.optional(v.number()),
+    refundedAt: v.optional(v.number()),
+    // Payments that didn't complete this enrolment (duplicates, short amounts), for admins
+    extraPayments: v.optional(v.array(v.object({ reference: v.string(), amountKobo: v.number(), at: v.number() }))),
+    attemptTimes: v.optional(v.array(v.number())),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_user_course", ["userId", "courseId"])
+    .index("by_course", ["courseId"]),
 
   learnVideoLessons: defineTable({
     courseId: v.id("learnVideoCourses"),
