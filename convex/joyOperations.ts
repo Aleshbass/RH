@@ -15,7 +15,8 @@ import { ZONE_CITY_STATE } from "./helpers/startingZones";
 import { insertLog, patientProgramView, startOfLagosDay } from "./exercisePrograms";
 import { posterUrl } from "./exerciseLibraryCatalog";
 import { assertProgramUnlocked } from "./helpers/patientPlans";
-import { insertNotification } from "./helpers/pushNotify";
+import { insertNotification, pushNewMessage } from "./helpers/pushNotify";
+import { senderIdentity } from "./helpers/displayIdentity";
 import { recordPatientCheckIn } from "./physioCare";
 
 type Operation =
@@ -38,7 +39,9 @@ type Operation =
   // Additive (Nov 2026): the patient asked Joy for a person ("call me", "talk to someone")
   | "patient_request_callback"
   // Additive (Nov 2026): a pain and progress check-in from WhatsApp, for the physio
-  | "patient_check_in";
+  | "patient_check_in"
+  // Additive (Nov 2026): a question about the physio's exercise plan, into the Messages chat
+  | "patient_ask_physio";
 
 const activeBooking = (status: unknown) => status === "pending" || status === "confirmed" || status === "scheduled";
 const nameOf = (user: { firstName?: string; lastName?: string } | null) =>
@@ -276,6 +279,48 @@ export const executeMutation = internalMutation({
       }
       await audit(ctx, data, op, { actorUserId: patient._id, patientUserId: patient._id, fields: [...Object.keys(userPatch), ...Object.keys(profilePatch)] });
       return { updated: true };
+    }
+    if (op === "patient_ask_physio") {
+      // A question about the physio's exercise plan, sent from WhatsApp. It goes into the patient's
+      // Messages chat with the physio who sent the plan (with the usual push), tagged as WhatsApp,
+      // so the physio's reply there comes back to the patient on WhatsApp (chat.ts).
+      // { patient_id, question, exercise? }
+      const patient = await patientForActor(ctx, String(data.patient_id), data.actor);
+      const question = String(data.question ?? "").replace(/\s+/g, " ").trim().slice(0, 1000);
+      if (!question) throw new Error("question is required");
+      const programs = await ctx.db.query("exercisePrograms").withIndex("by_patient", (q: any) => q.eq("patientId", patient._id)).order("desc").take(20);
+      const program: any = programs.find((p: any) => p.status === "active");
+      const physio: any = program ? await ctx.db.get(program.createdBy) : null;
+      if (!physio || physio._id === patient._id) return { sent: false, reason: "no_physio" };
+      const exercise = String(data.exercise ?? "").replace(/\s+/g, " ").trim().slice(0, 80);
+      const content = exercise ? `About "${exercise}": ${question}` : question;
+      const now = Date.now();
+      let conversation: any =
+        (await ctx.db.query("conversations").withIndex("by_participants", (q: any) => q.eq("participant1Id", patient._id).eq("participant2Id", physio._id)).first()) ??
+        (await ctx.db.query("conversations").withIndex("by_participants", (q: any) => q.eq("participant1Id", physio._id).eq("participant2Id", patient._id)).first());
+      if (!conversation) {
+        const conversationId = await ctx.db.insert("conversations", {
+          participant1Id: patient._id, participant2Id: physio._id, lastMessageAt: now, unreadCount1: 0, unreadCount2: 0, createdAt: now, updatedAt: now,
+        });
+        conversation = await ctx.db.get(conversationId);
+      }
+      await ctx.db.insert("messages", {
+        conversationId: conversation._id, senderId: patient._id, receiverId: physio._id, content, contentType: "text",
+        timestamp: now, isDelivered: false, isReadByReceiver: false, isRead: false, createdAt: now, updatedAt: now,
+        metadata: { via: "whatsapp" },
+      });
+      const patientIsFirst = conversation.participant1Id === patient._id;
+      await ctx.db.patch(conversation._id, {
+        lastMessageAt: now, updatedAt: now,
+        unreadCount1: patientIsFirst ? conversation.unreadCount1 : conversation.unreadCount1 + 1,
+        unreadCount2: patientIsFirst ? conversation.unreadCount2 + 1 : conversation.unreadCount2,
+      });
+      await pushNewMessage(ctx, {
+        sender: patient, senderLabel: (await senderIdentity(ctx, patient)).label, receiver: physio,
+        conversationId: conversation._id, contentType: "text",
+      });
+      await audit(ctx, data, op, { actorUserId: patient._id, patientUserId: patient._id, physiotherapistUserId: physio._id, question_length: question.length });
+      return { sent: true, physio_name: [physio.firstName, physio.lastName].filter(Boolean).join(" ") || undefined };
     }
     if (op === "patient_check_in") {
       // A pain and progress check-in from WhatsApp, with the app's rules (recordPatientCheckIn: high

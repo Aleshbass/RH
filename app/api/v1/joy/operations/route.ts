@@ -26,6 +26,8 @@ const schema = z.object({
     "patient_request_callback",
     // Additive (Nov 2026): a pain and progress check-in from WhatsApp
     "patient_check_in",
+    // Additive (Nov 2026): a question about the exercise plan, into the physio's Messages
+    "patient_ask_physio",
   ]),
   actor: actorSchema,
   data: z.record(z.string(), z.unknown()).default({}),
@@ -36,7 +38,7 @@ const mutations = new Set([
   "physio_update_availability", "physio_session_note", "physio_visit_event", "physio_message_patient", "physio_feedback_request",
   "family_grant", "family_update_grant", "family_revoke_grant", "change_physio_request", "admin_escalation", "admin_verify_physio", "admin_reassign",
   "patient_record_consents", "patient_link_request", "patient_link_confirm", "patient_update_profile",
-  "patient_log_exercise", "patient_request_callback", "patient_check_in",
+  "patient_log_exercise", "patient_request_callback", "patient_check_in", "patient_ask_physio",
 ]);
 
 export async function POST(request: Request) {

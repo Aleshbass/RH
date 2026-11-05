@@ -61,6 +61,7 @@ from app.config import get_settings
 from app.booking.paystack_client import initialize_transaction
 from app.booking.step_help import booking_step_help
 from app.conversation.check_in import check_in_turn
+from app.exercises.questions import exercise_question_turn
 from app.conversation.human_request import human_request_reply, is_human_request
 from app.api.internal.rh_safety_eligibility import EligibilityRequest, issue_eligibility_reference
 from app.models.admin import Admin
@@ -2378,6 +2379,22 @@ def handle_turn(
             return TurnResult(
                 reply_text=exercise_reply, language=language, phase=state.phase,
                 extracted=state.extracted, interactive=exercise_buttons, after=exercise_after or None,
+            )
+
+    # A question about one of the physio's exercises: answered from the plan, or sent to the physio
+    # (app/exercises/questions.py). Escalated patients never get here (the safety resend runs first).
+    if identity.persona == Persona.PATIENT:
+        question_patient = session.get(Patient, identity.person_id)
+        answered = exercise_question_turn(session, question_patient, user_text) if question_patient is not None else None
+        if answered is not None:
+            question_reply, question_after = answered
+            save_turn(
+                session, state, user_text, question_reply, state.extracted, state.phase,
+                language, wa_message_id, stage=state.stage,
+            )
+            return TurnResult(
+                reply_text=question_reply, language=language, phase=state.phase,
+                extracted=state.extracted, after=question_after or None,
             )
 
     # "send me my dashboard link": a fresh one-tap login link from Rehabify

@@ -5,6 +5,8 @@ import { getUserByIdOrThrow } from "./users";
 import { assertPatientInClinic } from "./clinicTools";
 import { pushNewMessage } from "./helpers/pushNotify";
 import { senderIdentity } from "./helpers/displayIdentity";
+import { internal } from "./_generated/api";
+import { isJoyLoginEmail } from "../lib/auth/joyLoginEmail";
 import {
   ChatMessage, 
   ChatConversation, 
@@ -494,6 +496,29 @@ export const sendMessage = mutation({
       conversationId: args.conversationId,
       contentType: args.contentType,
     });
+
+    // A patient who uses Rehabify through Joy also gets their physio's message on WhatsApp:
+    // WhatsApp-only accounts always, others when their last message in this chat came from
+    // WhatsApp (a question sent through Joy, joyOperations patient_ask_physio).
+    if (user.role === "physiotherapist" && receiver.role === "patient" && args.contentType === "text" && args.content.trim()) {
+      let onWhatsApp = isJoyLoginEmail(receiver.email);
+      if (!onWhatsApp) {
+        const recent = await ctx.db
+          .query("messages")
+          .withIndex("by_conversation_id_and_timestamp", (q) => q.eq("conversationId", args.conversationId))
+          .order("desc")
+          .take(20);
+        const lastFromPatient = recent.find((m) => m.senderId === receiver._id);
+        onWhatsApp = (lastFromPatient?.metadata as { via?: string } | undefined)?.via === "whatsapp";
+      }
+      if (onWhatsApp) {
+        await ctx.scheduler.runAfter(0, (internal as any).joyIntegration.deliverJoyEvent, {
+          eventId: `chat-message-${messageId}`,
+          eventType: "physio.patient_message",
+          data: { patient_id: String(receiver._id), message: args.content.trim().slice(0, 2000) },
+        });
+      }
+    }
 
     return messageId;
   },
