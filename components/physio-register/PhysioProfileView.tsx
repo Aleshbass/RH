@@ -227,9 +227,6 @@ export default function PhysioProfilePage() {
                       <div className="shrink-0 w-full sm:w-auto bg-rh-cream rounded-2xl px-4 py-3 text-center">
                         <Award className="w-5 h-5 text-rh-ink mx-auto mb-1" />
                         <p className="text-lg font-bold text-rh-ink">#{profile.ranking}</p>
-                        <p className="text-[10px] text-rh-ink/55 font-medium">
-                          out of {profile.totalRegistered}
-                        </p>
                       </div>
                     )}
                   </div>

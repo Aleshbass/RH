@@ -10,7 +10,7 @@ import { useRef, useState } from 'react';
 import Link from 'next/link';
 import { useQuery } from 'convex/react';
 import { makeFunctionReference } from 'convex/server';
-import { ArrowRight, Loader2, Search, ShieldCheck, UserPlus, WhatsApp } from '@/components/icons';
+import { ArrowRight, Loader2, Search, UserPlus, WhatsApp } from '@/components/icons';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import PhysioProfileCard, { type PhysioProfileCardData } from '@/components/physio-register/PhysioProfileCard';
 import { displayFont, pillGhostOnDark, pillLime } from '@/components/learn/shared';
@@ -25,9 +25,6 @@ const registryRef = makeFunctionReference<
   { searchQuery?: string; sortBy?: SortBy; limit?: number },
   { results: PhysioProfileCardData[]; total: number }
 >('physioRegistry:listPublicRegistry');
-const statsRef = makeFunctionReference<'query', Record<string, never>, { totalRegistered: number; totalVerifiedByRehabify: number }>(
-  'physioRegistry:getRegistryStats'
-);
 
 const JOIN_REGISTER = '/physio-register/register';
 const JOY_WHATSAPP = `https://wa.me/2348122615453?text=${encodeURIComponent('Hi Joy! 👋🏾 I need help getting matched with a verified physiotherapist for my recovery.')}`;
@@ -52,7 +49,6 @@ export default function PhysioRegisterDirectory() {
   };
 
   const data = useQuery(registryRef, { searchQuery: debouncedQuery || undefined, sortBy, limit: 60 });
-  const stats = useQuery(statsRef, {});
   const isLoading = data === undefined;
   const physios = data?.results ?? [];
   const searching = searchQuery.trim() !== debouncedQuery;
@@ -84,18 +80,6 @@ export default function PhysioRegisterDirectory() {
               {searching && <Loader2 className="absolute right-5 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-rh-ink/50" />}
             </div>
 
-            {stats && stats.totalRegistered > 0 && (
-              <p className="mt-5 inline-flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-sm text-white/60">
-                <span>
-                  <strong className="font-semibold text-white">{stats.totalRegistered.toLocaleString()}</strong> registered
-                </span>
-                <span className="inline-flex items-center gap-1.5">
-                  <ShieldCheck className="h-3.5 w-3.5 text-rh-lime" />
-                  <strong className="font-semibold text-white">{stats.totalVerifiedByRehabify.toLocaleString()}</strong> verified by Rehabify
-                </span>
-              </p>
-            )}
-
             <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
               <Link href={JOIN_REGISTER} className={cn(pillLime, 'w-full sm:w-auto')}>
                 <UserPlus className="h-4 w-4" /> Join the Physio Register
@@ -123,12 +107,9 @@ export default function PhysioRegisterDirectory() {
         </a>
 
         <div className="mt-8 flex flex-wrap items-center justify-between gap-3">
+          {/* No counts on the register (owner, 5 Nov 2026): just say what's shown */}
           <p className="text-sm text-rh-ink/60">
-            {isLoading
-              ? 'Loading the register…'
-              : debouncedQuery
-                ? `${data.total.toLocaleString()} result${data.total === 1 ? '' : 's'} for “${debouncedQuery}”`
-                : `${data.total.toLocaleString()} physiotherapist${data.total === 1 ? '' : 's'}`}
+            {isLoading ? 'Loading the register…' : debouncedQuery ? `Results for “${debouncedQuery}”` : 'All physiotherapists'}
           </p>
           <Select value={sortBy} onValueChange={(value) => setSortBy(value as SortBy)}>
             <SelectTrigger className="h-10 w-44 rounded-full border-rh-ink/10 bg-white text-sm" aria-label="Sort">
