@@ -434,11 +434,12 @@ async function getOfficialPhysiosAsRegistryEntries(ctx: any) {
     const user = await ctx.db.get(official.userId);
     if (!user) continue;
     
-    // Look up license document (if any) using generic fallback filter
+    // The licence document (if any), by index. A full-table filter here ran once per approved
+    // physio and passed Convex's 32,000-document read limit (Nov 2026), so the register page
+    // and its stats failed with "Server Error".
     const licenseDocs = await ctx.db.query("physiotherapistDocuments")
-       .filter((q:any) => q.eq(q.field("physiotherapistId"), official._id))
-       .filter((q:any) => q.eq(q.field("documentType"), "licenseDocument"))
-       .collect();
+       .withIndex("by_document_type", (q: any) => q.eq("physiotherapistId", official._id).eq("documentType", "licenseDocument"))
+       .take(1);
       
     // Construct mapped entry matching physioRegistry shape
     results.push({
