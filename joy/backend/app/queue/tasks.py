@@ -1,4 +1,6 @@
 import json
+import logging
+import re
 from hashlib import sha256
 from datetime import datetime, timezone
 
@@ -6,6 +8,8 @@ import httpx
 import redis
 
 from app.config import get_settings
+
+_logger = logging.getLogger(__name__)
 
 INBOUND_QUEUE = "joy:inbound"
 PROCESSING_QUEUE = "joy:inbound:processing"
@@ -368,8 +372,19 @@ def send_whatsapp_interactive(phone: str, text: str, interactive: dict, *, text_
     }
     try:
         _post_message(settings, message)
-    except httpx.HTTPError:
+    except httpx.HTTPError as exc:
+        # Meta's reason (for example 139000 "Blocked by Integrity" for a form while the business
+        # isn't verified). Only the status and error code: no phone number or message text.
+        code = re.search(r'"code":\s*(\d+)', str(exc))
+        _logger.warning(
+            "joy_interactive_rejected type=%s status=%s code=%s",
+            interactive.get("type"), getattr(getattr(exc, "response", None), "status_code", None), code.group(1) if code else None,
+        )
         if body == text:
+            if interactive.get("type") == "flow":
+                from app.flows.signup import text_without_form
+
+                text = text_without_form(text)
             send_text(phone, text)
 
 

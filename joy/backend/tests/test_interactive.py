@@ -98,6 +98,30 @@ def test_plain_text_fallback_never_loses_the_reply(monkeypatch, case):
     assert texts == ["Choose one"]
 
 
+def test_a_refused_signup_form_never_points_to_a_missing_button(monkeypatch, caplog):
+    """Nov 2026: Meta refused the draft form ((#139000) Blocked by Integrity, business not
+    verified) and the fallback still said "Tap Get started", with no button to tap."""
+    from app.flows.signup import SIGNUP_OFFER, WELCOME_WITH_FORM, WELCOME_WITHOUT_FORM
+    from app.flows.signup_flow import signup_flow_message
+
+    def refused(url, *, headers, json, timeout):
+        return httpx.Response(400, text='{"error":{"message":"(#139000) Blocked by Integrity","code":139000}}',
+                              request=httpx.Request("POST", url))
+
+    settings = Settings(whatsapp_access_token="token", whatsapp_phone_number_id="123", disable_whatsapp_delivery=False)
+    monkeypatch.setattr(tasks, "get_settings", lambda: settings)
+    monkeypatch.setattr(tasks, "_in_service_window", lambda phone: True)
+    monkeypatch.setattr(tasks.httpx, "post", refused)
+    form = signup_flow_message("123", "signup:abc", mode="draft")
+    texts: list[str] = []
+    with caplog.at_level("WARNING"):
+        for text in (WELCOME_WITH_FORM, SIGNUP_OFFER):
+            tasks.send_whatsapp_interactive("+2348012345678", text, form, text_sender=lambda phone, t: texts.append(t))
+    assert texts[0] == WELCOME_WITHOUT_FORM
+    assert "Get started" not in texts[1] and "isn't available" in texts[1]
+    assert "type=flow status=400 code=139000" in caplog.text and "2348012345678" not in caplog.text
+
+
 def test_a_long_message_goes_first_then_the_buttons_under_a_short_prompt(monkeypatch):
     posted, texts = _send(monkeypatch, body="x" * 1100)
     assert texts == ["x" * 1100]

@@ -61,6 +61,31 @@ SIGNUP_OFFER = (
     "Tap *Get started* to fill in your details. It takes about a minute, and you can change them "
     "any time by typing *update my details*."
 )
+WELCOME_WITHOUT_FORM = (
+    "Hello 👋 Welcome to Rehabify.\n\n"
+    "Could you tell me what’s going on today?\n\n"
+    "You can tell me:\n\n"
+    "• what’s bothering you\n"
+    "• which part of your body is affected\n"
+    "• how long you’ve had it\n"
+    "• whether you’ve seen anyone about it\n"
+    "• anything you’ve already tried\n\n"
+    "Just tell me in your own words. There’s no need to fill out a form.\n\n"
+    "If you're a physiotherapist, reply *PT*. Messaging for someone else? Just tell me who it's for."
+)
+FORM_UNAVAILABLE = (
+    "The sign-up form isn't available on WhatsApp just yet. You don't need it: tell me what's going "
+    "on in your own words, and I'll take your details as we go."
+)
+
+
+def text_without_form(text: str) -> str:
+    """What to send instead when Meta refuses the form message: never point to a missing button."""
+    if text == WELCOME_WITH_FORM:
+        return WELCOME_WITHOUT_FORM
+    if "Get started" in text:
+        return FORM_UNAVAILABLE
+    return text
 
 
 def _digits(phone: str) -> str:

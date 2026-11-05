@@ -19,7 +19,7 @@ from app.admin.escalation_router import (
 )
 from app.admin.verification_queue import apply_admin_turn
 from app.audit.logger import append
-from app.flows.signup import WELCOME_WITH_FORM, is_signup_request, signup_interactive, signup_offer
+from app.flows.signup import WELCOME_WITH_FORM, WELCOME_WITHOUT_FORM, is_signup_request, signup_interactive, signup_offer
 from app.identity.greetings import is_greeting_only
 from app.exercises.programme import asks_for_programme, done_command, reminder_command, show_programme
 from app.booking.booking_flow import (
@@ -158,18 +158,7 @@ _THANKS_ONLY_RE = re.compile(
     r"^\s*(?:thanks?|thank\s+you|tnx|thnx|tanks)(?:\s+(?:joy|so\s+much|a\s+lot))?[!,.\s]*$",
     re.IGNORECASE,
 )
-_FIRST_CONTACT_WELCOME = (
-    "Hello 👋 Welcome to Rehabify.\n\n"
-    "Could you tell me what’s going on today?\n\n"
-    "You can tell me:\n\n"
-    "• what’s bothering you\n"
-    "• which part of your body is affected\n"
-    "• how long you’ve had it\n"
-    "• whether you’ve seen anyone about it\n"
-    "• anything you’ve already tried\n\n"
-    "Just tell me in your own words. There’s no need to fill out a form.\n\n"
-    "If you're a physiotherapist, reply *PT*. Messaging for someone else? Just tell me who it's for."
-)
+_FIRST_CONTACT_WELCOME = WELCOME_WITHOUT_FORM
 _TRIAGE_FLOW_KEY = "triage_flow_state"
 _AWAITING_SUMMARY_CONFIRMATION = "awaiting_summary_confirmation"
 _AWAITING_SUMMARY_CORRECTION = "awaiting_summary_correction"
