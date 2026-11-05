@@ -61,7 +61,7 @@ export function CourseCatalog() {
   const offers = useQuery(videoApi.catalog, {})
   const signedIn = offers?.some((o) => o.viewer.signedIn) ?? false
   return (
-    <main className="mx-auto w-full max-w-6xl px-4 py-10 sm:px-6 sm:py-14">
+    <main className="mx-auto w-full max-w-6xl px-4 pb-10 pt-24 sm:px-6 sm:pb-14 sm:pt-28">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-rh-ink/50">Rehabify Learn</p>
@@ -167,14 +167,14 @@ function EnrolBox({ offer }: { offer: CourseOfferPage }) {
   } else if (!offer.viewer.signedIn) {
     action = (
       <Link href={signInHref(pathname)} className={cn(pillLime, 'w-full justify-center')}>
-        <Lock className="h-4 w-4" /> Sign in to enrol
+        <Lock className="h-4 w-4" /> {offer.access === 'paid' ? 'Sign in to pay and enrol' : 'Sign in to enrol'}
       </Link>
     )
   } else {
     action = (
       <button type="button" onClick={enrol} disabled={busy} className={cn(pillLime, 'w-full justify-center disabled:opacity-70')}>
         {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-        {offer.access === 'free' ? 'Enrol for free' : `Enrol · ${naira(offer.viewer.priceToPay ?? 0)}`}
+        {offer.access === 'free' ? 'Enrol for free' : `Pay ${naira(offer.viewer.priceToPay ?? 0)} and enrol`}
       </button>
     )
   }
@@ -246,11 +246,11 @@ export function CourseOfferView({ courseId }: { courseId: string }) {
   const { state, cancelled } = usePaymentReturn(courseId)
 
   if (offer === undefined) {
-    return <main className="mx-auto w-full max-w-6xl px-4 py-14 sm:px-6"><div className="h-96 animate-pulse rounded-[2rem] bg-rh-ink/[0.06]" /></main>
+    return <main className="mx-auto w-full max-w-6xl px-4 pb-14 pt-24 sm:px-6 sm:pt-28"><div className="h-96 animate-pulse rounded-[2rem] bg-rh-ink/[0.06]" /></main>
   }
   if (offer === null) {
     return (
-      <main className="mx-auto w-full max-w-2xl px-4 py-20 text-center sm:px-6">
+      <main className="mx-auto w-full max-w-2xl px-4 pb-20 pt-28 text-center sm:px-6 sm:pt-32">
         <h1 className={cn('text-3xl tracking-tight text-rh-ink', displayFont)}>This course isn’t available</h1>
         <p className="mt-2 text-rh-ink/60">It may have been unpublished. See the courses that are open now.</p>
         <Link href="/learn/courses" className={cn(pillInk, 'mt-6')}>All courses</Link>
@@ -259,7 +259,7 @@ export function CourseOfferView({ courseId }: { courseId: string }) {
   }
 
   return (
-    <main className="mx-auto w-full max-w-6xl px-4 py-10 sm:px-6 sm:py-14">
+    <main className="mx-auto w-full max-w-6xl px-4 pb-10 pt-24 sm:px-6 sm:pb-14 sm:pt-28">
       <Link href="/learn/courses" className="inline-flex items-center gap-1.5 text-sm font-medium text-rh-ink/60 hover:text-rh-ink">
         <ArrowLeft className="h-4 w-4" /> All courses
       </Link>
@@ -281,13 +281,17 @@ export function CourseOfferView({ courseId }: { courseId: string }) {
         <p className="mt-4 rounded-2xl bg-white px-4 py-3 text-sm text-rh-ink/70 shadow-soft">Payment cancelled. You can enrol whenever you’re ready.</p>
       )}
 
-      <div className="mt-6 grid gap-8 lg:grid-cols-[1fr_22rem]">
+      <div className="mt-6 grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_22rem]">
         <div className="min-w-0">
           <div className="relative aspect-[16/9] overflow-hidden rounded-[2rem] bg-rh-ink/[0.06] shadow-soft">
             <CoverImage url={offer.coverUrl} sizes="(min-width: 1024px) 66vw, 100vw" priority />
           </div>
           <h1 className={cn('mt-8 text-[32px] leading-tight tracking-tight text-rh-ink sm:text-[40px]', displayFont)}>{offer.title}</h1>
           <p className="mt-3 whitespace-pre-line text-[15px] leading-relaxed text-rh-ink/70">{offer.summary}</p>
+          {/* On phones the price and the pay / enrol button come straight after the summary */}
+          <div className="mt-6 lg:hidden">
+            <EnrolBox offer={offer} />
+          </div>
 
           {offer.benefits.length > 0 && (
             <section className="mt-8">
@@ -317,7 +321,9 @@ export function CourseOfferView({ courseId }: { courseId: string }) {
             </ol>
           </section>
         </div>
-        <EnrolBox offer={offer} />
+        <div className="hidden lg:block">
+          <EnrolBox offer={offer} />
+        </div>
       </div>
     </main>
   )

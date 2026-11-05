@@ -559,10 +559,10 @@ export function LessonPlayer({
         <span className="truncate">{course.title}</span>
       </button>
 
-      <div className="mt-4 grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start">
+      <div className="mt-4 grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start">
         <Stage key={lessonId} course={course} lessonId={lessonId} onSelectLesson={onSelectLesson} />
 
-        <aside className="rounded-[1.75rem] bg-white p-4 shadow-soft lg:sticky lg:top-24">
+        <aside className="min-w-0 rounded-[1.75rem] bg-white p-4 shadow-soft lg:sticky lg:top-28">
           <div className="px-2 pb-3 pt-1">
             <div className="flex items-baseline justify-between gap-3 text-sm">
               <span className="font-semibold text-rh-ink">Lessons</span>

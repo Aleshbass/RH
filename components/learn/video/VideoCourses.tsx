@@ -141,7 +141,7 @@ function ResumeCard({ course, onResume }: { course: VideoCourseCard; onResume: (
   if (!resume) return null
   const left = Math.max(0, resume.durationSec - resume.positionSec)
   return (
-    <section className="grid overflow-hidden rounded-[2rem] bg-rh-ink text-white shadow-soft md:grid-cols-[1.15fr_1fr]">
+    <section className="grid grid-cols-1 overflow-hidden rounded-[2rem] bg-rh-ink text-white shadow-soft md:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
       <button
         type="button"
         onClick={onResume}
@@ -264,7 +264,7 @@ function CourseDetail({
         <ArrowLeft className="h-4 w-4" /> All courses
       </button>
 
-      <section className="mt-5 grid items-center gap-8 lg:grid-cols-[1.05fr_1fr] lg:gap-12">
+      <section className="mt-5 grid grid-cols-1 items-center gap-8 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)] lg:gap-12">
         <div className="order-2 lg:order-1">
           <h1 className={cn('text-[34px] leading-[1.05] tracking-tight text-rh-ink sm:text-[46px]', displayFont)}>{course.title}</h1>
           <p className="mt-4 max-w-xl whitespace-pre-line text-base leading-7 text-rh-ink/70">{course.summary}</p>
@@ -322,7 +322,7 @@ function CourseDetail({
         </button>
       </section>
 
-      <section className="mt-10 grid gap-5 lg:grid-cols-[1fr_1.25fr] lg:items-start">
+      <section className="mt-10 grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)] lg:items-start">
         <div className="rounded-[1.75rem] bg-white p-6 shadow-soft sm:p-8">
           <h2 className={cn('text-2xl tracking-tight text-rh-ink', displayFont)}>What you’ll learn</h2>
           <ul className="mt-5 space-y-3.5">
@@ -353,7 +353,7 @@ function CourseDetail({
 
 function DetailSkeleton() {
   return (
-    <div className="grid gap-8 lg:grid-cols-[1.05fr_1fr]">
+    <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)]">
       <div className="space-y-4 pt-8">
         <div className="h-10 w-3/4 animate-pulse rounded-full bg-rh-ink/[0.07]" />
         <div className="h-4 w-full animate-pulse rounded-full bg-rh-ink/[0.05]" />

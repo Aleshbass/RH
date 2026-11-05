@@ -58,7 +58,7 @@ const navLinks: NavItem[] = [
         href: "/platform/physiotherapists",
         children: [
           { name: "MSK Specialist Program", href: "/learn", badge: "New" },
-          { name: "Physio register", href: "/physio-register/register" },
+          { name: "Physio register", href: "/physio-register" },
         ],
       },
       { name: "For clinics", href: "/platform/clinics" },

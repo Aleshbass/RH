@@ -14,12 +14,12 @@ export function MyCourses() {
   const library = useQuery(videoApi.library, isAuthenticated ? {} : 'skip')
 
   if (isLoading || (isAuthenticated && library === undefined)) {
-    return <main className="mx-auto w-full max-w-6xl px-4 py-14 sm:px-6"><div className="h-80 animate-pulse rounded-[2rem] bg-rh-ink/[0.06]" /></main>
+    return <main className="mx-auto w-full max-w-6xl px-4 pb-14 pt-24 sm:px-6 sm:pt-28"><div className="h-80 animate-pulse rounded-[2rem] bg-rh-ink/[0.06]" /></main>
   }
 
   if (!isAuthenticated || library?.state !== 'ok') {
     return (
-      <main className="mx-auto w-full max-w-2xl px-4 py-20 text-center sm:px-6">
+      <main className="mx-auto w-full max-w-2xl px-4 pb-20 pt-28 text-center sm:px-6 sm:pt-32">
         <h1 className={cn('text-3xl tracking-tight text-rh-ink', displayFont)}>
           {isAuthenticated ? 'No courses yet' : 'Sign in to see your courses'}
         </h1>
@@ -37,7 +37,7 @@ export function MyCourses() {
   }
 
   return (
-    <main className="mx-auto w-full max-w-6xl px-4 py-10 sm:px-6 sm:py-14">
+    <main className="mx-auto w-full max-w-6xl px-4 pb-10 pt-24 sm:px-6 sm:pb-14 sm:pt-28">
       <VideoCourses />
       <div className="mt-12 text-center">
         <Link href="/learn/courses" className="text-sm font-semibold text-rh-ink underline-offset-4 hover:underline">
