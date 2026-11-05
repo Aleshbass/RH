@@ -20,6 +20,8 @@ import { AnimatePresence, motion } from 'framer-motion';
 import PeerVerificationForm from '@/components/physio-register/PeerVerificationForm';
 import RehabifyConversionPopup from '@/components/physio-register/RehabifyConversionPopup';
 import { displayFont } from '@/components/learn/shared';
+import { initialsOf, regulatorLabel } from '@/components/physio-register/PhysioProfileCard';
+import Image from 'next/image';
 import { Id } from '@/convex/_generated/dataModel';
 
 const RELATIONSHIP_LABELS: Record<string, string> = {
@@ -185,79 +187,88 @@ export default function PhysioProfilePage() {
         </div>
 
         <div className="max-w-4xl mx-auto px-4 py-8 md:py-12">
-          {/* Profile Header Card */}
-          <div className="bg-white rounded-[2rem] shadow-soft overflow-hidden mb-6">
-            
-            <div className="p-6 md:p-8">
-              <div className="flex flex-col sm:flex-row items-start gap-6">
-                {/* Photo */}
-                <div className="relative shrink-0">
-                  {profile.profilePhotoUrl ? (
-                    <img
-                      src={profile.profilePhotoUrl}
-                      alt={profile.fullName}
-                      className="w-24 h-24 md:w-28 md:h-28 rounded-2xl object-cover shadow-soft"
-                    />
-                  ) : (
-                    <div className="w-24 h-24 md:w-28 md:h-28 rounded-2xl bg-rh-ink flex items-center justify-center shadow-soft">
-                      <span className="text-3xl font-bold text-rh-lime">
-                        {profile.fullName.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()}
-                      </span>
-                    </div>
-                  )}
-                  {profile.isRehabifyApproved && (
-                    <div className="absolute -bottom-2 -right-2 w-8 h-8 bg-rh-ink rounded-lg flex items-center justify-center border-2 border-white shadow-soft">
-                      <ShieldCheck className="w-4 h-4 text-rh-lime" />
-                    </div>
+          {/* Profile hero: a large photo first, then the name, licence and the trust signals */}
+          <section className="mb-6 overflow-hidden rounded-[2rem] bg-white shadow-soft">
+            <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,16rem)_minmax(0,1fr)]">
+              <div className="relative aspect-[5/4] w-full bg-rh-ink sm:aspect-auto sm:min-h-[20rem]">
+                {profile.profilePhotoUrl ? (
+                  <Image
+                    src={profile.profilePhotoUrl}
+                    alt={profile.fullName}
+                    fill
+                    priority
+                    unoptimized
+                    sizes="(min-width: 640px) 256px, 100vw"
+                    className="object-cover object-[50%_25%]"
+                  />
+                ) : (
+                  <span className={cn('absolute inset-0 flex items-center justify-center text-7xl text-rh-lime', displayFont)}>
+                    {initialsOf(profile.fullName)}
+                  </span>
+                )}
+                {profile.isRehabifyApproved && (
+                  <span className="absolute left-4 top-4 inline-flex items-center gap-1.5 rounded-full bg-white/95 px-3 py-1.5 text-xs font-semibold text-rh-ink shadow-soft">
+                    <ShieldCheck className="h-3.5 w-3.5 text-[#00cd0f]" /> Verified by Rehabify
+                  </span>
+                )}
+              </div>
+
+              <div className="flex min-w-0 flex-col p-6 sm:p-8">
+                <div className="flex items-start justify-between gap-3">
+                  <h1 className={cn('min-w-0 break-words text-[28px] leading-tight tracking-tight text-rh-ink sm:text-[36px]', displayFont)}>
+                    {profile.fullName}
+                  </h1>
+                  {profile.ranking && (
+                    <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-rh-ink px-3 py-1.5 text-sm font-semibold text-white">
+                      <Award className="h-4 w-4 text-rh-lime" /> #{profile.ranking}
+                    </span>
                   )}
                 </div>
+                <p className="mt-2 text-sm text-rh-ink/60">
+                  {regulatorLabel(profile.regulatoryBody)} licence <span className="break-all font-semibold text-rh-ink">{profile.licenseNumber}</span>
+                </p>
+                {(profile.practiceName || profile.practiceAddress) && (
+                  <p className="mt-1.5 flex items-center gap-1.5 text-sm text-rh-ink/60">
+                    <MapPin className="h-3.5 w-3.5 shrink-0 text-rh-ink/40" />
+                    <span className="min-w-0 truncate">{profile.practiceName || profile.practiceAddress}</span>
+                  </p>
+                )}
 
-                <div className="flex-1 w-full">
-                  <div className="flex flex-col sm:flex-row items-start justify-between gap-4">
-                    <div className="w-full sm:w-auto break-words">
-                      <h1 className={cn("text-2xl md:text-3xl tracking-tight text-rh-ink mb-1", displayFont)}>
-                        {profile.fullName}
-                      </h1>
-                      <p className="text-rh-ink/60 text-sm mb-3">
-                        {profile.regulatoryBody} • License: <strong className="text-rh-ink break-all">{profile.licenseNumber}</strong>
-                      </p>
-                    </div>
-                    {/* Ranking */}
-                    {profile.ranking && (
-                      <div className="shrink-0 w-full sm:w-auto bg-rh-cream rounded-2xl px-4 py-3 text-center">
-                        <Award className="w-5 h-5 text-rh-ink mx-auto mb-1" />
-                        <p className="text-lg font-bold text-rh-ink">#{profile.ranking}</p>
-                      </div>
-                    )}
+                {/* Trust signals as tiles */}
+                <dl className="mt-6 grid grid-cols-2 gap-2.5 sm:mt-auto sm:grid-cols-3 sm:pt-6">
+                  <div className="rounded-2xl bg-rh-cream px-4 py-3">
+                    <dt className="flex items-center gap-1.5 text-xs text-rh-ink/55">
+                      <Clock className="h-3.5 w-3.5" /> Experience
+                    </dt>
+                    <dd className={cn('mt-1 text-xl text-rh-ink', displayFont)}>
+                      {profile.yearsOfExperience} yr{profile.yearsOfExperience === 1 ? '' : 's'}
+                    </dd>
                   </div>
-
-                  {/* Stats */}
-                  <div className="flex flex-wrap items-center gap-4 text-sm text-rh-ink/70">
-                    <div className="flex items-center gap-1.5">
-                      <Users className="w-4 h-4 text-rh-ink/60" />
-                      <strong>{profile.peerVerificationCount}</strong> colleague verifications
-                    </div>
-                    {profile.averagePatientRating > 0 && (
-                      <div className="flex items-center gap-1.5">
-                        <Star className="w-4 h-4 text-amber-500 fill-amber-500" />
-                        <strong>{profile.averagePatientRating.toFixed(1)}</strong> ({profile.patientReviewCount} reviews)
-                      </div>
-                    )}
-                    <div className="flex items-center gap-1.5">
-                      <Clock className="w-4 h-4 text-rh-ink/45" />
-                      <strong>{profile.yearsOfExperience}</strong> years experience
-                    </div>
-                    {profile.referralCount > 0 && (
-                      <div className="flex items-center gap-1.5">
-                        <UserCheck className="w-4 h-4 text-rh-ink/60" />
-                        <strong>{profile.referralCount}</strong> referrals
-                      </div>
-                    )}
+                  <div className="rounded-2xl bg-rh-cream px-4 py-3">
+                    <dt className="flex items-center gap-1.5 text-xs text-rh-ink/55">
+                      <Users className="h-3.5 w-3.5" /> Colleagues
+                    </dt>
+                    <dd className={cn('mt-1 text-xl text-rh-ink', displayFont)}>{profile.peerVerificationCount} verified</dd>
                   </div>
-                </div>
+                  <div className="col-span-2 rounded-2xl bg-rh-cream px-4 py-3 sm:col-span-1">
+                    <dt className="flex items-center gap-1.5 text-xs text-rh-ink/55">
+                      <Star className="h-3.5 w-3.5" /> Patients
+                    </dt>
+                    <dd className={cn('mt-1 text-xl text-rh-ink', displayFont)}>
+                      {profile.averagePatientRating > 0
+                        ? `${profile.averagePatientRating.toFixed(1)} · ${profile.patientReviewCount} review${profile.patientReviewCount === 1 ? '' : 's'}`
+                        : 'No reviews yet'}
+                    </dd>
+                  </div>
+                </dl>
+                {profile.referralCount > 0 && (
+                  <p className="mt-3 flex items-center gap-1.5 text-xs text-rh-ink/55">
+                    <UserCheck className="h-3.5 w-3.5" /> {profile.referralCount} referral{profile.referralCount === 1 ? '' : 's'} to other physios
+                  </p>
+                )}
               </div>
             </div>
-          </div>
+          </section>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {/* Left column — Info */}
