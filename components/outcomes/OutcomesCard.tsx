@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useMutation, useQuery } from 'convex/react'
 import { format, formatDistanceToNow } from 'date-fns'
 import { toast } from 'sonner'
-import { ArrowRight, Copy, HeartPulse, Loader2, Pause, Play, Quote, Send, Star, WhatsApp } from '@/components/icons'
+import { ArrowRight, Copy, HeartPulse, Loader2, Pause, Play, Quote, Send, Star, WhatsApp, ChevronDown } from '@/components/icons'
 import { Button } from '@/components/ui/button'
 import { IconChip, Panel, PhysioDrawer, StatusBadge, primaryButtonClass, softButtonClass } from '@/components/physio/ui'
 import type { Id } from '@/convex/_generated/dataModel'
@@ -85,6 +85,8 @@ export function OutcomesCard({
   const [sendOpen, setSendOpen] = useState(false)
   const [recordOpen, setRecordOpen] = useState(false)
   const [cardFor, setCardFor] = useState<Id<'outcomeChecks'> | null>(null)
+  // Folded to a one-row summary until the physio opens it, so Overview stays short
+  const [expanded, setExpanded] = useState(false)
   const first = patientFirstName || 'The patient'
 
   if (data === undefined) return <div className="h-64 animate-pulse rounded-3xl bg-pt-sunken" />
@@ -92,6 +94,32 @@ export function OutcomesCard({
   const { episode, pain, readOnly } = data
   const canAct = !readOnly && episode.status === 'active'
   const hasAnything = pain !== null || data.recent.length > 0
+
+  const statusText = data.pending
+    ? `Waiting on ${first}: ${MOMENT_LABEL[data.pending.moment].toLowerCase()} sent ${formatDistanceToNow(data.pending.sentAt, { addSuffix: true })}${data.pending.via.length ? ` by ${data.pending.via.map((v) => (v === 'app' ? 'phone notification' : v === 'whatsapp' ? 'WhatsApp' : v)).join(' and ')}` : ''}.`
+    : episode.status !== 'active'
+      ? data.final
+        ? `${first} sent their final scores ${formatDistanceToNow(data.final.at, { addSuffix: true })}.`
+        : data.dischargeAsked
+          ? `${first} was asked for final scores at discharge.`
+          : 'Care is complete.'
+      : episode.paused
+        ? `Automatic checks are paused for ${first}.`
+        : data.next?.kind === 'before_visit'
+          ? `Rehabify asks ${first} about pain an hour before the next session (${format(data.next.at + 3_600_000, 'EEE d MMM, HH:mm')}) and again after it.`
+          : data.next
+            ? `Next automatic check-in: ${format(data.next.at, 'EEEE d MMM')}.`
+            : 'Automatic checks are on.'
+
+  // The folded summary: pain and daily activities (or the patient's goal) as start → latest
+  const scoreText = (from: number | null, to: number | null) => (from === null ? '–' : to === null || to === from ? `${from}` : `${from} → ${to}`)
+  const activity =
+    data.goal && data.goal.first !== null
+      ? { label: data.goal.activity, value: scoreText(data.goal.first, data.goal.latest) }
+      : {
+          label: 'Daily activities',
+          value: scoreText(data.function?.first ?? null, data.function && data.function.count > 1 ? data.function.latest : null),
+        }
 
   async function togglePause() {
     try {
@@ -113,14 +141,44 @@ export function OutcomesCard({
         </>
       }
       actions={
-        canAct && (
-          <Button variant="ghost" size="sm" className="h-8 rounded-lg text-pt-muted" onClick={() => void togglePause()}>
-            {episode.paused ? <Play className="mr-1.5 h-3.5 w-3.5" /> : <Pause className="mr-1.5 h-3.5 w-3.5" />}
-            {episode.paused ? 'Resume' : 'Pause'}
+        <>
+          {canAct && expanded && (
+            <Button variant="ghost" size="sm" className="h-8 rounded-lg text-pt-muted" onClick={() => void togglePause()}>
+              {episode.paused ? <Play className="mr-1.5 h-3.5 w-3.5" /> : <Pause className="mr-1.5 h-3.5 w-3.5" />}
+              {episode.paused ? 'Resume' : 'Pause'}
+            </Button>
+          )}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 rounded-lg text-pt-ink"
+            aria-expanded={expanded}
+            onClick={() => setExpanded((open) => !open)}
+          >
+            {expanded ? 'Hide' : 'Details'}
+            <ChevronDown className={cn('ml-1.5 h-3.5 w-3.5 transition-transform duration-200', expanded && 'rotate-180')} />
           </Button>
-        )
+        </>
       }
     >
+      {!expanded ? (
+        <button
+          type="button"
+          onClick={() => setExpanded(true)}
+          className="block w-full px-5 pb-5 pt-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-pt-ink sm:px-6"
+        >
+          <span className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-pt-sunken px-3 py-1.5 text-sm font-semibold tabular-nums text-pt-ink">
+              <span className="font-normal text-pt-muted">Pain</span> {scoreText(pain?.baseline ?? null, pain?.latest ?? null)}
+            </span>
+            <span className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-pt-sunken px-3 py-1.5 text-sm font-semibold tabular-nums text-pt-ink">
+              <span className="truncate font-normal text-pt-muted">{activity.label}</span> {activity.value}
+            </span>
+            {pain?.meaningful && <StatusBadge tone="green">Meaningful change</StatusBadge>}
+          </span>
+          <span className="mt-2.5 line-clamp-2 block text-[13px] leading-relaxed text-pt-muted">{statusText}</span>
+        </button>
+      ) : (
       <div className="space-y-4 px-5 pb-5 pt-3 sm:px-6">
         {hasAnything ? (
           <>
@@ -207,23 +265,7 @@ export function OutcomesCard({
 
         <div className="flex items-start gap-3 rounded-2xl bg-pt-green-bg/60 px-4 py-3">
           <IconChip icon={HeartPulse} tone="green" className="h-8 w-8 rounded-lg [&_svg]:h-4 [&_svg]:w-4" />
-          <p className="pt-1 text-[13px] leading-relaxed text-pt-ink">
-            {data.pending
-              ? `Waiting on ${first}: ${MOMENT_LABEL[data.pending.moment].toLowerCase()} sent ${formatDistanceToNow(data.pending.sentAt, { addSuffix: true })}${data.pending.via.length ? ` by ${data.pending.via.map((v) => (v === 'app' ? 'phone notification' : v === 'whatsapp' ? 'WhatsApp' : v)).join(' and ')}` : ''}.`
-              : episode.status !== 'active'
-                ? data.final
-                  ? `${first} sent their final scores ${formatDistanceToNow(data.final.at, { addSuffix: true })}.`
-                  : data.dischargeAsked
-                    ? `${first} was asked for final scores at discharge.`
-                    : 'Care is complete.'
-                : episode.paused
-                  ? `Automatic checks are paused for ${first}.`
-                  : data.next?.kind === 'before_visit'
-                    ? `Rehabify asks ${first} about pain an hour before the next session (${format(data.next.at + 3_600_000, 'EEE d MMM, HH:mm')}) and again after it.`
-                    : data.next
-                      ? `Next automatic check-in: ${format(data.next.at, 'EEEE d MMM')}.`
-                      : 'Automatic checks are on.'}
-          </p>
+          <p className="pt-1 text-[13px] leading-relaxed text-pt-ink">{statusText}</p>
         </div>
 
         {canAct && (
@@ -238,6 +280,7 @@ export function OutcomesCard({
           </div>
         )}
       </div>
+      )}
 
       <SendCheckDrawer open={sendOpen} onOpenChange={setSendOpen} patientId={patientId} firstName={first} />
       <FeedbackCardComposer checkId={cardFor} onClose={() => setCardFor(null)} />

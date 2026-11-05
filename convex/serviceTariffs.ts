@@ -68,8 +68,9 @@ export const getPayoutSchedule = query({
     const { version, tariffs } = await loadTariffs(ctx);
     return {
       version,
-      // Version 0 is the built-in working figures: physios see "being confirmed" until an admin publishes
-      confirmed: version >= 1,
+      // The figures always show, including the built-in ones (version 0) before an admin publishes
+      // changes (owner, 5 Nov 2026: no "Being confirmed")
+      confirmed: true,
       services: BOOKABLE_SERVICE_IDS.map((id) => {
         const service = REHABIFY_SERVICES.find((s) => s.id === id)!;
         const tariff = tariffs[id];

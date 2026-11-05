@@ -4,9 +4,8 @@ import { useMemo, useRef, useState } from 'react'
 import { useAction, useMutation, useQuery } from 'convex/react'
 import { format, formatDistanceToNow } from 'date-fns'
 import { makeFunctionReference } from 'convex/server'
-import { AlertTriangle, CheckCircle2, Copy, Download, FileText, HeartPulse, History, Loader2, Mail, NotebookPen, Pencil, Plus, Receipt, Upload } from '@/components/icons'
+import { AlertTriangle, CheckCircle2, ChevronDown, Copy, Download, FileText, HeartPulse, History, Loader2, Mail, Mic, NotebookPen, Paperclip, Pencil, Plus, Receipt, Ruler, Upload } from '@/components/icons'
 import { toast } from 'sonner'
-import { api } from '@/convex/_generated/api'
 import type { Id } from '@/convex/_generated/dataModel'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -35,9 +34,48 @@ const getClinicalNotesRef = makeFunctionReference<'query', { patientId: Id<'user
 const getClinicalNoteMeasuresRef = makeFunctionReference<'query', { patientId: Id<'users'> }, MeasuredNote[]>(
   'physioCare:getClinicalNoteMeasures'
 )
+// Plain references: the generated `api` type is at TypeScript's depth limit (TS2589)
+const markExerciseLogReviewedRef = makeFunctionReference<'mutation', { logId: string }, unknown>('physioCare:markExerciseLogReviewed')
+const markCheckInReviewedRef = makeFunctionReference<'mutation', { checkInId: string }, unknown>('physioCare:markCheckInReviewed')
+const getPatientDocumentsRef = makeFunctionReference<'query', { patientUserId: string }, unknown>('files:getPatientDocumentsForPhysio')
+const attachPatientFileRef = makeFunctionReference<
+  'mutation',
+  { patientId: string; storageId: Id<'_storage'>; fileName: string; fileSize: number; contentType: string; documentType: string },
+  unknown
+>('physioCare:attachPatientFile')
+const getMyInvoicesRef = makeFunctionReference<'query', { patientId: string; limit?: number }, unknown>('billing:getMyInvoices')
+const createPhysioPaymentLinkRef = makeFunctionReference<
+  'action',
+  { invoiceId: string; emailPatient: boolean },
+  { paymentLink: string; emailed: boolean }
+>('physioBilling:createPhysioPaymentLink')
 
 /** Notes shown at first, and how many more each "Show older notes" adds. */
 const NOTES_PAGE = 30
+
+/**
+ * A note's text without the template prompts left empty ("How it started:" with nothing after it),
+ * so a half-filled template doesn't read as a long list of blanks.
+ */
+function filledText(text: string | undefined | null): string {
+  if (!text) return ''
+  return text
+    .split(/\r?\n/)
+    .filter((line) => !/^\s*[^:\n]{1,48}:\s*$/.test(line))
+    .join('\n')
+    .trim()
+}
+
+/** One line that says what the note is about: the assessment, else the first filled line. */
+function noteSummary(note: NoteRow): string {
+  const assessment = filledText(note.diagnosis).split('\n')[0]
+  if (assessment) return assessment
+  for (const text of [note.subjectiveAssessment, note.treatmentAdministered, note.objectiveAssessment, note.planForNextSession, note.goals]) {
+    const first = filledText(text).split('\n')[0]
+    if (first) return first
+  }
+  return 'No written details'
+}
 
 export function NotesTab({ workspace, onWrite }: { workspace: Workspace; onWrite: () => void }) {
   const patientId = workspace.patient._id
@@ -56,6 +94,17 @@ export function NotesTab({ workspace, onWrite }: { workspace: Workspace; onWrite
   const isActive = workspace.episode.status === 'active'
   const [editing, setEditing] = useState<EditableNote | null>(null)
   const [historyId, setHistoryId] = useState<string | null>(null)
+  // Which notes are unfolded. Until the physio opens or closes one, only the newest is open.
+  const [openIds, setOpenIds] = useState<Set<string> | null>(null)
+  const isOpen = (id: string) => (openIds ? openIds.has(id) : id === notes?.[0]?._id)
+  const toggle = (id: string) =>
+    setOpenIds((current) => {
+      const next = new Set(current ?? (notes?.[0] ? [notes[0]._id] : []))
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  const allOpen = Boolean(notes?.length) && notes!.every((n) => isOpen(n._id))
   const hasColleagues = notes?.some((n) => !n.mine) ?? false
   // The clinic owner reading the record: notes are written by the clinicians
   const readOnly = useWorkspaceReadOnly()
@@ -85,33 +134,79 @@ export function NotesTab({ workspace, onWrite }: { workspace: Workspace; onWrite
         </Panel>
       ) : (
         <div className="space-y-3">
-          {readOnly ? (
-            <p className="px-1 text-xs text-pt-muted">Written by your clinicians. Only the person who wrote a note can change it, and every earlier wording is kept.</p>
-          ) : (
-            hasColleagues && (
-              <p className="px-1 text-xs text-pt-muted">Includes notes by your clinic colleagues. Only the person who wrote a note can edit it.</p>
-            )
-          )}
+          <div className="flex flex-wrap items-end justify-between gap-2 px-1">
+            <p className="min-w-0 text-xs text-pt-muted">
+              {readOnly
+                ? 'Written by your clinicians. Only the person who wrote a note can change it, and every earlier wording is kept.'
+                : hasColleagues
+                  ? 'Includes notes by your clinic colleagues. Only the person who wrote a note can edit it.'
+                  : `${notes.length} note${notes.length === 1 ? '' : 's'}, newest first. Tap one to open it.`}
+            </p>
+            {notes.length > 1 && (
+              <button
+                type="button"
+                onClick={() => setOpenIds(allOpen ? new Set() : new Set(notes.map((n) => n._id)))}
+                className="shrink-0 text-xs font-semibold text-pt-ink underline-offset-2 hover:underline"
+              >
+                {allOpen ? 'Collapse all' : 'Expand all'}
+              </button>
+            )}
+          </div>
           <ol className="space-y-3">
-          {notes.map((note) => (
+          {notes.map((note) => {
+            const open = isOpen(note._id)
+            const measureCount = note.measures?.length ?? 0
+            const fileCount = note.attachments?.length ?? 0
+            return (
             <li key={note._id}>
               <Panel>
-                <div className="space-y-3 p-5">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold text-pt-ink">{format(note.sessionDate, 'EEEE d MMMM yyyy')}</p>
-                      {(!note.mine || note.editedAt) && (
-                        <p className="text-xs text-pt-muted">
-                          {[
-                            note.mine ? null : `By ${note.authorName}`,
-                            note.editedAt ? `Edited ${format(note.editedAt, 'd MMM yyyy, HH:mm')}` : null,
-                          ]
-                            .filter(Boolean)
-                            .join(' · ')}
-                        </p>
-                      )}
-                    </div>
-                    <div className="flex flex-wrap items-center gap-1">
+                <div className={cn('p-4 sm:p-5', open && 'space-y-3')}>
+                  <div className="flex items-start justify-between gap-2">
+                    {/* The date and a one-line summary: tap to open or fold the note */}
+                    <button
+                      type="button"
+                      onClick={() => toggle(note._id)}
+                      aria-expanded={open}
+                      className="group flex min-w-0 flex-1 items-start gap-3 rounded-xl text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pt-ink"
+                    >
+                      <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-pt-sunken text-pt-muted transition group-hover:text-pt-ink">
+                        <ChevronDown className={cn('h-3.5 w-3.5 transition-transform duration-200', open ? 'rotate-0' : '-rotate-90')} />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-sm font-semibold text-pt-ink">{format(note.sessionDate, 'EEE d MMM yyyy')}</span>
+                        {(!note.mine || note.editedAt) && (
+                          <span className="block text-xs text-pt-muted">
+                            {[
+                              note.mine ? null : `By ${note.authorName}`,
+                              note.editedAt ? `Edited ${format(note.editedAt, 'd MMM yyyy, HH:mm')}` : null,
+                            ]
+                              .filter(Boolean)
+                              .join(' · ')}
+                          </span>
+                        )}
+                        {!open && (
+                          <span className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+                            <span className="line-clamp-1 min-w-0 text-sm text-pt-ink/80">{noteSummary(note)}</span>
+                            {measureCount > 0 && (
+                              <span className="inline-flex items-center gap-1 text-xs text-pt-muted">
+                                <Ruler className="h-3 w-3" /> {measureCount} measure{measureCount === 1 ? '' : 's'}
+                              </span>
+                            )}
+                            {note.voiceNote && (
+                              <span className="inline-flex items-center gap-1 text-xs text-pt-muted">
+                                <Mic className="h-3 w-3" /> Voice note
+                              </span>
+                            )}
+                            {fileCount > 0 && (
+                              <span className="inline-flex items-center gap-1 text-xs text-pt-muted">
+                                <Paperclip className="h-3 w-3" /> {fileCount}
+                              </span>
+                            )}
+                          </span>
+                        )}
+                      </span>
+                    </button>
+                    <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
                       <StatusBadge tone={note.noteType === 'discharge_summary' ? 'violet' : 'teal'}>{NOTE_TYPE_LABELS[note.noteType] ?? 'Note'}</StatusBadge>
                       {note.revisionCount > 0 && (
                         <Button
@@ -151,36 +246,42 @@ export function NotesTab({ workspace, onWrite }: { workspace: Workspace; onWrite
                       )}
                     </div>
                   </div>
-                  <dl className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                    {(
-                      [
-                        ['Subjective', note.subjectiveAssessment],
-                        ['Objective', note.objectiveAssessment],
-                        ['Assessment', note.diagnosis],
-                        ['Goals', note.goals],
-                        [note.noteType === 'discharge_summary' ? 'Summary' : 'Treatment', note.treatmentAdministered],
-                        [note.noteType === 'discharge_summary' ? 'Home advice' : 'Plan', note.planForNextSession],
-                      ] as const
-                    )
-                      .filter(([, text]) => Boolean(text))
-                      .map(([label, text]) => (
-                        <div key={label}>
-                          <dt className="text-[11px] font-semibold uppercase tracking-wider text-pt-faint">{label}</dt>
-                          <dd className="mt-0.5 whitespace-pre-line text-sm text-pt-ink">{text}</dd>
+                  {open && (
+                    <div className="space-y-3 border-t border-pt-line pt-3 sm:pl-10">
+                      <dl className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                        {(
+                          [
+                            ['Subjective', note.subjectiveAssessment],
+                            ['Objective', note.objectiveAssessment],
+                            ['Assessment', note.diagnosis],
+                            ['Goals', note.goals],
+                            [note.noteType === 'discharge_summary' ? 'Summary' : 'Treatment', note.treatmentAdministered],
+                            [note.noteType === 'discharge_summary' ? 'Home advice' : 'Plan', note.planForNextSession],
+                          ] as const
+                        )
+                          .map(([label, text]) => [label, filledText(text)] as const)
+                          .filter(([, text]) => Boolean(text))
+                          .map(([label, text]) => (
+                            <div key={label}>
+                              <dt className="text-[11px] font-semibold uppercase tracking-wider text-pt-faint">{label}</dt>
+                              <dd className="mt-0.5 whitespace-pre-line text-sm text-pt-ink">{text}</dd>
+                            </div>
+                          ))}
+                      </dl>
+                      {measureCount > 0 && (
+                        <div>
+                          <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-pt-faint">Measures</p>
+                          <MeasureList measures={note.measures} previous={previousBySeries(measured ?? notes, note.sessionDate, note._id)} />
                         </div>
-                      ))}
-                  </dl>
-                  {(note.measures?.length ?? 0) > 0 && (
-                    <div>
-                      <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-pt-faint">Measures</p>
-                      <MeasureList measures={note.measures} previous={previousBySeries(measured ?? notes, note.sessionDate, note._id)} />
+                      )}
+                      <NoteMediaView voiceNote={note.voiceNote} attachments={note.attachments} />
                     </div>
                   )}
-                  <NoteMediaView voiceNote={note.voiceNote} attachments={note.attachments} />
                 </div>
               </Panel>
             </li>
-          ))}
+            )
+          })}
           {hasOlder && (
             <li className="flex justify-center pt-1">
               <Button
@@ -210,7 +311,7 @@ export function NotesTab({ workspace, onWrite }: { workspace: Workspace; onWrite
 
 /** What the patient reported while doing their home programme: pain, difficulty and notes. */
 function ExerciseLogsPanel({ logs }: { logs: ExerciseLog[] }) {
-  const markReviewed = useMutation(api.physioCare.markExerciseLogReviewed)
+  const markReviewed = useMutation(markExerciseLogReviewedRef)
   const readOnly = useWorkspaceReadOnly()
   if (logs.length === 0) return null
   return (
@@ -259,7 +360,7 @@ function ExerciseLogsPanel({ logs }: { logs: ExerciseLog[] }) {
 }
 
 export function CheckInsTab({ workspace }: { workspace: Workspace }) {
-  const markReviewed = useMutation(api.physioCare.markCheckInReviewed)
+  const markReviewed = useMutation(markCheckInReviewedRef)
   const readOnly = useWorkspaceReadOnly()
   const checkIns = workspace.checkIns
   const exerciseLogs = workspace.exerciseLogs ?? []
@@ -370,10 +471,10 @@ function formatSize(bytes: number) {
 }
 
 export function FilesTab({ workspace }: { workspace: Workspace }) {
-  const files = useQuery(api.files.getPatientDocumentsForPhysio, { patientUserId: workspace.patient._id }) as
+  const files = useQuery(getPatientDocumentsRef, { patientUserId: workspace.patient._id }) as
     | { _id: string; fileName: string; documentType: DocType; uploadedAt: number; fileSize: number; downloadUrl: string }[]
     | undefined
-  const attach = useMutation(api.physioCare.attachPatientFile)
+  const attach = useMutation(attachPatientFileRef)
   const { uploadFile } = useFileUpload()
   const inputRef = useRef<HTMLInputElement>(null)
   const [docType, setDocType] = useState<DocType>('referralLetter')
@@ -491,8 +592,8 @@ function invoiceBadge(invoice: Invoice) {
 
 export function PaymentsTab({ workspace, onRequest }: { workspace: Workspace; onRequest: () => void }) {
   // Just this patient's invoices (not the physio's whole billing list)
-  const invoices = useQuery(api.billing.getMyInvoices, { patientId: workspace.patient._id, limit: 200 }) as Invoice[] | undefined
-  const createLink = useAction(api.physioBilling.createPhysioPaymentLink)
+  const invoices = useQuery(getMyInvoicesRef, { patientId: workspace.patient._id, limit: 200 }) as Invoice[] | undefined
+  const createLink = useAction(createPhysioPaymentLinkRef)
   const [busyId, setBusyId] = useState<string | null>(null)
   // Rehabify Care invoices show the physio's payout, never the patient's price (server-side)
   const mine = (invoices ?? []).filter((i) => i.patientId === workspace.patient._id)
