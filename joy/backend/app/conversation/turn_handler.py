@@ -60,6 +60,7 @@ from app.integrations.typesafe_client import TypeSafeClient, TypeSafeError
 from app.config import get_settings
 from app.booking.paystack_client import initialize_transaction
 from app.booking.step_help import booking_step_help
+from app.conversation.human_request import human_request_reply, is_human_request
 from app.api.internal.rh_safety_eligibility import EligibilityRequest, issue_eligibility_reference
 from app.models.admin import Admin
 from app.models.conversation import Conversation
@@ -2265,6 +2266,23 @@ def handle_turn(
         return TurnResult(
             reply_text=reply, language=language, phase=state.phase, extracted=state.extracted,
         )
+
+    # "Call me" / "I want to talk to someone": alert the care team (app/conversation/human_request.py).
+    # Before the safety resend, so an escalated patient's request still reaches a person; a message
+    # that also describes warning signs goes to the safety engine instead.
+    if (
+        identity.persona == Persona.PATIENT
+        and is_human_request(user_text)
+        and not flags_from_triage_text(user_text)
+    ):
+        callback_reply = human_request_reply(
+            session, identity, session.get(Conversation, state.conversation_id), user_text,
+        )
+        save_turn(
+            session, state, user_text, callback_reply, state.extracted, state.phase,
+            language, wa_message_id, stage=state.stage,
+        )
+        return TurnResult(reply_text=callback_reply, language=language, phase=state.phase, extracted=state.extracted)
 
     referral_turn = _verified_referral_turn(
         session, identity, state, user_text, language, wa_message_id

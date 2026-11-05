@@ -178,6 +178,12 @@ def _admin_text(kind: str, payload: dict) -> str:
             f"Physio {physio_id} submitted credentials for verification. "
             f"Reply approve {physio_id}, reject {physio_id}, or web {physio_id}."
         )
+    if kind == "callback":
+        said = str(payload.get("text") or "").strip()
+        return (
+            f"Patient {payload.get('patient_id') or ''} asked on WhatsApp to speak to someone. "
+            f"Call {payload.get('phone') or 'them'}." + (f' They wrote: "{said}"' if said else "")
+        )
     if kind == "safety":
         rules = ", ".join(str(item) for item in payload.get("rule_ids") or []) or "unknown"
         reason = str(payload.get("reason") or "").strip()

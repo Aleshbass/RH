@@ -15,6 +15,7 @@ import { ZONE_CITY_STATE } from "./helpers/startingZones";
 import { insertLog, patientProgramView, startOfLagosDay } from "./exercisePrograms";
 import { posterUrl } from "./exerciseLibraryCatalog";
 import { assertProgramUnlocked } from "./helpers/patientPlans";
+import { insertNotification } from "./helpers/pushNotify";
 
 type Operation =
   | "physio_work_summary" | "physio_update_availability" | "physio_session_note"
@@ -32,7 +33,9 @@ type Operation =
   // Additive (Nov 2026): answers from Joy's WhatsApp sign-up form
   | "patient_update_profile"
   // Additive (Nov 2026): the physio's exercise programme on WhatsApp, and DONE replies
-  | "patient_programme" | "patient_log_exercise";
+  | "patient_programme" | "patient_log_exercise"
+  // Additive (Nov 2026): the patient asked Joy for a person ("call me", "talk to someone")
+  | "patient_request_callback";
 
 const activeBooking = (status: unknown) => status === "pending" || status === "confirmed" || status === "scheduled";
 const nameOf = (user: { firstName?: string; lastName?: string } | null) =>
@@ -270,6 +273,30 @@ export const executeMutation = internalMutation({
       }
       await audit(ctx, data, op, { actorUserId: patient._id, patientUserId: patient._id, fields: [...Object.keys(userPatch), ...Object.keys(profilePatch)] });
       return { updated: true };
+    }
+    if (op === "patient_request_callback") {
+      // The patient asked Joy for a person ("call me", "I want to speak to someone"). Every admin
+      // gets a bell + push saying who to call and what they wrote. { patient_id, text? }
+      const patient = await patientForActor(ctx, String(data.patient_id), data.actor);
+      const name = [patient.firstName, patient.lastName].filter(Boolean).join(" ").trim() || "A patient";
+      const who = patient.rehabifyId ? `${name} (${patient.rehabifyId})` : name;
+      const phone = String(data.actor?.sender_phone ?? patient.phoneNumber ?? "").trim();
+      const said = String(data.text ?? "").replace(/\s+/g, " ").trim().slice(0, 200);
+      const body = `${who} asked on WhatsApp to speak to someone.${phone ? ` Call ${phone}.` : ""}${said ? ` They wrote: "${said}"` : ""}`;
+      const admins = await ctx.db.query("users").withIndex("by_role", (q: any) => q.eq("role", "admin")).take(25);
+      const now = Date.now();
+      for (const admin of admins) {
+        await insertNotification(ctx, {
+          userId: admin._id,
+          type: "joy_callback_requested",
+          priority: "high",
+          status: "pending",
+          payload: { title: "Patient asked for a call", body, link: "/dashboard/admin/users", data: { actionUrl: "/dashboard/admin/users", patientId: patient._id } },
+          createdAt: now,
+        });
+      }
+      await audit(ctx, data, op, { actorUserId: patient._id, patientUserId: patient._id });
+      return { accepted: true, notified: admins.length };
     }
     if (op === "patient_log_exercise") {
       // The patient replied DONE to an exercise reminder: log today's session, for one exercise
