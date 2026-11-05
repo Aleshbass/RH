@@ -297,7 +297,7 @@ def log_done(session: Session, patient: Patient, item: int | None, pain: int | N
         )
     elif pain is not None:
         text += f" I've noted pain of {pain}/10 for your physio."
-    return text
+    return text + "\n\nHow are you getting on? Type *CHECK IN* to tell your physio about your pain and progress."
 
 
 def set_reminders(session: Session, patient: Patient, *, on: bool, at: str | None = None) -> str:

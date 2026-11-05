@@ -104,7 +104,8 @@ def test_done_after_the_plan_logs_the_session(db_session, patient_identity, fake
 
     handle_turn(db_session, patient_identity.phone_e164, "my exercises", fake_llm)
     result = handle_turn(db_session, patient_identity.phone_e164, "DONE", fake_llm)
-    assert result.reply_text == "Well done! I've logged today's exercises."
+    assert result.reply_text.startswith("Well done! I've logged today's exercises.")
+    assert "Type *CHECK IN*" in result.reply_text
     assert rh.calls[-1] == ("patient_log_exercise", {"patient_id": "rh-pat-1"})
 
 

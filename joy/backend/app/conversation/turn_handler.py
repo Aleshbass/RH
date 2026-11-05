@@ -60,6 +60,7 @@ from app.integrations.typesafe_client import TypeSafeClient, TypeSafeError
 from app.config import get_settings
 from app.booking.paystack_client import initialize_transaction
 from app.booking.step_help import booking_step_help
+from app.conversation.check_in import check_in_turn
 from app.conversation.human_request import human_request_reply, is_human_request
 from app.api.internal.rh_safety_eligibility import EligibilityRequest, issue_eligibility_reference
 from app.models.admin import Admin
@@ -2199,6 +2200,21 @@ def handle_turn(
                 )
                 return TurnResult(reply_text=pin_reply, language=language, phase=state.phase, extracted=state.extracted)
             user_text = pin_text or user_text
+
+    # Pain and progress check-ins for the physio ("check in"; app/conversation/check_in.py).
+    # Before the reminder commands so "stop" ends a check-in rather than the reminders.
+    if identity.persona == Persona.PATIENT:
+        check_in = check_in_turn(session, identity, session.get(Conversation, state.conversation_id), user_text)
+        if check_in is not None:
+            check_in_text, check_in_buttons = check_in
+            save_turn(
+                session, state, user_text, check_in_text, state.extracted, state.phase,
+                language, wa_message_id, stage=state.stage,
+            )
+            return TurnResult(
+                reply_text=check_in_text, language=language, phase=state.phase,
+                extracted=state.extracted, interactive=check_in_buttons,
+            )
 
     # Exercise reminder settings work in any state: STOP / PAUSE / START / "remind me at 7am"
     if identity.persona == Persona.PATIENT and len(user_text or "") <= 60:

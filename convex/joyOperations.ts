@@ -1,4 +1,4 @@
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { internalMutation, internalQuery } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { publicAppUrl } from "./helpers/appUrl";
@@ -16,6 +16,7 @@ import { insertLog, patientProgramView, startOfLagosDay } from "./exerciseProgra
 import { posterUrl } from "./exerciseLibraryCatalog";
 import { assertProgramUnlocked } from "./helpers/patientPlans";
 import { insertNotification } from "./helpers/pushNotify";
+import { recordPatientCheckIn } from "./physioCare";
 
 type Operation =
   | "physio_work_summary" | "physio_update_availability" | "physio_session_note"
@@ -35,7 +36,9 @@ type Operation =
   // Additive (Nov 2026): the physio's exercise programme on WhatsApp, and DONE replies
   | "patient_programme" | "patient_log_exercise"
   // Additive (Nov 2026): the patient asked Joy for a person ("call me", "talk to someone")
-  | "patient_request_callback";
+  | "patient_request_callback"
+  // Additive (Nov 2026): a pain and progress check-in from WhatsApp, for the physio
+  | "patient_check_in";
 
 const activeBooking = (status: unknown) => status === "pending" || status === "confirmed" || status === "scheduled";
 const nameOf = (user: { firstName?: string; lastName?: string } | null) =>
@@ -273,6 +276,29 @@ export const executeMutation = internalMutation({
       }
       await audit(ctx, data, op, { actorUserId: patient._id, patientUserId: patient._id, fields: [...Object.keys(userPatch), ...Object.keys(profilePatch)] });
       return { updated: true };
+    }
+    if (op === "patient_check_in") {
+      // A pain and progress check-in from WhatsApp, with the app's rules (recordPatientCheckIn: high
+      // or rising pain, low mood and notes are flagged, and the physio is alerted).
+      // { patient_id, pain_score, exercises_done, mood?, note? }
+      const patient = await patientForActor(ctx, String(data.patient_id), data.actor);
+      const pain = Number(data.pain_score);
+      if (!Number.isFinite(pain)) throw new Error("pain_score is required");
+      const exercisesDone: "all" | "some" | "none" = data.exercises_done === "all" || data.exercises_done === "some" ? data.exercises_done : "none";
+      const mood = (["great", "good", "okay", "low"] as const).find((m) => m === data.mood);
+      let saved: { checkInId: any; flagged: boolean };
+      try {
+        saved = await recordPatientCheckIn(ctx, patient, {
+          painScore: pain, exercisesDone, mood, note: typeof data.note === "string" ? data.note : undefined,
+        });
+      } catch (error) {
+        // The only expected refusal: another check-in in the last 10 minutes
+        if (error instanceof ConvexError) return { saved: false, reason: "too_soon" };
+        throw error;
+      }
+      const row: any = await ctx.db.get(saved.checkInId);
+      await audit(ctx, data, op, { actorUserId: patient._id, patientUserId: patient._id });
+      return { saved: true, flagged: saved.flagged, has_physio: Boolean(row?.physiotherapistId) };
     }
     if (op === "patient_request_callback") {
       // The patient asked Joy for a person ("call me", "I want to speak to someone"). Every admin
