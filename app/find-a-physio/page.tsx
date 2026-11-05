@@ -11,6 +11,7 @@ import { useMarketplaceStore } from "@/stores/marketplaceStore";
 import { joyWhatsAppUrl } from "@/lib/joyWhatsApp";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { CareBrowsingSignal } from "@/components/marketplace/CareBrowsingSignal";
 
 type ViewMode = "list" | "map";
 
@@ -83,6 +84,8 @@ export default function FindAPhysioPage() {
 
   return (
     <div className="min-h-screen bg-rh-canvas text-rh-ink">
+      {/* A signed-in patient browsing here: the team is told so someone can help them book */}
+      <CareBrowsingSignal looking={debouncedQuery} />
       <section className="mx-auto max-w-7xl px-4 pb-8 pt-28 sm:px-6 md:pt-36 lg:px-8">
         <h1 className="max-w-3xl text-4xl font-semibold tracking-tight md:text-6xl">Find a physiotherapist</h1>
         <p className="mt-4 max-w-xl text-lg text-rh-ink/70">

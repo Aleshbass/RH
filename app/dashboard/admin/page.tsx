@@ -55,7 +55,7 @@ const homeQueries = {
   activity: makeFunctionReference<'query', { limit?: number }, QueryResult<typeof getUserActivityLogs>>('admin:getUserActivityLogs'),
 }
 
-type Badges = { approvals: number; openReports: number; bankTransfers: number; partnerApplications: number; accessApplications: number; agreements: number; refunds: number; inquiries?: number; cap: number }
+type Badges = { approvals: number; openReports: number; bankTransfers: number; partnerApplications: number; accessApplications: number; agreements: number; refunds: number; inquiries?: number; careQueue?: number; cap: number }
 
 function greeting(date: Date) {
   const hour = date.getHours()

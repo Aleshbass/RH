@@ -11,6 +11,8 @@
  * physio their fixed payout once the session is completed (appointments.updateAppointmentStatus).
  */
 
+import { raiseCareSignal } from "../helpers/careSignals";
+import { bookingLine } from "../careQueue";
 import { tagPaidRehabifyRelationship } from "../helpers/rehabifySources";
 import { insertNotification } from "../helpers/pushNotify";
 import { scheduleAcceptReminder } from "../pushAlerts";
@@ -670,6 +672,16 @@ export async function completeMarketplaceBookingCore(ctx: any, bookingId: any, o
 
         if (needsAccept) {
             await askPhysioToRespond(ctx, booking, responseDueAt!);
+            await raiseCareSignal(ctx, {
+                kind: "awaiting_physio",
+                bookingId: booking._id,
+                patientId: booking.patientId,
+                physiotherapistId: booking.physiotherapistId ?? undefined,
+                guestName: booking.guestName ?? undefined,
+                guestPhone: booking.guestPhone ?? undefined,
+                detail: `paid for ${bookingLine(booking)} and is waiting for the physio to accept`,
+                dueAt: responseDueAt,
+            });
             await tellPatientBookingReceived(ctx, booking, responseDueAt!);
             return { success: true, awaitingPhysio: true };
         }

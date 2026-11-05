@@ -189,6 +189,14 @@ crons.interval(
 // Physio payouts (Payout Policy): every Friday at 07:00 WAT prepare the week's run of Available
 // payouts for an admin to review and Pay all (nothing is sent automatically), and remind a physio
 // once when a session note is more than 24 hours late.
+// Patients looking for care: unpaid checkouts, physio nudges, and closing signals that moved on
+crons.interval(
+  "care-queue-sweep",
+  { minutes: 10 },
+  internal.careQueue.sweep,
+  {}
+);
+
 // Monday 08:00 WAT: Rehabify-referred visits at clinics without an online payment, and what
 // patients said they paid providers directly (visitCheckIns.ts). Sent only when there's something.
 crons.weekly(

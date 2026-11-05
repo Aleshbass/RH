@@ -2,7 +2,7 @@
 
 /**
  * Asks a physio who applied before the question existed whether they're a Rehabify physio or an
- * independent physio (one or the other), so our team (and the admin directory) can tell them
+ * independent physio (or both), so our team (and the admin directory) can tell them
  * apart. Until they answer they keep working as before, on the Rehabify network.
  */
 import { useState } from 'react'
@@ -52,10 +52,10 @@ export function PracticeModePrompt({ setup }: { setup: SetupStatus | null | unde
         Are you a Rehabify physio or an independent physio?
       </h2>
       <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
-        Choose one. You can change it later in Settings › How you work.
+        Choose how you work. You can change it later in Settings › How you work.
       </p>
 
-      <div role="radiogroup" aria-label="How you work with Rehabify" className="mt-4 grid gap-3 sm:grid-cols-2">
+      <div role="radiogroup" aria-label="How you work with Rehabify" className="mt-4 grid gap-3 lg:grid-cols-3">
         {PRACTICE_CHOICES.map((choice) => {
           const selected = chosen === choice.id
           return (

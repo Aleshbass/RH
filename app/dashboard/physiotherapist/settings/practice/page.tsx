@@ -41,6 +41,10 @@ const CONFIRM: Record<PracticeChoice, { title: string; body: string }> = {
         title: 'Become an independent physio?',
         body: 'You’ll be taken off Find a Physio and won’t be matched with new Rehabify Care patients. Rehabify patients you already see stay with you, still at Rehabify’s prices and paid through Rehabify.',
     },
+    both: {
+        title: 'Work both ways?',
+        body: 'You’ll be listed on Find a Physio and matched with Rehabify Care patients once your setup is complete, and you keep seeing your own patients at your own prices. Each patient follows their own rules.',
+    },
 };
 
 export default function PracticeModePage() {
@@ -101,7 +105,7 @@ export default function PracticeModePage() {
         <div className="space-y-6">
             <SettingsPageHeader
                 title="How you work"
-                description="Whether you’re a Rehabify physio or an independent physio. Each patient follows their own rules: Rehabify Care patients at Rehabify’s prices, your own at yours."
+                description="Whether you’re a Rehabify physio, an independent physio, or both. Each patient follows their own rules: Rehabify Care patients at Rehabify’s prices, your own at yours."
             />
 
             <SettingsSection>

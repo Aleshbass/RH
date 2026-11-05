@@ -7,6 +7,7 @@
  * Writes from Joy arrive through the signed gateway (joyGateway.ts → upsertJoyIntake,
  * recordJoyJourneyEventFromJoy). Rehabify records its own stages with logJourney().
  */
+import { raiseCareSignal } from "./helpers/careSignals";
 import { v } from "convex/values";
 import { internalMutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -56,7 +57,7 @@ export async function logJourney(
     .withIndex("by_event_key", (q) => q.eq("eventKey", event.eventKey))
     .first();
   if (existing) return existing._id;
-  return await ctx.db.insert("joyJourneyEvents", {
+  const id = await ctx.db.insert("joyJourneyEvents", {
     patientId: event.patientId,
     bookingId: event.bookingId,
     stage: event.stage,
@@ -65,6 +66,17 @@ export async function logJourney(
     note: event.note?.slice(0, 200),
     eventKey: event.eventKey,
   });
+  // Patients looking for a physio on Joy: the team can step in and help match (careQueue.ts)
+  const lookingDetail: Partial<Record<string, string>> = {
+    triage_completed: "finished triage with Joy and is looking for a physio",
+    matches_shown: "was shown physios by Joy and hasn't booked yet",
+    eligibility_blocked: "couldn't be matched with a physio on Joy",
+  };
+  const detail = lookingDetail[event.stage];
+  if (detail) {
+    await raiseCareSignal(ctx, { kind: "joy_matching", patientId: event.patientId, bookingId: event.bookingId, detail });
+  }
+  return id;
 }
 
 /** For actions (meeting links, call joins) that can't write to the database directly. */

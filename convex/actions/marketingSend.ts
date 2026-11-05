@@ -15,7 +15,7 @@
 import { v } from "convex/values";
 import { makeFunctionReference } from "convex/server";
 import { Resend } from "resend";
-import { internalAction } from "../_generated/server";
+import { action, internalAction } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
 import {
   AUDIENCE_LABEL,
@@ -173,6 +173,8 @@ export const processCampaign = internalAction({
               to: [row.email],
               subject: content.subject,
               html: renderMarketingEmail(content, { greetingName: row.name }),
+              // Lets Resend's delivered / opened events find this campaign (emailEvents.ts)
+              tags: [{ name: "campaign_id", value: String(campaign._id) }],
             }))
           )
         );
@@ -270,6 +272,33 @@ export const processCampaign = internalAction({
 });
 
 /** "Send me a test": the email exactly as it will look, to the admin who asked. */
+// Admin-only guard: this query throws for anyone who isn't an admin
+const adminGuardRef = makeFunctionReference<"query", Record<string, never>, unknown>("marketing:adminOverview");
+
+/**
+ * Admin › Emails: switch on Resend's open tracking for the domain campaigns are sent from, so
+ * "opened" events reach emailEvents.ts. Click tracking stays off: it would rewrite every link
+ * (payment and receipt links included) through Resend.
+ */
+export const adminEnableOpenTracking = action({
+  args: {},
+  handler: async (ctx): Promise<{ domain: string }> => {
+    await ctx.runQuery(adminGuardRef, {});
+    const fromEmail = process.env.MARKETING_FROM_EMAIL || process.env.FROM_EMAIL || "";
+    const domainName = fromEmail.split("@")[1]?.toLowerCase();
+    if (!domainName) throw new Error("No sending address is set (MARKETING_FROM_EMAIL or FROM_EMAIL).");
+    const resend = client();
+    const list = await resend.domains.list();
+    if (list.error) throw new Error(`Resend: ${list.error.message}`);
+    const domains = ((list.data as { data?: { id: string; name: string }[] } | null)?.data ?? []) as { id: string; name: string }[];
+    const domain = domains.find((d) => d.name.toLowerCase() === domainName);
+    if (!domain) throw new Error(`${domainName} isn't a domain in this Resend account.`);
+    const updated = await resend.domains.update({ id: domain.id, openTracking: true });
+    if (updated.error) throw new Error(`Resend: ${updated.error.message}`);
+    return { domain: domain.name };
+  },
+});
+
 export const sendTest = internalAction({
   args: {
     to: v.string(),

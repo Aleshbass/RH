@@ -373,6 +373,30 @@ export default defineSchema({
     .index("by_appointment", ["appointmentId"])
     .index("by_answered", ["answeredAt"]),
 
+  // Patients looking for care (careQueue.ts): paid and waiting for the physio, unpaid checkouts,
+  // Joy triage/matching, and signed-in patients browsing Find a Physio. The team is alerted and helps.
+  careSignals: defineTable({
+    kind: v.union(v.literal("awaiting_physio"), v.literal("unpaid_checkout"), v.literal("joy_matching"), v.literal("browsing")),
+    status: v.union(v.literal("open"), v.literal("handled")),
+    patientId: v.optional(v.id("users")),
+    bookingId: v.optional(v.id("marketplaceBookings")),
+    physiotherapistId: v.optional(v.id("users")),
+    guestName: v.optional(v.string()),
+    guestPhone: v.optional(v.string()),
+    detail: v.string(),
+    dueAt: v.optional(v.number()),
+    createdAt: v.number(),
+    lastSeenAt: v.number(),
+    handledAt: v.optional(v.number()),
+    handledBy: v.optional(v.id("users")),
+    handledNote: v.optional(v.string()),
+    nudgedAt: v.optional(v.number()),
+    nudgeCount: v.optional(v.number()),
+  })
+    .index("by_status", ["status", "createdAt"])
+    .index("by_booking", ["bookingId"])
+    .index("by_patient_kind", ["patientId", "kind"]),
+
   receipts: defineTable({
     // "test": paid with a Paystack test key, so no real money moved. Left out of every money figure (admin/testPayments.ts)
     paystackMode: v.optional(v.union(v.literal("test"), v.literal("live"))),
@@ -3536,6 +3560,8 @@ export default defineSchema({
     holdExpiresAt: v.optional(v.number()),
     providerResponse: v.optional(v.union(v.literal("pending"), v.literal("accepted"), v.literal("rejected"))),
     providerResponseDueAt: v.optional(v.number()),
+    // Reminders sent to the physio to answer (careQueue.sweep / an admin's Nudge)
+    providerNudgeCount: v.optional(v.number()),
     replacementStatus: v.optional(v.union(v.literal("not_needed"), v.literal("awaiting_patient_slot"), v.literal("admin_follow_up"))),
     // Website requests: physios who declined or didn't answer (never offered again), and why
     previousPhysioIds: v.optional(v.array(v.id("users"))),
@@ -4359,7 +4385,25 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
     sentAt: v.optional(v.number()),
+    // People counted once each, from Resend's webhook (emailEvents.ts). Opens are an estimate.
+    deliveredCount: v.optional(v.number()),
+    openedCount: v.optional(v.number()),
+    clickedCount: v.optional(v.number()),
+    bouncedCount: v.optional(v.number()),
+    complainedCount: v.optional(v.number()),
   }).index("by_created", ["createdAt"]),
+
+  // Delivered / opened / clicked / bounced / spam events for campaign emails (emailEvents.ts)
+  marketingEvents: defineTable({
+    campaignId: v.id("marketingCampaigns"),
+    email: v.string(),
+    type: v.union(v.literal("delivered"), v.literal("opened"), v.literal("clicked"), v.literal("bounced"), v.literal("complained")),
+    at: v.number(),
+    eventId: v.string(),
+  })
+    .index("by_event_id", ["eventId"])
+    .index("by_campaign_email_type", ["campaignId", "email", "type"])
+    .index("by_campaign_type", ["campaignId", "type", "at"]),
 
   // One-to-one sends (audience "individual"), drained in batches under the daily cap
   marketingQueue: defineTable({

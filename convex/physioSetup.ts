@@ -374,8 +374,8 @@ export const getMySetupStatus = query({
   },
 });
 
-/** Rehabify physio or independent physio: one or the other ("both" was offered before, and stays valid on old profiles). */
-const practiceChoice = v.union(v.literal("network"), v.literal("independent"));
+/** Rehabify physio, independent physio, or both (owner, 5 Nov 2026: "both" is offered again). */
+const practiceChoice = v.union(v.literal("network"), v.literal("independent"), v.literal("both"));
 
 /**
  * Rehabify physio or independent physio. Patients they already see stay with them. Switching to

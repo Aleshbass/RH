@@ -52,10 +52,11 @@ const setBillingSourceRef = makeFunctionReference<
   { rehabify: boolean }
 >('admin/patientBilling:setPatientBillingSource')
 
-const PRACTICE_MODES: PracticeChoice[] = ['network', 'independent']
+const PRACTICE_MODES: PracticeChoice[] = ['network', 'independent', 'both']
 const MAKE_THEM: Record<PracticeChoice, string> = {
   network: 'a Rehabify physio',
   independent: 'an independent physio',
+  both: 'a Rehabify and independent physio',
 }
 
 const sectionTitle = 'text-sm font-semibold text-rh-ink dark:text-white'

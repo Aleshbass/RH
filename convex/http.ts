@@ -7,8 +7,12 @@ import {
 } from "./joyGateway";
 import { readResolvePhysiotherapist, readFindMatches, readAvailability, readBooking, operationalQuery, operationalMutation, upsertIntake, recordJourneyEvent, issueDashboardLink, placeForPin } from "./joyGateway";
 import { rpc as partnerGatewayRpc } from "./partnerGateway";
+import { resendWebhook } from "./emailEvents";
 
 const http = httpRouter();
+
+// Resend: campaign email delivered / opened / clicked / bounced / spam (Svix-signed)
+http.route({ path: "/resend/webhook", method: "POST", handler: resendWebhook });
 
 // Partner REST API → Convex bridge (HMAC-signed, fixed operation allowlist).
 http.route({ path: "/partner-gateway/rpc", method: "POST", handler: partnerGatewayRpc });

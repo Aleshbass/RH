@@ -21,6 +21,12 @@ export type MarketingCampaign = MarketingContent & {
   createdByName: string;
   createdAt: number;
   sentAt?: number;
+  // People counted once each from Resend's webhook (convex/emailEvents.ts); opens are an estimate
+  deliveredCount?: number;
+  openedCount?: number;
+  clickedCount?: number;
+  bouncedCount?: number;
+  complainedCount?: number;
 };
 
 export type MarketingContact = { _id: Id<"marketingContacts">; email: string; name?: string; tags: string[]; createdAt: number };
@@ -38,6 +44,7 @@ export const marketingApi = {
     { added: number; skipped: number }
   >("marketing:adminAddContacts"),
   removeContact: makeFunctionReference<"mutation", { id: Id<"marketingContacts"> }, { success: boolean }>("marketing:adminRemoveContact"),
+  enableOpenTracking: makeFunctionReference<"action", Record<string, never>, { domain: string }>("actions/marketingSend:adminEnableOpenTracking"),
   sendTest: makeFunctionReference<"mutation", MarketingContent, { to: string }>("marketing:adminSendTest"),
   createCampaign: makeFunctionReference<
     "mutation",

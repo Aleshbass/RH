@@ -153,7 +153,7 @@ function Field({
     );
 }
 
-/** Step 1: Rehabify physio or independent physio. One or the other. */
+/** Step 1: Rehabify physio, independent physio, or both. */
 function PracticeModeChoice({
     value,
     onChange,
@@ -165,7 +165,7 @@ function PracticeModeChoice({
 }) {
     return (
         <div>
-            <p className="mb-3 text-sm text-neutral-600">Choose one.</p>
+            <p className="mb-3 text-sm text-neutral-600">Choose how you’ll work. You can change it later.</p>
             <div role="radiogroup" aria-label="How you’ll work with Rehabify" className="grid gap-3">
                 {PRACTICE_CHOICES.map((mode) => {
                     const selected = value === mode.id;

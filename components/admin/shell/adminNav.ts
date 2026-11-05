@@ -48,7 +48,7 @@ import {
 export const ADMIN_HOME = '/dashboard/admin'
 
 /** Live counts shown next to nav items. Resolved in AdminSidebar. */
-export type AdminBadgeKey = 'approvals' | 'partnerApplications' | 'openReports' | 'bankTransfers' | 'accessApplications' | 'agreements' | 'refunds' | 'inquiries'
+export type AdminBadgeKey = 'approvals' | 'partnerApplications' | 'openReports' | 'bankTransfers' | 'accessApplications' | 'agreements' | 'refunds' | 'inquiries' | 'careQueue'
 
 export type AdminNavItem = {
   title: string
@@ -129,6 +129,7 @@ export const ADMIN_NAV: AdminNavSection[] = [
     label: 'Marketplace',
     icon: Store,
     items: [
+      { title: 'Patients looking for care', href: a('/care-queue'), icon: HeartPulse, badgeKey: 'careQueue', keywords: ['waiting', 'unpaid', 'joy', 'nudge', 'match', 'help'] },
       { title: 'Bookings', href: a('/marketplace-bookings'), icon: CalendarCheck, keywords: ['appointments', 'joy', 'reassign'] },
       { title: 'Pricing & payouts', href: a('/service-tariffs'), icon: Tags, keywords: ['tariffs', 'prices', 'services', 'network terms', 'margin'] },
       { title: 'Travel zones', href: a('/travel-zones'), icon: MapPinned, keywords: ['home visits', 'areas', 'surcharge', 'travel charge'] },

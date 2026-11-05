@@ -3,6 +3,7 @@
  * Everything here is admin-only and reads through indexes with hard caps, so the
  * sidebar stays cheap no matter how big the tables grow.
  */
+import { openCareSignalCount } from "./careQueue";
 import { v } from "convex/values";
 import { query } from "./_generated/server";
 import { ensureUserRole } from "./auth";
@@ -80,6 +81,7 @@ export const getNavBadges = query({
       agreements: countersign.length,
       refunds: refunds.length,
       inquiries: newInquiries.length,
+      careQueue: await openCareSignalCount(ctx, BADGE_CAP),
       cap: BADGE_CAP,
     };
   },

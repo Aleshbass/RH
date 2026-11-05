@@ -2,7 +2,7 @@
 
 import { Suspense, useMemo, useState } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { useMutation, useQuery } from 'convex/react'
+import { useAction, useMutation, useQuery } from 'convex/react'
 import { format } from 'date-fns'
 import { toast } from 'sonner'
 import { Loader2, Mail, Search, Users } from '@/components/icons'
@@ -20,6 +20,7 @@ import {
   PageHeader,
   Panel,
   primaryButtonClass,
+  softButtonClass,
   StatusBadge,
   tabsListClass,
 } from '@/components/admin/ui'
@@ -66,10 +67,64 @@ function parseContacts(text: string) {
     })
 }
 
+/** "Delivered 120 · Opened 54 (45%) · Bounced 2", once Resend has reported anything. */
+function trackingLine(c: MarketingCampaign) {
+  const delivered = c.deliveredCount ?? 0
+  const opened = c.openedCount ?? 0
+  if (!delivered && !opened && !c.bouncedCount && !c.clickedCount) return null
+  const base = delivered || c.sentCount
+  const parts = [
+    delivered ? `Delivered ${delivered}` : null,
+    `Opened ${opened}${base ? ` (${Math.round((opened / base) * 100)}%)` : ''}`,
+    c.clickedCount ? `Clicked ${c.clickedCount}` : null,
+    c.bouncedCount ? `Bounced ${c.bouncedCount}` : null,
+    c.complainedCount ? `Marked as spam ${c.complainedCount}` : null,
+  ]
+  return parts.filter(Boolean).join(' · ')
+}
+
+/** Switch on open tracking in Resend, and where its webhook should point. */
+function TrackingSetup() {
+  const enable = useAction(marketingApi.enableOpenTracking)
+  const [busy, setBusy] = useState(false)
+  const site = (process.env.NEXT_PUBLIC_CONVEX_URL ?? '').replace('.convex.cloud', '.convex.site')
+  const webhookUrl = site ? `${site}/resend/webhook` : '/resend/webhook'
+  return (
+    <div className="flex flex-col gap-3 border-b border-black/[0.05] px-5 py-4 dark:border-white/[0.06] sm:flex-row sm:items-center sm:justify-between">
+      <div className="min-w-0 text-xs text-neutral-600 dark:text-neutral-300">
+        <p className="text-sm font-semibold text-rh-ink dark:text-white">Opens and deliveries</p>
+        <p className="mt-0.5">
+          Counted per person from Resend. Opens are an estimate (some apps block images, Apple Mail can over-count). Resend sends events to{' '}
+          <span className="break-all font-mono">{webhookUrl}</span>.
+        </p>
+      </div>
+      <button
+        type="button"
+        disabled={busy}
+        onClick={async () => {
+          setBusy(true)
+          try {
+            const res = await enable({})
+            toast.success(`Open tracking is on for ${res.domain}`)
+          } catch (error) {
+            toast.error(error instanceof Error ? error.message.replace(/^.*Uncaught Error:\s*/, '') : 'Couldn’t switch it on.')
+          } finally {
+            setBusy(false)
+          }
+        }}
+        className={cn(softButtonClass, 'h-9 shrink-0')}
+      >
+        Turn on open tracking
+      </button>
+    </div>
+  )
+}
+
 function SentList() {
   const campaigns = useQuery(marketingApi.campaigns, {})
   return (
     <Panel>
+      <TrackingSetup />
       {campaigns === undefined ? (
         <div className="space-y-2 p-5">
           {[0, 1, 2].map((i) => (
@@ -88,6 +143,7 @@ function SentList() {
                   {AUDIENCE_LABEL[c.audience]} · {format(c.createdAt, "d MMM yyyy, HH:mm")} · {c.createdByName}
                 </p>
                 <p className="mt-1 text-xs text-neutral-600 dark:text-neutral-300">{campaignProgress(c)}</p>
+                {trackingLine(c) && <p className="mt-0.5 text-xs font-medium text-rh-ink dark:text-white">{trackingLine(c)}</p>}
                 {c.lastError && (c.status === 'failed' || c.status === 'partial') && (
                   <p className="mt-1 text-xs text-rose-600">{c.lastError}</p>
                 )}
