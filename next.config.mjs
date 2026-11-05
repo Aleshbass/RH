@@ -17,6 +17,11 @@ const nextConfig = {
 
   // Bundle optimization
   experimental: {
+    // Compile in a separate worker that exits before the type check, and trim webpack's memory.
+    // With the custom webpack config below Next keeps the compiler in-process by default, and
+    // compile + type check together ran Vercel's 8 GB build machine out of memory (SIGKILL).
+    webpackBuildWorker: true,
+    webpackMemoryOptimizations: true,
     optimizePackageImports: [
       '@fortawesome/free-solid-svg-icons',
       '@fortawesome/free-brands-svg-icons',
