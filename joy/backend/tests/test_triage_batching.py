@@ -179,9 +179,11 @@ def test_lower_back_safety_prompt_is_grouped_and_backend_owned():
     extracted = ExtractedTriage(body_location="lower back", condition_area=ConditionArea.MSK)
     prompt = _safety_prompt(extracted)
     screen = _safety_screen(extracted)
-    assert "You can reply ‘No to all’" in prompt
-    assert "1. New or worsening weakness" in prompt
-    assert "8. Something else" in prompt
+    # One short question listing only the warning-sign groups still outstanding for this problem
+    assert "One quick safety check" in prompt
+    assert "Reply No if none" in prompt
+    assert "bladder or bowel" in prompt  # lower back: cauda equina signs are asked
+    assert "1." not in prompt  # no long numbered checklist
     assert "LB-" not in prompt  # patient copy contains approved wording, not internal IDs
     assert len(screen) == 4
     covered = [question.id for _, questions in screen for question in questions]

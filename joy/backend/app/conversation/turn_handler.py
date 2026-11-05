@@ -1446,18 +1446,30 @@ def _narrative_yes_answers(
     return answers
 
 
+# One short line per warning-sign group. Only the groups the protocol still needs for this
+# problem are shown (a knee isn't asked about bladder control), as one question.
+_SAFETY_GROUP_COPY = {
+    "new_nerve_symptoms": "new weakness, numbness or tingling in your arms or legs",
+    "bladder_bowel_or_saddle": "new bladder or bowel problems, or numbness around your groin or bottom",
+    "major_injury": "a serious accident or fall that caused this",
+    "general_warning_signs": "fever, feeling very unwell, or symptoms getting much worse quickly",
+}
+
+
 def _safety_prompt(extracted: ExtractedTriage, *, include_thanks: bool = True) -> str:
-    rendered = "\n".join(
-        f"{index}. {copy}"
-        for index, (copy, _) in enumerate(_SAFETY_SCREEN_ITEMS, start=1)
-    )
+    groups = [name for name, _ in _safety_screen(extracted)] or list(_SAFETY_GROUP_COPY)
+    lines = "\n".join(f"• {_SAFETY_GROUP_COPY[group]}" for group in groups)
     prefix = "Thanks. " if include_thanks else ""
     return (
-        f"{prefix}Before I help you book, I just need to check a few important safety questions.\n\n"
-        "Do you currently have any of the following?\n\n"
-        f"{rendered}"
-        "\n\nYou can reply ‘No to all’ or tell me the number(s) that apply."
+        f"{prefix}One quick safety check before I book. Do you have any of these?\n\n"
+        f"{lines}\n\n"
+        "Reply No if none, or tell me which."
     )
+
+
+def _looks_like_numbered_reply(user_text: str) -> bool:
+    """Only digits (and separators) are read as item numbers, e.g. an old numbered screen's "1 and 7"."""
+    return bool(re.fullmatch(r"[\d\s,;/&.+-]+|(?:\d+\s*(?:,|and|&)\s*)+\d+", (user_text or "").strip().casefold()))
 
 
 def _apply_numbered_safety_answers(
@@ -1669,6 +1681,25 @@ def _reply_after_extract(
     # Gemini extracts facts; it never chooses the route.
     context = dict(conversation.booking_context or {})
     flow_state = context.get(_TRIAGE_FLOW_KEY)
+
+    def _after_safety_screen() -> tuple[str, PatientPhase]:
+        safety = evaluate(extracted)
+        if safety.action == "specialist_review" or (safety.risk_level or "").upper() == "AMBER":
+            return _amber_specialist_reply(
+                session, identity, state, user_text, extracted, safety, incoming_phase, "en", wa_message_id
+            ), PatientPhase.POST_TRIAGE
+        return _offer_initial_consultation(session, state, extracted), PatientPhase.POST_TRIAGE
+
+    def _safety_step(acknowledgement: str) -> tuple[str, PatientPhase]:
+        """Ask the short safety check, or go straight on when nothing is left to check."""
+        context[_TRIAGE_FLOW_KEY] = _AWAITING_SAFETY_SCREEN
+        conversation.booking_context = context
+        state.booking_context = context
+        session.flush()
+        if schedule_questions(extracted):
+            return f"{acknowledgement}\n\n{_safety_prompt(extracted, include_thanks=False)}", PatientPhase.MID_TRIAGE
+        return _after_safety_screen()
+
     if flow_state is None:
         summary = _triage_summary_prompt(extracted)
         _store_summary(session, state, summary)
@@ -1710,34 +1741,16 @@ def _reply_after_extract(
             session.flush()
             return "Please tell me anything else you think is important.", PatientPhase.POST_TRIAGE
         if not (_is_simple_no(user_text) or _is_no_further_details(user_text)):
-            context[_TRIAGE_FLOW_KEY] = _AWAITING_SAFETY_SCREEN
-            conversation.booking_context = context
-            state.booking_context = context
-            session.flush()
-            return f"{_additional_details_acknowledgement()}\n\n{_safety_prompt(extracted, include_thanks=False)}", PatientPhase.MID_TRIAGE
-        acknowledgement = "Thanks — I’ve got everything you wanted to share."
-        context[_TRIAGE_FLOW_KEY] = _AWAITING_SAFETY_SCREEN
-        conversation.booking_context = context
-        state.booking_context = context
-        session.flush()
-        return f"{acknowledgement}\n\n{_safety_prompt(extracted, include_thanks=False)}", PatientPhase.MID_TRIAGE
+            return _safety_step(_additional_details_acknowledgement())
+        return _safety_step("Thanks — I’ve got everything you wanted to share.")
 
     if flow_state == _COLLECTING_ADDITIONAL_DETAILS:
-        context[_TRIAGE_FLOW_KEY] = _AWAITING_SAFETY_SCREEN
-        conversation.booking_context = context
-        state.booking_context = context
-        session.flush()
-        return f"{_additional_details_acknowledgement()}\n\n{_safety_prompt(extracted, include_thanks=False)}", PatientPhase.MID_TRIAGE
+        return _safety_step(_additional_details_acknowledgement())
 
     if flow_state == _AWAITING_SAFETY_SCREEN:
         if schedule_questions(extracted):
             return _safety_prompt(extracted), PatientPhase.MID_TRIAGE
-        safety = evaluate(extracted)
-        if safety.action == "specialist_review" or (safety.risk_level or "").upper() == "AMBER":
-            return _amber_specialist_reply(
-                session, identity, state, user_text, extracted, safety, incoming_phase, "en", wa_message_id
-            ), PatientPhase.POST_TRIAGE
-        return _offer_initial_consultation(session, state, extracted), PatientPhase.POST_TRIAGE
+        return _after_safety_screen()
 
     # Existing in-flight legacy conversations still complete safely. New
     # conversations never enter this branch because V1 sets the state above.
@@ -2652,7 +2665,7 @@ def handle_turn(
             answers,
             safety_screen,
             user_text,
-            allow_number_only=safety_screen_active,
+            allow_number_only=safety_screen_active and _looks_like_numbered_reply(user_text),
         )
         if safety_screen_active and answers == before_numbered:
             compact = " ".join((user_text or "").casefold().split()).strip(".!?,;: ")
@@ -2662,12 +2675,17 @@ def handle_turn(
                         answers[question.id] = NO
             else:
                 normalized = normalize_answer(user_text)
-                if normalized in {YES, NO}:
-                    # A bare answer is ambiguous after a grouped screen, so apply
-                    # it only to the first group rather than silently clearing all
-                    # safety checks.
+                if normalized == NO:
+                    # The screen is one question ("any of these?"), so a plain No
+                    # answers every group it showed.
+                    for _, questions in safety_screen:
+                        for question in questions:
+                            answers[question.id] = NO
+                elif normalized == YES:
+                    # A bare Yes doesn't say which sign: treat it conservatively as
+                    # the first (most urgent) group, which routes to safety advice.
                     for question in safety_screen[0][1]:
-                        answers[question.id] = normalized
+                        answers[question.id] = YES
         if answers != dict(extracted.safety_answers):
             order = list(extracted.safety_question_order)
             for _, questions in safety_screen:
