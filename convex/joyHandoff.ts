@@ -11,6 +11,7 @@ import { v } from "convex/values";
 import { internalMutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { currentUser, findRelationship, physioOrNull } from "./helpers/careAccess";
+import { tagPaidRehabifyRelationship } from "./helpers/rehabifySources";
 
 type Ctx = QueryCtx | MutationCtx;
 export type JourneyStage = Doc<"joyJourneyEvents">["stage"];
@@ -122,6 +123,7 @@ export async function ensureJoyCareLink(
   if (existing) {
     relationshipId = existing._id;
     if (existing.status !== "active") await ctx.db.patch(existing._id, { status: "active", endDate: undefined });
+    await tagPaidRehabifyRelationship(ctx, existing, "joy_whatsapp");
   } else {
     const primary = await ctx.db
       .query("patientPhysiotherapistRelationships")

@@ -9,6 +9,7 @@
  * carries `capped: true` when the cap was hit so the UI can say the numbers are partial.
  */
 
+import { isTestMoney } from "../helpers/paystackMode";
 import { v } from "convex/values";
 import { query, type QueryCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
@@ -55,8 +56,9 @@ async function bookingsInWindow(ctx: QueryCtx, window: { start: number; end: num
     .order("desc")
     .take(BOOKING_SCAN_LIMIT + 1);
   const capped = rows.length > BOOKING_SCAN_LIMIT;
+  // Test-key payments are left out: no real money moved (admin/testPayments.ts)
   const bookings = (capped ? rows.slice(0, BOOKING_SCAN_LIMIT) : rows).filter(
-    (b) => b.createdAt >= window.start && b.createdAt < window.end
+    (b) => !isTestMoney(b) && b.createdAt >= window.start && b.createdAt < window.end
   );
   return { bookings, capped };
 }
@@ -258,7 +260,7 @@ export const getPhysiotherapistEarningsDetail = query({
       .take(DETAIL_BOOKING_LIMIT + 1);
     const capped = recent.length > DETAIL_BOOKING_LIMIT;
     const bookings = (capped ? recent.slice(0, DETAIL_BOOKING_LIMIT) : recent).filter(
-      (b) => b.createdAt >= window.start && b.createdAt < window.end
+      (b) => !isTestMoney(b) && b.createdAt >= window.start && b.createdAt < window.end
     );
     const completed = bookings.filter((b) => b.paymentStatus === "completed");
 

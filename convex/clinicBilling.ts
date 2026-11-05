@@ -28,6 +28,7 @@ import { ensureUserRole, getAuthenticatedUser } from "./auth";
 import { appLink, publicAppUrl } from "./helpers/appUrl";
 import { activePaymentLink, closeInvoicePaymentLinks, PAYMENT_LINK_TTL_MS } from "./helpers/paymentLinks";
 import { recordInvoicePartnerCommission } from "./helpers/partnerLedger";
+import { alertAdminsOfPayment } from "./helpers/adminPaymentAlerts";
 import { currentPaystackMode, usableSubaccount } from "./helpers/paystackMode";
 import { verifyPaystackSignature } from "./helpers/paystackSignature";
 import { issueReceipt } from "./helpers/receipts";
@@ -525,6 +526,10 @@ export const markInvoicePaid = mutation({
     if (invoice.status === "paid") {
       return { success: true };
     }
+    // A patient Rehabify referred pays online, so Rehabify's share is collected with the payment
+    if (invoice.patientSource === "rehabify_referral") {
+      throw new ConvexError("Rehabify referred this patient, so they pay online with the payment link. Send them the link instead.");
+    }
     await ctx.db.patch(args.invoiceId, {
       status: "paid",
       paymentMethod: args.method,
@@ -540,6 +545,14 @@ export const markInvoicePaid = mutation({
       paidKobo: invoice.subtotalAmount > 0 ? invoice.subtotalAmount : invoice.totalAmount,
       paymentReference: `manual:${args.invoiceId}`,
       verified: false,
+    });
+    // The team sees money taken outside Rehabify
+    await alertAdminsOfPayment(ctx, {
+      amountKobo: Math.max(0, invoice.totalAmount - (invoice.paidAmount ?? 0)),
+      description: `invoice ${invoice.invoiceNumber ?? ""}`.trim(),
+      relationship: "clinic",
+      payerUserId: invoice.patientId,
+      recordedOutside: { by: clinic.name ?? "A clinic", method: args.method },
     });
     return { success: true };
   },

@@ -43,6 +43,8 @@ const LAGOS_OFFSET = 60 * 60 * 1000; // West Africa Time, UTC+1
 const DEFAULT_FOLLOW_UP_DAYS = 14;
 const UPCOMING_STATUSES = new Set(["scheduled", "confirmed"]);
 const MAX_FILE_BYTES = 15 * 1024 * 1024;
+// Sources that decide who bills the patient (Rehabify Care, or an admin referral with Rehabify's split)
+const LOCKED_RELATIONSHIP_SOURCES = new Set(["marketplace", "joy_whatsapp", "booking_link", "rehabify_referral"]);
 const HIGH_PAIN = 7;
 
 const sourceValidator = v.union(
@@ -1068,10 +1070,13 @@ export const updateCareEpisode = mutation({
     }
     await ctx.db.patch(episode._id, patch);
 
-    // Keep the relationship's source in step, for lists and reports
+    // Keep the relationship's source in step, for lists and reports. Where Rehabify sent the patient
+    // (website, Joy, booking link, an admin referral) is billing evidence and never changes here:
+    // relabelling it would let the patient be billed outside Rehabify (rehabifyFollowUps.isRehabifyCare).
     if (args.source !== undefined || args.referredBy !== undefined) {
+      const locked = LOCKED_RELATIONSHIP_SOURCES.has(relationship.source ?? "");
       const relSource =
-        args.source && args.source !== "clinic" && args.source !== "other" ? args.source : relationship.source;
+        !locked && args.source && args.source !== "clinic" && args.source !== "other" ? args.source : relationship.source;
       await ctx.db.patch(relationship._id, {
         source: relSource,
         referredBy: patch.referredBy ?? relationship.referredBy,

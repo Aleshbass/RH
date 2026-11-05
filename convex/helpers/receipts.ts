@@ -8,6 +8,7 @@ import type { MutationCtx } from "../_generated/server";
 import type { Id } from "../_generated/dataModel";
 import { appLink } from "./appUrl";
 import { randomToken } from "./exerciseCrypto";
+import { alertAdminsOfPayment } from "./adminPaymentAlerts";
 
 export type ReceiptRelationship = "rehabify_care" | "independent" | "clinic";
 
@@ -83,6 +84,18 @@ export async function issueReceipt(ctx: MutationCtx, input: ReceiptInput): Promi
     accessToken,
     issuedAt: Date.now(),
   });
+
+  // The team hears about every payment once (bell, phone push, email)
+  if (input.kind === "payment") {
+    await alertAdminsOfPayment(ctx, {
+      amountKobo: totalKobo,
+      description: input.description,
+      relationship: input.relationship,
+      payerUserId: input.payerUserId,
+      reference: input.reference,
+      receiptNumber: number,
+    });
+  }
 
   const to = input.email?.trim();
   if (to && input.notify !== false) {

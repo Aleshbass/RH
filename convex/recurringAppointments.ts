@@ -4,6 +4,7 @@ import { Doc, Id } from './_generated/dataModel'
 import { getAuthenticatedUser } from './auth'
 import { assertPatientInClinic, assertStaffInClinic, getClinicStaffUserIds } from './clinicTools'
 import { zonedDateTimeToUtc } from './helpers/lagosTime'
+import { isRehabifyCare } from './rehabifyFollowUps'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Access. A series and its appointments are visible to their patient and
@@ -61,6 +62,11 @@ async function getSeriesAccess(ctx: QueryCtx, user: Doc<'users'>, record: Series
  */
 async function assertCanCreateSeries(ctx: QueryCtx, user: Doc<'users'>, args: SeriesParties): Promise<void> {
   if (user.role === 'admin') return
+
+  // A Rehabify Care patient's sessions are booked one at a time through Rehabify and paid to confirm
+  if (await isRehabifyCare(ctx, args.patientId, args.physiotherapistId)) {
+    throw new ConvexError("This is a Rehabify patient, so each session is booked through Rehabify and paid to confirm. Schedule them one at a time.")
+  }
 
   if (args.clinicId) {
     const clinic = await ctx.db.get(args.clinicId)

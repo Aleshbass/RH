@@ -1762,7 +1762,6 @@ export const getMyPayouts = query({
       .query("physiotherapistProfiles")
       .withIndex("by_user_id", (q) => q.eq("userId", user._id))
       .first();
-    if (isIndependentPractice(profile)) return null;
     const now = Date.now();
 
     const rows = (
@@ -1771,7 +1770,9 @@ export const getMyPayouts = query({
         .withIndex("by_user_id", (q) => q.eq("userId", user._id))
         .order("desc")
         .take(300)
-    ).filter((p) => p.type === "physiotherapist_earning");
+    ).filter((p) => p.type === "physiotherapist_earning" && p.paystackMode !== "test");
+    // An independent physio still sees what they earn from Rehabify patients they kept
+    if (isIndependentPractice(profile) && rows.length === 0) return null;
     const draft = await draftRun(ctx);
     // Payouts being sent or failed in a Friday run show on that run's statement instead
     const open = rows.filter((p) => p.status === "pending" || !p.runTransferId).filter((p) => p.status !== "completed");

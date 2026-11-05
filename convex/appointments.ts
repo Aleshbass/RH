@@ -541,6 +541,11 @@ export const updateAppointmentStatus = mutation({
     if (args.status === "confirmed" && (await needsInvoiceOnAccept(ctx, appointment))) {
       throw new ConvexError("This is a paid Rehabify visit. Use Accept & send invoice so the patient can pay to confirm it.");
     }
+    // Any other unpaid Rehabify Care visit can't be confirmed or closed: the patient pays Rehabify first
+    // (otherwise it could be held and paid for outside Rehabify)
+    if (args.status !== "cancelled_by_therapist" && (await mustPayToConfirm(ctx, appointment))) {
+      throw new ConvexError("This Rehabify patient hasn't paid for this visit. Schedule it as a Rehabify session so they pay to confirm it, or cancel it.");
+    }
     // Completing (or marking a no-show) only once the visit has started: completion releases the payout
     if ((args.status === "completed" || args.status === "no_show") && appointment.startTime > Date.now()) {
       throw new ConvexError("This visit hasn't started yet, so it can't be marked as done.");
@@ -1253,8 +1258,14 @@ export const updateAppointmentFields = mutation({
     if (appointment.physiotherapistId !== user._id) {
       throw new Error("Access denied");
     }
+    // Only labels here. Times move through rescheduleAppointment / proposeNewTime, which check clashes,
+    // tell the patient and keep a paid visit from being backdated (e.g. to claim a no-show payout).
+    const { startTime, endTime, ...labels } = updates;
+    if ((startTime !== undefined && startTime !== appointment.startTime) || (endTime !== undefined && endTime !== appointment.endTime)) {
+      throw new ConvexError("Use Suggest another time to change when a visit happens.");
+    }
 
-    await ctx.db.patch(appointmentId, updates as any);
+    await ctx.db.patch(appointmentId, labels);
     return { success: true };
   },
 });

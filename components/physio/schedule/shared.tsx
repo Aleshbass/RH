@@ -107,11 +107,17 @@ export function visitStatus(apt: PhysioAppointment, now = Date.now()): { label: 
   if (apt.status === 'cancelled_by_therapist') {
     return { label: 'Cancelled by you', tone: 'rose', explain: 'You cancelled or declined this visit. The patient was told.' }
   }
-  if (apt.endTime < now) {
-    return { label: 'Not closed', tone: 'ink', explain: 'This session’s time has passed. Mark it done or a no-show so your records and payments stay right.' }
-  }
   if (hasPendingProposal(like, now)) {
-    return { label: 'New time sent', tone: 'blue', explain: 'You suggested another time. The patient can accept it or keep the original.' }
+    return apt.endTime < now
+      ? { label: 'Rebook sent', tone: 'blue', explain: 'You offered a new time for this missed session. It moves there once the patient accepts, with no new payment.' }
+      : { label: 'New time sent', tone: 'blue', explain: 'You suggested another time. The patient can accept it or keep the original.' }
+  }
+  if (apt.endTime < now) {
+    return {
+      label: 'Not closed',
+      tone: 'ink',
+      explain: 'This session’s time has passed. Mark it done or a no-show, or rebook it for free if it didn’t happen.',
+    }
   }
   const waitingOn = awaitingConfirmationFrom(like)
   if (waitingOn === 'provider' && apt.needsInvoice) {

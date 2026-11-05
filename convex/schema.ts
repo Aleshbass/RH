@@ -353,6 +353,8 @@ export default defineSchema({
   // A receipt for every payment and every refund (Payment Policy 7), shown in the account and
   // emailed. Written by helpers/receipts.ts only; never edited after it's issued.
   receipts: defineTable({
+    // "test": paid with a Paystack test key, so no real money moved. Left out of every money figure (admin/testPayments.ts)
+    paystackMode: v.optional(v.union(v.literal("test"), v.literal("live"))),
     number: v.string(), // "RH-RCT-100001"
     kind: v.union(v.literal("payment"), v.literal("refund")),
     payerUserId: v.optional(v.id("users")),
@@ -1838,6 +1840,8 @@ export default defineSchema({
 
   // Invoices for billing
   invoices: defineTable({
+    // "test": paid with a Paystack test key, so no real money moved. Left out of every money figure (admin/testPayments.ts)
+    paystackMode: v.optional(v.union(v.literal("test"), v.literal("live"))),
     patientId: v.id("users"),
     physiotherapistId: v.optional(v.id("users")), // The physiotherapist who created the invoice
     clinicId: v.optional(v.id("clinics")), // Optional for independent physiotherapists
@@ -2378,6 +2382,8 @@ export default defineSchema({
 
   // Payouts table for tracking earnings payouts to physiotherapists/clinics
   payouts: defineTable({
+    // "test": paid with a Paystack test key, so no real money moved. Left out of every money figure (admin/testPayments.ts)
+    paystackMode: v.optional(v.union(v.literal("test"), v.literal("live"))),
     paymentId: v.optional(v.id("payments")), // Set when the invoice's payment record is known
 
     invoiceId: v.id("invoices"),
@@ -3408,6 +3414,8 @@ export default defineSchema({
 
   // Marketplace Bookings (separate from regular appointments)
   marketplaceBookings: defineTable({
+    // "test": paid with a Paystack test key, so no real money moved. Left out of every money figure (admin/testPayments.ts)
+    paystackMode: v.optional(v.union(v.literal("test"), v.literal("live"))),
     // Admin-scheduled Joy virtual consultations are paid before a clinician
     // and time are allocated, so they intentionally have no provider yet.
     physiotherapistId: v.optional(v.id("users")),
@@ -3870,6 +3878,8 @@ export default defineSchema({
   // marketplace booking: a reviewer is allocated only after verified payment,
   // never fabricated merely to create a payment link.
   joySpecialistReviews: defineTable({
+    // "test": paid with a Paystack test key, so no real money moved. Left out of every money figure (admin/testPayments.ts)
+    paystackMode: v.optional(v.union(v.literal("test"), v.literal("live"))),
     patientId: v.id("users"),
     assessmentId: v.string(),
     assessmentRevision: v.number(),
@@ -5237,6 +5247,8 @@ export default defineSchema({
   }).index("by_status", ["status"]),
 
   learnRegistrations: defineTable({
+    // "test": paid with a Paystack test key, so no real money moved. Left out of every money figure (admin/testPayments.ts)
+    paystackMode: v.optional(v.union(v.literal("test"), v.literal("live"))),
     cohortId: v.id("learnCohorts"),
     track: v.union(v.literal("rehabify"), v.literal("external")),
     userId: v.optional(v.id("users")), // signed-in account; required for the Rehabify rate

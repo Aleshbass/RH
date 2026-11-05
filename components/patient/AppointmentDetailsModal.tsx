@@ -85,9 +85,13 @@ export function isCancelled(apt: PatientAppointment) {
   return apt.status === 'cancelled_by_patient' || apt.status === 'cancelled_by_therapist'
 }
 
-/** Needs the patient's answer: a new time the physio proposed, or a visit the physio booked. */
+/**
+ * Needs the patient's answer: a new time the physio proposed (also for a missed visit they're
+ * rebooking), or a visit the physio booked.
+ */
 export function needsPatientAnswer(apt: PatientAppointment) {
-  return isLiveAppointment(apt) && (hasPendingProposal(apt) || awaitingConfirmationFrom(apt) === 'patient')
+  if (isOpenAppointment(apt.status) && hasPendingProposal(apt)) return true
+  return isLiveAppointment(apt) && awaitingConfirmationFrom(apt) === 'patient'
 }
 
 /** A confirmed video visit with a link that hasn't ended. */
@@ -112,11 +116,13 @@ export function placeLabel(apt: PatientAppointment) {
 export function patientStatus(apt: PatientAppointment, now = Date.now()): { label: string; tone: Tone; explain: string } {
   const label = appointmentStatusLabel(apt, 'patient')
   if (isOpenAppointment(apt.status)) {
+    if (hasPendingProposal(apt, now)) {
+      return apt.endTime <= now
+        ? { label, tone: 'amber', explain: 'This visit didn’t happen, so your physio offered a new time. Accept it and the visit moves there. You don’t pay again.' }
+        : { label, tone: 'amber', explain: 'Your physio suggested another time. Accept it, or keep the time you had.' }
+    }
     if (apt.endTime <= now) {
       return { label, tone: 'neutral', explain: 'The time for this visit has passed. Your physio will update it.' }
-    }
-    if (hasPendingProposal(apt, now)) {
-      return { label, tone: 'amber', explain: 'Your physio suggested another time. Accept it, or keep the time you had.' }
     }
     const waitingOn = awaitingConfirmationFrom(apt)
     if (waitingOn === 'patient') {

@@ -23,22 +23,23 @@ import { hasPriorAssessment } from "./helpers/rehabifyPricing";
 import { awaitingConfirmationFrom } from "./helpers/appointmentStatus";
 import { emailAboutAppointment, personName, syncGoogleCalendarEvent } from "./helpers/appointmentNotify";
 import { formatKobo, getService, isBookableServiceId } from "../lib/rehabify-services";
+import { isRehabifyCareInvoice } from "./helpers/marketplaceInvoices";
 import { lagosDate, lagosDateTime, lagosTimeRange } from "./helpers/lagosTime";
 import { queueJoyBookingCancelled } from "./helpers/joyEvents";
 
 const REHABIFY_SOURCES = new Set(["marketplace", "joy_whatsapp", "booking_link"]);
 
-/** Whether sessions between this patient and physio are Rehabify-priced (pay to confirm). */
+/**
+ * Whether sessions between this patient and physio are Rehabify-priced (pay to confirm).
+ * The rule follows the patient: one Rehabify sent (website, Joy, the physio's Rehabify booking
+ * link) stays a Rehabify Care patient even if the physio later switches to independent or joins
+ * a clinic. Otherwise either switch would let them bill Rehabify's patients with no Rehabify share.
+ */
 export async function isRehabifyCare(
   ctx: QueryCtx,
   patientId: Id<"users">,
   physiotherapistId: Id<"users">
 ): Promise<boolean> {
-  const physio = await ctx.db.get(physiotherapistId);
-  const profile = physio?.physiotherapistProfileId ? await ctx.db.get(physio.physiotherapistProfileId) : null;
-  // Clinic members bill through their clinic; a physio who sees only their own patients has no
-  // Rehabify Care patients (anyone they still see is treated as their own patient)
-  if (!profile || profile.clinicId || profile.practiceMode === "independent") return false;
   // Old data can hold more than one row for a pair: any Rehabify-sourced one makes it Rehabify Care
   const relationships = await ctx.db
     .query("patientPhysiotherapistRelationships")
@@ -60,7 +61,9 @@ export async function isVisitPaid(ctx: QueryCtx, appointment: Doc<"appointments"
     .withIndex("by_patient_id", (q) => q.eq("patientId", appointment.patientId))
     .filter((q) => q.eq(q.field("status"), "paid"))
     .collect();
-  return paidInvoices.some((invoice) => invoice.relatedAppointmentIds?.includes(appointment._id));
+  // Only Rehabify's own invoices: a physio's own invoice (perhaps marked paid by hand) never pays for
+  // a Rehabify Care visit
+  return paidInvoices.some((invoice) => isRehabifyCareInvoice(invoice) && invoice.relatedAppointmentIds?.includes(appointment._id));
 }
 
 /**

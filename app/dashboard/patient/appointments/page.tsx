@@ -239,7 +239,9 @@ function AppointmentsView() {
     const upcoming = all
       .filter((a) => isLiveAppointment(a, now) && !needsAnswer.includes(a))
       .sort((a, b) => a.startTime - b.startTime)
-    const past = all.filter((a) => !isLiveAppointment(a, now) && !isCancelled(a)).sort((a, b) => b.startTime - a.startTime)
+    const past = all
+      .filter((a) => !isLiveAppointment(a, now) && !isCancelled(a) && !needsAnswer.includes(a))
+      .sort((a, b) => b.startTime - a.startTime)
     const cancelled = all.filter((a) => isCancelled(a)).sort((a, b) => b.startTime - a.startTime)
     return { needsAnswer, upcoming, past, cancelled }
   }, [appointments, now])

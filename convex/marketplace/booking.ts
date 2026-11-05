@@ -11,6 +11,7 @@
  * physio their fixed payout once the session is completed (appointments.updateAppointmentStatus).
  */
 
+import { tagPaidRehabifyRelationship } from "../helpers/rehabifySources";
 import { insertNotification } from "../helpers/pushNotify";
 import { scheduleAcceptReminder } from "../pushAlerts";
 import { v, ConvexError } from "convex/values";
@@ -852,6 +853,8 @@ export async function activatePaidBooking(
             });
         } else {
             relationshipId = existingRelationship._id;
+            // Paid through Rehabify: later sessions with this physio are Rehabify Care too
+            await tagPaidRehabifyRelationship(ctx, existingRelationship, "marketplace");
             await ctx.db.patch(args.bookingId, {
                 relationshipCreated: false, // Already existed
                 patientPhysioRelationshipId: relationshipId,
@@ -1230,21 +1233,7 @@ export async function activatePaidBooking(
                 subjectOverride: `Booking paid: ${actualPatientName}. Your payout after the session: ₦${Math.round(booking.physiotherapistEarnings / 100).toLocaleString("en-NG")}`,
             });
         }
-        // Send to admin (hello)
-        await ctx.scheduler.runAfter(0, api["actions/emails/sendPaymentReceiptEmail"].sendPaymentReceiptEmail as any, {
-            ...receiptData,
-            to: "hello@physioaroundme.com",
-            recipientName: "Admin",
-            role: "admin"
-        });
-        
-        // Send to admin (billing)
-        await ctx.scheduler.runAfter(0, api["actions/emails/sendPaymentReceiptEmail"].sendPaymentReceiptEmail as any, {
-            ...receiptData,
-            to: "billing@physioaroundme.com",
-            recipientName: "Billing",
-            role: "admin"
-        });
+        // The team is told by issueBookingReceipt (helpers/adminPaymentAlerts.ts), at the ADMIN_EMAIL inboxes
 
         // Video call creation is now handled earlier in the function
 

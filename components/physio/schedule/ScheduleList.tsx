@@ -330,7 +330,7 @@ export function ScheduleList({
                   showDay
                   onOpen={() => open(apt)}
                   action={
-                    apt.needsInvoice && !practice.isIndependent ? (
+                    apt.needsInvoice ? (
                       <Button size="sm" className={cn(primaryButtonClass, 'h-9 shrink-0 px-3')} onClick={() => open(apt, 'invoice')}>
                         <Receipt className="mr-1 h-3.5 w-3.5" />
                         Accept &amp; invoice
@@ -376,7 +376,8 @@ export function ScheduleList({
             </Panel>
           )}
 
-          {practice.loaded && !practice.isIndependent && (
+          {/* Empty unless they have Rehabify patients (an independent physio may have kept some) */}
+          {practice.loaded && (
             <Quiet>
               <HeldPanel now={now} />
             </Quiet>

@@ -13,7 +13,7 @@ import { canUseArea, insertClinicInvoice, resolveClinicMember } from "./clinicTo
 import { requireClinicCareAccess } from "./helpers/careAccess";
 import { isRehabifyCare } from "./rehabifyFollowUps";
 import { isRehabifyCareInvoice, rehabifyCarePayoutKobo } from "./helpers/marketplaceInvoices";
-import { isIndependentPractice } from "./physioSetup";
+import { alertAdminsOfPayment } from "./helpers/adminPaymentAlerts";
 
 /**
  * True when the signed-in caller is a party to the invoice: its patient, its
@@ -45,6 +45,20 @@ async function isInvoiceParty(ctx: QueryCtx | MutationCtx, invoice: Doc<"invoice
  * Create an invoice for a patient session
  * Following PRD: Generate, send, track payments
  */
+/** The team hears about money a physio or clinic says they took themselves (no Paystack, no Rehabify share). */
+async function alertManualPayment(ctx: MutationCtx, user: Doc<"users">, invoice: Doc<"invoices">, amountKobo: number, method: string) {
+  if (user.role === "admin") return;
+  const clinic = invoice.clinicId ? await ctx.db.get(invoice.clinicId) : null;
+  const person = [user.firstName, user.lastName].filter(Boolean).join(" ") || "A physiotherapist";
+  await alertAdminsOfPayment(ctx, {
+    amountKobo,
+    description: `invoice ${invoice.invoiceNumber ?? ""}`.trim(),
+    relationship: invoice.clinicId ? "clinic" : "independent",
+    payerUserId: invoice.patientId,
+    recordedOutside: { by: clinic?.name ?? person, method },
+  });
+}
+
 export const createInvoice = mutation({
   args: {
     patientId: v.id("users"),
@@ -555,6 +569,11 @@ async function assertCanRecordManualPayment(ctx: any, user: Doc<"users">, invoic
     throw new ConvexError("This invoice was voided and can't be paid.");
   }
   if (user.role === "admin") return;
+  // Rehabify's own invoices, and a clinic's invoice for a patient Rehabify referred, are paid online so
+  // Rehabify's share comes with the money. Marking them paid by hand would skip it.
+  if (isRehabifyCareInvoice(invoice) || invoice.patientSource === "rehabify_referral") {
+    throw new ConvexError("This patient came through Rehabify, so they pay online with the payment link. Send them the link instead.");
+  }
   if (invoice.physiotherapistId && invoice.physiotherapistId === user._id) return;
   if (invoice.clinicId) {
     const clinic = await ctx.db.get(invoice.clinicId);
@@ -616,6 +635,7 @@ export const processPayment = mutation({
     });
     // Recorded by hand: the online payment link must not collect a second time
     await closeInvoicePaymentLinks(ctx, args.invoiceId);
+    await alertManualPayment(ctx, user, invoice, Math.max(0, invoice.totalAmount - (invoice.paidAmount ?? 0)), args.paymentMethod);
     // A referred patient's partner or doctor earns on this too, once an admin approves it
     await recordInvoicePartnerCommission(ctx, {
       invoice,
@@ -752,10 +772,9 @@ export const getMyInvoices = query({
         ).filter((invoice: Doc<"invoices">) => inInvoiceScope(invoice, physiotherapist._id, billingClinicId))
       : await myInvoiceScope(ctx, physiotherapist._id, billingClinicId);
     const now = Date.now();
-    // Physios who see only their own patients never see Rehabify Care payouts
-    const independent = isIndependentPractice(physiotherapistProfile);
+    // Rehabify Care invoices show the physio their payout (never the patient price), also to an
+    // independent physio who kept Rehabify patients (rehabifyFollowUps.isRehabifyCare)
     const invoices = scoped
-      .filter((invoice) => !(independent && isRehabifyCareInvoice(invoice)))
       .filter((invoice) => {
         if (!args.status) return true;
         if (args.status === "overdue") return invoice.status !== "paid" && invoice.dueDate < now;
@@ -1253,6 +1272,7 @@ export const recordPayment = mutation({
       status: isFullPayment ? "paid" : "partial_payment",
     };
     await ctx.db.patch(args.invoiceId, updates);
+    await alertManualPayment(ctx, user, invoice, amt, args.paymentMethod);
     if (isFullPayment) {
       // Paid by hand: the online link must not collect again, and a referrer's commission waits
       // for an admin's approval

@@ -39,12 +39,14 @@ export function useRehabifyServices(patientId: string | null | undefined) {
   const practice = usePracticeMode()
   const billing: CareBillingMode | null | undefined = useCareBillingMode(patientId)
   const isRehabify = billing?.mode === 'rehabify'
-  // Video and home-visit coverage are Rehabify network settings: an independent physio has none
+  // Video and home-visit coverage are Rehabify network settings. An independent physio only needs
+  // them for a Rehabify patient they kept from before they switched.
+  const usesCoverage = practice.loaded && (!practice.isIndependent || isRehabify)
   const coverageQuery = useQueryUntyped(
     scheduleApi.marketplaceSettings.getMyMarketplaceSettings,
-    patientId && practice.loaded && !practice.isIndependent ? {} : 'skip'
+    patientId && usesCoverage ? {} : 'skip'
   ) as MarketplaceSettings | null | undefined
-  const coverage = practice.isIndependent ? null : coverageQuery
+  const coverage = usesCoverage ? coverageQuery : null
   const payoutSchedule = useQueryUntyped(scheduleApi.serviceTariffs.getPayoutSchedule, isRehabify ? {} : 'skip') as PayoutSchedule | null | undefined
   const zones = useQueryUntyped(scheduleApi.travelZones.listZones, isRehabify ? {} : 'skip') as TravelZone[] | undefined
   /** True while anything the booking and invoice drawers need is still on its way. */

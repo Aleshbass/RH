@@ -378,9 +378,9 @@ export const getMySetupStatus = query({
 const practiceChoice = v.union(v.literal("network"), v.literal("independent"));
 
 /**
- * Rehabify physio or independent physio. Patients they already see stay with them; switching to
- * independent also makes those patients their own (billed by the physio, not Rehabify), and no
- * new Rehabify Care patients are matched.
+ * Rehabify physio or independent physio. Patients they already see stay with them. Switching to
+ * independent stops new Rehabify Care matches, but Rehabify patients they kept are still billed
+ * at Rehabify prices through Rehabify (rehabifyFollowUps.isRehabifyCare follows the patient).
  */
 export const setMyPracticeMode = mutation({
   args: { practiceMode: practiceChoice },

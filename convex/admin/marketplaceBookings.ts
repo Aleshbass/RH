@@ -11,6 +11,7 @@
  * search and stats queries scan a capped window of the most recent bookings.
  */
 
+import { isTestMoney } from "../helpers/paystackMode";
 import { insertNotification } from "../helpers/pushNotify";
 import { ConvexError, v } from "convex/values";
 import { paginationOptsValidator } from "convex/server";
@@ -278,7 +279,7 @@ export const adminGetMarketplaceBookingStats = query({
       if (b.paymentStatus === "failed") paymentFailed += 1;
       if (b.isGuestBooking) guest += 1;
       if (b.adminSchedulingStatus === "awaiting_schedule") awaitingSchedule += 1;
-      if (b.paymentStatus === "completed") rehabifyRevenue += rehabifyShare(b) || 0;
+      if (b.paymentStatus === "completed" && !isTestMoney(b)) rehabifyRevenue += rehabifyShare(b) || 0;
     }
 
     return {

@@ -9,6 +9,7 @@
  * (recordLearnPaystackWebhook) does the same if they never come back. Completion is
  * idempotent, so the two can race safely.
  */
+import { isTestMoney } from "./helpers/paystackMode";
 import { ConvexError, v } from "convex/values";
 import {
   action,
@@ -839,7 +840,8 @@ export const adminOverview = query({
             pending: registrations.filter((r) => r.status === "pending").length,
             rehabify: paid.filter((r) => r.track === "rehabify").length,
             external: paid.filter((r) => r.track === "external").length,
-            revenue: paid.reduce((sum, r) => sum + (r.paidAmountKobo ?? r.amountKobo), 0) / 100,
+            // Test-key payments moved no real money (admin/testPayments.ts)
+            revenue: paid.filter((r) => !isTestMoney(r)).reduce((sum, r) => sum + (r.paidAmountKobo ?? r.amountKobo), 0) / 100,
             needsReview: registrations.filter((r) => (r.extraPayments?.length ?? 0) > 0).length,
           },
         };

@@ -1,3 +1,4 @@
+import { isTestMoney } from "./helpers/paystackMode";
 import { insertNotification } from "./helpers/pushNotify";
 import { v, ConvexError } from "convex/values";
 import { paginationOptsValidator } from "convex/server";
@@ -587,7 +588,8 @@ export const getRevenueAnalytics = query({
 
     const revenue = new Map(starts.map((s) => [monthKey(s), { grossKobo: 0, platformFeeKobo: 0, paidInvoices: 0 }]));
     for (const inv of invoices.slice(0, SERIES_SCAN_CAP)) {
-      if (inv.status !== "paid") continue;
+      // Test-key payments moved no real money (admin/testPayments.ts)
+      if (inv.status !== "paid" || isTestMoney(inv)) continue;
       const paidAt = inv.paymentDate ?? inv.issueDate;
       if (paidAt < rangeStart || paidAt >= rangeEnd) continue;
       const bucket = revenue.get(monthKey(paidAt));
@@ -624,7 +626,7 @@ export const getRevenueAnalytics = query({
     );
 
     const bookingMonths = new Map(starts.map((s) => [monthKey(s), { created: 0, paid: 0, cancelled: 0 }]));
-    for (const b of bookings.slice(0, SERIES_SCAN_CAP)) {
+    for (const b of bookings.slice(0, SERIES_SCAN_CAP).filter((row) => !isTestMoney(row))) {
       const bucket = bookingMonths.get(monthKey(b._creationTime));
       if (!bucket) continue;
       bucket.created++;
@@ -1023,7 +1025,11 @@ export const getMarketplaceTransactions = query({
   handler: async (ctx, args) => {
     await ensureUserRole(ctx, ["admin"]);
 
-    let invoicesQuery = ctx.db.query("invoices").order("desc");
+    // Test-key payments moved no real money, so Transactions leaves them out (admin/testPayments.ts)
+    let invoicesQuery = ctx.db
+      .query("invoices")
+      .order("desc")
+      .filter((q) => q.neq(q.field("paystackMode"), "test"));
     const status = args.status;
     if (status) invoicesQuery = invoicesQuery.filter((q) => q.eq(q.field("status"), status));
     const result = await invoicesQuery.paginate(args.paginationOpts);
@@ -1293,7 +1299,7 @@ export const getAdminUserDetails = query({
  * Where each patient came from follows the rules billing uses (rehabifyFollowUps.isRehabifyCare):
  *   "clinic":   the relationship (or, without one, the episode or appointment) belongs to a clinic;
  *   "rehabify": Rehabify Care. Came through the website, Joy or the physio's Rehabify booking
- *               link, and the physio isn't a clinic member;
+ *               link (still so if the physio later joined a clinic or went independent);
  *   "own":      everyone else (private patients, invites, referrals the physio took on).
  */
 const CASELOAD_WINDOW = 60 * DAY;
@@ -1391,8 +1397,9 @@ function caseloadSource(
   appointment: Doc<"appointments"> | null
 ): CaseloadSource {
   if (relationship) {
-    if (relationship.clinicId) return "clinic";
-    return !inClinic && REHABIFY_CARE_SOURCES.has(relationship.source ?? "") ? "rehabify" : "own";
+    // A patient Rehabify sent stays Rehabify Care, even inside a clinic (rehabifyFollowUps.isRehabifyCare)
+    if (REHABIFY_CARE_SOURCES.has(relationship.source ?? "")) return "rehabify";
+    return relationship.clinicId ? "clinic" : "own";
   }
   if (episode?.clinicId || episode?.source === "clinic" || appointment?.clinicId) return "clinic";
   return !inClinic && episode && REHABIFY_CARE_SOURCES.has(episode.source) ? "rehabify" : "own";

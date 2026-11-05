@@ -785,9 +785,9 @@ function HeldDrawer({ booking, onClose }: { booking: HeldBooking | null; onClose
 export function CalendarView({ header }: { header: ReactNode }) {
   const openBooking = useBooking()
   const now = useNow(30_000)
-  // Rehabify bookings waiting for payment only exist for physios who take Rehabify Care patients
+  // Rehabify bookings waiting for payment: only for Rehabify Care patients (an independent physio may have kept some)
   const practice = usePracticeMode()
-  const showHeld = practice.loaded && !practice.isIndependent
+  const showHeld = practice.loaded
   const [weekStart, setWeekStart] = useState(() => weekStartOf(Date.now()))
   const [selectedDay, setSelectedDay] = useState(() => startOfZonedDay(Date.now()))
   const [showCancelled, setShowCancelled] = useState(false)

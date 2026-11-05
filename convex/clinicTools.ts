@@ -652,6 +652,9 @@ export const addClinicPatient = mutation({
 
     const alreadyInCare = existingRel?.status === "active" && existingRel.clinicId === clinic._id;
     if (!existingRel) {
+      // Re-adding a patient Rehabify referred here keeps them a referral (with Rehabify's split),
+      // even after a discharge or under another clinician
+      const referredBefore = await clinicReferralSource(ctx, clinic._id, patientId);
       await ctx.db.insert("patientPhysiotherapistRelationships", {
         patientId,
         physiotherapistId: targetClinicianId,
@@ -659,7 +662,7 @@ export const addClinicPatient = mutation({
         isPrimaryPhysiotherapist: true,
         startDate: Date.now(),
         status: "active",
-        source: "clinic_direct",
+        source: referredBefore ?? "clinic_direct",
       });
     } else if (!alreadyInCare) {
       await ctx.db.patch(existingRel._id, { status: "active", clinicId: clinic._id });
@@ -1915,6 +1918,18 @@ export const logPatientFollowUp = mutation({
  * clinicians requesting payment from their physio workspace, so clinic money always goes to the clinic.
  * Item amounts are in kobo.
  */
+/** Sources that make a clinic patient Rehabify's (an admin referral, or one Rehabify sent a member physio). */
+const CLINIC_REHABIFY_SOURCES = new Set(["rehabify_referral", "marketplace", "joy_whatsapp", "booking_link"]);
+
+/** "rehabify_referral" when Rehabify sent this patient to the clinic (any row, active or not), else null. */
+async function clinicReferralSource(ctx: QueryCtx, clinicId: Id<"clinics">, patientId: Id<"users">): Promise<"rehabify_referral" | null> {
+  const rows = await ctx.db
+    .query("patientPhysiotherapistRelationships")
+    .withIndex("by_patient", (q: any) => q.eq("patientId", patientId))
+    .take(50);
+  return rows.some((rel) => rel.clinicId === clinicId && CLINIC_REHABIFY_SOURCES.has(rel.source ?? "")) ? "rehabify_referral" : null;
+}
+
 export async function insertClinicInvoice(
   ctx: MutationCtx,
   clinic: Doc<"clinics">,
@@ -1928,14 +1943,10 @@ export async function insertClinicInvoice(
     issuedById?: Id<"users">;
   }
 ) {
-    // Clinic-owned and Rehabify-referred patients are billed apart, so the invoice keeps the source
-    const careRelationship = (
-      await ctx.db
-        .query("patientPhysiotherapistRelationships")
-        .withIndex("by_patient", (q: any) => q.eq("patientId", input.patientId))
-        .collect()
-    ).find((rel) => rel.status === "active" && rel.clinicId === clinic._id);
-    const patientSource = careRelationship?.source === "rehabify_referral" ? "rehabify_referral" : "clinic_direct";
+    // Clinic-owned and Rehabify-sent patients are billed apart, so the invoice keeps the source. Any
+    // Rehabify row with this clinic counts (active or not), so discharging and re-adding a referral,
+    // or moving them to another clinician, can't turn them into the clinic's own patient.
+    const patientSource = (await clinicReferralSource(ctx, clinic._id, input.patientId)) ? "rehabify_referral" : "clinic_direct";
 
     const totalKobo = input.items.reduce((sum, item) => sum + item.totalPrice, 0);
     // Online payment: Paystack's fee first, then stamp duty off the clinic's payout. The clinic's

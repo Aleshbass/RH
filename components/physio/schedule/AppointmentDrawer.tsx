@@ -51,7 +51,6 @@ import { formatKobo } from '@/lib/rehabify-services'
 import { useMutationUntyped } from '@/lib/convexUntyped'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
-import { usePracticeMode } from '@/components/physio/practiceMode'
 import { Choice, HomeVisitFields, earningsFor, suggestService, useRehabifyServices, type HomeVisit, type ScheduleService } from './rehabifyServices'
 import { JoinVideoButton } from './JoinVideoButton'
 import {
@@ -101,9 +100,8 @@ export function AppointmentDrawer({
   const acceptWithInvoice = useMutationUntyped(scheduleApi.rehabifyFollowUps.acceptRequestWithInvoice)
 
   // A Rehabify Care patient's request: the services it's invoiced from (with the physio's payouts).
-  // Independent physios only have their own patients, so it never applies to them.
-  const practice = usePracticeMode()
-  const needsInvoice = Boolean(appointment?.needsInvoice) && practice.loaded && !practice.isIndependent
+  // The server decides per patient, so it also covers Rehabify patients an independent physio kept.
+  const needsInvoice = Boolean(appointment?.needsInvoice)
   const invoicing = isOpen && needsInvoice
   const { zones, services, coveredZones, loading: servicesLoading } = useRehabifyServices(invoicing ? appointment?.patientId : null)
 
@@ -316,6 +314,11 @@ export function AppointmentDrawer({
       footer = (
         <div className="space-y-2">
           {joinButton}
+          {/* The session didn't happen: move it to a new time. What the patient paid stays on it. */}
+          <Button className={cn(secondaryButtonClass, 'h-11 w-full')} disabled={busy !== null} onClick={() => setView('propose')}>
+            <CalendarDays className="mr-2 h-4 w-4" />
+            Missed it? Rebook free
+          </Button>
           <div className="grid grid-cols-2 gap-2">
             <Button
               className={cn(secondaryButtonClass, 'h-11')}
@@ -507,14 +510,23 @@ export function AppointmentDrawer({
   }
 
   if (view === 'propose') {
-    title = 'Suggest another time'
-    description = `Now: ${lagosShortDate(appointment.startTime)}, ${lagosTime(appointment.startTime)} · ${minutes} min`
+    // A visit whose time has passed without being closed: it's rebooked, not moved
+    const missed = started && open
+    title = missed ? 'Rebook the missed visit' : 'Suggest another time'
+    description = `${missed ? 'Was' : 'Now'}: ${lagosShortDate(appointment.startTime)}, ${lagosTime(appointment.startTime)} · ${minutes} min`
     body = (
       <div className="space-y-4">
-        <p className="flex items-start gap-1 text-sm text-pt-muted">
-          {first} can accept the new time or keep the original.
-          <InfoTip>Nothing changes until they answer. You’ll get a notification either way.</InfoTip>
-        </p>
+        {missed ? (
+          <p className="flex items-start gap-1 text-sm text-pt-muted">
+            Pick a new time and {first} accepts it. They don’t pay again: what they paid stays with this visit.
+            <InfoTip>The visit moves to the new time once {first} accepts. You’ll get a notification when they answer.</InfoTip>
+          </p>
+        ) : (
+          <p className="flex items-start gap-1 text-sm text-pt-muted">
+            {first} can accept the new time or keep the original.
+            <InfoTip>Nothing changes until they answer. You’ll get a notification either way.</InfoTip>
+          </p>
+        )}
         {appointment.physiotherapistId && (
           <PatientSlotPicker
             physiotherapistId={appointment.physiotherapistId}

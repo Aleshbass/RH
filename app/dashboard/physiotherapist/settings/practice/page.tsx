@@ -39,7 +39,7 @@ const CONFIRM: Record<PracticeChoice, { title: string; body: string }> = {
     },
     independent: {
         title: 'Become an independent physio?',
-        body: 'You’ll be taken off Find a Physio and won’t be matched with new Rehabify Care patients. Rehabify patients you already see stay with you.',
+        body: 'You’ll be taken off Find a Physio and won’t be matched with new Rehabify Care patients. Rehabify patients you already see stay with you, still at Rehabify’s prices and paid through Rehabify.',
     },
 };
 

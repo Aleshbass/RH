@@ -1,3 +1,4 @@
+import { isTestMoney } from "./helpers/paystackMode";
 import { insertNotification } from "./helpers/pushNotify";
 import { ConvexError, v } from "convex/values";
 import { mutation, query, type QueryCtx } from "./_generated/server";
@@ -216,6 +217,8 @@ export const getClinic = query({
       lastPaidAt: null as number | null,
     };
     for (const inv of invoices) {
+      // Test-key payments moved no real money (admin/testPayments.ts)
+      if (isTestMoney(inv)) continue;
       const total = inv.totalAmount || 0;
       if (inv.status === "sent" || inv.status === "overdue" || inv.status === "partial_payment") {
         billing.unpaidKobo += total;

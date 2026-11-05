@@ -16,7 +16,6 @@ import { useFileUpload } from '@/lib/hooks/useFileUpload'
 import { cn } from '@/lib/utils'
 import { NoteMediaView } from '@/components/physio/NoteMedia'
 import { programError } from '@/components/exercise-programs/errors'
-import { usePracticeMode } from '@/components/physio/practiceMode'
 import { DIFFICULTY_LABELS, EXERCISES_LABELS, HIGH_PAIN, MOOD_LABELS, PainPill, useWorkspaceReadOnly, type ExerciseLog, type Workspace } from './shared'
 import { NoteDrawer, type EditableNote } from './WorkspaceDrawers'
 import { NoteHistoryDrawer } from './NoteHistoryDrawer'
@@ -495,9 +494,8 @@ export function PaymentsTab({ workspace, onRequest }: { workspace: Workspace; on
   const invoices = useQuery(api.billing.getMyInvoices, { patientId: workspace.patient._id, limit: 200 }) as Invoice[] | undefined
   const createLink = useAction(api.physioBilling.createPhysioPaymentLink)
   const [busyId, setBusyId] = useState<string | null>(null)
-  // Rehabify Care payouts only ever show for a Rehabify Care patient, never to an independent physio
-  const { isIndependent } = usePracticeMode()
-  const mine = (invoices ?? []).filter((i) => i.patientId === workspace.patient._id && !(isIndependent && i.rehabifyCare))
+  // Rehabify Care invoices show the physio's payout, never the patient's price (server-side)
+  const mine = (invoices ?? []).filter((i) => i.patientId === workspace.patient._id)
   const isActive = workspace.episode.status === 'active'
 
   const sendLink = async (invoice: Invoice, email: boolean) => {

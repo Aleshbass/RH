@@ -17,3 +17,8 @@ export function usableSubaccount(
   if (!row?.subaccountCode) return null;
   return (row.paystackMode ?? "test") === currentPaystackMode() ? row.subaccountCode : null;
 }
+
+/** Paid with a Paystack test key (admin/testPayments.ts): no real money moved, so money figures skip it. */
+export function isTestMoney(row: { paystackMode?: PaystackMode } | null | undefined): boolean {
+  return row?.paystackMode === "test";
+}
