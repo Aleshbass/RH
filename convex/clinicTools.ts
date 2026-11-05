@@ -1,3 +1,5 @@
+import { cheapestSessionPriceKobo } from "./helpers/referralFloor";
+import { alertAdminsOfInheritedTag, inheritedRehabifySource } from "./helpers/rehabifySources";
 import { ConvexError, v } from "convex/values";
 import { internalMutation, mutation, query, QueryCtx, MutationCtx } from "./_generated/server";
 import { Doc, Id } from "./_generated/dataModel";
@@ -655,6 +657,8 @@ export const addClinicPatient = mutation({
       // Re-adding a patient Rehabify referred here keeps them a referral (with Rehabify's split),
       // even after a discharge or under another clinician
       const referredBefore = await clinicReferralSource(ctx, clinic._id, patientId);
+      // A patient Rehabify sent to a physio recently comes in as a referral too (admins are told)
+      const inherited = referredBefore ? null : await inheritedRehabifySource(ctx, patientId, targetClinicianId, clinic._id);
       await ctx.db.insert("patientPhysiotherapistRelationships", {
         patientId,
         physiotherapistId: targetClinicianId,
@@ -662,8 +666,9 @@ export const addClinicPatient = mutation({
         isPrimaryPhysiotherapist: true,
         startDate: Date.now(),
         status: "active",
-        source: referredBefore ?? "clinic_direct",
+        source: referredBefore ?? inherited?.source ?? "clinic_direct",
       });
+      if (inherited) await alertAdminsOfInheritedTag(ctx, { patientId, newPhysioId: targetClinicianId, clinicId: clinic._id, from: inherited.from });
     } else if (!alreadyInCare) {
       await ctx.db.patch(existingRel._id, { status: "active", clinicId: clinic._id });
     }
@@ -1949,6 +1954,16 @@ export async function insertClinicInvoice(
     const patientSource = (await clinicReferralSource(ctx, clinic._id, input.patientId)) ? "rehabify_referral" : "clinic_direct";
 
     const totalKobo = input.items.reduce((sum, item) => sum + item.totalPrice, 0);
+    // A Rehabify referral can't be billed a token amount on the platform with the rest taken in
+    // cash: each invoice is at least Rehabify's cheapest session price per visit it covers
+    if (patientSource === "rehabify_referral") {
+      const floorKobo = (await cheapestSessionPriceKobo(ctx)) * Math.max(1, input.appointmentIds?.length ?? 0);
+      if (totalKobo < floorKobo) {
+        throw new ConvexError(
+          `Rehabify referred this patient, so each visit is billed at least ₦${Math.round(floorKobo / 100 / Math.max(1, input.appointmentIds?.length ?? 0)).toLocaleString("en-NG")}. Please check the amount.`
+        );
+      }
+    }
     // Online payment: Paystack's fee first, then stamp duty off the clinic's payout. The clinic's
     // own patients: Rehabify takes no cut (clinics pay a software subscription instead). Rehabify
     // Care patients sent to a clinic are a separate deal, so only they use the admin's split. The

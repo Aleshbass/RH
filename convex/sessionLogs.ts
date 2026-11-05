@@ -1,3 +1,5 @@
+import { mustPayToConfirm } from "./rehabifyFollowUps";
+import { startVisitPaymentCheckIn } from "./helpers/visitCheckIns";
 import { insertNotification } from "./helpers/pushNotify";
 import { query, mutation } from "./_generated/server";
 import { ConvexError, v } from "convex/values";
@@ -161,6 +163,10 @@ export const createSessionLog = mutation({
     if (appointment.physiotherapistId !== user._id) {
       throw new ConvexError("This appointment isn't assigned to you.");
     }
+    // Writing the note closes the visit, so an unpaid Rehabify visit has to be paid through Rehabify first
+    if (appointment.status !== "completed" && (await mustPayToConfirm(ctx, appointment))) {
+      throw new ConvexError("This Rehabify patient hasn't paid for this visit yet, so it can't be closed. They pay through Rehabify first.");
+    }
 
     // One calendar note per visit. Workspace notes can also attach to a visit, so there may be
     // several; first() rather than unique(), which would throw on the second.
@@ -194,6 +200,8 @@ export const createSessionLog = mutation({
     await ctx.db.patch(args.appointmentId, {
       status: "completed",
     });
+    // A Rehabify patient is asked privately whether they paid the provider directly
+    if (appointment.status !== "completed") await startVisitPaymentCheckIn(ctx, appointment);
 
     // Create notification for patient
     const patient = await ctx.db.get(appointment.patientId);

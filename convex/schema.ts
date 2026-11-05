@@ -352,6 +352,27 @@ export default defineSchema({
 
   // A receipt for every payment and every refund (Payment Policy 7), shown in the account and
   // emailed. Written by helpers/receipts.ts only; never edited after it's issued.
+  // After a Rehabify patient's visit (Rehabify Care, or a referral at a clinic) the patient is asked
+  // whether they paid the physio or clinic anything directly (helpers/visitCheckIns.ts). A yes is
+  // flagged to admins: these patients pay through Rehabify. One row per visit.
+  visitPaymentCheckIns: defineTable({
+    appointmentId: v.id("appointments"),
+    patientId: v.id("users"),
+    physiotherapistId: v.id("users"),
+    clinicId: v.optional(v.id("clinics")),
+    kind: v.union(v.literal("rehabify_care"), v.literal("clinic_referral")),
+    token: v.string(),
+    visitAt: v.number(),
+    sentAt: v.number(),
+    answeredAt: v.optional(v.number()),
+    paidDirectly: v.optional(v.boolean()),
+    amountKobo: v.optional(v.number()),
+    method: v.optional(v.union(v.literal("cash"), v.literal("bank_transfer"), v.literal("pos"), v.literal("other"))),
+  })
+    .index("by_token", ["token"])
+    .index("by_appointment", ["appointmentId"])
+    .index("by_answered", ["answeredAt"]),
+
   receipts: defineTable({
     // "test": paid with a Paystack test key, so no real money moved. Left out of every money figure (admin/testPayments.ts)
     paystackMode: v.optional(v.union(v.literal("test"), v.literal("live"))),

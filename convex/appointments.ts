@@ -1,3 +1,4 @@
+import { startVisitPaymentCheckIn } from "./helpers/visitCheckIns";
 import { insertNotification } from "./helpers/pushNotify";
 import { ConvexError, v } from "convex/values";
 import { mutation, query, internalQuery } from "./_generated/server";
@@ -577,6 +578,8 @@ export const updateAppointmentStatus = mutation({
     // (fires referral.in_treatment to the partner).
     if (args.status === "completed") {
       await onPatientSessionCompleted(ctx, appointment.patientId);
+      // A Rehabify patient is asked privately whether they paid the provider directly
+      await startVisitPaymentCheckIn(ctx, appointment);
     }
 
     // Create notification for patient

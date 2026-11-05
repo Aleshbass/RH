@@ -66,6 +66,7 @@ import type * as adminPartnerships from "../adminPartnerships.js";
 import type * as adminReferrals from "../adminReferrals.js";
 import type * as admin_marketplaceBookings from "../admin/marketplaceBookings.js";
 import type * as admin_marketplaceEarnings from "../admin/marketplaceEarnings.js";
+import type * as admin_patientBilling from "../admin/patientBilling.js";
 import type * as admin_testPayments from "../admin/testPayments.js";
 import type * as admin_fix from "../admin_fix.js";
 import type * as admin_purge from "../admin_purge.js";
@@ -170,6 +171,7 @@ import type * as helpers_progressReport from "../helpers/progressReport.js";
 import type * as helpers_pushCategories from "../helpers/pushCategories.js";
 import type * as helpers_pushNotify from "../helpers/pushNotify.js";
 import type * as helpers_receipts from "../helpers/receipts.js";
+import type * as helpers_referralFloor from "../helpers/referralFloor.js";
 import type * as helpers_refunds from "../helpers/refunds.js";
 import type * as helpers_rehabifyIdFormat from "../helpers/rehabifyIdFormat.js";
 import type * as helpers_rehabifyIds from "../helpers/rehabifyIds.js";
@@ -181,6 +183,7 @@ import type * as helpers_serverSecret from "../helpers/serverSecret.js";
 import type * as helpers_slotHolds from "../helpers/slotHolds.js";
 import type * as helpers_startingZones from "../helpers/startingZones.js";
 import type * as helpers_triggerRetryProcessing from "../helpers/triggerRetryProcessing.js";
+import type * as helpers_visitCheckIns from "../helpers/visitCheckIns.js";
 import type * as helpers_whatsappLink from "../helpers/whatsappLink.js";
 import type * as http from "../http.js";
 import type * as imagekit from "../imagekit.js";
@@ -287,6 +290,7 @@ import type * as treatmentPlans from "../treatmentPlans.js";
 import type * as userNameBackfill from "../userNameBackfill.js";
 import type * as users from "../users.js";
 import type * as videoCalls from "../videoCalls.js";
+import type * as visitCheckIns from "../visitCheckIns.js";
 
 import type {
   ApiFromModules,
@@ -353,6 +357,7 @@ declare const fullApi: ApiFromModules<{
   adminReferrals: typeof adminReferrals;
   "admin/marketplaceBookings": typeof admin_marketplaceBookings;
   "admin/marketplaceEarnings": typeof admin_marketplaceEarnings;
+  "admin/patientBilling": typeof admin_patientBilling;
   "admin/testPayments": typeof admin_testPayments;
   admin_fix: typeof admin_fix;
   admin_purge: typeof admin_purge;
@@ -457,6 +462,7 @@ declare const fullApi: ApiFromModules<{
   "helpers/pushCategories": typeof helpers_pushCategories;
   "helpers/pushNotify": typeof helpers_pushNotify;
   "helpers/receipts": typeof helpers_receipts;
+  "helpers/referralFloor": typeof helpers_referralFloor;
   "helpers/refunds": typeof helpers_refunds;
   "helpers/rehabifyIdFormat": typeof helpers_rehabifyIdFormat;
   "helpers/rehabifyIds": typeof helpers_rehabifyIds;
@@ -468,6 +474,7 @@ declare const fullApi: ApiFromModules<{
   "helpers/slotHolds": typeof helpers_slotHolds;
   "helpers/startingZones": typeof helpers_startingZones;
   "helpers/triggerRetryProcessing": typeof helpers_triggerRetryProcessing;
+  "helpers/visitCheckIns": typeof helpers_visitCheckIns;
   "helpers/whatsappLink": typeof helpers_whatsappLink;
   http: typeof http;
   imagekit: typeof imagekit;
@@ -574,6 +581,7 @@ declare const fullApi: ApiFromModules<{
   userNameBackfill: typeof userNameBackfill;
   users: typeof users;
   videoCalls: typeof videoCalls;
+  visitCheckIns: typeof visitCheckIns;
 }>;
 
 /**

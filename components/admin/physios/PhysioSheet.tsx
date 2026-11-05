@@ -46,6 +46,12 @@ const setPracticeModeRef = makeFunctionReference<
   { practiceMode: PracticeChoice }
 >('physioSetup:adminSetPracticeMode')
 
+const setBillingSourceRef = makeFunctionReference<
+  'mutation',
+  { patientId: string; physiotherapistId: string; rehabify: boolean },
+  { rehabify: boolean }
+>('admin/patientBilling:setPatientBillingSource')
+
 const PRACTICE_MODES: PracticeChoice[] = ['network', 'independent']
 const MAKE_THEM: Record<PracticeChoice, string> = {
   network: 'a Rehabify physio',
@@ -373,6 +379,7 @@ function Caseload({ data }: { data: CaseloadResult }) {
           {data.patients.map((patient) => (
             <li key={patient.patientId}>
               <PatientRow patient={patient} />
+              <BillingSwitch physioId={data.physio.userId} patient={patient} />
             </li>
           ))}
         </ul>
@@ -390,6 +397,39 @@ function Caseload({ data }: { data: CaseloadResult }) {
         </div>
       )}
     </section>
+  )
+}
+
+/**
+ * Who bills this patient. Rehabify patients keep their tag when another provider adds them; a
+ * genuine walk-in can be made the provider's own here (and back). Audit-logged on the server.
+ */
+function BillingSwitch({ physioId, patient }: { physioId: string; patient: CaseloadPatient }) {
+  const setSource = useMutation(setBillingSourceRef)
+  const [busy, setBusy] = useState(false)
+  const rehabify = patient.source === 'rehabify'
+  const change = async () => {
+    setBusy(true)
+    try {
+      await setSource({ patientId: patient.patientId, physiotherapistId: physioId, rehabify: !rehabify })
+      toast.success(rehabify ? 'Now billed as their own patient.' : 'Now billed through Rehabify.')
+    } catch (error) {
+      toast.error(errorMessage(error, 'Couldn’t change that. Please try again.'))
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <div className="flex justify-end px-3 pb-2">
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => void change()}
+        className="text-[11px] font-medium text-neutral-500 underline-offset-2 hover:text-rh-ink hover:underline disabled:opacity-50 dark:text-neutral-400 dark:hover:text-white"
+      >
+        {rehabify ? 'Walk-in? Make their own patient' : 'Make a Rehabify patient'}
+      </button>
+    </div>
   )
 }
 

@@ -1,3 +1,4 @@
+import { alertAdminsOfInheritedTag, inheritedRehabifySource } from "./helpers/rehabifySources";
 import { insertNotification } from "./helpers/pushNotify";
 import { ConvexError, Infer, v } from "convex/values";
 import { query, mutation, internalQuery, MutationCtx } from "./_generated/server";
@@ -23,11 +24,15 @@ function maskEmail(email: string | undefined): string | null {
 
 const CLINIC_INVITE_DAYS = 30;
 
+// Sources that already make a link Rehabify's; accepting an invite never replaces them
+const REHABIFY_TAGS = new Set(["marketplace", "joy_whatsapp", "booking_link", "rehabify_referral"]);
+
 /**
  * A clinic's invitation link for a patient it added (clinicTools.addClinicPatient): the same
  * /patient-invite/<code> page physios use, showing the clinic and the patient's clinician.
  * Earlier unused links for this patient at this clinic stop working, so only the newest email counts.
  */
+
 export async function createClinicPatientInvitation(
   ctx: MutationCtx,
   input: { clinic: Doc<"clinics">; clinicianId: Id<"users">; patient: Doc<"users"> }
@@ -385,13 +390,17 @@ async function acceptPatientInvitation(
   const earlierRelationship =
     earlierRelationships.find((r) => r.status === "active") ?? earlierRelationships[0];
 
+  // A patient Rehabify sent to another physio recently stays Rehabify's (helpers/rehabifySources.ts)
+  const inherited = await inheritedRehabifySource(ctx, ensuredUser._id, invitation.physiotherapistId, invitation.clinicId ?? earlierRelationship?.clinicId);
+  const keepsOwnTag = earlierRelationship && REHABIFY_TAGS.has(earlierRelationship.source ?? "");
+
   if (earlierRelationship) {
     await ctx.db.patch(earlierRelationship._id, {
       status: "active",
       endDate: undefined,
       clinicId: invitation.clinicId ?? earlierRelationship.clinicId,
       invitationId: invitation._id,
-      source: earlierRelationship.source ?? invitation.source ?? "invite",
+      source: keepsOwnTag ? earlierRelationship.source : inherited?.source ?? earlierRelationship.source ?? invitation.source ?? "invite",
       referredBy: earlierRelationship.referredBy ?? invitation.referredBy,
     });
   } else {
@@ -403,8 +412,16 @@ async function acceptPatientInvitation(
       isPrimaryPhysiotherapist: true,
       status: "active",
       startDate: Date.now(),
-      source: invitation.source ?? "invite",
+      source: inherited?.source ?? invitation.source ?? "invite",
       referredBy: invitation.referredBy,
+    });
+  }
+  if (inherited && !keepsOwnTag) {
+    await alertAdminsOfInheritedTag(ctx, {
+      patientId: ensuredUser._id,
+      newPhysioId: invitation.physiotherapistId,
+      clinicId: invitation.clinicId ?? earlierRelationship?.clinicId,
+      from: inherited.from,
     });
   }
 
