@@ -145,13 +145,13 @@ export default function PhysioRegisterDirectory() {
         </div>
 
         {isLoading ? (
-          <div className="mt-5 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="mt-5 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
             {[0, 1, 2, 3, 4, 5].map((i) => (
               <div key={i} className="h-64 animate-pulse rounded-[1.75rem] bg-rh-ink/[0.06]" />
             ))}
           </div>
         ) : physios.length > 0 ? (
-          <div className="mt-5 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="mt-5 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
             {physios.map((physio) => (
               <PhysioProfileCard key={physio.id} data={physio} />
             ))}
@@ -171,7 +171,7 @@ export default function PhysioRegisterDirectory() {
         )}
 
         {/* For physiotherapists */}
-        <section className="mt-14 grid gap-4 md:grid-cols-2">
+        <section className="mt-14 grid grid-cols-1 gap-4 md:grid-cols-2">
           <div className="flex flex-col rounded-[2rem] bg-white p-7 shadow-soft sm:p-9">
             <p className="text-xs font-semibold uppercase tracking-[0.14em] text-rh-ink/50">For physiotherapists</p>
             <h2 className={cn('mt-2 text-2xl leading-snug tracking-tight text-rh-ink', displayFont)}>Get listed on the Physio Register</h2>

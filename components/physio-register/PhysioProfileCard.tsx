@@ -132,7 +132,7 @@ export default function PhysioProfileCard({ data }: { data: PhysioProfileCardDat
   );
 
   const cardClass =
-    'group flex h-full flex-col rounded-[1.75rem] bg-white p-6 shadow-soft transition duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-ink';
+    'group flex h-full min-w-0 flex-col rounded-[1.75rem] bg-white p-6 shadow-soft transition duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-ink';
 
   return profileUrl ? (
     <Link href={profileUrl} className={cn(cardClass, 'hover:-translate-y-1 hover:shadow-lift motion-reduce:hover:translate-y-0')}>
