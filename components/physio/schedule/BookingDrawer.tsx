@@ -51,6 +51,9 @@ type PatientOption = { _id: string; firstName?: string; lastName?: string; email
 
 const BookingContext = createContext<(options?: BookingOptions) => void>(() => undefined)
 
+/** A paid visit that didn't happen and can be rebooked free (rehabifyFollowUps.getRebookableVisits). */
+type RebookableVisit = { appointmentId: string; startTime: number; endTime: number; serviceType: string; status: string; video: boolean }
+
 /** Opens the booking drawer: `openBooking({ patient, slot, mode })`, all optional. */
 export function useBooking() {
   return useContext(BookingContext)
@@ -123,6 +126,8 @@ function BookingDrawer({ options, onClose }: { options: BookingOptions; onClose:
   const [notes, setNotes] = useState('')
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState<{ payoutKobo?: number; holdExpiresAt?: number } | null>(null)
+  // A paid visit that didn't happen, being rebooked free instead of booking a new paid session
+  const [rebookOf, setRebookOf] = useState<RebookableVisit | null>(null)
 
   const me = useQueryUntyped(scheduleApi.users.getMyUser) as { _id: string } | null | undefined
   const patients = useQueryUntyped(scheduleApi.patients.getMyPatientOptions, step === 'patient' ? {} : 'skip') as PatientOption[] | undefined
@@ -134,13 +139,26 @@ function BookingDrawer({ options, onClose }: { options: BookingOptions; onClose:
       : null
 
   const createAppointment = useMutationUntyped(scheduleApi.appointments.createAppointment)
+  const rebookMissed = useMutationUntyped(scheduleApi.rehabifyFollowUps.rebookMissedVisit)
+  const rebookable = useQueryUntyped(
+    scheduleApi.rehabifyFollowUps.getRebookableVisits,
+    patient && isRehabify ? { patientId: patient.id } : 'skip'
+  ) as RebookableVisit[] | undefined
   const scheduleFollowUp = useMutationUntyped(scheduleApi.rehabifyFollowUps.scheduleRehabifyFollowUp)
 
   const offersOnline = coverage?.offersOnlineSessions ?? true
 
-  const duration = isRehabify ? service?.durationMinutes ?? 60 : sessionType?.duration ?? 60
-  const sessionTitle = isRehabify ? service?.name ?? 'Session' : sessionType?.title ?? 'Session'
-  const modeLabel = isRehabify
+  const duration = rebookOf
+    ? Math.max(15, Math.round((rebookOf.endTime - rebookOf.startTime) / 60_000))
+    : isRehabify
+      ? service?.durationMinutes ?? 60
+      : sessionType?.duration ?? 60
+  const sessionTitle = rebookOf ? rebookOf.serviceType : isRehabify ? service?.name ?? 'Session' : sessionType?.title ?? 'Session'
+  const modeLabel = rebookOf
+    ? rebookOf.video
+      ? 'Video call'
+      : 'In person'
+    : isRehabify
     ? service?.mode === 'home'
       ? 'Home visit'
       : 'Video call'
@@ -207,6 +225,27 @@ function BookingDrawer({ options, onClose }: { options: BookingOptions; onClose:
     }
   }
 
+  const sendRebook = async () => {
+    if (!rebookOf || !slot) return
+    setBusy(true)
+    try {
+      await rebookMissed({
+        appointmentId: rebookOf.appointmentId as Id<'appointments'>,
+        startTime: slot.start,
+        endTime: slot.end,
+        note: notes.trim() || undefined,
+      })
+      setResult({})
+      playSound('send')
+      goTo('done')
+    } catch (error) {
+      playSound('error')
+      toast.error(readableError(error, 'Couldn’t send that time. Please try again.'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   // ── Steps ──────────────────────────────────────────────────────────────────
 
   const steps: Step[] = [...(options.patient ? [] : (['patient'] as Step[])), 'what', ...(options.slot ? [] : (['when'] as Step[])), 'details']
@@ -215,9 +254,11 @@ function BookingDrawer({ options, onClose }: { options: BookingOptions; onClose:
   const titles: Record<Step, { title: string; description?: ReactNode }> = {
     patient: { title: 'New appointment', description: 'Who is it for?' },
     what: { title: patient ? `Book ${firstName}` : 'New appointment', description: isRehabify ? 'Which Rehabify service is this?' : 'What kind of session is this?' },
-    when: { title: 'Choose a time', description: `${sessionTitle} · ${duration} min` },
+    when: rebookOf
+      ? { title: 'Rebook the missed visit', description: `${sessionTitle} · ${duration} min · already paid` }
+      : { title: 'Choose a time', description: `${sessionTitle} · ${duration} min` },
     details: { title: 'Check and book', description: 'Make sure everything looks right' },
-    done: { title: isRehabify ? 'Sent to pay' : 'Booked in' },
+    done: { title: rebookOf ? 'Rebooked' : isRehabify ? 'Sent to pay' : 'Booked in' },
   }
 
   let body: ReactNode = null
@@ -305,6 +346,26 @@ function BookingDrawer({ options, onClose }: { options: BookingOptions; onClose:
           </div>
         ) : isRehabify ? (
           <div className="space-y-3">
+            {(rebookable ?? []).map((missed) => (
+              <div key={missed.appointmentId} className="rounded-2xl border border-pt-line bg-pt-sunken p-4">
+                <p className="text-sm font-semibold text-pt-ink">Missed visit, already paid</p>
+                <p className="mt-1 text-sm text-pt-muted">
+                  {missed.serviceType} on {lagosShortDate(missed.startTime)}, {lagosTime(missed.startTime)} didn’t happen. Rebook it and{' '}
+                  {firstName} won’t pay again.
+                </p>
+                <Button
+                  className={cn(primaryButtonClass, 'mt-3 h-10')}
+                  onClick={() => {
+                    setRebookOf(missed)
+                    setSlot(null)
+                    goTo('when')
+                  }}
+                >
+                  <CalendarDays className="mr-2 h-4 w-4" />
+                  Rebook this visit free
+                </Button>
+              </div>
+            ))}
             <div className="flex gap-2 rounded-2xl bg-pt-blue-bg p-3.5 text-sm text-pt-blue-fg">
               <span>
                 {patient?.name} came through Rehabify, so each session is paid at the Rehabify price.
@@ -434,12 +495,26 @@ function BookingDrawer({ options, onClose }: { options: BookingOptions; onClose:
           </p>
         )}
         <div className="flex gap-2">
-          <Button className={cn(secondaryButtonClass, 'h-11 flex-1')} onClick={() => goTo('what')}>
+          <Button
+            className={cn(secondaryButtonClass, 'h-11 flex-1')}
+            disabled={busy}
+            onClick={() => {
+              setRebookOf(null)
+              goTo('what')
+            }}
+          >
             Back
           </Button>
-          <Button className={cn(primaryButtonClass, 'h-11 flex-[2]')} disabled={!slot} onClick={() => goTo('details')}>
-            {slot ? 'Continue' : 'Pick a time to continue'}
-          </Button>
+          {rebookOf ? (
+            <Button className={cn(primaryButtonClass, 'h-11 flex-[2]')} disabled={!slot || busy} onClick={() => void sendRebook()}>
+              {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              {slot ? `Rebook for ${lagosShortDate(slot.start)}, ${lagosTime(slot.start)}` : 'Pick the new time'}
+            </Button>
+          ) : (
+            <Button className={cn(primaryButtonClass, 'h-11 flex-[2]')} disabled={!slot} onClick={() => goTo('details')}>
+              {slot ? 'Continue' : 'Pick a time to continue'}
+            </Button>
+          )}
         </div>
       </div>
     )
@@ -537,10 +612,12 @@ function BookingDrawer({ options, onClose }: { options: BookingOptions; onClose:
           <Check className="h-7 w-7" />
         </span>
         <h3 className="mt-4 text-xl font-semibold tracking-tight text-pt-ink">
-          {isRehabify ? `Sent to ${firstName} to pay` : `${firstName} is booked in`}
+          {rebookOf ? `${firstName}’s visit is rebooked` : isRehabify ? `Sent to ${firstName} to pay` : `${firstName} is booked in`}
         </h3>
         <p className="mx-auto mt-2 max-w-sm text-sm text-pt-muted">
-          {isRehabify && result?.holdExpiresAt
+          {rebookOf
+            ? `${firstName} has been told in the app and by email. It’s already paid, so they don’t pay again, and you’re paid once it’s done.`
+            : isRehabify && result?.holdExpiresAt
             ? `They pay to confirm${result.payoutKobo !== undefined ? `, and you earn ${formatKobo(result.payoutKobo)}` : ''}. We hold the time until ${lagosShortDate(result.holdExpiresAt)}, ${lagosTime(result.holdExpiresAt)}.`
             : `${firstName} gets a notification to confirm the time. You’ll see it on your Schedule.`}
         </p>

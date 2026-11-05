@@ -20,8 +20,8 @@ import { isWithinWorkingHours } from "./calendar/availability";
 import { providerResponseDueAt } from "../lib/bookingResponse";
 import { patientCancelOutcome, patientCancelTier, type CancelMoney } from "../lib/cancellationPolicy";
 import { hasPriorAssessment } from "./helpers/rehabifyPricing";
-import { awaitingConfirmationFrom } from "./helpers/appointmentStatus";
-import { emailAboutAppointment, personName, syncGoogleCalendarEvent } from "./helpers/appointmentNotify";
+import { awaitingConfirmationFrom, isOpenAppointment } from "./helpers/appointmentStatus";
+import { emailAboutAppointment, notifyAboutAppointment, personName, syncGoogleCalendarEvent } from "./helpers/appointmentNotify";
 import { formatKobo, getService, isBookableServiceId } from "../lib/rehabify-services";
 import { isRehabifyCareInvoice } from "./helpers/marketplaceInvoices";
 import { lagosDate, lagosDateTime, lagosTimeRange } from "./helpers/lagosTime";
@@ -745,3 +745,192 @@ export async function useFreeReschedule(ctx: MutationCtx, appointment: Doc<"appo
   }
   await ctx.db.patch(booking._id, { freeRescheduleUsedAt: Date.now(), updatedAt: Date.now() });
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Rebooking a paid visit that didn't happen
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** How long after a missed paid visit the physio can still rebook it for free. */
+const REBOOK_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * Why a visit can't be rebooked for free, or null when it can. It must be the physio's own, paid
+ * through Rehabify, in the past (within 30 days), and not have happened: still open, marked a
+ * no-show, or marked done without a session note. Its payout must not have been sent yet.
+ */
+async function whyNotRebookable(ctx: QueryCtx, appointment: Doc<"appointments">, physioId: Id<"users">): Promise<string | null> {
+  if (appointment.physiotherapistId !== physioId) return "This visit isn't yours.";
+  if (appointment.isRecordOnly) return "This is a note, not a visit.";
+  const now = Date.now();
+  if (appointment.startTime > now) return "This visit hasn't happened yet. Use Suggest another time instead.";
+  if (appointment.startTime < now - REBOOK_WINDOW_MS) return "Visits can be rebooked free within 30 days.";
+  const closed = appointment.status === "no_show" || appointment.status === "completed";
+  if (!closed && !isOpenAppointment(appointment.status)) return "This visit was cancelled.";
+  if (!(await isVisitPaid(ctx, appointment))) return "Only visits paid through Rehabify are rebooked free. Book a new session instead.";
+  if (appointment.status === "completed") {
+    const note = await ctx.db
+      .query("sessionLogs")
+      .withIndex("by_appointment_id", (q) => q.eq("appointmentId", appointment._id))
+      .first();
+    if (note) return "This visit has a session note, so it happened. Book a new session instead.";
+  }
+  const payouts = await ctx.db
+    .query("payouts")
+    .withIndex("by_appointment", (q) => q.eq("appointmentId", appointment._id))
+    .take(20);
+  if (payouts.some((payout) => payout.status === "processing" || payout.status === "completed" || payout.runId)) {
+    return "You've already been paid for this visit, so it can't be rebooked free. Contact Rehabify support.";
+  }
+  return null;
+}
+
+/** For the booking drawer: this patient's paid visits with me that didn't happen and can be rebooked free. */
+export const getRebookableVisits = query({
+  args: { patientId: v.id("users") },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return [];
+    const me = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .unique();
+    if (!me || me.role !== "physiotherapist") return [];
+    const now = Date.now();
+    const visits = await ctx.db
+      .query("appointments")
+      .withIndex("by_patient_id_and_time", (q) =>
+        q.eq("patientId", args.patientId).gte("startTime", now - REBOOK_WINDOW_MS).lt("startTime", now)
+      )
+      .take(50);
+    const out: {
+      appointmentId: Id<"appointments">;
+      startTime: number;
+      endTime: number;
+      serviceType: string;
+      status: string;
+      video: boolean;
+    }[] = [];
+    for (const visit of visits) {
+      if (visit.physiotherapistId !== me._id) continue;
+      if (await whyNotRebookable(ctx, visit, me._id)) continue;
+      out.push({
+        appointmentId: visit._id,
+        startTime: visit.startTime,
+        endTime: visit.endTime,
+        serviceType: visit.serviceType ?? "Session",
+        status: visit.status,
+        video: visit.appointmentType === "telehealth" || visit.isOnline === true,
+      });
+    }
+    return out.sort((a, b) => b.startTime - a.startTime);
+  },
+});
+
+/**
+ * Physio rebooks a paid visit that didn't happen. The same visit (and its payment) moves straight
+ * to the new time, confirmed, and the patient is told; they don't pay again and can still change
+ * the time from their appointments. A visit already marked a no-show or done is reopened, and any
+ * payout queued for it is withdrawn; the physio is paid when the rebooked session is done.
+ */
+export const rebookMissedVisit = mutation({
+  args: {
+    appointmentId: v.id("appointments"),
+    startTime: v.number(),
+    endTime: v.number(),
+    note: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const physio = await getAuthenticatedUser(ctx);
+    if (physio.role !== "physiotherapist") throw new ConvexError("Only physiotherapists can rebook visits.");
+    const appointment = await ctx.db.get(args.appointmentId);
+    if (!appointment) throw new ConvexError("Visit not found.");
+    const why = await whyNotRebookable(ctx, appointment, physio._id);
+    if (why) throw new ConvexError(why);
+    if (args.endTime <= args.startTime || args.endTime - args.startTime > 4 * 60 * 60_000) {
+      throw new ConvexError("Please choose a valid session length.");
+    }
+    if (args.startTime < Date.now()) throw new ConvexError("Pick a time in the future.");
+    if (await findSlotClash(ctx, physio._id, { start: args.startTime, end: args.endTime }, { excludeAppointmentId: appointment._id })) {
+      throw new ConvexError("That time overlaps another booking. Pick another time.");
+    }
+
+    const now = Date.now();
+    const note = args.note?.trim().slice(0, 500) || undefined;
+    // Reopen a visit that was closed as a no-show or done; the payout queued for it is withdrawn
+    if (appointment.status === "no_show" || appointment.status === "completed") {
+      const payouts = await ctx.db
+        .query("payouts")
+        .withIndex("by_appointment", (q) => q.eq("appointmentId", appointment._id))
+        .take(20);
+      let withdrawn = 0;
+      for (const payout of payouts) {
+        if (payout.status === "pending" && !payout.runId) {
+          await ctx.db.delete(payout._id);
+          withdrawn++;
+        }
+      }
+      const booking = await ctx.db
+        .query("marketplaceBookings")
+        .withIndex("by_appointment", (q) => q.eq("appointmentId", appointment._id))
+        .first();
+      if (booking && (booking.bookingStatus === "no_show" || booking.bookingStatus === "completed")) {
+        await ctx.db.patch(booking._id, { bookingStatus: "confirmed", updatedAt: now });
+      }
+      await ctx.db.insert("systemLogs", {
+        type: "payment",
+        timestamp: now,
+        action: "missed_visit_reopened",
+        targetEntityType: "appointment",
+        targetEntityId: String(appointment._id),
+        details: { previousStatus: appointment.status, payoutsWithdrawn: withdrawn },
+      });
+    }
+    // The same visit moves to the new time, confirmed (no new payment, no acceptance step)
+    await ctx.db.patch(appointment._id, {
+      status: "confirmed",
+      startTime: args.startTime,
+      endTime: args.endTime,
+      requestedBy: "provider",
+      rescheduledFromAppointmentId: appointment._id,
+      proposedStartTime: undefined,
+      proposedEndTime: undefined,
+      proposedBy: undefined,
+      proposedAt: undefined,
+      proposalNote: undefined,
+    });
+    const paidBooking = await ctx.db
+      .query("marketplaceBookings")
+      .withIndex("by_appointment", (q) => q.eq("appointmentId", appointment._id))
+      .first();
+    if (paidBooking) await ctx.db.patch(paidBooking._id, { sessionDate: args.startTime, updatedAt: now });
+    await syncGoogleCalendarEvent(ctx, appointment._id, { startTime: args.startTime, endTime: args.endTime });
+
+    const patient = await ctx.db.get(appointment.patientId);
+    const physioName = personName(physio, "Your physiotherapist");
+    const when = `${lagosDate(args.startTime)}, ${lagosTimeRange(args.startTime, args.endTime)}`;
+    await notifyAboutAppointment(ctx, {
+      userId: appointment.patientId,
+      type: "appointment_rescheduled",
+      title: "Your missed visit is rebooked",
+      body: `${physioName} rebooked the visit that didn't happen on ${lagosDateTime(appointment.startTime)} for ${lagosDateTime(args.startTime)}. It's already paid, so you don't pay again.${note ? ` "${note}"` : ""}`,
+      appointmentId: appointment._id,
+      actionUrl: "/dashboard/patient/appointments",
+    });
+    await emailAboutAppointment(ctx, {
+      to: patient?.email,
+      audience: "patient",
+      subject: `Your visit with ${physioName} is rebooked for ${lagosDate(args.startTime)}`,
+      greetingName: patient?.firstName,
+      heading: "Your visit is rebooked",
+      paragraphs: [
+        `Your ${appointment.serviceType ?? "visit"} on ${lagosDate(appointment.startTime)} didn't go ahead, so ${physioName} has rebooked it for ${when} (Lagos time).`,
+        "You've already paid, so there's nothing more to pay. Your video link stays on your appointments page.",
+        ...(note ? [`Their note: "${note}"`] : []),
+        "Can't make this time? Change it from your appointments.",
+      ],
+      buttonLabel: "View my appointments",
+      buttonPath: "/dashboard/patient/appointments",
+    });
+    return { success: true, startTime: args.startTime };
+  },
+});

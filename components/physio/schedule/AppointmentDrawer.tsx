@@ -96,6 +96,7 @@ export function AppointmentDrawer({
 
   const updateStatus = useMutationUntyped(scheduleApi.appointments.updateAppointmentStatus)
   const propose = useMutationUntyped(scheduleApi.appointments.proposeNewTime)
+  const rebook = useMutationUntyped(scheduleApi.rehabifyFollowUps.rebookMissedVisit)
   const addNote = useMutationUntyped(scheduleApi.physioCare.addClinicalNote)
   const acceptWithInvoice = useMutationUntyped(scheduleApi.rehabifyFollowUps.acceptRequestWithInvoice)
 
@@ -144,6 +145,10 @@ export function AppointmentDrawer({
   const open = isOpenAppointment(appointment.status)
   const upcoming = appointment.startTime > now
   const started = appointment.startTime <= now
+  // Paid through Rehabify: a missed visit is rebooked free, even after it was marked a no-show or done
+  const paid = Boolean((appointment as { paidThroughRehabify?: boolean }).paidThroughRehabify)
+  const closedMissed = paid && started && (appointment.status === 'no_show' || appointment.status === 'completed')
+  const paidMissed = paid && started && (open || closedMissed)
   const answer = needsMyAnswer(appointment, now)
   const join = videoJoin(appointment, now)
   const video = isVideoVisit(asLike(appointment))
@@ -264,10 +269,18 @@ export function AppointmentDrawer({
           </div>
         )}
         {appointment.status === 'completed' && (
-          <Button className={cn(secondaryButtonClass, 'h-10')} onClick={() => setView('note')}>
-            <NotebookPen className="mr-2 h-4 w-4" />
-            Write a session note
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button className={cn(secondaryButtonClass, 'h-10')} onClick={() => setView('note')}>
+              <NotebookPen className="mr-2 h-4 w-4" />
+              Write a session note
+            </Button>
+            {closedMissed && (
+              <Button variant="ghost" className="h-10 rounded-xl text-pt-ink" onClick={() => setView('propose')}>
+                <CalendarDays className="mr-2 h-4 w-4" />
+                Didn’t happen? Rebook free
+              </Button>
+            )}
+          </div>
         )}
       </div>
     )
@@ -314,10 +327,10 @@ export function AppointmentDrawer({
       footer = (
         <div className="space-y-2">
           {joinButton}
-          {/* The session didn't happen: move it to a new time. What the patient paid stays on it. */}
-          <Button className={cn(secondaryButtonClass, 'h-11 w-full')} disabled={busy !== null} onClick={() => setView('propose')}>
+          {/* The session didn't happen: rebook it. A paid visit keeps its payment. */}
+          <Button className={cn(paid ? primaryButtonClass : secondaryButtonClass, 'h-11 w-full')} disabled={busy !== null} onClick={() => setView('propose')}>
             <CalendarDays className="mr-2 h-4 w-4" />
-            Missed it? Rebook free
+            {paid ? 'Missed it? Rebook free' : 'Missed it? Pick a new time'}
           </Button>
           <div className="grid grid-cols-2 gap-2">
             <Button
@@ -360,13 +373,21 @@ export function AppointmentDrawer({
       )
     } else if (appointment.status === 'no_show') {
       footer = (
-        <Button
-          className={cn(secondaryButtonClass, 'h-11 w-full')}
-          disabled={busy !== null}
-          onClick={() => void setStatus('done', 'completed', 'Changed to done.', 'success', () => setView('note'))}
-        >
-          They came after all: mark done
-        </Button>
+        <div className="space-y-2">
+          {closedMissed && (
+            <Button className={cn(primaryButtonClass, 'h-11 w-full')} disabled={busy !== null} onClick={() => setView('propose')}>
+              <CalendarDays className="mr-2 h-4 w-4" />
+              Rebook free (no new payment)
+            </Button>
+          )}
+          <Button
+            className={cn(secondaryButtonClass, 'h-11 w-full')}
+            disabled={busy !== null}
+            onClick={() => void setStatus('done', 'completed', 'Changed to done.', 'success', () => setView('note'))}
+          >
+            They came after all: mark done
+          </Button>
+        </div>
       )
     } else {
       footer = (
@@ -510,15 +531,23 @@ export function AppointmentDrawer({
   }
 
   if (view === 'propose') {
-    // A visit whose time has passed without being closed: it's rebooked, not moved
-    const missed = started && open
-    title = missed ? 'Rebook the missed visit' : 'Suggest another time'
-    description = `${missed ? 'Was' : 'Now'}: ${lagosShortDate(appointment.startTime)}, ${lagosTime(appointment.startTime)} · ${minutes} min`
+    // A visit whose time has passed: a paid one is rebooked straight away; an unpaid one is offered to the patient
+    const missed = started && (open || closedMissed)
+    title = paidMissed ? 'Rebook the missed visit' : missed ? 'Pick a new time' : 'Suggest another time'
+    description = `${missed ? 'Missed' : 'Now'}: ${lagosShortDate(appointment.startTime)}, ${lagosTime(appointment.startTime)} · ${minutes} min`
     body = (
       <div className="space-y-4">
-        {missed ? (
+        {paidMissed ? (
+          <div className="flex gap-3 rounded-2xl bg-pt-green-bg p-3.5 text-sm text-pt-green-fg">
+            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>
+              <span className="block font-semibold">Already paid: no new payment</span>
+              Pick the new time and it’s booked straight away. {first} is told in the app and by email, and can change it if it doesn’t suit.
+            </span>
+          </div>
+        ) : missed ? (
           <p className="flex items-start gap-1 text-sm text-pt-muted">
-            Pick a new time and {first} accepts it. They don’t pay again: what they paid stays with this visit.
+            Pick a new time and {first} accepts it.
             <InfoTip>The visit moves to the new time once {first} accepts. You’ll get a notification when they answer.</InfoTip>
           </p>
         ) : (
@@ -559,19 +588,21 @@ export function AppointmentDrawer({
             void run(
               'propose',
               () =>
-                propose({
+                (paidMissed ? rebook : propose)({
                   appointmentId: appointment._id as Id<'appointments'>,
                   startTime: slot.start,
                   endTime: slot.end,
                   note: message.trim() || undefined,
                 }),
-              `New time sent to ${first}.`,
-              'send',
-              () => setView('details')
+              paidMissed ? `Rebooked for ${lagosShortDate(slot.start)}, ${lagosTime(slot.start)}. ${first} has been told.` : `New time sent to ${first}.`,
+              paidMissed ? 'booked' : 'send',
+              paidMissed ? close : () => setView('details')
             )
           }
         >
-          {slot ? `Suggest ${lagosShortDate(slot.start)}, ${lagosTime(slot.start)}` : 'Pick a time'}
+          {slot
+            ? `${paidMissed ? 'Rebook for' : 'Suggest'} ${lagosShortDate(slot.start)}, ${lagosTime(slot.start)}`
+            : 'Pick a time'}
         </Button>
       </div>
     )
