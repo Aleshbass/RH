@@ -502,7 +502,7 @@ function SignFlow({ item, data }: { item: MyAgreementItem; data: MyAgreements })
                             <span className="text-sm font-semibold">{plan.price}/mo</span>
                           </span>
                           <span className={`mt-1 block text-sm ${selected ? 'opacity-75' : 'text-rh-ink/60 dark:text-white/60'}`}>
-                            {plan.seats} · {plan.programmes}
+                            {plan.features.join(' · ')}
                           </span>
                         </button>
                       );

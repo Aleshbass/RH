@@ -13,7 +13,8 @@
 import { ConvexError } from "convex/values";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
-import { CLINIC_PLANS, CLINIC_PROGRAMME_OVERAGE_KOBO } from "../../lib/clinicPlans";
+import { CLINIC_PLANS, CLINIC_PROGRAMME_OVERAGE_KOBO, isUnlimitedSeats } from "../../lib/clinicPlans";
+import { loadClinicPlans } from "../clinicPlans";
 import { formatLagos, startOfZonedDay, zonedDateKey, zonedDateTimeToUtc } from "./lagosTime";
 
 type Ctx = QueryCtx | MutationCtx;
@@ -43,9 +44,10 @@ export function planName(plan: string): string {
   return CLINIC_PLANS.find((p) => p.id === plan)?.name ?? "Clinic plan";
 }
 
-/** Seats, allowance and fee of a standard plan (Enterprise numbers are set by an admin). */
-export function standardPlanNumbers(plan: "starter" | "growth") {
-  const found = CLINIC_PLANS.find((p) => p.id === plan);
+/** Seats, allowance and fee of a standard plan as an admin last set it (Enterprise numbers are set per clinic). */
+export async function standardPlanNumbers(ctx: Ctx, plan: "starter" | "growth") {
+  const { plans } = await loadClinicPlans(ctx);
+  const found = plans.find((p) => p.id === plan);
   if (!found || found.seatLimit === null || found.programmeAllowance === null || found.monthlyFeeKobo === null) {
     throw new ConvexError("Unknown plan");
   }
@@ -182,7 +184,7 @@ export async function assertClinicianSeatFree(
   if (!billingIsOn(sub)) return;
   const { used, pending } = await clinicianSeatUsage(ctx, clinic, opts.excludeUserId);
   const taken = used + (opts.countPending ? pending : 0);
-  if (taken < sub.seatLimit) return;
+  if (taken < sub.seatLimit || isUnlimitedSeats(sub.seatLimit)) return;
   if (opts.audience === "invitee") {
     throw new ConvexError(
       `${clinic.name} has no free clinician seats on its Rehabify plan. Ask the clinic to upgrade its plan or free a seat, then accept again.`

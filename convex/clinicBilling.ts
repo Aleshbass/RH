@@ -1,3 +1,4 @@
+import { seatsLabel } from "../lib/clinicPlans";
 import { insertNotification } from "./helpers/pushNotify";
 import { ConvexError, v } from "convex/values";
 import { makeFunctionReference } from "convex/server";
@@ -1550,7 +1551,7 @@ export const adminSaveClinicSubscription = mutation({
       }
       numbers = { seatLimit: args.seatLimit, programmeAllowance: args.programmeAllowance, monthlyFeeKobo: Math.round(fee * 100) };
     } else {
-      numbers = standardPlanNumbers(args.plan);
+      numbers = await standardPlanNumbers(ctx, args.plan);
     }
 
     const startsAt = lagosDateToMs(args.billingStartDate.trim());
@@ -1634,7 +1635,7 @@ export const adminSaveClinicSubscription = mutation({
         subject: `Your Rehabify plan: ${name}`,
         heading: `You're on the ${name} plan`,
         paragraphs: [
-          `${clinic.name} is on the ${name} plan: ${naira(numbers.monthlyFeeKobo)} a month (excluding VAT), with up to ${numbers.seatLimit} clinician${numbers.seatLimit === 1 ? "" : "s"} and ${numbers.programmeAllowance} active patient programmes.`,
+          `${clinic.name} is on the ${name} plan: ${naira(numbers.monthlyFeeKobo)} a month (excluding VAT), with ${seatsLabel(numbers.seatLimit)} and ${numbers.programmeAllowance} active patient programmes.`,
           `Your first invoice is issued on ${longDate(startsAt)} and is payable within 7 days. Each active patient programme over your allowance is ${naira(OVERAGE_UNIT_KOBO)} a month, billed the month after.`,
           "You can see your plan, usage and invoices, and export your data, from your dashboard.",
         ],

@@ -397,6 +397,27 @@ export default defineSchema({
     .index("by_booking", ["bookingId"])
     .index("by_patient_kind", ["patientId", "kind"]),
 
+  // Clinic plan prices and wording edited by admins (clinicPlans.ts); the latest row wins
+  clinicPlanSettings: defineTable({
+    plans: v.array(
+      v.object({
+        id: v.union(v.literal("starter"), v.literal("growth"), v.literal("enterprise")),
+        name: v.optional(v.string()),
+        monthlyFeeKobo: v.optional(v.union(v.number(), v.null())),
+        priceNote: v.optional(v.string()),
+        features: v.optional(v.array(v.string())),
+        seatLimit: v.optional(v.union(v.number(), v.null())),
+        programmeAllowance: v.optional(v.union(v.number(), v.null())),
+        featured: v.optional(v.boolean()),
+      })
+    ),
+    includes: v.optional(v.array(v.string())),
+    excludes: v.optional(v.array(v.string())),
+    updatedAt: v.number(),
+    updatedBy: v.id("users"),
+    updatedByName: v.string(),
+  }),
+
   receipts: defineTable({
     // "test": paid with a Paystack test key, so no real money moved. Left out of every money figure (admin/testPayments.ts)
     paystackMode: v.optional(v.union(v.literal("test"), v.literal("live"))),

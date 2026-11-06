@@ -101,6 +101,7 @@ import type * as clinicBilling from "../clinicBilling.js";
 import type * as clinicFeeSettings from "../clinicFeeSettings.js";
 import type * as clinicFees from "../clinicFees.js";
 import type * as clinicInventory from "../clinicInventory.js";
+import type * as clinicPlans from "../clinicPlans.js";
 import type * as clinicTeamChat from "../clinicTeamChat.js";
 import type * as clinicTools from "../clinicTools.js";
 import type * as clinics from "../clinics.js";
@@ -397,6 +398,7 @@ declare const fullApi: ApiFromModules<{
   clinicFeeSettings: typeof clinicFeeSettings;
   clinicFees: typeof clinicFees;
   clinicInventory: typeof clinicInventory;
+  clinicPlans: typeof clinicPlans;
   clinicTeamChat: typeof clinicTeamChat;
   clinicTools: typeof clinicTools;
   clinics: typeof clinics;

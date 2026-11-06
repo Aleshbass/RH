@@ -121,6 +121,7 @@ export const ADMIN_NAV: AdminNavSection[] = [
     icon: Building2,
     items: [
       { title: 'All clinics', href: a('/clinics'), icon: Building2, keywords: ['practices', 'clinic owners', 'staff', 'subscriptions', 'clinic plans', 'past due'] },
+      { title: 'Clinic plans', href: a('/clinic-plans'), icon: Tags, keywords: ['subscription', 'prices', 'starter', 'growth', 'clinic pricing'] },
       { title: 'Clinic fees', href: a('/clinic-fees'), icon: Percent, keywords: ['split', 'commission', 'stamp duty'] },
     ],
   },

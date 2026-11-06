@@ -25,7 +25,8 @@ import {
   primaryButtonClass,
   softButtonClass,
 } from '@/components/admin/ui'
-import { CLINIC_PLANS } from '@/lib/clinicPlans'
+import { useClinicPlans } from '@/lib/useClinicPlans'
+import { seatsLabel } from '@/lib/clinicPlans'
 import { CLINICS_BASE } from '@/components/admin/clinics/shared'
 import {
   SUBSCRIPTION_STATUS_LABEL,
@@ -88,6 +89,8 @@ type Form = {
 }
 
 export function ClinicSubscriptionTab({ clinicId }: { clinicId: string }) {
+  // Plans as an admin last set them (Admin › Clinic plans)
+  const { plans: CLINIC_PLANS } = useClinicPlans()
   const data = useQuery(subscriptionRef, { clinicId })
   const save = useMutation(saveRef)
   const switchOff = useMutation(switchOffRef)
@@ -138,6 +141,7 @@ export function ClinicSubscriptionTab({ clinicId }: { clinicId: string }) {
   const on = isOn(sub?.status)
   const started = on && sub?.currentPeriodStart !== null && sub?.currentPeriodStart !== undefined
   const standard = CLINIC_PLANS.find((p) => p.id === form.plan)
+  const standardSeats = standard?.seatLimit != null ? seatsLabel(standard.seatLimit) : ''
   const enterprise = form.plan === 'enterprise'
   const seatLimit = enterprise ? Number(form.seats) || 0 : (standard?.seatLimit ?? 0)
   const allowance = enterprise ? Number(form.allowance) || 0 : (standard?.programmeAllowance ?? 0)
@@ -242,7 +246,7 @@ export function ClinicSubscriptionTab({ clinicId }: { clinicId: string }) {
             </select>
             {standard && !enterprise && (
               <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                {standard.seats}, {standard.programmes.toLowerCase()}. Excludes VAT.
+                {standardSeats.charAt(0).toUpperCase() + standardSeats.slice(1)}, {standard.programmeAllowance} patients with Joy recovery support. Excludes VAT.
               </p>
             )}
           </div>

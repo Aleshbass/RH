@@ -4,7 +4,8 @@ import { useState } from "react";
 import { Check } from "@/components/icons";
 import PlatformPageLayout, { type PlatformFeature } from "@/components/platform/PlatformPageLayout";
 import { BookDemoDialog } from "@/components/partners/BookDemoDialog";
-import { CLINIC_PLANS, CLINIC_PLAN_EXCLUDES, CLINIC_PLAN_INCLUDES, CLINIC_PROGRAMME_OVERAGE } from "@/lib/clinicPlans";
+import { CLINIC_PROGRAMME_OVERAGE } from "@/lib/clinicPlans";
+import { useClinicPlans } from "@/lib/useClinicPlans";
 import { MARKETING_VIDEOS } from "@/lib/marketingVideos";
 import { cn } from "@/lib/utils";
 
@@ -18,6 +19,8 @@ const FEATURES: PlatformFeature[] = [
 ];
 
 function Plans({ onBookDemo }: { onBookDemo: () => void }) {
+  // Prices and wording an admin can change in Admin › Clinic plans
+  const { plans: CLINIC_PLANS, includes: CLINIC_PLAN_INCLUDES, excludes: CLINIC_PLAN_EXCLUDES } = useClinicPlans();
   return (
     <section className="px-4 pb-20 sm:px-6 lg:pb-28">
       <div className="mx-auto max-w-6xl">
@@ -36,7 +39,7 @@ function Plans({ onBookDemo }: { onBookDemo: () => void }) {
               <p className="mt-4 text-[34px] font-bold leading-none tracking-tight">{plan.price}</p>
               <p className={cn("mt-1 text-sm", plan.featured ? "text-white/60" : "text-rh-ink/55")}>{plan.priceNote}</p>
               <ul className="mt-6 space-y-2.5">
-                {[plan.seats, plan.programmes].map((line) => (
+                {plan.features.map((line) => (
                   <li key={line} className="flex gap-2.5 text-[15px] font-medium">
                     <Check className={cn("mt-1 h-3.5 w-3.5 shrink-0", plan.featured ? "text-rh-lime" : "text-rh-ink")} />
                     {line}
@@ -61,7 +64,7 @@ function Plans({ onBookDemo }: { onBookDemo: () => void }) {
           </div>
           <div className="space-y-4 text-[15px] font-medium leading-relaxed text-rh-ink/70">
             <p>{CLINIC_PROGRAMME_OVERAGE}</p>
-            <p>Not included: {CLINIC_PLAN_EXCLUDES.join(", ")}.</p>
+            {CLINIC_PLAN_EXCLUDES.length > 0 && <p>Not included: {CLINIC_PLAN_EXCLUDES.join(", ")}.</p>}
             <p>Prices exclude VAT.</p>
             <button
               type="button"
