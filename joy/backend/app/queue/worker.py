@@ -43,6 +43,7 @@ from app.queue.tasks import (
     TAKEOVER_QUEUE,
     _redis,
     appointment_email_idempotency_key,
+    remember_language,
     send_appointment_email,
     send_whatsapp_interactive,
     send_whatsapp_text,
@@ -301,6 +302,9 @@ def process_queue_once(
         if own_session:
             db.commit()
             committed = True
+        if result is not None:
+            # Later messages to this number (reminders too) go out in the language they write in
+            remember_language(payload["phone"], getattr(result, "language", None))
         reply = (
             result.reply_text
             if result is not None

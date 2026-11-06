@@ -114,6 +114,25 @@ def _in_service_window(phone: str) -> bool:
         return True  # Unknown: fall back to a plain message, as before.
 
 
+def _localized(phone: str, text: str) -> str:
+    """The message in the language this number writes in (app/conversation/localize.py)."""
+    try:
+        from app.conversation.localize import localize
+
+        return localize(_redis(), phone, text)
+    except Exception:
+        return text
+
+
+def remember_language(phone: str, language: str | None) -> None:
+    try:
+        from app.conversation.localize import remember_language as _remember
+
+        _remember(_redis(), phone, language)
+    except Exception:
+        pass
+
+
 def _template_body_parameter(text: str) -> str:
     # Template parameters may not contain newlines, tabs or long runs of spaces.
     flat = " ".join(text.split())
@@ -320,6 +339,7 @@ def send_whatsapp_text(phone: str, text: str) -> None:
         # A silent no-op is indistinguishable from a delivered reply and leaves
         # the patient waiting forever.  Let the worker retry and record this.
         raise RuntimeError("WhatsApp delivery is not configured")
+    text = _localized(phone, text)
     message: dict = {"messaging_product": "whatsapp", "to": phone.lstrip("+"), "type": "text", "text": {"body": text}}
     template = settings.whatsapp_update_template.strip()
     if template and not _in_service_window(phone):
@@ -360,10 +380,12 @@ def send_whatsapp_interactive(phone: str, text: str, interactive: dict, *, text_
     ):
         send_text(phone, text)
         return
+    original = text
+    text = _localized(phone, text)
     body = text
     if len(text) > _INTERACTIVE_BODY_LIMIT:
         send_text(phone, text)
-        body = "Tap an option below, or type your reply."
+        body = _localized(phone, "Tap an option below, or type your reply.")
     message = {
         "messaging_product": "whatsapp",
         "to": phone.lstrip("+"),
@@ -384,7 +406,7 @@ def send_whatsapp_interactive(phone: str, text: str, interactive: dict, *, text_
             if interactive.get("type") == "flow":
                 from app.flows.signup import text_without_form
 
-                text = text_without_form(text)
+                text = _localized(phone, text_without_form(original))
             send_text(phone, text)
 
 
