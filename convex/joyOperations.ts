@@ -18,6 +18,7 @@ import { assertProgramUnlocked } from "./helpers/patientPlans";
 import { insertNotification, pushNewMessage } from "./helpers/pushNotify";
 import { senderIdentity } from "./helpers/displayIdentity";
 import { recordPatientCheckIn } from "./physioCare";
+import { requestRescheduleAsPatient } from "./appointments";
 
 type Operation =
   | "physio_work_summary" | "physio_update_availability" | "physio_session_note"
@@ -41,7 +42,9 @@ type Operation =
   // Additive (Nov 2026): a pain and progress check-in from WhatsApp, for the physio
   | "patient_check_in"
   // Additive (Nov 2026): a question about the physio's exercise plan, into the Messages chat
-  | "patient_ask_physio";
+  | "patient_ask_physio"
+  // Additive (Nov 2026): move a paid booking from WhatsApp (the app's reschedule rules)
+  | "patient_reschedule_booking";
 
 const activeBooking = (status: unknown) => status === "pending" || status === "confirmed" || status === "scheduled";
 const nameOf = (user: { firstName?: string; lastName?: string } | null) =>
@@ -279,6 +282,33 @@ export const executeMutation = internalMutation({
       }
       await audit(ctx, data, op, { actorUserId: patient._id, patientUserId: patient._id, fields: [...Object.keys(userPatch), ...Object.keys(profilePatch)] });
       return { updated: true };
+    }
+    if (op === "patient_reschedule_booking") {
+      // Moving a paid booking from WhatsApp, with the app's rules (requestRescheduleAsPatient: one
+      // free move at short notice, clash and calendar checks; the physio confirms the new time).
+      // Its checks all run before any write, so a refusal is returned, not thrown.
+      // { patient_id, booking_id, slot_start }
+      const patient = await patientForActor(ctx, String(data.patient_id), data.actor);
+      const booking: any = await ctx.db.get(String(data.booking_id) as any);
+      if (!booking || String(booking.patientId) !== String(patient._id)) throw new Error("Booking not found");
+      const appointment: any = booking.appointmentId ? await ctx.db.get(booking.appointmentId) : null;
+      const start = Number(data.slot_start);
+      if (!appointment || !Number.isFinite(start)) {
+        return { moved: false, message: "This booking can't be moved here yet. Reply CALL ME and our care team will help." };
+      }
+      try {
+        await requestRescheduleAsPatient(ctx, patient, {
+          appointmentId: appointment._id, newStartTime: start, newEndTime: start + (appointment.endTime - appointment.startTime),
+          reason: "Asked on WhatsApp",
+        });
+      } catch (error) {
+        if (error instanceof ConvexError) return { moved: false, message: typeof error.data === "string" ? error.data : "That time can't be booked." };
+        throw error;
+      }
+      await ctx.db.patch(booking._id, { sessionDate: start, updatedAt: Date.now() });
+      await audit(ctx, data, op, { actorUserId: patient._id, patientUserId: patient._id, bookingId: booking._id, appointmentId: appointment._id });
+      const physio: any = appointment.physiotherapistId ? await ctx.db.get(appointment.physiotherapistId) : null;
+      return { moved: true, new_start: start, physio_name: physio ? [physio.firstName, physio.lastName].filter(Boolean).join(" ") || undefined : undefined };
     }
     if (op === "patient_ask_physio") {
       // A question about the physio's exercise plan, sent from WhatsApp. It goes into the patient's

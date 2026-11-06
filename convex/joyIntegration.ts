@@ -1113,8 +1113,13 @@ export const getJoyBooking = internalQuery({
     const booking = await ctx.db.get(args.bookingId);
     if (!booking || booking.patientId !== args.patientId || booking.sourceSystem !== "joy_ai") return null;
     const provider = booking.physiotherapistId ? await ctx.db.get(booking.physiotherapistId) : null;
+    // The physio's profile id: Joy lists their free times when the patient moves the visit
+    const providerProfile = booking.physiotherapistId
+      ? await ctx.db.query("physiotherapistProfiles").withIndex("by_user_id", (q) => q.eq("userId", booking.physiotherapistId!)).first()
+      : null;
     return {
       booking_id: booking._id, booking_status: booking.bookingStatus, payment_status: booking.paymentStatus,
+      physiotherapist_id: providerProfile?._id ?? null,
       amount_kobo: booking.totalAmount, currency: "NGN", session_start: booking.sessionDate,
       duration_minutes: booking.sessionDuration, hold_expires_at: booking.holdExpiresAt,
       service_mode: booking.joyServiceMode ?? (booking.isOnline ? "online" : "clinic"),

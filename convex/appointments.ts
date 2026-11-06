@@ -1,8 +1,8 @@
 import { startVisitPaymentCheckIn } from "./helpers/visitCheckIns";
 import { insertNotification } from "./helpers/pushNotify";
 import { ConvexError, v } from "convex/values";
-import { mutation, query, internalQuery } from "./_generated/server";
-import { Id } from "./_generated/dataModel";
+import { mutation, query, internalQuery, type MutationCtx } from "./_generated/server";
+import { Doc, Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { onPatientSessionCompleted } from "./helpers/partnerAttribution";
 import { isRehabifyCare, mustPayToConfirm, needsInvoiceOnAccept, releaseCancelledVisit, settleNoShow, settlePatientCancellation, useFreeReschedule } from "./rehabifyFollowUps";
@@ -1943,6 +1943,20 @@ export const requestAppointmentReschedule = mutation({
   },
   handler: async (ctx, args) => {
     const patient = await getAuthenticatedPatient(ctx);
+    return await requestRescheduleAsPatient(ctx, patient, args);
+  },
+});
+
+/**
+ * The patient asks to move their visit (the app, or WhatsApp through Joy: joyOperations
+ * patient_reschedule_booking). Every check runs before anything is written, so a ConvexError
+ * leaves the visit and the free short-notice move untouched. The physio then confirms.
+ */
+export async function requestRescheduleAsPatient(
+  ctx: MutationCtx,
+  patient: Doc<"users">,
+  args: { appointmentId: Id<"appointments">; newStartTime: number; newEndTime: number; reason?: string }
+) {
 
     // Get the appointment
     const appointment = await ctx.db.get(args.appointmentId);
@@ -1965,9 +1979,6 @@ export const requestAppointmentReschedule = mutation({
     if (args.newStartTime < Date.now() - 60_000) {
       throw new ConvexError("Please choose a time in the future.");
     }
-    // Paid Rehabify Care visits: one free move at short notice (Payment Policy 4.3)
-    await useFreeReschedule(ctx, appointment, args.newStartTime);
-
     // Check for time conflicts (excluding the current appointment)
     const conflictingAppointments = await ctx.db
       .query("appointments")
@@ -1998,6 +2009,10 @@ export const requestAppointmentReschedule = mutation({
     if (await isGoogleBusy(ctx, appointment.physiotherapistId, { start: args.newStartTime, end: args.newEndTime })) {
       throw new ConvexError("That time isn't available any more. Please choose a different time.");
     }
+
+    // Paid Rehabify Care visits: one free move at short notice (Payment Policy 4.3). Spent after
+    // every check above, so a refused time never uses it up.
+    await useFreeReschedule(ctx, appointment, args.newStartTime);
 
     // Update the appointment. The patient picked the new time, so the physio confirms it.
     await ctx.db.patch(args.appointmentId, {
@@ -2101,8 +2116,7 @@ export const requestAppointmentReschedule = mutation({
       success: true,
       message: "Appointment rescheduled successfully. Your physiotherapist has been notified.",
     }
-  },
-})
+}
 
 /**
  * Get all physiotherapists in a clinic (for multi-provider calendar view)

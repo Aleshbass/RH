@@ -121,6 +121,13 @@ def interactive_for(conversation: Conversation | None) -> dict[str, Any] | None:
                 (str(index), str(p.get("display_name") or "Physiotherapist"), _provider_detail(p))
                 for index, p in enumerate(providers, 1)
             ], section="Verified specialists")
+    if step == "rh_awaiting_reschedule":
+        slots = [s for s in context.get("reschedule_slots") or [] if isinstance(s, dict) and isinstance(s.get("start"), (int, float))]
+        if slots:
+            return list_menu("Choose a time", [
+                (str(index), slot_label(s["start"]), "Lagos time") for index, s in enumerate(slots, 1)
+            ][:9] + [("keep", "Keep my time", None)], section="New time")
+        return None
     if step == AWAITING_RH_SLOT:
         slots = [s for s in context.get("slots") or [] if isinstance(s, dict) and isinstance(s.get("start"), (int, float))]
         if slots:

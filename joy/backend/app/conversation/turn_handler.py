@@ -1645,6 +1645,8 @@ def _stage_for_booking_substate(substate: str | None) -> ConversationStage | Non
         return ConversationStage.POLICY_ACCEPTANCE
     if substate in {AWAITING_RH_PAYMENT_EMAIL, AWAITING_RH_PAYMENT, AWAITING_PAYMENT}:
         return ConversationStage.AWAITING_PAYMENT
+    if substate == "rh_awaiting_reschedule":
+        return ConversationStage.BOOKING_CONFIRMED
     if substate in {
         AWAITING_RH_SERVICE_MODE,
         AWAITING_RH_LOCATION,
@@ -2461,7 +2463,12 @@ def handle_turn(
             from app.booking.booking_flow import paid_booking_change_reply
 
             action = "cancel" if change.group(0).lower().startswith("cancel") else "reschedule"
-            reply = paid_booking_change_reply(booked_patient, str(booked_context["rh_patient_id"]), action)
+            if action == "reschedule":
+                from app.booking.booking_flow import start_paid_reschedule
+
+                reply = start_paid_reschedule(session, session.get(Conversation, state.conversation_id), booked_patient)
+            else:
+                reply = paid_booking_change_reply(booked_patient, str(booked_context["rh_patient_id"]), action)
         else:
             reply = _booked_patient_reply(state)
         save_turn(
@@ -2534,7 +2541,9 @@ def handle_turn(
                 )
                 stage = assert_transition(
                     state.stage,
-                    booking_stage or ConversationStage.SPECIALIST_MATCHING,
+                    booking_stage
+                    # Done moving a confirmed booking: it is still confirmed
+                    or (ConversationStage.BOOKING_CONFIRMED if state.stage == ConversationStage.BOOKING_CONFIRMED else ConversationStage.SPECIALIST_MATCHING),
                 )
                 save_turn(
                     session,

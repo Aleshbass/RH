@@ -38,6 +38,8 @@ AWAITING_RH_PROVIDER = "rh_awaiting_provider"
 AWAITING_RH_SLOT = "rh_awaiting_slot"
 AWAITING_RH_PAYMENT_EMAIL = "rh_awaiting_payment_email"
 AWAITING_RH_PAYMENT = "rh_awaiting_payment"
+# A paid booking being moved in the chat: the physio's free times are on offer
+AWAITING_RH_RESCHEDULE = "rh_awaiting_reschedule"
 AWAITING_RH_REPLACEMENT = "rh_awaiting_replacement"
 AWAITING_TREATMENT_OPTION = "awaiting_treatment_option"
 AWAITING_POLICY_ACCEPTANCE = "awaiting_policy_acceptance"
@@ -108,6 +110,9 @@ def handle_booking_turn(
     conversation = session.get(Conversation, state.conversation_id)
     if conversation is None:
         return None
+
+    if conversation.booking_substate == AWAITING_RH_RESCHEDULE:
+        return _continue_rh_reschedule(session, conversation, patient, user_text)
 
     cancelled = _maybe_cancel(session, conversation, patient, user_text)
     if cancelled is not None:
@@ -742,7 +747,7 @@ def _current_assessment(session: Session, patient: Patient) -> UUID:
     return triage.id
 
 
-def _slot_choices(client, provider_id: str, mode: str) -> list[dict]:
+def _slot_choices(client, provider_id: str, mode: str, *, duration_minutes: int = 60) -> list[dict]:
     now = datetime.now(timezone.utc)
     # RH requires two hours' notice. Add a short transport margin so a slot
     # cannot become ineligible between availability and the signed hold.
@@ -751,7 +756,7 @@ def _slot_choices(client, provider_id: str, mode: str) -> list[dict]:
         provider_id,
         start_ms=int(window_start.timestamp() * 1000),
         end_ms=int((window_start + timedelta(days=7)).timestamp() * 1000),
-        duration_minutes=60,
+        duration_minutes=duration_minutes,
         service_mode=mode,
     )
     slots = result.get("slots") or []
@@ -1142,7 +1147,7 @@ def _maybe_reschedule(session: Session, patient: Patient, user_text: str, conver
         return None
     context = dict(conversation.booking_context or {}) if conversation is not None else {}
     if context.get("rh_booking_id") and context.get("rh_patient_id") and _rh_booking_paid(context):
-        return paid_booking_change_reply(patient, str(context["rh_patient_id"]), "reschedule")
+        return start_paid_reschedule(session, conversation, patient)
     booking = _mutable_booking(session, patient.id)
     if booking is None:
         return None
@@ -1191,6 +1196,105 @@ def _processing_reply(conversation: Conversation) -> str:
     if url:
         return f"{_PROCESSING} Pay here: {url}"
     return _PROCESSING
+
+
+_KEEP_RE = re.compile(r"\s*(keep|keep it|no|nope|cancel|stop|never ?mind|leave it|don'?t move it)\s*[.!]*\s*", re.I)
+
+
+def _lagos_label(start_ms: int | float) -> str:
+    return datetime.fromtimestamp(start_ms / 1000, timezone.utc).astimezone(_LAGOS).strftime("%a %d %b, %I:%M %p")
+
+
+def start_paid_reschedule(session: Session, conversation: Conversation, patient: Patient) -> str:
+    """Moving a paid booking: the physio's free times to choose from (RH's rules apply on the move).
+
+    Falls back to the dashboard when the times can't be listed here (no physio assigned yet, or
+    Rehabify can't be reached).
+    """
+    ctx = dict(conversation.booking_context or {})
+    booking_id, rh_patient_id = ctx.get("rh_booking_id"), ctx.get("rh_patient_id")
+    if not booking_id or not rh_patient_id:
+        return paid_booking_change_reply(patient, str(rh_patient_id or ""), "reschedule")
+    client = configured_rh_client()
+    try:
+        booking = client.booking_status(str(booking_id), patient_id=str(rh_patient_id))
+        physio_id = str(booking.get("physiotherapist_id") or "")
+        if not physio_id or booking.get("booking_status") not in {"confirmed", "paid", "scheduled"}:
+            return paid_booking_change_reply(patient, str(rh_patient_id), "reschedule")
+        mode = str(booking.get("service_mode") or "online")
+        duration = int(booking.get("duration_minutes") or 60)
+        current = booking.get("session_start")
+        slots = [s for s in _slot_choices(client, physio_id, mode, duration_minutes=duration) if s.get("start") != current]
+    except (RHIntegrationError, ValueError, TypeError):
+        return paid_booking_change_reply(patient, str(rh_patient_id), "reschedule")
+    name = ((booking.get("provider") or {}).get("display_name") or "your physio") if isinstance(booking.get("provider"), dict) else "your physio"
+    if not slots:
+        return (
+            f"{name} has no other free times in the next 7 days, so I can't move it here.\n\n"
+            + paid_booking_change_reply(patient, str(rh_patient_id), "reschedule")
+        )
+    ctx["reschedule_slots"] = slots
+    ctx["reschedule_provider_name"] = name
+    _set_substate(conversation, AWAITING_RH_RESCHEDULE, ctx)
+    when = f" (now {_lagos_label(current)})" if isinstance(current, (int, float)) else ""
+    lines = [f"Let's move your appointment{when}. {name}'s free times (Lagos time):"]
+    lines += [f"{index}. {_lagos_label(slot['start'])}" for index, slot in enumerate(slots, 1)]
+    lines += ["", "Reply with a number, or *KEEP* to keep your current time. Within 24 hours of the visit you can move it once for free."]
+    return "\n".join(lines)
+
+
+def _move_appointment_reminders(session: Session, booking_id: str, new_start_ms: int) -> None:
+    """The booking's pending reminders (30 minutes before, at the start) follow the new time."""
+    from app.models.appointment_reminder import AppointmentReminder
+
+    if not booking_id:
+        return
+    new_start = datetime.fromtimestamp(new_start_ms / 1000, timezone.utc)
+    for reminder in session.scalars(select(AppointmentReminder).where(
+        AppointmentReminder.rh_booking_id == booking_id, AppointmentReminder.status == "pending",
+    )):
+        shift = new_start - reminder.session_start
+        reminder.session_start = new_start
+        reminder.reminder_at = reminder.reminder_at + shift
+    session.flush()
+
+
+def _continue_rh_reschedule(session: Session, conversation: Conversation, patient: Patient, user_text: str) -> str:
+    ctx = dict(conversation.booking_context or {})
+    slots = list(ctx.get("reschedule_slots") or [])
+    if _KEEP_RE.fullmatch(user_text or ""):
+        for key in ("reschedule_slots", "reschedule_provider_name"):
+            ctx.pop(key, None)
+        _set_substate(conversation, None, ctx)
+        return "No problem, your appointment stays as it is."
+    choice = _parse_index(user_text, len(slots))
+    if choice is None:
+        return f"Reply with a time number from 1 to {len(slots)}, or *KEEP* to keep your current time."
+    slot = slots[choice - 1]
+    rh_patient_id = str(ctx.get("rh_patient_id") or "")
+    try:
+        result = configured_rh_client().operational_mutation(
+            "patient_reschedule_booking",
+            actor=_rh_actor(patient, rh_patient_id),
+            data={"patient_id": rh_patient_id, "booking_id": str(ctx.get("rh_booking_id") or ""), "slot_start": int(slot["start"])},
+            idempotency_key=f"joy-reschedule-{ctx.get('rh_booking_id')}-{int(slot['start'])}",
+        )
+    except RHIntegrationError:
+        return "I couldn't move it just now. Please reply with the number again in a few minutes, or *KEEP* to keep your time."
+    if not result.get("moved"):
+        reason = str(result.get("message") or "That time can't be booked any more.")
+        return f"{reason}\n\nReply with another number, or *KEEP* to keep your current time."
+    for key in ("reschedule_slots", "reschedule_provider_name"):
+        ctx.pop(key, None)
+    _set_substate(conversation, None, ctx)
+    _move_appointment_reminders(session, str(ctx.get("rh_booking_id") or ""), int(slot["start"]))
+    append(session, kind=AuditKind.BOOKING, actor_phone=patient.phone_e164, person_id=patient.id,
+           payload={"decision": "rh_booking_rescheduled", "rh_booking_id": str(ctx.get("rh_booking_id") or "")})
+    name = ctx.get("reschedule_provider_name") or result.get("physio_name") or "your physio"
+    return (
+        f"Done. I've asked {name} to confirm {_lagos_label(slot['start'])} (Lagos time). "
+        "Your new time shows in your Rehabify dashboard, and your reminders follow it once it's confirmed."
+    )
 
 
 def _paystack_callback_url() -> str:
