@@ -11,6 +11,7 @@
  * physio their fixed payout once the session is completed (appointments.updateAppointmentStatus).
  */
 
+import { mergeGuestAccounts } from "../helpers/guestMerge";
 import { raiseCareSignal } from "../helpers/careSignals";
 import { bookingLine } from "../careQueue";
 import { tagPaidRehabifyRelationship } from "../helpers/rehabifySources";
@@ -239,15 +240,14 @@ export const guestCreateServiceBooking = mutation({
 });
 
 async function findOrCreateGuestPatient(ctx: any, email: string, phone?: string, name?: string): Promise<Doc<"users">> {
-    const existing = await ctx.db.query("users").withIndex("by_email", (q) => q.eq("email", email)).first();
-    if (existing) {
-        // Only reuse earlier guest records. A registered account must sign in, otherwise
-        // anyone could attach bookings to someone else's account by typing their email.
-        if (!String(existing.clerkId ?? "").startsWith("guest-")) {
-            throw new ConvexError("An account already exists for this email. Please sign in to book.");
-        }
-        return existing;
+    const sameEmail = await ctx.db.query("users").withIndex("by_email", (q) => q.eq("email", email)).take(10);
+    // A registered account must sign in (otherwise anyone could attach bookings to someone else's
+    // account by typing their email). Checked across every row, not just the first.
+    if (sameEmail.some((user) => !String(user.clerkId ?? "").startsWith("guest-"))) {
+        throw new ConvexError("An account already exists for this email. Please sign in to book.");
     }
+    const existing = sameEmail[0];
+    if (existing) return existing;
     const nameParts = (name || "").split(" ").filter(Boolean);
     const guestUserId = await ctx.db.insert("users", {
         clerkId: `guest-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`,
@@ -1550,79 +1550,11 @@ export const claimGuestBookings = internalMutation({
         email: v.string(),
     },
     handler: async (ctx, args) => {
-        const guestBookings = await ctx.db
-            .query("marketplaceBookings")
-            .filter((q) => q.eq(q.field("isGuestBooking"), true))
-            .filter((q) => q.eq(q.field("guestEmail"), args.email))
-            .collect();
-
-        let claimedCount = 0;
-        const guestUserIds: Id<"users">[] = [];
-
-        for (const booking of guestBookings) {
-            const oldPatientId = booking.patientId;
-            guestUserIds.push(oldPatientId);
-
-            await ctx.db.patch(booking._id, {
-                patientId: args.userId,
-                isGuestBooking: false,
-            });
-
-            if (booking.appointmentId) {
-                await ctx.db.patch(booking.appointmentId, {
-                    patientId: args.userId,
-                });
-            }
-
-            if (booking.paymentReference) {
-                const invoicesToFix = await ctx.db
-                    .query("invoices")
-                    .withIndex("by_patient", (q) => q.eq("patientId", oldPatientId))
-                    .filter(q => q.eq(q.field("paymentReference"), booking.paymentReference))
-                    .collect();
-                    
-                for (const inv of invoicesToFix) {
-                    await ctx.db.patch(inv._id, { patientId: args.userId });
-                }
-            }
-
-            if (booking.patientPhysioRelationshipId) {
-                await ctx.db.patch(booking.patientPhysioRelationshipId, {
-                    patientId: args.userId,
-                });
-            }
-            
-            if (booking.treatmentPlanId) {
-                await ctx.db.patch(booking.treatmentPlanId, {
-                    patientId: args.userId,
-                });
-            }
-
-            claimedCount++;
-        }
-
-        if (claimedCount > 0) {
-            const user = await ctx.db.get(args.userId);
-            // Never overwrite a staff role (physio, clinic, doctor) that shares the guest's email
-            if (user && !user.role) {
-                await ctx.db.patch(args.userId, {
-                    role: "patient",
-                    onboarded: true,
-                });
-            }
-            const existingPatientProfile = await ctx.db
-                .query("patientProfiles")
-                .withIndex("by_user_id", (q) => q.eq("userId", args.userId))
-                .first();
-            if (!existingPatientProfile) {
-                await ctx.db.insert("patientProfiles", {
-                    userId: args.userId,
-                });
-            }
-            await adoptGuestPatientNumber(ctx, args.userId, guestUserIds);
-        }
-
-        return { claimedCount };
+        // Everything the guest booked moves onto the real account (helpers/guestMerge.ts). The old
+        // version looked invoices up by a missing index and crashed for every paid guest booking,
+        // which left patients with an empty second account.
+        const { merged, moved } = await mergeGuestAccounts(ctx, args.userId, args.email);
+        return { claimedCount: merged, moved };
     },
 });
 
