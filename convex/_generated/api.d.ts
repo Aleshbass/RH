@@ -128,6 +128,7 @@ import type * as exerciseShareLinks from "../exerciseShareLinks.js";
 import type * as exerciseTemplates from "../exerciseTemplates.js";
 import type * as exercises from "../exercises.js";
 import type * as files from "../files.js";
+import type * as findHelp from "../findHelp.js";
 import type * as health from "../health.js";
 import type * as helpers_accessAwards from "../helpers/accessAwards.js";
 import type * as helpers_adminPaymentAlerts from "../helpers/adminPaymentAlerts.js";
@@ -172,6 +173,7 @@ import type * as helpers_partnerReferralCore from "../helpers/partnerReferralCor
 import type * as helpers_partnerShared from "../helpers/partnerShared.js";
 import type * as helpers_patientFacts from "../helpers/patientFacts.js";
 import type * as helpers_patientPlans from "../helpers/patientPlans.js";
+import type * as helpers_patientViews from "../helpers/patientViews.js";
 import type * as helpers_paymentLinks from "../helpers/paymentLinks.js";
 import type * as helpers_paymentRefunds from "../helpers/paymentRefunds.js";
 import type * as helpers_payoutStage from "../helpers/payoutStage.js";
@@ -431,6 +433,7 @@ declare const fullApi: ApiFromModules<{
   exerciseTemplates: typeof exerciseTemplates;
   exercises: typeof exercises;
   files: typeof files;
+  findHelp: typeof findHelp;
   health: typeof health;
   "helpers/accessAwards": typeof helpers_accessAwards;
   "helpers/adminPaymentAlerts": typeof helpers_adminPaymentAlerts;
@@ -475,6 +478,7 @@ declare const fullApi: ApiFromModules<{
   "helpers/partnerShared": typeof helpers_partnerShared;
   "helpers/patientFacts": typeof helpers_patientFacts;
   "helpers/patientPlans": typeof helpers_patientPlans;
+  "helpers/patientViews": typeof helpers_patientViews;
   "helpers/paymentLinks": typeof helpers_paymentLinks;
   "helpers/paymentRefunds": typeof helpers_paymentRefunds;
   "helpers/payoutStage": typeof helpers_payoutStage;
