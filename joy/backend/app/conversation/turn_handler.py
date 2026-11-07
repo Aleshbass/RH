@@ -55,7 +55,11 @@ from app.family.relay import apply_pending_physio_answer, ask_physio, is_relay_a
 from app.partner.referral import apply_inbound_code, apply_partner_turn, maybe_provision_from_referral
 from app.identity.permissions import authorize
 from app.identity.resolver import resolve
-from app.identity.unknown_sender import resolve_unknown_sender
+from app.identity.unknown_sender import (
+    PHYSIO_SIGN_UP_REPLY,
+    PHYSIO_USE_DASHBOARD_REPLY,
+    resolve_unknown_sender,
+)
 from app.llm.gemini_client import LLMClient
 from app.observability import elapsed_ms, log_event
 from app.llm.prompt_builder import build
@@ -211,6 +215,8 @@ def _dashboard_link_reply(session: Session, identity: Identity) -> str:
 
 
 _PHYSIO_BOOKING_REPLY_RE = re.compile(r"^\s*(?:ACCEPT|REJECT)\s+[A-Za-z0-9_-]{6,64}\s*$", re.IGNORECASE)
+# A legacy Joy-booked physio answering its alert without an ID ("accept", "declined")
+_LEGACY_PHYSIO_ANSWER_RE = re.compile(r"(?i)\b(?:accept(?:ed)?|declin(?:e|ed))\b")
 
 
 def _is_greeting_only(user_text: str) -> bool:
@@ -1886,6 +1892,50 @@ def provider_unavailable_reply(
     return TurnResult(reply_text=reply, language=language, phase=phase, extracted=extracted, safety=safety)
 
 
+def _physio_patient_only_turn(
+    session: Session,
+    identity: Identity,
+    user_text: str,
+    wa_message_id: str | None,
+    language: str,
+    *,
+    rh_mapping: RHIdentityMapping | None,
+    physio: Physiotherapist | None,
+) -> TurnResult:
+    """Joy is for patients (owner, 2026-11-07): a physio can only answer a booking request here.
+
+    "ACCEPT <booking ID>" / "REJECT <booking ID>" still reach RH, so the 2-hour accept window
+    works from WhatsApp. Anything else (sign-up, availability, notes, payouts, visits) points to
+    the dashboard.
+    """
+    from app.config import get_settings
+
+    state = load(session, identity)
+    reply: str | None = None
+    text = user_text or ""
+    if _PHYSIO_BOOKING_REPLY_RE.fullmatch(text) and rh_mapping is not None and rh_mapping.rh_user_id:
+        if get_settings().rh_physio_operations_enabled:
+            try:
+                reply = apply_rh_physio_operation(
+                    configured_rh_client(), profile_id=rh_mapping.rh_record_id,
+                    actor=RHActor(persona="physiotherapist", sender_phone=identity.phone_e164, rh_user_id=rh_mapping.rh_user_id),
+                    text=text.strip(),
+                )
+            except RHIntegrationError:
+                reply = (
+                    "I can’t reach Rehabify right now. Please try again shortly, or answer the "
+                    "booking from your dashboard."
+                )
+    elif rh_mapping is None and physio is not None and _LEGACY_PHYSIO_ANSWER_RE.search(text):
+        conversation = session.get(Conversation, state.conversation_id)
+        reply = apply_physio_reply(session, physio.id, text, conversation)
+    reply = reply or PHYSIO_USE_DASHBOARD_REPLY
+    save_turn(
+        session, state, user_text, reply, ExtractedTriage(), PatientPhase.FIRST_CONTACT, language, wa_message_id,
+    )
+    return TurnResult(reply_text=reply, language=language, phase=PatientPhase.FIRST_CONTACT)
+
+
 def _physio_turn(
     session: Session,
     identity: Identity,
@@ -1908,6 +1958,10 @@ def _physio_turn(
     # booking and appointment state stays in RH; do not fall back to Joy's
     # legacy local physio tables for their operational commands.
     from app.config import get_settings
+    if get_settings().joy_patient_only:
+        return _physio_patient_only_turn(
+            session, identity, user_text, wa_message_id, language, rh_mapping=rh_mapping, physio=physio,
+        )
     if rh_mapping is not None and rh_mapping.rh_user_id and get_settings().rh_physio_operations_enabled:
         state = load(session, identity)
         try:
@@ -2276,6 +2330,9 @@ def handle_turn(
     # A physio answering Joy's booking request ("ACCEPT <booking ID>") may never have written to
     # Joy before, or may also be a patient here: RH verifies the number before anything is applied.
     physio_reply = bool(_PHYSIO_BOOKING_REPLY_RE.fullmatch(user_text or ""))
+    if identity is None and user_text.strip().upper() == "PT" and get_settings().joy_patient_only:
+        # Joy is for patients: no physio discovery here
+        return TurnResult(reply_text=PHYSIO_SIGN_UP_REPLY, language="en", phase=PatientPhase.FIRST_CONTACT)
     if (identity is None and user_text.strip().upper() == "PT") or (
         physio_reply and (identity is None or identity.persona == Persona.PATIENT)
     ):

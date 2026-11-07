@@ -75,6 +75,9 @@ class Settings(BaseSettings):
     # The structured self-referral flow (app/triage/self_referral.py): language, consent, profile,
     # the 7-item red-flag screen, short questions, then named physios. Off = the older flow.
     joy_self_referral_v2: bool = False
+    # Joy is for patients and their families only (owner, 2026-11-07). Physios still get Joy's
+    # booking requests and can reply ACCEPT/REJECT; everything else for them is on the dashboard.
+    joy_patient_only: bool = False
     internal_api_secret: str = ""
     internal_job_token: str = ""
     rh_api_base_url: str = ""

@@ -20,6 +20,29 @@ _UNKNOWN_SENDER_QUESTION = (
     "Are you looking for physiotherapy care, are you a physiotherapist, "
     "or did a family member add you here?"
 )
+_UNKNOWN_SENDER_QUESTION_PATIENT_ONLY = (
+    "Are you looking for physiotherapy care, or did a family member add you here?"
+)
+
+# Joy is for patients and their families (settings.joy_patient_only): a physio is pointed to the
+# website and is never set up on WhatsApp.
+PHYSIO_SIGN_UP_REPLY = (
+    "Joy is here for patients and their families. To join Rehabify as a physiotherapist, sign up "
+    "at https://physioaroundme.com/sign-up?as=physiotherapist\n\n"
+    "Already with us? Everything is on your dashboard: https://physioaroundme.com/dashboard/physiotherapist"
+)
+PHYSIO_USE_DASHBOARD_REPLY = (
+    "Joy is here for patients and their families, so I can't help with that here. Everything for "
+    "physiotherapists is on your dashboard: https://physioaroundme.com/dashboard/physiotherapist\n\n"
+    "I'll still message you here when a patient books you. Reply ACCEPT or REJECT with the booking ID."
+)
+
+
+def _patient_only() -> bool:
+    from app.config import get_settings
+
+    return get_settings().joy_patient_only
+
 
 _PROMPTS_DIR = Path(__file__).resolve().parents[2] / "prompts"
 
@@ -103,7 +126,7 @@ class UnknownSenderDecision:
 
 def begin_unknown(session: Session, phone_e164: str) -> str:
     del session, phone_e164
-    return _UNKNOWN_SENDER_QUESTION
+    return _UNKNOWN_SENDER_QUESTION_PATIENT_ONLY if _patient_only() else _UNKNOWN_SENDER_QUESTION
 
 
 def _normalize(text: str) -> str:
@@ -216,6 +239,12 @@ def _classify_prompt() -> str:
     empathy = (_PROMPTS_DIR / "empathy.md").read_text(encoding="utf-8").strip()
     tone = (_PROMPTS_DIR / "tone_and_format.md").read_text(encoding="utf-8").strip()
     unknown = (_PROMPTS_DIR / "unknown_sender.md").read_text(encoding="utf-8").strip()
+    if _patient_only():
+        unknown += (
+            "\n- Joy is only for patients and their families. If intent is \"unclear\", ask whether "
+            "they want physiotherapy care or a family member added them; never ask whether they "
+            "are a physiotherapist."
+        )
     return f"{empathy}\n\n{tone}\n\n{unknown}"
 
 
@@ -236,6 +265,8 @@ def resolve_unknown_sender(
 ) -> UnknownSenderDecision:
     """Deterministic gates first; Gemini classifies leftovers. Identity stays code-owned."""
     if looks_like_physio_claim(user_text):
+        if _patient_only():
+            return UnknownSenderDecision(intent="physio", reply_text=PHYSIO_SIGN_UP_REPLY)
         return UnknownSenderDecision(
             intent="physio",
             reply_text="",
@@ -280,6 +311,8 @@ def resolve_unknown_sender(
             identity=_provision_patient(session, phone_e164),
         )
     if intent == "physio":
+        if _patient_only():
+            return UnknownSenderDecision(intent="physio", reply_text=PHYSIO_SIGN_UP_REPLY)
         return UnknownSenderDecision(
             intent="physio",
             reply_text="",

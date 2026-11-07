@@ -140,7 +140,7 @@ WELCOME = (
     "I don't provide a diagnosis or emergency care. In an emergency, call 112 or go to the nearest hospital.\n\n"
     "Which language would you like to use? Tap *Choose language*, or reply with a number:\n"
     "1. English\n2. Pidgin\n3. Yorùbá\n4. Igbo\n5. Hausa\n\n"
-    "If you're a physiotherapist, reply *PT*. Messaging for someone else? Just tell me who it's for."
+    "Messaging for someone else? Just tell me who it's for."
 )
 LANGUAGE_ROWS = (
     ("en", "English", None),

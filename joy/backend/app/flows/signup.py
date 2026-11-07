@@ -55,7 +55,7 @@ WELCOME_WITH_FORM = (
     "so I don't have to ask later.\n\n"
     "Or just tell me in your own words what's going on today: what's bothering you, which part of "
     "your body, and how long you've had it. You can type or send a voice note.\n\n"
-    "If you're a physiotherapist, reply *PT*. Messaging for someone else? Just tell me who it's for."
+    "Messaging for someone else? Just tell me who it's for."
 )
 SIGNUP_OFFER = (
     "Tap *Get started* to fill in your details. It takes about a minute, and you can change them "
@@ -71,7 +71,7 @@ WELCOME_WITHOUT_FORM = (
     "• whether you’ve seen anyone about it\n"
     "• anything you’ve already tried\n\n"
     "Just tell me in your own words. There’s no need to fill out a form.\n\n"
-    "If you're a physiotherapist, reply *PT*. Messaging for someone else? Just tell me who it's for."
+    "Messaging for someone else? Just tell me who it's for."
 )
 FORM_UNAVAILABLE = (
     "The sign-up form isn't available on WhatsApp just yet. You don't need it: tell me what's going "

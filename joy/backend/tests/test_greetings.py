@@ -32,7 +32,7 @@ def test_a_new_number_saying_hi_gets_the_rehabify_welcome(db_session, fake_llm, 
     fake_llm.reply = "MODEL WROTE THIS"
     result = handle_turn(db_session, _new_phone(), text, fake_llm)
     assert result.reply_text.startswith("Hello 👋 Welcome to Rehabify.")
-    assert "reply *PT*" in result.reply_text and "Messaging for someone else?" in result.reply_text
+    assert "*PT*" not in result.reply_text and "Messaging for someone else?" in result.reply_text
     assert "MODEL WROTE THIS" not in result.reply_text
 
 

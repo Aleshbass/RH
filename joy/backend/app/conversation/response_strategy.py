@@ -21,7 +21,7 @@ _FIRST_CONTACT_WELCOME = (
     "• whether you’ve seen anyone about it\n"
     "• anything you’ve already tried\n\n"
     "Just tell me in your own words. There’s no need to fill out a form.\n\n"
-    "If you're a physiotherapist, reply *PT*. Messaging for someone else? Just tell me who it's for."
+    "Messaging for someone else? Just tell me who it's for."
 )
 
 
