@@ -21,6 +21,7 @@ import { NoteHistoryDrawer } from './NoteHistoryDrawer'
 import { DocumentManager, type DocumentType, type ManagedDocument } from '@/components/patient-documents/DocumentManager'
 import { MeasureList } from '@/components/physio/notes/MeasureList'
 import { NOTE_TYPE_LABELS, previousBySeries, type ClinicalNote } from '@/components/physio/notes/progress'
+import { useOutbox, type OutboxItem } from '@/lib/offline/outbox'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Clinical notes
@@ -83,6 +84,56 @@ function noteSummary(note: NoteRow): string {
   return 'No written details'
 }
 
+/** A note written offline that hasn't reached the server yet (it can't be edited until it has). */
+function WaitingNote({ change }: { change: OutboxItem }) {
+  const args = change.args as Record<string, unknown>
+  const text = (key: string) => (typeof args[key] === 'string' ? (args[key] as string) : undefined)
+  const sections = (
+    [
+      ['Subjective', text('subjectiveAssessment')],
+      ['Objective', text('objectiveAssessment')],
+      ['Assessment', text('diagnosis')],
+      ['Treatment', text('treatmentAdministered')],
+      ['Plan', text('planForNextSession')],
+    ] as const
+  ).filter(([, value]) => Boolean(value))
+  const measures = (Array.isArray(args.measures) ? args.measures : []) as NonNullable<ClinicalNote['measures']>
+  return (
+    <Panel>
+      <div className="space-y-3 p-5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-sm font-semibold text-pt-ink">{format(change.createdAt, 'EEEE d MMMM yyyy')}</p>
+          <div className="flex flex-wrap items-center gap-1">
+            <StatusBadge tone={change.status === 'pending' ? 'amber' : 'rose'}>
+              {change.status === 'pending' ? 'Waiting to send' : 'Couldn’t send'}
+            </StatusBadge>
+            <StatusBadge tone="teal">{NOTE_TYPE_LABELS[text('noteType') ?? ''] ?? 'Note'}</StatusBadge>
+          </div>
+        </div>
+        <p className="text-xs text-pt-muted">
+          {change.status === 'pending'
+            ? 'Written offline and saved on this phone. It’s sent when you’re back online; you can edit it after that.'
+            : change.error ?? 'Open “Waiting to send” to retry it.'}
+        </p>
+        <dl className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          {sections.map(([label, value]) => (
+            <div key={label}>
+              <dt className="text-[11px] font-semibold uppercase tracking-wider text-pt-faint">{label}</dt>
+              <dd className="mt-0.5 whitespace-pre-line text-sm text-pt-ink">{value}</dd>
+            </div>
+          ))}
+        </dl>
+        {measures.length > 0 && (
+          <div>
+            <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-pt-faint">Measures</p>
+            <MeasureList measures={measures} />
+          </div>
+        )}
+      </div>
+    </Panel>
+  )
+}
+
 export function NotesTab({ workspace, onWrite }: { workspace: Workspace; onWrite: () => void }) {
   const patientId = workspace.patient._id
   const [shown, setShown] = useState(NOTES_PAGE)
@@ -114,6 +165,12 @@ export function NotesTab({ workspace, onWrite }: { workspace: Workspace; onWrite
   const hasColleagues = notes?.some((n) => !n.mine) ?? false
   // The clinic owner reading the record: notes are written by the clinicians
   const readOnly = useWorkspaceReadOnly()
+  // Notes and edits written offline that haven't gone yet (lib/offline/outbox.ts)
+  const outbox = useOutbox()
+  const waitingNotes = outbox.filter((change) => change.kind === 'noteAdd' && change.meta.patientId === patientId)
+  const waitingEdits = new Map(
+    outbox.filter((change) => change.kind === 'noteUpdate').map((change) => [change.args.noteId as string, change] as const)
+  )
 
   return (
     <div className="space-y-5">
@@ -126,6 +183,16 @@ export function NotesTab({ workspace, onWrite }: { workspace: Workspace; onWrite
           <NotebookPen className="h-5 w-5" />
           Write a clinical note for today…
         </button>
+      )}
+
+      {waitingNotes.length > 0 && (
+        <ol className="space-y-3" aria-label="Notes waiting to send">
+          {waitingNotes.map((change) => (
+            <li key={change.id}>
+              <WaitingNote change={change} />
+            </li>
+          ))}
+        </ol>
       )}
 
       {notes === undefined ? (
@@ -214,6 +281,11 @@ export function NotesTab({ workspace, onWrite }: { workspace: Workspace; onWrite
                       </span>
                     </button>
                     <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
+                      {waitingEdits.has(note._id) && (
+                        <StatusBadge tone={waitingEdits.get(note._id)?.status === 'pending' ? 'amber' : 'rose'}>
+                          {waitingEdits.get(note._id)?.status === 'pending' ? 'Your edit is waiting to send' : 'Your edit needs a look'}
+                        </StatusBadge>
+                      )}
                       <StatusBadge tone={note.noteType === 'discharge_summary' ? 'violet' : 'teal'}>{NOTE_TYPE_LABELS[note.noteType] ?? 'Note'}</StatusBadge>
                       {note.revisionCount > 0 && (
                         <Button
@@ -236,6 +308,7 @@ export function NotesTab({ workspace, onWrite }: { workspace: Workspace; onWrite
                             setEditing({
                               _id: note._id,
                               sessionDate: note.sessionDate,
+                              version: note.editedAt ?? 0,
                               noteType: note.noteType,
                               subjectiveAssessment: note.subjectiveAssessment,
                               objectiveAssessment: note.objectiveAssessment,

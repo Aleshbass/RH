@@ -12,6 +12,7 @@ if (!SECRET.startsWith('sk_test_')) {
 export const PORT = 3100;
 export const PHYSIO_ID = process.env.OFFLINE_TEST_PHYSIO_CLERK_ID ?? '';
 export const CLINIC_OWNER_ID = process.env.OFFLINE_TEST_CLINIC_CLERK_ID ?? '';
+export const PATIENT_ID = process.env.OFFLINE_TEST_PATIENT_CLERK_ID ?? '';
 
 /**
  * Runs the Convex CLI against the isolated offline test project and returns what it printed.
@@ -38,8 +39,36 @@ function convexCli(args: string[]): string {
 }
 
 /** Runs a Convex function as a test user (isolated offline test project only). */
-function convexRunAs(clerkUserId: string, fn: string, args: Record<string, unknown>): string {
+export function convexRunAs(clerkUserId: string, fn: string, args: Record<string, unknown>): string {
   return convexCli(['run', '--identity', JSON.stringify({ subject: clerkUserId }), fn, JSON.stringify(args)]);
+}
+
+/**
+ * The fake patient in the test physio's care, with a two-exercise programme. Also clears what the
+ * offline-saving tests wrote last time (check-ins, exercise logs, notes written from a phone).
+ */
+export function seedTestPatient(): { patientId: string; programId: string } {
+  if (!PATIENT_ID) throw new Error('Missing OFFLINE_TEST_PATIENT_CLERK_ID in .env.local');
+  return JSON.parse(
+    convexCli(['run', 'testOnlyOffline:seedTestPatient', JSON.stringify({ clerkId: PATIENT_ID, physioClerkId: PHYSIO_ID })])
+  );
+}
+
+export type OfflineWrites = {
+  checkIns: { clientId: string | null; painScore: number; createdAt: number; syncedAt: number | null }[];
+  logs: { clientId: string | null; itemIndex: number; itemKey: string | null; createdAt: number }[];
+  notes: { _id: string; clientId: string | null; subjective: string | null; editedAt: number | null }[];
+  /** Education items ticked off ("item") and "Done for today" ("finish") */
+  ticks: { kind: 'item' | 'finish'; itemIndex: number | null; doneCount: number | null; total: number | null; createdAt: number }[];
+  /** The test physio's latest "finished the programme" alert */
+  finishedAlert: { title: string | null; body: string | null } | null;
+};
+
+/** What the server has saved from phones' ids (to check each change arrived exactly once). */
+export function offlineWrites(): OfflineWrites {
+  return JSON.parse(
+    convexCli(['run', 'testOnlyOffline:offlineWritesFor', JSON.stringify({ patientClerkId: PATIENT_ID, physioClerkId: PHYSIO_ID })])
+  );
 }
 
 /**
@@ -76,10 +105,14 @@ export async function signIn(page: Page, clerkUserId: string) {
 }
 
 /**
- * The welcome tours count as already seen on this phone, and the physio setup reminder as already
- * shown this visit (prompts take turns with them).
+ * The welcome tours count as already seen on this phone, the physio setup reminder as already
+ * shown this visit (prompts take turns with them), and the cookie question as answered
+ * ("Essential only"): the banner sits over the bottom of the screen.
  */
 export async function skipTours(page: Page) {
+  await page.context().addCookies([
+    { name: "rh_consent", value: `v1.offline-tests-${Date.now().toString(36)}.a0.${Date.now().toString(36)}.R`, url: `http://localhost:${PORT}` },
+  ]);
   await page.addInitScript(() => {
     localStorage.setItem('rehabify:physio-tour-version', '99');
     localStorage.setItem('rehabify:clinic-tour-version', '99');

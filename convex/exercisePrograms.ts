@@ -43,6 +43,7 @@ import {
 import { programmeAllowanceInfo } from "./helpers/clinicSubscriptions";
 import { RENEW_BEFORE_MS, activeFlexCard, chargeFlexRenewalRef, flexCardView, saveFlexCardFromPayment, wantsRenewalCharge } from "./helpers/flexCards";
 import type { PaystackAuthorization } from "./helpers/clinicCards";
+import { arrivedLate, cleanClientId, offlineWriteArgs, whenItHappened } from "./helpers/offlineWrites";
 import {
   REMINDER_BEFORE_MS,
   activatePendingPlans,
@@ -113,6 +114,14 @@ const itemInput = v.object(itemFields);
 // When editing, items already in the programme say where they were, so logs follow them.
 const editItemInput = v.object({ ...itemFields, fromIndex: v.optional(v.number()) });
 type ItemInput = Infer<typeof itemInput>;
+
+/** A programme item's permanent id (exercisePrograms.items[].key). */
+function newItemKey() {
+  return crypto.randomUUID().replace(/-/g, "").slice(0, 16);
+}
+
+/** Items about to be stored in a programme: each keeps its key or gets a new one. */
+const withKeys = (items: StoredItem[]): StoredItem[] => items.map((item) => (item.key ? item : { ...item, key: newItemKey() }));
 
 const clean = (s?: string, max = MAX_NOTE) => {
   const t = s?.trim();
@@ -301,6 +310,8 @@ export async function programView(ctx: Ctx, program: Doc<"exercisePrograms">, au
       const clipId = kind === "exercise" ? itemClipId(exercise, item.side) : null;
       return {
         index,
+        // Permanent id (older programmes get one from the backfill): offline logs point at it
+        key: item.key ?? null,
         kind,
         name: exercise?.name ?? item.name ?? (kind === "education" ? "Information" : "Exercise"),
         // An exercise the care team wrote themselves (not from the library)
@@ -491,7 +502,7 @@ export const createProgram = mutation({
       if (!title) throw new ConvexError("Give the programme a title.");
       if (args.items.length === 0) throw new ConvexError("Add at least one exercise or education item.");
       if (args.items.length > MAX_ITEMS) throw new ConvexError(`A programme can have up to ${MAX_ITEMS} items.`);
-      const items = await cleanItems(ctx, team, args.items);
+      const items = withKeys(await cleanItems(ctx, team, args.items));
 
       const { plan, episode } = await activePlanAndEpisode(ctx, args.patientId, team.kind === "physio" ? team.user._id : undefined);
       const now = Date.now();
@@ -569,7 +580,7 @@ export const addExercisesToProgram = mutation({
           `"${program.title}" can hold up to ${MAX_ITEMS} items and already has ${program.items.length}. Remove some first, or create a new programme.`
         );
       }
-      const added = await cleanItems(ctx, team, args.items);
+      const added = withKeys(await cleanItems(ctx, team, args.items));
       const now = Date.now();
       const patch: Partial<Doc<"exercisePrograms">> = { items: [...program.items, ...added], updatedAt: now };
       const note = clean(args.note);
@@ -629,7 +640,15 @@ export const updateProgram = mutation({
         }
         newIndexOf.set(from, newIndex);
       });
-      const items = await cleanItems(ctx, team, args.items.map(({ fromIndex: _from, ...item }) => item));
+      // Kept items keep their permanent key (offline logs find them by it); new items get one
+      const cleaned = await cleanItems(ctx, team, args.items.map(({ fromIndex: _from, ...item }) => item));
+      const items = withKeys(
+        cleaned.map((item, i) => {
+          const from = args.items[i].fromIndex;
+          const key = from === undefined ? undefined : program.items[from]?.key;
+          return key ? { ...item, key } : item;
+        })
+      );
 
       const reordered = program.items.length !== items.length || [...newIndexOf].some(([from, to]) => from !== to) || newIndexOf.size !== program.items.length;
       if (reordered) {
@@ -790,11 +809,14 @@ export async function patientProgramView(ctx: Ctx, program: Doc<"exerciseProgram
   };
 }
 
-/** What the patient ticked today besides exercise logs: education and activity items, and "Done for today". */
-export async function todaysTicks(ctx: Ctx, programId: Id<"exercisePrograms">) {
+/**
+ * What the patient ticked on a day (today unless said) besides exercise logs: education and
+ * activity items, and "Done for today". A change made offline is checked against its own day.
+ */
+export async function todaysTicks(ctx: Ctx, programId: Id<"exercisePrograms">, dayStart = startOfLagosDay()) {
   const ticks = await ctx.db
     .query("exerciseProgramTicks")
-    .withIndex("by_program", (q) => q.eq("programId", programId).gt("createdAt", startOfLagosDay()))
+    .withIndex("by_program", (q) => q.eq("programId", programId).gt("createdAt", dayStart).lt("createdAt", dayStart + DAY))
     .collect();
   const finish = ticks.filter((t) => t.kind === "finish").sort((a, b) => b.createdAt - a.createdAt)[0];
   return {
@@ -805,14 +827,22 @@ export async function todaysTicks(ctx: Ctx, programId: Id<"exercisePrograms">) {
 }
 
 /** Marks an education or activity item as done for today (exercises are logged with insertLog instead). */
-export async function tickItem(ctx: MutationCtx, program: Doc<"exercisePrograms">, itemIndex: number, source: "app" | "link") {
+export async function tickItem(
+  ctx: MutationCtx,
+  program: Doc<"exercisePrograms">,
+  itemIndex: number,
+  source: "app" | "link",
+  /** When it was ticked (ticked offline: earlier than now) */
+  at = Date.now()
+) {
   if (!Number.isInteger(itemIndex) || itemIndex < 0 || itemIndex >= program.items.length) {
     throw new ConvexError("That item isn't in this programme.");
   }
   if (program.items[itemIndex].kind !== "education") {
     throw new ConvexError("Log this exercise with “I did it”, so your physio sees how it went.");
   }
-  const ticks = await todaysTicks(ctx, program._id);
+  // Once a day per item, so a tick sent twice (offline, after a lost answer) is saved once
+  const ticks = await todaysTicks(ctx, program._id, startOfLagosDay(at));
   if (ticks.items.includes(itemIndex)) return;
   await ctx.db.insert("exerciseProgramTicks", {
     programId: program._id,
@@ -820,20 +850,31 @@ export async function tickItem(ctx: MutationCtx, program: Doc<"exercisePrograms"
     kind: "item",
     itemIndex,
     source,
-    createdAt: Date.now(),
+    createdAt: at,
   });
 }
 
 /**
  * "Done for today": the patient sends the day's session to their care team. Saved once a day
  * (pressing again after doing more updates the count), and the care team is told once a day.
+ * Pressed offline, it counts the day it was pressed and arrives after that day's logs (the phone
+ * sends oldest first); the care team is told it came in late.
  */
-export async function finishToday(ctx: MutationCtx, program: Doc<"exercisePrograms">, source: "app" | "link") {
+export async function finishToday(
+  ctx: MutationCtx,
+  program: Doc<"exercisePrograms">,
+  source: "app" | "link",
+  /** When it was pressed (pressed offline: earlier than now) */
+  at = Date.now()
+) {
+  const now = Date.now();
+  const dayStart = startOfLagosDay(at);
+  const late = arrivedLate(at, now);
   const logs = await ctx.db
     .query("exerciseProgramLogs")
-    .withIndex("by_program", (q) => q.eq("programId", program._id).gt("createdAt", startOfLagosDay()))
+    .withIndex("by_program", (q) => q.eq("programId", program._id).gt("createdAt", dayStart).lt("createdAt", dayStart + DAY))
     .collect();
-  const ticks = await todaysTicks(ctx, program._id);
+  const ticks = await todaysTicks(ctx, program._id, dayStart);
   const done = new Set([...logs.map((l) => l.itemIndex), ...ticks.items].filter((i) => i >= 0 && i < program.items.length));
   const total = program.items.length;
   if (done.size === 0) throw new ConvexError("Tick off what you've done first, then send it.");
@@ -849,7 +890,7 @@ export async function finishToday(ctx: MutationCtx, program: Doc<"exerciseProgra
     doneCount: done.size,
     total,
     source,
-    createdAt: Date.now(),
+    createdAt: at,
   });
 
   const patient = await ctx.db.get(program.patientId);
@@ -866,8 +907,8 @@ export async function finishToday(ctx: MutationCtx, program: Doc<"exerciseProgra
       priority: "low",
       status: "pending",
       payload: {
-        title: `${patientName} finished today's programme`,
-        body: `${done.size === total ? `All ${total} done` : `${done.size} of ${total} done`} in "${program.title}".${painNote}`,
+        title: late ? `${patientName} finished their programme on ${lagosDay(at)}` : `${patientName} finished today's programme`,
+        body: `${done.size === total ? `All ${total} done` : `${done.size} of ${total} done`} in "${program.title}".${painNote}${late ? " Sent from their phone once it was back online." : ""}`,
         data: {
           actionUrl:
             recipient.role === "physiotherapist"
@@ -895,40 +936,94 @@ export async function programCareTeam(ctx: Ctx, program: Doc<"exercisePrograms">
   return recipients;
 }
 
-export async function insertLog(
-  ctx: MutationCtx,
+type LogInput = { itemIndex: number; setsDone?: number; painScore?: number; difficulty?: "easy" | "ok" | "hard"; note?: string };
+/** A log made offline: the phone's id for it, when it was done, and which item it was for. */
+type OfflineLog = { clientId?: string; occurredAt?: number; itemKey?: string; itemRef?: string };
+
+/** What an item is, for programmes whose items have no permanent key yet: the exercise (and side), or its name. */
+const itemRefOf = (item: StoredItem) => `${item.exerciseId ?? item.name ?? ""}|${item.side ?? ""}`;
+
+/**
+ * Which item a log is for. A log made offline names its item by permanent key (or by what it
+ * was), so it still lands on the right exercise if the care team reordered the programme while
+ * the patient was offline. Without either, the position as sent.
+ */
+function itemIndexFor(
   program: Doc<"exercisePrograms">,
-  args: { itemIndex: number; setsDone?: number; painScore?: number; difficulty?: "easy" | "ok" | "hard"; note?: string },
-  source: "app" | "link" | "whatsapp",
-  linkId?: Id<"exerciseShareLinks">
-) {
+  args: Pick<LogInput, "itemIndex"> & OfflineLog,
+  removed = "That exercise was taken out of your programme, so this log couldn't be saved."
+): number {
+  if (args.itemKey) {
+    const index = program.items.findIndex((item) => item.key === args.itemKey);
+    if (index < 0) throw new ConvexError(removed);
+    return index;
+  }
+  if (args.itemRef) {
+    const atIndex = program.items[args.itemIndex];
+    if (atIndex && itemRefOf(atIndex) === args.itemRef) return args.itemIndex;
+    const matches = program.items.flatMap((item, index) => (itemRefOf(item) === args.itemRef ? [index] : []));
+    if (matches.length !== 1) throw new ConvexError(removed);
+    return matches[0];
+  }
   if (!Number.isInteger(args.itemIndex) || args.itemIndex < 0 || args.itemIndex >= program.items.length) {
     throw new ConvexError("That exercise isn't in this programme.");
   }
-  if (program.items[args.itemIndex].kind === "education") {
+  return args.itemIndex;
+}
+
+export async function insertLog(
+  ctx: MutationCtx,
+  program: Doc<"exercisePrograms">,
+  args: LogInput & OfflineLog,
+  source: "app" | "link" | "whatsapp",
+  linkId?: Id<"exerciseShareLinks">
+) {
+  const now = Date.now();
+  // Sent again after a lost answer: it's already saved
+  const clientId = cleanClientId(args.clientId);
+  if (clientId) {
+    const saved = await ctx.db
+      .query("exerciseProgramLogs")
+      .withIndex("by_client_id", (q) => q.eq("clientId", clientId))
+      .first();
+    if (saved) {
+      if (saved.patientId !== program.patientId) throw new ConvexError("This programme isn't available.");
+      return;
+    }
+  }
+  const itemIndex = itemIndexFor(program, args);
+  const item = program.items[itemIndex];
+  if (item.kind === "education") {
     throw new ConvexError("That's information to read, so there's nothing to log.");
   }
-  const recent = await ctx.db
+  // When it was done (a log made offline arrives later)
+  const at = whenItHappened(args.occurredAt, now);
+  const nearby = await ctx.db
     .query("exerciseProgramLogs")
-    .withIndex("by_program", (q) => q.eq("programId", program._id).gt("createdAt", Date.now() - 2 * 60_000))
+    .withIndex("by_program", (q) => q.eq("programId", program._id).gt("createdAt", at - 2 * 60_000))
     .collect();
-  if (recent.some((l) => l.itemIndex === args.itemIndex)) {
+  if (nearby.some((l) => l.itemIndex === itemIndex && Math.abs(l.createdAt - at) < 2 * 60_000)) {
     throw new ConvexError("You just logged this exercise. Well done!");
   }
   const pain = args.painScore === undefined ? undefined : Math.max(0, Math.min(10, Math.round(args.painScore)));
   await ctx.db.insert("exerciseProgramLogs", {
     programId: program._id,
     patientId: program.patientId,
-    itemIndex: args.itemIndex,
+    itemIndex,
     setsDone: args.setsDone === undefined ? undefined : Math.max(0, Math.min(20, Math.round(args.setsDone))),
     painScore: pain,
     difficulty: args.difficulty,
     note: clean(args.note, 500),
     source,
     linkId,
-    createdAt: Date.now(),
+    createdAt: at,
+    clientId,
+    syncedAt: at === now ? undefined : now,
+    itemKey: item.key,
   });
-  if (pain !== undefined && pain >= 7) await notifyHighPain(ctx, program, args.itemIndex, pain, clean(args.note, 200));
+  if (pain !== undefined && pain >= 7) {
+    await notifyHighPain(ctx, program, itemIndex, pain, clean(args.note, 200), arrivedLate(at, now) ? at : undefined);
+  }
 }
 
 /**
@@ -936,7 +1031,15 @@ export async function insertLog(
  * primary first) and to whoever sent the programme, if that's someone else. It also shows in
  * the physio's Needs attention until they mark it reviewed (physioCare.getNeedsAttention).
  */
-async function notifyHighPain(ctx: MutationCtx, program: Doc<"exercisePrograms">, itemIndex: number, pain: number, note?: string) {
+async function notifyHighPain(
+  ctx: MutationCtx,
+  program: Doc<"exercisePrograms">,
+  itemIndex: number,
+  pain: number,
+  note?: string,
+  /** Logged offline and sent much later: when it was done */
+  loggedOfflineAt?: number
+) {
   const patient = await ctx.db.get(program.patientId);
   const patientName = [patient?.firstName, patient?.lastName].filter(Boolean).join(" ") || "A patient";
   const item = program.items[itemIndex];
@@ -953,7 +1056,7 @@ async function notifyHighPain(ctx: MutationCtx, program: Doc<"exercisePrograms">
       status: "pending",
       payload: {
         title: `${patientName} reported high pain`,
-        body: `Pain ${pain}/10 during ${what} ("${program.title}").${note ? ` They wrote: "${note}"` : ""}`,
+        body: `Pain ${pain}/10 during ${what} ("${program.title}")${loggedOfflineAt ? `, logged offline on ${lagosDay(loggedOfflineAt)}` : ""}.${note ? ` They wrote: "${note}"` : ""}`,
         data: {
           actionUrl:
             recipient.role === "physiotherapist"
@@ -975,7 +1078,14 @@ const logArgs = {
 };
 
 export const logExercise = mutation({
-  args: { programId: v.id("exercisePrograms"), ...logArgs },
+  args: {
+    programId: v.id("exercisePrograms"),
+    ...logArgs,
+    // Logged offline (lib/offline/outbox.ts): sent once, dated when done, found by item key
+    ...offlineWriteArgs,
+    itemKey: v.optional(v.string()),
+    itemRef: v.optional(v.string()),
+  },
   handler: (ctx, args) =>
     guarded("save that", async () => {
       const user = await currentUser(ctx);
@@ -1023,10 +1133,19 @@ async function linkTrackableProgram(ctx: MutationCtx, code: string, session: str
 
 /** An education or activity item done for today: it turns green like a logged exercise. */
 export const markItemDone = mutation({
-  args: { programId: v.id("exercisePrograms"), itemIndex: v.number() },
+  args: {
+    programId: v.id("exercisePrograms"),
+    itemIndex: v.number(),
+    // Ticked offline (lib/offline/outbox.ts): dated when done, found by item key
+    ...offlineWriteArgs,
+    itemKey: v.optional(v.string()),
+    itemRef: v.optional(v.string()),
+  },
   handler: (ctx, args) =>
     guarded("save that", async () => {
-      await tickItem(ctx, await myTrackableProgram(ctx, args.programId), args.itemIndex, "app");
+      const program = await myTrackableProgram(ctx, args.programId);
+      const itemIndex = itemIndexFor(program, args, "That item was taken out of your programme, so this couldn't be saved.");
+      await tickItem(ctx, program, itemIndex, "app", whenItHappened(args.occurredAt, Date.now()));
     }),
 });
 
@@ -1040,9 +1159,12 @@ export const markItemDoneFromLink = mutation({
 
 /** "Done for today": sends the day's session to the patient's care team. */
 export const finishProgramToday = mutation({
-  args: { programId: v.id("exercisePrograms") },
+  // Pressed offline (lib/offline/outbox.ts): counts the day it was pressed
+  args: { programId: v.id("exercisePrograms"), ...offlineWriteArgs },
   handler: (ctx, args) =>
-    guarded("send that", async () => finishToday(ctx, await myTrackableProgram(ctx, args.programId), "app")),
+    guarded("send that", async () =>
+      finishToday(ctx, await myTrackableProgram(ctx, args.programId), "app", whenItHappened(args.occurredAt, Date.now()))
+    ),
 });
 
 export const finishProgramTodayFromLink = mutation({
@@ -2330,3 +2452,29 @@ async function creditAuthors(
     });
   }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// One-off: permanent keys for items of programmes made before keys existed
+// ─────────────────────────────────────────────────────────────────────────────
+
+const backfillItemKeysRef = makeFunctionReference<"mutation", { cursor?: string }>("exercisePrograms:backfillItemKeys");
+
+/**
+ * Gives every programme item without a permanent key one (logs made offline find their item by
+ * it). Safe to run again: items that have a key keep it. Run once after deploying:
+ *   npx convex run exercisePrograms:backfillItemKeys '{}' --prod
+ */
+export const backfillItemKeys = internalMutation({
+  args: { cursor: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const page = await ctx.db.query("exercisePrograms").paginate({ numItems: 100, cursor: args.cursor ?? null });
+    let updated = 0;
+    for (const program of page.page) {
+      if (program.items.every((item) => item.key)) continue;
+      await ctx.db.patch(program._id, { items: withKeys(program.items) });
+      updated++;
+    }
+    if (!page.isDone) await ctx.scheduler.runAfter(0, backfillItemKeysRef, { cursor: page.continueCursor });
+    return { updated, done: page.isDone };
+  },
+});

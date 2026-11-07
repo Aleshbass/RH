@@ -10,10 +10,11 @@
  * - Offline: the last person's vault is found so the PIN screen can open it.
  */
 import { useEffect } from 'react';
-import { useConvexAuth, useMutation, useQuery } from 'convex/react';
+import { useConvex, useConvexAuth, useMutation, useQuery } from 'convex/react';
 import { makeFunctionReference } from 'convex/server';
 import { offlineModeOn, setOfflinePilot, useOfflineMode } from '@/lib/pwa';
 import { lastSignedInUser, useOfflineSession } from '@/lib/offline/session';
+import { startOutboxSync, type SyncClient } from '@/lib/offline/sync';
 import {
   deviceId,
   forgetDeviceId,
@@ -44,7 +45,20 @@ export default function OfflineBridge() {
   const offlineMode = useOfflineMode();
   const { isAuthenticated } = useConvexAuth();
   const unlockDevice = useMutation(unlockDeviceRef);
+  const convex = useConvex();
   const signedInUser = session.mode === 'online' ? session.userId : null;
+
+  // Changes kept on this phone go out whenever it's online, unlocked and signed in as their author
+  useEffect(() => {
+    const client = convex as unknown as Partial<SyncClient>;
+    if (typeof client.signedInUser === 'function') startOutboxSync(client as SyncClient);
+  }, [convex]);
+
+  // Clerk loaded with nobody signed in: answers given without sign-in may show (and redirect)
+  const signedOut = session.mode === 'online' && !session.userId;
+  useEffect(() => {
+    if (signedOut) (convex as unknown as { noteSignedOut?: () => void }).noteSignedOut?.();
+  }, [signedOut, convex]);
   // Pilot: the account's switch, read live whenever someone is signed in online
   const me = useQuery(myUserRef, PILOT_MODE && signedInUser && isAuthenticated ? {} : 'skip');
 

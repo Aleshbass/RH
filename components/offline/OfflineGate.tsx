@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/compone
 import { Loader2, Lock, WifiOff } from '@/components/icons';
 import { primaryButtonClass, secondaryButtonClass } from '@/components/patient/ui';
 import { unlockDeviceRef } from '@/components/offline/OfflineBridge';
+import { SyncStatus } from '@/components/offline/SyncStatus';
 import { useOfflineMode } from '@/lib/pwa';
 import { lastSignedInUser, useOfflineSession, useOnline } from '@/lib/offline/session';
 import {
@@ -42,6 +43,8 @@ export function OfflineGate({ children }: { children: ReactNode }) {
     <>
       {children}
       {session.mode === 'online' && session.userId ? <PinSetupPrompt userId={session.userId} /> : null}
+      {/* Offline use is set up and open: being offline, and changes waiting to be sent */}
+      {vault.status === 'unlocked' ? <SyncStatus /> : null}
     </>
   );
 }

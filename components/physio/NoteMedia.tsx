@@ -5,6 +5,7 @@ import { FileText, ImageIcon, Loader2, Mic, Paperclip, Square, Trash2, X } from 
 import { toast } from 'sonner'
 import type { Id } from '@/convex/_generated/dataModel'
 import { useFileUpload } from '@/lib/hooks/useFileUpload'
+import { useOnline } from '@/lib/offline/session'
 import { cn } from '@/lib/utils'
 
 const MAX_ATTACHMENTS = 10
@@ -213,8 +214,18 @@ export type NoteMedia = ReturnType<typeof useNoteMedia>
 /** Record / attach buttons plus what's been added so far. */
 export function NoteMediaControls({ media, className }: { media: NoteMedia; className?: string }) {
   const inputRef = useRef<HTMLInputElement>(null)
+  // Recordings and files are uploaded as they're added, so they need a connection (the note's text doesn't)
+  const online = useOnline()
   const chip =
     'inline-flex items-center gap-2 rounded-full border border-black/[0.08] bg-white px-3.5 py-2 text-sm font-medium text-rh-ink transition-all hover:border-rh-lime/40 hover:bg-rh-honeydew active:scale-95 disabled:pointer-events-none disabled:opacity-50 dark:border-white/10 dark:bg-white/[0.04] dark:text-white dark:hover:bg-white/[0.08]'
+
+  if (!online && !media.voice && media.attachments.length === 0) {
+    return (
+      <p className={cn('text-xs text-neutral-500', className)}>
+        Voice notes and files need internet. You can still write and save the note: it’s sent when you’re back online.
+      </p>
+    )
+  }
 
   return (
     <div className={cn('space-y-3', className)}>

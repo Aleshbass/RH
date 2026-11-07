@@ -198,6 +198,7 @@ import type * as helpers_measuredNotes from "../helpers/measuredNotes.js";
 import type * as helpers_mediloanStatus from "../helpers/mediloanStatus.js";
 import type * as helpers_noteAccess from "../helpers/noteAccess.js";
 import type * as helpers_noteRevisions from "../helpers/noteRevisions.js";
+import type * as helpers_offlineWrites from "../helpers/offlineWrites.js";
 import type * as helpers_outreachMail from "../helpers/outreachMail.js";
 import type * as helpers_outreachShared from "../helpers/outreachShared.js";
 import type * as helpers_partnerAccess from "../helpers/partnerAccess.js";
@@ -579,6 +580,7 @@ declare const fullApi: ApiFromModules<{
   "helpers/mediloanStatus": typeof helpers_mediloanStatus;
   "helpers/noteAccess": typeof helpers_noteAccess;
   "helpers/noteRevisions": typeof helpers_noteRevisions;
+  "helpers/offlineWrites": typeof helpers_offlineWrites;
   "helpers/outreachMail": typeof helpers_outreachMail;
   "helpers/outreachShared": typeof helpers_outreachShared;
   "helpers/partnerAccess": typeof helpers_partnerAccess;

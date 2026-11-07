@@ -1665,9 +1665,12 @@ export default defineSchema({
       planForNextSession: v.optional(v.string()),
       measures: v.optional(v.array(measureValidator)),
     }))),
+    // Written offline: the id the phone gave it, so a note sent twice is saved once
+    clientId: v.optional(v.string()),
   })
     .index("by_appointment_id", ["appointmentId"])
-    .index("by_patient_id_and_date", ["patientId", "sessionDate"]),
+    .index("by_patient_id_and_date", ["patientId", "sessionDate"])
+    .index("by_client_id", ["clientId"]),
 
   // Every earlier wording of a clinical note (sessionLogs), one row per edit, all kept. Clinician
   // only: patients never see these (convex/helpers/noteRevisions.ts, physioCare.getClinicalNoteHistory).
@@ -1991,10 +1994,15 @@ export default defineSchema({
     flagged: v.boolean(), // Needs the physio's attention (high or rising pain, low mood)
     flagReason: v.optional(v.string()),
     reviewedAt: v.optional(v.number()), // Physio has seen it
+    // When the patient checked in (offline check-ins arrive later: see syncedAt)
     createdAt: v.number(),
+    // Sent offline: the id the phone gave it (saved once however often it's sent) and when it arrived
+    clientId: v.optional(v.string()),
+    syncedAt: v.optional(v.number()),
   })
     .index("by_patient", ["patientId", "createdAt"])
-    .index("by_physiotherapist", ["physiotherapistId", "createdAt"]),
+    .index("by_physiotherapist", ["physiotherapistId", "createdAt"])
+    .index("by_client_id", ["clientId"]),
 
   treatmentPlans: defineTable({
     patientId: v.id("users"),
@@ -6012,6 +6020,9 @@ export default defineSchema({
       note: v.optional(v.string()),
       // Education from the Rehabify Library: libraryResources.key (title, guide, link or video).
       resourceKey: v.optional(v.string()),
+      // Permanent id of this item in the programme (kept through edits and reorders), so a log
+      // made offline lands on the right exercise. Older programmes get one from a backfill.
+      key: v.optional(v.string()),
     })),
     status: v.union(v.literal("active"), v.literal("archived")),
     createdAt: v.number(),
@@ -6122,12 +6133,19 @@ export default defineSchema({
     // "whatsapp": the patient replied DONE to Joy's exercise reminder (joyOperations patient_log_exercise)
     source: v.union(v.literal("app"), v.literal("link"), v.literal("whatsapp")),
     linkId: v.optional(v.id("exerciseShareLinks")),
+    // When the patient did it (offline logs arrive later: see syncedAt)
     createdAt: v.number(),
     // A clinician has seen a high-pain log (it leaves Needs attention)
     reviewedAt: v.optional(v.number()),
+    // Logged offline: the id the phone gave it (saved once however often it's sent), when it
+    // arrived, and the programme item's permanent key (exercisePrograms.items[].key)
+    clientId: v.optional(v.string()),
+    syncedAt: v.optional(v.number()),
+    itemKey: v.optional(v.string()),
   })
     .index("by_program", ["programId", "createdAt"])
-    .index("by_patient", ["patientId", "createdAt"]),
+    .index("by_patient", ["patientId", "createdAt"])
+    .index("by_client_id", ["clientId"]),
 
   // What a patient ticks in a programme besides exercise logs: an education or activity item
   // done for the day ("item"), and the day's "Done, send to my physio" ("finish"). Kept apart

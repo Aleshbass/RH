@@ -52,6 +52,7 @@ import { formatKobo } from '@/lib/rehabify-services'
 import { useMutationUntyped } from '@/lib/convexUntyped'
 import { useQuery } from 'convex/react'
 import { scribeApi } from '@/components/physio/notes/scribe/scribeApi'
+import { useOfflineWrite, type WriteResult } from '@/lib/offline/offlineWrite'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
 import { Choice, HomeVisitFields, earningsFor, suggestService, useRehabifyServices, type HomeVisit, type ScheduleService } from './rehabifyServices'
@@ -102,7 +103,8 @@ export function AppointmentDrawer({
   const updateStatus = useMutationUntyped(scheduleApi.appointments.updateAppointmentStatus)
   const propose = useMutationUntyped(scheduleApi.appointments.proposeNewTime)
   const rebook = useMutationUntyped(scheduleApi.rehabifyFollowUps.rebookMissedVisit)
-  const addNote = useMutationUntyped(scheduleApi.physioCare.addClinicalNote)
+  // Offline, the note is kept on this phone and sent when back online
+  const addNote = useOfflineWrite('noteAdd')
   const scribeAccess = useQuery(scribeApi.access, {})
   const acceptWithInvoice = useMutationUntyped(scheduleApi.rehabifyFollowUps.acceptRequestWithInvoice)
 
@@ -166,9 +168,14 @@ export function AppointmentDrawer({
   const run = async (key: string, action: () => Promise<unknown>, done: string, sound: Parameters<typeof playSound>[0], next?: () => void) => {
     setBusy(key)
     try {
-      await action()
+      const result = await action()
       playSound(sound)
-      toast.success(done)
+      // Kept on this phone (offline): it's sent when the connection is back
+      if ((result as WriteResult<unknown> | undefined)?.queued === true) {
+        toast.success(done, { description: 'Saved on this phone. It’s sent when you’re back online.' })
+      } else {
+        toast.success(done)
+      }
       next?.()
     } catch (error) {
       playSound('error')
@@ -729,14 +736,17 @@ export function AppointmentDrawer({
             void run(
               'note',
               () =>
-                addNote({
-                  patientId: appointment.patientId as Id<'users'>,
-                  noteType: 'treatment_note',
-                  treatmentAdministered: note.did.trim() || undefined,
-                  subjectiveAssessment: note.how.trim() || undefined,
-                  planForNextSession: note.plan.trim() || undefined,
-                  appointmentId: appointment._id as Id<'appointments'>,
-                }),
+                addNote(
+                  {
+                    patientId: appointment.patientId as Id<'users'>,
+                    noteType: 'treatment_note',
+                    treatmentAdministered: note.did.trim() || undefined,
+                    subjectiveAssessment: note.how.trim() || undefined,
+                    planForNextSession: note.plan.trim() || undefined,
+                    appointmentId: appointment._id as Id<'appointments'>,
+                  },
+                  { label: `Clinical note · ${name}`, meta: { patientId: appointment.patientId } }
+                ),
               'Note saved.',
               'success',
               close

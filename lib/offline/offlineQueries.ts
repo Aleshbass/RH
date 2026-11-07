@@ -69,6 +69,7 @@ export const OFFLINE_QUERIES: Record<string, OfflineQueryRule> = {
   'treatmentPlans:getExerciseCompletionMap': same,
   'appointments:getPatientAppointments': same,
   'rehabifyFollowUps:getMyBookingsAwaitingPhysio': same,
+  'physioCare:getMyCheckIns': same, // The daily check-in card (check-ins can be sent offline)
 };
 
 export function offlineRuleFor(functionName: string): OfflineQueryRule | undefined {

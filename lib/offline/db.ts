@@ -37,10 +37,34 @@ export type UnlockedRow = {
   expiresAt: number;
 };
 
+export type OutboxStatus = 'pending' | 'failed' | 'conflict';
+
+/**
+ * A change made on this phone that the server hasn't confirmed yet (lib/offline/outbox.ts). `id` is
+ * the id the phone gave it, sent with it so the server saves it once. The change itself (which
+ * patient, what was written) is encrypted in `data`; the rest says nothing about anyone.
+ */
+export type OutboxRow = {
+  id: string;
+  userId: string;
+  kind: string;
+  /** When it was made (sent as "when it happened") */
+  createdAt: number;
+  status: OutboxStatus;
+  /** Tries that failed for want of a connection */
+  attempts: number;
+  nextTryAt: number;
+  /** Why the server refused it (our own messages) */
+  error?: string;
+  iv: Uint8Array<ArrayBuffer>;
+  data: ArrayBuffer;
+};
+
 class OfflineDb extends Dexie {
   vaults!: Table<VaultRow, string>;
   queries!: Table<SavedQueryRow, string>;
   unlocked!: Table<UnlockedRow, string>;
+  outbox!: Table<OutboxRow, string>;
 
   constructor() {
     super('rehabify-vault');
@@ -49,6 +73,7 @@ class OfflineDb extends Dexie {
       queries: 'key, userId, savedAt, [userId+savedAt]',
     });
     this.version(2).stores({ unlocked: 'userId' });
+    this.version(3).stores({ outbox: 'id, userId, [userId+createdAt]' });
   }
 }
 

@@ -277,6 +277,7 @@ function FinishCard({
   from,
   onOpen,
   className,
+  waiting = false,
 }: {
   doneCount: number
   total: number
@@ -284,7 +285,22 @@ function FinishCard({
   from: string
   onOpen: () => void
   className?: string
+  /** Pressed offline: saved on this phone, not sent yet */
+  waiting?: boolean
 }) {
+  if (finishedAt && waiting) {
+    return (
+      <div className={cn('flex items-center gap-3 rounded-2xl border border-rh-lime bg-white p-4 text-rh-ink dark:bg-rh-ink-2 dark:text-white', className)}>
+        <CheckCircle2 className="h-7 w-7 shrink-0 text-rh-lime" />
+        <div className="min-w-0">
+          <p className="text-sm font-semibold">Waiting to send to {from}</p>
+          <p className="text-xs text-neutral-500">
+            {doneCount} of {total} done. Saved on this phone, it goes when you’re back online.
+          </p>
+        </div>
+      </div>
+    )
+  }
   if (finishedAt) {
     return (
       <div className={cn('flex items-center gap-3 rounded-2xl bg-rh-lime p-4 text-rh-ink', className)}>
@@ -376,6 +392,9 @@ function FinishDialog({
   )
 }
 
+/** Said when a change was kept on the phone because there's no internet (lib/offline/offlineWrite.ts) */
+const SAVED_ON_PHONE = 'Saved on this phone. It’s sent when you’re back online.'
+
 export function ProgramPlayer({
   program,
   doneToday,
@@ -385,6 +404,7 @@ export function ProgramPlayer({
   onMarkDone,
   onFinish,
   finishedToday = null,
+  finishWaiting = false,
   readOnly,
   flex,
   coach,
@@ -394,13 +414,16 @@ export function ProgramPlayer({
   requestGrant: (clipIds: string[]) => Promise<ViewerGrant>
   /** Who is watching, for the physio's own photos and videos (same as the 3D grant) */
   mediaContext?: GrantContext
-  onLog?: (input: LogInput) => Promise<void>
-  /** Marks an education or activity item done for today; without it those items can't be ticked */
-  onMarkDone?: (itemIndex: number) => Promise<void>
-  /** "Done for today": sends the day's session to the care team */
-  onFinish?: () => Promise<void>
+  /** Saves a log; "queued" when it was kept on the phone to send once back online */
+  onLog?: (input: LogInput) => Promise<void | 'queued'>
+  /** Marks an education or activity item done for today; without it those items can't be ticked ("queued": kept on the phone) */
+  onMarkDone?: (itemIndex: number) => Promise<void | 'queued'>
+  /** "Done for today": sends the day's session to the care team ("queued": kept on the phone, sent once back online) */
+  onFinish?: () => Promise<void | 'queued'>
   /** When today's session was sent, if it was */
   finishedToday?: number | null
+  /** "Done for today" was pressed offline and is waiting on this phone */
+  finishWaiting?: boolean
   readOnly?: boolean
   /** How the patient gets Flex when this programme needs it (program.plan) */
   flex?: FlexActions
@@ -448,14 +471,16 @@ export function ProgramPlayer({
   }
 
   /** After an item is done: on to the next one, or the final "Done for today" when that was the last. */
-  const afterDone = (index: number, message: string) => {
+  const afterDone = (index: number, message: string, queued = false) => {
     playSound('success')
+    // Kept on this phone (no internet): said once, so the patient knows it hasn't gone yet
+    if (queued) toast.success(message, { description: SAVED_ON_PHONE })
     const left = exerciseItems.filter((it) => it.index !== index && !done.has(it.index))
     if (left.length === 0 && canFinish && !finishedToday) {
       setFinishOpen(true)
       return
     }
-    toast.success(message)
+    if (!queued) toast.success(message)
     const next = program.items.findIndex((it, i) => i > selected && (canTick || it.kind !== 'education') && !done.has(it.index))
     if (next >= 0) setSelected(next)
   }
@@ -463,8 +488,8 @@ export function ProgramPlayer({
   const log = async (input: Omit<LogInput, 'itemIndex'>) => {
     if (!onLog || !item) return
     try {
-      await onLog({ itemIndex: item.index, ...input })
-      afterDone(item.index, 'Logged. Nice work!')
+      const outcome = await onLog({ itemIndex: item.index, ...input })
+      afterDone(item.index, 'Logged. Nice work!', outcome === 'queued')
     } catch (error) {
       toast.error(programError(error, 'Couldn’t save that. Check your connection and try again.'))
       throw error
@@ -475,8 +500,8 @@ export function ProgramPlayer({
     if (!onMarkDone || !item || marking) return
     setMarking(true)
     try {
-      await onMarkDone(item.index)
-      afterDone(item.index, 'Done. Nice work!')
+      const outcome = await onMarkDone(item.index)
+      afterDone(item.index, 'Done. Nice work!', outcome === 'queued')
     } catch (error) {
       toast.error(programError(error, 'Couldn’t save that. Check your connection and try again.'))
     } finally {
@@ -487,10 +512,11 @@ export function ProgramPlayer({
   const finish = async () => {
     if (!onFinish) return
     try {
-      await onFinish()
+      const outcome = await onFinish()
       playSound('success')
       celebrate()
-      toast.success(`Sent to ${from}. Well done!`)
+      if (outcome === 'queued') toast.success('Well done!', { description: `Saved on this phone. It goes to ${from} when you’re back online.` })
+      else toast.success(`Sent to ${from}. Well done!`)
     } catch (error) {
       toast.error(programError(error, 'Couldn’t send that. Check your connection and try again.'))
       throw error
@@ -601,7 +627,7 @@ export function ProgramPlayer({
           })}
         </ol>
         {canFinish && (
-          <FinishCard className="hidden lg:block" doneCount={doneCount} total={exerciseItems.length} finishedAt={finishedToday} from={from} onOpen={() => setFinishOpen(true)} />
+          <FinishCard className="hidden lg:block" doneCount={doneCount} total={exerciseItems.length} finishedAt={finishedToday} waiting={finishWaiting} from={from} onOpen={() => setFinishOpen(true)} />
         )}
         </div>
 
@@ -751,7 +777,7 @@ export function ProgramPlayer({
       </div>
 
       {canFinish && (
-        <FinishCard className="lg:hidden" doneCount={doneCount} total={exerciseItems.length} finishedAt={finishedToday} from={from} onOpen={() => setFinishOpen(true)} />
+        <FinishCard className="lg:hidden" doneCount={doneCount} total={exerciseItems.length} finishedAt={finishedToday} waiting={finishWaiting} from={from} onOpen={() => setFinishOpen(true)} />
       )}
 
       <LogDialog item={item} open={logOpen && !locked} onOpenChange={setLogOpen} onSubmit={log} />

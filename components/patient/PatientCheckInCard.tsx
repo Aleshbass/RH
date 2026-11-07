@@ -2,7 +2,7 @@
 
 import { useState, type ReactNode } from 'react'
 import Link from 'next/link'
-import { useMutation, useQuery } from 'convex/react'
+import { useQuery } from 'convex/react'
 import { formatDistanceToNow } from 'date-fns'
 import { AlertTriangle, ArrowRight, Check, Frown, HeartPulse, Loader2, Meh, Smile } from '@/components/icons'
 import { toast } from 'sonner'
@@ -12,7 +12,15 @@ import { Textarea } from '@/components/ui/textarea'
 import { programError } from '@/components/exercise-programs/errors'
 import { IconChip, InfoTip, cardClass, fieldClass, primaryButtonClass } from '@/components/patient/ui'
 import { playSound } from '@/lib/sounds'
+import { useOfflineWrite } from '@/lib/offline/offlineWrite'
+import { useOutbox } from '@/lib/offline/outbox'
 import { cn } from '@/lib/utils'
+
+/** Midnight today in Lagos (UTC+1), as the server counts "today". */
+function startOfLagosDay(now: number) {
+  const day = 86_400_000
+  return now - ((now + 3_600_000) % day)
+}
 
 type Mood = 'great' | 'good' | 'okay' | 'low'
 type Exercises = 'all' | 'some' | 'none'
@@ -97,7 +105,8 @@ function FieldLabel({ children, info }: { children: ReactNode; info?: ReactNode 
 /** A quick daily check-in the patient's physiotherapist sees on their dashboard. */
 export function PatientCheckInCard() {
   const data = useQuery(api.physioCare.getMyCheckIns, {})
-  const submit = useMutation(api.physioCare.submitCheckIn)
+  const submit = useOfflineWrite<{ checkInId: string; flagged: boolean }>('checkIn')
+  const outbox = useOutbox()
   const [pain, setPain] = useState<number | null>(null)
   const [fn, setFn] = useState(5)
   const [mood, setMood] = useState<Mood | null>(null)
@@ -110,8 +119,11 @@ export function PatientCheckInCard() {
   if (!data) return null
   const last = data.recent[0]
   const physio = data.physioName ?? 'your physiotherapist'
+  // Worked out now, not when the answer was saved (offline it can be yesterday's answer)
+  const today = startOfLagosDay(Date.now())
+  const waiting = outbox.find((change) => change.kind === 'checkIn' && change.createdAt >= today && change.status === 'pending')
 
-  if (data.checkedInToday || justSent) {
+  if (data.recent.some((row: { createdAt: number }) => row.createdAt >= today) || justSent || waiting) {
     return (
       <section data-tour="check-in" className="flex h-full items-center gap-4 rounded-3xl bg-pt-green-bg p-5 sm:p-6">
         <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-pt-surface text-pt-green-fg">
@@ -120,8 +132,9 @@ export function PatientCheckInCard() {
         <div className="min-w-0">
           <p className="font-semibold text-pt-ink">Thanks for checking in today</p>
           <p className="text-sm text-pt-muted">
-            {last ? `Pain ${last.painScore}/10 · ` : ''}
-            {physio} can see how you’re doing. Check in again tomorrow.
+            {waiting
+              ? `Saved on this phone. ${physio} sees it once you’re back online.`
+              : `${last ? `Pain ${last.painScore}/10 · ` : ''}${physio} can see how you’re doing. Check in again tomorrow.`}
           </p>
         </div>
       </section>
@@ -134,17 +147,24 @@ export function PatientCheckInCard() {
     if (concern && !note.trim()) return toast.error(`Tell ${physio} what’s worrying you in the note.`)
     setSaving(true)
     try {
-      const result = await submit({
-        painScore: pain,
-        functionScore: fn,
-        mood: mood ?? undefined,
-        exercisesDone: exercises,
-        note: note.trim() || undefined,
-        concern: concern || undefined,
-      })
+      const saved = await submit(
+        {
+          painScore: pain,
+          functionScore: fn,
+          mood: mood ?? undefined,
+          exercisesDone: exercises,
+          note: note.trim() || undefined,
+          concern: concern || undefined,
+        },
+        { label: 'Daily check-in' }
+      )
       playSound('success')
       setJustSent(true)
-      if (result.flagged) {
+      if (saved.queued) {
+        toast.success('Check-in saved on this phone', {
+          description: `It goes to ${physio} once you’re back online. If your pain is severe or sudden, seek medical help.`,
+        })
+      } else if (saved.result.flagged) {
         toast.message(`We’ve let ${physio} know`, { description: 'If your pain is severe or sudden, contact them or seek medical help.' })
       }
     } catch (error) {

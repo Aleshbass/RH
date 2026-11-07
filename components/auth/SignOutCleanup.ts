@@ -34,7 +34,8 @@ export function useSignOutCleanup() {
       const stored = readLastUser()
       if (stored && stored !== current) {
         void clearStoredPages()
-        void wipeUser(stored).catch(() => undefined)
+        // Their changes not sent yet stay locked on the phone until they sign in again
+        void wipeUser(stored, { keepUnsent: true }).catch(() => undefined)
       }
       writeLastUser(current)
     }
@@ -61,8 +62,10 @@ async function cleanUpAfter(clerkUserId: string) {
   setIconBadge(0)
   clearUserNoteDrafts(clerkUserId)
   await clearStoredPages()
-  // Their encrypted offline copy on this phone (lib/offline/vault.ts) and their pilot switch
-  await wipeUser(clerkUserId).catch(() => undefined)
+  // Their encrypted offline copy on this phone (lib/offline/vault.ts) and their pilot switch.
+  // Changes they made offline that haven't gone yet stay, encrypted and locked, and are sent the
+  // next time they sign in (never lost to a sign-out).
+  await wipeUser(clerkUserId, { keepUnsent: true }).catch(() => undefined)
   setOfflinePilot(false)
   try {
     for (const key of PERSONAL_KEYS) window.localStorage.removeItem(key)

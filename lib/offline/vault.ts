@@ -12,6 +12,7 @@
  *   change is a full load) until 5 minutes without use, then the PIN is needed again.
  */
 import { useSyncExternalStore } from 'react';
+import Dexie from 'dexie';
 import type { Value } from 'convex/values';
 import {
   PIN_ITERATIONS,
@@ -23,6 +24,7 @@ import {
   seal,
   unwrapDataKey,
   wrapDataKey,
+  type Sealed,
 } from './crypto';
 import { deleteOfflineDb, offlineDb, type VaultRow } from './db';
 
@@ -238,12 +240,21 @@ export function lock() {
   if (state.status === 'unlocked') update({ status: 'locked' });
 }
 
-/** Removes one person's offline data from this phone (sign-out, switched-off phone, 10 wrong PINs). */
-export async function wipeUser(userId: string) {
+/**
+ * Removes one person's offline data from this phone (sign-out, switched-off phone, 10 wrong PINs).
+ * `keepUnsent` (sign-out, another person signing in): changes not sent yet stay, still encrypted
+ * and locked, with only what's needed to open them, and go out when this person signs in again.
+ */
+export async function wipeUser(userId: string, { keepUnsent = false }: { keepUnsent?: boolean } = {}) {
   const db = offlineDb();
+  let kept = false;
   if (db) {
-    await db.transaction('rw', db.vaults, db.queries, db.unlocked, async () => {
-      await db.vaults.delete(userId);
+    await db.transaction('rw', [db.vaults, db.queries, db.unlocked, db.outbox], async () => {
+      kept = keepUnsent && (await db.outbox.where('userId').equals(userId).count()) > 0;
+      if (!kept) {
+        await db.vaults.delete(userId);
+        await db.outbox.where('userId').equals(userId).delete();
+      }
       await db.queries.where('userId').equals(userId).delete();
       await db.unlocked.delete(userId);
     });
@@ -251,15 +262,36 @@ export async function wipeUser(userId: string) {
   if (deviceSecret?.userId === userId) deviceSecret = null;
   if (state.userId === userId) {
     dataKey = null;
-    update({ status: 'none', failedAttempts: 0 });
+    update({ status: kept ? 'locked' : 'none', failedAttempts: 0 });
   }
 }
 
-/** Removes everyone's offline data (offline mode switched off, or "Reset offline data"). */
+/**
+ * Removes everyone's offline data (offline mode switched off, or "Reset offline data"). Changes
+ * not sent yet are kept, still encrypted and locked, with what's needed to open them: they go out
+ * when their author is next online with offline use on. (Signing out also turns a pilot account's
+ * offline mode off on this phone, so this runs after every pilot sign-out.)
+ */
 export async function wipeAll() {
   dataKey = null;
   deviceSecret = null;
-  await deleteOfflineDb();
+  // Nothing kept on this phone (most people): nothing to open or delete
+  if (typeof indexedDB === 'undefined' || !(await Dexie.exists('rehabify-vault').catch(() => true))) {
+    update({ status: 'unknown', userId: null, failedAttempts: 0, wipedForPins: false });
+    return;
+  }
+  const db = offlineDb();
+  const authors = db ? ((await db.outbox.orderBy('userId').uniqueKeys().catch(() => [])) as string[]) : [];
+  if (db && authors.length > 0) {
+    const keep = new Set(authors);
+    await db.transaction('rw', [db.vaults, db.queries, db.unlocked], async () => {
+      await db.queries.clear();
+      await db.unlocked.clear();
+      await db.vaults.filter((row) => !keep.has(row.userId)).delete();
+    });
+  } else {
+    await deleteOfflineDb();
+  }
   update({ status: 'unknown', userId: null, failedAttempts: 0, wipedForPins: false });
 }
 
@@ -267,6 +299,23 @@ export async function wipeAll() {
 
 function usable(userId: string) {
   return dataKey !== null && state.status === 'unlocked' && state.userId === userId;
+}
+
+/** True while this person's vault is open, so their data can be read and written. */
+export function vaultOpenFor(userId: string | null | undefined): userId is string {
+  return typeof userId === 'string' && usable(userId);
+}
+
+/** Encrypts something of this person's (their vault must be open), bound to `recordKey`. */
+export async function sealFor(userId: string, recordKey: string, value: Value): Promise<Sealed> {
+  if (!usable(userId) || !dataKey) throw new Error('Offline data is locked');
+  return seal(dataKey, recordKey, value);
+}
+
+/** Decrypts something of this person's; throws if locked, changed or not theirs. */
+export async function openFor(userId: string, recordKey: string, sealed: Sealed): Promise<Value> {
+  if (!usable(userId) || !dataKey) throw new Error('Offline data is locked');
+  return open(dataKey, recordKey, sealed);
 }
 
 export async function saveAnswer(userId: string, key: string, value: Value) {

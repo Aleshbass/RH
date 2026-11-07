@@ -52,6 +52,9 @@ import { PlanLimitDialog, planLimitOf, type PlanLimit } from '@/components/physi
 import { useBooking } from '@/components/physio/schedule/BookingDrawer'
 import { useCareBillingMode } from '@/components/physio/practiceMode'
 import { useMutationUntyped, useQueryUntyped, useActionUntyped } from '@/lib/convexUntyped'
+import { useOfflineWrite } from '@/lib/offline/offlineWrite'
+import { replaceInOutbox, useOutbox } from '@/lib/offline/outbox'
+import { kickSync } from '@/lib/offline/sync'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
 import { currencySymbol } from '@/lib/practiceCountries'
@@ -168,6 +171,8 @@ function toDateInput(ms?: number | null) {
 export type EditableNote = {
   _id: string
   sessionDate: number
+  /** The version being edited (editedAt, 0 if never edited): an edit kept offline is checked against it */
+  version: number
   noteType: string
   subjectiveAssessment?: string
   objectiveAssessment?: string
@@ -197,8 +202,13 @@ export function NoteDrawer({
   onScribeSigned?: (steps: ScribeNextStepsData) => void
 }) {
   const patientId = workspace.patient._id
-  const addNote = useMutationUntyped(workspaceApi.physioCare.addClinicalNote)
-  const updateNote = useMutationUntyped(workspaceApi.physioCare.updateClinicalNote)
+  // Saved straight away online; offline, kept on this phone and sent when back online
+  const addNote = useOfflineWrite('noteAdd')
+  const updateNote = useOfflineWrite('noteUpdate')
+  const patientName = [workspace.patient.firstName, workspace.patient.lastName].filter(Boolean).join(' ') || 'Patient'
+  // An earlier offline edit of this note that hasn't gone yet: editing again changes that one
+  const outbox = useOutbox()
+  const waitingEdit = note ? outbox.find((change) => change.kind === 'noteUpdate' && change.args.noteId === note._id) : undefined
   // Recent notes for the last visit beside the note; every measured note on the record (the care
   // team's, older ones too) for "last time", re-testing and quick sets
   const notesResult = useQueryUntyped(workspaceApi.physioCare.getClinicalNotes, open ? { patientId } : 'skip')
@@ -235,20 +245,25 @@ export function NoteDrawer({
   // patient's first). Either way, this user's unsaved draft of it comes back if there is one.
   const resetMedia = media.reset
   const firstNote = workspace.notesCount === 0
+  // Read when the drawer opens: an offline edit still waiting is where the next edit starts
+  const waitingArgs = useRef(waitingEdit?.args)
+  waitingArgs.current = waitingEdit?.args
   useEffect(() => {
     if (!open) return
     setOpenedAt(Date.now())
     setConfirmClose(false)
     discarded.current = false
+    const waiting = waitingArgs.current as (Partial<Record<string, string>> & { measures?: ClinicalMeasure[] }) | undefined
+    const startType = waiting?.noteType ?? note?.noteType ?? ''
     const current: NoteDraft | null = note
       ? {
-          noteType: isEditableNoteType(note.noteType) ? note.noteType : 'treatment_note',
-          subjective: note.subjectiveAssessment ?? '',
-          objective: note.objectiveAssessment ?? '',
-          assessment: note.diagnosis ?? '',
-          treatment: note.treatmentAdministered ?? '',
-          plan: note.planForNextSession ?? '',
-          measures: note.measures,
+          noteType: isEditableNoteType(startType) ? startType : 'treatment_note',
+          subjective: waiting?.subjectiveAssessment ?? note.subjectiveAssessment ?? '',
+          objective: waiting?.objectiveAssessment ?? note.objectiveAssessment ?? '',
+          assessment: waiting?.diagnosis ?? note.diagnosis ?? '',
+          treatment: waiting?.treatmentAdministered ?? note.treatmentAdministered ?? '',
+          plan: waiting?.planForNextSession ?? note.planForNextSession ?? '',
+          measures: waiting?.measures ?? note.measures,
         }
       : null
     const saved = userId ? loadNoteDraft(userId, patientId, note?._id, current ?? undefined) : null
@@ -550,6 +565,7 @@ export function NoteDrawer({
     // From Rehabify Scribe with a programme or care plan beside the note: approve them all together
     if (reviewing) return approveAndSend(final)
     setSaving(true)
+    const keptOffline = { description: 'Saved on this phone. It’s sent when you’re back online.' }
     try {
       if (scribeDraft) {
         await signScribe({
@@ -577,7 +593,7 @@ export function NoteDrawer({
         return
       }
       if (editing) {
-        await updateNote({
+        const fields = {
           noteId: note._id,
           noteType: typeEditable ? final.noteType : undefined,
           subjectiveAssessment: final.subjective,
@@ -586,31 +602,55 @@ export function NoteDrawer({
           planForNextSession: final.plan,
           diagnosis: final.assessment,
           measures: final.measures,
-        })
+        }
+        let queued: boolean
+        if (waitingEdit) {
+          // Replaces the earlier offline edit, still checked against the version it started from
+          await replaceInOutbox(waitingEdit.id, {
+            args: Object.fromEntries(
+              Object.entries({ ...fields, expectedVersion: waitingEdit.args.expectedVersion }).filter(([, value]) => value !== undefined)
+            ) as typeof waitingEdit.args,
+            status: waitingEdit.status === 'conflict' ? undefined : 'pending',
+          })
+          kickSync()
+          queued = true
+        } else {
+          // Online it saves as before; kept offline, it's checked against this version when sent
+          const saved = await updateNote(
+            { ...fields, expectedVersion: note.version },
+            { label: `Note edit · ${patientName}`, meta: { patientId }, liveArgs: fields }
+          )
+          queued = saved.queued
+        }
         discarded.current = true
         if (userId) clearNoteDraft(userId, patientId, noteId)
         playSound('success')
-        toast.success('Note updated')
+        if (queued) toast.success('Note updated', keptOffline)
+        else toast.success('Note updated')
         onOpenChange(false)
         return
       }
-      await addNote({
-        patientId,
-        noteType: final.noteType,
-        subjectiveAssessment: final.subjective || undefined,
-        objectiveAssessment: final.objective || undefined,
-        treatmentAdministered: final.treatment || undefined,
-        planForNextSession: final.plan || undefined,
-        diagnosis: final.assessment || undefined,
-        measures: final.measures.length ? final.measures : undefined,
-        voiceNoteStorageId: media.voiceStorageId,
-        attachments: media.attachmentIds.length ? media.attachmentIds : undefined,
-      })
+      const saved = await addNote(
+        {
+          patientId,
+          noteType: final.noteType,
+          subjectiveAssessment: final.subjective || undefined,
+          objectiveAssessment: final.objective || undefined,
+          treatmentAdministered: final.treatment || undefined,
+          planForNextSession: final.plan || undefined,
+          diagnosis: final.assessment || undefined,
+          measures: final.measures.length ? final.measures : undefined,
+          voiceNoteStorageId: media.voiceStorageId,
+          attachments: media.attachmentIds.length ? media.attachmentIds : undefined,
+        },
+        { label: `Clinical note · ${patientName}`, meta: { patientId } }
+      )
       discarded.current = true
       if (userId) clearNoteDraft(userId, patientId)
       setDraft(emptyDraft())
       playSound('success')
-      toast.success('Note saved')
+      if (saved.queued) toast.success('Note saved', keptOffline)
+      else toast.success('Note saved')
       onOpenChange(false)
     } catch (error) {
       playSound('error')

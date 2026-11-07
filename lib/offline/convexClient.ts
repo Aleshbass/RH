@@ -14,6 +14,7 @@ import type { Value } from 'convex/values';
 import { offlineModeOn } from '@/lib/pwa';
 import { offlineRuleFor } from './offlineQueries';
 import { keepAnswer, onSavedAnswersChange, savedAnswer } from './savedAnswers';
+import { kickSync } from './sync';
 import { subscribeVault, vaultState } from './vault';
 
 type AuthTokenFetcher = Parameters<ConvexReactClient['setAuth']>[0];
@@ -35,8 +36,21 @@ type ActiveQuery = { name: string; keyArgs: Record<string, unknown>; read: () =>
 export class OfflineConvexClient extends ConvexReactClient {
   /** The person the server has accepted, or null (signed out, or not confirmed yet) */
   private signedInAs: string | null = null;
+  /**
+   * Sign-in as far as this client knows: "unknown" until Clerk has loaded, "pending" while the
+   * server checks the token. Until it's settled, an answer the server gave without sign-in (e.g.
+   * "no such user") isn't shown: it would send a signed-in person to /sign-in.
+   */
+  private authState: 'unknown' | 'pending' | 'signedIn' | 'signedOut' = 'unknown';
+  private authListeners = new Set<() => void>();
   /** Allowlisted queries on screen right now */
   private active = new Set<ActiveQuery>();
+
+  private setAuthState(next: typeof this.authState) {
+    if (this.authState === next) return;
+    this.authState = next;
+    this.authListeners.forEach((listener) => listener());
+  }
 
   constructor(...args: ConstructorParameters<typeof ConvexReactClient>) {
     super(...args);
@@ -60,6 +74,7 @@ export class OfflineConvexClient extends ConvexReactClient {
 
   override setAuth(fetchToken: AuthTokenFetcher, onChange?: (isAuthenticated: boolean) => void) {
     let tokenSubject: string | null = null;
+    this.setAuthState('pending');
     super.setAuth(
       async (args) => {
         const token = await fetchToken(args);
@@ -69,7 +84,10 @@ export class OfflineConvexClient extends ConvexReactClient {
       (isAuthenticated) => {
         this.signedInAs = isAuthenticated ? tokenSubject : null;
         onChange?.(isAuthenticated);
+        this.setAuthState(isAuthenticated ? 'signedIn' : 'signedOut');
         this.keepAnswersOnScreen();
+        // Signed in again: send what was kept on this phone
+        if (isAuthenticated) kickSync();
       }
     );
   }
@@ -77,6 +95,20 @@ export class OfflineConvexClient extends ConvexReactClient {
   override clearAuth() {
     this.signedInAs = null;
     super.clearAuth();
+    this.setAuthState('signedOut');
+  }
+
+  /** The person the server has accepted right now (changes kept offline are sent only as them). */
+  signedInUser(): string | null {
+    return this.signedInAs;
+  }
+
+  /**
+   * Clerk loaded and nobody is signed in. Convex's provider only clears auth after a sign-in, so
+   * without this a page opened signed out would wait instead of going to /sign-in.
+   */
+  noteSignedOut() {
+    if (this.authState === 'unknown') this.setAuthState('signedOut');
   }
 
   override watchQuery<Query extends FunctionReference<'query'>>(
@@ -109,10 +141,12 @@ export class OfflineConvexClient extends ConvexReactClient {
           callback();
         });
         const stopSaved = onSavedAnswersChange(callback);
+        this.authListeners.add(callback);
         return () => {
           this.active.delete(active);
           stopLive();
           stopSaved();
+          this.authListeners.delete(callback);
         };
       },
       localQueryResult: () => {
@@ -120,7 +154,10 @@ export class OfflineConvexClient extends ConvexReactClient {
         if (live !== undefined) return live;
         const saved = savedAnswer(name, keyArgs);
         if (saved !== undefined) return saved as FunctionReturnType<Query>;
-        // Nothing saved: the plain answer (signed-out pages still redirect to sign-in)
+        // Sign-in not settled yet (Clerk loading, or the token being checked): still loading.
+        // Without this, the answer given before sign-in ("no such user") redirects to /sign-in.
+        if (this.authState === 'unknown' || this.authState === 'pending') return undefined;
+        // Signed out, nothing saved: the plain answer (signed-out pages still redirect to sign-in)
         return watch.localQueryResult();
       },
     };

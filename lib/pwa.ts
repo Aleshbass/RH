@@ -197,8 +197,7 @@ async function sendOfflineSwitch() {
 /**
  * "Reset offline data": clears every copy this device keeps (pages, app files, images) and reloads.
  * For a stuck or broken cache; sign-in and notifications are kept, and the encrypted offline copy
- * is saved again as pages are opened. (Once offline changes can be queued, unsynced ones must be
- * sent or confirmed first.)
+ * is saved again as pages are opened. Changes made offline and not sent yet are kept (wipeAll).
  */
 export async function resetOfflineData() {
   try {

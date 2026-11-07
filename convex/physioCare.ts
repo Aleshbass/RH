@@ -22,6 +22,7 @@ import { shownEmail } from "./helpers/patientJoinStatus";
 import { awaitingConfirmationFrom, hasPendingProposal } from "./helpers/appointmentStatus";
 import { lagosDateTime } from "./helpers/lagosTime";
 import { assertNoteTextLength, earlierVersions, keepRevision, revisionCountOf } from "./helpers/noteRevisions";
+import { arrivedLate, cleanClientId, lagosDayLabel, offlineWriteArgs, whenItHappened } from "./helpers/offlineWrites";
 import { canReadNote, clinicNoteReader, noteReaderFor, physioNoteReader, type NoteReader } from "./helpers/noteAccess";
 import { getClinicMember, getClinicStaffUserIds } from "./clinicTools";
 import { cleanMeasures, measureValidator, sameMeasures } from "./helpers/clinicalMeasures";
@@ -1422,11 +1423,25 @@ export const addClinicalNote = mutation({
     appointmentId: v.optional(v.id("appointments")),
     voiceNoteStorageId: v.optional(v.id("_storage")),
     attachments: v.optional(v.array(v.id("_storage"))),
+    // Written offline (lib/offline/outbox.ts): saved once, dated when it was written
+    ...offlineWriteArgs,
   },
   handler: async (ctx, args) => {
     const physio = await requirePhysio(ctx);
+    // Sent again after a lost answer: it's already saved
+    const clientId = cleanClientId(args.clientId);
+    if (clientId) {
+      const saved = await ctx.db
+        .query("sessionLogs")
+        .withIndex("by_client_id", (q) => q.eq("clientId", clientId))
+        .first();
+      if (saved) {
+        if (saved.physiotherapistId !== physio._id) throw new ConvexError("This note couldn't be saved.");
+        return { noteId: saved._id };
+      }
+    }
     const relationship = await requireActiveRelationship(ctx, physio._id, args.patientId);
-    return await insertClinicalNote(ctx, physio, relationship, args);
+    return await insertClinicalNote(ctx, physio, relationship, args, { clientId });
   },
 });
 
@@ -1442,6 +1457,8 @@ export type NewClinicalNote = {
   appointmentId?: Id<"appointments">;
   voiceNoteStorageId?: Id<"_storage">;
   attachments?: Id<"_storage">[];
+  /** Written offline: when it was written (lib/offline/outbox.ts) */
+  occurredAt?: number;
 };
 
 /**
@@ -1454,7 +1471,7 @@ export async function insertClinicalNote(
   physio: Doc<"users">,
   relationship: Doc<"patientPhysiotherapistRelationships">,
   args: NewClinicalNote,
-  extra: Pick<Doc<"sessionLogs">, "aiAssisted" | "scribeSessionId" | "signedAt"> = {}
+  extra: Pick<Doc<"sessionLogs">, "aiAssisted" | "scribeSessionId" | "signedAt" | "clientId"> = {}
 ): Promise<{ noteId: Id<"sessionLogs"> }> {
   const sections = {
     subjectiveAssessment: args.subjectiveAssessment?.trim() || undefined,
@@ -1500,7 +1517,8 @@ export async function insertClinicalNote(
     patientId: args.patientId,
     physiotherapistId: physio._id,
     clinicId: relationship.clinicId,
-    sessionDate: Date.now(),
+    // When it was written (a note written offline arrives later)
+    sessionDate: whenItHappened(args.occurredAt, Date.now()),
     noteType: args.noteType,
     ...sections,
     measures: measures.length ? measures : undefined,
@@ -1526,11 +1544,17 @@ export const updateClinicalNote = mutation({
     diagnosis: v.optional(v.string()),
     /** The note's measures, replacing the ones it had; left as they are when not sent */
     measures: v.optional(v.array(measureValidator)),
+    /**
+     * Edited offline: the version the edit started from (the note's editedAt, 0 if never edited).
+     * If the note changed since, nothing is saved and the physio reviews both (NOTE_CHANGED).
+     */
+    expectedVersion: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const physio = await requirePhysio(ctx);
     const note = await ctx.db.get(args.noteId);
-    if (!note || note.physiotherapistId !== physio._id) {
+    if (!note) throw new ConvexError("This note was deleted, so the change couldn't be saved.");
+    if (note.physiotherapistId !== physio._id) {
       throw new ConvexError("Only the physiotherapist who wrote this note can change it.");
     }
     const next = {
@@ -1554,7 +1578,23 @@ export const updateClinicalNote = mutation({
       noteType !== note.noteType ||
       (Object.keys(next) as (keyof typeof next)[]).some((key) => next[key] !== note[key]) ||
       !sameMeasures(measures ?? [], note.measures ?? []);
+    // Already saved like this (also an offline edit sent again after a lost answer)
     if (!changed) return { changed: false };
+    if (args.expectedVersion !== undefined && (note.editedAt ?? 0) !== args.expectedVersion) {
+      throw new ConvexError({
+        code: "NOTE_CHANGED",
+        message: "This note was changed somewhere else while you were offline. Review both versions.",
+        current: {
+          version: note.editedAt ?? 0,
+          noteType: note.noteType ?? null,
+          subjectiveAssessment: note.subjectiveAssessment ?? null,
+          objectiveAssessment: note.objectiveAssessment ?? null,
+          treatmentAdministered: note.treatmentAdministered ?? null,
+          planForNextSession: note.planForNextSession ?? null,
+          diagnosis: note.diagnosis ?? null,
+        },
+      });
+    }
 
     const now = Date.now();
     const kept = await keepRevision(ctx, note, physio._id, now);
@@ -1853,10 +1893,12 @@ export const checkInArgs = {
 };
 
 export const submitCheckIn = mutation({
-  args: checkInArgs,
+  // Sent offline (lib/offline/outbox.ts): saved once, dated when the patient checked in
+  args: { ...checkInArgs, ...offlineWriteArgs },
   handler: async (ctx, args) => {
     const patient = await requirePatient(ctx);
-    return await recordPatientCheckIn(ctx, patient, args);
+    const { clientId, occurredAt, ...checkIn } = args;
+    return await recordPatientCheckIn(ctx, patient, checkIn, undefined, { clientId, occurredAt });
   },
 });
 
@@ -1878,7 +1920,9 @@ export async function recordPatientCheckIn(
   ctx: MutationCtx,
   patient: Doc<"users">,
   args: CheckInInput,
-  reportedBy?: { name: string; relationship: string }
+  reportedBy?: { name: string; relationship: string },
+  /** Sent offline: the phone's id for it and when the patient checked in */
+  offline?: { clientId?: string; occurredAt?: number }
 ) {
   const pain = Math.max(0, Math.min(10, Math.round(args.painScore)));
   const written = args.note?.trim().slice(0, 1000) || undefined;
@@ -1886,16 +1930,35 @@ export async function recordPatientCheckIn(
   const fn = args.functionScore === undefined ? undefined : Math.max(0, Math.min(10, Math.round(args.functionScore)));
   const now = Date.now();
 
+  // Sent again after a lost answer: it's already saved
+  const clientId = cleanClientId(offline?.clientId);
+  if (clientId) {
+    const saved = await ctx.db
+      .query("patientCheckIns")
+      .withIndex("by_client_id", (q) => q.eq("clientId", clientId))
+      .first();
+    if (saved) {
+      if (saved.patientId !== patient._id) throw new ConvexError("This check-in couldn't be saved.");
+      return { checkInId: saved._id, flagged: saved.flagged };
+    }
+  }
+
+  // When they checked in (an offline check-in arrives later): one per 10 minutes around then
+  const at = whenItHappened(offline?.occurredAt, now);
+  const tooClose = await ctx.db
+    .query("patientCheckIns")
+    .withIndex("by_patient", (q) => q.eq("patientId", patient._id).gt("createdAt", at - 10 * 60 * 1000).lt("createdAt", at + 10 * 60 * 1000))
+    .first();
+  if (tooClose) {
+    throw new ConvexError(reportedBy ? "A check-in was sent a few minutes ago. Try again tomorrow." : "You checked in a few minutes ago. Check in again tomorrow.");
+  }
   const previous = (
     await ctx.db
       .query("patientCheckIns")
-      .withIndex("by_patient", (q) => q.eq("patientId", patient._id))
+      .withIndex("by_patient", (q) => q.eq("patientId", patient._id).lt("createdAt", at))
       .order("desc")
       .take(1)
   )[0];
-  if (previous && now - previous.createdAt < 10 * 60 * 1000) {
-    throw new ConvexError(reportedBy ? "A check-in was sent a few minutes ago. Try again tomorrow." : "You checked in a few minutes ago. Check in again tomorrow.");
-  }
 
   const relationship = await primaryPhysioFor(ctx, patient._id);
   const physioId = relationship?.physiotherapistId;
@@ -1925,16 +1988,19 @@ export async function recordPatientCheckIn(
     note,
     flagged,
     flagReason: flagged ? reasons.join(" · ") : undefined,
-    createdAt: now,
+    createdAt: at,
+    clientId,
+    syncedAt: at === now ? undefined : now,
   });
 
   if (flagged && physioId) {
+    const when = arrivedLate(at, now) ? `in a check-in on ${lagosDayLabel(at)} (sent offline)` : "in today's check-in";
     await notify(
       ctx,
       physioId,
       "patient_check_in",
       `${fullName(patient)} needs your attention`,
-      `${reasons.join(", ")} in today's check-in${reportedBy ? ` (sent by ${reportedBy.name}, their ${reportedBy.relationship.toLowerCase()})` : ""}.${written ? ` They wrote: "${written.length > 140 ? `${written.slice(0, 140)}…` : written}"` : ""}`,
+      `${reasons.join(", ")} ${when}${reportedBy ? ` (sent by ${reportedBy.name}, their ${reportedBy.relationship.toLowerCase()})` : ""}.${written ? ` They wrote: "${written.length > 140 ? `${written.slice(0, 140)}…` : written}"` : ""}`,
       `/dashboard/physiotherapist/patients/${patient._id}?tab=checkins`,
       pain >= HIGH_PAIN || args.concern ? "high" : "medium"
     );
