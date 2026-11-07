@@ -13,8 +13,8 @@ import { CareFormatSection } from "@/components/landing/CareFormatSection";
 import { CostSection } from "@/components/landing/CostSection";
 import { MskProgramSection } from "@/components/landing/MskProgramSection";
 
-// The 3D demo (three.js) loads in its own chunk; the viewer itself waits until the section is near.
-const Exercise3DShowcase = dynamicImport(() => import("@/components/landing/Exercise3DShowcase").then((m) => m.Exercise3DShowcase));
+// Care plan carousel (with the 3D demo) loads in its own chunk; three.js waits until the section is near.
+const CarePlanSection = dynamicImport(() => import("@/components/landing/CarePlanSection").then((m) => m.CarePlanSection));
 const PracticeTools = dynamicImport(() => import("@/components/landing/PracticeTools").then((m) => m.PracticeTools));
 const FAQ = dynamicImport(() => import('@/components/landing/FAQ'));
 
@@ -29,8 +29,8 @@ const PageContent = () => (
     <ProofBand />
     <SpeakToAPhysio />
     <HowItWorks />
-    {/* A real exercise from the 3D library to turn, plus motion tracking (coming soon) */}
-    <Exercise3DShowcase />
+    {/* What a patient gets: 3D exercises, visit summaries, WhatsApp reminders, progress, their physio */}
+    <CarePlanSection />
     {/* Deep ink break in the page: two reasons and the patient film */}
     <WhyRehabify />
     <CareFormatSection />
