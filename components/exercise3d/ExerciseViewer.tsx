@@ -66,6 +66,12 @@ export type ExerciseViewerProps = {
   bare?: boolean
   /** Colour of the active controls: teal in the care dashboards, ink on Rehabify Learn. */
   accent?: 'teal' | 'ink'
+  /**
+   * "showcase" is the public landing demo: play/pause, speed and "Drag to turn" only, side-to-side
+   * turning with slow auto-rotation, page scrolling never blocked, and a quiet poster if a clip
+   * isn't available.
+   */
+  variant?: 'full' | 'showcase'
 }
 
 const ACCENTS = {
@@ -84,8 +90,9 @@ const ACCENTS = {
 }
 
 /** One exercise in 3D, with a poster first and graceful fallbacks. */
-export function ExerciseViewer({ clipId, requestGrant, className, autoPlay = true, onRep, onReadyChange, bare, accent = 'teal' }: ExerciseViewerProps) {
+export function ExerciseViewer({ clipId, requestGrant, className, autoPlay = true, onRep, onReadyChange, bare, accent = 'teal', variant = 'full' }: ExerciseViewerProps) {
   const tone = ACCENTS[accent]
+  const showcase = variant === 'showcase'
   const clipInfo = findClip(clipId)
   const [phase, setPhase] = useState<Phase>('checking')
 
@@ -225,7 +232,8 @@ export function ExerciseViewer({ clipId, requestGrant, className, autoPlay = tru
           viewNonce={viewNonce}
           watermark={assets.watermark}
           onRep={handleRep}
-          onFrame={audio ? handleFrame : undefined}
+          onFrame={audio && !showcase ? handleFrame : undefined}
+          showcase={showcase}
           onContextLost={() => {
             setLite('3D was paused to save memory')
             setPhase('lite')
@@ -248,13 +256,13 @@ export function ExerciseViewer({ clipId, requestGrant, className, autoPlay = tru
           </button>
           {lite && (
             <span className="inline-flex items-center gap-1 text-[11px] text-neutral-500">
-              <WifiOff className="h-3 w-3" /> {lite}. Showing the picture and steps.
+              <WifiOff className="h-3 w-3" /> {lite}. {showcase ? 'Showing the picture.' : 'Showing the picture and steps.'}
             </span>
           )}
         </div>
       )}
 
-      {phase === 'denied' && (
+      {phase === 'denied' && !showcase && (
         <div className="absolute inset-x-0 bottom-4 flex justify-center px-4">
           <span className={cn(chip, 'h-auto py-2 text-center')}>The 3D demonstration is waiting for clinical review. Follow the picture and steps.</span>
         </div>
@@ -274,12 +282,14 @@ export function ExerciseViewer({ clipId, requestGrant, className, autoPlay = tru
           <div className={cn('pointer-events-none absolute left-3 top-3 flex items-center gap-1.5 rounded-full bg-white/80 px-2.5 py-1 text-[11px] font-medium backdrop-blur dark:bg-rh-ink-2/80', tone.text)}>
             <Rotate3d className="h-3.5 w-3.5" /> Drag to turn
           </div>
-          <div className={cn('pointer-events-none absolute right-3 top-3 rounded-2xl px-3 py-1.5 text-center shadow-sm', tone.on)}>
-            <p className="text-lg font-semibold leading-none tabular-nums">{reps}</p>
-            <p className="text-[10px] uppercase tracking-wider opacity-80">reps</p>
-          </div>
+          {!showcase && (
+            <div className={cn('pointer-events-none absolute right-3 top-3 rounded-2xl px-3 py-1.5 text-center shadow-sm', tone.on)}>
+              <p className="text-lg font-semibold leading-none tabular-nums">{reps}</p>
+              <p className="text-[10px] uppercase tracking-wider opacity-80">reps</p>
+            </div>
+          )}
           <div className="absolute inset-x-0 bottom-3 flex flex-wrap items-center justify-center gap-1.5 px-3">
-            {audio && (
+            {audio && !showcase && (
               <button
                 type="button"
                 onClick={() => void toggleVoice()}
@@ -302,7 +312,7 @@ export function ExerciseViewer({ clipId, requestGrant, className, autoPlay = tru
             <button type="button" className={cn(chip, slow && tone.on)} onClick={() => setSlow((s) => !s)} aria-pressed={slow}>
               <Turtle className="h-3.5 w-3.5" /> {slow ? '0.5×' : '1×'}
             </button>
-            {(['front', 'side', 'top'] as ViewName[]).map((v) => (
+            {!showcase && (['front', 'side', 'top'] as ViewName[]).map((v) => (
               <button
                 key={v}
                 type="button"

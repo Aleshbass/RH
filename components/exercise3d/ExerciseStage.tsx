@@ -211,9 +211,14 @@ type StageProps = {
   watermark: string
   onRep?: () => void
   onFrame?: (progress: number) => void
+  /**
+   * Public showcase (landing page): turns side to side only, no zoom, slow auto-rotation until the
+   * first drag, and vertical swipes always scroll the page on phones.
+   */
+  showcase?: boolean
 }
 
-function Scene({ gltf, clip, props, playing, speed, view, viewNonce, watermark, onRep, onFrame }: StageProps) {
+function Scene({ gltf, clip, props, playing, speed, view, viewNonce, watermark, onRep, onFrame, showcase }: StageProps) {
   const { camera, gl } = useThree()
   const model = useMemo(() => cloneSkinned(gltf.scene), [gltf])
   const mixer = useMemo(() => new THREE.AnimationMixer(model), [model])
@@ -309,9 +314,26 @@ function Scene({ gltf, clip, props, playing, speed, view, viewNonce, watermark, 
     c.minDistance = 1.2
     c.maxDistance = 7
     c.maxPolarAngle = Math.PI / 2 - 0.04 // never below the floor
+    let stopSpin: (() => void) | undefined
+    if (showcase) {
+      // The wheel scrolls the page instead of zooming.
+      c.enableZoom = false
+      c.autoRotate = !window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      c.autoRotateSpeed = 2 // one turn about every 30 s
+      stopSpin = () => {
+        c.autoRotate = false
+      }
+      c.addEventListener('start', stopSpin)
+      // OrbitControls sets touch-action: none, which traps the page on phones. pan-y hands every
+      // vertical swipe (and pinch-zoom) back to the browser; only a sideways drag turns the model.
+      gl.domElement.style.touchAction = 'pan-y pinch-zoom'
+    }
     controls.current = c
-    return () => c.dispose()
-  }, [camera, gl])
+    return () => {
+      if (stopSpin) c.removeEventListener('start', stopSpin)
+      c.dispose()
+    }
+  }, [camera, gl, showcase])
 
   // Camera presets: front (the way the character faces), side, top.
   useEffect(() => {
@@ -326,9 +348,19 @@ function Scene({ gltf, clip, props, playing, speed, view, viewNonce, watermark, 
       view === 'side' ? new THREE.Vector3(1, 0.22, 0.12) : view === 'top' ? new THREE.Vector3(0.05, 1, 0.35) : new THREE.Vector3(0.38, 0.24, 1)
     camera.position.copy(center).addScaledVector(dir.normalize(), dist)
     camera.lookAt(center)
-    controls.current?.target.copy(center)
-    controls.current?.update()
-  }, [camera, view, viewNonce, clip])
+    const c = controls.current
+    if (!c) return
+    if (showcase) {
+      c.minPolarAngle = 0
+      c.maxPolarAngle = Math.PI / 2 - 0.04
+    }
+    c.target.copy(center)
+    c.update()
+    if (showcase) {
+      // Side to side only: the camera keeps this height.
+      c.minPolarAngle = c.maxPolarAngle = c.getPolarAngle()
+    }
+  }, [camera, view, viewNonce, clip, showcase])
 
   useFrame((_, delta) => {
     mixer.update(playing ? Math.min(delta, 0.1) * speed : 0)

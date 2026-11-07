@@ -21,11 +21,14 @@ const TOOLS = [
     id: "physio",
     label: "Physiotherapists",
     short: "Physios",
-    heading: "More space for the care you give.",
-    points: ["Consistent patient referrals, no marketing costs", "Scheduling, notes and payments in one place", "A fixed payout for every completed session"],
+    heading: "Better tools today. More patients when you're ready.",
+    points: ["Free practice tools for your own patients", "Patients matched to you by Joy when you join our network", "A fixed payout for every completed network session"],
     video: { url: MARKETING_VIDEOS.physiotherapist, title: "Rehabify for physiotherapists" },
     fallback: { src: "/logos/images/physio-dashboard.webp", alt: "The Rehabify physiotherapist workspace" },
-    ctas: [{ label: "Join our care network", href: signUpHrefFor("physiotherapist") }] as Cta[],
+    ctas: [
+      { label: "Start free", href: signUpHrefFor("physiotherapist") },
+      { label: "Join the care network", href: "/platform/physiotherapists#network" },
+    ] as Cta[],
   },
   {
     id: "clinic",

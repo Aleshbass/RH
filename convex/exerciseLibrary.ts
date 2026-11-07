@@ -355,6 +355,44 @@ export const requestViewerGrant = mutation({
   },
 });
 
+/** The only clips anyone may watch without signing in: the landing page's 3D demo. */
+export const DEMO_CLIPS = ["mini-squat", "glute-bridge"] as const;
+
+/**
+ * Keys for the public landing demo: the character and DEMO_CLIPS only, once a physio has approved
+ * each animation (unapproved ones come back denied and the page shows the poster).
+ *
+ * Not rate-limited or logged: these keys are fixed for a library version, so limiting would add
+ * nothing. The character key is shared by every clip in the version; motions stay per clip, so
+ * nothing beyond these two movements opens up.
+ */
+export const demoGrant = query({
+  args: { version: v.string() },
+  handler: async (ctx, args) => {
+    if (args.version !== EXERCISE_CATALOG.version) throw new ConvexError("This exercise library version isn't available.");
+    const clips: Record<string, string> = {};
+    const denied: string[] = [];
+    for (const id of DEMO_CLIPS) {
+      const clip = findClip(id);
+      const exercise = clip
+        ? await ctx.db
+            .query("exercises")
+            .withIndex("by_animation_slug", (q) => q.eq("animationSlug", clip.slug))
+            .first()
+        : null;
+      if (exercise?.animationStatus === "approved") clips[id] = await deriveAssetKey(`motion:${id}`, args.version);
+      else denied.push(id);
+    }
+    return {
+      version: args.version,
+      character: Object.keys(clips).length ? await deriveAssetKey("character", args.version) : null,
+      clips,
+      denied,
+      watermark: "Demo",
+    };
+  },
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // A physio's own exercises, with their own photos or video
 // ─────────────────────────────────────────────────────────────────────────────

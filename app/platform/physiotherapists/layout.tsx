@@ -3,9 +3,9 @@ import { pageMetadata } from '@/lib/seo/utils';
 
 // Metadata only: the page is a client component and cannot export it.
 export const metadata: Metadata = pageMetadata({
-  title: 'Software for Physiotherapists',
+  title: 'For Physiotherapists: Free Practice Tools and More Patients',
   description:
-    'Get matched with patients in Nigeria and treat them in one workspace: SOAP notes, care plan templates, a 3D exercise library, video calls and messages, and a fixed payout per completed session.',
+    'A free practice system built for Nigerian physiotherapists: SOAP notes, care plan templates, 3D exercise programmes, video sessions and invoices. Join our care network and Joy matches patients to your skills and area.',
   path: '/platform/physiotherapists',
 });
 
