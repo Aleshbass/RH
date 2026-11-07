@@ -38,6 +38,7 @@ import {
   type DirectoryRow,
   type UpcomingSession,
 } from './shared'
+import { WorkDetails } from './WorkDetails'
 
 // A plain reference: the generated `api` type is at TypeScript's depth limit (TS2589)
 const setPracticeModeRef = makeFunctionReference<
@@ -60,6 +61,8 @@ const MAKE_THEM: Record<PracticeChoice, string> = {
 }
 
 const sectionTitle = 'text-sm font-semibold text-rh-ink dark:text-white'
+// Patients open in the patient record (All patients), the same drawer as everywhere else
+const patientRecordHref = (patientId: string) => `${ADMIN_BASE}/users?role=patient&patient=${patientId}`
 const muted = 'text-xs text-neutral-500 dark:text-neutral-400'
 const rowLink =
   'block rounded-xl px-3 py-2.5 transition-colors hover:bg-rh-canvas focus:outline-none focus-visible:ring-2 focus-visible:ring-rh-lime dark:hover:bg-white/[0.04]'
@@ -183,6 +186,7 @@ function SheetBody({ data, preview }: { data: CaseloadResult | undefined; previe
         ) : (
           <>
             <Summary data={data} />
+            <WorkDetails data={data} />
             <Caseload data={data} />
             <Upcoming sessions={data.upcoming} />
           </>
@@ -444,7 +448,7 @@ function PatientRow({ patient }: { patient: CaseloadPatient }) {
   const care = carePlanText(patient)
 
   return (
-    <Link href={userHref(patient.patientId)} className={cn(rowLink, 'flex items-start gap-3')}>
+    <Link href={patientRecordHref(patient.patientId)} className={cn(rowLink, 'flex items-start gap-3')}>
       <PersonAvatar id={patient.patientId} name={patient.name} imageUrl={patient.imageUrl} size={36} />
       <span className="min-w-0 flex-1">
         <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -513,7 +517,7 @@ function Upcoming({ sessions }: { sessions: UpcomingSession[] }) {
               <ul className="space-y-0.5">
                 {day.items.map((session) => (
                   <li key={session.appointmentId}>
-                    <Link href={userHref(session.patientId)} className={cn(rowLink, 'flex items-start gap-3')}>
+                    <Link href={patientRecordHref(session.patientId)} className={cn(rowLink, 'flex items-start gap-3')}>
                       <span className="w-[86px] shrink-0 pt-0.5 text-sm font-semibold tabular-nums text-rh-ink dark:text-white">
                         {format(session.startTime, 'HH:mm')}
                         <span className="font-normal text-neutral-400">–{format(session.endTime, 'HH:mm')}</span>

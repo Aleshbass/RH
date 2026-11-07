@@ -14,6 +14,7 @@ import { AdminPage, EmptyState, FilterChips, inputClass, PageHeader, Panel, soft
 import { formatKobo, LoadingBlock, selectContentClass } from '@/components/admin/partners/shared'
 import type { PartnerApplication } from '@/components/admin/partners/PartnerReview'
 import { cn } from '@/lib/utils'
+import { PatientSheet } from '@/components/admin/patients/PatientSheet'
 import { ReferralManageDialog, type ReferralRow, type ReferralStage, STAGES, STATUS_LABEL, statusTone } from './ReferralManageDialog'
 
 const PAGE_SIZE = 100
@@ -56,6 +57,7 @@ function ReferralsContent() {
   const [search, setSearch] = useState('')
   const [unassignedOnly, setUnassignedOnly] = useState(false)
   const [managing, setManaging] = useState<ReferralRow | null>(null)
+  const [patientId, setPatientId] = useState<string | null>(null)
 
   // Follow the URL when it changes from outside (links from the partners page, back/forward)
   useEffect(() => setPartnerState(urlPartner), [urlPartner])
@@ -239,6 +241,19 @@ function ReferralsContent() {
                         <span>
                           {r.patientFirstName} {r.patientLastName}
                         </span>
+                        {r.patientId && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setPatientId(r.patientId!)
+                            }}
+                            className="rounded-full bg-rh-honeydew px-2 py-0.5 text-[11px] font-semibold text-rh-ink hover:bg-rh-lime dark:bg-white/[0.06] dark:text-rh-lime"
+                            title="Open the patient record"
+                          >
+                            Record
+                          </button>
+                        )}
                         {r.environment === 'sandbox' && <StatusBadge tone="neutral">Sandbox</StatusBadge>}
                         {(r.priority === 'urgent' || r.priority === 'high') && <StatusBadge tone="red">{r.priority === 'urgent' ? 'Urgent' : 'High'}</StatusBadge>}
                       </div>
@@ -329,6 +344,7 @@ function ReferralsContent() {
       </Panel>
 
       <ReferralManageDialog referral={managingLive} onClose={() => setManaging(null)} />
+      <PatientSheet patientId={patientId} onClose={() => setPatientId(null)} />
     </AdminPage>
   )
 }

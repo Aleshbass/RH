@@ -7,6 +7,8 @@ import { Search, Stethoscope } from '@/components/icons'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Input } from '@/components/ui/input'
 import { AdminPage, EmptyState, FilterChips, PageHeader, Panel, StatTile, StatusBadge, inputClass } from '@/components/admin/ui'
+import { PhysioSheet } from '@/components/admin/physios/PhysioSheet'
+import { TestAccountsPanel } from '@/components/admin/physios/TestAccountsPanel'
 
 type ListingRow = {
   userId: string
@@ -26,8 +28,10 @@ type Filter = 'hidden' | 'live' | 'all'
 
 export default function MarketplaceListingPage() {
   const rows = useQuery(listingHealthRef, {})
-  const [filter, setFilter] = useState<Filter>('hidden')
+  // Who patients can book right now comes first
+  const [filter, setFilter] = useState<Filter>('live')
   const [search, setSearch] = useState('')
+  const [openId, setOpenId] = useState<string | null>(null)
 
   const live = rows?.filter((row) => row.isLive).length ?? 0
   const hidden = (rows?.length ?? 0) - live
@@ -55,7 +59,7 @@ export default function MarketplaceListingPage() {
     <AdminPage>
       <PageHeader
         title="Marketplace listing"
-        description="Who patients can find on Find a Physio, and what's holding back everyone else."
+        description="Who patients can find on Find a Physio, and what's holding back everyone else. Open a physio to see their hours, areas and patients."
       />
 
       {rows === undefined ? (
@@ -89,6 +93,8 @@ export default function MarketplaceListingPage() {
             </Panel>
           )}
 
+          <TestAccountsPanel />
+
           <Panel
             title="Physiotherapists"
             actions={
@@ -108,8 +114,8 @@ export default function MarketplaceListingPage() {
                 value={filter}
                 onChange={setFilter}
                 options={[
-                  { value: 'hidden', label: 'Not listed', count: hidden },
                   { value: 'live', label: 'Live', count: live },
+                  { value: 'hidden', label: 'Not listed', count: hidden },
                   { value: 'all', label: 'All', count: rows.length },
                 ]}
               />
@@ -119,9 +125,14 @@ export default function MarketplaceListingPage() {
             ) : (
               <ul className="divide-y divide-black/[0.05] dark:divide-white/[0.06]">
                 {visible.map((row) => (
-                  <li key={row.userId} className="flex flex-col gap-2 px-5 py-4 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
+                  <li key={row.userId}>
+                    <button
+                      type="button"
+                      onClick={() => setOpenId(row.userId)}
+                      className="flex w-full flex-col gap-2 px-5 py-4 text-left transition-colors hover:bg-rh-canvas sm:flex-row sm:items-start sm:justify-between sm:gap-6 dark:hover:bg-white/[0.03]"
+                    >
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-rh-ink dark:text-white">{row.name}</p>
+                      <p className="truncate text-sm font-semibold text-rh-ink underline-offset-2 hover:underline dark:text-white">{row.name}</p>
                       <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">{row.email}</p>
                     </div>
                     {row.isLive ? (
@@ -135,6 +146,7 @@ export default function MarketplaceListingPage() {
                         ))}
                       </ul>
                     )}
+                    </button>
                   </li>
                 ))}
               </ul>
@@ -142,6 +154,7 @@ export default function MarketplaceListingPage() {
           </Panel>
         </>
       )}
+      <PhysioSheet physioId={openId} preview={null} onClose={() => setOpenId(null)} />
     </AdminPage>
   )
 }

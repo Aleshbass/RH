@@ -32,10 +32,37 @@ export type MarketingCampaign = MarketingContent & {
 export type MarketingContact = { _id: Id<"marketingContacts">; email: string; name?: string; tags: string[]; createdAt: number };
 export type MarketingPerson = { email: string; name: string; role: string };
 
+export type MarketingRecipient = {
+  email: string;
+  name?: string;
+  segment?: string;
+  status: "sent" | "pending" | "failed";
+  error?: string;
+  sentAt?: number;
+  userId?: Id<"users">;
+  role?: string;
+  delivered: boolean;
+  opened: boolean;
+  clicked: boolean;
+  bounced: boolean;
+  complained: boolean;
+};
+
+export type MarketingCampaignDetail = {
+  campaign: MarketingCampaign;
+  recipients: MarketingRecipient[];
+  /** queue: one-to-one sends · saved: group sends · events: older group sends, from Resend's reports only */
+  listSource: "queue" | "saved" | "events";
+  truncated: boolean;
+};
+
 /** Plain references to convex/marketing.ts: the generated `api` type is at TypeScript's depth limit (TS2589). */
 export const marketingApi = {
   overview: makeFunctionReference<"query", Record<string, never>, MarketingOverview>("marketing:adminOverview"),
   campaigns: makeFunctionReference<"query", Record<string, never>, MarketingCampaign[]>("marketing:adminListCampaigns"),
+  campaignDetail: makeFunctionReference<"query", { campaignId: Id<"marketingCampaigns"> }, MarketingCampaignDetail | null>(
+    "marketing:adminCampaignDetail"
+  ),
   contacts: makeFunctionReference<"query", Record<string, never>, MarketingContact[]>("marketing:adminListContacts"),
   findPeople: makeFunctionReference<"query", { q: string }, MarketingPerson[]>("marketing:adminFindPeople"),
   addContacts: makeFunctionReference<

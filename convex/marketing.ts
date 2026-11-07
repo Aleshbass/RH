@@ -174,6 +174,84 @@ export const adminListCampaigns = query({
   },
 });
 
+const EVENT_TYPES = ["delivered", "opened", "clicked", "bounced", "complained"] as const;
+type EventType = (typeof EVENT_TYPES)[number];
+const DETAIL_LIMIT = 2000;
+
+/**
+ * One sent campaign: what it said and who it went to. One-to-one sends list their queue rows,
+ * group sends the people saved when each segment went out (marketingRecipients). Campaigns sent
+ * before that list was kept fall back to the people Resend reported events for.
+ */
+export const adminCampaignDetail = query({
+  args: { campaignId: v.id("marketingCampaigns") },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx);
+    const campaign = await ctx.db.get(args.campaignId);
+    if (!campaign) return null;
+
+    // What Resend reported back, per person
+    const events = new Map<string, Set<EventType>>();
+    for (const type of EVENT_TYPES) {
+      const rows = await ctx.db
+        .query("marketingEvents")
+        .withIndex("by_campaign_type", (q) => q.eq("campaignId", campaign._id).eq("type", type))
+        .take(DETAIL_LIMIT * 2);
+      for (const row of rows) {
+        const set = events.get(row.email) ?? new Set<EventType>();
+        set.add(type);
+        events.set(row.email, set);
+      }
+    }
+
+    type Row = { email: string; name?: string; segment?: string; status: "sent" | "pending" | "failed"; error?: string; sentAt?: number };
+    let rows: Row[] = [];
+    let listSource: "queue" | "saved" | "events" = "saved";
+    if (campaign.audience === "individual") {
+      listSource = "queue";
+      for (const status of ["sent", "pending", "failed"] as const) {
+        const queued = await ctx.db
+          .query("marketingQueue")
+          .withIndex("by_campaign_and_status", (q) => q.eq("campaignId", campaign._id).eq("status", status))
+          .take(DETAIL_LIMIT);
+        rows.push(...queued.map((r) => ({ email: r.email, name: r.name, status, error: r.lastError, sentAt: r.sentAt })));
+      }
+    } else {
+      const saved = await ctx.db
+        .query("marketingRecipients")
+        .withIndex("by_campaign_and_email", (q) => q.eq("campaignId", campaign._id))
+        .take(DETAIL_LIMIT + 1);
+      rows = saved.map((r) => ({ email: r.email, name: r.name, segment: r.segment, status: "sent" as const }));
+      if (rows.length === 0 && events.size > 0) {
+        listSource = "events";
+        rows = Array.from(events.keys()).map((email) => ({ email, status: "sent" as const }));
+      }
+    }
+
+    const recipients = await Promise.all(
+      rows.slice(0, DETAIL_LIMIT).map(async (r) => {
+        const user = await ctx.db.query("users").withIndex("by_email", (q) => q.eq("email", r.email)).first();
+        const got = events.get(r.email);
+        return {
+          ...r,
+          name: r.name || [user?.firstName, user?.lastName].filter(Boolean).join(" ") || undefined,
+          userId: user && !user.deletedAt ? user._id : undefined,
+          role: user?.role,
+          delivered: got?.has("delivered") ?? false,
+          opened: got?.has("opened") ?? false,
+          clicked: got?.has("clicked") ?? false,
+          bounced: got?.has("bounced") ?? false,
+          complained: got?.has("complained") ?? false,
+        };
+      })
+    );
+    recipients.sort((a, b) => (a.name ?? a.email).localeCompare(b.name ?? b.email));
+
+    const pendingCount = rows.filter((r) => r.status === "pending").length;
+    return { campaign: { ...campaign, pendingCount }, recipients, listSource, truncated: rows.length > DETAIL_LIMIT };
+  },
+});
+
 export const adminListContacts = query({
   args: {},
   handler: async (ctx) => {
@@ -374,6 +452,21 @@ export const internalSegmentSent = internalMutation({
   handler: async (ctx, args) => {
     const c = await ctx.db.get(args.campaignId);
     if (!c) return;
+
+    // Save who this segment went to: the Resend audience as just synced, with names where we have them
+    const members = await ctx.db
+      .query("marketingAudienceMembers")
+      .withIndex("by_segment", (q) => q.eq("segment", args.segment))
+      .collect();
+    const names = new Map((await segmentRecipients(ctx, args.segment as MarketingSegment)).map((r) => [r.email, r.name]));
+    for (const m of members) {
+      const already = await ctx.db
+        .query("marketingRecipients")
+        .withIndex("by_campaign_and_email", (q) => q.eq("campaignId", c._id).eq("email", m.email))
+        .first();
+      if (!already) await ctx.db.insert("marketingRecipients", { campaignId: c._id, email: m.email, name: names.get(m.email), segment: args.segment });
+    }
+
     const rest = c.segmentsToSend.filter((s) => s !== args.segment);
     const now = Date.now();
     await ctx.db.patch(c._id, {

@@ -8,6 +8,7 @@ import { ensureUserRole } from "./auth";
 import { requireAdmin } from "./helpers/partnerAccess";
 import { isPhysioBookable, servesRehabifyNetwork } from "./physioSetup";
 import { physioAgreementStates } from "./agreements";
+import { normalizeAvailabilitySchedule } from "./calendar/availability";
 import type { Doc, Id } from "./_generated/dataModel";
 import { isRehabifyCareInvoice } from "./helpers/marketplaceInvoices";
 
@@ -1671,6 +1672,38 @@ export const adminPhysioDirectory = query({
  * next 14 days. Statuses and dates only: no clinical notes, conditions or plan contents.
  * Takes the id as a string so a mistyped link shows "not found" instead of an error.
  */
+/** Working hours, formats, areas covered and languages, for the admin physio drawer. */
+async function physioWorkDetails(ctx: QueryCtx, profile: Doc<"physiotherapistProfiles"> | null, now: number) {
+  const schedule = profile?.availabilitySchedule ? normalizeAvailabilitySchedule(profile.availabilitySchedule) : null;
+  const today = new Date(now).toISOString().slice(0, 10);
+  const zoneIds = profile?.coveredZoneIds ?? [];
+  const zones = await Promise.all(zoneIds.slice(0, 20).map((id) => ctx.db.get(id)));
+  const formats: string[] =
+    profile?.joyServiceModes && profile.joyServiceModes.length
+      ? [...profile.joyServiceModes]
+      : profile
+        ? [...(profile.offersOnlineSessions !== false ? ["online"] : []), ...(profile.offersInPersonSessions ? ["home_visit"] : [])]
+        : [];
+  return {
+    hasSchedule: Boolean(schedule),
+    weeklyHours: schedule
+      ? [...schedule.weeklyHours]
+          .sort((a, b) => ((a.dayOfWeek + 6) % 7) - ((b.dayOfWeek + 6) % 7))
+          .map((day) => ({ dayOfWeek: day.dayOfWeek, isAvailable: day.isAvailable, slots: day.isAvailable ? day.slots : [] }))
+      : [],
+    timeOff: (schedule?.dateOverrides ?? [])
+      .filter((o) => o.date >= today)
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .slice(0, 6)
+      .map((o) => ({ date: o.date, isAvailable: o.isAvailable, slots: o.slots ?? [], reason: o.reason ?? null })),
+    sessionMinutes: schedule?.defaultSessionDuration ?? null,
+    formats,
+    coveredZones: zones.filter((z): z is Doc<"travelZones"> => Boolean(z)).map((z) => ({ city: z.city, name: z.name })),
+    serviceAreas: profile?.joyServiceAreas ?? [],
+    languages: profile?.languagesSpoken ?? [],
+  };
+}
+
 export const adminPhysioCaseload = query({
   args: { physiotherapistId: v.string() },
   handler: async (ctx, args) => {
@@ -1825,6 +1858,10 @@ export const adminPhysioCaseload = query({
         reviewCount: profile?.reviewCount ?? 0,
         offersOnline: profile ? profile.offersOnlineSessions !== false : false,
         offersInPerson: Boolean(profile?.offersInPersonSessions),
+        // What matching needs: when they work, how, where and in which languages
+        ...(await physioWorkDetails(ctx, profile, now)),
+        listedOnMarketplace: Boolean(profile?.isAvailableOnMarketplace),
+        servesNetwork: Boolean(profile && servesRehabifyNetwork(profile)),
       },
       patients,
       counts,

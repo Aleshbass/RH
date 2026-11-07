@@ -3,7 +3,8 @@
  *   - a patient has paid and is waiting for the physio to accept (marketplace/booking.ts);
  *   - a patient started a booking but hasn't paid after 20 minutes (sweep);
  *   - Joy has triaged a patient, shown matches, or found no physio (joyHandoff.logJourney);
- *   - a signed-in patient is browsing Find a Physio without a recent booking (noteBrowsing).
+ *   - a signed-in patient is browsing Find a Physio without a recent booking (noteBrowsing);
+ *   - a patient signed up on the website and nobody is linked to them yet (sweep, "no_physio").
  * Physios are nudged halfway through the time they have to accept and 30 minutes before it ends,
  * and an admin can nudge them any time. Signals close themselves when the booking moves on.
  */
@@ -15,6 +16,7 @@ import { CARE_QUEUE_PATH, closeCareSignal, raiseCareSignal } from "./helpers/car
 import { appLink } from "./helpers/appUrl";
 import { lagosDateTime, lagosTime } from "./helpers/lagosTime";
 import { requireAdmin } from "./helpers/partnerAccess";
+import { factsRow, patientFacts, personName } from "./helpers/patientFacts";
 import { insertNotification } from "./helpers/pushNotify";
 import { getService } from "../lib/rehabify-services";
 
@@ -23,6 +25,23 @@ const DAY = 24 * 60 * MINUTE;
 const UNPAID_AFTER = 20 * MINUTE;
 const UNPAID_UNTIL = 6 * 60 * MINUTE;
 const SIGNAL_EXPIRES = 3 * DAY;
+// New sign-ups with no physio: give them 10 minutes to book themselves, look back 3 days
+const NO_PHYSIO_AFTER = 10 * MINUTE;
+const NO_PHYSIO_WITHIN = 3 * DAY;
+
+/** Someone is looking after them: an active physio link, or a booking of their own. */
+async function hasPhysioOrBooking(ctx: MutationCtx, patientId: Id<"users">) {
+  const links = await ctx.db
+    .query("patientPhysiotherapistRelationships")
+    .withIndex("by_patient", (q) => q.eq("patientId", patientId))
+    .take(20);
+  if (links.some((link) => link.status === "active")) return true;
+  const booking = await ctx.db
+    .query("marketplaceBookings")
+    .withIndex("by_patient", (q) => q.eq("patientId", patientId))
+    .first();
+  return Boolean(booking);
+}
 
 const sendEmail = makeFunctionReference<
   "action",
@@ -161,7 +180,33 @@ export const sweep = internalMutation({
       }
     }
 
-    // 3. Close signals whose booking moved on, and old ones
+    // 3. New patients nobody is linked to (website sign-ups): someone has to pair them
+    let unlinked = 0;
+    const newest = await ctx.db
+      .query("users")
+      .withIndex("by_role", (q) => q.eq("role", "patient"))
+      .order("desc")
+      .take(60);
+    for (const patient of newest) {
+      if (now - patient._creationTime > NO_PHYSIO_WITHIN || patient.deletedAt) continue;
+      if (now - patient._creationTime < NO_PHYSIO_AFTER) continue;
+      if (await hasPhysioOrBooking(ctx, patient._id)) continue;
+      // Once per patient: an earlier signal (open or handled) is enough, and Joy has its own
+      const earlier = await ctx.db
+        .query("careSignals")
+        .withIndex("by_patient_kind", (q) => q.eq("patientId", patient._id))
+        .first();
+      if (earlier) continue;
+      const viaJoy = String(patient.clerkId ?? "").startsWith("joy-whatsapp:");
+      await raiseCareSignal(ctx, {
+        kind: "no_physio",
+        patientId: patient._id,
+        detail: viaJoy ? "started on Joy and has no physio yet" : "signed up on the website and has no physio yet",
+      });
+      unlinked++;
+    }
+
+    // 4. Close signals whose booking moved on, and old ones
     const open = await ctx.db
       .query("careSignals")
       .withIndex("by_status", (q) => q.eq("status", "open"))
@@ -189,6 +234,11 @@ export const sweep = internalMutation({
           await closeCareSignal(ctx, signal, note);
           closed++;
         }
+      } else if (signal.patientId && signal.kind === "no_physio") {
+        if (await hasPhysioOrBooking(ctx, signal.patientId)) {
+          await closeCareSignal(ctx, signal, "Linked to a physio");
+          closed++;
+        }
       } else if (signal.patientId) {
         // Joy or browsing: closed once the patient has a paid booking made after it
         const booked = await ctx.db
@@ -202,7 +252,7 @@ export const sweep = internalMutation({
         }
       }
     }
-    return { unpaid, nudged, closed };
+    return { unpaid, nudged, unlinked, closed };
   },
 });
 
@@ -210,7 +260,7 @@ export const sweep = internalMutation({
 // Admin
 // ─────────────────────────────────────────────────────────────────────────────
 
-const KIND_ORDER: Record<string, number> = { awaiting_physio: 0, joy_matching: 1, unpaid_checkout: 2, browsing: 3 };
+const KIND_ORDER: Record<string, number> = { awaiting_physio: 0, joy_matching: 1, no_physio: 2, unpaid_checkout: 3, browsing: 4 };
 
 /** Open signals (most urgent first) and the last day's handled ones. */
 export const adminList = query({
@@ -229,8 +279,15 @@ export const adminList = query({
       .take(50);
 
     const rows = [];
+    const physioNames = new Map<string, Promise<string>>();
+    const physioName = (id: Id<"users">) => {
+      if (!physioNames.has(id)) physioNames.set(id, ctx.db.get(id).then((u) => personName(u, "Physiotherapist")));
+      return physioNames.get(id)!;
+    };
     for (const signal of [...open, ...handled]) {
       const patient = signal.patientId ? await ctx.db.get(signal.patientId) : null;
+      // Who they are and what they need, so the team can act without phoning first
+      const facts = patient && patient.role === "patient" ? factsRow(await patientFacts(ctx, patient, physioName)) : null;
       const physio = signal.physiotherapistId ? await ctx.db.get(signal.physiotherapistId) : null;
       const booking = signal.bookingId ? await ctx.db.get(signal.bookingId) : null;
       const handler = signal.handledBy ? await ctx.db.get(signal.handledBy) : null;
@@ -248,9 +305,12 @@ export const adminList = query({
           name: name || null,
           rehabifyId: patient?.patientNumber ?? null,
           phone: patient?.phoneNumber ?? signal.guestPhone ?? booking?.guestPhone ?? null,
-          email: patient?.email ?? booking?.guestEmail ?? null,
+          email: facts?.email ?? booking?.guestEmail ?? null,
         },
-        physio: physio ? { name: [physio.firstName, physio.lastName].filter(Boolean).join(" ") || "Physiotherapist", phone: physio.phoneNumber ?? null } : null,
+        facts,
+        // Joy patients stay under Joy whatever stage they reach (a Joy booking waiting on a physio too)
+        fromJoy: Boolean(facts?.fromJoy || booking?.joyServiceMode || signal.kind === "joy_matching"),
+        physio: physio ? { userId: physio._id, name: [physio.firstName, physio.lastName].filter(Boolean).join(" ") || "Physiotherapist", phone: physio.phoneNumber ?? null } : null,
         booking: booking
           ? {
               id: booking._id,

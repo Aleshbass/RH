@@ -24,9 +24,11 @@ import {
   StatusBadge,
   tabsListClass,
 } from '@/components/admin/ui'
+import { CampaignSheet } from '@/components/admin/emails/CampaignSheet'
 import { Composer } from '@/components/admin/emails/Composer'
 import { AUDIENCE_LABEL } from '@/lib/email/marketing'
 import { marketingApi, type MarketingCampaign } from '@/lib/marketingApi'
+import type { Id } from '@/convex/_generated/dataModel'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
 
@@ -122,6 +124,7 @@ function TrackingSetup() {
 
 function SentList() {
   const campaigns = useQuery(marketingApi.campaigns, {})
+  const [openId, setOpenId] = useState<Id<'marketingCampaigns'> | null>(null)
   return (
     <Panel>
       <TrackingSetup />
@@ -132,11 +135,16 @@ function SentList() {
           ))}
         </div>
       ) : campaigns.length === 0 ? (
-        <EmptyState icon={<Mail />} title="Nothing sent yet" description="Emails you send appear here with their progress." />
+        <EmptyState icon={<Mail />} title="Nothing sent yet" description="Emails you send appear here with their progress. Open one to see what it said and who got it." />
       ) : (
         <ul className="divide-y divide-black/[0.05] dark:divide-white/[0.06]">
           {campaigns.map((c) => (
-            <li key={c._id} className={cn(listRowClass, 'flex-col items-stretch gap-1.5 py-4 sm:flex-row sm:items-center sm:gap-4')}>
+            <li key={c._id}>
+              <button
+                type="button"
+                onClick={() => setOpenId(c._id)}
+                className={cn(listRowClass, 'w-full flex-col items-stretch gap-1.5 py-4 text-left sm:flex-row sm:items-center sm:gap-4')}
+              >
               <div className="min-w-0 flex-1">
                 <p className="truncate text-[15px] font-semibold text-rh-ink dark:text-white">{c.subject}</p>
                 <p className="mt-0.5 truncate text-xs text-neutral-500 dark:text-neutral-400">
@@ -151,10 +159,12 @@ function SentList() {
               <StatusBadge tone={STATUS[c.status].tone} className="self-start sm:self-center">
                 {STATUS[c.status].label}
               </StatusBadge>
+              </button>
             </li>
           ))}
         </ul>
       )}
+      <CampaignSheet campaignId={openId} onClose={() => setOpenId(null)} />
     </Panel>
   )
 }

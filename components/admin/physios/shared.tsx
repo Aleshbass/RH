@@ -102,6 +102,17 @@ export type CaseloadResult = {
     reviewCount: number
     offersOnline: boolean
     offersInPerson: boolean
+    hasSchedule: boolean
+    /** Monday first; times are "HH:MM", Lagos time */
+    weeklyHours: { dayOfWeek: number; isAvailable: boolean; slots: { start: string; end: string }[] }[]
+    timeOff: { date: string; isAvailable: boolean; slots: { start: string; end: string }[]; reason: string | null }[]
+    sessionMinutes: number | null
+    formats: string[]
+    coveredZones: { city: string; name: string }[]
+    serviceAreas: string[]
+    languages: string[]
+    listedOnMarketplace: boolean
+    servesNetwork: boolean
   }
   patients: CaseloadPatient[]
   counts: SourceSplit

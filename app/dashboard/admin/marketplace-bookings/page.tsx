@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { usePaginatedQuery, useMutation, useQuery } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import type { Id } from '@/convex/_generated/dataModel';
@@ -40,6 +40,8 @@ import {
 import { cn } from '@/lib/utils';
 import { playSound } from '@/lib/sounds';
 import { RehabifyId } from '@/components/shared/RehabifyId';
+import { PatientSheet } from '@/components/admin/patients/PatientSheet';
+import { PhysioSheet } from '@/components/admin/physios/PhysioSheet';
 import { getService } from '@/lib/rehabify-services';
 import {
   AdminPage,
@@ -83,6 +85,7 @@ type BookingRow = {
   patientEmail: string;
   patientPhone: string;
   isGuest: boolean;
+  patientId?: Id<'users'>;
   physiotherapistId?: Id<'users'>;
   physioName: string;
   physioEmail: string;
@@ -222,7 +225,25 @@ function PhysioLocationBadge({
   );
 }
 
+/** Names open the same patient and physio drawers as every other admin page. */
+const OpenPerson = createContext<{ patient: (id: string) => void; physio: (id: string) => void }>({ patient: () => {}, physio: () => {} });
+
+function PhysioName({ booking }: { booking: BookingRow }) {
+  const open = useContext(OpenPerson);
+  if (!booking.physiotherapistId) return <p className="text-sm font-semibold text-rh-ink dark:text-white">{booking.physioName}</p>;
+  return (
+    <button
+      type="button"
+      onClick={() => open.physio(booking.physiotherapistId!)}
+      className="text-left text-sm font-semibold text-rh-ink underline-offset-2 hover:underline dark:text-white"
+    >
+      {booking.physioName}
+    </button>
+  );
+}
+
 function PatientCell({ booking }: { booking: BookingRow }) {
+  const open = useContext(OpenPerson);
   return (
     <div className="flex min-w-0 items-start gap-2.5">
       <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-rh-honeydew text-xs font-semibold text-rh-ink dark:bg-white/[0.06] dark:text-rh-lime">
@@ -230,7 +251,17 @@ function PatientCell({ booking }: { booking: BookingRow }) {
       </span>
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-1.5">
-          <p className="max-w-[180px] truncate text-sm font-semibold text-rh-ink dark:text-white">{booking.patientName}</p>
+          {booking.patientId && !booking.isGuest ? (
+            <button
+              type="button"
+              onClick={() => open.patient(booking.patientId!)}
+              className="max-w-[180px] truncate text-left text-sm font-semibold text-rh-ink underline-offset-2 hover:underline dark:text-white"
+            >
+              {booking.patientName}
+            </button>
+          ) : (
+            <p className="max-w-[180px] truncate text-sm font-semibold text-rh-ink dark:text-white">{booking.patientName}</p>
+          )}
           <RehabifyId value={booking.patientNumber} />
           {booking.isGuest && (
             <StatusBadge tone="amber" className="gap-0.5 text-[10px]">
@@ -660,7 +691,7 @@ function BookingCard({ booking, onReassign, onSchedule }: { booking: BookingRow;
 
       <div className="border-t border-black/[0.05] pt-3 dark:border-white/[0.06]">
         <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-neutral-400 dark:text-neutral-500">Physiotherapist</p>
-        <p className="text-sm font-semibold text-rh-ink dark:text-white">{booking.physioName}</p>
+        <PhysioName booking={booking} />
         {booking.physioEmail && <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">{booking.physioEmail}</p>}
         <PhysioLocationBadge
           location={booking.physioLocation}
@@ -691,6 +722,9 @@ export default function AdminMarketplaceBookingsPage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [reassignBooking, setReassignBooking] = useState<BookingRow | null>(null);
   const [scheduleBooking, setScheduleBooking] = useState<BookingRow | null>(null);
+  const [patientId, setPatientId] = useState<string | null>(null);
+  const [physioId, setPhysioId] = useState<string | null>(null);
+  const openPerson = useMemo(() => ({ patient: setPatientId, physio: setPhysioId }), []);
 
   const stats = useQuery(api.admin.marketplaceBookings.adminGetMarketplaceBookingStats) as Stats | undefined;
 
@@ -751,6 +785,7 @@ export default function AdminMarketplaceBookingsPage() {
   };
 
   return (
+    <OpenPerson.Provider value={openPerson}>
     <AdminPage>
       <PageHeader
         eyebrow="Marketplace"
@@ -873,7 +908,7 @@ export default function AdminMarketplaceBookingsPage() {
                         <PatientCell booking={booking} />
                       </TableCell>
                       <TableCell className="py-3 align-top">
-                        <p className="text-sm font-semibold text-rh-ink dark:text-white">{booking.physioName}</p>
+                        <PhysioName booking={booking} />
                         {booking.physioEmail && (
                           <p className="max-w-[200px] truncate text-xs text-neutral-500 dark:text-neutral-400">{booking.physioEmail}</p>
                         )}
@@ -930,6 +965,9 @@ export default function AdminMarketplaceBookingsPage() {
 
       {reassignBooking && <ReassignDialog booking={reassignBooking} onClose={() => setReassignBooking(null)} />}
       {scheduleBooking && <ScheduleVirtualDialog booking={scheduleBooking} onClose={() => setScheduleBooking(null)} />}
+      <PatientSheet patientId={patientId} onClose={() => setPatientId(null)} />
+      <PhysioSheet physioId={physioId} preview={null} onClose={() => setPhysioId(null)} />
     </AdminPage>
+    </OpenPerson.Provider>
   );
 }

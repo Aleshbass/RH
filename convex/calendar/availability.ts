@@ -101,7 +101,7 @@ function isOldOperatingHoursFormat(schedule: unknown): schedule is OperatingHour
 /**
  * Normalize availability schedule - handles both old and new formats
  */
-function normalizeAvailabilitySchedule(schedule: unknown): AvailabilitySchedule {
+export function normalizeAvailabilitySchedule(schedule: unknown): AvailabilitySchedule {
     if (!schedule) {
         return DEFAULT_AVAILABILITY_SCHEDULE;
     }

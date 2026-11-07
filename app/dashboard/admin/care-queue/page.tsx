@@ -2,23 +2,28 @@
 
 /**
  * Patients looking for care: paid patients waiting on a physio, unpaid checkouts, patients Joy has
- * triaged or couldn't match, and signed-in patients browsing Find a Physio. The team reaches out,
- * nudges the physio or reassigns, then marks it handled (convex/careQueue.ts).
+ * triaged or couldn't match, new sign-ups nobody is linked to, and signed-in patients browsing
+ * Find a Physio. Each row shows what we know about the patient; opening it shows everything,
+ * lets the team fill the gaps after a call, and suggests physios to pair them with
+ * (convex/careQueue.ts, convex/adminPatients.ts).
  */
 
 import { useEffect, useMemo, useState } from 'react'
-import Link from 'next/link'
 import { useMutation, useQuery } from 'convex/react'
 import { makeFunctionReference } from 'convex/server'
 import { ConvexError } from 'convex/values'
 import { formatDistanceToNowStrict } from 'date-fns'
 import { toast } from 'sonner'
-import { BellRing, CalendarCheck, CheckCircle2, Clock, HeartPulse, Mail, Phone, UserRound, WhatsApp } from '@/components/icons'
+import { BellRing, CheckCircle2, Clock, HeartPulse, UserRound } from '@/components/icons'
 import { Skeleton } from '@/components/ui/skeleton'
 import { AdminPage, EmptyState, FilterChips, PageHeader, Panel, StatTile, StatusBadge, primaryButtonClass, softButtonClass } from '@/components/admin/ui'
+import { ContactButtons, FactsLine, SourceTags } from '@/components/admin/patients/PatientBits'
+import { PatientSheet } from '@/components/admin/patients/PatientSheet'
+import type { PatientFactsRow } from '@/components/admin/patients/patientApi'
+import { PhysioSheet } from '@/components/admin/physios/PhysioSheet'
 import { cn } from '@/lib/utils'
 
-type Kind = 'awaiting_physio' | 'unpaid_checkout' | 'joy_matching' | 'browsing'
+type Kind = 'awaiting_physio' | 'unpaid_checkout' | 'joy_matching' | 'browsing' | 'no_physio'
 type Row = {
   id: string
   kind: Kind
@@ -28,7 +33,9 @@ type Row = {
   lastSeenAt: number
   dueAt: number | null
   patient: { userId: string | null; name: string | null; rehabifyId: string | null; phone: string | null; email: string | null }
-  physio: { name: string; phone: string | null } | null
+  facts: PatientFactsRow | null
+  fromJoy: boolean
+  physio: { userId: string; name: string; phone: string | null } | null
   booking: { id: string; line: string; paid: boolean; awaitingPhysio: boolean; nudges: number } | null
   nudgedAt: number | null
   handledAt: number | null
@@ -44,20 +51,14 @@ const nudgeRef = makeFunctionReference<'mutation', { signalId: string }, { ok: b
 const KIND: Record<Kind, { label: string; tone: 'red' | 'amber' | 'teal' | 'neutral' }> = {
   awaiting_physio: { label: 'Paid · waiting on physio', tone: 'red' },
   joy_matching: { label: 'Joy · needs a physio', tone: 'amber' },
+  no_physio: { label: 'No physio yet', tone: 'amber' },
   unpaid_checkout: { label: 'Started · not paid', tone: 'teal' },
   browsing: { label: 'Browsing', tone: 'neutral' },
 }
 
-type Filter = 'open' | Kind | 'handled'
+type Filter = 'open' | 'joy' | Exclude<Kind, 'joy_matching'> | 'handled'
 
 const time = (t: number) => new Date(t).toLocaleString('en-GB', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'Africa/Lagos' })
-
-/** wa.me wants the international number without "+"; Nigerian local numbers start with 0. */
-function whatsappDigits(phone: string | null) {
-  let digits = (phone ?? '').replace(/\D/g, '')
-  if (digits.startsWith('0')) digits = `234${digits.slice(1)}`
-  return digits.length >= 10 ? digits : null
-}
 
 function errorText(error: unknown) {
   return error instanceof ConvexError && typeof error.data === 'string' ? error.data : 'Something went wrong. Please try again.'
@@ -69,6 +70,8 @@ export default function CareQueuePage() {
   const nudge = useMutation(nudgeRef)
   const [filter, setFilter] = useState<Filter>('open')
   const [busy, setBusy] = useState<string | null>(null)
+  const [patientId, setPatientId] = useState<string | null>(null)
+  const [physioId, setPhysioId] = useState<string | null>(null)
   // Waiting times tick without a refresh
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
@@ -83,7 +86,9 @@ export default function CareQueuePage() {
       open,
       handled: all.filter((r) => r.status === 'handled'),
       awaiting_physio: open.filter((r) => r.kind === 'awaiting_physio'),
-      joy_matching: open.filter((r) => r.kind === 'joy_matching'),
+      // Everyone who came through Joy, whatever stage they're stuck at
+      joy: open.filter((r) => r.fromJoy),
+      no_physio: open.filter((r) => r.kind === 'no_physio'),
       unpaid_checkout: open.filter((r) => r.kind === 'unpaid_checkout'),
       browsing: open.filter((r) => r.kind === 'browsing'),
     }
@@ -106,25 +111,26 @@ export default function CareQueuePage() {
     <AdminPage>
       <PageHeader
         title="Patients looking for care"
-        description="Everyone who wants a physio right now. Reach out, nudge the physio or reassign, then mark it handled. You get a phone alert for each new one."
+        description="Everyone who wants a physio right now. Open a patient to see everything we know, add what's missing after a call, and pair them with a physio."
       />
 
       {rows === undefined ? (
-        <div className="grid gap-3 sm:grid-cols-4">
-          {[0, 1, 2, 3].map((i) => (
+        <div className="grid gap-3 sm:grid-cols-5">
+          {[0, 1, 2, 3, 4].map((i) => (
             <Skeleton key={i} className="h-28 rounded-2xl" />
           ))}
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
             <StatTile
               label="Paid, waiting on physio"
               value={groups.awaiting_physio.length}
               hint="Physios are nudged automatically"
               tone={groups.awaiting_physio.length ? 'attention' : 'default'}
             />
-            <StatTile label="Joy: needs a physio" value={groups.joy_matching.length} hint="Triaged, shown matches or unmatched" />
+            <StatTile label="From Joy" value={groups.joy.length} hint="Any stage: triaged, matched, booking" />
+            <StatTile label="No physio yet" value={groups.no_physio.length} hint="Signed up, nobody linked" />
             <StatTile label="Started, not paid" value={groups.unpaid_checkout.length} hint="20 minutes or more" />
             <StatTile label="Browsing" value={groups.browsing.length} hint="Signed in, no recent booking" />
           </div>
@@ -137,7 +143,8 @@ export default function CareQueuePage() {
                 options={[
                   { value: 'open', label: 'All open', count: groups.open.length },
                   { value: 'awaiting_physio', label: 'Waiting on physio', count: groups.awaiting_physio.length },
-                  { value: 'joy_matching', label: 'Joy', count: groups.joy_matching.length },
+                  { value: 'joy', label: 'Joy', count: groups.joy.length },
+                  { value: 'no_physio', label: 'No physio yet', count: groups.no_physio.length },
                   { value: 'unpaid_checkout', label: 'Not paid', count: groups.unpaid_checkout.length },
                   { value: 'browsing', label: 'Browsing', count: groups.browsing.length },
                   { value: 'handled', label: 'Handled today', count: groups.handled.length },
@@ -153,14 +160,15 @@ export default function CareQueuePage() {
             ) : (
               <ul className="divide-y divide-black/[0.05] dark:divide-white/[0.06]">
                 {visible.map((row) => {
-                  const wa = whatsappDigits(row.patient.phone)
                   const dueSoon = row.dueAt !== null && row.dueAt - now < 30 * 60_000
                   const who = row.patient.name || 'Guest'
+                  const open = () => row.patient.userId && setPatientId(row.patient.userId)
                   return (
                     <li key={row.id} className="flex flex-col gap-3 px-5 py-4 lg:flex-row lg:items-start lg:gap-6">
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2">
                           <StatusBadge tone={KIND[row.kind].tone}>{KIND[row.kind].label}</StatusBadge>
+                          {row.facts ? <SourceTags sources={row.facts.sources} /> : row.fromJoy ? <SourceTags sources={['joy']} /> : null}
                           <span className="inline-flex items-center gap-1 text-xs text-neutral-500 dark:text-neutral-400">
                             <Clock className="h-3 w-3" /> {formatDistanceToNowStrict(row.createdAt, { addSuffix: true })}
                           </span>
@@ -172,19 +180,40 @@ export default function CareQueuePage() {
                         </div>
                         <p className="mt-1.5 text-base font-semibold text-rh-ink dark:text-white">
                           {row.patient.userId ? (
-                            <Link href={`/dashboard/admin/users/${row.patient.userId}`} className="underline-offset-2 hover:underline">
+                            <button type="button" onClick={open} className="text-left underline-offset-2 hover:underline">
                               {who}
-                            </Link>
+                            </button>
                           ) : (
                             who
                           )}
                           {row.patient.rehabifyId && <span className="ml-2 font-mono text-xs font-normal text-neutral-500">{row.patient.rehabifyId}</span>}
                         </p>
-                        <p className="mt-0.5 text-sm text-rh-ink/80 dark:text-white/80">{row.detail}</p>
-                        {(row.booking || row.physio) && (
+                        {row.facts && <FactsLine facts={row.facts} className="mt-1" />}
+                        <p className="mt-1 text-xs text-neutral-600 dark:text-neutral-300">{row.detail}</p>
+                        {(row.booking || row.physio || (row.facts && row.facts.physios.length > 0)) && (
                           <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
                             {row.booking?.line}
-                            {row.physio ? `${row.booking ? ' · ' : ''}Physio: ${row.physio.name}` : ''}
+                            {row.physio && (
+                              <>
+                                {row.booking ? ' · ' : ''}Physio:{' '}
+                                <button type="button" onClick={() => setPhysioId(row.physio!.userId)} className="font-medium text-rh-ink underline-offset-2 hover:underline dark:text-white">
+                                  {row.physio.name}
+                                </button>
+                              </>
+                            )}
+                            {!row.physio && row.facts && row.facts.physios.length > 0 && (
+                              <>
+                                {row.booking ? ' · ' : ''}With{' '}
+                                {row.facts.physios.map((p, i) => (
+                                  <span key={p.physioId}>
+                                    {i > 0 ? ', ' : ''}
+                                    <button type="button" onClick={() => setPhysioId(p.physioId)} className="font-medium text-rh-ink underline-offset-2 hover:underline dark:text-white">
+                                      {p.name}
+                                    </button>
+                                  </span>
+                                ))}
+                              </>
+                            )}
                             {row.booking && row.booking.nudges > 0 ? ` · nudged ${row.booking.nudges}×` : ''}
                           </p>
                         )}
@@ -198,50 +227,26 @@ export default function CareQueuePage() {
                         )}
                         {/* Reach the patient */}
                         <div className="mt-2.5 flex flex-wrap gap-1.5">
-                          {wa && (
-                            <a
-                              href={`https://wa.me/${wa}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1.5 rounded-full bg-rh-canvas px-3 py-1.5 text-xs font-semibold text-rh-ink hover:bg-rh-honeydew dark:bg-white/[0.06] dark:text-white"
-                            >
-                              <WhatsApp className="h-3.5 w-3.5 text-[#25D366]" /> WhatsApp
-                            </a>
-                          )}
-                          {row.patient.phone && (
-                            <a href={`tel:${row.patient.phone}`} className="inline-flex items-center gap-1.5 rounded-full bg-rh-canvas px-3 py-1.5 text-xs font-semibold text-rh-ink hover:bg-rh-honeydew dark:bg-white/[0.06] dark:text-white">
-                              <Phone className="h-3.5 w-3.5" /> Call
-                            </a>
-                          )}
-                          {row.patient.email && (
-                            <a href={`mailto:${row.patient.email}`} className="inline-flex items-center gap-1.5 rounded-full bg-rh-canvas px-3 py-1.5 text-xs font-semibold text-rh-ink hover:bg-rh-honeydew dark:bg-white/[0.06] dark:text-white">
-                              <Mail className="h-3.5 w-3.5" /> Email
-                            </a>
-                          )}
-                          {row.patient.userId && (
-                            <Link href={`/dashboard/admin/users/${row.patient.userId}`} className="inline-flex items-center gap-1.5 rounded-full bg-rh-canvas px-3 py-1.5 text-xs font-semibold text-rh-ink hover:bg-rh-honeydew dark:bg-white/[0.06] dark:text-white">
-                              <UserRound className="h-3.5 w-3.5" /> Profile
-                            </Link>
-                          )}
-                          {row.booking && (
-                            <Link href="/dashboard/admin/marketplace-bookings" className="inline-flex items-center gap-1.5 rounded-full bg-rh-canvas px-3 py-1.5 text-xs font-semibold text-rh-ink hover:bg-rh-honeydew dark:bg-white/[0.06] dark:text-white">
-                              <CalendarCheck className="h-3.5 w-3.5" /> Bookings &amp; reassign
-                            </Link>
-                          )}
+                          <ContactButtons phone={row.patient.phone} email={row.patient.email} />
                         </div>
                       </div>
-                      {row.status === 'open' && (
-                        <div className="flex shrink-0 flex-wrap gap-2 lg:flex-col lg:items-stretch">
-                          {row.booking?.awaitingPhysio && (
-                            <button
-                              type="button"
-                              disabled={busy !== null}
-                              onClick={() => void act(`nudge-${row.id}`, () => nudge({ signalId: row.id }), 'Physio nudged by app, phone and email.')}
-                              className={cn(primaryButtonClass, 'h-10')}
-                            >
-                              <BellRing className="mr-1.5 h-4 w-4" /> Nudge physio
-                            </button>
-                          )}
+                      <div className="flex shrink-0 flex-wrap gap-2 lg:w-44 lg:flex-col lg:items-stretch">
+                        {row.patient.userId && (
+                          <button type="button" onClick={open} className={cn(row.status === 'open' ? primaryButtonClass : softButtonClass, 'h-10')}>
+                            <UserRound className="mr-1.5 h-4 w-4" /> {row.status === 'open' ? 'Details & pair' : 'Details'}
+                          </button>
+                        )}
+                        {row.status === 'open' && row.booking?.awaitingPhysio && (
+                          <button
+                            type="button"
+                            disabled={busy !== null}
+                            onClick={() => void act(`nudge-${row.id}`, () => nudge({ signalId: row.id }), 'Physio nudged by app, phone and email.')}
+                            className={cn(softButtonClass, 'h-10')}
+                          >
+                            <BellRing className="mr-1.5 h-4 w-4" /> Nudge physio
+                          </button>
+                        )}
+                        {row.status === 'open' && (
                           <button
                             type="button"
                             disabled={busy !== null}
@@ -250,8 +255,8 @@ export default function CareQueuePage() {
                           >
                             <CheckCircle2 className="mr-1.5 h-4 w-4" /> Mark handled
                           </button>
-                        </div>
-                      )}
+                        )}
+                      </div>
                     </li>
                   )
                 })}
@@ -260,6 +265,10 @@ export default function CareQueuePage() {
           </Panel>
         </>
       )}
+
+      <PatientSheet patientId={patientId} onClose={() => setPatientId(null)} />
+      <PhysioSheet physioId={physioId} preview={null} onClose={() => setPhysioId(null)} />
     </AdminPage>
   )
 }
+

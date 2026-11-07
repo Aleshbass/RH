@@ -1,11 +1,12 @@
 import { Suspense } from 'react'
-import { UserManagement } from '@/components/dashboard/admin/UserManagement'
+import { UsersOrPatients } from '@/components/admin/patients/PatientDirectory'
 
 export default function AdminUsersPage() {
-  // UserManagement reads ?role= with useSearchParams, which needs a Suspense boundary.
+  // ?role=patient shows the patient directory, any other role the accounts list. Both read the
+  // URL with useSearchParams, which needs a Suspense boundary.
   return (
     <Suspense fallback={null}>
-      <UserManagement />
+      <UsersOrPatients />
     </Suspense>
   )
 }

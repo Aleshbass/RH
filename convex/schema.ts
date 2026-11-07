@@ -376,7 +376,8 @@ export default defineSchema({
   // Patients looking for care (careQueue.ts): paid and waiting for the physio, unpaid checkouts,
   // Joy triage/matching, and signed-in patients browsing Find a Physio. The team is alerted and helps.
   careSignals: defineTable({
-    kind: v.union(v.literal("awaiting_physio"), v.literal("unpaid_checkout"), v.literal("joy_matching"), v.literal("browsing")),
+    // no_physio: a patient who signed up on the website with nobody linked to them (careQueue.sweep)
+    kind: v.union(v.literal("awaiting_physio"), v.literal("unpaid_checkout"), v.literal("joy_matching"), v.literal("browsing"), v.literal("no_physio")),
     status: v.union(v.literal("open"), v.literal("handled")),
     patientId: v.optional(v.id("users")),
     bookingId: v.optional(v.id("marketplaceBookings")),
@@ -703,6 +704,15 @@ export default defineSchema({
     })),
     referralSource: v.optional(v.string()),
     preferredLanguage: v.optional(v.string()),
+    // Filled in by the care team after speaking to the patient (Admin › patient record,
+    // adminPatients.ts), so they can be matched with a physio
+    ageYears: v.optional(v.number()), // when only an age is known, not a date of birth
+    ageRecordedAt: v.optional(v.number()),
+    mainComplaint: v.optional(v.string()),
+    preferredFormat: v.optional(v.union(v.literal("online"), v.literal("home_visit"), v.literal("clinic"))),
+    careTeamNotes: v.optional(v.string()),
+    careDetailsUpdatedAt: v.optional(v.number()),
+    careDetailsUpdatedBy: v.optional(v.id("users")),
     therapyFor: v.optional(v.string()), // "myself", "partner", "child"
     therapyType: v.optional(v.string()), // "individual", "couples", "teen"
     relationshipStatus: v.optional(v.string()), // For couples therapy context
@@ -4436,6 +4446,15 @@ export default defineSchema({
     lastError: v.optional(v.string()),
     sentAt: v.optional(v.number()),
   }).index("by_campaign_and_status", ["campaignId", "status"]),
+
+  // Who a group (Broadcast) campaign went to, saved as each segment is sent, so admins can see the
+  // people behind the count. One-to-one sends keep theirs in marketingQueue.
+  marketingRecipients: defineTable({
+    campaignId: v.id("marketingCampaigns"),
+    email: v.string(),
+    name: v.optional(v.string()),
+    segment: v.string(),
+  }).index("by_campaign_and_email", ["campaignId", "email"]),
 
   // One-to-one marketing emails sent per UTC day, kept under MARKETING_DIRECT_DAILY_LIMIT so they
   // never use up the Resend free plan's 100 a day that appointment and payment emails rely on

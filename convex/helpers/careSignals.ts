@@ -8,7 +8,7 @@ import type { MutationCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
 import { insertNotification } from "./pushNotify";
 
-export type CareSignalKind = "awaiting_physio" | "unpaid_checkout" | "joy_matching" | "browsing";
+export type CareSignalKind = "awaiting_physio" | "unpaid_checkout" | "joy_matching" | "browsing" | "no_physio";
 
 const DAY = 24 * 60 * 60 * 1000;
 export const CARE_QUEUE_PATH = "/dashboard/admin/care-queue";
@@ -18,6 +18,7 @@ const TITLES: Record<CareSignalKind, string> = {
   unpaid_checkout: "Patient started booking but hasn't paid",
   joy_matching: "Patient looking for a physio on Joy",
   browsing: "Patient browsing Find a Physio",
+  no_physio: "New patient with no physio yet",
 };
 
 const PRIORITY: Record<CareSignalKind, "urgent" | "high" | "medium" | "low"> = {
@@ -25,6 +26,7 @@ const PRIORITY: Record<CareSignalKind, "urgent" | "high" | "medium" | "low"> = {
   unpaid_checkout: "medium",
   joy_matching: "medium",
   browsing: "low",
+  no_physio: "medium",
 };
 
 export type CareSignalInput = {
