@@ -106,6 +106,7 @@ def handle_booking_turn(
     *,
     paystack=None,
     summary_confirmed: bool = False,
+    wa_message_id: str | None = None,
 ) -> str | None:
     conversation = session.get(Conversation, state.conversation_id)
     if conversation is None:
@@ -113,6 +114,14 @@ def handle_booking_turn(
 
     if conversation.booking_substate == AWAITING_RH_RESCHEDULE:
         return _continue_rh_reschedule(session, conversation, patient, user_text)
+    # The self-referral booking (named physios, then Confirm and pay) owns its own replies:
+    # "Cancel" here means "not this one", not a paid-booking cancellation
+    if conversation.booking_substate == AWAITING_RH_NAMED_PROVIDER:
+        return _continue_named_provider(session, conversation, patient, user_text)
+    if conversation.booking_substate == AWAITING_RH_CONFIRM:
+        return _continue_confirm(session, conversation, patient, extracted, user_text, wa_message_id)
+    if conversation.booking_substate == AWAITING_RH_OTHER_TIME:
+        return _continue_other_time(session, conversation, patient, user_text)
 
     cancelled = _maybe_cancel(session, conversation, patient, user_text)
     if cancelled is not None:
@@ -945,6 +954,8 @@ def _continue_rh_payment_email(session: Session, conversation: Conversation, pat
             ctx["payment_email"] = email
             ctx["rh_payment_status"] = "succeeded"
             _set_substate(conversation, AWAITING_RH_PAYMENT, ctx)
+            if ctx.get("booking_route") == NAMED_ROUTE:
+                return named_payment_received_text(ctx)
             return (
                 "Your payment has already been received. Our care team will assign your clinician, date, and time shortly. "
                 "I’ll send your appointment details and joining link here once that is done."
@@ -974,6 +985,8 @@ def _amount_text(ctx: dict) -> str:
 
 
 def _payment_received_reply(context: dict) -> str:
+    if context.get("booking_route") == NAMED_ROUTE:
+        return named_payment_received_text(context)
     if context.get("booking_route") == "admin_scheduled_virtual":
         return "Your payment has been received. Our care team will assign your clinician, date and time, and I’ll send them here shortly."
     return "Your payment has been received. I’ll confirm the appointment here after the specialist accepts it."
@@ -1415,3 +1428,399 @@ def _start_payment(
     ctx["authorization_url"] = url
     _set_substate(conversation, AWAITING_PAYMENT, ctx)
     return f"Pay here: {url}"
+
+
+# ---------------------------------------------------------------------------------------------
+# Self-referral booking (app/triage/self_referral.py; owner's guide, Nov 2026)
+#
+# After triage Joy shows up to 3 named physios free within 24 hours (best first, RH ranks them:
+# convex/joyMatching.ts), each with their photo when they've uploaded one. The patient picks
+# one, sees the time and price, and taps Confirm and pay (which accepts the booking policy),
+# Choose another time, or Cancel. Then the receipt email and the Paystack link, as before.
+# Nobody free within 24 hours: the care team is alerted and arranges it.
+# ---------------------------------------------------------------------------------------------
+
+AWAITING_RH_NAMED_PROVIDER = "rh_awaiting_named_provider"
+AWAITING_RH_CONFIRM = "rh_awaiting_confirm"
+AWAITING_RH_OTHER_TIME = "rh_awaiting_other_time"
+NAMED_ROUTE = "named_online"
+INITIAL_CONSULT_MINUTES = 20  # RH prices a 20-minute online visit as the ₦6,000 initial consultation
+MATCH_WINDOW_HOURS = 24
+_PAGE = 3
+_KEYCAPS = ("1\ufe0f\u20e3", "2\ufe0f\u20e3", "3\ufe0f\u20e3", "4\ufe0f\u20e3", "5\ufe0f\u20e3", "6\ufe0f\u20e3")
+_CANT_REACH = (
+    "I can't reach Rehabify's booking service right now, so nothing has been booked. "
+    "Please reply *TRY AGAIN* in a few minutes, or *CALL ME* and our care team will help."
+)
+_CONFIRM_WORDS = {
+    "confirm and pay", "confirm", "confirm & pay", "yes", "yes please", "pay", "book", "book it", "ok", "okay",
+    "go ahead", "proceed", "continue", "yes confirm", "i confirm", "confirm it",
+}
+_MORE_WORDS = {"more", "see more", "show more", "others", "other options", "more options", "next", "see others"}
+_CANCEL_WORDS = {"cancel", "no", "not now", "no thanks", "stop", "none", "no thank you", "later"}
+_QUESTION_RE = re.compile(r"\?|^(what|how|why|when|where|who|which|is|are|can|do|does|will|should|could)\b", re.I)
+
+
+def when_label(start_ms: int | float, *, now: datetime | None = None) -> str:
+    """"Today, 3:00 PM", "Tomorrow, 10:00 AM" or "Thu 6 Nov, 2:00 PM" (Lagos time)."""
+    when = datetime.fromtimestamp(float(start_ms) / 1000, timezone.utc).astimezone(_LAGOS)
+    today = (now or datetime.now(timezone.utc)).astimezone(_LAGOS).date()
+    clock = when.strftime("%I:%M %p").lstrip("0")
+    if when.date() == today:
+        return f"Today, {clock}"
+    if when.date() == today + timedelta(days=1):
+        return f"Tomorrow, {clock}"
+    return f"{when.strftime('%a')} {when.day} {when.strftime('%b')}, {clock}"
+
+
+def _naira(kobo: object) -> str:
+    return f"₦{int(kobo) // 100:,}" if isinstance(kobo, (int, float)) and kobo > 0 else "₦6,000"
+
+
+def _present_named_policy(ctx: dict, language: str | None) -> dict | None:
+    """The current RH-approved booking policy, kept so Confirm and pay can accept that version."""
+    try:
+        document = configured_rh_client().current_policy(language=language or "en")
+    except RHIntegrationError:
+        return None
+    if not document.is_approved:
+        return None
+    policy = {
+        "policy_id": document.policy_id, "version": document.version, "url": document.url,
+        "content_sha256": document.content_sha256, "effective_at": document.effective_at,
+        "acceptance_text": document.acceptance_text, "language": document.language,
+        "presented_at": datetime.now(timezone.utc).isoformat(),
+    }
+    ctx["sr_policy"] = policy
+    return policy
+
+
+def _photo_cards(providers: list[dict], start: int, end: int) -> list[dict]:
+    """A photo with name, specialty and next free time, for each physio who has uploaded one."""
+    from app.exercises.media import is_profile_photo_url
+
+    cards = []
+    for index in range(start, min(end, len(providers))):
+        provider = providers[index]
+        url = provider.get("photo_url")
+        if not isinstance(url, str) or not is_profile_photo_url(url):
+            continue  # no photo: the list below has their details; never a placeholder
+        lines = [f"{_KEYCAPS[index]} {provider.get('display_name') or 'Physiotherapist'}"]
+        if provider.get("specialty_label"):
+            lines.append(str(provider["specialty_label"]))
+        if provider.get("next_slot_start"):
+            lines.append(f"Next available: {when_label(provider['next_slot_start'])}")
+        cards.append({"photo_url": url, "caption": "\n".join(lines)})
+    return cards
+
+
+def named_list_text(providers: list[dict], start: int, end: int, *, urgent: bool = False) -> str:
+    end = min(end, len(providers))
+    count = end - start
+    if start:
+        head = "Here are more physiotherapists free in the next 24 hours:"
+    elif urgent:
+        head = "Here are the physiotherapists free soonest:"
+    else:
+        head = f"Here {'is' if count == 1 else 'are'} {count} physiotherapist{'' if count == 1 else 's'} free in the next 24 hours:"
+    blocks = [head]
+    for index in range(start, end):
+        provider = providers[index]
+        lines = [f"{_KEYCAPS[index]} *{provider.get('display_name') or 'Physiotherapist'}*"]
+        if provider.get("specialty_label"):
+            lines.append(f"   {provider['specialty_label']}")
+        if provider.get("next_slot_start"):
+            lines.append(f"   Next available: {when_label(provider['next_slot_start'])}")
+        blocks.append("\n".join(lines))
+    price = _naira(providers[start].get("amount_kobo") if providers else None)
+    more = ", or *See more*" if end < len(providers) else ""
+    blocks.append(
+        f"The initial consultation is {price}: an online video call of about 20 minutes.\n\n"
+        f"Would you like to book one? Reply with the number{more}."
+    )
+    return "\n\n".join(blocks)
+
+
+def hand_to_care_team(session: Session, conversation: Conversation, patient: Patient, *, rh_patient_id: str | None, reason_text: str) -> str:
+    """Nobody fits and is free within 24 hours: the care team arranges it (owner decision, Nov 2026)."""
+    from app.admin.escalation_router import route_escalation
+    from app.triage.self_referral import CARE_TEAM, CARE_TEAM_HANDOFF, FLOW_KEY
+
+    if rh_patient_id:
+        try:
+            configured_rh_client().operational_mutation(
+                "patient_request_callback", actor=_rh_actor(patient, rh_patient_id),
+                data={"patient_id": rh_patient_id, "reason": "no_match", "text": reason_text[:200]},
+                idempotency_key=f"joy-no-match-{conversation.id}-{datetime.now(timezone.utc).strftime('%Y%m%d%H')}",
+            )
+        except RHIntegrationError as error:
+            logger.warning("joy_no_match_alert_failed code=%s", error.code)
+        journey(rh_patient_id, "handed_to_human", f"no-match-{conversation.id}-{datetime.now(timezone.utc).strftime('%Y%m%d')}")
+    route_escalation(session, "no_match", {
+        "patient_id": str(patient.id), "phone": patient.phone_e164, "text": reason_text[:160],
+    })
+    ctx = dict(conversation.booking_context or {})
+    ctx[FLOW_KEY] = CARE_TEAM
+    for key in ("providers", "providers_shown", "selected_provider", "selected_slot", "slots"):
+        ctx.pop(key, None)
+    _set_substate(conversation, None, ctx)
+    append(session, kind=AuditKind.MATCH, actor_phone=patient.phone_e164, person_id=patient.id,
+           payload={"decision": "self_referral_no_match_care_team", "conversation_id": str(conversation.id)})
+    return CARE_TEAM_HANDOFF
+
+
+def offer_named_physios(
+    session: Session, conversation: Conversation, patient: Patient, extracted: ExtractedTriage, *,
+    urgent: bool, language: str | None, intro: str,
+) -> tuple[str, list[dict]]:
+    """(the list to book from, the messages before it: the outcome, then the physios' photos)."""
+    ctx = dict(conversation.booking_context or {})
+    rh_patient_id = _rh_patient_id(session, patient)
+    tags = _required_specialties(extracted) or ["msk"]
+    if not rh_patient_id:
+        return _CANT_REACH, [{"text": intro}]
+    if _present_named_policy(ctx, language) is None:
+        return _CANT_REACH, [{"text": intro}]
+    try:
+        matches = configured_rh_client().match_physios(
+            patient_id=rh_patient_id, assessment_id=str(_current_assessment(session, patient)), assessment_revision=1,
+            required_specialties=tags, service_mode="online", actor=_rh_actor(patient, rh_patient_id),
+            city=patient.city or None, area=patient.area or None, latitude=patient.lat, longitude=patient.lng,
+            within_hours=MATCH_WINDOW_HOURS, language=language, duration_minutes=INITIAL_CONSULT_MINUTES,
+            urgent=urgent, limit=6,
+        )
+    except (RHIntegrationError, ValueError) as error:
+        logger.warning("joy_named_matching_failed error=%s", getattr(error, "code", type(error).__name__))
+        return _CANT_REACH, [{"text": intro}]
+    providers = [dict(m.__dict__) for m in matches if m.next_slot_start]
+    if not providers:
+        conversation.booking_context = ctx
+        area = (extracted.body_location or extracted.body_region or "").strip()
+        reply = hand_to_care_team(
+            session, conversation, patient, rh_patient_id=rh_patient_id,
+            reason_text=f"{'Urgent' if urgent else 'Routine'} triage{f', {area}' if area else ''}. Language: {language or 'en'}.",
+        )
+        return reply, [{"text": intro}]
+    shown = min(_PAGE, len(providers))
+    ctx.update({
+        "rh_patient_id": rh_patient_id, "service_mode": "online", "required_specialties": tags,
+        "providers": providers, "providers_shown": shown, "booking_route": NAMED_ROUTE, "sr_urgent": urgent,
+    })
+    for key in ("selected_provider", "selected_slot", "slots", "rh_booking_id", "authorization_url", "rh_payment_status", "policy_accepted"):
+        ctx.pop(key, None)
+    _set_substate(conversation, AWAITING_RH_NAMED_PROVIDER, ctx)
+    append(session, kind=AuditKind.MATCH, actor_phone=patient.phone_e164, person_id=patient.id,
+           payload={"decision": "rh_named_matches_presented", "urgent": urgent,
+                    "provider_ids": [p["physiotherapist_id"] for p in providers]})
+    journey(rh_patient_id, "matches_shown", f"matches-{conversation.id}-named")
+    return named_list_text(providers, 0, shown, urgent=urgent), [{"text": intro}, *_photo_cards(providers, 0, shown)]
+
+
+def _continue_named_provider(session: Session, conversation: Conversation, patient: Patient, user_text: str) -> str | None:
+    ctx = dict(conversation.booking_context or {})
+    providers = [p for p in ctx.get("providers") or [] if isinstance(p, dict)]
+    shown = int(ctx.get("providers_shown") or min(_PAGE, len(providers)))
+    text = " ".join((user_text or "").casefold().split()).strip(" .!?")
+    if not providers:
+        return None
+    if text in _MORE_WORDS or "see more" in text or "more option" in text:
+        if shown >= len(providers):
+            return (
+                "Those are all the physiotherapists free in the next 24 hours. Reply with a number to book, "
+                "or *CALL ME* if you'd like our care team to help."
+            )
+        end = min(shown + _PAGE, len(providers))
+        ctx["providers_shown"] = end
+        ctx["_before"] = _photo_cards(providers, shown, end)
+        _set_substate(conversation, AWAITING_RH_NAMED_PROVIDER, ctx)
+        return named_list_text(providers, shown, end)
+    match = re.fullmatch(r"(?:book\s*(?:number\s*)?|number\s*|option\s*|no\.?\s*)?([1-6])(?:\s*please)?", text)
+    if match is None:
+        for index, provider in enumerate(providers[:shown], 1):
+            name = str(provider.get("display_name") or "").casefold()
+            if name and (text == name or (len(text) >= 4 and text in name)):
+                match = re.match(r"(\d)", str(index))
+                break
+    if match is None or int(match.group(1)) > shown:
+        if _QUESTION_RE.search(text):
+            return None  # a question: answered from the booking facts (app/booking/step_help.py)
+        more = ", or *See more*" if shown < len(providers) else ""
+        return f"Reply with a number from 1 to {shown} to book{more}."
+    provider = providers[int(match.group(1)) - 1]
+    ctx["selected_provider"] = provider
+    ctx["selected_slot"] = {"start": provider.get("next_slot_start"), "end": provider.get("next_slot_end")}
+    _set_substate(conversation, AWAITING_RH_CONFIRM, ctx)
+    return confirm_text(ctx)
+
+
+def confirm_text(ctx: dict) -> str:
+    provider = ctx.get("selected_provider") or {}
+    slot = ctx.get("selected_slot") or {}
+    policy = ctx.get("sr_policy") or {}
+    url = str(policy.get("url") or "https://physioaroundme.com/consultation-booking-policy")
+    when = when_label(slot["start"]) if isinstance(slot.get("start"), (int, float)) else "the time shown"
+    return (
+        f"You've selected *{provider.get('display_name') or 'your physiotherapist'}*.\n\n"
+        "Initial consultation\n"
+        f"📅 {when}\n"
+        "💻 Online video call, about 20 minutes\n"
+        f"💳 {_naira(provider.get('amount_kobo'))}\n\n"
+        f"By tapping *Confirm and pay*, you accept our Consultation & Booking Policy: {url}\n\n"
+        "Would you like to confirm?"
+    )
+
+
+def _render_other_times(provider: dict, slots: list[dict]) -> str:
+    lines = [f"Other free times with {provider.get('display_name') or 'this physiotherapist'} (Lagos time):"]
+    for index, slot in enumerate(slots, 1):
+        lines.append(f"{index}. {when_label(slot['start'])}")
+    lines.append("Reply with the number of the time you'd like, or *Back* to keep the first one.")
+    return "\n".join(lines)
+
+
+def _continue_confirm(
+    session: Session, conversation: Conversation, patient: Patient, extracted: ExtractedTriage,
+    user_text: str, wa_message_id: str | None,
+) -> str | None:
+    ctx = dict(conversation.booking_context or {})
+    provider = ctx.get("selected_provider") or {}
+    text = " ".join((user_text or "").casefold().split()).strip(" .!?")
+    if text in _CONFIRM_WORDS or text.startswith("confirm"):
+        return _hold_named_slot(session, conversation, patient, extracted, ctx, wa_message_id)
+    if "another time" in text or "other time" in text or "different time" in text or text in {"change time", "another", "later time", "choose another time"}:
+        try:
+            slots = _slot_choices(configured_rh_client(), str(provider.get("physiotherapist_id")), "online", duration_minutes=INITIAL_CONSULT_MINUTES)
+        except RHIntegrationError:
+            return "I can't load other times right now. Tap *Confirm and pay* to keep this time, or try again in a few minutes."
+        if not slots:
+            return (
+                f"{provider.get('display_name') or 'This physiotherapist'} has no other free times this week. "
+                "Tap *Confirm and pay* to keep this time, or *Cancel* to choose another physiotherapist."
+            )
+        ctx["slots"] = slots
+        _set_substate(conversation, AWAITING_RH_OTHER_TIME, ctx)
+        return _render_other_times(provider, slots)
+    if text in _CANCEL_WORDS:
+        ctx.pop("selected_provider", None)
+        ctx.pop("selected_slot", None)
+        _set_substate(conversation, AWAITING_RH_NAMED_PROVIDER, ctx)
+        providers = [p for p in ctx.get("providers") or [] if isinstance(p, dict)]
+        shown = int(ctx.get("providers_shown") or min(_PAGE, len(providers)))
+        more = ", or *See more*" if shown < len(providers) else ""
+        return (
+            "No problem, nothing has been booked. Reply with a number to choose another physiotherapist"
+            f"{more}. You can also come back to this any time."
+        )
+    if _QUESTION_RE.search(text):
+        return None
+    return "Please tap *Confirm and pay*, *Choose another time* or *Cancel*.\n\n" + confirm_text(ctx)
+
+
+def _continue_other_time(session: Session, conversation: Conversation, patient: Patient, user_text: str) -> str | None:
+    ctx = dict(conversation.booking_context or {})
+    slots = [s for s in ctx.get("slots") or [] if isinstance(s, dict) and isinstance(s.get("start"), (int, float))]
+    text = " ".join((user_text or "").casefold().split()).strip(" .!?")
+    if text in {"back", "keep", "keep the first one", "keep first", "cancel", "no"}:
+        _set_substate(conversation, AWAITING_RH_CONFIRM, ctx)
+        return confirm_text(ctx)
+    selected = _parse_index(user_text, len(slots))
+    if selected is None:
+        if _QUESTION_RE.search(text):
+            return None
+        return f"Reply with a time number from 1 to {len(slots)}, or *Back* to keep the first time."
+    slot = slots[selected - 1]
+    ctx["selected_slot"] = {"start": slot["start"], "end": slot.get("end")}
+    _set_substate(conversation, AWAITING_RH_CONFIRM, ctx)
+    return confirm_text(ctx)
+
+
+def _hold_named_slot(
+    session: Session, conversation: Conversation, patient: Patient, extracted: ExtractedTriage, ctx: dict, wa_message_id: str | None,
+) -> str:
+    """Confirm and pay: accept the policy shown, hold the time in RH, then ask for the receipt email."""
+    from app.triage.self_referral import SR_KEY, physio_summary
+
+    provider = ctx.get("selected_provider") or {}
+    slot = ctx.get("selected_slot") or {}
+    rh_patient_id = ctx.get("rh_patient_id")
+    policy = ctx.get("sr_policy") or _present_named_policy(ctx, getattr(patient, "preferred_language", None))
+    if not provider or not isinstance(slot.get("start"), (int, float)) or not rh_patient_id or not policy:
+        return "I need to refresh your booking details first. Please reply *TRY AGAIN*."
+    accepted = {
+        **policy,
+        "accepted_at": datetime.now(timezone.utc).isoformat(),
+        "acceptance_message_id": wa_message_id or f"joy-confirm-{conversation.id}-{int(slot['start'])}",
+        "actor_phone": patient.phone_e164,
+    }
+    ctx["policy_accepted"] = accepted
+    append(session, kind=AuditKind.POLICY, actor_phone=patient.phone_e164, person_id=patient.id,
+           payload={"event": "accepted", "via": "confirm_and_pay", **accepted})
+    try:
+        rh_client = configured_rh_client()
+        eligibility_reference: str | None = None
+        if rh_client.uses_direct_convex_gateway:
+            eligibility = issue_eligibility_reference(
+                session=session, settings=get_settings(),
+                payload=EligibilityRequest(
+                    rh_patient_id=str(rh_patient_id), assessment_id=str(_current_assessment(session, patient)),
+                    assessment_revision=1, service_type="standard_consultation", policy_version=str(policy["version"]),
+                ),
+            )
+            eligibility_reference = eligibility.get("eligibility_reference") if eligibility.get("allowed") else None
+        booking = rh_client.create_pending_booking(
+            patient_id=str(rh_patient_id), physiotherapist_id=str(provider["physiotherapist_id"]),
+            slot_start=int(slot["start"]), duration_minutes=INITIAL_CONSULT_MINUTES, service_mode="online",
+            session_type="physiotherapy", triage_summary_reference=str(_current_assessment(session, patient)),
+            assessment_id=str(_current_assessment(session, patient)), assessment_revision=1,
+            protocol_version="clinical_engine_v1", policy_version=str(policy["version"]),
+            policy_acceptance_reference=str(accepted["acceptance_message_id"]),
+            conversation_id=str(conversation.id), actor=_rh_actor(patient, str(rh_patient_id)),
+            idempotency_key=f"joy-named-booking-{conversation.id}-{provider['physiotherapist_id']}-{int(slot['start'])}",
+            required_specialties=list(ctx.get("required_specialties") or []), patient_address=patient.location,
+            eligibility_reference=eligibility_reference,
+        )
+    except RHIntegrationError as error:
+        append(session, kind=AuditKind.BOOKING, actor_phone=patient.phone_e164, person_id=patient.id,
+               payload={"decision": "rh_named_hold_failed", "error_code": error.code})
+        if error.code in {"DEPENDENCY_UNAVAILABLE", "INTEGRATION_NOT_CONFIGURED", "RH_BOOKING_GATEWAY_UNAVAILABLE", "SAFETY_ELIGIBILITY_REQUIRED"}:
+            conversation.booking_context = ctx
+            return "I can't confirm that time with Rehabify right now, so nothing has been booked. Please tap *Confirm and pay* again in a few minutes."
+        try:
+            slots = _slot_choices(configured_rh_client(), str(provider["physiotherapist_id"]), "online", duration_minutes=INITIAL_CONSULT_MINUTES)
+        except RHIntegrationError:
+            slots = []
+        if slots:
+            ctx["slots"] = slots
+            _set_substate(conversation, AWAITING_RH_OTHER_TIME, ctx)
+            return "That time has just been taken, so nothing was booked.\n\n" + _render_other_times(provider, slots)
+        ctx.pop("selected_provider", None)
+        _set_substate(conversation, AWAITING_RH_NAMED_PROVIDER, ctx)
+        return "That time has just been taken, so nothing was booked. Please choose another physiotherapist: reply with their number."
+    when = when_label(slot["start"])
+    sr = dict(ctx.get(SR_KEY) or {})
+    sr["physio_summary"] = physio_summary(patient, extracted, sr, appointment=when)
+    ctx[SR_KEY] = sr
+    ctx.update({"rh_booking_id": booking.booking_id, "rh_amount_kobo": booking.amount_kobo, "service_mode": "online"})
+    known_email = _known_email(patient)
+    if known_email:
+        ctx["suggested_email"] = known_email
+    _set_substate(conversation, AWAITING_RH_PAYMENT_EMAIL, ctx)
+    send_intake(session, conversation, patient, rh_patient_id=str(rh_patient_id), booking_id=booking.booking_id, policy=accepted)
+    append(session, kind=AuditKind.BOOKING, actor_phone=patient.phone_e164, person_id=patient.id,
+           payload={"decision": "rh_named_booking_held", "rh_booking_id": booking.booking_id})
+    held = f"Your time with {provider.get('display_name') or 'your physiotherapist'} ({when}) is held for 30 minutes."
+    if known_email:
+        return f"{held} Shall I send your payment receipt to {known_email}? Reply YES, or send a different email address."
+    return f"{held} Please reply with the email address you'd like your payment receipt sent to."
+
+
+def named_payment_received_text(context: dict, due_at_ms: int | float | None = None) -> str:
+    provider = context.get("selected_provider") or {}
+    name = provider.get("display_name") or "Your physiotherapist"
+    due = ""
+    if isinstance(due_at_ms, (int, float)):
+        due = f" by {when_label(due_at_ms)}"
+    return (
+        f"Payment received ✅ Thank you.\n\n{name} has up to 2 hours{due} to confirm your consultation. "
+        "I'll message you here as soon as they do. If they can't, I'll offer you another physiotherapist or a full refund."
+    )

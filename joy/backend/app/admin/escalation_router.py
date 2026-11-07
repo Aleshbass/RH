@@ -178,6 +178,12 @@ def _admin_text(kind: str, payload: dict) -> str:
             f"Physio {physio_id} submitted credentials for verification. "
             f"Reply approve {physio_id}, reject {physio_id}, or web {physio_id}."
         )
+    if kind == "no_match":
+        return (
+            f"Joy patient {payload.get('patient_id') or ''} finished triage, but no physio who fits is free "
+            f"in the next 24 hours. Please arrange their consultation. Call {payload.get('phone') or 'them'}."
+            + (f" {str(payload.get('text') or '').strip()}" if payload.get("text") else "")
+        )
     if kind == "callback":
         said = str(payload.get("text") or "").strip()
         return (

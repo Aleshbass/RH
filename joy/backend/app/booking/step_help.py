@@ -36,6 +36,20 @@ _NAIRA_RE = re.compile(r"₦\s?[\d,]+")
 # Same values as booking_flow's (imported there would be circular when this loads first)
 AWAITING_RH_PAYMENT = "rh_awaiting_payment"
 AWAITING_RH_PAYMENT_EMAIL = "rh_awaiting_payment_email"
+AWAITING_RH_NAMED_PROVIDER = "rh_awaiting_named_provider"
+AWAITING_RH_CONFIRM = "rh_awaiting_confirm"
+AWAITING_RH_OTHER_TIME = "rh_awaiting_other_time"
+NAMED_ROUTE = "named_online"
+
+
+def _named(context: dict) -> bool:
+    return context.get("booking_route") == NAMED_ROUTE
+
+
+def _physio_name(context: dict) -> str | None:
+    provider = context.get("selected_provider") or {}
+    name = provider.get("display_name") if isinstance(provider, dict) else None
+    return str(name) if name else None
 
 
 def _amount(context: dict) -> str:
@@ -46,7 +60,7 @@ def _amount(context: dict) -> str:
 
 
 def _is_online_consult(context: dict) -> bool:
-    return context.get("booking_route") == "admin_scheduled_virtual" or context.get("treatment_option") == "quick_initial"
+    return context.get("booking_route") in {"admin_scheduled_virtual", NAMED_ROUTE} or context.get("treatment_option") == "quick_initial"
 
 
 def _paid(context: dict) -> bool:
@@ -64,8 +78,16 @@ def _facts(context: dict) -> list[str]:
         ]
     elif amount:
         facts.append(f"The booking costs {amount}.")
+    if _named(context):
+        name = _physio_name(context)
+        facts += [
+            f"The patient is choosing a named physiotherapist{f' ({name})' if name else ''} and time themselves. "
+            "After payment the physiotherapist has up to 2 hours to confirm; if they can't, Joy offers another physiotherapist or a full refund.",
+            "Tapping Confirm and pay accepts the Consultation & Booking Policy and holds the time for 30 minutes.",
+        ]
+    else:
+        facts.append("After payment, the care team assigns the clinician, date and time, and Joy sends the details here on WhatsApp.")
     facts += [
-        "After payment, the care team assigns the clinician, date and time, and Joy sends the details here on WhatsApp.",
         "Payment is made on Paystack's secure checkout page. Rehabify never sees card details.",
         "Paid bookings are cancelled or moved from the Rehabify dashboard: 24 hours or more before the session gives a full refund.",
     ]
@@ -98,14 +120,21 @@ def _known_answer(context: dict, text: str) -> str | None:
     if _DURATION_RE.search(text) and online:
         return "It's a short video call, about 20 minutes."
     if _WHO_RE.search(text):
+        if _named(context):
+            name = _physio_name(context)
+            return f"You're booking with {name}, the physiotherapist you chose." if name else "You choose your physiotherapist from the list: reply with their number."
         return "Your clinician is assigned after payment. I'll send their name with your appointment details."
     if _WHEN_RE.search(text):
+        if _named(context):
+            return "It's the time shown with your physiotherapist. Tap *Choose another time* if you'd like a different one."
         return "Once your payment comes through, our care team sets your clinician, date and time and I'll send them here."
     if _SAFE_RE.search(text):
         return "Yes. You pay on Paystack's secure checkout page, and Rehabify never sees your card details."
     if online and _JOIN_RE.search(text):
         return "You join from your phone. I'll send a secure video link here before the call; there's nothing to install."
     if _PAY_RE.search(text) and not paid:
+        if _named(context):
+            return "Yes, payment comes first: it secures your time, then your physiotherapist confirms it (within 2 hours)."
         return "Yes, payment comes first: it confirms your place, then our care team books your clinician and time."
     return None
 
@@ -139,7 +168,16 @@ def _model_answer(llm, context: dict, text: str) -> str | None:
 def step_reminder(substate: str | None, context: dict) -> str:
     """What the current step is still waiting for."""
     if _paid(context):
+        if _named(context):
+            name = _physio_name(context) or "Your physiotherapist"
+            return f"Your payment has been received. {name} will confirm your consultation within 2 hours, and I'll message you here."
         return "Your payment has been received. Our care team will send your clinician, date and time here shortly."
+    if substate == AWAITING_RH_NAMED_PROVIDER:
+        return "To book, reply with the number of the physiotherapist you'd like."
+    if substate == AWAITING_RH_CONFIRM:
+        return "When you're ready, tap *Confirm and pay*, *Choose another time* or *Cancel*."
+    if substate == AWAITING_RH_OTHER_TIME:
+        return "Reply with the number of the time you'd like, or *Back* to keep the first one."
     if substate == AWAITING_RH_PAYMENT:
         url = str(context.get("authorization_url") or "")
         if url.startswith("https://"):

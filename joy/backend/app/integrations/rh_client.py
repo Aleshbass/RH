@@ -105,6 +105,12 @@ class RHMatch:
     amount_kobo: int
     match_reasons: list[str]
     distance_km: float | None = None  # from the patient's shared pin, when both locations are known
+    # Ranked matching (convex/joyMatching.ts) only
+    next_slot_start: int | None = None  # ms, the physio's first free time in the window
+    next_slot_end: int | None = None
+    specialty_label: str | None = None
+    photo_url: str | None = None  # their own uploaded photo; absent when they haven't added one
+    languages: list[str] | None = None
 
 
 @dataclass(frozen=True)
@@ -479,12 +485,22 @@ class RHClient:
             idempotency_key=f"joy-patient-location-{patient_id}-{city.casefold()}-{area.casefold()}",
         )
 
-    def match_physios(self, *, patient_id: str, assessment_id: str, assessment_revision: int, required_specialties: list[str], service_mode: str, actor: RHActor, city: str | None = None, area: str | None = None, latitude: float | None = None, longitude: float | None = None) -> list[RHMatch]:
+    def match_physios(self, *, patient_id: str, assessment_id: str, assessment_revision: int, required_specialties: list[str], service_mode: str, actor: RHActor, city: str | None = None, area: str | None = None, latitude: float | None = None, longitude: float | None = None, within_hours: int | None = None, language: str | None = None, duration_minutes: int | None = None, urgent: bool = False, limit: int | None = None) -> list[RHMatch]:
         payload: dict[str, Any] = {
             "patient_id": patient_id, "assessment_id": assessment_id,
             "assessment_revision": assessment_revision, "required_specialties": required_specialties,
             "service_mode": service_mode, "actor": actor.as_payload(),
         }
+        if within_hours:
+            # Ranked matching: only physios free within this many hours, best first (joyMatching.ts)
+            payload["within_hours"] = int(within_hours)
+            payload["urgent"] = bool(urgent)
+            if language:
+                payload["language"] = language
+            if duration_minutes:
+                payload["duration_minutes"] = int(duration_minutes)
+            if limit:
+                payload["limit"] = int(limit)
         if city:
             payload["city"] = city
         if area:
@@ -513,6 +529,11 @@ class RHClient:
             specialties=list(item.get("specialties") or []), service_modes=list(item.get("service_modes") or []),
             amount_kobo=int(item["amount_kobo"]), match_reasons=list(item.get("match_reasons") or []),
             distance_km=float(item["distance_km"]) if isinstance(item.get("distance_km"), (int, float)) else None,
+            next_slot_start=int(item["next_slot_start"]) if isinstance(item.get("next_slot_start"), (int, float)) else None,
+            next_slot_end=int(item["next_slot_end"]) if isinstance(item.get("next_slot_end"), (int, float)) else None,
+            specialty_label=str(item["specialty_label"])[:80] if isinstance(item.get("specialty_label"), str) else None,
+            photo_url=str(item["photo_url"]) if isinstance(item.get("photo_url"), str) and str(item["photo_url"]).startswith("https://") else None,
+            languages=[str(x) for x in item.get("languages") or [] if isinstance(x, str)][:6] or None,
         ) for item in providers if isinstance(item, dict)]
 
     def availability(self, physiotherapist_id: str, *, start_ms: int, end_ms: int, duration_minutes: int, service_mode: str) -> dict[str, Any]:

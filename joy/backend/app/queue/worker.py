@@ -312,6 +312,7 @@ def process_queue_once(
         )
         if not reply:
             raise RuntimeError("Joy produced no outbound reply")
+        _send_items(payload["phone"], getattr(result, "before", None))
         interactive = _interactive_reply(db, payload["phone"], result)
         if interactive:
             send_whatsapp_interactive(payload["phone"], reply, interactive, text_sender=send_whatsapp_text)
@@ -565,9 +566,19 @@ def _exercise_reminders_tick() -> None:
 
 def _send_after(phone: str, result) -> None:
     """Follow-up messages after the reply (exercise pictures, then buttons). Never fails a turn."""
-    for item in getattr(result, "after", None) or []:
+    _send_items(phone, getattr(result, "after", None))
+
+
+def _send_items(phone: str, items) -> None:
+    """Extra messages around the reply, in order. A failed one is skipped, never the turn."""
+    for item in items or []:
         try:
-            if item.get("image_url"):
+            if item.get("photo_url"):
+                # A physio's own profile photo; no photo, no message (never a placeholder)
+                from app.exercises.media import send_profile_photo
+
+                send_profile_photo(phone, str(item["photo_url"]), str(item.get("caption") or ""))
+            elif item.get("image_url"):
                 from app.exercises.media import send_exercise_image
 
                 send_exercise_image(phone, str(item["image_url"]), str(item.get("caption") or ""))
@@ -595,8 +606,11 @@ def _retry_pending_signup(db, phone: str, own_session: bool) -> None:
 
 def _interactive_reply(db, phone: str, result) -> dict | None:
     """Tap-to-answer buttons for the step this reply asks about (never on safety replies)."""
-    if result is None or getattr(result, "blocked_by_safety", False):
+    if result is None:
         return None
+    if getattr(result, "blocked_by_safety", False):
+        # Only buttons a safety reply chose itself (e.g. "Emergency guidance" / "I understand")
+        return getattr(result, "interactive", None) or None
     if getattr(result, "interactive", None):
         return result.interactive
     try:

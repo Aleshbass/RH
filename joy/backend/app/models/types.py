@@ -146,3 +146,6 @@ class TurnResult(BaseModel):
     # Messages sent after the reply, in order: {"image_url", "caption"} pictures, or
     # {"text", "interactive"} (e.g. the exercise plan's pictures, then its buttons)
     after: list[dict] | None = None
+    # Messages sent before the reply, the same shapes (e.g. the triage outcome, then each
+    # matched physio's photo, then the reply with the list to book from)
+    before: list[dict] | None = None

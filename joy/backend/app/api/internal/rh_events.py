@@ -1,5 +1,6 @@
 import hashlib
 import hmac
+import logging
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -67,8 +68,10 @@ async def receive_event(request: Request, settings: Settings = Depends(get_setti
             # The meeting-link event can arrive first for an online booking.
             # In that case it has already supplied the complete confirmation.
             if not data.get("defer_patient_notification") and not _has_notified_meeting_link(conversation, booking_id):
+                booked_context = (conversation.booking_context or {}) if conversation is not None else {}
+                receipt = booked_context.get("receipt_url") if booked_context.get("rh_booking_id") == booking_id else None
                 text = (
-                    appointment_confirmation_text(**details)
+                    appointment_confirmation_text(**details, receipt_url=receipt if isinstance(receipt, str) else None)
                     if details is not None
                     else "Your appointment is confirmed. I’ll send your appointment details here."
                 )
@@ -86,11 +89,19 @@ async def receive_event(request: Request, settings: Settings = Depends(get_setti
                 context["rh_payment_status"] = "succeeded"
                 if conversation is not None:
                     conversation.booking_context = context
+            receipt_link = str(data.get("receipt_url") or "").strip()
+            if context.get("rh_booking_id") == booking_id and receipt_link.startswith("https://") and conversation is not None:
+                context["receipt_url"] = receipt_link  # repeated in the booked message
+                conversation.booking_context = context
             if context.get("booking_route") == "admin_scheduled_virtual":
                 text = (
                     "Your payment has been received. Our care team will assign your clinician, date, and time shortly. "
                     "I’ll send your appointment details and joining link here once that is done."
                 )
+            elif context.get("booking_route") == "named_online" and context.get("rh_booking_id") == booking_id:
+                from app.booking.booking_flow import named_payment_received_text
+
+                text = named_payment_received_text(context, data.get("provider_response_due_at"))
             else:
                 text = "Your payment has been received. I’ll confirm the appointment here after the specialist accepts it."
             # RH issues the receipt with the payment (Payment Policy 7).
@@ -365,12 +376,34 @@ def physio_request_text(data: dict) -> str | None:
     )
 
 
+logger = logging.getLogger(__name__)
+
+
+def _self_referral_summary(session: Session, booking_id: str) -> str | None:
+    """The pre-appointment summary Joy wrote for this booking (app/triage/self_referral.py)."""
+    if not booking_id:
+        return None
+    try:
+        conversation = session.scalar(
+            select(Conversation).where(Conversation.booking_context["rh_booking_id"].astext == booking_id)
+        )
+    except Exception:
+        logger.warning("joy_physio_summary_lookup_failed", exc_info=True)
+        return None
+    summary = ((conversation.booking_context or {}).get("self_referral") or {}).get("physio_summary") if conversation else None
+    return summary if isinstance(summary, str) and summary.strip() else None
+
+
 def _nudge_physio(session: Session, data: dict) -> None:
     """A paid booking waits for the physio: ask them on WhatsApp (RH also sends push and email)."""
     phone = str(data.get("physiotherapist_phone") or "").strip()
     text = physio_request_text(data)
     if not text or not phone.startswith("+") or not phone[1:].isdigit():
         return
+    summary = _self_referral_summary(session, str(data.get("booking_id") or ""))
+    if summary:
+        # The physio reads the triage before accepting; they keep full clinical responsibility
+        text = f"{text}\n\n{summary}"
     enqueue_booking_confirmed(phone, str(data.get("booking_id") or ""), text)
     append(session, kind=AuditKind.BOOKING, actor_phone="rh-service", person_id=None,
            payload={"event": "physio_response_requested_on_whatsapp", "booking_id": str(data.get("booking_id") or "")})

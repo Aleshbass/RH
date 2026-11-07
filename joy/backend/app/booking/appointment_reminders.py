@@ -45,22 +45,34 @@ def format_duration(duration_minutes: int) -> str:
 
 def appointment_confirmation_text(
     *, provider_name: str, session_start: datetime, duration_minutes: int, service_mode: str,
-    booking_code: str | None, meeting_url: str | None = None,
+    booking_code: str | None, meeting_url: str | None = None, receipt_url: str | None = None,
 ) -> str:
     mode = "online " if service_mode == "online" else ""
-    lines = [
-        f"Your {mode}appointment with {provider_name} is on "
-        f"{format_lagos_appointment_time(session_start)} and will last {format_duration(duration_minutes)}.",
+    how = {"online": "💻 Online video call", "home_visit": "🏠 Home visit"}.get(service_mode, "🏥 Clinic visit")
+    details = [
+        f"📅 {format_lagos_appointment_time(session_start)} ({format_duration(duration_minutes)})",
+        f"🩺 {provider_name}",
+        how,
     ]
     if booking_code:
-        lines.append(f"Your booking code is: {booking_code}.")
+        details.append(f"🔖 Booking code: {booking_code}")
+    if receipt_url:
+        details.append(f"🧾 Receipt: {receipt_url}")
+    lines = [
+        f"✅ Your {mode}appointment is booked.",
+        "\n".join(details),
+    ]
     if meeting_url:
         # Every booking has a /v/<code> page, but only online visits have a call to join.
         lines.append(f"Join securely here: {meeting_url}" if service_mode == "online" else f"Your booking details: {meeting_url}")
-    lines.extend([
-        f"{_early_instruction(service_mode)} Missed appointments are not refundable.",
-        "Looking forward to supporting your recovery — see you then!",
-    ])
+    lines.append(
+        "Before your appointment:\n"
+        "• Wear comfortable clothing\n"
+        "• Have any scans, reports or a list of your medicines ready\n"
+        f"• {_early_instruction(service_mode)}\n"
+        "• Reply *RESCHEDULE* if you need to change the time"
+    )
+    lines.append("Missed appointments are not refundable. Looking forward to supporting your recovery!")
     return "\n\n".join(lines)
 
 

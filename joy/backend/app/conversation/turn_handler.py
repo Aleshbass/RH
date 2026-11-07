@@ -23,6 +23,10 @@ from app.flows.signup import WELCOME_WITH_FORM, WELCOME_WITHOUT_FORM, is_signup_
 from app.identity.greetings import is_greeting_only
 from app.exercises.programme import asks_for_programme, done_command, reminder_command, show_programme
 from app.booking.booking_flow import (
+    AWAITING_RH_CONFIRM,
+    AWAITING_RH_NAMED_PROVIDER,
+    AWAITING_RH_OTHER_TIME,
+    offer_named_physios,
     AWAITING_PAYMENT,
     AWAITING_RH_LOCATION,
     AWAITING_RH_PAYMENT_EMAIL,
@@ -63,6 +67,8 @@ from app.booking.step_help import booking_step_help
 from app.conversation.check_in import check_in_turn
 from app.exercises.questions import exercise_question_turn
 from app.conversation.human_request import human_request_reply, is_human_request
+from app.triage import self_referral as sr
+from app.triage.non_msk import infer_non_msk_area
 from app.api.internal.rh_safety_eligibility import EligibilityRequest, issue_eligibility_reference
 from app.models.admin import Admin
 from app.models.conversation import Conversation
@@ -72,6 +78,7 @@ from app.models.triage_session import TriageSession
 from app.models.rh_identity_mapping import RHIdentityMapping
 from app.models.types import (
     AuditKind,
+    ConditionArea,
     ConversationStage,
     ExtractedTriage,
     Identity,
@@ -799,6 +806,20 @@ def _resend_safety_block(
     language: str,
     wa_message_id: str | None = None,
 ) -> TurnResult:
+    sr_conversation = session.get(Conversation, state.conversation_id)
+    sr_flags = ((sr_conversation.booking_context or {}).get(sr.SR_KEY) or {}).get("red_flags") if sr_conversation else None
+    if sr_flags and _is_escalated(session, state):
+        # Stopped on the red-flag screen (app/triage/self_referral.py): never a booking from here
+        sr_reply, sr_buttons = sr.resend_after_stop(user_text)
+        sr_stage = state.stage if state.stage in _ESCALATION_STAGES else ConversationStage.MEDICAL_ESCALATION
+        save_turn(
+            session, state, user_text, sr_reply, state.extracted, phase, language, wa_message_id,
+            stage=assert_transition(state.stage, sr_stage),
+        )
+        return TurnResult(
+            reply_text=sr_reply, language=language, phase=phase, extracted=state.extracted,
+            blocked_by_safety=True, interactive=sr_buttons,
+        )
     safety = evaluate(state.extracted)
     reply = patient_message(safety)
     if _is_specialist_review(session, state):
@@ -1647,6 +1668,10 @@ def _stage_for_booking_substate(substate: str | None) -> ConversationStage | Non
         return ConversationStage.AWAITING_PAYMENT
     if substate == "rh_awaiting_reschedule":
         return ConversationStage.BOOKING_CONFIRMED
+    if substate == AWAITING_RH_NAMED_PROVIDER:
+        return ConversationStage.SPECIALIST_MATCHING
+    if substate in {AWAITING_RH_CONFIRM, AWAITING_RH_OTHER_TIME}:
+        return ConversationStage.SLOT_SELECTION
     if substate in {
         AWAITING_RH_SERVICE_MODE,
         AWAITING_RH_LOCATION,
@@ -1669,6 +1694,22 @@ def _reply_after_extract(
     wa_message_id: str | None = None,
     llm=None,
 ) -> tuple[str, PatientPhase]:
+    sr_conversation = session.get(Conversation, state.conversation_id)
+    sr_context = dict(sr_conversation.booking_context or {}) if sr_conversation is not None else {}
+    if sr_conversation is not None and sr.active(sr_context):
+        sr_flow = sr_context.get(_TRIAGE_FLOW_KEY)
+        if sr_flow in (sr.BOOKING, sr.CARE_TEAM) or sr_conversation.booking_substate:
+            # A question part-way through booking: answered from the booking facts
+            return booking_step_help(sr_conversation.booking_substate, sr_context, user_text, llm=llm), PatientPhase.POST_TRIAGE
+        if sr_flow in (None, sr.REASON):
+            if not has_narrative(extracted) and not (extracted.main_complaint or "").strip():
+                return candidate_reply, PatientPhase.FIRST_CONTACT
+            sr_patient = session.get(Patient, identity.person_id)
+            has_area = bool((extracted.body_location or "").strip() or (extracted.body_region or "").strip()) or (
+                extracted.condition_area not in (None, ConditionArea.MSK)
+            ) or infer_non_msk_area(extracted) is not None
+            step = sr.after_story(session, sr_patient, sr_conversation, extracted, has_area=has_area)
+            return step.reply, PatientPhase.MID_TRIAGE
     if not has_narrative(extracted):
         return candidate_reply, PatientPhase.FIRST_CONTACT
 
@@ -2073,6 +2114,151 @@ def _partner_turn(
     )
 
 
+_SR_STAGES = {
+    "safety_screen": ConversationStage.SAFETY_SCREEN,
+    "matching": ConversationStage.SPECIALIST_MATCHING,
+    "summary": ConversationStage.TRIAGE_SUMMARY,
+}
+
+
+def _alert_care_team(patient: Patient, reason: str, text: str) -> None:
+    """A bell and push for Rehabify's admins (RH patient_request_callback). Never raises."""
+    try:
+        from sqlalchemy.orm import object_session
+
+        session = object_session(patient)
+        rh_patient_id = _booking_rh_patient_id(session, patient) if session is not None else None
+        if not rh_patient_id:
+            return
+        configured_rh_client().operational_mutation(
+            "patient_request_callback",
+            actor=RHActor(persona="patient", sender_phone=patient.phone_e164, rh_user_id=rh_patient_id),
+            data={"patient_id": rh_patient_id, "reason": reason, "text": text[:200]},
+            idempotency_key=f"joy-{reason}-{patient.id}-{datetime.now(timezone.utc).strftime('%Y%m%d%H')}",
+        )
+    except Exception:
+        logger.warning("joy_care_team_alert_failed reason=%s", reason, exc_info=True)
+
+
+def _booking_rh_patient_id(session: Session, patient: Patient) -> str | None:
+    from app.booking.booking_flow import _rh_patient_id
+
+    return _rh_patient_id(session, patient)
+
+
+def _self_referral_turn(
+    session: Session,
+    identity: Identity,
+    state: ConversationState,
+    user_text: str,
+    phase: PatientPhase,
+    language: str,
+    wa_message_id: str | None,
+    *,
+    location: tuple[float, float] | None = None,
+) -> TurnResult | str | None:
+    """Run one self-referral step. A TurnResult is the reply; a string is the story to read now."""
+    patient = session.get(Patient, identity.person_id)
+    conversation = session.get(Conversation, state.conversation_id)
+    if patient is None or conversation is None or conversation.human_takeover:
+        return None
+    context = conversation.booking_context or {}
+    step = context.get(_TRIAGE_FLOW_KEY)
+    if sr.SR_KEY not in context:
+        fresh = (
+            step is None
+            and not conversation.booking_substate
+            and not has_narrative(state.extracted)
+            and state.stage == ConversationStage.STORY_CAPTURE
+        )
+        if not fresh:
+            return None  # a conversation started before the switch keeps the older flow
+        result = sr.start(session, patient, conversation, user_text, is_greeting=_is_greeting_only(user_text))
+    elif step in sr.FRONT_STEPS:
+        result = sr.front_turn(
+            session, patient, conversation, user_text,
+            detected_language=mirror_language(user_text, None), location=location,
+        )
+    elif step in (sr.AREA, sr.RED_FLAGS, sr.QUESTIONS, sr.CARE_TEAM):
+        result = sr.triage_turn(session, patient, conversation, state.extracted, user_text)
+    elif step == sr.BOOKING and not conversation.booking_substate:
+        # Matching couldn't run last time (Rehabify unreachable): try again
+        result = sr.Step(
+            "outcome", extracted=state.extracted,
+            urgent=(context.get(sr.SR_KEY) or {}).get("outcome") == "urgent", stage="matching",
+        )
+    else:
+        return None
+    if result is None:
+        return None
+    if result.kind == "story":
+        return result.story
+    language = result.language or patient.preferred_language or language
+    extracted = result.extracted or state.extracted
+
+    if result.kind == "safety":
+        return _safety_fire_reply(
+            session, identity, state, user_text, extracted, result.safety, phase, language, wa_message_id,
+        )
+    if result.kind == "red_flag":
+        safety = result.safety
+        notified = notify_family_on_safety(session, identity.person_id, safety)
+        _set_triage_status(session, state, "escalated")
+        route_safety(session, safety, {"patient_id": str(identity.person_id)})
+        _alert_care_team(patient, "red_flag", safety.reason_plain_language)
+        _audit_turn(session, identity, extracted, safety, PatientPhase.MID_TRIAGE, notify_family=notified)
+        stage = (
+            ConversationStage.EMERGENCY_ESCALATION
+            if (safety.risk_level or "").upper() == "RED"
+            else ConversationStage.MEDICAL_ESCALATION
+        )
+        save_turn(
+            session, state, user_text, result.reply, extracted, PatientPhase.MID_TRIAGE, language,
+            wa_message_id, stage=assert_transition(state.stage, stage),
+        )
+        return TurnResult(
+            reply_text=result.reply, language=language, phase=PatientPhase.MID_TRIAGE, extracted=extracted,
+            safety=safety, blocked_by_safety=True, interactive=result.interactive,
+        )
+    if result.kind == "outcome":
+        _set_triage_status(session, state, "summarised")
+        intro = sr.outcome_text(result.urgent)
+        reply, before = offer_named_physios(
+            session, conversation, patient, extracted, urgent=result.urgent,
+            language=patient.preferred_language or language, intro=intro,
+        )
+        current = session.get(Conversation, state.conversation_id)
+        flow = (current.booking_context or {}).get(_TRIAGE_FLOW_KEY) if current is not None else None
+        target = _stage_for_booking_substate(current.booking_substate if current is not None else None) or (
+            ConversationStage.TRIAGE_SUMMARY if flow == sr.CARE_TEAM else state.stage
+        )
+        texts = [item["text"] for item in before if item.get("text")]
+        save_turn(
+            session, state, user_text, "\n\n".join([*texts, reply]), extracted, PatientPhase.POST_TRIAGE,
+            language, wa_message_id, stage=assert_transition(state.stage, target),
+        )
+        return TurnResult(
+            reply_text=reply, language=language, phase=PatientPhase.POST_TRIAGE, extracted=extracted,
+            before=before or None,
+        )
+    # A plain reply for this step
+    in_front = sr.current_step(session.get(Conversation, state.conversation_id)) in (*sr.FRONT_STEPS, sr.REASON)
+    target = _SR_STAGES.get(result.stage or "") or state.stage
+    out_phase = (
+        PatientPhase.FIRST_CONTACT if in_front
+        else PatientPhase.POST_TRIAGE if target == ConversationStage.TRIAGE_SUMMARY
+        else PatientPhase.MID_TRIAGE
+    )
+    save_turn(
+        session, state, user_text, result.reply, extracted, out_phase, language, wa_message_id,
+        stage=assert_transition(state.stage, target),
+    )
+    return TurnResult(
+        reply_text=result.reply, language=language, phase=out_phase, extracted=extracted,
+        interactive=result.interactive, before=result.before or None,
+    )
+
+
 def handle_turn(
     session: Session,
     phone: str,
@@ -2200,11 +2386,16 @@ def handle_turn(
 
     state = load(session, identity)
     language = mirror_language(user_text, state.last_known_language)
+    sr_patient = session.get(Patient, identity.person_id) if identity.persona == Persona.PATIENT else None
+    if sr_patient is not None and sr.enabled() and sr_patient.preferred_language:
+        language = sr_patient.preferred_language
 
     # A shared WhatsApp location pin (often from the "Send location" button)
     if identity.persona == Persona.PATIENT and location is not None:
         pin_patient = session.get(Patient, identity.person_id)
-        if pin_patient is not None:
+        if pin_patient is not None and not (
+            sr.enabled() and sr.front_pending(pin_patient, session.get(Conversation, state.conversation_id))
+        ):
             pin_text, pin_reply = location_pin_turn(
                 session, session.get(Conversation, state.conversation_id), pin_patient,
                 location[0], location[1], has_story=has_narrative(state.extracted),
@@ -2251,6 +2442,7 @@ def handle_turn(
         and state.phase == PatientPhase.FIRST_CONTACT
         and not has_narrative(state.extracted)
         and _is_greeting_only(user_text)
+        and not sr.enabled()
     ):
         # With the sign-up form set up, the welcome carries a "Get started" button for it.
         # It never blocks typing: the patient can just describe the problem instead.
@@ -2363,6 +2555,21 @@ def handle_turn(
                     session, identity, state, user_text, flagged,
                     volunteered_safety, phase, language, wa_message_id,
                 )
+
+    # Self-referral: language, consent, profile, red flags, questions, named physios
+    # (app/triage/self_referral.py; the owner's guide). The story itself goes to the model below.
+    if identity.persona == Persona.PATIENT and sr.enabled():
+        sr_turn = _self_referral_turn(
+            session, identity, state, user_text, phase, language, wa_message_id, location=location,
+        )
+        if isinstance(sr_turn, TurnResult):
+            return sr_turn
+        if isinstance(sr_turn, str):
+            # They told Joy what's wrong before the intake: read it now
+            user_text = sr_turn
+            story_patient = session.get(Patient, identity.person_id)
+            if story_patient is not None and story_patient.preferred_language:
+                language = story_patient.preferred_language
 
     # A returning patient who just says hello: welcome them back where they left off
     if identity.persona == Persona.PATIENT and _is_greeting_only(user_text) and state.recent_messages:
@@ -2523,6 +2730,7 @@ def handle_turn(
                     state.extracted,
                     user_text,
                     paystack=paystack,
+                    wa_message_id=wa_message_id,
                 )
             if booking_reply == "__JOY_TREATMENT_OPTION_SELECTED__":
                 booking_reply = _present_policy(session, state)
@@ -2536,6 +2744,12 @@ def handle_turn(
                     )
             if booking_reply is not None:
                 current = session.get(Conversation, state.conversation_id)
+                before_items = None
+                if current is not None and isinstance((current.booking_context or {}).get("_before"), list):
+                    # More physios' photos ("See more"), sent just before the list
+                    trimmed = dict(current.booking_context or {})
+                    before_items = trimmed.pop("_before") or None
+                    current.booking_context = trimmed
                 booking_stage = _stage_for_booking_substate(
                     current.booking_substate if current is not None else None
                 )
@@ -2562,6 +2776,7 @@ def handle_turn(
                     phase=PatientPhase.POST_TRIAGE,
                     extracted=state.extracted,
                     blocked_by_safety=False,
+                    before=before_items,
                 )
 
     # A bare 0–10 answer after the completed deterministic safety screen is
@@ -2721,7 +2936,9 @@ def handle_turn(
             wa_message_id,
         )
 
-    if _TRIAGE_QUESTIONNAIRE_ENABLED and (
+    sr_conversation = session.get(Conversation, state.conversation_id)
+    sr_on = sr_conversation is not None and sr.active(sr_conversation.booking_context)
+    if _TRIAGE_QUESTIONNAIRE_ENABLED and not sr_on and (
         safety.action == "specialist_review" or (safety.risk_level or "").upper() == "AMBER"
     ):
         conversation = session.get(Conversation, state.conversation_id)

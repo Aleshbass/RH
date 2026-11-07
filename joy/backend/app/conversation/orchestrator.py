@@ -25,6 +25,10 @@ BOOKING_SUBSTATES = (
     "awaiting_policy_acceptance",
     "awaiting_initial_consultation_confirmation",
     "rh_awaiting_reschedule",
+    # Self-referral booking (app/booking/booking_flow.py): named physios, then Confirm and pay
+    "rh_awaiting_named_provider",
+    "rh_awaiting_confirm",
+    "rh_awaiting_other_time",
 )
 
 

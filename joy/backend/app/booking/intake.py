@@ -53,6 +53,11 @@ def intake_payload(
         for question, answer in (extracted.safety_answers or {}).items()
     ]
     history = _text_list(extracted.comorbidities, extracted.relevant_medical_history, extracted.previous_treatment)
+    # The self-referral summary in the owner's layout (app/triage/self_referral.py), if Joy wrote one
+    self_referral = (conversation.booking_context or {}).get("self_referral") or {}
+    sr_summary = self_referral.get("physio_summary") if isinstance(self_referral, dict) else None
+    if isinstance(self_referral, dict) and self_referral.get("outcome") == "urgent" and level == "green":
+        level = "amber"  # urgent clinician review: the physio sees it flagged
     return {
         "patient_id": rh_patient_id,
         "booking_id": booking_id,
@@ -71,9 +76,9 @@ def intake_payload(
         "easing_factors": list(extracted.relieving or []),
         "goals": extracted.goals or extracted.main_concern,
         "medical_history": "; ".join(history) or None,
-        "clinician_summary": confirmation_summary(extracted),
+        "clinician_summary": (f"{sr_summary}\n\n{confirmation_summary(extracted)}" if isinstance(sr_summary, str) and sr_summary else confirmation_summary(extracted)),
         "patient_summary": plain_summary(extracted),
-        "language": conversation.last_known_language,
+        "language": getattr(patient, "preferred_language", None) or conversation.last_known_language,
         "consent": {
             "share_with_clinician": True,
             "policy_version": str(policy.get("version") or ""),

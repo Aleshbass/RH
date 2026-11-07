@@ -72,6 +72,9 @@ class Settings(BaseSettings):
     disable_whatsapp_delivery: bool = False
     # Joy's fixed messages in the patient's language (app/conversation/localize.py)
     joy_translate_messages: bool = True
+    # The structured self-referral flow (app/triage/self_referral.py): language, consent, profile,
+    # the 7-item red-flag screen, short questions, then named physios. Off = the older flow.
+    joy_self_referral_v2: bool = False
     internal_api_secret: str = ""
     internal_job_token: str = ""
     rh_api_base_url: str = ""

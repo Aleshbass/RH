@@ -29,6 +29,10 @@ class Patient(Base):
     exercise_reminder_last_sent_on: Mapped[date | None] = mapped_column(Date, nullable=True)
     # When Joy last showed the plan or a reminder: a DONE reply soon after logs the session
     exercise_prompted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Self-referral intake (app/triage/self_referral.py): the language they chose ("en", "pcm",
+    # "yo", "ig", "ha") and when they agreed to the Privacy Policy, Terms and storing their details
+    preferred_language: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    care_consent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # Booking location is deliberately structured.  The legacy display string
     # remains for compatibility with existing records and appointment notes.
     city: Mapped[str | None] = mapped_column(String, nullable=True)

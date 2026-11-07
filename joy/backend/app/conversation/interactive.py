@@ -20,7 +20,10 @@ from app.booking.appointment_reminders import LAGOS
 from app.booking.booking_flow import (
     AWAITING_INITIAL_CONSULTATION_CONFIRMATION,
     AWAITING_POLICY_ACCEPTANCE,
+    AWAITING_RH_CONFIRM,
     AWAITING_RH_LOCATION,
+    AWAITING_RH_NAMED_PROVIDER,
+    AWAITING_RH_OTHER_TIME,
     AWAITING_RH_PAYMENT_EMAIL,
     AWAITING_RH_PROVIDER,
     AWAITING_RH_SERVICE_MODE,
@@ -121,6 +124,30 @@ def interactive_for(conversation: Conversation | None) -> dict[str, Any] | None:
                 (str(index), str(p.get("display_name") or "Physiotherapist"), _provider_detail(p))
                 for index, p in enumerate(providers, 1)
             ], section="Verified specialists")
+    if step == AWAITING_RH_NAMED_PROVIDER:
+        providers = [p for p in context.get("providers") or [] if isinstance(p, dict)]
+        shown = int(context.get("providers_shown") or min(3, len(providers)))
+        if providers:
+            from app.booking.booking_flow import when_label
+
+            rows = [
+                (str(index), str(p.get("display_name") or "Physiotherapist"),
+                 f"Next: {when_label(p['next_slot_start'])}" if p.get("next_slot_start") else None)
+                for index, p in enumerate(providers[:shown], 1)
+            ]
+            if shown < len(providers):
+                rows.append(("see more", "See more", "Other physiotherapists free in 24 hours"))
+            return list_menu("Book a physio", rows, section="Free in the next 24 hours")
+        return None
+    if step == AWAITING_RH_CONFIRM:
+        return reply_buttons(("confirm and pay", "Confirm and pay"), ("another time", "Choose another time"), ("cancel", "Cancel"))
+    if step == AWAITING_RH_OTHER_TIME:
+        slots = [s for s in context.get("slots") or [] if isinstance(s, dict) and isinstance(s.get("start"), (int, float))]
+        if slots:
+            return list_menu("Choose a time", [
+                (str(index), slot_label(s["start"]), "Lagos time") for index, s in enumerate(slots, 1)
+            ][:9] + [("back", "Keep the first time", None)], section="Other times")
+        return None
     if step == "rh_awaiting_reschedule":
         slots = [s for s in context.get("reschedule_slots") or [] if isinstance(s, dict) and isinstance(s.get("start"), (int, float))]
         if slots:
@@ -137,6 +164,10 @@ def interactive_for(conversation: Conversation | None) -> dict[str, Any] | None:
     if step:
         return None
     flow = context.get(_TRIAGE_FLOW_KEY)
+    if flow in {"sr_area", "sr_red_flags"}:
+        # Self-referral (app/triage/self_referral.py): the list the step was asked with
+        menu = (context.get("self_referral") or {}).get("menu")
+        return menu if isinstance(menu, dict) else None
     if flow == "awaiting_summary_confirmation":
         return reply_buttons(("yes", "Yes, that's right"), ("no", "Change something"))
     if flow == "awaiting_additional_details":
