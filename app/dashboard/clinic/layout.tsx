@@ -56,6 +56,8 @@ const PAGE_AREAS: { prefix: string; area: ClinicArea; orArea?: ClinicArea }[] = 
   { prefix: '/dashboard/clinic/analytics', area: 'reports' },
   { prefix: '/dashboard/clinic/settings', area: 'settings' },
   { prefix: '/dashboard/clinic/inventory', area: 'inventory' },
+  // Clock-in: who's in and their hours, with the Team page
+  { prefix: '/dashboard/clinic/attendance', area: 'team' },
 ]
 
 function pageForPath(pathname: string) {

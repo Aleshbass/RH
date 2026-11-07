@@ -49,6 +49,8 @@ import { RehabifyId } from '@/components/shared/RehabifyId'
 import { matchesRehabifyId } from '@/convex/helpers/rehabifyIdFormat'
 import { publicAppUrl } from '@/lib/public-app-url'
 import { useMutationUntyped, useQueryUntyped } from '@/lib/convexUntyped'
+import { ClockHomeCard } from '@/components/clock/ClinicClock'
+import { Quiet } from '@/components/physio/schedule/shared'
 import { cn } from '@/lib/utils'
 
 type Appointment = {
@@ -644,6 +646,11 @@ export function PhysioHome({ setup }: { setup: SetupStatus | null | undefined })
   return (
     <PageContainer className="max-w-7xl">
       <Hero firstName={user?.firstName} clinicName={clinicInfo?.name} todayCount={todayActive?.length} attentionCount={attention?.length} />
+
+      {/* Clinic clinicians, once their clinic switches clock-in on */}
+      <Quiet>
+        <ClockHomeCard />
+      </Quiet>
 
       <PracticeModePrompt setup={setup} />
 

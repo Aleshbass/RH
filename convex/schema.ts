@@ -848,6 +848,75 @@ export default defineSchema({
     .index("by_clinic_and_status", ["clinicId", "status"])
     .index("by_patient", ["patientId"]),
 
+  // Clock-in (clinicAttendance.ts): the owner switches it on, clinicians clock in and out of their
+  // day at the clinic. Opening hours (clinics.workingHours) say when they're expected.
+  clinicAttendanceSettings: defineTable({
+    clinicId: v.id("clinics"),
+    enabled: v.boolean(),
+    // Check the phone's position against the clinic's pin
+    locationCheck: v.boolean(),
+    // Away from the clinic: "flag" asks for a reason and marks it for the owner, "block" refuses
+    offsiteRule: v.union(v.literal("flag"), v.literal("block")),
+    siteLat: v.optional(v.number()),
+    siteLng: v.optional(v.number()),
+    siteRadiusM: v.number(),
+    sitePinnedAt: v.optional(v.number()),
+    // Late = after opening time plus this many minutes
+    graceMinutes: v.number(),
+    remindClockIn: v.boolean(),
+    remindClockOut: v.boolean(),
+    // What the owner hears: late and off-site only, every clock-in and out, or nothing
+    ownerAlerts: v.union(v.literal("exceptions"), v.literal("every"), v.literal("none")),
+    // Clinicians who aren't expected to clock in (part-timers): no reminders, never "not in"
+    exemptUserIds: v.array(v.id("users")),
+    enabledAt: v.optional(v.number()),
+    updatedAt: v.number(),
+    updatedBy: v.id("users"),
+  })
+    .index("by_clinic", ["clinicId"])
+    .index("by_enabled", ["enabled"]),
+
+  // One clock-in to clock-out. Open while clockOutAt is unset.
+  clinicShifts: defineTable({
+    clinicId: v.id("clinics"),
+    userId: v.id("users"),
+    // Lagos date of the clock-in, "2026-11-07"
+    dateKey: v.string(),
+    clockInAt: v.number(),
+    clockOutAt: v.optional(v.number()),
+    breaks: v.array(v.object({ startAt: v.number(), endAt: v.optional(v.number()) })),
+    // Where they were when the clinic checks location
+    inCheck: v.optional(v.object({ distanceM: v.number(), accuracyM: v.number(), onSite: v.boolean() })),
+    outCheck: v.optional(v.object({ distanceM: v.number(), accuracyM: v.number(), onSite: v.boolean() })),
+    offsiteReason: v.optional(v.string()),
+    // Minutes after opening time (plus grace) for the day's first clock-in
+    lateMinutes: v.optional(v.number()),
+    note: v.optional(v.string()),
+    closedBy: v.optional(v.union(v.literal("self"), v.literal("owner"), v.literal("auto"))),
+    // Closed automatically or edited: the owner should look at it
+    needsReview: v.optional(v.boolean()),
+    // Owner corrections, oldest first
+    edits: v.optional(v.array(v.object({
+      byUserId: v.id("users"),
+      at: v.number(),
+      reason: v.string(),
+      before: v.object({ clockInAt: v.number(), clockOutAt: v.optional(v.number()) }),
+    }))),
+  })
+    .index("by_clinic_and_date", ["clinicId", "dateKey"])
+    .index("by_user_and_clock_in", ["userId", "clockInAt"])
+    .index("by_clinic_and_out", ["clinicId", "clockOutAt"])
+    .index("by_out", ["clockOutAt"]),
+
+  // Reminders already sent, so each goes once a day
+  clinicClockNudges: defineTable({
+    clinicId: v.id("clinics"),
+    userId: v.id("users"),
+    dateKey: v.string(),
+    kind: v.union(v.literal("clock_in"), v.literal("clock_out"), v.literal("owner_missing")),
+    sentAt: v.number(),
+  }).index("by_user_date_kind", ["userId", "dateKey", "kind"]),
+
   // Clinic Staff Invitations: Manages invitations for physiotherapists to join clinics
   clinicStaffInvitations: defineTable({
     code: v.string(), // Unique invitation code

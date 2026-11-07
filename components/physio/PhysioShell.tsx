@@ -24,6 +24,8 @@ import { BookingProvider, useBooking } from '@/components/physio/schedule/Bookin
 import { isClinicClinician } from '@/components/clinic/clinician-routing'
 import { WebsiteLink } from '@/components/dashboard/shared/WebsiteLink'
 import { AppIconBadge, AppSetupButton, AppSetupPrompt } from '@/components/pwa/AppSetup'
+import { ClockPill } from '@/components/clock/ClinicClock'
+import { Quiet } from '@/components/physio/schedule/shared'
 
 /** The top bar's main action: book a patient in, in a drawer, without leaving the page. */
 function NewAppointmentButton() {
@@ -166,6 +168,12 @@ function PhysioPortal({ children }: { children: ReactNode }) {
             <div className="flex shrink-0 items-center gap-2">
               <WebsiteLink tone="portal" className="hidden sm:inline-flex" />
               {!isUnderReview && clinic.loaded && !clinic.active && <PhysioDutySwitch />}
+              {/* Clinic clinicians: clock in and out, once their clinic switches clock-in on */}
+              {!isUnderReview && clinic.active && (
+                <Quiet>
+                  <ClockPill />
+                </Quiet>
+              )}
               {!isUnderReview && <NewAppointmentButton />}
               <AppSetupButton tone="portal" />
               <PhysioHelp />

@@ -248,4 +248,9 @@ crons.interval("awadoc-outbox-retry", { minutes: 5 }, internal.awadoc.kickOutbox
 crons.interval("awadoc-visit-reminders", { minutes: 5 }, internal.awadoc.remindUpcomingVisits, {});
 crons.daily("awadoc-purge-event-log", { hourUTC: 2, minuteUTC: 15 }, internal.awadoc.purgeOldEvents, {});
 
+// Clock-in (clinicAttendance.ts): reminders to clock in and out, the owner's "not in yet"
+// summary, and forgotten shifts closed at closing time. Old reminder rows go nightly.
+crons.interval("clinic-clock-checks", { minutes: 10 }, internal.clinicAttendance.runClockChecks, {});
+crons.daily("clinic-clock-purge-nudges", { hourUTC: 2, minuteUTC: 40 }, internal.clinicAttendance.purgeOldNudges, {});
+
 export default crons;

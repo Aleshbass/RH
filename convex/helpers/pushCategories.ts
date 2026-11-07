@@ -28,6 +28,11 @@ export const PUSH_CATEGORIES = [
     label: "Birthdays and milestones",
     description: "Patients' birthdays, care anniversaries and check-ins due, and wishes from your care team.",
   },
+  {
+    id: "attendance",
+    label: "Clock-in",
+    description: "Reminders to clock in and out at your clinic, and your team's arrivals.",
+  },
 ] as const;
 
 export type PushCategory = (typeof PUSH_CATEGORIES)[number]["id"];
@@ -96,6 +101,15 @@ const CATEGORY_OF: Record<string, PushCategory> = {
   // Birthdays and milestones (careMoments.ts)
   care_moment: "celebrations",
   care_moment_digest: "celebrations",
+  // Clock-in (clinicAttendance.ts)
+  clinic_clock: "attendance",
+  clinic_clock_exception: "attendance",
+  clinic_clock_missing: "attendance",
+  clinic_clock_reminder: "attendance",
+  clinic_clock_out_reminder: "attendance",
+  clinic_clock_auto_closed: "attendance",
+  clinic_clock_corrected: "attendance",
+  clinic_clock_enabled: "attendance",
 };
 
 /**

@@ -33,6 +33,7 @@ import {
   Building2,
   Calendar,
   ChevronRight,
+  Clock,
   CreditCard,
   FileSignature,
   Home,
@@ -78,6 +79,7 @@ const NAV = {
   reports: { title: 'Reports', href: `${CLINIC_HOME}/analytics`, icon: BarChart3, hint: 'How the clinic is doing', area: 'reports' },
   inventory: { title: 'Inventory', href: `${CLINIC_HOME}/inventory`, icon: Package, hint: 'Supplies and equipment', area: 'inventory' },
   team: { title: 'Team', href: `${CLINIC_HOME}/staff`, icon: UserCheck, hint: 'Clinicians, front desk and roles', area: 'team' },
+  clock: { title: 'Clock-in', href: `${CLINIC_HOME}/attendance`, icon: Clock, hint: 'Who’s in and the hours they work', area: 'team' },
   settings: { title: 'Clinic settings', href: `${CLINIC_HOME}/settings`, icon: Building2, hint: 'Profile, hours and payouts', area: 'settings' },
   agreement: { title: 'Agreement', href: `${CLINIC_HOME}/agreement`, icon: FileSignature, hint: 'Your agreement with Rehabify', area: 'settings' },
 } satisfies Record<string, NavItem>
@@ -86,7 +88,7 @@ const GROUPS: { label?: string; items: NavItem[] }[] = [
   { items: [NAV.home] },
   { label: 'Care', items: [NAV.appointments, NAV.patients, NAV.messages] },
   { label: 'Business', items: [NAV.billing, NAV.plan, NAV.reports, NAV.inventory] },
-  { label: 'Clinic', items: [NAV.team, NAV.settings, NAV.agreement] },
+  { label: 'Clinic', items: [NAV.team, NAV.clock, NAV.settings, NAV.agreement] },
 ]
 
 /** The phone tab bar: the places owners go most (when their role includes them), then "More". */

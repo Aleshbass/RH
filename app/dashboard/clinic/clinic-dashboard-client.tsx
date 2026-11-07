@@ -37,6 +37,8 @@ import {
   secondaryButtonClass,
 } from '@/components/clinic/ui'
 import { cn } from '@/lib/utils'
+import { WhosInCard } from '@/components/clinic/attendance/WhosInCard'
+import { Quiet } from '@/components/physio/schedule/shared'
 import { useClinicAccess, type ClinicStaffKind } from '@/components/clinic/ClinicAccessContext'
 import { PlanStatusCard } from '@/components/clinic/PlanStatusCard'
 import { makeFunctionReference } from 'convex/server'
@@ -359,6 +361,13 @@ export default function ClinicDashboardClient() {
         </div>
 
         <div className="space-y-6">
+          {/* Only while the clinic uses clock-in */}
+          {canUse('team') && (
+            <Quiet>
+              <WhosInCard />
+            </Quiet>
+          )}
+
           {canUse('billing') && (
             <div data-tour="clinic-plan">
               <PlanStatusCard />

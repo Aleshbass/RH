@@ -2518,7 +2518,7 @@ const WEEK_DAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "satu
  * Opening hours are saved as { open, close, active } by settings but as
  * { isOpen, slots: [{ start, end }] } by onboarding. Always return the settings shape.
  */
-function normalizeWorkingHours(raw: any) {
+export function normalizeWorkingHours(raw: any) {
   const defaults: Record<string, { open: string; close: string; active: boolean }> = {
     monday: { open: "08:00", close: "17:00", active: true },
     tuesday: { open: "08:00", close: "17:00", active: true },

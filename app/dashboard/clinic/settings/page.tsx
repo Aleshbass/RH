@@ -31,6 +31,8 @@ import { PageShell, Panel, StatusBadge, primaryButtonClass } from '@/components/
 import { RehabifyId } from '@/components/shared/RehabifyId'
 import { NotificationSettings } from '@/components/pwa/NotificationSettings'
 import { playSound } from '@/lib/sounds'
+import { ClockSettingsPanel } from '@/components/clinic/attendance/ClockSettingsPanel'
+import { Quiet } from '@/components/physio/schedule/shared'
 
 const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'] as const
 type Day = (typeof DAYS)[number]
@@ -336,6 +338,11 @@ export default function ClinicSettingsPage() {
           })}
         </ul>
       </Panel>
+
+      {/* Uses the opening hours above for when the team is expected */}
+      <Quiet>
+        <ClockSettingsPanel />
+      </Quiet>
 
       <Panel
         title="Services and prices"
