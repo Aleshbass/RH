@@ -376,14 +376,25 @@ export const executeMutation = internalMutation({
       return { saved: true, flagged: saved.flagged, has_physio: Boolean(row?.physiotherapistId) };
     }
     if (op === "patient_request_callback") {
-      // The patient asked Joy for a person ("call me", "I want to speak to someone"). Every admin
-      // gets a bell + push saying who to call and what they wrote. { patient_id, text? }
+      // The patient needs a person. Every admin gets a bell + push saying who to call and why.
+      // { patient_id, text?, reason? }. reason:
+      //   "call_me" (default): they asked for a person ("call me", "I want to speak to someone")
+      //   "no_match": no physio fits and is free within 24 hours, so the care team books them
+      //   "red_flag": Joy stopped the booking on a warning sign and sent them to urgent care
       const patient = await patientForActor(ctx, String(data.patient_id), data.actor);
       const name = [patient.firstName, patient.lastName].filter(Boolean).join(" ").trim() || "A patient";
       const who = patient.rehabifyId ? `${name} (${patient.rehabifyId})` : name;
       const phone = String(data.actor?.sender_phone ?? patient.phoneNumber ?? "").trim();
       const said = String(data.text ?? "").replace(/\s+/g, " ").trim().slice(0, 200);
-      const body = `${who} asked on WhatsApp to speak to someone.${phone ? ` Call ${phone}.` : ""}${said ? ` They wrote: "${said}"` : ""}`;
+      const reason = data.reason === "no_match" || data.reason === "red_flag" ? data.reason : "call_me";
+      const call = phone ? ` Call ${phone}.` : "";
+      const wrote = said ? ` They wrote: "${said}"` : "";
+      const title = reason === "no_match" ? "Joy patient needs booking" : reason === "red_flag" ? "Joy red flag: urgent care advised" : "Patient asked for a call";
+      const body = reason === "no_match"
+        ? `${who} finished Joy's triage, but no physio who fits is free in the next 24 hours. Please arrange their consultation.${call}${said ? ` ${said}` : ""}`
+        : reason === "red_flag"
+          ? `${who} reported a warning sign on WhatsApp. Joy stopped the booking and told them to get urgent medical care.${call}${said ? ` ${said}` : ""}`
+          : `${who} asked on WhatsApp to speak to someone.${call}${wrote}`;
       const admins = await ctx.db.query("users").withIndex("by_role", (q: any) => q.eq("role", "admin")).take(25);
       const now = Date.now();
       for (const admin of admins) {
@@ -392,7 +403,7 @@ export const executeMutation = internalMutation({
           type: "joy_callback_requested",
           priority: "high",
           status: "pending",
-          payload: { title: "Patient asked for a call", body, link: "/dashboard/admin/users", data: { actionUrl: "/dashboard/admin/users", patientId: patient._id } },
+          payload: { title, body, link: "/dashboard/admin/users", data: { actionUrl: "/dashboard/admin/users", patientId: patient._id, reason } },
           createdAt: now,
         });
       }

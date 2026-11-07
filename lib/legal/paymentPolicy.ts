@@ -1,10 +1,10 @@
 import { ol, p, table, type LegalDocument } from './types';
 
-/** Rehabify Payment Policy, effective 26 October 2026 (owner-approved wording). */
+/** Rehabify Payment Policy, effective 6 November 2026 (owner-approved wording; 3.4 response time now 2 hours). */
 export const PAYMENT_POLICY: LegalDocument = {
   title: 'Payment Policy',
-  effectiveDate: '26 October 2026',
-  version: '2026-10-26',
+  effectiveDate: '6 November 2026',
+  version: '2026-11-06',
   intro: [
     p(
       'The price you see before you pay is the price you pay: one all-inclusive price per service, plus a travel charge for home visits shown before checkout. This Policy forms part of our Terms of Service and is issued by Rehabify Limited (RC 6989173). Nothing in it limits your rights under the Federal Competition and Consumer Protection Act 2018 ("**FCCPA**").'
@@ -76,7 +76,7 @@ export const PAYMENT_POLICY: LegalDocument = {
           '**3.3 Slot holds.** When you choose a time, we hold it for up to 30 minutes while you pay. If payment is not completed within that time, the hold may expire, and the slot may be offered to someone else.'
         ),
         p(
-          '**3.4 When your booking is confirmed.** Payment alone does not confirm an appointment. Your booking is confirmed only when (a) Rehabify has verified your payment and (b) the Physiotherapist has accepted the appointment. The Consultation and Booking Policy explains what happens if the Physiotherapist declines or does not respond within 5 hours (or 1 hour for appointments starting within the next 8 hours), including your right to choose a replacement or receive a full refund.'
+          '**3.4 When your booking is confirmed.** Payment alone does not confirm an appointment. Your booking is confirmed only when (a) Rehabify has verified your payment and (b) the Physiotherapist has accepted the appointment. The Consultation and Booking Policy explains what happens if the Physiotherapist declines or does not respond within 2 hours, including your right to choose a replacement or receive a full refund.'
         ),
         p(
           '**3.5 Failed payments.** If a payment fails, you will be told and may retry. You may retry up to 3 times within the hold period; after that, the slot may be released. A failed payment is never treated as a booking.'

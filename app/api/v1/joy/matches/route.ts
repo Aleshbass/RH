@@ -16,6 +16,12 @@ const requestSchema = z.object({
   // The patient's shared WhatsApp location pin (nearest physios first)
   latitude: z.number().min(4).max(14.5).optional(),
   longitude: z.number().min(2.5).max(15).optional(),
+  // Ranked matching (convex/joyMatching.ts): only physios free within this many hours
+  within_hours: z.number().min(3).max(168).optional(),
+  language: z.string().min(2).max(8).optional(),
+  duration_minutes: z.number().int().min(5).max(180).optional(),
+  urgent: z.boolean().optional(),
+  limit: z.number().int().min(1).max(6).optional(),
   actor: actorSchema,
 }).strict().superRefine((value, ctx) => {
   if (value.service_mode === "home_visit" && (!value.city || !value.area)) {
@@ -35,7 +41,9 @@ export async function POST(request: Request) {
     const providers = await callJoyConvexGateway("find_matches", {
       patient_id: input.patient_id, required_specialties: input.required_specialties,
       service_mode: input.service_mode, city: input.city, area: input.area,
-      latitude: input.latitude, longitude: input.longitude, limit: 3,
+      latitude: input.latitude, longitude: input.longitude, limit: input.limit ?? 3,
+      within_hours: input.within_hours, language: input.language,
+      duration_minutes: input.duration_minutes, urgent: input.urgent,
     });
     return success(requestId, { providers });
   } catch (error) {

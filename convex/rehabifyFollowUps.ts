@@ -265,7 +265,7 @@ export const acceptRequestWithInvoice = mutation({
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Paid website requests waiting for the physio (Consultation and Booking Policy 5.4-5.5)
-// The patient pays, then the physio has 5 hours (1 if the visit is within 8 hours) to accept.
+// The patient pays, then the physio has 2 hours to accept (lib/bookingResponse.ts).
 // Declined or unanswered: the patient picks another physio free at the same time, asks for a
 // full refund (an admin approves it), or asks the care team to sort it out.
 // Joy bookings follow the same rules through the Joy integration.

@@ -1,5 +1,6 @@
 import { httpAction } from "./_generated/server";
 import { api, internal } from "./_generated/api";
+import { rankedJoyMatches } from "./joyMatching";
 
 const encoder = new TextEncoder();
 const JOY_MINIMUM_NOTICE_MS = 2 * 60 * 60 * 1000;
@@ -189,12 +190,32 @@ function pinArgs(latitude: unknown, longitude: unknown): { latitude?: number; lo
   return { latitude, longitude };
 }
 
+/**
+ * The ranked matching (convex/joyMatching.ts) when Joy sends a time window ("within_hours");
+ * callers that don't get the original list.
+ */
+async function rankedMatchesIfAsked(ctx: any, data: Record<string, unknown>): Promise<unknown[] | null> {
+  const within = data.within_hours;
+  if (typeof within !== "number" || !Number.isFinite(within)) return null;
+  const { patient_id, required_specialties, service_mode, city, area, limit, latitude, longitude, language, duration_minutes, urgent } = data as any;
+  return await rankedJoyMatches(ctx, {
+    patientId: patient_id, requiredSpecialties: required_specialties, serviceMode: service_mode,
+    durationMinutes: typeof duration_minutes === "number" && duration_minutes >= 5 && duration_minutes <= 180 ? Math.round(duration_minutes) : undefined,
+    language: typeof language === "string" ? language.slice(0, 8) : undefined,
+    city: typeof city === "string" ? city : undefined, area: typeof area === "string" ? area : undefined,
+    ...pinArgs(latitude, longitude),
+    withinHours: within, urgent: urgent === true, limit: typeof limit === "number" ? limit : 3,
+  });
+}
+
 export const findMatches = httpAction(async (ctx, request) => {
   const parsed = await readJson(request, "/joy-integration/find_matches");
   if (parsed instanceof Response) return parsed;
   if (!(await reserveNonce(ctx, parsed.nonce))) return new Response("Replay detected", { status: 409 });
   const { patient_id, required_specialties, service_mode, city, area, limit, latitude, longitude } = parsed.data;
   if (typeof patient_id !== "string" || !Array.isArray(required_specialties) || !required_specialties.every((value) => typeof value === "string") || !["home_visit", "clinic", "online"].includes(String(service_mode))) return new Response("Invalid payload", { status: 400 });
+  const ranked = await rankedMatchesIfAsked(ctx, parsed.data);
+  if (ranked) return Response.json(ranked);
   return Response.json(await ctx.runQuery((internal as any).joyIntegration.findMatches, {
     patientId: patient_id, requiredSpecialties: required_specialties, serviceMode: service_mode,
     city: typeof city === "string" ? city : undefined, area: typeof area === "string" ? area : undefined,
@@ -231,6 +252,8 @@ export const readFindMatches = httpAction(async (ctx, request) => {
   if (parsed instanceof Response) return parsed;
   const { patient_id, required_specialties, service_mode, city, area, limit, latitude, longitude } = parsed.data;
   if (typeof patient_id !== "string" || !Array.isArray(required_specialties) || !required_specialties.every((value) => typeof value === "string") || !["home_visit", "clinic", "online"].includes(String(service_mode))) return new Response("Invalid payload", { status: 400 });
+  const ranked = await rankedMatchesIfAsked(ctx, parsed.data);
+  if (ranked) return Response.json(ranked);
   return Response.json(await ctx.runQuery((internal as any).joyIntegration.findMatches, {
     patientId: patient_id, requiredSpecialties: required_specialties, serviceMode: service_mode,
     city: typeof city === "string" ? city : undefined, area: typeof area === "string" ? area : undefined,

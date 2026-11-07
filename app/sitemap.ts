@@ -53,8 +53,8 @@ const STATIC_ROUTES: StaticRoute[] = [
   // Policies
   { path: '/terms-and-conditions', changeFrequency: 'yearly', priority: 0.3, lastModified: '2026-10-26' },
   { path: '/privacy-policy', changeFrequency: 'yearly', priority: 0.3, lastModified: '2026-10-26' },
-  { path: '/payment-policy', changeFrequency: 'yearly', priority: 0.3, lastModified: '2026-10-26' },
-  { path: '/consultation-booking-policy', changeFrequency: 'yearly', priority: 0.3, lastModified: '2026-10-26' },
+  { path: '/payment-policy', changeFrequency: 'yearly', priority: 0.3, lastModified: '2026-11-06' },
+  { path: '/consultation-booking-policy', changeFrequency: 'yearly', priority: 0.3, lastModified: '2026-11-06' },
   { path: '/cookie-policy', changeFrequency: 'yearly', priority: 0.3, lastModified: '2026-10-26' },
   { path: '/payout-policy', changeFrequency: 'yearly', priority: 0.3 },
   // Agreements (read-only copies; people sign them in their dashboard)

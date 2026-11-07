@@ -19,7 +19,7 @@ export const metadata: Metadata = pageMetadata({
 // Joy's canonical policy (the text and version Joy asks patients to accept), shown as a page
 const doc: LegalDocument = {
   title: "Consultation and Booking Policy",
-  effectiveDate: "26 October 2026",
+  effectiveDate: "6 November 2026",
   version: consultationBookingPolicy.version,
   intro: [p(consultationBookingPolicyIntro)],
   sections: consultationBookingPolicySections.map((section) => ({

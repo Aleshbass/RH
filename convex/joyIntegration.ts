@@ -58,7 +58,7 @@ const LEGACY_SPECIALTY_TAGS: Record<string, string> = {
   geriatric: "GERIATRIC_REHAB",
 };
 
-function controlledTags(profile: { joySpecialtyTags?: string[]; specializations?: string[] }): string[] {
+export function controlledTags(profile: { joySpecialtyTags?: string[]; specializations?: string[] }): string[] {
   if (profile.joySpecialtyTags?.length) return [...new Set(profile.joySpecialtyTags)];
   return [...new Set((profile.specializations ?? [])
     .map((label) => LEGACY_SPECIALTY_TAGS[label.trim().toLowerCase()])
@@ -71,7 +71,7 @@ function samePhone(left: string, right: string): boolean {
   return a.length >= 7 && b.length >= 7 && a.slice(-10) === b.slice(-10);
 }
 
-function displayName(user: { firstName?: string; lastName?: string }): string | undefined {
+export function displayName(user: { firstName?: string; lastName?: string }): string | undefined {
   const value = `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim();
   return value || undefined;
 }
@@ -770,7 +770,7 @@ export const resolvePhysiotherapistByPhone = internalQuery({
 });
 
 /** Straight-line distance in km between two points; null if either point is missing or invalid. */
-function kmBetween(lat1?: number, lng1?: number, lat2?: number, lng2?: number): number | null {
+export function kmBetween(lat1?: number, lng1?: number, lat2?: number, lng2?: number): number | null {
   if ([lat1, lng1, lat2, lng2].some((value) => typeof value !== "number" || !Number.isFinite(value))) return null;
   const rad = (deg: number) => (deg * Math.PI) / 180;
   const dLat = rad(lat2! - lat1!);
@@ -1302,7 +1302,7 @@ export const recordJoyPaymentWebhook = internalMutation({
         event_id: args.paystackEventId,
       };
     }
-    // Booking Policy 5.4: 5 hours to answer, or 1 hour when the visit starts within 8 hours
+    // Booking Policy 5.4: 2 hours to answer (never later than 10 minutes before the start)
     const joyResponseDueAt = providerResponseDueAt(now, booking.sessionDate);
     await ctx.db.patch(booking._id, { paymentStatus: "completed", paidAt: now, paymentReference: args.reference, paidAmountKobo: args.amountKobo, updatedAt: now, providerResponse: "pending", providerResponseDueAt: joyResponseDueAt });
     await creditPartnerForJoyPayment(ctx, booking, args.reference, now);

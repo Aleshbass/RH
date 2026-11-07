@@ -27,13 +27,13 @@ export const POLICIES: Record<PolicyId, PolicyDocument> = {
     href: '/privacy-policy#why-we-use-your-data-and-our-lawful-bases',
     version: '2026-10-26',
   },
-  payment_policy: { id: 'payment_policy', title: 'Payment Policy', href: '/payment-policy', version: '2026-10-26' },
+  payment_policy: { id: 'payment_policy', title: 'Payment Policy', href: '/payment-policy', version: '2026-11-06' },
   // Same version Joy sends (lib/joy-integration/consultation-booking-policy.ts)
   booking_policy: {
     id: 'booking_policy',
     title: 'Consultation & Booking Policy',
     href: '/consultation-booking-policy',
-    version: '2026-10-26',
+    version: '2026-11-06',
   },
   payout_policy: { id: 'payout_policy', title: 'Payout Policy', href: '/payout-policy', version: '2026-10-23' },
   cookie_policy: { id: 'cookie_policy', title: 'Cookie Policy', href: '/cookie-policy', version: '2026-10-26' },

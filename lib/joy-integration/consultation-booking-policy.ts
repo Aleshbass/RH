@@ -77,7 +77,7 @@ export const consultationBookingPolicySections: readonly PolicySection[] = [
       "**5.1 Holding a slot.** When you choose a Physiotherapist and slot, we place a temporary hold while you pay. The hold expires if payment is not completed in time.",
       "**5.2 Payment.** Payments are processed by Paystack. The total shown to you before payment, including any travel charge, is the authoritative amount for that booking. See the Payment Policy.",
       "**5.3 Confirmation.** A booking is confirmed only when (a) Rehabify has verified your payment and (b) the Physiotherapist has accepted the appointment. We will notify you by WhatsApp, email or in-app message when it is confirmed.",
-      "**5.4 Physiotherapist response time.** After a paid booking is sent to a Physiotherapist, they have up to 5 hours to accept or decline. For appointments starting within the next 8 hours, the response time is shortened to 1 hour. If they decline or do not respond, we will show you replacement Physiotherapists and slots. You may choose one, or ask for a full refund.",
+      "**5.4 Physiotherapist response time.** After a paid booking is sent to a Physiotherapist, they have up to 2 hours to accept or decline (and never later than 10 minutes before the appointment starts). If they decline or do not respond, we will show you replacement Physiotherapists and slots. You may choose one, or ask for a full refund.",
       "**5.5 No replacement available.** If no suitable replacement can be arranged, a member of our care team will contact you personally within 1 business day, and you will be entitled to a full refund.",
       "**5.6 Booking for someone else.** You may book for another adult with their agreement, or for a Child as their parent or legal guardian. The Patient's own information must be used for clinical purposes.",
     ],
@@ -185,10 +185,10 @@ const canonicalPolicyText = [
 
 export const consultationBookingPolicy = {
   policy_id: "consultation-booking-policy",
-  version: "2026-10-26",
+  version: "2026-11-06",
   url: "https://physioaroundme.com/consultation-booking-policy",
   content_sha256: createHash("sha256").update(canonicalPolicyText, "utf8").digest("hex"),
-  effective_at: "2026-10-26T00:00:00.000Z",
+  effective_at: "2026-11-06T00:00:00.000Z",
   acceptance_text: "I accept the Consultation & Booking Policy.",
   language: "en",
   approval_status: "APPROVED" as const,
