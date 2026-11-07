@@ -8,11 +8,13 @@ import { useFlexCheckout } from '@/components/exercise-programs/flex'
 import type { LogInput, MyProgram } from '@/components/exercise-programs/types'
 import { InfoTip, SectionLabel } from '@/components/patient/ui'
 import { useViewerGrant } from '@/lib/exercise3d/useViewerGrant'
+import { saveMineRef } from '@/lib/motion/convexRefs'
 import { cn } from '@/lib/utils'
 
 function Program({ program }: { program: MyProgram }) {
   const requestGrant = useViewerGrant({ kind: 'program', programId: program._id })
   const log = useMutation(api.exercisePrograms.logExercise)
+  const saveGuided = useMutation(saveMineRef)
   // An independent physio's own patients buy Flex for demonstrations and tracking. Paystack
   // returns to /dashboard/patient/exercises, which redirects here with the reference.
   const { checkout, busy } = useFlexCheckout({ from: 'exercises' })
@@ -24,6 +26,12 @@ function Program({ program }: { program: MyProgram }) {
       mediaContext={{ kind: 'program', programId: program._id }}
       onLog={(input: LogInput) => log({ programId: program._id, ...input })}
       flex={{ onChoose: (plan) => void checkout(plan), busy }}
+      coach={{
+        programId: program._id,
+        save: async (result) => {
+          await saveGuided({ programId: program._id, ...result })
+        },
+      }}
     />
   )
 }

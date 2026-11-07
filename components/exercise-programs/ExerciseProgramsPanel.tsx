@@ -28,7 +28,9 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { EmptyState, Panel, StatusBadge, primaryButtonClass, softButtonClass } from '@/components/physio/ui'
 import { posterUrl } from '@/convex/exerciseLibraryCatalog'
+import { CameraSessions } from '@/components/guided-session/CameraSessions'
 import { useViewerGrant } from '@/lib/exercise3d/useViewerGrant'
+import { forPatientRef, type CareTeamSessionRow } from '@/lib/motion/convexRefs'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
 import { programError } from './errors'
@@ -120,6 +122,7 @@ function ItemThumb({ item }: { item: CareTeamProgram['items'][number] }) {
 
 function ProgramCard({
   program,
+  cameraSessions,
   canWrite,
   onPreview,
   onShare,
@@ -127,6 +130,8 @@ function ProgramCard({
   onAdd,
 }: {
   program: CareTeamProgram
+  /** Camera-coach sessions of this programme, newest first */
+  cameraSessions: CareTeamSessionRow[]
   canWrite: boolean
   onPreview: () => void
   onShare: () => void
@@ -201,6 +206,8 @@ function ProgramCard({
         <StatusBadge>{a.lastLoggedAt ? `Last done ${formatDistanceToNow(a.lastLoggedAt, { addSuffix: true })}` : 'Not started yet'}</StatusBadge>
       </div>
 
+      <CameraSessions sessions={cameraSessions} itemName={(index) => program.items[index]?.name ?? ''} />
+
       {a.recent.length > 0 && (
         <details className="rounded-xl bg-rh-canvas px-3 py-2 text-xs dark:bg-white/[0.03]">
           <summary className="cursor-pointer font-medium text-rh-ink dark:text-white">Recent logs</summary>
@@ -246,6 +253,7 @@ export function ExerciseProgramsPanel({
   children?: ReactNode
 }) {
   const programs = useQuery(api.exercisePrograms.listForPatient, { patientId }) as CareTeamProgram[] | null | undefined
+  const cameraSessions = useQuery(forPatientRef, { patientId })
   const [dialogOpen, setDialogOpen] = useState(false)
   const [dialog, setDialog] = useState<DialogState>({ mode: 'send', program: null })
   const [preview, setPreview] = useState<CareTeamProgram | null>(null)
@@ -303,6 +311,7 @@ export function ExerciseProgramsPanel({
               <ProgramCard
                 key={program._id}
                 program={program}
+                cameraSessions={(cameraSessions ?? []).filter((s) => s.programId === program._id)}
                 canWrite={canWrite}
                 onPreview={() => setPreview(program)}
                 onShare={() => setShareFor(program._id)}

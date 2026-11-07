@@ -12,6 +12,7 @@ import { FlexPaymentReturn } from '@/components/exercise-programs/FlexUpgradeCar
 import { useFlexCheckout } from '@/components/exercise-programs/flex'
 import type { LinkStatus, LogInput, SharedProgramResult } from '@/components/exercise-programs/types'
 import { useViewerGrant } from '@/lib/exercise3d/useViewerGrant'
+import { saveFromLinkRef } from '@/lib/motion/convexRefs'
 import { cn } from '@/lib/utils'
 
 // Exercise programme sent on WhatsApp: /x/<token>. No account; the patient unlocks it with a PIN
@@ -190,6 +191,7 @@ function Unlocked({ code, session, onSessionLost }: { code: string; session: str
   const data = useQuery(api.exerciseShareLinks.sharedProgram, { code, session }) as SharedProgramResult | undefined
   const requestGrant = useViewerGrant({ kind: 'link', code, session })
   const log = useMutation(api.exercisePrograms.logExerciseFromLink)
+  const saveGuided = useMutation(saveFromLinkRef)
   // Flex from the link: pay here (Paystack brings them back to this page), or sign in
   const share = useMemo(() => ({ code, session }), [code, session])
   const { checkout, busy } = useFlexCheckout({ share })
@@ -221,6 +223,11 @@ function Unlocked({ code, session, onSessionLost }: { code: string; session: str
           onChoose: (plan) => void checkout(plan),
           busy,
           signInHref: `/sign-in?redirect_url=${encodeURIComponent('/dashboard/patient/exercises')}`,
+        }}
+        coach={{
+          save: async (result) => {
+            await saveGuided({ code, session, ...result })
+          },
         }}
       />
     </div>

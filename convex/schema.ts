@@ -5288,6 +5288,39 @@ export default defineSchema({
     createdAt: v.number(),
   }).index("by_template_and_user", ["templateId", "userId", "kind"]),
 
+  // One camera-coached session of one programme exercise (convex/guidedSessions.ts). Tracking runs
+  // on the patient's phone: only counts, scores and short stick-figure snapshots of the worst reps
+  // are stored, never video or photos.
+  guidedSessions: defineTable({
+    programId: v.id("exercisePrograms"),
+    patientId: v.id("users"),
+    itemIndex: v.number(),
+    clipId: v.string(),
+    exerciseKey: v.string(), // lib/motion/exercises.ts
+    side: v.union(v.literal("L"), v.literal("R")), // side of the body measured
+    startedAt: v.number(),
+    durationSeconds: v.number(),
+    setsPlanned: v.number(),
+    setsDone: v.number(),
+    repsTarget: v.number(),
+    repsCounted: v.number(),
+    partialReps: v.number(), // attempts that didn't reach the full movement
+    averageScore: v.number(), // form score 0-100, average of counted reps
+    rehabifyScore: v.number(), // form and completion together, 0-100
+    repScores: v.array(v.number()),
+    mistakes: v.array(v.object({ code: v.string(), count: v.number() })),
+    // Up to 3 lowest-scoring reps: up to 16 frames each of [x, y] pairs (image units; -1 = not seen)
+    snapshots: v.array(
+      v.object({ rep: v.number(), score: v.number(), mistakes: v.array(v.string()), frames: v.array(v.array(v.number())) })
+    ),
+    tracking: v.object({ model: v.string(), delegate: v.string(), fps: v.number() }),
+    source: v.union(v.literal("app"), v.literal("link")),
+    linkId: v.optional(v.id("exerciseShareLinks")),
+    createdAt: v.number(),
+  })
+    .index("by_patient", ["patientId", "createdAt"])
+    .index("by_program", ["programId", "createdAt"]),
+
   // One patient-reported completion of one exercise in a programme.
   exerciseProgramLogs: defineTable({
     programId: v.id("exercisePrograms"),

@@ -1,0 +1,19 @@
+{
+  "version": "v1",
+  "cues": {
+    "sts_stand_tall": "Stand all the way up at the top.",
+    "sts_chest_up": "Stand tall, chest up.",
+    "sts_slow_down": "Sit down slowly, with control.",
+    "ke_straighten": "Straighten your knee a little more.",
+    "ke_hold": "Hold the straight knee for a moment.",
+    "ke_thigh_down": "Keep your thigh resting on the chair.",
+    "ke_sit_tall": "Sit tall. Don't lean back.",
+    "ke_slow_down": "Lower your foot slowly.",
+    "sf_higher": "Lift a little higher, if it's comfortable.",
+    "sf_elbows": "Keep your elbows straight.",
+    "sf_no_arch": "Keep your back still. Don't lean back.",
+    "sf_slow_down": "Lower your arms slowly.",
+    "good_set": "Good set. Rest now.",
+    "all_done": "All done. Great work."
+  }
+}

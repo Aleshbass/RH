@@ -3,16 +3,18 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Image from 'next/image'
 import { format } from 'date-fns'
-import { BookOpen, Check, CheckCircle2, ChevronRight, Dumbbell, ExternalLink, Loader2, Mic, PartyPopper, Play, ShieldAlert, Timer, X } from '@/components/icons'
+import { BookOpen, Camera, Check, CheckCircle2, ChevronRight, Dumbbell, ExternalLink, Loader2, Mic, PartyPopper, Play, ShieldAlert, Timer, X } from '@/components/icons'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Slider } from '@/components/ui/slider'
 import { Textarea } from '@/components/ui/textarea'
 import { ExerciseViewer } from '@/components/exercise3d/ExerciseViewer'
+import { CameraCoach, type CoachActions } from '@/components/guided-session/CameraCoach'
 import { VideoEmbed } from '@/components/media/VideoEmbed'
 import { posterUrl } from '@/convex/exerciseLibraryCatalog'
 import type { GrantContext, ViewerGrant } from '@/lib/exercise3d/useViewerGrant'
+import { motionExerciseForClip } from '@/lib/motion/exercises'
 import { youtubeIdFrom } from '@/lib/youtube'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
@@ -270,6 +272,7 @@ export function ProgramPlayer({
   onLog,
   readOnly,
   flex,
+  coach,
 }: {
   program: ProgramForPlayer
   doneToday: number[]
@@ -280,6 +283,8 @@ export function ProgramPlayer({
   readOnly?: boolean
   /** How the patient gets Flex when this programme needs it (program.plan) */
   flex?: FlexActions
+  /** Camera coach for the exercises it follows (components/guided-session); omitted where it isn't offered */
+  coach?: CoachActions
 }) {
   // An independent physio's own patient without Flex: the steps stay (Basic); demonstrations and
   // logging are replaced by the upgrade card. The server refuses them too (patientPlans.ts).
@@ -288,6 +293,7 @@ export function ProgramPlayer({
   const [selected, setSelected] = useState(0)
   const [rep, setRep] = useState(0)
   const [guided, setGuided] = useState(false)
+  const [coachOpen, setCoachOpen] = useState(false)
   const [logOpen, setLogOpen] = useState(false)
   // The 3D demonstration is actually playing (approved, loaded, not in low-data mode). The
   // viewer reports it on every change, including when it mounts for the next exercise.
@@ -298,6 +304,8 @@ export function ProgramPlayer({
   // Education items have no dose, so there is nothing to count through
   const dosed = item && item.sets !== null && item.reps !== null ? { ...item, sets: item.sets, reps: item.reps } : null
   const done = useMemo(() => new Set(doneToday), [doneToday])
+  // The camera coach follows a few exercises so far (lib/motion/exercises.ts)
+  const motion = !readOnly && !locked && coach && !isEducation ? motionExerciseForClip(item?.clipId) : null
   // Education is read, not logged, so it doesn't count towards "done today"
   const exerciseItems = program.items.filter((it) => it.kind !== 'education')
   const doneCount = exerciseItems.filter((it) => done.has(it.index)).length
@@ -306,6 +314,7 @@ export function ProgramPlayer({
   useEffect(() => {
     setRep(0)
     setGuided(false)
+    setCoachOpen(false)
   }, [selected])
 
   const choose = (index: number) => {
@@ -436,6 +445,11 @@ export function ProgramPlayer({
                 url={youtubeIdFrom(item.exercise.videoUrl) ? undefined : item.exercise.videoUrl}
                 className="rounded-3xl"
               />
+            ) : item.clipId && coachOpen ? (
+              // The camera coach has its own 3D coach; one WebGL scene at a time on small phones
+              <div className="relative aspect-square max-h-[min(72vh,620px)] w-full overflow-hidden rounded-3xl bg-rh-honeydew dark:bg-white/[0.04]">
+                <Image src={posterUrl(item.clipId)} alt={item.name} fill sizes="(max-width: 1024px) 100vw, 640px" className="object-contain p-4" draggable={false} />
+              </div>
             ) : item.clipId ? (
               <ExerciseViewer
                 clipId={item.clipId}
@@ -485,7 +499,12 @@ export function ProgramPlayer({
                   </div>
                 </div>
                 {!readOnly && !isEducation && !locked && (
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-2">
+                    {motion && item.clipId && (
+                      <Button variant="outline" className="rounded-xl" onClick={() => setCoachOpen(true)}>
+                        <Camera className="mr-1.5 h-4 w-4" /> Camera coach
+                      </Button>
+                    )}
                     {/* Guided sets count reps from the animation, so they need the 3D demonstration playing */}
                     {item.animated && playing3d && dosed && !guided && (
                       <Button variant="outline" className="rounded-xl" onClick={() => setGuided(true)}>
@@ -541,6 +560,26 @@ export function ProgramPlayer({
       </div>
 
       <LogDialog item={item} open={logOpen && !locked} onOpenChange={setLogOpen} onSubmit={log} />
+
+      {coachOpen && coach && motion && item?.clipId && (
+        <CameraCoach
+          coach={coach}
+          clipId={item.clipId}
+          exercise={motion}
+          name={item.name}
+          itemIndex={item.index}
+          plan={{ sets: item.sets ?? 1, reps: item.reps ?? 10 }}
+          requestGrant={requestGrant}
+          onSaved={() => {
+            setCoachOpen(false)
+            playSound('success')
+            toast.success('Session saved. Your physio can see it.')
+            // Pain and effort go in the usual log, so high pain still alerts the physio
+            if (onLog) setLogOpen(true)
+          }}
+          onClose={() => setCoachOpen(false)}
+        />
+      )}
     </div>
   )
 }
