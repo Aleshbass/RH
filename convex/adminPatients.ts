@@ -18,6 +18,7 @@ import { closeCareSignal } from "./helpers/careSignals";
 import { insertNotification } from "./helpers/pushNotify";
 import { appLink } from "./helpers/appUrl";
 import { factsRow, patientFacts, personName, reachableEmail } from "./helpers/patientFacts";
+import { recentPatientViews } from "./helpers/patientViews";
 import { isJoyProviderEligible } from "./helpers/joyPricing";
 import { zoneForArea } from "./helpers/rehabifyPricing";
 import { controlledTags } from "./joyIntegration";
@@ -198,6 +199,13 @@ export const record = query({
       upcoming: await Promise.all(upcoming.map(sessionRow)),
       past: await Promise.all(past.map(sessionRow)),
       journey: journey.map((e) => ({ stage: e.stage, occurredAt: e.occurredAt, note: e.note ?? null, source: e.source })),
+      // Physio profiles they opened on Find a Physio, newest first
+      viewedPhysios: await recentPatientViews(ctx, user._id, 8),
+      // Their latest "Help me choose a physio" answers
+      helpRequest: (() => {
+        const asked = signals.filter((s) => s.kind === "help_choosing" && s.request).sort((a, b) => b.createdAt - a.createdAt)[0];
+        return asked?.request ? { ...asked.request, askedAt: asked.createdAt, open: asked.status === "open" } : null;
+      })(),
       signals: signals
         .sort((a, b) => b.createdAt - a.createdAt)
         .slice(0, 6)

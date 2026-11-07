@@ -17,6 +17,7 @@ import { appLink } from "./helpers/appUrl";
 import { lagosDateTime, lagosTime } from "./helpers/lagosTime";
 import { requireAdmin } from "./helpers/partnerAccess";
 import { factsRow, patientFacts, personName } from "./helpers/patientFacts";
+import { recentPatientViews, recordPatientView, validPhysioIds } from "./helpers/patientViews";
 import { insertNotification } from "./helpers/pushNotify";
 import { getService } from "../lib/rehabify-services";
 
@@ -104,7 +105,8 @@ async function nudgePhysio(ctx: MutationCtx, booking: Doc<"marketplaceBookings">
 
 /** Find a Physio: a signed-in patient browsing without a recent booking (once a day per patient). */
 export const noteBrowsing = mutation({
-  args: { looking: v.optional(v.string()) },
+  // viewed: physio profiles opened in this browser, maybe before they signed in
+  args: { looking: v.optional(v.string()), viewed: v.optional(v.array(v.string())) },
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) return { noted: false };
@@ -113,6 +115,20 @@ export const noteBrowsing = mutation({
       .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
       .unique();
     if (!user || user.role !== "patient") return { noted: false };
+    for (const physioId of await validPhysioIds(ctx, args.viewed)) {
+      const seen = await ctx.db
+        .query("patientPhysioViews")
+        .withIndex("by_patient_and_physio", (q) => q.eq("patientId", user._id).eq("physiotherapistId", physioId))
+        .first();
+      if (!seen) await recordPatientView(ctx, user._id, physioId);
+    }
+    // They already asked for help choosing: that item says more than "browsing"
+    const asked = await ctx.db
+      .query("careSignals")
+      .withIndex("by_patient_kind", (q) => q.eq("patientId", user._id).eq("kind", "help_choosing"))
+      .order("desc")
+      .first();
+    if (asked?.status === "open") return { noted: false };
     const recent = await ctx.db
       .query("marketplaceBookings")
       .withIndex("by_patient", (q) => q.eq("patientId", user._id))
@@ -260,7 +276,7 @@ export const sweep = internalMutation({
 // Admin
 // ─────────────────────────────────────────────────────────────────────────────
 
-const KIND_ORDER: Record<string, number> = { awaiting_physio: 0, joy_matching: 1, no_physio: 2, unpaid_checkout: 3, browsing: 4 };
+const KIND_ORDER: Record<string, number> = { awaiting_physio: 0, help_choosing: 1, joy_matching: 2, no_physio: 3, unpaid_checkout: 4, browsing: 5 };
 
 /** Open signals (most urgent first) and the last day's handled ones. */
 export const adminList = query({
@@ -288,6 +304,12 @@ export const adminList = query({
       const patient = signal.patientId ? await ctx.db.get(signal.patientId) : null;
       // Who they are and what they need, so the team can act without phoning first
       const facts = patient && patient.role === "patient" ? factsRow(await patientFacts(ctx, patient, physioName)) : null;
+      // Who they were considering: their own record, else what the browser sent with a guest request
+      const viewed = patient
+        ? (await recentPatientViews(ctx, patient._id, 5)).map((v) => ({ physioId: v.physioId, name: v.name, at: v.lastViewedAt }))
+        : await Promise.all(
+            (signal.request?.viewedPhysioIds ?? []).slice(0, 5).map(async (id) => ({ physioId: id, name: await physioName(id), at: null as number | null }))
+          );
       const physio = signal.physiotherapistId ? await ctx.db.get(signal.physiotherapistId) : null;
       const booking = signal.bookingId ? await ctx.db.get(signal.bookingId) : null;
       const handler = signal.handledBy ? await ctx.db.get(signal.handledBy) : null;
@@ -308,6 +330,8 @@ export const adminList = query({
           email: facts?.email ?? booking?.guestEmail ?? null,
         },
         facts,
+        request: signal.request ?? null,
+        viewed,
         // Joy patients stay under Joy whatever stage they reach (a Joy booking waiting on a physio too)
         fromJoy: Boolean(facts?.fromJoy || booking?.joyServiceMode || signal.kind === "joy_matching"),
         physio: physio ? { userId: physio._id, name: [physio.firstName, physio.lastName].filter(Boolean).join(" ") || "Physiotherapist", phone: physio.phoneNumber ?? null } : null,

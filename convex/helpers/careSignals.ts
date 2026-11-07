@@ -8,7 +8,7 @@ import type { MutationCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
 import { insertNotification } from "./pushNotify";
 
-export type CareSignalKind = "awaiting_physio" | "unpaid_checkout" | "joy_matching" | "browsing" | "no_physio";
+export type CareSignalKind = "awaiting_physio" | "unpaid_checkout" | "joy_matching" | "browsing" | "no_physio" | "help_choosing";
 
 const DAY = 24 * 60 * 60 * 1000;
 export const CARE_QUEUE_PATH = "/dashboard/admin/care-queue";
@@ -19,6 +19,7 @@ const TITLES: Record<CareSignalKind, string> = {
   joy_matching: "Patient looking for a physio on Joy",
   browsing: "Patient browsing Find a Physio",
   no_physio: "New patient with no physio yet",
+  help_choosing: "Patient asked for help choosing a physio",
 };
 
 const PRIORITY: Record<CareSignalKind, "urgent" | "high" | "medium" | "low"> = {
@@ -27,6 +28,7 @@ const PRIORITY: Record<CareSignalKind, "urgent" | "high" | "medium" | "low"> = {
   joy_matching: "medium",
   browsing: "low",
   no_physio: "medium",
+  help_choosing: "high",
 };
 
 export type CareSignalInput = {
@@ -40,6 +42,8 @@ export type CareSignalInput = {
   detail: string;
   /** When the physio must answer by (awaiting_physio) */
   dueAt?: number;
+  /** "Help me choose a physio" answers (help_choosing) */
+  request?: Doc<"careSignals">["request"];
 };
 
 async function openSignalFor(ctx: MutationCtx, input: CareSignalInput): Promise<Doc<"careSignals"> | null> {
@@ -67,7 +71,7 @@ async function whoLabel(ctx: MutationCtx, input: CareSignalInput) {
   return patient?.patientNumber ?? input.guestName?.trim() ?? "A patient";
 }
 
-async function alertAdmins(ctx: MutationCtx, kind: CareSignalKind, body: string) {
+export async function alertAdmins(ctx: MutationCtx, kind: CareSignalKind, body: string) {
   const admins = await ctx.db
     .query("users")
     .withIndex("by_role", (q) => q.eq("role", "admin"))
@@ -98,6 +102,7 @@ export async function raiseCareSignal(ctx: MutationCtx, input: CareSignalInput) 
       lastSeenAt: now,
       ...(input.dueAt !== undefined ? { dueAt: input.dueAt } : {}),
       ...(input.physiotherapistId ? { physiotherapistId: input.physiotherapistId } : {}),
+      ...(input.request ? { request: input.request } : {}),
     });
     // A checkout that's now paid and waiting on the physio is new news for the team
     if (changed) await alertAdmins(ctx, input.kind, `${who}: ${input.detail}`);
@@ -123,6 +128,7 @@ export async function raiseCareSignal(ctx: MutationCtx, input: CareSignalInput) 
     guestPhone: input.guestPhone?.slice(0, 40),
     detail: input.detail.slice(0, 240),
     dueAt: input.dueAt,
+    request: input.request,
     createdAt: now,
     lastSeenAt: now,
   });

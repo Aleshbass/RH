@@ -12,6 +12,7 @@ import { joyWhatsAppUrl } from "@/lib/joyWhatsApp";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { CareBrowsingSignal } from "@/components/marketplace/CareBrowsingSignal";
+import { HelpMeChoose } from "@/components/marketplace/HelpMeChoose";
 
 type ViewMode = "list" | "map";
 
@@ -113,6 +114,9 @@ export default function FindAPhysioPage() {
             </button>
           )}
         </div>
+
+        {/* Three questions; the care team matches them (convex/findHelp.ts) */}
+        <HelpMeChoose />
       </section>
 
       <section className="mx-auto max-w-7xl px-4 pb-16 sm:px-6 lg:px-8">

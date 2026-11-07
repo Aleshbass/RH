@@ -15,7 +15,7 @@ import { cn } from '@/lib/utils'
 import { ContactButtons, SourceTags } from './PatientBits'
 import { EditDetails } from './EditDetails'
 import { SuggestedPhysios } from './SuggestedPhysios'
-import { FORMAT_LABEL, MISSING_LABEL, patientApi, placeText, type PatientRecord } from './patientApi'
+import { FORMAT_LABEL, HELP_FORMAT_LABEL, MISSING_LABEL, patientApi, placeText, type PatientRecord } from './patientApi'
 
 const sectionTitle = 'text-sm font-semibold text-rh-ink dark:text-white'
 const muted = 'text-xs text-neutral-500 dark:text-neutral-400'
@@ -65,6 +65,7 @@ const SIGNAL_LABEL: Record<string, string> = {
   joy_matching: 'Joy, needs a physio',
   browsing: 'Browsing Find a Physio',
   no_physio: 'No physio yet',
+  help_choosing: 'Asked for help choosing',
 }
 
 const when = (t: number) => format(t, 'd MMM yyyy, h:mmaaa')
@@ -240,6 +241,14 @@ function Body({ record, onOpenPhysio }: { record: PatientRecord; onOpenPhysio: (
         </Section>
 
         <Section title="What they need">
+          {record.helpRequest && (
+            <p className="rounded-xl bg-rh-honeydew px-3 py-2 text-sm text-rh-ink dark:bg-white/[0.06] dark:text-white">
+              <strong>Asked for help choosing a physio</strong> {formatDistanceToNowStrict(record.helpRequest.askedAt, { addSuffix: true })}:{' '}
+              {[record.helpRequest.complaint, HELP_FORMAT_LABEL[record.helpRequest.format], [record.helpRequest.area, record.helpRequest.state].filter(Boolean).join(', ')]
+                .filter(Boolean)
+                .join(' · ')}
+            </p>
+          )}
           <dl className="grid grid-cols-2 gap-x-4 gap-y-3">
             <Fact label="Main complaint" wide>{record.complaint ?? notGiven}</Fact>
             <Fact label="Video or home visit">{record.format ? FORMAT_LABEL[record.format] : notGiven}</Fact>
@@ -312,6 +321,24 @@ function Body({ record, onOpenPhysio }: { record: PatientRecord; onOpenPhysio: (
             <SuggestedPhysios record={record} onOpenPhysio={onOpenPhysio} />
           </div>
         </Section>
+
+        {record.viewedPhysios.length > 0 && (
+          <Section title="Physios they looked at">
+            <ul className="space-y-1.5">
+              {record.viewedPhysios.map((v) => (
+                <li key={v.physioId} className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                  <button type="button" onClick={() => onOpenPhysio(v.physioId)} className="font-medium text-rh-ink underline-offset-2 hover:underline dark:text-white">
+                    {v.name}
+                  </button>
+                  <span className={muted}>
+                    {v.count > 1 ? `opened ${v.count} times · ` : ''}last {formatDistanceToNowStrict(v.lastViewedAt, { addSuffix: true })}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <p className={muted}>Profiles they opened on Find a Physio. A good place to start when pairing them.</p>
+          </Section>
+        )}
 
         {record.referrals.length > 0 && (
           <Section title="Referrals">

@@ -135,6 +135,7 @@ export function SuggestedPhysios({ record, onOpenPhysio }: { record: PatientReco
                         <span className="font-normal text-neutral-500"> · {p.booked7d} booked this week · {p.recentReferrals} referral{p.recentReferrals === 1 ? '' : 's'} in 30 days</span>
                       </span>
                       <span className="mt-1.5 flex flex-wrap gap-1">
+                        {record.viewedPhysios.some((v) => v.physioId === p.userId) && <StatusBadge tone="teal">They looked at this profile</StatusBadge>}
                         {p.fits.map((f) => (
                           <StatusBadge key={f} tone="green">{f}</StatusBadge>
                         ))}

@@ -11,6 +11,7 @@
 import { v } from "convex/values";
 import { query, mutation, internalQuery } from "../_generated/server";
 import { isPhysioNetworkEligible, offersServiceMode, recordProfileView, servesRehabifyNetwork } from "../physioSetup";
+import { recordPatientView } from "../helpers/patientViews";
 import { BOOKABLE_SERVICE_IDS, getService, isBookableServiceId } from "../../lib/rehabify-services";
 
 /** Public coordinates are rounded to about 1 km so a physio's home or clinic address isn't exposed. */
@@ -386,6 +387,18 @@ export const incrementProfileView = mutation({
     }
 
     await recordProfileView(ctx, args.physiotherapistId);
+
+    // A signed-in patient: note who they looked at, so the care team can help them choose
+    const identity = await ctx.auth.getUserIdentity();
+    if (identity) {
+      const viewer = await ctx.db
+        .query("users")
+        .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+        .unique();
+      if (viewer?.role === "patient" && viewer._id !== args.physiotherapistId) {
+        await recordPatientView(ctx, viewer._id, args.physiotherapistId);
+      }
+    }
 
     return { success: true };
   },

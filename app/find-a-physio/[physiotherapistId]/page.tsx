@@ -13,6 +13,7 @@ import ReviewsList from "@/components/marketplace/ReviewsList";
 import RatingBreakdown from "@/components/marketplace/RatingBreakdown";
 import { cn } from "@/lib/utils";
 import { PublicProof } from "@/components/outcomes/PublicProof";
+import { rememberViewedPhysio } from "@/lib/viewedPhysios";
 
 function titleCase(value: string): string {
   return value.toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase());
@@ -44,6 +45,8 @@ export default function PhysiotherapistProfilePage() {
 
   useEffect(() => {
     if (!profile) return;
+    // Remembered on this device so "Help me choose a physio" can tell the care team who they looked at
+    rememberViewedPhysio(physiotherapistId);
     try {
       const key = `viewed_${physiotherapistId}`;
       const seen = sessionStorage.getItem(key);

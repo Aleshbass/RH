@@ -377,7 +377,23 @@ export default defineSchema({
   // Joy triage/matching, and signed-in patients browsing Find a Physio. The team is alerted and helps.
   careSignals: defineTable({
     // no_physio: a patient who signed up on the website with nobody linked to them (careQueue.sweep)
-    kind: v.union(v.literal("awaiting_physio"), v.literal("unpaid_checkout"), v.literal("joy_matching"), v.literal("browsing"), v.literal("no_physio")),
+    // help_choosing: answered "Help me choose a physio" on Find a Physio (findHelp.ts)
+    kind: v.union(
+      v.literal("awaiting_physio"),
+      v.literal("unpaid_checkout"),
+      v.literal("joy_matching"),
+      v.literal("browsing"),
+      v.literal("no_physio"),
+      v.literal("help_choosing")
+    ),
+    // What they told us in "Help me choose a physio" (guests have no record to save it to)
+    request: v.optional(v.object({
+      complaint: v.string(),
+      format: v.union(v.literal("online"), v.literal("home_visit"), v.literal("either")),
+      state: v.optional(v.string()),
+      area: v.optional(v.string()),
+      viewedPhysioIds: v.optional(v.array(v.id("users"))),
+    })),
     status: v.union(v.literal("open"), v.literal("handled")),
     patientId: v.optional(v.id("users")),
     bookingId: v.optional(v.id("marketplaceBookings")),
@@ -994,6 +1010,18 @@ export default defineSchema({
     userId: v.id("users"),
     count: v.number(),
   }).index("by_user_id", ["userId"]),
+
+  // Which physio profiles a signed-in patient opened on Find a Physio, so the care team can see
+  // who they were considering (marketplace/search.incrementProfileView, findHelp.ts)
+  patientPhysioViews: defineTable({
+    patientId: v.id("users"),
+    physiotherapistId: v.id("users"),
+    firstViewedAt: v.number(),
+    lastViewedAt: v.number(),
+    count: v.number(),
+  })
+    .index("by_patient_and_physio", ["patientId", "physiotherapistId"])
+    .index("by_patient", ["patientId", "lastViewedAt"]),
 
   notifications: defineTable({
     userId: v.id("users"),

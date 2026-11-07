@@ -9,8 +9,9 @@
 import { useEffect } from 'react'
 import { useConvexAuth, useMutation } from 'convex/react'
 import { makeFunctionReference } from 'convex/server'
+import { viewedPhysioIds } from '@/lib/viewedPhysios'
 
-const noteBrowsingRef = makeFunctionReference<'mutation', { looking?: string }, { noted: boolean }>('careQueue:noteBrowsing')
+const noteBrowsingRef = makeFunctionReference<'mutation', { looking?: string; viewed?: string[] }, { noted: boolean }>('careQueue:noteBrowsing')
 const SESSION_KEY = 'rh_care_browsing_noted'
 const AFTER_MS = 20_000
 
@@ -31,7 +32,9 @@ export function CareBrowsingSignal({ looking }: { looking?: string }) {
       } catch {
         // ignore
       }
-      void noteBrowsing({ looking: looking?.trim() || undefined }).catch(() => undefined)
+      // With the profiles opened on this device, maybe before they signed in
+      const viewed = viewedPhysioIds()
+      void noteBrowsing({ looking: looking?.trim() || undefined, viewed: viewed.length ? viewed : undefined }).catch(() => undefined)
     }, AFTER_MS)
     return () => window.clearTimeout(timer)
     // Once per visit: later search changes don't re-send

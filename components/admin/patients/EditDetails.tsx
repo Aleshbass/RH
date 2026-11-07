@@ -13,13 +13,9 @@ import { inputClass, primaryButtonClass, softButtonClass } from '@/components/ad
 import { errorMessage } from '@/components/partners/portal/shared'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
+import { NIGERIAN_STATES } from '@/lib/nigerianStates'
 import { patientApi, type CareFormat, type DetailsPatch, type PatientRecord } from './patientApi'
 
-const NIGERIAN_STATES = [
-  'Abia', 'Adamawa', 'Akwa Ibom', 'Anambra', 'Bauchi', 'Bayelsa', 'Benue', 'Borno', 'Cross River', 'Delta', 'Ebonyi', 'Edo',
-  'Ekiti', 'Enugu', 'FCT', 'Gombe', 'Imo', 'Jigawa', 'Kaduna', 'Kano', 'Katsina', 'Kebbi', 'Kogi', 'Kwara', 'Lagos', 'Nasarawa',
-  'Niger', 'Ogun', 'Ondo', 'Osun', 'Oyo', 'Plateau', 'Rivers', 'Sokoto', 'Taraba', 'Yobe', 'Zamfara',
-]
 const LANGUAGES = ['English', 'Pidgin', 'Yoruba', 'Igbo', 'Hausa']
 const NONE = '__none'
 

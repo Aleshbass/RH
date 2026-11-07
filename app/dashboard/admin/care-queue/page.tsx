@@ -1,7 +1,8 @@
 'use client'
 
 /**
- * Patients looking for care: paid patients waiting on a physio, unpaid checkouts, patients Joy has
+ * Patients looking for care: paid patients waiting on a physio, people who asked for help choosing
+ * a physio on Find a Physio, unpaid checkouts, patients Joy has
  * triaged or couldn't match, new sign-ups nobody is linked to, and signed-in patients browsing
  * Find a Physio. Each row shows what we know about the patient; opening it shows everything,
  * lets the team fill the gaps after a call, and suggests physios to pair them with
@@ -19,11 +20,11 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { AdminPage, EmptyState, FilterChips, PageHeader, Panel, StatTile, StatusBadge, primaryButtonClass, softButtonClass } from '@/components/admin/ui'
 import { ContactButtons, FactsLine, SourceTags } from '@/components/admin/patients/PatientBits'
 import { PatientSheet } from '@/components/admin/patients/PatientSheet'
-import type { PatientFactsRow } from '@/components/admin/patients/patientApi'
+import { HELP_FORMAT_LABEL, type HelpRequest, type PatientFactsRow } from '@/components/admin/patients/patientApi'
 import { PhysioSheet } from '@/components/admin/physios/PhysioSheet'
 import { cn } from '@/lib/utils'
 
-type Kind = 'awaiting_physio' | 'unpaid_checkout' | 'joy_matching' | 'browsing' | 'no_physio'
+type Kind = 'awaiting_physio' | 'unpaid_checkout' | 'joy_matching' | 'browsing' | 'no_physio' | 'help_choosing'
 type Row = {
   id: string
   kind: Kind
@@ -34,6 +35,8 @@ type Row = {
   dueAt: number | null
   patient: { userId: string | null; name: string | null; rehabifyId: string | null; phone: string | null; email: string | null }
   facts: PatientFactsRow | null
+  request: HelpRequest | null
+  viewed: { physioId: string; name: string; at: number | null }[]
   fromJoy: boolean
   physio: { userId: string; name: string; phone: string | null } | null
   booking: { id: string; line: string; paid: boolean; awaitingPhysio: boolean; nudges: number } | null
@@ -50,6 +53,7 @@ const nudgeRef = makeFunctionReference<'mutation', { signalId: string }, { ok: b
 
 const KIND: Record<Kind, { label: string; tone: 'red' | 'amber' | 'teal' | 'neutral' }> = {
   awaiting_physio: { label: 'Paid · waiting on physio', tone: 'red' },
+  help_choosing: { label: 'Asked for help choosing', tone: 'red' },
   joy_matching: { label: 'Joy · needs a physio', tone: 'amber' },
   no_physio: { label: 'No physio yet', tone: 'amber' },
   unpaid_checkout: { label: 'Started · not paid', tone: 'teal' },
@@ -86,6 +90,7 @@ export default function CareQueuePage() {
       open,
       handled: all.filter((r) => r.status === 'handled'),
       awaiting_physio: open.filter((r) => r.kind === 'awaiting_physio'),
+      help_choosing: open.filter((r) => r.kind === 'help_choosing'),
       // Everyone who came through Joy, whatever stage they're stuck at
       joy: open.filter((r) => r.fromJoy),
       no_physio: open.filter((r) => r.kind === 'no_physio'),
@@ -115,19 +120,25 @@ export default function CareQueuePage() {
       />
 
       {rows === undefined ? (
-        <div className="grid gap-3 sm:grid-cols-5">
-          {[0, 1, 2, 3, 4].map((i) => (
+        <div className="grid gap-3 sm:grid-cols-3">
+          {[0, 1, 2, 3, 4, 5].map((i) => (
             <Skeleton key={i} className="h-28 rounded-2xl" />
           ))}
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
             <StatTile
               label="Paid, waiting on physio"
               value={groups.awaiting_physio.length}
               hint="Physios are nudged automatically"
               tone={groups.awaiting_physio.length ? 'attention' : 'default'}
+            />
+            <StatTile
+              label="Asked for help choosing"
+              value={groups.help_choosing.length}
+              hint="Answered the 3 questions on Find a Physio"
+              tone={groups.help_choosing.length ? 'attention' : 'default'}
             />
             <StatTile label="From Joy" value={groups.joy.length} hint="Any stage: triaged, matched, booking" />
             <StatTile label="No physio yet" value={groups.no_physio.length} hint="Signed up, nobody linked" />
@@ -143,6 +154,7 @@ export default function CareQueuePage() {
                 options={[
                   { value: 'open', label: 'All open', count: groups.open.length },
                   { value: 'awaiting_physio', label: 'Waiting on physio', count: groups.awaiting_physio.length },
+                  { value: 'help_choosing', label: 'Asked for help', count: groups.help_choosing.length },
                   { value: 'joy', label: 'Joy', count: groups.joy.length },
                   { value: 'no_physio', label: 'No physio yet', count: groups.no_physio.length },
                   { value: 'unpaid_checkout', label: 'Not paid', count: groups.unpaid_checkout.length },
@@ -189,6 +201,31 @@ export default function CareQueuePage() {
                           {row.patient.rehabifyId && <span className="ml-2 font-mono text-xs font-normal text-neutral-500">{row.patient.rehabifyId}</span>}
                         </p>
                         {row.facts && <FactsLine facts={row.facts} className="mt-1" />}
+                        {!row.facts && row.request && (
+                          <p className="mt-1 text-sm text-rh-ink/85 dark:text-white/85">
+                            {[row.request.complaint, HELP_FORMAT_LABEL[row.request.format], [row.request.area, row.request.state].filter(Boolean).join(', ')]
+                              .filter(Boolean)
+                              .join(' · ')}
+                          </p>
+                        )}
+                        {!row.patient.userId && row.kind === 'help_choosing' && (
+                          <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+                            Not signed in: contact them on WhatsApp, then book them through Joy or a physio&apos;s booking link.
+                          </p>
+                        )}
+                        {row.viewed.length > 0 && (
+                          <p className="mt-1 text-xs text-neutral-600 dark:text-neutral-300">
+                            Looked at:{' '}
+                            {row.viewed.map((v, i) => (
+                              <span key={v.physioId}>
+                                {i > 0 ? ', ' : ''}
+                                <button type="button" onClick={() => setPhysioId(v.physioId)} className="font-medium text-rh-ink underline-offset-2 hover:underline dark:text-white">
+                                  {v.name}
+                                </button>
+                              </span>
+                            ))}
+                          </p>
+                        )}
                         <p className="mt-1 text-xs text-neutral-600 dark:text-neutral-300">{row.detail}</p>
                         {(row.booking || row.physio || (row.facts && row.facts.physios.length > 0)) && (
                           <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">

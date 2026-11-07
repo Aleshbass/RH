@@ -103,7 +103,23 @@ export type PatientRecord = Omit<PatientFactsRow, 'physios'> & {
   past: { id: string; startTime: number; status: string; online: boolean; physioName: string | null }[]
   journey: { stage: string; occurredAt: number; note: string | null; source: string }[]
   signals: { id: string; kind: string; status: 'open' | 'handled'; detail: string; createdAt: number; handledNote: string | null }[]
+  viewedPhysios: ViewedPhysio[]
+  helpRequest: (HelpRequest & { askedAt: number; open: boolean }) | null
 }
+
+/** A physio profile the patient opened on Find a Physio. */
+export type ViewedPhysio = { physioId: Id<'users'>; name: string; lastViewedAt: number; count: number }
+
+/** Answers to "Help me choose a physio" (convex/findHelp.ts). */
+export type HelpRequest = {
+  complaint: string
+  format: 'online' | 'home_visit' | 'either'
+  state?: string
+  area?: string
+  viewedPhysioIds?: Id<'users'>[]
+}
+
+export const HELP_FORMAT_LABEL: Record<HelpRequest['format'], string> = { online: 'Video', home_visit: 'Home visit', either: 'Video or home visit' }
 
 export type SuggestedPhysio = {
   userId: Id<'users'>
