@@ -149,7 +149,7 @@ const TOOLS: Tool[] = [
   {
     title: "Exercise programmes patients actually follow",
     body: "Build programmes from our 3D exercise library. Patients see clear demonstrations at home.",
-    note: "New: camera coach tracks reps and form (beta)",
+    note: "New: 3D motion tracking for reps and form",
     visual: (
       <Image src={posterUrl("mini-squat")} alt="A mini squat from the Rehabify 3D exercise library" fill sizes="(min-width: 1024px) 360px, 84vw" className="bg-white object-contain p-3" />
     ),
