@@ -234,24 +234,18 @@ def treatment_options_prompt(summary: str) -> str:
 
 def initial_consultation_offer() -> str:
     """Explain the single GREEN-path consultation before creating its booking."""
+    # Shortened Nov 2026; the facts are unchanged: price, online only, what the clinician does, not
+    # a full physiotherapy consultation, home visits after, and why it comes first.
     return (
-        "Thanks — you’re all set.\n\n"
-        "Initial Consultation with a Clinician — ₦6,000\n\n"
-        "📱 This is an online video call, not a home visit. Nobody will come to your house: you join from your "
-        "phone using a secure link I’ll send you here. It’s short, and it makes sure you’re speaking to the right "
-        "clinician and getting the right next step.\n\n"
-        "During the consultation, the clinician will:\n"
-        "• understand your problem in more detail\n"
-        "• review your symptoms and concerns\n"
-        "• provide initial advice\n"
-        "• decide whether an MSK physiotherapist is appropriate\n"
-        "• recommend the most appropriate next step\n"
-        "• refer you elsewhere if another type of clinician would be more appropriate\n\n"
+        "Thanks. Here’s your next step:\n\n"
+        "*Initial Consultation with a Clinician — ₦6,000*\n\n"
+        "📱 This is a short online video call, not a home visit. Nobody will come to your house: you join "
+        "from your phone with a secure link I’ll send you here.\n\n"
+        "The clinician will go through your problem, give initial advice, and recommend the right next step: "
+        "an MSK physiotherapist if that’s appropriate, or another type of clinician if that would suit you better.\n\n"
         "This is not a full physiotherapy consultation. If you need hands-on care, the clinician will recommend "
-        "it, and home visits can be arranged after this call.\n\n"
-        "We offer this first because we don’t want you paying for a full consultation when you may need a "
-        "different type of care.\n\n"
-        "Would you like to continue with the ₦6,000 online Initial Consultation?\n\n"
+        "it, and home visits can be arranged after this call. We start here so you don’t pay for a full "
+        "consultation when you may need a different type of care.\n\n"
         "Reply Yes to continue."
     )
 
@@ -265,8 +259,7 @@ def booking_policy_acceptance_prompt(context: dict) -> str:
         return (
             "Before we arrange your consultation, please review and accept our booking policy."
             f"{link}\n\n"
-            "Reply with ‘I accept’ when you are ready to continue. Once you’ve accepted it, I’ll show you "
-            "the available consultation options."
+            "Reply ‘I accept’ when you’re ready, and I’ll show you the consultation details."
         )
     return (
         f"Please review the Consultation & Booking Policy{f': {url}' if url else ' above'}, then reply ‘I accept’ "
@@ -384,7 +377,7 @@ def begin_selected_treatment(
         )
     return (
         f"Your {config['label'].casefold()} booking is ready. "
-        "Please reply with the email address you want to use for your secure payment receipt."
+        "Which email address should I send your secure payment receipt to?"
     )
 
 
@@ -912,7 +905,7 @@ def _continue_rh_slot(session: Session, conversation: Conversation, patient: Pat
             f"Your time is held. Shall I send your secure payment receipt to {known_email}? "
             "Reply YES, or send a different email address."
         )
-    return "Your time is held. Please reply with the email address you want to use for your secure payment receipt."
+    return "Your time is held. Which email address should I send your secure payment receipt to?"
 
 
 _USE_EMAIL = {"yes", "y", "yes please", "ok", "okay", "yes, use it", "use it", "use that", "use that email", "correct", "sure"}
@@ -974,8 +967,11 @@ def _continue_rh_payment_email(session: Session, conversation: Conversation, pat
            payload={"decision": "rh_pending_payment_created", "rh_booking_id": str(booking_id)})
     amount = _amount_text(ctx)
     if ctx.get("booking_route") == "admin_scheduled_virtual":
-        return f"Your virtual consultation booking is ready.{amount} Complete payment securely here: {payment.authorization_url}"
-    return f"Your time is held.{amount} Complete payment securely here: {payment.authorization_url}"
+        return (
+            f"Your virtual consultation booking is ready.{amount} Pay securely here: {payment.authorization_url}\n\n"
+            "I’ll message you as soon as your payment comes through."
+        )
+    return f"Your time is held.{amount} Pay securely here: {payment.authorization_url}"
 
 
 def _amount_text(ctx: dict) -> str:

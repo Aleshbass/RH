@@ -50,11 +50,9 @@ SIGNUP_REQUEST_RE = re.compile(
 )
 
 WELCOME_WITH_FORM = (
-    "Hello 👋 Welcome to Rehabify.\n\n"
-    "Tap *Get started* to set up your profile in about a minute: your name, age and where you are, "
-    "so I don't have to ask later.\n\n"
-    "Or just tell me in your own words what's going on today: what's bothering you, which part of "
-    "your body, and how long you've had it. You can type or send a voice note.\n\n"
+    "Hello 👋 Welcome to Rehabify. I'm Joy.\n\n"
+    "Tap *Get started* to set up your profile in a minute, or just tell me what's going on: what's "
+    "bothering you, where, and for how long. You can type or send a voice note.\n\n"
     "Messaging for someone else? Just tell me who it's for."
 )
 SIGNUP_OFFER = (
@@ -62,15 +60,9 @@ SIGNUP_OFFER = (
     "any time by typing *update my details*."
 )
 WELCOME_WITHOUT_FORM = (
-    "Hello 👋 Welcome to Rehabify.\n\n"
-    "Could you tell me what’s going on today?\n\n"
-    "You can tell me:\n\n"
-    "• what’s bothering you\n"
-    "• which part of your body is affected\n"
-    "• how long you’ve had it\n"
-    "• whether you’ve seen anyone about it\n"
-    "• anything you’ve already tried\n\n"
-    "Just tell me in your own words. There’s no need to fill out a form.\n\n"
+    "Hello 👋 Welcome to Rehabify. I'm Joy.\n\n"
+    "What’s going on today? Tell me in your own words: what’s bothering you, where, for how long, "
+    "and anything you’ve tried. There’s no need to fill out a form, and a voice note is fine.\n\n"
     "Messaging for someone else? Just tell me who it's for."
 )
 FORM_UNAVAILABLE = (

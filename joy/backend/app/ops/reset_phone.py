@@ -9,7 +9,9 @@ is now asked for an MRTB number every time). For that phone it:
   sessions. The patient record itself stays.
 
 WhatsApp's visible chat history is not affected. Used by scripts/reset_phone.py and the internal
-endpoint POST /api/internal/ops/reset-phone (X-Internal-Key).
+endpoint POST /api/internal/ops/reset-phone (X-Internal-Key). Joy itself uses the physio part
+(``physio_removal_refusal`` and ``remove_physio_identity``) when someone in physio sign-up says they
+are a patient (app/identity/role_switch.py); that never touches the patient's own chats.
 """
 
 from __future__ import annotations
@@ -27,6 +29,7 @@ from app.models.payout import Payout
 from app.models.physiotherapist import Physiotherapist
 from app.models.relay import RelayThread
 from app.models.triage_session import TriageSession
+from app.models.types import Persona
 
 
 def normalize_phone(raw: str) -> str:
@@ -38,6 +41,44 @@ def normalize_phone(raw: str) -> str:
 
 def _count(session: Session, stmt) -> int:
     return session.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+
+
+def _physio_activity(session: Session, physio: Physiotherapist) -> tuple[int, int]:
+    bookings = _count(session, select(Booking.id).where(Booking.physio_id == physio.id))
+    payouts = _count(session, select(Payout.id).where(Payout.physio_id == physio.id))
+    return bookings, payouts
+
+
+def physio_removal_refusal(session: Session, physio: Physiotherapist) -> str | None:
+    """Why this physio identity must be kept, or None when it may be removed."""
+    if physio.verified or physio.onboarding_status == "verified":
+        return "the physio is verified"
+    bookings, payouts = _physio_activity(session, physio)
+    if bookings or payouts:
+        return "the physio has bookings or payouts"
+    return None
+
+
+def _delete_conversations(session: Session, conversation_ids: list) -> None:
+    if conversation_ids:
+        session.execute(delete(Message).where(Message.conversation_id.in_(conversation_ids)))
+        session.execute(delete(Conversation).where(Conversation.id.in_(conversation_ids)))
+
+
+def remove_physio_identity(session: Session, physio: Physiotherapist) -> None:
+    """Delete a physio identity and Joy's chats with it. Callers check ``physio_removal_refusal`` first.
+
+    Only the physio's own conversation goes: a patient record on the same number, and its chats and
+    triage, are left exactly as they were. Nothing is committed here.
+    """
+    conversation_ids = list(session.scalars(select(Conversation.id).where(
+        Conversation.person_id == physio.id, Conversation.persona == Persona.PHYSIO,
+    )).all())
+    _delete_conversations(session, conversation_ids)
+    session.execute(delete(AvailabilitySlot).where(AvailabilitySlot.physio_id == physio.id))
+    session.execute(update(RelayThread).where(RelayThread.physio_id == physio.id).values(physio_id=None))
+    session.delete(physio)
+    session.flush()
 
 
 def reset_phone(session: Session, raw_phone: str, *, apply: bool) -> dict:
@@ -61,8 +102,7 @@ def reset_phone(session: Session, raw_phone: str, *, apply: bool) -> dict:
         "refused": None,
     }
     if physio is not None:
-        bookings = _count(session, select(Booking.id).where(Booking.physio_id == physio.id))
-        payouts = _count(session, select(Payout.id).where(Payout.physio_id == physio.id))
+        bookings, payouts = _physio_activity(session, physio)
         report["physio"] = {
             "onboarding_status": physio.onboarding_status,
             "verified": bool(physio.verified),
@@ -70,22 +110,15 @@ def reset_phone(session: Session, raw_phone: str, *, apply: bool) -> dict:
             "bookings": bookings,
             "payouts": payouts,
         }
-        if physio.verified or physio.onboarding_status == "verified":
-            report["refused"] = "the physio is verified"
-        elif bookings or payouts:
-            report["refused"] = "the physio has bookings or payouts"
+        report["refused"] = physio_removal_refusal(session, physio)
     if report["refused"] or not apply:
         return report
 
-    if conversation_ids:
-        session.execute(delete(Message).where(Message.conversation_id.in_(conversation_ids)))
-        session.execute(delete(Conversation).where(Conversation.id.in_(conversation_ids)))
+    _delete_conversations(session, conversation_ids)
     if patient is not None:
         session.execute(delete(TriageSession).where(TriageSession.patient_id == patient.id))
     if physio is not None:
-        session.execute(delete(AvailabilitySlot).where(AvailabilitySlot.physio_id == physio.id))
-        session.execute(update(RelayThread).where(RelayThread.physio_id == physio.id).values(physio_id=None))
-        session.delete(physio)
+        remove_physio_identity(session, physio)
     session.commit()
     report["applied"] = True
     return report

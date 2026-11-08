@@ -186,8 +186,11 @@ def _admin_text(kind: str, payload: dict) -> str:
         )
     if kind == "callback":
         said = str(payload.get("text") or "").strip()
+        who = {
+            "patient": "Patient", "family": "Family member", "physiotherapist": "Physio", "partner": "Partner",
+        }.get(str(payload.get("role") or "patient"), "Someone")
         return (
-            f"Patient {payload.get('patient_id') or ''} asked on WhatsApp to speak to someone. "
+            f"{who} {payload.get('patient_id') or payload.get('person_id') or ''} asked on WhatsApp to speak to someone. "
             f"Call {payload.get('phone') or 'them'}." + (f' They wrote: "{said}"' if said else "")
         )
     if kind == "safety":

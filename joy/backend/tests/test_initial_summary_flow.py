@@ -14,7 +14,7 @@ from app.safety.escalation import specialist_review_offer
 from app.models.types import ConditionArea, ExtractedTriage
 
 
-def test_initial_summary_requires_an_explicit_confirmation_before_more_detail():
+def test_initial_summary_confirms_and_invites_changes_in_one_message():
     prompt = _triage_summary_prompt(
         ExtractedTriage(
             body_location="ankle",
@@ -25,9 +25,10 @@ def test_initial_summary_requires_an_explicit_confirmation_before_more_detail():
     ).lower()
 
     assert "ankle" in prompt
-    assert "is that correct" in prompt
-    assert "reply yes or no" in prompt
+    assert "reply *yes* if that’s right" in prompt
+    assert "tell me anything to change or add" in prompt
     assert "anything else" not in prompt
+    assert prompt.count("?") == 0
 
 
 def test_amber_is_deferred_only_while_the_initial_summary_can_still_change():

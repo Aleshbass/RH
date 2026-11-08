@@ -25,7 +25,7 @@ def _safety_cleared(extracted: ExtractedTriage) -> ExtractedTriage:
     })
 
 
-_SUMMARY_PROMPT = "just to make sure i’ve understood you correctly"
+_SUMMARY_PROMPT = "tell me anything to change or add"
 
 
 def _set_v1_flow(db_session, state, flow_state: str) -> None:
@@ -170,7 +170,7 @@ def test_green_policy_reminder_includes_the_policy_link_and_next_step():
 
     assert "Before we arrange your consultation" in reply
     assert "https://example.test/policy" in reply
-    assert "available consultation options" in reply
+    assert "Reply ‘I accept’" in reply
 
 
 def test_eight_item_safety_screen_accepts_number_only_concerning_answers():
@@ -501,10 +501,12 @@ def test_post_triage_accepts_common_confirm_phrases(
     fake_llm.reply = "should not loop the summary"
     result = handle_turn(db_session, patient_identity.phone_e164, confirm_text, fake_llm)
     lower = result.reply_text.lower()
-    assert "here's what i understood" not in lower
+    assert "here’s what i understood" not in lower
     assert _SUMMARY_PROMPT not in lower
-    # Confirmation moves on to the one open "anything else?" question.
-    assert "anything else about your problem" in lower
+    # Confirmation goes straight on: nothing is left to screen here, so to the consultation step
+    # (no separate "anything else?" question any more).
+    assert "anything else" not in lower
+    assert "initial consultation" in lower
 
 
 def test_mid_triage_moves_to_summary_after_safety_and_required_facts(

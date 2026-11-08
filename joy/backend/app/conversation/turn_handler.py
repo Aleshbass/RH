@@ -55,6 +55,27 @@ from app.family.relay import apply_pending_physio_answer, ask_physio, is_relay_a
 from app.partner.referral import apply_inbound_code, apply_partner_turn, maybe_provision_from_referral
 from app.identity.permissions import authorize
 from app.identity.resolver import resolve
+from app.identity.role_switch import (
+    PHYSIO_ESCAPE_HINT,
+    PHYSIO_LOCKED_REPLY,
+    PHYSIO_START_PREFIX,
+    PHYSIO_SIGNUP_REPLY,
+    PHYSIO_SIGNUP_URL,
+    ROLE_CHECK_KEY,
+    ROLE_QUESTION,
+    ROLE_QUESTION_RED_FLAG,
+    STAY_PHYSIO_PREFIX,
+    SWITCHED_PREFIX,
+    SWITCHED_WELCOME,
+    carries_patient_story,
+    is_onboarding_content,
+    is_patient_statement,
+    is_restart_request,
+    is_switchable_physio,
+    patient_says_physio,
+    role_choice,
+    writes_like_patient,
+)
 from app.identity.unknown_sender import (
     PHYSIO_SIGN_UP_REPLY,
     PHYSIO_USE_DASHBOARD_REPLY,
@@ -70,11 +91,13 @@ from app.booking.paystack_client import initialize_transaction
 from app.booking.step_help import booking_step_help
 from app.conversation.check_in import check_in_turn
 from app.exercises.questions import exercise_question_turn
-from app.conversation.human_request import human_request_reply, is_human_request
+from app.conversation.human_request import BOT_REPLY, human_request_reply, is_bot_question, is_human_request
+from app.conversation.interactive import reply_buttons
 from app.triage import self_referral as sr
 from app.triage.non_msk import infer_non_msk_area
 from app.api.internal.rh_safety_eligibility import EligibilityRequest, issue_eligibility_reference
 from app.models.admin import Admin
+from app.models.booking import Booking
 from app.models.conversation import Conversation
 from app.models.patient import Patient
 from app.models.physiotherapist import Physiotherapist
@@ -214,6 +237,7 @@ def _dashboard_link_reply(session: Session, identity: Identity) -> str:
     return dashboard_link_text(url)
 
 
+_PARTNER_PHONE_RE = re.compile(r"\+?\d[\d\s-]{9,}\d")
 _PHYSIO_BOOKING_REPLY_RE = re.compile(r"^\s*(?:ACCEPT|REJECT)\s+[A-Za-z0-9_-]{6,64}\s*$", re.IGNORECASE)
 # A legacy Joy-booked physio answering its alert without an ID ("accept", "declined")
 _LEGACY_PHYSIO_ANSWER_RE = re.compile(r"(?i)\b(?:accept(?:ed)?|declin(?:e|ed))\b")
@@ -1564,24 +1588,100 @@ def _can_skip_model_for_safety_reply(
     )
 
 
-def _triage_summary_prompt(extracted: ExtractedTriage) -> str:
+_SUMMARY_PREFIX = "Here's what I understood:"
+_SUMMARY_ROUNDS_KEY = "summary_rounds"
+# A corrected summary is shown again at most this many times; after that Joy carries on, so a
+# patient who keeps adding detail (or a model that keeps rewording it) never loops.
+_MAX_SUMMARY_REPEATS = 2
+
+
+def _triage_summary_prompt(extracted: ExtractedTriage, *, updated: bool = False) -> str:
+    """One message that both confirms the story and invites anything to change or add.
+
+    It replaces "Is that correct? Reply Yes or No" followed by "Is there anything else…? Reply Yes
+    or No": a Yes goes straight to the safety check, anything else is read as a correction.
+    """
+    summary = confirmation_summary(extracted)
+    if summary.startswith(_SUMMARY_PREFIX):
+        summary = summary[len(_SUMMARY_PREFIX):].strip()
+    opening = "Thanks, I’ve updated that. Here’s what I have now:" if updated else "Thanks. Here’s what I understood:"
     return (
-        "Thanks. Just to make sure I’ve understood you correctly:\n\n"
-        f"{confirmation_summary(extracted)}\n\n"
-        "Is that correct? Reply Yes or No."
+        f"{opening}\n\n"
+        f"{summary}\n\n"
+        "Reply *Yes* if that’s right, or tell me anything to change or add."
     )
 
 
 def _additional_details_acknowledgement() -> str:
     """Acknowledge a new detail before the deterministic safety screen."""
-    return "Thanks, I’ve added that to your information."
+    return "Thanks, I’ve added that."
 
 
-def _additional_details_prompt() -> str:
-    return (
-        "Is there anything else about your problem that you’d like me to know before I continue?\n\n"
-        "Reply Yes or No. If there is nothing else, you can also reply ‘there’s nothing else’."
-    )
+# The summary lines that say what the problem is and when it started. If what the patient saw there
+# is no longer true ("left knee" became "right knee", "4 days" became "2 weeks"), that's a correction
+# worth showing back. Anything else, including more words added to those lines, is extra detail.
+_SUMMARY_MATERIAL_LINES = ("You have", "Started")
+
+
+def _summary_lines(extracted: ExtractedTriage) -> dict[str, str]:
+    lines: dict[str, str] = {}
+    for line in confirmation_summary(extracted).splitlines():
+        label, colon, value = line.partition(":")
+        if colon:
+            lines[label.strip()] = " ".join(value.casefold().split())
+    return lines
+
+
+def _summary_change(before: ExtractedTriage, after: ExtractedTriage) -> str:
+    """"material" when a shown fact was corrected, "detail" when the summary would only read
+    differently in some other way (something added), and "none" when it would read the same."""
+    shown, now = _summary_lines(before), _summary_lines(after)
+    if any(label in shown and shown[label] not in now.get(label, "") for label in _SUMMARY_MATERIAL_LINES):
+        return "material"
+    return "detail" if shown != now else "none"
+
+
+def _summary_reply_words(user_text: str) -> str:
+    return " ".join(_normalised_short_reply(user_text).replace(",", " ").split())
+
+
+_SUMMARY_EXTRA_RE = re.compile(r"\b(?:but|except|however|actually|although|though|also|and|plus|only)\b", re.IGNORECASE)
+_SUMMARY_OK_REPLIES = {
+    "correct", "right", "exactly", "perfect", "spot on", "all correct", "all good", "fine", "it's fine",
+    "nothing", "nothing to change", "nothing to add", "no changes", "no change", "nothing to correct",
+}
+_SUMMARY_CHANGE_REPLIES = {
+    "change something", "change", "change it", "edit", "wrong", "it's wrong", "that's wrong", "incorrect",
+    "not right", "that's not right", "it's not right", "not correct", "that's not correct", "it's not correct",
+    "not quite", "no change something", "no it's not", "no it isn't", "something's wrong",
+    "i want to change something",
+}
+
+
+def _is_bare_summary_confirmation(user_text: str) -> bool:
+    """A plain "Yes" (or "that's right", "nothing to change"), with no new detail in it."""
+    words = _summary_reply_words(user_text)
+    if not words:
+        return False
+    if words in _SUMMARY_OK_REPLIES or _is_no_further_details(user_text):
+        return True
+    return _is_summary_confirm(words) and len(words.split()) <= 5 and not _SUMMARY_EXTRA_RE.search(words)
+
+
+def _is_bare_summary_rejection(user_text: str) -> bool:
+    """A plain "No" / "Change something" that doesn't yet say what to change."""
+    return _is_simple_no(user_text) or _summary_reply_words(user_text) in _SUMMARY_CHANGE_REPLIES
+
+
+_QUESTION_START_RE = re.compile(
+    r"^\s*(?:how|what|when|where|why|who|which|can|could|do|does|will|would|should|is\s+it|are\s+you)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_question(user_text: str) -> bool:
+    text = (user_text or "").strip()
+    return text.endswith("?") or bool(_QUESTION_START_RE.match(text))
 
 
 def _offer_initial_consultation(
@@ -1609,7 +1709,7 @@ def _offer_initial_consultation(
     state.booking_substate = None
     _set_triage_status(session, state, "summarised")
     return (
-        "Thanks. Based on what you’ve told me so far, I can help you arrange your initial consultation with a clinician.\n\n"
+        "Thanks. From what you’ve told me so far, the next step is an initial consultation with a clinician.\n\n"
         f"{_present_policy(session, state)}"
     )
 
@@ -1699,7 +1799,9 @@ def _reply_after_extract(
     paystack=None,
     wa_message_id: str | None = None,
     llm=None,
-) -> tuple[str, PatientPhase]:
+) -> tuple[str | TurnResult, PatientPhase]:
+    """The next deterministic step after the story. A TurnResult means the turn was already
+    completed and saved (an AMBER result routed to the specialist review), so callers return it."""
     sr_conversation = session.get(Conversation, state.conversation_id)
     sr_context = dict(sr_conversation.booking_context or {}) if sr_conversation is not None else {}
     if sr_conversation is not None and sr.active(sr_context):
@@ -1725,8 +1827,8 @@ def _reply_after_extract(
         return "I need to refresh your consultation details before we continue. Please try again shortly.", PatientPhase.MID_TRIAGE
 
     # The patient-facing protocol is deliberately deterministic after the
-    # opening story: confirm summary -> correction if needed -> one open
-    # question -> grouped safety screen -> safety-directed booking route.
+    # opening story: summary (confirm, correct or add, in one message) ->
+    # grouped safety screen -> safety-directed booking route.
     # Gemini extracts facts; it never chooses the route.
     context = dict(conversation.booking_context or {})
     flow_state = context.get(_TRIAGE_FLOW_KEY)
@@ -1749,39 +1851,55 @@ def _reply_after_extract(
             return f"{acknowledgement}\n\n{_safety_prompt(extracted, include_thanks=False)}", PatientPhase.MID_TRIAGE
         return _after_safety_screen()
 
-    if flow_state is None:
-        summary = _triage_summary_prompt(extracted)
+    def _show_summary(*, updated: bool) -> tuple[str, PatientPhase]:
+        summary = _triage_summary_prompt(extracted, updated=updated)
         _store_summary(session, state, summary)
         context[_TRIAGE_FLOW_KEY] = _AWAITING_SUMMARY_CONFIRMATION
+        context[_SUMMARY_ROUNDS_KEY] = int(context.get(_SUMMARY_ROUNDS_KEY) or 0) + 1 if updated else 0
         conversation.booking_context = context
         state.booking_context = context
         session.flush()
         return summary, PatientPhase.POST_TRIAGE
 
+    def _after_summary_text(*, asked_to_change: bool) -> tuple[str, PatientPhase]:
+        """Free text after the summary: a correction, extra detail, or a question."""
+        change = _summary_change(state.extracted, extracted)
+        # After an explicit "No", anything new is worth showing back; otherwise only a corrected fact is.
+        worth_showing = change == "material" or (asked_to_change and change == "detail")
+        if worth_showing and int(context.get(_SUMMARY_ROUNDS_KEY) or 0) < _MAX_SUMMARY_REPEATS:
+            return _show_summary(updated=True)
+        if change == "none" and not asked_to_change and _is_question(user_text):
+            return (
+                "Happy to help with that. First, is my summary above right? "
+                "Reply *Yes*, or tell me what to change."
+            ), PatientPhase.POST_TRIAGE
+        return _safety_step(_additional_details_acknowledgement())
+
+    if flow_state is None:
+        return _show_summary(updated=False)
+
+    # One step: "Yes" goes straight to the safety check, "No" asks what to change, and anything else
+    # is read as a correction or extra detail. Conversations that saw the old "Is that correct? Reply
+    # Yes or No" wording land here too, and their Yes/No still mean the same.
     if flow_state == _AWAITING_SUMMARY_CONFIRMATION:
-        if _is_simple_no(user_text):
+        if _is_bare_summary_rejection(user_text):
             context[_TRIAGE_FLOW_KEY] = _AWAITING_SUMMARY_CORRECTION
             conversation.booking_context = context
             state.booking_context = context
             session.flush()
-            return "No problem. What would you like me to correct or add?", PatientPhase.POST_TRIAGE
-        if _is_summary_confirm(user_text):
-            context[_TRIAGE_FLOW_KEY] = _AWAITING_ADDITIONAL_DETAILS
-            conversation.booking_context = context
-            state.booking_context = context
-            session.flush()
-            return _additional_details_prompt(), PatientPhase.POST_TRIAGE
-        return "Please reply Yes if the summary is correct, or No if you’d like to correct or add something.", PatientPhase.POST_TRIAGE
+            return "No problem. What should I change or add?", PatientPhase.POST_TRIAGE
+        if _is_bare_summary_confirmation(user_text):
+            return _safety_step("Great, thanks.")
+        return _after_summary_text(asked_to_change=False)
 
     if flow_state == _AWAITING_SUMMARY_CORRECTION:
-        summary = _triage_summary_prompt(extracted)
-        _store_summary(session, state, summary)
-        context[_TRIAGE_FLOW_KEY] = _AWAITING_SUMMARY_CONFIRMATION
-        conversation.booking_context = context
-        state.booking_context = context
-        session.flush()
-        return summary, PatientPhase.POST_TRIAGE
+        # "Nothing" / "it's fine" here means the summary was right after all.
+        if _is_bare_summary_confirmation(user_text) or _is_simple_no(user_text):
+            return _safety_step("Thanks.")
+        return _after_summary_text(asked_to_change=True)
 
+    # The two states below come from the older two-question flow. New conversations never enter
+    # them, but a patient who was mid-way when it changed still finishes the same way.
     if flow_state == _AWAITING_ADDITIONAL_DETAILS:
         if _is_simple_yes(user_text):
             context[_TRIAGE_FLOW_KEY] = _COLLECTING_ADDITIONAL_DETAILS
@@ -1841,6 +1959,13 @@ def provider_unavailable_reply(
     # only the patient's human-facing message.
     _capture_partner_attribution(session, identity, state, user_text)
     user_text = _PARTNER_LINK_CODE_RE.sub("", user_text or "").strip()
+    # A request for a person must still reach the care team when the normal turn failed.
+    if is_human_request(user_text) and not flags_from_triage_text(user_text):
+        reply = human_request_reply(session, identity, session.get(Conversation, state.conversation_id), user_text)
+        save_turn(
+            session, state, user_text, reply, state.extracted, state.phase, language, wa_message_id, stage=state.stage,
+        )
+        return TurnResult(reply_text=reply, language=language, phase=state.phase, extracted=state.extracted)
     extracted = _apply_inferred_area(enrich_from_user_text(state.extracted, user_text))
     # Preserve the same deterministic immediate red-flag handling used during
     # human takeover; a provider outage must never downgrade a clear urgent
@@ -1877,6 +2002,8 @@ def provider_unavailable_reply(
     reply, phase = _reply_after_extract(
         session, state, user_text, "", extracted, state.phase, identity, wa_message_id=wa_message_id,
     )
+    if isinstance(reply, TurnResult):
+        return reply
     if not reply.strip():
         # With no story yet there is nothing deterministic to continue, and the
         # model's wording is unavailable. Never send an empty WhatsApp message.
@@ -1901,12 +2028,16 @@ def _physio_patient_only_turn(
     *,
     rh_mapping: RHIdentityMapping | None,
     physio: Physiotherapist | None,
+    media: list[str] | None = None,
+    llm: LLMClient | None = None,
+    paystack=None,
 ) -> TurnResult:
     """Joy is for patients (owner, 2026-11-07): a physio can only answer a booking request here.
 
     "ACCEPT <booking ID>" / "REJECT <booking ID>" still reach RH, so the 2-hour accept window
-    works from WhatsApp. Anything else (sign-up, availability, notes, payouts, visits) points to
-    the dashboard.
+    works from WhatsApp. An old WhatsApp physio sign-up that is really a patient can still switch
+    (app/identity/role_switch.py), and "call me" still reaches the team. Anything else (sign-up,
+    availability, notes, payouts, visits) points to the dashboard.
     """
     from app.config import get_settings
 
@@ -1927,13 +2058,182 @@ def _physio_patient_only_turn(
                     "booking from your dashboard."
                 )
     elif rh_mapping is None and physio is not None and _LEGACY_PHYSIO_ANSWER_RE.search(text):
-        conversation = session.get(Conversation, state.conversation_id)
-        reply = apply_physio_reply(session, physio.id, text, conversation)
+        reply = apply_physio_reply(session, physio.id, text, session.get(Conversation, state.conversation_id))
+    if reply is None and physio is not None and llm is not None:
+        switched = _physio_role_switch_turn(
+            session, identity, physio, state, session.get(Conversation, state.conversation_id), user_text,
+            media, language, wa_message_id, llm, paystack,
+        )
+        if switched is not None:
+            return switched
+    if reply is None and is_human_request(text):
+        reply = human_request_reply(session, identity, session.get(Conversation, state.conversation_id), text)
     reply = reply or PHYSIO_USE_DASHBOARD_REPLY
     save_turn(
         session, state, user_text, reply, ExtractedTriage(), PatientPhase.FIRST_CONTACT, language, wa_message_id,
     )
     return TurnResult(reply_text=reply, language=language, phase=PatientPhase.FIRST_CONTACT)
+
+
+def _persona_reply(
+    session: Session,
+    state: ConversationState,
+    user_text: str,
+    reply: str,
+    language: str,
+    wa_message_id: str | None,
+    *,
+    interactive: dict | None = None,
+) -> TurnResult:
+    """Save and return a code-owned reply for a persona with no triage (physio, family, partner)."""
+    save_turn(session, state, user_text, reply, ExtractedTriage(), PatientPhase.FIRST_CONTACT, language, wa_message_id)
+    return TurnResult(reply_text=reply, language=language, phase=PatientPhase.FIRST_CONTACT, interactive=interactive)
+
+
+def _switch_physio_to_patient(
+    session: Session,
+    identity: Identity,
+    physio: Physiotherapist,
+    user_text: str,
+    carry_on_text: str,
+    language: str,
+    wa_message_id: str | None,
+    llm: LLMClient,
+    paystack=None,
+) -> TurnResult:
+    """Remove an unverified physio sign-up and carry on as a patient on the same number.
+
+    Only the physio identity and its own chat go (app/ops/reset_phone.remove_physio_identity); a
+    patient record already on this number is reused as it is. A message that already said what's
+    wrong is handled as the patient's first message, so safety runs on it straight away.
+    """
+    from app.ops.reset_phone import remove_physio_identity
+
+    phone = identity.phone_e164
+    remove_physio_identity(session, physio)
+    append(session, kind=AuditKind.IDENTITY, actor_phone=phone, person_id=None,
+           payload={"decision": "role_switched", "from": Persona.PHYSIO.value, "to": Persona.PATIENT.value})
+    patient = session.scalar(select(Patient).where(Patient.phone_e164 == phone))
+    if patient is None:
+        patient = Patient(phone_e164=phone)
+        session.add(patient)
+        session.flush()
+    if carry_on_text.strip():
+        result = handle_turn(session, phone, carry_on_text, llm, wa_message_id, paystack=paystack)
+        if result.blocked_by_safety:
+            return result  # urgent advice leads, with nothing in front of it
+        return result.model_copy(update={"reply_text": f"{SWITCHED_PREFIX}\n\n{result.reply_text}"})
+    patient_identity = Identity(persona=Persona.PATIENT, person_id=patient.id, phone_e164=phone)
+    state = load(session, patient_identity)
+    reply = SWITCHED_WELCOME if not has_narrative(state.extracted) else f"{SWITCHED_PREFIX} How can I help today?"
+    save_turn(
+        session, state, user_text, reply, state.extracted, state.phase, language, wa_message_id, stage=state.stage,
+    )
+    return TurnResult(reply_text=reply, language=language, phase=state.phase, extracted=state.extracted)
+
+
+def _fresh_patient(session: Session, patient: Patient, state: ConversationState) -> bool:
+    """Nothing to lose by starting physio sign-up on this number: no story, booking or Rehabify account."""
+    context = state.booking_context or {}
+    if has_narrative(state.extracted) or state.booking_substate or context.get("rh_booking_id"):
+        return False
+    if patient.signup_completed_at is not None:
+        return False
+    if session.scalar(select(Booking.id).where(Booking.patient_id == patient.id).limit(1)) is not None:
+        return False
+    return session.scalar(select(RHIdentityMapping.id).where(
+        RHIdentityMapping.persona == Persona.PATIENT.value, RHIdentityMapping.joy_person_id == patient.id,
+    ).limit(1)) is None
+
+
+def _patient_says_physio_reply(
+    session: Session, identity: Identity, state: ConversationState, user_text: str, media: list[str] | None,
+) -> str:
+    """A patient saying they're a physiotherapist.
+
+    A number that only said hello so far starts WhatsApp physio sign-up, as a new number saying "I'm a
+    physio" does; its empty patient record is kept, not deleted, and "I'm a patient" switches back.
+    Anyone with a story, a booking or a Rehabify account (or a PT that RH couldn't verify, which never
+    creates a local physio) gets the website sign-up link, and their patient record is left alone.
+    """
+    if get_settings().joy_patient_only:
+        # Joy is for patients: point to the website, and the patient record stays as it is
+        return PHYSIO_SIGN_UP_REPLY
+    patient = session.get(Patient, identity.person_id)
+    if (user_text or "").strip().upper() == "PT" or patient is None or not _fresh_patient(session, patient, state):
+        return PHYSIO_SIGNUP_REPLY
+    physio = Physiotherapist(phone_e164=patient.phone_e164)
+    session.add(physio)
+    session.flush()
+    append(session, kind=AuditKind.IDENTITY, actor_phone=patient.phone_e164, person_id=physio.id,
+           payload={"decision": "role_switched", "from": Persona.PATIENT.value, "to": Persona.PHYSIO.value})
+    onboarding = apply_onboarding_turn(session, physio, user_text, media)
+    return f"{PHYSIO_START_PREFIX} {onboarding}\n\n{PHYSIO_ESCAPE_HINT}"
+
+
+def _physio_role_switch_turn(
+    session: Session,
+    identity: Identity,
+    physio: Physiotherapist,
+    state: ConversationState,
+    conversation: Conversation | None,
+    user_text: str,
+    media: list[str] | None,
+    language: str,
+    wa_message_id: str | None,
+    llm: LLMClient,
+    paystack=None,
+) -> TurnResult | None:
+    """Someone in physio sign-up who is really a patient (app/identity/role_switch.py).
+
+    None means carry on as a physio. A verified physio, one in review or one with bookings or
+    payouts is never switched: an "I'm a patient" from them gets a pointer to the team instead.
+    """
+    if conversation is None:
+        return None
+    text = user_text or ""
+    if not is_switchable_physio(session, physio):
+        if is_patient_statement(text):
+            return _persona_reply(session, state, user_text, PHYSIO_LOCKED_REPLY, language, wa_message_id)
+        return None
+    context = dict(conversation.booking_context or {})
+    pending = context.get(ROLE_CHECK_KEY) if isinstance(context.get(ROLE_CHECK_KEY), dict) else None
+    choice = role_choice(text) if pending is not None else None
+    if choice == "patient":
+        return _switch_physio_to_patient(
+            session, identity, physio, user_text, str(pending.get("text") or ""), language, wa_message_id, llm, paystack,
+        )
+    if choice == "physio":
+        context.pop(ROLE_CHECK_KEY, None)
+        conversation.booking_context = context
+        if get_settings().joy_patient_only:
+            # No physio sign-up on WhatsApp any more: the website
+            return _persona_reply(session, state, user_text, PHYSIO_SIGN_UP_REPLY, language, wa_message_id)
+        reply = f"{STAY_PHYSIO_PREFIX} {apply_onboarding_turn(session, physio, '', media)}"
+        return _persona_reply(session, state, user_text, reply, language, wa_message_id)
+    if is_patient_statement(text):
+        carry_on = text if carries_patient_story(text) else ""
+        return _switch_physio_to_patient(
+            session, identity, physio, user_text, carry_on, language, wa_message_id, llm, paystack,
+        )
+    if is_onboarding_content(text, media):
+        if pending is not None:
+            context.pop(ROLE_CHECK_KEY, None)
+            conversation.booking_context = context
+        return None
+    red_flags = bool(flags_from_triage_text(text))
+    if is_human_request(text) and not red_flags:
+        return None  # the physio path alerts the team
+    patient_like = red_flags or writes_like_patient(text)
+    if not (patient_like or is_restart_request(text) or pending is not None):
+        return None
+    # Keep the message that sounded like a patient, so "Patient" can carry on with it
+    context[ROLE_CHECK_KEY] = {"text": (text if patient_like else str((pending or {}).get("text") or ""))[:1000]}
+    conversation.booking_context = context
+    return _persona_reply(
+        session, state, user_text, ROLE_QUESTION_RED_FLAG if red_flags else ROLE_QUESTION, language, wa_message_id,
+        interactive=reply_buttons(("patient", "I'm a patient"), ("physio", "I'm a physio")),
+    )
 
 
 def _physio_turn(
@@ -1961,17 +2261,21 @@ def _physio_turn(
     if get_settings().joy_patient_only:
         return _physio_patient_only_turn(
             session, identity, user_text, wa_message_id, language, rh_mapping=rh_mapping, physio=physio,
+            media=media, llm=llm, paystack=paystack,
         )
     if rh_mapping is not None and rh_mapping.rh_user_id and get_settings().rh_physio_operations_enabled:
         state = load(session, identity)
-        try:
-            reply = apply_rh_physio_operation(
-                configured_rh_client(), profile_id=rh_mapping.rh_record_id,
-                actor=RHActor(persona="physiotherapist", sender_phone=identity.phone_e164, rh_user_id=rh_mapping.rh_user_id),
-                text=user_text,
-            )
-        except RHIntegrationError:
-            reply = "I can’t reach Rehabify’s live operations service right now. Please try again shortly."
+        if is_human_request(user_text):
+            reply = human_request_reply(session, identity, session.get(Conversation, state.conversation_id), user_text)
+        else:
+            try:
+                reply = apply_rh_physio_operation(
+                    configured_rh_client(), profile_id=rh_mapping.rh_record_id,
+                    actor=RHActor(persona="physiotherapist", sender_phone=identity.phone_e164, rh_user_id=rh_mapping.rh_user_id),
+                    text=user_text,
+                )
+            except RHIntegrationError:
+                reply = "I can’t reach Rehabify’s live operations service right now. Please try again shortly."
         if reply is None:
             reply = rh_physio_help()
         save_turn(session, state, user_text, reply, ExtractedTriage(), PatientPhase.FIRST_CONTACT, language, wa_message_id)
@@ -1984,6 +2288,11 @@ def _physio_turn(
         )
     state = load(session, identity)
     conversation = session.get(Conversation, state.conversation_id)
+    switched = _physio_role_switch_turn(
+        session, identity, physio, state, conversation, user_text, media, language, wa_message_id, llm, paystack,
+    )
+    if switched is not None:
+        return switched
     prior_status = physio.onboarding_status
     reply = apply_physio_reply(session, physio.id, user_text, conversation)
     if reply is None and authorize(identity, "physio_payout"):
@@ -2002,6 +2311,10 @@ def _physio_turn(
         reply = apply_availability_turn(session, physio.id, user_text, conversation)
     if reply is None:
         reply = apply_pending_physio_answer(session, physio.id, user_text, conversation)
+    # "Call me" reaches the team from a physio too. After the commands above, so a session note or
+    # an answer for a family ("ask her to call me back") is never taken as a request.
+    if reply is None and is_human_request(user_text):
+        reply = human_request_reply(session, identity, conversation, user_text)
     if reply is None:
         reply = apply_onboarding_turn(session, physio, user_text, media)
     _maybe_route_off_platform(session, user_text, physio_id=physio.id)
@@ -2063,6 +2376,16 @@ def _family_turn(
     paystack=None,
 ) -> TurnResult:
     language = mirror_language(user_text, None)
+    # "Call me" from a family member reaches the care team (the reply carries the 112 line), even
+    # when it mentions warning signs: family turns have no triage, so a person is the right next step.
+    # "Ask the physio to call me" is a question for the physio, which the relay below sends on.
+    if is_human_request(user_text) and not is_relay_ask(user_text):
+        family_state = load(session, identity)
+        conversation = session.get(Conversation, family_state.conversation_id)
+        return _persona_reply(
+            session, family_state, user_text, human_request_reply(session, identity, conversation, user_text),
+            mirror_language(user_text, family_state.last_known_language), wa_message_id,
+        )
     patient = _linked_patient(session, identity)
     if patient is None:
         # Phase 5 family identities are granted and resolved by RH.  No local
@@ -2150,6 +2473,13 @@ def _partner_turn(
     language = mirror_language(user_text, None)
     state = load(session, identity)
     language = mirror_language(user_text, state.last_known_language)
+    # A message carrying a phone number is a referral ("please call 0803…"), which the partner flow owns
+    if is_human_request(user_text) and not _PARTNER_PHONE_RE.search(user_text or ""):
+        conversation = session.get(Conversation, state.conversation_id)
+        return _persona_reply(
+            session, state, user_text, human_request_reply(session, identity, conversation, user_text),
+            language, wa_message_id,
+        )
     reply = apply_partner_turn(session, identity.person_id, user_text)
     save_turn(
         session,
@@ -2330,12 +2660,13 @@ def handle_turn(
     # A physio answering Joy's booking request ("ACCEPT <booking ID>") may never have written to
     # Joy before, or may also be a patient here: RH verifies the number before anything is applied.
     physio_reply = bool(_PHYSIO_BOOKING_REPLY_RE.fullmatch(user_text or ""))
-    if identity is None and user_text.strip().upper() == "PT" and get_settings().joy_patient_only:
-        # Joy is for patients: no physio discovery here
+    pt_discovery = (user_text or "").strip().upper() == "PT"
+    if pt_discovery and get_settings().joy_patient_only and (identity is None or identity.persona == Persona.PATIENT):
+        # Joy is for patients: no physio discovery here, and a patient record stays as it is
         return TurnResult(reply_text=PHYSIO_SIGN_UP_REPLY, language="en", phase=PatientPhase.FIRST_CONTACT)
-    if (identity is None and user_text.strip().upper() == "PT") or (
-        physio_reply and (identity is None or identity.persona == Persona.PATIENT)
-    ):
+    # A physio who knows the old "reply PT" may already be a patient here (a "Hi" first), so PT from
+    # a patient is checked with RH too (unverified, it gets the sign-up link below).
+    if (pt_discovery or physio_reply) and (identity is None or identity.persona == Persona.PATIENT):
         fallback_identity = identity
         try:
             resolved = configured_rh_client().resolve_physiotherapist(
@@ -2347,7 +2678,13 @@ def handle_turn(
                 return TurnResult(reply_text="I can’t verify physiotherapist access right now. Please try again shortly.", language="en", phase=PatientPhase.FIRST_CONTACT)
         if resolved is None or resolved.resolution != "MATCH" or not resolved.physiotherapist_id or not resolved.rh_user_id:
             if fallback_identity is None:
-                return TurnResult(reply_text="This WhatsApp number is not linked to an active, verified Rehabify physiotherapist account.", language="en", phase=PatientPhase.FIRST_CONTACT)
+                return TurnResult(
+                    reply_text=(
+                        "This WhatsApp number isn't linked to a verified Rehabify physiotherapist account yet. "
+                        f"To join, sign up here: {PHYSIO_SIGNUP_URL}\n\nIf you need care yourself, just tell me what's going on."
+                    ),
+                    language="en", phase=PatientPhase.FIRST_CONTACT,
+                )
         else:
             person_id = uuid5(NAMESPACE_URL, f"rehabify:physio:{resolved.physiotherapist_id}")
             mapping = session.scalar(select(RHIdentityMapping).where(RHIdentityMapping.persona == Persona.PHYSIO.value, RHIdentityMapping.joy_person_id == person_id))
@@ -2564,6 +2901,25 @@ def handle_turn(
             language, wa_message_id, stage=state.stage,
         )
         return TurnResult(reply_text=callback_reply, language=language, phase=state.phase, extracted=state.extracted)
+
+    # "Are you a real person?" gets an honest answer and the way to reach one; "I'm a physio" (or PT
+    # that RH couldn't verify above) gets the physio sign-up link. Neither changes the patient's
+    # record or the step they're on, and a message with warning signs goes on to the safety engine.
+    if identity.persona == Persona.PATIENT and not flags_from_triage_text(user_text):
+        # A patient under safety escalation or review keeps getting that guidance instead
+        safety_hold = _is_escalated(session, state) or _is_specialist_review(session, state)
+        role_reply = (
+            BOT_REPLY if is_bot_question(user_text)
+            else _patient_says_physio_reply(session, identity, state, user_text, media)
+            if patient_says_physio(user_text) and not safety_hold
+            else None
+        )
+        if role_reply is not None:
+            save_turn(
+                session, state, user_text, role_reply, state.extracted, state.phase,
+                language, wa_message_id, stage=state.stage,
+            )
+            return TurnResult(reply_text=role_reply, language=language, phase=state.phase, extracted=state.extracted)
 
     referral_turn = _verified_referral_turn(
         session, identity, state, user_text, language, wa_message_id
@@ -3057,6 +3413,10 @@ def handle_turn(
         wa_message_id=wa_message_id,
         llm=llm,
     )
+    if isinstance(reply, TurnResult):
+        # The summary was confirmed with nothing left to screen and the result is AMBER: the
+        # specialist-review reply has already been saved with its own stage.
+        return reply
     _audit_turn(session, identity, extracted, safety, outgoing)
     conversation = session.get(Conversation, state.conversation_id)
     booking_stage = _stage_for_booking_substate(

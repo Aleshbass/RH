@@ -116,3 +116,62 @@ def test_off_by_default_physios_still_get_the_old_door(db_session, fake_llm, mon
     phone = _phone()
     handle_turn(db_session, phone, "Hello, I am a physiotherapist and I want to join", fake_llm)
     assert _physio_count(db_session, phone) == 1
+
+
+# ---- with the role switching from joy-smarter (app/identity/role_switch.py) -----------------------
+
+def test_an_old_physio_sign_up_that_is_really_a_patient_still_switches(db_session, fake_llm, patient_only):
+    from app.conversation.turn_handler import handle_turn
+    from app.identity.resolver import resolve
+    from app.identity.role_switch import ROLE_QUESTION, SWITCHED_PREFIX
+    from app.models.types import Persona
+
+    phone = _phone()
+    db_session.add(Physiotherapist(phone_e164=phone))  # signed up on WhatsApp before Joy was patient-only
+    db_session.flush()
+    asked = handle_turn(db_session, phone, "my knee hurts when I walk", fake_llm)
+    assert asked.reply_text == ROLE_QUESTION
+    switched = handle_turn(db_session, phone, "Patient", fake_llm)
+    assert switched.reply_text.startswith(SWITCHED_PREFIX)
+    assert _physio_count(db_session, phone) == 0
+    assert resolve(db_session, phone).persona == Persona.PATIENT
+
+
+def test_answering_physio_to_the_role_question_gets_the_website(db_session, fake_llm, patient_only):
+    from app.conversation.turn_handler import handle_turn
+
+    phone = _phone()
+    db_session.add(Physiotherapist(phone_e164=phone))
+    db_session.flush()
+    handle_turn(db_session, phone, "start over", fake_llm)
+    result = handle_turn(db_session, phone, "Physio", fake_llm)
+    assert result.reply_text == PHYSIO_SIGN_UP_REPLY
+    assert "mrtb" not in result.reply_text.lower()
+
+
+def test_a_patient_saying_they_are_a_physio_keeps_their_record(db_session, fake_llm, patient_only):
+    from app.conversation.turn_handler import handle_turn
+    from app.identity.resolver import resolve
+    from app.models.types import Persona
+
+    phone = _phone()
+    handle_turn(db_session, phone, "Hi", fake_llm)
+    for text in ("I'm a physiotherapist", "PT"):
+        result = handle_turn(db_session, phone, text, fake_llm)
+        assert result.reply_text == PHYSIO_SIGN_UP_REPLY
+    assert _physio_count(db_session, phone) == 0
+    assert resolve(db_session, phone).persona == Persona.PATIENT
+    assert patient_only.requests == []
+
+
+def test_a_physio_asking_for_a_person_still_reaches_the_team(db_session, fake_llm, patient_only, monkeypatch):
+    from app.conversation.turn_handler import handle_turn
+
+    alerts = []
+    monkeypatch.setattr("app.admin.escalation_router.route_escalation", lambda session, kind, payload: alerts.append((kind, payload)))
+    phone = _phone()
+    db_session.add(Physiotherapist(phone_e164=phone, verified=True, onboarding_status="verified", mrtb_number="1"))
+    db_session.flush()
+    result = handle_turn(db_session, phone, "I want to speak to someone", fake_llm)
+    assert result.reply_text.startswith("Of course. I've asked our team to call you")
+    assert alerts and alerts[0][0] == "callback"

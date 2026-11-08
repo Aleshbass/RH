@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from app.flows.signup import WELCOME_WITHOUT_FORM
 from app.models.types import ExtractedTriage
 
 
@@ -11,18 +12,8 @@ _GENERIC_REPLIES = {
 }
 
 
-_FIRST_CONTACT_WELCOME = (
-    "Hello 👋 Welcome to Rehabify.\n\n"
-    "Could you tell me what’s going on today?\n\n"
-    "You can tell me:\n\n"
-    "• what’s bothering you\n"
-    "• which part of your body is affected\n"
-    "• how long you’ve had it\n"
-    "• whether you’ve seen anyone about it\n"
-    "• anything you’ve already tried\n\n"
-    "Just tell me in your own words. There’s no need to fill out a form.\n\n"
-    "Messaging for someone else? Just tell me who it's for."
-)
+# The same first-contact welcome as a "Hi" gets, so the two never drift apart
+_FIRST_CONTACT_WELCOME = WELCOME_WITHOUT_FORM
 
 
 def grounded_triage_ack(candidate_reply: str, extracted: ExtractedTriage) -> str:

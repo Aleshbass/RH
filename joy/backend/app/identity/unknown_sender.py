@@ -295,6 +295,17 @@ def resolve_unknown_sender(
             reply_text="",
             identity=_provision_patient(session, phone_e164),
         )
+    # "Call me" / "I want to talk to a human" from a new number: start them as a patient too, so the
+    # patient path alerts the care team at once instead of the model asking who they are first.
+    # (Imported here: app.conversation's package init imports the turn handler, which imports this.)
+    from app.conversation.human_request import is_human_request
+
+    if is_human_request(user_text):
+        return UnknownSenderDecision(
+            intent="patient",
+            reply_text="",
+            identity=_provision_patient(session, phone_e164),
+        )
     if looks_like_family_intent(user_text):
         response = llm.complete(_classify_prompt(), user_text)
         reply = (response.reply_text or "").strip() or _FAMILY_FALLBACK
