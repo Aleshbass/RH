@@ -5,9 +5,12 @@ import Image from "next/image";
 import * as Dialog from "@radix-ui/react-dialog";
 import { useConvex } from "convex/react";
 import { makeFunctionReference } from "convex/server";
-import { motion, useReducedMotion } from "framer-motion";
+import { motion, useInView, useReducedMotion } from "framer-motion";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { CheckCheck, Rotate3d, X } from "@/components/icons";
+import { CheckCheck, Rotate3d, TrendingDown, X } from "@/components/icons";
+import { AnimatedList } from "@/components/magicui/animated-list";
+import { NumberTicker } from "@/components/magicui/number-ticker";
+import { TypingAnimation } from "@/components/magicui/typing-animation";
 import { SnapCarousel } from "@/components/marketing/SnapCarousel";
 import { EXERCISE_CATALOG, posterUrl } from "@/convex/exerciseLibraryCatalog";
 import type { ViewerGrant } from "@/lib/exercise3d/useViewerGrant";
@@ -84,58 +87,124 @@ function ExerciseVisual({ near, onTry }: { near: boolean; onTry: () => void }) {
   );
 }
 
+// The cards below animate with Magic UI components (components/magicui) when they're on screen, and
+// replay each time a visitor swipes back to them. With reduced motion they show their final state.
+
+const SUMMARY_LINES = ["Keep going with mini squats, 3 sets of 10 a day.", "Next visit on Friday."];
+
 function SummaryVisual() {
+  // The bullet points follow once the headline has finished typing, however fast the phone types
+  const [typed, setTyped] = useState(false);
   return (
     <div className="flex h-full items-center p-5">
       <div className="w-full rounded-2xl bg-white p-4 shadow-soft">
-        <p className="text-[12px] font-semibold text-rh-ink/50">Visit summary · Tuesday</p>
-        <p className="mt-2 text-[14px] font-semibold leading-snug text-rh-ink">Your knee is bending further than last week.</p>
-        <ul className="mt-3 space-y-2 text-[13px] leading-snug text-rh-ink/75">
-          <li className="flex gap-2">
-            <span aria-hidden className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-rh-lime" />
-            Keep going with mini squats, 3 sets of 10 a day.
-          </li>
-          <li className="flex gap-2">
-            <span aria-hidden className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-rh-lime" />
-            Next visit on Friday.
-          </li>
-        </ul>
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-[12px] font-semibold text-rh-ink/50">Visit summary · Tuesday</p>
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-rh-lime/30 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-rh-ink">
+            <span aria-hidden className="h-1.5 w-1.5 animate-pulse rounded-full bg-rh-ink" />
+            New
+          </span>
+        </div>
+        <TypingAnimation
+          replay
+          delay={350}
+          duration={32}
+          onDoneChange={setTyped}
+          className="mt-2 min-h-[2.6em] w-full text-[14px] font-semibold leading-snug text-rh-ink"
+        >
+          Your knee is bending further than last week.
+        </TypingAnimation>
+        <AnimatedList replay play={typed} order="chat" startDelay={250} delay={650} className="mt-3 items-stretch gap-2">
+          {SUMMARY_LINES.map((line) => (
+            <p key={line} className="flex gap-2 text-[13px] leading-snug text-rh-ink/75">
+              <span aria-hidden className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-rh-lime" />
+              {line}
+            </p>
+          ))}
+        </AnimatedList>
       </div>
     </div>
   );
 }
+
+function TypingDots({ dark = false }: { dark?: boolean }) {
+  return (
+    <span className="inline-flex items-center gap-1" aria-label="typing">
+      {[0, 1, 2].map((i) => (
+        <motion.span
+          key={i}
+          className={cn("h-1.5 w-1.5 rounded-full", dark ? "bg-rh-ink/70" : "bg-rh-ink/40")}
+          animate={{ y: [0, -3, 0] }}
+          transition={{ duration: 0.8, repeat: Infinity, delay: i * 0.15 }}
+        />
+      ))}
+    </span>
+  );
+}
+
+const joyBubble = "max-w-[85%] rounded-2xl rounded-tl-sm bg-white px-3.5 py-2.5 text-[13px] leading-snug text-rh-ink shadow-soft";
 
 function ReminderVisual() {
   return (
-    <div className="flex h-full flex-col justify-center gap-2.5 p-5">
-      <p className="max-w-[85%] rounded-2xl rounded-tl-sm bg-white px-3.5 py-2.5 text-[13px] leading-snug text-rh-ink shadow-soft">
-        Time for your knee exercises 💪🏾 Reply DONE when you finish.
-      </p>
-      <p className="ml-auto inline-flex items-center gap-1.5 rounded-2xl rounded-tr-sm bg-rh-lime px-3.5 py-2 text-[13px] font-semibold text-rh-ink">
-        DONE <CheckCheck className="h-3 w-3" />
-      </p>
-      <p className="max-w-[85%] rounded-2xl rounded-tl-sm bg-white px-3.5 py-2.5 text-[13px] leading-snug text-rh-ink shadow-soft">
-        Great work! See you tomorrow.
-      </p>
+    <div className="flex h-full flex-col justify-end p-4">
+      <AnimatedList replay order="chat" startDelay={400} delay={1150} loopAfter={3500} transient={["typing-you", "typing-joy"]} className="items-stretch gap-2">
+        <div key="joy-1" className="flex">
+          <p className={joyBubble}>
+            <span className="mb-0.5 block text-[11px] font-semibold text-rh-ink/50">Joy · 6:00 pm</span>
+            Time for your knee exercises 💪🏾 Reply DONE when you finish.
+          </p>
+        </div>
+        <div key="typing-you" className="flex justify-end">
+          <span className="rounded-2xl rounded-tr-sm bg-rh-lime px-3.5 py-3">
+            <TypingDots dark />
+          </span>
+        </div>
+        <div key="done" className="flex justify-end">
+          <p className="inline-flex items-center gap-1.5 rounded-2xl rounded-tr-sm bg-rh-lime px-3.5 py-2 text-[13px] font-semibold text-rh-ink">
+            DONE <CheckCheck className="h-3 w-3" />
+          </p>
+        </div>
+        <div key="typing-joy" className="flex">
+          <span className="rounded-2xl rounded-tl-sm bg-white px-3.5 py-3 shadow-soft">
+            <TypingDots />
+          </span>
+        </div>
+        <div key="joy-2" className="flex">
+          <p className={joyBubble}>Great work! That&apos;s 3 days in a row 🔥</p>
+        </div>
+      </AnimatedList>
     </div>
   );
 }
 
+const PAIN = [7, 6, 6, 4, 3, 2];
+
 function ProgressVisual() {
-  const pain = [7, 6, 6, 4, 3, 2];
+  const ref = useRef<HTMLDivElement>(null);
+  const inView = useInView(ref, { amount: 0.4 });
+  const reduce = useReducedMotion();
+  const grown = inView || Boolean(reduce);
   return (
-    <div className="flex h-full flex-col p-5">
-      <div className="flex items-baseline justify-between">
+    <div ref={ref} className="flex h-full flex-col p-5">
+      <div className="flex items-baseline justify-between gap-2">
         <p className="text-[13px] font-semibold text-rh-ink">Pain</p>
-        <p className="text-[12px] text-rh-ink/50">Last 6 weeks</p>
+        <p className="inline-flex items-center gap-1 text-[12px] font-semibold text-rh-ink">
+          <TrendingDown className="h-3 w-3" />
+          <span>
+            <NumberTicker value={71} replay delay={0.5} />% in 6 weeks
+          </span>
+        </p>
       </div>
       <div className="mt-4 flex flex-1 items-end gap-2.5">
-        {pain.map((value, i) => (
+        {PAIN.map((value, i) => (
           <div key={i} className="flex flex-1 flex-col items-center gap-1.5">
-            <span className="text-[11px] font-semibold tabular-nums text-rh-ink/60">{value}</span>
-            <span
-              className={cn("w-full rounded-lg", i === pain.length - 1 ? "bg-rh-lime" : "bg-rh-ink")}
+            <NumberTicker value={value} replay delay={0.12 * i} className="text-[11px] font-semibold text-rh-ink/60" />
+            <motion.span
+              className={cn("w-full origin-bottom rounded-lg", i === PAIN.length - 1 ? "bg-rh-lime" : "bg-rh-ink")}
               style={{ height: `${value * 18}px` }}
+              initial={false}
+              animate={{ scaleY: grown ? 1 : 0 }}
+              transition={reduce ? { duration: 0 } : { type: "spring", stiffness: 140, damping: 18, delay: grown ? 0.12 * i : 0 }}
             />
           </div>
         ))}
@@ -144,18 +213,55 @@ function ProgressVisual() {
   );
 }
 
-function CallVisual() {
+/** Sound bars that move while the physio is talking. */
+function Speaking({ active }: { active: boolean }) {
   return (
-    <div className="relative h-full p-5">
-      <div className="flex h-full items-center justify-center rounded-2xl bg-rh-ink">
-        <span className="flex h-16 w-16 items-center justify-center rounded-full bg-white/10 text-lg font-bold text-white">CN</span>
-        <span className="absolute right-8 top-8 flex h-14 w-11 items-center justify-center rounded-lg bg-rh-ink-3 text-[11px] font-semibold text-white ring-1 ring-white/10">
+    <span aria-hidden className="mt-3 flex h-4 items-end gap-[3px]">
+      {[0.5, 1, 0.7, 0.9, 0.4].map((peak, i) => (
+        <motion.span
+          key={i}
+          className="w-[3px] origin-bottom rounded-full bg-rh-lime"
+          style={{ height: "100%" }}
+          animate={active ? { scaleY: [0.25, peak, 0.35, peak * 0.8, 0.25] } : { scaleY: 0.3 }}
+          transition={active ? { duration: 1.1, repeat: Infinity, delay: i * 0.12, ease: "easeInOut" } : { duration: 0 }}
+        />
+      ))}
+    </span>
+  );
+}
+
+function CallVisual() {
+  const ref = useRef<HTMLDivElement>(null);
+  const inView = useInView(ref, { amount: 0.4 });
+  const reduce = useReducedMotion();
+  const [seconds, setSeconds] = useState(4);
+  useEffect(() => {
+    if (!inView || reduce) return;
+    const t = setInterval(() => setSeconds((s) => s + 1), 1000);
+    return () => clearInterval(t);
+  }, [inView, reduce]);
+  const clock = `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
+  return (
+    <div ref={ref} className="relative h-full p-5">
+      <div className="relative flex h-full flex-col items-center rounded-2xl bg-rh-ink pt-10">
+        <span className="absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-full bg-white/10 px-2.5 py-1 text-[11px] font-semibold tabular-nums text-white">
+          <span aria-hidden className="h-1.5 w-1.5 animate-pulse rounded-full bg-rh-lime" />
+          {clock}
+        </span>
+        <span className="absolute right-3 top-3 flex h-14 w-11 items-center justify-center rounded-lg bg-rh-ink-3 text-[11px] font-semibold text-white ring-1 ring-white/10">
           You
         </span>
+        <span className="flex h-16 w-16 items-center justify-center rounded-full bg-white/10 text-lg font-bold text-white">CN</span>
+        <Speaking active={inView && !reduce} />
       </div>
-      <span className="absolute bottom-8 left-8 max-w-[70%] rounded-2xl rounded-bl-sm bg-white px-3 py-2 text-[12px] text-rh-ink shadow-soft">
-        How did the exercises feel today?
-      </span>
+      <AnimatedList replay order="chat" startDelay={900} delay={1600} loopAfter={4000} className="absolute inset-x-8 bottom-8 items-stretch gap-2">
+        <div key="physio" className="flex">
+          <span className="max-w-[80%] rounded-2xl rounded-bl-sm bg-white px-3 py-2 text-[12px] text-rh-ink shadow-soft">How did the exercises feel today?</span>
+        </div>
+        <div key="you" className="flex justify-end">
+          <span className="max-w-[80%] rounded-2xl rounded-br-sm bg-rh-lime px-3 py-2 text-[12px] font-medium text-rh-ink">Much easier than last week 🙌🏾</span>
+        </div>
+      </AnimatedList>
     </div>
   );
 }
