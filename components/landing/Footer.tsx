@@ -5,7 +5,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { joyWhatsAppUrl } from '@/lib/joyWhatsApp';
 import { useConsent } from '@/components/consent/ConsentProvider';
-import { GENERAL_EMAIL, SUPPORT_EMAIL } from '@/lib/contact';
+import { SUPPORT_EMAIL } from '@/lib/contact';
 
 // Book a demo lives on the partners page (/partnerships) now
 const Footer = () => {
@@ -151,7 +151,6 @@ const Footer = () => {
         <div className="mt-8 py-6 border-t border-white/10 flex flex-col sm:flex-row justify-between items-center">
           <p className="text-gray-400 text-sm">&copy; {new Date().getFullYear()} Rehabify. All rights reserved.</p>
           <p className="mt-3 flex flex-wrap justify-center gap-x-4 gap-y-1 text-sm sm:mt-0">
-            <a href={`mailto:${GENERAL_EMAIL}`} className="text-gray-300 transition-colors hover:text-white">{GENERAL_EMAIL}</a>
             <a href={`mailto:${SUPPORT_EMAIL}`} className="text-gray-300 transition-colors hover:text-white">{SUPPORT_EMAIL}</a>
           </p>
           {/* Social links go here once the profiles exist (add them to SITE_CONFIG.organization.sameAs too) */}
