@@ -39,8 +39,8 @@ interface NavItem {
   name: string;
   href?: string;
   items?: MenuLink[];
-  /** Phone menu: list the items as their own rows instead of behind a tap-to-open group */
-  flatOnMobile?: boolean;
+  /** Phone menu: show the group already open (heading + links), with no tap needed */
+  openOnMobile?: boolean;
 }
 
 // About us: FAQs and Support become sections of the About page once it is built
@@ -55,7 +55,7 @@ const navLinks: NavItem[] = [
   // One page each. Professionals read their page (why to join) before signing up there.
   {
     name: "For professionals",
-    flatOnMobile: true,
+    openOnMobile: true,
     items: [
       { name: "For physiotherapists", href: "/platform/physiotherapists" },
       { name: "For clinics", href: "/platform/clinics" },
@@ -370,17 +370,24 @@ export default function Header() {
 
                 <nav className="rounded-2xl bg-white p-2">
                   {navLinks.map((item) => {
-                    if (item.items && item.flatOnMobile) {
-                      return item.items.map((link) => (
-                        <Link
-                          key={link.href}
-                          href={link.href}
-                          onClick={closeMobile}
-                          className="flex items-center px-3.5 py-3.5 rounded-xl text-[15px] font-semibold text-rh-ink hover:bg-rh-canvas transition-colors"
-                        >
-                          {link.name}
-                        </Link>
-                      ));
+                    if (item.items && item.openOnMobile) {
+                      return (
+                        <div key={item.name}>
+                          <p className="px-3.5 pb-1 pt-3.5 text-[15px] font-semibold text-rh-ink">{item.name}</p>
+                          <div className="ml-3.5 mb-2 border-l border-rh-ink/10 pl-2">
+                            {item.items.map((link) => (
+                              <Link
+                                key={link.href}
+                                href={link.href}
+                                onClick={closeMobile}
+                                className="flex items-center px-3 py-2.5 rounded-xl text-sm font-medium text-rh-ink hover:bg-rh-canvas transition-colors"
+                              >
+                                {link.name}
+                              </Link>
+                            ))}
+                          </div>
+                        </div>
+                      );
                     }
                     if (!item.items) {
                       return (
