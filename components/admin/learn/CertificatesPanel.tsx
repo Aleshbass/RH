@@ -20,6 +20,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ConfirmDialog, EmptyState, Panel, primaryButtonClass, softButtonClass, StatTile, StatusBadge } from '@/components/admin/ui'
 import { Callout, errorMessage, labelClass, LoadingBlock } from '@/components/admin/partners/shared'
+import { DrawPad } from '@/components/agreements/SignaturePad'
 import { CertificateActions, CertificatePreview, useCertificate } from '@/components/learn/course/Certificate'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
@@ -66,10 +67,93 @@ function PreviewCard({ design, learner }: { design: Design; learner: Learner | n
       bodyClassName="px-5 pb-5 pt-2"
     >
       <CertificatePreview src={src} failed={failed} className="mx-auto max-w-3xl" />
-      {!design.signatoryName && (
+      {!design.signatoryName && !design.signatures?.length && (
         <Callout tone="warning" className="mt-4">
-          No signatory yet, so the certificate shows “Rehabify Learn”. Add a name and title under Course › Final assessment.
+          No signature yet, so the certificate shows “Issued by Rehabify Learn”. Draw the founders’ signatures below.
         </Callout>
+      )}
+    </Panel>
+  )
+}
+
+type SignatureSlot = { slot: number; name: string; title: string; path: string; updatedAt: number | null }
+
+/** One signature place: who signs, their title, and the drawing. */
+function SignatureCard({ saved }: { saved: SignatureSlot }) {
+  const save = useMutationUntyped(learnApi.adminSaveCertificateSignature)
+  const remove = useMutationUntyped(learnApi.adminRemoveCertificateSignature)
+  const [name, setName] = useState(saved.name)
+  const [title, setTitle] = useState(saved.title)
+  const [path, setPath] = useState(saved.path)
+  const [busy, setBusy] = useState<'save' | 'remove' | null>(null)
+  const changed = name !== saved.name || title !== saved.title || path !== saved.path
+  const side = saved.slot === 1 ? 'left' : 'right'
+
+  const run = async (kind: 'save' | 'remove') => {
+    setBusy(kind)
+    try {
+      if (kind === 'save') await save({ slot: saved.slot, name, title, path })
+      else await remove({ slot: saved.slot })
+      playSound('success')
+      toast.success(kind === 'save' ? 'Signature saved. It prints on every certificate.' : 'Signature removed')
+    } catch (error) {
+      toast.error(errorMessage(error, 'Could not save the signature'))
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  return (
+    <div className="space-y-3 rounded-2xl border border-black/[0.06] p-4 dark:border-white/10">
+      <p className="text-sm font-semibold text-rh-ink dark:text-white">
+        Signature {saved.slot} <span className="font-normal text-neutral-500">({side} on the certificate)</span>
+      </p>
+      <Field label="Name" htmlFor={`sig-name-${saved.slot}`}>
+        <Input id={`sig-name-${saved.slot}`} value={name} onChange={(e) => setName(e.target.value)} placeholder="Full name, as it should print" />
+      </Field>
+      <Field label="Title" htmlFor={`sig-title-${saved.slot}`}>
+        <Input id={`sig-title-${saved.slot}`} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Co-founder, Rehabify Health" />
+      </Field>
+      <div className="space-y-1.5">
+        <p className={labelClass}>Signature</p>
+        {/* Remounts when the saved drawing changes (the pad keeps its own strokes while drawing) */}
+        <DrawPad key={`${saved.slot}-${saved.updatedAt ?? 0}`} value={saved.path} onChange={setPath} />
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <Button size="sm" className={primaryButtonClass} disabled={busy !== null || !changed || !path || name.trim().length < 3} onClick={() => void run('save')}>
+          {busy === 'save' ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Award className="mr-1.5 h-3.5 w-3.5" />}
+          Save signature
+        </Button>
+        {saved.updatedAt && (
+          <Button size="sm" variant="ghost" className={softButtonClass} disabled={busy !== null} onClick={() => void run('remove')}>
+            Remove
+          </Button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * The founders' drawn signatures, printed on every certificate (two places, left and right).
+ * Each person signs with a finger, pen or mouse; the drawing is stored as a vector line.
+ */
+function SignaturesPanel() {
+  const slots = useQueryUntyped(learnApi.adminCertificateSignatures, {}) as SignatureSlot[] | undefined
+  return (
+    <Panel
+      title="Signatures"
+      description="Two signatures print on every certificate, for example both co-founders. Sign on a phone or tablet for the smoothest line."
+      bodyClassName="px-5 pb-5 pt-2"
+    >
+      {slots === undefined ? (
+        <LoadingBlock />
+      ) : (
+        <div className="grid gap-4 lg:grid-cols-2">
+          {slots.map((slot) => (
+            <SignatureCard key={`${slot.slot}-${slot.updatedAt ?? 0}`} saved={slot} />
+          ))}
+        </div>
       )}
     </Panel>
   )
@@ -231,6 +315,8 @@ export function CertificatesPanel({ cohortId }: { cohortId: Id<'learnCohorts'> }
       </div>
 
       <PreviewCard design={design} learner={selected} />
+
+      <SignaturesPanel />
 
       <Panel
         title="Completed the program"

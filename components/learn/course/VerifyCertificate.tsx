@@ -60,6 +60,7 @@ function Valid({ result }: { result: Extract<Verified, { state: 'valid' }> }) {
     issuedAt: result.issuedAt,
     signatoryName: result.signatoryName,
     signatoryTitle: result.signatoryTitle,
+    signatures: result.signatures,
     note: result.note,
   })
   return (

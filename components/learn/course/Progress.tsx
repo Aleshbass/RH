@@ -424,7 +424,7 @@ export function CertificatePanel({ course }: { course: CourseOk }) {
       issuedAt: cert?.issuedAt ?? Date.now(),
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [cert?.code, cert?.name, cert?.issuedAt, previewName, progress.certificateCohort.cohortLabel, progress.certificateCohort.signatoryName]
+    [cert?.code, cert?.name, cert?.issuedAt, previewName, progress.certificateCohort.cohortLabel, progress.certificateCohort.signatoryName, progress.certificateCohort.signatures]
   )
   const showPreview = Boolean(cert || progress.canClaim)
   const { svg, src, failed } = useCertificate(showPreview ? data : null)

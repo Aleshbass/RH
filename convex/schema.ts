@@ -5593,6 +5593,17 @@ export default defineSchema({
     updatedAt: v.number(),
   }).index("by_cohort", ["cohortId"]),
 
+  // Drawn signatures printed on every Learn certificate (Admin › Learn › Certificates): two slots,
+  // left and right. When none are saved, the course's typed signatory above is used instead.
+  learnSignatures: defineTable({
+    slot: v.number(), // 1 = left, 2 = right
+    name: v.string(),
+    title: v.string(),
+    path: v.string(), // SVG path data drawn on the 600 x 180 signature pad
+    updatedBy: v.id("users"),
+    updatedAt: v.number(),
+  }).index("by_slot", ["slot"]),
+
   learnAttempts: defineTable({
     registrationId: v.id("learnRegistrations"),
     cohortId: v.id("learnCohorts"),

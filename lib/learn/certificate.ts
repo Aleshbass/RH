@@ -16,6 +16,11 @@ export type CertificateData = {
   issuedAt: number
   signatoryName: string | null
   signatoryTitle: string | null
+  /**
+   * Drawn signatures (Admin › Learn › Certificates), left then right. SVG path data on the
+   * 600 × 180 signature pad. When there are any, they replace the typed "Issued by" line.
+   */
+  signatures?: { name: string; title: string; path: string }[]
   note: string
   /** Shown without https:// */
   verifyUrl: string
@@ -64,6 +69,26 @@ function label(x: number, y: number, text: string, anchor: 'start' | 'end' = 'st
   return `<text x="${x}" y="${y}" text-anchor="${anchor}" font-family="RHMatter" font-weight="600" font-size="2.3" letter-spacing="0.45" fill="${INK}" fill-opacity="0.5">${esc(text.toUpperCase())}</text>`
 }
 
+// Signature blocks (mm): the drawing (600 × 180 pad units) sits on a line, name and title under it
+const SIGNATURE = { width: 56, top: 151, columns: [100, 170] }
+const PAD = { width: 600, height: 180 }
+const SAFE_PATH = /^[ML0-9 .-]+$/
+
+function signatureBlock(x: number, sig: { name: string; title: string; path: string }, measure: Measure) {
+  const scale = SIGNATURE.width / PAD.width
+  const lineY = SIGNATURE.top + PAD.height * scale + 1
+  const nameSize = fit(sig.name, 'matterBold', 3.6, 2.6, SIGNATURE.width, measure)
+  const titleSize = fit(sig.title, 'matter', 2.9, 2.2, SIGNATURE.width, measure)
+  // Only plain move/line path data is drawn (that's all the signature pad makes)
+  const drawing = SAFE_PATH.test(sig.path)
+    ? `<path transform="translate(${x} ${SIGNATURE.top}) scale(${scale.toFixed(5)})" d="${sig.path}" fill="none" stroke="${INK}" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/>`
+    : ''
+  return `${drawing}
+<rect x="${x}" y="${lineY.toFixed(2)}" width="${SIGNATURE.width}" height="0.25" fill="${INK}" fill-opacity="0.3"/>
+<text x="${x}" y="${(lineY + 5.5).toFixed(2)}" font-family="RHMatter" font-weight="600" font-size="${nameSize}" fill="${INK}">${esc(sig.name)}</text>
+${sig.title ? `<text x="${x}" y="${(lineY + 10.3).toFixed(2)}" font-family="RHMatter" font-size="${titleSize}" fill="${INK}" fill-opacity="0.6">${esc(sig.title)}</text>` : ''}`
+}
+
 export function certificateSvg(data: CertificateData, assets: CertificateAssets, measure: Measure = estimate) {
   const nameSize = fit(data.name, 'cal', NAME.maxSize, NAME.minSize, CONTENT, measure)
   const nameWidth = measure(data.name, 'cal', nameSize)
@@ -77,6 +102,9 @@ export function certificateSvg(data: CertificateData, assets: CertificateAssets,
   // The "Issued by" column is 58 mm wide, so a long title never reaches the verify link
   const issuerSize = fit(issuer, 'matterBold', 3.8, 2.8, 58, measure)
   const issuerTitleSize = fit(issuerTitle, 'matter', 3, 2.2, 58, measure)
+  // At most two drawn signatures; with them, the verify link sits under the date (70 mm wide)
+  const signatures = (data.signatures ?? []).filter((s) => s.path && s.name).slice(0, 2)
+  const stackedVerifySize = fit(data.verifyUrl, 'matterBold', 3.2, 2.2, 70, measure)
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${PAGE.width}mm" height="${PAGE.height}mm" viewBox="0 0 ${PAGE.width} ${PAGE.height}">
 <defs><style>
@@ -102,7 +130,15 @@ ${label(RIGHT, 26.5, 'Certificate no.', 'end')}
 <text x="${LEFT}" y="134" font-family="RHCal" font-weight="600" font-size="${titleSize}" fill="${INK}">${esc(data.programTitle)}</text>
 <text x="${LEFT}" y="144" font-family="RHMatter" font-size="${detailsSize}" fill="${INK}" fill-opacity="0.6">${esc(details)}</text>
 
-${label(LEFT, 172, 'Date issued')}
+${
+  signatures.length
+    ? // Signed: date and verify link stacked on the left, the drawn signatures in the middle
+      `${label(LEFT, 162, 'Date issued')}
+<text x="${LEFT}" y="168.5" font-family="RHMatter" font-weight="600" font-size="3.8" fill="${INK}">${esc(issuedOn(data.issuedAt))}</text>
+${label(LEFT, 178, 'Verify this certificate')}
+<text x="${LEFT}" y="184.5" font-family="RHMatter" font-weight="600" font-size="${stackedVerifySize}" fill="${INK}">${esc(data.verifyUrl)}</text>
+${signatures.map((sig, i) => signatureBlock(SIGNATURE.columns[i], sig, measure)).join('\n')}`
+    : `${label(LEFT, 172, 'Date issued')}
 <text x="${LEFT}" y="178.5" font-family="RHMatter" font-weight="600" font-size="3.8" fill="${INK}">${esc(issuedOn(data.issuedAt))}</text>
 
 ${label(84, 172, 'Issued by')}
@@ -110,7 +146,8 @@ ${label(84, 172, 'Issued by')}
 ${issuerTitle ? `<text x="84" y="183.5" font-family="RHMatter" font-size="${issuerTitleSize}" fill="${INK}" fill-opacity="0.6">${esc(issuerTitle)}</text>` : ''}
 
 ${label(150, 172, 'Verify this certificate')}
-<text x="150" y="178.5" font-family="RHMatter" font-weight="600" font-size="${verifySize}" fill="${INK}">${esc(data.verifyUrl)}</text>
+<text x="150" y="178.5" font-family="RHMatter" font-weight="600" font-size="${verifySize}" fill="${INK}">${esc(data.verifyUrl)}</text>`
+}
 
 <!-- Brand pairing mark: ink square with a lime square on its corner, flush with the right margin -->
 <rect x="243" y="152" width="25" height="25" rx="6" fill="${INK}"/>

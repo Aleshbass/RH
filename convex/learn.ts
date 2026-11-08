@@ -1768,8 +1768,19 @@ function certificateView(registration: Doc<"learnRegistrations">) {
     : null;
 }
 
+type CertificateSignature = { name: string; title: string; path: string };
+
+/** The drawn signatures printed on certificates, left (slot 1) then right (slot 2). */
+async function certificateSignatures(ctx: Ctx): Promise<CertificateSignature[]> {
+  const rows = await ctx.db.query("learnSignatures").withIndex("by_slot").collect();
+  return rows
+    .filter((r) => r.slot === 1 || r.slot === 2)
+    .sort((a, b) => a.slot - b.slot)
+    .map((r) => ({ name: r.name, title: r.title, path: r.path }));
+}
+
 /** Certificate details everything that draws a certificate needs (course page and verify page). */
-function certificateCohort(cohort: Doc<"learnCohorts">, assessment: Doc<"learnAssessments"> | null) {
+function certificateCohort(cohort: Doc<"learnCohorts">, assessment: Doc<"learnAssessments"> | null, signatures: CertificateSignature[]) {
   return {
     programTitle: PROGRAM_TITLE,
     cohortLabel: cohort.cohortLabel,
@@ -1777,6 +1788,7 @@ function certificateCohort(cohort: Doc<"learnCohorts">, assessment: Doc<"learnAs
     duration: cohort.duration,
     signatoryName: assessment?.signatoryName ?? null,
     signatoryTitle: assessment?.signatoryTitle ?? null,
+    signatures,
     note: CERTIFICATE_NOTE,
   };
 }
@@ -1817,7 +1829,7 @@ async function progressView(
     certificate,
     canClaim: !certificate && passed && attendedSessionIds.length >= minSessions,
     suggestedName: `${registration.firstName} ${registration.lastName}`.trim(),
-    certificateCohort: certificateCohort(cohort, assessment),
+    certificateCohort: certificateCohort(cohort, assessment, await certificateSignatures(ctx)),
   };
 }
 
@@ -1998,7 +2010,7 @@ export const verifyCertificate = query({
       code,
       name: registration.certificateName ?? `${registration.firstName} ${registration.lastName}`,
       issuedAt: registration.certificateIssuedAt ?? registration.updatedAt,
-      ...certificateCohort(cohort, await cohortAssessment(ctx, cohort._id)),
+      ...certificateCohort(cohort, await cohortAssessment(ctx, cohort._id), await certificateSignatures(ctx)),
     };
   },
 });
@@ -2213,7 +2225,7 @@ export const adminLearnerProgress = query({
     return {
       minSessions,
       // Everything that draws this cohort's certificate (the admin preview matches what physios download)
-      design: cohort ? certificateCohort(cohort, assessment) : null,
+      design: cohort ? certificateCohort(cohort, assessment, await certificateSignatures(ctx)) : null,
       sessions: sessions.map((s) => ({ id: s._id, label: lagosDateTime(s.startsAt), title: s.title ?? null, past: s.endsAt < Date.now() })),
       learners: rows.sort((a, b) => a.name.localeCompare(b.name)),
     };
@@ -2251,6 +2263,59 @@ export const adminIssueCertificate = mutation({
       certificateRevokedAt: undefined,
       updatedAt: now,
     });
+  },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Certificate signatures: two drawn signatures (left and right) printed on every certificate
+// ─────────────────────────────────────────────────────────────────────────────
+
+const SIGNATURE_PATH = /^[ML0-9 .-]+$/;
+const MAX_SIGNATURE_PATH = 60_000;
+
+export const adminCertificateSignatures = query({
+  args: {},
+  handler: async (ctx) => {
+    await requireAdmin(ctx);
+    const rows = await ctx.db.query("learnSignatures").withIndex("by_slot").collect();
+    return [1, 2].map((slot) => {
+      const row = rows.find((r) => r.slot === slot);
+      return { slot, name: row?.name ?? "", title: row?.title ?? "", path: row?.path ?? "", updatedAt: row?.updatedAt ?? null };
+    });
+  },
+});
+
+export const adminSaveCertificateSignature = mutation({
+  args: { slot: v.number(), name: v.string(), title: v.string(), path: v.string() },
+  handler: async (ctx, args) => {
+    const admin = await requireAdmin(ctx);
+    if (args.slot !== 1 && args.slot !== 2) throw new ConvexError("There are two signature places: 1 (left) and 2 (right).");
+    const name = clean(args.name, 80);
+    const title = clean(args.title, 80);
+    const path = args.path.trim();
+    if (name.length < 3) throw new ConvexError("Add the name that prints under the signature.");
+    if (!path || path.length > MAX_SIGNATURE_PATH || !SIGNATURE_PATH.test(path)) {
+      throw new ConvexError("Draw the signature again: it didn't come through.");
+    }
+    const existing = await ctx.db
+      .query("learnSignatures")
+      .withIndex("by_slot", (q) => q.eq("slot", args.slot))
+      .first();
+    const fields = { name, title, path, updatedBy: admin.user._id, updatedAt: Date.now() };
+    if (existing) await ctx.db.patch(existing._id, fields);
+    else await ctx.db.insert("learnSignatures", { slot: args.slot, ...fields });
+  },
+});
+
+export const adminRemoveCertificateSignature = mutation({
+  args: { slot: v.number() },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx);
+    const rows = await ctx.db
+      .query("learnSignatures")
+      .withIndex("by_slot", (q) => q.eq("slot", args.slot))
+      .collect();
+    for (const row of rows) await ctx.db.delete(row._id);
   },
 });
 
