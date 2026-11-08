@@ -10,11 +10,11 @@ import {
   Award,
   BadgeCheck,
   CalendarDays,
-  ChevronDown,
   Clock3,
   Lock,
   MonitorPlay,
   PlayCircle,
+  Plus,
   Video,
 } from '@/components/icons'
 import { api } from '@/convex/_generated/api'
@@ -512,12 +512,10 @@ function Faq({ cohort }: { cohort: PublicCohort | null | undefined }) {
         </FadeUp>
         <FadeUp className="space-y-3">
           {items.map((item) => (
-            <details key={item.q} className="group rounded-[1.5rem] bg-white px-6 py-5 shadow-soft open:shadow-lift">
+            <details key={item.q} className="group rounded-[1.5rem] bg-white px-6 py-5 ring-1 ring-inset ring-rh-ink/[0.06]">
               <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-left text-[17px] font-semibold text-rh-ink [&::-webkit-details-marker]:hidden">
                 {item.q}
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-rh-honeydew text-rh-ink transition group-open:rotate-180">
-                  <ChevronDown className="h-4 w-4" />
-                </span>
+                <Plus className="h-4 w-4 shrink-0 text-rh-ink transition-transform duration-300 group-open:rotate-45 motion-reduce:transition-none" />
               </summary>
               <p className="mt-3 pr-10 text-[15px] leading-7 text-rh-ink/70">{item.a}</p>
             </details>
