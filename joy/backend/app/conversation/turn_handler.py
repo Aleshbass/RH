@@ -2674,11 +2674,11 @@ def _price_question_turn(
     answer, topic = price_answer(user_text)
     if topic == "hmo":
         try:
-            route_escalation(session, "hmo", {
+            route_escalation(session, "insurance", {
                 "phone": identity.phone_e164, "patient_id": str(identity.person_id), "text": (user_text or "")[:200],
             })
         except Exception:
-            logger.warning("joy_hmo_admin_alert_failed", exc_info=True)
+            logger.warning("joy_insurance_admin_alert_failed", exc_info=True)
     append(session, kind=AuditKind.TRIAGE, actor_phone=identity.phone_e164, person_id=identity.person_id,
            payload={"decision": "price_question_answered", "topic": topic})
     carries_story = looks_like_symptom(user_text)

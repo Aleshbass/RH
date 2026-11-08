@@ -213,7 +213,7 @@ def test_an_hmo_question_alerts_the_team(db_session, rh, new_patient, prices, mo
     handle_turn(db_session, new_patient.phone_e164, "Hi", FakeLLM())
     result = handle_turn(db_session, new_patient.phone_e164, "Do you accept AXA Mansard HMO?", FakeLLM())
     assert "HMO or insurance cover" in result.before[0]["text"]
-    assert alerts and alerts[0][0] == "hmo" and "AXA" in alerts[0][1]["text"]
+    assert alerts and alerts[0][0] == "insurance" and "AXA" in alerts[0][1]["text"]
 
 
 def test_the_older_flow_answers_then_welcomes(db_session, new_patient, prices, monkeypatch):
