@@ -129,6 +129,7 @@ import type * as exerciseTemplates from "../exerciseTemplates.js";
 import type * as exercises from "../exercises.js";
 import type * as files from "../files.js";
 import type * as findHelp from "../findHelp.js";
+import type * as guidedSessions from "../guidedSessions.js";
 import type * as health from "../health.js";
 import type * as helpers_accessAwards from "../helpers/accessAwards.js";
 import type * as helpers_adminPaymentAlerts from "../helpers/adminPaymentAlerts.js";
@@ -434,6 +435,7 @@ declare const fullApi: ApiFromModules<{
   exercises: typeof exercises;
   files: typeof files;
   findHelp: typeof findHelp;
+  guidedSessions: typeof guidedSessions;
   health: typeof health;
   "helpers/accessAwards": typeof helpers_accessAwards;
   "helpers/adminPaymentAlerts": typeof helpers_adminPaymentAlerts;
