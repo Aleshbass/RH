@@ -3,11 +3,14 @@
 import Image from "next/image";
 import Link from "next/link";
 import * as Dialog from "@radix-ui/react-dialog";
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { AnimatePresence, motion, useInView, useReducedMotion } from "framer-motion";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { ArrowDown, ArrowRight, Plus, X } from "@/components/icons";
+import { ArrowDown, ArrowRight, Check, Plus, X } from "@/components/icons";
 import { MarketingVideo } from "@/components/landing/MarketingVideo";
 import { PairingShapes } from "@/components/learn/shared";
+import { AnimatedList } from "@/components/magicui/animated-list";
+import { NumberTicker } from "@/components/magicui/number-ticker";
+import { CallScene } from "@/components/marketing/CallScene";
 import { LoopVideo } from "@/components/marketing/LoopVideo";
 import { SnapCarousel } from "@/components/marketing/SnapCarousel";
 import { signUpHrefFor } from "@/lib/auth/signupIntent";
@@ -58,73 +61,181 @@ function StartFree({ onInk = false, className }: { onInk?: boolean; className?: 
 }
 
 // ─── Small product sketches for the tool cards (ink and lime, no screenshots of old designs) ───
+// They animate while on screen (Magic UI components, components/magicui) and replay when a reader
+// swipes back to them; reduced motion shows the final state.
+
+/** True while the element is on screen; always true for reduced motion (final state, no movement). */
+function useShown(amount = 0.4) {
+  const ref = useRef<HTMLDivElement>(null);
+  const inView = useInView(ref, { amount });
+  const reduce = useReducedMotion();
+  return { ref, shown: inView || Boolean(reduce), moving: inView && !reduce, reduce: Boolean(reduce) };
+}
+
+function RecordSketch() {
+  const { ref, moving } = useShown();
+  const items = ["History and red flags", "SOAP note saved", "Care plan updated"];
+  return (
+    <div ref={ref} className="relative h-full overflow-hidden">
+      <motion.div
+        className="absolute inset-0"
+        animate={moving ? { scale: [1, 1.07, 1] } : { scale: 1 }}
+        transition={moving ? { duration: 14, repeat: Infinity, ease: "easeInOut" } : { duration: 0 }}
+      >
+        <Image
+          src="/logos/images/Group 469272 (1).webp"
+          alt="A physiotherapist treating a patient"
+          fill
+          sizes="(min-width: 1024px) 360px, 84vw"
+          className="object-cover object-[center_20%]"
+        />
+      </motion.div>
+      <AnimatedList replay order="stack" startDelay={500} delay={900} loopAfter={3500} className="absolute bottom-3 left-3 w-[64%] items-stretch gap-1.5">
+        {items.map((item) => (
+          <p key={item} className="flex items-center gap-2 rounded-xl bg-white/95 px-3 py-1.5 text-[12px] font-semibold text-rh-ink shadow-soft">
+            <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-rh-lime">
+              <Check className="h-2.5 w-2.5" />
+            </span>
+            {item}
+          </p>
+        ))}
+      </AnimatedList>
+    </div>
+  );
+}
 
 function TemplatesSketch() {
   const rows = ["ACL reconstruction: weeks 1–6", "Acute low back pain", "Frozen shoulder"];
   return (
-    <div className="flex h-full flex-col justify-center gap-2 p-4">
-      {rows.map((row, i) => (
-        <div key={row} className="flex items-center justify-between gap-3 rounded-2xl bg-white px-3.5 py-2.5 text-[13px] font-medium text-rh-ink">
-          <span className="truncate">{row}</span>
-          {i === 0 && <span className="shrink-0 rounded-full bg-rh-lime px-2.5 py-0.5 text-[11px] font-semibold">Use</span>}
+    <div className="flex h-full flex-col justify-center p-4">
+      <AnimatedList replay order="chat" startDelay={300} delay={600} loopAfter={3500} className="items-stretch gap-1.5">
+        {rows.map((row, i) => (
+          <div key={row} className="flex items-center justify-between gap-3 rounded-2xl bg-white px-3.5 py-2 text-[13px] font-medium text-rh-ink">
+            <span className="truncate">{row}</span>
+            {i === 0 && <span className="shrink-0 rounded-full bg-rh-lime px-2.5 py-0.5 text-[11px] font-semibold">Use</span>}
+          </div>
+        ))}
+        <div key="ready" className="flex items-center gap-2 rounded-2xl bg-rh-ink px-3.5 py-2 text-[13px] font-semibold text-white">
+          <Check className="h-3.5 w-3.5 shrink-0 text-rh-lime" />
+          <span className="truncate">Plan ready, from ACL reconstruction</span>
         </div>
-      ))}
+      </AnimatedList>
     </div>
   );
 }
 
-function CallSketch() {
-  return (
-    <div className="relative h-full p-4">
-      <div className="flex h-full items-center justify-center rounded-2xl bg-rh-ink">
-        <span className="flex h-14 w-14 items-center justify-center rounded-full bg-white/10 text-lg font-bold text-white">AO</span>
-        <span className="absolute right-7 top-7 flex h-12 w-10 items-center justify-center rounded-lg bg-rh-ink-3 text-[11px] font-semibold text-white ring-1 ring-white/10">You</span>
-      </div>
-      <span className="absolute bottom-7 left-7 max-w-[70%] rounded-2xl rounded-bl-sm bg-white px-3 py-2 text-[12px] text-rh-ink shadow-soft">
-        Knee feels better after the exercises
-      </span>
-    </div>
-  );
-}
+const WEEK_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
+const BOOKED = [[0, 2], [1], [0, 1, 3], [2], [1, 2]];
+const NEW_BOOKING = { day: 3, slot: 1 };
 
 function WeekSketch() {
-  const days = ["Mon", "Tue", "Wed", "Thu", "Fri"];
-  const booked = [[0, 2], [1], [0, 1, 3], [2], [1, 2]];
+  const { ref, shown, moving, reduce } = useShown();
+  // A new booking lands a moment after the week fills in, then the loop starts again
+  const [fresh, setFresh] = useState(false);
+  useEffect(() => {
+    if (reduce) return setFresh(true);
+    if (!moving) return setFresh(false);
+    const t = setInterval(() => setFresh((f) => !f), 2600);
+    return () => clearInterval(t);
+  }, [moving, reduce]);
+  let order = 0;
   return (
-    <div className="grid h-full grid-cols-5 gap-1.5 p-4">
-      {days.map((day, d) => (
+    <div ref={ref} className="relative grid h-full grid-cols-5 gap-1.5 p-4">
+      {WEEK_DAYS.map((day, d) => (
         <div key={day} className="flex flex-col gap-1.5">
           <span className="text-center text-[11px] font-semibold text-rh-ink/60">{day}</span>
-          {[0, 1, 2, 3].map((slot) => (
-            <span key={slot} className={cn("flex-1 rounded-lg", booked[d].includes(slot) ? "bg-rh-ink" : "bg-white")} />
-          ))}
+          {[0, 1, 2, 3].map((slot) => {
+            const booked = BOOKED[d].includes(slot);
+            const isNew = d === NEW_BOOKING.day && slot === NEW_BOOKING.slot;
+            const delay = booked ? 0.05 * order++ : 0;
+            return (
+              <span key={slot} className="relative flex-1 rounded-lg bg-white">
+                {(booked || isNew) && (
+                  <motion.span
+                    className={cn("absolute inset-0 rounded-lg", isNew ? "bg-rh-lime" : "bg-rh-ink")}
+                    initial={false}
+                    animate={(isNew ? fresh : shown) ? { scale: 1, opacity: 1 } : { scale: 0.4, opacity: 0 }}
+                    transition={reduce ? { duration: 0 } : { type: "spring", stiffness: 260, damping: 20, delay: isNew ? 0 : delay }}
+                  />
+                )}
+              </span>
+            );
+          })}
         </div>
       ))}
+      <AnimatePresence>
+        {fresh && !reduce && (
+          <motion.p
+            key="toast"
+            initial={{ opacity: 0, y: 8, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 8, scale: 0.95 }}
+            transition={{ type: "spring", stiffness: 350, damping: 30 }}
+            className="absolute inset-x-6 bottom-3 rounded-xl bg-rh-ink px-3 py-2 text-center text-[12px] font-semibold text-white shadow-soft"
+          >
+            New booking · Thu 10:00
+          </motion.p>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
 
+const INVOICES = [
+  { who: "Invoice to A. Okafor", paid: true },
+  { who: "Invoice to T. Bello", paid: false },
+  { who: "Invoice to K. Eze", paid: true },
+];
+
 function InvoiceSketch() {
-  const rows = [
-    { who: "Invoice to A. Okafor", status: "Paid" },
-    { who: "Invoice to T. Bello", status: "Sent" },
-    { who: "Invoice to K. Eze", status: "Paid" },
-  ];
+  const { ref, moving, reduce } = useShown();
+  // T. Bello's invoice gets paid while you watch
+  const [settled, setSettled] = useState(false);
+  useEffect(() => {
+    if (reduce) return setSettled(true);
+    if (!moving) return setSettled(false);
+    const t = setTimeout(() => setSettled(true), 2400);
+    return () => clearTimeout(t);
+  }, [moving, reduce]);
   return (
-    <div className="flex h-full flex-col justify-center gap-2 p-4">
-      {rows.map((row) => (
-        <div key={row.who} className="flex items-center justify-between gap-3 rounded-2xl bg-white px-3.5 py-2.5 text-[13px] font-medium text-rh-ink">
-          <span className="truncate">{row.who}</span>
-          <span
-            className={cn(
-              "shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-semibold",
-              row.status === "Paid" ? "bg-rh-lime text-rh-ink" : "bg-rh-ink/[0.06] text-rh-ink/70",
-            )}
-          >
-            {row.status}
-          </span>
-        </div>
-      ))}
+    <div ref={ref} className="flex h-full flex-col justify-center gap-2 p-4">
+      <p className="flex items-baseline justify-between px-1 text-[12px] font-semibold text-rh-ink/60">
+        Received this week
+        <span className="text-[15px] font-bold text-rh-ink">
+          ₦<NumberTicker value={settled ? 63000 : 45000} replay />
+        </span>
+      </p>
+      <AnimatedList replay order="chat" startDelay={200} delay={450} className="items-stretch gap-2">
+        {INVOICES.map((row) => {
+          const paid = row.paid || settled;
+          return (
+            <div key={row.who} className="flex items-center justify-between gap-3 rounded-2xl bg-white px-3.5 py-2 text-[13px] font-medium text-rh-ink">
+              <span className="truncate">{row.who}</span>
+              <AnimatePresence mode="wait" initial={false}>
+                <motion.span
+                  key={paid ? "paid" : "sent"}
+                  initial={{ scale: 0.6, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  exit={{ scale: 0.6, opacity: 0 }}
+                  transition={{ type: "spring", stiffness: 400, damping: 25 }}
+                  className={cn(
+                    "inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold",
+                    paid ? "bg-rh-lime text-rh-ink" : "bg-rh-ink/[0.06] text-rh-ink/70",
+                  )}
+                >
+                  {paid ? (
+                    <>
+                      Paid <Check className="h-2.5 w-2.5" />
+                    </>
+                  ) : (
+                    "Sent"
+                  )}
+                </motion.span>
+              </AnimatePresence>
+            </div>
+          );
+        })}
+      </AnimatedList>
     </div>
   );
 }
@@ -132,19 +243,7 @@ function InvoiceSketch() {
 type Tool = { title: string; body: string; visual: ReactNode; note?: string };
 
 const TOOLS: Tool[] = [
-  {
-    title: "Every patient in one place",
-    body: "History, SOAP notes and care plans, ready before each session.",
-    visual: (
-      <Image
-        src="/logos/images/Group 469272 (1).webp"
-        alt="A physiotherapist treating a patient"
-        fill
-        sizes="(min-width: 1024px) 360px, 84vw"
-        className="object-cover object-[center_20%]"
-      />
-    ),
-  },
+  { title: "Every patient in one place", body: "History, SOAP notes and care plans, ready before each session.", visual: <RecordSketch /> },
   { title: "Care plans in minutes", body: "Start from templates you've saved instead of writing from scratch.", visual: <TemplatesSketch /> },
   {
     title: "Exercise programmes patients actually follow",
@@ -154,7 +253,11 @@ const TOOLS: Tool[] = [
       <LoopVideo base="/media/camera-coach-demo" label="Demo: 3D motion tracking follows shoulder raises and counts the reps" className="object-[62%_50%]" />
     ),
   },
-  { title: "See patients anywhere", body: "Video sessions and messaging, so you can follow up between visits.", visual: <CallSketch /> },
+  {
+    title: "See patients anywhere",
+    body: "Video sessions and messaging, so you can follow up between visits.",
+    visual: <CallScene compact className="p-4" initials="AO" incoming="Knee feels better after the exercises" outgoing="Great, let's add a third set 💪🏾" />,
+  },
   { title: "Your week, organised", body: "Set your hours and see your appointments at a glance.", visual: <WeekSketch /> },
   { title: "Get paid without chasing", body: "Send invoices, and track what's been paid.", visual: <InvoiceSketch /> },
 ];

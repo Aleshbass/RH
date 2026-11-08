@@ -11,6 +11,7 @@ import { CheckCheck, Rotate3d, TrendingDown, X } from "@/components/icons";
 import { AnimatedList } from "@/components/magicui/animated-list";
 import { NumberTicker } from "@/components/magicui/number-ticker";
 import { TypingAnimation } from "@/components/magicui/typing-animation";
+import { CallScene } from "@/components/marketing/CallScene";
 import { LoopVideo } from "@/components/marketing/LoopVideo";
 import { SnapCarousel } from "@/components/marketing/SnapCarousel";
 import { EXERCISE_CATALOG, posterUrl } from "@/convex/exerciseLibraryCatalog";
@@ -214,57 +215,8 @@ function ProgressVisual() {
   );
 }
 
-/** Sound bars that move while the physio is talking. */
-function Speaking({ active }: { active: boolean }) {
-  return (
-    <span aria-hidden className="mt-3 flex h-4 items-end gap-[3px]">
-      {[0.5, 1, 0.7, 0.9, 0.4].map((peak, i) => (
-        <motion.span
-          key={i}
-          className="w-[3px] origin-bottom rounded-full bg-rh-lime"
-          style={{ height: "100%" }}
-          animate={active ? { scaleY: [0.25, peak, 0.35, peak * 0.8, 0.25] } : { scaleY: 0.3 }}
-          transition={active ? { duration: 1.1, repeat: Infinity, delay: i * 0.12, ease: "easeInOut" } : { duration: 0 }}
-        />
-      ))}
-    </span>
-  );
-}
-
 function CallVisual() {
-  const ref = useRef<HTMLDivElement>(null);
-  const inView = useInView(ref, { amount: 0.4 });
-  const reduce = useReducedMotion();
-  const [seconds, setSeconds] = useState(4);
-  useEffect(() => {
-    if (!inView || reduce) return;
-    const t = setInterval(() => setSeconds((s) => s + 1), 1000);
-    return () => clearInterval(t);
-  }, [inView, reduce]);
-  const clock = `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
-  return (
-    <div ref={ref} className="relative h-full p-5">
-      <div className="relative flex h-full flex-col items-center rounded-2xl bg-rh-ink pt-10">
-        <span className="absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-full bg-white/10 px-2.5 py-1 text-[11px] font-semibold tabular-nums text-white">
-          <span aria-hidden className="h-1.5 w-1.5 animate-pulse rounded-full bg-rh-lime" />
-          {clock}
-        </span>
-        <span className="absolute right-3 top-3 flex h-14 w-11 items-center justify-center rounded-lg bg-rh-ink-3 text-[11px] font-semibold text-white ring-1 ring-white/10">
-          You
-        </span>
-        <span className="flex h-16 w-16 items-center justify-center rounded-full bg-white/10 text-lg font-bold text-white">CN</span>
-        <Speaking active={inView && !reduce} />
-      </div>
-      <AnimatedList replay order="chat" startDelay={900} delay={1600} loopAfter={4000} className="absolute inset-x-8 bottom-8 items-stretch gap-2">
-        <div key="physio" className="flex">
-          <span className="max-w-[80%] rounded-2xl rounded-bl-sm bg-white px-3 py-2 text-[12px] text-rh-ink shadow-soft">How did the exercises feel today?</span>
-        </div>
-        <div key="you" className="flex justify-end">
-          <span className="max-w-[80%] rounded-2xl rounded-br-sm bg-rh-lime px-3 py-2 text-[12px] font-medium text-rh-ink">Much easier than last week 🙌🏾</span>
-        </div>
-      </AnimatedList>
-    </div>
-  );
+  return <CallScene className="p-5" initials="CN" incoming="How did the exercises feel today?" outgoing="Much easier than last week 🙌🏾" />;
 }
 
 function Card({ title, body, note, children }: { title: string; body: string; note?: string; children: ReactNode }) {
