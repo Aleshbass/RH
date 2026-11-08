@@ -391,8 +391,12 @@ async function main() {
 async function setupEncoder() {
   const EW = Number(params.get('ew') ?? 960)
   const EH = Number(params.get('eh') ?? 540)
-  const mp4 = await import(/* @vite-ignore */ 'https://cdn.jsdelivr.net/npm/mp4-muxer@5.2.1/+esm')
-  const webm = await import(/* @vite-ignore */ 'https://cdn.jsdelivr.net/npm/webm-muxer@5.1.4/+esm')
+  // Loaded from the CDN in the browser only. The URLs are variables so TypeScript (and the site's
+  // build, which type-checks every file) treats them as untyped modules instead of failing.
+  const mp4Url: string = 'https://cdn.jsdelivr.net/npm/mp4-muxer@5.2.1/+esm'
+  const webmUrl: string = 'https://cdn.jsdelivr.net/npm/webm-muxer@5.1.4/+esm'
+  const mp4 = await import(/* @vite-ignore */ mp4Url)
+  const webm = await import(/* @vite-ignore */ webmUrl)
   const outputs = [
     { name: 'av1', codec: 'av01.0.05M.08', bitrate: Number(params.get('av1') ?? 380_000), lib: webm, track: 'V_AV1' },
     { name: 'vp9', codec: 'vp09.00.31.08', bitrate: Number(params.get('vp9') ?? 550_000), lib: webm, track: 'V_VP9' },
