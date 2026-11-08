@@ -39,6 +39,8 @@ interface NavItem {
   name: string;
   href?: string;
   items?: MenuLink[];
+  /** Phone menu: list the items as their own rows instead of behind a tap-to-open group */
+  flatOnMobile?: boolean;
 }
 
 // About us: FAQs and Support become sections of the About page once it is built
@@ -50,17 +52,12 @@ const navLinks: NavItem[] = [
       { name: "For family members", href: "/platform/family" },
     ],
   },
+  // One page each. Professionals read their page (why to join) before signing up there.
   {
     name: "For professionals",
+    flatOnMobile: true,
     items: [
-      {
-        name: "For physiotherapists",
-        href: "/platform/physiotherapists",
-        children: [
-          { name: "MSK Specialist Program", href: "/learn", badge: "New" },
-          { name: "Physio register", href: "/physio-register" },
-        ],
-      },
+      { name: "For physiotherapists", href: "/platform/physiotherapists" },
       { name: "For clinics", href: "/platform/clinics" },
       { name: "For referring doctors", href: "/platform/doctors" },
       { name: "For partners", href: "/partnerships" },
@@ -373,6 +370,18 @@ export default function Header() {
 
                 <nav className="rounded-2xl bg-white p-2">
                   {navLinks.map((item) => {
+                    if (item.items && item.flatOnMobile) {
+                      return item.items.map((link) => (
+                        <Link
+                          key={link.href}
+                          href={link.href}
+                          onClick={closeMobile}
+                          className="flex items-center px-3.5 py-3.5 rounded-xl text-[15px] font-semibold text-rh-ink hover:bg-rh-canvas transition-colors"
+                        >
+                          {link.name}
+                        </Link>
+                      ));
+                    }
                     if (!item.items) {
                       return (
                         <Link

@@ -1,24 +1,21 @@
 "use client";
 
 /**
- * "Get started" in the site header: asks who the visitor is before sign-up, so a physio or
- * clinic who never found their own page still lands in the right onboarding. The option
- * matching the current page is marked "Suggested"; the choice is remembered for later.
+ * "Get started" in the site header is for people getting care: a patient, or someone arranging
+ * care for a family member. Physios, clinics, doctors and partners start from their own page
+ * (For professionals), which explains why to join before sign-up. The choice is remembered.
  */
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import { useQuery } from "convex/react";
 import { makeFunctionReference } from "convex/server";
 import { Building2, ChevronDown, Handshake, Heart, HeartHandshake, LayoutDashboard, Stethoscope, UserCheck } from "@/components/icons";
 import { cn } from "@/lib/utils";
 import {
-  intentForPath,
+  HEADER_INTENTS,
   onboardingPathFor,
-  PRIMARY_INTENTS,
   rememberIntent,
-  SECONDARY_INTENTS,
   SIGNUP_INTENTS,
   signUpHrefFor,
   type SignupIntent,
@@ -80,22 +77,13 @@ function IntentLink({
   );
 }
 
-/** Every option, primary roles first. Used inside the desktop dropdown and the mobile menu. */
+/** Patient and family only. Used inside the desktop dropdown and the mobile menu. */
 export function GetStartedList({ onPick }: { onPick?: () => void }) {
-  const suggested = intentForPath(usePathname());
   return (
-    <div>
-      <div className="space-y-1">
-        {PRIMARY_INTENTS.map((intent) => (
-          <IntentLink key={intent} intent={intent} suggested={suggested === intent} onPick={onPick} />
-        ))}
-      </div>
-      <div className="my-2 h-px bg-gray-100" role="separator" />
-      <div className="space-y-0.5">
-        {SECONDARY_INTENTS.map((intent) => (
-          <IntentLink key={intent} intent={intent} suggested={suggested === intent} compact onPick={onPick} />
-        ))}
-      </div>
+    <div className="space-y-1">
+      {HEADER_INTENTS.map((intent) => (
+        <IntentLink key={intent} intent={intent} suggested={false} onPick={onPick} />
+      ))}
     </div>
   );
 }

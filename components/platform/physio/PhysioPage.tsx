@@ -2,11 +2,11 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { motion, useReducedMotion } from "framer-motion";
-import { useEffect, useState, type MouseEvent, type ReactNode } from "react";
-import { ArrowRight, Plus } from "@/components/icons";
+import * as Dialog from "@radix-ui/react-dialog";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { ArrowDown, ArrowRight, Plus, X } from "@/components/icons";
 import { MarketingVideo } from "@/components/landing/MarketingVideo";
-import { SegmentedSwitch, switchPanelId, switchTabId } from "@/components/landing/SegmentedSwitch";
 import { PairingShapes } from "@/components/learn/shared";
 import { SnapCarousel } from "@/components/marketing/SnapCarousel";
 import { posterUrl } from "@/convex/exerciseLibraryCatalog";
@@ -15,13 +15,13 @@ import { MARKETING_VIDEOS } from "@/lib/marketingVideos";
 import { cn } from "@/lib/utils";
 
 /**
- * /platform/physiotherapists, in four parts: hero, the two ways to use Rehabify (a switch between
- * the free practice tools and the care network, so it stays one section), questions, closing call.
+ * /platform/physiotherapists: hero, the two ways to use Rehabify (both visible; "Read more" opens
+ * the network details in a drawer), the practice tools, questions and a closing call. A slim
+ * "Start free" bar floats once the hero has scrolled away, so readers never scroll back to start.
  */
 
 const EASE = [0.22, 1, 0.36, 1] as const;
 const SIGN_UP = signUpHrefFor("physiotherapist");
-const WAYS_ID = "two-ways";
 
 const primary =
   "group inline-flex h-12 items-center justify-center gap-2 rounded-full bg-rh-lime px-7 text-[15px] font-semibold text-rh-ink transition-colors hover:bg-rh-lime-deep focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2";
@@ -45,9 +45,12 @@ function Rise({ children, delay = 0, className }: { children: ReactNode; delay?:
   );
 }
 
-function StartFree({ onInk = false }: { onInk?: boolean }) {
+function StartFree({ onInk = false, className }: { onInk?: boolean; className?: string }) {
   return (
-    <Link href={SIGN_UP} className={cn(primary, onInk ? "focus-visible:ring-rh-lime focus-visible:ring-offset-rh-ink" : "focus-visible:ring-rh-ink")}>
+    <Link
+      href={SIGN_UP}
+      className={cn(primary, onInk ? "focus-visible:ring-rh-lime focus-visible:ring-offset-rh-ink" : "focus-visible:ring-rh-ink", className)}
+    >
       Start free
       <ArrowRight className="h-4 w-4 transition-transform duration-300 group-hover:translate-x-1" />
     </Link>
@@ -207,12 +210,6 @@ const FAQS: { question: string; answer: ReactNode }[] = [
   },
 ];
 
-const WAYS = [
-  { id: "practice", label: "Run your practice: free", short: "Your practice" },
-  { id: "network", label: "Get patients from us", short: "Get patients" },
-] as const;
-type WayId = (typeof WAYS)[number]["id"];
-
 function ToolCard({ tool }: { tool: Tool }) {
   return (
     <article className="flex w-full flex-col rounded-[1.75rem] bg-white p-4 ring-1 ring-inset ring-rh-ink/[0.06]">
@@ -220,65 +217,150 @@ function ToolCard({ tool }: { tool: Tool }) {
       <h4 className="mt-5 px-1 text-lg font-bold leading-snug text-rh-ink">{tool.title}</h4>
       <p className="mt-1.5 px-1 pb-1 text-[15px] leading-relaxed text-rh-ink/70">{tool.body}</p>
       {tool.note && (
-        <span className="mx-1 mb-1 mt-auto inline-flex w-fit rounded-full bg-rh-ink px-3 py-1 text-xs font-semibold text-white">{tool.note}</span>
+        <div className="mt-auto px-1 pb-1 pt-3">
+          <span className="inline-flex rounded-full bg-rh-ink px-3 py-1 text-xs font-semibold text-white">{tool.note}</span>
+        </div>
       )}
     </article>
   );
 }
 
+// ─── "Patients from the Rehabify network": read, then close and carry on where you were ───
+
+function NetworkDrawer({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+  return (
+    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+      <Dialog.Portal>
+        <Dialog.Overlay className="fixed inset-0 z-[85] bg-rh-ink/60 backdrop-blur-sm data-[state=open]:animate-in data-[state=open]:fade-in" />
+        <Dialog.Content
+          aria-describedby={undefined}
+          className={cn(
+            "fixed inset-x-0 bottom-0 z-[86] flex max-h-[92vh] flex-col rounded-t-[2rem] bg-rh-canvas",
+            "sm:inset-y-0 sm:left-auto sm:right-0 sm:max-h-none sm:w-[min(94vw,520px)] sm:rounded-none sm:rounded-l-[2rem]",
+            "data-[state=open]:animate-in data-[state=open]:slide-in-from-bottom-8 sm:data-[state=open]:slide-in-from-bottom-0 sm:data-[state=open]:slide-in-from-right-10",
+          )}
+        >
+          <div className="flex items-start justify-between gap-4 px-5 pb-3 pt-5 sm:px-7 sm:pt-7">
+            <Dialog.Title className="text-[26px] font-bold leading-tight tracking-tight text-rh-ink">Patients from the Rehabify network</Dialog.Title>
+            <Dialog.Close
+              aria-label="Close"
+              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white text-rh-ink ring-1 ring-inset ring-rh-ink/10 hover:bg-rh-ink hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-ink"
+            >
+              <X className="h-4 w-4" />
+            </Dialog.Close>
+          </div>
+
+          <div className="flex-1 overflow-y-auto px-5 pb-6 sm:px-7">
+            <p className="text-[16px] leading-relaxed text-rh-ink/70">
+              Licensed physiotherapists in our network receive patients matched by Joy, our AI assistant. No adverts, no marketing cost.
+            </p>
+
+            <div className="mt-6 space-y-3">
+              {NETWORK.map((item) => (
+                <article key={item.title} className="rounded-[1.5rem] bg-white p-5 ring-1 ring-inset ring-rh-ink/[0.06]">
+                  <h3 className="text-lg font-bold leading-snug text-rh-ink">{item.title}</h3>
+                  <p className="mt-1.5 text-[15px] leading-relaxed text-rh-ink/70">{item.body}</p>
+                </article>
+              ))}
+            </div>
+
+            <div className="mt-3 rounded-[1.5rem] bg-rh-ink p-5 text-white sm:p-6">
+              <h3 className="text-xl font-bold">How to join the network</h3>
+              <ol className="mt-5 space-y-4">
+                {STEPS.map((step, i) => (
+                  <li key={step.title} className="flex gap-4">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-rh-lime text-sm font-bold text-rh-ink">
+                      {String(i + 1).padStart(2, "0")}
+                    </span>
+                    <p className="pt-1 text-[15px] leading-relaxed text-white/75">
+                      <span className="font-semibold text-white">{step.title}</span> {step.body}
+                    </p>
+                  </li>
+                ))}
+              </ol>
+              <p className="mt-6 border-t border-white/10 pt-5 text-[15px] leading-relaxed text-white/75">
+                <span className="font-semibold text-white">Keep growing:</span> join our{" "}
+                <Link href="/learn" className="font-semibold text-rh-lime underline-offset-4 hover:underline">
+                  MSK Specialist Program
+                </Link>
+                , a live, cohort-based course, to sharpen your skills.
+              </p>
+            </div>
+          </div>
+
+          <div className="border-t border-rh-ink/10 px-5 py-4 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:px-7">
+            <Link href={SIGN_UP} className={cn(primary, "w-full focus-visible:ring-rh-ink")}>
+              Join the care network
+              <ArrowRight className="h-4 w-4 transition-transform duration-300 group-hover:translate-x-1" />
+            </Link>
+          </div>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
+  );
+}
+
 export default function PhysioPage() {
   const reduce = useReducedMotion();
-  const [way, setWay] = useState<WayId>("practice");
+  const [networkOpen, setNetworkOpen] = useState(false);
+  const [pastHero, setPastHero] = useState(false);
+  const [atEnd, setAtEnd] = useState(false);
+  const heroRef = useRef<HTMLElement>(null);
+  const endRef = useRef<HTMLElement>(null);
 
-  // "#network" (from the landing page or the buttons below) opens the network side.
+  // "#network" (from the landing page) opens the network details.
   useEffect(() => {
     const sync = () => {
-      if (window.location.hash !== "#network") return;
-      setWay("network");
-      document.getElementById(WAYS_ID)?.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
+      if (window.location.hash === "#network") setNetworkOpen(true);
     };
     sync();
     window.addEventListener("hashchange", sync);
     return () => window.removeEventListener("hashchange", sync);
-  }, [reduce]);
+  }, []);
 
-  const openNetwork = (event: MouseEvent<HTMLAnchorElement>) => {
-    // Same hash twice doesn't fire hashchange, so open it directly too.
-    if (window.location.hash === "#network") {
-      event.preventDefault();
-      setWay("network");
-      document.getElementById(WAYS_ID)?.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
+  const setNetwork = useCallback((open: boolean) => {
+    setNetworkOpen(open);
+    // Clear the hash on close so the same link opens it again
+    if (!open && window.location.hash === "#network") {
+      history.replaceState(null, "", window.location.pathname + window.location.search);
     }
-  };
+  }, []);
+
+  // The floating bar shows once the hero is gone, and steps aside for the closing call.
+  useEffect(() => {
+    const hero = heroRef.current;
+    const end = endRef.current;
+    if (!hero || !end) return;
+    const heroObserver = new IntersectionObserver(([entry]) => setPastHero(!entry.isIntersecting), { rootMargin: "-64px 0px 0px 0px" });
+    const endObserver = new IntersectionObserver(([entry]) => setAtEnd(entry.isIntersecting));
+    heroObserver.observe(hero);
+    endObserver.observe(end);
+    return () => {
+      heroObserver.disconnect();
+      endObserver.disconnect();
+    };
+  }, []);
+
+  const showBar = pastHero && !atEnd;
 
   return (
     <div className="min-h-screen overflow-x-hidden bg-rh-canvas text-rh-ink">
       {/* Hero */}
-      <section className="px-4 pb-16 pt-32 sm:px-6 sm:pt-40 lg:pb-24">
+      <section ref={heroRef} className="px-4 pb-16 pt-32 sm:px-6 sm:pt-40 lg:pb-24">
         <div className="mx-auto grid max-w-6xl items-center gap-10 lg:grid-cols-[1fr_1.05fr] lg:gap-14">
           <motion.div initial={reduce ? false : { opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.55, ease: EASE }}>
-            <h1 className="max-w-xl text-[40px] font-bold leading-[1.04] tracking-tight text-rh-ink sm:text-[56px]">
-              Better tools for your practice.{" "}
-              <span className="text-rh-ink/55">
-                More patients when you join our network.
-                <a href="#network-note" aria-label="See note" className="no-underline">
-                  *
-                </a>
-              </span>
-            </h1>
-            <p className="mt-5 max-w-lg text-lg font-medium leading-relaxed text-rh-ink/70 sm:text-xl">
+            <h1 className="max-w-xl text-[40px] font-bold leading-[1.04] tracking-tight text-rh-ink sm:text-[56px]">Better tools for your practice.</h1>
+            <p className="mt-3 max-w-lg text-lg font-semibold leading-snug text-rh-ink/60 sm:text-xl">More patients when you join our network.</p>
+            <p className="mt-5 max-w-lg text-[17px] leading-relaxed text-rh-ink/70">
               Rehabify gives you a free practice system built for Nigerian physiotherapists. Join our care network and we&apos;ll also send you patients,
               matched to your skills and your area.
             </p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
               <StartFree />
-              <a href="#network" onClick={openNetwork} className={secondaryOnLight}>
+              <button type="button" onClick={() => setNetwork(true)} className={secondaryOnLight}>
                 Join the care network
-              </a>
+              </button>
             </div>
-            <p id="network-note" className="mt-5 text-sm text-rh-ink/55">
-              *For licensed physiotherapists. We review every application.
-            </p>
           </motion.div>
 
           <motion.div initial={reduce ? false : { opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, ease: EASE, delay: 0.1 }}>
@@ -291,83 +373,61 @@ export default function PhysioPage() {
         </div>
       </section>
 
-      {/* Two ways to use Rehabify: one section, a switch between the two */}
-      <section id={WAYS_ID} className="scroll-mt-24 px-4 pb-20 sm:px-6 lg:pb-28">
+      {/* Two ways to use Rehabify: both visible, network details one tap away */}
+      <section id="two-ways" className="scroll-mt-24 px-4 pb-20 sm:px-6 lg:pb-28">
         <div className="mx-auto max-w-6xl">
           <Rise>
             <h2 className="max-w-2xl text-[36px] font-bold leading-[1.05] tracking-tight text-rh-ink sm:text-5xl">Two ways to use Rehabify.</h2>
             <p className="mt-4 max-w-xl text-[17px] leading-relaxed text-rh-ink/70">You can start with one and add the other any time.</p>
-            <SegmentedSwitch
-              idBase={WAYS_ID}
-              label="Two ways to use Rehabify"
-              options={WAYS}
-              value={way}
-              onChange={setWay}
-              className="mt-8 flex w-full sm:inline-flex sm:w-auto"
-            />
           </Rise>
 
-          {/* Both sides stay in the page (for search engines and anchors); only one shows. */}
-          <div id={switchPanelId(WAYS_ID)} role="tabpanel" aria-labelledby={switchTabId(WAYS_ID, way)} className="mt-10">
-            <div hidden={way !== "practice"} className="animate-in fade-in duration-300">
-              <h3 className="text-[26px] font-bold leading-tight tracking-tight sm:text-[32px]">Run your practice better: free</h3>
-              <p className="mt-3 max-w-2xl text-[16px] leading-relaxed text-rh-ink/70 sm:text-[17px]">
-                Bring your own patients and manage everything in one place: notes, care plans, exercises, appointments and payments.
-              </p>
-              <SnapCarousel label="Tools for your practice" className="mt-8">
-                {TOOLS.map((tool) => (
-                  <ToolCard key={tool.title} tool={tool} />
-                ))}
-              </SnapCarousel>
-              <div className="mt-2">
-                <StartFree />
-              </div>
-            </div>
-
-            <div id="network" hidden={way !== "network"} className="animate-in fade-in duration-300">
-              <h3 className="text-[26px] font-bold leading-tight tracking-tight sm:text-[32px]">Get patients from us: join the network</h3>
-              <p className="mt-3 max-w-2xl text-[16px] leading-relaxed text-rh-ink/70 sm:text-[17px]">
-                Licensed physiotherapists in our network receive patients matched by Joy, our AI assistant. No adverts, no marketing cost.
-              </p>
-
-              <div className="mt-8 grid gap-4 md:grid-cols-2">
-                {NETWORK.map((item) => (
-                  <article key={item.title} className="rounded-[1.75rem] bg-white p-6 ring-1 ring-inset ring-rh-ink/[0.06] sm:p-7">
-                    <h4 className="text-lg font-bold leading-snug text-rh-ink sm:text-xl">{item.title}</h4>
-                    <p className="mt-2 text-[15px] leading-relaxed text-rh-ink/70 sm:text-base">{item.body}</p>
-                  </article>
-                ))}
-              </div>
-
-              <div className="mt-4 rounded-[1.75rem] bg-rh-ink p-6 text-white sm:p-8">
-                <h4 className="text-xl font-bold sm:text-2xl">How to join the network</h4>
-                <ol className="mt-6 grid gap-5 md:grid-cols-3">
-                  {STEPS.map((step, i) => (
-                    <li key={step.title} className="flex gap-4">
-                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-rh-lime text-sm font-bold text-rh-ink">
-                        {String(i + 1).padStart(2, "0")}
-                      </span>
-                      <p className="pt-1 text-[15px] leading-relaxed text-white/75">
-                        <span className="font-semibold text-white">{step.title}</span> {step.body}
-                      </p>
-                    </li>
-                  ))}
-                </ol>
-                <p className="mt-7 border-t border-white/10 pt-5 text-[15px] leading-relaxed text-white/75">
-                  <span className="font-semibold text-white">Keep growing:</span> join our{" "}
-                  <Link href="/learn" className="font-semibold text-rh-lime underline-offset-4 hover:underline">
-                    MSK Specialist Program
-                  </Link>
-                  , a live, cohort-based course, to sharpen your skills.
+          <div className="mt-10 grid gap-4 md:grid-cols-2">
+            <Rise className="flex">
+              <article className="flex w-full flex-col rounded-[2rem] bg-white p-6 ring-1 ring-inset ring-rh-ink/[0.06] sm:p-8">
+                <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-rh-ink text-sm font-bold text-white">01</span>
+                <h3 className="mt-5 text-[24px] font-bold leading-tight tracking-tight sm:text-[28px]">Run your practice better: free</h3>
+                <p className="mt-3 text-[16px] leading-relaxed text-rh-ink/70">
+                  Bring your own patients and manage everything in one place: notes, care plans, exercises, appointments and payments.
                 </p>
-                <div className="mt-7">
-                  <Link href={SIGN_UP} className={cn(primary, "focus-visible:ring-rh-lime focus-visible:ring-offset-rh-ink")}>
-                    Join the care network
+                <div className="mt-auto flex flex-col gap-3 pt-7 sm:flex-row sm:items-center">
+                  <StartFree />
+                  <a href="#tools" className="inline-flex h-12 items-center justify-center gap-2 px-3 text-[15px] font-semibold text-rh-ink underline-offset-4 hover:underline">
+                    See the tools <ArrowDown className="h-3.5 w-3.5" />
+                  </a>
+                </div>
+              </article>
+            </Rise>
+
+            <Rise delay={0.06} className="flex">
+              <article className="relative flex w-full flex-col overflow-hidden rounded-[2rem] bg-rh-ink p-6 text-white sm:p-8">
+                <PairingShapes className="-bottom-14 -right-12 hidden h-48 w-48 opacity-70 sm:block" />
+                <span className="relative flex h-9 w-9 items-center justify-center rounded-xl bg-rh-lime text-sm font-bold text-rh-ink">02</span>
+                <h3 className="relative mt-5 text-[24px] font-bold leading-tight tracking-tight sm:text-[28px]">Get patients from us: join the network</h3>
+                <p className="relative mt-3 text-[16px] leading-relaxed text-white/75">
+                  Licensed physiotherapists in our network receive patients matched by Joy, our AI assistant. No adverts, no marketing cost.
+                </p>
+                <div className="relative mt-auto flex flex-col gap-3 pt-7 sm:flex-row">
+                  <button type="button" onClick={() => setNetwork(true)} className={cn(primary, "focus-visible:ring-rh-lime focus-visible:ring-offset-rh-ink")}>
+                    Read more
                     <ArrowRight className="h-4 w-4 transition-transform duration-300 group-hover:translate-x-1" />
+                  </button>
+                  <Link href={SIGN_UP} className={secondaryOnInk}>
+                    Join the care network
                   </Link>
                 </div>
-              </div>
-            </div>
+              </article>
+            </Rise>
+          </div>
+
+          <div id="tools" className="scroll-mt-24 pt-16">
+            <Rise>
+              <h3 className="text-[26px] font-bold leading-tight tracking-tight sm:text-[32px]">Tools for your practice</h3>
+            </Rise>
+            <SnapCarousel label="Tools for your practice" className="mt-8">
+              {TOOLS.map((tool) => (
+                <ToolCard key={tool.title} tool={tool} />
+              ))}
+            </SnapCarousel>
           </div>
         </div>
       </section>
@@ -393,7 +453,7 @@ export default function PhysioPage() {
       </section>
 
       {/* Closing call to action */}
-      <section className="px-4 pb-20 sm:px-6 lg:pb-28">
+      <section ref={endRef} className="px-4 pb-20 sm:px-6 lg:pb-28">
         <Rise className="mx-auto max-w-6xl">
           <div className="relative overflow-hidden rounded-[2rem] bg-rh-ink px-6 py-12 text-white sm:rounded-[2.5rem] sm:px-12 sm:py-16 lg:px-16">
             <PairingShapes className="-bottom-16 -right-12 hidden h-64 w-64 sm:block" />
@@ -402,14 +462,41 @@ export default function PhysioPage() {
               <p className="mt-4 text-lg font-medium leading-relaxed text-white/75">Better tools today. More patients when you&apos;re ready.</p>
               <div className="mt-8 flex flex-col gap-3 sm:flex-row">
                 <StartFree onInk />
-                <a href="#network" onClick={openNetwork} className={secondaryOnInk}>
+                <button type="button" onClick={() => setNetwork(true)} className={secondaryOnInk}>
                   Join the care network
-                </a>
+                </button>
               </div>
             </div>
           </div>
         </Rise>
       </section>
+
+      {/* Floating "Start free" once the hero has scrolled away (below dialogs and the cookie banner) */}
+      <AnimatePresence>
+        {showBar && (
+          <motion.div
+            initial={reduce ? { opacity: 0 } : { opacity: 0, y: 24 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={reduce ? { opacity: 0 } : { opacity: 0, y: 24 }}
+            transition={{ duration: 0.3, ease: EASE }}
+            className="fixed inset-x-3 bottom-[calc(0.75rem+env(safe-area-inset-bottom))] z-[55] sm:inset-x-auto sm:bottom-5 sm:right-5"
+          >
+            <div className="flex items-center justify-between gap-3 rounded-full bg-rh-ink p-1.5 pl-5 text-white shadow-lift">
+              <span className="text-sm font-semibold sm:hidden">Free for your own patients</span>
+              <button
+                type="button"
+                onClick={() => setNetwork(true)}
+                className="hidden text-sm font-semibold text-white/80 underline-offset-4 hover:text-white hover:underline sm:inline"
+              >
+                Get patients from us
+              </button>
+              <StartFree onInk className="h-11 px-5 text-sm" />
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <NetworkDrawer open={networkOpen} onOpenChange={setNetwork} />
     </div>
   );
 }

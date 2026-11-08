@@ -65,6 +65,11 @@ export const SIGNUP_INTENTS: Record<SignupIntent, IntentDetails> = {
 /** Shown first; the rest sit under "More" or a divider. */
 export const PRIMARY_INTENTS: SignupIntent[] = ["patient", "physiotherapist", "clinic_owner"];
 export const SECONDARY_INTENTS: SignupIntent[] = ["doctor", "family", "partner"];
+/**
+ * The header's "Get started" list: people getting care. Professionals sign up from their own
+ * page (For professionals) so they read why to join first; the sign-up page still offers every role.
+ */
+export const HEADER_INTENTS: SignupIntent[] = ["patient", "family"];
 
 const ALIASES: Record<string, SignupIntent> = {
   patient: "patient",
