@@ -261,7 +261,7 @@ export function CarePlanSection() {
           <Card
             title="Exercises you can see in 3D"
             body="Your physio picks exercises for you. Watch them from every side and follow along at home."
-            note="3D motion tracking: coming soon"
+            note="New: a camera coach counts your reps (beta)"
           >
             <ExerciseVisual near={near} onTry={() => setTryOpen(true)} />
           </Card>
