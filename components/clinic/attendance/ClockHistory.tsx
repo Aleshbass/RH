@@ -11,7 +11,7 @@ import { cn } from '@/lib/utils'
 import { lagosTime, zonedTimeKey } from '@/convex/helpers/lagosTime'
 import { addDays, breakMs, decimalHours, formatDistance, formatWorked, mondayOf, workedMs } from '@/convex/helpers/clinicClock'
 import { clockRefs, type ShiftView } from '@/components/clock/clockApi'
-import { ChoiceChips, dayTitle, downloadCsv } from './shared'
+import { AtClinicBadge, ChoiceChips, dayTitle, downloadCsv, locationText } from './shared'
 import type { ShiftTarget } from './ShiftDrawer'
 
 type Range = 'this_week' | 'last_week' | 'this_month' | 'last_month' | 'custom'
@@ -87,7 +87,7 @@ export function ClockHistory({ today, canManage, onEdit }: { today: string; canM
 
   const exportCsv = () => {
     const rows: (string | number)[][] = [
-      ['Date', 'Clinician', 'Clock in', 'Clock out', 'Breaks (min)', 'Hours worked', 'Late (min)', 'Away from clinic', 'Reason', 'Closed by', 'Corrected', 'Note'],
+      ['Date', 'Clinician', 'Clock in', 'Clock out', 'Breaks (min)', 'Hours worked', 'Late (min)', 'Clock-in location', 'Clock-out location', 'Reason', 'Closed by', 'Corrected', 'Note'],
     ]
     for (const s of [...shifts].sort((a, b) => a.clockInAt - b.clockInAt)) {
       rows.push([
@@ -98,7 +98,8 @@ export function ClockHistory({ today, canManage, onEdit }: { today: string; canM
         Math.round(breakMs(s.breaks, now) / 60_000),
         decimalHours(workedMs(s, now)),
         s.lateMinutes ?? '',
-        s.offsite ? (s.distanceM !== null ? formatDistance(s.distanceM) : 'Yes') : '',
+        locationText(s) ?? '',
+        locationText(s, true) ?? '',
         s.offsiteReason ?? '',
         s.closedBy === 'auto' ? 'Automatically' : s.closedBy === 'owner' ? 'Clinic' : s.closedBy === 'self' ? 'Themselves' : '',
         s.edited ? (s.lastEdit?.reason ?? 'Yes') : '',
@@ -208,7 +209,9 @@ export function ClockHistory({ today, canManage, onEdit }: { today: string; canM
                           <div className="flex flex-wrap items-center gap-1.5">
                             <p className="truncate text-sm font-medium text-pt-ink">{s.name}</p>
                             {s.lateMinutes !== null && <StatusBadge tone="neutral">Late {formatWorked(s.lateMinutes * 60_000)}</StatusBadge>}
+                            <AtClinicBadge shift={s} />
                             {s.offsite && <StatusBadge tone="neutral">Away{s.distanceM !== null ? ` · ${formatDistance(s.distanceM)}` : ''}</StatusBadge>}
+                            {s.outLocation === 'away' && !s.offsite && <StatusBadge tone="neutral">Clocked out away</StatusBadge>}
                             {s.needsReview && <StatusBadge tone="ink">Check this</StatusBadge>}
                             {s.edited && !s.needsReview && <StatusBadge tone="blue">Corrected</StatusBadge>}
                           </div>

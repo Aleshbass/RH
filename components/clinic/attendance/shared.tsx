@@ -5,7 +5,37 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { initials } from '@/components/patient/ui'
 import { cn } from '@/lib/utils'
 import { formatLagos, zonedDateKey, zonedDateTimeToUtc, zonedTimeKey } from '@/convex/helpers/lagosTime'
-import type { BoardPerson } from '@/components/clock/clockApi'
+import { formatDistance } from '@/convex/helpers/clinicClock'
+import { MapPin } from '@/components/icons'
+import { StatusBadge } from '@/components/clinic/ui'
+import type { BoardPerson, ShiftView } from '@/components/clock/clockApi'
+
+/**
+ * Where a clock-in (or clock-out) happened against the clinic's pin, in words, or null when the
+ * clinic doesn't check location. "At the clinic (40 m from your pin)".
+ */
+export function locationText(shift: ShiftView, out = false): string | null {
+  const where = out ? shift.outLocation : shift.location ?? (shift.offsite ? 'away' : undefined)
+  const distance = out ? shift.outDistanceM : shift.distanceM
+  const metres = distance !== null && distance !== undefined ? ` (${formatDistance(distance)} from your pin)` : ''
+  if (where === 'clinic') return `At the clinic${metres}`
+  if (where === 'away') return distance !== null && distance !== undefined ? `Away: ${formatDistance(distance)} from the clinic` : 'Away from the clinic'
+  if (where === 'unknown') return 'No location from their phone'
+  return null
+}
+
+/** Green "At the clinic" badge for a clock-in at the clinic; the distance shows on hover. */
+export function AtClinicBadge({ shift, out = false }: { shift: ShiftView; out?: boolean }) {
+  if ((out ? shift.outLocation : shift.location) !== 'clinic') return null
+  return (
+    <span title={locationText(shift, out) ?? undefined}>
+      <StatusBadge tone="green">
+        <MapPin className="h-3 w-3" />
+        {out ? 'Left from the clinic' : 'At the clinic'}
+      </StatusBadge>
+    </span>
+  )
+}
 
 export const CLOCK_PAGE = '/dashboard/clinic/attendance'
 

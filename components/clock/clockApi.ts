@@ -9,6 +9,8 @@
 import { makeFunctionReference } from 'convex/server'
 import type { ClockBreak } from '@/convex/helpers/clinicClock'
 
+export type ClockLocation = 'clinic' | 'away' | 'unknown' | 'unchecked'
+
 export type ShiftView = {
   _id: string
   userId: string
@@ -22,6 +24,11 @@ export type ShiftView = {
   distanceM: number | null
   offsiteReason: string | null
   outOffsite: boolean
+  /** Against the clinic's pin: "unknown" = no location from the phone, "unchecked" = the clinic doesn't check */
+  location?: ClockLocation
+  accuracyM?: number | null
+  outLocation?: ClockLocation | null
+  outDistanceM?: number | null
   note: string | null
   closedBy: 'self' | 'owner' | 'auto' | null
   needsReview: boolean

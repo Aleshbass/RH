@@ -13,7 +13,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery } from 'convex/react'
 import { toast } from 'sonner'
 import { faMugHot } from '@fortawesome/free-solid-svg-icons'
-import { AlertTriangle, Clock, Icon, Loader2, LocateFixed, MapPin, Play } from '@/components/icons'
+import { AlertTriangle, ChevronDown, ChevronUp, Clock, Icon, Loader2, LocateFixed, MapPin, Play } from '@/components/icons'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { PatientDrawer, StatusBadge, accentButtonClass, cardClass, softButtonClass } from '@/components/patient/ui'
@@ -406,7 +406,7 @@ function OffsiteReason({
 }
 
 /** The clock itself. `layout="card"` sits on Today; `layout="drawer"` is the full view. */
-function ClockPanel({ clock, layout, active }: { clock: OnClock; layout: 'card' | 'drawer'; active: boolean }) {
+function ClockPanel({ clock, layout, active, onCollapse }: { clock: OnClock; layout: 'card' | 'drawer'; active: boolean; onCollapse?: () => void }) {
   const shift = clock.shift
   const now = useTicker(1000, active)
   const fix = useSiteFix(clock.site, active && !shift, layout === 'drawer')
@@ -486,10 +486,22 @@ function ClockPanel({ clock, layout, active }: { clock: OnClock; layout: 'card' 
       <section className={cn(cardClass, 'overflow-hidden p-5 sm:p-6')} aria-label="Clock-in">
         <div className="flex flex-col gap-6 sm:flex-row sm:items-center">
           <div className="min-w-0 flex-1 space-y-3">
-            <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-pt-faint">
-              <Clock className="h-3.5 w-3.5" />
-              Clock-in · {clock.clinicName}
-            </p>
+            <div className="flex items-center justify-between gap-2">
+              <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-pt-faint">
+                <Clock className="h-3.5 w-3.5" />
+                Clock-in · {clock.clinicName}
+              </p>
+              {onCollapse && (
+                <button
+                  type="button"
+                  onClick={onCollapse}
+                  aria-expanded
+                  className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-pt-muted transition-colors hover:bg-pt-hover hover:text-pt-ink sm:hidden"
+                >
+                  Hide <ChevronUp className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
             <div>
               <h2 className="text-xl font-semibold tracking-tight text-pt-ink">{status.title}</h2>
               <p className="mt-0.5 text-sm text-pt-muted">{status.sub}</p>
@@ -504,7 +516,17 @@ function ClockPanel({ clock, layout, active }: { clock: OnClock; layout: 'card' 
             </div>
             {notes}
           </div>
-          <div className="flex shrink-0 flex-col items-center gap-3 sm:w-56">
+          <div className="relative flex shrink-0 flex-col items-center gap-3 sm:w-56">
+            {onCollapse && (
+              <button
+                type="button"
+                onClick={onCollapse}
+                aria-expanded
+                className="absolute -right-2 -top-2 hidden items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-pt-muted transition-colors hover:bg-pt-hover hover:text-pt-ink sm:inline-flex"
+              >
+                Hide <ChevronUp className="h-3.5 w-3.5" />
+              </button>
+            )}
             {offsite ? (
               <OffsiteReason message={offsite.message} busy={busy === 'in'} onSubmit={(r) => doClockIn(r)} onCancel={() => setOffsite(null)} />
             ) : (
@@ -545,11 +567,83 @@ function ClockPanel({ clock, layout, active }: { clock: OnClock; layout: 'card' 
   )
 }
 
-/** On Today: the clock with its button, while the clinic uses clock-in. */
+const CARD_PREF = 'rh-clock-card'
+
+/** Folded clock on Today: one line with where they are in the day; tap to open the full clock. */
+function ClockSummary({ clock, onExpand }: { clock: OnClock; onExpand: () => void }) {
+  const shift = clock.shift
+  const now = useTicker(30_000, Boolean(shift))
+  const todayShifts = clock.shifts.filter((s) => s.dateKey === clock.today)
+  const lastOut = todayShifts.find((s) => s.clockOutAt !== null)
+  const worked = todayShifts.reduce((sum, s) => sum + workedMs(s, now), 0)
+  const text = shift
+    ? shift.onBreak
+      ? `On a break · ${formatWorked(workedMs(shift, now))} so far`
+      : `Clocked in since ${lagosTime(shift.clockInAt)} · ${formatWorked(workedMs(shift, now))}`
+    : lastOut
+      ? `Done for today · ${formatWorked(worked)} worked`
+      : 'Not clocked in yet'
+  return (
+    <button
+      type="button"
+      onClick={onExpand}
+      aria-expanded={false}
+      aria-label={`Clock-in: ${text}. Open the clock`}
+      className={cn(
+        cardClass,
+        'flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-pt-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pt-accent/50 sm:px-5'
+      )}
+    >
+      {shift && !shift.onBreak ? (
+        <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-pt-accent" aria-hidden />
+      ) : shift ? (
+        <Icon icon={faMugHot} className="h-4 w-4 shrink-0 text-pt-muted" />
+      ) : (
+        <Clock className="h-4 w-4 shrink-0 text-pt-muted" />
+      )}
+      <span className="min-w-0 flex-1">
+        <span className="block text-[11px] font-semibold uppercase tracking-wider text-pt-faint">Clock-in · {clock.clinicName}</span>
+        <span className="block truncate text-sm font-semibold tabular-nums text-pt-ink">{text}</span>
+      </span>
+      <span className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-pt-sunken px-2.5 py-1.5 text-xs font-semibold text-pt-ink">
+        {shift ? 'Open' : lastOut ? 'Open' : 'Clock in'}
+        <ChevronDown className="h-3.5 w-3.5" />
+      </span>
+    </button>
+  )
+}
+
+/**
+ * On Today: the clock, while the clinic uses clock-in. It can be folded to one line so it doesn't
+ * push the day's patients down; the choice is remembered on this device. Folded by default once
+ * they're clocked in, open while they still need to clock in.
+ */
 export function ClockHomeCard() {
   const clock = useMyClock()
+  const [pref, setPref] = useState<'open' | 'folded' | null>(null)
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(CARD_PREF)
+      if (saved === 'open' || saved === 'folded') setPref(saved)
+    } catch {
+      // Private mode: not remembered
+    }
+  }, [])
+  const choose = (next: 'open' | 'folded') => {
+    setPref(next)
+    try {
+      localStorage.setItem(CARD_PREF, next)
+    } catch {
+      // Private mode: not remembered
+    }
+  }
   if (!clock) return null
-  return <ClockPanel clock={clock} layout="card" active />
+  const folded = pref ? pref === 'folded' : Boolean(clock.shift)
+  return folded ? (
+    <ClockSummary clock={clock} onExpand={() => choose('open')} />
+  ) : (
+    <ClockPanel clock={clock} layout="card" active onCollapse={() => choose('folded')} />
+  )
 }
 
 /**

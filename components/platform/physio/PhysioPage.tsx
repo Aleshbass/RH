@@ -8,8 +8,8 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { ArrowDown, ArrowRight, Plus, X } from "@/components/icons";
 import { MarketingVideo } from "@/components/landing/MarketingVideo";
 import { PairingShapes } from "@/components/learn/shared";
+import { LoopVideo } from "@/components/marketing/LoopVideo";
 import { SnapCarousel } from "@/components/marketing/SnapCarousel";
-import { posterUrl } from "@/convex/exerciseLibraryCatalog";
 import { signUpHrefFor } from "@/lib/auth/signupIntent";
 import { MARKETING_VIDEOS } from "@/lib/marketingVideos";
 import { cn } from "@/lib/utils";
@@ -151,7 +151,7 @@ const TOOLS: Tool[] = [
     body: "Build programmes from our 3D exercise library. Patients see clear demonstrations at home.",
     note: "New: 3D motion tracking for reps and form",
     visual: (
-      <Image src={posterUrl("mini-squat")} alt="A mini squat from the Rehabify 3D exercise library" fill sizes="(min-width: 1024px) 360px, 84vw" className="bg-white object-contain p-3" />
+      <LoopVideo base="/media/camera-coach-demo" label="Demo: 3D motion tracking follows shoulder raises and counts the reps" className="object-[62%_50%]" />
     ),
   },
   { title: "See patients anywhere", body: "Video sessions and messaging, so you can follow up between visits.", visual: <CallSketch /> },

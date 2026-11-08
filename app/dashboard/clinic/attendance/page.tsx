@@ -202,6 +202,24 @@ export default function ClinicClockPage() {
             </div>
           )}
 
+          {/* Without a pin there's nothing to compare a phone's location with, so no "At the clinic" */}
+          {board.canManage && (!s.locationCheck || !s.site) && (
+            <div className="flex flex-col gap-3 rounded-2xl border border-pt-line bg-pt-surface px-4 py-3 sm:flex-row sm:items-center">
+              <MapPin className="h-4 w-4 shrink-0 text-pt-muted" />
+              <p className="flex-1 text-sm text-pt-muted">
+                <span className="font-semibold text-pt-ink">
+                  {s.locationCheck ? 'Pin your clinic to see who clocks in there.' : 'Location check is off.'}
+                </span>{' '}
+                {s.locationCheck
+                  ? 'Drop a pin while you’re at the clinic. Each clock-in then shows “At the clinic” or how far away it was.'
+                  : 'Turn it on and pin your clinic to see whether each clock-in happened at the clinic.'}
+              </p>
+              <Button className={cn(secondaryButtonClass, 'h-9 shrink-0')} onClick={() => setSettingsOpen(true)}>
+                {s.locationCheck ? 'Pin the clinic' : 'Turn it on'}
+              </Button>
+            </div>
+          )}
+
           <div role="tablist" aria-label="Clock-in views" className="inline-flex gap-1 rounded-2xl bg-pt-sunken p-1">
             {(['today', 'history'] as const).map((key) => (
               <button

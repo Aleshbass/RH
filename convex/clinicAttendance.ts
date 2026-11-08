@@ -162,6 +162,13 @@ function siteCheck(settings: Settings | null, p: { lat: number; lng: number; acc
   return { distanceM: Math.round(distanceM), accuracyM, onSite: isOnSite(distanceM, accuracyM, settings!.siteRadiusM) };
 }
 
+type ClockLocation = "clinic" | "away" | "unknown" | "unchecked";
+
+function locationOf(check: Shift["inCheck"], hadReason: boolean): ClockLocation {
+  if (check) return check.onSite ? "clinic" : "away";
+  return hadReason ? "unknown" : "unchecked";
+}
+
 function shiftView(shift: Shift) {
   return {
     _id: shift._id as string,
@@ -176,6 +183,12 @@ function shiftView(shift: Shift) {
     distanceM: shift.inCheck?.distanceM ?? null,
     offsiteReason: shift.offsiteReason ?? null,
     outOffsite: shift.outCheck ? !shift.outCheck.onSite : false,
+    // Where they clocked in and out against the clinic's pin, so owners also see "at the clinic":
+    // "unknown" = no location from the phone; "unchecked" = the clinic doesn't check location
+    location: locationOf(shift.inCheck, Boolean(shift.offsiteReason)),
+    accuracyM: shift.inCheck?.accuracyM ?? null,
+    outLocation: shift.clockOutAt === undefined ? null : locationOf(shift.outCheck, false),
+    outDistanceM: shift.outCheck?.distanceM ?? null,
     note: shift.note ?? null,
     closedBy: shift.closedBy ?? null,
     needsReview: Boolean(shift.needsReview),

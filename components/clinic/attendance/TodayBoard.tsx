@@ -18,7 +18,7 @@ import { cn } from '@/lib/utils'
 import { formatLagos, lagosTime, zonedDateTimeToUtc } from '@/convex/helpers/lagosTime'
 import { formatDistance, formatWorked, workedMs } from '@/convex/helpers/clinicClock'
 import { clockError, clockRefs, type BoardPerson, type ClockBoard, type ShiftView } from '@/components/clock/clockApi'
-import { PersonAvatar, STATUS_ORDER } from './shared'
+import { AtClinicBadge, PersonAvatar, STATUS_ORDER } from './shared'
 import type { ShiftTarget } from './ShiftDrawer'
 
 type Board = NonNullable<ClockBoard>
@@ -46,11 +46,14 @@ function statusLine(person: BoardPerson, now: number) {
 function Flags({ shifts }: { shifts: ShiftView[] }) {
   const late = shifts.find((s) => s.lateMinutes !== null)
   const away = shifts.find((s) => s.offsite)
+  // Clocked in at the clinic (the latest such clock-in), when the clinic checks location
+  const atClinic = away ? null : [...shifts].reverse().find((s) => s.location === 'clinic') ?? null
   const review = shifts.some((s) => s.needsReview)
   const edited = shifts.some((s) => s.edited)
   return (
     <>
       {late && <StatusBadge tone="neutral">Late {formatWorked(late.lateMinutes! * 60_000)}</StatusBadge>}
+      {atClinic && <AtClinicBadge shift={atClinic} />}
       {away && (
         <span className="inline-flex items-center gap-0.5">
           <StatusBadge tone="neutral">

@@ -11,6 +11,7 @@ import { CheckCheck, Rotate3d, TrendingDown, X } from "@/components/icons";
 import { AnimatedList } from "@/components/magicui/animated-list";
 import { NumberTicker } from "@/components/magicui/number-ticker";
 import { TypingAnimation } from "@/components/magicui/typing-animation";
+import { LoopVideo } from "@/components/marketing/LoopVideo";
 import { SnapCarousel } from "@/components/marketing/SnapCarousel";
 import { EXERCISE_CATALOG, posterUrl } from "@/convex/exerciseLibraryCatalog";
 import type { ViewerGrant } from "@/lib/exercise3d/useViewerGrant";
@@ -370,6 +371,17 @@ export function CarePlanSection() {
             note="New: 3D motion tracking counts your reps"
           >
             <ExerciseVisual near={near} onTry={() => setTryOpen(true)} />
+          </Card>
+          <Card
+            title="3D motion tracking"
+            body="Exercise in front of your phone's camera. It counts your reps and gives you tips on your form, next to the 3D coach."
+            note="Your video never leaves your phone"
+          >
+            <LoopVideo
+              base="/media/camera-coach-demo"
+              label="Demo: 3D motion tracking follows shoulder raises and counts the reps"
+              className="object-[85%_50%]"
+            />
           </Card>
           <Card title="A summary after every visit" body="In plain words: what your physio found, what you did together and what comes next.">
             <SummaryVisual />

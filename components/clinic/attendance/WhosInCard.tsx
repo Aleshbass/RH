@@ -36,9 +36,10 @@ export function WhosInCard() {
         {people.slice(0, 6).map((person) => {
           const open = person.shifts.find((s) => s.clockOutAt === null)
           const worked = person.shifts.reduce((sum, s) => sum + workedMs(s, now), 0)
+          const where = open?.location === 'clinic' ? ' · at the clinic' : open?.offsite ? ' · away from the clinic' : ''
           const line =
             person.status === 'working'
-              ? `Since ${lagosTime(open!.clockInAt)}`
+              ? `Since ${lagosTime(open!.clockInAt)}${where}`
               : person.status === 'on_break'
                 ? 'On a break'
                 : person.status === 'out'
