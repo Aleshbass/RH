@@ -2174,9 +2174,11 @@ export const adminLearnerProgress = query({
   args: { cohortId: v.id("learnCohorts") },
   handler: async (ctx, args) => {
     await requireAdmin(ctx);
+    const cohort = await ctx.db.get(args.cohortId);
     const assessment = await cohortAssessment(ctx, args.cohortId);
     const sessions = await cohortSessions(ctx, args.cohortId);
     const sessionIds = new Set(sessions.map((s) => s._id));
+    const minSessions = Math.min(assessment?.minSessions ?? 0, sessions.length);
     const paid = await ctx.db
       .query("learnRegistrations")
       .withIndex("by_cohort_status", (q) => q.eq("cohortId", args.cohortId).eq("status", "paid"))
@@ -2184,16 +2186,20 @@ export const adminLearnerProgress = query({
     const rows = [];
     for (const r of paid) {
       const attempts = await registrationAttempts(ctx, r._id);
+      const attended = (r.attendedSessionIds ?? []).filter((id) => sessionIds.has(id));
+      const passed = attempts.some((a) => a.passed);
       rows.push({
         registrationId: r._id,
         name: `${r.firstName} ${r.lastName}`.trim(),
         email: r.email,
         track: TRACK_LABEL[r.track],
-        attendedSessionIds: (r.attendedSessionIds ?? []).filter((id) => sessionIds.has(id)),
+        attendedSessionIds: attended,
         weeksDone: (r.weeksDone ?? []).length,
         attempts: attempts.length,
         bestScore: attempts.length ? Math.max(...attempts.map((a) => a.scorePct)) : null,
-        passed: attempts.some((a) => a.passed),
+        passed,
+        // Met everything the certificate asks for: passed the assessment and joined enough sessions
+        completed: passed && attended.length >= minSessions,
         certificate: r.certificateCode
           ? {
               code: r.certificateCode,
@@ -2205,7 +2211,9 @@ export const adminLearnerProgress = query({
       });
     }
     return {
-      minSessions: Math.min(assessment?.minSessions ?? 0, sessions.length),
+      minSessions,
+      // Everything that draws this cohort's certificate (the admin preview matches what physios download)
+      design: cohort ? certificateCohort(cohort, assessment) : null,
       sessions: sessions.map((s) => ({ id: s._id, label: lagosDateTime(s.startsAt), title: s.title ?? null, past: s.endsAt < Date.now() })),
       learners: rows.sort((a, b) => a.name.localeCompare(b.name)),
     };

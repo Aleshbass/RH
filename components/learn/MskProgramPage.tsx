@@ -38,6 +38,7 @@ import {
   type PublicCohort,
   type Track,
 } from './shared'
+import { VideoCoursesSection } from './video/CourseEnrolment'
 
 type RegistrationContext = {
   signedIn: boolean
@@ -173,11 +174,7 @@ function Hero({ cohort }: { cohort: PublicCohort | null | undefined }) {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
           >
-            <span className="inline-flex items-center gap-2 rounded-full bg-white px-3.5 py-1.5 text-xs font-semibold tracking-wide text-rh-ink ring-1 ring-inset ring-rh-ink/10">
-              <span className="h-1.5 w-1.5 rounded-full bg-rh-lime" />
-              Rehabify Learn · MSK Specialist Program
-            </span>
-            <h1 className="mt-6 text-[40px] leading-[1.04] tracking-tight text-rh-ink sm:text-[56px] lg:text-[62px]">
+            <h1 className="text-[40px] leading-[1.04] tracking-tight text-rh-ink sm:text-[56px] lg:text-[62px]">
               Become a Rehabify Certified{' '}
               <span className="relative inline-block">
                 MSK Specialist
@@ -572,6 +569,7 @@ export function MskProgramPage({ initialCohort }: { initialCohort?: PublicCohort
       <Skills />
       <HowItWorks cohort={cohort} />
       <Pricing cohort={cohort} />
+      <VideoCoursesSection />
       <Faq cohort={cohort} />
       <FinalCta cohort={cohort} />
     </div>

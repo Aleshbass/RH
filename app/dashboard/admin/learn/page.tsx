@@ -40,6 +40,7 @@ import {
 import { Callout, errorMessage, LoadingBlock } from '@/components/admin/partners/shared'
 import { CohortForm } from '@/components/admin/learn/CohortForm'
 import { CoursePanel } from '@/components/admin/learn/CoursePanel'
+import { CertificatesPanel } from '@/components/admin/learn/CertificatesPanel'
 import { InterestPanel, RegistrationsPanel } from '@/components/admin/learn/RegistrationsPanel'
 import {
   AUTO_CLOSED,
@@ -393,6 +394,7 @@ export default function AdminLearnPage() {
         <TabsList className={tabsListClass}>
           <TabsTrigger value="details">Cohort details</TabsTrigger>
           <TabsTrigger value="course">Course</TabsTrigger>
+          <TabsTrigger value="certificates">Certificates</TabsTrigger>
           <TabsTrigger value="registrations">
             Registrations{selected.stats.paid + selected.stats.pending > 0 ? ` (${selected.stats.paid + selected.stats.pending})` : ''}
           </TabsTrigger>
@@ -410,6 +412,9 @@ export default function AdminLearnPage() {
         </TabsContent>
         <TabsContent value="course" className="mt-4">
           <CoursePanel key={selected.id} cohortId={selected.id} />
+        </TabsContent>
+        <TabsContent value="certificates" className="mt-4">
+          <CertificatesPanel key={selected.id} cohortId={selected.id} />
         </TabsContent>
         <TabsContent value="registrations" className="mt-4">
           <RegistrationsPanel cohort={selected} programUrl={overview.programUrl} />

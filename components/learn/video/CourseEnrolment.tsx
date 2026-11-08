@@ -57,6 +57,76 @@ function CoverImage({ url, sizes, priority }: { url: string | null; sizes: strin
 // All courses
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** Course cards (catalogue page and the Learn home). */
+function OfferGrid({ offers, className }: { offers: CourseOffer[]; className?: string }) {
+  return (
+    <div className={cn('grid gap-5 sm:grid-cols-2 lg:grid-cols-3', className)}>
+      {offers.map((offer) => (
+        <Link
+          key={offer.id}
+          href={`/learn/courses/${offer.id}`}
+          className="group flex h-full flex-col overflow-hidden rounded-[1.75rem] bg-white shadow-soft transition duration-300 hover:-translate-y-1 hover:shadow-lift focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-ink motion-reduce:hover:translate-y-0"
+        >
+          <div className="relative aspect-[16/10] overflow-hidden bg-rh-ink/[0.06]">
+            <CoverImage url={offer.coverUrl} sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw" />
+            {offer.viewer.canWatch && (
+              <span className="absolute left-3 top-3 inline-flex items-center gap-1 rounded-full bg-rh-lime px-2.5 py-1 text-xs font-semibold text-rh-ink">
+                <Check className="h-3 w-3" /> Enrolled
+              </span>
+            )}
+          </div>
+          <div className="flex flex-1 flex-col p-6">
+            <h2 className={cn('text-xl leading-snug tracking-tight text-rh-ink', displayFont)}>{offer.title}</h2>
+            <p className="mt-2 line-clamp-3 text-sm text-rh-ink/60">{offer.summary}</p>
+            <div className="mt-auto flex flex-wrap items-center justify-between gap-2 pt-5 text-xs text-rh-ink/55">
+              <span className="inline-flex items-center gap-1.5">
+                <BookOpen className="h-3.5 w-3.5" /> {offer.lessonCount} lessons · {formatLength(offer.durationSec)}
+              </span>
+              <PriceTag offer={offer} />
+            </div>
+          </div>
+        </Link>
+      ))}
+    </div>
+  )
+}
+
+/** "Video courses" on the Learn home: up to three courses and a link to them all. */
+export function VideoCoursesSection() {
+  const offers = useQuery(videoApi.catalog, {})
+  return (
+    <section id="video-courses" className="scroll-mt-24 bg-rh-cream px-4 py-20 sm:px-6 lg:py-28">
+      <div className="mx-auto max-w-6xl">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 className={cn('text-[32px] leading-[1.1] tracking-tight text-rh-ink sm:text-[44px]', displayFont)}>Video courses</h2>
+            <p className="mt-3 max-w-xl text-[15px] text-rh-ink/60">
+              Short, practical courses for physiotherapists. Pay once, then watch at your own pace on your phone or computer.
+            </p>
+          </div>
+          <Link href="/learn/courses" className={cn(pillOutline, 'self-start sm:self-auto')}>
+            All courses
+          </Link>
+        </div>
+        {offers === undefined ? (
+          <div className="mt-10 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="h-80 animate-pulse rounded-[1.75rem] bg-rh-ink/[0.06]" />
+            ))}
+          </div>
+        ) : offers.length === 0 ? (
+          <div className="mt-10 rounded-[2rem] bg-white px-6 py-12 text-center shadow-soft">
+            <h3 className={cn('text-2xl tracking-tight text-rh-ink', displayFont)}>Courses are on the way</h3>
+            <p className="mx-auto mt-2 max-w-sm text-[15px] text-rh-ink/60">New video courses will appear here as soon as they’re published.</p>
+          </div>
+        ) : (
+          <OfferGrid offers={offers.slice(0, 3)} className="mt-10" />
+        )}
+      </div>
+    </section>
+  )
+}
+
 export function CourseCatalog() {
   const offers = useQuery(videoApi.catalog, {})
   const signedIn = offers?.some((o) => o.viewer.signedIn) ?? false
@@ -89,34 +159,7 @@ export function CourseCatalog() {
           <p className="mx-auto mt-2 max-w-sm text-[15px] text-rh-ink/60">New courses will appear here as soon as they’re published.</p>
         </div>
       ) : (
-        <div className="mt-10 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          {offers.map((offer) => (
-            <Link
-              key={offer.id}
-              href={`/learn/courses/${offer.id}`}
-              className="group flex h-full flex-col overflow-hidden rounded-[1.75rem] bg-white shadow-soft transition duration-300 hover:-translate-y-1 hover:shadow-lift focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-ink motion-reduce:hover:translate-y-0"
-            >
-              <div className="relative aspect-[16/10] overflow-hidden bg-rh-ink/[0.06]">
-                <CoverImage url={offer.coverUrl} sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw" />
-                {offer.viewer.canWatch && (
-                  <span className="absolute left-3 top-3 inline-flex items-center gap-1 rounded-full bg-rh-lime px-2.5 py-1 text-xs font-semibold text-rh-ink">
-                    <Check className="h-3 w-3" /> Enrolled
-                  </span>
-                )}
-              </div>
-              <div className="flex flex-1 flex-col p-6">
-                <h2 className={cn('text-xl leading-snug tracking-tight text-rh-ink', displayFont)}>{offer.title}</h2>
-                <p className="mt-2 line-clamp-3 text-sm text-rh-ink/60">{offer.summary}</p>
-                <div className="mt-auto flex flex-wrap items-center justify-between gap-2 pt-5 text-xs text-rh-ink/55">
-                  <span className="inline-flex items-center gap-1.5">
-                    <BookOpen className="h-3.5 w-3.5" /> {offer.lessonCount} lessons · {formatLength(offer.durationSec)}
-                  </span>
-                  <PriceTag offer={offer} />
-                </div>
-              </div>
-            </Link>
-          ))}
-        </div>
+        <OfferGrid offers={offers} className="mt-10" />
       )}
     </main>
   )
