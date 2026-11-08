@@ -171,6 +171,46 @@ def load(session: Session, identity: Identity) -> ConversationState:
     )
 
 
+def put_before_last_joy_message(
+    session: Session, conversation_id: UUID, text: str, *, user_text: str | None = None,
+) -> None:
+    """Record a Joy message sent just ahead of the last reply (an answer before the next step).
+
+    ``user_text`` puts the patient's own words back on the last user message, for a turn that ran
+    on a stand-in (a price question that starts a chat the way "Hi" does).
+    """
+    session.flush()
+    newest = select(Message).where(Message.conversation_id == conversation_id).order_by(Message.created_at.desc())
+    joy = session.scalar(newest.where(Message.role == "joy").limit(1))
+    if user_text is not None:
+        user = session.scalar(newest.where(Message.role == "user").limit(1))
+        if user is not None:
+            user.text = user_text
+    if joy is None:
+        session.add(Message(conversation_id=conversation_id, role="joy", text=text, created_at=_next_stamp()))
+    else:
+        stamp = joy.created_at
+        joy.created_at = _next_stamp()
+        session.add(Message(conversation_id=conversation_id, role="joy", text=text, created_at=stamp))
+    session.flush()
+
+
+def add_joy_message(session: Session, conversation_id: UUID, text: str) -> None:
+    """One more Joy message after everything saved so far in this conversation."""
+    session.add(Message(conversation_id=conversation_id, role="joy", text=text, created_at=_next_stamp()))
+    session.flush()
+
+
+def last_joy_text(session: Session, conversation_id: UUID) -> str | None:
+    session.flush()
+    return session.scalar(
+        select(Message.text)
+        .where(Message.conversation_id == conversation_id, Message.role == "joy")
+        .order_by(Message.created_at.desc())
+        .limit(1)
+    )
+
+
 def save_turn(
     session: Session,
     state: ConversationState,

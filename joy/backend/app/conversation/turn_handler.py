@@ -49,7 +49,15 @@ from app.booking.booking_flow import (
 from app.conversation.language import mirror_language
 from app.conversation.orchestrator import decide_booking_substate, decide_phase, has_narrative
 from app.conversation.stage_machine import assert_transition
-from app.conversation.state_manager import ConversationState, load, save_turn
+from app.conversation.state_manager import (
+    ConversationState,
+    add_joy_message,
+    last_joy_text,
+    load,
+    put_before_last_joy_message,
+    save_turn,
+)
+from app.conversation.pricing import is_price_question, price_answer
 from app.family.access import apply_family_turn
 from app.family.relay import apply_pending_physio_answer, ask_physio, is_relay_ask
 from app.partner.referral import apply_inbound_code, apply_partner_turn, maybe_provision_from_referral
@@ -79,6 +87,7 @@ from app.identity.role_switch import (
 from app.identity.unknown_sender import (
     PHYSIO_SIGN_UP_REPLY,
     PHYSIO_USE_DASHBOARD_REPLY,
+    looks_like_symptom,
     resolve_unknown_sender,
 )
 from app.llm.gemini_client import LLMClient
@@ -92,7 +101,7 @@ from app.booking.step_help import booking_step_help
 from app.conversation.check_in import check_in_turn
 from app.exercises.questions import exercise_question_turn
 from app.conversation.human_request import BOT_REPLY, human_request_reply, is_bot_question, is_human_request
-from app.conversation.interactive import reply_buttons
+from app.conversation.interactive import interactive_for, reply_buttons
 from app.triage import self_referral as sr
 from app.triage.non_msk import infer_non_msk_area
 from app.api.internal.rh_safety_eligibility import EligibilityRequest, issue_eligibility_reference
@@ -2643,6 +2652,62 @@ def _self_referral_turn(
     )
 
 
+def _price_question_turn(
+    session: Session,
+    identity: Identity,
+    state: ConversationState,
+    user_text: str,
+    language: str,
+    wa_message_id: str | None,
+    llm: LLMClient,
+    *,
+    paystack=None,
+    media: list[str] | None = None,
+    location: tuple[float, float] | None = None,
+) -> TurnResult:
+    """Answer what care costs (app/conversation/pricing.py), then carry on with the step they're on.
+
+    The answer is its own message, sent first. A first message (the landing page's "Ask Joy about
+    pricing") then starts the chat the way "Hi" does, a message that also says what's wrong goes
+    on through the normal turn, and otherwise the question they were last asked is asked again.
+    """
+    answer, topic = price_answer(user_text)
+    if topic == "hmo":
+        try:
+            route_escalation(session, "hmo", {
+                "phone": identity.phone_e164, "patient_id": str(identity.person_id), "text": (user_text or "")[:200],
+            })
+        except Exception:
+            logger.warning("joy_hmo_admin_alert_failed", exc_info=True)
+    append(session, kind=AuditKind.TRIAGE, actor_phone=identity.phone_e164, person_id=identity.person_id,
+           payload={"decision": "price_question_answered", "topic": topic})
+    carries_story = looks_like_symptom(user_text)
+    if carries_story or not state.recent_messages:
+        result = handle_turn(
+            session, identity.phone_e164, user_text if carries_story else "Hi", llm, wa_message_id,
+            paystack=paystack, media=media, location=location, price_answered=True,
+        )
+        if result.blocked_by_safety or (result.safety is not None and result.safety.fired):
+            return result  # urgent advice leads, with nothing in front of it
+        put_before_last_joy_message(
+            session, state.conversation_id, answer, user_text=None if carries_story else user_text,
+        )
+        return result.model_copy(update={"before": [{"text": answer}, *(result.before or [])]})
+    question = last_joy_text(session, state.conversation_id)
+    save_turn(
+        session, state, user_text, answer, state.extracted, state.phase, language, wa_message_id, stage=state.stage,
+    )
+    if not question:
+        return TurnResult(reply_text=answer, language=language, phase=state.phase, extracted=state.extracted)
+    add_joy_message(session, state.conversation_id, question)
+    conversation = session.get(Conversation, state.conversation_id)
+    return TurnResult(
+        reply_text=question, language=language, phase=state.phase, extracted=state.extracted,
+        before=[{"text": answer}],
+        interactive=interactive_for(conversation) or sr.step_interactive(conversation),
+    )
+
+
 def handle_turn(
     session: Session,
     phone: str,
@@ -2653,6 +2718,7 @@ def handle_turn(
     paystack=None,
     media: list[str] | None = None,
     location: tuple[float, float] | None = None,
+    price_answered: bool = False,
 ) -> TurnResult:
     identity = resolve(session, phone)
     # `PT` is discovery, never local physiotherapist provisioning. RH's exact
@@ -2968,6 +3034,20 @@ def handle_turn(
                     session, identity, state, user_text, flagged,
                     volunteered_safety, phase, language, wa_message_id,
                 )
+
+    # "How much will it cost?" at any step: answered in code from Rehabify's live prices, then the
+    # step carries on (app/conversation/pricing.py). Booking steps answer it from the booking's own
+    # price (app/booking/step_help.py). After the safety checks above, so warning signs lead.
+    if (
+        identity.persona == Persona.PATIENT
+        and not price_answered
+        and not state.booking_substate
+        and is_price_question(user_text)
+    ):
+        return _price_question_turn(
+            session, identity, state, user_text, language, wa_message_id, llm,
+            paystack=paystack, media=media, location=location,
+        )
 
     # Self-referral: language, consent, profile, red flags, questions, named physios
     # (app/triage/self_referral.py; the owner's guide). The story itself goes to the model below.

@@ -84,6 +84,9 @@ class Settings(BaseSettings):
     rh_api_key_id: str = ""
     rh_api_hmac_secret: str = ""
     rh_convex_read_base_url: str = ""
+    # The Convex deployment URL (https://<name>.convex.cloud) for RH's public price list. Empty:
+    # derived from the .convex.site URLs above (app/integrations/rh_catalogue.py).
+    rh_convex_url: str = ""
     rh_convex_read_hmac_secret: str = ""
     # Optional operational gateway.  Unlike the read-only gateway, this key
     # can invoke a small, fixed set of RH-owned Convex mutations (for example

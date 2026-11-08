@@ -122,6 +122,22 @@ def _save(conversation: Conversation, context: dict, sr: dict, step: str | None)
     conversation.booking_context = context
 
 
+def step_interactive(conversation: Conversation | None) -> dict | None:
+    """The buttons or list the current step was asked with, for asking it again."""
+    if conversation is None:
+        return None
+    context = conversation.booking_context or {}
+    step = context.get(FLOW_KEY)
+    if step == LANGUAGE:
+        return _list("Choose language", list(LANGUAGE_ROWS), "Language")
+    if step == CONSENT:
+        return _buttons(("I agree", "I agree"), ("I don't agree", "I don't agree"))
+    if step in (AREA, RED_FLAGS, QUESTIONS):
+        menu = (context.get(SR_KEY) or {}).get("menu")
+        return menu if isinstance(menu, dict) else None
+    return None
+
+
 def current_step(conversation: Conversation | None) -> str | None:
     if conversation is None:
         return None
@@ -840,6 +856,7 @@ def _question_step(conversation: Conversation, context: dict, sr: dict, question
     question = questions[index]
     sr["question_keys"] = [q["key"] for q in questions]
     sr["question_index"] = index
+    sr["menu"] = _buttons(*question["buttons"])
     _save(conversation, context, sr, QUESTIONS)
     count = f"{index + 1}/{len(questions)} " if len(questions) > 1 else ""
     return Step("reply", f"{lead}{count}{question['text']}", _buttons(*question["buttons"]), stage="safety_screen")

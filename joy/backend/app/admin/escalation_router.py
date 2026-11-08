@@ -184,6 +184,13 @@ def _admin_text(kind: str, payload: dict) -> str:
             f"in the next 24 hours. Please arrange their consultation. Call {payload.get('phone') or 'them'}."
             + (f" {str(payload.get('text') or '').strip()}" if payload.get("text") else "")
         )
+    if kind == "hmo":
+        said = str(payload.get("text") or "").strip()
+        return (
+            f"Patient {payload.get('patient_id') or ''} asked on WhatsApp about HMO or insurance cover. "
+            f"Please check and reply to {payload.get('phone') or 'them'} within 1 working day."
+            + (f' They wrote: "{said}"' if said else "")
+        )
     if kind == "callback":
         said = str(payload.get("text") or "").strip()
         who = {
