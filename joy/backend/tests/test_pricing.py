@@ -63,8 +63,10 @@ def test_the_general_answer_explains_the_first_step_and_what_comes_after():
     assert "Initial Recovery Consultation, ₦6,000" in answer
     assert "show you the exact price before you pay" in answer
     assert "pay-later" in answer and "rehabify-access" in answer
-    # The owner shows only the first price unless a patient asks about later care
-    assert "₦30,000" not in answer and "₦12,000" not in answer
+    # The owner chose the full price list for a general question (8 Nov 2026)
+    assert "Virtual Physiotherapy Treatment (30 minutes): ₦12,000" in answer
+    assert "Initial Home Physiotherapy Assessment (90 minutes): ₦30,000 plus a travel charge for your area" in answer
+    assert answer.index("₦6,000") < answer.index("₦12,000")
 
 
 def test_answers_use_the_live_prices():

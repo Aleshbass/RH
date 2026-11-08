@@ -5,9 +5,10 @@ any point in a chat. They are answered in code from Rehabify's live price list
 (app/integrations/rh_catalogue.py), never by the model, so Joy can't quote a wrong price.
 
 The answers follow the owner's rules: the first step is always the online Initial Recovery
-Consultation (7 Nov 2026), anything after it is recommended by the physiotherapist and priced
-before the patient pays, and support from Joy between sessions is included for Rehabify Care
-patients in treatment (convex/helpers/patientPlans.ts).
+Consultation (7 Nov 2026), a general question gets every price (8 Nov 2026), anything after the
+first step is recommended by the physiotherapist and priced before the patient pays, and support
+from Joy between sessions is included for Rehabify Care patients in treatment
+(convex/helpers/patientPlans.ts).
 """
 
 from __future__ import annotations
@@ -116,16 +117,21 @@ def help_paying_text() -> str:
     )
 
 
+_LATER_CARE = ("virtual_assessment", "home_assessment", "virtual_treatment", "home_treatment", "virtual_review", "home_review")
+
+
 def general_answer(services: dict[str, Service]) -> str:
+    """Every price, first step first (the owner chose the full list for a general question, 8 Nov 2026)."""
     first = _first_step(services)
+    lines = "\n".join(_line(service) for service in _bookable(services, *_LATER_CARE))
     return (
         "Chatting with me is free. Here's how the cost works:\n\n"
         f"*1. Your first step: {first.name}, {naira(first.price_kobo)}*\n"
         f"A short video call ({first.duration}) with a licensed physiotherapist, who goes through your problem and "
-        "recommends the right next step. The price is all-inclusive.\n\n"
-        "*2. After that, only if you need it*\n"
-        "Your physiotherapist recommends any further care, such as treatment sessions online or at home. "
-        "I always show you the exact price before you pay, and you decide.\n\n"
+        "recommends the right next step.\n\n"
+        "*2. If your physiotherapist recommends more care*\n"
+        f"{lines}\n\n"
+        "Every price is all-inclusive, and I show you the exact price before you pay, so you always decide.\n\n"
         "*3. Between sessions*\n"
         "My reminders and check-ins here on WhatsApp are included while you're in treatment with Rehabify Care.\n\n"
         f"{help_paying_text()}"
@@ -169,8 +175,7 @@ def assessment_answer(services: dict[str, Service]) -> str:
 
 def list_answer(services: dict[str, Service]) -> str:
     first = _first_step(services)
-    later = _bookable(services, "virtual_assessment", "home_assessment", "virtual_treatment", "home_treatment",
-                      "virtual_review", "home_review")
+    later = _bookable(services, *_LATER_CARE)
     lines = "\n".join(_line(service) for service in later)
     return (
         f"*Your first step*\n• {first.name} ({first.duration}, online): {naira(first.price_kobo)}\n\n"
