@@ -3,10 +3,11 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Play, ChevronRight, PlayCircle } from '@/components/icons';
+import { MARKETING_VIDEOS, cloudinaryPoster, cloudinaryVideo } from '@/lib/marketingVideos';
 
 const STORAGE_KEY = 'rehabify_physio_guide_video_seen';
-const GUIDE_VIDEO_EMBED_URL =
-  'https://drive.google.com/file/d/1QalAWl1Q-_w_CEbP_eQLwulR6gbx8LW9/preview';
+// The same film as the landing page's physiotherapist demo ("Rehabify for physiotherapists")
+const GUIDE_VIDEO_URL = MARKETING_VIDEOS.physiotherapist;
 
 interface PhysioGuideVideoModalProps {
   /** If true, always shows regardless of localStorage (post-onboarding screens). */
@@ -23,7 +24,7 @@ interface PhysioGuideVideoModalProps {
  * PhysioGuideVideoModal
  *
  * Shows a premium cinematic splash screen with a large play button.
- * Clicking it loads the Google Drive iframe in-place.
+ * Clicking it plays the physiotherapist demo film from the landing page, in place.
  *
  * - forceShow=true → always shows (post-onboarding page)
  * - default → shows once per browser (localStorage)
@@ -132,7 +133,7 @@ export function PhysioGuideVideoModal({
                         aria-label="Play platform guide video"
                         className="relative h-20 w-20 rounded-full bg-rh-lime hover:bg-rh-lime-deep flex items-center justify-center cursor-pointer focus:outline-none focus-visible:ring-4 focus-visible:ring-rh-lime"
                       >
-                        <Play className="h-9 w-9 text-white ml-1" />
+                        <Play className="h-9 w-9 text-rh-ink ml-1" />
                       </motion.button>
                     </div>
 
@@ -154,14 +155,15 @@ export function PhysioGuideVideoModal({
                   </div>
                 </div>
               ) : (
-                /* ── Google Drive iframe — loaded after clicking play ── */
-                <iframe
-                  src={GUIDE_VIDEO_EMBED_URL}
-                  title="Rehabify Platform Guide for Physiotherapists"
-                  allow="autoplay; fullscreen"
-                  allowFullScreen
-                  autoFocus
-                  className="absolute inset-0 w-full h-full border-0"
+                /* ── The landing page's physiotherapist film, loaded after clicking play ── */
+                <video
+                  src={cloudinaryVideo(GUIDE_VIDEO_URL)}
+                  poster={cloudinaryPoster(GUIDE_VIDEO_URL)}
+                  title="Rehabify for physiotherapists"
+                  controls
+                  autoPlay
+                  playsInline
+                  className="absolute inset-0 h-full w-full bg-black object-contain"
                 />
               )}
             </div>
