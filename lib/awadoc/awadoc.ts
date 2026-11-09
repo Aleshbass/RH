@@ -17,8 +17,8 @@
  *                            partners-prod-001 host does not exist, checked Nov 2026)
  *   AWADOC_TEST_SECRET_KEY   sandbox secret (the sk_ value of AwaDoc's test key; rotated 2026-11-09)
  *   AWADOC_TEST_API_KEY      sandbox pk_test_ key, kept for reference only (not used for signing)
- *   AWADOC_TEST_BASE_URL     sandbox API base (default https://partners-staging.awadoc.com; on 2026-11-09
- *                            that host served a self-signed certificate, so sandbox callbacks may fail TLS)
+ *   AWADOC_TEST_BASE_URL     sandbox API base (default https://sandbox.partners-api.awadoc.com, given by
+ *                            AwaDoc 2026-11-09; partners-staging.awadoc.com has a self-signed certificate)
  *   AWADOC_TEST_PARTNER_ID   optional, when the sandbox partner id differs
  */
 
@@ -45,7 +45,7 @@ export function awadocEnvConfig(env: AwadocEnv) {
     if (env === "test") {
         return {
             secrets: secretList(process.env.AWADOC_TEST_SECRET_KEY),
-            baseUrl: stripTrailingSlash(process.env.AWADOC_TEST_BASE_URL?.trim() || "https://partners-staging.awadoc.com"),
+            baseUrl: stripTrailingSlash(process.env.AWADOC_TEST_BASE_URL?.trim() || "https://sandbox.partners-api.awadoc.com"),
             partnerId: process.env.AWADOC_TEST_PARTNER_ID?.trim() || partnerId,
         };
     }
