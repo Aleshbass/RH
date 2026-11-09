@@ -6,10 +6,16 @@ import { Camera, Check, Dumbbell, Eye, Rotate3d, Search } from '@/components/ico
 import { Input } from '@/components/ui/input'
 import { StatusBadge } from '@/components/physio/ui'
 import { posterUrl } from '@/convex/exerciseLibraryCatalog'
+import { motionExerciseForClip } from '@/lib/motion/exercises'
 import { cn } from '@/lib/utils'
 import { isLocalImage, type LibraryEntry } from './types'
 
 const BODY_FILTERS = ['All', 'Knee', 'Hip', 'Ankle', 'Back', 'Core', 'Neck', 'Shoulders', 'Arms'] as const
+
+/** The patient can use the camera coach (lib/motion/exercises.ts) on this exercise. */
+export function hasCameraCoach(entry: LibraryEntry) {
+  return Boolean(entry.animation?.clips.some((c) => motionExerciseForClip(c.id)))
+}
 
 export function entryPoster(entry: LibraryEntry) {
   const clip = entry.animation?.clips[0]
@@ -33,11 +39,13 @@ export function LibraryPicker({
   const [search, setSearch] = useState('')
   const [body, setBody] = useState<(typeof BODY_FILTERS)[number]>('All')
   const [only3d, setOnly3d] = useState(false)
+  const [onlyCoach, setOnlyCoach] = useState(false)
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
     return items.filter((e) => {
       if (only3d && !e.animation) return false
+      if (onlyCoach && !hasCameraCoach(e)) return false
       if (body !== 'All' && !e.bodyParts.some((b) => b.toLowerCase() === body.toLowerCase())) return false
       if (!q) return true
       return (
@@ -47,7 +55,7 @@ export function LibraryPicker({
         e.conditions.some((c) => c.replace(/_/g, ' ').includes(q))
       )
     })
-  }, [items, search, body, only3d])
+  }, [items, search, body, only3d, onlyCoach])
 
   return (
     <div className="space-y-4">
@@ -65,6 +73,17 @@ export function LibraryPicker({
           )}
         >
           <Rotate3d className="h-4 w-4" /> 3D only
+        </button>
+        <button
+          type="button"
+          onClick={() => setOnlyCoach((v) => !v)}
+          title="Exercises where patients can use the camera coach (it counts reps and gives form tips)"
+          className={cn(
+            'inline-flex items-center gap-1.5 rounded-full border px-3 py-2 text-sm transition active:scale-95',
+            onlyCoach ? 'border-rh-lime bg-rh-lime text-rh-ink dark:border-rh-lime dark:bg-rh-lime dark:text-rh-ink' : 'border-black/[0.08] hover:bg-rh-honeydew dark:border-white/10'
+          )}
+        >
+          <Camera className="h-4 w-4" /> Camera coach
         </button>
       </div>
       <div className="flex flex-wrap gap-1.5">
@@ -136,6 +155,12 @@ export function LibraryPicker({
                     <p className="line-clamp-1 text-xs text-neutral-500">{entry.bodyParts.filter((b) => !['Legs', 'Arms'].includes(b)).join(' · ') || entry.bodyParts.join(' · ')}</p>
                     {entry.author && <p className="line-clamp-1 text-xs text-neutral-500">By {entry.author.name}</p>}
                     <div className="flex flex-wrap gap-1">
+                      {hasCameraCoach(entry) && (
+                        <StatusBadge tone="green">
+                          <Camera className="mr-1 inline h-3 w-3" />
+                          Camera coach
+                        </StatusBadge>
+                      )}
                       {entry.sided && <StatusBadge tone="neutral">Left / right</StatusBadge>}
                       {entry.animation?.status === 'draft' && <StatusBadge>Awaiting sign-off</StatusBadge>}
                     </div>

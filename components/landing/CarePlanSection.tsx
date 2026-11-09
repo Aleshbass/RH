@@ -320,18 +320,18 @@ export function CarePlanSection() {
           <Card
             title="Exercises you can see in 3D"
             body="Your physio picks exercises for you. Watch them from every side and follow along at home."
-            note="New: 3D motion tracking counts your reps"
+            note="New: a camera coach counts your reps (beta)"
           >
             <ExerciseVisual near={near} onTry={() => setTryOpen(true)} />
           </Card>
           <Card
-            title="3D motion tracking"
-            body="Exercise in front of your phone's camera. It counts your reps and gives you tips on your form, next to the 3D coach."
+            title="Camera coach (beta)"
+            body="Follow the 3D guide while your phone's camera counts your reps and checks your form."
             note="Your video never leaves your phone"
           >
             <LoopVideo
               base="/media/camera-coach-demo"
-              label="Demo: 3D motion tracking follows shoulder raises and counts the reps"
+              label="Demo: the camera coach follows shoulder raises and counts the reps"
               className="object-[85%_50%]"
             />
           </Card>

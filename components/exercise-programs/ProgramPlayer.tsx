@@ -418,6 +418,11 @@ export function ProgramPlayer({
                     <span className="block truncate text-sm font-semibold text-rh-ink dark:text-white">{it.name}</span>
                     {detail && <span className="block truncate text-xs text-neutral-500">{detail}</span>}
                     {side && <span className="mt-0.5 inline-block rounded-full bg-rh-peach px-2 py-0.5 text-[10px] font-medium text-[#b4690e]">{side}</span>}
+                    {coach && !readOnly && !locked && !education && motionExerciseForClip(it.clipId) && (
+                      <span className="ml-1 mt-0.5 inline-flex items-center gap-1 rounded-full bg-rh-honeydew px-2 py-0.5 text-[10px] font-semibold text-rh-ink dark:bg-white/[0.06] dark:text-rh-lime">
+                        <Camera className="h-2.5 w-2.5" /> Camera coach
+                      </span>
+                    )}
                   </span>
                   <ChevronRight className="h-4 w-4 text-neutral-400" />
                 </button>

@@ -39,8 +39,8 @@ export const BONES: [number, number][] = [
   [7, 11], [8, 12],
 ]
 
-/** A point is trusted from this visibility up; below it the angle is skipped and the patient told why. */
-export const VISIBLE = 0.6
+/** A point is trusted from this visibility up; below it the angle is skipped and the patient told why (0.7, as in Das et al. 2026). */
+export const VISIBLE = 0.7
 
 export function point(frame: Frame, joint: Joint, side: Side): Point {
   return frame.points[LANDMARK[joint][side]]

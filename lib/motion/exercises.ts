@@ -58,6 +58,18 @@ export type MotionExercise = {
   /** Typical resting and full-movement angles; the resting angle is re-measured for each patient */
   rest: number
   target: number
+  /**
+   * Ask for the same range of movement from the patient's own measured start, instead of reaching the
+   * fixed target angle. The camera reads a bent knee straighter than it is (about 20° near 90°,
+   * less near straight), so a fixed target over-credits short movements. Capped just short of 180°.
+   */
+  relativeTarget?: boolean
+  /**
+   * Limb segments that stay the same length on screen while the patient moves side-on. When one
+   * changes length by more than OUT_OF_PLANE (engine.ts), the limb is turning towards the camera and
+   * the angle can't be trusted, so the frame is skipped.
+   */
+  segments?: [Joint, Joint][]
   /** Progress a rep needs to count, and from which a short attempt gets a "go further" cue */
   countAt: number
   partialAt: number
@@ -86,11 +98,14 @@ export const MOTION_EXERCISES: MotionExercise[] = [
       'Put your chair side-on to the phone, about 2 metres away.',
       'Prop the phone up at about hip height so your whole body, head to feet, fits on the screen.',
       'Sit on the front half of the chair with your feet flat.',
+      'Roll trousers or a wrapper above the knee if you can, so the camera sees your knee clearly.',
     ],
     primary: kneeAngle,
     primaryJoint: 'knee',
     rest: 90,
     target: 170,
+    relativeTarget: true,
+    segments: [['knee', 'ankle']],
     countAt: 0.85,
     partialAt: 0.45,
     partialCue: 'sts_stand_tall',
@@ -113,11 +128,14 @@ export const MOTION_EXERCISES: MotionExercise[] = [
       'Put your chair side-on to the phone, about 1.5 to 2 metres away, with the leg you are exercising nearest the phone.',
       'Prop the phone up at about seat height so your hips, knees and feet are on the screen.',
       'Sit tall with your back against the chair and your feet flat.',
+      'Roll trousers or a wrapper above the knee if you can, so the camera sees your knee clearly.',
     ],
     primary: kneeAngle,
     primaryJoint: 'knee',
     rest: 90,
     target: 170,
+    relativeTarget: true,
+    segments: [['hip', 'knee'], ['knee', 'ankle']],
     countAt: 0.85,
     partialAt: 0.45,
     partialCue: 'ke_straighten',
@@ -155,6 +173,7 @@ export const MOTION_EXERCISES: MotionExercise[] = [
     primaryJoint: 'shoulder',
     rest: 12,
     target: 160,
+    segments: [['shoulder', 'elbow']],
     countAt: 0.8,
     partialAt: 0.45,
     partialCue: 'sf_higher',
@@ -164,7 +183,13 @@ export const MOTION_EXERCISES: MotionExercise[] = [
       elbow: angleAt(point(frame, 'shoulder', side), point(frame, 'elbow', side), point(frame, 'wrist', side)),
     }),
     rules: [
-      { code: 'sf_elbows', joints: ['elbow'], check: (r) => r.atPeak.elbow !== null && r.atPeak.elbow < 145 },
+      // Elbow bending compared with the patient's own straight-arm start (absolute angles vary by body and camera)
+      {
+        code: 'sf_elbows',
+        joints: ['elbow'],
+        check: (r) =>
+          r.atPeak.elbow !== null && (r.atStart.elbow !== null ? r.atStart.elbow - r.atPeak.elbow > 30 : r.atPeak.elbow < 135),
+      },
       {
         code: 'sf_no_arch',
         joints: ['shoulder', 'hip'],

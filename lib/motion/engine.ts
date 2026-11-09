@@ -20,6 +20,10 @@ export type Reference = {
 }
 
 export const SHAPE_POINTS = 40
+/** A limb segment changing on-screen length by more than this means it's turning towards the camera */
+export const OUT_OF_PLANE = 0.2
+/** Relative targets stop just short of a fully straight joint */
+const RELATIVE_TARGET_CAP = 178
 const START_BELOW = 0.2
 const RISE_ABOVE = 0.3
 const SNAPSHOT_MS = 100
@@ -53,6 +57,12 @@ function avgMetrics(samples: Sample[]): Metrics {
     }
   }
   return Object.fromEntries(Object.entries(sums).map(([k, s]) => [k, s.n ? s.total / s.n : null]))
+}
+
+function median(values: number[]) {
+  const sorted = [...values].sort((a, b) => a - b)
+  const mid = Math.floor(sorted.length / 2)
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2
 }
 
 function clamp01(x: number) {
@@ -137,9 +147,15 @@ export class RepEngine {
   private frames: Frame[] = []
   private lastSnapshotT = 0
   private reps = 0
+  private readonly target: number
+  /** Resting on-screen length of each limb segment (median of the start position), for the out-of-plane check */
+  private segmentBase: number[] | null = null
+  private segmentSamples: number[][] = []
   /** Latest progress (0-1), for the progress bar on the camera */
   progress = 0
   angle: number | null = null
+  /** The last frame was skipped because a limb was turning towards the camera */
+  outOfPlane = false
 
   constructor(
     readonly exercise: MotionExercise,
@@ -151,6 +167,10 @@ export class RepEngine {
     // The patient's own start position, within reason (a bad first reading must not break counting)
     this.restAngle =
       restAngle !== null && Math.abs(restAngle - exercise.rest) <= 30 ? restAngle : exercise.rest
+    // Same range of movement from the patient's own start (see MotionExercise.relativeTarget)
+    this.target = exercise.relativeTarget
+      ? Math.min(RELATIVE_TARGET_CAP, this.restAngle + (exercise.target - exercise.rest))
+      : exercise.target
   }
 
   get phase() {
@@ -168,8 +188,42 @@ export class RepEngine {
   }
 
   private progressOf(angle: number) {
-    const span = this.exercise.target - this.restAngle
+    const span = this.target - this.restAngle
     return span === 0 ? 0 : (angle - this.restAngle) / span
+  }
+
+  /** On-screen length of each configured limb segment, or null when a point isn't visible. */
+  private segmentLengths(frame: Frame): number[] | null {
+    const segments = this.exercise.segments
+    if (!segments?.length) return null
+    const lengths: number[] = []
+    for (const [a, b] of segments) {
+      const pa = point(frame, a, this.side)
+      const pb = point(frame, b, this.side)
+      if (!visible(pa) || !visible(pb)) return null
+      lengths.push(Math.hypot(pa.x - pb.x, pa.y - pb.y))
+    }
+    return lengths
+  }
+
+  /** True when a limb has changed length on screen enough that it's turning towards the camera. */
+  private turnedOutOfPlane(frame: Frame, atRest: boolean): boolean {
+    const lengths = this.segmentLengths(frame)
+    if (!lengths) return false
+    if (!this.segmentBase) {
+      // Learn the resting lengths from the start position first
+      if (atRest) {
+        this.segmentSamples.push(lengths)
+        if (this.segmentSamples.length >= 10) {
+          this.segmentBase = lengths.map((_, i) => median(this.segmentSamples.map((s) => s[i])))
+        }
+      }
+      return false
+    }
+    return lengths.some((len, i) => {
+      const base = this.segmentBase![i]
+      return base > 1e-6 && Math.abs(len - base) / base > OUT_OF_PLANE
+    })
   }
 
   /** Feed one smoothed frame; returns what happened. Frames where the body can't be seen are skipped. */
@@ -180,6 +234,9 @@ export class RepEngine {
     this.angle = angle
     if (angle === null) return []
     const progress = this.progressOf(angle)
+    // A limb turning towards the camera reads as a different angle: skip the frame rather than count it
+    this.outOfPlane = this.turnedOutOfPlane(frame, this.state === 'rest' && progress < START_BELOW)
+    if (this.outOfPlane) return []
     this.progress = clamp01(progress)
     const sample: Sample = { t: frame.t, progress, metrics: this.exercise.metrics(frame, this.side, this.dir) }
     const events: EngineEvent[] = []

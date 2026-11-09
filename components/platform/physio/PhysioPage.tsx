@@ -248,9 +248,9 @@ const TOOLS: Tool[] = [
   {
     title: "Exercise programmes patients actually follow",
     body: "Build programmes from our 3D exercise library. Patients see clear demonstrations at home.",
-    note: "New: 3D motion tracking for reps and form",
+    note: "New: camera coach for reps and form (beta)",
     visual: (
-      <LoopVideo base="/media/camera-coach-demo" label="Demo: 3D motion tracking follows shoulder raises and counts the reps" className="object-[62%_50%]" />
+      <LoopVideo base="/media/camera-coach-demo" label="Demo: the camera coach follows shoulder raises and counts the reps" className="object-[62%_50%]" />
     ),
   },
   {

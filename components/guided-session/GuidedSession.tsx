@@ -142,6 +142,8 @@ export default function GuidedSession({ clipId, exercise, name, itemIndex, plan:
   const readySince = useRef(0)
   const restAngles = useRef<number[]>([])
   const missingSince = useRef(0)
+  // A limb kept turning towards the camera (engine.outOfPlane): frames are skipped until they turn back
+  const outOfPlaneSince = useRef(0)
   const flagged = useRef<{ joints: Joint[]; until: number }>({ joints: [], until: 0 })
   const lightAt = useRef(0)
   const darkRef = useRef(false)
@@ -299,7 +301,11 @@ export default function GuidedSession({ clipId, exercise, name, itemIndex, plan:
         if (missing.length) {
           if (!missingSince.current) missingSince.current = now
         } else missingSince.current = 0
-        for (const event of frame ? session.onFrame(frame) : []) {
+        const frameEvents = frame ? session.onFrame(frame) : []
+        if (session.engine.outOfPlane) {
+          if (!outOfPlaneSince.current) outOfPlaneSince.current = now
+        } else outOfPlaneSince.current = 0
+        for (const event of frameEvents) {
           if (event.type === 'rep') {
             const fix = event.rep.mistakes[0]
             if (fix) {
@@ -351,7 +357,9 @@ export default function GuidedSession({ clipId, exercise, name, itemIndex, plan:
           missing:
             missingSince.current && now - missingSince.current > 700 && session
               ? `Step back so we can see your ${[...new Set(session.engine.missing(frame ?? { t: 0, points: [] }).map((j) => JOINT_WORDS[j]))].join(' and ') || 'whole body'}`
-              : null,
+              : outOfPlaneSince.current && now - outOfPlaneSince.current > 700 && session
+                ? "Stay side-on to the phone: your arm or leg is turning towards the camera"
+                : null,
         }))
       }
     },
@@ -670,7 +678,7 @@ export default function GuidedSession({ clipId, exercise, name, itemIndex, plan:
                 <p className="rounded-2xl bg-white/[0.06] p-3 text-xs text-white/75">
                   The video stays on your phone and is never uploaded. Only your rep count, scores and a simple stick figure of a few reps are
                   saved for your physio.
-                  {downloaded === false && ` The first time, the camera coach downloads up to ${downloadMegabytes(model)} MB once: Wi-Fi is best.`}
+                  {downloaded === false && ` The first time, the camera coach downloads about ${downloadMegabytes(model)} MB of data, once: Wi-Fi is best.`}
                 </p>
                 <div className="flex gap-3 rounded-2xl bg-rose-500/15 p-3 text-xs text-rose-100">
                   <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-rose-300" />
@@ -695,7 +703,7 @@ export default function GuidedSession({ clipId, exercise, name, itemIndex, plan:
               <Loader2 className="h-8 w-8 animate-spin text-rh-lime" />
               <p className="text-sm">
                 {progress && progress.loaded < progress.total * 0.98
-                  ? `Getting the camera coach ready… ${(progress.loaded / 1e6).toFixed(1)} of ${(progress.total / 1e6).toFixed(0)} MB`
+                  ? `Getting the camera coach ready… ${Math.round((progress.loaded / progress.total) * 100)}%`
                   : 'Starting the camera…'}
               </p>
               {progress && (

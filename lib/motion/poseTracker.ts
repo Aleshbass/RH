@@ -31,9 +31,13 @@ const ASSETS = {
 export type PoseModel = 'lite' | 'full'
 export type LoadProgress = { loaded: number; total: number }
 
-/** At most how much a first session downloads, for the setup screen (the CDN may compress some of it). */
+/**
+ * About how much data a first session uses, for the setup screen. jsDelivr sends the WebAssembly
+ * brotli-compressed (13.5 MB -> 3.6 MB on the wire); the model isn't compressed. Measured Nov 2026:
+ * lite ~9.5 MB, full ~13.1 MB. (Progress below counts unpacked bytes, so it's shown as a percentage.)
+ */
 export function downloadMegabytes(model: PoseModel) {
-  return model === 'full' ? 24 : 20
+  return model === 'full' ? 13 : 10
 }
 
 // The parts of @mediapipe/tasks-vision used here (the package is loaded at runtime, not installed).
