@@ -13,7 +13,7 @@
 import { ConvexError } from "convex/values";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
-import { CLINIC_PLANS, CLINIC_PROGRAMME_OVERAGE_KOBO, isUnlimitedSeats } from "../../lib/clinicPlans";
+import { CLINIC_LAUNCH_WEEK, CLINIC_PLANS, CLINIC_PROGRAMME_OVERAGE_KOBO, isUnlimitedSeats } from "../../lib/clinicPlans";
 import { loadClinicPlans } from "../clinicPlans";
 import { formatLagos, startOfZonedDay, zonedDateKey, zonedDateTimeToUtc } from "./lagosTime";
 
@@ -125,6 +125,24 @@ export function lagosDateToMs(date: string): number | null {
   const ms = zonedDateTimeToUtc(date, "00:00");
   return Number.isFinite(ms) && zonedDateKey(ms) === date ? ms : null;
 }
+
+// ─── Launch week ─────────────────────────────────────────────────────────────
+
+/** Lagos midnight of 16 November 2026: no clinic is billed for anything before it. */
+export const LAUNCH_BILLING_FROM_MS = lagosDateToMs(CLINIC_LAUNCH_WEEK.billingFrom)!;
+export const LAUNCH_WEEK_FIRST_DAY_MS = lagosDateToMs(CLINIC_LAUNCH_WEEK.firstDay)!;
+
+/** The launch week offer still applies: it's before 16 November 2026. */
+export function launchWeekOpen(now: number): boolean {
+  return now < LAUNCH_BILLING_FROM_MS;
+}
+
+/** A billing start date moved past the launch week: the week itself is never billed. */
+export function startAfterLaunchWeek(startsAt: number): number {
+  return Math.max(startsAt, LAUNCH_BILLING_FROM_MS);
+}
+
+export const LAUNCH_WEEK_START_MESSAGE = `Clinics use Rehabify free during launch week (${CLINIC_LAUNCH_WEEK.label}), so billing can start on 16 November 2026 at the earliest.`;
 
 // ─── Status ──────────────────────────────────────────────────────────────────
 

@@ -75,6 +75,19 @@ export const DEFAULT_CLINIC_PLANS: ClinicPlan[] = [
 /** The defaults; code that can't read Convex (the agreement order form) uses these. */
 export const CLINIC_PLANS: ClinicPlan[] = DEFAULT_CLINIC_PLANS;
 
+/**
+ * Launch week (owner, 9 Nov 2026): clinics put on a plan use it free from 9 to 15 November 2026
+ * (Lagos), so billing can start on 16 November at the earliest. Nothing about it is charged:
+ * no invoice covers the week and no overage is counted for it.
+ */
+export const CLINIC_LAUNCH_WEEK = {
+  firstDay: '2026-11-09',
+  lastDay: '2026-11-15',
+  /** The earliest billing start date while the offer applies */
+  billingFrom: '2026-11-16',
+  label: '9 to 15 November 2026',
+} as const;
+
 export const CLINIC_PROGRAMME_OVERAGE_KOBO = 50_000;
 // Allowance warnings at 80% and 100% are sent by convex/clinicBilling.ts
 export const CLINIC_PROGRAMME_OVERAGE =

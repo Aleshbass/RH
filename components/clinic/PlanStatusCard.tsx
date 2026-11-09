@@ -77,9 +77,11 @@ export function PlanStatusCard() {
         ? 'An invoice is overdue. Pay it to keep full access.'
         : sub.status === 'cancelled'
           ? 'Billing has stopped. No new invoices will be issued.'
-          : billingOn && sub.nextInvoiceAt
-            ? `Renews ${day(sub.nextInvoiceAt)} · ${formatKobo(sub.monthlyFeeKobo)} a month`
-            : null
+          : sub.launchWeekFree
+            ? `Free for launch week · billing starts ${day(sub.billingStartsAt)}`
+            : billingOn && sub.nextInvoiceAt
+              ? `Renews ${day(sub.nextInvoiceAt)} · ${formatKobo(sub.monthlyFeeKobo)} a month`
+              : null
 
   return (
     <Panel title="Your plan" actions={manage}>

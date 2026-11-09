@@ -26,6 +26,9 @@ export type ClinicSubscriptionView = {
   readOnlySince: number | null
   upgradeRequestedPlan: string | null
   upgradeRequestedAt: number | null
+  /** On a plan during launch week: nothing is billed until the start date */
+  launchWeekFree: boolean
+  launchWeekLabel: string
 }
 
 export type ClinicSubscriptionInvoiceView = {
@@ -75,6 +78,9 @@ export type AdminClinicSubscription = {
   usage: ClinicUsage
   invoices: (ClinicSubscriptionInvoiceView & { paymentNote: string | null; voidReason: string | null })[]
   today: string
+  /** The date input's minimum: 16 November while launch week runs, otherwise today */
+  earliestStartDate: string
+  launchWeek: { label: string; billingFrom: string } | null
   suggestedStartDate: string
 } | null
 

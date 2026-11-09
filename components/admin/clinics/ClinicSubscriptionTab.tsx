@@ -178,7 +178,11 @@ export function ClinicSubscriptionTab({ clinicId }: { clinicId: string }) {
         <StatTile
           label="Billing"
           value={sub ? SUBSCRIPTION_STATUS_LABEL[sub.status] : 'Not set up'}
-          hint={sub?.currentPeriodLabel ?? (sub && on ? `Starts ${day(sub.billingStartsAt)}` : 'Clinic works as before')}
+          hint={
+            sub?.launchWeekFree
+              ? `Free for launch week · billing starts ${day(sub.billingStartsAt)}`
+              : (sub?.currentPeriodLabel ?? (sub && on ? `Starts ${day(sub.billingStartsAt)}` : 'Clinic works as before'))
+          }
           icon={CreditCard}
           tone={sub?.status === 'read_only' || sub?.status === 'past_due' ? 'attention' : 'teal'}
         />
@@ -217,6 +221,14 @@ export function ClinicSubscriptionTab({ clinicId }: { clinicId: string }) {
               }`
             : 'This clinic hasn’t signed the Clinic Master SaaS Agreement yet.'}
         </p>
+
+        {data.launchWeek && !started && (
+          <div className="rounded-xl bg-rh-honeydew px-4 py-3 text-sm text-rh-ink dark:bg-white/[0.06] dark:text-white">
+            <span className="font-semibold">Launch week offer:</span> clinics are free from {data.launchWeek.label}. Put the clinic on its
+            plan now and switch billing on: the plan works straight away, and the first invoice is on the billing start date
+            (16 November at the earliest).
+          </div>
+        )}
 
         {sub?.upgradeRequestedPlan && (
           <div className="rounded-xl bg-rh-honeydew px-4 py-3 text-sm text-rh-ink dark:bg-white/[0.06] dark:text-white">
@@ -258,7 +270,7 @@ export function ClinicSubscriptionTab({ clinicId }: { clinicId: string }) {
               id="sub-start"
               type="date"
               value={form.startDate}
-              min={started ? undefined : data.today}
+              min={started ? undefined : data.earliestStartDate}
               disabled={started}
               onChange={(e) => set({ startDate: e.target.value })}
               className={cn(inputClass, 'h-10')}
@@ -266,7 +278,9 @@ export function ClinicSubscriptionTab({ clinicId }: { clinicId: string }) {
             <p className="text-xs text-neutral-500 dark:text-neutral-400">
               {started
                 ? 'Billing has started, so this can’t change.'
-                : 'First invoice on this date, then the same day each month. The 1st keeps it to calendar months.'}
+                : data.launchWeek
+                  ? 'Launch week is free, so the earliest is 16 November. First invoice on this date, then the same day each month.'
+                  : 'First invoice on this date, then the same day each month. The 1st keeps it to calendar months.'}
             </p>
           </div>
         </div>
@@ -420,7 +434,9 @@ export function ClinicSubscriptionTab({ clinicId }: { clinicId: string }) {
         open={confirm === 'on'}
         onOpenChange={(open) => !open && setConfirm(null)}
         title="Switch billing on?"
-        description={`The clinic goes on ${CLINIC_PLANS.find((p) => p.id === form.plan)?.name ?? 'this plan'} with up to ${seatLimit} clinicians. The first invoice is issued on ${
+        description={`The clinic goes on ${CLINIC_PLANS.find((p) => p.id === form.plan)?.name ?? 'this plan'} with ${seatLimit > 0 ? seatsLabel(seatLimit) : 'its clinician seats'}.${
+          data.launchWeek ? ` It's free for launch week (${data.launchWeek.label}).` : ''
+        } The first invoice is issued on ${
           form.startDate ? format(new Date(`${form.startDate}T00:00:00`), 'd MMM yyyy') : 'the start date'
         } and the owner is emailed now.`}
         confirmLabel="Switch billing on"

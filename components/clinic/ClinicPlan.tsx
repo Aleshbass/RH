@@ -215,6 +215,12 @@ export default function ClinicPlan() {
                   month, excluding VAT
                 </p>
               </div>
+              {sub.launchWeekFree && (
+                <p className="rounded-xl bg-pt-accent-soft px-3 py-2 text-sm text-pt-ink">
+                  <span className="font-semibold">Free for launch week.</span> Your plan costs nothing from {sub.launchWeekLabel}. Billing
+                  starts on {day(sub.billingStartsAt)}.
+                </p>
+              )}
               <dl className="space-y-1.5 text-sm">
                 {sub.currentPeriodLabel && (
                   <div className="flex justify-between gap-3">

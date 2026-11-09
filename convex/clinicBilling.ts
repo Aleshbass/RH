@@ -1,4 +1,4 @@
-import { seatsLabel } from "../lib/clinicPlans";
+import { CLINIC_LAUNCH_WEEK, seatsLabel } from "../lib/clinicPlans";
 import { insertNotification } from "./helpers/pushNotify";
 import { ConvexError, v } from "convex/values";
 import { makeFunctionReference } from "convex/server";
@@ -38,6 +38,8 @@ import { startOfZonedDay, zonedDateKey } from "./helpers/lagosTime";
 import {
   CLINIC_PLAN_PAGE,
   DAY_MS,
+  LAUNCH_BILLING_FROM_MS,
+  LAUNCH_WEEK_START_MESSAGE,
   OVERAGE_UNIT_KOBO,
   addMonthsLagos,
   allowanceLevel,
@@ -46,6 +48,7 @@ import {
   countActiveProgrammes,
   dueAtFor,
   lagosDateToMs,
+  launchWeekOpen,
   longDate,
   noticeDueFrom,
   periodLabel,
@@ -1018,6 +1021,9 @@ function subscriptionView(sub: ClinicSubscription) {
     readOnlySince: sub.readOnlySince ?? null,
     upgradeRequestedPlan: sub.upgradeRequestedPlan ?? null,
     upgradeRequestedAt: sub.upgradeRequestedAt ?? null,
+    // Launch week: on a plan, nothing billed until 16 November 2026
+    launchWeekFree: billingIsOn(sub) && sub.currentPeriodStart === undefined && launchWeekOpen(Date.now()),
+    launchWeekLabel: CLINIC_LAUNCH_WEEK.label,
   };
 }
 
@@ -1032,6 +1038,12 @@ export const processClinicSubscription = internalMutation({
     if (!billingIsOn(sub)) return { skipped: true };
     const clinic = await ctx.db.get(sub.clinicId);
     if (!clinic) return { skipped: true };
+
+    // 0. Launch week is free: a plan due to start billing during it starts on 16 November instead
+    if (sub.currentPeriodStart === undefined && sub.billingStartsAt < LAUNCH_BILLING_FROM_MS) {
+      await ctx.db.patch(sub._id, { billingStartsAt: LAUNCH_BILLING_FROM_MS, updatedAt: now });
+      sub = (await ctx.db.get(sub._id))!;
+    }
 
     // 1. Billing periods. Each roll happens once: the period moves on in the same transaction.
     if (now >= sub.billingStartsAt) {
@@ -1494,6 +1506,7 @@ export const adminGetClinicSubscription = query({
     const signature = signatures.find((row) => row.status !== "void") ?? null;
     const signedPlan = signature?.values.plan;
     const today = zonedDateKey(now);
+    const launchWeek = launchWeekOpen(now);
     return {
       agreement: signature
         ? {
@@ -1512,8 +1525,13 @@ export const adminGetClinicSubscription = query({
         }))
       ),
       today,
-      // The 1st of next month, so periods follow calendar months
-      suggestedStartDate: zonedDateKey(addMonthsLagos(lagosDateToMs(`${today.slice(0, 7)}-01`) ?? now, 1)),
+      // During launch week billing can't start before 16 November
+      earliestStartDate: launchWeek ? CLINIC_LAUNCH_WEEK.billingFrom : today,
+      launchWeek: launchWeek ? { label: CLINIC_LAUNCH_WEEK.label, billingFrom: CLINIC_LAUNCH_WEEK.billingFrom } : null,
+      // The day after launch week while it runs, then the 1st of next month (calendar months)
+      suggestedStartDate: launchWeek
+        ? CLINIC_LAUNCH_WEEK.billingFrom
+        : zonedDateKey(addMonthsLagos(lagosDateToMs(`${today.slice(0, 7)}-01`) ?? now, 1)),
     };
   },
 });
@@ -1568,6 +1586,7 @@ export const adminSaveClinicSubscription = mutation({
     if ((turningOn || (isOn && !started)) && startsAt < startOfZonedDay(now)) {
       throw new ConvexError("Pick a billing start date from today onwards.");
     }
+    if (!started && startsAt < LAUNCH_BILLING_FROM_MS) throw new ConvexError(LAUNCH_WEEK_START_MESSAGE);
 
     const requested = existing?.upgradeRequestedPlan as ClinicSubscription["plan"] | undefined;
     const fields = {
@@ -1636,6 +1655,9 @@ export const adminSaveClinicSubscription = mutation({
         heading: `You're on the ${name} plan`,
         paragraphs: [
           `${clinic.name} is on the ${name} plan: ${naira(numbers.monthlyFeeKobo)} a month (excluding VAT), with ${seatsLabel(numbers.seatLimit)} and ${numbers.programmeAllowance} active patient programmes.`,
+          ...(launchWeekOpen(now)
+            ? [`It's launch week, so your plan is free from ${CLINIC_LAUNCH_WEEK.label}. Nothing is charged for those days.`]
+            : []),
           `Your first invoice is issued on ${longDate(startsAt)} and is payable within 7 days. Each active patient programme over your allowance is ${naira(OVERAGE_UNIT_KOBO)} a month, billed the month after.`,
           "You can see your plan, usage and invoices, and export your data, from your dashboard.",
         ],
@@ -1665,7 +1687,13 @@ export const adminSaveClinicSubscription = mutation({
       targetEntityType: "clinic",
       targetEntityId: clinic._id,
       timestamp: now,
-      details: { plan: args.plan, ...numbers, billingStartDate: args.billingStartDate, prorationKobo: proration?.amountKobo ?? 0 },
+      details: {
+        plan: args.plan,
+        ...numbers,
+        billingStartDate: args.billingStartDate,
+        prorationKobo: proration?.amountKobo ?? 0,
+        launchWeekFree: turningOn && launchWeekOpen(now),
+      },
     });
     return { subscriptionId, switchedOn: turningOn };
   },
