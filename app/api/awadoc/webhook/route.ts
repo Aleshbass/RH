@@ -85,16 +85,19 @@ export async function POST(request: NextRequest) {
     let answer: Answer;
     try {
         switch (action) {
-            case "availability.query":
+            case "availability.query": {
+                const availability = await convex().query(awadoc.availability, {
+                    serverSecret,
+                    queryId: str(meta.query_id) ?? "",
+                    preferredMode: str(context.schedule?.preferred_mode),
+                    specialistType: str(context.specialist_type),
+                });
+                // AwaDoc rejects an "unavailable" reply without a string reason (confirmed by AwaDoc 2026-11-09).
                 answer = {
-                    body: await convex().query(awadoc.availability, {
-                        serverSecret,
-                        queryId: str(meta.query_id) ?? "",
-                        preferredMode: str(context.schedule?.preferred_mode),
-                        specialistType: str(context.specialist_type),
-                    }),
+                    body: availability.status === "unavailable" ? { ...availability, reason: "no_available_therapist" } : availability,
                 };
                 break;
+            }
 
             case "request": {
                 const requestId = str(meta.request_id) ?? str(body.request_id);
