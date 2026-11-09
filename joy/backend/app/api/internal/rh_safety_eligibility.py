@@ -94,17 +94,6 @@ def issue_eligibility_reference(
     created_at = triage.created_at if triage.created_at.tzinfo else triage.created_at.replace(tzinfo=timezone.utc)
     if datetime.now(timezone.utc) > created_at + _CLEARANCE_VALIDITY:
         return {"allowed": False, "reason": "ASSESSMENT_EXPIRED"}
-    result = evaluate(ExtractedTriage.model_validate(triage.extracted))
-    permitted = (
-        (payload.service_type == "standard_consultation" and result.risk_level == "GREEN")
-        # The current Joy pathway offers the short clinician review to both a
-        # routine GREEN presentation and an AMBER presentation.  This is a
-        # stricter route for GREEN, not a safety bypass: ORANGE and RED remain
-        # ineligible and are still sent to medical/emergency guidance.
-        or (payload.service_type == "specialist_review" and result.risk_level in {"GREEN", "AMBER"})
-    )
-    if not permitted:
-        return {"allowed": False, "reason": "SERVICE_NOT_PERMITTED"}
     # The direct Joy flow already has the active conversation in hand.  Use it
     # rather than selecting an arbitrary historical patient conversation,
     # which could incorrectly make a just-recorded policy acceptance appear
@@ -116,6 +105,23 @@ def issue_eligibility_reference(
         ))
     elif conversation.person_id != mapping.joy_person_id or conversation.persona != Persona.PATIENT:
         return {"allowed": False, "reason": "CONVERSATION_NOT_AUTHORIZED"}
+    result = evaluate(ExtractedTriage.model_validate(triage.extracted))
+    # Self-referral "urgent review" (owner, Nov 2026): an AMBER presentation books the earliest
+    # standard assessment, flagged urgent, instead of the retired paid specialist review.
+    self_referral = ((conversation.booking_context or {}).get("self_referral") or {}) if conversation else {}
+    urgent_self_referral = self_referral.get("outcome") == "urgent"
+    permitted = (
+        (payload.service_type == "standard_consultation" and (
+            result.risk_level == "GREEN" or (result.risk_level == "AMBER" and urgent_self_referral)
+        ))
+        # The older Joy pathway offers the short clinician review to both a
+        # routine GREEN presentation and an AMBER presentation.  This is a
+        # stricter route for GREEN, not a safety bypass: ORANGE and RED remain
+        # ineligible and are still sent to medical/emergency guidance.
+        or (payload.service_type == "specialist_review" and result.risk_level in {"GREEN", "AMBER"})
+    )
+    if not permitted:
+        return {"allowed": False, "reason": "SERVICE_NOT_PERMITTED"}
     policy = (conversation.booking_context or {}).get("policy_accepted") if conversation else None
     if not isinstance(policy, dict) or policy.get("version") != payload.policy_version:
         return {"allowed": False, "reason": "POLICY_NOT_ACCEPTED"}

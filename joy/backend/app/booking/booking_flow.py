@@ -1730,6 +1730,28 @@ def _continue_other_time(session: Session, conversation: Conversation, patient: 
     return confirm_text(ctx)
 
 
+NAMED_HOLD_BLOCKED = (
+    "I need our care team to check one thing before I can book this time, so nothing has been booked "
+    "or charged. Someone will message you here shortly."
+)
+
+
+def _named_hold_blocked(session: Session, conversation: Conversation, patient: Patient, rh_patient_id: str, reason: str) -> str:
+    """The booking safety check refused: say so once, and let a person sort it out (never a retry loop)."""
+    from app.admin.escalation_router import route_escalation
+
+    logger.warning("joy_named_hold_not_eligible reason=%s", reason)
+    append(session, kind=AuditKind.BOOKING, actor_phone=patient.phone_e164, person_id=patient.id,
+           payload={"decision": "rh_named_hold_not_eligible", "reason": reason})
+    try:
+        route_escalation(session, "booking_blocked", {
+            "patient_id": rh_patient_id, "phone": patient.phone_e164, "reason": reason,
+        })
+    except Exception:
+        logger.warning("joy_booking_blocked_alert_failed", exc_info=True)
+    return NAMED_HOLD_BLOCKED
+
+
 def _hold_named_slot(
     session: Session, conversation: Conversation, patient: Patient, extracted: ExtractedTriage, ctx: dict, wa_message_id: str | None,
 ) -> str:
@@ -1749,6 +1771,10 @@ def _hold_named_slot(
         "actor_phone": patient.phone_e164,
     }
     ctx["policy_accepted"] = accepted
+    # The safety gate below reads the acceptance from the conversation, so it is saved first.
+    # (Kept only in this copy, every Confirm and pay was refused as "policy not accepted".)
+    conversation.booking_context = dict(ctx)
+    session.flush()
     append(session, kind=AuditKind.POLICY, actor_phone=patient.phone_e164, person_id=patient.id,
            payload={"event": "accepted", "via": "confirm_and_pay", **accepted})
     try:
@@ -1761,8 +1787,11 @@ def _hold_named_slot(
                     rh_patient_id=str(rh_patient_id), assessment_id=str(_current_assessment(session, patient)),
                     assessment_revision=1, service_type="standard_consultation", policy_version=str(policy["version"]),
                 ),
+                conversation=conversation,
             )
-            eligibility_reference = eligibility.get("eligibility_reference") if eligibility.get("allowed") else None
+            if not eligibility.get("allowed"):
+                return _named_hold_blocked(session, conversation, patient, str(rh_patient_id), str(eligibility.get("reason") or "unknown"))
+            eligibility_reference = eligibility.get("eligibility_reference")
         booking = rh_client.create_pending_booking(
             patient_id=str(rh_patient_id), physiotherapist_id=str(provider["physiotherapist_id"]),
             slot_start=int(slot["start"]), duration_minutes=INITIAL_CONSULT_MINUTES, service_mode="online",

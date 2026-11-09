@@ -11,6 +11,7 @@ import pytest
 
 from app.integrations.rh_client import RHMatch
 from app.models.patient import Patient
+from app.models.rh_identity_mapping import RHIdentityMapping
 from app.models.types import ExtractedTriage, Identity, Persona
 from app.triage import self_referral as sr
 from tests.fakes import FakeLLM
@@ -237,6 +238,36 @@ def test_full_self_referral_to_confirm_and_pay(db_session, new_patient, rh):
     assert (hold["physiotherapist_id"], hold["duration_minutes"], hold["service_mode"], hold["policy_version"]) == ("p1", 20, "online", "2026-11-06")
     intake = next(payload for op, payload in rh.calls if op == "intake")
     assert intake["clinician_summary"].startswith("New self-referral — Ada, 34\nTriage outcome: Routine MSK physiotherapy")
+
+
+def test_confirm_and_pay_passes_the_safety_gate_on_the_direct_gateway(db_session, new_patient, rh, monkeypatch):
+    """Live RH needs a safety reference for every hold. The policy accepted at Confirm and pay must
+    already be on the conversation when Joy issues it (it wasn't, so every hold was refused)."""
+    monkeypatch.setenv("RH_SAFETY_HMAC_SECRET", "test-safety-secret")
+    rh.uses_direct_convex_gateway = True
+    db_session.add(RHIdentityMapping(persona="patient", joy_person_id=new_patient.person_id, rh_record_id="rh-pat-1"))
+    db_session.flush()
+    _through_intake(db_session, new_patient)
+    for answer in ("7", "Moderate", "no", "yes", "no", "1"):
+        _turn(db_session, new_patient, STORY, answer)
+    held = _turn(db_session, new_patient, STORY, "confirm and pay")
+    assert "is held for 30 minutes" in held.reply_text
+    hold = next(kwargs for op, kwargs in rh.calls if op == "hold")
+    assert hold["eligibility_reference"]
+
+
+def test_a_refused_safety_gate_hands_over_instead_of_looping(db_session, new_patient, rh, monkeypatch):
+    monkeypatch.setenv("RH_SAFETY_HMAC_SECRET", "test-safety-secret")
+    rh.uses_direct_convex_gateway = True  # no patient mapping: the gate refuses
+    alerts = []
+    monkeypatch.setattr("app.admin.escalation_router.route_escalation", lambda session, kind, payload: alerts.append((kind, payload)))
+    _through_intake(db_session, new_patient)
+    for answer in ("7", "Moderate", "no", "yes", "no", "1"):
+        _turn(db_session, new_patient, STORY, answer)
+    blocked = _turn(db_session, new_patient, STORY, "confirm and pay")
+    assert "care team to check one thing" in blocked.reply_text
+    assert not [op for op, _ in rh.calls if op == "hold"]
+    assert ("booking_blocked", "PATIENT_MAPPING_NOT_FOUND") in [(kind, payload.get("reason")) for kind, payload in alerts]
 
 
 def test_any_red_flag_stops_the_booking_and_alerts_the_team(db_session, new_patient, rh):

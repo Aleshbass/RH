@@ -184,6 +184,12 @@ def _admin_text(kind: str, payload: dict) -> str:
             f"in the next 24 hours. Please arrange their consultation. Call {payload.get('phone') or 'them'}."
             + (f" {str(payload.get('text') or '').strip()}" if payload.get("text") else "")
         )
+    if kind == "booking_blocked":
+        return (
+            f"Joy couldn't book a self-referral patient ({payload.get('patient_id') or 'unknown'}): the booking "
+            f"safety check said {payload.get('reason') or 'no'}. Please contact {payload.get('phone') or 'them'} "
+            "and book them by hand. Nothing was charged."
+        )
     if kind == "insurance":
         said = str(payload.get("text") or "").strip()
         return (
