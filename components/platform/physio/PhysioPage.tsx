@@ -250,7 +250,7 @@ const TOOLS: Tool[] = [
     body: "Build programmes from our 3D exercise library. Patients see clear demonstrations at home.",
     note: "New: camera coach for reps and form (beta)",
     visual: (
-      <LoopVideo base="/media/camera-coach-demo" label="Demo: the camera coach follows shoulder raises and counts the reps" className="object-[62%_50%]" />
+      <LoopVideo base="/media/camera-coach-sts" label="Demo: the camera coach follows sit to stand, counts the reps and talks you through it" className="object-center" sound />
     ),
   },
   {

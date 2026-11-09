@@ -330,9 +330,10 @@ export function CarePlanSection() {
             note="Your video never leaves your phone"
           >
             <LoopVideo
-              base="/media/camera-coach-demo"
-              label="Demo: the camera coach follows shoulder raises and counts the reps"
-              className="object-[85%_50%]"
+              base="/media/camera-coach-sts"
+              label="Demo: the camera coach follows sit to stand, counts the reps and talks you through it"
+              className="object-center"
+              sound
             />
           </Card>
           <Card title="A summary after every visit" body="In plain words: what your physio found, what you did together and what comes next.">
