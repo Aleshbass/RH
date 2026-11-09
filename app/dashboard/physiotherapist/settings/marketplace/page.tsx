@@ -15,6 +15,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { primaryButtonClass, StatusBadge } from '@/components/physio/ui';
 import { OwnPatientsOnlyNotice, SettingsPageHeader, SettingsSection, fieldHintClass, fieldLabelClass } from '@/components/physio/SettingsUI';
+import { JoyReadinessCard } from '@/components/physio/JoyReadinessCard';
 import { usePracticeMode } from '@/components/physio/practiceMode';
 import { formatKobo } from '@/lib/rehabify-services';
 import { cn } from '@/lib/utils';
@@ -173,6 +174,7 @@ export default function ServicesAndCoveragePage() {
     return (
         <div className="space-y-6">
             <SettingsPageHeader title="Services & coverage" description="How Rehabify patients can see you, and where you travel." />
+            <JoyReadinessCard />
 
             <SettingsSection>
                 <div className="flex items-start justify-between gap-4">

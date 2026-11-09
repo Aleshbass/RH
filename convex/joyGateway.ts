@@ -197,8 +197,10 @@ function pinArgs(latitude: unknown, longitude: unknown): { latitude?: number; lo
 async function rankedMatchesIfAsked(ctx: any, data: Record<string, unknown>): Promise<unknown[] | null> {
   const within = data.within_hours;
   if (typeof within !== "number" || !Number.isFinite(within)) return null;
-  const { patient_id, required_specialties, service_mode, city, area, limit, latitude, longitude, language, duration_minutes, urgent } = data as any;
+  const { patient_id, required_specialties, service_mode, city, area, limit, latitude, longitude, language, duration_minutes, urgent, not_before_ms, physio_sex } = data as any;
   return await rankedJoyMatches(ctx, {
+    ...(typeof not_before_ms === "number" && Number.isFinite(not_before_ms) ? { notBefore: not_before_ms } : {}),
+    ...(physio_sex === "female" || physio_sex === "male" ? { physioSex: physio_sex } : {}),
     patientId: patient_id, requiredSpecialties: required_specialties, serviceMode: service_mode,
     durationMinutes: typeof duration_minutes === "number" && duration_minutes >= 5 && duration_minutes <= 180 ? Math.round(duration_minutes) : undefined,
     language: typeof language === "string" ? language.slice(0, 8) : undefined,

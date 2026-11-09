@@ -38,6 +38,7 @@ import {
   type DirectoryRow,
   type UpcomingSession,
 } from './shared'
+import { JoyMatching } from './JoyMatching'
 import { WorkDetails } from './WorkDetails'
 
 // A plain reference: the generated `api` type is at TypeScript's depth limit (TS2589)
@@ -187,6 +188,7 @@ function SheetBody({ data, preview }: { data: CaseloadResult | undefined; previe
           <>
             <Summary data={data} />
             <WorkDetails data={data} />
+            {data.physio.mode !== 'independent' && data.physio.mode !== 'clinic' && <JoyMatching physioUserId={data.physio.userId} />}
             <Caseload data={data} />
             <Upcoming sessions={data.upcoming} />
           </>
