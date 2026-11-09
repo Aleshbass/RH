@@ -183,7 +183,7 @@ def test_a_price_question_mid_step_is_answered_and_the_step_asked_again(db_sessi
     again = handle_turn(db_session, phone, "and how much is each session?", FakeLLM())
     assert again.reply_text == consent.reply_text
     profile = handle_turn(db_session, phone, "I agree", FakeLLM())
-    assert "What is your first name?" in profile.reply_text
+    assert profile.reply_text == "What's your first name?"
 
 
 def test_a_story_with_a_price_question_keeps_the_story(db_session, rh, new_patient, prices):

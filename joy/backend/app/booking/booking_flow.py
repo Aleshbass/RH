@@ -114,6 +114,10 @@ def handle_booking_turn(
 
     if conversation.booking_substate == AWAITING_RH_RESCHEDULE:
         return _continue_rh_reschedule(session, conversation, patient, user_text)
+    # Cancel, change physio, a named physio or another day: acted on at any named-booking step
+    request = _named_route_request(session, conversation, patient, extracted, user_text)
+    if request is not None:
+        return request
     # The self-referral booking (named physios, then Confirm and pay) owns its own replies:
     # "Cancel" here means "not this one", not a paid-booking cancellation
     if conversation.booking_substate == AWAITING_RH_NAMED_PROVIDER:
@@ -1510,15 +1514,15 @@ def _photo_cards(providers: list[dict], start: int, end: int) -> list[dict]:
     return cards
 
 
-def named_list_text(providers: list[dict], start: int, end: int, *, urgent: bool = False) -> str:
+def named_list_text(providers: list[dict], start: int, end: int, *, urgent: bool = False, when: str = "in the next 24 hours") -> str:
     end = min(end, len(providers))
     count = end - start
     if start:
-        head = "Here are more physiotherapists free in the next 24 hours:"
+        head = f"Here are more physiotherapists free {when}:"
     elif urgent:
         head = "Here are the physiotherapists free soonest:"
     else:
-        head = f"Here {'is' if count == 1 else 'are'} {count} physiotherapist{'' if count == 1 else 's'} free in the next 24 hours:"
+        head = f"Here {'is' if count == 1 else 'are'} {count} physiotherapist{'' if count == 1 else 's'} free {when}:"
     blocks = [head]
     for index in range(start, end):
         provider = providers[index]
@@ -1535,6 +1539,172 @@ def named_list_text(providers: list[dict], start: int, end: int, *, urgent: bool
         f"Would you like to book one? Reply with the number{more}."
     )
     return "\n\n".join(blocks)
+
+
+# ── Requests at any step of the named-physio booking (owner's test, 9 Nov 2026) ─────────────
+# "I want to cancel booking" at the physio list got "reply 1 to 4", and "Olamide Akinwola" at the
+# time list got "reply 1 to 8". These are acted on first; then the step carries on.
+
+_STOP_BOOKING_RE = re.compile(
+    r"\b(?:cancel(?:\s+(?:the|my|this))?\s+(?:booking|appointment|it all|everything)|"
+    r"i\s+(?:want|wan|would like|'d like)\s+to\s+cancel|stop\s+(?:the\s+)?booking|"
+    r"(?:don't|do not|dont)\s+want\s+to\s+book|not\s+booking\s+(?:any\s*more|again)|forget\s+it)\b",
+    re.I,
+)
+_CHANGE_PHYSIO_RE = re.compile(
+    r"\b(?:change|switch|swap)\s+(?:my\s+|the\s+)?(?:physio(?:therapist)?|pt|therapist)\b|"
+    r"\b(?:another|different|new|other)\s+(?:physio(?:therapist)?|pt|therapist)\b|"
+    r"\bsomeone\s+else\b",
+    re.I,
+)
+_CHANGE_DAY_RE = re.compile(
+    r"\b(?:change|another|different|other|new)\s+(?:the\s+)?day\b|\b(?:a|another)\s+different\s+day\b|"
+    r"\bnot\s+(?:today|tomorrow)\b|\b(?:next week|this week)\b|"
+    r"\b(?:on|for|this|next)\s+(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b|"
+    r"^(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|tomorrow)$",
+    re.I,
+)
+# "Book Olamide", "I want Olamide Akinwola", "can I see Grace?": a name the patient asked for
+_NAMED_ASK_RE = re.compile(
+    # The request words in any case; the name itself must start with a capital
+    r"\b(?i:book(?:\s+with)?|i\s+want|i'?d\s+like|i\s+would\s+like|i\s+prefer|can\s+i\s+(?:have|book|see|get)|"
+    r"with)\s+(?i:dr\.?\s+|physio\s+|pt\s+)?([A-Z][a-z]{2,})(?:\s+([A-Z][a-z]{2,}))?",
+)
+_NAME_STOPWORDS = {"the", "you", "him", "her", "them", "another", "someone", "physio", "time", "day", "this",
+                   "that", "one", "pay", "today", "tomorrow", "monday", "tuesday", "wednesday", "thursday",
+                   "friday", "saturday", "sunday", "video", "home", "online", "female", "male", "joy"}
+
+
+def _provider_by_name(providers: list[dict], text: str) -> int | None:
+    """The index of the physio whose name the patient wrote (first or last name, 3+ letters)."""
+    words = {w for w in re.findall(r"[a-zà-ÿ']{3,}", (text or "").casefold()) if w not in _NAME_STOPWORDS}
+    if not words:
+        return None
+    best, best_score = None, 0
+    for index, provider in enumerate(providers):
+        names = {w for w in re.findall(r"[a-zà-ÿ']{3,}", str(provider.get("display_name") or "").casefold())}
+        score = len(words & names)
+        if score > best_score:
+            best, best_score = index, score
+    return best
+
+
+def _named_route_request(
+    session: Session, conversation: Conversation, patient: Patient, extracted: ExtractedTriage, user_text: str,
+) -> str | None:
+    """Cancel, change physio, a named physio or another day, at any named-booking step (None: not one)."""
+    from app.triage import timing
+    from app.triage.self_referral import FLOW_KEY, SR_KEY, TIMING
+
+    ctx = dict(conversation.booking_context or {})
+    if ctx.get("booking_route") != NAMED_ROUTE:
+        return None
+    text = user_text or ""
+    paid = _rh_booking_paid(ctx)
+    providers = [p for p in ctx.get("providers") or [] if isinstance(p, dict)]
+
+    def ask_timing(lead: str) -> str:
+        sr = dict(ctx.get(SR_KEY) or {})
+        sr["menu"] = timing.timing_buttons()
+        sr.pop("timing_days", None)
+        ctx[SR_KEY] = sr
+        ctx[FLOW_KEY] = TIMING
+        for key in ("selected_provider", "selected_slot", "slots"):
+            ctx.pop(key, None)
+        _set_substate(conversation, None, ctx)
+        return f"{lead}{timing.TIMING_TEXT}"
+
+    if _STOP_BOOKING_RE.search(text):
+        if paid:
+            return paid_booking_change_reply(patient, str(ctx.get("rh_patient_id") or ""), "cancel")
+        released = _maybe_cancel(session, conversation, patient, "cancel") if ctx.get("rh_booking_id") else None
+        if released is not None and released != _CANCELLED:
+            return released  # the held time couldn't be released yet: say so, never claim it was
+        ctx = dict(conversation.booking_context or {})
+        for key in ("selected_provider", "selected_slot", "slots", "rh_booking_id", "authorization_url"):
+            ctx.pop(key, None)
+        sr = dict(ctx.get(SR_KEY) or {})
+        sr["menu"] = timing.timing_buttons()
+        ctx[SR_KEY] = sr
+        ctx[FLOW_KEY] = TIMING
+        _set_substate(conversation, None, ctx)
+        append(session, kind=AuditKind.BOOKING, actor_phone=patient.phone_e164, person_id=patient.id,
+               payload={"decision": "named_booking_stopped", "released_hold": released is not None})
+        return (
+            "Okay, I've cancelled that, so nothing is booked and you haven't been charged.\n\n"
+            "Whenever you're ready, just tell me when you're free and I'll find you a physiotherapist."
+        )
+
+    if _CHANGE_PHYSIO_RE.search(text) and not (conversation.booking_substate == AWAITING_RH_CONFIRM and _norm_text(text) in _CANCEL_WORDS):
+        if paid:
+            # A paid booking changes physio only with the care team's approval
+            from app.admin.escalation_router import route_escalation
+
+            try:
+                route_escalation(session, "change_physio", {
+                    "patient_id": str(ctx.get("rh_patient_id") or patient.id), "phone": patient.phone_e164,
+                    "booking_id": str(ctx.get("rh_booking_id") or ""), "text": text[:200],
+                })
+            except Exception:
+                logger.warning("joy_change_physio_alert_failed", exc_info=True)
+            return (
+                "I've asked our care team to approve a change of physiotherapist for your booking. "
+                "Someone will message you here shortly. Your current booking stays in place until then."
+            )
+        if providers:
+            selected = (ctx.get("selected_provider") or {}).get("physiotherapist_id")
+            others = [p for p in providers if p.get("physiotherapist_id") != selected] or providers
+            ctx["providers"] = others
+            ctx["providers_shown"] = min(_PAGE, len(others))
+            for key in ("selected_provider", "selected_slot", "slots"):
+                ctx.pop(key, None)
+            ctx["_before"] = _photo_cards(others, 0, ctx["providers_shown"])
+            _set_substate(conversation, AWAITING_RH_NAMED_PROVIDER, ctx)
+            return named_list_text(others, 0, ctx["providers_shown"], when=str(ctx.get("window_label") or "in the next 24 hours"))
+
+    if not paid and providers:
+        index = _provider_by_name(providers, text)
+        if index is not None and (_NAMED_ASK_RE.search(text) or len(text.split()) <= 4):
+            ctx["providers_shown"] = max(int(ctx.get("providers_shown") or 0), index + 1)
+            for key in ("selected_provider", "selected_slot", "slots"):
+                ctx.pop(key, None)
+            _set_substate(conversation, AWAITING_RH_NAMED_PROVIDER, ctx)
+            return _continue_named_provider(session, conversation, patient, str(index + 1))
+        asked = _NAMED_ASK_RE.search(text)
+        if asked and asked.group(1).casefold() not in _NAME_STOPWORDS:
+            name = " ".join(part for part in asked.groups() if part)
+            when = str(ctx.get("window_label") or "in the next 24 hours")
+            return (
+                f"{name} isn't one of the physiotherapists free {when}. Reply *change day* to look at another "
+                "day, or choose from the list I sent."
+            )
+
+    if not paid and _CHANGE_DAY_RE.search(text):
+        choice = timing.parse_timing(text)
+        window = timing.window_for(choice) if choice not in (None, "choose") else None
+        if window is None:
+            return ask_timing("No problem. ")
+        sr = dict(ctx.get(SR_KEY) or {})
+        sr["window"] = window.as_dict()
+        ctx[SR_KEY] = sr
+        for key in ("selected_provider", "selected_slot", "slots"):
+            ctx.pop(key, None)
+        conversation.booking_context = ctx
+        reply, before = offer_named_physios(
+            session, conversation, patient, extracted, urgent=False,
+            language=getattr(patient, "preferred_language", None), intro="", window=window.as_dict(),
+            physio_sex=sr.get("physio_pref"),
+        )
+        if before:
+            fresh = dict(conversation.booking_context or {})
+            fresh["_before"] = before
+            conversation.booking_context = fresh
+        return reply
+    return None
+
+
+def _norm_text(text: str) -> str:
+    return " ".join((text or "").casefold().split()).strip(" .!?")
 
 
 def hand_to_care_team(session: Session, conversation: Conversation, patient: Patient, *, rh_patient_id: str | None, reason_text: str) -> str:
@@ -1567,40 +1737,66 @@ def hand_to_care_team(session: Session, conversation: Conversation, patient: Pat
 
 def offer_named_physios(
     session: Session, conversation: Conversation, patient: Patient, extracted: ExtractedTriage, *,
-    urgent: bool, language: str | None, intro: str,
+    urgent: bool, language: str | None, intro: str, window: dict | None = None, physio_sex: str | None = None,
 ) -> tuple[str, list[dict]]:
-    """(the list to book from, the messages before it: the outcome, then the physios' photos)."""
+    """(the list to book from, the messages before it: the outcome, then the physios' photos).
+
+    ``window`` is the patient's answer to "When are you free?" (app/triage/timing.py); without one
+    (a conversation from before that step) it's the next 24 hours.
+    """
+    from app.triage import timing
+
     ctx = dict(conversation.booking_context or {})
+    lead = [{"text": intro}] if intro else []
+    chosen = timing.window_from(window) or timing.Window(MATCH_WINDOW_HOURS, "in the next 24 hours", None, "soon")
     rh_patient_id = _rh_patient_id(session, patient)
     tags = _required_specialties(extracted) or ["msk"]
     if not rh_patient_id:
-        return _CANT_REACH, [{"text": intro}]
+        return _CANT_REACH, lead
     if _present_named_policy(ctx, language) is None:
-        return _CANT_REACH, [{"text": intro}]
+        return _CANT_REACH, lead
     try:
         matches = configured_rh_client().match_physios(
             patient_id=rh_patient_id, assessment_id=str(_current_assessment(session, patient)), assessment_revision=1,
             required_specialties=tags, service_mode="online", actor=_rh_actor(patient, rh_patient_id),
             city=patient.city or None, area=patient.area or None, latitude=patient.lat, longitude=patient.lng,
-            within_hours=MATCH_WINDOW_HOURS, language=language, duration_minutes=INITIAL_CONSULT_MINUTES,
-            urgent=urgent, limit=6,
+            within_hours=chosen.within_hours, language=language, duration_minutes=INITIAL_CONSULT_MINUTES,
+            urgent=urgent, limit=6, not_before_ms=chosen.not_before_ms,
+            physio_sex=physio_sex if physio_sex in ("female", "male") else None,
         )
     except (RHIntegrationError, ValueError) as error:
         logger.warning("joy_named_matching_failed error=%s", getattr(error, "code", type(error).__name__))
-        return _CANT_REACH, [{"text": intro}]
-    providers = [dict(m.__dict__) for m in matches if m.next_slot_start]
+        return _CANT_REACH, lead
+    # Never "Physiotherapist" with no name (RH leaves them out too)
+    providers = [dict(m.__dict__) for m in matches if m.next_slot_start and (m.display_name or "").strip()]
+    if not providers and not urgent and chosen.kind != "week":
+        # Nobody that day: offer another time before handing over (the patient chose the window)
+        from app.triage.self_referral import FLOW_KEY, SR_KEY, TIMING
+
+        sr = dict(ctx.get(SR_KEY) or {})
+        sr["menu"] = timing.timing_buttons()
+        sr.pop("timing_days", None)
+        ctx[SR_KEY] = sr
+        ctx[FLOW_KEY] = TIMING
+        _set_substate(conversation, None, ctx)
+        who = f"a {physio_sex} physiotherapist" if physio_sex in ("female", "male") else "a physiotherapist"
+        return (
+            f"I couldn't find {who} who fits and is free {chosen.label}. When else are you free? "
+            "Or reply *care team* and our team will arrange it for you."
+        ), lead
     if not providers:
         conversation.booking_context = ctx
         area = (extracted.body_location or extracted.body_region or "").strip()
         reply = hand_to_care_team(
             session, conversation, patient, rh_patient_id=rh_patient_id,
-            reason_text=f"{'Urgent' if urgent else 'Routine'} triage{f', {area}' if area else ''}. Language: {language or 'en'}.",
+            reason_text=f"{'Urgent' if urgent else 'Routine'} triage{f', {area}' if area else ''}, free {chosen.label}. Language: {language or 'en'}.",
         )
-        return reply, [{"text": intro}]
+        return reply, lead
     shown = min(_PAGE, len(providers))
     ctx.update({
         "rh_patient_id": rh_patient_id, "service_mode": "online", "required_specialties": tags,
         "providers": providers, "providers_shown": shown, "booking_route": NAMED_ROUTE, "sr_urgent": urgent,
+        "window_label": chosen.label,
     })
     for key in ("selected_provider", "selected_slot", "slots", "rh_booking_id", "authorization_url", "rh_payment_status", "policy_accepted"):
         ctx.pop(key, None)
@@ -1609,7 +1805,7 @@ def offer_named_physios(
            payload={"decision": "rh_named_matches_presented", "urgent": urgent,
                     "provider_ids": [p["physiotherapist_id"] for p in providers]})
     journey(rh_patient_id, "matches_shown", f"matches-{conversation.id}-named")
-    return named_list_text(providers, 0, shown, urgent=urgent), [{"text": intro}, *_photo_cards(providers, 0, shown)]
+    return named_list_text(providers, 0, shown, urgent=urgent, when=chosen.label), [*lead, *_photo_cards(providers, 0, shown)]
 
 
 def _continue_named_provider(session: Session, conversation: Conversation, patient: Patient, user_text: str) -> str | None:
@@ -1620,16 +1816,17 @@ def _continue_named_provider(session: Session, conversation: Conversation, patie
     if not providers:
         return None
     if text in _MORE_WORDS or "see more" in text or "more option" in text:
+        when = str(ctx.get("window_label") or "in the next 24 hours")
         if shown >= len(providers):
             return (
-                "Those are all the physiotherapists free in the next 24 hours. Reply with a number to book, "
-                "or *CALL ME* if you'd like our care team to help."
+                f"Those are all the physiotherapists free {when}. Reply with a number to book, "
+                "*change day* for another time, or *CALL ME* if you'd like our care team to help."
             )
         end = min(shown + _PAGE, len(providers))
         ctx["providers_shown"] = end
         ctx["_before"] = _photo_cards(providers, shown, end)
         _set_substate(conversation, AWAITING_RH_NAMED_PROVIDER, ctx)
-        return named_list_text(providers, shown, end)
+        return named_list_text(providers, shown, end, when=when)
     match = re.fullmatch(r"(?:book\s*(?:number\s*)?|number\s*|option\s*|no\.?\s*)?([1-6])(?:\s*please)?", text)
     if match is None:
         for index, provider in enumerate(providers[:shown], 1):

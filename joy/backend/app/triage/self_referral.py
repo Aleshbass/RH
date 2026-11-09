@@ -30,7 +30,7 @@ import hashlib
 import logging
 import re
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -39,6 +39,7 @@ from app.audit.logger import append
 from app.models.conversation import Conversation
 from app.models.patient import Patient
 from app.models.types import AuditKind, ConditionArea, ExtractedTriage, SafetyResult
+from app.triage import timing
 
 logger = logging.getLogger(__name__)
 
@@ -52,10 +53,11 @@ REASON = "sr_reason"
 AREA = "sr_area"
 RED_FLAGS = "sr_red_flags"
 QUESTIONS = "sr_questions"
+TIMING = "sr_timing"
 CARE_TEAM = "sr_care_team"
 BOOKING = "sr_booking"
 FRONT_STEPS = (LANGUAGE, CONSENT, PROFILE)
-STEPS = (*FRONT_STEPS, REASON, AREA, RED_FLAGS, QUESTIONS, CARE_TEAM, BOOKING)
+STEPS = (*FRONT_STEPS, REASON, AREA, RED_FLAGS, QUESTIONS, TIMING, CARE_TEAM, BOOKING)
 
 PRIVACY_URL = "https://physioaroundme.com/privacy-policy"
 TERMS_URL = "https://physioaroundme.com/terms-and-conditions"
@@ -86,6 +88,8 @@ class Step:
     safety: SafetyResult | None = None
     urgent: bool = False
     stage: str | None = None  # "safety_screen" | "matching" | "summary"
+    # The time window to match in (app/triage/timing.py Window.as_dict()), for an "outcome"
+    window: dict | None = None
 
 
 def _buttons(*options: tuple[str, str]) -> dict:
@@ -132,7 +136,7 @@ def step_interactive(conversation: Conversation | None) -> dict | None:
         return _list("Choose language", list(LANGUAGE_ROWS), "Language")
     if step == CONSENT:
         return _buttons(("I agree", "I agree"), ("I don't agree", "I don't agree"))
-    if step in (AREA, RED_FLAGS, QUESTIONS):
+    if step in (AREA, RED_FLAGS, QUESTIONS, TIMING):
         menu = (context.get(SR_KEY) or {}).get("menu")
         return menu if isinstance(menu, dict) else None
     return None
@@ -338,14 +342,29 @@ def parse_profile(text: str, missing: list[str]) -> dict[str, Any]:
     return found
 
 
-def profile_missing(patient: Patient) -> list[str]:
+_SEXES = ("female", "male", "other", "prefer_not_to_say")
+
+
+def profile_missing(patient: Patient, sr: dict | None = None) -> list[str]:
+    """What the profile still needs, in the order Joy asks (one question per message).
+
+    With the self-referral state: "confirm" first when the name came from an existing record
+    ("Am I speaking with Simidara?", in case someone else is using the phone), and the patient's
+    preference for a female or male physiotherapist last.
+    """
     missing = []
+    if sr is not None and sr.get("known_name") and not sr.get("identity_confirmed"):
+        missing.append("confirm")
     if not (patient.name or "").strip():
         missing.append("name")
     if patient.age is None and patient.date_of_birth is None:
         missing.append("age")
+    if (patient.gender or "") not in _SEXES and not (sr or {}).get("sex_skipped"):
+        missing.append("sex")
     if not (patient.area or patient.city or patient.location):
         missing.append("place")
+    if sr is not None and "physio_pref" not in sr:
+        missing.append("physio_pref")
     return missing
 
 
@@ -356,8 +375,56 @@ def _first_name(patient: Patient) -> str:
 _ASK_MISSING = {
     "name": "What's your first name?",
     "age": "How old are you? A number is fine. If you're asking for a child, tell me their age.",
-    "place": "Which city or area are you in? For example, *Yaba, Lagos*. You can also tap *Send location*.",
+    "sex": "Are you female or male?",
+    "place": "Which state and area are you in? For example, *Bodija, Ibadan*. You can also tap *Send location*.",
+    "physio_pref": "Would you prefer a female or male physiotherapist?",
 }
+_YES_WORDS = {"yes", "yeah", "yep", "y", "yes that's me", "that's me", "it's me", "its me", "correct", "right",
+              "yes it is", "yes i am", "sure", "ok", "okay", "yes, that's me", "na me", "yes na me"}
+_NO_WORDS = {"no", "nope", "n", "not me", "no it's not", "no its not", "someone else", "wrong person", "no i'm not",
+             "no im not", "that's not me", "thats not me"}
+_PREF_NONE = {"no preference", "none", "any", "anyone", "either", "either is fine", "doesn't matter", "does not matter",
+              "it doesn't matter", "i don't mind", "dont mind", "i dont mind", "no", "not really", "anybody", "any one"}
+
+
+def _parse_sex(text: str) -> str | None:
+    plain = _norm(text)
+    if plain in {"f"} or re.search(r"\b(female|woman|lady|girl)\b", plain):
+        return "female"
+    if plain in {"m"} or re.search(r"\b(male|man|guy|boy|gentleman)\b", plain):
+        return "male"
+    return None
+
+
+def _parse_physio_pref(text: str) -> str | None:
+    plain = _norm(text)
+    if plain in _PREF_NONE or re.search(r"\bno preference\b|\bdoesn'?t matter\b|\bany(one|body)?\b", plain):
+        return "none"
+    return _parse_sex(plain)
+
+
+def _profile_prompt(field: str, patient: Patient) -> tuple[str, dict | None]:
+    """The question for one profile field, with its buttons."""
+    if field == "confirm":
+        first = _first_name(patient) or "you"
+        place = ", ".join(part for part in (patient.area, patient.city) if part)
+        known = []
+        if patient.age is not None:
+            known.append(f"{patient.age}")
+        if place:
+            known.append(f"in {place}")
+        details = f" I have you down as {first}, {', '.join(known)}." if known else ""
+        return (f"Am I speaking with {first}?{details}",
+                _buttons(("yes", "Yes, that's me"), ("no", "No, someone else")))
+    if field == "sex":
+        return _ASK_MISSING["sex"], _buttons(("female", "Female"), ("male", "Male"))
+    if field == "physio_pref":
+        return _ASK_MISSING["physio_pref"], _buttons(("no preference", "No preference"), ("female", "Female"), ("male", "Male"))
+    if field == "place":
+        from app.conversation.interactive import location_request
+
+        return _ASK_MISSING["place"], location_request()
+    return _ASK_MISSING[field], None
 
 
 def _looks_like_story(text: str) -> bool:
@@ -379,7 +446,7 @@ def needs_front(patient: Patient, sr: dict | None = None) -> list[str]:
         steps.append(LANGUAGE)
     if patient.care_consent_at is None:
         steps.append(CONSENT)
-    if profile_missing(patient) and not (sr or {}).get("profile_skipped"):
+    if profile_missing(patient, sr if sr is not None else {}) and not (sr or {}).get("profile_skipped"):
         steps.append(PROFILE)
     return steps
 
@@ -422,6 +489,7 @@ def _sync_profile(session: Session, patient: Patient) -> None:
         data = {k: v for k, v in {
             "patient_id": rh_patient_id, "first_name": _first_name(patient) or None,
             "city": patient.city, "area": patient.area,
+            "gender": patient.gender if patient.gender in ("female", "male") else None,
         }.items() if v}
         configured_rh_client().operational_mutation(
             "patient_update_profile",
@@ -449,14 +517,12 @@ def _next_front(session: Session, patient: Patient, conversation: Conversation, 
         _save(conversation, context, sr, CONSENT)
         return Step("reply", lead + CONSENT_TEXT, _buttons(("I agree", "I agree"), ("I don't agree", "I don't agree")))
     if PROFILE in steps:
-        missing = profile_missing(patient)
+        # One question per message (Joy coordination spec, step 4)
+        field = profile_missing(patient, sr)[0]
+        sr["asking"] = field
         _save(conversation, context, sr, PROFILE)
-        if len(missing) == 3:
-            return Step("reply", lead + PROFILE_TEXT)
-        ask = _ASK_MISSING[missing[0]]
-        from app.conversation.interactive import location_request
-
-        return Step("reply", lead + ask, location_request() if missing[0] == "place" else None)
+        ask, menu = _profile_prompt(field, patient)
+        return Step("reply", lead + ask, menu)
     sr["front_done_at"] = datetime.now(timezone.utc).isoformat()
     story = (sr.pop("opening_story", None) or "").strip()
     if story:
@@ -473,6 +539,9 @@ def start(session: Session, patient: Patient, conversation: Conversation, user_t
     context = _ctx(conversation)
     sr = _sr(context)
     sr.setdefault("started_at", datetime.now(timezone.utc).isoformat())
+    if (patient.name or "").strip() and "known_name" not in sr:
+        # Known from an earlier record: confirm it's them before using it (a relative may have the phone)
+        sr["known_name"] = patient.name
     if not is_greeting and _looks_like_story(user_text):
         _keep_story(sr, user_text)
     append(session, kind=AuditKind.TRIAGE, actor_phone=patient.phone_e164, person_id=patient.id,
@@ -512,7 +581,7 @@ def front_turn(
                         _list("Choose language", list(LANGUAGE_ROWS), "Language"))
         if step != PROFILE:
             return _next_front(session, patient, conversation, context, sr)
-        if not pinned and "place" in profile_missing(patient):
+        if not pinned and "place" in profile_missing(patient, sr):
             _save(conversation, context, sr, PROFILE)
             return Step("reply", "Thanks for the pin. I couldn't work out the area from it, so please type your area and city, for example *Yaba, Lagos*.")
 
@@ -560,28 +629,69 @@ def front_turn(
                     _buttons(("I agree", "I agree"), ("I don't agree", "I don't agree")))
 
     if step == PROFILE:
-        missing = profile_missing(patient)
-        found = parse_profile(user_text, missing) if (missing and not pinned) else {}
-        if not found and missing and _looks_like_story(user_text) and len(missing) == 3:
+        missing = profile_missing(patient, sr)
+        field = sr.get("asking") if sr.get("asking") in missing else (missing[0] if missing else None)
+        prefix = ""
+        got = bool(pinned)
+        if field == "confirm":
+            if text in _YES_WORDS or text.startswith("yes"):
+                sr["identity_confirmed"] = True
+                got = True
+            elif text in _NO_WORDS or text.startswith("no"):
+                # Someone else has this phone: take their own details, and use only those
+                for attr in ("name", "age", "date_of_birth", "gender", "city", "area", "location"):
+                    setattr(patient, attr, None)
+                sr["identity_confirmed"] = True
+                sr["identity_changed"] = True
+                prefix = "Thanks for letting me know."
+                got = True
+        elif field == "sex":
+            sex = _parse_sex(user_text)
+            if sex:
+                patient.gender = sex
+                got = True
+        elif field == "physio_pref":
+            pref = _parse_physio_pref(user_text)
+            if pref:
+                sr["physio_pref"] = pref
+                got = True
+        if field in ("name", "age", "place") and not pinned:
+            # Their answer, and anything else they typed with it ("Ada, 34, Yaba")
+            core = [item for item in ("name", "age", "place") if item in missing]
+            found = parse_profile(user_text, core)
+            if found.get("name") and "name" in missing:
+                patient.name = found["name"]
+            if found.get("age") and "age" in missing:
+                patient.age = int(found["age"])
+            if (found.get("city") or found.get("area")) and "place" in missing:
+                _apply_place(patient, found.get("city"), found.get("area"))
+            got = got or field in found or (field == "place" and bool(found.get("city") or found.get("area")))
+        if not got and _looks_like_story(user_text) and field in ("confirm", "name"):
             _keep_story(sr, user_text)
-        if found.get("name") and "name" in missing:
-            patient.name = found["name"]
-        if found.get("age") and "age" in missing:
-            patient.age = int(found["age"])
-        if (found.get("city") or found.get("area")) and "place" in missing:
-            _apply_place(patient, found.get("city"), found.get("area"))
         session.flush()
-        if not profile_missing(patient):
+        if not got and field is not None:
+            tries = int(sr.get(f"{field}_attempts") or 0) + 1
+            sr[f"{field}_attempts"] = tries
+            if field == "sex" and tries >= 2:
+                sr["sex_skipped"] = True  # never trap anyone: the physio can ask
+            elif field == "physio_pref" and tries >= 2:
+                sr["physio_pref"] = "none"
+            elif field == "confirm" and tries >= 2:
+                sr["identity_confirmed"] = True
+            elif field in ("name", "age", "place"):
+                attempts = int(sr.get("profile_attempts") or 0) + 1
+                sr["profile_attempts"] = attempts
+                if attempts >= 3:
+                    # Never trap anyone here: the physio can take the missing details on the call
+                    sr["profile_skipped"] = True
+                    sr["profile_missing"] = profile_missing(patient, sr)
+        if not profile_missing(patient, sr):
             append(session, kind=AuditKind.TRIAGE, actor_phone=patient.phone_e164, person_id=patient.id,
-                   payload={"event": "self_referral_profile", "has_age": patient.age is not None, "city": patient.city})
+                   payload={"event": "self_referral_profile", "has_age": patient.age is not None, "city": patient.city,
+                            "sex": patient.gender, "physio_pref": sr.get("physio_pref"),
+                            "identity_changed": bool(sr.get("identity_changed"))})
             _sync_profile(session, patient)
-        attempts = int(sr.get("profile_attempts") or 0) + (0 if (found or pinned) else 1)
-        sr["profile_attempts"] = attempts
-        if attempts >= 3 and profile_missing(patient):
-            # Never trap anyone here: the physio can take the missing details on the call
-            sr["profile_skipped"] = True
-            sr["profile_missing"] = profile_missing(patient)
-        return _next_front(session, patient, conversation, context, sr)
+        return _next_front(session, patient, conversation, context, sr, prefix=prefix)
 
     return None
 
@@ -910,8 +1020,46 @@ def _outcome(patient: Patient, conversation: Conversation, context: dict, sr: di
     urgent = (safety.risk_level or "").upper() == "AMBER" or safety.action == "specialist_review" or sr.get("answers", {}).get("pain") == "severe"
     sr["outcome"] = "urgent" if urgent else "routine"
     sr["outcome_rules"] = list(safety.rule_ids)
+    if urgent:
+        # Urgent patients see only physios free today or tomorrow (spec, matching protocol 5)
+        window = timing.soon_window()
+        sr["window"] = window.as_dict()
+        _save(conversation, context, sr, BOOKING)
+        return Step("outcome", extracted=extracted, urgent=True, stage="matching", window=window.as_dict())
+    return _timing_step(conversation, context, sr, before=[{"text": outcome_text(False)}], extracted=extracted)
+
+
+def _timing_step(conversation: Conversation, context: dict, sr: dict, *, lead: str = "", before: list[dict] | None = None,
+                 extracted: ExtractedTriage | None = None) -> Step:
+    """Ask "When are you free?" with its three buttons."""
+    sr.pop("timing_days", None)
+    sr["menu"] = timing.timing_buttons()
+    _save(conversation, context, sr, TIMING)
+    return Step("reply", f"{lead}{timing.TIMING_TEXT}", sr["menu"], before=list(before or []), extracted=extracted, stage="matching")
+
+
+def timing_turn(conversation: Conversation, context: dict, sr: dict, user_text: str, extracted: ExtractedTriage) -> Step:
+    """The answer to "When are you free?" (or to the list of days)."""
+    choice = timing.parse_timing(user_text, days_shown=sr.get("timing_days"))
+    if choice == "choose":
+        rows = timing.day_rows()
+        sr["timing_days"] = [row[0] for row in rows]
+        sr["menu"] = timing.day_menu()
+        _save(conversation, context, sr, TIMING)
+        return Step("reply", timing.DAY_TEXT, sr["menu"], extracted=extracted, stage="matching")
+    window = timing.window_for(choice) if choice is not None else None
+    if window is None:
+        if isinstance(choice, date):
+            lead = ("There are no times left that day. " if choice <= datetime.now(timing.LAGOS).date()
+                    else "I can book up to a week ahead. ")
+        else:
+            lead = "Sorry, I didn't catch that. "
+        return _timing_step(conversation, context, sr, lead=lead, extracted=extracted)
+    sr["window"] = window.as_dict()
+    sr.pop("timing_days", None)
+    sr.pop("menu", None)
     _save(conversation, context, sr, BOOKING)
-    return Step("outcome", extracted=extracted, urgent=urgent, stage="matching")
+    return Step("outcome", extracted=extracted, urgent=False, stage="matching", window=window.as_dict())
 
 
 def outcome_text(urgent: bool) -> str:
@@ -1011,10 +1159,17 @@ def triage_turn(
             return _with_extracted(_question_step(conversation, context, sr, questions, index + 1), extracted)
         return _with_extracted(_outcome(patient, conversation, context, sr, extracted), extracted)
 
+    if step == TIMING:
+        return timing_turn(conversation, context, sr, user_text, extracted)
+
     if step == CARE_TEAM:
-        if re.search(r"\b(try again|book|search again|find|look again)\b", _norm(user_text)):
-            _save(conversation, context, sr, BOOKING)
-            return Step("outcome", extracted=extracted, urgent=sr.get("outcome") == "urgent", stage="matching")
+        if re.search(r"\b(try again|book|search again|find|look again|another day|other day)\b", _norm(user_text)):
+            if sr.get("outcome") == "urgent":
+                window = timing.soon_window()
+                sr["window"] = window.as_dict()
+                _save(conversation, context, sr, BOOKING)
+                return Step("outcome", extracted=extracted, urgent=True, stage="matching", window=window.as_dict())
+            return _timing_step(conversation, context, sr, extracted=extracted)
         return Step("reply", CARE_TEAM_WAITING, stage="summary")
     return None
 
@@ -1035,7 +1190,7 @@ def _with_extracted(step: Step, extracted: ExtractedTriage) -> Step:
 
 
 CARE_TEAM_HANDOFF = (
-    "I couldn't find a physiotherapist who fits your needs and is free in the next 24 hours, so I've passed "
+    "I couldn't find a physiotherapist who fits your needs and is free when you need one, so I've passed "
     "your details to our care team. Someone will contact you on this WhatsApp number to arrange your consultation.\n\n"
     "If your symptoms get worse, or you notice any of the warning signs I asked about, get medical care "
     "straight away or call 112."

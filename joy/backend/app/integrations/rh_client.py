@@ -485,7 +485,7 @@ class RHClient:
             idempotency_key=f"joy-patient-location-{patient_id}-{city.casefold()}-{area.casefold()}",
         )
 
-    def match_physios(self, *, patient_id: str, assessment_id: str, assessment_revision: int, required_specialties: list[str], service_mode: str, actor: RHActor, city: str | None = None, area: str | None = None, latitude: float | None = None, longitude: float | None = None, within_hours: int | None = None, language: str | None = None, duration_minutes: int | None = None, urgent: bool = False, limit: int | None = None) -> list[RHMatch]:
+    def match_physios(self, *, patient_id: str, assessment_id: str, assessment_revision: int, required_specialties: list[str], service_mode: str, actor: RHActor, city: str | None = None, area: str | None = None, latitude: float | None = None, longitude: float | None = None, within_hours: int | None = None, language: str | None = None, duration_minutes: int | None = None, urgent: bool = False, limit: int | None = None, not_before_ms: int | None = None, physio_sex: str | None = None) -> list[RHMatch]:
         payload: dict[str, Any] = {
             "patient_id": patient_id, "assessment_id": assessment_id,
             "assessment_revision": assessment_revision, "required_specialties": required_specialties,
@@ -501,6 +501,12 @@ class RHClient:
                 payload["duration_minutes"] = int(duration_minutes)
             if limit:
                 payload["limit"] = int(limit)
+            # The patient's chosen day, and a female or male physio if they asked (only when set,
+            # so an older RH that doesn't know these fields still answers)
+            if not_before_ms:
+                payload["not_before_ms"] = int(not_before_ms)
+            if physio_sex in ("female", "male"):
+                payload["physio_sex"] = physio_sex
         if city:
             payload["city"] = city
         if area:

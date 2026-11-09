@@ -191,8 +191,14 @@ def _through_intake(db_session, identity, llm=STORY):
     assert consent.reply_text.startswith("Before we continue, please confirm:")
     assert consent.interactive["type"] == "button"
     profile = _turn(db_session, identity, llm, "I agree")
-    assert "What is your first name?" in profile.reply_text
-    reason = _turn(db_session, identity, llm, "Ada, 34, Yaba")
+    assert profile.reply_text == "What's your first name?"
+    # One question per message; anything else typed with the name is kept
+    sex = _turn(db_session, identity, llm, "Ada, 34, Yaba")
+    assert sex.reply_text == "Are you female or male?"
+    assert [b["reply"]["title"] for b in sex.interactive["action"]["buttons"]] == ["Female", "Male"]
+    preference = _turn(db_session, identity, llm, "Female")
+    assert preference.reply_text == "Would you prefer a female or male physiotherapist?"
+    reason = _turn(db_session, identity, llm, "No preference")
     assert reason.reply_text.startswith("Thanks, Ada. What would you like help with today?")
     screen = _turn(db_session, identity, llm, "My lower back has been hurting for 3 weeks")
     assert "I need to ask a few safety questions" in screen.reply_text
@@ -216,9 +222,12 @@ def test_full_self_referral_to_confirm_and_pay(db_session, new_patient, rh):
     assert "sleep, work, or daily activities" in _turn(db_session, new_patient, STORY, "no").reply_text
     assert "seen a doctor or physiotherapist" in _turn(db_session, new_patient, STORY, "yes").reply_text
 
-    offer = _turn(db_session, new_patient, STORY, "no")
-    assert offer.before[0]["text"].startswith("Thank you. Based on your answers, a physiotherapy assessment may be helpful.")
-    assert "This is not a diagnosis." in offer.before[0]["text"]
+    when = _turn(db_session, new_patient, STORY, "no")
+    assert when.before[0]["text"].startswith("Thank you. Based on your answers, a physiotherapy assessment may be helpful.")
+    assert "This is not a diagnosis." in when.before[0]["text"]
+    assert when.reply_text == "When are you free for your video consultation?"
+    assert [b["reply"]["title"] for b in when.interactive["action"]["buttons"]] == ["Today or tomorrow", "This week", "Choose a day"]
+    offer = _turn(db_session, new_patient, STORY, "today or tomorrow")
     # Only the physio who uploaded a photo gets one: no placeholder for the others
     photos = [item for item in offer.before if item.get("photo_url")]
     assert [p["photo_url"] for p in photos] == [REAL_PHOTO]
@@ -226,7 +235,9 @@ def test_full_self_referral_to_confirm_and_pay(db_session, new_patient, rh):
     assert "*Tolu Adeyemi*" in offer.reply_text and "*Ngozi Okafor*" in offer.reply_text
     assert "₦6,000: an online video call of about 20 minutes" in offer.reply_text
     match_call = next(kwargs for op, kwargs in rh.calls if op == "match")
-    assert (match_call["service_mode"], match_call["within_hours"], match_call["duration_minutes"], match_call["urgent"]) == ("online", 24, 20, False)
+    assert (match_call["service_mode"], match_call["duration_minutes"], match_call["urgent"]) == ("online", 20, False)
+    assert 3 <= match_call["within_hours"] <= 48  # to the end of tomorrow, Lagos time
+    assert match_call["physio_sex"] is None  # "No preference"
 
     confirm = _turn(db_session, new_patient, STORY, "1")
     assert confirm.reply_text.startswith("You've selected *Tolu Adeyemi*.")
@@ -248,7 +259,7 @@ def test_confirm_and_pay_passes_the_safety_gate_on_the_direct_gateway(db_session
     db_session.add(RHIdentityMapping(persona="patient", joy_person_id=new_patient.person_id, rh_record_id="rh-pat-1"))
     db_session.flush()
     _through_intake(db_session, new_patient)
-    for answer in ("7", "Moderate", "no", "yes", "no", "1"):
+    for answer in ("7", "Moderate", "no", "yes", "no", "today or tomorrow", "1"):
         _turn(db_session, new_patient, STORY, answer)
     held = _turn(db_session, new_patient, STORY, "confirm and pay")
     assert "is held for 30 minutes" in held.reply_text
@@ -262,7 +273,7 @@ def test_a_refused_safety_gate_hands_over_instead_of_looping(db_session, new_pat
     alerts = []
     monkeypatch.setattr("app.admin.escalation_router.route_escalation", lambda session, kind, payload: alerts.append((kind, payload)))
     _through_intake(db_session, new_patient)
-    for answer in ("7", "Moderate", "no", "yes", "no", "1"):
+    for answer in ("7", "Moderate", "no", "yes", "no", "today or tomorrow", "1"):
         _turn(db_session, new_patient, STORY, answer)
     blocked = _turn(db_session, new_patient, STORY, "confirm and pay")
     assert "care team to check one thing" in blocked.reply_text
@@ -294,8 +305,13 @@ def test_nobody_free_within_24_hours_goes_to_the_care_team(db_session, new_patie
     _through_intake(db_session, new_patient)
     for answer in ("7", "mild", "no", "no"):
         reply = _turn(db_session, new_patient, STORY, answer)
-    reply = _turn(db_session, new_patient, STORY, "no")
-    assert "couldn't find a physiotherapist who fits your needs and is free in the next 24 hours" in reply.reply_text
+    _turn(db_session, new_patient, STORY, "no")
+    # Nobody today or tomorrow: another time is offered first
+    sooner = _turn(db_session, new_patient, STORY, "today or tomorrow")
+    assert "couldn't find a physiotherapist who fits and is free today or tomorrow" in sooner.reply_text
+    # Nobody all week either: the care team arranges it (owner decision)
+    reply = _turn(db_session, new_patient, STORY, "this week")
+    assert "couldn't find a physiotherapist who fits your needs and is free when you need one" in reply.reply_text
     assert any(op == "patient_request_callback" and data["reason"] == "no_match" for op, data in rh.calls)
     later = _turn(db_session, new_patient, STORY, "hello?")
     assert later.reply_text.startswith("Our care team has your details")
@@ -315,7 +331,9 @@ def test_a_story_sent_first_is_kept_for_after_the_intake(db_session, new_patient
     assert welcome.reply_text.startswith("Hi 👋 I'm Joy")
     _turn(db_session, new_patient, STORY, "English")
     _turn(db_session, new_patient, STORY, "I agree")
-    screen = _turn(db_session, new_patient, STORY, "Ada, 34, Yaba")
+    _turn(db_session, new_patient, STORY, "Ada, 34, Yaba")
+    _turn(db_session, new_patient, STORY, "female")
+    screen = _turn(db_session, new_patient, STORY, "no preference")
     assert screen.reply_text.startswith("Thanks, Ada. I need to ask a few safety questions.")
 
 

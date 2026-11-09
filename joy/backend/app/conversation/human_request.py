@@ -72,8 +72,8 @@ CALLBACK_KEY = "callback_requested_at"
 _REPEAT_WINDOW = timedelta(hours=2)
 _EMERGENCY_LINE = "If it's an emergency, call 112 or go to the nearest hospital now."
 BOT_REPLY = (
-    "I'm Joy, Rehabify's virtual assistant. If you'd like a person from our care team to call you, "
-    "just reply *call me*."
+    "I'm Joy, Rehabify's AI assistant. Your care is always led by a licensed physiotherapist. "
+    "If you'd like a person from our care team to call you, just reply *call me*."
 )
 
 

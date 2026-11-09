@@ -135,9 +135,10 @@ def interactive_for(conversation: Conversation | None) -> dict[str, Any] | None:
                  f"Next: {when_label(p['next_slot_start'])}" if p.get("next_slot_start") else None)
                 for index, p in enumerate(providers[:shown], 1)
             ]
+            when = str(context.get("window_label") or "in the next 24 hours")
             if shown < len(providers):
-                rows.append(("see more", "See more", "Other physiotherapists free in 24 hours"))
-            return list_menu("Book a physio", rows, section="Free in the next 24 hours")
+                rows.append(("see more", "See more", f"Other physiotherapists free {when}"[:72]))
+            return list_menu("Book a physio", rows, section=f"Free {when}"[:24])
         return None
     if step == AWAITING_RH_CONFIRM:
         return reply_buttons(("confirm and pay", "Confirm and pay"), ("another time", "Choose another time"), ("cancel", "Cancel"))
@@ -164,7 +165,7 @@ def interactive_for(conversation: Conversation | None) -> dict[str, Any] | None:
     if step:
         return None
     flow = context.get(_TRIAGE_FLOW_KEY)
-    if flow in {"sr_area", "sr_red_flags"}:
+    if flow in {"sr_area", "sr_red_flags", "sr_questions", "sr_timing"}:
         # Self-referral (app/triage/self_referral.py): the list the step was asked with
         menu = (context.get("self_referral") or {}).get("menu")
         return menu if isinstance(menu, dict) else None

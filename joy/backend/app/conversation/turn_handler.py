@@ -2572,13 +2572,14 @@ def _self_referral_turn(
             session, patient, conversation, user_text,
             detected_language=mirror_language(user_text, None), location=location,
         )
-    elif step in (sr.AREA, sr.RED_FLAGS, sr.QUESTIONS, sr.CARE_TEAM):
+    elif step in (sr.AREA, sr.RED_FLAGS, sr.QUESTIONS, sr.TIMING, sr.CARE_TEAM):
         result = sr.triage_turn(session, patient, conversation, state.extracted, user_text)
     elif step == sr.BOOKING and not conversation.booking_substate:
         # Matching couldn't run last time (Rehabify unreachable): try again
         result = sr.Step(
             "outcome", extracted=state.extracted,
             urgent=(context.get(sr.SR_KEY) or {}).get("outcome") == "urgent", stage="matching",
+            window=(context.get(sr.SR_KEY) or {}).get("window"),
         )
     else:
         return None
@@ -2615,10 +2616,12 @@ def _self_referral_turn(
         )
     if result.kind == "outcome":
         _set_triage_status(session, state, "summarised")
-        intro = sr.outcome_text(result.urgent)
+        # A routine outcome was already said with "When are you free?"; urgent goes straight to times
+        intro = "" if (result.window and not result.urgent) else sr.outcome_text(result.urgent)
         reply, before = offer_named_physios(
             session, conversation, patient, extracted, urgent=result.urgent,
-            language=patient.preferred_language or language, intro=intro,
+            language=patient.preferred_language or language, intro=intro, window=result.window,
+            physio_sex=((conversation.booking_context or {}).get(sr.SR_KEY) or {}).get("physio_pref"),
         )
         current = session.get(Conversation, state.conversation_id)
         flow = (current.booking_context or {}).get(_TRIAGE_FLOW_KEY) if current is not None else None
@@ -2681,6 +2684,50 @@ def _price_question_turn(
             logger.warning("joy_insurance_admin_alert_failed", exc_info=True)
     append(session, kind=AuditKind.TRIAGE, actor_phone=identity.phone_e164, person_id=identity.person_id,
            payload={"decision": "price_question_answered", "topic": topic})
+    return _answer_then_continue(
+        session, identity, state, user_text, answer, language, wa_message_id, llm,
+        paystack=paystack, media=media, location=location,
+    )
+
+
+CAPABILITIES_REPLY = (
+    "Here's what I can help with:\n\n"
+    "• Find a licensed physiotherapist who fits your problem, and book an online consultation\n"
+    "• Answer questions about prices and how booking works\n"
+    "• Remind you about your appointments\n"
+    "• Once your physiotherapist sets your plan: daily exercise reminders, check-ins, and answers about your plan\n"
+    "• Pass you to a person on our care team: just say *talk to someone*\n\n"
+    "I don't give a diagnosis or emergency care. In an emergency, call 112."
+)
+_CAPABILITIES_RE = re.compile(
+    r"\bwhat\s+(?:else\s+)?(?:can|do)\s+you\s+(?:do|help\s+(?:me\s+)?with|offer)\b"
+    r"|\bwhat\s+(?:else\s+)?(?:are\s+you\s+able\s+to|can\s+joy)\s+do\b"
+    r"|\bhow\s+(?:else\s+)?can\s+you\s+help\b|\bwhat\s+(?:services|else)\s+do\s+you\s+(?:have|offer|do)\b"
+    r"|\bwhat\s+(?:is|are)\s+your\s+(?:services|features)\b|^\s*(?:help|menu|options)\s*[.?!]*\s*$",
+    re.IGNORECASE,
+)
+
+
+def is_capabilities_question(text: str | None) -> bool:
+    return len(text or "") <= 160 and bool(_CAPABILITIES_RE.search(text or ""))
+
+
+def _answer_then_continue(
+    session: Session,
+    identity: Identity,
+    state: ConversationState,
+    user_text: str,
+    answer: str,
+    language: str,
+    wa_message_id: str | None,
+    llm: LLMClient,
+    *,
+    paystack=None,
+    media: list[str] | None = None,
+    location: tuple[float, float] | None = None,
+) -> TurnResult:
+    """Answer the question first, then the step they're on (spec, technical notes: "answer the
+    question the patient asked, then repeat the current step's question")."""
     carries_story = looks_like_symptom(user_text)
     if carries_story or not state.recent_messages:
         result = handle_turn(
@@ -3034,6 +3081,15 @@ def handle_turn(
                     session, identity, state, user_text, flagged,
                     volunteered_safety, phase, language, wa_message_id,
                 )
+
+    # "What else can you do?" at any step, booking steps included: what Joy does, then the step again
+    if identity.persona == Persona.PATIENT and not price_answered and is_capabilities_question(user_text):
+        append(session, kind=AuditKind.TRIAGE, actor_phone=identity.phone_e164, person_id=identity.person_id,
+               payload={"decision": "capabilities_answered"})
+        return _answer_then_continue(
+            session, identity, state, user_text, CAPABILITIES_REPLY, language, wa_message_id, llm,
+            paystack=paystack, media=media, location=location,
+        )
 
     # "How much will it cost?" at any step: answered in code from Rehabify's live prices, then the
     # step carries on (app/conversation/pricing.py). Booking steps answer it from the booking's own

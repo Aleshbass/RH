@@ -184,6 +184,13 @@ def _admin_text(kind: str, payload: dict) -> str:
             f"in the next 24 hours. Please arrange their consultation. Call {payload.get('phone') or 'them'}."
             + (f" {str(payload.get('text') or '').strip()}" if payload.get("text") else "")
         )
+    if kind == "change_physio":
+        said = str(payload.get("text") or "").strip()
+        return (
+            f"Patient {payload.get('patient_id') or ''} asked on WhatsApp to change physiotherapist for paid booking "
+            f"{payload.get('booking_id') or ''}. Please review and reply to {payload.get('phone') or 'them'}."
+            + (f' They wrote: "{said}"' if said else "")
+        )
     if kind == "booking_blocked":
         return (
             f"Joy couldn't book a self-referral patient ({payload.get('patient_id') or 'unknown'}): the booking "

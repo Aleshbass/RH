@@ -48,13 +48,19 @@ _ALLOWED: dict[ConversationStage, set[ConversationStage]] = {
         ConversationStage.SPECIALIST_MATCHING,
         ConversationStage.AWAITING_PAYMENT,
     },
-    ConversationStage.SPECIALIST_MATCHING: {ConversationStage.SPECIALIST_MATCHING, ConversationStage.SLOT_SELECTION},
+    # Nobody free when the patient chose ("When are you free?"): the care team takes over, which
+    # parks the conversation at the summary. A hand-over to a person, not a clinical shortcut.
+    ConversationStage.SPECIALIST_MATCHING: {
+        ConversationStage.SPECIALIST_MATCHING, ConversationStage.SLOT_SELECTION, ConversationStage.TRIAGE_SUMMARY,
+    },
     # A rejected RH hold can safely return to provider selection; this is a
     # recovery transition, not a booking confirmation or clinical shortcut.
     ConversationStage.SLOT_SELECTION: {
         ConversationStage.SLOT_SELECTION,
         ConversationStage.SPECIALIST_MATCHING,
         ConversationStage.AWAITING_PAYMENT,
+        # "Cancel booking" then nobody free on the new day: the care team takes over
+        ConversationStage.TRIAGE_SUMMARY,
     },
     # A patient whose answers turn AMBER while a payment link is open is moved to the
     # specialist review (and its policy) instead of crashing the turn.
