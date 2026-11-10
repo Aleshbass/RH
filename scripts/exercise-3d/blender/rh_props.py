@@ -228,7 +228,11 @@ DYNAMIC = {
     "stick": ("wood", 0.013, 1),
     "bottle": ("bottle", 0.032, 2),
     "ball": ("ball", 0.033, 1),
+    "headband": ("towel", 0.012, 5),
+    "twist": ("towel", 0.026, 1),
+    "ring": ("band", 0.0035, 5),
 }
+FINGERS = ("Thumb", "Index", "Middle", "Ring", "Pinky")
 
 
 def grip(s):
@@ -298,6 +302,18 @@ def bottle_axis(s):
     return (R.world_point(f"{s}HandIndex1") - R.world_point(f"{s}HandPinky1")).normalized()
 
 
+def head_frame():
+    """Centre of the head and directions from bone positions only (so the web viewer can match it):
+    up the head, towards the wearer's left, and backwards."""
+    import rh_pose as R
+
+    h0, h1 = R.world_point("Head"), R.world_point("HeadTop_End")
+    up = (h1 - h0).normalized()
+    across = R.world_point("LeftArm") - R.world_point("RightArm")
+    left = (across - up * across.dot(up)).normalized()
+    return h0 + up * 0.09, left, up, up.cross(left).normalized()
+
+
 def pieces(spec):
     """Pieces of a body-following prop in the current pose: (a, b) segments; a == b is a sphere's
     centre, or an unused segment."""
@@ -326,10 +342,28 @@ def pieces(spec):
                 out.append((Vector(), Vector()))
         return out
     if kind == "ball":
-        # Pressed between the back and a wall behind it: it rides up and down with the body.
+        # Pressed between the back and a wall behind it. It rolls between the two, so when the back
+        # moves down by d (from z0, the bone's height when it was placed) the ball moves down d / 2.
         b = R.world_point(spec["bone"])
-        c = Vector((b.x + spec["dx"], spec["faceY"] - DYNAMIC["ball"][1], b.z + spec["dz"]))
+        z = b.z + spec["dz"] - (b.z - spec["z0"]) * 0.5 if "z0" in spec else b.z + spec["dz"]
+        c = Vector((b.x + spec["dx"], spec["faceY"] - DYNAMIC["ball"][1], z))
         return [(c, c)]
+    if kind == "headband":
+        # A towel held in both fists in front of the face, wrapped round the back of the head.
+        c, left, up, back = head_frame()
+        sl, sr = c + left * 0.095 + back * 0.01, c - left * 0.095 + back * 0.01
+        bl, br = c + left * 0.055 + back * 0.088, c - left * 0.055 + back * 0.088
+        return [(grip("Left"), sl), (sl, bl), (bl, br), (br, sr), (sr, grip("Right"))]
+    if kind == "twist":
+        # A rolled towel held across in both fists, its ends 9 cm beyond them.
+        a, b = grip("Left"), grip("Right")
+        d = (b - a).normalized()
+        return [(a - d * 0.09, b + d * 0.09)]
+    if kind == "ring":
+        # A rubber band round the last joints of the fingers and thumb of one hand.
+        s = spec["hand"]
+        pts = [R.world_point(f"{s}Hand{f}3").lerp(R.world_point(f"{s}Hand{f}4"), 0.5) for f in FINGERS]
+        return [(pts[i], pts[(i + 1) % len(pts)]) for i in range(len(pts))]
     raise KeyError(kind)
 
 
@@ -410,6 +444,25 @@ def bottles(hands=("Left", "Right")):
     return _dynamic({"type": "bottle", "hands": list(hands)})
 
 
-def ball(bone, face_y, dx=0.0, dz=0.0):
-    """Tennis ball between the back and a wall behind (wall face at face_y), level with `bone` + dz."""
-    return _dynamic({"type": "ball", "bone": bone, "faceY": round(face_y, 3), "dx": round(dx, 3), "dz": round(dz, 3)})
+def headband():
+    """Towel or band held in both hands in front, round the back of the head."""
+    return _dynamic({"type": "headband"})
+
+
+def twist():
+    """Rolled towel held across in both fists (wringing)."""
+    return _dynamic({"type": "twist"})
+
+
+def ring(hand="Left"):
+    """Rubber band round the fingers and thumb of one hand."""
+    return _dynamic({"type": "ring", "hand": hand})
+
+
+def ball(bone, face_y, dx=0.0, dz=0.0, z0=None):
+    """Tennis ball between the back and a wall behind (wall face at face_y), level with `bone` + dz.
+    With z0 (the bone's height at placement) it rolls: half the bone's travel, as a real ball would."""
+    spec = {"type": "ball", "bone": bone, "faceY": round(face_y, 3), "dx": round(dx, 3), "dz": round(dz, 3)}
+    if z0 is not None:
+        spec["z0"] = round(z0, 4)
+    return _dynamic(spec)

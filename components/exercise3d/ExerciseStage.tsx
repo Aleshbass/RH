@@ -115,11 +115,134 @@ function strapPoints(b: StrapBones, atToes: boolean) {
   return [lg, rg, la, ra] as const
 }
 
+type Segment = [THREE.Vector3, THREE.Vector3]
+
+/**
+ * Props held in the hands or pressed against the body, rebuilt from the bones every frame: a band
+ * round a door handle, a stick, water bottles, a tennis ball rolling between the back and a wall, a
+ * towel round the back of the head, a rolled towel being wrung, a rubber band round the fingers.
+ * Same construction as rh_props.pieces in scripts/exercise-3d/blender/rh_props.py.
+ */
+const DYNAMIC: Record<string, { color: string; radius: number; count: number; sphere?: boolean }> = {
+  band: { color: '#e8876b', radius: 0.008, count: 2 },
+  stick: { color: '#d9b48f', radius: 0.013, count: 1 },
+  bottle: { color: '#9ecce5', radius: 0.032, count: 2 },
+  ball: { color: '#cce64f', radius: 0.033, count: 1, sphere: true },
+  headband: { color: '#b8dbd8', radius: 0.012, count: 5 },
+  twist: { color: '#b8dbd8', radius: 0.026, count: 1 },
+  ring: { color: '#e8876b', radius: 0.0035, count: 5 },
+}
+const FINGERS = ['Thumb', 'Index', 'Middle', 'Ring', 'Pinky']
+
+function dynamicPieces(p: CatalogProp, bone: (name: string) => THREE.Vector3 | null): Segment[] | null {
+  const grip = (s: string) => {
+    const a = bone(`${s}HandMiddle1`), b = bone(`${s}HandMiddle3`)
+    return a && b ? a.lerp(b, 0.5) : null
+  }
+  const unused = (): Segment => [new THREE.Vector3(), new THREE.Vector3()]
+  if (p.type === 'band') {
+    const [x, y, z] = Array.isArray(p.anchor) ? (p.anchor as number[]) : [0, 0, 0]
+    const a = blender(x, y, z), l = grip('Left'), r = grip('Right')
+    return l && r ? [[a, l], [a.clone(), r]] : null
+  }
+  if (p.type === 'stick') {
+    const hand = p.hand === 'Right' ? 'Right' : 'Left'
+    const a = grip(hand), b = grip(hand === 'Left' ? 'Right' : 'Left')
+    if (!a || !b) return null
+    const d = b.sub(a).normalize()
+    return [[a.clone().addScaledVector(d, -0.08), a.clone().addScaledVector(d, num(p, 'length', 1) - 0.08)]]
+  }
+  if (p.type === 'bottle') {
+    const hands = Array.isArray(p.hands) ? (p.hands as string[]) : []
+    return ['Left', 'Right'].map((s) => {
+      const c = hands.includes(s) ? grip(s) : null, i = bone(`${s}HandIndex1`), k = bone(`${s}HandPinky1`)
+      if (!c || !i || !k) return unused()
+      const axis = i.sub(k).normalize()
+      return [c.clone().addScaledVector(axis, -0.09), c.clone().addScaledVector(axis, 0.09)] as Segment
+    })
+  }
+  if (p.type === 'ball') {
+    // Rolls between the back and the wall: half the bone's travel from its height when placed (z0).
+    const b = bone(String(p.bone))
+    if (!b) return null
+    const h = typeof p.z0 === 'number' ? b.y + num(p, 'dz') - (b.y - num(p, 'z0')) * 0.5 : b.y + num(p, 'dz')
+    const c = blender(b.x + num(p, 'dx'), num(p, 'faceY') - DYNAMIC.ball.radius, h)
+    return [[c, c.clone()]]
+  }
+  if (p.type === 'headband') {
+    const h0 = bone('Head'), h1 = bone('HeadTop_End'), la = bone('LeftArm'), ra = bone('RightArm')
+    const lg = grip('Left'), rg = grip('Right')
+    if (!h0 || !h1 || !la || !ra || !lg || !rg) return null
+    const up = h1.sub(h0).normalize()
+    const across = la.sub(ra)
+    const left = across.addScaledVector(up, -across.dot(up)).normalize()
+    const back = new THREE.Vector3().crossVectors(up, left).normalize()
+    const c = h0.addScaledVector(up, 0.09)
+    const at = (l: number, b: number) => c.clone().addScaledVector(left, l).addScaledVector(back, b)
+    const sl = at(0.095, 0.01), sr = at(-0.095, 0.01), bl = at(0.055, 0.088), br = at(-0.055, 0.088)
+    return [[lg, sl], [sl, bl], [bl, br], [br, sr], [sr, rg]]
+  }
+  if (p.type === 'twist') {
+    const a = grip('Left'), b = grip('Right')
+    if (!a || !b) return null
+    const d = b.clone().sub(a).normalize()
+    return [[a.addScaledVector(d, -0.09), b.addScaledVector(d, 0.09)]]
+  }
+  if (p.type === 'ring') {
+    const s = p.hand === 'Right' ? 'Right' : 'Left'
+    const pts = FINGERS.map((f) => {
+      const a = bone(`${s}Hand${f}3`), b = bone(`${s}Hand${f}4`)
+      return a && b ? a.lerp(b, 0.5) : null
+    })
+    if (pts.some((v) => !v)) return null
+    return pts.map((v, i) => [v!, pts[(i + 1) % pts.length]!.clone()] as Segment)
+  }
+  return null
+}
+
 /** Props from the catalog, rebuilt from their dimensions (they cost nothing to download). */
 function Props({ props }: { props: CatalogProp[] }) {
   return (
     <group>
       {props.map((p, i) => {
+        if (p.type === 'table') {
+          const top = num(p, 'top', 0.75), x = num(p, 'x'), y = num(p, 'y'), w = num(p, 'width', 0.9), d = num(p, 'depth', 0.6)
+          const t = 0.03, leg = 0.04
+          return (
+            <group key={i}>
+              <Box size={[w, t, d]} center={blender(x, y, top - t / 2)} color="#d9b48f" />
+              {[[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([dx, dy], j) => (
+                <Box key={j} size={[leg, top - t, leg]} center={blender(x + dx * (w / 2 - leg), y + dy * (d / 2 - leg), (top - t) / 2)} color="#cfa57d" />
+              ))}
+            </group>
+          )
+        }
+        if (p.type === 'door') {
+          const face = num(p, 'faceY'), w = num(p, 'width', 0.82), h = num(p, 'height', 2)
+          const [hx, , hz] = Array.isArray(p.handle) ? (p.handle as number[]) : [0, 0, 1]
+          return (
+            <group key={i}>
+              <Box size={[w, h, 0.04]} center={blender(num(p, 'x'), face - 0.02, h / 2)} color="#ccad8c" />
+              <Box size={[0.12, 0.022, 0.05]} center={blender(hx, face + 0.025, hz)} color="#5a5c61" />
+            </group>
+          )
+        }
+        if (p.type === 'doorway') {
+          const face = num(p, 'faceY'), x = num(p, 'x'), open = num(p, 'opening', 0.84), w = num(p, 'width', 3)
+          const h = num(p, 'height', 2.4), head = num(p, 'header', 2.05), half = (w - open) / 2
+          return (
+            <group key={i}>
+              {[-1, 1].map((sx) => (
+                <Box key={sx} size={[half, h, 0.1]} center={blender(x + sx * (open / 2 + half / 2), face - 0.05, h / 2)} color="#f7f5ef" />
+              ))}
+              <Box size={[open, h - head, 0.1]} center={blender(x, face - 0.05, (h + head) / 2)} color="#f7f5ef" />
+            </group>
+          )
+        }
+        if (p.type === 'jamb') {
+          const len = num(p, 'length', 1), thick = num(p, 'thick', 0.1), h = num(p, 'height', 2.4)
+          return <Box key={i} size={[thick, h, len]} center={blender(num(p, 'x'), num(p, 'nearY') - len / 2, h / 2)} color="#f7f5ef" />
+        }
         if (p.type === 'chair') {
           const top = num(p, 'seatTop'), front = num(p, 'frontY'), x = num(p, 'x'), w = num(p, 'width', 0.46), d = num(p, 'depth', 0.42)
           const t = 0.04, leg = 0.035
@@ -138,6 +261,11 @@ function Props({ props }: { props: CatalogProp[] }) {
           const along = p.along === 'x'
           const len = num(p, 'length', 1.8), wid = num(p, 'width', 0.62)
           return <Box key={i} size={along ? [len, 0.008, wid] : [wid, 0.008, len]} center={blender(0, num(p, 'centerY'), 0.004)} color="#bfeedd" />
+        }
+        if (p.type === 'wall' && typeof p.faceX === 'number') {
+          // Wall beside the character (its face is the plane x = faceX).
+          const w = num(p, 'width', 2.4), h = num(p, 'height', 2.4), fx = num(p, 'faceX')
+          return <Box key={i} size={[0.1, h, w]} center={blender(fx + (fx > 0 ? 0.05 : -0.05), num(p, 'y'), h / 2)} color="#f7f5ef" />
         }
         if (p.type === 'wall') {
           const w = num(p, 'width', 2.4), h = num(p, 'height', 2.4)
@@ -248,6 +376,18 @@ function Scene({ gltf, clip, props, playing, speed, view, viewNonce, watermark, 
   }, [model, strap])
   const strapSegs = useRef<(THREE.Mesh | null)[]>([])
 
+  // Band, stick, bottles, ball, towels and finger band: pieces rebuilt from the bones every frame.
+  const dynamic = useMemo(() => props.filter((p) => p.type in DYNAMIC), [props])
+  const dynMeshes = useRef<(THREE.Mesh | null)[][]>([])
+  const boneAt = useMemo(() => {
+    const cache = new Map<string, THREE.Object3D | null>()
+    return (name: string) => {
+      if (!cache.has(name)) cache.set(name, model.getObjectByName(name) ?? null)
+      const o = cache.get(name)
+      return o ? o.getWorldPosition(new THREE.Vector3()) : null
+    }
+  }, [model])
+
   const floorTex = useMemo(() => radialTexture('rgba(230,240,239,1)', 'rgba(247,245,239,0)'), [])
   const shadowTex = useMemo(() => radialTexture('rgba(11, 19, 18,0.32)', 'rgba(11, 19, 18,0)'), [])
   const markTex = useMemo(() => watermarkTexture(`rehabify  ·  ${watermark}`), [watermark])
@@ -295,6 +435,12 @@ function Scene({ gltf, clip, props, playing, speed, view, viewNonce, watermark, 
       if (p.type === 'pillow') box.expandByPoint(blender(num(p, 'x'), num(p, 'y'), num(p, 'top')))
     }
     box.expandByPoint(new THREE.Vector3(box.min.x, 0, box.min.z))
+    // Small movements (hands) carry a focus: frame that sphere instead of the whole body.
+    const focus = props.find((p) => p.type === 'focus')
+    if (focus) {
+      const r = num(focus, 'radius', 0.4)
+      box.setFromCenterAndSize(blender(num(focus, 'x'), num(focus, 'y'), num(focus, 'z')), new THREE.Vector3(2 * r, 2 * r, 2 * r))
+    }
     bounds.current.copy(box)
 
     const onLoop = () => onRepRef.current?.()
@@ -384,6 +530,28 @@ function Scene({ gltf, clip, props, playing, speed, view, viewNonce, watermark, 
         seg.scale.set(1, Math.max(d.length(), 1e-4), 1)
       })
     }
+    if (dynamic.length) {
+      model.updateMatrixWorld(true)
+      const up = new THREE.Vector3(0, 1, 0)
+      dynamic.forEach((p, k) => {
+        const segments = dynamicPieces(p, boneAt) ?? []
+        const sphere = DYNAMIC[p.type as string]?.sphere
+        ;(dynMeshes.current[k] ?? []).forEach((mesh, i) => {
+          if (!mesh) return
+          const pair = segments[i]
+          const d = pair ? pair[1].clone().sub(pair[0]) : null
+          mesh.visible = Boolean(pair) && (sphere || d!.length() > 1e-4)
+          if (!mesh.visible || !pair || !d) return
+          if (sphere) {
+            mesh.position.copy(pair[0])
+            return
+          }
+          mesh.position.copy(pair[0]).add(pair[1]).multiplyScalar(0.5)
+          mesh.quaternion.setFromUnitVectors(up, d.clone().normalize())
+          mesh.scale.set(1, d.length(), 1)
+        })
+      })
+    }
     controls.current?.update()
     if (hips && shadow.current) {
       const p = hips.getWorldPosition(new THREE.Vector3())
@@ -423,6 +591,21 @@ function Scene({ gltf, clip, props, playing, speed, view, viewNonce, watermark, 
             <meshStandardMaterial color="#b8dbd8" roughness={0.9} />
           </mesh>
         ))}
+      {dynamic.map((p, k) => {
+        const spec = DYNAMIC[p.type as string]
+        return Array.from({ length: spec.count }, (_, i) => (
+          <mesh
+            key={`${k}-${i}`}
+            visible={false}
+            ref={(el) => {
+              ;(dynMeshes.current[k] ??= [])[i] = el
+            }}
+          >
+            {spec.sphere ? <sphereGeometry args={[spec.radius, 20, 12]} /> : <cylinderGeometry args={[spec.radius, spec.radius, 1, 12]} />}
+            <meshStandardMaterial color={spec.color} roughness={0.8} />
+          </mesh>
+        ))
+      })}
       <mesh rotation-x={-Math.PI / 2} position={[0, 0, 0]}>
         <circleGeometry args={[3.2, 48]} />
         <meshBasicMaterial map={floorTex} transparent depthWrite={false} />

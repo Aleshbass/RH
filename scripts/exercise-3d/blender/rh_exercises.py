@@ -543,7 +543,7 @@ def plantar_fascia_wall_stretch(side="L"):
     def pose(knee, shin, tilt, back_ankle=-20):
         # shin: forward lean of the front shin = ankle dorsiflexion with the foot flat.
         p = {"root": [("x", tilt)], "hip_flex_L": tilt - shin + knee, "knee_flex_L": knee, "ankle_plantar_L": -shin,
-             "toe_ext_L": 62, "hip_flex_R": -8, "knee_flex_R": 12, "ankle_plantar_R": back_ankle, **wall_arms(30, 50, 80)}
+             "toe_ext_L": 38, "hip_flex_R": -8, "knee_flex_R": 12, "ankle_plantar_R": back_ankle, **wall_arms(30, 50, 80)}
         return _side(p, side)
 
     # The back foot is flat at the start; as the body moves forward its heel lifts and only the ball stays down.
@@ -1109,7 +1109,17 @@ def forward_step_up(side="L"):
 
     # While the other foot stands on the floor with its leg straight, it stays flat: ankle = -lean.
     stand = R.lock({}, {**floor["L"], **floor["R"]})
-    lift_w = k(**lean(5), hip_flex_L=68, knee_flex_L=92, ankle_plantar_L=-4, ankle_plantar_R=-5)
+    # Every foot that moves between the floor and the step rises first, clears the step's edge with
+    # its toe tip (the ToeBase bone sits ~7 cm behind the tip), and only then moves on.
+    up = Vector((0, 0, 0.08))
+    raised = {x: {b: v + up for b, v in step_t[x].items()} for x in (w, o)}
+
+    def past_edge(x):
+        n = SIDE_NAME[x]
+        return {f"{n}ToeBase": Vector((floor[x][f"{n}ToeBase"].x, near + 0.10, h + 0.06))}
+
+    lift_w = settle(k(**lean(5), hip_flex_L=60, knee_flex_L=88, ankle_plantar_L=-4, ankle_plantar_R=-5), floor[o],
+                    [([f"hip_flex_{w}", f"knee_flex_{w}"], past_edge(w))])
     place_w = settle(k(**lean(10), hip_flex_L=62, knee_flex_L=78, ankle_plantar_L=6, ankle_plantar_R=-10),
                      floor[o], [(leg_params(w), step_t[w])])
     # Double support (one foot on the step, one on the floor): the hips are placed between the feet
@@ -1123,19 +1133,34 @@ def forward_step_up(side="L"):
 
     push = between(0.62, hips0.z + 0.02, on_step(16, 62, 72, ankle_plantar_R=20, toe_ext_R=20),
                    ([f"hip_flex_{o}", f"knee_flex_{o}"], ball[o]))
-    rise_w = on_step(8, 24, 22, hip_flex_R=48, knee_flex_R=92, ankle_plantar_R=5)
+    rise_w = settle(on_step(8, 24, 22, hip_flex_R=40, knee_flex_R=80, ankle_plantar_R=5), step_t[w],
+                    [([f"hip_flex_{o}", f"knee_flex_{o}"], past_edge(o))])
+    hover_o = settle(on_step(3, 6, 6, hip_flex_R=24, knee_flex_R=30), step_t[w], [(leg_params(o), raised[o])])
     top = settle(k(), step_t[w], [(leg_params(o), step_t[o])])
-    off_o = on_step(4, 12, 20, hip_flex_R=6, knee_flex_R=62, ankle_plantar_R=-8)
+    # Stepping down backwards: lift the other foot straight up off the step, take it back just past
+    # the edge with only a small knee bend (no heel kick behind), touch the toes down, then the heel.
+    # The first foot then comes off the step the same way: up, back past the edge, down.
+    lift_o = settle(on_step(2, 2, 2, hip_flex_R=18, knee_flex_R=30, ankle_plantar_R=0), step_t[w],
+                    [(leg_params(o), raised[o])])
+    off_o = settle(on_step(6, 18, 24, hip_flex_R=-6, knee_flex_R=32, ankle_plantar_R=15), step_t[w],
+                   [([f"hip_flex_{o}", f"knee_flex_{o}"], past_edge(o))])
+    touch_o = between(0.6, hips0.z - 0.01, on_step(12, 58, 68, ankle_plantar_R=24, toe_ext_R=18),
+                      ([f"hip_flex_{o}", f"knee_flex_{o}"], ball[o]))
     land_o = between(0.5, hips0.z - 0.06, on_step(8, 48, 62), (leg_params(o), floor[o]))
-    off_w = k(**lean(4), hip_flex_L=50, knee_flex_L=82, ankle_plantar_L=-6, ankle_plantar_R=-4)
+    lift_w2 = settle(k(**lean(4), hip_flex_L=44, knee_flex_L=60, ankle_plantar_L=-10, ankle_plantar_R=-4), floor[o],
+                     [(leg_params(w), raised[w])])
+    off_w = settle(k(**lean(4), hip_flex_L=30, knee_flex_L=58, ankle_plantar_L=6, ankle_plantar_R=-4), floor[o],
+                   [([f"hip_flex_{w}", f"knee_flex_{w}"], past_edge(w))])
     on_w = {"locks": step_t[w]}
     on_o = {"locks": floor[o]}
     act, report = R.animate(f"EX_forward_step_up_{side}", stand, [
         (lift_w, 18, on_o), (place_w, 15, on_o),
         (push, 24, {"locks": step_t[w], "reach": [([f"hip_flex_{o}", f"knee_flex_{o}"], ball[o])]}),
-        (rise_w, 21, on_w), (top, 18, on_w), (top, 15, {**on_w, "step": 5}),
-        (off_o, 18, on_w), (land_o, 27, on_w),
-        (off_w, 18, on_o), (stand, 21, on_o), (stand, 18, {"locks": {**floor["L"], **floor["R"]}, "step": 6}),
+        (rise_w, 15, on_w), (hover_o, 12, on_w), (top, 12, on_w), (top, 15, {**on_w, "step": 5}),
+        (lift_o, 9, on_w), (off_o, 9, on_w), (touch_o, 12, on_w),
+        (land_o, 15, {**on_w, "reach": [([f"hip_flex_{o}", f"knee_flex_{o}"], ball[o])]}),
+        (lift_w2, 8, on_o), (off_w, 10, on_o), (stand, 21, on_o),
+        (stand, 18, {"locks": {**floor["L"], **floor["R"]}, "step": 6}),
     ], locks=floor[o])
     P.clear()
     step = P.step(h, front_y=near - 0.42, depth=0.42)
@@ -1491,21 +1516,30 @@ def femoral_nerve_glide(side="L"):
     import rh_props as P
 
     s = SIDE_NAME[side]
-    start = side_lying(hip_flex_L=12, knee_flex_L=72, ankle_plantar_L=25, arm_L={"flex": -20, "abd": -10}, elbow_flex_L=20)
-    glide = dict(start, hip_flex_L=-14, knee_flex_L=112, ankle_plantar_L=30)
+    # The trunk stays still: only the top thigh moves back about 20 degrees. The hand holds the
+    # ankle, so the knee stays well bent (like a side-lying thigh stretch) and follows the hand.
+    start = side_lying(hip_flex_L=5, knee_flex_L=140, ankle_plantar_L=25, arm_L={"flex": -25, "abd": -10}, elbow_flex_L=8)
+    glide = dict(start, hip_flex_L=-15)
     if side == "R":
         start, glide = R.ground(R.mirror(start), MAT_TOP), R.mirror(glide)
     P.clear()
     mat = P.mat(center_y=0.0, along="x", length=1.9)
     pillow = head_pillow(start)
 
-    def ankle_grip(p):
+    def grip_point(p):
         R.apply_pose(p)
-        a = R.world_point(f"{s}Foot").lerp(R.world_point(f"{s}ToeBase"), 0.45)
-        return {f"{s}HandMiddle3": a + Vector((0, 0, 0.035))}     # over the top of the ankle
+        return R.world_point(f"{s}Foot").lerp(R.world_point(f"{s}ToeBase"), 0.45) + Vector((0, 0, 0.035))
 
-    reach = [([(f"arm_{side}", "flex"), (f"arm_{side}", "abd"), f"elbow_flex_{side}", "spine_flex"], ankle_grip)]
-    start, glide = settle(start, None, reach, rounds=3), settle(glide, None, reach, rounds=3)
+    def ankle_grip(p):
+        return {f"{s}HandMiddle3": grip_point(p)}                  # hand over the top of the ankle
+
+    def ankle_to_hand(p):
+        off = grip_point(p) - R.world_point(f"{s}Foot")
+        return {f"{s}Foot": R.world_point(f"{s}HandMiddle3") - off}
+
+    reach = [([(f"arm_{side}", "flex"), (f"arm_{side}", "abd")], ankle_grip),
+             ([f"knee_flex_{side}", f"ankle_plantar_{side}"], ankle_to_hand)]
+    start, glide = settle(start, None, reach, rounds=5), settle(glide, None, reach, rounds=5)
     hold = {"step": 6}
     act, report = R.animate(f"EX_femoral_nerve_glide_{side}", start, [
         (glide, 45), (glide, 9, hold), (start, 54), (start, 12, hold),
@@ -1974,7 +2008,758 @@ def wall_angels():
     return act, report
 
 
+
+def table_under(hand, depth=0.6, width=0.9, inset=0.12, gap=0.016):
+    """Table whose top is just under the palm of `hand` ("L"/"R") in the current pose, the hand
+    `inset` metres in from the table's near edge (the edge towards the character)."""
+    import rh_props as P
+
+    n = SIDE_NAME[hand]
+    palm = R.world_point(f"{n}Hand").lerp(R.world_point(f"{n}HandMiddle1"), 0.5)
+    return P.table(top=palm.z - gap, x=palm.x, y=palm.y + inset - depth / 2, width=width, depth=depth)
+
+
+def pendulum(side="L"):
+    """Pendulum: leaning forwards with the good hand on a table, the painful arm (side) hangs loose and
+    swings in small circles, moved by gently swaying the body, not lifted by the shoulder. 6 s."""
+    import rh_props as P
+
+    s, o = side, OTHER[side]
+    feet = R.points(FEET)
+    tilt, spine = 42, 10
+    hang = tilt + spine                      # arm flexion that keeps the arm vertical
+    base = {"root": [("x", tilt)], "spine_flex": spine, "neck_flex": -14, "head_flex": -6,
+            **_sym(hip_flex=tilt + 8, knee_flex=16, ankle_plantar=-8),
+            f"arm_{o}": {"flex": hang + 52, "abd": -4}, f"elbow_flex_{o}": 12,
+            f"forearm_pron_{o}": 90, f"wrist_ext_{o}": 62, f"grip_{o}": 8,
+            f"arm_{s}": {"flex": hang}, f"elbow_flex_{s}": 6, f"grip_{s}": 18}
+    base = R.lock(base, feet)
+    R.apply_pose(base)
+    P.clear()
+    table = table_under(o)
+    loop = []
+    for i in range(1, 13):
+        a = 2 * math.pi * i / 12
+        loop.append(dict(base, **{f"arm_{s}": {"flex": hang + 13 * math.cos(a) - 13, "abd": 11 * math.sin(a)}}))
+    steady = {"ease": False}
+    moves = [(base, 9, {"step": 9})] + [(p, 7, steady) for p in loop] + [(p, 7, steady) for p in loop]
+    moves += [(base, 9, {"step": 9})]
+    act, report = R.animate(f"EX_pendulum_{side}", base, moves, locks=feet)
+    report["props"] = [table]
+    return act, report
+
+
+def band_row():
+    """Rowing with a resistance band tied to a door handle at waist height. Standing tall, pull the
+    elbows back, squeezing the shoulder blades together, then return slowly. 5 s per rep."""
+    import rh_props as P
+
+    feet = R.points(FEET)
+    fists = _sym(grip=78, forearm_pron=0, wrist_ext=0)
+    reach = dict(fists, **_sym(elbow_flex=14, shoulder_protr=6), arm_L={"flex": 42, "abd": -8}, arm_R={"flex": 42, "abd": -8})
+    row = dict(fists, **_sym(elbow_flex=96, shoulder_protr=-24, shoulder_elev=-4), spine_flex=-3,
+               arm_L={"flex": -16, "abd": 8}, arm_R={"flex": -16, "abd": 8})
+    R.apply_pose(reach)
+    gl, gr = P.grip("Left"), P.grip("Right")
+    handle = Vector((0.0, min(gl.y, gr.y) - 0.62, (gl.z + gr.z) / 2 + 0.02))
+    P.clear()
+    door = P.door(face_y=handle.y - 0.025, handle=tuple(handle))
+    band = P.band(tuple(handle))
+    hold = {"step": 6}
+    act, report = R.animate("EX_band_row", reach, [
+        (reach, 6, hold), (row, 45), (row, 21, hold), (reach, 66), (reach, 12, hold),
+    ], locks=feet)
+    report["props"] = [door, band]
+    return act, report
+
+
+def rhomboid_doorway_stretch():
+    """Rhomboid stretch at a door frame: hold the edge of the frame with both hands at chest height,
+    sit the hips back and let the upper back round so the shoulder blades spread apart; hold;
+    come back up. 12 s."""
+    import rh_props as P
+
+    feet = R.points(FEET)
+    hands = _sym(grip=72, forearm_pron=-5, wrist_ext=0)
+    # Sitting back moves the shoulders about 20 cm back from standing, which is what pulls the arms
+    # straight and spreads the shoulder blades (trunk only ~40 degrees forward, head between the arms).
+    sit = squat_pose(pelvis_tilt=5, thigh=70, knee=75)
+    sit.update(hands, spine_flex=15, upper_back_flex=18, neck_flex=16, head_flex=10, **_sym(shoulder_protr=24, elbow_flex=3),
+               arm_L={"flex": 118, "horiz": -10}, arm_R={"flex": 118, "horiz": -10})
+    sit = R.lock(sit, feet)
+    # The frame is where the straight arms reach when sitting back (the furthest point), so standing
+    # up again only ever bends the elbows.
+    R.apply_pose(sit)
+    gl, gr = P.grip("Left"), P.grip("Right")
+    thick = 0.11
+    near = (gl.y + gr.y) / 2 + 0.012
+    z = (gl.z + gr.z) / 2
+    targets = {"L": Vector((thick / 2 + 0.004, near, z)), "R": Vector((-thick / 2 - 0.004, near, z))}
+
+    def on_frame(p):
+        R.apply_pose(p)
+        out = {}
+        for x in ("L", "R"):
+            out.update(fist_on(x, targets[x]))
+        return out
+
+    arms = [(f"arm_{x}", k) for x in ("L", "R") for k in ("flex", "horiz", "abd")] + ["elbow_flex_L", "elbow_flex_R"]
+    reach = [(arms, on_frame)]
+    stand = dict(hands, **_sym(elbow_flex=40, shoulder_protr=0), arm_L={"flex": 70, "horiz": -12}, arm_R={"flex": 70, "horiz": -12})
+    stand = settle(stand, feet, reach, rounds=3)
+    sit = settle(sit, feet, reach, rounds=3)
+    P.clear()
+    jamb = P.jamb(x=0.0, near_y=near - 0.012, thick=thick)
+    hold = {"step": 10}
+    act, report = R.animate("EX_rhomboid_doorway_stretch", stand, [
+        (stand, 12, hold), (sit, 54), (sit, 210, {**hold, "reach": reach}), (stand, 54), (stand, 30, hold),
+    ], locks=feet, reach=reach)
+    report["props"] = [jamb]
+    return act, report
+
+
+def open_book(side="L"):
+    """Side-lying rotation (open book): lying on the side, knees bent and together, arms straight out in
+    front. Lift the top arm (side) and open it across to the other side, the chest and eyes following;
+    return slowly. 6 s. side names the top arm: L lies on the right side."""
+    import rh_props as P
+
+    start = side_lying(**_sym(hip_flex=80, knee_flex=88, ankle_plantar=12), neck_side=-14,
+                       arm_R={"flex": 88, "abd": -6}, elbow_flex_R=4, forearm_pron_R=10,
+                       arm_L={"flex": 88, "abd": -24}, elbow_flex_L=4, forearm_pron_L=10)
+    mid = dict(start, spine_rot=20, neck_rot=24, arm_L={"flex": 88, "abd": -8, "horiz": 70})
+    opened = dict(start, spine_rot=42, neck_rot=46, neck_side=-8, arm_L={"flex": 88, "abd": 0, "horiz": 128})
+    if side == "R":
+        start = R.ground(R.mirror(start), MAT_TOP)
+        mid, opened = R.mirror(mid), R.mirror(opened)
+        mid["hips"] = opened["hips"] = start["hips"]
+    P.clear()
+    mat = P.mat(center_y=0.0, along="x", length=1.9)
+    pillow = head_pillow(start)
+    hold = {"step": 6}
+    act, report = R.animate(f"EX_open_book_{side}", start, [
+        (start, 9, hold), (mid, 30), (opened, 30), (opened, 21, hold), (mid, 33), (start, 36), (start, 21, hold),
+    ])
+    report["props"] = [mat, pillow]
+    return act, report
+
+
+def rolled_towel_extension():
+    """Rolled towel extension: lying on the back, knees bent, a rolled towel across the upper back under
+    the shoulder blades and the hands supporting the head. Let the upper back bend gently back over
+    the towel, then return. 5 s per rep."""
+    import rh_props as P
+
+    radius = 0.045
+    arms = {"arm_L": {"abd": 120, "ext_rot": 90}, "arm_R": {"abd": 120, "ext_rot": 90}, **_sym(elbow_flex=135, forearm_pron=30)}
+    base = R.ground(supine(**_sym(hip_flex=45, knee_flex=95, ankle_plantar=50), **arms), MAT_TOP)
+
+    def behind_head(p):
+        # Fingers cupped round the back of the head, either side of it.
+        R.apply_pose(p)
+        h0, h1 = R.world_point("Head"), R.world_point("Head", tail=True)
+        up = (h1 - h0).normalized()
+        c = h0 + up * 0.06
+        side = Vector((1, 0, 0))
+        back = up.cross(side).normalized()
+        if back.z > 0:
+            back = -back
+        return {"LeftHandMiddle2": c + side * 0.055 + back * 0.07, "RightHandMiddle2": c - side * 0.055 + back * 0.07}
+
+    hand_reach = [([(f"arm_{x}", "abd"), (f"arm_{x}", "flex"), (f"arm_{x}", "ext_rot"), f"elbow_flex_{x}"],
+                   (lambda p, x=x: {k: v for k, v in behind_head(p).items() if k.startswith(SIDE_NAME[x])})) for x in ("L", "R")]
+    base = settle(base, None, hand_reach, rounds=3)
+    feet = {**foot_targets("L", p=base), **foot_targets("R", p=base)}
+    roll_y = R.points(("Spine2",), base)["Spine2"].y
+    top = MAT_TOP + 2 * radius
+    pelvis = R.points(("LeftUpLeg", "RightUpLeg"), base)
+
+    def on_roll(p):
+        # Height of the back above the top of the towel where it crosses it.
+        pts = mesh_points(("RH_Shirt",), lambda w: abs(w.y - roll_y) < 0.025 and abs(w.x) < 0.12, p)
+        return min(w.z for w in pts) - top
+
+    def resting(**angles):
+        p = R.lock(dict(base, **angles), pelvis)
+        flex = bisect(lambda f: on_roll(R.lock(dict(p, spine_flex=f), pelvis)), 0.0, 40.0, iters=14)
+        return R.lock(dict(p, spine_flex=flex), pelvis)
+
+    rest = resting(neck_flex=10, head_flex=4)
+    arch = resting(upper_back_flex=-16, neck_flex=-2, head_flex=-4)
+    reach = _foot_reach(feet) + hand_reach
+    rest, arch = settle(rest, pelvis, reach), settle(arch, pelvis, reach)
+    P.clear()
+    mat = P.mat(center_y=roll_y - 0.4)
+    roll = P.roll(0.0, roll_y, MAT_TOP, radius=radius, length=0.5)
+    hold = {"step": 6}
+    act, report = R.animate("EX_rolled_towel_extension", rest, [
+        (rest, 9, hold), (arch, 54), (arch, 21, hold), (rest, 54), (rest, 12, hold),
+    ], locks=pelvis, reach=reach)
+    report["props"] = [mat, roll]
+    return act, report
+
+
+def side_wall_reach(face, wrists, wall_side="L"):
+    """Reach that puts each hand flat on a wall beside the character (its face is the plane x = face,
+    on the wearer's left for wall_side L): the arm places the wrist at wrists[hand], then the wrist
+    turns the palm flat onto the wall wherever it lands."""
+    sx = 1 if wall_side == "L" else -1
+    reach = []
+    for s, wrist in wrists.items():
+        n = SIDE_NAME[s]
+
+        def flat(p, n=n):
+            R.apply_pose(p)
+            out = {}
+            for b in PALM:
+                w = R.world_point(f"{n}{b}")
+                out[f"{n}{b}"] = Vector((face - sx * 0.016, w.y, w.z))
+            return out
+
+        reach.append(([(f"arm_{s}", "flex"), (f"arm_{s}", "horiz"), (f"arm_{s}", "abd"), f"elbow_flex_{s}"],
+                      {f"{n}Hand": wrist}))
+        reach.append(([f"wrist_ext_{s}", f"forearm_pron_{s}", f"wrist_dev_{s}"], flat))
+    return reach
+
+
+def wall_rotation(side="L"):
+    """Wall rotation for the mid back: standing side-on to a wall (on the side named), feet a small step
+    away. Turn the upper body towards the wall and place both hands on it, hips still facing forwards;
+    turn back. 6 s per rep."""
+    import rh_props as P
+
+    feet = R.points(FEET)
+    sx = 1 if side == "L" else -1
+    # Authored with the wall on the left: the near arm bends, the far arm reaches across the chest.
+    turned = {"spine_rot": 56, "neck_rot": 24, **_sym(forearm_pron=90, wrist_ext=70),
+              "arm_L": {"flex": 80, "horiz": 30}, "elbow_flex_L": 70,
+              "arm_R": {"flex": 84, "horiz": -78}, "elbow_flex_R": 14}
+    turned = _side(turned, side)
+    face = sx * 0.42
+    wrists = {"L" if side == "L" else "R": Vector((face - sx * 0.05, -0.02, 1.30)),
+              "R" if side == "L" else "L": Vector((face - sx * 0.05, -0.22, 1.30))}
+    reach = side_wall_reach(face, wrists, wall_side=side)
+    turned = settle(turned, feet, reach, rounds=4)
+    rest = {}
+    lift = dict(turned)
+    for s in ("L", "R"):
+        lift[f"elbow_flex_{s}"] = turned[f"elbow_flex_{s}"] + 25
+        lift[f"wrist_ext_{s}"] = 30
+    lift["spine_rot"] = turned["spine_rot"] * 0.6
+    P.clear()
+    wall = P.side_wall(face)
+    hold = {"step": 6}
+    act, report = R.animate(f"EX_wall_rotation_{side}", rest, [
+        (rest, 9, hold), (lift, 30), (turned, 21), (turned, 39, {**hold, "reach": reach}), (lift, 24), (rest, 42), (rest, 15, hold),
+    ], locks=feet)
+    report["props"] = [wall]
+    return act, report
+
+
+def doorway_chest_stretch(side="L"):
+    """Doorway chest stretch: standing in a doorway with the forearm (side) on the door frame, elbow at
+    shoulder height, one foot a step forward. Shift forwards gently until a stretch is felt across the
+    front of the shoulder and chest; hold; ease back. 12 s."""
+    import rh_props as P
+
+    s = side
+    n = SIDE_NAME[s]
+    tilt = 4
+    back_t = foot_targets(OTHER[s], (0, 0.14, 0))
+    front_t = foot_targets(s, (0, -0.20, 0))
+
+    def stance(back_hip, front_knee, horiz):
+        # Authored on the left: left arm on the frame, left foot forward.
+        p = {"root": [("x", tilt)], "hip_flex_R": back_hip, "knee_flex_R": 0, "ankle_plantar_R": back_hip - tilt,
+             "hip_flex_L": 20 + front_knee * 0.4, "knee_flex_L": front_knee, "ankle_plantar_L": 0,
+             "arm_L": {"abd": 88, "ext_rot": 84, "horiz": horiz}, "elbow_flex_L": 92, "forearm_pron_L": -6,
+             "wrist_ext_L": 8, "arm_R": {"abd": 8}, "elbow_flex_R": 8}
+        return _side(p, s)
+
+    front = [(leg_params(s), front_t)]
+    start = settle(stance(0, 8, -4), back_t, front)
+    R.apply_pose(start)
+    elbow = R.world_point(f"{n}ForeArm")
+    forearm = mesh_points(("RH_Body1", "RH_Shirt"), lambda w: (w - elbow).length < 0.32 and w.z > elbow.z - 0.03, start)
+    face = min(w.y for w in forearm) - 0.002
+    contacts = {f"{n}ForeArm": R.world_point(f"{n}ForeArm"), f"{n}Hand": R.world_point(f"{n}Hand")}
+    arm = [([(f"arm_{s}", "horiz"), (f"arm_{s}", "abd"), (f"arm_{s}", "ext_rot"), f"elbow_flex_{s}"], contacts)]
+    reach = front + arm
+    stretch = settle(stance(-10, 30, 18), back_t, reach, rounds=3)
+    start = settle(start, back_t, reach)
+    opening = 2 * (abs(contacts[f"{n}ForeArm"].x) - 0.06)
+    P.clear()
+    door = P.doorway(face_y=face, opening=round(opening, 3), x=0.0)
+    hold = {"step": 10}
+    act, report = R.animate(f"EX_doorway_chest_stretch_{side}", start, [
+        (start, 12, hold), (stretch, 60), (stretch, 180, hold), (start, 60), (start, 18, hold),
+    ], locks=back_t, reach=reach)
+    report["props"] = [door]
+    return act, report
+
+
+def ball_on_wall(name, bone, dx, dz, top_knee, bottom_knee, timing):
+    """Back towards a wall with a tennis ball between the back and the wall, level with `bone` (+dx, dz).
+    Bending and straightening the knees rolls the ball up and down the back.
+    timing: [("down" | "up" | "hold", frames)]; a hold keeps the last position."""
+    import rh_props as P
+
+    r = P.DYNAMIC["ball"][1]
+    feet = {**foot_targets("L"), **foot_targets("R")}
+    hips0 = R.points(("Hips",))["Hips"]
+    hip_y = hips0.y + 0.30
+    arms = {"arm_L": {"flex": 10, "abd": 8}, "arm_R": {"flex": 10, "abd": 8}, **_sym(elbow_flex=12)}
+
+    def at(z):
+        return dict(arms, label=z, **_sym(hip_flex=26, knee_flex=26, ankle_plantar=0))
+
+    def hips_lock(p):
+        return {"Hips": Vector((hips0.x, hip_y, p["label"]))}
+
+    reach = _foot_reach(feet)
+
+    def knee_err(z, want):
+        return settle(at(z), hips_lock, reach, rounds=1)["knee_flex_L"] - want
+
+    z_top = bisect(lambda z: knee_err(z, top_knee), hips0.z, hips0.z - 0.5, iters=14)
+    z_bot = bisect(lambda z: knee_err(z, bottom_knee), hips0.z, hips0.z - 0.5, iters=14)
+    top = settle(at(z_top), hips_lock, reach, rounds=1)
+    bottom = settle(at(z_bot), hips_lock, reach, rounds=1)
+    R.apply_pose(top)
+    b = R.world_point(bone)
+    level, across = b.z + dz, b.x + dx
+    back = mesh_points(("RH_Shirt", "RH_Body1"), lambda w: abs(w.z - level) < 0.03 and abs(w.x - across) < 0.03, top)
+    face = max(w.y for w in back) + 2 * r
+    P.clear()
+    wall = P.wall(face_y=face, behind=True)
+    ball = P.ball(bone, face, dx=dx, dz=dz, z0=b.z)
+    moves, last = [], top
+    for kind, frames in timing:
+        last = bottom if kind == "down" else top if kind == "up" else last
+        moves.append((last, frames, {"step": 10} if kind == "hold" else {}))
+    act, report = R.animate(name, top, moves, locks=hips_lock, reach=reach)
+    report["props"] = [wall, ball]
+    return act, report
+
+
+def tennis_ball_upper_back():
+    """Tennis ball rolling for the upper back: a tennis ball between the upper back (beside the spine)
+    and a wall. Lean into it gently and bend and straighten the knees so it rolls slowly up and down;
+    pause on a tight spot. 9 s."""
+    return ball_on_wall("EX_tennis_ball_upper_back", "Spine2", 0.06, -0.04, 12, 42,
+                        [("hold", 9), ("down", 60), ("hold", 60), ("up", 60), ("hold", 81)])
+
+
+
+# ─── Neck pack (Nov 2026) ────────────────────────────────────────────────────────────────
+
+def seated_upright():
+    """Sitting tall on a chair, feet flat, hands resting on the thighs.
+    Returns (pose, hips lock, leg reach, hand reach, chair)."""
+    sit, feet = seated_base()
+    chair = fit_chair(sit)
+    hips = R.points(("LeftUpLeg", "RightUpLeg"), sit)
+    legs = [(leg_params(x), {k: v for k, v in feet.items() if k.startswith(SIDE_NAME[x])}) for x in ("L", "R")]
+    hands = hands_on_thighs({"L": ("L", 0.55, 0.0), "R": ("R", 0.55, 0.0)})
+    sit = settle(sit, hips, legs + hands)
+    return sit, hips, legs, hands, chair
+
+
+def head_frame(p=None):
+    """Centre of the head and its own axes (right-to-left, up, back) in pose p (or as posed)."""
+    if p is not None:
+        R.apply_pose(p)
+    rig = R.rig()
+    m = rig.matrix_world @ rig.pose.bones["Head"].matrix
+    left = Vector(m.col[0][:3]).normalized()
+    up = Vector(m.col[1][:3]).normalized()
+    back = -Vector(m.col[2][:3]).normalized()
+    return R.world_point("Head") + up * 0.09, left, up, back
+
+
+def chin_tuck_lying():
+    """Chin tuck lying down: on the back with the knees bent and the head on a thin pillow. Gently tuck
+    the chin in, as if making a small double chin, keeping the head on the pillow; hold; relax. 7 s."""
+    import rh_props as P
+
+    rest = dict(hook_lying(), neck_flex=10, head_flex=-4)
+    P.clear()
+    mat = P.mat(center_y=-0.1)
+    pillow = head_pillow(rest)
+    tuck = dict(rest, neck_flex=4, head_flex=14)
+    hold = {"step": 10}
+    act, report = R.animate("EX_chin_tuck_lying", rest, [
+        (rest, 9, hold), (tuck, 30), (tuck, 120, hold), (rest, 30), (rest, 21, hold),
+    ])
+    report["props"] = [mat, pillow]
+    return act, report
+
+
+def neck_flexion_extension():
+    """Neck bending forwards and backwards, sitting tall: nod the chin down towards the chest and hold,
+    back to the middle, then look up towards the ceiling and hold, back to the middle. 9 s."""
+    sit, hips, legs, hands, chair = seated_upright()
+    reach = legs + hands
+    down = dict(sit, neck_flex=32, head_flex=14)
+    up = dict(sit, neck_flex=-24, head_flex=-18)
+    hold = {"step": 10}
+    act, report = R.animate("EX_neck_flexion_extension", sit, [
+        (sit, 9, hold), (down, 36), (down, 60, hold), (sit, 36), (up, 36), (up, 60, hold), (sit, 36), (sit, 9, hold),
+    ], locks=hips, reach=reach)
+    report["props"] = [chair]
+    return act, report
+
+
+def neck_side_bending():
+    """Neck side bending, sitting tall and looking ahead: tip the ear towards the shoulder without lifting
+    the shoulder; hold; back to the middle; then the other side. 8.5 s."""
+    sit, hips, legs, hands, chair = seated_upright()
+    reach = legs + hands
+    left = dict(sit, neck_side=26)
+    right = dict(sit, neck_side=-26)
+    hold = {"step": 10}
+    act, report = R.animate("EX_neck_side_bending", sit, [
+        (sit, 9, hold), (left, 36), (left, 45, hold), (sit, 36), (right, 36), (right, 45, hold), (sit, 36), (sit, 12, hold),
+    ], locks=hips, reach=reach)
+    report["props"] = [chair]
+    return act, report
+
+
+def upper_trap_stretch(side="L"):
+    """Upper trapezius stretch, sitting tall: hold the edge of the chair seat with the hand on the side
+    being stretched (side) to keep that shoulder down, tip the ear away towards the other shoulder,
+    turning slightly, and rest the other hand on the head for very light pressure; hold; release. 11 s."""
+    s, o = side, OTHER[side]
+    sx = 1 if s == "L" else -1
+    sit, hips, legs, hands, chair = seated_upright()
+    R.apply_pose(sit)
+    # The fist holds the side edge of the seat beside the hip, under the shoulder (sitting tall the arm
+    # only just reaches it, so that shoulder also drops a little).
+    shoulder = R.world_point(f"{SIDE_NAME[s]}Arm")
+    edge = Vector((sx * (chair["width"] / 2 + 0.008), shoulder.y - 0.03, chair["seatTop"] + 0.025))
+    seat_hand = ([(f"arm_{s}", "flex"), (f"arm_{s}", "abd"), f"elbow_flex_{s}"], lambda p: fist_on(s, edge))
+
+    def on_head(p):
+        c, left, up, back = head_frame(p)
+        return {f"{SIDE_NAME[o]}HandMiddle2": c + up * 0.05 + left * (sx * 0.075)}
+
+    head_hand = ([(f"arm_{o}", "flex"), (f"arm_{o}", "abd"), (f"arm_{o}", "horiz"), f"elbow_flex_{o}"], on_head)
+    other_thigh = [r for r, x in zip(hands, ("L", "R")) if x == o]
+    held = dict(sit, **{f"grip_{s}": 70, f"forearm_pron_{s}": 10, f"arm_{s}": {"flex": 4, "abd": 18}, f"elbow_flex_{s}": 6,
+                        f"arm_{o}": {"flex": 150, "abd": 25}, f"elbow_flex_{o}": 125, f"forearm_pron_{o}": 70,
+                        f"shoulder_elev_{s}": -14})
+    stretch = dict(held, neck_side=-sx * 28, neck_rot=sx * 10, head_flex=4)
+    held = settle(held, hips, legs + [seat_hand, head_hand], rounds=3)
+    stretch = settle(stretch, hips, legs + [seat_hand, head_hand], rounds=3)
+    placed = {"reach": legs + [seat_hand, head_hand]}
+    hold = {"step": 10}
+    act, report = R.animate(f"EX_upper_trap_stretch_{side}", sit, [
+        (sit, 9, hold), (held, 39), (stretch, 45, placed), (stretch, 150, {**placed, **hold}), (held, 42, placed),
+        (sit, 36), (sit, 12, hold),
+    ], locks=hips, reach=legs)
+    report["props"] = [chair]
+    return act, report
+
+
+def neck_band_push_back():
+    """Neck strengthening with a towel or band: sitting tall, hold the towel round the back of the head
+    with both hands in front. Gently push the head back into it, chin slightly tucked, while the hands
+    stop it moving far; hold; relax. 6 s."""
+    import rh_props as P
+
+    sit, hips, legs, hands, chair = seated_upright()
+    held = dict(sit, **_sym(grip=78, forearm_pron=0, wrist_ext=0, elbow_flex=118),
+                arm_L={"flex": 62, "abd": 24}, arm_R={"flex": 62, "abd": 24}, head_flex=4)
+    push = dict(held, neck_flex=-6, head_flex=6, **_sym(elbow_flex=112))
+    band = P.headband()
+    hold = {"step": 10}
+    act, report = R.animate("EX_neck_band_push_back", sit, [
+        (held, 30), (held, 9, hold), (push, 24), (push, 75, hold), (held, 24), (held, 9, hold), (sit, 27),
+    ], locks=hips, reach=legs)
+    report["props"] = [chair, band]
+    return act, report
+
+
+def median_nerve_glide(side="L"):
+    """Median nerve glide, standing tall: the arm (side) out to the side, palm up, elbow bent. Straighten
+    the elbow and bend the wrist back while tipping the head away; then bend the elbow and tip the head
+    towards the arm. Smooth, never forced. 4 s."""
+    feet = R.points(FEET)
+    s = side
+    sx = 1 if s == "L" else -1
+    bent = {f"arm_{s}": {"abd": 84, "ext_rot": 30}, f"elbow_flex_{s}": 95, f"forearm_pron_{s}": -85,
+            f"wrist_ext_{s}": 0, "neck_side": sx * 12}
+    straight = dict(bent, **{f"elbow_flex_{s}": 6, f"wrist_ext_{s}": 50, "neck_side": -sx * 18})
+    hold = {"step": 6}
+    return R.animate(f"EX_median_nerve_glide_{side}", bent, [
+        (straight, 48), (straight, 9, hold), (bent, 51), (bent, 12, hold),
+    ], locks=feet)
+
+
+def tennis_ball_neck(side="L"):
+    """Tennis ball self-massage for the top of the shoulder: back towards a wall with a tennis ball
+    between the wall and the tight muscle at the top of the shoulder (side). Lean gently into it and
+    roll slowly over the tender spot with small knee bends; stay on it, breathing slowly. 8 s."""
+    sx = 1 if side == "L" else -1
+    return ball_on_wall(f"EX_tennis_ball_neck_{side}", "Spine2", sx * 0.10, 0.13, 8, 22,
+                        [("hold", 9), ("down", 45), ("hold", 45), ("up", 45), ("hold", 45), ("down", 30), ("up", 30)])
+
+
+# ─── Elbow, wrist and hand pack (Nov 2026) ───────────────────────────────────────────────
+
+def focus_on(points, radius):
+    """Camera hint for small movements (hands): frame this sphere instead of the whole body."""
+    c = sum(points, Vector()) / len(points)
+    return {"type": "focus", "x": round(c.x, 3), "y": round(c.y, 3), "z": round(c.z, 3), "radius": radius}
+
+
+def forearm_on_thigh(side, pron=90):
+    """Sitting tall with the forearm (side) resting along the top of the same thigh, the wrist at the knee
+    so the hand is free over it (instead of a table edge); the other hand rests on its own thigh.
+    Returns (pose, hips lock, reach, chair)."""
+    s, o = side, OTHER[side]
+    sit, hips, legs, hands, chair = seated_upright()
+    n = SIDE_NAME[s]
+    p = dict(sit, **{f"arm_{s}": {"flex": 24, "abd": 4, "horiz": -10}, f"elbow_flex_{s}": 72,
+                     f"forearm_pron_{s}": pron, f"grip_{s}": 14, f"wrist_ext_{s}": 0})
+
+    def along_thigh(q):
+        R.apply_pose(q)
+        return {f"{n}Hand": thigh_point(s, 1.02, lift=0.1), f"{n}ForeArm": thigh_point(s, 0.44, lift=0.1)}
+
+    forearm = ([(f"arm_{s}", "flex"), (f"arm_{s}", "abd"), (f"arm_{s}", "horiz"), f"elbow_flex_{s}"], along_thigh)
+    other = [r for r in hands if r[0][0][0] == f"arm_{o}"]
+    p = settle(p, hips, legs + other + [forearm], rounds=3)
+    return p, hips, legs + other, chair
+
+
+def hand_focus(side, p, radius=0.32):
+    """Camera hint around the forearm and hand of `side` in pose p (just the hand for a small radius)."""
+    R.apply_pose(p)
+    n = SIDE_NAME[side]
+    far = f"{n}HandMiddle1" if radius < 0.3 else f"{n}ForeArm"
+    return focus_on([R.world_point(f"{n}Hand"), R.world_point(far)], radius)
+
+
+def static_wrist_extension(side="L"):
+    """Static wrist extension for tennis elbow: sitting with the forearm (side) supported (a table, or here
+    the thigh), palm down and the hand over the edge. The other hand rests on the back of the hand and the hand pushes up into it
+    without moving; hold; relax. 9 s."""
+    s, o = side, OTHER[side]
+    p, hips, reach, chair = forearm_on_thigh(s, pron=90)
+
+    def on_back(q):
+        R.apply_pose(q)
+        n = SIDE_NAME[s]
+        k = R.world_point(f"{n}HandMiddle1").lerp(R.world_point(f"{n}Hand"), 0.4)
+        return {f"{SIDE_NAME[o]}HandMiddle2": k + Vector((0, 0, 0.045))}
+
+    press = ([(f"arm_{o}", "flex"), (f"arm_{o}", "abd"), (f"arm_{o}", "horiz"), f"elbow_flex_{o}", f"shoulder_protr_{o}"], on_back)
+    legs = reach[:2]
+    placed = settle(dict(p, **{f"arm_{o}": {"flex": 40, "abd": -10, "horiz": -30}, f"elbow_flex_{o}": 70,
+                               f"forearm_pron_{o}": 90, f"wrist_ext_{o}": 10, f"grip_{o}": 20}), hips, legs + [press], rounds=3)
+    push = dict(placed, **{f"wrist_ext_{s}": 3, f"grip_{o}": 30, f"grip_{s}": 22})
+    on = {"reach": legs + [press]}
+    hold = {"step": 10}
+    act, report = R.animate(f"EX_static_wrist_extension_{side}", p, [
+        (p, 9, hold), (placed, 36), (push, 15, on), (push, 180, {**on, **hold}), (placed, 15, on), (p, 33), (p, 12, hold),
+    ], locks=hips, reach=reach)
+    report["props"] = [chair, hand_focus(s, p, 0.36)]
+    return act, report
+
+
+def eccentric_wrist_extension(side="L"):
+    """Slow lowering wrist exercise: forearm (side) on a table, palm down, holding a water bottle with the
+    hand over the edge. The other hand helps lift the wrist up; then lower it slowly on its own over
+    about 4 seconds. 6.5 s."""
+    import rh_props as P
+
+    s, o = side, OTHER[side]
+    p, hips, reach, chair = forearm_on_thigh(s, pron=90)
+    legs = reach[:2]
+    low = dict(p, **{f"grip_{s}": 70, f"wrist_ext_{s}": -40})
+    high = dict(low, **{f"wrist_ext_{s}": 38})
+
+    def under(q):
+        R.apply_pose(q)
+        n = SIDE_NAME[s]
+        k = R.world_point(f"{n}HandMiddle1").lerp(R.world_point(f"{n}Hand"), 0.3)
+        return {f"{SIDE_NAME[o]}HandMiddle2": k + Vector((0, 0, -0.05))}
+
+    helper = ([(f"arm_{o}", "flex"), (f"arm_{o}", "abd"), (f"arm_{o}", "horiz"), f"elbow_flex_{o}", f"shoulder_protr_{o}"], under)
+    aid = {f"arm_{o}": {"flex": 40, "abd": -10, "horiz": -30}, f"elbow_flex_{o}": 80, f"forearm_pron_{o}": -80, f"grip_{o}": 20}
+    low_h = settle(dict(low, **aid), hips, legs + [helper], rounds=3)
+    high_h = settle(dict(high, **aid), hips, legs + [helper], rounds=3)
+    with_help = {"reach": legs + [helper]}
+    act, report = R.animate(f"EX_eccentric_wrist_extension_{side}", low, [
+        (low, 6, {"step": 6}), (low_h, 24), (high_h, 27, with_help), (high, 18), (low, 120, {"ease": False}), (low, 6, {"step": 6}),
+    ], locks=hips, reach=reach)
+    report["props"] = [chair, P.bottles((SIDE_NAME[s],)), hand_focus(s, p, 0.4)]
+    return act, report
+
+
+def wrist_flexor_curl(side="L"):
+    """Wrist curl for golfer's elbow: forearm (side) on a table, palm up, holding a water bottle with the
+    hand over the edge. Slowly curl the wrist up, then lower slowly, the elbow still. 4 s per rep."""
+    import rh_props as P
+
+    s = side
+    p, hips, reach, chair = forearm_on_thigh(s, pron=-88)
+    low = dict(p, **{f"grip_{s}": 70, f"wrist_ext_{s}": 35})
+    high = dict(low, **{f"wrist_ext_{s}": -50})
+    hold = {"step": 6}
+    act, report = R.animate(f"EX_wrist_flexor_curl_{side}", low, [
+        (low, 6, hold), (high, 42), (high, 9, hold), (low, 57), (low, 6, hold),
+    ], locks=hips, reach=reach)
+    report["props"] = [chair, P.bottles((SIDE_NAME[s],)), hand_focus(s, p, 0.4)]
+    return act, report
+
+
+def wrist_flexor_stretch(side="L"):
+    """Wrist flexor stretch for golfer's elbow, standing: straighten the arm (side) in front, palm up,
+    and with the other hand gently pull the fingers back and down until a stretch is felt in the
+    forearm; hold; release. 9 s."""
+    s, o = side, OTHER[side]
+    feet = R.points(FEET)
+    n, on = SIDE_NAME[s], SIDE_NAME[o]
+    out = {f"arm_{s}": {"flex": 76, "abd": -6, "horiz": -24}, f"elbow_flex_{s}": 4, f"forearm_pron_{s}": -88, f"wrist_ext_{s}": 0,
+           f"grip_{s}": 8}
+    stretched = dict(out, **{f"wrist_ext_{s}": 58, f"grip_{s}": -6})
+
+    def on_fingers(q):
+        R.apply_pose(q)
+        f = R.world_point(f"{n}HandMiddle2").lerp(R.world_point(f"{n}HandMiddle3"), 0.5)
+        palm_up = (R.world_point(f"{n}HandMiddle1") - R.world_point(f"{n}Hand")).cross(
+            R.world_point(f"{n}HandIndex1") - R.world_point(f"{n}HandPinky1")).normalized()
+        if palm_up.z < 0:
+            palm_up = -palm_up
+        return {f"{on}HandMiddle2": f + palm_up * 0.03}
+
+    helper = ([(f"arm_{o}", "flex"), (f"arm_{o}", "abd"), (f"arm_{o}", "horiz"), f"elbow_flex_{o}"], on_fingers)
+    grip = {f"arm_{o}": {"flex": 60, "abd": -10, "horiz": -30}, f"elbow_flex_{o}": 60, f"forearm_pron_{o}": 90,
+            f"wrist_ext_{o}": -10, f"grip_{o}": 45}
+    placed = settle(dict(out, **grip), feet, [helper], rounds=3)
+    pulled = settle(dict(stretched, **grip), feet, [helper], rounds=3)
+    held = {"reach": [helper]}
+    hold = {"step": 10}
+    act, report = R.animate(f"EX_wrist_flexor_stretch_{side}", {}, [
+        (out, 30), (placed, 24), (pulled, 30, held), (pulled, 150, {**held, **hold}), (placed, 24, held), (out, 18), ({}, 30),
+    ], locks=feet)
+    report["props"] = [hand_focus(s, pulled, 0.5)]
+    return act, report
+
+
+def towel_twist():
+    """Towel twist, standing: hold a rolled towel across in front with both hands, elbows bent. Twist it
+    as if wringing out water, one way and then the other, slowly. 5 s per rep."""
+    import rh_props as P
+
+    feet = R.points(FEET)
+    hold_pose = {**_sym(grip=82, forearm_pron=88, elbow_flex=88, wrist_ext=0),
+                 "arm_L": {"flex": 22, "abd": -4, "horiz": -6}, "arm_R": {"flex": 22, "abd": -4, "horiz": -6}}
+    one = dict(hold_pose, wrist_ext_L=38, wrist_ext_R=-38)
+    other = dict(hold_pose, wrist_ext_L=-38, wrist_ext_R=38)
+    twist = P.twist()
+    hold = {"step": 6}
+    act, report = R.animate("EX_towel_twist", hold_pose, [
+        (hold_pose, 6, hold), (one, 33), (one, 9, hold), (hold_pose, 24), (other, 33), (other, 9, hold), (hold_pose, 30), (hold_pose, 6, hold),
+    ], locks=feet)
+    R.apply_pose(hold_pose)
+    report["props"] = [twist, focus_on([P.grip("Left"), P.grip("Right")], 0.5)]
+    return act, report
+
+
+def wrist_range_of_movement(side="L"):
+    """Wrist range of movement after a fracture or stiffness: forearm (side) on a table, the hand over the
+    edge. Gently bend the wrist up and down, side to side, turn the palm up and down, then make a full
+    fist and straighten the fingers. 13 s."""
+    s = side
+    p, hips, reach, chair = forearm_on_thigh(s, pron=90)
+    w = lambda **k: dict(p, **{f"{j}_{s}": v for j, v in k.items()})
+    steps = [
+        (w(wrist_ext=45), 27), (w(wrist_ext=-50), 39), (w(wrist_ext=0), 24),
+        (w(wrist_dev=18), 21), (w(wrist_dev=-28), 30), (w(wrist_dev=0), 21),
+        (w(forearm_pron=-80), 39), (w(forearm_pron=90), 39),
+        (w(grip=95), 27), (w(grip=95), 9, {"step": 9}), (w(grip=-8), 27), (w(), 18),
+    ]
+    act, report = R.animate(f"EX_wrist_range_of_movement_{side}", p, [(x[0], x[1], *x[2:]) for x in steps],
+                            locks=hips, reach=reach)
+    report["props"] = [chair, hand_focus(s, p, 0.36)]
+    return act, report
+
+
+def finger_pip_bend(side="L"):
+    """Finger middle-joint bending: forearm (side) resting on a table, palm up. The other hand supports
+    the index finger just below its middle joint; bend only the middle joint as far as is comfortable,
+    then straighten it slowly. 4 s per rep."""
+    s, o = side, OTHER[side]
+    n, on = SIDE_NAME[s], SIDE_NAME[o]
+    p, hips, reach, chair = forearm_on_thigh(s, pron=-88)
+    legs = reach[:2]
+    rest = dict(p, **{f"grip_{s}": 0, f"wrist_ext_{s}": 10, f"fing_middle1_{s}": 20, f"fing_ring1_{s}": 25,
+                      f"fing_pinky1_{s}": 30, f"fing_middle2_{s}": 30, f"fing_ring2_{s}": 35, f"fing_pinky2_{s}": 40})
+
+    def pinch(q):
+        # The other hand's fingers wrap over the base of the index finger, just below its middle joint.
+        R.apply_pose(q)
+        a = R.world_point(f"{n}HandIndex1").lerp(R.world_point(f"{n}HandIndex2"), 0.6)
+        return {f"{on}HandMiddle2": a + Vector((0, 0, 0.03))}
+
+    helper = ([(f"arm_{o}", "flex"), (f"arm_{o}", "abd"), (f"arm_{o}", "horiz"), f"elbow_flex_{o}", f"shoulder_protr_{o}"], pinch)
+    held = settle(dict(rest, **{f"arm_{o}": {"flex": 30, "abd": -10, "horiz": -30}, f"elbow_flex_{o}": 75,
+                                f"forearm_pron_{o}": 90, f"wrist_ext_{o}": 15, f"grip_{o}": 40}), hips, legs + [helper], rounds=4)
+    bent = dict(held, **{f"fing_index2_{s}": 88, f"fing_index3_{s}": 25})
+    pinched = {"reach": legs + [helper]}
+    hold = {"step": 6}
+    act, report = R.animate(f"EX_finger_pip_bend_{side}", held, [
+        (held, 6, hold), (bent, 39, pinched), (bent, 12, {**pinched, **hold}), (held, 57, pinched), (held, 6, {**pinched, **hold}),
+    ], locks=hips, reach=legs + [helper])
+    report["props"] = [chair, hand_focus(s, p, 0.26)]
+    return act, report
+
+
+def hand_band_open(side="L"):
+    """Hand opening against a rubber band: forearm (side) on a table, hand over the edge, a rubber band
+    round the fingers and thumb. Open the fingers wide against the band, hold briefly, then close. 4 s."""
+    import rh_props as P
+
+    s = side
+    p, hips, reach, chair = forearm_on_thigh(s, pron=60)
+    closed = dict(p, **{f"grip_{s}": 22, f"finger_spread_{s}": -6, f"thumb_abd_{s}": -14, f"wrist_ext_{s}": 15})
+    opened = dict(closed, **{f"grip_{s}": -12, f"finger_spread_{s}": 26, f"thumb_abd_{s}": 30})
+    ring = P.ring(SIDE_NAME[s])
+    hold = {"step": 6}
+    act, report = R.animate(f"EX_hand_band_open_{side}", closed, [
+        (closed, 6, hold), (opened, 30), (opened, 27, hold), (closed, 39), (closed, 18, hold),
+    ], locks=hips, reach=reach)
+    report["props"] = [chair, ring, hand_focus(s, p, 0.26)]
+    return act, report
+
+
 BUILDERS = {
+    "chin_tuck_lying": chin_tuck_lying,
+    "neck_flexion_extension": neck_flexion_extension,
+    "neck_side_bending": neck_side_bending,
+    "upper_trap_stretch": upper_trap_stretch,
+    "neck_band_push_back": neck_band_push_back,
+    "median_nerve_glide": median_nerve_glide,
+    "tennis_ball_neck": tennis_ball_neck,
+    "static_wrist_extension": static_wrist_extension,
+    "eccentric_wrist_extension": eccentric_wrist_extension,
+    "wrist_flexor_curl": wrist_flexor_curl,
+    "wrist_flexor_stretch": wrist_flexor_stretch,
+    "towel_twist": towel_twist,
+    "wrist_range_of_movement": wrist_range_of_movement,
+    "finger_pip_bend": finger_pip_bend,
+    "hand_band_open": hand_band_open,
+    "pendulum": pendulum,
+    "band_row": band_row,
+    "rhomboid_doorway_stretch": rhomboid_doorway_stretch,
+    "open_book": open_book,
+    "rolled_towel_extension": rolled_towel_extension,
+    "wall_rotation": wall_rotation,
+    "doorway_chest_stretch": doorway_chest_stretch,
+    "tennis_ball_upper_back": tennis_ball_upper_back,
     "assisted_external_rotation": assisted_external_rotation,
     "assisted_abduction": assisted_abduction,
     "static_shoulder_abduction": static_shoulder_abduction,

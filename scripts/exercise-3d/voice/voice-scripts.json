@@ -786,5 +786,544 @@
         "text": "Keep it relaxed."
       }
     ]
+  },
+  "shoulder-blade-setting": {
+    "intro": "This is shoulder blade setting. Stand or sit tall with your arms relaxed. Gently draw your shoulder blades back and down, as if sliding them into your back pockets. Hold without shrugging, then relax. Follow along with me.",
+    "cues": [
+      {
+        "at": 0.3,
+        "text": "Back and down."
+      },
+      {
+        "at": 1.5,
+        "text": "Hold. No shrugging."
+      },
+      {
+        "at": 4.4,
+        "text": "And relax."
+      }
+    ]
+  },
+  "cross-body-stretch": {
+    "intro": "This is a cross-body shoulder stretch for your {side} shoulder. Stand tall and bring your {side} arm across your chest. With your other hand, gently pull it closer at the elbow until you feel a stretch at the back of the shoulder, and hold. Then release. Follow along with me.",
+    "cues": [
+      {
+        "at": 0.3,
+        "text": "Arm across your chest."
+      },
+      {
+        "at": 1.8,
+        "text": "Pull gently at the elbow."
+      },
+      {
+        "at": 3.3,
+        "text": "Hold the stretch."
+      },
+      {
+        "at": 7.8,
+        "text": "And release."
+      }
+    ]
+  },
+  "scaption": {
+    "intro": "This is scaption. Stand tall holding a water bottle or light weight in each hand, thumbs up. Lift your arms forwards and slightly out, in a V shape, to shoulder height. Then lower slowly. Follow along with me.",
+    "cues": [
+      {
+        "at": 0.2,
+        "text": "Lift, thumbs up."
+      },
+      {
+        "at": 2.4,
+        "text": "Lower slowly."
+      }
+    ]
+  },
+  "assisted-external-rotation": {
+    "intro": "This is assisted outward rotation for your {side} shoulder. Sit tall holding a stick across in front of you, elbows tucked in and bent, palms up. Use your other arm to push the stick so your {side} hand moves outwards, keeping that elbow at your side. Go to a comfortable stretch, then back. Follow along with me.",
+    "cues": [
+      {
+        "at": 0.3,
+        "text": "Push the stick across."
+      },
+      {
+        "at": 2.3,
+        "text": "Hold."
+      },
+      {
+        "at": 2.8,
+        "text": "And back."
+      }
+    ]
+  },
+  "assisted-abduction": {
+    "intro": "This is an assisted arm lift for your {side} shoulder. Hold a stick in both hands in front of you, palms up. Use your other arm to push your {side} arm out to the side and up, elbow straight, to a comfortable stretch. Then lower slowly. Follow along with me.",
+    "cues": [
+      {
+        "at": 0.3,
+        "text": "Push the arm out and up."
+      },
+      {
+        "at": 2.5,
+        "text": "Hold."
+      },
+      {
+        "at": 3.1,
+        "text": "Lower slowly."
+      }
+    ]
+  },
+  "static-shoulder-abduction": {
+    "intro": "This is a static shoulder push for your {side} shoulder. Stand side-on to a wall with your {side} elbow bent and touching the wall. Push the elbow gently into the wall without moving, and hold. Then relax. Follow along with me.",
+    "cues": [
+      {
+        "at": 1,
+        "text": "Push gently into the wall."
+      },
+      {
+        "at": 2.6,
+        "text": "Hold. Don't move."
+      },
+      {
+        "at": 7.9,
+        "text": "And relax."
+      }
+    ]
+  },
+  "static-external-rotation": {
+    "intro": "This is a static outward rotation for your {side} shoulder. Stand side-on to a wall, your {side} elbow bent and tucked into your side. Press the back of your wrist gently out into the wall without moving your arm, and hold. Then relax. Follow along with me.",
+    "cues": [
+      {
+        "at": 1,
+        "text": "Press the wrist out."
+      },
+      {
+        "at": 2.6,
+        "text": "Hold. Elbow stays in."
+      },
+      {
+        "at": 7.9,
+        "text": "And relax."
+      }
+    ]
+  },
+  "wall-angels": {
+    "intro": "This is wall angels. Stand with your back against a wall, arms bent in a goalpost shape against it. Slide your arms up the wall as far as is comfortable, then back down, keeping your back and arms close to the wall. Follow along with me.",
+    "cues": [
+      {
+        "at": 0.3,
+        "text": "Slide your arms up."
+      },
+      {
+        "at": 2.8,
+        "text": "And slowly down."
+      }
+    ]
+  },
+  "pendulum": {
+    "intro": "This is the pendulum exercise for your {side} shoulder. Lean forwards with your good hand on a table and let your {side} arm hang down loosely. Gently sway your body so the arm swings in small circles, keeping the shoulder relaxed. Follow along with me.",
+    "cues": [
+      {
+        "at": 0.3,
+        "text": "Let the arm swing in small circles."
+      },
+      {
+        "at": 3.3,
+        "text": "Stay relaxed."
+      }
+    ]
+  },
+  "band-row": {
+    "intro": "This is rowing with a resistance band. Tie the band to a door handle at waist height and hold one end in each hand. Stand tall and pull your elbows back, squeezing your shoulder blades together. Then slowly return. Follow along with me.",
+    "cues": [
+      {
+        "at": 0.2,
+        "text": "Pull your elbows back."
+      },
+      {
+        "at": 2.4,
+        "text": "Return slowly."
+      }
+    ]
+  },
+  "rhomboid-doorway-stretch": {
+    "intro": "This is a rhomboid doorway stretch. Hold onto a door frame with both hands at chest height. Sit your hips back and let your upper back round, so your shoulder blades spread apart. Hold while breathing slowly, then come back up. Follow along with me.",
+    "cues": [
+      {
+        "at": 0.4,
+        "text": "Sit your hips back."
+      },
+      {
+        "at": 2.4,
+        "text": "Let your upper back round. Hold."
+      },
+      {
+        "at": 9.2,
+        "text": "And come back up."
+      }
+    ]
+  },
+  "open-book": {
+    "intro": "This is the open book, turning to open your {side} arm. Lie on your side with your knees bent and your arms out in front. Lift your top arm and open it across to the other side, following it with your eyes and keeping your knees together. Then return slowly. Follow along with me.",
+    "cues": [
+      {
+        "at": 0.3,
+        "text": "Lift and open the top arm."
+      },
+      {
+        "at": 2.3,
+        "text": "Eyes follow the hand."
+      },
+      {
+        "at": 3.6,
+        "text": "And return slowly."
+      }
+    ]
+  },
+  "rolled-towel-extension": {
+    "intro": "This is a rolled towel extension. Lie on your back with your knees bent and a rolled towel across your upper back, under your shoulder blades. Support your head with your hands. Gently let your upper back bend back over the towel, then return. Follow along with me.",
+    "cues": [
+      {
+        "at": 0.3,
+        "text": "Let your upper back bend back."
+      },
+      {
+        "at": 2.6,
+        "text": "And return."
+      }
+    ]
+  },
+  "wall-rotation": {
+    "intro": "This is a wall rotation, turning to your {side}. Stand side-on to a wall with your feet a small step away. Turn your upper body towards the wall and place both hands on it, keeping your hips facing forwards. Then turn back. Follow along with me.",
+    "cues": [
+      {
+        "at": 0.3,
+        "text": "Turn towards the wall."
+      },
+      {
+        "at": 1.7,
+        "text": "Both hands on the wall."
+      },
+      {
+        "at": 3.3,
+        "text": "And turn back."
+      }
+    ]
+  },
+  "doorway-chest-stretch": {
+    "intro": "This is a doorway chest stretch for your {side} side. Stand in a doorway with your {side} forearm on the door frame, elbow at shoulder height, one foot a step forward. Gently shift forwards until you feel a stretch across the front of your shoulder and chest, and hold. Then ease back. Follow along with me.",
+    "cues": [
+      {
+        "at": 0.4,
+        "text": "Ease forwards."
+      },
+      {
+        "at": 2.4,
+        "text": "Hold the stretch."
+      },
+      {
+        "at": 8.4,
+        "text": "And ease back."
+      }
+    ]
+  },
+  "tennis-ball-upper-back": {
+    "intro": "This is tennis ball rolling for your upper back. Place a tennis ball between your upper back and a wall, beside the spine, not on it. Lean into it gently and bend and straighten your knees so it rolls slowly up and down. Pause on any tight spot. Follow along with me.",
+    "cues": [
+      {
+        "at": 0.3,
+        "text": "Bend your knees to roll."
+      },
+      {
+        "at": 2.3,
+        "text": "Pause on the tight spot."
+      },
+      {
+        "at": 4.3,
+        "text": "And roll back up."
+      }
+    ]
+  },
+  "chin-tuck-lying": {
+    "intro": "This is a chin tuck lying down. Lie on your back with your knees bent and your head on a thin pillow. Gently tuck your chin in, as if making a small double chin, keeping your head on the pillow. Hold while breathing normally, then relax. Follow along with me.",
+    "cues": [
+      {
+        "at": 0.3,
+        "text": "Tuck your chin in."
+      },
+      {
+        "at": 1.6,
+        "text": "Hold. Breathe normally."
+      },
+      {
+        "at": 5.3,
+        "text": "And relax."
+      }
+    ]
+  },
+  "neck-flexion-extension": {
+    "intro": "This is neck bending forwards and backwards. Sit tall with your shoulders relaxed. Slowly nod your chin towards your chest and hold, come back to the middle, then slowly look up towards the ceiling and hold. Move only as far as is comfortable. Follow along with me.",
+    "cues": [
+      {
+        "at": 0.3,
+        "text": "Nod down."
+      },
+      {
+        "at": 1.5,
+        "text": "Hold."
+      },
+      {
+        "at": 3.5,
+        "text": "Back to the middle."
+      },
+      {
+        "at": 4.8,
+        "text": "Now look up."
+      },
+      {
+        "at": 6,
+        "text": "Hold."
+      },
+      {
+        "at": 7.9,
+        "text": "Back to the middle."
+      }
+    ]
+  },
+  "neck-side-bending": {
+    "intro": "This is neck side bending. Sit tall and look straight ahead. Slowly tip your ear towards your shoulder without lifting the shoulder, and hold. Come back to the middle, then go to the other side. Follow along with me.",
+    "cues": [
+      {
+        "at": 0.3,
+        "text": "Ear towards your shoulder."
+      },
+      {
+        "at": 1.8,
+        "text": "Hold."
+      },
+      {
+        "at": 3,
+        "text": "Back to the middle."
+      },
+      {
+        "at": 4.2,
+        "text": "Now the other side."
+      },
+      {
+        "at": 5.5,
+        "text": "Hold."
+      },
+      {
+        "at": 6.9,
+        "text": "Back to the middle."
+      }
+    ]
+  },
+  "upper-trap-stretch": {
+    "intro": "This is an upper trapezius stretch for your {side} side. Sit tall and hold the edge of the chair with your {side} hand to keep that shoulder down. Tip your ear away towards the other shoulder, and rest your other hand lightly on your head. Hold, then slowly come back. Follow along with me.",
+    "cues": [
+      {
+        "at": 0.3,
+        "text": "Hold the edge of the chair."
+      },
+      {
+        "at": 1.8,
+        "text": "Tip your ear away."
+      },
+      {
+        "at": 3.3,
+        "text": "Hold the stretch."
+      },
+      {
+        "at": 8.1,
+        "text": "Slowly come back."
+      }
+    ]
+  },
+  "neck-band-push-back": {
+    "intro": "This is a neck push-back into a towel. Sit tall, holding a towel around the back of your head with both hands in front. Gently push your head back into it while your hands stop it moving far, chin slightly tucked. Hold, then relax. Follow along with me.",
+    "cues": [
+      {
+        "at": 1.3,
+        "text": "Push back gently."
+      },
+      {
+        "at": 2.4,
+        "text": "Hold. Chin tucked."
+      },
+      {
+        "at": 4.6,
+        "text": "And relax."
+      }
+    ]
+  },
+  "median-nerve-glide": {
+    "intro": "This is a median nerve glide for your {side} arm. Lift your {side} arm out to the side, palm up and elbow bent. Slowly straighten the elbow and bend the wrist back while tipping your head away. Then bend the elbow and tip your head towards the arm. Keep it smooth and never forced. Follow along with me.",
+    "cues": [
+      {
+        "at": 0.05,
+        "text": "Straighten, head away."
+      },
+      {
+        "at": 1.9,
+        "text": "Bend, head towards."
+      }
+    ]
+  },
+  "tennis-ball-neck": {
+    "intro": "This is a tennis ball self-massage for the top of your {side} shoulder. Stand with your back to a wall, the ball between the wall and the tight muscle. Lean gently into it and roll slowly over the tender spot with small knee bends. Stay on it while breathing slowly. Follow along with me.",
+    "cues": [
+      {
+        "at": 0.3,
+        "text": "Lean in and roll slowly."
+      },
+      {
+        "at": 2.3,
+        "text": "Stay on the tender spot."
+      },
+      {
+        "at": 4.9,
+        "text": "Breathe slowly."
+      }
+    ]
+  },
+  "static-wrist-extension": {
+    "intro": "This is a static wrist extension for your {side} elbow. Sit with your {side} forearm supported, palm down, the hand over the edge. Place your other hand on the back of the hand and push up into it without moving, and hold. Then relax. Follow along with me.",
+    "cues": [
+      {
+        "at": 0.3,
+        "text": "Other hand on top."
+      },
+      {
+        "at": 1.5,
+        "text": "Push up into it. Don't move."
+      },
+      {
+        "at": 3.3,
+        "text": "Hold."
+      },
+      {
+        "at": 8,
+        "text": "And relax."
+      }
+    ]
+  },
+  "eccentric-wrist-extension": {
+    "intro": "This is the slow lowering wrist exercise for your {side} arm. Rest your {side} forearm palm down, holding a water bottle with the hand over the edge. Use your other hand to help lift the wrist up, then let go and lower slowly on your own. Follow along with me.",
+    "cues": [
+      {
+        "at": 0.2,
+        "text": "Help the wrist up."
+      },
+      {
+        "at": 1.9,
+        "text": "Let go."
+      },
+      {
+        "at": 2.6,
+        "text": "Now lower slowly, on your own."
+      }
+    ]
+  },
+  "wrist-flexor-curl": {
+    "intro": "This is a palm-up wrist curl for your {side} arm. Rest your {side} forearm with the palm up and the hand over the edge, holding a water bottle. Slowly curl the wrist up, then lower slowly, keeping the elbow still. Follow along with me.",
+    "cues": [
+      {
+        "at": 0.2,
+        "text": "Curl the wrist up."
+      },
+      {
+        "at": 1.6,
+        "text": "And lower slowly."
+      }
+    ]
+  },
+  "wrist-flexor-stretch": {
+    "intro": "This is a palm-up wrist and forearm stretch for your {side} arm. Straighten your {side} arm in front of you, palm up. With your other hand, gently pull the fingers back and down until you feel a stretch in the forearm, and hold. Then release. Follow along with me.",
+    "cues": [
+      {
+        "at": 0.05,
+        "text": "Arm straight, palm up."
+      },
+      {
+        "at": 1.7,
+        "text": "Take hold of the fingers."
+      },
+      {
+        "at": 3,
+        "text": "Hold the stretch."
+      },
+      {
+        "at": 7.8,
+        "text": "And release."
+      }
+    ]
+  },
+  "towel-twist": {
+    "intro": "This is a towel twist. Hold a rolled towel in both hands in front of you. Twist it as if wringing out water, one way and then the other, slowly and with control. Follow along with me.",
+    "cues": [
+      {
+        "at": 0.2,
+        "text": "Twist one way."
+      },
+      {
+        "at": 2.4,
+        "text": "Now the other way."
+      }
+    ]
+  },
+  "wrist-range-of-movement": {
+    "intro": "These are wrist range of movement exercises for your {side} wrist. Rest your {side} forearm with the hand over the edge. Gently bend the wrist up and down, then side to side. Turn the palm up and down. Then make a full fist and straighten the fingers. Follow along with me.",
+    "cues": [
+      {
+        "at": 0.05,
+        "text": "Up and down."
+      },
+      {
+        "at": 3,
+        "text": "Side to side."
+      },
+      {
+        "at": 5.4,
+        "text": "Palm up, and down."
+      },
+      {
+        "at": 8,
+        "text": "Make a fist."
+      },
+      {
+        "at": 9.2,
+        "text": "Straighten the fingers."
+      }
+    ]
+  },
+  "finger-pip-bend": {
+    "intro": "This is finger middle-joint bending for your {side} hand. Hold your {side} index finger steady just below its middle joint with your other hand. Bend only the middle joint as far as is comfortable, then straighten it slowly. Follow along with me.",
+    "cues": [
+      {
+        "at": 0.2,
+        "text": "Bend the middle joint."
+      },
+      {
+        "at": 1.9,
+        "text": "Straighten slowly."
+      }
+    ]
+  },
+  "hand-band-open": {
+    "intro": "This is hand opening against a rubber band, for your {side} hand. Put a rubber band around your fingers and thumb. Open your fingers wide against the band, hold briefly, then close slowly. Follow along with me.",
+    "cues": [
+      {
+        "at": 0.2,
+        "text": "Open wide."
+      },
+      {
+        "at": 1.3,
+        "text": "Hold."
+      },
+      {
+        "at": 2.1,
+        "text": "And close slowly."
+      }
+    ]
   }
 }

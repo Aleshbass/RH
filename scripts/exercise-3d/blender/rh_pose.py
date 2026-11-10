@@ -39,6 +39,10 @@ JOINTS = {
     "wrist_ext":      ("Hand",     Y, -1, +1),   # back of the hand up (in the T-pose frame)
     "wrist_dev":      ("Hand",     Z, -1, +1),   # tilt the hand towards the thumb side
 }
+# Finger joints (see pose_quats): grip_<side> curls all fingers, fing_<finger><1-3>_<side> one joint,
+# finger_spread_<side> and thumb_abd_<side> move in the plane of the palm. Axis signs checked on the rig.
+FINGER_SPREAD_SIGN = -1
+THUMB_ABD_SIGN = -1
 # Spine and neck joints have no side.
 AXIAL = {
     "spine_flex":      (("Spine", "Spine1", "Spine2"), X, +1),   # bend forward (negative = arch back)
@@ -132,6 +136,24 @@ def pose_quats(p):
                     add(f"{side_name(side)}Hand{finger}{seg}", _rot(Y, s * deg * share))
             for seg in (2, 3):
                 add(f"{side_name(side)}HandThumb{seg}", _rot(Y, s * deg * 0.35))
+            continue
+        if joint.startswith("fing_") and side in ("L", "R"):
+            # One finger joint: fing_index2_L bends the left index finger's middle joint towards the palm
+            # (negative straightens it back).
+            s = 1 if side == "L" else -1
+            finger, seg = joint[5:-1].capitalize(), joint[-1]
+            add(f"{side_name(side)}Hand{finger}{seg}", _rot(Y, s * deg))
+            continue
+        if joint == "finger_spread" and side in ("L", "R"):
+            # Spread the fingers apart in the plane of the palm (index one way, ring and little finger the other).
+            s = 1 if side == "L" else -1
+            for finger, share in (("Index", 1.0), ("Middle", 0.15), ("Ring", -0.55), ("Pinky", -1.1)):
+                add(f"{side_name(side)}Hand{finger}1", _rot(Z, s * FINGER_SPREAD_SIGN * deg * share))
+            continue
+        if joint == "thumb_abd" and side in ("L", "R"):
+            # Thumb away from the index finger, in the plane of the palm.
+            s = 1 if side == "L" else -1
+            add(f"{side_name(side)}HandThumb1", _rot(Z, s * THUMB_ABD_SIGN * deg))
             continue
         if joint not in JOINTS or side not in ("L", "R"):
             raise KeyError(f"Unknown joint '{key}'")

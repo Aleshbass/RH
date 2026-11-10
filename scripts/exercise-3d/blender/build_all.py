@@ -74,6 +74,28 @@ CATALOG = [
         (f"pelvic-dips-{s}", "pelvic_dips", s[0].upper(), f"Pelvic dips on a step ({s} leg)", 0.42, (0.25 * sx, -1.0, 0.15)),
         (f"side-lying-hip-lift-{s}", "side_lying_hip_lift", s[0].upper(), f"Side-lying hip lift ({s})", 0.4, (0.3 * sx, -1.0, 0.45)),
         (f"pendulum-leg-swing-{s}", "pendulum_leg_swing", s[0].upper(), f"Pendulum leg swings ({s} leg)", 0.35, (sx, -0.2, 0.15)),
+        # Shoulder and upper back pack (Nov 2026)
+        (f"cross-body-stretch-{s}", "cross_body_stretch", s[0].upper(), f"Cross-body shoulder stretch ({s})", 0.5, (0.4 * sx, -1.0, 0.2)),
+        (f"assisted-external-rotation-{s}", "assisted_external_rotation", s[0].upper(), f"Assisted outward rotation with a stick ({s})", 0.45, (0.3 * sx, -1.0, 0.6)),
+        (f"assisted-abduction-{s}", "assisted_abduction", s[0].upper(), f"Assisted arm lift out to the side ({s})", 0.5, (0.2 * sx, -1.0, 0.2)),
+        (f"static-shoulder-abduction-{s}", "static_shoulder_abduction", s[0].upper(), f"Static shoulder push out to the side ({s})", 0.5, (-0.3 * sx, -1.0, 0.3)),
+        (f"static-external-rotation-{s}", "static_external_rotation", s[0].upper(), f"Static outward rotation against a wall ({s})", 0.5, (-0.3 * sx, -1.0, 0.3)),
+        (f"pendulum-{s}", "pendulum", s[0].upper(), f"Pendulum exercise ({s} arm)", 0.3, (sx, -0.5, 0.3)),
+        (f"open-book-{s}", "open_book", s[0].upper(), f"Side-lying rotation, open book ({s} arm)", 0.45, (0.2 * sx, -0.5, 1.0)),
+        (f"wall-rotation-{s}", "wall_rotation", s[0].upper(), f"Wall rotation for the mid back ({s})", 0.4, (-0.4 * sx, -1.0, 0.4)),
+        (f"doorway-chest-stretch-{s}", "doorway_chest_stretch", s[0].upper(), f"Doorway chest stretch ({s})", 0.5, (0.6 * sx, 1.0, 0.35)),
+        # Neck pack
+        (f"upper-trap-stretch-{s}", "upper_trap_stretch", s[0].upper(), f"Upper trapezius stretch ({s})", 0.5, (0.3 * sx, -1.0, 0.25)),
+        (f"median-nerve-glide-{s}", "median_nerve_glide", s[0].upper(), f"Median nerve glide ({s} arm)", 0.45, (0.2 * sx, -1.0, 0.25)),
+        (f"tennis-ball-neck-{s}", "tennis_ball_neck", s[0].upper(), f"Tennis ball self-massage, top of the shoulder ({s})", 0.3, (sx, -0.4, 0.2)),
+        # Elbow, wrist and hand pack
+        (f"static-wrist-extension-{s}", "static_wrist_extension", s[0].upper(), f"Static wrist extension ({s})", 0.5, (0.6 * sx, -1.0, 0.6)),
+        (f"eccentric-wrist-extension-{s}", "eccentric_wrist_extension", s[0].upper(), f"Slow lowering wrist exercise ({s})", 0.2, (0.8 * sx, -1.0, 0.5)),
+        (f"wrist-flexor-curl-{s}", "wrist_flexor_curl", s[0].upper(), f"Wrist curl, palm up ({s})", 0.4, (0.8 * sx, -1.0, 0.5)),
+        (f"wrist-flexor-stretch-{s}", "wrist_flexor_stretch", s[0].upper(), f"Wrist and forearm stretch, palm up ({s})", 0.5, (0.6 * sx, -1.0, 0.4)),
+        (f"wrist-range-of-movement-{s}", "wrist_range_of_movement", s[0].upper(), f"Wrist range of movement ({s})", 0.08, (0.6 * sx, -1.0, 0.5)),
+        (f"finger-pip-bend-{s}", "finger_pip_bend", s[0].upper(), f"Finger middle-joint bending ({s} hand)", 0.4, (0.4 * sx, -0.8, 0.9)),
+        (f"hand-band-open-{s}", "hand_band_open", s[0].upper(), f"Hand opening against a rubber band ({s})", 0.4, (0.6 * sx, -1.0, 0.5)),
     )],
     ("knee-rolling", "knee_rolling", None, "Knee rolling", 0.25, (0.3, -1.0, 0.9)),
     ("pelvic-rocking", "pelvic_rocking", None, "Pelvic rocking", 0.55, (1.0, -0.2, 0.25)),
@@ -87,6 +109,21 @@ CATALOG = [
     ("wall-squat", "wall_squat", None, "Wall squat", 0.4, (1.0, -0.4, 0.15)),
     ("seated-calf-hold", "seated_calf_hold", None, "Seated static calf hold", 0.4, (1.0, -0.5, 0.12)),
     ("heel-to-toe-walking", "heel_to_toe_walking", None, "Heel-to-toe walking", 0.25, (1.0, -0.4, 0.2)),
+    # Shoulder and upper back pack (Nov 2026)
+    ("shoulder-blade-setting", "shoulder_blade_setting", None, "Shoulder blade setting", 0.4, (0.6, 1.0, 0.3)),
+    ("scaption", "scaption", None, "Scaption (arm lift at an angle)", 0.45, (0.6, -1.0, 0.2)),
+    ("wall-angels", "wall_angels", None, "Wall angels", 0.5, (0.3, -1.0, 0.2)),
+    ("band-row", "band_row", None, "Rowing with a resistance band", 0.4, (1.0, -0.3, 0.25)),
+    ("rhomboid-doorway-stretch", "rhomboid_doorway_stretch", None, "Rhomboid doorway stretch", 0.5, (1.0, 0.25, 0.2)),
+    ("rolled-towel-extension", "rolled_towel_extension", None, "Rolled towel extension", 0.45, (1.0, 0.0, 0.3)),
+    ("tennis-ball-upper-back", "tennis_ball_upper_back", None, "Tennis ball rolling for the upper back", 0.4, (1.0, -0.5, 0.2)),
+    # Neck pack
+    ("chin-tuck-lying", "chin_tuck_lying", None, "Chin tuck lying down", 0.4, (1.0, 0.3, 0.4)),
+    ("neck-flexion-extension", "neck_flexion_extension", None, "Neck bending forwards and backwards", 0.2, (1.0, -0.5, 0.2)),
+    ("neck-side-bending", "neck_side_bending", None, "Neck side bending", 0.25, (0.2, -1.0, 0.2)),
+    ("neck-band-push-back", "neck_band_push_back", None, "Neck push-back into a towel", 0.5, (0.8, -0.8, 0.3)),
+    # Elbow, wrist and hand pack
+    ("towel-twist", "towel_twist", None, "Towel twist", 0.25, (0.4, -1.0, 0.5)),
 ]
 NEW_IDS = [c[0] for c in CATALOG[20:]]
 
@@ -171,8 +208,9 @@ def poster_lighting(camera_dir):
     fill.data.color = (0.9, 0.95, 1.0)
 
 
-def frame_camera(frame, view):
-    """Aim RH_PosterCam at the character and props at this frame, from direction `view`, and light it."""
+def frame_camera(frame, view, focus=None):
+    """Aim RH_PosterCam at the character and props at this frame, from direction `view`, and light it.
+    A focus prop (small movements such as the hands) frames its sphere instead."""
     from mathutils import Vector
 
     scene = bpy.context.scene
@@ -189,6 +227,8 @@ def frame_camera(frame, view):
     lo = Vector((min(p.x for p in pts), min(p.y for p in pts), min(p.z for p in pts)))
     hi = Vector((max(p.x for p in pts), max(p.y for p in pts), max(p.z for p in pts)))
     center, radius = (lo + hi) / 2, (hi - lo).length / 2
+    if focus:
+        center, radius = Vector((focus["x"], focus["y"], focus["z"])), focus["radius"]
 
     cam = bpy.data.objects.get("RH_PosterCam")
     if cam is None:
@@ -203,10 +243,10 @@ def frame_camera(frame, view):
     return cam
 
 
-def render_poster(clip_id, frame, view):
+def render_poster(clip_id, frame, view, focus=None):
     """Transparent-background still from a three-quarter camera that frames the character and props."""
     scene = bpy.context.scene
-    frame_camera(frame, view)
+    frame_camera(frame, view, focus)
     r = scene.render
     r.resolution_x = r.resolution_y = 640
     r.film_transparent = True
@@ -214,6 +254,43 @@ def render_poster(clip_id, frame, view):
     r.image_settings.quality = 80
     r.filepath = os.path.join(OUT, "posters", f"{clip_id}.webp")
     bpy.ops.render.render(write_still=True)
+
+
+LEG_MESHES = ("RH_Pants", "RH_Shoes", "RH_Body1")
+
+
+def clear_chair(prop, frames, gap=0.02):
+    """Slide a chair back until nothing below its seat (calves, shins, shoes) passes into it on any
+    frame of the clip. The seat height stays. Returns how far the front edge moved (m)."""
+    import numpy as np
+
+    scene = bpy.context.scene
+    x0, half = prop.get("x", 0.0), prop["width"] / 2 + 0.01
+    under = prop["seatTop"] - 0.045                     # underside of the seat board
+    front, back = prop["frontY"], prop["frontY"] + prop["depth"]
+    worst = None
+    for fr in range(1, frames + 1, 2):
+        scene.frame_set(fr)
+        deps = bpy.context.evaluated_depsgraph_get()
+        for n in LEG_MESHES:
+            o = bpy.data.objects[n].evaluated_get(deps)
+            m = np.array(o.matrix_world)
+            me = o.to_mesh()
+            co = np.empty(len(me.vertices) * 3)
+            me.vertices.foreach_get("co", co)
+            o.to_mesh_clear()
+            w = co.reshape(-1, 3) @ m[:3, :3].T + m[:3, 3]
+            hit = (w[:, 2] < under) & (np.abs(w[:, 0] - x0) < half) & (w[:, 1] > front - gap) & (w[:, 1] < back)
+            if hit.any():
+                y = float(w[hit, 1].max())
+                worst = y if worst is None else max(worst, y)
+    if worst is None:
+        return 0.0
+    new = P.chair(seat_top=prop["seatTop"], front_y=worst + gap, x=x0, width=prop["width"], depth=prop["depth"])
+    moved = new["frontY"] - front
+    prop.clear()
+    prop.update(new)
+    return moved
 
 
 def main(only=None, character=True, save=True):
@@ -242,8 +319,15 @@ def main(only=None, character=True, save=True):
         fn = E.BUILDERS[builder]
         action, report = fn(side) if side else fn()
         frames = report["frames"]
+        R.rig().animation_data.action = action
+        for prop in report.get("props", []):
+            if prop.get("type") == "chair":
+                moved = clear_chair(prop, frames)
+                if moved > 0.001:
+                    print(f"[build] {clip_id}: chair moved back {moved * 100:.1f} cm to clear the legs")
         clip_bytes = export_clip(clip_id, action)
-        render_poster(clip_id, max(1, round(frames * poster_at)), view)
+        focus = next((p for p in report.get("props", []) if p.get("type") == "focus"), None)
+        render_poster(clip_id, max(1, round(frames * poster_at)), view, focus)
         manifest["exercises"] = [e for e in manifest["exercises"] if e["id"] != clip_id]
         manifest["exercises"].append({
             "id": clip_id, "name": name, "side": side, "action": action.name,
