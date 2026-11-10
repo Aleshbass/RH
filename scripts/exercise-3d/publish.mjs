@@ -78,9 +78,17 @@ function encrypt(assetId, plain) {
   return Buffer.concat([MAGIC, iv, body, cipher.getAuthTag()])
 }
 
-// Fresh output: only the current version is served.
-fs.rmSync(PUBLIC_DIR, { recursive: true, force: true })
+// Two versions are served: the new one and the one it replaces. Pages opened before a release
+// still run the old app code, which asks for the old version's files; deleting them broke every
+// poster and 3D preview in those tabs until a reload (Nov 2026). Anything older is removed.
+const previous = fs.existsSync(CATALOG_FILE) ? /"version": "([0-9a-f]{12})"/.exec(fs.readFileSync(CATALOG_FILE, 'utf8'))?.[1] : null
+const keep = new Set([version, previous].filter(Boolean))
+fs.mkdirSync(PUBLIC_DIR, { recursive: true })
+for (const entry of fs.readdirSync(PUBLIC_DIR)) {
+  if (!keep.has(entry)) fs.rmSync(path.join(PUBLIC_DIR, entry), { recursive: true, force: true })
+}
 const dir = path.join(PUBLIC_DIR, version)
+fs.rmSync(dir, { recursive: true, force: true })
 fs.mkdirSync(path.join(dir, 'm'), { recursive: true })
 fs.mkdirSync(path.join(dir, 'p'), { recursive: true })
 
