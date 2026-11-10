@@ -20,7 +20,8 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { PatientSlotPicker } from '@/components/patient/PatientAppointmentBookingModal'
 import AddPatientDirectForm from '@/components/dashboard/physiotherapist/AddPatientDirectForm'
-import { MAX_REPEAT_VISITS, WEEKDAYS, lagosDateTimeToMs, lagosToday, lagosWeekday, repeatVisitStarts } from '@/lib/repeatVisits'
+import { lagosDateTimeToMs, lagosToday } from '@/lib/repeatVisits'
+import { RepeatPlanner, useRepeatPlan } from '@/components/appointments/RepeatPlanner'
 import { SESSION_TYPES, type SessionType } from '@/components/booking/booking-shared'
 import {
   EmptyState,
@@ -132,10 +133,6 @@ function BookingDrawer({ options, onClose }: { options: BookingOptions; onClose:
   const [manualTime, setManualTime] = useState(false)
   const [manualDate, setManualDate] = useState(() => lagosToday())
   const [manualClock, setManualClock] = useState('09:00')
-  // Repeat visits (your own patients): every 1 or 2 weeks, on the first visit's weekday plus any others
-  const [repeat, setRepeat] = useState<'none' | '1' | '2'>('none')
-  const [extraDays, setExtraDays] = useState<number[]>([])
-  const [repeatWeeks, setRepeatWeeks] = useState(4)
   // A paid visit that didn't happen, being rebooked free instead of booking a new paid session
   const [rebookOf, setRebookOf] = useState<RebookableVisit | null>(null)
 
@@ -180,10 +177,14 @@ function BookingDrawer({ options, onClose }: { options: BookingOptions; onClose:
   // The calendar slot, sized to the session once we know how long it is
   const fixedSlot = options.slot ? { start: options.slot.start, end: options.slot.start + duration * 60_000, duration } : null
 
-  // Every visit this booking makes (the first one included), when it repeats
-  const firstDay = slot ? lagosWeekday(slot.start) : -1
-  const repeatDays = firstDay < 0 ? [] : [...new Set([firstDay, ...extraDays])]
-  const visitStarts = slot && !isRehabify && repeat !== 'none' ? repeatVisitStarts(slot.start, repeatDays, Number(repeat), repeatWeeks) : []
+  // A course of visits (your own patients): the planner checks your diary and the care plan
+  const repeat = useRepeatPlan({
+    firstStart: slot?.start ?? null,
+    durationMinutes: duration,
+    physiotherapistId: me?._id ?? null,
+    patientId: patient?.id ?? null,
+    available: !isRehabify && !rebookOf,
+  })
   const slotIsPast = Boolean(slot && slot.end <= Date.now())
 
   const setManualSlot = (date: string, clock: string) => {
@@ -229,10 +230,6 @@ function BookingDrawer({ options, onClose }: { options: BookingOptions; onClose:
         })) as { payoutKobo: number; holdExpiresAt: number }
         setResult(res)
       } else {
-        if (visitStarts.length > MAX_REPEAT_VISITS) {
-          setBusy(false)
-          return toast.error(`That is ${visitStarts.length} visits. Choose fewer weeks or days (up to ${MAX_REPEAT_VISITS}).`)
-        }
         const res = (await createAppointment({
           patientId: patient.id as Id<'users'>,
           startTime: slot.start,
@@ -241,7 +238,7 @@ function BookingDrawer({ options, onClose }: { options: BookingOptions; onClose:
           appointmentType: mode,
           location: mode === 'in-person' ? location.trim() || undefined : undefined,
           notesForTherapist: notes.trim() || undefined,
-          repeatStartTimes: visitStarts.length > 1 ? visitStarts.slice(1) : undefined,
+          repeatStartTimes: repeat.bookStarts.length > 0 ? repeat.bookStarts : undefined,
         })) as { past?: boolean; booked?: number; skipped?: number[] }
         setResult({ past: res?.past, booked: res?.booked, skipped: res?.skipped })
       }
@@ -649,91 +646,7 @@ function BookingDrawer({ options, onClose }: { options: BookingOptions; onClose:
           />
         )}
 
-        {!isRehabify && !rebookOf && (
-          <div>
-            <label htmlFor="booking-repeat" className="mb-1.5 block text-sm font-medium text-pt-ink">
-              Repeat
-            </label>
-            <div className="grid grid-cols-3 gap-2" id="booking-repeat" role="radiogroup">
-              {(
-                [
-                  ['none', 'Just once'],
-                  ['1', 'Every week'],
-                  ['2', 'Every 2 weeks'],
-                ] as const
-              ).map(([value, label]) => (
-                <button
-                  key={value}
-                  type="button"
-                  role="radio"
-                  aria-checked={repeat === value}
-                  onClick={() => setRepeat(value)}
-                  className={cn(
-                    'rounded-xl border px-2 py-2.5 text-sm font-semibold transition-colors',
-                    repeat === value ? 'border-pt-ink bg-pt-primary text-pt-on-primary' : 'border-pt-line-strong bg-pt-surface text-pt-ink hover:bg-pt-hover'
-                  )}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-            {repeat !== 'none' && (
-              <div className="mt-3 space-y-3 rounded-2xl border border-pt-line p-3">
-                <div>
-                  <p className="mb-1.5 text-xs text-pt-muted">On these days</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {WEEKDAYS.map(({ day, label }) => {
-                      const active = repeatDays.includes(day)
-                      const locked = day === firstDay
-                      return (
-                        <button
-                          key={day}
-                          type="button"
-                          aria-pressed={active}
-                          disabled={locked}
-                          title={locked ? 'The day of the first visit' : undefined}
-                          onClick={() => setExtraDays(active ? extraDays.filter((d) => d !== day) : [...extraDays, day])}
-                          className={cn(
-                            'h-9 min-w-[2.75rem] rounded-lg border px-2 text-xs font-semibold transition-colors',
-                            active ? 'border-pt-ink bg-pt-primary text-pt-on-primary' : 'border-pt-line-strong text-pt-ink hover:bg-pt-hover'
-                          )}
-                        >
-                          {label}
-                        </button>
-                      )
-                    })}
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <label htmlFor="booking-weeks" className="text-xs text-pt-muted">
-                    For
-                  </label>
-                  <select
-                    id="booking-weeks"
-                    value={repeatWeeks}
-                    onChange={(e) => setRepeatWeeks(Number(e.target.value))}
-                    className="h-9 rounded-lg border border-pt-line-strong bg-pt-surface px-2 text-sm text-pt-ink"
-                  >
-                    {[2, 3, 4, 6, 8, 10, 12].map((n) => (
-                      <option key={n} value={n}>
-                        {n} weeks
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                {visitStarts.length > 0 && (
-                  <p className={cn('text-xs', visitStarts.length > MAX_REPEAT_VISITS ? 'text-pt-rose-fg' : 'text-pt-ink')}>
-                    {visitStarts.length} visits, {lagosShortDate(visitStarts[0])} to {lagosShortDate(visitStarts[visitStarts.length - 1])}, at{' '}
-                    {lagosTime(visitStarts[0])}.
-                    {visitStarts.length > MAX_REPEAT_VISITS
-                      ? ` The most at once is ${MAX_REPEAT_VISITS}.`
-                      : ' Times you’re already booked are skipped and listed for you.'}
-                  </p>
-                )}
-              </div>
-            )}
-          </div>
-        )}
+        <RepeatPlanner repeat={repeat} />
 
         {!isRehabify && mode === 'in-person' && (
           <div>
@@ -793,8 +706,8 @@ function BookingDrawer({ options, onClose }: { options: BookingOptions; onClose:
             </>
           ) : isRehabify ? (
             `Send to ${firstName} to pay`
-          ) : visitStarts.length > 1 ? (
-            `Book ${visitStarts.length} visits`
+          ) : repeat.total > 1 ? (
+            `Book ${repeat.total} sessions`
           ) : slotIsPast ? (
             'Save past visit'
           ) : (

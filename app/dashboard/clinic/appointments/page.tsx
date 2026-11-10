@@ -57,6 +57,7 @@ import { CLINIC_BOOK_EVENT, listenForShortcut, takeQueryParam } from '@/componen
 import { useClinicAccess } from '@/components/clinic/ClinicAccessContext'
 import { BookingRequests } from '@/components/clinic/appointments/BookingRequests'
 import AddPatientModal from '@/components/clinic/patients/AddPatientModal'
+import { RepeatPlanner, useRepeatPlan } from '@/components/appointments/RepeatPlanner'
 import {
   EmptyState,
   PageShell,
@@ -118,36 +119,6 @@ const cancelRepeatVisitsRef = makeFunctionReference<
   { appointmentId: Id<'appointments'>; cancellationReason?: string },
   { success: boolean; cancelled: number }
 >('clinicTools:cancelClinicRepeatVisits')
-
-const MAX_REPEAT_VISITS = 40
-const WEEKDAYS = [
-  { day: 1, label: 'Mon' },
-  { day: 2, label: 'Tue' },
-  { day: 3, label: 'Wed' },
-  { day: 4, label: 'Thu' },
-  { day: 5, label: 'Fri' },
-  { day: 6, label: 'Sat' },
-  { day: 0, label: 'Sun' },
-]
-
-/**
- * Start times of a repeat booking: the chosen weekdays (0 Sunday … 6 Saturday), every
- * `everyWeeks` weeks, for `weeks` weeks counted from the week of the first visit.
- */
-function repeatStarts(date: string, time: string, days: number[], everyWeeks: number, weeks: number) {
-  const first = new Date(`${date}T${time}:00`)
-  if (Number.isNaN(first.getTime())) return []
-  const monday = startOfWeek(first, { weekStartsOn: 1 })
-  const starts = new Set<number>([first.getTime()])
-  for (let week = 0; week < weeks; week += everyWeeks) {
-    for (const day of days) {
-      const visit = addDays(addWeeks(monday, week), (day + 6) % 7)
-      visit.setHours(first.getHours(), first.getMinutes(), 0, 0)
-      if (visit.getTime() > first.getTime()) starts.add(visit.getTime())
-    }
-  }
-  return [...starts].sort((a, b) => a - b)
-}
 
 function dayKey(date: Date) {
   return format(date, 'EEEE').toLowerCase()
@@ -795,10 +766,6 @@ function BookDialog({
     duration: 60,
     mode: 'in-person' as 'in-person' | 'telehealth',
     note: '',
-    // Repeat visits: every 1 or 2 weeks, on the first visit's weekday plus any extra days
-    repeat: 'none' as 'none' | '1' | '2',
-    extraDays: [] as number[],
-    weeks: 4,
   }
   const [form, setForm] = useState(empty)
   const [search, setSearch] = useState('')
@@ -820,12 +787,13 @@ function BookDialog({
   const startAt = form.date && form.time ? toTimestamp(form.date, form.time) : NaN
   // Already over: a visit that happened but was never entered. It is saved as attended.
   const isPast = !Number.isNaN(startAt) && startAt + form.duration * 60000 <= Date.now()
-  const firstDay = Number.isNaN(startAt) ? -1 : new Date(startAt).getDay()
-  const repeatDays = firstDay < 0 ? [] : [...new Set([firstDay, ...form.extraDays])]
-  const visitStarts =
-    form.repeat === 'none' || Number.isNaN(startAt)
-      ? []
-      : repeatStarts(form.date, form.time, repeatDays, Number(form.repeat), form.weeks)
+  // A course of visits: the planner checks the clinician's diary and the patient's care plan
+  const repeat = useRepeatPlan({
+    firstStart: Number.isNaN(startAt) ? null : startAt,
+    durationMinutes: form.duration,
+    physiotherapistId: form.clinicianId || null,
+    patientId: form.patientId || null,
+  })
   const durations = Array.from(new Set([...BASE_DURATIONS, form.duration])).sort((a, b) => a - b)
   const warning = hoursWarning(workingHours, form.date, form.time, form.duration)
 
@@ -833,6 +801,7 @@ function BookDialog({
     setForm(empty)
     setSearch('')
     setAdded(null)
+    repeat.setEnabled(false)
   }
 
   const submit = async (e: React.FormEvent) => {
@@ -843,9 +812,6 @@ function BookDialog({
     if (!form.date || !form.time) return toast.error('Choose a date and time.')
     const start = toTimestamp(form.date, form.time)
     if (Number.isNaN(start)) return toast.error('That date or time is not valid.')
-    if (visitStarts.length > MAX_REPEAT_VISITS) {
-      return toast.error(`That is ${visitStarts.length} visits. Choose fewer weeks or days (up to ${MAX_REPEAT_VISITS}).`)
-    }
 
     setSaving(true)
     try {
@@ -857,12 +823,12 @@ function BookDialog({
         appointmentType: form.mode,
         notes: form.note.trim() || undefined,
         serviceType: form.service !== 'none' ? form.service : undefined,
-        repeatStartTimes: visitStarts.length > 1 ? visitStarts.slice(1) : undefined,
+        repeatStartTimes: repeat.bookStarts.length > 0 ? repeat.bookStarts : undefined,
       })
       playSound('booked')
       const skipped = ((result?.skipped ?? []) as number[]).map((t) => format(t, 'EEE d MMM'))
-      if (visitStarts.length > 1) {
-        toast.success(`${result?.booked ?? visitStarts.length} visits booked`, {
+      if (repeat.total > 1) {
+        toast.success(`${result?.booked ?? repeat.total} visits booked`, {
           description: skipped.length
             ? `Not booked, because the clinician already has a visit then: ${skipped.join(', ')}.`
             : `From ${format(start, 'EEE d MMM, HH:mm')}.`,
@@ -1051,79 +1017,7 @@ function BookDialog({
             </p>
           )}
 
-          <div className="space-y-1.5">
-            <Label className="text-sm">Repeat</Label>
-            <Select value={form.repeat} onValueChange={(v) => setForm({ ...form, repeat: v as typeof form.repeat })}>
-              <SelectTrigger className={fieldClass}>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">Does not repeat</SelectItem>
-                <SelectItem value="1">Every week</SelectItem>
-                <SelectItem value="2">Every 2 weeks</SelectItem>
-              </SelectContent>
-            </Select>
-            {form.repeat !== 'none' && (
-              <div className="space-y-3 rounded-xl border border-pt-line p-3">
-                <div className="space-y-1.5">
-                  <p className="text-xs text-pt-muted">On these days</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {WEEKDAYS.map(({ day, label }) => {
-                      const active = repeatDays.includes(day)
-                      const locked = day === firstDay
-                      return (
-                        <button
-                          key={day}
-                          type="button"
-                          aria-pressed={active}
-                          disabled={locked}
-                          title={locked ? 'The day of the first visit' : undefined}
-                          onClick={() =>
-                            setForm({
-                              ...form,
-                              extraDays: active ? form.extraDays.filter((d) => d !== day) : [...form.extraDays, day],
-                            })
-                          }
-                          className={cn(
-                            'h-8 min-w-[2.75rem] rounded-lg border px-2 text-xs font-medium transition-colors',
-                            active
-                              ? 'border-pt-primary bg-pt-primary text-pt-on-primary'
-                              : 'border-pt-line text-pt-ink hover:border-pt-line-strong'
-                          )}
-                        >
-                          {label}
-                        </button>
-                      )
-                    })}
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-pt-muted">For</span>
-                  <Select value={String(form.weeks)} onValueChange={(v) => setForm({ ...form, weeks: Number(v) })}>
-                    <SelectTrigger className={cn(fieldClass, 'w-32')}>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {[2, 3, 4, 6, 8, 10, 12].map((n) => (
-                        <SelectItem key={n} value={String(n)}>
-                          {n} weeks
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                {visitStarts.length > 0 && (
-                  <p className={cn('text-xs', visitStarts.length > MAX_REPEAT_VISITS ? 'text-pt-rose-fg' : 'text-pt-ink')}>
-                    {visitStarts.length} visits at {form.time}, {format(visitStarts[0], 'EEE d MMM')} to{' '}
-                    {format(visitStarts[visitStarts.length - 1], 'EEE d MMM')}.
-                    {visitStarts.length > MAX_REPEAT_VISITS
-                      ? ` The most at once is ${MAX_REPEAT_VISITS}.`
-                      : ' Days the clinician is already booked are skipped and listed for you.'}
-                  </p>
-                )}
-              </div>
-            )}
-          </div>
+          <RepeatPlanner repeat={repeat} />
 
           <div className="space-y-1.5">
             <Label className="text-sm">Where</Label>
@@ -1186,8 +1080,8 @@ function BookDialog({
               {saving && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
               {saving
                 ? 'Booking…'
-                : visitStarts.length > 1
-                  ? `Book ${visitStarts.length} visits`
+                : repeat.total > 1
+                  ? `Book ${repeat.total} sessions`
                   : isPast
                     ? 'Save past visit'
                     : 'Book appointment'}
