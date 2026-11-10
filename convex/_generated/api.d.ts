@@ -256,6 +256,7 @@ import type * as paystack from "../paystack.js";
 import type * as paystackDoctor from "../paystackDoctor.js";
 import type * as physioBilling from "../physioBilling.js";
 import type * as physioCare from "../physioCare.js";
+import type * as physioPatients from "../physioPatients.js";
 import type * as physioRegistry from "../physioRegistry.js";
 import type * as physioSetup from "../physioSetup.js";
 import type * as physiotherapistProfiles from "../physiotherapistProfiles.js";
@@ -562,6 +563,7 @@ declare const fullApi: ApiFromModules<{
   paystackDoctor: typeof paystackDoctor;
   physioBilling: typeof physioBilling;
   physioCare: typeof physioCare;
+  physioPatients: typeof physioPatients;
   physioRegistry: typeof physioRegistry;
   physioSetup: typeof physioSetup;
   physiotherapistProfiles: typeof physiotherapistProfiles;
