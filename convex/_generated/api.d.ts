@@ -274,6 +274,7 @@ import type * as rehabifyFollowUps from "../rehabifyFollowUps.js";
 import type * as rehabifyIds from "../rehabifyIds.js";
 import type * as reminderSystem from "../reminderSystem.js";
 import type * as reminders from "../reminders.js";
+import type * as repeatPlanner from "../repeatPlanner.js";
 import type * as resourceManagement from "../resourceManagement.js";
 import type * as resourceNotifications from "../resourceNotifications.js";
 import type * as resourceSchema from "../resourceSchema.js";
@@ -581,6 +582,7 @@ declare const fullApi: ApiFromModules<{
   rehabifyIds: typeof rehabifyIds;
   reminderSystem: typeof reminderSystem;
   reminders: typeof reminders;
+  repeatPlanner: typeof repeatPlanner;
   resourceManagement: typeof resourceManagement;
   resourceNotifications: typeof resourceNotifications;
   resourceSchema: typeof resourceSchema;
