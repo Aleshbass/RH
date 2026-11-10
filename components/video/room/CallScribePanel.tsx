@@ -15,7 +15,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { cn } from '@/lib/utils'
 import type { Id } from '@/convex/_generated/dataModel'
 import { formatClock, LevelMeter, ScribeTranscript } from '@/components/physio/notes/scribe/ScribePanel'
-import { scribeApi, scribeError, type ScribeSessionId } from '@/components/physio/notes/scribe/scribeApi'
+import { SCRIBE_NAME, SCRIBE_PILOT, scribeApi, scribeError, type ScribeSessionId } from '@/components/physio/notes/scribe/scribeApi'
 import { useScribeRecorder, type RecorderState } from '@/components/physio/notes/scribe/useScribeRecorder'
 
 export type CallScribeConfig = {
@@ -99,7 +99,7 @@ export function CallScribePanel({
 
   return (
     <aside
-      aria-label="AI scribe"
+      aria-label={SCRIBE_NAME}
       className={cn(
         'fixed inset-x-0 bottom-0 z-40 flex max-h-[75dvh] flex-col rounded-t-[28px] bg-white pb-[env(safe-area-inset-bottom)] text-neutral-900 shadow-[0_-20px_60px_-24px_rgba(0,0,0,0.3)]',
         'lg:static lg:z-auto lg:max-h-none lg:w-[360px] lg:shrink-0 lg:overflow-hidden lg:rounded-[28px] lg:pb-0 lg:shadow-[0_20px_60px_-24px_rgba(0,0,0,0.2)] lg:ring-1 lg:ring-black/5',
@@ -108,7 +108,8 @@ export function CallScribePanel({
     >
       <div className="flex items-center justify-between border-b border-black/5 px-5 py-4">
         <h2 className="flex items-center gap-2 text-[15px] font-semibold tracking-tight">
-          <Mic className="h-4 w-4" aria-hidden /> AI scribe
+          <Mic className="h-4 w-4" aria-hidden /> {SCRIBE_NAME}
+          {SCRIBE_PILOT && <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">Free during the pilot</span>}
         </h2>
         <button
           type="button"

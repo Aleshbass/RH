@@ -178,7 +178,7 @@ export function NotesTab({ workspace, onWrite }: { workspace: Workspace; onWrite
                           <span className="block text-xs text-pt-muted">
                             {[
                               note.mine ? null : `By ${note.authorName}`,
-                              note.aiAssisted ? 'AI-assisted, signed by the physio' : null,
+                              note.aiAssisted ? 'Drafted with Rehabify Scribe, signed by the physio' : null,
                               note.editedAt ? `Edited ${format(note.editedAt, 'd MMM yyyy, HH:mm')}` : null,
                             ]
                               .filter(Boolean)

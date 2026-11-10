@@ -680,7 +680,7 @@ export function AppointmentDrawer({
               <Mic className="h-4 w-4" aria-hidden />
             </span>
             <span>
-              <span className="block font-semibold text-pt-ink">Write the full note with the AI scribe</span>
+              <span className="block font-semibold text-pt-ink">Write the full note with Rehabify Scribe</span>
               <span className="block text-pt-muted">Dictate what happened, or record the next part of the session. You check and sign it.</span>
             </span>
           </Link>

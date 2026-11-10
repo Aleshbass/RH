@@ -125,7 +125,7 @@ export async function scribeAllowedFor(ctx: Ctx, user: Doc<"users">): Promise<bo
 
 async function requireScribePhysio(ctx: Ctx) {
   const physio = await requirePhysio(ctx);
-  if (!(await scribeAllowedFor(ctx, physio))) throw new ConvexError("The AI scribe isn't switched on for your account yet.");
+  if (!(await scribeAllowedFor(ctx, physio))) throw new ConvexError("Rehabify Scribe isn't switched on for your account yet.");
   return physio;
 }
 

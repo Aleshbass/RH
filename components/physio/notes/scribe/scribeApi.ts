@@ -7,6 +7,14 @@ import type { Doc, Id } from '@/convex/_generated/dataModel'
 import type { ClinicalMeasure } from '@/convex/helpers/clinicalMeasures'
 import type { ScribeDraft, ScribeNoteType } from '@/convex/helpers/scribeDraft'
 
+/** The product name physios see */
+export const SCRIBE_NAME = 'Rehabify Scribe'
+/**
+ * Pilot: free for every physio an admin switches it on for. After the pilot it moves to the paid
+ * plan; the access check (convex/scribe.ts scribeAllowedFor) is where that gate goes.
+ */
+export const SCRIBE_PILOT = true
+
 export type ScribeSession = Doc<'scribeSessions'>
 export type ScribeSessionId = Id<'scribeSessions'>
 export type ScribeSource = ScribeSession['source']

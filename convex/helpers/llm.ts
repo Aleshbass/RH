@@ -88,7 +88,7 @@ function reasoningEffort(model: string): { reasoning_effort?: string } {
 
 async function callGemini(model: string, req: JsonRequest): Promise<string> {
   const key = process.env.GEMINI_API_KEY?.trim();
-  if (!key) throw new ConvexError("The AI scribe isn't set up yet: GEMINI_API_KEY is missing on Convex.");
+  if (!key) throw new ConvexError("Rehabify Scribe isn't set up yet: GEMINI_API_KEY is missing on Convex.");
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
   const res = await postWithTimeout(url, {
     headers: { "x-goog-api-key": key },
@@ -123,7 +123,7 @@ export function transcribeModel(): string {
 
 function openAiKey(): string {
   const key = process.env.OPENAI_API_KEY?.trim();
-  if (!key) throw new ConvexError("The AI scribe isn't set up yet: OPENAI_API_KEY is missing on Convex.");
+  if (!key) throw new ConvexError("Rehabify Scribe isn't set up yet: OPENAI_API_KEY is missing on Convex.");
   return key;
 }
 

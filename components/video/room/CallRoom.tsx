@@ -276,7 +276,7 @@ export function CallRoom({
               )}
             >
               {scribeRecording ? <span className="h-2 w-2 animate-pulse rounded-full bg-rose-600" aria-hidden /> : <Mic className="h-3.5 w-3.5" />}
-              <span>{scribeRecording ? 'Scribe on' : 'AI scribe'}</span>
+              <span>{scribeRecording ? 'Scribe on' : 'Rehabify Scribe'}</span>
             </button>
           )}
           {onMinimize && (

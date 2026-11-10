@@ -251,11 +251,11 @@ export default function AdminSettingsPage() {
 
           <SettingsGroup
             icon={Mic}
-            title="AI scribe"
-            description="Physiotherapists record or dictate a session; an AI drafts the clinical note for them to check, edit and sign. Audio isn’t kept."
+            title="Rehabify Scribe"
+            description="Physiotherapists record or dictate a session; an AI drafts the clinical note for them to check, edit and sign. Audio isn’t kept. Free during the pilot; after the pilot it moves to the paid plan."
           >
             <div className="space-y-3 px-5 py-4">
-              <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Who can use the AI scribe">
+              <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Who can use Rehabify Scribe">
                 {SCRIBE_MODES.map((option) => (
                   <button
                     key={option.value}

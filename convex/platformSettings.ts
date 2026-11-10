@@ -252,10 +252,10 @@ export const updatePlatformControls = mutation({
       scribeAllowedEmails,
     };
     if (scribeAllowedEmails.length > MAX_SCRIBE_EMAILS) {
-      throw new ConvexError(`The AI scribe list can hold up to ${MAX_SCRIBE_EMAILS} emails.`);
+      throw new ConvexError(`The Rehabify Scribe list can hold up to ${MAX_SCRIBE_EMAILS} emails.`);
     }
     const badEmail = scribeAllowedEmails.find((e) => !EMAIL_PATTERN.test(e));
-    if (badEmail) throw new ConvexError(`"${badEmail}" isn't a valid email for the AI scribe list.`);
+    if (badEmail) throw new ConvexError(`"${badEmail}" isn't a valid email for the Rehabify Scribe list.`);
     if (next.maintenanceMessage.length > MAX_MAINTENANCE_MESSAGE) {
       throw new ConvexError(`The maintenance message can be at most ${MAX_MAINTENANCE_MESSAGE} characters.`);
     }

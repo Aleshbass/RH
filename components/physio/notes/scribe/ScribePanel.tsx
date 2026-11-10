@@ -39,7 +39,7 @@ import type { ScribeDraft } from '@/convex/helpers/scribeDraft'
 import type { Id } from '@/convex/_generated/dataModel'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
-import { scribeApi, scribeError, type ScribeSession, type ScribeSessionId } from './scribeApi'
+import { SCRIBE_NAME, SCRIBE_PILOT, scribeApi, scribeError, type ScribeSession, type ScribeSessionId } from './scribeApi'
 import { openMicrophone, useScribeRecorder, type ScribeLine, type ScribeRecorder } from './useScribeRecorder'
 
 export const formatClock = (seconds: number) => {
@@ -402,7 +402,8 @@ export function ScribePanel({ patientId, patientFirstName, appointmentId, noteMe
       <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-pt-primary text-pt-on-primary">
         <Mic className="h-4 w-4" aria-hidden />
       </span>
-      <p className="text-sm font-semibold text-pt-ink">AI scribe</p>
+      <p className="text-sm font-semibold text-pt-ink">{SCRIBE_NAME}</p>
+      {SCRIBE_PILOT && <span className="rounded-full bg-pt-green-bg px-2 py-0.5 text-xs font-medium text-pt-green-fg">Free during the pilot</span>}
       <InfoTip>
         Records the session and drafts the note for you to check, edit and sign. The audio isn’t kept: only the words are saved, for you and
         the patient’s care team. Names and phone numbers are taken out before anything goes to the AI.
@@ -583,6 +584,9 @@ export function ScribePanel({ patientId, patientFirstName, appointmentId, noteMe
     const needsConsent = sourceOf === 'in_person'
     body = (
       <div className="space-y-3">
+        <p className="text-sm text-pt-muted">
+          Talk as you normally would. The words appear live, and when you stop, the note drafts itself below for you to check and sign.
+        </p>
         <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="What to record">
           {(
             [
@@ -619,7 +623,7 @@ export function ScribePanel({ patientId, patientFirstName, appointmentId, noteMe
   }
 
   return (
-    <section aria-label="AI scribe" className="mb-5 rounded-2xl border border-pt-line bg-pt-surface p-4">
+    <section aria-label={SCRIBE_NAME} className="mb-5 rounded-2xl border border-pt-line bg-pt-surface p-4">
       {header}
       {body}
     </section>
