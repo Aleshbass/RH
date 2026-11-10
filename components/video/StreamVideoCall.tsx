@@ -10,6 +10,7 @@ import { useAction, useMutation, useQuery } from 'convex/react'
 import { makeFunctionReference } from 'convex/server'
 import { CallLobby, CallRoom, CallStatusScreen } from '@/components/video/room'
 import { useActiveCall } from '@/components/video/activeCall/ActiveCallProvider'
+import type { CallScribeConfig } from '@/components/video/room/CallScribePanel'
 
 // By name: the generated api type is at TypeScript's depth limit (TS2589)
 const myUserRef = makeFunctionReference<
@@ -54,6 +55,8 @@ interface StreamVideoCallProps {
   afterLeave?: () => void
   /** Physios: the patient's record, opened with the call carrying on in a small window */
   recordHref?: string
+  /** Physios: the AI scribe for this call's patient (components/video/room/CallScribePanel.tsx) */
+  scribe?: CallScribeConfig
   /** Where "Use the app" goes, with the call carrying on in a small window */
   appHref?: string
   /** Navigates within the app (the call keeps going) */
@@ -80,6 +83,7 @@ export default function StreamVideoCall({
   navigate,
   isFullscreen = false,
   participants,
+  scribe,
 }: StreamVideoCallProps) {
   const { user, isLoaded } = useUser()
   // Prefer the Convex profile (uploaded photo, full name) over Clerk's.
@@ -282,6 +286,7 @@ export default function StreamVideoCall({
                 startedAt={resumed.joinedAt}
                 onOpenRecord={recordHref && navigate ? () => navigate(recordHref) : undefined}
                 onMinimize={appHref && navigate ? () => navigate(appHref) : undefined}
+                scribe={scribe}
               />
             ) : (
               <CallLobby

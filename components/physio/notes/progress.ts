@@ -50,6 +50,8 @@ export type ClinicalNote = {
   authorName?: string | null
   /** Written by the signed-in physio (undefined on older query versions: treat as theirs) */
   mine?: boolean
+  /** Drafted by the AI scribe, then reviewed and signed by the physio */
+  aiAssisted?: boolean
 }
 
 /**

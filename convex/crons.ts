@@ -253,4 +253,7 @@ crons.daily("awadoc-purge-event-log", { hourUTC: 2, minuteUTC: 15 }, internal.aw
 crons.interval("clinic-clock-checks", { minutes: 10 }, internal.clinicAttendance.runClockChecks, {});
 crons.daily("clinic-clock-purge-nudges", { hourUTC: 2, minuteUTC: 40 }, internal.clinicAttendance.purgeOldNudges, {});
 
+// AI scribe (scribe.ts): recordings discarded or never signed go after 7 days, transcript and all.
+crons.daily("scribe-purge-unsigned", { hourUTC: 2, minuteUTC: 55 }, internal.scribe.purgeScribeSessions, {});
+
 export default crons;

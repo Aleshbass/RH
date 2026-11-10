@@ -5,12 +5,14 @@ import { CallingState, hasScreenShare, useCall, useCallStateHooks } from '@strea
 import type { Channel as ChatChannel, StreamChat } from 'stream-chat'
 import { Chat, Channel, MessageInput, MessageList, Window } from 'stream-chat-react'
 import 'stream-chat-react/dist/css/v2/index.css'
-import { FileText, Loader2, Minimize, MonitorUp, Users, WifiOff, X } from '@/components/icons'
+import { FileText, Loader2, Mic, Minimize, MonitorUp, Users, WifiOff, X } from '@/components/icons'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { CallBackdrop, CallBrandMark } from './CallBackdrop'
 import { ControlBar } from './ControlBar'
 import { RoomTile, participantName } from './RoomTile'
+import { CallScribePanel, type CallScribeConfig } from './CallScribePanel'
+import type { RecorderState } from '@/components/physio/notes/scribe/useScribeRecorder'
 
 export type CallChat = { client: StreamChat; channel: ChatChannel }
 
@@ -69,6 +71,7 @@ export function CallRoom({
   startedAt,
   onOpenRecord,
   onMinimize,
+  scribe,
 }: {
   /** Heading, e.g. "Appointment with David Falola". Defaults to the other participants' names. */
   title?: string
@@ -85,6 +88,8 @@ export function CallRoom({
   onOpenRecord?: () => void
   /** Keeps the call going in a small window while you use the rest of the app */
   onMinimize?: () => void
+  /** Physios: the AI scribe for this call's patient */
+  scribe?: CallScribeConfig
 }) {
   const call = useCall()
   const { useCallCallingState, useParticipants, useLocalParticipant, useRemoteParticipants, useMicrophoneState } = useCallStateHooks()
@@ -96,6 +101,10 @@ export function CallRoom({
   const elapsed = useElapsed(startedAt)
 
   const [swapped, setSwapped] = useState(false)
+  const [scribeOpen, setScribeOpen] = useState(false)
+  const [scribeState, setScribeState] = useState<RecorderState>('idle')
+  const scribeStop = useRef<(() => Promise<void>) | null>(null)
+  const scribeRecording = scribeState === 'recording' || scribeState === 'paused' || scribeState === 'starting'
   const [chatOpen, setChatOpen] = useState(false)
   const [chatUnread, setChatUnread] = useState(false)
   const chatOpenRef = useRef(chatOpen)
@@ -142,6 +151,10 @@ export function CallRoom({
   }, [chat])
 
   const leave = async () => {
+    // Save the scribe's last words before the call (and its audio) goes
+    if (scribeStop.current) {
+      await Promise.race([scribeStop.current().catch(() => undefined), new Promise((resolve) => setTimeout(resolve, 10_000))])
+    }
     try {
       await call?.leave()
     } catch {
@@ -252,6 +265,20 @@ export function CallRoom({
               <span className="sm:hidden">Record</span>
             </button>
           )}
+          {scribe && (
+            <button
+              type="button"
+              onClick={() => setScribeOpen((open) => !open)}
+              aria-pressed={scribeOpen}
+              className={cn(
+                'flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium ring-1 backdrop-blur transition-colors',
+                scribeRecording ? 'bg-rose-50 text-rose-700 ring-rose-200 hover:bg-rose-100' : 'bg-white/80 text-neutral-700 ring-black/5 hover:bg-white'
+              )}
+            >
+              {scribeRecording ? <span className="h-2 w-2 animate-pulse rounded-full bg-rose-600" aria-hidden /> : <Mic className="h-3.5 w-3.5" />}
+              <span>{scribeRecording ? 'Scribe on' : 'AI scribe'}</span>
+            </button>
+          )}
           {onMinimize && (
             <button
               type="button"
@@ -290,6 +317,9 @@ export function CallRoom({
           )}
         </main>
         {chat && chatOpen && <ChatPanel chat={chat} onClose={toggleChat} />}
+        {scribe && (
+          <CallScribePanel config={scribe} open={scribeOpen} onClose={() => setScribeOpen(false)} stopRef={scribeStop} onStateChange={setScribeState} />
+        )}
       </div>
 
       <footer className="pointer-events-none relative flex justify-center px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 sm:pb-5 sm:pt-4">

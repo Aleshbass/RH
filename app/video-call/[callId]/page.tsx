@@ -42,10 +42,21 @@ export default function VideoCallPage() {
           ? '/dashboard/clinic'
           : '/dashboard'
 
+  // Physios: the AI scribe for the call's patient. If it recorded anything, the patient's note
+  // opens after the call so the AI can draft it (components/video/room/CallScribePanel.tsx).
+  const scribePatientId = role === 'physiotherapist' ? (callMetadata?.patientId ?? null) : null
+  const scribeAppointmentId = callMetadata?.appointmentId ?? null
+  const scribeUsed = useRef(false)
+  const noteHref = scribePatientId
+    ? `/dashboard/physiotherapist/patients/${scribePatientId}?note=new${scribeAppointmentId ? `&appointment=${scribeAppointmentId}` : ''}`
+    : null
+
   const handleCallEnd = useCallback(async () => {
     const openAwadocVisit = awadocVisit && (awadocVisit.status === 'scheduled' || awadocVisit.status === 'started')
-    router.push(role === 'physiotherapist' && openAwadocVisit ? `/dashboard/physiotherapist?awadoc=${awadocVisit.visitId}` : home)
-  }, [router, home, role, awadocVisit])
+    if (role === 'physiotherapist' && openAwadocVisit) router.push(`/dashboard/physiotherapist?awadoc=${awadocVisit.visitId}`)
+    else if (scribeUsed.current && noteHref) router.push(noteHref)
+    else router.push(home)
+  }, [router, home, role, awadocVisit, noteHref])
 
   // If the backend marks the call as ended (e.g., host clicked "End for Everyone"),
   // redirect all participants back to their dashboards.
@@ -84,7 +95,8 @@ export default function VideoCallPage() {
   })) || []
 
   // Physios: open the call's patient's record (the call carries on in a small window)
-  const patientId = role === 'physiotherapist' ? (callMetadata?.patientId ?? null) : null
+  const patientId = scribePatientId
+  const patientDetail = callMetadata?.participantDetails?.find((p: ParticipantLite) => p.id === patientId)
 
   return (
     <StreamVideoCall
@@ -96,6 +108,19 @@ export default function VideoCallPage() {
       navigate={(href) => router.push(href)}
       participants={participants}
       isFullscreen={true}
+      scribe={
+        patientId && noteHref
+          ? {
+              patientId,
+              patientFirstName: patientDetail?.firstName || 'The patient',
+              appointmentId: scribeAppointmentId ?? undefined,
+              onRecorded: () => {
+                scribeUsed.current = true
+              },
+              onOpenNote: () => router.push(noteHref),
+            }
+          : undefined
+      }
     />
   )
 }

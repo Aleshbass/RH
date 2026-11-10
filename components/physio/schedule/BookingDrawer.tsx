@@ -45,6 +45,10 @@ export type BookingOptions = {
   /** A time already chosen (e.g. clicked on the calendar). */
   slot?: { start: number; end?: number }
   mode?: 'telehealth' | 'in-person'
+  /** A date to start from when choosing the time (YYYY-MM-DD, Lagos), e.g. "review in a week" */
+  suggestedDate?: string
+  /** A line shown above the times, e.g. what the note said about the follow-up */
+  hint?: string
 }
 
 type Step = 'patient' | 'new' | 'what' | 'when' | 'details' | 'done'
@@ -131,7 +135,7 @@ function BookingDrawer({ options, onClose }: { options: BookingOptions; onClose:
   const [result, setResult] = useState<{ payoutKobo?: number; holdExpiresAt?: number; past?: boolean; booked?: number; skipped?: number[] } | null>(null)
   // Your own patients: any date and time, past ones too (a visit agreed by phone and never entered)
   const [manualTime, setManualTime] = useState(false)
-  const [manualDate, setManualDate] = useState(() => lagosToday())
+  const [manualDate, setManualDate] = useState(() => (options.suggestedDate && options.suggestedDate >= lagosToday() ? options.suggestedDate : lagosToday()))
   const [manualClock, setManualClock] = useState('09:00')
   // A paid visit that didn't happen, being rebooked free instead of booking a new paid session
   const [rebookOf, setRebookOf] = useState<RebookableVisit | null>(null)
@@ -525,6 +529,12 @@ function BookingDrawer({ options, onClose }: { options: BookingOptions; onClose:
     body = (
       <div>
         <StepBar index={stepIndex} total={steps.length} />
+        {options.hint && (
+          <p className="mb-4 rounded-2xl bg-pt-blue-bg px-3 py-2.5 text-sm text-pt-blue-fg">
+            {options.hint}
+            {options.suggestedDate && <> Around {lagosDate(Date.parse(`${options.suggestedDate}T12:00:00+01:00`))}.</>}
+          </p>
+        )}
         {manualTime && !rebookOf && !isRehabify ? (
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-2">

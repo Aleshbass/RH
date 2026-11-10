@@ -6,6 +6,7 @@ import { outcomeTables } from "./schema/outcomes";
 import { rewardTables } from "./schema/rewards";
 import { communityTables } from "./schema/community";
 import { offlineTables } from "./schema/offline";
+import { scribeTables } from "./schema/scribe";
 import { measureValidator } from "./helpers/clinicalMeasures";
 import { goalMeasureValidator } from "./helpers/goalMeasures";
 import { reportSnapshotValidator } from "./helpers/progressReport";
@@ -1476,6 +1477,10 @@ export default defineSchema({
     // counts them (convex/helpers/noteRevisions.ts).
     editedAt: v.optional(v.number()),
     revisionCount: v.optional(v.number()),
+    // Drafted by the AI scribe from a recording, then reviewed and signed by the physio (convex/scribe.ts)
+    aiAssisted: v.optional(v.boolean()),
+    scribeSessionId: v.optional(v.id("scribeSessions")),
+    signedAt: v.optional(v.number()),
     // Legacy: history kept on the note before sessionLogRevisions existed (oldest first). Still
     // shown; moved into the table and cleared the next time the note is edited.
     revisions: v.optional(v.array(v.object({
@@ -4450,6 +4455,9 @@ export default defineSchema({
   // Phones keeping encrypted data for offline use (schema/offline.ts)
   ...offlineTables,
 
+  // AI scribe recordings and their unsigned draft notes (schema/scribe.ts)
+  ...scribeTables,
+
   partnershipInquiries: defineTable({
     // "demo" = Book a demo on the partners page; missing on older rows, which are partnership inquiries
     kind: v.optional(v.union(v.literal("partnership"), v.literal("demo"))),
@@ -5154,6 +5162,10 @@ export default defineSchema({
     allowDoctorSignups: v.optional(v.boolean()),
     marketplaceEnabled: v.boolean(),
     supportEmail: v.optional(v.string()),
+    // AI scribe for physiotherapists (convex/scribe.ts): off unless an admin switches it on.
+    // "allowlist" = only the physio accounts in scribeAllowedEmails. Missing = off.
+    scribeMode: v.optional(v.union(v.literal("off"), v.literal("allowlist"), v.literal("everyone"))),
+    scribeAllowedEmails: v.optional(v.array(v.string())),
     updatedAt: v.number(),
     updatedBy: v.optional(v.id("users")),
     updatedByName: v.optional(v.string()),

@@ -4,7 +4,7 @@ import { useEffect, useId, useMemo, useState, type ReactNode } from 'react'
 import { useMutation, useQuery } from 'convex/react'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { formatDistanceToNow } from 'date-fns'
-import { Loader2, Mail, Store, UserPlus, Wrench } from '@/components/icons'
+import { Loader2, Mail, Mic, Store, UserPlus, Wrench } from '@/components/icons'
 import { toast } from 'sonner'
 import { api } from '@/convex/_generated/api'
 import { Button } from '@/components/ui/button'
@@ -36,6 +36,25 @@ type Controls = {
   allowDoctorSignups: boolean
   marketplaceEnabled: boolean
   supportEmail: string
+  scribeMode: ScribeMode
+  /** One email per line (or comma-separated) while editing; saved as a list */
+  scribeAllowedEmails: string
+}
+
+type ScribeMode = 'off' | 'allowlist' | 'everyone'
+type SavedControls = Omit<Controls, 'scribeMode' | 'scribeAllowedEmails'> & { scribeMode?: ScribeMode; scribeAllowedEmails?: string[] }
+
+const SCRIBE_MODES: { value: ScribeMode; label: string }[] = [
+  { value: 'off', label: 'Off' },
+  { value: 'allowlist', label: 'Only these physios' },
+  { value: 'everyone', label: 'Every physiotherapist' },
+]
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+/** The emails typed into the AI scribe list, tidied */
+function emailList(text: string): string[] {
+  return [...new Set(text.split(/[\s,;]+/).map((e) => e.trim().toLowerCase()).filter(Boolean))]
 }
 
 const FIELDS: (keyof Controls)[] = [
@@ -47,12 +66,25 @@ const FIELDS: (keyof Controls)[] = [
   'allowDoctorSignups',
   'marketplaceEnabled',
   'supportEmail',
+  'scribeMode',
+  'scribeAllowedEmails',
 ]
 
 const MAX_MESSAGE = 500
 
-function pick(source: Controls): Controls {
-  return Object.fromEntries(FIELDS.map((k) => [k, source[k]])) as Controls
+function pick(source: SavedControls): Controls {
+  return {
+    maintenanceMode: source.maintenanceMode,
+    maintenanceMessage: source.maintenanceMessage,
+    allowPatientSignups: source.allowPatientSignups,
+    allowPhysioSignups: source.allowPhysioSignups,
+    allowClinicSignups: source.allowClinicSignups,
+    allowDoctorSignups: source.allowDoctorSignups,
+    marketplaceEnabled: source.marketplaceEnabled,
+    supportEmail: source.supportEmail,
+    scribeMode: source.scribeMode ?? 'off',
+    scribeAllowedEmails: (source.scribeAllowedEmails ?? []).join('\n'),
+  }
 }
 
 function errorMessage(error: unknown) {
@@ -84,12 +116,15 @@ export default function AdminSettingsPage() {
 
   const emailInvalid = !!draft?.supportEmail.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(draft.supportEmail.trim())
   const messageTooLong = (draft?.maintenanceMessage.length ?? 0) > MAX_MESSAGE
+  const scribeEmails = emailList(draft?.scribeAllowedEmails ?? '')
+  const scribeEmailsInvalid = scribeEmails.some((e) => !EMAIL_PATTERN.test(e))
+  const scribeListEmpty = draft?.scribeMode === 'allowlist' && scribeEmails.length === 0
 
   const save = async () => {
     if (!draft) return
     setSaving(true)
     try {
-      const result = await update(draft)
+      const result = await update({ ...draft, scribeAllowedEmails: emailList(draft.scribeAllowedEmails) })
       playSound('success')
       toast.success(result.changed ? 'Settings saved' : 'Nothing to change')
     } catch (error) {
@@ -101,7 +136,7 @@ export default function AdminSettingsPage() {
   }
 
   const requestSave = () => {
-    if (!draft || emailInvalid || messageTooLong) return
+    if (!draft || emailInvalid || messageTooLong || scribeEmailsInvalid || scribeListEmpty) return
     if (draft.maintenanceMode && !savedControls?.maintenanceMode) setConfirmMaintenance(true)
     else void save()
   }
@@ -214,6 +249,63 @@ export default function AdminSettingsPage() {
             />
           </SettingsGroup>
 
+          <SettingsGroup
+            icon={Mic}
+            title="AI scribe"
+            description="Physiotherapists record or dictate a session; an AI drafts the clinical note for them to check, edit and sign. Audio isn’t kept."
+          >
+            <div className="space-y-3 px-5 py-4">
+              <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Who can use the AI scribe">
+                {SCRIBE_MODES.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    role="radio"
+                    aria-checked={draft.scribeMode === option.value}
+                    onClick={() => set('scribeMode', option.value)}
+                    className={cn(
+                      'rounded-full border px-3 py-1.5 text-sm transition',
+                      draft.scribeMode === option.value
+                        ? 'border-rh-ink bg-rh-ink text-white dark:border-white dark:bg-white dark:text-rh-ink'
+                        : 'border-black/10 text-rh-ink hover:bg-black/[0.03] dark:border-white/15 dark:text-white dark:hover:bg-white/5'
+                    )}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+              {draft.scribeMode === 'allowlist' && (
+                <div className="space-y-1.5">
+                  <Label htmlFor="scribe-emails" className="text-sm font-medium text-rh-ink dark:text-white">
+                    Physiotherapist emails
+                  </Label>
+                  <Textarea
+                    id="scribe-emails"
+                    value={draft.scribeAllowedEmails}
+                    onChange={(e) => set('scribeAllowedEmails', e.target.value)}
+                    placeholder={'tester@example.com\nanother.physio@example.com'}
+                    rows={4}
+                    className={cn(inputClass, 'max-w-md', (scribeEmailsInvalid || scribeListEmpty) && 'border-rose-400 dark:border-rose-400')}
+                  />
+                  <p className={cn('text-xs', scribeEmailsInvalid || scribeListEmpty ? 'text-rose-600 dark:text-rose-300' : 'text-neutral-500 dark:text-neutral-400')}>
+                    {scribeEmailsInvalid
+                      ? 'One of these isn’t a valid email.'
+                      : scribeListEmpty
+                        ? 'Add at least one email, or turn the scribe off.'
+                        : `${scribeEmails.length} account${scribeEmails.length === 1 ? '' : 's'}. One email per line; the account’s sign-in email.`}
+                  </p>
+                </div>
+              )}
+              <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                {saved?.scribeReady === false
+                  ? 'Not ready: OPENAI_API_KEY isn’t set on Convex, so the scribe stays hidden whatever you choose here.'
+                  : saved?.scribeOverride
+                    ? `SCRIBE_ENABLED on Convex forces it ${saved.scribeOverride} on this deployment, whatever you choose here.`
+                    : 'Before real patients: OpenAI’s data processing agreement accepted, and the consent wording checked by your lawyer.'}
+              </p>
+            </div>
+          </SettingsGroup>
+
           <SettingsGroup icon={Mail} title="Support" description="Where the team can be reached.">
             <div className="space-y-1.5 px-5 py-4">
               <Label htmlFor="support-email" className="text-sm font-medium text-rh-ink dark:text-white">
@@ -248,7 +340,9 @@ export default function AdminSettingsPage() {
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-rh-ink px-4 py-3 text-white shadow-lift dark:bg-rh-ink-3 dark:ring-1 dark:ring-white/10">
               <p className="text-sm">
                 You have unsaved changes
-                {(emailInvalid || messageTooLong) && <span className="ml-2 text-amber-300">Fix the highlighted fields first.</span>}
+                {(emailInvalid || messageTooLong || scribeEmailsInvalid || scribeListEmpty) && (
+                  <span className="ml-2 text-amber-300">Fix the highlighted fields first.</span>
+                )}
               </p>
               <div className="flex items-center gap-2">
                 <Button
@@ -264,7 +358,7 @@ export default function AdminSettingsPage() {
                   size="sm"
                   className={cn(primaryButtonClass, 'bg-rh-lime text-rh-ink hover:bg-rh-lime-deep')}
                   onClick={requestSave}
-                  disabled={saving || emailInvalid || messageTooLong}
+                  disabled={saving || emailInvalid || messageTooLong || scribeEmailsInvalid || scribeListEmpty}
                 >
                   {saving && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
                   Save changes

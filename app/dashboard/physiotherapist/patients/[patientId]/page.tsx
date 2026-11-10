@@ -32,6 +32,9 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import EditPatientModal from '@/components/dashboard/physiotherapist/EditPatientModal';
 import { SendProgramDialog } from '@/components/exercise-programs/SendProgramDialog';
+import type { LibraryEntry } from '@/components/exercise-programs/types';
+import { ScribeNextSteps, type ScribeNextStepsData } from '@/components/physio/notes/scribe/ScribeNextSteps';
+import { suggestedDate } from '@/components/physio/notes/scribe/scribeTools';
 import { ShareLinkDialog } from '@/components/exercise-programs/ShareLinkDialog';
 import { PatientPlanBadge } from '@/components/exercise-programs/PatientPlanBadge';
 import { useBooking } from '@/components/physio/schedule/BookingDrawer';
@@ -109,6 +112,23 @@ export default function PatientWorkspacePage() {
   const [drawer, setDrawer] = useState<DrawerId | null>(null);
   const [shareFor, setShareFor] = useState<Id<'exercisePrograms'> | null>(null);
   const openBooking = useBooking();
+  // A new note opened for a visit (?note=new&appointment=…), e.g. after a video call with the AI scribe
+  const [noteAppointment, setNoteAppointment] = useState<Id<'appointments'> | undefined>(undefined);
+  // After an AI-drafted note is signed: the exercises and follow-up the session mentioned
+  const [nextSteps, setNextSteps] = useState<ScribeNextStepsData | null>(null);
+  const [programInitial, setProgramInitial] = useState<LibraryEntry[] | undefined>(undefined);
+
+  useEffect(() => {
+    if (searchParams.get('note') !== 'new') return;
+    setNoteAppointment((searchParams.get('appointment') as Id<'appointments'> | null) ?? undefined);
+    setTab('notes');
+    setDrawer('note');
+    const url = new URL(window.location.href);
+    url.searchParams.delete('note');
+    url.searchParams.delete('appointment');
+    url.searchParams.set('tab', 'notes');
+    window.history.replaceState(null, '', url.toString());
+  }, [searchParams]);
 
   useEffect(() => {
     const fromUrl = searchParams.get('tab') as TabId | null;
@@ -353,7 +373,32 @@ export default function PatientWorkspacePage() {
         </Panel>
       )}
 
-      <NoteDrawer workspace={workspace} {...drawerProps('note')} />
+      <NoteDrawer
+        workspace={workspace}
+        open={drawer === 'note'}
+        onOpenChange={(open) => {
+          setDrawer(open ? 'note' : null);
+          if (!open) setNoteAppointment(undefined);
+        }}
+        appointmentId={noteAppointment}
+        onScribeSigned={setNextSteps}
+      />
+      <ScribeNextSteps
+        steps={nextSteps}
+        patientFirstName={patient.firstName || 'your patient'}
+        onClose={() => setNextSteps(null)}
+        onSendExercises={(entries) => {
+          setProgramInitial(entries.length ? entries : undefined);
+          setDrawer('exercises');
+        }}
+        onBookFollowUp={(followUp) =>
+          openBooking({
+            patient: { id: patientId, name },
+            suggestedDate: followUp.inDays ? suggestedDate(followUp.inDays) : undefined,
+            hint: `From your note: ${followUp.text}`,
+          })
+        }
+      />
       <CarePlanDrawer workspace={workspace} {...drawerProps('plan')} />
       {workspace.plan && <SaveTemplateDrawer plan={workspace.plan} {...drawerProps('template')} />}
       <RequestPaymentDrawer workspace={workspace} {...drawerProps('payment')} />
@@ -364,7 +409,12 @@ export default function PatientWorkspacePage() {
         patientName={patient.firstName || 'your patient'}
         mode="send"
         program={null}
-        {...drawerProps('exercises')}
+        initial={programInitial}
+        open={drawer === 'exercises'}
+        onOpenChange={(open) => {
+          setDrawer(open ? 'exercises' : null);
+          if (!open) setProgramInitial(undefined);
+        }}
         onSent={(programId) => setShareFor(programId)}
       />
       <ShareLinkDialog

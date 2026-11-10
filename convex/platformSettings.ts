@@ -140,9 +140,13 @@ export const DEFAULT_PLATFORM_CONTROLS = {
   allowDoctorSignups: true,
   marketplaceEnabled: true,
   supportEmail: "",
+  scribeMode: "off" as ScribeMode,
+  scribeAllowedEmails: [] as string[],
 };
 
+export type ScribeMode = "off" | "allowlist" | "everyone";
 export type PlatformControls = typeof DEFAULT_PLATFORM_CONTROLS;
+const MAX_SCRIBE_EMAILS = 200;
 
 const MAX_MAINTENANCE_MESSAGE = 500;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -162,8 +166,10 @@ export async function loadPlatformControls(ctx: ReaderCtx) {
         allowDoctorSignups: row.allowDoctorSignups ?? true,
         marketplaceEnabled: row.marketplaceEnabled,
         supportEmail: row.supportEmail ?? "",
+        scribeMode: row.scribeMode ?? "off",
+        scribeAllowedEmails: row.scribeAllowedEmails ?? [],
       }
-    : { ...DEFAULT_PLATFORM_CONTROLS };
+    : { ...DEFAULT_PLATFORM_CONTROLS, scribeAllowedEmails: [] };
   return { controls, row };
 }
 
@@ -200,8 +206,13 @@ export const getPlatformControls = query({
   handler: async (ctx) => {
     await ensureUserRole(ctx, ["admin"]);
     const { controls, row } = await loadPlatformControls(ctx);
+    const scribeEnv = (process.env.SCRIBE_ENABLED ?? "").trim().toLowerCase();
     return {
       ...controls,
+      /** The AI scribe can reach OpenAI (OPENAI_API_KEY is set on this deployment) */
+      scribeReady: Boolean(process.env.OPENAI_API_KEY?.trim()),
+      /** SCRIBE_ENABLED on this deployment overrides the switch below ("on" / "off"), or null */
+      scribeOverride: scribeEnv === "true" ? "on" : scribeEnv === "false" || scribeEnv === "off" ? "off" : null,
       isCustom: row !== null,
       updatedAt: row?.updatedAt ?? null,
       updatedByName: row?.updatedByName ?? null,
@@ -221,17 +232,30 @@ export const updatePlatformControls = mutation({
     allowDoctorSignups: v.optional(v.boolean()),
     marketplaceEnabled: v.boolean(),
     supportEmail: v.string(),
+    // Optional so a Settings page loaded before the AI scribe switch existed can still save
+    scribeMode: v.optional(v.union(v.literal("off"), v.literal("allowlist"), v.literal("everyone"))),
+    scribeAllowedEmails: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
     const admin = await ensureUserRole(ctx, ["admin"]);
 
     const { controls: previous, row } = await loadPlatformControls(ctx);
+    const scribeAllowedEmails = [
+      ...new Set((args.scribeAllowedEmails ?? previous.scribeAllowedEmails).map((e) => e.trim().toLowerCase()).filter(Boolean)),
+    ].sort();
     const next: PlatformControls = {
       ...args,
       allowDoctorSignups: args.allowDoctorSignups ?? previous.allowDoctorSignups,
       maintenanceMessage: args.maintenanceMessage.trim(),
       supportEmail: args.supportEmail.trim(),
+      scribeMode: args.scribeMode ?? previous.scribeMode,
+      scribeAllowedEmails,
     };
+    if (scribeAllowedEmails.length > MAX_SCRIBE_EMAILS) {
+      throw new ConvexError(`The AI scribe list can hold up to ${MAX_SCRIBE_EMAILS} emails.`);
+    }
+    const badEmail = scribeAllowedEmails.find((e) => !EMAIL_PATTERN.test(e));
+    if (badEmail) throw new ConvexError(`"${badEmail}" isn't a valid email for the AI scribe list.`);
     if (next.maintenanceMessage.length > MAX_MAINTENANCE_MESSAGE) {
       throw new ConvexError(`The maintenance message can be at most ${MAX_MAINTENANCE_MESSAGE} characters.`);
     }
@@ -240,7 +264,7 @@ export const updatePlatformControls = mutation({
     }
 
     const changes = (Object.keys(next) as (keyof PlatformControls)[])
-      .filter((key) => previous[key] !== next[key])
+      .filter((key) => JSON.stringify(previous[key]) !== JSON.stringify(next[key]))
       .map((key) => ({ field: key, from: previous[key], to: next[key] }));
     if (changes.length === 0) return { changed: 0 };
 

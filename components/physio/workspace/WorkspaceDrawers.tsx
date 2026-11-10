@@ -12,6 +12,7 @@ import {
   Check,
   ClipboardList,
   Copy,
+  FileSignature,
   FileText,
   Loader2,
   Mail,
@@ -54,6 +55,12 @@ import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
 import { ClinicalNoteEditor } from '@/components/physio/notes/ClinicalNoteEditor'
 import { clearNoteDraft, loadNoteDraft, saveNoteDraft } from '@/components/physio/notes/draftStore'
+import { ScribePanel } from '@/components/physio/notes/scribe/ScribePanel'
+import type { ScribeNextStepsData } from '@/components/physio/notes/scribe/ScribeNextSteps'
+import { scribeApi, scribeError, type ScribeSession } from '@/components/physio/notes/scribe/scribeApi'
+import { draftToNote } from '@/components/physio/notes/scribe/scribeTools'
+import type { ScribeDraft } from '@/convex/helpers/scribeDraft'
+import { useMutation } from 'convex/react'
 import {
   draftHasContent,
   emptyDraft,
@@ -138,12 +145,18 @@ export function NoteDrawer({
   open,
   onOpenChange,
   note = null,
+  appointmentId,
+  onScribeSigned,
 }: {
   workspace: Workspace
   open: boolean
   onOpenChange: (open: boolean) => void
   /** Opens the drawer on this note to edit it, instead of a new note */
   note?: EditableNote | null
+  /** The visit a new note is for (an AI scribe recording is linked to it) */
+  appointmentId?: Id<'appointments'>
+  /** After an AI-drafted note is signed: the exercises and follow-up the session mentioned */
+  onScribeSigned?: (steps: ScribeNextStepsData) => void
 }) {
   const patientId = workspace.patient._id
   const addNote = useMutationUntyped(workspaceApi.physioCare.addClinicalNote)
@@ -167,6 +180,14 @@ export function NoteDrawer({
   const [confirmClose, setConfirmClose] = useState(false)
   const discarded = useRef(false)
   const media = useNoteMedia()
+  // The AI scribe recording this new note is drafted from, and whether it's recording or drafting
+  const signScribe = useMutation(scribeApi.sign)
+  const [scribe, setScribe] = useState<ScribeSession | null>(null)
+  const [scribeBusy, setScribeBusy] = useState(false)
+  const [replaceWith, setReplaceWith] = useState<ScribeDraft | null>(null)
+  const lastApplied = useRef<NoteDraft | null>(null)
+  const draftRef = useRef(draft)
+  draftRef.current = draft
   const editing = note !== null
   const noteId = note?._id
   // Discharge summaries and follow-up calls keep their type
@@ -197,7 +218,32 @@ export function NoteDrawer({
     setDraft(saved ?? current ?? emptyDraft(firstNote ? 'initial_assessment' : 'treatment_note'))
     setRestored(Boolean(saved))
     resetMedia()
+    lastApplied.current = null
+    setReplaceWith(null)
   }, [open, note, patientId, firstNote, resetMedia, userId])
+
+  /** The AI's draft into the editor; if the physio has written something of their own, ask first. */
+  const applyScribeDraft = useCallback((next: ScribeDraft, force = false) => {
+    const current = draftRef.current
+    const own = lastApplied.current ? !sameDraft(current, lastApplied.current) : draftHasContent({ ...current, measures: [] })
+    if (own && !force) {
+      setReplaceWith(next)
+      return
+    }
+    const note = draftToNote(next, current.measures)
+    lastApplied.current = note
+    setDraft(note)
+    setReplaceWith(null)
+    setOpenedAt(Date.now())
+  }, [])
+  const addScribeMeasures = useCallback((measures: ClinicalMeasure[]) => {
+    setDraft((current) => {
+      const next = { ...current, measures: mergeMeasures(current.measures, measures) }
+      if (lastApplied.current && sameDraft(current, lastApplied.current)) lastApplied.current = next
+      return next
+    })
+  }, [])
+  const scribeDraft = !editing && scribe?.draft ? scribe : null
 
   // The note is kept in this browser as it's written, so a closed tab or a crash loses nothing.
   // An edit is kept only while it differs from the saved note.
@@ -227,6 +273,10 @@ export function NoteDrawer({
   // Escape, a click outside, the close button and Cancel all come through here
   const requestClose = () => {
     if (saving || media.recording) return
+    if (scribeBusy) {
+      toast('Stop the recording (or wait for the draft) before closing.')
+      return
+    }
     if (unsaved()) setConfirmClose(true)
     else onOpenChange(false)
   }
@@ -261,6 +311,29 @@ export function NoteDrawer({
     }
     setSaving(true)
     try {
+      if (scribeDraft) {
+        await signScribe({
+          scribeSessionId: scribeDraft._id,
+          noteType: final.noteType,
+          subjectiveAssessment: final.subjective || undefined,
+          objectiveAssessment: final.objective || undefined,
+          treatmentAdministered: final.treatment || undefined,
+          planForNextSession: final.plan || undefined,
+          diagnosis: final.assessment || undefined,
+          measures: final.measures.length ? final.measures : undefined,
+          voiceNoteStorageId: media.voiceStorageId,
+          attachments: media.attachmentIds.length ? media.attachmentIds : undefined,
+        })
+        discarded.current = true
+        if (userId) clearNoteDraft(userId, patientId)
+        setDraft(emptyDraft())
+        playSound('success')
+        toast.success('Note signed')
+        onOpenChange(false)
+        const steps = scribeDraft.draft!
+        if (steps.exercises.length || steps.followUp) onScribeSigned?.({ exercises: steps.exercises, followUp: steps.followUp })
+        return
+      }
       if (editing) {
         await updateNote({
           noteId: note._id,
@@ -299,7 +372,7 @@ export function NoteDrawer({
       onOpenChange(false)
     } catch (error) {
       playSound('error')
-      toast.error(programError(error, 'Couldn’t save the note. Please try again.'))
+      toast.error(scribeDraft ? scribeError(error, 'Couldn’t sign the note. Please try again.') : programError(error, 'Couldn’t save the note. Please try again.'))
     } finally {
       setSaving(false)
     }
@@ -319,16 +392,28 @@ export function NoteDrawer({
       className="sm:max-w-none md:max-w-2xl lg:max-w-3xl xl:max-w-5xl"
       footer={
         <div className="flex gap-2">
-          <Button className={cn(secondaryButtonClass, 'h-11 flex-1 sm:flex-none sm:px-6')} disabled={saving || media.recording} onClick={requestClose}>
+          <Button className={cn(secondaryButtonClass, 'h-11 flex-1 sm:flex-none sm:px-6')} disabled={saving || media.recording || scribeBusy} onClick={requestClose}>
             {editing ? 'Cancel' : 'Close'}
           </Button>
-          <Button className={cn(primaryButtonClass, 'h-11 flex-1')} disabled={saving || media.busy} onClick={() => void save()}>
-            {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {editing ? 'Save changes' : 'Save note'}
+          <Button className={cn(primaryButtonClass, 'h-11 flex-1')} disabled={saving || media.busy || scribeBusy} onClick={() => void save()}>
+            {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : scribeDraft ? <FileSignature className="mr-2 h-4 w-4" /> : null}
+            {editing ? 'Save changes' : scribeDraft ? 'Sign note' : 'Save note'}
           </Button>
         </div>
       }
     >
+      {!editing && open && (
+        <ScribePanel
+          patientId={patientId}
+          patientFirstName={workspace.patient.firstName || 'The patient'}
+          appointmentId={appointmentId}
+          noteMeasures={draft.measures}
+          onDraft={applyScribeDraft}
+          onAddMeasures={addScribeMeasures}
+          onSessionChange={setScribe}
+          onBusyChange={setScribeBusy}
+        />
+      )}
       {restored && (
         <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl bg-pt-blue-bg px-3 py-2 text-sm text-pt-blue-fg">
           {editing ? 'Your unsaved changes to this note are back.' : 'Your unsaved note is back where you left it.'}
@@ -368,6 +453,29 @@ export function NoteDrawer({
       />
     </PhysioDrawer>
 
+    <AlertDialog open={replaceWith !== null} onOpenChange={(next) => !next && setReplaceWith(null)}>
+      <AlertDialogContent className="rounded-2xl border-pt-line bg-pt-surface text-pt-ink">
+        <AlertDialogHeader>
+          <AlertDialogTitle className="text-pt-ink">Use the AI draft?</AlertDialogTitle>
+          <AlertDialogDescription className="text-pt-muted">
+            The note’s sections will be replaced with the AI’s draft. Measures already in the note stay.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel className={cn(secondaryButtonClass, 'h-11 sm:h-10')}>Keep my note</AlertDialogCancel>
+          <AlertDialogAction
+            className={cn(primaryButtonClass, 'h-11 sm:h-10')}
+            onClick={(event) => {
+              event.preventDefault()
+              if (replaceWith) applyScribeDraft(replaceWith, true)
+            }}
+          >
+            Use the AI draft
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+
     <AlertDialog open={confirmClose} onOpenChange={setConfirmClose}>
       <AlertDialogContent className="rounded-2xl border-pt-line bg-pt-surface text-pt-ink">
         <AlertDialogHeader>
@@ -375,7 +483,7 @@ export function NoteDrawer({
           <AlertDialogDescription className="text-pt-muted">
             {editing
               ? 'Your changes to this note haven’t been saved. The note stays as it was.'
-              : `This note hasn’t been saved${media.hasMedia ? ', and its voice note and files will be lost' : ''}.`}
+              : `This note hasn’t been saved${media.hasMedia ? ', and its voice note and files will be lost' : ''}.${scribe ? ' The recording and AI draft are kept for 7 days: open a new note for this patient to carry on.' : ''}`}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>

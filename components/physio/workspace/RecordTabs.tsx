@@ -174,10 +174,11 @@ export function NotesTab({ workspace, onWrite }: { workspace: Workspace; onWrite
                       </span>
                       <span className="min-w-0 flex-1">
                         <span className="block text-sm font-semibold text-pt-ink">{format(note.sessionDate, 'EEE d MMM yyyy')}</span>
-                        {(!note.mine || note.editedAt) && (
+                        {(!note.mine || note.editedAt || note.aiAssisted) && (
                           <span className="block text-xs text-pt-muted">
                             {[
                               note.mine ? null : `By ${note.authorName}`,
+                              note.aiAssisted ? 'AI-assisted, signed by the physio' : null,
                               note.editedAt ? `Edited ${format(note.editedAt, 'd MMM yyyy, HH:mm')}` : null,
                             ]
                               .filter(Boolean)

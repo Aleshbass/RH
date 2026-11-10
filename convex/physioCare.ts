@@ -149,7 +149,7 @@ export async function ensureActiveEpisode(
 }
 
 /** The care plan in use. A clinic's patient (`clinicId`): the clinic's, whoever on its team wrote it. */
-async function activePlanFor(ctx: Ctx, physioId: Id<"users">, patientId: Id<"users">, clinicId?: Id<"clinics">) {
+export async function activePlanFor(ctx: Ctx, physioId: Id<"users">, patientId: Id<"users">, clinicId?: Id<"clinics">) {
   const plans = await ctx.db
     .query("treatmentPlans")
     .withIndex("by_patient", (q) => q.eq("patientId", patientId))
@@ -641,6 +641,8 @@ export const getClinicalNotes = query({
         goals: n.goals,
         measures: n.measures ?? [],
         editedAt: n.editedAt ?? null,
+        /** Drafted by the AI scribe from a recording, then reviewed and signed by the physio */
+        aiAssisted: n.aiAssisted ?? false,
         authorName: await nameOf(n.physiotherapistId),
         /** The signed-in physio wrote it (only they can edit it) */
         mine: n.physiotherapistId === reader.user._id,
@@ -1418,62 +1420,92 @@ export const addClinicalNote = mutation({
   handler: async (ctx, args) => {
     const physio = await requirePhysio(ctx);
     const relationship = await requireActiveRelationship(ctx, physio._id, args.patientId);
-    const sections = {
-      subjectiveAssessment: args.subjectiveAssessment?.trim() || undefined,
-      objectiveAssessment: args.objectiveAssessment?.trim() || undefined,
-      treatmentAdministered: args.treatmentAdministered?.trim() || undefined,
-      planForNextSession: args.planForNextSession?.trim() || undefined,
-      diagnosis: args.diagnosis?.trim() || undefined,
-    };
-    assertNoteTextLength(sections);
-    const text = Object.values(sections).filter(Boolean);
-    const measures = cleanMeasures(args.measures ?? []);
-    const attachments = [...new Set(args.attachments ?? [])];
-    if (text.length === 0 && measures.length === 0 && !args.voiceNoteStorageId && attachments.length === 0) {
-      throw new ConvexError("Write something, add a measure, record a voice note or attach a file before saving.");
-    }
-    if (attachments.length > MAX_NOTE_ATTACHMENTS) {
-      throw new ConvexError(`A note can have up to ${MAX_NOTE_ATTACHMENTS} attachments.`);
-    }
-    for (const fileId of attachments) {
-      if (!(await ctx.db.system.get(fileId))) throw new ConvexError("One of the attachments didn't finish uploading. Try again.");
-    }
-    if (args.voiceNoteStorageId) {
-      const voice = await ctx.db.system.get(args.voiceNoteStorageId);
-      if (!voice) throw new ConvexError("The voice note didn't finish uploading. Try again.");
-      if (voice.contentType && !voice.contentType.startsWith("audio/")) {
-        throw new ConvexError("The voice note must be an audio recording.");
-      }
-    }
-
-    let appointmentId = args.appointmentId;
-    if (appointmentId) {
-      const appointment = await ctx.db.get(appointmentId);
-      if (!appointment || appointment.physiotherapistId !== physio._id || appointment.patientId !== args.patientId) {
-        throw new ConvexError("That appointment isn't with this patient.");
-      }
-    } else {
-      const labels = { initial_assessment: "Initial assessment", treatment_note: "Clinical note", follow_up: "Follow-up" } as const;
-      appointmentId = await anchorAppointment(ctx, physio, relationship, labels[args.noteType]);
-    }
-
-    const noteId = await ctx.db.insert("sessionLogs", {
-      appointmentId,
-      patientId: args.patientId,
-      physiotherapistId: physio._id,
-      clinicId: relationship.clinicId,
-      sessionDate: Date.now(),
-      noteType: args.noteType,
-      ...sections,
-      measures: measures.length ? measures : undefined,
-      // Stored as the storage id; getClinicalNotes turns it into a playable URL.
-      voiceNoteUrl: args.voiceNoteStorageId,
-      attachments: attachments.length ? attachments : undefined,
-    });
-    await ensureActiveEpisode(ctx, physio, relationship);
-    return { noteId };
+    return await insertClinicalNote(ctx, physio, relationship, args);
   },
 });
+
+export type NewClinicalNote = {
+  patientId: Id<"users">;
+  noteType: "initial_assessment" | "treatment_note" | "follow_up";
+  subjectiveAssessment?: string;
+  objectiveAssessment?: string;
+  treatmentAdministered?: string;
+  planForNextSession?: string;
+  diagnosis?: string;
+  measures?: Doc<"sessionLogs">["measures"];
+  appointmentId?: Id<"appointments">;
+  voiceNoteStorageId?: Id<"_storage">;
+  attachments?: Id<"_storage">[];
+};
+
+/**
+ * Checks and saves a new clinical note for a physio already allowed to write it (requirePhysio +
+ * requireActiveRelationship). Shared by addClinicalNote and the AI scribe's signing
+ * (scribe.signScribeNote), which passes `extra` to mark the note as drafted by the scribe.
+ */
+export async function insertClinicalNote(
+  ctx: MutationCtx,
+  physio: Doc<"users">,
+  relationship: Doc<"patientPhysiotherapistRelationships">,
+  args: NewClinicalNote,
+  extra: Pick<Doc<"sessionLogs">, "aiAssisted" | "scribeSessionId" | "signedAt"> = {}
+): Promise<{ noteId: Id<"sessionLogs"> }> {
+  const sections = {
+    subjectiveAssessment: args.subjectiveAssessment?.trim() || undefined,
+    objectiveAssessment: args.objectiveAssessment?.trim() || undefined,
+    treatmentAdministered: args.treatmentAdministered?.trim() || undefined,
+    planForNextSession: args.planForNextSession?.trim() || undefined,
+    diagnosis: args.diagnosis?.trim() || undefined,
+  };
+  assertNoteTextLength(sections);
+  const text = Object.values(sections).filter(Boolean);
+  const measures = cleanMeasures(args.measures ?? []);
+  const attachments = [...new Set(args.attachments ?? [])];
+  if (text.length === 0 && measures.length === 0 && !args.voiceNoteStorageId && attachments.length === 0) {
+    throw new ConvexError("Write something, add a measure, record a voice note or attach a file before saving.");
+  }
+  if (attachments.length > MAX_NOTE_ATTACHMENTS) {
+    throw new ConvexError(`A note can have up to ${MAX_NOTE_ATTACHMENTS} attachments.`);
+  }
+  for (const fileId of attachments) {
+    if (!(await ctx.db.system.get(fileId))) throw new ConvexError("One of the attachments didn't finish uploading. Try again.");
+  }
+  if (args.voiceNoteStorageId) {
+    const voice = await ctx.db.system.get(args.voiceNoteStorageId);
+    if (!voice) throw new ConvexError("The voice note didn't finish uploading. Try again.");
+    if (voice.contentType && !voice.contentType.startsWith("audio/")) {
+      throw new ConvexError("The voice note must be an audio recording.");
+    }
+  }
+
+  let appointmentId = args.appointmentId;
+  if (appointmentId) {
+    const appointment = await ctx.db.get(appointmentId);
+    if (!appointment || appointment.physiotherapistId !== physio._id || appointment.patientId !== args.patientId) {
+      throw new ConvexError("That appointment isn't with this patient.");
+    }
+  } else {
+    const labels = { initial_assessment: "Initial assessment", treatment_note: "Clinical note", follow_up: "Follow-up" } as const;
+    appointmentId = await anchorAppointment(ctx, physio, relationship, labels[args.noteType]);
+  }
+
+  const noteId = await ctx.db.insert("sessionLogs", {
+    appointmentId,
+    patientId: args.patientId,
+    physiotherapistId: physio._id,
+    clinicId: relationship.clinicId,
+    sessionDate: Date.now(),
+    noteType: args.noteType,
+    ...sections,
+    measures: measures.length ? measures : undefined,
+    // Stored as the storage id; getClinicalNotes turns it into a playable URL.
+    voiceNoteUrl: args.voiceNoteStorageId,
+    attachments: attachments.length ? attachments : undefined,
+    ...extra,
+  });
+  await ensureActiveEpisode(ctx, physio, relationship);
+  return { noteId };
+}
 
 /** The physio who wrote a clinical note corrects or adds to it. The earlier wording is kept. */
 export const updateClinicalNote = mutation({

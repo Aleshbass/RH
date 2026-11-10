@@ -22,6 +22,7 @@ import {
   Loader2,
   MapPin,
   MessageSquare,
+  Mic,
   NotebookPen,
   Receipt,
   User,
@@ -49,6 +50,8 @@ import {
 } from '@/components/physio/ui'
 import { formatKobo } from '@/lib/rehabify-services'
 import { useMutationUntyped } from '@/lib/convexUntyped'
+import { useQuery } from 'convex/react'
+import { scribeApi } from '@/components/physio/notes/scribe/scribeApi'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
 import { Choice, HomeVisitFields, earningsFor, suggestService, useRehabifyServices, type HomeVisit, type ScheduleService } from './rehabifyServices'
@@ -98,6 +101,7 @@ export function AppointmentDrawer({
   const propose = useMutationUntyped(scheduleApi.appointments.proposeNewTime)
   const rebook = useMutationUntyped(scheduleApi.rehabifyFollowUps.rebookMissedVisit)
   const addNote = useMutationUntyped(scheduleApi.physioCare.addClinicalNote)
+  const scribeAccess = useQuery(scribeApi.access, {})
   const acceptWithInvoice = useMutationUntyped(scheduleApi.rehabifyFollowUps.acceptRequestWithInvoice)
 
   // A Rehabify Care patient's request: the services it's invoiced from (with the physio's payouts).
@@ -666,6 +670,21 @@ export function AppointmentDrawer({
           It’s saved to the Notes tab on {first}’s page, linked to this session.
           <InfoTip>Only you and your clinic can see clinical notes. Write the full assessment from the patient’s page any time.</InfoTip>
         </p>
+        {scribeAccess?.enabled && (
+          <Link
+            href={`${patientHref}?note=new&appointment=${appointment._id}`}
+            onClick={close}
+            className="flex items-center gap-3 rounded-2xl border border-pt-line p-3 text-sm transition hover:bg-pt-hover"
+          >
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-pt-primary text-pt-on-primary">
+              <Mic className="h-4 w-4" aria-hidden />
+            </span>
+            <span>
+              <span className="block font-semibold text-pt-ink">Write the full note with the AI scribe</span>
+              <span className="block text-pt-muted">Dictate what happened, or record the next part of the session. You check and sign it.</span>
+            </span>
+          </Link>
+        )}
         {(
           [
             ['did', 'What you did today', 'e.g. Manual therapy to the knee, progressed squats'],
