@@ -13,7 +13,7 @@ import { isJoyLoginEmail } from "../../lib/auth/joyLoginEmail";
 export const JOY_PLACEHOLDER_PREFIX = "joy-whatsapp:";
 
 // Records created for a patient before they had their own login (see users.ts)
-const PLACEHOLDER_PREFIXES = ["clinic_patient_", "rehabify_ref_", JOY_PLACEHOLDER_PREFIX, "managed_"];
+const PLACEHOLDER_PREFIXES = ["clinic_patient_", "physio_patient_", "rehabify_ref_", JOY_PLACEHOLDER_PREFIX, "managed_"];
 
 export const LINK_CODE_TTL_MS = 15 * 60_000;
 export const LINK_CODE_MAX_ATTEMPTS = 5;

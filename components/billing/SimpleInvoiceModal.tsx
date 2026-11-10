@@ -15,7 +15,10 @@ import {
   User,
   Mail,
   Phone,
-  WalletCards
+  WalletCards,
+  Edit,
+  Undo2,
+  XCircle
 } from '@/components/icons';
 
 // Types used in this modal
@@ -63,6 +66,11 @@ interface SimpleInvoiceModalProps {
   isInitiatingLoan?: boolean;
   /** Status of the MediLoan already started for this invoice, if any. */
   mediloanStatus?: string | null;
+  /** Correcting mistakes: shown only when given */
+  onEdit?: () => void;
+  onCancelInvoice?: () => void;
+  /** A payment recorded by hand by mistake (cash, transfer, POS) */
+  onUndoPayment?: () => void;
 }
 
 /** A MediLoan in these states may still pay the invoice, so another can't be started. */
@@ -84,7 +92,10 @@ export function SimpleInvoiceModal({
   onDownload,
   onInitiateMediLoan,
   isInitiatingLoan,
-  mediloanStatus
+  mediloanStatus,
+  onEdit,
+  onCancelInvoice,
+  onUndoPayment
 }: SimpleInvoiceModalProps) {
   if (!selectedInvoice) return null;
 
@@ -212,6 +223,24 @@ export function SimpleInvoiceModal({
 
           {/* Actions */}
           <div className="flex flex-wrap gap-2 justify-end pt-4">
+            {onUndoPayment && (
+              <Button variant="outline" onClick={onUndoPayment}>
+                <Undo2 className="h-4 w-4 mr-2" />
+                Undo recorded payment
+              </Button>
+            )}
+            {onCancelInvoice && (
+              <Button variant="outline" className="text-red-700 hover:text-red-800" onClick={onCancelInvoice}>
+                <XCircle className="h-4 w-4 mr-2" />
+                Cancel invoice
+              </Button>
+            )}
+            {onEdit && (
+              <Button variant="outline" onClick={onEdit}>
+                <Edit className="h-4 w-4 mr-2" />
+                Edit
+              </Button>
+            )}
             <Button variant="outline" onClick={onDownload}>
               <Download className="h-4 w-4 mr-2" />
               Download PDF

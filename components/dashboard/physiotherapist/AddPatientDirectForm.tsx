@@ -1,10 +1,11 @@
 'use client'
 
 import { useState } from 'react'
-import { useAction } from 'convex/react'
-import { Loader2, Mail } from '@/components/icons'
+import { useMutation } from 'convex/react'
+import { makeFunctionReference } from 'convex/server'
+import { ConvexError } from 'convex/values'
+import { Loader2, UserPlus } from '@/components/icons'
 import { toast } from 'sonner'
-import { api } from '@/convex/_generated/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -20,20 +21,51 @@ const SOURCES: { value: Source; title: string; hint: string }[] = [
   { value: 'existing_patient', title: 'My existing patient', hint: 'Someone I already treat' },
 ]
 
+type AddResult =
+  | { mode: 'added'; patientId: string; name: string; invited: boolean; patientNumber?: string | null }
+  | { mode: 'existing'; patientId: string; name: string; invited: false }
+  | { mode: 'invited'; patientId: null; name: string; invited: true; patientNumber?: string | null }
+
+// By name: the generated `api` type is at TypeScript's depth limit
+const addPatientRecordRef = makeFunctionReference<
+  'mutation',
+  {
+    firstName: string
+    lastName: string
+    phoneNumber?: string
+    email?: string
+    source?: Source
+    referredBy?: string
+    note?: string
+  },
+  AddResult
+>('physioPatients:addPatientRecord')
+
+/** A patient who is on your list now and can be booked straight away. */
+export type AddedPatient = { patientId: string; name: string }
+
 interface AddPatientDirectFormProps {
   onSuccess?: () => void
+  /** The patient is on your list now (new, or already yours): e.g. the booking drawer books them next */
+  onAdded?: (patient: AddedPatient) => void
   onCancel?: () => void
 }
 
+function errorText(error: unknown) {
+  if (error instanceof ConvexError && typeof error.data === 'string') return error.data
+  return 'We couldn’t add the patient. Try again.'
+}
+
 /**
- * Invite a patient by email. They join Rehabify with the link and appear in the physio's
- * patients once they accept. The physio says where the patient came from, which is kept on
- * the patient's record and care episode.
+ * Add a patient to your list. Only the name is required: many patients have no email. With an
+ * email they're also invited to their own login. Someone already on Rehabify is invited instead,
+ * and appears once they accept (their record is never linked just by typing their email).
  */
-export default function AddPatientDirectForm({ onSuccess, onCancel }: AddPatientDirectFormProps) {
-  const createInvitation = useAction(api.actions.patients.invitePatient.createPatientInvitationWithNotification)
+export default function AddPatientDirectForm({ onSuccess, onAdded, onCancel }: AddPatientDirectFormProps) {
+  const addPatient = useMutation(addPatientRecordRef)
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
+  const [phone, setPhone] = useState('')
   const [email, setEmail] = useState('')
   const [source, setSource] = useState<Source | null>(null)
   const [referredBy, setReferredBy] = useState('')
@@ -46,31 +78,43 @@ export default function AddPatientDirectForm({ onSuccess, onCancel }: AddPatient
     const next: Record<string, string> = {}
     if (!firstName.trim()) next.firstName = 'Enter their first name'
     if (!lastName.trim()) next.lastName = 'Enter their last name'
-    if (!/^\S+@\S+\.\S+$/.test(email.trim())) next.email = 'Enter a valid email address'
+    if (email.trim() && !/^\S+@\S+\.\S+$/.test(email.trim())) next.email = 'Check the email address, or leave it empty'
     if (!source) next.source = 'Choose where this patient came from'
     setErrors(next)
     if (Object.keys(next).length > 0) return
 
     setSubmitting(true)
     try {
-      const result = await createInvitation({
-        patientEmail: email.trim().toLowerCase(),
-        patientName: `${firstName.trim()} ${lastName.trim()}`,
-        notes: note.trim() || undefined,
-        sendEmail: true,
+      const result = await addPatient({
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+        phoneNumber: phone.trim() || undefined,
+        email: email.trim().toLowerCase() || undefined,
         source: source!,
         referredBy: source === 'referred' ? referredBy.trim() || undefined : undefined,
+        note: note.trim() || undefined,
       })
-      if (!result?.success) throw new Error(result?.message || 'We couldn’t send the invitation.')
       playSound('success')
-      toast.success(`Invitation sent to ${firstName.trim()}`, {
-        description: result.existingPatientNumber
-          ? `Already on Rehabify as ${result.existingPatientNumber}. Accepting links their existing record, so there’s no duplicate.`
-          : 'They’ll appear in your patients once they accept.',
-      })
+      if (result.mode === 'invited') {
+        toast.success(`Invitation sent to ${firstName.trim()}`, {
+          description: `${result.patientNumber ? `Already on Rehabify as ${result.patientNumber}. ` : 'Already on Rehabify. '}They appear in your patients once they accept.`,
+        })
+        onSuccess?.()
+        return
+      }
+      if (result.mode === 'existing') {
+        toast.success(`${result.name} is already your patient`)
+      } else {
+        toast.success(result.patientNumber ? `${result.name} added · ${result.patientNumber}` : `${result.name} added`, {
+          description: result.invited
+            ? 'We emailed them an invitation to their own login.'
+            : 'No email, so no invitation was sent. You can add one later.',
+        })
+      }
+      onAdded?.({ patientId: result.patientId, name: result.name })
       onSuccess?.()
     } catch (error) {
-      toast.error((error as Error).message || 'We couldn’t send the invitation. Try again.')
+      toast.error(errorText(error))
     } finally {
       setSubmitting(false)
     }
@@ -94,19 +138,38 @@ export default function AddPatientDirectForm({ onSuccess, onCancel }: AddPatient
         </div>
       </div>
 
-      <div>
-        <Label htmlFor="ap-email">Email</Label>
-        <Input
-          id="ap-email"
-          className="mt-1.5"
-          type="email"
-          inputMode="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          placeholder="patient@example.com"
-          autoComplete="off"
-        />
-        {fieldError('email')}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div>
+          <Label htmlFor="ap-phone">
+            Phone <span className="font-normal text-neutral-400">(optional)</span>
+          </Label>
+          <Input
+            id="ap-phone"
+            className="mt-1.5"
+            type="tel"
+            inputMode="tel"
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            placeholder="0801 234 5678"
+            autoComplete="off"
+          />
+        </div>
+        <div>
+          <Label htmlFor="ap-email">
+            Email <span className="font-normal text-neutral-400">(if they have one)</span>
+          </Label>
+          <Input
+            id="ap-email"
+            className="mt-1.5"
+            type="email"
+            inputMode="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="patient@example.com"
+            autoComplete="off"
+          />
+          {fieldError('email')}
+        </div>
       </div>
 
       <div>
@@ -163,7 +226,9 @@ export default function AddPatientDirectForm({ onSuccess, onCancel }: AddPatient
       </div>
 
       <p className="rounded-xl bg-rh-canvas px-3 py-2 text-xs text-neutral-600 dark:bg-white/[0.04] dark:text-neutral-400">
-        We’ll email {firstName.trim() || 'them'} an invitation to join Rehabify. They appear in your patients once they accept.
+        {email.trim()
+          ? `${firstName.trim() || 'They'}’ll be on your list now, and we’ll email an invitation to their own login.`
+          : `${firstName.trim() || 'They'}’ll be on your list now. Without an email no invitation is sent; you can add one later.`}
       </p>
 
       <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
@@ -173,8 +238,8 @@ export default function AddPatientDirectForm({ onSuccess, onCancel }: AddPatient
           </Button>
         )}
         <Button type="submit" disabled={submitting} className={primaryButtonClass}>
-          {submitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Mail className="mr-2 h-4 w-4" />}
-          Send invitation
+          {submitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UserPlus className="mr-2 h-4 w-4" />}
+          Add patient
         </Button>
       </div>
     </form>

@@ -12,13 +12,15 @@
 import { createContext, useCallback, useContext, useState, type ReactNode } from 'react'
 import Link from 'next/link'
 import { toast } from 'sonner'
-import { ArrowRight, CalendarDays, Check, Clock, Home, Loader2, MapPin, MessageSquare, Search, User, Video } from '@/components/icons'
+import { ArrowRight, CalendarDays, Check, Clock, Home, Loader2, MapPin, MessageSquare, Search, User, UserPlus, Video } from '@/components/icons'
 import type { Id } from '@/convex/_generated/dataModel'
 import { lagosDate, lagosShortDate, lagosTime, lagosTimeRange } from '@/convex/helpers/lagosTime'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { PatientSlotPicker } from '@/components/patient/PatientAppointmentBookingModal'
+import AddPatientDirectForm from '@/components/dashboard/physiotherapist/AddPatientDirectForm'
+import { MAX_REPEAT_VISITS, WEEKDAYS, lagosDateTimeToMs, lagosToday, lagosWeekday, repeatVisitStarts } from '@/lib/repeatVisits'
 import { SESSION_TYPES, type SessionType } from '@/components/booking/booking-shared'
 import {
   EmptyState,
@@ -44,7 +46,7 @@ export type BookingOptions = {
   mode?: 'telehealth' | 'in-person'
 }
 
-type Step = 'patient' | 'what' | 'when' | 'details' | 'done'
+type Step = 'patient' | 'new' | 'what' | 'when' | 'details' | 'done'
 type Slot = { start: number; end: number; duration: number }
 
 type PatientOption = { _id: string; firstName?: string; lastName?: string; email?: string; patientNumber?: string }
@@ -125,7 +127,15 @@ function BookingDrawer({ options, onClose }: { options: BookingOptions; onClose:
   const [location, setLocation] = useState('')
   const [notes, setNotes] = useState('')
   const [busy, setBusy] = useState(false)
-  const [result, setResult] = useState<{ payoutKobo?: number; holdExpiresAt?: number } | null>(null)
+  const [result, setResult] = useState<{ payoutKobo?: number; holdExpiresAt?: number; past?: boolean; booked?: number; skipped?: number[] } | null>(null)
+  // Your own patients: any date and time, past ones too (a visit agreed by phone and never entered)
+  const [manualTime, setManualTime] = useState(false)
+  const [manualDate, setManualDate] = useState(() => lagosToday())
+  const [manualClock, setManualClock] = useState('09:00')
+  // Repeat visits (your own patients): every 1 or 2 weeks, on the first visit's weekday plus any others
+  const [repeat, setRepeat] = useState<'none' | '1' | '2'>('none')
+  const [extraDays, setExtraDays] = useState<number[]>([])
+  const [repeatWeeks, setRepeatWeeks] = useState(4)
   // A paid visit that didn't happen, being rebooked free instead of booking a new paid session
   const [rebookOf, setRebookOf] = useState<RebookableVisit | null>(null)
 
@@ -170,6 +180,17 @@ function BookingDrawer({ options, onClose }: { options: BookingOptions; onClose:
   // The calendar slot, sized to the session once we know how long it is
   const fixedSlot = options.slot ? { start: options.slot.start, end: options.slot.start + duration * 60_000, duration } : null
 
+  // Every visit this booking makes (the first one included), when it repeats
+  const firstDay = slot ? lagosWeekday(slot.start) : -1
+  const repeatDays = firstDay < 0 ? [] : [...new Set([firstDay, ...extraDays])]
+  const visitStarts = slot && !isRehabify && repeat !== 'none' ? repeatVisitStarts(slot.start, repeatDays, Number(repeat), repeatWeeks) : []
+  const slotIsPast = Boolean(slot && slot.end <= Date.now())
+
+  const setManualSlot = (date: string, clock: string) => {
+    const start = lagosDateTimeToMs(date, clock)
+    setSlot(Number.isNaN(start) ? null : { start, end: start + duration * 60_000, duration })
+  }
+
   const close = () => {
     if (busy) return
     setOpen(false)
@@ -181,7 +202,11 @@ function BookingDrawer({ options, onClose }: { options: BookingOptions; onClose:
     if (fixedSlot) {
       setSlot(fixedSlot)
       goTo('details')
-    } else goTo('when')
+    } else {
+      // A typed time is resized to the session just chosen
+      if (manualTime) setManualSlot(manualDate, manualClock)
+      goTo('when')
+    }
   }
 
   const book = async () => {
@@ -204,7 +229,11 @@ function BookingDrawer({ options, onClose }: { options: BookingOptions; onClose:
         })) as { payoutKobo: number; holdExpiresAt: number }
         setResult(res)
       } else {
-        await createAppointment({
+        if (visitStarts.length > MAX_REPEAT_VISITS) {
+          setBusy(false)
+          return toast.error(`That is ${visitStarts.length} visits. Choose fewer weeks or days (up to ${MAX_REPEAT_VISITS}).`)
+        }
+        const res = (await createAppointment({
           patientId: patient.id as Id<'users'>,
           startTime: slot.start,
           endTime: slot.end,
@@ -212,8 +241,9 @@ function BookingDrawer({ options, onClose }: { options: BookingOptions; onClose:
           appointmentType: mode,
           location: mode === 'in-person' ? location.trim() || undefined : undefined,
           notesForTherapist: notes.trim() || undefined,
-        })
-        setResult({})
+          repeatStartTimes: visitStarts.length > 1 ? visitStarts.slice(1) : undefined,
+        })) as { past?: boolean; booked?: number; skipped?: number[] }
+        setResult({ past: res?.past, booked: res?.booked, skipped: res?.skipped })
       }
       playSound('booked')
       goTo('done')
@@ -253,12 +283,13 @@ function BookingDrawer({ options, onClose }: { options: BookingOptions; onClose:
 
   const titles: Record<Step, { title: string; description?: ReactNode }> = {
     patient: { title: 'New appointment', description: 'Who is it for?' },
+    new: { title: 'New patient', description: 'Add them, then book them in' },
     what: { title: patient ? `Book ${firstName}` : 'New appointment', description: isRehabify ? 'Which Rehabify service is this?' : 'What kind of session is this?' },
     when: rebookOf
       ? { title: 'Rebook the missed visit', description: `${sessionTitle} · ${duration} min · already paid` }
       : { title: 'Choose a time', description: `${sessionTitle} · ${duration} min` },
     details: { title: 'Check and book', description: 'Make sure everything looks right' },
-    done: { title: rebookOf ? 'Rebooked' : isRehabify ? 'Sent to pay' : 'Booked in' },
+    done: { title: rebookOf ? 'Rebooked' : isRehabify ? 'Sent to pay' : result?.past && (result.booked ?? 1) === 1 ? 'Saved' : 'Booked in' },
   }
 
   let body: ReactNode = null
@@ -281,10 +312,19 @@ function BookingDrawer({ options, onClose }: { options: BookingOptions; onClose:
             className={cn(fieldClass, 'h-11 pl-9')}
           />
         </div>
-        <p className="mt-2 flex items-center gap-1 text-xs text-pt-muted">
-          Only patients in your care are listed
-          <InfoTip>Add someone new from Patients first. Once they’re in your care you can book them here.</InfoTip>
-        </p>
+        <div className="mt-2 flex items-center justify-between gap-2">
+          <p className="flex items-center gap-1 text-xs text-pt-muted">
+            Only patients in your care are listed
+            <InfoTip>Someone new? Tap New patient: add their name (email is optional) and book them straight away.</InfoTip>
+          </p>
+          <button
+            type="button"
+            onClick={() => goTo('new')}
+            className="inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-sm font-semibold text-pt-ink transition-colors hover:bg-pt-hover"
+          >
+            <UserPlus className="h-4 w-4" /> New patient
+          </button>
+        </div>
         <div className="mt-3 space-y-1">
           {patients === undefined ? (
             <div className="flex items-center gap-2 py-8 text-sm text-pt-muted">
@@ -294,12 +334,11 @@ function BookingDrawer({ options, onClose }: { options: BookingOptions; onClose:
             <EmptyState
               icon={<User />}
               title={q ? 'No patient matches' : 'No patients yet'}
-              description={q ? 'Try another name, email or Rehabify ID.' : 'Patients you treat show up here.'}
+              description={q ? 'Try another name, email or Rehabify ID, or add them as a new patient.' : 'Patients you treat show up here.'}
               action={
-                <Button asChild className={cn(secondaryButtonClass, 'h-10')}>
-                  <Link href="/dashboard/physiotherapist/patients" onClick={close}>
-                    Go to Patients
-                  </Link>
+                <Button className={cn(primaryButtonClass, 'h-10')} onClick={() => goTo('new')}>
+                  <UserPlus className="mr-2 h-4 w-4" />
+                  New patient
                 </Button>
               }
             />
@@ -332,6 +371,20 @@ function BookingDrawer({ options, onClose }: { options: BookingOptions; onClose:
           )}
         </div>
       </div>
+    )
+  }
+
+  if (step === 'new') {
+    body = (
+      <AddPatientDirectForm
+        onAdded={(added) => {
+          setPatient({ id: added.patientId, name: added.name })
+          setService(null)
+          setSessionType(null)
+          goTo('what')
+        }}
+        onCancel={() => goTo('patient')}
+      />
     )
   }
 
@@ -475,13 +528,70 @@ function BookingDrawer({ options, onClose }: { options: BookingOptions; onClose:
     body = (
       <div>
         <StepBar index={stepIndex} total={steps.length} />
-        <PatientSlotPicker physiotherapistId={me._id} durationMinutes={duration} selected={slot} onSelect={setSlot} />
+        {manualTime && !rebookOf && !isRehabify ? (
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label htmlFor="booking-date" className="mb-1.5 block text-sm font-medium text-pt-ink">
+                  Date
+                </label>
+                <Input
+                  id="booking-date"
+                  type="date"
+                  value={manualDate}
+                  onChange={(e) => {
+                    setManualDate(e.target.value)
+                    setManualSlot(e.target.value, manualClock)
+                  }}
+                  className={cn(fieldClass, 'h-11')}
+                />
+              </div>
+              <div>
+                <label htmlFor="booking-time" className="mb-1.5 block text-sm font-medium text-pt-ink">
+                  Time
+                </label>
+                <Input
+                  id="booking-time"
+                  type="time"
+                  step={300}
+                  value={manualClock}
+                  onChange={(e) => {
+                    setManualClock(e.target.value)
+                    setManualSlot(manualDate, e.target.value)
+                  }}
+                  className={cn(fieldClass, 'h-11')}
+                />
+              </div>
+            </div>
+            {slotIsPast && (
+              <p className="rounded-2xl bg-pt-green-bg p-3 text-sm text-pt-green-fg">
+                This time has passed, so it’s saved as a visit {firstName} attended. No reminder or confirmation is sent.
+              </p>
+            )}
+          </div>
+        ) : (
+          <PatientSlotPicker physiotherapistId={me._id} durationMinutes={duration} selected={slot} onSelect={setSlot} />
+        )}
         <p className="mt-4 flex items-center gap-1 text-xs text-pt-muted">
-          Times come from your working hours
+          {manualTime ? 'Any date and time, in Lagos time' : 'Times come from your working hours'}
           <InfoTip>
-            Open times use your working hours, days off and existing bookings, in Lagos time. To book outside them, tap the time on the Calendar instead, or change your hours in Settings → Working hours.
+            Open times use your working hours, days off and existing bookings, in Lagos time. To book outside them, or to add a visit that already happened, enter the date and time yourself.
           </InfoTip>
         </p>
+        {!rebookOf && !isRehabify && (
+          <button
+            type="button"
+            onClick={() => {
+              const next = !manualTime
+              setManualTime(next)
+              if (next) setManualSlot(manualDate, manualClock)
+              else setSlot(null)
+            }}
+            className="mt-2 text-sm font-semibold text-pt-ink underline-offset-2 hover:underline"
+          >
+            {manualTime ? 'Pick from my open times instead' : 'Enter a date and time yourself (past visits too)'}
+          </button>
+        )}
       </div>
     )
     footer = (
@@ -537,6 +647,92 @@ function BookingDrawer({ options, onClose }: { options: BookingOptions; onClose:
             address={address}
             onAddress={setAddress}
           />
+        )}
+
+        {!isRehabify && !rebookOf && (
+          <div>
+            <label htmlFor="booking-repeat" className="mb-1.5 block text-sm font-medium text-pt-ink">
+              Repeat
+            </label>
+            <div className="grid grid-cols-3 gap-2" id="booking-repeat" role="radiogroup">
+              {(
+                [
+                  ['none', 'Just once'],
+                  ['1', 'Every week'],
+                  ['2', 'Every 2 weeks'],
+                ] as const
+              ).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  role="radio"
+                  aria-checked={repeat === value}
+                  onClick={() => setRepeat(value)}
+                  className={cn(
+                    'rounded-xl border px-2 py-2.5 text-sm font-semibold transition-colors',
+                    repeat === value ? 'border-pt-ink bg-pt-primary text-pt-on-primary' : 'border-pt-line-strong bg-pt-surface text-pt-ink hover:bg-pt-hover'
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            {repeat !== 'none' && (
+              <div className="mt-3 space-y-3 rounded-2xl border border-pt-line p-3">
+                <div>
+                  <p className="mb-1.5 text-xs text-pt-muted">On these days</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {WEEKDAYS.map(({ day, label }) => {
+                      const active = repeatDays.includes(day)
+                      const locked = day === firstDay
+                      return (
+                        <button
+                          key={day}
+                          type="button"
+                          aria-pressed={active}
+                          disabled={locked}
+                          title={locked ? 'The day of the first visit' : undefined}
+                          onClick={() => setExtraDays(active ? extraDays.filter((d) => d !== day) : [...extraDays, day])}
+                          className={cn(
+                            'h-9 min-w-[2.75rem] rounded-lg border px-2 text-xs font-semibold transition-colors',
+                            active ? 'border-pt-ink bg-pt-primary text-pt-on-primary' : 'border-pt-line-strong text-pt-ink hover:bg-pt-hover'
+                          )}
+                        >
+                          {label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <label htmlFor="booking-weeks" className="text-xs text-pt-muted">
+                    For
+                  </label>
+                  <select
+                    id="booking-weeks"
+                    value={repeatWeeks}
+                    onChange={(e) => setRepeatWeeks(Number(e.target.value))}
+                    className="h-9 rounded-lg border border-pt-line-strong bg-pt-surface px-2 text-sm text-pt-ink"
+                  >
+                    {[2, 3, 4, 6, 8, 10, 12].map((n) => (
+                      <option key={n} value={n}>
+                        {n} weeks
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                {visitStarts.length > 0 && (
+                  <p className={cn('text-xs', visitStarts.length > MAX_REPEAT_VISITS ? 'text-pt-rose-fg' : 'text-pt-ink')}>
+                    {visitStarts.length} visits, {lagosShortDate(visitStarts[0])} to {lagosShortDate(visitStarts[visitStarts.length - 1])}, at{' '}
+                    {lagosTime(visitStarts[0])}.
+                    {visitStarts.length > MAX_REPEAT_VISITS
+                      ? ` The most at once is ${MAX_REPEAT_VISITS}.`
+                      : ' Times you’re already booked are skipped and listed for you.'}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
         )}
 
         {!isRehabify && mode === 'in-person' && (
@@ -597,6 +793,10 @@ function BookingDrawer({ options, onClose }: { options: BookingOptions; onClose:
             </>
           ) : isRehabify ? (
             `Send to ${firstName} to pay`
+          ) : visitStarts.length > 1 ? (
+            `Book ${visitStarts.length} visits`
+          ) : slotIsPast ? (
+            'Save past visit'
           ) : (
             `Book ${firstName} in`
           )}
@@ -612,15 +812,30 @@ function BookingDrawer({ options, onClose }: { options: BookingOptions; onClose:
           <Check className="h-7 w-7" />
         </span>
         <h3 className="mt-4 text-xl font-semibold tracking-tight text-pt-ink">
-          {rebookOf ? `${firstName}’s visit is rebooked` : isRehabify ? `Sent to ${firstName} to pay` : `${firstName} is booked in`}
+          {rebookOf
+            ? `${firstName}’s visit is rebooked`
+            : isRehabify
+              ? `Sent to ${firstName} to pay`
+              : (result?.booked ?? 1) > 1
+                ? `${result?.booked} visits booked for ${firstName}`
+                : result?.past
+                  ? 'Saved as an attended visit'
+                  : `${firstName} is booked in`}
         </h3>
         <p className="mx-auto mt-2 max-w-sm text-sm text-pt-muted">
           {rebookOf
             ? `${firstName} has been told in the app and by email. It’s already paid, so they don’t pay again, and you’re paid once it’s done.`
             : isRehabify && result?.holdExpiresAt
             ? `They pay to confirm${result.payoutKobo !== undefined ? `, and you earn ${formatKobo(result.payoutKobo)}` : ''}. We hold the time until ${lagosShortDate(result.holdExpiresAt)}, ${lagosTime(result.holdExpiresAt)}.`
-            : `${firstName} gets a notification to confirm the time. You’ll see it on your Schedule.`}
+            : result?.past && (result.booked ?? 1) === 1
+              ? 'It’s on your Schedule as attended. Nothing was sent to the patient.'
+              : `${firstName} gets a notification to confirm. You’ll see ${(result?.booked ?? 1) > 1 ? 'them' : 'it'} on your Schedule.`}
         </p>
+        {(result?.skipped?.length ?? 0) > 0 && (
+          <p className="mx-auto mt-2 max-w-sm rounded-2xl bg-pt-amber-bg p-3 text-sm text-pt-amber-fg">
+            Not booked, because you already have a visit then: {result!.skipped!.map((t) => `${lagosShortDate(t)} ${lagosTime(t)}`).join(', ')}.
+          </p>
+        )}
         <div className="mt-5 text-left">
           <Summary patient={patient.name} title={sessionTitle} slot={slot} mode={modeLabel} />
         </div>

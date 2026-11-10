@@ -122,6 +122,8 @@ export const createAppointment = mutation({
     colorCode: v.optional(v.string()),
     manualMeetingLink: v.optional(v.string()),
     location: v.optional(v.string()),
+    // Repeat visits: start times of the later visits (same length, type and place)
+    repeatStartTimes: v.optional(v.array(v.number())),
   },
   handler: async (ctx, args): Promise<{
     success: boolean;
@@ -129,6 +131,11 @@ export const createAppointment = mutation({
     message: string;
     googleMeetLink?: string;
     googleCalendarLink?: string;
+    /** The first visit was already over, so it was saved as attended */
+    past?: boolean;
+    booked?: number;
+    /** Repeat times skipped because they clash with another visit */
+    skipped?: number[];
   }> => {
     const user = await getAuthenticatedUser(ctx);
 
@@ -159,27 +166,30 @@ export const createAppointment = mutation({
       throw new Error("Physiotherapist profile not found");
     }
 
-    // Check for time conflicts
-    const conflictingAppointments = await ctx.db
-      .query("appointments")
-      .withIndex("by_physiotherapist_id_and_time", (q) =>
-        q.eq("physiotherapistId", user._id)
-      )
-      .filter((q) =>
-        q.or(
-          q.and(q.lte(q.field("startTime"), args.startTime), q.gt(q.field("endTime"), args.startTime)),
-          q.and(q.lt(q.field("startTime"), args.endTime), q.gte(q.field("endTime"), args.endTime)),
-          q.and(q.gte(q.field("startTime"), args.startTime), q.lte(q.field("endTime"), args.endTime))
-        )
-      )
-      .filter((q) =>
-        q.and(
-          q.neq(q.field("status"), "cancelled_by_patient"),
-          q.neq(q.field("status"), "cancelled_by_therapist")
-        )
-      )
-      .collect();
+    const length = args.endTime - args.startTime;
+    if (!(length > 0)) throw new ConvexError("The visit must end after it starts.");
+    const now = Date.now();
+    const DAY = 24 * 60 * 60 * 1000;
+    // A visit that already happened can be added afterwards (agreed by phone and never entered)
+    if (args.startTime < now - 366 * DAY) throw new ConvexError("That date is more than a year ago. Check the date.");
+    const repeats = [...new Set(args.repeatStartTimes ?? [])].filter((t) => t > args.startTime).sort((a, b) => a - b);
+    if (repeats.length > MAX_REPEAT_VISITS - 1) throw new ConvexError(`You can book up to ${MAX_REPEAT_VISITS} visits at once.`);
+    if ((repeats[repeats.length - 1] ?? args.startTime) > now + 366 * DAY) throw new ConvexError("Repeat visits can be booked up to a year ahead.");
 
+    // Visits of this physio's that overlap [start, end) and still stand
+    const clashesWith = async (start: number, end: number) =>
+      (
+        await ctx.db
+          .query("appointments")
+          .withIndex("by_physiotherapist_id_and_time", (q) =>
+            q.eq("physiotherapistId", user._id).gte("startTime", start - DAY).lt("startTime", end)
+          )
+          .collect()
+      ).filter(
+        (a) => !a.isRecordOnly && a.status !== "cancelled_by_patient" && a.status !== "cancelled_by_therapist" && a.startTime < end && a.endTime > start
+      );
+
+    const conflictingAppointments = await clashesWith(args.startTime, args.endTime);
     if (conflictingAppointments.length > 0) {
       const sorted = conflictingAppointments.sort((a, b) => a.startTime - b.startTime);
       const details = sorted.slice(0, 3).map((a) => `${lagosShortDate(a.startTime)}, ${lagosTimeRange(a.startTime, a.endTime)}`).join("; ");
@@ -188,29 +198,62 @@ export const createAppointment = mutation({
 
     // "google_meet" is the wizard's platform choice, not a link
     const manualMeetingLink = args.manualMeetingLink === "google_meet" ? undefined : args.manualMeetingLink;
+    const repeatGroup = repeats.length > 0 ? `rg_${now.toString(36)}_${Math.random().toString(36).slice(2, 8)}` : undefined;
 
-    // Create the appointment
-    const appointmentId = await ctx.db.insert("appointments", {
-      patientId: args.patientId,
-      physiotherapistId: user._id,
-      // The visit belongs to the care relationship's clinic, never the physio's other work
-      clinicId: relationship.clinicId,
-      startTime: args.startTime,
-      endTime: args.endTime,
-      serviceType: args.serviceType,
-      status: "scheduled",
-      // The physio set this time, so the patient is the one who confirms it
-      requestedBy: "provider",
-      notesForPatient: args.notesForPatient,
-      notesForTherapist: args.notesForTherapist,
-      // Enhanced appointment features
-      priority: args.priority || "low",
-      appointmentType: args.appointmentType || "in-person",
-      isPinned: args.isPinned || false,
-      colorCode: args.colorCode || "#3B82F6", // Default blue
-      manualMeetingLink,
-      location: args.location,
-    });
+    const insertVisit = (startTime: number) => {
+      // Already over: saved as attended, since nobody can confirm a visit in the past
+      const past = startTime + length <= now;
+      return ctx.db.insert("appointments", {
+        patientId: args.patientId,
+        physiotherapistId: user._id,
+        // The visit belongs to the care relationship's clinic, never the physio's other work
+        clinicId: relationship.clinicId,
+        startTime,
+        endTime: startTime + length,
+        serviceType: args.serviceType,
+        status: past ? "completed" : "scheduled",
+        // The physio set this time, so the patient is the one who confirms it
+        requestedBy: "provider",
+        notesForPatient: args.notesForPatient,
+        notesForTherapist: args.notesForTherapist,
+        // Enhanced appointment features
+        priority: args.priority || "low",
+        appointmentType: args.appointmentType || "in-person",
+        isPinned: args.isPinned || false,
+        colorCode: args.colorCode || "#3B82F6", // Default blue
+        manualMeetingLink,
+        location: args.location,
+        repeatGroup,
+      });
+    };
+
+    // Create the appointment(s): later repeats that clash are skipped and reported
+    const appointmentId = await insertVisit(args.startTime);
+    const upcoming: { id: Id<"appointments">; startTime: number }[] = args.endTime > now ? [{ id: appointmentId, startTime: args.startTime }] : [];
+    const skipped: number[] = [];
+    for (const startTime of repeats) {
+      if ((await clashesWith(startTime, startTime + length)).length > 0) {
+        skipped.push(startTime);
+        continue;
+      }
+      const id = await insertVisit(startTime);
+      if (startTime + length > now) upcoming.push({ id, startTime });
+    }
+    const booked = 1 + repeats.length - skipped.length;
+    const firstIsPast = args.endTime <= now;
+
+    // A visit that already happened needs no notifications, email or video room
+    if (upcoming.length === 0) {
+      return {
+        success: true,
+        appointmentId,
+        message: firstIsPast && booked === 1 ? "Saved as an attended visit." : `${booked} visits saved.`,
+        past: firstIsPast,
+        booked,
+        skipped,
+      };
+    }
+    const firstUpcoming = upcoming[0];
 
     // Create notifications for both patient and therapist
     const patient = await ctx.db.get(args.patientId);
@@ -227,7 +270,9 @@ export const createAppointment = mutation({
       }
     }
     // Precompute a friendly time range string for emails (Convex runs in UTC; people read Lagos time)
-    const appointmentTimeStr = lagosTimeRange(args.startTime, args.endTime);
+    const appointmentTimeStr = lagosTimeRange(firstUpcoming.startTime, firstUpcoming.startTime + length);
+    // Repeat visits: one message for the whole set, not one per visit
+    const moreVisits = upcoming.length - 1;
 
     // Notification for patient
     await insertNotification(ctx, {
@@ -236,10 +281,13 @@ export const createAppointment = mutation({
       priority: "medium",
       status: "pending",
       payload: {
-        title: "Appointment Scheduled",
-        body: `${physiotherapistName} booked a visit for ${lagosDateTime(args.startTime)}. Please confirm it on your appointments page.`,
+        title: moreVisits > 0 ? `${upcoming.length} Appointments Scheduled` : "Appointment Scheduled",
+        body:
+          moreVisits > 0
+            ? `${physiotherapistName} booked ${upcoming.length} visits, starting ${lagosDateTime(firstUpcoming.startTime)}. Please confirm them on your appointments page.`
+            : `${physiotherapistName} booked a visit for ${lagosDateTime(firstUpcoming.startTime)}. Please confirm it on your appointments page.`,
         data: {
-          entityId: appointmentId,
+          entityId: firstUpcoming.id,
           entityType: "appointment",
           actionUrl: "/dashboard/patient/appointments",
         },
@@ -254,7 +302,7 @@ export const createAppointment = mutation({
         to: patientEmail,
         patientName,
         physiotherapistName,
-        appointmentDate: args.startTime,
+        appointmentDate: firstUpcoming.startTime,
         appointmentTime: appointmentTimeStr,
         clinicName,
         clinicAddress,
@@ -271,10 +319,10 @@ export const createAppointment = mutation({
       priority: "medium",
       status: "pending",
       payload: {
-        title: "Appointment Created",
-        body: `Appointment scheduled with ${patientName}`,
+        title: moreVisits > 0 ? "Appointments Created" : "Appointment Created",
+        body: moreVisits > 0 ? `${upcoming.length} visits scheduled with ${patientName}` : `Appointment scheduled with ${patientName}`,
         data: {
-          entityId: appointmentId,
+          entityId: firstUpcoming.id,
           entityType: "appointment",
           actionUrl: "/dashboard/physiotherapist/appointments",
         },
@@ -297,29 +345,30 @@ export const createAppointment = mutation({
         // A link typed by the physio is used as is; otherwise the wizard's choice, then their preference
         const wantsGoogleMeet = args.manualMeetingLink === 'google_meet' || (!manualMeetingLink && preferredPlatform === 'google_meet');
 
-        if (!wantsGoogleMeet && !manualMeetingLink) {
-          // Stream room via an internal action: scheduled functions have no signed-in user,
-          // so the public createVideoCall would refuse. The link is saved on the appointment.
-          await ctx.scheduler.runAfter(0, internal.videoCalls.createAppointmentVideoCall, {
-            appointmentId: appointmentId,
-            hostId: user._id,
-            participants: [args.patientId, user._id],
-            title: `Appointment: ${patientName}`,
-          });
-        } else if (wantsGoogleMeet) {
-          // Schedule Google Meet link generation via Google Calendar API
-
-          await ctx.scheduler.runAfter(0, internal.calendar.service.createCalendarEventAsync, {
-            userId: user._id,
-            appointmentId: appointmentId,
-            summary: `${args.serviceType} - ${patientName}`,
-            description: args.notesForTherapist || `Telehealth ${args.serviceType} Appointment`,
-            startTime: args.startTime,
-            endTime: args.endTime,
-            attendees: patient?.email ? [{ email: patient.email, displayName: patientName }] : [],
-            createMeetLink: true,
-          });
-
+        // A room for each upcoming visit (a visit that already happened needs none)
+        for (const visit of upcoming) {
+          if (!wantsGoogleMeet && !manualMeetingLink) {
+            // Stream room via an internal action: scheduled functions have no signed-in user,
+            // so the public createVideoCall would refuse. The link is saved on the appointment.
+            await ctx.scheduler.runAfter(0, internal.videoCalls.createAppointmentVideoCall, {
+              appointmentId: visit.id,
+              hostId: user._id,
+              participants: [args.patientId, user._id],
+              title: `Appointment: ${patientName}`,
+            });
+          } else if (wantsGoogleMeet) {
+            // Schedule Google Meet link generation via Google Calendar API
+            await ctx.scheduler.runAfter(0, internal.calendar.service.createCalendarEventAsync, {
+              userId: user._id,
+              appointmentId: visit.id,
+              summary: `${args.serviceType} - ${patientName}`,
+              description: args.notesForTherapist || `Telehealth ${args.serviceType} Appointment`,
+              startTime: visit.startTime,
+              endTime: visit.startTime + length,
+              attendees: patient?.email ? [{ email: patient.email, displayName: patientName }] : [],
+              createMeetLink: true,
+            });
+          }
         }
       } catch (error) {
         console.error('Failed to create video call for appointment:', error);
@@ -330,10 +379,16 @@ export const createAppointment = mutation({
     return {
       success: true,
       appointmentId,
-      message: "Appointment created successfully.",
+      message: booked > 1 ? `${booked} appointments created.` : "Appointment created successfully.",
+      past: firstIsPast,
+      booked,
+      skipped,
     };
   },
 });
+
+/** Most visits one booking can create (repeats included). */
+const MAX_REPEAT_VISITS = 40;
 
 /**
  * Get appointments for physiotherapist

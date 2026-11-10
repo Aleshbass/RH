@@ -722,7 +722,7 @@ export const addClinicPatient = mutation({
 
 // Records a clinic, referral or Joy created before the patient had an account
 // (kept in step with PLACEHOLDER_CLERK_ID_PREFIXES in convex/users.ts)
-const PLACEHOLDER_CLERK_ID_PREFIXES = ["clinic_patient_", "rehabify_ref_", "joy-whatsapp:", "managed_"];
+const PLACEHOLDER_CLERK_ID_PREFIXES = ["clinic_patient_", "physio_patient_", "rehabify_ref_", "joy-whatsapp:", "managed_"];
 
 /** True once the patient has signed up and owns the account. */
 function patientHasAccount(patient: Doc<"users">) {
@@ -730,7 +730,7 @@ function patientHasAccount(patient: Doc<"users">) {
 }
 
 /** Email the patient that this clinic added them. Returns false when there's no email to send to. */
-async function schedulePatientInviteEmail(
+export async function schedulePatientInviteEmail(
   ctx: MutationCtx,
   clinic: Doc<"clinics">,
   patient: Doc<"users">,
@@ -2048,7 +2048,7 @@ async function clinicReferralSource(ctx: QueryCtx, clinicId: Id<"clinics">, pati
  * The amounts stored on a clinic invoice of `totalKobo`, for a new invoice or a corrected one.
  * Throws when a Rehabify referral is billed under the floor.
  */
-async function clinicInvoiceMoney(
+export async function clinicInvoiceMoney(
   ctx: QueryCtx,
   patientSource: "rehabify_referral" | "clinic_direct",
   totalKobo: number,

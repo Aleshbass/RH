@@ -273,7 +273,8 @@ export const updateOrCreateUser = internalMutation({
 // ==== PUBLIC MUTATION: Store User from Clerk (Client-Side Sync) ====
 // Records created for a patient before they had a Clerk account.
 // managed_: a profile a family member or caregiver set up (convex/careCircle.ts)
-const PLACEHOLDER_CLERK_ID_PREFIXES = ["clinic_patient_", "rehabify_ref_", "joy-whatsapp:", "managed_"];
+// physio_patient_: a patient a physiotherapist added without an account (physioPatients.ts)
+const PLACEHOLDER_CLERK_ID_PREFIXES = ["clinic_patient_", "physio_patient_", "rehabify_ref_", "joy-whatsapp:", "managed_"];
 
 /** A Joy (WhatsApp) patient record for this verified phone number, if exactly one exists. */
 async function joyPlaceholderByPhone(ctx: MutationCtx, verifiedPhone: string) {

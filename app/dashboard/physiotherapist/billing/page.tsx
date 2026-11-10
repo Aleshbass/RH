@@ -14,6 +14,13 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { SimpleInvoiceModal } from '@/components/billing/SimpleInvoiceModal';
+import {
+  EditInvoiceDialog,
+  cancelMyInvoiceRef,
+  getInvoiceForEditRef,
+  invoiceErrorText,
+  undoMyRecordedPaymentRef,
+} from '@/components/billing/EditInvoiceDialog';
 import { CreateInvoiceModal } from '@/components/dashboard/physiotherapist/modals/CreateInvoiceModal';
 import { EmptyState, PageContainer, PageHeader, Panel, StatTile, StatusBadge, primaryButtonClass } from '@/components/physio/ui';
 import { PaystackTestModeBanner } from '@/components/billing/PaystackTestModeBanner';
@@ -112,6 +119,11 @@ export default function BillingPage() {
   const [selected, setSelected] = useState<InvoiceFromQuery | null>(null);
   const [creating, setCreating] = useState(false);
   const [isInitiatingLoan, setIsInitiatingLoan] = useState(false);
+  // Correcting a mistake: the open invoice's lines and whether its payment was recorded by hand
+  const [editing, setEditing] = useState<Id<'invoices'> | null>(null);
+  const correction = useQuery(getInvoiceForEditRef, selected ? { invoiceId: selected._id } : 'skip');
+  const cancelInvoice = useMutation(cancelMyInvoiceRef);
+  const undoPayment = useMutation(undoMyRecordedPaymentRef);
   // MediLoans on this physio's invoices, so each row shows where its loan stands
   const invoiceLoans = useQuery(api.mediloan.getMyInvoiceLoans, {}) as
     | Array<{ invoiceId: string; status: string; updatedAt: number }>
@@ -222,6 +234,43 @@ export default function BillingPage() {
       }
     },
     [patients]
+  );
+
+  const handleCancelInvoice = useCallback(
+    async (invoice: InvoiceFromQuery) => {
+      const reason = window.prompt(
+        `Cancel invoice #${invoice.invoiceNumber} for ${invoice.patientName}? The patient is told there's nothing to pay. Add a reason (optional):`,
+        ''
+      );
+      if (reason === null) return;
+      try {
+        await cancelInvoice({ invoiceId: invoice._id, reason: reason.trim() || undefined });
+        playSound('reject');
+        toast.success('Invoice cancelled');
+        setSelected(null);
+      } catch (error) {
+        toast.error(invoiceErrorText(error, 'Couldn’t cancel the invoice'));
+      }
+    },
+    [cancelInvoice]
+  );
+
+  const handleUndoPayment = useCallback(
+    async (invoice: InvoiceFromQuery) => {
+      const ok = window.confirm(
+        `Undo the payment recorded on invoice #${invoice.invoiceNumber}? It goes back to unpaid, so you can correct it, cancel it or record the payment again.`
+      );
+      if (!ok) return;
+      try {
+        await undoPayment({ invoiceId: invoice._id });
+        playSound('success');
+        toast.success('Payment undone. The invoice is unpaid again.');
+        setSelected(null);
+      } catch (error) {
+        toast.error(invoiceErrorText(error, 'Couldn’t undo the payment'));
+      }
+    },
+    [undoPayment]
   );
 
   const payout = bankAccounts?.[0];
@@ -403,6 +452,8 @@ export default function BillingPage() {
 
       <CreateInvoiceModal isOpen={creating} onClose={() => setCreating(false)} />
 
+      <EditInvoiceDialog invoiceId={editing} onClose={() => setEditing(null)} />
+
       {selected && (
         <SimpleInvoiceModal
           isOpen
@@ -412,7 +463,23 @@ export default function BillingPage() {
               firstName: selected.patientName.split(' ')[0],
               lastName: selected.patientName.split(' ').slice(1).join(' '),
             },
+            // The services on it, once loaded (prices in kobo, as the modal shows them)
+            items: correction?.items.map((item) => ({
+              description: item.description,
+              quantity: item.quantity,
+              unitPrice: Math.round(item.unitPriceNaira * 100),
+            })),
           } as never}
+          onEdit={
+            correction && ['sent', 'draft', 'pending'].includes(correction.status)
+              ? () => {
+                  setEditing(selected._id);
+                  setSelected(null);
+                }
+              : undefined
+          }
+          onCancelInvoice={correction && ['sent', 'draft', 'pending'].includes(correction.status) ? () => void handleCancelInvoice(selected) : undefined}
+          onUndoPayment={correction?.paidByHand ? () => void handleUndoPayment(selected) : undefined}
           onClose={() => setSelected(null)}
           onSend={() => handleSend(selected._id)}
           onRecordPayment={(amount: number, method: string) => handleRecordPayment(selected._id, amount, method)}

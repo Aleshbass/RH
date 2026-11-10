@@ -6,10 +6,10 @@ import { api } from "./_generated/api";
 import { Doc, Id } from "./_generated/dataModel";
 import { publicAppUrl } from "./helpers/appUrl";
 import { closeInvoicePaymentLinks } from "./helpers/paymentLinks";
-import { recordInvoicePartnerCommission } from "./helpers/partnerLedger";
+import { recordInvoicePartnerCommission, reverseCommissionsForPayment } from "./helpers/partnerLedger";
 import { getAuthenticatedUser } from "./auth";
 import { isServerCaller } from "./helpers/serverSecret";
-import { canUseArea, insertClinicInvoice, resolveClinicMember } from "./clinicTools";
+import { canUseArea, clinicInvoiceMoney, insertClinicInvoice, resolveClinicMember } from "./clinicTools";
 import { requireClinicCareAccess } from "./helpers/careAccess";
 import { isRehabifyCare } from "./rehabifyFollowUps";
 import { isRehabifyCareInvoice, rehabifyCarePayoutKobo } from "./helpers/marketplaceInvoices";
@@ -628,10 +628,11 @@ export const processPayment = mutation({
     await assertCanRecordManualPayment(ctx, user, invoice);
 
     // Update invoice with payment details
+    const paidAt = Date.now();
     await ctx.db.patch(args.invoiceId, {
       status: "paid",
       paymentMethod: args.paymentMethod,
-      paymentDate: Date.now(),
+      paymentDate: paidAt,
     });
     // Recorded by hand: the online payment link must not collect a second time
     await closeInvoicePaymentLinks(ctx, args.invoiceId);
@@ -640,7 +641,7 @@ export const processPayment = mutation({
     await recordInvoicePartnerCommission(ctx, {
       invoice,
       paidKobo: invoice.subtotalAmount > 0 ? invoice.subtotalAmount : invoice.totalAmount,
-      paymentReference: `manual:${args.invoiceId}`,
+      paymentReference: await manualPaymentReference(ctx, args.invoiceId, paidAt),
       verified: false,
     });
 
@@ -1264,10 +1265,11 @@ export const recordPayment = mutation({
     const isFullPayment = amt >= remaining;
 
     // Update invoice
+    const paidAt = Date.now();
     const updates: any = {
       paymentMethod: args.paymentMethod,
       paymentReference: ref,
-      paymentDate: Date.now(),
+      paymentDate: paidAt,
       paidAmount: alreadyPaid + amt,
       status: isFullPayment ? "paid" : "partial_payment",
     };
@@ -1280,7 +1282,7 @@ export const recordPayment = mutation({
       await recordInvoicePartnerCommission(ctx, {
         invoice,
         paidKobo: invoice.subtotalAmount > 0 ? invoice.subtotalAmount : invoice.totalAmount,
-        paymentReference: `manual:${args.invoiceId}`,
+        paymentReference: await manualPaymentReference(ctx, args.invoiceId, paidAt),
         verified: false,
       });
     }
@@ -1402,4 +1404,300 @@ export const updateInvoiceStatus = internalMutation({
 
     return { success: true };
   }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Correcting mistakes on an invoice (physio portal): edit an unpaid invoice, cancel it, or
+// undo a payment recorded by hand. A physio's own invoices, or their clinic's with Billing.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Payment methods a person records by hand (cash, transfer, POS), as opposed to Paystack or MediLoan. */
+const ONLINE_METHODS = new Set(["paystack", "card", "mediloan", "ussd"]);
+
+/** The invoice, if the signed-in physio may correct it. */
+async function correctableInvoice(ctx: MutationCtx, invoiceId: Id<"invoices">) {
+  const user = await getAuthenticatedUser(ctx);
+  if (user.role !== "physiotherapist") throw new ConvexError("Only physiotherapists can change invoices here.");
+  const invoice = await ctx.db.get(invoiceId);
+  if (!invoice) throw new ConvexError("Invoice not found");
+  if (isRehabifyCareInvoice(invoice)) {
+    throw new ConvexError("This session was paid through Rehabify at Rehabify's price, so it can't be changed here.");
+  }
+  if (invoice.clinicId) {
+    // The clinic administers its invoices: clinicians only with Billing in their role
+    await requireClinicCareAccess(ctx, user, invoice.clinicId, { area: "billing", allowBillingReadOnly: true });
+  } else if (invoice.physiotherapistId !== user._id) {
+    throw new ConvexError("Invoice not found");
+  }
+  return { user, invoice };
+}
+
+/** Money has moved on this invoice (online, by loan, or partly by hand): it can't simply be changed. */
+async function assertNothingPaid(ctx: MutationCtx, invoice: Doc<"invoices">, what: string) {
+  if (invoice.status === "paid") {
+    throw new ConvexError(`This invoice is paid, so it can't be ${what}. If it was recorded as paid by mistake, undo that first.`);
+  }
+  if (invoice.status === "void") throw new ConvexError("This invoice was cancelled. Create a new one instead.");
+  if (invoice.status === "partial_payment" || (invoice.paidAmount ?? 0) > 0) {
+    throw new ConvexError(`Part of this invoice has been paid, so it can't be ${what}. Undo the recorded payment first, or contact Rehabify support.`);
+  }
+  const payments = await ctx.db
+    .query("payments")
+    .withIndex("by_invoice_id", (q) => q.eq("invoiceId", invoice._id))
+    .collect();
+  if (payments.some((p) => p.status === "completed")) {
+    throw new ConvexError("A payment has gone through on this invoice. Contact Rehabify support.");
+  }
+  const loans = await ctx.db
+    .query("loanApplications")
+    .withIndex("by_invoice", (q) => q.eq("invoiceId", invoice._id))
+    .collect();
+  if (loans.some((loan) => !["declined", "expired", "cancelled", "failed"].includes(String(loan.status)))) {
+    throw new ConvexError(`The patient has a MediLoan for this invoice, so it can't be ${what}. Contact Rehabify support.`);
+  }
+}
+
+/** The patient hears about a corrected or cancelled invoice. */
+async function tellPatientAboutInvoice(ctx: MutationCtx, invoice: Doc<"invoices">, title: string, body: string) {
+  await insertNotification(ctx, {
+    userId: invoice.patientId,
+    type: "invoice_created" as any,
+    priority: "medium",
+    status: "pending",
+    payload: {
+      title,
+      body,
+      data: { entityId: invoice._id, entityType: "invoice", actionUrl: `/dashboard/patient/invoices/${invoice._id}` },
+    },
+    createdAt: Date.now(),
+  });
+}
+
+/** Reverses every partner commission recorded for hand-recorded payments on this invoice. */
+async function reverseManualCommissions(ctx: MutationCtx, invoiceId: Id<"invoices">, reason: string) {
+  const prefix = `manual:${invoiceId}`;
+  const rows = await ctx.db
+    .query("partnerCommissions")
+    .withIndex("by_payment_reference", (q) => q.gte("paymentReference", prefix).lt("paymentReference", `${prefix};`))
+    .collect();
+  for (const reference of new Set(rows.map((row) => row.paymentReference).filter((ref): ref is string => Boolean(ref)))) {
+    await reverseCommissionsForPayment(ctx, reference, reason);
+  }
+}
+
+/**
+ * The reference a hand-recorded payment's commission is kept under. After an undo the first
+ * one is reversed, so a new payment gets its own reference and earns again.
+ */
+async function manualPaymentReference(ctx: MutationCtx, invoiceId: Id<"invoices">, at: number) {
+  const earlier = await ctx.db
+    .query("partnerCommissions")
+    .withIndex("by_payment_reference", (q) => q.eq("paymentReference", `manual:${invoiceId}`))
+    .first();
+  return earlier?.status === "reversed" ? `manual:${invoiceId}:${at}` : `manual:${invoiceId}`;
+}
+
+/** An invoice as the edit form needs it (amounts in naira), or null when this physio can't change it. */
+export const getInvoiceForEdit = query({
+  args: { invoiceId: v.id("invoices") },
+  handler: async (ctx, args) => {
+    const user = await getAuthenticatedUser(ctx).catch(() => null);
+    if (!user || user.role !== "physiotherapist") return null;
+    const invoice = await ctx.db.get(args.invoiceId);
+    if (!invoice || isRehabifyCareInvoice(invoice)) return null;
+    if (!inInvoiceScope(invoice, user._id, await billingClinicOf(ctx, user))) return null;
+    const paid = invoice.status === "paid" || invoice.status === "partial_payment";
+    return {
+      _id: invoice._id,
+      invoiceNumber: invoice.invoiceNumber,
+      status: invoice.status,
+      clinicInvoice: Boolean(invoice.clinicId),
+      items: invoice.items.map((item) => ({
+        description: item.description,
+        quantity: item.quantity,
+        unitPriceNaira: Math.round(item.unitPrice) / 100,
+      })),
+      discountNaira: (invoice.discountAmount ?? 0) / 100,
+      dueDate: invoice.dueDate,
+      paymentMethod: invoice.paymentMethod ?? null,
+      // Recorded by hand, so it can be undone (online and MediLoan payments can't)
+      paidByHand:
+        paid &&
+        !ONLINE_METHODS.has(String(invoice.paymentMethod ?? "")) &&
+        !String(invoice.paymentReference ?? "").startsWith("MEDILOAN_") &&
+        !invoice.payoutRoute &&
+        !(invoice.refundedAmount ?? 0),
+    };
+  },
+});
+
+/** Correct the lines (services, quantities, prices) or due date of an unpaid invoice. It keeps its number. */
+export const updateMyInvoice = mutation({
+  args: {
+    invoiceId: v.id("invoices"),
+    items: v.array(v.object({ description: v.string(), quantity: v.number(), unitPrice: v.number() })),
+    dueDate: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const { user, invoice } = await correctableInvoice(ctx, args.invoiceId);
+    await assertNothingPaid(ctx, invoice, "changed");
+
+    if (args.items.length === 0 || args.items.length > 20) throw new ConvexError("An invoice needs 1 to 20 lines.");
+    const items = args.items.map((item) => {
+      const description = item.description.trim().slice(0, 200);
+      const quantity = Math.round(item.quantity);
+      const unitPrice = Math.round(item.unitPrice * 100);
+      if (!description) throw new ConvexError("Each line needs a description.");
+      if (!(quantity >= 1 && quantity <= 100)) throw new ConvexError("Quantities are 1 to 100.");
+      if (!(unitPrice > 0 && unitPrice <= 1_000_000_000)) throw new ConvexError("Each line needs an amount.");
+      return { description, quantity, unitPrice, totalPrice: unitPrice * quantity };
+    });
+    const subtotal = items.reduce((sum, item) => sum + item.totalPrice, 0);
+    if (args.dueDate !== undefined && (!Number.isFinite(args.dueDate) || args.dueDate < Date.now() - 24 * 60 * 60 * 1000)) {
+      throw new ConvexError("Pick a due date from today onwards.");
+    }
+
+    let money: Partial<Doc<"invoices">>;
+    if (invoice.clinicId) {
+      // The clinic's split for this patient (their own, or a Rehabify referral)
+      const source = invoice.patientSource === "rehabify_referral" ? "rehabify_referral" : "clinic_direct";
+      money = await clinicInvoiceMoney(ctx, source, subtotal, invoice.relatedAppointmentIds?.length ?? 0);
+    } else {
+      // A physio's own patient: all theirs; Paystack's card fee is added at checkout (as createInvoice)
+      const discount = invoice.discountAmount ?? 0;
+      if (discount >= subtotal) throw new ConvexError("The discount on this invoice is more than the new total. Lower it first, or create a new invoice.");
+      const base = subtotal - discount;
+      const paystackPercentageFee = Math.round(base * 0.015);
+      const paystackFlatFee = 10000;
+      money = {
+        subtotalAmount: subtotal,
+        discountAmount: discount,
+        platformFeeAmount: 0,
+        paystackFeeAmount: paystackPercentageFee + paystackFlatFee,
+        totalAmount: base,
+        physiotherapistShare: base,
+        platformShare: 0,
+        feeBreakdown: {
+          subtotal,
+          discount,
+          platformFee: 0,
+          paystackPercentage: paystackPercentageFee,
+          paystackFlat: paystackFlatFee,
+          total: base + paystackPercentageFee + paystackFlatFee,
+          physiotherapistEarnings: base,
+        },
+      };
+    }
+
+    // A link made for the old amount must not be paid: it's closed and the next one uses the new amount
+    await closeInvoicePaymentLinks(ctx, invoice._id);
+    await ctx.db.patch(invoice._id, {
+      items,
+      ...money,
+      ...(args.dueDate !== undefined ? { dueDate: args.dueDate } : {}),
+      paymentLinkSubaccount: undefined,
+    });
+    await ctx.db.insert("auditLogs", {
+      actorUserId: user._id,
+      action: "invoice_corrected",
+      targetEntityType: "invoice",
+      targetEntityId: invoice._id,
+      timestamp: Date.now(),
+      details: {
+        invoiceNumber: invoice.invoiceNumber,
+        before: { items: invoice.items, totalAmount: invoice.totalAmount, dueDate: invoice.dueDate },
+        after: { items, totalAmount: money.totalAmount, dueDate: args.dueDate ?? invoice.dueDate },
+      },
+    });
+    const amount = `₦${((money.totalAmount ?? subtotal) / 100).toLocaleString("en-NG")}`;
+    await tellPatientAboutInvoice(
+      ctx,
+      invoice,
+      "Invoice corrected",
+      `Invoice #${invoice.invoiceNumber} was corrected and is now ${amount}. If you had a payment link for it, use the new one.`
+    );
+    return { success: true };
+  },
+});
+
+/** Cancel an unpaid invoice (e.g. raised for the wrong patient or service). */
+export const cancelMyInvoice = mutation({
+  args: { invoiceId: v.id("invoices"), reason: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const { user, invoice } = await correctableInvoice(ctx, args.invoiceId);
+    await assertNothingPaid(ctx, invoice, "cancelled");
+    await ctx.db.patch(invoice._id, { status: "void" });
+    await closeInvoicePaymentLinks(ctx, invoice._id);
+    const reason = args.reason?.trim().slice(0, 300) || undefined;
+    await ctx.db.insert("auditLogs", {
+      actorUserId: user._id,
+      action: "invoice_cancelled",
+      targetEntityType: "invoice",
+      targetEntityId: invoice._id,
+      timestamp: Date.now(),
+      details: { invoiceNumber: invoice.invoiceNumber, totalAmount: invoice.totalAmount, reason },
+    });
+    await tellPatientAboutInvoice(
+      ctx,
+      invoice,
+      "Invoice cancelled",
+      `Invoice #${invoice.invoiceNumber} was cancelled, so there's nothing to pay on it.${reason ? ` ${reason}` : ""}`
+    );
+    return { success: true };
+  },
+});
+
+/**
+ * Undo a payment recorded by hand by mistake (cash, transfer, POS). Online and MediLoan payments
+ * are refunded instead. The invoice goes back to unpaid.
+ */
+export const undoMyRecordedPayment = mutation({
+  args: { invoiceId: v.id("invoices") },
+  handler: async (ctx, args) => {
+    const { user, invoice } = await correctableInvoice(ctx, args.invoiceId);
+    if (invoice.status !== "paid" && invoice.status !== "partial_payment") {
+      throw new ConvexError("No payment is recorded on this invoice.");
+    }
+    const payments = await ctx.db
+      .query("payments")
+      .withIndex("by_invoice_id", (q) => q.eq("invoiceId", invoice._id))
+      .collect();
+    const online =
+      ONLINE_METHODS.has(String(invoice.paymentMethod ?? "")) ||
+      String(invoice.paymentReference ?? "").startsWith("MEDILOAN_") ||
+      Boolean(invoice.payoutRoute) ||
+      (invoice.refundedAmount ?? 0) > 0 ||
+      payments.some((p) => p.status === "completed");
+    if (online) {
+      throw new ConvexError("This invoice was paid online or by MediLoan, so it can't be undone here. Contact Rehabify support about a refund.");
+    }
+    await ctx.db.patch(invoice._id, {
+      status: "sent",
+      paidAmount: 0,
+      paymentMethod: undefined,
+      paymentDate: undefined,
+      paymentReference: undefined,
+    });
+    await reverseManualCommissions(ctx, invoice._id, "Payment recorded by mistake was undone");
+    await ctx.db.insert("auditLogs", {
+      actorUserId: user._id,
+      action: "invoice_payment_undone",
+      targetEntityType: "invoice",
+      targetEntityId: invoice._id,
+      timestamp: Date.now(),
+      details: {
+        invoiceNumber: invoice.invoiceNumber,
+        method: invoice.paymentMethod,
+        paidAmount: invoice.paidAmount ?? invoice.totalAmount,
+        recordedAt: invoice.paymentDate,
+      },
+    });
+    await tellPatientAboutInvoice(
+      ctx,
+      invoice,
+      "Invoice reopened",
+      `A payment on invoice #${invoice.invoiceNumber} was recorded by mistake and has been removed, so it shows as unpaid again.`
+    );
+    return { success: true };
+  },
 });

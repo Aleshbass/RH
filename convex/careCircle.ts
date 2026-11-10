@@ -81,7 +81,7 @@ function firstName(user: Doc<"users"> | null | undefined, fallback = "them") {
 /** A row created for someone who hasn't signed in themselves (a clinic's or caregiver's placeholder). */
 function hasOwnLogin(user: Doc<"users">) {
   const id = user.clerkId ?? "";
-  return !id.startsWith("clinic_patient_") && !id.startsWith("managed_") && !id.startsWith("joy-");
+  return !id.startsWith("clinic_patient_") && !id.startsWith("physio_patient_") && !id.startsWith("managed_") && !id.startsWith("joy-");
 }
 
 /**
