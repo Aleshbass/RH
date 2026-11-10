@@ -204,6 +204,14 @@ function ProgramCard({
           </StatusBadge>
         )}
         <StatusBadge>{a.lastLoggedAt ? `Last done ${formatDistanceToNow(a.lastLoggedAt, { addSuffix: true })}` : 'Not started yet'}</StatusBadge>
+        {/* The patient pressed "Done for today" and sent the session */}
+        {a.lastFinish && (
+          <StatusBadge tone="green">
+            Sent as done {formatDistanceToNow(a.lastFinish.at, { addSuffix: true })}
+            {a.lastFinish.doneCount !== null && a.lastFinish.total !== null && ` (${a.lastFinish.doneCount} of ${a.lastFinish.total})`}
+            {a.finishedDaysLast14 > 1 && ` · ${a.finishedDaysLast14} days in the last 14`}
+          </StatusBadge>
+        )}
       </div>
 
       <CameraSessions sessions={cameraSessions} itemName={(index) => program.items[index]?.name ?? ''} />

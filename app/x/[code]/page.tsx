@@ -10,7 +10,13 @@ import { api } from '@/convex/_generated/api'
 import { ProgramPlayer } from '@/components/exercise-programs/ProgramPlayer'
 import { FlexPaymentReturn } from '@/components/exercise-programs/FlexUpgradeCard'
 import { useFlexCheckout } from '@/components/exercise-programs/flex'
-import type { LinkStatus, LogInput, SharedProgramResult } from '@/components/exercise-programs/types'
+import {
+  finishProgramTodayFromLinkRef,
+  markItemDoneFromLinkRef,
+  type LinkStatus,
+  type LogInput,
+  type SharedProgramResult,
+} from '@/components/exercise-programs/types'
 import { useViewerGrant } from '@/lib/exercise3d/useViewerGrant'
 import { saveFromLinkRef } from '@/lib/motion/convexRefs'
 import { cn } from '@/lib/utils'
@@ -192,6 +198,8 @@ function Unlocked({ code, session, onSessionLost }: { code: string; session: str
   const requestGrant = useViewerGrant({ kind: 'link', code, session })
   const log = useMutation(api.exercisePrograms.logExerciseFromLink)
   const saveGuided = useMutation(saveFromLinkRef)
+  const markDone = useMutation(markItemDoneFromLinkRef)
+  const finish = useMutation(finishProgramTodayFromLinkRef)
   // Flex from the link: pay here (Paystack brings them back to this page), or sign in
   const share = useMemo(() => ({ code, session }), [code, session])
   const { checkout, busy } = useFlexCheckout({ share })
@@ -219,6 +227,13 @@ function Unlocked({ code, session, onSessionLost }: { code: string; session: str
         requestGrant={requestGrant}
         mediaContext={{ kind: 'link', code, session }}
         onLog={(input: LogInput) => log({ code, session, ...input })}
+        onMarkDone={async (itemIndex) => {
+          await markDone({ code, session, itemIndex })
+        }}
+        onFinish={async () => {
+          await finish({ code, session })
+        }}
+        finishedToday={data.finishedToday}
         flex={{
           onChoose: (plan) => void checkout(plan),
           busy,

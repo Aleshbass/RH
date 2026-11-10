@@ -478,7 +478,7 @@ def _record_consent(session: Session, patient: Patient, conversation: Conversati
 
 
 def _sync_profile(session: Session, patient: Patient) -> None:
-    """First name and area on the Rehabify record. Never raises."""
+    """First name, age, sex and place on the Rehabify record. Never raises."""
     try:
         from app.booking.booking_flow import _rh_patient_id
         from app.integrations.rh_client import RHActor, configured_rh_client
@@ -488,7 +488,8 @@ def _sync_profile(session: Session, patient: Patient) -> None:
             return
         data = {k: v for k, v in {
             "patient_id": rh_patient_id, "first_name": _first_name(patient) or None,
-            "city": patient.city, "area": patient.area,
+            "state": getattr(patient, "state", None), "city": patient.city, "area": patient.area,
+            "age_years": patient.age if isinstance(patient.age, int) and 0 < patient.age < 120 else None,
             "gender": patient.gender if patient.gender in ("female", "male") else None,
         }.items() if v}
         configured_rh_client().operational_mutation(

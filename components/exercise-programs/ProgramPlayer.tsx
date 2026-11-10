@@ -264,12 +264,127 @@ function LibraryResource({ resource }: { resource: NonNullable<ProgramItem['reso
 
 const STAFF_CONTEXT: GrantContext = { kind: 'staff' }
 
+const celebrate = () =>
+  void import('canvas-confetti').then(({ default: confetti }) =>
+    confetti({ particleCount: 120, spread: 80, origin: { y: 0.7 }, colors: ['#00cd0f', '#00cd0f', '#00cd0f', '#ffffff'] })
+  )
+
+/** The last step of the day: send the session to the care team. Green once it's sent. */
+function FinishCard({
+  doneCount,
+  total,
+  finishedAt,
+  from,
+  onOpen,
+  className,
+}: {
+  doneCount: number
+  total: number
+  finishedAt: number | null
+  from: string
+  onOpen: () => void
+  className?: string
+}) {
+  if (finishedAt) {
+    return (
+      <div className={cn('flex items-center gap-3 rounded-2xl bg-rh-lime p-4 text-rh-ink', className)}>
+        <CheckCircle2 className="h-7 w-7 shrink-0" />
+        <div className="min-w-0">
+          <p className="text-sm font-semibold">Sent to {from} today</p>
+          <p className="text-xs">
+            {doneCount} of {total} done. See you tomorrow.
+          </p>
+        </div>
+      </div>
+    )
+  }
+  const all = total > 0 && doneCount >= total
+  return (
+    <div className={cn('rounded-2xl border border-black/[0.05] bg-white p-4 dark:border-white/[0.06] dark:bg-rh-ink-2', className)}>
+      <p className="text-sm font-semibold text-rh-ink dark:text-white">{all ? 'That’s everything for today' : 'Finished for today?'}</p>
+      <p className="mt-0.5 text-xs text-neutral-500">
+        {doneCount === 0
+          ? `Tick off what you do, then send it to ${from}.`
+          : `${doneCount} of ${total} done. Send it to ${from} so they can see how you’re getting on.`}
+      </p>
+      <Button
+        disabled={doneCount === 0}
+        onClick={onOpen}
+        className="mt-3 h-11 w-full rounded-xl bg-rh-lime text-base font-semibold text-rh-ink hover:bg-rh-lime-deep disabled:opacity-50"
+      >
+        <Check className="mr-1.5 h-5 w-5" strokeWidth={3} /> Done for today
+      </Button>
+    </div>
+  )
+}
+
+function FinishDialog({
+  open,
+  onOpenChange,
+  doneCount,
+  total,
+  from,
+  onSend,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  doneCount: number
+  total: number
+  from: string
+  onSend: () => Promise<void>
+}) {
+  const [sending, setSending] = useState(false)
+  const all = total > 0 && doneCount >= total
+  const send = async () => {
+    setSending(true)
+    try {
+      await onSend()
+      onOpenChange(false)
+    } catch {
+      // The player has already shown why
+    } finally {
+      setSending(false)
+    }
+  }
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="rounded-3xl sm:max-w-md">
+        <DialogHeader>
+          <span className="mx-auto mb-1 flex h-14 w-14 items-center justify-center rounded-full bg-rh-lime text-rh-ink sm:mx-0">
+            <PartyPopper className="h-7 w-7" />
+          </span>
+          <DialogTitle>{all ? 'That’s everything for today' : 'Finish for today?'}</DialogTitle>
+          <DialogDescription>
+            {all
+              ? `You did all ${total}. Send it to ${from} so they can see it.`
+              : `You’ve done ${doneCount} of ${total}. Send it to ${from} now, or keep going and send it later.`}
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter className="gap-2">
+          {!all && (
+            <Button variant="outline" className="rounded-xl" onClick={() => onOpenChange(false)} disabled={sending}>
+              Keep going
+            </Button>
+          )}
+          <Button onClick={send} disabled={sending} className="h-11 w-full rounded-xl bg-rh-lime text-base font-semibold text-rh-ink hover:bg-rh-lime-deep sm:w-auto">
+            {sending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Check className="mr-2 h-5 w-5" strokeWidth={3} />}
+            Send to my physio
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 export function ProgramPlayer({
   program,
   doneToday,
   requestGrant,
   mediaContext = STAFF_CONTEXT,
   onLog,
+  onMarkDone,
+  onFinish,
+  finishedToday = null,
   readOnly,
   flex,
   coach,
@@ -280,6 +395,12 @@ export function ProgramPlayer({
   /** Who is watching, for the physio's own photos and videos (same as the 3D grant) */
   mediaContext?: GrantContext
   onLog?: (input: LogInput) => Promise<void>
+  /** Marks an education or activity item done for today; without it those items can't be ticked */
+  onMarkDone?: (itemIndex: number) => Promise<void>
+  /** "Done for today": sends the day's session to the care team */
+  onFinish?: () => Promise<void>
+  /** When today's session was sent, if it was */
+  finishedToday?: number | null
   readOnly?: boolean
   /** How the patient gets Flex when this programme needs it (program.plan) */
   flex?: FlexActions
@@ -295,6 +416,8 @@ export function ProgramPlayer({
   const [guided, setGuided] = useState(false)
   const [coachOpen, setCoachOpen] = useState(false)
   const [logOpen, setLogOpen] = useState(false)
+  const [finishOpen, setFinishOpen] = useState(false)
+  const [marking, setMarking] = useState(false)
   // The 3D demonstration is actually playing (approved, loaded, not in low-data mode). The
   // viewer reports it on every change, including when it mounts for the next exercise.
   const [playing3d, setPlaying3d] = useState(false)
@@ -306,9 +429,11 @@ export function ProgramPlayer({
   const done = useMemo(() => new Set(doneToday), [doneToday])
   // The camera coach follows a few exercises so far (lib/motion/exercises.ts)
   const motion = !readOnly && !locked && coach && !isEducation ? motionExerciseForClip(item?.clipId) : null
-  // Education is read, not logged, so it doesn't count towards "done today"
-  const exerciseItems = program.items.filter((it) => it.kind !== 'education')
+  // Education and activity items count towards "done today" where they can be ticked off
+  const canTick = Boolean(onMarkDone) && !readOnly && !locked
+  const exerciseItems = program.items.filter((it) => canTick || it.kind !== 'education')
   const doneCount = exerciseItems.filter((it) => done.has(it.index)).length
+  const canFinish = Boolean(onFinish) && !readOnly && !locked && exerciseItems.length > 0
   const from = program.clinicName ?? program.senderName
 
   useEffect(() => {
@@ -322,16 +447,52 @@ export function ProgramPlayer({
     if (window.matchMedia('(max-width: 1023px)').matches) detailRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
+  /** After an item is done: on to the next one, or the final "Done for today" when that was the last. */
+  const afterDone = (index: number, message: string) => {
+    playSound('success')
+    const left = exerciseItems.filter((it) => it.index !== index && !done.has(it.index))
+    if (left.length === 0 && canFinish && !finishedToday) {
+      setFinishOpen(true)
+      return
+    }
+    toast.success(message)
+    const next = program.items.findIndex((it, i) => i > selected && (canTick || it.kind !== 'education') && !done.has(it.index))
+    if (next >= 0) setSelected(next)
+  }
+
   const log = async (input: Omit<LogInput, 'itemIndex'>) => {
     if (!onLog || !item) return
     try {
       await onLog({ itemIndex: item.index, ...input })
-      playSound('success')
-      toast.success('Logged. Nice work!')
-      const next = program.items.findIndex((it, i) => i > selected && it.kind !== 'education' && !done.has(it.index))
-      if (next >= 0) setSelected(next)
+      afterDone(item.index, 'Logged. Nice work!')
     } catch (error) {
       toast.error(programError(error, 'Couldn’t save that. Check your connection and try again.'))
+      throw error
+    }
+  }
+
+  const markDone = async () => {
+    if (!onMarkDone || !item || marking) return
+    setMarking(true)
+    try {
+      await onMarkDone(item.index)
+      afterDone(item.index, 'Done. Nice work!')
+    } catch (error) {
+      toast.error(programError(error, 'Couldn’t save that. Check your connection and try again.'))
+    } finally {
+      setMarking(false)
+    }
+  }
+
+  const finish = async () => {
+    if (!onFinish) return
+    try {
+      await onFinish()
+      playSound('success')
+      celebrate()
+      toast.success(`Sent to ${from}. Well done!`)
+    } catch (error) {
+      toast.error(programError(error, 'Couldn’t send that. Check your connection and try again.'))
       throw error
     }
   }
@@ -373,10 +534,11 @@ export function ProgramPlayer({
       </section>
 
       <div className="grid gap-5 lg:grid-cols-[320px_1fr]">
+        <div className="space-y-3">
         <ol className="space-y-2">
           {program.items.map((it, i) => {
             const education = it.kind === 'education'
-            const isDone = !education && !locked && done.has(it.index)
+            const isDone = (canTick || !education) && !locked && done.has(it.index)
             const side = sideLabel(it.exercise?.animation?.slug, it.side)
             const detail = education
               ? it.resource
@@ -392,7 +554,9 @@ export function ProgramPlayer({
                     'flex w-full items-center gap-3 rounded-2xl border p-2 pr-3 text-left transition active:scale-[0.99]',
                     i === selected
                       ? 'border-rh-lime/50 bg-white shadow-soft ring-2 ring-rh-lime/15 dark:border-white/10 dark:bg-rh-ink-2'
-                      : 'border-black/[0.05] bg-white/70 hover:bg-white dark:border-white/[0.06] dark:bg-white/[0.02]'
+                      : 'border-black/[0.05] bg-white/70 hover:bg-white dark:border-white/[0.06] dark:bg-white/[0.02]',
+                    // Done today: the whole row goes green
+                    isDone && 'border-rh-lime/60 bg-rh-honeydew hover:bg-rh-honeydew dark:border-rh-lime/40 dark:bg-rh-lime/10'
                   )}
                 >
                   <span
@@ -424,12 +588,22 @@ export function ProgramPlayer({
                       </span>
                     )}
                   </span>
-                  <ChevronRight className="h-4 w-4 text-neutral-400" />
+                  {isDone ? (
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-rh-lime text-rh-ink">
+                      <Check className="h-3.5 w-3.5" strokeWidth={3} />
+                    </span>
+                  ) : (
+                    <ChevronRight className="h-4 w-4 text-neutral-400" />
+                  )}
                 </button>
               </li>
             )
           })}
         </ol>
+        {canFinish && (
+          <FinishCard className="hidden lg:block" doneCount={doneCount} total={exerciseItems.length} finishedAt={finishedToday} from={from} onOpen={() => setFinishOpen(true)} />
+        )}
+        </div>
 
         {item && (
           <div ref={detailRef} className="scroll-mt-20 space-y-4">
@@ -503,6 +677,18 @@ export function ProgramPlayer({
                     )}
                   </div>
                 </div>
+                {isEducation && canTick && (
+                  done.has(item.index) ? (
+                    <span className="inline-flex items-center gap-1.5 rounded-xl bg-rh-lime px-3 py-2 text-sm font-semibold text-rh-ink">
+                      <Check className="h-4 w-4" strokeWidth={3} /> Done today
+                    </span>
+                  ) : (
+                    <Button className="rounded-xl bg-rh-lime text-rh-ink hover:bg-rh-lime-deep" onClick={() => void markDone()} disabled={marking}>
+                      {marking ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Check className="mr-1.5 h-4 w-4" />}
+                      Mark as done
+                    </Button>
+                  )
+                )}
                 {!readOnly && !isEducation && !locked && (
                   <div className="flex flex-wrap gap-2">
                     {motion && item.clipId && (
@@ -564,7 +750,12 @@ export function ProgramPlayer({
         )}
       </div>
 
+      {canFinish && (
+        <FinishCard className="lg:hidden" doneCount={doneCount} total={exerciseItems.length} finishedAt={finishedToday} from={from} onOpen={() => setFinishOpen(true)} />
+      )}
+
       <LogDialog item={item} open={logOpen && !locked} onOpenChange={setLogOpen} onSubmit={log} />
+      <FinishDialog open={finishOpen && canFinish} onOpenChange={setFinishOpen} doneCount={doneCount} total={exerciseItems.length} from={from} onSend={finish} />
 
       {coachOpen && coach && motion && item?.clipId && (
         <CameraCoach

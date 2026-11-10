@@ -327,7 +327,17 @@ async function logsSummary(ctx: Ctx, programId: Id<"exercisePrograms">) {
     .collect();
   const days = new Set(logs.map((l) => new Date(l.createdAt).toISOString().slice(0, 10)));
   const pains = logs.filter((l) => typeof l.painScore === "number").map((l) => l.painScore!);
+  // Days the patient pressed "Done for today" and sent the session to their care team
+  const finishes = (
+    await ctx.db
+      .query("exerciseProgramTicks")
+      .withIndex("by_program", (q) => q.eq("programId", programId).gt("createdAt", since))
+      .collect()
+  ).filter((t) => t.kind === "finish");
+  const lastFinish = finishes.sort((a, b) => b.createdAt - a.createdAt)[0];
   return {
+    finishedDaysLast14: new Set(finishes.map((t) => new Date(t.createdAt + LAGOS_OFFSET).toISOString().slice(0, 10))).size,
+    lastFinish: lastFinish ? { at: lastFinish.createdAt, doneCount: lastFinish.doneCount ?? null, total: lastFinish.total ?? null } : null,
     logsLast14Days: logs.length,
     activeDaysLast14: days.size,
     lastLoggedAt: logs.length ? Math.max(...logs.map((l) => l.createdAt)) : null,
@@ -547,6 +557,16 @@ export const updateProgram = mutation({
           const next = log.itemIndex < 0 ? log.itemIndex : (newIndexOf.get(log.itemIndex) ?? -1);
           if (next !== log.itemIndex) await ctx.db.patch(log._id, { itemIndex: next });
         }
+        // Today's ticked education and activity items follow their item too
+        const ticks = await ctx.db
+          .query("exerciseProgramTicks")
+          .withIndex("by_program", (q) => q.eq("programId", program._id).gt("createdAt", startOfLagosDay()))
+          .collect();
+        for (const tick of ticks) {
+          if (tick.kind !== "item" || tick.itemIndex === undefined || tick.itemIndex < 0) continue;
+          const next = newIndexOf.get(tick.itemIndex) ?? -1;
+          if (next !== tick.itemIndex) await ctx.db.patch(tick._id, { itemIndex: next });
+        }
       }
 
       const patch: Partial<Doc<"exercisePrograms">> = { title, items, updatedAt: Date.now() };
@@ -664,13 +684,122 @@ export async function patientProgramView(ctx: Ctx, program: Doc<"exerciseProgram
     .withIndex("by_program", (q) => q.eq("programId", program._id).gt("createdAt", startOfLagosDay()))
     .collect();
   const summary = await logsSummary(ctx, program._id);
+  const ticks = await todaysTicks(ctx, program._id);
   return {
     ...(await programView(ctx, program, "patient")),
     // The treatment plan it was sent with: My care plan lists that plan's programmes first
     treatmentPlanId: program.treatmentPlanId ?? null,
-    doneToday: [...new Set(today.map((l) => l.itemIndex))],
+    // Exercises logged today, plus education and activity items ticked today
+    doneToday: [...new Set([...today.map((l) => l.itemIndex), ...ticks.items])],
+    // When the patient pressed "Done for today" (sent to their care team), or null
+    finishedToday: ticks.finishedAt,
     activeDaysLast14: summary.activeDaysLast14,
   };
+}
+
+/** What the patient ticked today besides exercise logs: education and activity items, and "Done for today". */
+export async function todaysTicks(ctx: Ctx, programId: Id<"exercisePrograms">) {
+  const ticks = await ctx.db
+    .query("exerciseProgramTicks")
+    .withIndex("by_program", (q) => q.eq("programId", programId).gt("createdAt", startOfLagosDay()))
+    .collect();
+  const finish = ticks.filter((t) => t.kind === "finish").sort((a, b) => b.createdAt - a.createdAt)[0];
+  return {
+    items: [...new Set(ticks.flatMap((t) => (t.kind === "item" && t.itemIndex !== undefined && t.itemIndex >= 0 ? [t.itemIndex] : [])))],
+    finish: finish ?? null,
+    finishedAt: finish?.createdAt ?? null,
+  };
+}
+
+/** Marks an education or activity item as done for today (exercises are logged with insertLog instead). */
+export async function tickItem(ctx: MutationCtx, program: Doc<"exercisePrograms">, itemIndex: number, source: "app" | "link") {
+  if (!Number.isInteger(itemIndex) || itemIndex < 0 || itemIndex >= program.items.length) {
+    throw new ConvexError("That item isn't in this programme.");
+  }
+  if (program.items[itemIndex].kind !== "education") {
+    throw new ConvexError("Log this exercise with “I did it”, so your physio sees how it went.");
+  }
+  const ticks = await todaysTicks(ctx, program._id);
+  if (ticks.items.includes(itemIndex)) return;
+  await ctx.db.insert("exerciseProgramTicks", {
+    programId: program._id,
+    patientId: program.patientId,
+    kind: "item",
+    itemIndex,
+    source,
+    createdAt: Date.now(),
+  });
+}
+
+/**
+ * "Done for today": the patient sends the day's session to their care team. Saved once a day
+ * (pressing again after doing more updates the count), and the care team is told once a day.
+ */
+export async function finishToday(ctx: MutationCtx, program: Doc<"exercisePrograms">, source: "app" | "link") {
+  const logs = await ctx.db
+    .query("exerciseProgramLogs")
+    .withIndex("by_program", (q) => q.eq("programId", program._id).gt("createdAt", startOfLagosDay()))
+    .collect();
+  const ticks = await todaysTicks(ctx, program._id);
+  const done = new Set([...logs.map((l) => l.itemIndex), ...ticks.items].filter((i) => i >= 0 && i < program.items.length));
+  const total = program.items.length;
+  if (done.size === 0) throw new ConvexError("Tick off what you've done first, then send it.");
+
+  if (ticks.finish) {
+    await ctx.db.patch(ticks.finish._id, { doneCount: done.size, total });
+    return { doneCount: done.size, total };
+  }
+  await ctx.db.insert("exerciseProgramTicks", {
+    programId: program._id,
+    patientId: program.patientId,
+    kind: "finish",
+    doneCount: done.size,
+    total,
+    source,
+    createdAt: Date.now(),
+  });
+
+  const patient = await ctx.db.get(program.patientId);
+  const patientName = [patient?.firstName, patient?.lastName].filter(Boolean).join(" ") || "A patient";
+  const pains = logs.flatMap((l) => (typeof l.painScore === "number" ? [l.painScore] : []));
+  const painNote = pains.length ? ` Highest pain today: ${Math.max(...pains)}/10.` : "";
+  for (const userId of await programCareTeam(ctx, program)) {
+    const recipient = await ctx.db.get(userId);
+    if (!recipient) continue;
+    await insertNotification(ctx, {
+      userId,
+      // Bell only (helpers/pushCategories.ts): a daily buzz per patient would be too much
+      type: "exercise_day_finished",
+      priority: "low",
+      status: "pending",
+      payload: {
+        title: `${patientName} finished today's programme`,
+        body: `${done.size === total ? `All ${total} done` : `${done.size} of ${total} done`} in "${program.title}".${painNote}`,
+        data: {
+          actionUrl:
+            recipient.role === "physiotherapist"
+              ? `/dashboard/physiotherapist/patients/${program.patientId}?tab=checkins`
+              : "/dashboard/clinic/patients",
+        },
+      },
+      createdAt: Date.now(),
+    });
+  }
+  return { doneCount: done.size, total };
+}
+
+/** Who hears about a patient's programme: their current clinician (primary first) and whoever sent it. */
+async function programCareTeam(ctx: Ctx, program: Doc<"exercisePrograms">) {
+  const active = (
+    await ctx.db
+      .query("patientPhysiotherapistRelationships")
+      .withIndex("by_patient", (q) => q.eq("patientId", program.patientId))
+      .collect()
+  ).filter((r) => r.status === "active");
+  const current = active.find((r) => r.isPrimaryPhysiotherapist) ?? active.sort((a, b) => b.startDate - a.startDate)[0];
+  const recipients = new Set<Id<"users">>([program.createdBy]);
+  if (current) recipients.add(current.physiotherapistId);
+  return recipients;
 }
 
 export async function insertLog(
@@ -721,17 +850,7 @@ async function notifyHighPain(ctx: MutationCtx, program: Doc<"exercisePrograms">
   const exercise = item.exerciseId ? await ctx.db.get(item.exerciseId) : null;
   const what = exercise?.name ?? item.name ?? "an exercise";
 
-  const active = (
-    await ctx.db
-      .query("patientPhysiotherapistRelationships")
-      .withIndex("by_patient", (q) => q.eq("patientId", program.patientId))
-      .collect()
-  ).filter((r) => r.status === "active");
-  const current = active.find((r) => r.isPrimaryPhysiotherapist) ?? active.sort((a, b) => b.startDate - a.startDate)[0];
-  const recipients = new Set<Id<"users">>([program.createdBy]);
-  if (current) recipients.add(current.physiotherapistId);
-
-  for (const userId of recipients) {
+  for (const userId of await programCareTeam(ctx, program)) {
     const recipient = await ctx.db.get(userId);
     if (!recipient) continue;
     await insertNotification(ctx, {
@@ -789,6 +908,54 @@ export const logExerciseFromLink = mutation({
       const { code: _c, session: _s, ...log } = args;
       await insertLog(ctx, res.program, log, "link", res.link._id);
     }),
+});
+
+/** The signed-in patient's own active programme, unlocked for tracking (Flex where it applies). */
+async function myTrackableProgram(ctx: MutationCtx, programId: Id<"exercisePrograms">) {
+  const user = await currentUser(ctx);
+  const program = await ctx.db.get(programId);
+  if (!user || !program || program.patientId !== user._id || program.status !== "active") {
+    throw new ConvexError("This programme isn't available.");
+  }
+  await assertProgramUnlocked(ctx, program, "log");
+  return program;
+}
+
+async function linkTrackableProgram(ctx: MutationCtx, code: string, session: string) {
+  const res = await resolveShareSession(ctx, code, session);
+  if (!res.ok) throw new ConvexError("Enter your PIN again to continue.");
+  await assertProgramUnlocked(ctx, res.program, "log");
+  return res.program;
+}
+
+/** An education or activity item done for today: it turns green like a logged exercise. */
+export const markItemDone = mutation({
+  args: { programId: v.id("exercisePrograms"), itemIndex: v.number() },
+  handler: (ctx, args) =>
+    guarded("save that", async () => {
+      await tickItem(ctx, await myTrackableProgram(ctx, args.programId), args.itemIndex, "app");
+    }),
+});
+
+export const markItemDoneFromLink = mutation({
+  args: { code: v.string(), session: v.string(), itemIndex: v.number() },
+  handler: (ctx, args) =>
+    guarded("save that", async () => {
+      await tickItem(ctx, await linkTrackableProgram(ctx, args.code, args.session), args.itemIndex, "link");
+    }),
+});
+
+/** "Done for today": sends the day's session to the patient's care team. */
+export const finishProgramToday = mutation({
+  args: { programId: v.id("exercisePrograms") },
+  handler: (ctx, args) =>
+    guarded("send that", async () => finishToday(ctx, await myTrackableProgram(ctx, args.programId), "app")),
+});
+
+export const finishProgramTodayFromLink = mutation({
+  args: { code: v.string(), session: v.string() },
+  handler: (ctx, args) =>
+    guarded("send that", async () => finishToday(ctx, await linkTrackableProgram(ctx, args.code, args.session), "link")),
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

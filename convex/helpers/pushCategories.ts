@@ -47,6 +47,8 @@ const BELL_ONLY = new Set([
   "notification_created",
   // Points earned: shown in the bell and on Me, never a phone buzz
   "reward_points",
+  // A patient pressed "Done for today" on a home programme (exercisePrograms.finishToday)
+  "exercise_day_finished",
 ]);
 
 const CATEGORY_OF: Record<string, PushCategory> = {

@@ -28,7 +28,7 @@ import {
 import { ensureUserRole, getAuthenticatedUser } from "./auth";
 import { appLink, publicAppUrl } from "./helpers/appUrl";
 import { activePaymentLink, closeInvoicePaymentLinks, PAYMENT_LINK_TTL_MS } from "./helpers/paymentLinks";
-import { recordInvoicePartnerCommission } from "./helpers/partnerLedger";
+import { recordInvoicePartnerCommission, reverseCommissionsForPayment } from "./helpers/partnerLedger";
 import { alertAdminsOfPayment } from "./helpers/adminPaymentAlerts";
 import { currentPaystackMode, usableSubaccount } from "./helpers/paystackMode";
 import { verifyPaystackSignature } from "./helpers/paystackSignature";
@@ -534,20 +534,26 @@ export const markInvoicePaid = mutation({
     if (invoice.patientSource === "rehabify_referral") {
       throw new ConvexError("Rehabify referred this patient, so they pay online with the payment link. Send them the link instead.");
     }
+    const paidAt = Date.now();
     await ctx.db.patch(args.invoiceId, {
       status: "paid",
       paymentMethod: args.method,
-      paymentDate: Date.now(),
+      paymentDate: paidAt,
       paidAmount: invoice.totalAmount,
     });
     // Paid in person: the online link must not collect a second time
     await closeInvoicePaymentLinks(ctx, args.invoiceId);
     // A referred patient's partner or doctor earns on this too, once an admin approves it
-    // (Rehabify didn't see the money arrive)
+    // (Rehabify didn't see the money arrive). After an undo (undoMarkInvoicePaid) the first
+    // reference's commission is reversed, so this payment earns under its own reference.
+    const earlier = await ctx.db
+      .query("partnerCommissions")
+      .withIndex("by_payment_reference", (q) => q.eq("paymentReference", `manual:${args.invoiceId}`))
+      .first();
     await recordInvoicePartnerCommission(ctx, {
       invoice,
       paidKobo: invoice.subtotalAmount > 0 ? invoice.subtotalAmount : invoice.totalAmount,
-      paymentReference: `manual:${args.invoiceId}`,
+      paymentReference: earlier?.status === "reversed" ? `manual:${args.invoiceId}:${paidAt}` : `manual:${args.invoiceId}`,
       verified: false,
     });
     // The team sees money taken outside Rehabify
@@ -557,6 +563,60 @@ export const markInvoicePaid = mutation({
       relationship: "clinic",
       payerUserId: invoice.patientId,
       recordedOutside: { by: clinic.name ?? "A clinic", method: args.method },
+    });
+    return { success: true };
+  },
+});
+
+/**
+ * Undo "Mark as paid" when it was pressed by mistake (wrong invoice, wrong amount). Only for
+ * payments recorded by hand: money that came through Paystack is refunded, never un-marked.
+ * The invoice goes back to unpaid, so it can be corrected, cancelled or paid properly.
+ */
+export const undoMarkInvoicePaid = mutation({
+  args: { invoiceId: v.id("invoices") },
+  handler: async (ctx, args) => {
+    const member = await requireClinicWrite(ctx, "billing", { allowBillingReadOnly: true });
+    const { user, clinic } = member;
+    const invoice = await ctx.db.get(args.invoiceId);
+    if (!invoice || invoice.clinicId !== clinic._id) {
+      throw new ConvexError("Invoice not found");
+    }
+    if (invoice.status !== "paid") {
+      throw new ConvexError("This invoice isn't marked as paid.");
+    }
+    const byHand = invoice.paymentMethod === "cash" || invoice.paymentMethod === "bank_transfer" || invoice.paymentMethod === "pos";
+    const onlinePayments = await ctx.db
+      .query("payments")
+      .withIndex("by_invoice_id", (q) => q.eq("invoiceId", invoice._id))
+      .collect();
+    if (!byHand || onlinePayments.some((p) => p.status === "completed") || (invoice.refundedAmount ?? 0) > 0) {
+      throw new ConvexError("This invoice was paid online, so it can't be undone here. Contact Rehabify support about a refund.");
+    }
+    await ctx.db.patch(invoice._id, {
+      status: "sent",
+      paymentMethod: undefined,
+      paymentDate: undefined,
+      paidAmount: 0,
+    });
+    // Any partner or doctor commission recorded for the hand-marked payment goes with it
+    const reason = "Clinic undid a payment marked as paid by mistake";
+    await reverseCommissionsForPayment(ctx, `manual:${invoice._id}`, reason);
+    // (a payment recorded after an earlier undo has its own reference: see markInvoicePaid)
+    if (invoice.paymentDate) await reverseCommissionsForPayment(ctx, `manual:${invoice._id}:${invoice.paymentDate}`, reason);
+    await ctx.db.insert("auditLogs", {
+      actorUserId: user._id,
+      action: "clinic_invoice_payment_undone",
+      targetEntityType: "invoice",
+      targetEntityId: invoice._id,
+      timestamp: Date.now(),
+      details: {
+        clinicId: clinic._id,
+        invoiceNumber: invoice.invoiceNumber,
+        method: invoice.paymentMethod,
+        amountKobo: invoice.totalAmount,
+        markedPaidAt: invoice.paymentDate,
+      },
     });
     return { success: true };
   },

@@ -1352,6 +1352,9 @@ export default defineSchema({
     isRecurring: v.optional(v.boolean()), // Flag for recurring appointments
     instanceDate: v.optional(v.string()), // ISO date for this instance
     isException: v.optional(v.boolean()), // True if modified from series template
+    // Visits a clinic booked together as a repeat (clinicTools.bookClinicAppointment): the same
+    // value on each, so "cancel this and later visits" can find them
+    repeatGroup: v.optional(v.string()),
     // Enhanced appointment features
     priority: v.optional(v.union(
       v.literal("low"),
@@ -5336,6 +5339,24 @@ export default defineSchema({
     createdAt: v.number(),
     // A clinician has seen a high-pain log (it leaves Needs attention)
     reviewedAt: v.optional(v.number()),
+  })
+    .index("by_program", ["programId", "createdAt"])
+    .index("by_patient", ["patientId", "createdAt"]),
+
+  // What a patient ticks in a programme besides exercise logs: an education or activity item
+  // done for the day ("item"), and the day's "Done, send to my physio" ("finish"). Kept apart
+  // from exerciseProgramLogs so adherence, pain and billing counts stay exercise-only.
+  exerciseProgramTicks: defineTable({
+    programId: v.id("exercisePrograms"),
+    patientId: v.id("users"),
+    kind: v.union(v.literal("item"), v.literal("finish")),
+    // kind "item": which item; -1 once that item is removed from the programme
+    itemIndex: v.optional(v.number()),
+    // kind "finish": how much of the programme was done when it was sent
+    doneCount: v.optional(v.number()),
+    total: v.optional(v.number()),
+    source: v.union(v.literal("app"), v.literal("link")),
+    createdAt: v.number(),
   })
     .index("by_program", ["programId", "createdAt"])
     .index("by_patient", ["patientId", "createdAt"]),

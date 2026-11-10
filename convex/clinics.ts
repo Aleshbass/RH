@@ -2270,7 +2270,8 @@ export const getClinicPatients = query({
           // Left with the owner (e.g. their clinician left): the owner doesn't treat, so assign someone
           needsClinician: rel.status === "active" && rel.physiotherapistId === clinic.ownerId,
           // Added by the clinic and hasn't opened their invite yet (still the placeholder account)
-          invitePending: (patient.clerkId ?? "").startsWith("clinic_patient_"),
+          // (no email means no invite was sent, so nothing is pending)
+          invitePending: Boolean(patient.email) && (patient.clerkId ?? "").startsWith("clinic_patient_"),
           careStatus:
             rel.status === "active"
               ? ("active" as const)

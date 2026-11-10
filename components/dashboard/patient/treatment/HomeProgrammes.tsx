@@ -5,7 +5,7 @@ import { useMutation } from 'convex/react'
 import { api } from '@/convex/_generated/api'
 import { ProgramPlayer } from '@/components/exercise-programs/ProgramPlayer'
 import { useFlexCheckout } from '@/components/exercise-programs/flex'
-import type { LogInput, MyProgram } from '@/components/exercise-programs/types'
+import { finishProgramTodayRef, markItemDoneRef, type LogInput, type MyProgram } from '@/components/exercise-programs/types'
 import { InfoTip, SectionLabel } from '@/components/patient/ui'
 import { useViewerGrant } from '@/lib/exercise3d/useViewerGrant'
 import { saveMineRef } from '@/lib/motion/convexRefs'
@@ -15,6 +15,8 @@ function Program({ program }: { program: MyProgram }) {
   const requestGrant = useViewerGrant({ kind: 'program', programId: program._id })
   const log = useMutation(api.exercisePrograms.logExercise)
   const saveGuided = useMutation(saveMineRef)
+  const markDone = useMutation(markItemDoneRef)
+  const finish = useMutation(finishProgramTodayRef)
   // An independent physio's own patients buy Flex for demonstrations and tracking. Paystack
   // returns to /dashboard/patient/exercises, which redirects here with the reference.
   const { checkout, busy } = useFlexCheckout({ from: 'exercises' })
@@ -25,6 +27,13 @@ function Program({ program }: { program: MyProgram }) {
       requestGrant={requestGrant}
       mediaContext={{ kind: 'program', programId: program._id }}
       onLog={(input: LogInput) => log({ programId: program._id, ...input })}
+      onMarkDone={async (itemIndex) => {
+        await markDone({ programId: program._id, itemIndex })
+      }}
+      onFinish={async () => {
+        await finish({ programId: program._id })
+      }}
+      finishedToday={program.finishedToday}
       flex={{ onChoose: (plan) => void checkout(plan), busy }}
       coach={{
         programId: program._id,

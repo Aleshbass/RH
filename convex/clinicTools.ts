@@ -9,7 +9,7 @@ import { clinicPaymentSplit } from "./clinicFees";
 import { loadClinicFeeConfig } from "./clinicFeeSettings";
 import { logSecurityEvent } from "./helpers/securityLog";
 import { ensureUserNumbers } from "./helpers/rehabifyIds";
-import { activePaymentLink } from "./helpers/paymentLinks";
+import { activePaymentLink, closeInvoicePaymentLinks } from "./helpers/paymentLinks";
 import { isClinicInviteApproval } from "./helpers/clinicApproval";
 import { usableSubaccount } from "./helpers/paystackMode";
 import { assertClinicNotBillingReadOnly, subscriptionForClinic } from "./helpers/clinicSubscriptions";
@@ -457,6 +457,9 @@ async function advanceClinicReferral(
   }
 }
 
+/** Most visits one repeat booking can create (bookClinicAppointment). */
+const MAX_REPEAT_VISITS = 40;
+
 /** Stops a clinician being double-booked. */
 async function assertClinicianFree(
   ctx: QueryCtx,
@@ -561,7 +564,9 @@ export const addClinicPatient = mutation({
   args: {
     firstName: v.string(),
     lastName: v.string(),
-    email: v.string(),
+    // Optional: many patients have no email. They get a record without a login; add an email
+    // later (Edit details) to invite them to their account.
+    email: v.optional(v.string()),
     phoneNumber: v.optional(v.string()),
     dateOfBirth: v.optional(v.string()),
     gender: v.optional(v.union(v.literal("male"), v.literal("female"), v.literal("other"), v.literal("prefer_not_to_say"))),
@@ -579,11 +584,37 @@ export const addClinicPatient = mutation({
       await assertStaffInClinic(ctx, clinic, args.assignedClinicianId);
     }
 
-    // Check if a user with this email already exists
-    let patientUser = await ctx.db
-      .query("users")
-      .withIndex("by_email", (q: any) => q.eq("email", args.email.toLowerCase().trim()))
-      .first();
+    const email = args.email?.trim().toLowerCase() || undefined;
+    if (email && !/^\S+@\S+\.\S+$/.test(email)) {
+      throw new ConvexError("That email address doesn't look right. Check it, or leave it empty.");
+    }
+    const phoneNumber = args.phoneNumber?.trim() || undefined;
+
+    // An email that's already on Rehabify links to that record. Without an email there is
+    // nothing to match on, so a new record is made (never matched on an empty email).
+    let patientUser = email
+      ? await ctx.db
+          .query("users")
+          .withIndex("by_email", (q: any) => q.eq("email", email))
+          .first()
+      : null;
+
+    // No email: the same name and phone already in this clinic is almost certainly a duplicate
+    if (!email && phoneNumber) {
+      const sameName = (u: Doc<"users">) =>
+        (u.firstName ?? "").trim().toLowerCase() === args.firstName.trim().toLowerCase() &&
+        (u.lastName ?? "").trim().toLowerCase() === args.lastName.trim().toLowerCase();
+      const samePhone = await ctx.db
+        .query("users")
+        .withIndex("by_phone_number", (q: any) => q.eq("phoneNumber", phoneNumber))
+        .collect();
+      const duplicate = samePhone.find((u) => u.role === "patient" && u.clinicId === clinic._id && sameName(u));
+      if (duplicate) {
+        throw new ConvexError(
+          `${args.firstName.trim()} ${args.lastName.trim()} is already one of your patients with this phone number. Open their record from Patients.`
+        );
+      }
+    }
 
     if (patientUser && patientUser.role && patientUser.role !== "patient") {
       throw new ConvexError("This email belongs to a non-patient account and cannot be enrolled as a patient.");
@@ -594,10 +625,10 @@ export const addClinicPatient = mutation({
       const generatedClerkId = `clinic_patient_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
       const patientUserId = await ctx.db.insert("users", {
         clerkId: generatedClerkId,
-        email: args.email.toLowerCase().trim(),
+        email,
         firstName: args.firstName.trim(),
         lastName: args.lastName.trim(),
-        phoneNumber: args.phoneNumber,
+        phoneNumber,
         role: "patient",
         onboarded: true,
         clinicId: clinic._id,
@@ -682,6 +713,8 @@ export const addClinicPatient = mutation({
       patientNumber,
       existingAccount,
       emailSent,
+      // The clinician they were put with, so a booking form can pick them straight away
+      clinicianId: targetClinicianId,
       message: `Patient ${args.firstName} ${args.lastName} enrolled successfully.`,
     };
   },
@@ -1196,6 +1229,8 @@ export const bookClinicAppointment = mutation({
     appointmentType: v.union(v.literal("in-person"), v.literal("telehealth")),
     notes: v.optional(v.string()),
     serviceType: v.optional(v.string()),
+    // Repeat visits: the start times of the later visits (same length, clinician and place)
+    repeatStartTimes: v.optional(v.array(v.number())),
   },
   handler: async (ctx, args) => {
     const member = await requireClinicWrite(ctx, "appointments");
@@ -1207,22 +1242,96 @@ export const bookClinicAppointment = mutation({
     if (args.endTime <= args.startTime) {
       throw new ConvexError("Appointment end time must be after the start time");
     }
+    const length = args.endTime - args.startTime;
+    const now = Date.now();
+    const DAY = 24 * 60 * 60 * 1000;
+    const repeats = [...new Set(args.repeatStartTimes ?? [])].filter((t) => t > args.startTime).sort((a, b) => a - b);
+    if (repeats.length > MAX_REPEAT_VISITS - 1) {
+      throw new ConvexError(`You can book up to ${MAX_REPEAT_VISITS} repeat visits at once.`);
+    }
+    // A visit that already happened can be added afterwards (a verbal booking that was never entered)
+    if (args.startTime < now - 366 * DAY) {
+      throw new ConvexError("That date is more than a year ago. Check the date.");
+    }
+    if ((repeats[repeats.length - 1] ?? args.startTime) > now + 366 * DAY) {
+      throw new ConvexError("Repeat visits can be booked up to a year ahead.");
+    }
+    // The first visit must be free; later repeats that clash are skipped and reported
     await assertClinicianFree(ctx, args.physiotherapistId, args.startTime, args.endTime);
 
-    const aptId = await ctx.db.insert("appointments", {
-      clinicId: clinic._id,
-      patientId: args.patientId,
-      physiotherapistId: args.physiotherapistId,
-      startTime: args.startTime,
-      endTime: args.endTime,
-      status: "scheduled",
-      appointmentType: args.appointmentType,
-      isOnline: args.appointmentType === "telehealth",
-      serviceType: args.serviceType || (args.appointmentType === "telehealth" ? "Telehealth Consultation" : "Clinic Consultation"),
-      notesForTherapist: args.notes,
-    });
+    const repeatGroup = repeats.length > 0 ? `rg_${now.toString(36)}_${Math.random().toString(36).slice(2, 8)}` : undefined;
+    const serviceType = args.serviceType || (args.appointmentType === "telehealth" ? "Telehealth Consultation" : "Clinic Consultation");
+    const insertVisit = (startTime: number) => {
+      // Already over: saved as attended, since nobody can confirm a visit in the past
+      const past = startTime + length <= now;
+      return ctx.db.insert("appointments", {
+        clinicId: clinic._id,
+        patientId: args.patientId,
+        physiotherapistId: args.physiotherapistId,
+        startTime,
+        endTime: startTime + length,
+        status: past ? "completed" : "scheduled",
+        appointmentType: args.appointmentType,
+        isOnline: args.appointmentType === "telehealth",
+        serviceType,
+        notesForTherapist: args.notes,
+        repeatGroup,
+      });
+    };
 
-    return { success: true, appointmentId: aptId };
+    const aptId = await insertVisit(args.startTime);
+    let booked = 1;
+    const skipped: number[] = [];
+    for (const startTime of repeats) {
+      try {
+        await assertClinicianFree(ctx, args.physiotherapistId, startTime, startTime + length);
+      } catch {
+        skipped.push(startTime);
+        continue;
+      }
+      await insertVisit(startTime);
+      booked += 1;
+    }
+    if (args.endTime <= now) {
+      await advanceClinicReferral(ctx, clinic, args.patientId, "attended", user._id);
+    }
+
+    return { success: true, appointmentId: aptId, past: args.endTime <= now, booked, skipped };
+  },
+});
+
+/** Cancels a repeat visit and every later open visit booked with it; the patient is told once. */
+export const cancelClinicRepeatVisits = mutation({
+  args: { appointmentId: v.id("appointments"), cancellationReason: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const { user, clinic } = await requireClinicWrite(ctx, "appointments");
+    const first = await getClinicAppointmentOrThrow(ctx, clinic, args.appointmentId);
+    if (!first.repeatGroup) throw new ConvexError("This visit isn't part of a repeat booking.");
+    const later = (
+      await ctx.db
+        .query("appointments")
+        .withIndex("by_physiotherapist_id_and_time", (q: any) =>
+          q.eq("physiotherapistId", first.physiotherapistId).gte("startTime", first.startTime)
+        )
+        .collect()
+    ).filter(
+      (apt) =>
+        apt.clinicId === clinic._id &&
+        apt.repeatGroup === first.repeatGroup &&
+        (apt.status === "scheduled" || apt.status === "confirmed")
+    );
+    if (later.length === 0) throw new ConvexError("There are no upcoming visits left in this repeat booking.");
+    for (const apt of later) {
+      await ctx.db.patch(apt._id, { status: "cancelled_by_therapist", cancellationReason: args.cancellationReason, ...CLEAR_PROPOSAL });
+      await syncGoogleCalendarEvent(ctx, apt._id, "delete");
+    }
+    const others = later.length - 1;
+    const note = others > 0 ? `This and ${others} later repeat visit${others === 1 ? " was" : "s were"} cancelled.` : undefined;
+    await notifyClinicVisitChange(ctx, clinic, user._id, later[0], {
+      kind: "cancelled",
+      reason: [args.cancellationReason?.trim(), note].filter(Boolean).join(" ") || undefined,
+    });
+    return { success: true, cancelled: later.length };
   },
 });
 
@@ -1935,6 +2044,63 @@ async function clinicReferralSource(ctx: QueryCtx, clinicId: Id<"clinics">, pati
   return rows.some((rel) => rel.clinicId === clinicId && CLINIC_REHABIFY_SOURCES.has(rel.source ?? "")) ? "rehabify_referral" : null;
 }
 
+/**
+ * The amounts stored on a clinic invoice of `totalKobo`, for a new invoice or a corrected one.
+ * Throws when a Rehabify referral is billed under the floor.
+ */
+async function clinicInvoiceMoney(
+  ctx: QueryCtx,
+  patientSource: "rehabify_referral" | "clinic_direct",
+  totalKobo: number,
+  visits: number
+) {
+  // A Rehabify referral can't be billed a token amount on the platform with the rest taken in
+  // cash: each invoice is at least Rehabify's cheapest session price per visit it covers
+  if (patientSource === "rehabify_referral") {
+    const floorKobo = (await cheapestSessionPriceKobo(ctx)) * Math.max(1, visits);
+    if (totalKobo < floorKobo) {
+      throw new ConvexError(
+        `Rehabify referred this patient, so each visit is billed at least ₦${Math.round(floorKobo / 100 / Math.max(1, visits)).toLocaleString("en-NG")}. Please check the amount.`
+      );
+    }
+  }
+  // Online payment: Paystack's fee first, then stamp duty off the clinic's payout. The clinic's
+  // own patients: Rehabify takes no cut (clinics pay a software subscription instead). Rehabify
+  // Care patients sent to a clinic are a separate deal, so only they use the admin's split. The
+  // patient pays the quoted price; nothing is added on top. The amounts are fixed on the invoice
+  // now, so later settings changes don't alter it. See convex/clinicFees.ts.
+  const feeConfig = await loadClinicFeeConfig(ctx);
+  const split = clinicPaymentSplit(
+    totalKobo,
+    patientSource === "rehabify_referral" ? feeConfig : { ...feeConfig, clinicSharePercent: 100 }
+  );
+  const platformFeeKobo = split.rehabifyKobo;
+  // What Paystack settles to the clinic's subaccount (stamp duty is deducted from it on payout)
+  const clinicShareKobo = split.clinicShareKobo;
+  return {
+    subtotalAmount: totalKobo,
+    platformFeeAmount: platformFeeKobo,
+    paystackFeeAmount: split.paystackFeeKobo,
+    stampDutyAmount: split.stampDutyKobo,
+    clinicSharePercent: split.clinicSharePercent,
+    totalAmount: totalKobo,
+    physiotherapistShare: clinicShareKobo,
+    platformShare: platformFeeKobo,
+    // feeBreakdown.total is what checkout charges, so the patient pays the quoted price exactly once.
+    // paystackFlat holds the whole estimated Paystack fee in kobo; paystackPercentage is the rate.
+    // physiotherapistEarnings is the clinic's share before stamp duty (what the split sends it).
+    feeBreakdown: {
+      subtotal: totalKobo,
+      discount: 0,
+      platformFee: platformFeeKobo,
+      paystackPercentage: feeConfig.paystackPercent,
+      paystackFlat: split.paystackFeeKobo,
+      total: totalKobo,
+      physiotherapistEarnings: clinicShareKobo,
+    },
+  };
+}
+
 export async function insertClinicInvoice(
   ctx: MutationCtx,
   clinic: Doc<"clinics">,
@@ -1954,29 +2120,7 @@ export async function insertClinicInvoice(
     const patientSource = (await clinicReferralSource(ctx, clinic._id, input.patientId)) ? "rehabify_referral" : "clinic_direct";
 
     const totalKobo = input.items.reduce((sum, item) => sum + item.totalPrice, 0);
-    // A Rehabify referral can't be billed a token amount on the platform with the rest taken in
-    // cash: each invoice is at least Rehabify's cheapest session price per visit it covers
-    if (patientSource === "rehabify_referral") {
-      const floorKobo = (await cheapestSessionPriceKobo(ctx)) * Math.max(1, input.appointmentIds?.length ?? 0);
-      if (totalKobo < floorKobo) {
-        throw new ConvexError(
-          `Rehabify referred this patient, so each visit is billed at least ₦${Math.round(floorKobo / 100 / Math.max(1, input.appointmentIds?.length ?? 0)).toLocaleString("en-NG")}. Please check the amount.`
-        );
-      }
-    }
-    // Online payment: Paystack's fee first, then stamp duty off the clinic's payout. The clinic's
-    // own patients: Rehabify takes no cut (clinics pay a software subscription instead). Rehabify
-    // Care patients sent to a clinic are a separate deal, so only they use the admin's split. The
-    // patient pays the quoted price; nothing is added on top. The amounts are fixed on the invoice
-    // now, so later settings changes don't alter it. See convex/clinicFees.ts.
-    const feeConfig = await loadClinicFeeConfig(ctx);
-    const split = clinicPaymentSplit(
-      totalKobo,
-      patientSource === "rehabify_referral" ? feeConfig : { ...feeConfig, clinicSharePercent: 100 }
-    );
-    const platformFeeKobo = split.rehabifyKobo;
-    // What Paystack settles to the clinic's subaccount (stamp duty is deducted from it on payout)
-    const clinicShareKobo = split.clinicShareKobo;
+    const money = await clinicInvoiceMoney(ctx, patientSource, totalKobo, input.appointmentIds?.length ?? 0);
 
     const now = Date.now();
     let invoiceNumber = "";
@@ -2008,35 +2152,16 @@ export async function insertClinicInvoice(
       issueDate: now,
       dueDate: due,
       items: input.items,
-      subtotalAmount: totalKobo,
-      platformFeeAmount: platformFeeKobo,
-      paystackFeeAmount: split.paystackFeeKobo,
-      stampDutyAmount: split.stampDutyKobo,
-      clinicSharePercent: split.clinicSharePercent,
-      totalAmount: totalKobo,
+      ...money,
       currency: "NGN",
       status: "sent",
       patientSource,
       relatedAppointmentIds: input.appointmentIds?.length ? input.appointmentIds : undefined,
       notes: input.notes,
-      physiotherapistShare: clinicShareKobo,
-      platformShare: platformFeeKobo,
-      // feeBreakdown.total is what checkout charges, so the patient pays the quoted price exactly once.
-      // paystackFlat holds the whole estimated Paystack fee in kobo; paystackPercentage is the rate.
-      // physiotherapistEarnings is the clinic's share before stamp duty (what the split sends it).
-      feeBreakdown: {
-        subtotal: totalKobo,
-        discount: 0,
-        platformFee: platformFeeKobo,
-        paystackPercentage: feeConfig.paystackPercent,
-        paystackFlat: split.paystackFeeKobo,
-        total: totalKobo,
-        physiotherapistEarnings: clinicShareKobo,
-      },
     });
 
     // The patient hears it from their clinic, by name, wherever they are
-    await notifyPatientOfClinicInvoice(ctx, clinic, input.patientId, invoiceId, totalKobo, input.items[0]?.description);
+    await notifyPatientOfClinicInvoice(ctx, clinic, input.patientId, invoiceId, totalKobo, input.items[0]?.description, "new");
 
     return { success: true, invoiceId, invoiceNumber };
 }
@@ -2047,10 +2172,14 @@ async function notifyPatientOfClinicInvoice(
   patientId: Id<"users">,
   invoiceId: Id<"invoices">,
   totalKobo: number,
-  what: string | undefined
+  what: string | undefined,
+  /** "corrected": the clinic changed the amount or service of a request already sent */
+  kind: "new" | "corrected"
 ) {
   const amount = `₦${(totalKobo / 100).toLocaleString("en-NG", { maximumFractionDigits: 2 })}`;
   const path = `/dashboard/patient/invoices/${invoiceId}`;
+  const headline = kind === "corrected" ? `${clinic.name} corrected your payment request` : `${clinic.name} sent you a payment request`;
+  const lead = kind === "corrected" ? "It is now " : "";
   await insertNotification(ctx, {
     userId: patientId,
     type: "invoice_created",
@@ -2058,8 +2187,8 @@ async function notifyPatientOfClinicInvoice(
     status: "pending",
     createdAt: Date.now(),
     payload: {
-      title: `${clinic.name} sent you a payment request`,
-      body: `${amount}${what ? ` for ${what}` : ""}. Pay by card, transfer or USSD.`,
+      title: headline,
+      body: `${lead}${amount}${what ? ` for ${what}` : ""}. Pay by card, transfer or USSD.`,
       data: { entityId: String(invoiceId), entityType: "invoice" },
       link: path,
     },
@@ -2068,11 +2197,12 @@ async function notifyPatientOfClinicInvoice(
   if (patient?.email && patientHasAccount(patient)) {
     await ctx.scheduler.runAfter(0, internal.actions.emails.sendPatientCareEmail.sendPatientCareEmail, {
       to: patient.email,
-      subject: `${clinic.name}: payment request for ${amount}`,
+      subject: kind === "corrected" ? `${clinic.name}: corrected payment request, now ${amount}` : `${clinic.name}: payment request for ${amount}`,
       greetingName: patient.firstName,
-      heading: `${clinic.name} sent you a payment request`,
+      heading: headline,
       paragraphs: [
-        `${amount}${what ? ` for ${what}` : ""}. You can pay by card, bank transfer or USSD, and the payment goes straight to ${clinic.name}.`,
+        `${lead}${amount}${what ? ` for ${what}` : ""}. You can pay by card, bank transfer or USSD, and the payment goes straight to ${clinic.name}.`,
+        ...(kind === "corrected" ? ["This replaces the earlier request. If you already have a payment link for it, please use the new one."] : []),
         clinic.contactPhone ? `Questions about it? Call ${clinic.name} on ${clinic.contactPhone}.` : `Questions about it? Message ${clinic.name} in your patient portal.`,
       ],
       buttonLabel: "View and pay",
@@ -2125,6 +2255,71 @@ export const createClinicPaymentRequest = mutation({
       appointmentIds: args.appointmentId ? [args.appointmentId] : undefined,
       issuedById: member.user._id,
     });
+  },
+});
+
+/**
+ * Correct an unpaid payment request: a wrong amount or service. The invoice keeps its number, the
+ * old payment link is closed (a new one is made for the new amount) and the patient is told.
+ * A paid invoice is first reopened with clinicBilling.undoMarkInvoicePaid if it was marked paid by mistake.
+ */
+export const updateClinicPaymentRequest = mutation({
+  args: {
+    invoiceId: v.id("invoices"),
+    serviceName: v.string(),
+    amountNaira: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const member = await requireClinicWrite(ctx, "billing", { allowBillingReadOnly: true });
+    const { clinic } = member;
+    const invoice = await ctx.db.get(args.invoiceId);
+    if (!invoice || invoice.clinicId !== clinic._id) throw new ConvexError("Invoice not found");
+
+    if (invoice.status === "paid") {
+      throw new ConvexError("This invoice is paid, so it can't be changed. If it was marked as paid by mistake, undo that first.");
+    }
+    if (invoice.status === "void") throw new ConvexError("This invoice was cancelled. Create a new payment request instead.");
+    if (invoice.status === "partial_payment" || (invoice.paidAmount ?? 0) > 0) {
+      throw new ConvexError("Part of this invoice has already been paid, so it can't be changed. Contact Rehabify support.");
+    }
+    if (invoice.items.length > 1) {
+      throw new ConvexError("This invoice has several lines. Cancel it and create a new payment request instead.");
+    }
+    // A pay-later application was made for the old amount
+    const loans = await ctx.db
+      .query("loanApplications")
+      .withIndex("by_invoice", (q: any) => q.eq("invoiceId", invoice._id))
+      .collect();
+    if (loans.some((loan) => !["declined", "rejected", "cancelled", "expired", "failed"].includes(String(loan.status)))) {
+      throw new ConvexError("The patient has a pay-later (MediLoan) application for this invoice, so it can't be changed. Contact Rehabify support.");
+    }
+
+    const serviceName = args.serviceName.trim();
+    if (!serviceName) throw new ConvexError("Say what the payment is for");
+    if (!(args.amountNaira > 0)) throw new ConvexError("Amount must be greater than zero");
+    const amountKobo = Math.round(args.amountNaira * 100);
+    const before = { serviceName: invoice.items[0]?.description ?? "", amountKobo: invoice.totalAmount };
+    if (before.serviceName === serviceName && before.amountKobo === amountKobo) return { success: true, changed: false };
+
+    const patientSource = invoice.patientSource === "rehabify_referral" ? "rehabify_referral" : "clinic_direct";
+    const money = await clinicInvoiceMoney(ctx, patientSource, amountKobo, invoice.relatedAppointmentIds?.length ?? 0);
+    // A link for the old amount must not be paid: it is closed, and the next one uses the new amount
+    await closeInvoicePaymentLinks(ctx, invoice._id);
+    await ctx.db.patch(invoice._id, {
+      items: [{ description: serviceName, quantity: 1, unitPrice: amountKobo, totalPrice: amountKobo }],
+      ...money,
+      paymentLinkSubaccount: undefined,
+    });
+    await ctx.db.insert("auditLogs", {
+      actorUserId: member.user._id,
+      action: "clinic_invoice_corrected",
+      targetEntityType: "invoice",
+      targetEntityId: invoice._id,
+      timestamp: Date.now(),
+      details: { clinicId: clinic._id, invoiceNumber: invoice.invoiceNumber, before, after: { serviceName, amountKobo } },
+    });
+    await notifyPatientOfClinicInvoice(ctx, clinic, invoice.patientId, invoice._id, amountKobo, serviceName, "corrected");
+    return { success: true, changed: true };
   },
 });
 
@@ -3142,7 +3337,8 @@ export const getClinicNavCounts = query({
       for (const [patientId, treated] of hasClinician) {
         if (!treated) counts.needsClinician += 1;
         const patient = await ctx.db.get(patientId);
-        if ((patient?.clerkId ?? "").startsWith("clinic_patient_")) counts.invitesPending += 1;
+        // No email means no invite was sent, so there's nothing to wait for
+        if (patient?.email && (patient.clerkId ?? "").startsWith("clinic_patient_")) counts.invitesPending += 1;
       }
     }
 

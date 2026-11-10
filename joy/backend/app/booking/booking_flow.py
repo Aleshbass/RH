@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session, object_session
 from app.audit.logger import append
 from app.booking.paystack_client import initialize_transaction
 from app.booking.state import cancel, create_draft, get_active_booking, mark_awaiting_payment
-from app.booking.intake import journey, send_intake
+from app.booking.intake import journey, send_intake, send_triage_snapshot
 from app.config import get_settings
 from app.conversation.state_manager import ConversationState
 from app.matching.ranking import rank
@@ -602,6 +602,7 @@ def _find_rh_matches(session: Session, conversation: Conversation, patient: Pati
     _set_substate(conversation, AWAITING_RH_PROVIDER, context)
     append(session, kind=AuditKind.MATCH, actor_phone=patient.phone_e164, person_id=patient.id,
            payload={"decision": "rh_matches_presented", "service_mode": mode, "provider_ids": [m.physiotherapist_id for m in matches]})
+    send_triage_snapshot(session, conversation, patient, rh_patient_id=str(rh_patient_id))
     journey(rh_patient_id, "matches_shown", f"matches-{conversation.id}-{mode}")
     return "\n".join(lines)
 
@@ -1804,6 +1805,7 @@ def offer_named_physios(
     append(session, kind=AuditKind.MATCH, actor_phone=patient.phone_e164, person_id=patient.id,
            payload={"decision": "rh_named_matches_presented", "urgent": urgent,
                     "provider_ids": [p["physiotherapist_id"] for p in providers]})
+    send_triage_snapshot(session, conversation, patient, rh_patient_id=str(rh_patient_id))
     journey(rh_patient_id, "matches_shown", f"matches-{conversation.id}-named")
     return named_list_text(providers, 0, shown, urgent=urgent, when=chosen.label), [*lead, *_photo_cards(providers, 0, shown)]
 

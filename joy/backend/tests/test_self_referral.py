@@ -247,7 +247,10 @@ def test_full_self_referral_to_confirm_and_pay(db_session, new_patient, rh):
     assert "is held for 30 minutes" in held.reply_text and "email address" in held.reply_text
     hold = next(kwargs for op, kwargs in rh.calls if op == "hold")
     assert (hold["physiotherapist_id"], hold["duration_minutes"], hold["service_mode"], hold["policy_version"]) == ("p1", 20, "online", "2026-11-06")
-    intake = next(payload for op, payload in rh.calls if op == "intake")
+    # The care team got the story when physios were shown, before any booking
+    snapshot = next(payload for op, payload in rh.calls if op == "intake")
+    assert "booking_id" not in snapshot and snapshot["chief_complaint"]
+    intake = next(payload for op, payload in rh.calls if op == "intake" and payload.get("booking_id"))
     assert intake["clinician_summary"].startswith("New self-referral — Ada, 34\nTriage outcome: Routine MSK physiotherapy")
 
 

@@ -11,7 +11,7 @@ import {
   LINK_CODE_MAX_ATTEMPTS, LINK_CODE_TTL_MS, LINK_REQUESTS_PER_HOUR, emailHint, hashLinkCode,
   isPlaceholderUser, linkableEmail, patientsByPhone, sixDigitCode,
 } from "./helpers/whatsappLink";
-import { ZONE_CITY_STATE } from "./helpers/startingZones";
+import { ZONE_CITY_STATE, stateForPlace } from "./helpers/startingZones";
 import { insertLog, patientProgramView, startOfLagosDay } from "./exercisePrograms";
 import { posterUrl } from "./exerciseLibraryCatalog";
 import { assertProgramUnlocked } from "./helpers/patientPlans";
@@ -265,8 +265,15 @@ export const executeMutation = internalMutation({
       const profilePatch: Record<string, unknown> = {};
       const set = (key: string, next: unknown) => { const value = fill(profile?.[key], next); if (value !== undefined) profilePatch[key] = value; };
       if (/^\d{4}-\d{2}-\d{2}$/.test(dob)) { set("dateOfBirth", dob); set("birthdayMonthDay", dob.slice(5, 10)); }
+      // Joy asks for an age, not a date of birth: kept with when it was given (patientFacts.ageOf)
+      const ageYears = typeof data.age_years === "number" && Number.isInteger(data.age_years) && data.age_years > 0 && data.age_years < 120 ? data.age_years : undefined;
+      if (ageYears !== undefined && !profilePatch.dateOfBirth && !profile?.dateOfBirth && (joyRecord || typeof profile?.ageYears !== "number")) {
+        profilePatch.ageYears = ageYears;
+        profilePatch.ageRecordedAt = Date.now();
+      }
       set("gender", gender);
-      set("state", text(data.state, 40) || undefined);
+      // Joy knows the town; the state follows from it when Joy doesn't send one
+      set("state", text(data.state, 40) || stateForPlace(text(data.city, 60) || text(data.area, 80)) || undefined);
       set("city", text(data.city, 60) || undefined);
       set("area", text(data.area, 80) || undefined);
       if (summary) {

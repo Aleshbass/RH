@@ -1,3 +1,5 @@
+import { makeFunctionReference } from 'convex/server'
+import type { Id } from '@/convex/_generated/dataModel'
 import type { LibraryItem } from '@/convex/exerciseLibrary'
 import type { careTeamProgramView, patientProgramView, programView } from '@/convex/exercisePrograms'
 import type { listResources } from '@/convex/libraryResources'
@@ -14,8 +16,16 @@ export type CareTeamProgram = Awaited<ReturnType<typeof careTeamProgramView>>
 export type MyProgram = Awaited<ReturnType<typeof patientProgramView>>
 
 export type SharedProgramResult =
-  | { ok: true; patientFirstName: string | null; expiresAt: number; program: ProgramView; doneToday: number[] }
+  | { ok: true; patientFirstName: string | null; expiresAt: number; program: ProgramView; doneToday: number[]; finishedToday: number | null }
   | { ok: false; reason: string }
+
+// Ticking an education or activity item, and "Done for today" (convex/exercisePrograms.ts). By
+// name, because the generated `api` type is at TypeScript's depth limit.
+type Finished = { doneCount: number; total: number }
+export const markItemDoneRef = makeFunctionReference<'mutation', { programId: Id<'exercisePrograms'>; itemIndex: number }, null>('exercisePrograms:markItemDone')
+export const markItemDoneFromLinkRef = makeFunctionReference<'mutation', { code: string; session: string; itemIndex: number }, null>('exercisePrograms:markItemDoneFromLink')
+export const finishProgramTodayRef = makeFunctionReference<'mutation', { programId: Id<'exercisePrograms'> }, Finished>('exercisePrograms:finishProgramToday')
+export const finishProgramTodayFromLinkRef = makeFunctionReference<'mutation', { code: string; session: string }, Finished>('exercisePrograms:finishProgramTodayFromLink')
 
 // One member per failure state, so each `state` check narrows the union.
 export type LinkStatus =

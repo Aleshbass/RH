@@ -170,18 +170,33 @@ function draftsFromProgram(program: Pick<CareTeamProgram, 'items'>): Draft[] {
 }
 
 function NumberField({ label, value, onChange, min, max }: { label: string; value: number | null; onChange: (v: number | null) => void; min: number; max: number }) {
+  // What is typed is kept here while the box has focus, so it can be emptied and retyped
+  // ("10" → "" → "8"). Showing the saved value instead put a 1 back as soon as the box was
+  // cleared, so every number typed after it started with 1.
+  const [text, setText] = useState<string | null>(null)
   return (
     <label className="block">
       <span className="text-[11px] font-medium uppercase tracking-wider text-neutral-400">{label}</span>
       <Input
         inputMode="numeric"
         className="mt-1 h-9 rounded-lg"
-        value={value ?? ''}
+        value={text ?? value ?? ''}
         placeholder="—"
+        onFocus={(e) => {
+          setText(value === null ? '' : String(value))
+          // Tapping the box selects the number, so typing replaces it
+          e.target.select()
+        }}
+        onBlur={() => setText(null)}
         onChange={(e) => {
-          const raw = e.target.value.replace(/[^\d]/g, '')
-          if (!raw) return onChange(null)
-          onChange(Math.max(min, Math.min(max, Number(raw))))
+          const raw = e.target.value.replace(/[^\d]/g, '').slice(0, 3)
+          if (!raw) {
+            setText('')
+            return onChange(null)
+          }
+          const typed = Number(raw)
+          setText(typed > max ? String(max) : raw)
+          onChange(Math.max(min, Math.min(max, typed)))
         }}
       />
     </label>

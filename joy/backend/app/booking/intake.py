@@ -88,8 +88,9 @@ def intake_payload(
     }
 
 
-def send_intake(session: Session, conversation: Conversation, patient: Patient, *, rh_patient_id: str, booking_id: str, policy: dict) -> bool:
-    """Attach the WhatsApp assessment to the booking for the physio. Never raises."""
+def send_intake(session: Session, conversation: Conversation, patient: Patient, *, rh_patient_id: str, booking_id: str | None, policy: dict) -> bool:
+    """Attach the WhatsApp assessment to the booking for the physio (or, with no booking yet, to
+    the patient's record for the care team). Never raises."""
     try:
         triage = session.scalar(
             select(TriageSession).where(TriageSession.patient_id == patient.id).order_by(TriageSession.created_at.desc())
@@ -104,6 +105,15 @@ def send_intake(session: Session, conversation: Conversation, patient: Patient, 
     except Exception:
         logger.warning("joy_intake_not_sent", exc_info=True)
         return False
+
+
+def send_triage_snapshot(session: Session, conversation: Conversation, patient: Patient, *, rh_patient_id: str) -> bool:
+    """Before a booking: what the patient told Joy (complaint, pain, safety answers), so Rehabify's
+    care team sees it in Patients looking for care while the patient picks a physio. The booking's
+    intake later replaces it (same assessment), with the booking policy they accept. Never raises."""
+    consent_at = getattr(patient, "care_consent_at", None)
+    policy = {"version": "joy-care-consent", "accepted_at": consent_at.isoformat() if consent_at else ""}
+    return send_intake(session, conversation, patient, rh_patient_id=rh_patient_id, booking_id=None, policy=policy)
 
 
 def journey(rh_patient_id: str | None, stage: str, event_id: str, *, booking_id: str | None = None) -> None:

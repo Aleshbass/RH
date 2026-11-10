@@ -1,7 +1,8 @@
 'use client'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { ConvexError } from 'convex/values'
 import Link from 'next/link'
 import { useMutation, useQuery } from 'convex/react'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
@@ -81,6 +82,12 @@ type Leaving = 'approve' | 'decline' | 'delete'
 
 const QUEUE_LIMIT = 100
 
+/** The server's own words for a refusal (a ConvexError), else a generic line. */
+function reasonOf(error: unknown) {
+  if (error instanceof ConvexError && typeof error.data === 'string') return error.data
+  return 'Something went wrong. Please try again.'
+}
+
 const approvalApi = api.accountApproval
 
 export default function AdminApprovalsPage() {
@@ -131,13 +138,17 @@ export default function AdminApprovalsPage() {
   const runApprove = async (userId: Id<'users'>, name: string, comments?: string) => {
     markLeaving(userId, 'approve')
     try {
-      await approveUser({ userId, comments })
+      const result = await approveUser({ userId, comments })
       playSound('approve')
-      toast.success(`${name} approved`, { description: 'They can sign in to their dashboard now. An approval email is on its way.' })
+      if (result?.message === 'Already approved') {
+        toast.success(`${name} is already approved`, { description: 'Nothing else to do. They can sign in to their dashboard.' })
+      } else {
+        toast.success(`${name} approved`, { description: 'They can sign in to their dashboard now. An approval email is on its way.' })
+      }
     } catch (error) {
       clearLeaving(userId)
       toast.error(`Could not approve ${name}`, {
-        description: error instanceof Error ? error.message : 'Please try again.',
+        description: reasonOf(error),
       })
       throw error
     }
@@ -152,7 +163,7 @@ export default function AdminApprovalsPage() {
     } catch (error) {
       clearLeaving(userId)
       toast.error(`Could not decline ${name}`, {
-        description: error instanceof Error ? error.message : 'Please try again.',
+        description: reasonOf(error),
       })
       throw error
     }
@@ -189,17 +200,24 @@ export default function AdminApprovalsPage() {
     } catch (error) {
       clearLeaving(deleteTarget.userId)
       toast.error(`Could not delete ${name}`, {
-        description: error instanceof Error ? error.message : 'Please try again.',
+        description: reasonOf(error),
       })
       throw error
     }
   }
 
   // Review dialog handlers: the dialog stays open if these throw
+  // The applicant's name, kept from when the review opened (the row leaves the queue once decided)
+  const reviewName = useRef<string>('this applicant')
+  useEffect(() => {
+    const item = queue?.find((q) => q.userId === reviewUserId)
+    if (item) reviewName.current = displayName(item.user)
+  }, [queue, reviewUserId])
+
   const reviewApprove = async (userId: Id<'users'>, comments?: string) => {
     const item = queue?.find((q) => q.userId === userId)
     try {
-      await runApprove(userId, displayName(item?.user), comments)
+      await runApprove(userId, item ? displayName(item.user) : reviewName.current, comments)
     } catch (error) {
       playSound('error')
       throw error
@@ -208,7 +226,7 @@ export default function AdminApprovalsPage() {
   const reviewDecline = async (userId: Id<'users'>, comments: string) => {
     const item = queue?.find((q) => q.userId === userId)
     try {
-      await runDecline(userId, displayName(item?.user), comments)
+      await runDecline(userId, item ? displayName(item.user) : reviewName.current, comments)
     } catch (error) {
       playSound('error')
       throw error

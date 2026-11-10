@@ -17,7 +17,7 @@ import { internal } from "./_generated/api";
 import { publicAppUrl } from "./helpers/appUrl";
 import { phoneLast4, pinHash, randomToken, sha256Hex } from "./helpers/exerciseCrypto";
 import { displayName, linkByCode, linkState, requireCareTeam, resolveShareSession } from "./helpers/exerciseAccess";
-import { programView, startOfLagosDay } from "./exercisePrograms";
+import { programView, startOfLagosDay, todaysTicks } from "./exercisePrograms";
 
 const DAY = 86_400_000;
 const MAX_DAYS = 180;
@@ -275,13 +275,16 @@ export const sharedProgram = query({
       .withIndex("by_program", (q) => q.eq("programId", res.program._id).gt("createdAt", startOfLagosDay()))
       .collect();
     const patient = await ctx.db.get(res.program.patientId);
+    const ticks = await todaysTicks(ctx, res.program._id);
     return {
       ok: true as const,
       patientFirstName: patient?.firstName ?? null,
       expiresAt: res.link.expiresAt,
       // As the patient sees it: program.plan says whether Flex applies (demos and logging)
       program: await programView(ctx, res.program, "patient"),
-      doneToday: [...new Set(today.map((l) => l.itemIndex))],
+      // Exercises logged today, plus education and activity items ticked today
+      doneToday: [...new Set([...today.map((l) => l.itemIndex), ...ticks.items])],
+      finishedToday: ticks.finishedAt,
     };
   },
 });

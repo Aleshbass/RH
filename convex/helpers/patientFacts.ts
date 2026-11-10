@@ -7,6 +7,7 @@
 import type { QueryCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
 import { isJoyLoginEmail } from "../../lib/auth/joyLoginEmail";
+import { stateForPlace } from "./startingZones";
 
 /** Where a patient came from. A patient can carry more than one (Joy, then added by a clinic). */
 export type PatientSource = "joy" | "doctor" | "partner" | "clinic" | "physio" | "find_a_physio" | "website";
@@ -125,14 +126,18 @@ export async function patientFacts(
     latestBooking?.joyServiceMode ??
     (latestBooking ? (latestBooking.isOnline ? "online" : "home_visit") : null) ??
     formatFromCareSetting(referral?.careSetting) ??
-    formatFromCareSetting(referral?.preferredCareMode);
+    formatFromCareSetting(referral?.preferredCareMode) ??
+    // Joy's first booking is always the online Initial Recovery Consultation (owner, 7 Nov 2026)
+    (fromJoy ? "online" : null);
   const age = ageOf(profile);
+  // Only a town on record (Joy asks where they are, not the state): the state it is in
+  const state = profile?.state ?? stateForPlace(profile?.city) ?? stateForPlace(profile?.area);
   const phone = user.phoneNumber ?? referral?.patientPhone ?? null;
   const redFlags = (intake?.redFlags ?? []).filter((flag) => flag.flagged).map((flag) => flag.question);
 
   const missing: string[] = [];
   if (age === null) missing.push("age");
-  if (!profile?.state) missing.push("state");
+  if (!state) missing.push("state");
   if (!profile?.area && !profile?.city) missing.push("area");
   if (!complaint) missing.push("complaint");
   if (!format) missing.push("format");
@@ -149,7 +154,7 @@ export async function patientFacts(
     age,
     gender: profile?.gender ?? null,
     language: profile?.preferredLanguage ?? intake?.language ?? null,
-    state: profile?.state ?? null,
+    state: state ?? null,
     city: profile?.city ?? null,
     area: profile?.area ?? null,
     complaint,

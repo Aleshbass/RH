@@ -32,7 +32,8 @@ import { playSound } from '@/lib/sounds'
 interface AddPatientModalProps {
   isOpen: boolean
   onClose: () => void
-  onSuccess?: () => void
+  /** The patient just added (e.g. so a booking form can choose them straight away) */
+  onSuccess?: (added: { patientId: string; clinicianId: string; name: string }) => void
 }
 
 export default function AddPatientModal({ isOpen, onClose, onSuccess }: AddPatientModalProps) {
@@ -56,8 +57,13 @@ export default function AddPatientModal({ isOpen, onClose, onSuccess }: AddPatie
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!formData.firstName.trim() || !formData.lastName.trim() || !formData.email.trim()) {
-      toast.error('Enter first name, last name and email')
+    if (!formData.firstName.trim() || !formData.lastName.trim()) {
+      toast.error('Enter the first name and last name')
+      return
+    }
+    const email = formData.email.trim()
+    if (email && !/^\S+@\S+\.\S+$/.test(email)) {
+      toast.error('That email address doesn’t look right. Check it, or leave it empty.')
       return
     }
     const clinicianId = formData.assignedClinicianId || clinicianOptions.defaultId
@@ -71,7 +77,8 @@ export default function AddPatientModal({ isOpen, onClose, onSuccess }: AddPatie
       const result = await addPatient({
         firstName: formData.firstName.trim(),
         lastName: formData.lastName.trim(),
-        email: formData.email.trim(),
+        // Many patients have no email: they get a record without a login
+        email: email || undefined,
         phoneNumber: formData.phoneNumber.trim() || undefined,
         dateOfBirth: formData.dateOfBirth || undefined,
         gender: formData.gender,
@@ -83,8 +90,15 @@ export default function AddPatientModal({ isOpen, onClose, onSuccess }: AddPatie
       })
 
       const emailNote = result?.emailSent
-        ? `We've emailed ${formData.email.trim()} a link to see their appointments and exercises.`
-        : undefined
+        ? `We've emailed ${email} a link to see their appointments and exercises.`
+        : !email
+          ? 'No email, so no invite was sent. You can add one later under Edit details.'
+          : undefined
+      const added = {
+        patientId: String(result?.patientId ?? ''),
+        clinicianId: String(result?.clinicianId ?? clinicianId),
+        name: `${formData.firstName.trim()} ${formData.lastName.trim()}`,
+      }
       playSound('success')
       toast.success(result?.patientNumber ? `Patient added · ${result.patientNumber}` : 'Patient added', {
         description: result?.existingAccount
@@ -105,7 +119,7 @@ export default function AddPatientModal({ isOpen, onClose, onSuccess }: AddPatie
         assignedClinicianId: '',
       })
       onClose()
-      onSuccess?.()
+      if (added.patientId) onSuccess?.(added)
     } catch (err: any) {
       // Show the backend's reason (e.g. the email belongs to a staff account)
       toast.error(friendlyError(err, 'Could not add the patient. Please try again.'))
@@ -122,8 +136,8 @@ export default function AddPatientModal({ isOpen, onClose, onSuccess }: AddPatie
             Add patient
           </DialogTitle>
           <DialogDescription className="text-sm text-pt-muted">
-            Creates a record for this patient at your clinic and emails them a link to their Rehabify account.
-            Only name and email are required.
+            Creates a record for this patient at your clinic. Only the name is required. Add a phone number so you can
+            send exercises on WhatsApp. If they have an email, we send them a link to their Rehabify account.
           </DialogDescription>
         </DialogHeader>
 
@@ -160,11 +174,10 @@ export default function AddPatientModal({ isOpen, onClose, onSuccess }: AddPatie
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label className="text-xs font-medium text-pt-ink">
-                Email *
+                Email <span className="font-normal text-pt-muted">(if they have one)</span>
               </Label>
               <Input
                 type="email"
-                required
                 placeholder="patient@example.com"
                 value={formData.email}
                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}

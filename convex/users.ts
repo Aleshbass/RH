@@ -1763,6 +1763,34 @@ export const getDeclinedApprovals = query({
 });
 
 /**
+ * The user's approval record, for an admin decision. Older accounts can have none (they
+ * finished sign-up before records were made) or, rarely, more than one: a missing one is
+ * created as pending, and duplicates are folded into the one that decides (approved first,
+ * then pending, then declined), so .unique() can't fail on them.
+ */
+async function approvalRecordFor(ctx: MutationCtx, user: Doc<"users">): Promise<Doc<"accountApprovalStatus">> {
+  const rows = await ctx.db
+    .query("accountApprovalStatus")
+    .withIndex("by_user_id", (q) => q.eq("userId", user._id))
+    .collect();
+  if (rows.length === 0) {
+    if (user.role !== "physiotherapist" && user.role !== "clinic_owner") {
+      throw new ConvexError("This account doesn't need approval.");
+    }
+    const id = await ctx.db.insert("accountApprovalStatus", {
+      userId: user._id,
+      status: "pending_review",
+      submittedAt: Date.now(),
+    });
+    return (await ctx.db.get(id))!;
+  }
+  const rank = { approved: 0, pending_review: 1, declined: 2 } as const;
+  const [keep, ...extra] = rows.sort((a, b) => rank[a.status] - rank[b.status] || b.submittedAt - a.submittedAt);
+  for (const row of extra) await ctx.db.delete(row._id);
+  return keep;
+}
+
+/**
  * Approve a user account
  */
 export const approveUser = mutation({
@@ -1778,26 +1806,25 @@ export const approveUser = mutation({
     // Verify admin access
     const currentUser = await ensureUserRole(ctx, ["admin"]);
 
-    // Get user and approval status
+    // Get user and approval status. Errors are ConvexErrors so the admin sees the reason
+    // (a plain Error shows as "Server Error" in production).
     const user = await ctx.db.get(args.userId);
     if (!user) {
-      throw new Error("User not found");
+      throw new ConvexError("This account no longer exists. It may have been deleted.");
     }
 
-    const approvalStatus = await ctx.db
-      .query("accountApprovalStatus")
-      .withIndex("by_user_id", (q) => q.eq("userId", args.userId))
-      .unique();
+    const approvalStatus = await approvalRecordFor(ctx, user);
 
-    if (!approvalStatus) {
-      throw new Error("No approval request found for this user");
+    // Already approved (a second click, another admin, or another tab): nothing to do, and the
+    // applicant isn't emailed twice. Their account is made usable in case it wasn't.
+    if (approvalStatus.status === "approved") {
+      if (user.status !== "active" || !user.onboarded) {
+        await ctx.db.patch(user._id, { status: "active", onboarded: true });
+      }
+      return { success: true, message: "Already approved" };
     }
 
-    if (approvalStatus.status !== "pending_review") {
-      throw new Error("User has already been reviewed");
-    }
-
-    // Update approval status
+    // Pending, or declined earlier and now approved after all
     await ctx.db.patch(approvalStatus._id, {
       status: "approved",
       reviewedAt: Date.now(),
@@ -1927,20 +1954,16 @@ export const declineUser = mutation({
     // Get user and approval status
     const user = await ctx.db.get(args.userId);
     if (!user) {
-      throw new Error("User not found");
+      throw new ConvexError("This account no longer exists. It may have been deleted.");
     }
 
-    const approvalStatus = await ctx.db
-      .query("accountApprovalStatus")
-      .withIndex("by_user_id", (q) => q.eq("userId", args.userId))
-      .unique();
+    const approvalStatus = await approvalRecordFor(ctx, user);
 
-    if (!approvalStatus) {
-      throw new Error("No approval request found for this user");
+    if (approvalStatus.status === "declined") {
+      return { success: true, message: "Already declined" };
     }
-
     if (approvalStatus.status !== "pending_review") {
-      throw new Error("User has already been reviewed");
+      throw new ConvexError("This account has already been approved, so it can't be declined here. Suspend it from their profile instead.");
     }
 
     // Update approval status

@@ -1,8 +1,8 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import Link from 'next/link'
 import { useQuery, useMutation } from 'convex/react'
+import { makeFunctionReference } from 'convex/server'
 import { api } from '@/convex/_generated/api'
 import type { Id } from '@/convex/_generated/dataModel'
 import { Button } from '@/components/ui/button'
@@ -56,6 +56,7 @@ import { playSound } from '@/lib/sounds'
 import { CLINIC_BOOK_EVENT, listenForShortcut, takeQueryParam } from '@/components/clinic/clinicEvents'
 import { useClinicAccess } from '@/components/clinic/ClinicAccessContext'
 import { BookingRequests } from '@/components/clinic/appointments/BookingRequests'
+import AddPatientModal from '@/components/clinic/patients/AddPatientModal'
 import {
   EmptyState,
   PageShell,
@@ -84,6 +85,8 @@ type Appointment = AppointmentLike & {
   serviceType?: string
   notesForTherapist?: string
   physiotherapistId?: string
+  /** Set on visits booked together as a repeat */
+  repeatGroup?: string
   patient?: Person
   physiotherapist?: Person
 }
@@ -107,6 +110,43 @@ function clinicianIdOf(apt: Appointment) {
 
 function toTimestamp(date: string, time: string) {
   return new Date(`${date}T${time}:00`).getTime()
+}
+
+// By name: the generated `api` type is at TypeScript's depth limit
+const cancelRepeatVisitsRef = makeFunctionReference<
+  'mutation',
+  { appointmentId: Id<'appointments'>; cancellationReason?: string },
+  { success: boolean; cancelled: number }
+>('clinicTools:cancelClinicRepeatVisits')
+
+const MAX_REPEAT_VISITS = 40
+const WEEKDAYS = [
+  { day: 1, label: 'Mon' },
+  { day: 2, label: 'Tue' },
+  { day: 3, label: 'Wed' },
+  { day: 4, label: 'Thu' },
+  { day: 5, label: 'Fri' },
+  { day: 6, label: 'Sat' },
+  { day: 0, label: 'Sun' },
+]
+
+/**
+ * Start times of a repeat booking: the chosen weekdays (0 Sunday … 6 Saturday), every
+ * `everyWeeks` weeks, for `weeks` weeks counted from the week of the first visit.
+ */
+function repeatStarts(date: string, time: string, days: number[], everyWeeks: number, weeks: number) {
+  const first = new Date(`${date}T${time}:00`)
+  if (Number.isNaN(first.getTime())) return []
+  const monday = startOfWeek(first, { weekStartsOn: 1 })
+  const starts = new Set<number>([first.getTime()])
+  for (let week = 0; week < weeks; week += everyWeeks) {
+    for (const day of days) {
+      const visit = addDays(addWeeks(monday, week), (day + 6) % 7)
+      visit.setHours(first.getHours(), first.getMinutes(), 0, 0)
+      if (visit.getTime() > first.getTime()) starts.add(visit.getTime())
+    }
+  }
+  return [...starts].sort((a, b) => a - b)
 }
 
 function dayKey(date: Date) {
@@ -162,6 +202,7 @@ export default function ClinicAppointmentsPage() {
   const setup = useQuery(api.clinicTools.getClinicSetupDetails, {})
 
   const updateStatus = useMutation(api.clinicTools.updateAppointmentStatus)
+  const cancelRepeatVisits = useMutation(cancelRepeatVisitsRef)
 
   const [view, setView] = useState<'list' | 'week'>('list')
   const [listTab, setListTab] = useState<'today' | 'upcoming' | 'past'>('today')
@@ -171,6 +212,8 @@ export default function ClinicAppointmentsPage() {
   const [bookOpen, setBookOpen] = useState(false)
   const [rescheduleTarget, setRescheduleTarget] = useState<Appointment | null>(null)
   const [cancelTarget, setCancelTarget] = useState<Appointment | null>(null)
+  // Cancel this visit and the later ones booked with it
+  const [cancelRepeats, setCancelRepeats] = useState(false)
 
   const allAppointments = useMemo(
     () => (appointmentsRaw as Appointment[] | undefined) ?? [],
@@ -205,6 +248,7 @@ export default function ClinicAppointmentsPage() {
         id: String(p._id),
         name: personName(p, 'Patient'),
         email: (p.email as string | undefined) ?? '',
+        phone: (p.phoneNumber as string | undefined) ?? '',
       })),
     [patientsRaw]
   )
@@ -284,7 +328,7 @@ export default function ClinicAppointmentsPage() {
     return (
       <DropdownMenu>
         <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-48 text-sm">
+        <DropdownMenuContent align="end" className="w-56 text-sm">
           {apt.status !== 'completed' && (
             <DropdownMenuItem
               onClick={() => requireFullAccess('Reschedule appointment', () => setRescheduleTarget(apt))}
@@ -302,10 +346,28 @@ export default function ClinicAppointmentsPage() {
               <DropdownMenuSeparator />
               <DropdownMenuItem
                 className="text-pt-rose-fg focus:text-pt-rose-fg"
-                onClick={() => requireFullAccess('Cancel appointment', () => setCancelTarget(apt))}
+                onClick={() =>
+                  requireFullAccess('Cancel appointment', () => {
+                    setCancelRepeats(false)
+                    setCancelTarget(apt)
+                  })
+                }
               >
                 Cancel appointment
               </DropdownMenuItem>
+              {apt.repeatGroup && (
+                <DropdownMenuItem
+                  className="text-pt-rose-fg focus:text-pt-rose-fg"
+                  onClick={() =>
+                    requireFullAccess('Cancel appointment', () => {
+                      setCancelRepeats(true)
+                      setCancelTarget(apt)
+                    })
+                  }
+                >
+                  Cancel this and later repeats
+                </DropdownMenuItem>
+              )}
             </>
           )}
           {!isOpen && (
@@ -580,11 +642,26 @@ export default function ClinicAppointmentsPage() {
 
       <CancelDialog
         apt={cancelTarget}
+        repeats={cancelRepeats}
         onClose={() => setCancelTarget(null)}
         onConfirm={async (reason) => {
           if (!cancelTarget) return
-          const ok = await setStatus(cancelTarget, 'cancelled', reason)
-          if (ok) setCancelTarget(null)
+          if (!cancelRepeats) {
+            const ok = await setStatus(cancelTarget, 'cancelled', reason)
+            if (ok) setCancelTarget(null)
+            return
+          }
+          try {
+            const result = await cancelRepeatVisits({
+              appointmentId: cancelTarget._id as Id<'appointments'>,
+              cancellationReason: reason || undefined,
+            })
+            playSound('reject')
+            toast.success(`${result.cancelled} visit${result.cancelled === 1 ? '' : 's'} cancelled. The patient has been told.`)
+            setCancelTarget(null)
+          } catch (err: any) {
+            toast.error(friendlyError(err, 'Could not cancel the visits. Please try again.'))
+          }
         }}
       />
     </PageShell>
@@ -700,7 +777,7 @@ function BookDialog({
   onOpenChange: (open: boolean) => void
   /** Open with this patient (and clinician) already chosen */
   preset?: { patientId: string; clinicianId: string | null } | null
-  patients: { id: string; name: string; email: string }[]
+  patients: { id: string; name: string; email: string; phone: string }[]
   patientsLoading: boolean
   clinicians: ClinicianOption[]
   services: ServiceOption[]
@@ -718,26 +795,44 @@ function BookDialog({
     duration: 60,
     mode: 'in-person' as 'in-person' | 'telehealth',
     note: '',
+    // Repeat visits: every 1 or 2 weeks, on the first visit's weekday plus any extra days
+    repeat: 'none' as 'none' | '1' | '2',
+    extraDays: [] as number[],
+    weeks: 4,
   }
   const [form, setForm] = useState(empty)
   const [search, setSearch] = useState('')
   const [saving, setSaving] = useState(false)
+  // A patient added from this form, shown as chosen before the patient list catches up
+  const [addOpen, setAddOpen] = useState(false)
+  const [added, setAdded] = useState<{ id: string; name: string } | null>(null)
   useEffect(() => {
     if (open && preset) setForm((current) => ({ ...current, patientId: preset.patientId, clinicianId: preset.clinicianId ?? '' }))
   }, [open, preset])
 
   const filteredPatients = search.trim()
     ? patients.filter((p) =>
-        `${p.name} ${p.email}`.toLowerCase().includes(search.trim().toLowerCase())
+        `${p.name} ${p.email} ${p.phone}`.toLowerCase().includes(search.trim().toLowerCase())
       )
     : patients
-  const selectedPatient = patients.find((p) => p.id === form.patientId)
+  const selectedPatient = patients.find((p) => p.id === form.patientId) ?? (added?.id === form.patientId ? added : undefined)
+
+  const startAt = form.date && form.time ? toTimestamp(form.date, form.time) : NaN
+  // Already over: a visit that happened but was never entered. It is saved as attended.
+  const isPast = !Number.isNaN(startAt) && startAt + form.duration * 60000 <= Date.now()
+  const firstDay = Number.isNaN(startAt) ? -1 : new Date(startAt).getDay()
+  const repeatDays = firstDay < 0 ? [] : [...new Set([firstDay, ...form.extraDays])]
+  const visitStarts =
+    form.repeat === 'none' || Number.isNaN(startAt)
+      ? []
+      : repeatStarts(form.date, form.time, repeatDays, Number(form.repeat), form.weeks)
   const durations = Array.from(new Set([...BASE_DURATIONS, form.duration])).sort((a, b) => a - b)
   const warning = hoursWarning(workingHours, form.date, form.time, form.duration)
 
   const reset = () => {
     setForm(empty)
     setSearch('')
+    setAdded(null)
   }
 
   const submit = async (e: React.FormEvent) => {
@@ -748,11 +843,13 @@ function BookDialog({
     if (!form.date || !form.time) return toast.error('Choose a date and time.')
     const start = toTimestamp(form.date, form.time)
     if (Number.isNaN(start)) return toast.error('That date or time is not valid.')
-    if (start < Date.now() - 5 * 60000) return toast.error('Pick a time that has not passed yet.')
+    if (visitStarts.length > MAX_REPEAT_VISITS) {
+      return toast.error(`That is ${visitStarts.length} visits. Choose fewer weeks or days (up to ${MAX_REPEAT_VISITS}).`)
+    }
 
     setSaving(true)
     try {
-      await bookAppointment({
+      const result = await bookAppointment({
         patientId: form.patientId as Id<'users'>,
         physiotherapistId: form.clinicianId as Id<'users'>,
         startTime: start,
@@ -760,9 +857,22 @@ function BookDialog({
         appointmentType: form.mode,
         notes: form.note.trim() || undefined,
         serviceType: form.service !== 'none' ? form.service : undefined,
+        repeatStartTimes: visitStarts.length > 1 ? visitStarts.slice(1) : undefined,
       })
       playSound('booked')
-      toast.success(`Booked for ${format(start, 'EEE d MMM, HH:mm')}`)
+      const skipped = ((result?.skipped ?? []) as number[]).map((t) => format(t, 'EEE d MMM'))
+      if (visitStarts.length > 1) {
+        toast.success(`${result?.booked ?? visitStarts.length} visits booked`, {
+          description: skipped.length
+            ? `Not booked, because the clinician already has a visit then: ${skipped.join(', ')}.`
+            : `From ${format(start, 'EEE d MMM, HH:mm')}.`,
+          duration: skipped.length ? 12000 : undefined,
+        })
+      } else if (result?.past) {
+        toast.success(`Saved as an attended visit on ${format(start, 'EEE d MMM, HH:mm')}`)
+      } else {
+        toast.success(`Booked for ${format(start, 'EEE d MMM, HH:mm')}`)
+      }
       reset()
       onOpenChange(false)
     } catch (err: any) {
@@ -773,10 +883,12 @@ function BookDialog({
   }
 
   return (
+    <>
     <Dialog
       open={open}
       onOpenChange={(o) => {
-        if (saving) return
+        // Adding a patient opens on top of this form; closing that one must not close this
+        if (saving || addOpen) return
         if (!o) reset()
         onOpenChange(o)
       }}
@@ -784,25 +896,32 @@ function BookDialog({
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle className="text-base font-semibold">Book appointment</DialogTitle>
-          <DialogDescription className="text-sm">Choose the patient, clinician and time.</DialogDescription>
+          <DialogDescription className="text-sm">
+            Choose the patient, clinician and time. A visit that already happened can be added with its past date.
+          </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={submit} className="space-y-4">
           <div className="space-y-1.5">
-            <Label className="text-sm">Patient</Label>
-            {!patientsLoading && patients.length === 0 ? (
+            <div className="flex items-center justify-between gap-2">
+              <Label className="text-sm">Patient</Label>
+              <button
+                type="button"
+                onClick={() => requireFullAccess('Add patient', () => setAddOpen(true))}
+                className="inline-flex items-center gap-1 text-sm font-medium text-rh-ink underline-offset-2 hover:underline dark:text-rh-lime"
+              >
+                <Plus className="h-3.5 w-3.5" /> New patient
+              </button>
+            </div>
+            {!patientsLoading && patients.length === 0 && !selectedPatient ? (
               <p className="rounded-lg border border-pt-line px-3 py-2 text-sm text-pt-muted">
-                You have no patients yet.{' '}
-                <Link href="/dashboard/clinic/patients" className="font-medium text-rh-ink underline dark:text-rh-lime">
-                  Add a patient
-                </Link>{' '}
-                first.
+                You have no patients yet. Use “New patient” to add one here.
               </p>
             ) : (
               <>
                 {patients.length > 6 && (
                   <Input
-                    placeholder="Search by name or email"
+                    placeholder="Search by name, phone or email"
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                     className={fieldClass}
@@ -888,10 +1007,10 @@ function BookDialog({
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div className="space-y-1.5">
               <Label className="text-sm">Date</Label>
+              {/* Past dates are allowed: a visit that happened but was never entered */}
               <Input
                 type="date"
                 value={form.date}
-                min={format(new Date(), 'yyyy-MM-dd')}
                 onChange={(e) => setForm({ ...form, date: e.target.value })}
                 className={fieldClass}
               />
@@ -926,6 +1045,85 @@ function BookDialog({
             </div>
           </div>
           {warning && <p className="text-xs text-pt-amber-fg">{warning}</p>}
+          {isPast && (
+            <p className="rounded-lg bg-pt-accent-soft px-3 py-2 text-xs text-pt-ink">
+              This time has passed, so it is saved as a visit the patient attended. No reminder or confirmation is sent.
+            </p>
+          )}
+
+          <div className="space-y-1.5">
+            <Label className="text-sm">Repeat</Label>
+            <Select value={form.repeat} onValueChange={(v) => setForm({ ...form, repeat: v as typeof form.repeat })}>
+              <SelectTrigger className={fieldClass}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Does not repeat</SelectItem>
+                <SelectItem value="1">Every week</SelectItem>
+                <SelectItem value="2">Every 2 weeks</SelectItem>
+              </SelectContent>
+            </Select>
+            {form.repeat !== 'none' && (
+              <div className="space-y-3 rounded-xl border border-pt-line p-3">
+                <div className="space-y-1.5">
+                  <p className="text-xs text-pt-muted">On these days</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {WEEKDAYS.map(({ day, label }) => {
+                      const active = repeatDays.includes(day)
+                      const locked = day === firstDay
+                      return (
+                        <button
+                          key={day}
+                          type="button"
+                          aria-pressed={active}
+                          disabled={locked}
+                          title={locked ? 'The day of the first visit' : undefined}
+                          onClick={() =>
+                            setForm({
+                              ...form,
+                              extraDays: active ? form.extraDays.filter((d) => d !== day) : [...form.extraDays, day],
+                            })
+                          }
+                          className={cn(
+                            'h-8 min-w-[2.75rem] rounded-lg border px-2 text-xs font-medium transition-colors',
+                            active
+                              ? 'border-pt-primary bg-pt-primary text-pt-on-primary'
+                              : 'border-pt-line text-pt-ink hover:border-pt-line-strong'
+                          )}
+                        >
+                          {label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-pt-muted">For</span>
+                  <Select value={String(form.weeks)} onValueChange={(v) => setForm({ ...form, weeks: Number(v) })}>
+                    <SelectTrigger className={cn(fieldClass, 'w-32')}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {[2, 3, 4, 6, 8, 10, 12].map((n) => (
+                        <SelectItem key={n} value={String(n)}>
+                          {n} weeks
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {visitStarts.length > 0 && (
+                  <p className={cn('text-xs', visitStarts.length > MAX_REPEAT_VISITS ? 'text-pt-rose-fg' : 'text-pt-ink')}>
+                    {visitStarts.length} visits at {form.time}, {format(visitStarts[0], 'EEE d MMM')} to{' '}
+                    {format(visitStarts[visitStarts.length - 1], 'EEE d MMM')}.
+                    {visitStarts.length > MAX_REPEAT_VISITS
+                      ? ` The most at once is ${MAX_REPEAT_VISITS}.`
+                      : ' Days the clinician is already booked are skipped and listed for you.'}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
 
           <div className="space-y-1.5">
             <Label className="text-sm">Where</Label>
@@ -986,12 +1184,29 @@ function BookDialog({
             </Button>
             <Button type="submit" size="sm" disabled={saving} className={cn('h-9', primaryButtonClass)}>
               {saving && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
-              {saving ? 'Booking…' : 'Book appointment'}
+              {saving
+                ? 'Booking…'
+                : visitStarts.length > 1
+                  ? `Book ${visitStarts.length} visits`
+                  : isPast
+                    ? 'Save past visit'
+                    : 'Book appointment'}
             </Button>
           </DialogFooter>
         </form>
       </DialogContent>
     </Dialog>
+
+    {/* A new patient without leaving the booking: they come back already chosen */}
+    <AddPatientModal
+      isOpen={addOpen}
+      onClose={() => setAddOpen(false)}
+      onSuccess={(patient) => {
+        setAdded({ id: patient.patientId, name: patient.name })
+        setForm((current) => ({ ...current, patientId: patient.patientId, clinicianId: patient.clinicianId || current.clinicianId }))
+      }}
+    />
+    </>
   )
 }
 
@@ -1175,10 +1390,13 @@ function RescheduleForm({
 
 function CancelDialog({
   apt,
+  repeats,
   onClose,
   onConfirm,
 }: {
   apt: Appointment | null
+  /** Also cancel the later visits booked with this one */
+  repeats?: boolean
   onClose: () => void
   onConfirm: (reason: string) => Promise<void>
 }) {
@@ -1197,10 +1415,16 @@ function CancelDialog({
     >
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle className="text-base font-semibold">Cancel this appointment?</DialogTitle>
+          <DialogTitle className="text-base font-semibold">
+            {repeats ? 'Cancel this and the later repeat visits?' : 'Cancel this appointment?'}
+          </DialogTitle>
           <DialogDescription className="text-sm">
             {apt
-              ? `${personName(apt.patient, 'Patient')} · ${format(new Date(apt.startTime), 'EEE d MMM, HH:mm')}. You can reopen it later if needed.`
+              ? `${personName(apt.patient, 'Patient')} · ${format(new Date(apt.startTime), 'EEE d MMM, HH:mm')}. ${
+                  repeats
+                    ? 'Every upcoming visit booked with this one, from this date on, is cancelled. Earlier visits stay.'
+                    : 'You can reopen it later if needed.'
+                }`
               : ''}
           </DialogDescription>
         </DialogHeader>
@@ -1240,7 +1464,7 @@ function CancelDialog({
             }}
           >
             {saving && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
-            Cancel appointment
+            {repeats ? 'Cancel these visits' : 'Cancel appointment'}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useAction, useMutation, useQuery } from 'convex/react'
+import { makeFunctionReference } from 'convex/server'
 import { ConvexError } from 'convex/values'
 import { format } from 'date-fns'
 import { toast } from 'sonner'
@@ -45,6 +46,18 @@ import { cn } from '@/lib/utils'
 import { PaystackTestModeBanner } from '@/components/billing/PaystackTestModeBanner'
 import { playSound } from '@/lib/sounds'
 import { CLINIC_REQUEST_PAYMENT_EVENT, listenForShortcut, takeQueryParam } from '@/components/clinic/clinicEvents'
+
+// Correcting a mistake on an invoice (by name: the generated `api` type is at TypeScript's depth limit)
+const updatePaymentRequestRef = makeFunctionReference<
+  'mutation',
+  { invoiceId: Id<'invoices'>; serviceName: string; amountNaira: number },
+  { success: boolean; changed: boolean }
+>('clinicTools:updateClinicPaymentRequest')
+const undoMarkPaidRef = makeFunctionReference<'mutation', { invoiceId: Id<'invoices'> }, { success: boolean }>(
+  'clinicBilling:undoMarkInvoicePaid'
+)
+
+type EditTarget = { id: string; patientName: string; invoiceNumber: string; serviceName: string; amountNaira: number }
 
 type Filter = 'unpaid' | 'paid' | 'all'
 type SourceFilter = 'all' | 'clinic_direct' | 'rehabify_referral'
@@ -143,6 +156,7 @@ export default function ClinicBillingPage() {
   const createPaymentLink = useAction(api.clinicBilling.createPaymentLink)
   const markInvoicePaid = useMutation(api.clinicBilling.markInvoicePaid)
   const voidInvoice = useMutation(api.clinicBilling.voidInvoice)
+  const undoMarkPaid = useMutation(undoMarkPaidRef)
 
   const [filter, setFilter] = useState<Filter>('unpaid')
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all')
@@ -151,6 +165,9 @@ export default function ClinicBillingPage() {
   const [markPaidFor, setMarkPaidFor] = useState<{ id: string; label: string } | null>(null)
   const [offlineMethod, setOfflineMethod] = useState<OfflineMethod>('cash')
   const [cancelFor, setCancelFor] = useState<{ id: string; label: string } | null>(null)
+  // Mistakes: a wrong amount or service on an unpaid invoice, or "Mark as paid" pressed by mistake
+  const [editFor, setEditFor] = useState<EditTarget | null>(null)
+  const [undoFor, setUndoFor] = useState<{ id: string; label: string } | null>(null)
   // "Request a payment" on a patient's record (?request=1&patient=<id>): the form opens for them
   const [requestPatientId, setRequestPatientId] = useState<string | null>(null)
   const openRequestRef = useRef<() => void>(() => undefined)
@@ -234,6 +251,24 @@ export default function ClinicBillingPage() {
       setMarkPaidFor(null)
     } catch (err) {
       toast.error(errorText(err, 'Could not update the invoice'))
+    } finally {
+      setBusyInvoice(null)
+    }
+  }
+
+  const confirmUndo = async () => {
+    if (!undoFor) return
+    setBusyInvoice(undoFor.id)
+    try {
+      await undoMarkPaid({ invoiceId: undoFor.id as Id<'invoices'> })
+      playSound('success')
+      toast.success('Payment undone. The invoice is unpaid again.', {
+        description: 'You can now correct it, cancel it, or mark it as paid again.',
+      })
+      setUndoFor(null)
+      setFilter('unpaid')
+    } catch (err) {
+      toast.error(errorText(err, 'Could not undo the payment'))
     } finally {
       setBusyInvoice(null)
     }
@@ -365,6 +400,9 @@ export default function ClinicBillingPage() {
               const busy = busyInvoice === inv._id
               const showFee = unpaid || (inv.status === 'paid' && inv.paymentMethod === 'paystack')
               const payout = inv.status === 'paid' && inv.payoutStatus ? payoutLabel[inv.payoutStatus] : undefined
+              // Recorded by hand (cash, POS, transfer): can be undone if it was a mistake
+              const paidByHand = inv.status === 'paid' && ['cash', 'pos', 'bank_transfer'].includes(inv.paymentMethod ?? '')
+              const rowLabel = `${inv.patientName} · ${formatNaira(inv.totalAmountNaira)}`
               return (
                 <li key={inv._id} className="flex items-start gap-3 px-5 py-3 sm:items-center sm:px-6">
                   <div className="min-w-0 flex-1">
@@ -442,6 +480,26 @@ export default function ClinicBillingPage() {
                           >
                             Mark as paid (cash, POS, transfer)
                           </DropdownMenuItem>
+                          {inv.status !== 'partial_payment' && (
+                            <DropdownMenuItem
+                              onClick={() =>
+                                requireFullAccess(
+                                  'Edit invoice',
+                                  () =>
+                                    setEditFor({
+                                      id: inv._id,
+                                      patientName: inv.patientName,
+                                      invoiceNumber: inv.invoiceNumber,
+                                      serviceName: inv.serviceName,
+                                      amountNaira: inv.totalAmountNaira,
+                                    }),
+                                  { allowBillingReadOnly: true }
+                                )
+                              }
+                            >
+                              Edit amount or service
+                            </DropdownMenuItem>
+                          )}
                           <DropdownMenuSeparator />
                           <DropdownMenuItem
                             className="text-pt-rose-fg focus:text-pt-rose-fg"
@@ -458,6 +516,23 @@ export default function ClinicBillingPage() {
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </div>
+                  ) : paidByHand ? (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button size="sm" variant="ghost" className="h-8 w-8 shrink-0 p-0" aria-label="Invoice actions" disabled={busy}>
+                          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <MoreHorizontal className="h-4 w-4" />}
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem
+                          onClick={() =>
+                            requireFullAccess('Undo payment', () => setUndoFor({ id: inv._id, label: rowLabel }), { allowBillingReadOnly: true })
+                          }
+                        >
+                          Undo “Mark as paid”
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   ) : (
                     <div className="w-8 shrink-0 sm:hidden" />
                   )}
@@ -513,6 +588,28 @@ export default function ClinicBillingPage() {
         </DialogContent>
       </Dialog>
 
+      <EditInvoiceDialog target={editFor} onClose={() => setEditFor(null)} />
+
+      <Dialog open={undoFor !== null} onOpenChange={(open) => !open && setUndoFor(null)}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Undo “Mark as paid”?</DialogTitle>
+            <DialogDescription>
+              {undoFor?.label}. The invoice goes back to unpaid, so you can correct the amount or service, cancel it, or
+              mark it as paid again.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setUndoFor(null)}>
+              Keep as paid
+            </Button>
+            <Button className={primaryButtonClass} onClick={confirmUndo} disabled={busyInvoice !== null}>
+              Undo payment
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={cancelFor !== null} onOpenChange={(open) => !open && setCancelFor(null)}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
@@ -532,6 +629,73 @@ export default function ClinicBillingPage() {
         </DialogContent>
       </Dialog>
     </PageShell>
+  )
+}
+
+/** Correct a wrong amount or service on an unpaid invoice. It keeps its number; the patient is told. */
+function EditInvoiceDialog({ target, onClose }: { target: EditTarget | null; onClose: () => void }) {
+  const update = useMutation(updatePaymentRequestRef)
+  const [serviceName, setServiceName] = useState('')
+  const [amount, setAmount] = useState('')
+  const [saving, setSaving] = useState(false)
+  useEffect(() => {
+    if (!target) return
+    setServiceName(target.serviceName)
+    setAmount(String(target.amountNaira))
+  }, [target])
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!target) return
+    const amountNaira = Number(amount.replace(/,/g, ''))
+    if (!serviceName.trim()) return toast.error('Say what the payment is for')
+    if (!Number.isFinite(amountNaira) || amountNaira <= 0) return toast.error('Enter the amount in naira')
+    setSaving(true)
+    try {
+      const result = await update({ invoiceId: target.id as Id<'invoices'>, serviceName: serviceName.trim(), amountNaira })
+      playSound('success')
+      toast.success(result.changed ? 'Invoice corrected' : 'Nothing changed', {
+        description: result.changed ? 'The patient has been told. Any old payment link no longer works, so send the new one.' : undefined,
+      })
+      onClose()
+    } catch (err) {
+      toast.error(errorText(err, 'Could not change the invoice'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Dialog open={target !== null} onOpenChange={(open) => !open && !saving && onClose()}>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Edit invoice</DialogTitle>
+          <DialogDescription>
+            {target ? `${target.patientName} · ${target.invoiceNumber}. ` : ''}Correct the service or the amount. The patient is
+            told, and a payment link sent before stops working.
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={submit} className="space-y-4">
+          <div className="space-y-1.5">
+            <Label>What is it for?</Label>
+            <Input value={serviceName} onChange={(e) => setServiceName(e.target.value)} placeholder="e.g. Physiotherapy session" />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Amount (₦)</Label>
+            <Input inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value.replace(/[^\d.,]/g, ''))} placeholder="e.g. 15000" />
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button type="button" variant="outline" onClick={onClose} disabled={saving}>
+              Back
+            </Button>
+            <Button type="submit" className={primaryButtonClass} disabled={saving}>
+              {saving && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
+              Save changes
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   )
 }
 

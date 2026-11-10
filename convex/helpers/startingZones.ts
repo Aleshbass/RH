@@ -151,6 +151,20 @@ export const STARTING_ZONES: StartingZone[] = [...LAGOS, ...ABUJA, ...IBADAN, ..
 export const ZONE_CITY_STATE: Record<string, string> = Object.fromEntries(STARTING_ZONES.map((zone) => [zone.city, zone.state]));
 
 /**
+ * The state a town or city is in ("Port Harcourt" → "Rivers", "Ikeja" → "Lagos"), from the zone
+ * words below, or null. A state named outright counts too. Used where only a town is known
+ * (Joy asks where the patient is, not their state).
+ */
+export function stateForPlace(place: string | null | undefined): string | null {
+  const words = ` ${(place ?? "").toLowerCase().replace(/[^a-z\s-]/g, " ").replace(/\s+/g, " ").trim()} `;
+  if (!words.trim()) return null;
+  for (const [city, keywords] of Object.entries(CITY_KEYWORDS)) {
+    if (keywords.some((word) => words.includes(` ${word} `))) return ZONE_CITY_STATE[city] ?? null;
+  }
+  return null;
+}
+
+/**
  * Words in a physio's profile location that place them in a zone city, for their starting zones
  * (travelZones.assignStartingZonesToPhysios). Whole words; the physio adjusts afterwards.
  */
