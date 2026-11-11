@@ -204,6 +204,7 @@ import type * as helpers_whatsappLink from "../helpers/whatsappLink.js";
 import type * as http from "../http.js";
 import type * as imagekit from "../imagekit.js";
 import type * as joyAccounts from "../joyAccounts.js";
+import type * as joyConnect from "../joyConnect.js";
 import type * as joyGateway from "../joyGateway.js";
 import type * as joyHandoff from "../joyHandoff.js";
 import type * as joyIntegration from "../joyIntegration.js";
@@ -516,6 +517,7 @@ declare const fullApi: ApiFromModules<{
   http: typeof http;
   imagekit: typeof imagekit;
   joyAccounts: typeof joyAccounts;
+  joyConnect: typeof joyConnect;
   joyGateway: typeof joyGateway;
   joyHandoff: typeof joyHandoff;
   joyIntegration: typeof joyIntegration;
