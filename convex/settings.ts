@@ -340,7 +340,7 @@ export const updateClinicSettings = mutation({
 });
 
 interface SettingsUser extends Doc<"users"> {
-  role: "physiotherapist" | "clinic_owner" | "patient" | "family_member" | "doctor" | "admin" | "partner" | "clinic_staff" | undefined;
+  role: Doc<"users">["role"];
   clerkId: string;
 }
 
