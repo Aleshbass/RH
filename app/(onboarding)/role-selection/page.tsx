@@ -34,7 +34,7 @@ type OnboardingRole = Exclude<UserRole, 'admin'>;
 // A simple way to generate a unique ID for the onboarding session
 const generateOnboardingId = () => `onboarding_${new Date().getTime()}_${Math.random().toString(36).substring(2, 10)}`;
 
-const DASHBOARD_ROLES = new Set(['physiotherapist', 'clinic_owner', 'patient', 'family_member', 'doctor', 'admin', 'clinic_staff']);
+const DASHBOARD_ROLES = new Set(['physiotherapist', 'clinic_owner', 'patient', 'family_member', 'doctor', 'admin', 'clinic_staff', 'blog_editor']);
 
 type AccountLike = { role?: string | null; patientProfileId?: unknown };
 

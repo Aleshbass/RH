@@ -28,6 +28,8 @@ import {
   MapPinned,
   Megaphone,
   MessageCircle,
+  Newspaper,
+  ImageIcon,
   Percent,
   Quote,
   PlayCircle,
@@ -66,6 +68,18 @@ export type AdminNavSection = {
   items: AdminNavItem[]
   /** Only shown in development or when NEXT_PUBLIC_ADMIN_DEV_TOOLS=true. */
   devOnly?: boolean
+  /** Other roles that see this section besides admins (e.g. blog writers see only the blog). */
+  alsoFor?: ConsoleRole[]
+}
+
+/** Who is using the console: administrators, or blog writers (role blog_editor). */
+export type ConsoleRole = 'admin' | 'blog_editor'
+
+/** The only part of the console a blog writer may open. */
+export const BLOG_HOME = '/dashboard/admin/blog'
+
+export function consoleAllows(role: ConsoleRole, pathname: string) {
+  return role === 'admin' || pathname === BLOG_HOME || pathname.startsWith(`${BLOG_HOME}/`)
 }
 
 const a = (path: string) => `${ADMIN_HOME}${path}`
@@ -183,6 +197,18 @@ export const ADMIN_NAV: AdminNavSection[] = [
     ],
   },
   {
+    id: 'blog',
+    label: 'Blog',
+    icon: Newspaper,
+    alsoFor: ['blog_editor'],
+    items: [
+      { title: 'Posts', href: a('/blog'), icon: Newspaper, keywords: ['articles', 'write', 'publish', 'seo', 'content', 'review'] },
+      { title: 'Media library', href: a('/blog/media'), icon: ImageIcon, keywords: ['images', 'photos', 'uploads', 'alt text'] },
+      { title: 'Authors', href: a('/blog/authors'), icon: Users, keywords: ['bylines', 'writers', 'reviewers', 'profile', 'bio'] },
+      { title: 'Categories', href: a('/blog/categories'), icon: Tags, keywords: ['topics', 'sections'] },
+    ],
+  },
+  {
     id: 'platform',
     label: 'Platform',
     icon: Settings,
@@ -214,9 +240,9 @@ export function devToolsEnabled() {
   return process.env.NODE_ENV !== 'production' || process.env.NEXT_PUBLIC_ADMIN_DEV_TOOLS === 'true'
 }
 
-export function visibleAdminNav(): AdminNavSection[] {
+export function visibleAdminNav(role: ConsoleRole = 'admin'): AdminNavSection[] {
   const showDev = devToolsEnabled()
-  return ADMIN_NAV.filter((section) => !section.devOnly || showDev)
+  return ADMIN_NAV.filter((section) => (!section.devOnly || showDev) && (role === 'admin' || section.alsoFor?.includes(role)))
 }
 
 /** How well a nav href matches the current URL: higher is better, 0 means no match. */

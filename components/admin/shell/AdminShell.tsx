@@ -2,7 +2,7 @@
 
 import { Fragment, Suspense, useEffect, useState, type ReactNode } from 'react'
 import Link from 'next/link'
-import { usePathname, useSearchParams } from 'next/navigation'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useQuery } from 'convex/react'
 import { motion, useReducedMotion } from 'framer-motion'
 import { ChevronRight, Menu, Search, ShieldAlert } from '@/components/icons'
@@ -14,7 +14,8 @@ import { ClinicThemeProvider, ClinicThemeToggle } from '@/components/clinic/Clin
 import { PhysioNotifications } from '@/components/physio/PhysioNotifications'
 import { AdminSidebar } from './AdminSidebar'
 import { AdminCommandPalette, OPEN_ADMIN_PALETTE_EVENT } from './AdminCommandPalette'
-import { adminBreadcrumbs } from './adminNav'
+import { BLOG_HOME, adminBreadcrumbs, consoleAllows, type ConsoleRole } from './adminNav'
+import { ConsoleRoleContext } from './consoleRole'
 import { WebsiteLink } from '@/components/dashboard/shared/WebsiteLink'
 import { AppIconBadge, AppSetupButton, AppSetupPrompt } from '@/components/pwa/AppSetup'
 
@@ -179,19 +180,33 @@ function ShellFrame({ children }: { children: ReactNode }) {
   )
 }
 
+/** Blog writers only have the blog: any other console page sends them there. */
+function BlogWriterGate({ children }: { children: ReactNode }) {
+  const pathname = usePathname() ?? ''
+  const router = useRouter()
+  const allowed = consoleAllows('blog_editor', pathname)
+  useEffect(() => {
+    if (!allowed) router.replace(BLOG_HOME)
+  }, [allowed, router])
+  return allowed ? <>{children}</> : null
+}
+
 /** Wraps every /dashboard/admin page: theme, access check, sidebar, topbar and ⌘K search. */
 export function AdminShell({ children }: { children: ReactNode }) {
   const me = useQuery(api.users.getMyUser) as { role?: string } | null | undefined
+  const role: ConsoleRole | null = me?.role === 'admin' ? 'admin' : me?.role === 'blog_editor' ? 'blog_editor' : null
 
   let body: ReactNode
   if (me === undefined) body = <ShellSkeleton />
-  else if (!me || me.role !== 'admin') body = <AccessDenied />
+  else if (!me || !role) body = <AccessDenied />
   else
     body = (
-      // useSearchParams needs a Suspense boundary
-      <Suspense fallback={<ShellSkeleton />}>
-        <ShellFrame>{children}</ShellFrame>
-      </Suspense>
+      <ConsoleRoleContext.Provider value={role}>
+        {/* useSearchParams needs a Suspense boundary */}
+        <Suspense fallback={<ShellSkeleton />}>
+          <ShellFrame>{role === 'admin' ? children : <BlogWriterGate>{children}</BlogWriterGate>}</ShellFrame>
+        </Suspense>
+      </ConsoleRoleContext.Provider>
     )
 
   return <ClinicThemeProvider>{body}</ClinicThemeProvider>

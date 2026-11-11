@@ -7,6 +7,7 @@ import { rewardTables } from "./schema/rewards";
 import { communityTables } from "./schema/community";
 import { offlineTables } from "./schema/offline";
 import { scribeTables } from "./schema/scribe";
+import { blogTables } from "./schema/blog";
 import { measureValidator } from "./helpers/clinicalMeasures";
 import { goalMeasureValidator } from "./helpers/goalMeasures";
 import { reportSnapshotValidator } from "./helpers/progressReport";
@@ -47,7 +48,9 @@ export default defineSchema({
       v.literal("admin"),
       v.literal("partner"),
       // Non-clinical clinic team member (receptionist, administrator...), works only in the clinic dashboard
-      v.literal("clinic_staff")
+      v.literal("clinic_staff"),
+      // Blog writer: only the blog pages of the admin console (convex/blog.ts); posts need an admin to publish
+      v.literal("blog_editor")
     )),
     // Clinic dashboard role (page permissions). None means full access.
     clinicRoleId: v.optional(v.id("clinicRoles")),
@@ -4480,6 +4483,9 @@ export default defineSchema({
 
   // AI scribe recordings and their unsigned draft notes (schema/scribe.ts)
   ...scribeTables,
+
+  // Blog posts, authors, categories and media (schema/blog.ts)
+  ...blogTables,
 
   partnershipInquiries: defineTable({
     // "demo" = Book a demo on the partners page; missing on older rows, which are partnership inquiries

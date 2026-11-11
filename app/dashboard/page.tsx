@@ -16,7 +16,7 @@ import {
   isClinicFrontDesk,
 } from '@/components/clinic/clinician-routing'
 
-type UserRole = 'physiotherapist' | 'clinic_owner' | 'patient' | 'family_member' | 'doctor' | 'admin' | 'partner';
+type UserRole = 'physiotherapist' | 'clinic_owner' | 'patient' | 'family_member' | 'doctor' | 'admin' | 'partner' | 'blog_editor';
 
 // Plain references: the generated `api` type is at TypeScript's depth limit here (TS2589)
 const root = api as unknown as Record<string, Record<string, unknown>>
@@ -139,6 +139,10 @@ export default function DashboardPage() {
           break
         case 'admin':
           router.replace('/dashboard/admin')
+          break
+        case 'blog_editor':
+          // Blog writers only have the blog pages of the admin console
+          router.replace('/dashboard/admin/blog')
           break
         case 'partner':
           router.replace('/partners/portal')

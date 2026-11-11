@@ -1124,7 +1124,9 @@ export const setUserRole = mutation({
       v.literal("physiotherapist"),
       v.literal("clinic_owner"),
       v.literal("family_member"),
-      v.literal("admin")
+      v.literal("admin"),
+      // Blog writer: sees only the blog pages of the admin console
+      v.literal("blog_editor")
     ),
   },
   handler: async (ctx, args) => {
@@ -1158,7 +1160,8 @@ export const setUserRole = mutation({
       physiotherapist: "Physiotherapist",
       clinic_owner: "Clinic Owner",
       family_member: "Family Member",
-      admin: "Administrator"
+      admin: "Administrator",
+      blog_editor: "Blog Writer"
     };
 
     await ctx.runMutation(api.notifications.create, {
@@ -1215,6 +1218,7 @@ const ADMIN_LISTABLE_ROLES = [
   "admin",
   "partner",
   "clinic_staff",
+  "blog_editor",
 ] as const;
 
 const adminRoleFilterValidator = v.union(

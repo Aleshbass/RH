@@ -23,8 +23,10 @@ import {
 import { ClinicThemeToggle } from '@/components/clinic/ClinicTheme'
 import { PhysioBrand } from '@/components/physio/PhysioSidebar'
 import { playSound, setSoundsEnabled, soundsEnabled, SOUND_SETTING_EVENT } from '@/lib/sounds'
+import { useConsoleRole } from './consoleRole'
 import {
   ADMIN_HOME,
+  BLOG_HOME,
   findActiveItem,
   visibleAdminNav,
   type AdminBadgeKey,
@@ -162,8 +164,10 @@ export function AdminSidebar({
   const pathname = usePathname() ?? ''
   const searchParams = useSearchParams()
   const reduceMotion = useReducedMotion()
-  const sections = useMemo(() => visibleAdminNav(), [])
-  const badges = useQuery(api.adminConsole.getNavBadges) as Badges | undefined
+  const role = useConsoleRole()
+  const sections = useMemo(() => visibleAdminNav(role), [role])
+  // Badge counts are admin-only (blog writers would get an access error)
+  const badges = useQuery(api.adminConsole.getNavBadges, role === 'admin' ? {} : 'skip') as Badges | undefined
 
   const active = findActiveItem(pathname, new URLSearchParams(searchParams?.toString() ?? ''))
   const activeHref = active?.item.href
@@ -330,10 +334,10 @@ export function AdminSidebar({
     >
       <div className={cn('flex h-16 shrink-0 items-center justify-between px-5', collapsed && 'justify-center px-0')}>
         {!collapsed && (
-          <Link href={ADMIN_HOME} onClick={onNavigate} aria-label="Admin home" className="flex items-center gap-2">
+          <Link href={role === 'admin' ? ADMIN_HOME : BLOG_HOME} onClick={onNavigate} aria-label={role === 'admin' ? 'Admin home' : 'Blog home'} className="flex items-center gap-2">
             <PhysioBrand onBrand />
             <span className="rounded-md bg-white/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-white/90">
-              Admin
+              {role === 'admin' ? 'Admin' : 'Blog'}
             </span>
           </Link>
         )}

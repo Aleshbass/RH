@@ -2,7 +2,7 @@ import { ConvexError } from "convex/values";
 import type { Doc } from "../_generated/dataModel";
 
 /** Roles only an administrator assigns; their holders never pick a role for themselves. */
-const ADMIN_ASSIGNED_ROLES = new Set(["admin", "partner", "clinic_staff"]);
+const ADMIN_ASSIGNED_ROLES = new Set(["admin", "partner", "clinic_staff", "blog_editor"]);
 
 const ROLE_LABELS: Record<string, string> = {
   physiotherapist: "physiotherapist",
@@ -13,6 +13,7 @@ const ROLE_LABELS: Record<string, string> = {
   admin: "administrator",
   partner: "partner",
   clinic_staff: "clinic team member",
+  blog_editor: "blog writer",
 };
 
 /**
