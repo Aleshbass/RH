@@ -94,6 +94,7 @@ import type * as calendar_service from "../calendar/service.js";
 import type * as calendar_sync from "../calendar/sync.js";
 import type * as calendar_types from "../calendar/types.js";
 import type * as calendar_webhook from "../calendar/webhook.js";
+import type * as cameraCoachClips from "../cameraCoachClips.js";
 import type * as careCircle from "../careCircle.js";
 import type * as careMoments from "../careMoments.js";
 import type * as careQueue from "../careQueue.js";
@@ -409,6 +410,7 @@ declare const fullApi: ApiFromModules<{
   "calendar/sync": typeof calendar_sync;
   "calendar/types": typeof calendar_types;
   "calendar/webhook": typeof calendar_webhook;
+  cameraCoachClips: typeof cameraCoachClips;
   careCircle: typeof careCircle;
   careMoments: typeof careMoments;
   careQueue: typeof careQueue;
