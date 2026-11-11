@@ -16,6 +16,7 @@ import {
   AlertTriangle,
   CalendarPlus,
   Check,
+  ClipboardList,
   ChevronDown,
   ChevronUp,
   Dumbbell,
@@ -419,7 +420,7 @@ export function ScribePanel({ patientId, patientFirstName, appointmentId, noteMe
       <div className="flex items-center gap-3 rounded-xl bg-pt-sunken p-4 text-sm text-pt-ink">
         <Loader2 className="h-5 w-5 shrink-0 animate-spin text-pt-muted" aria-hidden />
         <span>
-          Writing the draft from {open ? minutesLabel(open.audioSeconds) : 'the recording'}. This takes about 15 seconds…
+          Writing the draft from {open ? minutesLabel(open.audioSeconds) : 'the recording'}. This takes 15 to 30 seconds…
         </span>
       </div>
     )
@@ -504,7 +505,7 @@ export function ScribePanel({ patientId, patientFirstName, appointmentId, noteMe
           </div>
         )}
 
-        {draft && (draft.exercises.length > 0 || draft.followUp) && (
+        {draft && (draft.exercises.length > 0 || draft.followUp || draft.carePlan) && (
           <div className="flex flex-col gap-1.5 text-sm text-pt-muted">
             {draft.exercises.length > 0 && (
               <p className="flex items-start gap-2">
@@ -512,6 +513,16 @@ export function ScribePanel({ patientId, patientFirstName, appointmentId, noteMe
                 <span>
                   <span className="font-medium text-pt-ink">Exercises heard:</span> {draft.exercises.map((e) => (e.dosage ? `${e.name} (${e.dosage})` : e.name)).join('; ')}.
                   You can send them as a home programme after signing.
+                </span>
+              </p>
+            )}
+            {draft.carePlan && (
+              <p className="flex items-start gap-2">
+                <ClipboardList className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+                <span>
+                  <span className="font-medium text-pt-ink">Care plan:</span>{' '}
+                  {draft.carePlan.action === 'update' ? 'changes to the current plan' : `a new plan with ${draft.carePlan.goals.length} goal${draft.carePlan.goals.length === 1 ? '' : 's'}`},
+                  drafted from what you said. You can check and save it after signing.
                 </span>
               </p>
             )}

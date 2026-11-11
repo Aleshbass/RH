@@ -26,6 +26,7 @@ import { WebsiteLink } from '@/components/dashboard/shared/WebsiteLink'
 import { AppIconBadge, AppSetupButton, AppSetupPrompt } from '@/components/pwa/AppSetup'
 import { ClockPill } from '@/components/clock/ClinicClock'
 import { Quiet } from '@/components/physio/schedule/shared'
+import { ScribeIntro } from '@/components/physio/notes/scribe/ScribeIntro'
 
 /** The top bar's main action: book a patient in, in a drawer, without leaving the page. */
 function NewAppointmentButton() {
@@ -218,6 +219,8 @@ function PhysioPortal({ children }: { children: ReactNode }) {
       {/* Home-screen app + notifications for new patients and messages, asked until done */}
       <AppSetupPrompt />
       {access === 'full' && <AppIconBadge />}
+      {/* One-time "New: Rehabify Scribe" card, once it's switched on for this physio */}
+      {access === 'full' && <ScribeIntro />}
     </div>
     </BookingProvider>
   )

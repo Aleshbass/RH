@@ -5,7 +5,9 @@
 import { makeFunctionReference } from 'convex/server'
 import type { Doc, Id } from '@/convex/_generated/dataModel'
 import type { ClinicalMeasure } from '@/convex/helpers/clinicalMeasures'
-import type { ScribeDraft, ScribeNoteType } from '@/convex/helpers/scribeDraft'
+import type { ScribeCarePlan, ScribeDraft, ScribeNoteType } from '@/convex/helpers/scribeDraft'
+
+export type { ScribeCarePlan }
 
 /** The product name physios see */
 export const SCRIBE_NAME = 'Rehabify Scribe'
@@ -23,6 +25,8 @@ export type ScribeSpeaker = 'physio' | 'patient'
 
 export const scribeApi = {
   access: makeFunctionReference<'query', Record<string, never>, { enabled: boolean }>('scribe:getScribeAccess'),
+  intro: makeFunctionReference<'query', Record<string, never>, { show: boolean }>('scribe:getScribeIntro'),
+  dismissIntro: makeFunctionReference<'mutation', Record<string, never>, null>('scribe:dismissScribeIntro'),
   session: makeFunctionReference<'query', { scribeSessionId: ScribeSessionId }, ScribeSession | null>('scribe:getScribeSession'),
   open: makeFunctionReference<'query', { patientId: Id<'users'> }, ScribeSession | null>('scribe:getOpenScribe'),
   start: makeFunctionReference<

@@ -4,12 +4,14 @@
  * After an AI-drafted note is signed: what the session said to do next, one tap each. The
  * exercises heard are matched to the exercise library (with the sets, reps and hold that were
  * said) and open the usual "Send exercises" dialog to check and send; the follow-up opens the
- * booking drawer on the suggested date. Nothing is sent or booked without the physio confirming.
+ * booking drawer on the suggested date; the care plan opens the care plan drawer filled in (a new
+ * plan, or the changes to the current one). Nothing is sent, booked or saved without the physio
+ * confirming.
  */
 import { useMemo } from 'react'
 import { useQuery } from 'convex/react'
 import { makeFunctionReference } from 'convex/server'
-import { CalendarPlus, Check, CheckCircle2, Dumbbell } from '@/components/icons'
+import { CalendarPlus, Check, CheckCircle2, ClipboardList, Dumbbell } from '@/components/icons'
 import {
   AlertDialog,
   AlertDialogContent,
@@ -22,9 +24,31 @@ import { Button } from '@/components/ui/button'
 import { primaryButtonClass, secondaryButtonClass } from '@/components/physio/ui'
 import type { LibraryData, LibraryEntry } from '@/components/exercise-programs/types'
 import { cn } from '@/lib/utils'
+import type { ScribeCarePlan } from './scribeApi'
 import { matchExercises, parseDosage, withDosage, type HeardExercise } from './scribeTools'
 
-export type ScribeNextStepsData = { exercises: HeardExercise[]; followUp?: { text: string; inDays?: number } }
+export type ScribeNextStepsData = { exercises: HeardExercise[]; followUp?: { text: string; inDays?: number }; carePlan?: ScribeCarePlan }
+
+/** One line on what the drafted plan holds, or changes */
+export function carePlanSummary(plan: ScribeCarePlan, updating: boolean): string[] {
+  const how = [
+    plan.sessionFrequency,
+    plan.plannedSessions ? `${plan.plannedSessions} sessions` : '',
+    plan.reviewInWeeks ? `review in ${plan.reviewInWeeks} week${plan.reviewInWeeks === 1 ? '' : 's'}` : '',
+  ].filter(Boolean)
+  if (!updating) {
+    return [
+      plan.title,
+      [`${plan.goals.length} goal${plan.goals.length === 1 ? '' : 's'}`, ...how].join(' · '),
+    ].filter(Boolean)
+  }
+  return [
+    plan.achievedGoals.length ? `Goals met: ${plan.achievedGoals.join('; ')}` : '',
+    plan.goals.length ? `New goals: ${plan.goals.map((g) => g.description).join('; ')}` : '',
+    how.length ? `Now: ${how.join(' · ')}` : '',
+    plan.precautions ? `Precautions: ${plan.precautions}` : '',
+  ].filter(Boolean)
+}
 
 const listLibraryRef = makeFunctionReference<'query', Record<string, never>, LibraryData | null>('exerciseLibrary:listLibrary')
 
@@ -34,12 +58,17 @@ export function ScribeNextSteps({
   onClose,
   onSendExercises,
   onBookFollowUp,
+  hasPlan,
+  onCarePlan,
 }: {
   steps: ScribeNextStepsData | null
   patientFirstName: string
   onClose: () => void
   onSendExercises: (entries: LibraryEntry[]) => void
   onBookFollowUp: (followUp: { text: string; inDays?: number }) => void
+  /** The patient already has a care plan: the draft updates it */
+  hasPlan: boolean
+  onCarePlan: (plan: ScribeCarePlan) => void
 }) {
   const library = useQuery(listLibraryRef, steps?.exercises.length ? {} : 'skip')
   const match = useMemo(() => {
@@ -100,6 +129,28 @@ export function ScribeNextSteps({
             </div>
           )}
 
+          {steps?.carePlan && (
+            <div className="rounded-xl border border-pt-line p-3">
+              <p className="flex items-center gap-2 text-sm font-semibold text-pt-ink">
+                <ClipboardList className="h-4 w-4" aria-hidden /> {hasPlan ? 'Care plan changes' : 'Care plan'}
+              </p>
+              <ul className="mt-1 space-y-0.5 text-sm text-pt-muted">
+                {carePlanSummary(steps.carePlan, hasPlan).map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+              </ul>
+              <Button
+                className={cn(primaryButtonClass, 'mt-3 h-10 w-full')}
+                onClick={() => {
+                  onCarePlan(steps.carePlan!)
+                  onClose()
+                }}
+              >
+                {hasPlan ? 'Check and update the care plan' : 'Check and create the care plan'}
+              </Button>
+            </div>
+          )}
+
           {steps?.followUp && (
             <div className="rounded-xl border border-pt-line p-3">
               <p className="flex items-center gap-2 text-sm font-semibold text-pt-ink">
@@ -107,7 +158,7 @@ export function ScribeNextSteps({
               </p>
               <p className="mt-1 text-sm text-pt-muted">{steps.followUp.text}</p>
               <Button
-                className={cn(steps.exercises.length ? secondaryButtonClass : primaryButtonClass, 'mt-3 h-10 w-full')}
+                className={cn(steps.exercises.length || steps.carePlan ? secondaryButtonClass : primaryButtonClass, 'mt-3 h-10 w-full')}
                 onClick={() => {
                   onBookFollowUp(steps.followUp!)
                   onClose()

@@ -25,9 +25,13 @@ import {
   ROM,
   SPECIAL_TESTS,
   STRENGTH,
+  outcomeDef,
+  romDef,
+  specialTestDef,
   strengthDef,
   type ClinicalMeasure,
 } from "./clinicalMeasures";
+import { cleanGoalMeasure, goalTemplate, linkFromMeasure } from "./goalMeasures";
 import { MAX_NOTE_FIELD_LENGTH } from "./noteRevisions";
 
 export const NOT_STATED = "Not stated.";
@@ -38,6 +42,45 @@ export const scribeNoteTypeValidator = v.union(
   v.literal("follow_up")
 );
 export type ScribeNoteType = Infer<typeof scribeNoteTypeValidator>;
+
+/** The measure a care-plan goal tracks, as notes record it (no value) */
+const planGoalMeasureValidator = v.object({
+  kind: measureValidator.fields.kind,
+  key: v.string(),
+  side: v.optional(v.union(v.literal("left"), v.literal("right"))),
+  method: v.optional(v.string()),
+  location: v.optional(v.string()),
+  context: v.optional(v.string()),
+});
+
+/**
+ * A care plan drafted from the session: a new plan ("create"), or changes to the active one
+ * ("update": only the new goals, the goals said to be met, and what changed). Opened in the care
+ * plan drawer for the physio to check and save; never saved on its own.
+ */
+export const scribeCarePlanValidator = v.object({
+  action: v.union(v.literal("create"), v.literal("update")),
+  title: v.string(),
+  summary: v.string(),
+  goals: v.array(
+    v.object({
+      description: v.string(),
+      timeline: v.string(),
+      measure: v.optional(planGoalMeasureValidator),
+      /** Only when the physio said the number */
+      target: v.optional(v.number()),
+    })
+  ),
+  /** Update: the active plan's goals (as listed to the AI) the physio said are met */
+  achievedGoals: v.array(v.string()),
+  sessionFrequency: v.string(),
+  plannedSessions: v.optional(v.number()),
+  reviewInWeeks: v.optional(v.number()),
+  precautions: v.string(),
+  /** Update: why the plan is changing, as said */
+  changeReason: v.string(),
+});
+export type ScribeCarePlan = Infer<typeof scribeCarePlanValidator>;
 
 /** What the AI drafted, as saved on scribeSessions.draft until the physio signs. */
 export const scribeDraftValidator = v.object({
@@ -58,6 +101,8 @@ export const scribeDraftValidator = v.object({
   missing: v.array(v.string()),
   /** Measures the AI suggested that didn't pass the catalogue's checks */
   droppedMeasures: v.number(),
+  /** A new care plan, or changes to the active one, when the session talked about the plan */
+  carePlan: v.optional(scribeCarePlanValidator),
 });
 export type ScribeDraft = Infer<typeof scribeDraftValidator>;
 
@@ -151,12 +196,18 @@ Reply with one JSON object and nothing else:
   "exercises": [ { "name": "...", "dosage": "..." } ],
   "followUp": { "text": "...", "inDays": 7 } or null,
   "redFlags": [ "..." ],
-  "missing": [ "..." ]
+  "missing": [ "..." ],
+  "carePlan": { "action": "create" | "update", "title": "...", "summary": "...", "goals": [ { "description": "...", "timeline": "...", "measure": { "kind": "...", "key": "...", "side": "..." } or null, "target": 135 or null } ], "achievedGoals": [ "..." ], "sessionFrequency": "...", "plannedSessions": 8 or null, "reviewInWeeks": 4 or null, "precautions": "...", "changeReason": "..." } or null
 }
 - exercises: each exercise prescribed or taught, with the dosage (sets, reps, hold, how often) exactly as said; [] if none.
 - followUp: the next visit or review as said ("review in one week" gives inDays 7); null when not mentioned.
 - redFlags: anything said that may need urgent attention (for example saddle numbness, new bladder or bowel problems, progressive leg weakness, unexplained weight loss, fever with back pain, constant night pain, chest pain, calf pain with swelling, recent major trauma, a history of cancer). Quote or closely paraphrase what was said; [] if none. Do not diagnose.
-- missing: which of these the session did not cover: ${MISSING_OPTIONS.map((m) => `"${m}"`).join(", ")}.`;
+- missing: which of these the session did not cover: ${MISSING_OPTIONS.map((m) => `"${m}"`).join(", ")}.
+- carePlan: a draft care plan built only from what was said, or null.
+  - When "Active care plan" is "none" and the physiotherapist talked about the plan of care (the patient's goals, how often to come, how many sessions, when to review, precautions): action "create", with a short title (e.g. "Right knee rehab after a fall"), a one or two sentence summary of the approach as said, the functional goals the patient or physiotherapist stated (each with its timeline if said, e.g. "6 weeks"), sessionFrequency (e.g. "Twice a week"), plannedSessions, reviewInWeeks and precautions.
+  - When there is an active care plan and the physiotherapist said it should change (a goal met, a new goal, a different frequency, more or fewer sessions, a review date, new precautions): action "update", with goals = only the NEW goals, achievedGoals = the active plan's goals that were said to be met (copied exactly from the list), changeReason = why, as said, and the other fields only where they changed ("" or null otherwise). title and summary can be "".
+  - Link a goal to a measure only when it clearly tracks one in the catalogue above (e.g. "bend the knee fully" tracks rom knee_flexion with its side). Give a target only when the physiotherapist said the number; otherwise null. Never invent goals, targets, frequencies or session numbers.
+  - Otherwise null.`;
 
 /** Clinical words the speech-to-text model should expect, so it spells them right. */
 const VOCABULARY =
@@ -193,7 +244,8 @@ export type ScribeContext = {
   /** How many earlier notes this physio (or their clinic) has for the patient */
   earlierNotes: number;
   condition?: string;
-  goals?: string[];
+  /** The active care plan, if there is one: goals not met yet, and how often */
+  plan?: { goals: string[]; sessionFrequency?: string; plannedSessions?: number };
   /** "Knee flexion (AROM · Right): 95° (Wed, 3 Nov)" */
   earlierMeasures?: string[];
 };
@@ -205,7 +257,13 @@ export function scribeUserPrompt(transcript: string, context: ScribeContext): st
     `Earlier notes for this patient: ${context.earlierNotes === 0 ? "none (probably a first visit)" : context.earlierNotes}`,
   ];
   if (context.condition?.trim()) lines.push(`Presenting condition on record: ${context.condition.trim()}`);
-  if (context.goals?.length) lines.push("Care-plan goals on record:", ...context.goals.map((g) => `- ${g}`));
+  if (context.plan) {
+    const how = [context.plan.sessionFrequency, context.plan.plannedSessions ? `${context.plan.plannedSessions} sessions planned` : ""].filter(Boolean).join(", ");
+    lines.push(`Active care plan: yes${how ? ` (${how})` : ""}`);
+    if (context.plan.goals.length) lines.push("Its goals not met yet:", ...context.plan.goals.map((g) => `- ${g}`));
+  } else {
+    lines.push("Active care plan: none");
+  }
   if (context.earlierMeasures?.length) {
     lines.push("Earlier record (for comparison only, not today's findings):", ...context.earlierMeasures.map((m) => `- ${m}`));
   }
@@ -387,6 +445,7 @@ export function parseScribeDraft(raw: string, opts: { idPrefix: string; firstVis
       .map((s) => clip(str(s), maxLength))
       .filter(Boolean)
       .slice(0, max);
+  const carePlan = parseCarePlan(data.carePlan);
   const missing = strings(data.missing, MAX_MISSING, 60)
     .map((m) => m.toLowerCase())
     .filter((m) => MISSING_OPTIONS.includes(m));
@@ -404,7 +463,119 @@ export function parseScribeDraft(raw: string, opts: { idPrefix: string; firstVis
     redFlags: strings(data.redFlags, MAX_RED_FLAGS, 300),
     missing: [...new Set(missing)],
     droppedMeasures: Math.min(suggested.length, MAX_MEASURES_PER_NOTE) - measures.length,
+    ...(carePlan ? { carePlan } : {}),
   };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The care plan
+// ─────────────────────────────────────────────────────────────────────────────
+
+const MAX_PLAN_GOALS = 8;
+
+/** The measure a goal tracks, made to fit the catalogue, or undefined when it doesn't. */
+function planGoalMeasure(raw: unknown): ScribeCarePlan["goals"][number]["measure"] {
+  if (!raw || typeof raw !== "object") return undefined;
+  const r = raw as Record<string, unknown>;
+  const kind = str(r.kind) as ClinicalMeasure["kind"];
+  const key = str(r.key).toLowerCase();
+  const sideText = str(r.side).toLowerCase();
+  const side = sideText === "left" || sideText === "right" ? sideText : undefined;
+  const method = str(r.method).toLowerCase() || undefined;
+  switch (kind) {
+    case "rom": {
+      const def = romDef(key);
+      if (!def || (def.sided && !side)) return undefined;
+      return { kind, key, method: method === "prom" ? "prom" : "arom", ...(def.sided ? { side } : {}) };
+    }
+    case "strength": {
+      const def = strengthDef(key);
+      if (!def || (def.sided && !side)) return undefined;
+      const m = method && (def.methods as string[]).includes(method) ? method : def.methods.includes("mmt") ? "mmt" : def.methods[0];
+      return { kind, key, method: m, ...(def.sided ? { side } : {}) };
+    }
+    case "functional": {
+      const def = functionalDef(key);
+      if (!def || (def.sided && !side)) return undefined;
+      return { kind, key, ...(def.sided ? { side } : {}) };
+    }
+    case "pain": {
+      const location = PAIN_AREAS.find((a) => a.toLowerCase() === str(r.location).toLowerCase());
+      return { kind, key: "nprs", ...(location ? { location } : {}) };
+    }
+    case "outcome": {
+      const def = outcomeDef(key);
+      if (!def || key === "custom" || key === "mas") return undefined;
+      return { kind, key };
+    }
+    case "special_test": {
+      const def = specialTestDef(key);
+      if (!def?.angle || (def.sided && !side)) return undefined;
+      return { kind, key, ...(def.sided ? { side } : {}) };
+    }
+    default:
+      return undefined;
+  }
+}
+
+/** A target the measure can actually take, or undefined. */
+function planTarget(measure: NonNullable<ScribeCarePlan["goals"][number]["measure"]>, raw: unknown): number | undefined {
+  const target = number(raw);
+  if (target === undefined) return undefined;
+  try {
+    const link = linkFromMeasure(goalTemplate(measure), target);
+    if (!link) return undefined;
+    cleanGoalMeasure(link);
+    return target;
+  } catch {
+    return undefined;
+  }
+}
+
+function parseCarePlan(raw: unknown): ScribeCarePlan | undefined {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const r = raw as Record<string, unknown>;
+  const action = str(r.action) === "update" ? "update" : "create";
+  const goals = (Array.isArray(r.goals) ? r.goals : [])
+    .map((g) => {
+      const goal = (g ?? {}) as Record<string, unknown>;
+      const description = clip(typeof g === "string" ? g.trim() : str(goal.description), 200);
+      const measure = planGoalMeasure(goal.measure);
+      const target = measure ? planTarget(measure, goal.target) : undefined;
+      return {
+        description,
+        timeline: clip(str(goal.timeline).replace(/^not stated\.?$/i, ""), 60),
+        ...(measure ? { measure } : {}),
+        ...(target !== undefined ? { target } : {}),
+      };
+    })
+    .filter((g) => g.description)
+    .slice(0, MAX_PLAN_GOALS);
+  const text = (value: unknown, max: number) => clip(str(value).replace(/^not stated\.?$/i, ""), max);
+  const whole = (value: unknown, min: number, max: number) => {
+    const n = number(value);
+    return n !== undefined && Number.isInteger(n) && n >= min && n <= max ? n : undefined;
+  };
+  const plannedSessions = whole(r.plannedSessions, 1, 100);
+  const reviewInWeeks = whole(r.reviewInWeeks, 1, 52);
+  const plan: ScribeCarePlan = {
+    action,
+    title: text(r.title, 100),
+    summary: text(r.summary, 500),
+    goals,
+    achievedGoals: (Array.isArray(r.achievedGoals) ? r.achievedGoals : []).map((g) => clip(str(g), 200)).filter(Boolean).slice(0, MAX_PLAN_GOALS),
+    sessionFrequency: text(r.sessionFrequency, 60),
+    ...(plannedSessions !== undefined ? { plannedSessions } : {}),
+    ...(reviewInWeeks !== undefined ? { reviewInWeeks } : {}),
+    precautions: text(r.precautions, 1000),
+    changeReason: text(r.changeReason, 300),
+  };
+  // A plan with nothing in it isn't worth offering
+  const hasContent =
+    plan.goals.length > 0 ||
+    plan.achievedGoals.length > 0 ||
+    Boolean(plan.sessionFrequency || plan.precautions || plan.plannedSessions || plan.reviewInWeeks);
+  return hasContent ? plan : undefined;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

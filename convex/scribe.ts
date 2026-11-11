@@ -74,6 +74,8 @@ const KEEP_UNSIGNED_MS = 7 * DAY;
 const PURGE_BATCH = 200;
 
 const sourceValidator = v.union(v.literal("in_person"), v.literal("video_call"), v.literal("dictation"));
+/** featureIntros key for the one-time "Rehabify Scribe is here" card */
+const SCRIBE_INTRO = "rehabify_scribe";
 /** Whose audio a live connection carries: the room (one mic), or one side of a video call */
 const channelValidator = v.union(v.literal("room"), v.literal("physio"), v.literal("patient"));
 const speakerValidator = v.union(v.literal("physio"), v.literal("patient"));
@@ -150,6 +152,37 @@ async function redactionTargets(ctx: Ctx, physio: Doc<"users">, patientId: Id<"u
   ];
 }
 
+async function introSeen(ctx: Ctx, userId: Id<"users">) {
+  return await ctx.db
+    .query("featureIntros")
+    .withIndex("by_user_and_key", (q) => q.eq("userId", userId).eq("key", SCRIBE_INTRO))
+    .first();
+}
+
+async function markIntroSeen(ctx: MutationCtx, userId: Id<"users">) {
+  if (!(await introSeen(ctx, userId))) await ctx.db.insert("featureIntros", { userId, key: SCRIBE_INTRO, seenAt: Date.now() });
+}
+
+/** Physio portal: show the one-time "Rehabify Scribe is here" card? Only once it's on for them. */
+export const getScribeIntro = query({
+  args: {},
+  handler: async (ctx) => {
+    const physio = await physioOrNull(ctx);
+    if (!physio || !(await scribeAllowedFor(ctx, physio))) return { show: false };
+    return { show: !(await introSeen(ctx, physio._id)) };
+  },
+});
+
+/** The physio closed the card (or started using the scribe): it doesn't come back. */
+export const dismissScribeIntro = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const physio = await requirePhysio(ctx);
+    await markIntroSeen(ctx, physio._id);
+    return null;
+  },
+});
+
 /** Physio app: whether to show the scribe at all. */
 export const getScribeAccess = query({
   args: {},
@@ -207,6 +240,8 @@ export const startScribe = mutation({
       createdAt: now,
       updatedAt: now,
     });
+    // Using it counts as having seen the introduction
+    await markIntroSeen(ctx, physio._id);
     return { scribeSessionId };
   },
 });
@@ -429,7 +464,7 @@ export const beginDraft = internalMutation({
     const plan = await activePlanFor(ctx, physio._id, session.patientId, relationship?.clinicId);
     const goals = (plan?.goals ?? [])
       .filter((g) => !g.achieved && g.description.trim())
-      .slice(0, 8)
+      .slice(0, 10)
       .map((g) => redact(g.description.trim()));
 
     // Earlier notes this physio may read (their own, or their clinic's), newest first
@@ -453,7 +488,15 @@ export const beginDraft = internalMutation({
       source: session.source,
       earlierNotes: notes.length,
       ...(condition ? { condition: redact(condition) } : {}),
-      ...(goals.length ? { goals } : {}),
+      ...(plan
+        ? {
+            plan: {
+              goals,
+              ...(plan.sessionFrequency ? { sessionFrequency: plan.sessionFrequency } : {}),
+              ...(plan.plannedSessions ? { plannedSessions: plan.plannedSessions } : {}),
+            },
+          }
+        : {}),
       ...(earlierMeasures.length ? { earlierMeasures } : {}),
     };
     return { transcript: redact(session.transcript), context };

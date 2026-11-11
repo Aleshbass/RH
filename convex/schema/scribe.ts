@@ -40,4 +40,12 @@ export const scribeTables = {
     .index("by_physio_and_created", ["physiotherapistId", "createdAt"])
     .index("by_patient_and_physio", ["patientId", "physiotherapistId"])
     .index("by_status_and_updated", ["status", "updatedAt"]),
+
+  // One-time "New" introductions a user has seen, one row per feature key (e.g. "rehabify_scribe"),
+  // so each is shown once on any device. Any feature can use it.
+  featureIntros: defineTable({
+    userId: v.id("users"),
+    key: v.string(),
+    seenAt: v.number(),
+  }).index("by_user_and_key", ["userId", "key"]),
 };

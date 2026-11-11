@@ -34,6 +34,7 @@ import EditPatientModal from '@/components/dashboard/physiotherapist/EditPatient
 import { SendProgramDialog } from '@/components/exercise-programs/SendProgramDialog';
 import type { LibraryEntry } from '@/components/exercise-programs/types';
 import { ScribeNextSteps, type ScribeNextStepsData } from '@/components/physio/notes/scribe/ScribeNextSteps';
+import type { ScribeCarePlan } from '@/components/physio/notes/scribe/scribeApi';
 import { suggestedDate } from '@/components/physio/notes/scribe/scribeTools';
 import { ShareLinkDialog } from '@/components/exercise-programs/ShareLinkDialog';
 import { PatientPlanBadge } from '@/components/exercise-programs/PatientPlanBadge';
@@ -120,6 +121,7 @@ export default function PatientWorkspacePage() {
   // After an AI-drafted note is signed: the exercises and follow-up the session mentioned
   const [nextSteps, setNextSteps] = useState<ScribeNextStepsData | null>(null);
   const [programInitial, setProgramInitial] = useState<LibraryEntry[] | undefined>(undefined);
+  const [planPrefill, setPlanPrefill] = useState<ScribeCarePlan | null>(null);
 
   useEffect(() => {
     if (searchParams.get('note') !== 'new') return;
@@ -397,6 +399,11 @@ export default function PatientWorkspacePage() {
           setProgramInitial(entries.length ? entries : undefined);
           setDrawer('exercises');
         }}
+        hasPlan={Boolean(workspace.plan)}
+        onCarePlan={(plan) => {
+          setPlanPrefill(plan);
+          setDrawer('plan');
+        }}
         onBookFollowUp={(followUp) =>
           openBooking({
             patient: { id: patientId, name },
@@ -405,7 +412,15 @@ export default function PatientWorkspacePage() {
           })
         }
       />
-      <CarePlanDrawer workspace={workspace} {...drawerProps('plan')} />
+      <CarePlanDrawer
+        workspace={workspace}
+        open={drawer === 'plan'}
+        onOpenChange={(open) => {
+          setDrawer(open ? 'plan' : null);
+          if (!open) setPlanPrefill(null);
+        }}
+        prefill={planPrefill}
+      />
       {workspace.plan && <SaveTemplateDrawer plan={workspace.plan} {...drawerProps('template')} />}
       <RequestPaymentDrawer workspace={workspace} {...drawerProps('payment')} />
       <EpisodeDialog workspace={workspace} {...drawerProps('episode')} />

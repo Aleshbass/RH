@@ -57,8 +57,8 @@ import { ClinicalNoteEditor } from '@/components/physio/notes/ClinicalNoteEditor
 import { clearNoteDraft, loadNoteDraft, saveNoteDraft } from '@/components/physio/notes/draftStore'
 import { ScribePanel } from '@/components/physio/notes/scribe/ScribePanel'
 import type { ScribeNextStepsData } from '@/components/physio/notes/scribe/ScribeNextSteps'
-import { scribeApi, scribeError, type ScribeSession } from '@/components/physio/notes/scribe/scribeApi'
-import { draftToNote } from '@/components/physio/notes/scribe/scribeTools'
+import { SCRIBE_NAME, scribeApi, scribeError, type ScribeCarePlan, type ScribeSession } from '@/components/physio/notes/scribe/scribeApi'
+import { draftToNote, nameScore } from '@/components/physio/notes/scribe/scribeTools'
 import type { ScribeDraft } from '@/convex/helpers/scribeDraft'
 import { useMutation } from 'convex/react'
 import {
@@ -73,7 +73,7 @@ import {
   type PendingHandle,
 } from '@/components/physio/notes/progress'
 import type { ClinicalMeasure } from '@/convex/helpers/clinicalMeasures'
-import { autoTargetText, type GoalMeasure, type MeasuredNote } from '@/convex/helpers/goalMeasures'
+import { autoTargetText, goalTemplate, type GoalMeasure, type MeasuredNote } from '@/convex/helpers/goalMeasures'
 import { fullName, workspaceApi, type CarePlanTemplate, type Workspace } from './shared'
 import { GoalMeasureField, linkFromDraft, measureDraftFromLink, type MeasureDraft } from './GoalMeasureField'
 
@@ -331,7 +331,9 @@ export function NoteDrawer({
         toast.success('Note signed')
         onOpenChange(false)
         const steps = scribeDraft.draft!
-        if (steps.exercises.length || steps.followUp) onScribeSigned?.({ exercises: steps.exercises, followUp: steps.followUp })
+        if (steps.exercises.length || steps.followUp || steps.carePlan) {
+          onScribeSigned?.({ exercises: steps.exercises, followUp: steps.followUp, carePlan: steps.carePlan })
+        }
         return
       }
       if (editing) {
@@ -555,6 +557,48 @@ function draftFromTemplate(template: CarePlanTemplate): PlanDraft {
   }
 }
 
+/** A goal from a Rehabify Scribe draft. A measured goal's target stays empty unless the physio said it. */
+function goalFromScribe(goal: ScribeCarePlan['goals'][number]): DraftGoal {
+  return {
+    description: goal.description,
+    targetValue: '',
+    timeline: goal.timeline,
+    measure: goal.measure ? { template: goalTemplate(goal.measure), target: goal.target !== undefined ? String(goal.target) : '' } : undefined,
+  }
+}
+
+const reviewIn = (weeks?: number) => (weeks ? toDateInput(Date.now() + weeks * 7 * DAY_MS) : '')
+
+/** A new plan from a Rehabify Scribe draft. */
+function draftFromScribe(plan: ScribeCarePlan): PlanDraft {
+  return {
+    title: plan.title,
+    description: plan.summary,
+    goals: plan.goals.length ? plan.goals.map(goalFromScribe) : [{ description: '', targetValue: '', timeline: '' }],
+    frequency: plan.sessionFrequency,
+    planned: plan.plannedSessions ? String(plan.plannedSessions) : '',
+    reviewDate: reviewIn(plan.reviewInWeeks),
+    precautions: plan.precautions,
+  }
+}
+
+/** The current plan with a Rehabify Scribe draft's changes: goals said to be met ticked, new goals added, the rest only where it changed. */
+function patchFromScribe(base: PlanDraft, plan: ScribeCarePlan): PlanDraft {
+  const met = (description: string) =>
+    plan.achievedGoals.some((said) => said.trim().toLowerCase() === description.trim().toLowerCase() || nameScore(said, description) >= 0.6)
+  const kept = base.goals.filter((g) => g.description.trim() || plan.goals.length === 0)
+  return {
+    ...base,
+    title: base.title || plan.title,
+    description: base.description || plan.summary,
+    goals: [...kept.map((g) => (g.description.trim() && met(g.description) ? { ...g, achieved: true } : g)), ...plan.goals.map(goalFromScribe)],
+    frequency: plan.sessionFrequency || base.frequency,
+    planned: plan.plannedSessions ? String(plan.plannedSessions) : base.planned,
+    reviewDate: plan.reviewInWeeks ? reviewIn(plan.reviewInWeeks) : base.reviewDate,
+    precautions: plan.precautions ? (base.precautions ? `${base.precautions}\n${plan.precautions}` : plan.precautions) : base.precautions,
+  }
+}
+
 function templateSummary(template: CarePlanTemplate) {
   return [
     `${template.goals.length} goal${template.goals.length === 1 ? '' : 's'}`,
@@ -689,7 +733,18 @@ function TemplatesSource({ onChange }: { onChange: (templates: CarePlanTemplate[
   return null
 }
 
-export function CarePlanDrawer({ workspace, open, onOpenChange }: { workspace: Workspace; open: boolean; onOpenChange: (open: boolean) => void }) {
+export function CarePlanDrawer({
+  workspace,
+  open,
+  onOpenChange,
+  prefill = null,
+}: {
+  workspace: Workspace
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  /** A plan (or changes) Rehabify Scribe drafted from the session, to check before saving */
+  prefill?: ScribeCarePlan | null
+}) {
   const save = useMutationUntyped(workspaceApi.physioCare.saveCarePlan)
   const saveTemplate = useMutationUntyped(workspaceApi.physioCare.saveCarePlanTemplate)
   const noteUsed = useMutationUntyped(workspaceApi.physioCare.noteCarePlanTemplateUsed)
@@ -705,6 +760,7 @@ export function CarePlanDrawer({ workspace, open, onOpenChange }: { workspace: W
   const [step, setStep] = useState<'start' | 'form'>('form')
   const [draft, setDraft] = useState<PlanDraft>(() => draftFromPlan(plan))
   const [fromTemplate, setFromTemplate] = useState<string | null>(null)
+  const [fromScribe, setFromScribe] = useState(false)
   const [reason, setReason] = useState('')
   const [alsoTemplate, setAlsoTemplate] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -712,10 +768,19 @@ export function CarePlanDrawer({ workspace, open, onOpenChange }: { workspace: W
   // Each opening starts over: a new plan offers templates first, a revision opens the form
   useEffect(() => {
     if (!open) return
-    setDraft(draftFromPlan(plan))
-    setStep(plan ? 'form' : 'start')
+    if (prefill) {
+      // From Rehabify Scribe: straight to the form, filled in
+      setDraft(plan ? patchFromScribe(draftFromPlan(plan), prefill) : draftFromScribe(prefill))
+      setStep('form')
+      setReason(plan ? prefill.changeReason : '')
+      setFromScribe(true)
+    } else {
+      setDraft(draftFromPlan(plan))
+      setStep(plan ? 'form' : 'start')
+      setReason('')
+      setFromScribe(false)
+    }
     setFromTemplate(null)
-    setReason('')
     setAlsoTemplate(false)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
@@ -762,7 +827,9 @@ export function CarePlanDrawer({ workspace, open, onOpenChange }: { workspace: W
         plannedSessions: draft.planned ? Number(draft.planned) : undefined,
         reviewDate,
         precautions: draft.precautions || undefined,
-        changeReason: reason || (fromTemplate ? `Started from the “${fromTemplate}” template` : undefined),
+        changeReason:
+          reason ||
+          (fromTemplate ? `Started from the “${fromTemplate}” template` : fromScribe ? `Drafted with ${SCRIBE_NAME} from the session` : undefined),
       })
       if (alsoTemplate) {
         await saveTemplate({
@@ -831,6 +898,16 @@ export function CarePlanDrawer({ workspace, open, onOpenChange }: { workspace: W
           )
         ) : (
           <div className="space-y-5">
+            {fromScribe && (
+              <p className="flex items-start gap-2 rounded-2xl bg-pt-amber-bg p-3 text-sm text-pt-amber-fg">
+                <ClipboardList className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>
+                  {plan
+                    ? `${SCRIBE_NAME} filled in the changes from the session: goals said to be met are ticked and new goals added. Check everything before saving.`
+                    : `Drafted by ${SCRIBE_NAME} from the session. Check every goal, and set targets for the measured ones before saving.`}
+                </span>
+              </p>
+            )}
             {fromTemplate && (
               <p className="flex items-start gap-2 rounded-2xl bg-pt-sunken p-3 text-sm text-pt-muted">
                 <ClipboardList className="mt-0.5 h-4 w-4 shrink-0 text-pt-ink" />

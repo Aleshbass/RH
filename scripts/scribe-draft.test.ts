@@ -48,17 +48,20 @@ test('user prompt wraps the transcript and labels earlier values as comparison o
     source: 'in_person',
     earlierNotes: 2,
     condition: 'Right knee pain after a fall',
-    goals: ['Climb stairs without pain'],
+    plan: { goals: ['Climb stairs without pain'], sessionFrequency: 'Twice a week', plannedSessions: 8 },
     earlierMeasures: ['Knee flexion (AROM · Right): 95° (Mon, 3 Nov)'],
   })
   assert.ok(prompt.includes('<transcript>\nPhysio: How is the knee?\n</transcript>'))
   assert.ok(prompt.includes('Earlier notes for this patient: 2'))
   assert.ok(prompt.includes('for comparison only'))
   assert.ok(prompt.includes('- Climb stairs without pain'))
+  assert.ok(prompt.includes('Active care plan: yes (Twice a week, 8 sessions planned)'))
   const first = scribeUserPrompt('x', { source: 'dictation', earlierNotes: 0 })
   assert.ok(first.includes('none (probably a first visit)'))
   assert.ok(first.includes('Dictation'))
   assert.ok(!first.includes('Earlier record'))
+  assert.ok(first.includes('Active care plan: none'))
+  assert.ok(SCRIBE_SYSTEM_PROMPT.includes('"carePlan"') && SCRIBE_SYSTEM_PROMPT.includes('achievedGoals'))
 })
 
 console.log('reading the draft')
@@ -158,6 +161,75 @@ test('returns null for a reply that is not JSON', () => {
 test('caps very long sections', () => {
   const draft = parseScribeDraft(JSON.stringify({ subjective: 'a'.repeat(20_000) }), { idPrefix: 'a', firstVisit: false })!
   assert.equal(draft.subjective.length, 10_000)
+})
+
+console.log('care plan')
+
+test('drafts a new plan; measures and targets must fit the catalogue', () => {
+  const raw = JSON.stringify({
+    subjective: 'x',
+    carePlan: {
+      action: 'create',
+      title: 'Right knee rehab after a fall',
+      summary: 'Strength and range, then stairs.',
+      goals: [
+        { description: 'Bend the knee fully', timeline: '6 weeks', measure: { kind: 'rom', key: 'knee_flexion', side: 'right' }, target: 135 },
+        { description: 'Knee straight', timeline: '', measure: { kind: 'rom', key: 'knee_flexion' }, target: 0 }, // no side: no measure
+        { description: 'Pain-free stairs', timeline: 'Not stated', measure: { kind: 'pain', key: 'nprs', location: 'knee' }, target: 0 },
+        { description: 'Better function', timeline: '8 weeks', measure: { kind: 'outcome', key: 'lefs' }, target: 999 }, // target off the scale
+        { description: 'Lachman stays negative', measure: { kind: 'special_test', key: 'lachman', side: 'right' } }, // nothing to chart
+        { description: '' },
+      ],
+      sessionFrequency: 'Twice a week',
+      plannedSessions: 8,
+      reviewInWeeks: 4,
+      precautions: 'Avoid deep squats',
+      achievedGoals: [],
+      changeReason: '',
+    },
+  })
+  const plan = parseScribeDraft(raw, { idPrefix: 'p', firstVisit: true })!.carePlan!
+  assert.equal(plan.action, 'create')
+  assert.equal(plan.goals.length, 5)
+  assert.deepEqual(plan.goals[0], { description: 'Bend the knee fully', timeline: '6 weeks', measure: { kind: 'rom', key: 'knee_flexion', method: 'arom', side: 'right' }, target: 135 })
+  assert.ok(!('measure' in plan.goals[1]), 'a sided measure without its side is left off')
+  assert.deepEqual(plan.goals[2], { description: 'Pain-free stairs', timeline: '', measure: { kind: 'pain', key: 'nprs', location: 'Knee' }, target: 0 })
+  assert.deepEqual(plan.goals[3].measure, { kind: 'outcome', key: 'lefs' })
+  assert.ok(!('target' in plan.goals[3]), 'a target off the scale is dropped')
+  assert.ok(!('measure' in plan.goals[4]))
+  assert.equal(plan.plannedSessions, 8)
+  assert.equal(plan.reviewInWeeks, 4)
+  assert.equal(plan.sessionFrequency, 'Twice a week')
+})
+
+test('drafts changes to the current plan', () => {
+  const raw = JSON.stringify({
+    carePlan: {
+      action: 'update',
+      title: '',
+      summary: '',
+      goals: [{ description: 'Return to five-a-side football', timeline: '3 months' }],
+      achievedGoals: ['Climb stairs without pain'],
+      sessionFrequency: 'Once a week',
+      plannedSessions: 0.5, // not a whole number: dropped
+      reviewInWeeks: null,
+      precautions: '',
+      changeReason: 'Stairs goal met; dropping to weekly visits.',
+    },
+  })
+  const plan = parseScribeDraft(raw, { idPrefix: 'p', firstVisit: false })!.carePlan!
+  assert.equal(plan.action, 'update')
+  assert.deepEqual(plan.achievedGoals, ['Climb stairs without pain'])
+  assert.equal(plan.goals[0].description, 'Return to five-a-side football')
+  assert.equal(plan.sessionFrequency, 'Once a week')
+  assert.ok(!('plannedSessions' in plan))
+  assert.equal(plan.changeReason, 'Stairs goal met; dropping to weekly visits.')
+})
+
+test('no plan when the session said nothing about it', () => {
+  assert.ok(!('carePlan' in parseScribeDraft(JSON.stringify({ carePlan: null }), { idPrefix: 'p', firstVisit: true })!))
+  const empty = JSON.stringify({ carePlan: { action: 'create', title: 'Plan', goals: [], achievedGoals: [], sessionFrequency: 'Not stated', precautions: '' } })
+  assert.ok(!('carePlan' in parseScribeDraft(empty, { idPrefix: 'p', firstVisit: true })!), 'a plan with nothing in it is not offered')
 })
 
 console.log('redaction')
