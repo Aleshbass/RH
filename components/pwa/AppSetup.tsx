@@ -8,7 +8,7 @@
  * "Not now" only puts it off for a day. <AppSetupButton /> opens it from the top bar.
  * Browser side in lib/pwa.ts, server side in convex/push.ts.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
 import { useMutation, useQuery } from 'convex/react';
 import { makeFunctionReference } from 'convex/server';
@@ -137,9 +137,20 @@ function Steps({ steps }: { steps: { icon?: React.ReactNode; text: React.ReactNo
   );
 }
 
+/** Who the setup dialog talks to: clinicians hear about patients, patients about their care. */
+type SetupAudience = 'clinician' | 'patient';
+const SetupAudienceContext = createContext<SetupAudience>('clinician');
+
 function Benefits() {
+  const audience = useContext(SetupAudienceContext);
   const items = [
-    { icon: <Bell className="h-4 w-4" />, text: 'A notification the moment a new patient books or messages you' },
+    {
+      icon: <Bell className="h-4 w-4" />,
+      text:
+        audience === 'patient'
+          ? 'A reminder when it’s time for your exercises, and when your physio messages you'
+          : 'A notification the moment a new patient books or messages you',
+    },
     { icon: <Smartphone className="h-4 w-4" />, text: 'Opens full screen from your home screen, like any app' },
     { icon: <Check className="h-4 w-4" />, text: 'Nothing to download from an app store' },
   ];
@@ -356,12 +367,15 @@ function useTurnOnPush(publicKey: string) {
 
 function NotifyBody({ publicKey }: { publicKey: string }) {
   const { turnOn, busy } = useTurnOnPush(publicKey);
+  const audience = useContext(SetupAudienceContext);
 
   return (
     <div className="space-y-4">
       <p className="text-sm leading-relaxed text-neutral-700 dark:text-white/80">
-        Your phone will tell you when a new patient books or sends you a message, even when Rehabify is closed. Message
-        notifications show who it’s from, never what they wrote.
+        {audience === 'patient'
+          ? 'Your phone will remind you about your exercises and visits, and tell you when your physio messages you, even when Rehabify is closed.'
+          : 'Your phone will tell you when a new patient books or sends you a message, even when Rehabify is closed.'}{' '}
+        Message notifications show who it’s from, never what they wrote.
       </p>
       <Button type="button" className={primaryClass} onClick={() => void turnOn()} disabled={busy}>
         {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Bell className="mr-2 h-4 w-4" />}
@@ -497,7 +511,7 @@ const TITLES: Record<Need, { title: string; description: string }> = {
 };
 
 /** The setup dialog. Opens on its own until the app is installed and notifications are on. */
-export function AppSetupPrompt() {
+export function AppSetupPrompt({ audience = 'clinician' }: { audience?: SetupAudience } = {}) {
   const { need, env, config, pwa } = useAppSetup();
   const subscribe = useMutation(subscribeRef);
   const autoOpened = useRef(false);
@@ -555,6 +569,7 @@ export function AppSetupPrompt() {
   const copy = TITLES[need];
 
   return (
+    <SetupAudienceContext.Provider value={audience}>
     <Dialog open={pwa.setupOpen} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md gap-5 rounded-3xl border-neutral-200 bg-white p-6 text-neutral-900 dark:border-white/10 dark:bg-rh-ink-2 dark:text-white">
         <div className="flex items-center gap-4 pr-6">
@@ -580,6 +595,7 @@ export function AppSetupPrompt() {
         </Button>
       </DialogContent>
     </Dialog>
+    </SetupAudienceContext.Provider>
   );
 }
 

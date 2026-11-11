@@ -50,9 +50,19 @@ function cleanName(value: string | undefined, max = 60) {
   return text ? text.slice(0, max) : "";
 }
 
+/** "paul francis" or "PAUL FRANCIS" → "Paul Francis"; names typed in mixed case are left alone. */
+function properName(name: string) {
+  if (name !== name.toLowerCase() && name !== name.toUpperCase()) return name;
+  return name.toLowerCase().replace(/(^|[\s'-])(\p{L})/gu, (_m, sep: string, ch: string) => sep + ch.toUpperCase());
+}
+
+function niceName(user: Doc<"users"> | null | undefined, fallback?: string) {
+  return properName(displayName(user, fallback));
+}
+
 function firstNameOf(user: Pick<Doc<"users">, "firstName"> | null | undefined) {
   const name = (user?.firstName ?? "").trim();
-  return name && name !== "Patient" ? name : null;
+  return name && name !== "Patient" ? properName(name) : null;
 }
 
 /** +2348031234567 → 0803 123 4567; other numbers as stored. */
@@ -94,7 +104,7 @@ async function senderFor(ctx: QueryCtx | MutationCtx, physioId?: Id<"users">, cl
   const physio = physioId ? await ctx.db.get(physioId) : null;
   const clinic = clinicId ? await ctx.db.get(clinicId) : null;
   return {
-    physioName: physio ? displayName(physio) : null,
+    physioName: physio ? niceName(physio) : null,
     physioImageUrl: physio?.imageUrl ?? null,
     clinicName: clinic?.name ?? null,
   };
@@ -131,7 +141,7 @@ export const prepareInvite = internalQuery({
     return {
       userId: team.user._id,
       fromClinic: team.kind === "clinic",
-      senderName: team.kind === "clinic" ? team.senderName : displayName(team.user),
+      senderName: team.kind === "clinic" ? team.senderName : niceName(team.user),
       physioId,
       clinicId: team.clinicId,
       patientFirstName: firstNameOf(patient),
@@ -330,7 +340,7 @@ async function attachPinLogin(
 
 async function tellPhysioJoined(ctx: MutationCtx, physioId: Id<"users"> | undefined, patient: Doc<"users">, how: "invite" | "link") {
   if (!physioId) return;
-  const name = displayName(patient, "Your patient");
+  const name = niceName(patient, "Your patient");
   await insertNotification(ctx, {
     userId: physioId,
     type: "patient_joined",
@@ -401,7 +411,7 @@ export const getPhysioLinkPage = query({
     }
     return {
       state: "ok" as const,
-      physioName: displayName(physio),
+      physioName: niceName(physio),
       physioImageUrl: physio.imageUrl ?? null,
       clinicName: clinic?.name ?? null,
       signedIn,
@@ -455,7 +465,7 @@ export const physioLinkContext = internalQuery({
     return {
       ok: true as const,
       physioId: physio._id,
-      physioName: displayName(physio),
+      physioName: niceName(physio),
       busy: joinedToday >= PHYSIO_LINK_JOINS_PER_DAY,
       pinRows,
       inCare,
@@ -600,7 +610,7 @@ export const askPhysioToSendLink = internalMutation({
     if (recent.some((n) => (n.payload?.data as { key?: string } | undefined)?.key === key && n.createdAt > Date.now() - DAY)) {
       return null;
     }
-    const name = displayName(patient, "A patient");
+    const name = niceName(patient, "A patient");
     await insertNotification(ctx, {
       userId: args.physioId,
       type: "patient_join_request",

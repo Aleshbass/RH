@@ -15,7 +15,13 @@ export function hasOwnPortalShell(pathname: string) {
  * without it, toasts (saves, errors, the "new version" prompt) would never show.
  */
 export function hasOwnToaster(pathname: string) {
-  if (pathname.startsWith('/v/') || pathname.startsWith('/video-call/') || pathname.startsWith('/dashboard/clinic')) {
+  // The physio portal sits in ClinicThemeProvider, which has its own toast container too
+  if (
+    pathname.startsWith('/v/') ||
+    pathname.startsWith('/video-call/') ||
+    pathname.startsWith('/dashboard/clinic') ||
+    pathname.startsWith('/dashboard/physiotherapist')
+  ) {
     return true;
   }
   return pathname.startsWith('/dashboard') && !hasOwnPortalShell(pathname);

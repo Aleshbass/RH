@@ -56,7 +56,10 @@ export default function ConditionalLayout({ children, isSubdomainHost = false }:
     pathname.startsWith('/sign-up') ||
     pathname.startsWith('/sso-callback') ||
     pathname.startsWith('/partners/sign-in') ||
-    pathname.startsWith('/partners/sign-up')
+    pathname.startsWith('/partners/sign-up') ||
+    // Patient join pages (personal /j/<code> links and a physio's /join/<slug>) use the same frame
+    pathname.startsWith('/j/') ||
+    pathname.startsWith('/join/')
 
   // B2B, Partner Hub, API, Documentation, and Patient Care Tracker routes
   // MUST NEVER display the consumer marketplace header or footer

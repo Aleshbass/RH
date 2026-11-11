@@ -22,5 +22,5 @@ export function JoinedAppSetup() {
     }
   }, [])
 
-  return show ? <AppSetupPrompt /> : null
+  return show ? <AppSetupPrompt audience="patient" /> : null
 }
