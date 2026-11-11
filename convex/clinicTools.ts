@@ -28,6 +28,7 @@ import { attributeUserToReferral } from "./helpers/partnerAttribution";
 import { assertNoteTextLength, keepRevision } from "./helpers/noteRevisions";
 import { createClinicPatientInvitation } from "./patientInvitations";
 import { insertNotification } from "./helpers/pushNotify";
+import { queueJoyAppointmentScheduled } from "./helpers/joyEvents";
 import { publicAppUrl } from "./helpers/appUrl";
 
 /** Section names as the clinic's note form shows them, for "too long" messages. */
@@ -1294,6 +1295,21 @@ export const bookClinicAppointment = mutation({
     }
     if (args.endTime <= now) {
       await advanceClinicReferral(ctx, clinic, args.patientId, "attended", user._id);
+    } else {
+      // A patient on Joy hears about it on WhatsApp too
+      const patient = await ctx.db.get(args.patientId);
+      const clinician = await ctx.db.get(args.physiotherapistId);
+      if (patient) {
+        await queueJoyAppointmentScheduled(ctx, patient, {
+          appointmentId: aptId,
+          startTime: args.startTime,
+          endTime: args.endTime,
+          online: args.appointmentType === "telehealth",
+          physioName: personName(clinician, clinic.name),
+          clinicName: clinic.name,
+          visits: booked,
+        });
+      }
     }
 
     return { success: true, appointmentId: aptId, past: args.endTime <= now, booked, skipped };

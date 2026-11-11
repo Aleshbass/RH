@@ -409,9 +409,18 @@ export const resolveOrCreatePatientByPhone = internalMutation({
     const websiteAccounts = patients.filter((user) => !isPlaceholderUser(user));
     const linkedAccounts: Doc<"users">[] = [];
     for (const account of websiteAccounts) if (await isWhatsAppLinked(ctx, account)) linkedAccounts.push(account);
+    // Connected with a "Connect to Joy" code (joyConnect.ts), including records a physio or clinic
+    // created: the latest connection wins, so the number follows the patient who sent the code
+    const e164 = normalizePhone(phone);
+    const connected = e164
+      ? (await ctx.db.query("users").withIndex("by_whatsapp_linked_phone", (q) => q.eq("whatsappLinkedPhone", e164)).collect())
+          .filter((user) => user.role === "patient" && user.whatsappLinkedAt)
+      : [];
+    for (const account of connected) if (!linkedAccounts.some((a) => a._id === account._id)) linkedAccounts.push(account);
+    linkedAccounts.sort((a, b) => (b.whatsappLinkedAt ?? 0) - (a.whatsappLinkedAt ?? 0));
     const unlinkedAccounts = websiteAccounts.filter((account) => !linkedAccounts.includes(account));
     const joyRecords = patients.filter((user) => user.clerkId.startsWith(JOY_PLACEHOLDER_PREFIX));
-    if (linkedAccounts.length > 1) return { resolution: "AMBIGUOUS" as const };
+    if (linkedAccounts.length > 1 && !linkedAccounts[0].whatsappLinkedAt) return { resolution: "AMBIGUOUS" as const };
     // A website account is used only once its owner linked it (emailed code) or it already has
     // Joy bookings. A number that merely matches gets a WhatsApp-only record and an offer to link.
     const existing =

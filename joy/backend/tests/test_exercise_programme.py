@@ -39,6 +39,10 @@ class _FakeRH:
         self.calls.append((operation, data))
         return self.log_result
 
+    def programme_watch_link(self, *, patient_id, sender_phone):
+        self.calls.append(("programme_watch_link", {"patient_id": patient_id}))
+        return {"ok": True, "url": "https://physioaroundme.com/x/token123", "programme_id": "prog-1", "expires_at": 4_102_444_800_000}
+
 
 @pytest.fixture
 def rh(db_session, patient_identity, monkeypatch):
@@ -78,7 +82,9 @@ def test_asking_for_exercises_shows_the_plan_with_buttons(db_session, patient_id
     picture, last = result.after
     assert picture["image_url"].endswith("quad-sets-right.webp") and picture["caption"].startswith("*1. Quad sets*")
     assert "Reply *DONE*" in last["text"]
-    assert [b["reply"]["title"] for b in last["interactive"]["action"]["buttons"]] == ["Done today ✅", "Daily reminder"]
+    assert [b["reply"]["title"] for b in last["interactive"]["action"]["buttons"]] == ["Done today ✅", "Remind me 7am", "Remind me 6pm"]
+    # The 3D player link that opens without signing in (PIN: last 4 digits of the number)
+    assert "▶️ Watch them move in 3D: https://physioaroundme.com/x/token123" in result.reply_text
     assert db_session.get(Patient, patient_identity.person_id).exercise_prompted_at is not None
 
 

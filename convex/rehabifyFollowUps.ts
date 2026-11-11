@@ -25,7 +25,7 @@ import { emailAboutAppointment, notifyAboutAppointment, personName, syncGoogleCa
 import { formatKobo, getService, isBookableServiceId } from "../lib/rehabify-services";
 import { isRehabifyCareInvoice } from "./helpers/marketplaceInvoices";
 import { lagosDate, lagosDateTime, lagosTimeRange } from "./helpers/lagosTime";
-import { queueJoyBookingCancelled } from "./helpers/joyEvents";
+import { queueJoyAppointmentScheduled, queueJoyBookingCancelled } from "./helpers/joyEvents";
 
 const REHABIFY_SOURCES = new Set(["marketplace", "joy_whatsapp", "booking_link"]);
 
@@ -175,6 +175,15 @@ export const scheduleRehabifyFollowUp = mutation({
         data: { entityType: "marketplace_booking", entityId: result.bookingId, actionUrl: "/dashboard/patient" },
       },
       createdAt: Date.now(),
+    });
+    // A patient on Joy hears about it on WhatsApp too (they pay in the app to confirm)
+    await queueJoyAppointmentScheduled(ctx, patient, {
+      appointmentId: String(result.bookingId),
+      startTime: args.slotStart,
+      endTime: args.slotStart + (result.durationMinutes ?? 60) * 60_000,
+      online: service?.mode !== "home",
+      physioName,
+      payToConfirm: true,
     });
     return await physioBookingResult(ctx, result);
   },

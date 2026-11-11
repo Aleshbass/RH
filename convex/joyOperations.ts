@@ -19,6 +19,7 @@ import { insertNotification, pushNewMessage } from "./helpers/pushNotify";
 import { senderIdentity } from "./helpers/displayIdentity";
 import { recordPatientCheckIn } from "./physioCare";
 import { requestRescheduleAsPatient } from "./appointments";
+import { careSummaryForJoy, connectWithCode, messageCurrentPhysio, requestVisitFromCare } from "./joyConnect";
 
 type Operation =
   | "physio_work_summary" | "physio_update_availability" | "physio_session_note"
@@ -44,7 +45,12 @@ type Operation =
   // Additive (Nov 2026): a question about the physio's exercise plan, into the Messages chat
   | "patient_ask_physio"
   // Additive (Nov 2026): move a paid booking from WhatsApp (the app's reschedule rules)
-  | "patient_reschedule_booking";
+  | "patient_reschedule_booking"
+  // Additive (10 Nov 2026): patients already in care. The "Connect to Joy" code their physio or
+  // clinic sent them, and who looks after them (joyConnect.ts)
+  | "patient_connect" | "patient_care_summary"
+  // Additive (10 Nov 2026): a message to their physio, and asking for the next visit (no ₦6,000)
+  | "patient_message_physio" | "patient_request_visit";
 
 const activeBooking = (status: unknown) => status === "pending" || status === "confirmed" || status === "scheduled";
 const nameOf = (user: { firstName?: string; lastName?: string } | null) =>
@@ -516,6 +522,42 @@ export const executeMutation = internalMutation({
       });
       return { linked: true, patient_id: account._id, display_name: nameOf(account) };
     }
+    if (op === "patient_connect") {
+      // "Hi Joy, connect me: K7P3XQ2M": the code their physio or clinic sent proves the care team
+      // sent this person the link, so this WhatsApp number is bound to that patient's record
+      // (joyConnect.connectWithCode). { patient_id (Joy's current record), code }
+      const current = await patientForActor(ctx, String(data.patient_id), data.actor);
+      const phone = normalizePhone(String(data.actor?.sender_phone ?? ""));
+      if (!phone) return { connected: false, reason: "invalid" };
+      const result = await connectWithCode(ctx, { code: String(data.code ?? ""), phone, joyRecordId: current._id });
+      if (result.connected) {
+        // The audit row is the consent record (the patient sent the code themselves)
+        await audit(ctx, data, op, {
+          actorUserId: result.patient_id, patientUserId: result.patient_id,
+          placeholder_user_id: String(current._id), consent: "joy_connect_code",
+        });
+      }
+      return result;
+    }
+    if (op === "patient_message_physio") {
+      // "Message my physio" from Joy's menu: into the Messages chat with whoever looks after them
+      // now; the reply comes back on WhatsApp. { patient_id, message }
+      const patient = await patientForActor(ctx, String(data.patient_id), data.actor);
+      const result = await messageCurrentPhysio(ctx, patient, String(data.message ?? ""));
+      if (result.sent) await audit(ctx, data, op, { actorUserId: patient._id, patientUserId: patient._id });
+      return result;
+    }
+    if (op === "patient_request_visit") {
+      // "Book a visit" with their own physio or clinic (joyConnect.requestVisitFromCare).
+      // { patient_id, preferred_times?, note? }
+      const patient = await patientForActor(ctx, String(data.patient_id), data.actor);
+      const result = await requestVisitFromCare(ctx, patient, {
+        preferredTimes: typeof data.preferred_times === "string" ? data.preferred_times : undefined,
+        note: typeof data.note === "string" ? data.note : undefined,
+      });
+      if (result.sent) await audit(ctx, data, op, { actorUserId: patient._id, patientUserId: patient._id, to: result.to });
+      return result;
+    }
     throw new Error("Unsupported Joy operational mutation");
   },
 });
@@ -580,6 +622,12 @@ export const executeQuery = internalQuery({
           })),
         })),
       };
+    }
+    if (op === "patient_care_summary") {
+      // Who looks after this patient, today's programme and the next visit, so Joy greets them as
+      // someone in care (joyConnect.careSummaryForJoy)
+      const patient = await patientForActor(ctx, String(data.patient_id), data.actor);
+      return careSummaryForJoy(ctx, patient);
     }
     if (op === "patient_consent_status") {
       const patient = await patientForActor(ctx, String(data.patient_id), data.actor);

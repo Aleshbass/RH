@@ -264,6 +264,15 @@ def resolve_unknown_sender(
     llm: LLMClient,
 ) -> UnknownSenderDecision:
     """Deterministic gates first; Gemini classifies leftovers. Identity stays code-owned."""
+    # "Hi Joy, connect me: CODE" from the link a physio or clinic sent: a patient in their care
+    from app.conversation.companion import connect_code
+
+    if connect_code(user_text):
+        return UnknownSenderDecision(
+            intent="patient",
+            reply_text="",
+            identity=_provision_patient(session, phone_e164),
+        )
     if looks_like_physio_claim(user_text):
         if _patient_only():
             return UnknownSenderDecision(intent="physio", reply_text=PHYSIO_SIGN_UP_REPLY)

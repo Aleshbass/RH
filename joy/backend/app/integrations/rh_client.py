@@ -405,6 +405,41 @@ class RHClient:
             idempotency_key=f"joy-link-confirm-{uuid4()}",
         )
 
+    # ── Patients already in care (RH convex/joyConnect.ts) ─────────────────────────────
+
+    def connect_patient(self, *, patient_id: str, code: str, actor: RHActor) -> dict[str, Any]:
+        """The "Connect to Joy" code from the patient's physio or clinic: binds this WhatsApp number
+        to their Rehabify record. Returns {connected, patient_id, first_name, physio_name, clinic_name}
+        or {connected: False, reason}."""
+        return self.operational_mutation(
+            "patient_connect", actor=actor, data={"patient_id": patient_id, "code": code},
+            idempotency_key=f"joy-connect-{uuid4()}",
+        )
+
+    def care_summary(self, *, patient_id: str, actor: RHActor) -> dict[str, Any]:
+        """Who looks after the patient, today's programme and the next visit."""
+        return self.operational_query("patient_care_summary", actor=actor, data={"patient_id": patient_id})
+
+    def message_physio(self, *, patient_id: str, message: str, actor: RHActor) -> dict[str, Any]:
+        """A message into the patient's Messages chat with their physio (the reply comes back here)."""
+        return self.operational_mutation(
+            "patient_message_physio", actor=actor, data={"patient_id": patient_id, "message": message},
+            idempotency_key=f"joy-message-physio-{uuid4()}",
+        )
+
+    def request_visit(self, *, patient_id: str, preferred_times: str, actor: RHActor) -> dict[str, Any]:
+        """Ask their own physio or clinic for the next visit (never the first-consultation booking)."""
+        return self.operational_mutation(
+            "patient_request_visit", actor=actor, data={"patient_id": patient_id, "preferred_times": preferred_times},
+            idempotency_key=f"joy-request-visit-{uuid4()}",
+        )
+
+    def programme_watch_link(self, *, patient_id: str, sender_phone: str) -> dict[str, Any]:
+        """A PIN-protected link to the 3D exercise player (PIN: last 4 digits of the WhatsApp number)."""
+        if not self.gateway_client:
+            raise RHIntegrationError("INTEGRATION_NOT_CONFIGURED", "RH Convex gateway is not configured")
+        return self._gateway("programme_watch_link", {"patient_id": patient_id, "sender_phone": sender_phone})
+
     def resolve_referral_context(
         self, tracking_code: str, *, phone: str, joy_person_id: str, actor: RHActor, confirm_name: str | None = None
     ) -> RHReferralContext:

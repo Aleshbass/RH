@@ -144,7 +144,7 @@ def _byline(programme: dict) -> str:
     return f"_From {sender}{f' · {title}' if title else ''}_"
 
 
-def programme_text(programme: dict, care_plan_url: str | None) -> str:
+def programme_text(programme: dict, care_plan_url: str | None, *, watch_url: str | None = None) -> str:
     """The plan as a WhatsApp card: one block per exercise, the physio's words only."""
     lines = ["🏋️ *Your exercise plan*", _byline(programme)]
     exercises = exercise_items(programme)
@@ -172,7 +172,9 @@ def programme_text(programme: dict, care_plan_url: str | None) -> str:
         extras.append(f"✅ *Today:* {done_count} of {len(exercises)} done")
     if extras:
         lines += [""] + extras
-    if care_plan_url:
+    if watch_url:
+        lines += ["", f"▶️ Watch them move in 3D: {watch_url}", "🔒 PIN: the last 4 digits of this WhatsApp number"]
+    elif care_plan_url:
         lines += ["", f"▶️ Watch them move: {care_plan_url}"]
     text = "\n".join(lines)
     return text if len(text) <= _MAX_TEXT else text[: _MAX_TEXT - 1] + "…"
@@ -230,7 +232,8 @@ def show_programme(session: Session, patient: Patient) -> tuple[str, dict | None
             [],
         )
     programme = programmes[0]
-    card = programme_text(programme, data.get("care_plan_url"))
+    watch_url = programme_watch_url(session, patient, rh_patient_id, str(programme.get("programme_id") or "")) if not programme.get("locked") else None
+    card = programme_text(programme, data.get("care_plan_url"), watch_url=watch_url)
     exercises = exercise_items(programme)
     if not exercises:
         return card, None, []
@@ -238,7 +241,8 @@ def show_programme(session: Session, patient: Patient) -> tuple[str, dict | None
     session.flush()
     options = [("DONE", "Done today ✅")]
     if patient.exercise_reminders != REMINDERS_ON:
-        options.append(("remind me daily", "Daily reminder"))
+        # One tap to a daily reminder (it checks whether their plan includes reminders)
+        options += [("remind me at 7am", "Remind me 7am"), ("remind me at 6pm", "Remind me 6pm")]
     buttons = reply_buttons(*options)
     pictures = [
         {"image_url": str(item["image_url"]), "caption": image_caption(number, item)}
@@ -249,6 +253,42 @@ def show_programme(session: Session, patient: Patient) -> tuple[str, dict | None
         return f"{card}\n\n{DONE_PROMPT}", buttons, []
     # The card, a picture of each exercise, then the buttons at the bottom of the chat
     return card, None, pictures + [{"text": DONE_PROMPT, "interactive": buttons}]
+
+
+WATCH_LINKS_KEY = "programme_watch_links"
+
+
+def programme_watch_url(session: Session, patient: Patient, rh_patient_id: str | None, programme_id: str) -> str | None:
+    """A link to the 3D player that opens without signing in (PIN: the last 4 digits of this
+    number), made by Rehabify once per programme and kept on the conversation until it nearly expires."""
+    import time
+
+    from app.conversation.companion import patient_conversation
+
+    if not rh_patient_id or not programme_id:
+        return None
+    conversation = patient_conversation(session, patient)
+    context = dict(conversation.booking_context or {}) if conversation is not None else {}
+    links = dict(context.get(WATCH_LINKS_KEY) or {})
+    cached = links.get(programme_id)
+    now_ms = time.time() * 1000
+    if isinstance(cached, dict) and isinstance(cached.get("url"), str) and float(cached.get("expires_at") or 0) > now_ms + 2 * 86_400_000:
+        return cached["url"]
+    try:
+        result = configured_rh_client().programme_watch_link(patient_id=rh_patient_id, sender_phone=patient.phone_e164)
+    except Exception as error:  # best effort: the card then links to the dashboard instead
+        logger.warning("joy_watch_link_failed code=%s", getattr(error, "code", type(error).__name__))
+        return None
+    if not isinstance(result, dict):
+        return None
+    url = result.get("url") if isinstance(result, dict) else None
+    if result.get("ok") is not True or not isinstance(url, str) or not url.startswith("https://"):
+        return None
+    if conversation is not None:
+        links[programme_id] = {"url": url, "expires_at": result.get("expires_at")}
+        context[WATCH_LINKS_KEY] = links
+        conversation.booking_context = context
+    return url
 
 
 def log_done(session: Session, patient: Patient, item: int | None, pain: int | None) -> str:

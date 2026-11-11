@@ -38,6 +38,7 @@ import { suggestedDate } from '@/components/physio/notes/scribe/scribeTools';
 import { ShareLinkDialog } from '@/components/exercise-programs/ShareLinkDialog';
 import { PatientPlanBadge } from '@/components/exercise-programs/PatientPlanBadge';
 import { useBooking } from '@/components/physio/schedule/BookingDrawer';
+import { useConnectToJoy } from '@/components/joy/useConnectToJoy';
 import { JoinVideoButton } from '@/components/physio/schedule/JoinVideoButton';
 import { needsMyAnswer, useNow, useTodaysVisits, videoJoin } from '@/components/physio/schedule/shared';
 import {
@@ -112,6 +113,8 @@ export default function PatientWorkspacePage() {
   const [drawer, setDrawer] = useState<DrawerId | null>(null);
   const [shareFor, setShareFor] = useState<Id<'exercisePrograms'> | null>(null);
   const openBooking = useBooking();
+  // "Connect to Joy on WhatsApp": exercises, reminders and visits on WhatsApp (convex/joyConnect.ts)
+  const joyConnect = useConnectToJoy();
   // A new note opened for a visit (?note=new&appointment=…), e.g. after a video call with the AI scribe
   const [noteAppointment, setNoteAppointment] = useState<Id<'appointments'> | undefined>(undefined);
   // After an AI-drafted note is signed: the exercises and follow-up the session mentioned
@@ -266,6 +269,9 @@ export default function PatientWorkspacePage() {
                     <DropdownMenuItem onClick={() => openBooking({ patient: { id: patientId, name }, mode: 'telehealth' })}>Book a video session</DropdownMenuItem>
                     <DropdownMenuItem onClick={() => go('files')}>Upload a file</DropdownMenuItem>
                     <DropdownMenuItem onClick={() => setDrawer('episode')}>Care details and source</DropdownMenuItem>
+                    <DropdownMenuItem disabled={joyConnect.busy} onClick={() => void joyConnect.connect(patientId, patient.firstName ?? undefined)}>
+                      Connect to Joy on WhatsApp
+                    </DropdownMenuItem>
                   </>
                 )}
                 <DropdownMenuItem onClick={() => setDrawer('edit')}>Edit contact details</DropdownMenuItem>

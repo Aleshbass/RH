@@ -7,6 +7,7 @@
  * The care team sees adherence.
  */
 import { insertNotification } from "./helpers/pushNotify";
+import { queueJoyProgrammeSent } from "./helpers/joyEvents";
 import { advancePatientReferrals } from "./helpers/partnerAttribution";
 import { ConvexError, v, type Infer } from "convex/values";
 import { makeFunctionReference } from "convex/server";
@@ -355,7 +356,17 @@ type ProgramChange =
   | { kind: "added"; title: string; what: string }
   | { kind: "updated"; title: string };
 
-async function notifyPatient(ctx: MutationCtx, patient: Doc<"users">, senderName: string, change: ProgramChange) {
+async function notifyPatient(ctx: MutationCtx, patient: Doc<"users">, senderName: string, change: ProgramChange, programmeId?: Id<"exercisePrograms">) {
+  // On WhatsApp too, for patients connected to Joy
+  if (programmeId) {
+    await queueJoyProgrammeSent(ctx, patient, {
+      programmeId,
+      title: change.title,
+      senderName,
+      change: change.kind,
+      what: change.kind === "added" ? change.what : undefined,
+    });
+  }
   const text = {
     new: {
       title: "New exercises from your physio",
@@ -461,7 +472,7 @@ export const createProgram = mutation({
       await advancePatientReferrals(ctx, args.patientId, "treatment_active", { actorType: "physiotherapist", actorId: String(team.user._id) });
       // Flex bought before the programme was ready starts its 30 days now
       await activatePendingPlans(ctx, args.patientId, now);
-      await notifyPatient(ctx, patient, team.senderName, { kind: "new", title });
+      await notifyPatient(ctx, patient, team.senderName, { kind: "new", title }, programId);
       await creditAuthors(ctx, team.user._id, items, args.templateId, programId);
       return programId;
     }),
@@ -504,7 +515,7 @@ export const addExercisesToProgram = mutation({
       }
       await ctx.db.patch(program._id, patch);
       const patient = await ctx.db.get(program.patientId);
-      if (patient) await notifyPatient(ctx, patient, team.senderName, { kind: "added", title: program.title, what: countLabel(added) });
+      if (patient) await notifyPatient(ctx, patient, team.senderName, { kind: "added", title: program.title, what: countLabel(added) }, program._id);
       await creditAuthors(ctx, team.user._id, added, args.templateId, program._id);
       return program._id;
     }),
@@ -581,7 +592,7 @@ export const updateProgram = mutation({
       }
       await ctx.db.patch(program._id, patch);
       const patient = await ctx.db.get(program.patientId);
-      if (patient) await notifyPatient(ctx, patient, team.senderName, { kind: "updated", title });
+      if (patient) await notifyPatient(ctx, patient, team.senderName, { kind: "updated", title }, program._id);
       return program._id;
     }),
 });

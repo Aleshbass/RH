@@ -19,6 +19,7 @@ import { requireClinicCareAccess, requirePhysio } from "./helpers/careAccess";
 import { ensureUserNumbers } from "./helpers/rehabifyIds";
 import { publicAppUrl } from "./helpers/appUrl";
 import { schedulePatientInviteEmail } from "./clinicTools";
+import { normalizePhone } from "./helpers/partnerShared";
 
 const INVITE_DAYS = 7;
 
@@ -88,7 +89,8 @@ export const addPatientRecord = mutation({
     if (email && !/^\S+@\S+\.\S+$/.test(email)) {
       throw new ConvexError("That email address doesn't look right. Check it, or leave it empty.");
     }
-    const phoneNumber = cleanText(args.phoneNumber, 30);
+    const typedPhone = cleanText(args.phoneNumber, 30);
+    const phoneNumber = typedPhone ? normalizePhone(typedPhone) ?? typedPhone : undefined;
     const referredBy = args.source === "referred" ? cleanText(args.referredBy, 120) : undefined;
     const note = cleanText(args.note, 500);
     const name = `${firstName} ${lastName}`;

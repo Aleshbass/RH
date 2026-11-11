@@ -118,7 +118,30 @@ export default defineSchema({
     .index("by_patient_number", ["patientNumber"])
     .index("by_staff_number", ["staffNumber"])
     .index("by_role_and_patient_number", ["role", "patientNumber"])
-    .index("by_role_and_staff_number", ["role", "staffNumber"]),
+    .index("by_role_and_staff_number", ["role", "staffNumber"])
+    // Joy: the patient record a WhatsApp number is connected or linked to (joyConnect.ts)
+    .index("by_whatsapp_linked_phone", ["whatsappLinkedPhone"]),
+
+  // "Connect to Joy" codes a physio or clinic sends a patient (joyConnect.ts). Only the hash is kept.
+  joyConnectCodes: defineTable({
+    patientId: v.id("users"),
+    createdBy: v.id("users"),
+    codeHash: v.string(),
+    expiresAt: v.number(),
+    usedAt: v.optional(v.number()),
+    usedByPhone: v.optional(v.string()),
+    // Joy's WhatsApp-only record for the sender at the time (left as it was)
+    joyRecordId: v.optional(v.id("users")),
+    createdAt: v.number(),
+  })
+    .index("by_code_hash", ["codeHash"])
+    .index("by_patient", ["patientId"]),
+
+  // Connect attempts per WhatsApp number, to slow down guessing (10 an hour)
+  joyConnectAttempts: defineTable({
+    phone: v.string(),
+    createdAt: v.number(),
+  }).index("by_phone", ["phone", "createdAt"]),
 
   // One row per Rehabify ID kind; `next` is the number the next person or clinic receives.
   idCounters: defineTable({

@@ -221,6 +221,29 @@ async def receive_event(request: Request, settings: Settings = Depends(get_setti
             enqueue_booking_confirmed(patient.phone_e164, str(data.get("booking_id") or ""), f"Message from your physiotherapist: {message}")
             append(session, kind=AuditKind.BOOKING, actor_phone="rh-service", person_id=patient.id,
                    payload={"event": "physio_patient_message_disclosed", "booking_id": str(data.get("booking_id") or "")})
+    elif event_type == "programme.sent":
+        # A physio sent, added to or changed a home programme (RH helpers/joyEvents.queueJoyProgrammeSent)
+        data = payload.get("data") or {}
+        patient = _patient_for_rh_id(session, str(data.get("patient_id") or ""))
+        if patient:
+            text = programme_sent_text(data, reminders_on=patient.exercise_reminders == "on")
+            enqueue_booking_confirmed(patient.phone_e164, "", text)
+            from app.conversation.companion import forget_care_summary
+
+            forget_care_summary(_patient_conversation(session, patient))
+            append(session, kind=AuditKind.BOOKING, actor_phone="rh-service", person_id=patient.id,
+                   payload={"event": "programme_sent_notified", "change": str(data.get("change") or "")})
+    elif event_type == "appointment.scheduled":
+        # A physio or clinic booked a visit for a patient on Joy (RH queueJoyAppointmentScheduled)
+        data = payload.get("data") or {}
+        patient = _patient_for_rh_id(session, str(data.get("patient_id") or ""))
+        if patient:
+            enqueue_booking_confirmed(patient.phone_e164, "", appointment_scheduled_text(data))
+            from app.conversation.companion import forget_care_summary
+
+            forget_care_summary(_patient_conversation(session, patient))
+            append(session, kind=AuditKind.BOOKING, actor_phone="rh-service", person_id=patient.id,
+                   payload={"event": "appointment_scheduled_notified"})
     elif event_type == "specialist_review.payment_confirmed":
         data = payload.get("data") or {}
         rh_patient_id = str(data.get("patient_id") or "")
@@ -233,6 +256,51 @@ async def receive_event(request: Request, settings: Settings = Depends(get_setti
                 "Your ₦6,000 specialist review payment has been verified. RH will assign an eligible reviewer and I’ll send the review details here.",
             )
     return {"accepted": True, "duplicate": False}
+
+
+def _patient_for_rh_id(session: Session, rh_patient_id: str) -> Patient | None:
+    """The Joy patient for an RH record: their current record, or one they used before linking (alias)."""
+    if not rh_patient_id:
+        return None
+    mapping = session.scalar(select(RHIdentityMapping).where(RHIdentityMapping.rh_record_id == rh_patient_id))
+    return session.get(Patient, mapping.joy_person_id) if mapping else None
+
+
+def _short(value: object, limit: int) -> str:
+    text = " ".join(str(value or "").split())
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+def programme_sent_text(data: dict, *, reminders_on: bool) -> str:
+    sender = _short(data.get("sender_name"), 80) or "Your physiotherapist"
+    title = _short(data.get("title"), 80) or "your exercises"
+    change = str(data.get("change") or "new")
+    if change == "added":
+        what = _short(data.get("what"), 40) or "exercises"
+        lead = f"🏋️ {sender} added {what} to *{title}*."
+    elif change == "updated":
+        lead = f"🏋️ {sender} updated your home programme: *{title}*."
+    else:
+        lead = f"🏋️ {sender} sent you a new home programme: *{title}*."
+    lines = [lead, "", "Reply *my exercises* to see it, with a 3D demo of each exercise."]
+    if not reminders_on:
+        lines.append("Want a daily reminder? Reply *remind me at 7am* (or any time that suits you).")
+    return "\n".join(lines)
+
+
+def appointment_scheduled_text(data: dict) -> str:
+    physio = _short(data.get("physio_name"), 80) or "Your physiotherapist"
+    start = data.get("start_time")
+    when = format_lagos_appointment_time(appointment_start_from_ms(start)) if isinstance(start, (int, float)) else "soon"
+    visits = int(data.get("visits") or 1)
+    lead = f"📅 {physio} booked your next visit for {when}{' (video call)' if data.get('online') else ''}."
+    if visits > 1:
+        lead += f" That's the first of {visits} visits."
+    lines = [lead]
+    if data.get("pay_to_confirm"):
+        lines.append("Please pay within 24 hours to confirm it. Reply *dashboard link* and I'll send you a link to pay.")
+    lines.append("If the time doesn't suit you, tell me here and I'll pass it on.")
+    return "\n".join(lines)
 
 
 def _patient_conversation(session: Session, patient: Patient) -> Conversation | None:

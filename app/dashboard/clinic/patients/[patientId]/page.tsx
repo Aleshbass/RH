@@ -56,6 +56,7 @@ import { CarePlanTab } from '@/components/physio/workspace/CarePlanTab'
 import { CheckInsTab, NotesTab } from '@/components/physio/workspace/RecordTabs'
 import { SOURCE_LABELS, WorkspaceReadOnly, fullName, type Workspace } from '@/components/physio/workspace/shared'
 import { RehabifyId } from '@/components/shared/RehabifyId'
+import { useConnectToJoy } from '@/components/joy/useConnectToJoy'
 import { useQueryUntyped } from '@/lib/convexUntyped'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
@@ -128,6 +129,8 @@ function ClinicPatientRecord({ patientId }: { patientId: Id<'users'> }) {
   const [tab, setTab] = useState<TabId>(initialTab && TABS.some((t) => t.id === initialTab) ? initialTab : 'overview')
   const [dialog, setDialog] = useState<'edit' | 'reopen' | 'clinician' | 'family' | null>(null)
   const [sendingInvite, setSendingInvite] = useState(false)
+  // "Connect to Joy on WhatsApp": exercises, reminders and visits on WhatsApp (convex/joyConnect.ts)
+  const joyConnect = useConnectToJoy()
 
   useEffect(() => {
     const fromUrl = searchParams.get('tab') as TabId | null
@@ -317,6 +320,13 @@ function ClinicPatientRecord({ patientId }: { patientId: Id<'users'> }) {
                   </DropdownMenuItem>
                   <DropdownMenuItem className="rounded-xl px-3 py-2.5 focus:bg-pt-hover" onSelect={() => setDialog('family')}>
                     Family and caregivers
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className="rounded-xl px-3 py-2.5 focus:bg-pt-hover"
+                    disabled={joyConnect.busy}
+                    onSelect={() => void joyConnect.connect(patientId, patient.firstName ?? undefined)}
+                  >
+                    Connect to Joy on WhatsApp
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>

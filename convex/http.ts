@@ -5,7 +5,7 @@ import {
   resolveAvailabilityProfile, createPendingBooking, createAdminScheduledVirtualBooking, resolvePartnerAttribution, getBooking,
   preparePaymentAttempt, recordPaymentInitialization, recordPaymentWebhook, recordPaymentFailedWebhook, createSpecialistReview, prepareSpecialistReviewPayment, recordSpecialistReviewPaymentInitialization, recordSpecialistReviewPaymentWebhook, cancelBooking, enqueueEvent, markEventDelivery, respondToBooking, replacementCandidates, reassignBooking,
 } from "./joyGateway";
-import { readResolvePhysiotherapist, readFindMatches, readAvailability, readBooking, operationalQuery, operationalMutation, upsertIntake, recordJourneyEvent, issueDashboardLink, placeForPin } from "./joyGateway";
+import { readResolvePhysiotherapist, readFindMatches, readAvailability, readBooking, operationalQuery, operationalMutation, upsertIntake, recordJourneyEvent, issueDashboardLink, placeForPin, programmeWatchLink } from "./joyGateway";
 import { rpc as partnerGatewayRpc } from "./partnerGateway";
 import { resendWebhook } from "./emailEvents";
 
@@ -60,6 +60,7 @@ http.route({ path: "/joy-integration/reassign_booking", method: "POST", handler:
 http.route({ path: "/joy-integration/upsert_intake", method: "POST", handler: upsertIntake });
 http.route({ path: "/joy-integration/record_journey_event", method: "POST", handler: recordJourneyEvent });
 http.route({ path: "/joy-integration/issue_dashboard_link", method: "POST", handler: issueDashboardLink });
+http.route({ path: "/joy-integration/programme_watch_link", method: "POST", handler: programmeWatchLink });
 // Physio / family / admin operations from Joy (fixed allowlist in joyOperations.ts)
 http.route({ path: "/joy-integration/operational_query", method: "POST", handler: operationalQuery });
 http.route({ path: "/joy-integration/operational_mutation", method: "POST", handler: operationalMutation });

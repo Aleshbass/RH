@@ -1,3 +1,4 @@
+import { queueJoyAppointmentScheduled } from "./helpers/joyEvents";
 import { startVisitPaymentCheckIn } from "./helpers/visitCheckIns";
 import { insertNotification } from "./helpers/pushNotify";
 import { ConvexError, v } from "convex/values";
@@ -259,6 +260,17 @@ export const createAppointment = mutation({
     const patient = await ctx.db.get(args.patientId);
     const patientName = personName(patient, "Patient");
     const physiotherapistName = `${(user as any)?.firstName || ''} ${(user as any)?.lastName || ''}`.trim() || 'Physiotherapist';
+    // A patient on Joy hears about it on WhatsApp too
+    if (patient) {
+      await queueJoyAppointmentScheduled(ctx, patient, {
+        appointmentId: firstUpcoming.id,
+        startTime: firstUpcoming.startTime,
+        endTime: firstUpcoming.startTime + length,
+        online: (args.appointmentType || "in-person") === "telehealth",
+        physioName: physiotherapistName,
+        visits: upcoming.length,
+      });
+    }
     // Compute clinic information for emails (best-effort)
     let clinicName = 'Rehabify Health';
     let clinicAddress = '';

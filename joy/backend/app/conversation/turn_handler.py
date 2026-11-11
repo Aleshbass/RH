@@ -99,6 +99,7 @@ from app.config import get_settings
 from app.booking.paystack_client import initialize_transaction
 from app.booking.step_help import booking_step_help
 from app.conversation.check_in import check_in_turn
+from app.conversation.companion import companion_turn, connect_turn, in_care, repoint_patient_mapping
 from app.exercises.questions import exercise_question_turn
 from app.conversation.human_request import BOT_REPLY, human_request_reply, is_bot_question, is_human_request
 from app.conversation.interactive import interactive_for, reply_buttons
@@ -314,12 +315,10 @@ def _account_link_turn(session: Session, identity: Identity, state: Conversation
 
     if code_match and awaiting_code:
         if result.get("linked") is True and isinstance(result.get("patient_id"), str):
-            mapping = session.scalar(select(RHIdentityMapping).where(
-                RHIdentityMapping.persona == "patient", RHIdentityMapping.joy_person_id == patient.id,
-            ))
-            if mapping is not None:
-                mapping.rh_record_id = result["patient_id"]
+            # Events for bookings on the old WhatsApp-only record still reach them (alias mapping)
+            repoint_patient_mapping(session, patient, result["patient_id"])
             context.pop(_LINK_PENDING_KEY, None)
+            context.pop("care_summary", None)
             conversation.booking_context = context
             append(session, kind=AuditKind.IDENTITY, actor_phone=patient.phone_e164, person_id=patient.id,
                    payload={"decision": "rh_account_linked"})
@@ -2897,6 +2896,24 @@ def handle_turn(
     if sr_patient is not None and sr.enabled() and sr_patient.preferred_language:
         language = sr_patient.preferred_language
 
+    # "Hi Joy, connect me: CODE": the link their physio or clinic sent (app/conversation/companion.py)
+    care_now: dict | None = None
+    if sr_patient is not None:
+        care_conversation = session.get(Conversation, state.conversation_id)
+        connected = connect_turn(session, sr_patient, care_conversation, user_text)
+        if connected is not None:
+            connect_text, connect_buttons = connected
+            save_turn(
+                session, state, user_text, connect_text, state.extracted, state.phase,
+                language, wa_message_id, stage=state.stage,
+            )
+            return TurnResult(
+                reply_text=connect_text, language=language, phase=state.phase,
+                extracted=state.extracted, interactive=connect_buttons,
+            )
+        # Already in care with a physio: Joy is their companion, not a new-patient intake
+        care_now = in_care(session, sr_patient, care_conversation)
+
     # A shared WhatsApp location pin (often from the "Send location" button)
     if identity.persona == Persona.PATIENT and location is not None:
         pin_patient = session.get(Patient, identity.person_id)
@@ -2950,6 +2967,7 @@ def handle_turn(
         and not has_narrative(state.extracted)
         and _is_greeting_only(user_text)
         and not sr.enabled()
+        and care_now is None
     ):
         # With the sign-up form set up, the welcome carries a "Get started" button for it.
         # It never blocks typing: the patient can just describe the problem instead.
@@ -3105,9 +3123,28 @@ def handle_turn(
             paystack=paystack, media=media, location=location,
         )
 
+    # A patient in care: the greeting menu, "message my physio", "book a visit" with their own physio
+    # or clinic. Exercises, DONE, dashboard and LINK still go to their own handlers below.
+    if identity.persona == Persona.PATIENT and care_now is not None:
+        companion = companion_turn(
+            session, sr_patient, session.get(Conversation, state.conversation_id), user_text,
+            is_greeting=_is_greeting_only(user_text), offer_free_text=False,
+        )
+        if companion is not None:
+            companion_text, companion_buttons = companion
+            save_turn(
+                session, state, user_text, companion_text, state.extracted, state.phase,
+                language, wa_message_id, stage=state.stage,
+            )
+            return TurnResult(
+                reply_text=companion_text, language=language, phase=state.phase,
+                extracted=state.extracted, interactive=companion_buttons,
+            )
+
     # Self-referral: language, consent, profile, red flags, questions, named physios
     # (app/triage/self_referral.py; the owner's guide). The story itself goes to the model below.
-    if identity.persona == Persona.PATIENT and sr.enabled():
+    # Not for a patient in care (above), unless they asked for someone new.
+    if identity.persona == Persona.PATIENT and sr.enabled() and care_now is None:
         sr_turn = _self_referral_turn(
             session, identity, state, user_text, phase, language, wa_message_id, location=location,
         )
@@ -3201,6 +3238,24 @@ def handle_turn(
             )
             return TurnResult(
                 reply_text=link_reply, language=language, phase=state.phase, extracted=state.extracted,
+            )
+
+    # A patient in care who wrote something else: offer to pass it to their physio, or book a visit,
+    # rather than starting a new-patient intake (they can still choose "Someone new").
+    if identity.persona == Persona.PATIENT and care_now is not None and not state.booking_substate:
+        companion = companion_turn(
+            session, sr_patient, session.get(Conversation, state.conversation_id), user_text,
+            is_greeting=False, offer_free_text=True,
+        )
+        if companion is not None:
+            companion_text, companion_buttons = companion
+            save_turn(
+                session, state, user_text, companion_text, state.extracted, state.phase,
+                language, wa_message_id, stage=state.stage,
+            )
+            return TurnResult(
+                reply_text=companion_text, language=language, phase=state.phase,
+                extracted=state.extracted, interactive=companion_buttons,
             )
 
     # After RH confirms the booking, later messages get a code-owned reply with

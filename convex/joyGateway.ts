@@ -531,6 +531,17 @@ export const recordJourneyEvent = httpAction(async (ctx, request) => {
   return Response.json(await ctx.runMutation((internal as any).joyHandoff.recordJoyJourneyEventFromJoy, { payload: parsed.data }));
 });
 
+// A PIN-protected link to the patient's 3D exercise programme (/x/<token>; the PIN is the last
+// 4 digits of their WhatsApp number). Only for the number linked to that patient (joyConnect.ts).
+export const programmeWatchLink = httpAction(async (ctx, request) => {
+  const parsed = await readJson(request, "/joy-integration/programme_watch_link");
+  if (parsed instanceof Response) return parsed;
+  if (!(await reserveNonce(ctx, parsed.nonce))) return new Response("Replay detected", { status: 409 });
+  const { patient_id, sender_phone } = parsed.data;
+  if (typeof patient_id !== "string" || typeof sender_phone !== "string") return new Response("Invalid payload", { status: 400 });
+  return Response.json(await ctx.runAction((internal as any).joyConnect.createWatchLinkForJoy, { patientId: patient_id, senderPhone: sender_phone }));
+});
+
 // A fresh dashboard link when the patient asks Joy for one. Only the patient's own
 // WhatsApp number can get it, since the link signs them in (actions/joyDashboard.ts).
 export const issueDashboardLink = httpAction(async (ctx, request) => {
