@@ -19,6 +19,7 @@ import { matchesRehabifyId } from '@/convex/helpers/rehabifyIdFormat';
 import { cn } from '@/lib/utils';
 import { JoinStatusChip, needsInvite } from '@/components/patient-join/JoinStatusChip';
 import { useSendJoinLink } from '@/components/patient-join/useSendJoinLink';
+import { InviteHowToVideo } from '@/components/patient-join/InviteHowToVideo';
 import type { PatientJoinState } from '@/components/patient-join/refs';
 
 /** The generated api types sit at TypeScript's depth limit, so this page reads its functions untyped. */
@@ -122,14 +123,17 @@ export default function PatientsPage() {
         description="Everyone you’re treating, and everyone you’ve finished with."
         info="Open a patient to see their care plan, notes, check-ins, files and payments in one place. When you finish a course of care they move to Care completed, and you can start a new course any time."
         actions={
-          <AddPatientModal
-            trigger={
-              <Button className={primaryButtonClass}>
-                <UserPlus className="mr-2 h-4 w-4" />
-                Add patient
-              </Button>
-            }
-          />
+          <div className="flex items-center gap-4">
+            <InviteHowToVideo className="hidden sm:inline-flex" />
+            <AddPatientModal
+              trigger={
+                <Button className={primaryButtonClass}>
+                  <UserPlus className="mr-2 h-4 w-4" />
+                  Add patient
+                </Button>
+              }
+            />
+          </div>
         }
       />
 

@@ -11,6 +11,7 @@ import { QrCode } from '@/components/shared/QrCode'
 import { cardClass, IconChip, InfoTip } from '@/components/physio/ui'
 import { publicAppUrl } from '@/lib/public-app-url'
 import { cn } from '@/lib/utils'
+import { InviteHowToVideo } from './InviteHowToVideo'
 
 // By name: the generated `api` type is at TypeScript's depth limit
 const ensureSlugRef = makeFunctionReference<'mutation', { userId: string }, string | null>('marketplace/search:ensureBookingSlug')
@@ -115,6 +116,9 @@ export function PatientLinkCard({ physioId, name }: { physioId: string; name?: s
           <QrIcon className="mr-1.5 h-4 w-4" />
           QR
         </Button>
+      </div>
+      <div className="mt-3 flex justify-center">
+        <InviteHowToVideo />
       </div>
     </section>
   )
