@@ -9,6 +9,7 @@ import { api } from '@/convex/_generated/api'
 import { cn } from '@/lib/utils'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { ADMIN_HOME, visibleAdminNav, type AdminNavItem } from './adminNav'
+import { useConsoleRole } from './consoleRole'
 
 export const OPEN_ADMIN_PALETTE_EVENT = 'rehabify:admin-palette'
 
@@ -54,14 +55,16 @@ export function AdminCommandPalette() {
     if (!open) setTerm('')
   }, [open])
 
+  const role = useConsoleRole()
+  // People search is admin-only
   const people = useQuery(
     api.adminConsole.searchPeople,
-    open && debounced.trim().length >= 2 ? { term: debounced } : 'skip'
+    role === 'admin' && open && debounced.trim().length >= 2 ? { term: debounced } : 'skip'
   )
 
   const pages = useMemo<Result[]>(() => {
     const q = term.trim().toLowerCase()
-    const all = visibleAdminNav().flatMap((section) =>
+    const all = visibleAdminNav(role).flatMap((section) =>
       section.items.map((item) => ({ section, item }))
     )
     return all
@@ -79,7 +82,7 @@ export function AdminCommandPalette() {
         href: item.href,
         icon: item.icon,
       }))
-  }, [term])
+  }, [term, role])
 
   const results: Result[] = useMemo(() => {
     type Person = { _id: string; name: string; email: string; role: string; rehabifyId?: string }

@@ -3,12 +3,14 @@ import { makeFunctionReference } from 'convex/server';
 import { getConvexClient } from '@/lib/convex-client';
 import { SITE_CONFIG } from '@/lib/seo/config';
 import { LEARN_URL } from '@/lib/site-hosts';
+import { loadBlogSitemap } from '@/lib/blog/server';
 
 /**
  * sitemap.xml — the only sitemap source (next-sitemap is no longer run after the build).
  *
- * Lists public, indexable pages plus the profile of every physiotherapist patients can book.
- * Auth pages, redirect stubs (/blog, /faqs, /support, /forum, /physio-register/verify) and
+ * Lists public, indexable pages, the profile of every physiotherapist patients can book, and the
+ * published blog (posts, topics, authors; lib/blog/server). Auth pages, redirect stubs (/faqs,
+ * /support, /forum, /physio-register/verify) and
  * private areas are left out. Check a route still renders real content before adding it.
  * docs.* and partners.* are separate hosts and are not listed here.
  *
@@ -95,11 +97,34 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...(route.lastModified && { lastModified: new Date(route.lastModified) }),
   }));
 
-  const physioEntries: MetadataRoute.Sitemap = (await bookablePhysioIds()).map((id) => ({
+  const [physioIds, blog] = await Promise.all([bookablePhysioIds(), loadBlogSitemap()]);
+  const physioEntries: MetadataRoute.Sitemap = physioIds.map((id) => ({
     url: `${baseUrl}/find-a-physio/${id}`,
     changeFrequency: 'weekly',
     priority: 0.6,
   }));
 
-  return [...staticEntries, ...physioEntries];
+  // The blog index is listed once something is published (until then it says "on the way")
+  const blogEntries: MetadataRoute.Sitemap = [];
+  if (blog && blog.total > 0) {
+    const newest = Math.max(...blog.posts.map((p) => p.updatedAt), 0);
+    blogEntries.push({ url: `${baseUrl}/blog`, changeFrequency: 'daily', priority: 0.8, ...(newest ? { lastModified: new Date(newest) } : {}) });
+    for (const post of blog.posts) {
+      blogEntries.push({
+        url: `${baseUrl}/blog/${post.slug}`,
+        lastModified: new Date(post.updatedAt),
+        changeFrequency: 'monthly',
+        priority: 0.7,
+        ...(post.image ? { images: [post.image] } : {}),
+      });
+    }
+    for (const c of blog.categories) {
+      blogEntries.push({ url: `${baseUrl}/blog/category/${c.slug}`, lastModified: new Date(c.updatedAt), changeFrequency: 'weekly', priority: 0.5 });
+    }
+    for (const a of blog.authors) {
+      blogEntries.push({ url: `${baseUrl}/blog/author/${a.slug}`, lastModified: new Date(a.updatedAt), changeFrequency: 'monthly', priority: 0.4 });
+    }
+  }
+
+  return [...staticEntries, ...blogEntries, ...physioEntries];
 }

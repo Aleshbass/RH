@@ -3,6 +3,7 @@ import { getConvexClient } from '@/lib/convex-client';
 import { REHABIFY_SERVICES, defaultTariffs, formatKobo, isBookableServiceId } from '@/lib/rehabify-services';
 import { SITE_CONFIG } from '@/lib/seo/config';
 import type { Catalogue, TravelZone } from '@/lib/rehabify-api-types';
+import { loadPosts } from '@/lib/blog/server';
 
 /**
  * /llms-full.txt — the long-form brief for AI assistants (https://llmstxt.org), next to the
@@ -301,9 +302,29 @@ ${servicesList(live.catalogue)}
 ${physioSection(base, live.physios)}`;
 }
 
+/** The newest published blog posts, so AI assistants can cite them. Left out when there are none. */
+async function blogSection(base: string): Promise<string> {
+  try {
+    const list = await loadPosts(1);
+    if (list.posts.length === 0) return '';
+    const lines = list.posts.map((post) => `- ${post.title}: ${post.excerpt} ${base}/blog/${post.slug}`);
+    return `
+## Latest articles from the Rehabify blog
+
+${lines.join('
+')}
+
+All articles: ${base}/blog
+`;
+  } catch {
+    return '';
+  }
+}
+
 export async function GET() {
   const live = await loadLiveData();
-  return new Response(buildBrief(live), {
+  const blog = await blogSection(SITE_CONFIG.url);
+  return new Response(buildBrief(live) + blog, {
     headers: { 'Content-Type': 'text/plain; charset=utf-8' },
   });
 }

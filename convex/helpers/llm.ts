@@ -40,6 +40,8 @@ export type JsonRequest = {
   user: string;
   /** Room for the answer (and, on reasoning models, the thinking before it) */
   maxOutputTokens?: number;
+  /** A public https image for the model to look at (blog alt text). OpenAI only; Gemini gets the text alone. */
+  imageUrl?: string;
 };
 
 export type JsonReply = { text: string; provider: LlmProvider; model: string };
@@ -58,7 +60,15 @@ async function callOpenAi(model: string, req: JsonRequest): Promise<string> {
       model,
       messages: [
         { role: "system", content: req.system },
-        { role: "user", content: req.user },
+        {
+          role: "user",
+          content: req.imageUrl
+            ? [
+                { type: "text", text: req.user },
+                { type: "image_url", image_url: { url: req.imageUrl, detail: "low" } },
+              ]
+            : req.user,
+        },
       ],
       response_format: { type: "json_object" },
       max_completion_tokens: req.maxOutputTokens ?? 16_000,
