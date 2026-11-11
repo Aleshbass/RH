@@ -47,10 +47,19 @@ async function main() {
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(10, 10), new THREE.MeshStandardMaterial({ color: 0xc9c2b6 }))
   floor.rotation.x = -Math.PI / 2
   scene.add(floor)
-  // Side-on, from the character's left (it faces +Z; its left is +X), at about hip height
+  // Side-on, from the character's left (it faces +Z; its left is +X), at about hip height; low
+  // down for exercises on the floor; or in front of it for the ones done facing the phone
   const camera = new THREE.PerspectiveCamera(42, W / H, 0.1, 50)
-  camera.position.set(3.4, 0.9, 0.2)
-  camera.lookAt(0, 0.82, 0.1)
+  if (exercise.view === 'front') {
+    camera.position.set(0.1, 1.1, 4)
+    camera.lookAt(0, 1, 0)
+  } else if (exercise.floor) {
+    camera.position.set(3.4, 0.45, 0.1)
+    camera.lookAt(0, 0.3, 0.1)
+  } else {
+    camera.position.set(3.4, 0.9, 0.2)
+    camera.lookAt(0, 0.82, 0.1)
+  }
 
   const loader = new GLTFLoader().setDRACOLoader(new DRACOLoader().setDecoderPath('/vendor/draco/'))
   const [character, motion] = await Promise.all([loader.loadAsync('/assets/character.glb'), loader.loadAsync(`/assets/clips/${clipId}.glb`)])

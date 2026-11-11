@@ -8,8 +8,8 @@ import { LANDMARK, type Frame, type Joint, type Point, type Side } from './pose'
 /**
  * The "perfect rep": the 3D demonstration measured exactly the way the camera measures the
  * patient. The clip is played on a hidden copy of the character, each tracked joint's bone is
- * projected onto the side view (forward and up, as a side-on phone sees it) and the exercise's
- * own angle function reads it. No extra data has to be exported from Blender.
+ * projected the way the phone sees it (forward and up side-on, or across and up facing the phone)
+ * and the exercise's own angle function reads it. No extra data has to be exported from Blender.
  */
 
 const FPS = 30
@@ -45,6 +45,7 @@ export function referenceFromClip(gltf: GLTF, clip: AnimationClip, exercise: Mot
   }
   const hidden: Point = { x: 0, y: 0, z: 0, v: 0 }
   const world = new Vector3()
+  const front = exercise.view === 'front'
   const samples: { t: number; angle: number }[] = []
   try {
     for (let i = 0; i <= Math.floor(clip.duration * FPS); i++) {
@@ -54,8 +55,9 @@ export function referenceFromClip(gltf: GLTF, clip: AnimationClip, exercise: Mot
       const points: Point[] = Array.from({ length: 33 }, () => hidden)
       for (const [index, bone] of bones) {
         bone.getWorldPosition(world)
-        // glTF is Y up and the character faces +Z: a side-on camera sees forward (z) and up (y)
-        points[index] = { x: world.z, y: -world.y, z: world.x, v: 1 }
+        // glTF is Y up and the character faces +Z: a side-on camera sees forward (z) and up (y), one
+        // in front of it sees across (x) and up
+        points[index] = front ? { x: world.x, y: -world.y, z: -world.z, v: 1 } : { x: world.z, y: -world.y, z: world.x, v: 1 }
       }
       const frame: Frame = { t: t * 1000, points }
       const angle = exercise.primary(frame, side)

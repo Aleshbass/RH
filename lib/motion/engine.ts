@@ -22,8 +22,9 @@ export type Reference = {
 export const SHAPE_POINTS = 40
 /** A limb segment changing on-screen length by more than this means it's turning towards the camera */
 export const OUT_OF_PLANE = 0.2
-/** Relative targets stop just short of a fully straight joint */
+/** Relative targets stop just short of a fully straight joint, or of a fully bent one */
 const RELATIVE_TARGET_CAP = 178
+const RELATIVE_TARGET_FLOOR = 20
 const START_BELOW = 0.2
 const RISE_ABOVE = 0.3
 const SNAPSHOT_MS = 100
@@ -168,9 +169,12 @@ export class RepEngine {
     this.restAngle =
       restAngle !== null && Math.abs(restAngle - exercise.rest) <= 30 ? restAngle : exercise.rest
     // Same range of movement from the patient's own start (see MotionExercise.relativeTarget)
-    this.target = exercise.relativeTarget
-      ? Math.min(RELATIVE_TARGET_CAP, this.restAngle + (exercise.target - exercise.rest))
-      : exercise.target
+    const relative = this.restAngle + (exercise.target - exercise.rest)
+    this.target = !exercise.relativeTarget
+      ? exercise.target
+      : exercise.target >= exercise.rest
+        ? Math.min(RELATIVE_TARGET_CAP, relative)
+        : Math.max(RELATIVE_TARGET_FLOOR, relative)
   }
 
   get phase() {

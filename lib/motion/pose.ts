@@ -112,6 +112,49 @@ export function shoulderFlexion(frame: Frame, side: Side): number | null {
   return angleBetween(e.x - s.x, e.y - s.y, h.x - s.x, h.y - s.y)
 }
 
+/** Knee angle (hip, knee, ankle): about 180 with the leg straight. */
+export function kneeAngle(frame: Frame, side: Side): number | null {
+  return angleAt(point(frame, 'hip', side), point(frame, 'knee', side), point(frame, 'ankle', side))
+}
+
+/** Elbow angle (shoulder, elbow, wrist): about 180 with the arm straight. */
+export function elbowAngle(frame: Frame, side: Side): number | null {
+  return angleAt(point(frame, 'shoulder', side), point(frame, 'elbow', side), point(frame, 'wrist', side))
+}
+
+/** Hip angle seen from the side (shoulder, hip, knee): about 180 with the body and thigh in one line. */
+export function hipAngle(frame: Frame, side: Side): number | null {
+  return angleAt(point(frame, 'shoulder', side), point(frame, 'hip', side), point(frame, 'knee', side))
+}
+
+/** Forward bend of the trunk from upright, either way round (side view), in degrees. */
+export function trunkBend(frame: Frame, side: Side): number | null {
+  const lean = trunkLean(frame, side, 1)
+  return lean === null ? null : Math.abs(lean)
+}
+
+/**
+ * Hip out to the side, facing the camera: the angle between the line across the hips and the thigh.
+ * About 90 with the legs straight down; it grows as the leg lifts out.
+ */
+export function hipAbduction(frame: Frame, side: Side): number | null {
+  const other: Side = side === 'L' ? 'R' : 'L'
+  return angleAt(point(frame, 'hip', other), point(frame, 'hip', side), point(frame, 'knee', side))
+}
+
+/** Sideways lean of the trunk facing the camera (mid-shoulders over mid-hips), in degrees from upright. */
+export function sideLean(frame: Frame): number | null {
+  const ls = frame.points[LANDMARK.shoulder.L]
+  const rs = frame.points[LANDMARK.shoulder.R]
+  const lh = frame.points[LANDMARK.hip.L]
+  const rh = frame.points[LANDMARK.hip.R]
+  if (!visible(ls) || !visible(rs) || !visible(lh) || !visible(rh)) return null
+  const dx = (ls.x + rs.x) / 2 - (lh.x + rh.x) / 2
+  const up = (lh.y + rh.y) / 2 - (ls.y + rs.y) / 2
+  if (up <= 1e-6) return null
+  return Math.abs((Math.atan2(dx, up) * 180) / Math.PI)
+}
+
 /**
  * The side of the body nearest the camera in a side view. MediaPipe's z is depth (smaller is
  * nearer) and the far side is partly hidden, so both are used.

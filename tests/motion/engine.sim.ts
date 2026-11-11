@@ -80,6 +80,18 @@ function shoulderFlexion(F: number, E = 0, L = 0): Body {
   return { shoulder, elbow, wrist: add(elbow, 0.13, F + E), hip, knee, ankle, ...head(shoulder, L) }
 }
 
+// Mini squat from standing: ankle fixed, shin and thigh fold evenly to knee angle K, trunk leans with them
+function squat(K: number): Body {
+  const a = (180 - K) / 2
+  const ankle = { x: 0.5, y: 0.95 }
+  const knee = add(ankle, 0.2, 180 - a)
+  const hip = add(knee, 0.2, 180 + a)
+  const lean = a * 0.6
+  const shoulder = add(hip, 0.25, 180 - lean)
+  const elbow = add(shoulder, 0.14, 90)
+  return { shoulder, elbow, wrist: add(elbow, 0.13, 90), hip, knee, ankle, ...head(shoulder, lean) }
+}
+
 type Key = { t: number; body: Body }
 /** Frames easing between key poses (times in seconds). */
 function* play(keys: Key[], lerp: (a: Body, b: Body, f: number) => Body) {
@@ -155,6 +167,7 @@ type Case = {
 const STS = (p: number[]) => sitToStand(p[0], p[1])
 const KE = (p: number[]) => kneeExtension(p[0], p[1], p[2])
 const SF = (p: number[]) => shoulderFlexion(p[0], p[1], p[2])
+const SQ = (p: number[]) => squat(p[0])
 
 const cases: Case[] = [
   { name: 'sit to stand: 5 good reps', exercise: 'sit-to-stand', frames: reps(STS, [90, 8], [176, 2], { up: 1.6, hold: 0.8, down: 2.2, pause: 1 }, 5), expectReps: 5, noCues: true, minScore: 85 },
@@ -172,6 +185,10 @@ const cases: Case[] = [
   { name: 'shoulder flexion: only to shoulder height', exercise: 'shoulder-flexion', frames: reps(SF, [8, 0, 0], [92, 0, 0], { up: 1.5, hold: 0.5, down: 1.5, pause: 0.8 }, 3), expectReps: 0, expectPartials: 3, expectCue: 'sf_higher' },
   { name: 'sit to stand: 8 reps, heavy jitter', exercise: 'sit-to-stand', frames: reps(STS, [90, 8], [176, 2], { up: 1.6, hold: 0.8, down: 2.2, pause: 1 }, 8, 0.012), expectReps: 8 },
   { name: 'knee extension: 6 reps, joints dropping out', exercise: 'seated-knee-extension', frames: reps(KE, [90, 0, 0], [174, 4, 0], { up: 1.4, hold: 2, down: 1.8, pause: 1 }, 6, 0.006, 0.25), expectReps: 6 },
+  // Bending movements: the target angle is below the rest angle
+  { name: 'mini squat: 5 good reps', exercise: 'mini-squat', frames: reps(SQ, [174], [130], { up: 1.4, hold: 0.6, down: 1.4, pause: 0.8 }, 5), expectReps: 5, noCues: true, minScore: 85 },
+  { name: 'mini squat: barely bending', exercise: 'mini-squat', frames: reps(SQ, [174], [158], { up: 1.2, hold: 0.4, down: 1.2, pause: 0.8 }, 3), expectReps: 0, expectPartials: 3, expectCue: 'squat_lower' },
+  { name: 'mini squat: drops down fast', exercise: 'mini-squat', frames: reps(SQ, [174], [130], { up: 0.3, hold: 0.6, down: 1.4, pause: 0.8 }, 4), expectReps: 4, expectCue: 'slow_down' },
   { name: 'sit to stand: 2 sets of 3', exercise: 'sit-to-stand', frames: reps(STS, [90, 8], [176, 2], { up: 1.6, hold: 0.8, down: 2.2, pause: 1 }, 6), sets: 2, reps: 3, expectReps: 6, noCues: true },
 ]
 

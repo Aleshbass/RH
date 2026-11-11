@@ -13,16 +13,13 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { currentUser } from "./helpers/careAccess";
 import { careTeamOrNull, itemClipId, programmeInScope, resolveShareSession } from "./helpers/exerciseAccess";
 import { assertProgramUnlocked } from "./helpers/patientPlans";
+import { CAMERA_COACH_CLIPS } from "./cameraCoachClips";
 
 type Ctx = QueryCtx | MutationCtx;
 
 const DAY = 86_400_000;
-/** Exercises the camera coach follows, and their clips (lib/motion/exercises.ts) */
-const EXERCISE_CLIPS: Record<string, string[]> = {
-  "sit-to-stand": ["sit-to-stand"],
-  "seated-knee-extension": ["seated-knee-extension-left", "seated-knee-extension-right"],
-  "shoulder-flexion": ["shoulder-flexion"],
-};
+/** Exercises the camera coach follows, and their clips (shared with lib/motion/exercises.ts) */
+const EXERCISE_CLIPS: Record<string, readonly string[]> = CAMERA_COACH_CLIPS;
 const MAX_REPS = 300;
 const MAX_SNAPSHOTS = 3;
 const MAX_FRAMES = 16;

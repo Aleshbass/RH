@@ -26,7 +26,7 @@ function WorstReps({ sessionId, onClose }: { sessionId: Id<'guidedSessions'> | n
         <DialogHeader>
           <DialogTitle>Lowest-scoring reps</DialogTitle>
           <DialogDescription>
-            Stick figures from the patient&apos;s phone (the video itself is never stored). Seen side-on; scores are form guidance, not measurements.
+            Stick figures from the patient&apos;s phone (the video itself is never stored). Seen as the phone saw them; scores are form guidance, not measurements.
           </DialogDescription>
         </DialogHeader>
         {detail === undefined ? (

@@ -261,15 +261,20 @@ export default function GuidedSession({ clipId, exercise, name, itemIndex, plan:
                 ? `Step back so we can see your ${[...new Set(missing.map((j) => JOINT_WORDS[j]))].join(' and ')}`
                 : 'Whole body in view',
           },
-          {
-            ok: front !== null && front < 0.45 && (exercise.side === 'auto' || near === null || near === side),
-            label:
-              front !== null && front >= 0.45
-                ? 'Turn side-on to the phone'
-                : exercise.side === 'clip' && near && near !== side
-                  ? `Turn round so your ${sideWord} leg is nearest the phone`
-                  : 'Side-on to the phone',
-          },
+          exercise.view === 'front'
+            ? {
+                ok: front !== null && front >= 0.45,
+                label: front !== null && front < 0.45 ? 'Turn to face the phone' : 'Facing the phone',
+              }
+            : {
+                ok: front !== null && front < 0.45 && (exercise.side === 'auto' || near === null || near === side),
+                label:
+                  front !== null && front >= 0.45
+                    ? 'Turn side-on to the phone'
+                    : exercise.side === 'clip' && near && near !== side
+                      ? `Turn round so your ${sideWord} ${exercise.limb} is nearest the phone`
+                      : 'Side-on to the phone',
+              },
           { ok: primary !== null && !startProblem, label: startProblem ?? 'In the start position' },
         ]
         if (current === 'setup') {
@@ -358,7 +363,9 @@ export default function GuidedSession({ clipId, exercise, name, itemIndex, plan:
             missingSince.current && now - missingSince.current > 700 && session
               ? `Step back so we can see your ${[...new Set(session.engine.missing(frame ?? { t: 0, points: [] }).map((j) => JOINT_WORDS[j]))].join(' and ') || 'whole body'}`
               : outOfPlaneSince.current && now - outOfPlaneSince.current > 700 && session
-                ? "Stay side-on to the phone: your arm or leg is turning towards the camera"
+                ? exercise.view === 'front'
+                  ? 'Keep facing the phone: your arm or leg is moving towards the camera'
+                  : 'Stay side-on to the phone: your arm or leg is turning towards the camera'
                 : null,
         }))
       }
@@ -734,7 +741,7 @@ export default function GuidedSession({ clipId, exercise, name, itemIndex, plan:
                   </li>
                 ))}
               </ul>
-              {exercise.side === 'clip' && <p className="mt-1.5 text-xs text-white/60">Exercising your {sideWord} leg</p>}
+              {exercise.side === 'clip' && <p className="mt-1.5 text-xs text-white/60">Exercising your {sideWord} {exercise.limb}</p>}
             </div>
           )}
 
