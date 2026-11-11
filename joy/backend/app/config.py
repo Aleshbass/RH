@@ -36,6 +36,12 @@ class Settings(BaseSettings):
     openai_fallback_models: str = "gpt-4.1-mini"
     # Voice notes with LLM_PROVIDER=openai: OpenAI transcription first, Gemini as the backup
     openai_transcribe_model: str = "gpt-4o-transcribe"
+    # A voice note back when the patient sends one (app/conversation/voice_reply.py)
+    joy_voice_replies: bool = True
+    # Languages Joy speaks; the others get text. Add yo, ig, ha once someone has listened to them.
+    joy_voice_reply_languages: str = "en,pcm"
+    openai_tts_model: str = "gpt-4o-mini-tts"
+    openai_tts_voice: str = "coral"
     openrouter_api_key: str = ""
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     openrouter_text_model: str = ""

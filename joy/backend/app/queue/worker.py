@@ -312,12 +312,11 @@ def process_queue_once(
         )
         if not reply:
             raise RuntimeError("Joy produced no outbound reply")
-        _send_items(payload["phone"], getattr(result, "before", None))
         interactive = _interactive_reply(db, payload["phone"], result)
-        if interactive:
-            send_whatsapp_interactive(payload["phone"], reply, interactive, text_sender=send_whatsapp_text)
-        else:
-            send_whatsapp_text(payload["phone"], reply)
+        _send_reply(
+            payload["phone"], result, reply, interactive,
+            voice_in=bool(payload.get("audio_url") or payload.get("audio_media_id")),
+        )
         _send_after(payload["phone"], result)
         logger.info(
             "joy_outbound_delivered wa_message_id=%s reply_length=%d processing_ms=%d",
@@ -567,6 +566,29 @@ def _exercise_reminders_tick() -> None:
 def _send_after(phone: str, result) -> None:
     """Follow-up messages after the reply (exercise pictures, then buttons). Never fails a turn."""
     _send_items(phone, getattr(result, "after", None))
+
+
+def _send_reply(phone: str, result, reply: str, interactive: dict | None, *, voice_in: bool) -> None:
+    """The reply and anything before it. A voice note answers a voice note
+    (app/conversation/voice_reply.py); the text still goes when there's something to tap or read."""
+    before = [item for item in (getattr(result, "before", None) or []) if isinstance(item, dict)]
+    if voice_in and result is not None:
+        from app.conversation.voice_reply import send_voice_reply, text_still_needed
+
+        said = [str(item["text"]) for item in before if item.get("text") and not item.get("photo_url") and not item.get("image_url")]
+        if send_voice_reply(phone, "\n\n".join([*said, reply]), getattr(result, "language", None)):
+            if not text_still_needed(
+                reply, interactive=interactive, blocked_by_safety=bool(getattr(result, "blocked_by_safety", False)),
+                before=before,
+            ):
+                # Spoken already: only the pictures still go
+                _send_items(phone, [item for item in before if item.get("photo_url") or item.get("image_url")])
+                return
+    _send_items(phone, before)
+    if interactive:
+        send_whatsapp_interactive(phone, reply, interactive, text_sender=send_whatsapp_text)
+    else:
+        send_whatsapp_text(phone, reply)
 
 
 def _send_items(phone: str, items) -> None:
