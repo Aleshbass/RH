@@ -9,10 +9,6 @@ export const revalidate = 300
 
 type Props = { params: Promise<{ slug: string }> }
 
-export function generateStaticParams() {
-  return []
-}
-
 function describe(name: string, description?: string) {
   return truncateDescription(
     description?.trim() || `Articles about ${name.toLowerCase()} from Rehabify Health's physiotherapists: what helps, what to avoid, and when to get care.`,

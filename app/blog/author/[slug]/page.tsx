@@ -9,10 +9,6 @@ export const revalidate = 300
 
 type Props = { params: Promise<{ slug: string }> }
 
-export function generateStaticParams() {
-  return []
-}
-
 function hostOf(link: string) {
   try {
     return new URL(link).hostname.replace(/^www\./, '')

@@ -7,10 +7,6 @@ export const revalidate = 300
 
 type Props = { params: Promise<{ page: string }> }
 
-export function generateStaticParams() {
-  return []
-}
-
 function pageNumber(raw: string) {
   return /^\d{1,4}$/.test(raw) ? Number(raw) : NaN
 }

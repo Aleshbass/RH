@@ -14,15 +14,11 @@ import { faqItems, outline, parseBody } from '@/lib/blog/content'
 import { documentTitle, effectiveMetaDescription, effectiveMetaTitle } from '@/lib/blog/seo'
 import { BLOG_NAME, absoluteUrl, blogMetadata, blogPaths, coverOgImage, loadPost } from '@/lib/blog/server'
 
-// Cached and rebuilt in the background at most every 5 minutes; publishing refreshes it at once
+// The root layout reads request headers, so this renders on each request (always current).
+// No generateStaticParams: it would mark the route static and fail at runtime.
 export const revalidate = 300
 
 type Props = { params: Promise<{ slug: string }> }
-
-// Posts are built the first time someone opens them, then cached
-export function generateStaticParams() {
-  return []
-}
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params
