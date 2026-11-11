@@ -18,6 +18,7 @@ import { senderIdentity } from "./helpers/displayIdentity";
 import { assertCanMessage } from "./chat";
 import { assertSelfRoleChangeAllowed } from "./helpers/roleLock";
 import { claimJoyRecordWithLink } from "./joyAccounts";
+import { isJoyLoginEmail } from "../lib/auth/joyLoginEmail";
 import { handOverManagedProfile } from "./helpers/careCircleAccess";
 import { missingPolicies, recordMissingPolicyAcceptances } from "./helpers/policyAcceptance";
 import { PATIENT_CONSENT_POLICIES, POLICIES, PROFESSIONAL_SIGNUP_POLICIES } from "../lib/policies";
@@ -179,6 +180,14 @@ function clerkName(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
+/**
+ * A phone + PIN (or Joy) login only has a private placeholder address in Clerk. Never let it
+ * replace a real email the physio, clinic or patient put on the record.
+ */
+function keepsRealEmail(current: string | undefined, incoming: string) {
+  return isJoyLoginEmail(incoming) && Boolean(current) && !isJoyLoginEmail(current);
+}
+
 // ==== INTERNAL MUTATION: Create or Update User from Clerk Data ====
 // This should ideally be triggered by a Clerk webhook or an action
 // that securely verifies the Clerk session upon first login/signup.
@@ -221,7 +230,7 @@ export const updateOrCreateUser = internalMutation({
 
     if (existingUser) {
       const updates: Partial<Doc<"users">> = {};
-      if (email && existingUser.email !== email) {
+      if (email && existingUser.email !== email && !keepsRealEmail(existingUser.email, email)) {
         updates.email = email;
       }
       // The Rehabify profile name wins (onboarding, Settings): Clerk only fills a missing one.
@@ -393,7 +402,7 @@ export const storeUserFromClerk = mutation({
 
     if (existingUser) {
       const updates: Partial<Doc<"users">> = {};
-      if (trustedEmail && existingUser.email !== trustedEmail) {
+      if (trustedEmail && existingUser.email !== trustedEmail && !keepsRealEmail(existingUser.email, trustedEmail)) {
         updates.email = trustedEmail;
       }
       if (args.firstName && existingUser.firstName !== args.firstName) {

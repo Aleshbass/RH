@@ -17,7 +17,12 @@ import {
   Receipt,
   RotateCcw,
   Users,
+  WhatsApp,
 } from '@/components/icons';
+import { useQuery } from 'convex/react';
+import { joinRefs } from '@/components/patient-join/refs';
+import { JoinStatusChip, needsInvite } from '@/components/patient-join/JoinStatusChip';
+import { InviteDialog } from '@/components/patient-join/InviteDialog';
 import { api } from '@/convex/_generated/api';
 import type { Id } from '@/convex/_generated/dataModel';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -116,6 +121,9 @@ export default function PatientWorkspacePage() {
   const openBooking = useBooking();
   // "Connect to Joy on WhatsApp": exercises, reminders and visits on WhatsApp (convex/joyConnect.ts)
   const joyConnect = useConnectToJoy();
+  // Their phone + PIN login: invite on WhatsApp, or a new link for a forgotten PIN (patientJoin.ts)
+  const joinStatus = useQuery(joinRefs.getJoinStatus, patientId ? { patientId } : 'skip');
+  const [inviteOpen, setInviteOpen] = useState(() => searchParams.get('invite') === '1');
   // A new note opened for a visit (?note=new&appointment=…), e.g. after a video call with the AI scribe
   const [noteAppointment, setNoteAppointment] = useState<Id<'appointments'> | undefined>(undefined);
   // After an AI-drafted note is signed: the exercises and follow-up the session mentioned
@@ -226,6 +234,7 @@ export default function PatientWorkspacePage() {
               <p className="truncate text-sm text-pt-muted">{[patient.email, patient.phoneNumber].filter(Boolean).join(' · ') || 'No contact details'}</p>
               <div className="mt-2 flex flex-wrap items-center gap-1.5">
                 <RehabifyId value={patient.patientNumber} className="rounded-full px-2.5 text-xs" />
+                <JoinStatusChip join={joinStatus} />
                 <StatusBadge tone={isActive ? 'green' : 'neutral'}>
                   {isActive ? 'In treatment' : `Care completed${episode.completedAt ? ` · ${format(episode.completedAt, 'd MMM yyyy')}` : ''}`}
                 </StatusBadge>
@@ -242,6 +251,12 @@ export default function PatientWorkspacePage() {
 
           <div className="flex flex-wrap items-center gap-2">
             <TodaysVideoJoin patientId={patientId} />
+            {isActive && needsInvite(joinStatus) && (
+              <Button onClick={() => setInviteOpen(true)} className="h-10 rounded-xl bg-rh-lime font-semibold text-rh-ink hover:bg-rh-lime-deep">
+                <WhatsApp className="mr-2 h-4 w-4" />
+                {joinStatus?.status === 'invited' ? 'Remind on WhatsApp' : 'Send link'}
+              </Button>
+            )}
             <Button asChild className={cn(secondaryButtonClass, 'h-10')}>
               <Link href={`/dashboard/physiotherapist/messages?with=${patientId}`}>
                 <MessageSquare className="mr-2 h-4 w-4" />
@@ -274,6 +289,9 @@ export default function PatientWorkspacePage() {
                     <DropdownMenuItem disabled={joyConnect.busy} onClick={() => void joyConnect.connect(patientId, patient.firstName ?? undefined)}>
                       Connect to Joy on WhatsApp
                     </DropdownMenuItem>
+                    {joinStatus?.canSendLink && !needsInvite(joinStatus) && (
+                      <DropdownMenuItem onClick={() => setInviteOpen(true)}>Send a new sign-in link (forgot PIN)</DropdownMenuItem>
+                    )}
                   </>
                 )}
                 <DropdownMenuItem onClick={() => setDrawer('edit')}>Edit contact details</DropdownMenuItem>
@@ -437,6 +455,13 @@ export default function PatientWorkspacePage() {
           if (!open) setProgramInitial(undefined);
         }}
         onSent={(programId) => setShareFor(programId)}
+      />
+      <InviteDialog
+        open={inviteOpen}
+        onOpenChange={setInviteOpen}
+        patientId={patientId}
+        firstName={patient.firstName || 'your patient'}
+        join={joinStatus}
       />
       <ShareLinkDialog
         programId={shareFor}

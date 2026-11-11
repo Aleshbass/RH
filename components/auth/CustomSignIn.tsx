@@ -9,7 +9,11 @@ import Link from "next/link";
 import { useEffect, useState, type FormEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth, useSignIn } from "@clerk/nextjs";
+import { useAction } from "convex/react";
 import { toSafeInternalPath } from "@/lib/auth/ssoRedirect";
+import { looksLikePhone } from "@/lib/auth/pin";
+import { joinRefs, type PinSignInResult } from "@/components/patient-join/refs";
+import { PinField } from "@/components/patient-join/PinField";
 import {
   afterSignUpPathFor,
   parseIntent,
@@ -60,7 +64,30 @@ function reportFailedSignIn(err: unknown, identifier: string) {
 }
 
 type SignInAttempt = NonNullable<ReturnType<typeof useSignIn>["signIn"]>;
-type Step = "identifier" | "password" | "code" | "reset";
+// "pin": patients a physio invited on WhatsApp sign in with phone number + 4-digit PIN
+type Step = "identifier" | "password" | "code" | "reset" | "pin";
+
+/** What to tell someone whose phone + PIN didn't work. */
+function pinError(result: Exclude<PinSignInResult, { ok: true } | { reason: "choose" }>): AuthError {
+  switch (result.reason) {
+    case "cooldown": {
+      const minutes = result.lockedUntil ? Math.max(1, Math.ceil((result.lockedUntil - Date.now()) / 60_000)) : 15;
+      return { message: `Too many wrong PINs. Wait ${minutes} minute${minutes === 1 ? "" : "s"} and try again.` };
+    }
+    case "locked":
+      return { message: "This account is locked after too many wrong PINs. Ask your physiotherapist to send you a new link on WhatsApp." };
+    case "wrong_pin":
+      return {
+        field: "code",
+        message:
+          result.attemptsLeft && result.attemptsLeft <= 3
+            ? `That phone number and PIN don't match. ${result.attemptsLeft} ${result.attemptsLeft === 1 ? "try" : "tries"} left before a short pause.`
+            : "That phone number and PIN don't match.",
+      };
+    default:
+      return { message: "We couldn't sign you in just now. Please try again." };
+  }
+}
 /** Which Clerk factor the code step verifies. */
 type CodeMode = "email_first" | "email_second" | "totp";
 
@@ -104,6 +131,11 @@ export default function CustomSignIn({
   const [notice, setNotice] = useState<string | null>(null);
   const cooldown = useCooldown();
   const google = useGoogleAuth(redirectTarget, setError);
+  // Phone + PIN (patients without email); the partner portal stays email only
+  const phoneAllowed = audience !== "partner";
+  const signInWithPin = useAction(joinRefs.signInWithPin);
+  const [pin, setPin] = useState("");
+  const [pinChoices, setPinChoices] = useState<{ loginId: string; firstName: string }[] | null>(null);
 
   // Already signed in (or just finished): go to the destination
   useEffect(() => {
@@ -177,8 +209,18 @@ export default function CustomSignIn({
   const submitIdentifier = async (e: FormEvent) => {
     e.preventDefault();
     const identifier = email.trim();
+    if (phoneAllowed && looksLikePhone(identifier)) {
+      setPin("");
+      setPinChoices(null);
+      setNotice(null);
+      goTo("pin");
+      return;
+    }
     if (!EMAIL_PATTERN.test(identifier)) {
-      setError({ message: "Enter a valid email address.", field: "email" });
+      setError({
+        message: phoneAllowed ? "Enter your email address or phone number." : "Enter a valid email address.",
+        field: "email",
+      });
       return;
     }
     if (!isLoaded || !signIn) return;
@@ -352,9 +394,42 @@ export default function CustomSignIn({
     }
   };
 
+  /** Phone + PIN: the server checks the PIN and returns a one-time Clerk sign-in ticket. */
+  const submitPin = async (e?: FormEvent, value = pin, loginId?: string) => {
+    e?.preventDefault();
+    if (value.length !== 4) {
+      setError({ message: "Enter your 4-digit PIN.", field: "code" });
+      return;
+    }
+    if (!signIn) return;
+    setPending("pin");
+    setError(null);
+    try {
+      const result = await signInWithPin({ phone: email.trim(), pin: value, ...(loginId ? { loginId } : {}) });
+      if (!result.ok) {
+        // Two accounts on this number with the same PIN (a family sharing a phone)
+        if ("choices" in result) {
+          setPinChoices(result.choices);
+          return;
+        }
+        setPin("");
+        setPinChoices(null);
+        setError(pinError(result));
+        return;
+      }
+      await proceed(await signIn.create({ strategy: "ticket", ticket: result.ticket }));
+    } catch (err) {
+      fail(err, "We couldn't sign you in. Please try again.");
+    } finally {
+      setPending(null);
+    }
+  };
+
   const backToEmail = () => {
     setPassword("");
     setCode("");
+    setPin("");
+    setPinChoices(null);
     setNotice(null);
     goTo("identifier", -1);
   };
@@ -416,11 +491,13 @@ export default function CustomSignIn({
             <form onSubmit={submitIdentifier} noValidate className={cn("flex flex-col", SPACE.fields)}>
               <AuthField
                 id="signin-email"
-                label="Email address"
-                type="email"
+                label={phoneAllowed ? "Email or phone number" : "Email address"}
+                type={phoneAllowed ? "text" : "email"}
                 inputMode="email"
                 autoComplete="username email"
-                placeholder="you@example.com"
+                autoCapitalize="none"
+                spellCheck={false}
+                placeholder={phoneAllowed ? "you@example.com or 0803 123 4567" : "you@example.com"}
                 value={email}
                 onChange={(e) => {
                   setEmail(e.target.value);
@@ -470,6 +547,52 @@ export default function CustomSignIn({
                   </a>
                 </p>
               </div>
+            )}
+          </>
+        )}
+
+        {step === "pin" && (
+          <>
+            <StepHeading eyebrow={copy.eyebrow} title={pinChoices ? "Who’s signing in?" : "Enter your PIN"} subtitle={emailChip} />
+            {pinChoices ? (
+              <div className={cn("flex flex-col", SPACE.section, SPACE.fields)}>
+                <p className="px-1 text-sm text-rh-night/65">More than one account on this number uses that PIN.</p>
+                {pinChoices.map((choice) => (
+                  <button
+                    key={choice.loginId}
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void submitPin(undefined, pin, choice.loginId)}
+                    className="flex h-12 w-full items-center justify-center rounded-full border border-rh-night/10 bg-white px-6 text-[15px] font-semibold text-rh-night transition hover:border-rh-teal active:scale-[0.99] disabled:opacity-60"
+                  >
+                    {choice.firstName}
+                  </button>
+                ))}
+                {formNotice}
+              </div>
+            ) : (
+              <form onSubmit={submitPin} noValidate className={cn("flex flex-col", SPACE.section, SPACE.fields)}>
+                <PinField
+                  id="signin-pin"
+                  label="4-digit PIN"
+                  value={pin}
+                  onChange={(value) => {
+                    setPin(value);
+                    if (error) setError(null);
+                  }}
+                  onComplete={(value) => void submitPin(undefined, value)}
+                  error={fieldError("code")}
+                  disabled={pending === "pin"}
+                  autoFocus
+                />
+                <p className="px-1 text-[13px] leading-snug text-rh-night/60">
+                  Forgot your PIN? Ask your physiotherapist to send you a new link on WhatsApp.
+                </p>
+                {formNotice}
+                <PrimaryButton loading={pending === "pin"} disabled={busy || !isLoaded}>
+                  Sign in
+                </PrimaryButton>
+              </form>
             )}
           </>
         )}

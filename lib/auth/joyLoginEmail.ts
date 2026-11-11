@@ -10,8 +10,22 @@ export function joyLoginEmail(patientId: string) {
   return `wa-${patientId.toLowerCase()}@${JOY_LOGIN_EMAIL_DOMAIN}`;
 }
 
+/**
+ * Patients a physio or clinic invited on WhatsApp sign in with phone + PIN (convex/patientJoin.ts);
+ * their Clerk login uses a private address on the same undeliverable domain.
+ */
+export function pinLoginEmail(patientId: string) {
+  return `pt-${patientId.toLowerCase()}@${JOY_LOGIN_EMAIL_DOMAIN}`;
+}
+
+/** Any private login address Rehabify made (Joy's or a phone + PIN login): never a real inbox. */
 export function isJoyLoginEmail(email: string | null | undefined) {
   return !!email && email.trim().toLowerCase().endsWith(`@${JOY_LOGIN_EMAIL_DOMAIN}`);
+}
+
+/** Only Joy's WhatsApp logins (wa-…): this person uses Rehabify through Joy. */
+export function isJoyWhatsAppLoginEmail(email: string | null | undefined) {
+  return isJoyLoginEmail(email) && email!.trim().toLowerCase().startsWith("wa-");
 }
 
 type ClerkEmails = {

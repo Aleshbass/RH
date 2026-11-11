@@ -8,6 +8,7 @@ import { assertClinicNotSuspended, getClinicMember, getClinicMemberOrNull, getOw
 import { ensureClinicNumber, ensureUserNumbers } from "./helpers/rehabifyIds";
 import { CLINIC_INVITE_APPROVAL_NOTE } from "./helpers/clinicApproval";
 import { personName } from "./helpers/displayIdentity";
+import { patientJoinStatus, shownEmail } from "./helpers/patientJoinStatus";
 import { assertClinicianSeatFree, assertClinicNotBillingReadOnly } from "./helpers/clinicSubscriptions";
 
 /**
@@ -2252,10 +2253,12 @@ export const getClinicPatients = query({
           _id: patient._id,
           firstName: patient.firstName || "",
           lastName: patient.lastName || "",
-          email: patient.email || "",
+          email: shownEmail(patient.email) ?? "",
           imageUrl: patient.imageUrl,
           phoneNumber: patient.phoneNumber,
           patientNumber: patient.patientNumber,
+          // Not invited · Invited · Joined · Programme started (patientJoin.ts)
+          join: await patientJoinStatus(ctx, patient),
           primaryPhysiotherapist: physiotherapist ? {
             _id: physiotherapist._id,
             firstName: physiotherapist.firstName || "",

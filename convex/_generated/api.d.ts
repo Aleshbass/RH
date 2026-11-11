@@ -46,6 +46,7 @@ import type * as actions_emails_sendVerificationBadgeEmail from "../actions/emai
 import type * as actions_emails_sendVideoCallInvitation from "../actions/emails/sendVideoCallInvitation.js";
 import type * as actions_index from "../actions/index.js";
 import type * as actions_joyDashboard from "../actions/joyDashboard.js";
+import type * as actions_patientJoin from "../actions/patientJoin.js";
 import type * as actions_marketingSend from "../actions/marketingSend.js";
 import type * as actions_notifications_cleanupDuplicates from "../actions/notifications/cleanupDuplicates.js";
 import type * as actions_notifications_index from "../actions/notifications/index.js";
@@ -176,6 +177,7 @@ import type * as helpers_partnerLedger from "../helpers/partnerLedger.js";
 import type * as helpers_partnerReferralCore from "../helpers/partnerReferralCore.js";
 import type * as helpers_partnerShared from "../helpers/partnerShared.js";
 import type * as helpers_patientFacts from "../helpers/patientFacts.js";
+import type * as helpers_patientJoinStatus from "../helpers/patientJoinStatus.js";
 import type * as helpers_patientPlans from "../helpers/patientPlans.js";
 import type * as helpers_patientViews from "../helpers/patientViews.js";
 import type * as helpers_paymentLinks from "../helpers/paymentLinks.js";
@@ -252,6 +254,7 @@ import type * as partnerMigrations from "../partnerMigrations.js";
 import type * as partnerWebhooks from "../partnerWebhooks.js";
 import type * as partners from "../partners.js";
 import type * as patientInvitations from "../patientInvitations.js";
+import type * as patientJoin from "../patientJoin.js";
 import type * as patients from "../patients.js";
 import type * as paymentMode from "../paymentMode.js";
 import type * as paymentReconciliation from "../paymentReconciliation.js";
@@ -362,6 +365,7 @@ declare const fullApi: ApiFromModules<{
   "actions/emails/sendVideoCallInvitation": typeof actions_emails_sendVideoCallInvitation;
   "actions/index": typeof actions_index;
   "actions/joyDashboard": typeof actions_joyDashboard;
+  "actions/patientJoin": typeof actions_patientJoin;
   "actions/marketingSend": typeof actions_marketingSend;
   "actions/notifications/cleanupDuplicates": typeof actions_notifications_cleanupDuplicates;
   "actions/notifications/index": typeof actions_notifications_index;
@@ -492,6 +496,7 @@ declare const fullApi: ApiFromModules<{
   "helpers/partnerReferralCore": typeof helpers_partnerReferralCore;
   "helpers/partnerShared": typeof helpers_partnerShared;
   "helpers/patientFacts": typeof helpers_patientFacts;
+  "helpers/patientJoinStatus": typeof helpers_patientJoinStatus;
   "helpers/patientPlans": typeof helpers_patientPlans;
   "helpers/patientViews": typeof helpers_patientViews;
   "helpers/paymentLinks": typeof helpers_paymentLinks;
@@ -568,6 +573,7 @@ declare const fullApi: ApiFromModules<{
   partnerWebhooks: typeof partnerWebhooks;
   partners: typeof partners;
   patientInvitations: typeof patientInvitations;
+  patientJoin: typeof patientJoin;
   patients: typeof patients;
   paymentMode: typeof paymentMode;
   paymentReconciliation: typeof paymentReconciliation;

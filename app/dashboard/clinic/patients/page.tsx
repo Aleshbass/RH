@@ -9,7 +9,10 @@ import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { ChevronRight, Inbox, Phone, Search, UserPlus, Users } from '@/components/icons'
+import { ChevronRight, Inbox, Phone, Search, UserPlus, Users, WhatsApp } from '@/components/icons'
+import { JoinStatusChip, needsInvite } from '@/components/patient-join/JoinStatusChip'
+import { useSendJoinLink } from '@/components/patient-join/useSendJoinLink'
+import type { PatientJoinState } from '@/components/patient-join/refs'
 import { differenceInCalendarDays, format } from 'date-fns'
 import AddPatientModal from '@/components/clinic/patients/AddPatientModal'
 import {
@@ -27,11 +30,11 @@ import { CLINIC_ADD_PATIENT_EVENT, listenForShortcut } from '@/components/clinic
 
 type SourceFilter = 'all' | 'needs-clinician' | 'invited' | 'referred' | 'clinic'
 
-/** "Needs a clinician" and "Invite sent" only show while someone is in them */
+/** "Needs a clinician" and "Not joined yet" only show while someone is in them */
 const FILTERS: { value: SourceFilter; label: string; onlyWhenUsed?: boolean }[] = [
   { value: 'all', label: 'All' },
   { value: 'needs-clinician', label: 'Needs a clinician', onlyWhenUsed: true },
-  { value: 'invited', label: 'Invite sent', onlyWhenUsed: true },
+  { value: 'invited', label: 'Not joined yet', onlyWhenUsed: true },
   { value: 'referred', label: 'Referred by Rehabify' },
   { value: 'clinic', label: 'Clinic patients' },
 ]
@@ -95,8 +98,10 @@ interface PatientRow {
   careStatus: CareStatus
   /** In care but still with the owner, who doesn't treat */
   needsClinician: boolean
-  /** Added by the clinic, hasn't opened their invite yet */
+  /** Added by the clinic, hasn't joined yet: send their WhatsApp link (or a reminder) */
   invitePending: boolean
+  /** Not invited · Invited · Joined · Programme started */
+  join: PatientJoinState | null
 }
 
 function fullName(first?: string, last?: string) {
@@ -143,6 +148,8 @@ function ClinicPatients() {
   const [filter, setFilterState] = useState<SourceFilter>(urlFilter)
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('active')
   const [isAddPatientOpen, setIsAddPatientOpen] = useState(false)
+  // One tap: opens WhatsApp with the patient's chat and their join link
+  const sendLink = useSendJoinLink()
   const router = useRouter()
   // Each patient has their own page: the clinician's workspace, read-only, plus the clinic's tools
   const openRecord = (patientId: string, tab?: string) =>
@@ -206,7 +213,8 @@ function ClinicPatients() {
         // Patients without a care status are in care
         careStatus: p.careStatus === 'paused' || p.careStatus === 'discharged' ? p.careStatus : 'active',
         needsClinician: Boolean(p.needsClinician),
-        invitePending: Boolean(p.invitePending),
+        invitePending: needsInvite(p.join),
+        join: p.join ?? null,
       }
     })
   }, [clinicPatients, referralByPatient])
@@ -500,11 +508,11 @@ function ClinicPatients() {
                 .filter(Boolean)
                 .join(' · ')
               return (
-                <li key={p._id}>
+                <li key={p._id} className="flex items-center">
                   <button
                     type="button"
                     onClick={() => openRecord(p._id)}
-                    className="flex w-full min-w-0 items-center gap-3 px-5 py-3 text-left transition-colors hover:bg-pt-hover focus-visible:bg-pt-sunken focus-visible:outline-none sm:px-6"
+                    className="flex w-full min-w-0 flex-1 items-center gap-3 px-5 py-3 text-left transition-colors hover:bg-pt-hover focus-visible:bg-pt-sunken focus-visible:outline-none sm:px-6"
                   >
                     <Avatar className="h-9 w-9 shrink-0 border border-pt-line">
                       <AvatarImage src={p.imageUrl} alt="" />
@@ -519,7 +527,7 @@ function ClinicPatients() {
                         </span>
                         <RehabifyId value={p.patientNumber} copyable={false} />
                         {p.needsClinician && <StatusBadge tone="ink">Needs a clinician</StatusBadge>}
-                        {p.invitePending && p.careStatus === 'active' && <StatusBadge tone="blue">Invite sent</StatusBadge>}
+                        {p.careStatus === 'active' && <JoinStatusChip join={p.join} />}
                         {p.careStatus === 'paused' && <StatusBadge>Paused</StatusBadge>}
                         {p.careStatus === 'discharged' && <StatusBadge>Discharged</StatusBadge>}
                         {p.isReferral && <StatusBadge tone="teal">Referred by Rehabify</StatusBadge>}
@@ -529,6 +537,19 @@ function ClinicPatients() {
                     </div>
                     <ChevronRight className="h-4 w-4 shrink-0 text-pt-faint" aria-hidden />
                   </button>
+                  {p.invitePending && p.careStatus === 'active' && (
+                    <button
+                      type="button"
+                      disabled={sendLink.busy}
+                      onClick={() => void sendLink.send(p._id, p.firstName)}
+                      aria-label={`Send ${name} their link on WhatsApp`}
+                      title={p.join?.status === 'invited' ? 'Send a reminder on WhatsApp' : 'Send their link on WhatsApp'}
+                      className="mr-3 inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg bg-pt-accent px-3 text-xs font-semibold text-[#06210a] transition hover:opacity-90 active:scale-[0.97] disabled:opacity-60 sm:mr-5"
+                    >
+                      <WhatsApp className="h-4 w-4" />
+                      <span className="hidden sm:inline">{p.join?.status === 'invited' ? 'Remind' : 'Send link'}</span>
+                    </button>
+                  )}
                 </li>
               )
             })}

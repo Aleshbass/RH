@@ -146,6 +146,44 @@ export default defineSchema({
     createdAt: v.number(),
   }).index("by_phone", ["phone", "createdAt"]),
 
+  // Personal join links a physio or clinic sends a patient on WhatsApp: /j/<code> (patientJoin.ts).
+  // "join" sets up the patient's phone + PIN login; "reset" (already joined) chooses a new PIN.
+  // One live link per patient; sending again reuses it until it's used or expires.
+  patientJoinLinks: defineTable({
+    code: v.string(),
+    patientId: v.id("users"),
+    createdBy: v.id("users"),
+    // Whose name the patient sees: the treating physio, and the clinic for a clinic's patient
+    physioId: v.optional(v.id("users")),
+    clinicId: v.optional(v.id("clinics")),
+    purpose: v.union(v.literal("join"), v.literal("reset")),
+    createdAt: v.number(),
+    expiresAt: v.number(),
+    sentAt: v.optional(v.number()), // the care team tapped "Send on WhatsApp"
+    openedAt: v.optional(v.number()), // the patient opened the page
+    usedAt: v.optional(v.number()),
+  })
+    .index("by_code", ["code"])
+    .index("by_patient", ["patientId", "createdAt"]),
+
+  // Phone + 4-digit PIN logins for patients without email (patientJoin.ts). The PIN is checked
+  // here, then a one-time Clerk sign-in ticket opens the session: no paid Clerk phone sign-in.
+  // Several rows may share a phone (a family sharing one number); the PIN tells them apart.
+  patientPinLogins: defineTable({
+    userId: v.id("users"),
+    phone: v.string(), // E.164
+    pinSalt: v.string(),
+    pinHash: v.string(), // PBKDF2-SHA256
+    failedPins: v.number(),
+    lockedUntil: v.optional(v.number()), // 15 minutes after every 5th wrong PIN
+    lockedOut: v.optional(v.boolean()), // 10 wrong PINs: only a new link from the care team unlocks
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    lastSignInAt: v.optional(v.number()),
+  })
+    .index("by_phone", ["phone"])
+    .index("by_user", ["userId"]),
+
   // One row per Rehabify ID kind; `next` is the number the next person or clinic receives.
   idCounters: defineTable({
     kind: v.union(v.literal("patient"), v.literal("staff"), v.literal("clinic"), v.literal("receipt")),
@@ -1017,7 +1055,8 @@ export default defineSchema({
       v.literal("marketplace"),
       v.literal("booking_link"),
       v.literal("invite"),
-      v.literal("joy_whatsapp")       // booked through Joy on WhatsApp
+      v.literal("joy_whatsapp"),      // booked through Joy on WhatsApp
+      v.literal("physio_link")        // joined with the physio's own patient link (/join/<slug>)
     )),
     referredBy: v.optional(v.string()), // Who referred them, when source is "referred"
     // Follow-up task: when the clinic should next check in with this patient

@@ -28,6 +28,7 @@ import { UserPlus, Loader2 } from '@/components/icons'
 import { primaryButtonClass } from '@/components/clinic/ui'
 import { friendlyError, useClinicianOptions } from './patient-record-shared'
 import { playSound } from '@/lib/sounds'
+import { InvitePanel } from '@/components/patient-join/InvitePanel'
 
 interface AddPatientModalProps {
   isOpen: boolean
@@ -38,6 +39,12 @@ interface AddPatientModalProps {
 
 export default function AddPatientModal({ isOpen, onClose, onSuccess }: AddPatientModalProps) {
   const [isSubmitting, setIsSubmitting] = useState(false)
+  // From the Patients page (no booking waiting): next, send them their link on WhatsApp
+  const [invite, setInvite] = useState<{ patientId: string; name: string } | null>(null)
+  const close = () => {
+    onClose()
+    window.setTimeout(() => setInvite(null), 200)
+  }
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
@@ -61,6 +68,10 @@ export default function AddPatientModal({ isOpen, onClose, onSuccess }: AddPatie
       toast.error('Enter the first name and last name')
       return
     }
+    if (formData.phoneNumber.replace(/\D/g, '').length < 10) {
+      toast.error('Enter their phone number. They join and sign in with it.')
+      return
+    }
     const email = formData.email.trim()
     if (email && !/^\S+@\S+\.\S+$/.test(email)) {
       toast.error('That email address doesn’t look right. Check it, or leave it empty.')
@@ -79,7 +90,7 @@ export default function AddPatientModal({ isOpen, onClose, onSuccess }: AddPatie
         lastName: formData.lastName.trim(),
         // Many patients have no email: they get a record without a login
         email: email || undefined,
-        phoneNumber: formData.phoneNumber.trim() || undefined,
+        phoneNumber: formData.phoneNumber.trim(),
         dateOfBirth: formData.dateOfBirth || undefined,
         gender: formData.gender,
         address: formData.address.trim() || undefined,
@@ -91,9 +102,7 @@ export default function AddPatientModal({ isOpen, onClose, onSuccess }: AddPatie
 
       const emailNote = result?.emailSent
         ? `We've emailed ${email} a link to see their appointments and exercises.`
-        : !email
-          ? 'No email, so no invite was sent. You can add one later under Edit details.'
-          : undefined
+        : undefined
       const added = {
         patientId: String(result?.patientId ?? ''),
         clinicianId: String(result?.clinicianId ?? clinicianId),
@@ -118,6 +127,10 @@ export default function AddPatientModal({ isOpen, onClose, onSuccess }: AddPatie
         initialDiagnosis: '',
         assignedClinicianId: '',
       })
+      if (!onSuccess && added.patientId) {
+        setInvite({ patientId: added.patientId, name: added.name })
+        return
+      }
       onClose()
       if (added.patientId) onSuccess?.(added)
     } catch (err: any) {
@@ -129,18 +142,22 @@ export default function AddPatientModal({ isOpen, onClose, onSuccess }: AddPatie
   }
 
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+    <Dialog open={isOpen} onOpenChange={(open) => !open && close()}>
       <DialogContent className="w-[calc(100vw-2rem)] max-w-xl max-h-[90vh] overflow-y-auto bg-pt-surface border-pt-line p-4 sm:p-6 space-y-5">
         <DialogHeader className="space-y-1 text-left">
           <DialogTitle className="text-lg font-semibold tracking-tight text-pt-ink">
-            Add patient
+            {invite ? `${invite.name.split(' ')[0]} is added` : 'Add patient'}
           </DialogTitle>
           <DialogDescription className="text-sm text-pt-muted">
-            Creates a record for this patient at your clinic. Only the name is required. Add a phone number so you can
-            send exercises on WhatsApp. If they have an email, we send them a link to their Rehabify account.
+            {invite
+              ? 'One more step: send them their link so they can see their appointments and exercises.'
+              : 'Creates a record for this patient at your clinic. Name and phone number are required: they join with their phone number and a PIN, no email needed.'}
           </DialogDescription>
         </DialogHeader>
 
+        {invite ? (
+          <InvitePanel patientId={invite.patientId} firstName={invite.name.split(' ')[0] || 'them'} onDone={close} />
+        ) : (
         <form onSubmit={handleSubmit} className="space-y-4 pt-1">
           {/* Name Row */}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -186,10 +203,13 @@ export default function AddPatientModal({ isOpen, onClose, onSuccess }: AddPatie
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs font-medium text-pt-ink">
-                Phone number
+                Phone number * <span className="font-normal text-pt-muted">(their WhatsApp)</span>
               </Label>
               <Input
-                placeholder="+234 801 234 5678"
+                required
+                type="tel"
+                inputMode="tel"
+                placeholder="0803 123 4567"
                 value={formData.phoneNumber}
                 onChange={(e) => setFormData({ ...formData, phoneNumber: e.target.value })}
                 className="h-9 text-sm bg-pt-surface border-pt-line"
@@ -295,7 +315,7 @@ export default function AddPatientModal({ isOpen, onClose, onSuccess }: AddPatie
               type="button"
               variant="outline"
               size="sm"
-              onClick={onClose}
+              onClick={close}
               disabled={isSubmitting}
               className="h-9 text-sm font-medium"
             >
@@ -321,6 +341,7 @@ export default function AddPatientModal({ isOpen, onClose, onSuccess }: AddPatie
             </Button>
           </div>
         </form>
+        )}
       </DialogContent>
     </Dialog>
   )

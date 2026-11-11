@@ -89,8 +89,11 @@ export const addPatientRecord = mutation({
     if (email && !/^\S+@\S+\.\S+$/.test(email)) {
       throw new ConvexError("That email address doesn't look right. Check it, or leave it empty.");
     }
+    // Required: the patient joins from a WhatsApp message and signs in with this number + a PIN
     const typedPhone = cleanText(args.phoneNumber, 30);
-    const phoneNumber = typedPhone ? normalizePhone(typedPhone) ?? typedPhone : undefined;
+    if (!typedPhone) throw new ConvexError("Enter the patient's phone number. They join and sign in with it.");
+    const phoneNumber = normalizePhone(typedPhone);
+    if (!phoneNumber) throw new ConvexError("That phone number doesn't look right. Check it, e.g. 0803 123 4567.");
     const referredBy = args.source === "referred" ? cleanText(args.referredBy, 120) : undefined;
     const note = cleanText(args.note, 500);
     const name = `${firstName} ${lastName}`;

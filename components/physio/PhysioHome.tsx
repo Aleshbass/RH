@@ -24,6 +24,7 @@ import {
   Video,
 } from '@/components/icons'
 import { toast } from 'sonner'
+import { PatientLinkCard } from '@/components/patient-join/PatientLinkCard'
 import { api } from '@/convex/_generated/api'
 import type { Id } from '@/convex/_generated/dataModel'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
@@ -685,7 +686,7 @@ export function PhysioHome({ setup }: { setup: SetupStatus | null | undefined })
         <StatTile label="Today" value={stat(stats?.todaysAppointments)} hint="appointments" icon={CalendarDays} tone="mint" href={`${PHYSIO_HOME}/calendar`} info="Sessions booked for today, including any still waiting to be confirmed." />
         <StatTile label="This week" value={stat(stats?.completedSessionsThisWeek)} hint="sessions completed" icon={Activity} tone="teal" info="Sessions you’ve marked done since Monday." />
         <StatTile label="Patients" value={stat(stats?.totalPatients)} hint="in treatment" icon={Users} tone="violet" href={`${PHYSIO_HOME}/patients`} info="Patients currently in your care. Finished courses are under Patients → Care completed." />
-        <StatTile label="Invites" value={stat(stats?.pendingInvitations)} hint="waiting to join" icon={UserPlus} tone="rose" href={`${PHYSIO_HOME}/patients`} info="Patients you’ve invited who haven’t created their account yet. You can resend the invite from Patients." />
+        <StatTile label="Invites" value={stat(stats?.pendingInvitations)} hint="waiting to join" icon={UserPlus} tone="rose" href={`${PHYSIO_HOME}/patients`} info="Patients who haven’t joined Rehabify yet. Open Patients → Not joined yet to send their link on WhatsApp." />
       </div>
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
@@ -696,6 +697,8 @@ export function PhysioHome({ setup }: { setup: SetupStatus | null | undefined })
         <div className="space-y-5">
           <NeedsAttention items={attention} />
           <OpenWorkspace patients={patients} />
+          {/* Every physio: one link patients use to join them with their phone number (no email) */}
+          {user?._id && setup && <PatientLinkCard physioId={user._id} name={name || undefined} />}
           {/* The booking link is a Rehabify Care booking page (Rehabify prices), so it isn't for independent physios */}
           {user?._id && setup && !independent && <BookingLinkCard physioId={user._id} name={name || undefined} />}
         </div>

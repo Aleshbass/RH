@@ -6,7 +6,7 @@
  */
 import type { QueryCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
-import { isJoyLoginEmail } from "../../lib/auth/joyLoginEmail";
+import { isJoyLoginEmail, isJoyWhatsAppLoginEmail } from "../../lib/auth/joyLoginEmail";
 import { stateForPlace } from "./startingZones";
 
 /** Where a patient came from. A patient can carry more than one (Joy, then added by a clinic). */
@@ -87,7 +87,7 @@ export async function patientFacts(
     user.referralAttributionSource === "joy" ||
     Boolean(intake || journey) ||
     relationships.some((r) => r.source === "joy_whatsapp") ||
-    isJoyLoginEmail(user.email) ||
+    isJoyWhatsAppLoginEmail(user.email) ||
     Boolean(latestBooking?.joyServiceMode);
   if (fromJoy) add("joy");
   if (referral?.referringDoctorId || referral?.conversionSource === "doctor_referral" || relationships.some((r) => r.source === "referred")) add("doctor");

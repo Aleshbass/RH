@@ -18,7 +18,11 @@ import {
   Stethoscope,
   UserPlus,
   Users,
+  WhatsApp,
 } from '@/components/icons'
+import { joinRefs } from '@/components/patient-join/refs'
+import { JoinStatusChip, needsInvite } from '@/components/patient-join/JoinStatusChip'
+import { InviteDialog } from '@/components/patient-join/InviteDialog'
 import { api } from '@/convex/_generated/api'
 import type { Id } from '@/convex/_generated/dataModel'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
@@ -131,6 +135,9 @@ function ClinicPatientRecord({ patientId }: { patientId: Id<'users'> }) {
   const [sendingInvite, setSendingInvite] = useState(false)
   // "Connect to Joy on WhatsApp": exercises, reminders and visits on WhatsApp (convex/joyConnect.ts)
   const joyConnect = useConnectToJoy()
+  // Their phone + PIN login: invite on WhatsApp, or a new link for a forgotten PIN (patientJoin.ts)
+  const joinStatus = useQuery(joinRefs.getJoinStatus, patientId ? { patientId } : 'skip')
+  const [inviteOpen, setInviteOpen] = useState(false)
 
   useEffect(() => {
     const fromUrl = searchParams.get('tab') as TabId | null
@@ -262,12 +269,18 @@ function ClinicPatientRecord({ patientId }: { patientId: Id<'users'> }) {
                     {episode.source === 'referred' && episode.referredBy ? ` by ${episode.referredBy}` : ''}
                   </StatusBadge>
                   <StatusBadge>Since {format(workspace.relationship.startDate, 'MMM yyyy')}</StatusBadge>
-                  {!record.patient.hasAccount && <StatusBadge tone="blue">Invite sent</StatusBadge>}
+                  <JoinStatusChip join={joinStatus} />
                 </div>
               </div>
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
+              {isActive && needsInvite(joinStatus) && (
+                <Button onClick={() => setInviteOpen(true)} className="h-10 rounded-xl bg-pt-accent font-semibold text-[#06210a] hover:opacity-90">
+                  <WhatsApp className="mr-2 h-4 w-4" />
+                  {joinStatus?.status === 'invited' ? 'Remind on WhatsApp' : 'Send link'}
+                </Button>
+              )}
               {canUse('patients') && (
                 <Button asChild className={cn(secondaryButtonClass, 'h-10')}>
                   <Link href={`${CLINIC}/messages?with=${patientId}`}>
@@ -303,7 +316,12 @@ function ClinicPatientRecord({ patientId }: { patientId: Id<'users'> }) {
                   </DropdownMenuItem>
                   {!record.patient.hasAccount && patient.email && (
                     <DropdownMenuItem className="rounded-xl px-3 py-2.5 focus:bg-pt-hover" disabled={sendingInvite} onSelect={() => void handleResendInvite()}>
-                      {sendingInvite ? 'Sending…' : 'Resend their invite'}
+                      {sendingInvite ? 'Sending…' : 'Resend their email invite'}
+                    </DropdownMenuItem>
+                  )}
+                  {joinStatus?.canSendLink && !needsInvite(joinStatus) && (
+                    <DropdownMenuItem className="rounded-xl px-3 py-2.5 focus:bg-pt-hover" onSelect={() => setInviteOpen(true)}>
+                      Send a new sign-in link (forgot PIN)
                     </DropdownMenuItem>
                   )}
                   {canUse('billing') && (
@@ -434,6 +452,13 @@ function ClinicPatientRecord({ patientId }: { patientId: Id<'users'> }) {
         )}
 
         <EditPatientDetailsDialog record={record} open={dialog === 'edit'} onOpenChange={(open) => setDialog(open ? 'edit' : null)} />
+        <InviteDialog
+          open={inviteOpen}
+          onOpenChange={setInviteOpen}
+          patientId={patientId}
+          firstName={patient.firstName || 'your patient'}
+          join={joinStatus}
+        />
         <PatientDrawer
           open={dialog === 'family'}
           onOpenChange={(open) => setDialog(open ? 'family' : null)}

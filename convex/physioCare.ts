@@ -17,6 +17,8 @@ import { internalMutation, mutation, query, type MutationCtx, type QueryCtx } fr
 import type { Doc, Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { publicAppUrl } from "./helpers/appUrl";
+import { isPlaceholderUser } from "./helpers/whatsappLink";
+import { shownEmail } from "./helpers/patientJoinStatus";
 import { awaitingConfirmationFrom, hasPendingProposal } from "./helpers/appointmentStatus";
 import { lagosDateTime } from "./helpers/lagosTime";
 import { assertNoteTextLength, earlierVersions, keepRevision, revisionCountOf } from "./helpers/noteRevisions";
@@ -96,6 +98,7 @@ function sourceFromRelationship(relationship: Doc<"patientPhysiotherapistRelatio
     case "clinic_direct":
       return "clinic";
     case "invite":
+    case "physio_link":
       return "invite";
     case "joy_whatsapp":
       return "joy_whatsapp";
@@ -472,7 +475,7 @@ export const getPatientWorkspace = query({
         _id: patient._id,
         firstName: patient.firstName,
         lastName: patient.lastName,
-        email: patient.email,
+        email: shownEmail(patient.email),
         phoneNumber: patient.phoneNumber,
         imageUrl: patient.imageUrl,
         patientNumber: patient.patientNumber,
@@ -564,7 +567,7 @@ export const getPatientWorkspace = query({
             clinicianId: treatingClinicianId(relationship, clinicView),
             clinicianName: treatingClinicianId(relationship, clinicView) ? fullName(await ctx.db.get(relationship.physiotherapistId)) : null,
             /** False while they haven't opened their invite (still the clinic's placeholder account) */
-            hasAccount: !(patient.clerkId ?? "").startsWith("clinic_patient_"),
+            hasAccount: !isPlaceholderUser(patient),
           }
         : null,
     };

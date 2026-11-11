@@ -30,6 +30,7 @@ import { createClinicPatientInvitation } from "./patientInvitations";
 import { insertNotification } from "./helpers/pushNotify";
 import { queueJoyAppointmentScheduled } from "./helpers/joyEvents";
 import { publicAppUrl } from "./helpers/appUrl";
+import { normalizePhone } from "./helpers/partnerShared";
 
 /** Section names as the clinic's note form shows them, for "too long" messages. */
 const CLINIC_NOTE_LABELS: Record<string, string> = {
@@ -589,7 +590,11 @@ export const addClinicPatient = mutation({
     if (email && !/^\S+@\S+\.\S+$/.test(email)) {
       throw new ConvexError("That email address doesn't look right. Check it, or leave it empty.");
     }
-    const phoneNumber = args.phoneNumber?.trim() || undefined;
+    // Required: the patient joins from a WhatsApp message and signs in with this number + a PIN
+    const typedPhone = args.phoneNumber?.trim();
+    if (!typedPhone) throw new ConvexError("Enter the patient's phone number. They join and sign in with it.");
+    const phoneNumber = normalizePhone(typedPhone);
+    if (!phoneNumber) throw new ConvexError("That phone number doesn't look right. Check it, e.g. 0803 123 4567.");
 
     // An email that's already on Rehabify links to that record. Without an email there is
     // nothing to match on, so a new record is made (never matched on an empty email).

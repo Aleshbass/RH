@@ -24,6 +24,7 @@ const RELATION_SOURCE: Record<string, string> = {
   joy_whatsapp: 'Booked through Joy',
   marketplace: 'Rehabify Care (Find a Physio or paired by the team)',
   booking_link: 'Booked from the physio’s link',
+  physio_link: 'Joined with the physio’s patient link',
   existing_patient: 'Added by the physio (their own patient)',
   invite: 'Invited by the physio',
   referred: 'Referred',

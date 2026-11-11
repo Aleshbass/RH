@@ -6,7 +6,7 @@ import { assertPatientInClinic } from "./clinicTools";
 import { pushNewMessage } from "./helpers/pushNotify";
 import { senderIdentity } from "./helpers/displayIdentity";
 import { internal } from "./_generated/api";
-import { isJoyLoginEmail } from "../lib/auth/joyLoginEmail";
+import { isJoyWhatsAppLoginEmail } from "../lib/auth/joyLoginEmail";
 import {
   ChatMessage, 
   ChatConversation, 
@@ -501,7 +501,7 @@ export const sendMessage = mutation({
     // WhatsApp-only accounts always, others when their last message in this chat came from
     // WhatsApp (a question sent through Joy, joyOperations patient_ask_physio).
     if (user.role === "physiotherapist" && receiver.role === "patient" && args.contentType === "text" && args.content.trim()) {
-      let onWhatsApp = isJoyLoginEmail(receiver.email);
+      let onWhatsApp = isJoyWhatsAppLoginEmail(receiver.email);
       if (!onWhatsApp) {
         const recent = await ctx.db
           .query("messages")

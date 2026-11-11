@@ -17,6 +17,7 @@ import { PatientBrand, PatientMobileNav, PatientSidebar } from '@/components/pat
 import { PatientHelp, PatientNotifications, PatientThemeToggle } from '@/components/patient/shell/PatientControls'
 import { PatientTour } from '@/components/patient/shell/PatientTour'
 import { ConsentDialog, useConsentsSettled } from '@/components/patient/ConsentDialog'
+import { JoinedAppSetup } from '@/components/patient-join/JoinedAppSetup'
 import { WebsiteLink } from '@/components/dashboard/shared/WebsiteLink'
 
 // Staff accounts have their own dashboards; the patient pages would only show them an empty record
@@ -132,6 +133,8 @@ function PatientPortal({ children }: { children: ReactNode }) {
         <PatientTour enabled={pathname === PATIENT_HOME && consentsSettled}firstName={user?.firstName} homeHref={PATIENT_HOME} />
         {/* Terms and Privacy, asked once if missing */}
         {user?.role === 'patient' && <ConsentDialog />}
+        {/* Just joined from their physio's WhatsApp link: "add to home screen" once */}
+        {user?.role === 'patient' && <JoinedAppSetup />}
       </div>
     </DashboardAuthGuard>
   )

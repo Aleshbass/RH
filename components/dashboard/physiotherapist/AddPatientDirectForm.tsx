@@ -57,8 +57,9 @@ function errorText(error: unknown) {
 }
 
 /**
- * Add a patient to your list. Only the name is required: many patients have no email. With an
- * email they're also invited to their own login. Someone already on Rehabify is invited instead,
+ * Add a patient to your list. Name and phone are required; email is optional (many patients have
+ * none). Next the physio sends their personal link on WhatsApp (components/patient-join): they
+ * join with their phone number and a PIN. Someone already on Rehabify by email is invited instead,
  * and appears once they accept (their record is never linked just by typing their email).
  */
 export default function AddPatientDirectForm({ onSuccess, onAdded, onCancel }: AddPatientDirectFormProps) {
@@ -78,6 +79,7 @@ export default function AddPatientDirectForm({ onSuccess, onAdded, onCancel }: A
     const next: Record<string, string> = {}
     if (!firstName.trim()) next.firstName = 'Enter their first name'
     if (!lastName.trim()) next.lastName = 'Enter their last name'
+    if (phone.replace(/\D/g, '').length < 10) next.phone = 'Enter their phone number. They join and sign in with it'
     if (email.trim() && !/^\S+@\S+\.\S+$/.test(email.trim())) next.email = 'Check the email address, or leave it empty'
     if (!source) next.source = 'Choose where this patient came from'
     setErrors(next)
@@ -88,7 +90,7 @@ export default function AddPatientDirectForm({ onSuccess, onAdded, onCancel }: A
       const result = await addPatient({
         firstName: firstName.trim(),
         lastName: lastName.trim(),
-        phoneNumber: phone.trim() || undefined,
+        phoneNumber: phone.trim(),
         email: email.trim().toLowerCase() || undefined,
         source: source!,
         referredBy: source === 'referred' ? referredBy.trim() || undefined : undefined,
@@ -105,11 +107,7 @@ export default function AddPatientDirectForm({ onSuccess, onAdded, onCancel }: A
       if (result.mode === 'existing') {
         toast.success(`${result.name} is already your patient`)
       } else {
-        toast.success(result.patientNumber ? `${result.name} added · ${result.patientNumber}` : `${result.name} added`, {
-          description: result.invited
-            ? 'We emailed them an invitation to their own login.'
-            : 'No email, so no invitation was sent. You can add one later.',
-        })
+        toast.success(result.patientNumber ? `${result.name} added · ${result.patientNumber}` : `${result.name} added`)
       }
       onAdded?.({ patientId: result.patientId, name: result.name })
       onSuccess?.()
@@ -141,7 +139,7 @@ export default function AddPatientDirectForm({ onSuccess, onAdded, onCancel }: A
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
           <Label htmlFor="ap-phone">
-            Phone <span className="font-normal text-neutral-400">(optional)</span>
+            Phone <span className="font-normal text-neutral-400">(their WhatsApp number)</span>
           </Label>
           <Input
             id="ap-phone"
@@ -153,6 +151,7 @@ export default function AddPatientDirectForm({ onSuccess, onAdded, onCancel }: A
             placeholder="0801 234 5678"
             autoComplete="off"
           />
+          {fieldError('phone')}
         </div>
         <div>
           <Label htmlFor="ap-email">
@@ -226,9 +225,7 @@ export default function AddPatientDirectForm({ onSuccess, onAdded, onCancel }: A
       </div>
 
       <p className="rounded-xl bg-rh-canvas px-3 py-2 text-xs text-neutral-600 dark:bg-white/[0.04] dark:text-neutral-400">
-        {email.trim()
-          ? `${firstName.trim() || 'They'}’ll be on your list now, and we’ll email an invitation to their own login.`
-          : `${firstName.trim() || 'They'}’ll be on your list now. Without an email no invitation is sent; you can add one later.`}
+        {`${firstName.trim() || 'They'}’ll be on your list now. Next, send them their link on WhatsApp: they join with their phone number and a PIN, no email needed.`}
       </p>
 
       <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">

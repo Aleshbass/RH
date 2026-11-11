@@ -156,6 +156,7 @@ const SOURCE_LABEL: Record<string, string> = {
   existing_patient: 'Existing patient',
   marketplace: 'Marketplace',
   booking_link: 'Booking link',
+  physio_link: 'Physio’s patient link',
   invite: 'Invited',
   joy_whatsapp: 'Joy · WhatsApp',
 }

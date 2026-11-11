@@ -6,6 +6,8 @@ import { getAuthenticatedUser, ensureClinicOwner, ensureUserRole, ensureIsClinic
 import { Doc, Id } from "./_generated/dataModel";
 import { getClinicMember, requireClinicWrite } from "./clinicTools";
 import { normalizePhone } from "./helpers/partnerShared";
+import { patientJoinStatus, shownEmail } from "./helpers/patientJoinStatus";
+import { isPlaceholderUser } from "./helpers/whatsappLink";
 
 /**
  * Get authenticated physiotherapist user and validate permissions
@@ -171,10 +173,12 @@ export const getMyPatients = query({
           _id: patient._id,
           firstName: patient.firstName,
           lastName: patient.lastName,
-          email: patient.email,
+          email: shownEmail(patient.email),
           imageUrl: patient.imageUrl,
           phoneNumber: patient.phoneNumber,
           patientNumber: patient.patientNumber,
+          // Not invited · Invited · Joined · Programme started (patientJoin.ts)
+          join: await patientJoinStatus(ctx, patient),
           relationship: {
             isPrimary: relationship.isPrimaryPhysiotherapist,
             startDate: relationship.startDate,
@@ -555,14 +559,20 @@ export const getDashboardStats = query({
     const physiotherapist = await getAuthenticatedPhysiotherapist(ctx);
 
     // Get total patients
-    const totalPatients = await ctx.db
+    const activeRelationships = await ctx.db
       .query("patientPhysiotherapistRelationships")
       .withIndex("by_physiotherapist", (q) =>
         q.eq("physiotherapistId", physiotherapist._id)
       )
       .filter((q) => q.eq(q.field("status"), "active"))
-      .collect()
-      .then(relationships => relationships.length);
+      .collect();
+    const totalPatients = activeRelationships.length;
+    // In your care but not joined yet (no login): they're waiting for their WhatsApp link
+    let notJoined = 0;
+    for (const patientId of new Set(activeRelationships.slice(0, 400).map((r) => r.patientId))) {
+      const patient = await ctx.db.get(patientId);
+      if (patient && isPlaceholderUser(patient)) notJoined++;
+    }
 
     // Get today's appointments
     const today = new Date();
@@ -605,7 +615,7 @@ export const getDashboardStats = query({
         apt.status === "scheduled" || apt.status === "confirmed"
       ).length,
       completedSessionsThisWeek: completedSessions.length,
-      pendingInvitations: pendingInvitations.length,
+      pendingInvitations: pendingInvitations.length + notJoined,
     };
   },
 });

@@ -270,6 +270,7 @@ const CHANNEL_LABEL: Record<string, string> = {
   marketplace: 'Website',
   joy_whatsapp: 'Joy',
   booking_link: 'Booking link',
+  physio_link: 'Patient link',
   referred: 'Referred',
   existing_patient: 'Existing patient',
   invite: 'Invite',

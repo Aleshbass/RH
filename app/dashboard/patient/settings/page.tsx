@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type ChangeEvent, type ComponentType, type ReactNode } from 'react'
 import { useClerk, useUser } from '@clerk/nextjs'
 import { isJoyLoginEmail } from '@/lib/auth/joyLoginEmail'
+import { joinRefs } from '@/components/patient-join/refs'
 import { useConvex, useMutation, useQuery } from 'convex/react'
 import { toast } from 'sonner'
 import { api } from '@/convex/_generated/api'
@@ -282,6 +283,8 @@ export default function PatientSettingsPage() {
   const isDark = theme === 'dark'
   // Patients who joined through Joy sign in with a placeholder address; don't show it as theirs
   const signInEmail = patient?.email && !isJoyLoginEmail(patient.email) ? (patient.email as string) : null
+  // Joined from their physio's WhatsApp link: they sign in with phone + PIN
+  const pinLogin = useQuery(joinRefs.myPinLogin, {})
 
   return (
     <PageContainer className="max-w-3xl">
@@ -346,6 +349,16 @@ export default function PatientSettingsPage() {
                 <Field label="Email" htmlFor="email" hint="The email you sign in with.">
                   <Input id="email" type="email" value={signInEmail} disabled className={inputClass} />
                 </Field>
+              ) : pinLogin ? (
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-pt-sunken px-4 py-3">
+                  <p className="min-w-0 flex-1 text-sm text-pt-ink">
+                    You sign in with your phone number ({pinLogin.phone}) and your 4-digit PIN. Forgot your PIN? Ask your
+                    physiotherapist to send you a new link on WhatsApp.
+                  </p>
+                  <Button onClick={() => openUserProfile()} variant="ghost" className="h-9 px-4">
+                    Add email
+                  </Button>
+                </div>
               ) : (
                 <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-pt-sun-bg px-4 py-3">
                   <p className="text-sm text-pt-sun-fg">Add an email so you can sign in any time, without waiting for a link.</p>
