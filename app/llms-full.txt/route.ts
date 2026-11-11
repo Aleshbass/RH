@@ -308,14 +308,7 @@ async function blogSection(base: string): Promise<string> {
     const list = await loadPosts(1);
     if (list.posts.length === 0) return '';
     const lines = list.posts.map((post) => `- ${post.title}: ${post.excerpt} ${base}/blog/${post.slug}`);
-    return `
-## Latest articles from the Rehabify blog
-
-${lines.join('
-')}
-
-All articles: ${base}/blog
-`;
+    return ['', '## Latest articles from the Rehabify blog', '', ...lines, '', `All articles: ${base}/blog`, ''].join('\n');
   } catch {
     return '';
   }

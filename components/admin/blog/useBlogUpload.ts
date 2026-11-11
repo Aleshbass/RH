@@ -2,7 +2,7 @@
 
 import { useCallback, useState } from 'react'
 import { useAction, useMutation } from 'convex/react'
-import { uploadToImagekit } from '@/components/learn/video/videoApi'
+import { uploadToImagekit } from './imagekitUpload'
 import { blogApi, type BlogImage } from '@/lib/blog/api'
 
 /** Pictures are shown at most ~1200px wide (2x on sharp screens); bigger only costs load time. */
@@ -83,7 +83,7 @@ export function useBlogUpload() {
       try {
         const prepared = await prepareImage(file)
         const auth = await getAuth({})
-        const saved = await uploadToImagekit(prepared.blob, prepared.name, auth, { isPrivate: false, onProgress: setProgress })
+        const saved = await uploadToImagekit(prepared.blob, prepared.name, auth, setProgress)
         await addMedia({ url: saved.url, fileId: saved.fileId, alt, width: prepared.width, height: prepared.height, bytes: saved.size })
         return { url: saved.url, fileId: saved.fileId, alt, width: prepared.width, height: prepared.height }
       } finally {
