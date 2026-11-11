@@ -47,7 +47,8 @@ export async function patientJoinStatus(ctx: Ctx, patient: Doc<"users">): Promis
     return {
       status: link ? "invited" : "not_invited",
       canSendLink: true,
-      sentAt: link ? link.sentAt ?? link.createdAt : null,
+      // Only when someone tapped Send (or copied the message); a link made but not sent doesn't count
+      sentAt: link?.sentAt ?? null,
       openedAt: link?.openedAt ?? null,
     };
   }

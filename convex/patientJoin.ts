@@ -201,6 +201,41 @@ export const getJoinStatus = query({
   },
 });
 
+/**
+ * "Already on your list?" while a physio or clinic types a phone number in Add patient. Only
+ * patients this person can already see are searched (in their care, or their clinic's patients),
+ * so it never reveals anyone else's record.
+ */
+export const findInMyCareByPhone = query({
+  args: { phone: v.string() },
+  handler: async (ctx, args) => {
+    const viewer = await currentUser(ctx);
+    if (!viewer) return null;
+    const phone = normalizePhone(args.phone);
+    if (!phone) return null;
+    for (const patient of await patientsByPhone(ctx, phone)) {
+      let team;
+      try {
+        team = await requireCareTeam(ctx, patient._id, { write: false });
+      } catch {
+        continue;
+      }
+      if (team.kind === "physio") {
+        const rel = await findRelationship(ctx, team.user._id, patient._id);
+        if (rel?.status !== "active") continue;
+      }
+      return {
+        patientId: patient._id,
+        name: niceName(patient, "Patient"),
+        firstName: firstNameOf(patient),
+        patientNumber: patient.patientNumber ?? null,
+        join: await patientJoinStatus(ctx, patient),
+      };
+    }
+    return null;
+  },
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 2. The patient opens /j/<code>
 // ─────────────────────────────────────────────────────────────────────────────

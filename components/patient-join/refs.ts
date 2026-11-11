@@ -60,6 +60,11 @@ export const joinRefs = {
   markInviteSent: makeFunctionReference<'mutation', { patientId: string }, null>('patientJoin:markInviteSent'),
   getJoinStatus: makeFunctionReference<'query', { patientId: string }, PatientJoinState | null>('patientJoin:getJoinStatus'),
   myPinLogin: makeFunctionReference<'query', Record<string, never>, { phone: string } | null>('patientJoin:myPinLogin'),
+  findInMyCareByPhone: makeFunctionReference<
+    'query',
+    { phone: string },
+    { patientId: string; name: string; firstName: string | null; patientNumber: string | null; join: PatientJoinState } | null
+  >('patientJoin:findInMyCareByPhone'),
 }
 
 /** Set before the first visit to the dashboard after joining: the "add to home screen" prompt opens once. */

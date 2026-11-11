@@ -1,10 +1,16 @@
 'use client'
 
 import { useRef, useState } from 'react'
-import { UserPlus } from '@/components/icons'
+import Link from 'next/link'
+import { useAction } from 'convex/react'
+import { CalendarPlus, UserPlus } from '@/components/icons'
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
-import { InvitePanel } from '@/components/patient-join/InvitePanel'
+import { PhysioDrawer } from '@/components/physio/ui'
+import { useBooking } from '@/components/physio/schedule/BookingDrawer'
+import { InviteStep } from '@/components/patient-join/InviteStep'
+import { StepDots, StepSlide } from '@/components/patient-join/StepDrawerBody'
+import { getInviteLink } from '@/components/patient-join/inviteLinkCache'
+import { joinRefs } from '@/components/patient-join/refs'
 import AddPatientDirectForm, { type AddedPatient } from './AddPatientDirectForm'
 
 interface AddPatientModalProps {
@@ -12,59 +18,95 @@ interface AddPatientModalProps {
   onSuccess?: () => void
 }
 
-/** Add a patient, then send them their personal link on WhatsApp (they join with phone + PIN). */
+const nextAction =
+  'inline-flex h-9 items-center gap-1.5 rounded-full bg-rh-ink px-3.5 text-xs font-semibold text-white transition hover:opacity-90 active:scale-[0.97] dark:bg-white dark:text-rh-ink'
+
+/**
+ * Add a patient in the portal's drawer (from the right; a bottom sheet on phones), in two quick
+ * steps: their details, then their link on WhatsApp or a QR code. The link is made the moment the
+ * patient is saved, so step 2 opens ready.
+ */
 export default function AddPatientModal({ trigger, onSuccess }: AddPatientModalProps) {
-  const [isOpen, setIsOpen] = useState(false)
+  const [open, setOpen] = useState(false)
   const [added, setAdded] = useState<AddedPatient | null>(null)
-  // onAdded runs just before onSuccess, in the same tick: a ref tells onSuccess to stay open
-  const addedRef = useRef<AddedPatient | null>(null)
+  const [round, setRound] = useState(0)
+  // onAdded runs just before onSuccess in the same tick; without it, the person was invited by email
+  const addedNow = useRef(false)
+  const createLink = useAction(joinRefs.createInviteLink)
+  const openBooking = useBooking()
 
   const close = () => {
-    setIsOpen(false)
-    // Reset after the closing animation
-    window.setTimeout(() => {
-      addedRef.current = null
-      setAdded(null)
-    }, 200)
+    setOpen(false)
+    window.setTimeout(() => setAdded(null), 250)
   }
+  const first = added?.name.split(' ')[0] || 'them'
 
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => (open ? setIsOpen(true) : close())}>
-      <DialogTrigger asChild>
+    <>
+      <span className="contents" onClick={() => setOpen(true)}>
         {trigger || (
           <Button>
             <UserPlus className="mr-2 h-4 w-4" />
             Add patient
           </Button>
         )}
-      </DialogTrigger>
-      <DialogContent className="max-h-[90vh] overflow-y-auto rounded-3xl border-0 p-6 sm:max-w-lg dark:bg-rh-ink-2">
-        <DialogHeader className="text-left">
-          <DialogTitle className="text-xl font-semibold tracking-tight text-rh-ink dark:text-white">
-            {added ? `${added.name.split(' ')[0]} is on your list` : 'Add a patient'}
-          </DialogTitle>
-          <DialogDescription>
-            {added ? 'One more step: send them their link so they can see their care.' : 'Name and phone number. Email only if they have one.'}
-          </DialogDescription>
-        </DialogHeader>
-        {added ? (
-          <InvitePanel patientId={added.patientId} firstName={added.name.split(' ')[0] || 'them'} onDone={close} />
-        ) : (
-          <AddPatientDirectForm
-            onAdded={(patient) => {
-              addedRef.current = patient
-              setAdded(patient)
-              onSuccess?.()
-            }}
-            onSuccess={() => {
-              if (addedRef.current) return
-              close()
-              onSuccess?.()
-            }}
-            onCancel={close}
-          />
-        )}
-      </DialogContent>
-    </Dialog>
+      </span>
+      <PhysioDrawer
+        open={open}
+        onOpenChange={(next) => (next ? setOpen(true) : close())}
+        title={added ? `Send ${first} their link` : 'Add a patient'}
+        description={added ? `${added.name} is on your list` : 'Their WhatsApp number and name. That’s all you need.'}
+      >
+        <StepDots step={added ? 2 : 1} />
+        <StepSlide stepKey={added ? `invite-${added.patientId}` : `details-${round}`} direction={added ? 1 : -1}>
+          {added ? (
+            <InviteStep
+              patientId={added.patientId}
+              firstName={first}
+              onDone={close}
+              onAddAnother={() => {
+                setAdded(null)
+                setRound((n) => n + 1)
+              }}
+              afterJoin={
+                <>
+                  <button
+                    type="button"
+                    className={nextAction}
+                    onClick={() => {
+                      close()
+                      openBooking({ patient: { id: added.patientId, name: added.name } })
+                    }}
+                  >
+                    <CalendarPlus className="h-3.5 w-3.5" />
+                    Book first session
+                  </button>
+                  <Link href={`/dashboard/physiotherapist/patients/${added.patientId}`} onClick={close} className={nextAction}>
+                    Open their record
+                  </Link>
+                </>
+              }
+            />
+          ) : (
+            <AddPatientDirectForm
+              key={round}
+              onAdded={(patient) => {
+                // Start making their link now, while the drawer slides to step 2
+                void getInviteLink(createLink, patient.patientId).catch(() => undefined)
+                addedNow.current = true
+                setAdded(patient)
+                onSuccess?.()
+              }}
+              onSuccess={() => {
+                // Someone already on Rehabify by email was invited instead: nothing more to do here
+                if (!addedNow.current) close()
+                addedNow.current = false
+              }}
+              onCancel={close}
+            />
+          )}
+        </StepSlide>
+      </PhysioDrawer>
+    </>
   )
 }

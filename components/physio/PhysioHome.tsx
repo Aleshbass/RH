@@ -25,6 +25,7 @@ import {
 } from '@/components/icons'
 import { toast } from 'sonner'
 import { PatientLinkCard } from '@/components/patient-join/PatientLinkCard'
+import { InviteNewsCard } from '@/components/patient-join/InviteNewsCard'
 import { api } from '@/convex/_generated/api'
 import type { Id } from '@/convex/_generated/dataModel'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
@@ -656,6 +657,9 @@ export function PhysioHome({ setup }: { setup: SetupStatus | null | undefined })
       <PracticeModePrompt setup={setup} />
 
       {setup && <SetupChecklistCard setup={setup} />}
+
+      {/* New: patients join from a WhatsApp link with a PIN (one-time card) */}
+      <InviteNewsCard />
 
       <BookingRequests />
 
