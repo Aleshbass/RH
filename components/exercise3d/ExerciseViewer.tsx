@@ -210,12 +210,15 @@ export function ExerciseViewer({ clipId, requestGrant, className, autoPlay = tru
       )}
       onContextMenu={(e) => e.preventDefault()}
     >
-      {/* Poster until the 3D scene is ready. Not secret: it's a still. */}
+      {/* Poster until the 3D scene is ready. Not secret: it's a still. Served as the small WebP it
+          already is: through Vercel's image resizer, posters broke on phones after each new library
+          version (owner, 12 Nov 2026). The same goes for every poster in the app. */}
       <Image
         src={posterUrl(clipId)}
         alt={clipInfo ? `${clipInfo.name}: starting position` : 'Exercise'}
         fill
         sizes="(max-width: 1024px) 100vw, 640px"
+        unoptimized
         draggable={false}
         className={cn('object-contain p-4 transition-opacity duration-500', phase === 'ready' ? 'opacity-0' : 'opacity-100')}
       />

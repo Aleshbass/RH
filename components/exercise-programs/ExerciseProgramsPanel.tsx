@@ -108,7 +108,7 @@ function ItemThumb({ item }: { item: CareTeamProgram['items'][number] }) {
         )}
       >
         {item.clipId ? (
-          <Image src={posterUrl(item.clipId)} alt="" fill sizes="80px" className="object-contain" draggable={false} />
+          <Image src={posterUrl(item.clipId)} alt="" fill sizes="80px" unoptimized className="object-contain" draggable={false} />
         ) : item.kind === 'education' ? (
           <BookOpen className="h-6 w-6 text-pt-violet-fg" />
         ) : (

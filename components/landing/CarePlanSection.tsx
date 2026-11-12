@@ -74,7 +74,7 @@ function ExerciseVisual({ near, onTry }: { near: boolean; onTry: () => void }) {
             className="aspect-auto h-full rounded-none bg-white"
           />
         ) : (
-          <Image src={posterUrl("mini-squat")} alt="" fill sizes="(min-width: 1024px) 380px, 84vw" className="object-contain p-4" />
+          <Image src={posterUrl("mini-squat")} alt="" fill sizes="(min-width: 1024px) 380px, 84vw" unoptimized className="object-contain p-4" />
         )}
       </div>
       <button

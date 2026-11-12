@@ -125,7 +125,7 @@ export function LibraryPicker({
                         alt=""
                         fill
                         sizes="(max-width: 640px) 50vw, (max-width: 1280px) 33vw, 25vw"
-                        unoptimized={!isLocalImage(poster)}
+                        unoptimized={!isLocalImage(poster) || poster.startsWith('/exercise-library/')}
                         draggable={false}
                         className="object-contain p-2 transition group-hover:scale-[1.03]"
                       />

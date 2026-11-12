@@ -146,7 +146,7 @@ function SignOff() {
                 return (
                   <li key={item.slug} className={cn(cardClass, 'flex gap-3 p-3', approved && 'ring-1 ring-emerald-300/70 dark:ring-emerald-500/30')}>
                     <div className="relative h-24 w-24 shrink-0 overflow-hidden rounded-xl bg-rh-honeydew dark:bg-white/[0.05]">
-                      <Image src={posterUrl(clipId)} alt={item.name} fill sizes="96px" className="object-contain" />
+                      <Image src={posterUrl(clipId)} alt={item.name} fill sizes="96px" unoptimized className="object-contain" />
                     </div>
                     <div className="min-w-0 flex-1 space-y-1.5">
                       <p className="font-semibold text-rh-ink dark:text-white">{item.name}</p>

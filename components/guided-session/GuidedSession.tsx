@@ -624,7 +624,7 @@ export default function GuidedSession({ clipId, exercise, name, itemIndex, plan:
               }}
             />
           ) : (
-            <Image src={posterUrl(clipId)} alt={`${name}: starting position`} fill sizes="40vw" className="object-contain p-4" draggable={false} />
+            <Image src={posterUrl(clipId)} alt={`${name}: starting position`} fill sizes="40vw" unoptimized className="object-contain p-4" draggable={false} />
           )}
           {coach.status === 'loading' && (
             <span className="absolute bottom-3 left-1/2 inline-flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-white/90 px-3 py-1.5 text-xs font-medium text-rh-ink">

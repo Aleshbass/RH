@@ -157,6 +157,7 @@ export function StudyLibrary({ open, accessUntil }: { open: (panel: StudyPanel) 
                             src={posterUrl(clip.id)}
                             alt=""
                             fill
+                            unoptimized
                             sizes="(min-width: 1024px) 220px, (min-width: 640px) 30vw, 45vw"
                             className="object-contain p-3 transition duration-300 group-hover:scale-[1.03]"
                           />

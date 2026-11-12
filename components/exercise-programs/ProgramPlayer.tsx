@@ -568,7 +568,7 @@ export function ProgramPlayer({
                     {education ? (
                       <BookOpen className="m-5 h-6 w-6 text-[#b4690e] dark:text-amber-300" />
                     ) : it.clipId ? (
-                      <Image src={posterUrl(it.clipId)} alt="" fill sizes="64px" className="object-contain" draggable={false} />
+                      <Image src={posterUrl(it.clipId)} alt="" fill sizes="64px" unoptimized className="object-contain" draggable={false} />
                     ) : (
                       <Dumbbell className="m-5 h-6 w-6 text-rh-ink" />
                     )}
@@ -627,7 +627,7 @@ export function ProgramPlayer({
             ) : item.clipId && coachOpen ? (
               // The camera coach has its own 3D coach; one WebGL scene at a time on small phones
               <div className="relative aspect-square max-h-[min(72vh,620px)] w-full overflow-hidden rounded-3xl bg-rh-honeydew dark:bg-white/[0.04]">
-                <Image src={posterUrl(item.clipId)} alt={item.name} fill sizes="(max-width: 1024px) 100vw, 640px" className="object-contain p-4" draggable={false} />
+                <Image src={posterUrl(item.clipId)} alt={item.name} fill sizes="(max-width: 1024px) 100vw, 640px" unoptimized className="object-contain p-4" draggable={false} />
               </div>
             ) : item.clipId ? (
               <ExerciseViewer
