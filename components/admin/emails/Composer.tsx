@@ -68,8 +68,8 @@ export function Composer({ overview, onSent }: { overview: MarketingOverview | u
           heading: content.heading || 'Your heading',
           body: content.body || 'Your message appears here. Leave a blank line between paragraphs.',
         },
-        // Each person sees their own first name ("Hi there," when it isn't known)
-        { greetingName: '[First name]', unsubscribeUrl: audience === 'individual' ? undefined : '#' }
+        // Previewed with a sample name; each person gets their own first name ("Hi there," when it isn't known)
+        { greetingName: 'Ada', unsubscribeUrl: audience === 'individual' ? undefined : '#' }
       ),
     [content, audience]
   )
