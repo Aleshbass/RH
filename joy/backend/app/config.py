@@ -42,6 +42,13 @@ class Settings(BaseSettings):
     joy_voice_reply_languages: str = "en,pcm"
     openai_tts_model: str = "gpt-4o-mini-tts"
     openai_tts_voice: str = "coral"
+    # ElevenLabs voice for Joy's voice notes when ELEVENLABS_API_KEY is set (OpenAI is the fallback).
+    # Adeola, "Warm & Soothing": a young female Nigerian English voice (owner's choice, 11 Nov 2026).
+    elevenlabs_api_key: str = ""
+    elevenlabs_voice_id: str = "t2zuPBtbBvwLINfk1lqx"
+    # English and Pidgin; Yoruba and Hausa need the newer model (Igbo isn't supported by ElevenLabs yet)
+    elevenlabs_model: str = "eleven_multilingual_v2"
+    elevenlabs_local_language_model: str = "eleven_v4"
     openrouter_api_key: str = ""
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     openrouter_text_model: str = ""

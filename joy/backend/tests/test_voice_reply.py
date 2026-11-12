@@ -37,6 +37,7 @@ def whatsapp(monkeypatch):
     monkeypatch.setenv("WHATSAPP_ACCESS_TOKEN", "token")
     monkeypatch.setenv("WHATSAPP_PHONE_NUMBER_ID", "123")
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    monkeypatch.delenv("ELEVENLABS_API_KEY", raising=False)  # OpenAI path unless a test sets it
     monkeypatch.setenv("DISABLE_WHATSAPP_DELIVERY", "false")
     monkeypatch.delenv("JOY_VOICE_REPLIES", raising=False)
     monkeypatch.delenv("JOY_VOICE_REPLY_LANGUAGES", raising=False)
@@ -124,3 +125,46 @@ def test_text_when_the_voice_note_fails_or_they_typed(outbox, monkeypatch):
     worker._send_reply("+2348000000001", _result(), "Typed hello", None, voice_in=False)
     assert tried == ["Hello"]
     assert outbox == [("text", "Hello"), ("text", "Typed hello")]
+
+
+def _elevenlabs_post(calls, *, fail=False):
+    def post(url, **kwargs):
+        calls.append((url, kwargs))
+        if "elevenlabs.io" in url:
+            if fail:
+                raise RuntimeError("elevenlabs down")
+            return SimpleNamespace(content=b"OggS" + b"\x01" * 400, raise_for_status=lambda: None)
+        if url.endswith("/audio/speech"):
+            return SimpleNamespace(content=b"OggS" + b"\x00" * 400, raise_for_status=lambda: None)
+        return SimpleNamespace(json=lambda: {"id": "media-1"}, raise_for_status=lambda: None)
+    return post
+
+
+def test_adeola_from_elevenlabs_when_the_key_is_set(whatsapp, monkeypatch):
+    monkeypatch.setenv("ELEVENLABS_API_KEY", "el-test")
+    calls = []
+    monkeypatch.setattr(voice_reply.httpx, "post", _elevenlabs_post(calls))
+    audio = voice_reply.synthesize("Hello Ada.", "en")
+    assert audio.startswith(b"OggS\x01")
+    url, kwargs = calls[0]
+    assert url.endswith("/text-to-speech/t2zuPBtbBvwLINfk1lqx")  # Adeola
+    assert kwargs["params"]["output_format"].startswith("opus_")
+    assert kwargs["json"]["model_id"] == "eleven_multilingual_v2"
+    assert len(calls) == 1  # OpenAI not called
+
+
+def test_openai_takes_over_when_elevenlabs_fails(whatsapp, monkeypatch):
+    monkeypatch.setenv("ELEVENLABS_API_KEY", "el-test")
+    calls = []
+    monkeypatch.setattr(voice_reply.httpx, "post", _elevenlabs_post(calls, fail=True))
+    audio = voice_reply.synthesize("Hello Ada.", "en")
+    assert audio.startswith(b"OggS\x00")
+    assert calls[-1][0] == "https://api.openai.com/v1/audio/speech"
+
+
+def test_yoruba_and_hausa_use_the_newer_model(whatsapp, monkeypatch):
+    monkeypatch.setenv("ELEVENLABS_API_KEY", "el-test")
+    calls = []
+    monkeypatch.setattr(voice_reply.httpx, "post", _elevenlabs_post(calls))
+    voice_reply.synthesize("Ẹ kú àárọ̀", "yo")
+    assert calls[0][1]["json"]["model_id"] == "eleven_v4" and calls[0][1]["json"]["language_code"] == "yo"

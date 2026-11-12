@@ -1,7 +1,8 @@
 """A voice note back when the patient sends one (owner, 10 Nov 2026).
 
-Joy speaks its reply with OpenAI text-to-speech, in Ogg/Opus (what WhatsApp plays as a voice
-note), uploads it to WhatsApp and sends it before any text. The written reply still goes when the
+Joy speaks its reply in Ogg/Opus (what WhatsApp plays as a voice note) with ElevenLabs (Adeola, a
+Nigerian voice) when ELEVENLABS_API_KEY is set, else OpenAI text-to-speech, uploads it to
+WhatsApp and sends it before any text. The written reply still goes when the
 patient needs to tap or read something: buttons, a list, a link, or safety advice. Any failure
 falls back to the text alone, so a reply is never lost to a voice problem.
 
@@ -62,12 +63,50 @@ def speakable(text: str) -> tuple[str, bool]:
 def speaks(language: str | None) -> bool:
     settings = get_settings()
     allowed = {item.strip().lower() for item in (settings.joy_voice_reply_languages or "").split(",") if item.strip()}
-    return bool(settings.joy_voice_replies and settings.openai_api_key and (language or "en").lower() in allowed)
+    has_voice = bool(settings.elevenlabs_api_key or settings.openai_api_key)
+    return bool(settings.joy_voice_replies and has_voice and (language or "en").lower() in allowed)
+
+
+# Languages only ElevenLabs' newer model speaks (Igbo isn't supported by ElevenLabs yet)
+_LOCAL_LANGUAGE_MODEL = {"yo", "ha"}
+
+
+def _elevenlabs(text: str, language: str | None) -> bytes | None:
+    """Joy's Nigerian voice (Adeola) from ElevenLabs, as Ogg/Opus; None when not set up or it fails."""
+    settings = get_settings()
+    if not settings.elevenlabs_api_key:
+        return None
+    lang = (language or "en").lower()
+    model = settings.elevenlabs_local_language_model if lang in _LOCAL_LANGUAGE_MODEL else settings.elevenlabs_model
+    try:
+        response = httpx.post(
+            f"https://api.elevenlabs.io/v1/text-to-speech/{settings.elevenlabs_voice_id}",
+            params={"output_format": "opus_48000_64"},  # Ogg/Opus: what WhatsApp plays as a voice note
+            headers={"xi-api-key": settings.elevenlabs_api_key},
+            json={
+                "text": text,
+                "model_id": model,
+                "voice_settings": {"stability": 0.5, "similarity_boost": 0.8},
+                **({"language_code": lang} if lang in _LOCAL_LANGUAGE_MODEL else {}),
+            },
+            timeout=45.0,
+        )
+        response.raise_for_status()
+    except Exception:
+        logger.warning("joy_voice_reply_elevenlabs_failed", exc_info=True)
+        return None
+    audio = response.content or b""
+    return audio if len(audio) > 100 and audio[:4] == b"OggS" else None
 
 
 def synthesize(text: str, language: str | None) -> bytes | None:
-    """Ogg/Opus speech for this text, or None."""
+    """Ogg/Opus speech for this text, or None. ElevenLabs (Adeola) first, then OpenAI."""
+    audio = _elevenlabs(text, language)
+    if audio is not None:
+        return audio
     settings = get_settings()
+    if not settings.openai_api_key:
+        return None
     try:
         response = httpx.post(
             "https://api.openai.com/v1/audio/speech",
