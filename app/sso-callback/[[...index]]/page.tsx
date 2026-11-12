@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { Suspense } from 'react';
 import { toSafeInternalPath } from '@/lib/auth/ssoRedirect';
+import { RehabifySplash } from '@/components/brand/RehabifyLoader';
 
 function readStoredRedirect() {
   try {
@@ -40,8 +41,7 @@ function SSOCallbackContent() {
 
   return (
     <div className="text-center">
-      <div className="w-8 h-8 border-4 border-[#005b57] border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-      <p className="text-gray-600 mb-2">Completing sign in...</p>
+      <RehabifySplash fullScreen={false} message="Completing sign in…" />
       {/* A first-time Google user is turned from a sign-in into a sign-up here, and Clerk then
           goes to its own "after sign-up" page ("/" by default) before our effect runs; both
           destinations are pinned so they land where they started (onboarding, partner portal) */}
@@ -56,10 +56,7 @@ function SSOCallbackContent() {
 export default function SSOCallback() {
   return (
     <Suspense fallback={
-      <div className="text-center">
-        <div className="w-8 h-8 border-4 border-[#005b57] border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-        <p className="text-gray-600">Loading...</p>
-      </div>
+      <RehabifySplash fullScreen={false} message="Completing sign in…" />
     }>
       <SSOCallbackContent />
     </Suspense>

@@ -6,6 +6,7 @@ import { useQuery } from "convex/react";
 import { makeFunctionReference } from "convex/server";
 import { api } from "@/convex/_generated/api";
 import { PhysioGuideVideoModal } from '@/components/dashboard/shared/PhysioGuideVideoModal';
+import { RehabifyLoader } from "@/components/brand/RehabifyLoader";
 
 type Status = "loading" | "success" | "error";
 
@@ -62,7 +63,7 @@ export default function OnboardingCompletePage() {
       <div className="max-w-md w-full p-8 bg-white rounded-lg shadow-lg">
         <div className="text-center">
           {status === "loading" && (
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-dark mx-auto"></div>
+            <RehabifyLoader size={64} className="mx-auto" />
           )}
           {status === "success" && (
             <div className="text-green-500 text-4xl mb-4">✓</div>

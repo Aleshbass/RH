@@ -18,6 +18,7 @@ import {
   Clock
 } from '@/components/icons'
 import { format } from 'date-fns'
+import { RehabifyLoader } from '@/components/brand/RehabifyLoader'
 
 // Types for invoice data
 interface InvoiceItem {
@@ -91,8 +92,8 @@ function SharedInvoicePageComponent() {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading invoice...</p>
+          <RehabifyLoader size={64} label="Loading invoice" className="mx-auto mb-4" />
+          <p className="text-gray-600">Loading invoice…</p>
         </div>
       </div>
     )

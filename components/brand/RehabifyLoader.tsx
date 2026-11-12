@@ -18,6 +18,9 @@ import styles from './RehabifyLoader.module.css'
 const R_PATH =
   'M56.15,52.92q-6.26-4.64-11-4.63-6.81,0-12.46,5.93A26.64,26.64,0,0,0,25.55,67.8l-4.7,25.14A21.21,21.21,0,0,1,0,110.26H0L14,35.09H31.65l-1.19,6.53a31.11,31.11,0,0,1,20.63-7.93A69.43,69.43,0,0,1,61.41,35Z'
 
+// Before the first paint in the browser; a plain effect on the server (where it never runs)
+const useBeforePaint = typeof window === 'undefined' ? useEffect : useLayoutEffect
+
 const WORDMARK = [
   { ink: true, d: "M56.15,52.92q-6.26-4.64-11-4.63-6.81,0-12.46,5.93A26.64,26.64,0,0,0,25.55,67.8l-4.7,25.14A21.21,21.21,0,0,1,0,110.26H0L14,35.09H31.65l-1.19,6.53a31.11,31.11,0,0,1,20.63-7.93A69.43,69.43,0,0,1,61.41,35Z" },
   { ink: true, d: "M190.36,39.72q-6.15-6-17-6a36,36,0,0,0-19.72,6l5.76-35.37a20.91,20.91,0,0,0-20.58,17.2l-8,44.67C117,85.94,104.61,92.81,102.66,93.83l-.26.12q-.77.36-1.56.69a26.87,26.87,0,0,1-10.18,2.43c-5.51,0-9.84-1.41-13-4.21S73.05,86,73.05,80.79c0-.9,0-2,.14-3.16a47,47,0,0,0,15.37,2.59q16.06,0,27.06-7.22t11-19.94q0-9.35-7.36-14.35t-19.23-5q-20.16,0-32.61,12.89T54.94,78.82q0,15.29,8.63,24.07t22.53,8.78q12.84,0,21.76-4c7.28-2.66,13.78-8.72,18-13.41,0,.35,0,.72,0,1.07a15,15,0,0,0,15,14.93l10-53.76q7.69-8.14,17.37-8A10.41,10.41,0,0,1,178.32,59a24.8,24.8,0,0,1-.42,4.56l-5.49,28.94a14.91,14.91,0,0,0,14.68,17.73l8.63-46a41.76,41.76,0,0,0,.77-7.72Q196.49,45.76,190.36,39.72ZM85.12,52.88q5.47-4.59,10.74-4.59,13.32,0,13.33,6.11,0,5.48-6.6,8.38A40.07,40.07,0,0,1,86.45,65.7a35.08,35.08,0,0,1-9.89-1.34A31.63,31.63,0,0,1,85.12,52.88Z" },
@@ -29,11 +32,23 @@ const WORDMARK = [
   { ink: false, d: "M433.58,18.52a24.71,24.71,0,0,1,9.75,2.53l3.51-13.76a24.16,24.16,0,0,0-12.42-3q-25.69,0-32.92,30.8H391.12L388.8,49.21h10.6l-11.15,61.92-.57,3.2c-.06.28-.11.55-.18.82l.75-4c-2.82,15-20.5,15.2-17.5-.87L382.36,48.1a11.23,11.23,0,0,0-10.81-13.28l-49.42-1-3.71-.08h0l-.77,0a27.67,27.67,0,0,0-13.95,4.15l5.89-33.61a20.44,20.44,0,0,0-20.11,16.87L279.1,79.38a166.5,166.5,0,0,1-9.2,30.88h12.85l5.61-5.68c3.51,4.71,9,7.09,16.42,7.09A42.84,42.84,0,0,0,336.5,98.4a43.91,43.91,0,0,0,13.07-32,37.66,37.66,0,0,0-3.93-17.73l15.37.44a2.8,2.8,0,0,1,2.68,3.31l-10.78,57.84c-1.78,9.62-.8,30.4,24.59,29.48a31.05,31.05,0,0,0,5.36-.49,28,28,0,0,0,13.52-6.53,29.06,29.06,0,0,0,9.9-17.69l11.23-65.82h17.68L437,35.08H419.68Q423.48,18.54,433.58,18.52ZM324,88.3q-7.36,8.83-19.65,8.84-7.92,0-10.6-5.48l6.81-37.12q5.15-6,12.21-6,18.11,0,18.11,19Q330.89,79.94,324,88.3Z" },
 ]
 
-function Mark() {
+// One loop clock for the whole visit: a loader that replaces another (one screen handing over to
+// the next) picks up the arc where the last one was, so the change can't be seen
+const LOOP_MS = 1600
+let loopEpoch: number | null = null
+
+/** `introDelayMs`: when the intro's loop starts (RehabifyLoader.module.css), so the clock starts there too. */
+function Mark({ introDelayMs = 0 }: { introDelayMs?: number }) {
   // url(#id) needs a plain id, and every mark on the page needs its own clip
   const clipId = `rl-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`
+  const [phase, setPhase] = useState('0s')
+  useBeforePaint(() => {
+    const now = performance.now()
+    if (loopEpoch === null) loopEpoch = now + introDelayMs
+    setPhase(`${-((now - loopEpoch) % LOOP_MS) / 1000}s`)
+  }, [])
   return (
-    <svg viewBox="0 0 120 120" aria-hidden="true" focusable="false">
+    <svg viewBox="0 0 120 120" aria-hidden="true" focusable="false" style={{ ['--rl-phase' as string]: phase }}>
       <defs>
         <clipPath id={clipId}>
           <circle cx="256" cy="256" r="256" />
@@ -75,8 +90,11 @@ export function RehabifyPageLoader({ label = 'Loading', message, className, size
 
 // The splash intro plays once per app open (a reload starts a new one)
 let splashPlayed = false
-// Before the first paint in the browser; a plain effect on the server (where it never runs)
-const useBeforePaint = typeof window === 'undefined' ? useEffect : useLayoutEffect
+
+/** Opened from the home screen (the shorter intro in RehabifyLoader.module.css). */
+function installedApp() {
+  return typeof window !== 'undefined' && window.matchMedia?.('(display-mode: standalone)').matches
+}
 
 /** App start and sign-up: the mark and wordmark come in, then it keeps loading. */
 export function RehabifySplash({ message, className, fullScreen = true }: { message?: string; className?: string; fullScreen?: boolean }) {
@@ -90,11 +108,15 @@ export function RehabifySplash({ message, className, fullScreen = true }: { mess
     <div
       role="status"
       aria-live="polite"
-      className={cn(fullScreen && 'flex min-h-[100dvh] items-center justify-center px-4', className)}
+      className={cn(
+        // White like the phone's launch screen (manifest background_color), so there's no flash between them
+        fullScreen && 'flex min-h-[100dvh] items-center justify-center bg-white px-4 dark:bg-[#0b1312]',
+        className
+      )}
     >
       <div className={cn(styles.splash, intro && styles.splashIntro)}>
-        <span className={cn(styles.loader, intro && styles.intro)} style={{ width: 96, height: 96 }}>
-          <Mark />
+        <span className={cn(styles.loader, intro ? styles.intro : styles.instant)} style={{ width: 112, height: 112 }}>
+          <Mark introDelayMs={intro ? (installedApp() ? 150 : 1150) : 0} />
         </span>
         <svg className={styles.word} viewBox="0 0 512.34 139.77" aria-hidden="true" focusable="false">
           {WORDMARK.map((p, i) => (

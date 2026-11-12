@@ -34,11 +34,15 @@
   stroke-linecap: round;
   transform-origin: 60px 60px;
   animation:
-    rl-spin 1.6s linear infinite,
-    rl-dash 1.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+    rl-spin 1.6s var(--rl-phase, 0s) linear infinite,
+    rl-dash 1.6s var(--rl-phase, 0s) cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
 .r {
-  animation: rl-lift 1.6s cubic-bezier(0.45, 0, 0.25, 1) infinite;
+  animation: rl-lift 1.6s var(--rl-phase, 0s) cubic-bezier(0.45, 0, 0.25, 1) infinite;
+}
+/* A splash after another splash in the same visit: there at once, no fade-in */
+.instant {
+  animation: none;
 }
 .disc {
   transform-origin: 60px 60px;
@@ -123,7 +127,7 @@
 .intro .r {
   animation:
     sp-rise 0.8s 0.18s cubic-bezier(0.3, 1.35, 0.6, 1) both,
-    rl-lift 1.6s 1.5s cubic-bezier(0.45, 0, 0.25, 1) infinite;
+    rl-lift 1.6s 1.15s cubic-bezier(0.45, 0, 0.25, 1) infinite;
 }
 .intro .track {
   animation: rl-appear 0.5s 1.15s both;
@@ -182,6 +186,35 @@
   }
 }
 
+/*
+ * Opened from the home screen: Android has just shown the app icon on white, so the logo doesn't
+ * grow in again. It stays where it is and comes alive: the arc sweeps in, the wordmark wipes in.
+ * Decided in CSS, so it applies from the very first frame (before any script runs).
+ */
+@media (display-mode: standalone) {
+  .intro .disc {
+    animation: none;
+  }
+  .intro .r {
+    animation: rl-lift 1.6s 0.15s cubic-bezier(0.45, 0, 0.25, 1) infinite;
+  }
+  .intro .track {
+    animation: rl-appear 0.4s 0.15s both;
+  }
+  .intro .arc {
+    animation:
+      rl-appear 0.4s 0.15s both,
+      rl-spin 1.6s 0.15s linear infinite,
+      rl-dash 1.6s 0.15s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  }
+  .splashIntro .word {
+    animation: sp-word 0.7s 0.25s cubic-bezier(0.65, 0, 0.35, 1) both;
+  }
+  .splashIntro .message {
+    animation: sp-message 0.5s 0.8s both;
+  }
+}
+
 /* ── Reduced motion: a still mark that breathes softly ── */
 @keyframes rl-breathe {
   0%,
@@ -194,7 +227,8 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .loader,
-  .intro {
+  .intro,
+  .instant {
     animation: rl-breathe 2.4s ease-in-out infinite;
   }
   .arc,
