@@ -75,6 +75,7 @@ import { publicAppUrl } from '@/lib/public-app-url'
 import { NETWORK_TERMS_VERSION } from '@/lib/rehabify-network-terms'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
+import { DeleteAccountDialog } from '@/components/admin/DeleteAccountDialog'
 
 /** Row shapes returned by api.admin.getAdminUserDetails. */
 type PatientLink = { _id: string; patientId: string; status: string; name: string; email?: string; imageUrl?: string }
@@ -846,6 +847,10 @@ export default function AdminUserDetailPage() {
 
       <RoleChangeDialog user={user} open={roleOpen} onOpenChange={setRoleOpen} />
 
+      {['physiotherapist', 'clinic_owner', 'clinic_staff'].includes(user.role ?? '') ? (
+        // Clinicians and clinic owners: their patients' records stay (convex/users.ts adminCloseAccount)
+        <DeleteAccountDialog userId={user._id} open={deleteOpen} onOpenChange={setDeleteOpen} onDeleted={() => router.push(listHref)} />
+      ) : (
       <ConfirmDialog
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
@@ -855,6 +860,7 @@ export default function AdminUserDetailPage() {
         destructive
         onConfirm={confirmDelete}
       />
+      )}
     </AdminPage>
   )
 }
