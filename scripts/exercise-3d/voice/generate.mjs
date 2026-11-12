@@ -1,4 +1,5 @@
-// Generate exercise voiceovers with Google Cloud Text-to-Speech.
+// Generate exercise voiceovers with ElevenLabs (voice.json provider "elevenlabs", the owner's pick)
+// or Google Cloud Text-to-Speech (provider "google", the voice before 12 Nov 2026).
 //
 //   node scripts/exercise-3d/voice/generate.mjs [--force]
 //
@@ -8,12 +9,16 @@
 //   cue-<key>.mp3           short rep cues, shared between exercises ("Hold.", "Lower slowly.")
 //   audio-index.json        { clipId: { intro, cues: [{ at, file }] } } for publish.mjs
 //   voice-state.json        text/voice hash per file, so unchanged files are skipped on re-runs
+//
+// Then check the files that will ship: node scripts/exercise-3d/voice/verify.mjs
 
 import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { elevenTts } from './elevenTts.mjs'
 import { googleTts } from './googleTts.mjs'
+import { masterMp3 } from './master.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(HERE, '..', '..', '..')
@@ -49,39 +54,66 @@ for (const [slug, script] of Object.entries(scripts)) {
     for (const cue of script.cues) {
       if (cue.at < 0 || cue.at >= clip.seconds) throw new Error(`${clip.id}: cue at ${cue.at}s is outside the ${clip.seconds}s clip`)
       const file = `cue-${cueKey(cue.text)}.mp3`
-      jobs.set(file, { text: cue.text, rate: voice.cueRate })
+      // A cue in a tight slot can be spoken a little faster (voice.json cueSpeed, by text)
+      jobs.set(file, { text: cue.text, rate: voice.cueSpeed?.[cue.text] ?? voice.cueRate })
       cues.push({ at: cue.at, file })
     }
     index[clip.id] = { intro: introFile, cues: cues.sort((a, b) => a.at - b.at), transcript: intro }
   }
 }
 
-const tts = await googleTts(ROOT)
+const elevenlabs = voice.provider === 'elevenlabs'
+const tts = elevenlabs ? await elevenTts(ROOT, voice) : await googleTts(ROOT)
 let made = 0
 let skipped = 0
 const failed = []
+const todo = []
 for (const [file, job] of jobs) {
   const target = path.join(OUT, file)
-  const h = hash(job.text, job.rate)
-  if (!force && state[file] === h && fs.existsSync(target)) {
-    skipped++
-    continue
+  if (!force && state[file] === hash(job.text, job.rate) && fs.existsSync(target)) skipped++
+  else todo.push([file, job])
+}
+// A few requests at a time (ElevenLabs allows several in parallel on the Creator plan)
+let next = 0
+async function worker() {
+  while (next < todo.length) {
+    const [file, job] = todo[next++]
+    try {
+      const mp3 = await tts.synthesize({ text: job.text, languageCode: voice.languageCode, voiceName: voice.voiceName, speakingRate: job.rate })
+      fs.writeFileSync(path.join(OUT, file), mp3)
+      state[file] = hash(job.text, job.rate)
+      made++
+      if (made % 20 === 0) {
+        console.log(`  ${made}/${todo.length}`)
+        fs.writeFileSync(statePath, JSON.stringify(state, null, 2)) // progress survives a crash
+      }
+    } catch (error) {
+      failed.push(`${file}: ${error.message}`)
+    }
   }
-  try {
-    const mp3 = await tts.synthesize({ text: job.text, languageCode: voice.languageCode, voiceName: voice.voiceName, speakingRate: job.rate })
-    fs.writeFileSync(target, mp3)
-    state[file] = h
-    made++
-  } catch (error) {
-    failed.push(`${file}: ${error.message}`)
+}
+await Promise.all(Array.from({ length: elevenlabs ? 3 : 1 }, worker))
+
+// ElevenLabs takes vary in loudness from line to line: master every new take (same speech level,
+// clean start and end). The mastered file's hash is kept so a file is never mastered twice.
+if (elevenlabs) {
+  const fileHash = (file) => crypto.createHash('sha256').update(fs.readFileSync(path.join(OUT, file))).digest('hex').slice(0, 16)
+  state._mastered ??= {}
+  const raw = [...jobs.keys()].filter((file) => fs.existsSync(path.join(OUT, file)) && state._mastered[file] !== fileHash(file))
+  if (raw.length) {
+    console.log(`Mastering ${raw.length} file(s)...`)
+    masterMp3(raw.map((file) => path.join(OUT, file)))
+    for (const file of raw) state._mastered[file] = fileHash(file)
   }
 }
 // Timing check. TTS adds a variable silence before and after speech (the player trims it), so
 // measure each cue's audible span from uncompressed audio and make sure it ends before the
 // next cue on the loop.
-const spans = state._spans ?? {}
+// ElevenLabs never says a line exactly the same way twice, so a second "measuring" take would not
+// match the file that ships: verify.mjs measures the shipped MP3s instead.
+const spans = elevenlabs ? {} : state._spans ?? {}
 for (const [file, job] of jobs) {
-  if (!file.startsWith('cue-')) continue
+  if (elevenlabs || !file.startsWith('cue-')) continue
   const h = hash(job.text, job.rate)
   if (spans[file]?.hash === h) continue
   const pcm = await tts.synthesizePcm({ text: job.text, languageCode: voice.languageCode, voiceName: voice.voiceName, speakingRate: job.rate })
@@ -94,10 +126,11 @@ for (const [file, job] of jobs) {
   while (b > a && Math.abs(pcm[b]) < threshold) b--
   spans[file] = { hash: h, seconds: Math.round(((b - a) / 24000) * 100) / 100 }
 }
-state._spans = spans
+if (!elevenlabs) state._spans = spans
 const overlaps = []
 for (const [clipId, entry] of Object.entries(index)) {
   const loop = manifest.exercises.find((e) => e.id === clipId).seconds
+  if (elevenlabs) continue
   entry.cues.forEach((cue, k) => {
     const next = k + 1 < entry.cues.length ? entry.cues[k + 1].at : loop + entry.cues[0].at
     const ends = cue.at + (spans[cue.file]?.seconds ?? 0)
@@ -107,7 +140,8 @@ for (const [clipId, entry] of Object.entries(index)) {
 
 fs.writeFileSync(statePath, JSON.stringify(state, null, 2))
 fs.writeFileSync(path.join(OUT, 'audio-index.json'), JSON.stringify({ voice: voice.voiceName, clips: index }, null, 2))
-console.log(overlaps.length ? `TIMING: ${overlaps.length} cue(s) too long for their slot:\n  ${overlaps.join('\n  ')}` : 'Timing: every cue finishes before the next one.')
+if (elevenlabs) console.log('Timing: run voice/verify.mjs (measures the shipped files).')
+else console.log(overlaps.length ? `TIMING: ${overlaps.length} cue(s) too long for their slot:\n  ${overlaps.join('\n  ')}` : 'Timing: every cue finishes before the next one.')
 
 console.log(`Voice: ${voice.voiceName}`)
 console.log(`Generated ${made}, skipped ${skipped} (unchanged), failed ${failed.length}`)

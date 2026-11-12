@@ -12,11 +12,22 @@ import { CUE_VERSION, type CueCode } from './exercises'
  * - one only starts between reps or in the rest after a set, and only when the voiceover is
  *   silent for the whole length of the clip (its timing is known from the catalog: each cue plays
  *   when the demonstration's loop passes its time).
+ *
+ * Praise ("Good job!") after a clean rep follows the same rules, plus (owner, 12 Nov 2026): it plays
+ * whenever the patient has sound on (the voice guide or spoken tips), never replaces a waiting
+ * correction (a correction replaces it), is dropped if no quiet moment comes within PRAISE_WAIT_MS,
+ * comes at most once every PRAISE_EVERY_MS, and doesn't repeat the last two lines.
  */
 
 const REPEAT_MS = 10_000
 const PENDING_MS = 6_000
 const GAP_S = 0.35 // silence kept either side of a correction
+const PRAISE_WAIT_MS = 3_000
+const PRAISE_EVERY_MS = 15_000
+
+/** Encouragement after a clean rep, in the coach's voice. */
+export const PRAISE: CueCode[] = ['praise_good_job', 'praise_great_form', 'praise_perfect', 'praise_well_done', 'praise_thats_it']
+const isPraise = (code: CueCode) => PRAISE.includes(code)
 
 const MODE_KEY = 'rh-motion-cues'
 export type CueMode = 'visual' | 'voice'
@@ -144,7 +155,11 @@ export class CorrectionVoice {
   private lastSaid = new Map<CueCode, number>()
   private pending: { code: CueCode; at: number } | null = null
   private playingUntil = 0
+  private lastPraise = -Infinity
+  private recentPraise: CueCode[] = []
   enabled: boolean
+  /** Whether praise is spoken: the patient has sound on (voice guide or spoken tips). */
+  praiseOn = false
 
   constructor(
     private readonly codes: CueCode[],
@@ -165,12 +180,26 @@ export class CorrectionVoice {
     }
     await this.ctx.resume().catch(() => undefined)
     if (this.enabled) for (const code of this.codes) void this.load(code)
+    if (this.praiseOn) for (const code of PRAISE) void this.load(code)
   }
 
   setEnabled(on: boolean) {
     this.enabled = on
-    if (!on) this.pending = null
-    else for (const code of this.codes) void this.load(code)
+    if (!on && this.pending && !isPraise(this.pending.code)) this.pending = null
+    else if (on) for (const code of this.codes) void this.load(code)
+  }
+
+  setPraise(on: boolean) {
+    this.praiseOn = on
+    if (!on && this.pending && isPraise(this.pending.code)) this.pending = null
+    else if (on) for (const code of PRAISE) void this.load(code)
+  }
+
+  /** After a clean rep: queue a line of praise, unless a correction is waiting or praise came recently. */
+  praise(nowMs = performance.now()) {
+    if (!this.praiseOn || this.pending || nowMs - this.lastPraise < PRAISE_EVERY_MS) return
+    const choices = PRAISE.filter((code) => !this.recentPraise.includes(code))
+    this.pending = { code: choices[Math.floor(Math.random() * choices.length)], at: nowMs }
   }
 
   /** Ask for a correction; it waits for a quiet moment (or is dropped). */
@@ -194,8 +223,10 @@ export class CorrectionVoice {
    */
   async pump(canSpeak: (seconds: number) => boolean, nowMs = performance.now()) {
     const waiting = this.pending
-    if (!waiting || !this.ctx || !this.enabled) return
-    if (nowMs - waiting.at > PENDING_MS) {
+    if (!waiting || !this.ctx) return
+    const praise = isPraise(waiting.code)
+    if (!(praise ? this.praiseOn : this.enabled)) return
+    if (nowMs - waiting.at > (praise ? PRAISE_WAIT_MS : PENDING_MS)) {
       this.pending = null
       return
     }
@@ -207,7 +238,10 @@ export class CorrectionVoice {
     }
     if (this.pending !== waiting || !canSpeak(clip.duration)) return
     this.pending = null
-    this.lastSaid.set(waiting.code, nowMs)
+    if (praise) {
+      this.lastPraise = nowMs
+      this.recentPraise = [waiting.code, ...this.recentPraise].slice(0, 2)
+    } else this.lastSaid.set(waiting.code, nowMs)
     const source = this.ctx.createBufferSource()
     source.buffer = clip.buffer
     source.connect(this.ctx.destination)

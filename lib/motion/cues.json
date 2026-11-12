@@ -1,5 +1,5 @@
 {
-  "version": "v1",
+  "version": "v2",
   "cues": {
     "sts_stand_tall": "Stand all the way up at the top.",
     "sts_chest_up": "Stand tall, chest up.",
@@ -25,6 +25,11 @@
     "bend_further": "Bend forward a little further, if it's comfortable.",
     "no_lean": "Keep your body upright. Don't lean.",
     "good_set": "Good set. Rest now.",
-    "all_done": "All done. Great work."
+    "all_done": "All done. Great work.",
+    "praise_good_job": "Good job!",
+    "praise_great_form": "Great form. Keep it up.",
+    "praise_perfect": "Perfect. Just like that.",
+    "praise_well_done": "Well done. Nice and controlled.",
+    "praise_thats_it": "That's it. Excellent."
   }
 }

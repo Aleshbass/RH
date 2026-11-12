@@ -32,6 +32,7 @@ import { useCoachAssets } from './useCoachAssets'
 const ExerciseStage = dynamic(() => import('@/components/exercise3d/ExerciseStage'), { ssr: false })
 
 const REST_SECONDS = 20
+const PRAISE_SCORE = 85 // a clean rep (no form mistakes) scoring at least this earns a "Good job!"
 const READY_HOLD_MS = 1500
 const COUNTDOWN = 3
 const DARK = 45 // average brightness out of 255
@@ -180,6 +181,7 @@ export default function GuidedSession({ clipId, exercise, name, itemIndex, plan:
     guideRef.current = audio ? new VoiceGuide(audio) : null
     timelineRef.current = new VoiceoverTimeline(audio)
     correctionRef.current = new CorrectionVoice(codes, savedCueMode())
+    correctionRef.current.setPraise(savedCueMode() === 'voice' || voiceGuideWanted())
     return () => {
       guideRef.current?.dispose()
       correctionRef.current?.dispose()
@@ -317,7 +319,10 @@ export default function GuidedSession({ clipId, exercise, name, itemIndex, plan:
               showCue(CUES[fix], 'fix')
               flagged.current = { joints: exercise.rules.find((r) => r.code === fix)?.joints ?? [], until: now + 2600 }
               correctionRef.current?.request(fix, now)
-            } else showCue(`Good rep · ${event.rep.score}`, 'good', 1800)
+            } else {
+              showCue(`Good rep · ${event.rep.score}`, 'good', 1800)
+              if (event.rep.score >= PRAISE_SCORE) correctionRef.current?.praise(now)
+            }
             setHud((h) => ({ ...h, rep: event.repInSet, lastScore: event.rep.score }))
           } else if (event.type === 'partial') {
             showCue(CUES[event.cue], 'fix')
@@ -337,10 +342,10 @@ export default function GuidedSession({ clipId, exercise, name, itemIndex, plan:
         }
       }
 
-      // Spoken correction: between reps or resting, and never over the voiceover
+      // Spoken correction or praise: between reps or resting, and never over the voiceover
       const correction = correctionRef.current
       const session = sessionRef.current
-      if (correction?.enabled) {
+      if (correction?.enabled || correction?.praiseOn) {
         const voiceTalking = guideRef.current?.started && voiceOn
         void correction.pump((seconds) => {
           const p = phaseRef.current
@@ -478,6 +483,7 @@ export default function GuidedSession({ clipId, exercise, name, itemIndex, plan:
     go('starting')
     const correction = correctionRef.current
     correction?.setEnabled(cueMode === 'voice')
+    correction?.setPraise(cueMode === 'voice' || voiceOn)
     try {
       await correction?.start()
       const guide = guideRef.current
@@ -519,6 +525,7 @@ export default function GuidedSession({ clipId, exercise, name, itemIndex, plan:
     const guide = guideRef.current
     const next = !voiceOn
     setVoiceOn(next)
+    correctionRef.current?.setPraise(cueMode === 'voice' || next)
     try {
       localStorage.setItem(VOICE_PREF, next ? 'on' : 'off')
     } catch {
@@ -528,14 +535,15 @@ export default function GuidedSession({ clipId, exercise, name, itemIndex, plan:
     if (!next) guide.setMuted(true)
     else if (guide.started) guide.setMuted(false)
     else await guide.start({ intro: false })
-  }, [voiceOn])
+  }, [cueMode, voiceOn])
 
   const toggleCues = useCallback(() => {
     const next: CueMode = cueMode === 'voice' ? 'visual' : 'voice'
     setCueMode(next)
     saveCueMode(next)
     correctionRef.current?.setEnabled(next === 'voice')
-  }, [cueMode])
+    correctionRef.current?.setPraise(next === 'voice' || voiceOn)
+  }, [cueMode, voiceOn])
 
   const save = useCallback(async () => {
     if (!summary) return

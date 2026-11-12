@@ -194,12 +194,8 @@
     "intro": "This is single-leg balance on your {side} leg. Stand close to a chair or counter, so you can hold on if you need to. Shift your weight onto your {side} leg, lift the other foot off the floor, and balance, standing tall. Small wobbles are normal. Then put your foot down. Follow along with me.",
     "cues": [
       {
-        "at": 0.05,
-        "text": "Weight onto one leg."
-      },
-      {
         "at": 1.25,
-        "text": "Lift the other foot."
+        "text": "Other foot up."
       },
       {
         "at": 2.5,
@@ -208,6 +204,10 @@
       {
         "at": 10.8,
         "text": "And foot down."
+      },
+      {
+        "at": 13.25,
+        "text": "Weight on one leg."
       }
     ]
   },
