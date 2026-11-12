@@ -15,7 +15,8 @@ import { PhysioNotifications } from '@/components/physio/PhysioNotifications'
 import { AdminSidebar } from './AdminSidebar'
 import { AdminCommandPalette, OPEN_ADMIN_PALETTE_EVENT } from './AdminCommandPalette'
 import { adminBreadcrumbs, consoleAllows, consoleHome, toConsoleRole, type ConsoleRole } from './adminNav'
-import { ConsoleRoleContext } from './consoleRole'
+import { ConsoleRoleContext, useConsoleRole } from './consoleRole'
+import { TeamAccessIntro } from '@/components/admin/TeamAccessIntro'
 import { WebsiteLink } from '@/components/dashboard/shared/WebsiteLink'
 import { AppIconBadge, AppSetupButton, AppSetupPrompt } from '@/components/pwa/AppSetup'
 
@@ -123,6 +124,7 @@ function PageTransition({ children }: { children: ReactNode }) {
 }
 
 function ShellFrame({ children }: { children: ReactNode }) {
+  const isAdmin = useConsoleRole() === 'admin'
   const [menuOpen, setMenuOpen] = useState(false)
   const pathname = usePathname()
   useEffect(() => setMenuOpen(false), [pathname])
@@ -173,6 +175,8 @@ function ShellFrame({ children }: { children: ReactNode }) {
       </div>
 
       <AdminCommandPalette />
+      {/* One-time "New" pop-up for admins (Blog & Learn access) */}
+      {isAdmin && <TeamAccessIntro />}
       {/* Demo requests, approvals and other alerts on the admin's phone */}
       <AppSetupPrompt />
       <AppIconBadge />

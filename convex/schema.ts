@@ -5913,8 +5913,14 @@ export default defineSchema({
   // no account yet stays "pending" and becomes the role when that person signs up with it
   // (verified email only); an existing account is switched straight away ("accepted").
   teamInvites: defineTable({
-    email: v.string(), // lowercase
+    // Who it is for: an email (lowercase) or a WhatsApp number (+E.164); a link invite has either
+    email: v.optional(v.string()),
+    phone: v.optional(v.string()),
     role: v.union(v.literal("blog_editor"), v.literal("learn_instructor")),
+    // The one-time invite link /team-invite/<code>: only the SHA-256 of the code is kept, and
+    // sending the link again makes a new code (the old link stops working)
+    codeHash: v.optional(v.string()),
+    codeExpiresAt: v.optional(v.number()),
     status: v.union(v.literal("pending"), v.literal("accepted"), v.literal("revoked")),
     invitedBy: v.id("users"),
     userId: v.optional(v.id("users")),
@@ -5927,6 +5933,8 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_email", ["email"])
+    .index("by_phone", ["phone"])
+    .index("by_code_hash", ["codeHash"])
     .index("by_status", ["status", "updatedAt"]),
 
 });

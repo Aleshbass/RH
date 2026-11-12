@@ -30,6 +30,8 @@ export const sendTeamEmail = internalAction({
     to: v.string(),
     role: v.union(v.literal("blog_editor"), v.literal("learn_instructor")),
     name: v.optional(v.string()),
+    /** The one-time invite link (/team-invite/<code>) */
+    link: v.optional(v.string()),
   },
   returns: v.object({ success: v.boolean(), error: v.optional(v.string()) }),
   handler: async (_ctx, args) => {
@@ -42,12 +44,12 @@ export const sendTeamEmail = internalAction({
             heading: `You're invited to ${args.role === "blog_editor" ? "write for" : "teach on"} Rehabify`,
             paragraphs: [
               `The Rehabify team has invited you to ${role.what}`,
-              `To start, create your Rehabify account with this email address (${args.to}). You'll go straight to your ${role.label.toLowerCase()} space once you're signed in.`,
+              `Open the link below, then sign in or create your Rehabify account. You'll go straight to your ${role.label.toLowerCase()} space.`,
             ],
-            calloutTitle: "Use this same email",
-            calloutText: "The access is linked to this address. Signing up with a different email won't include it.",
-            ctaLabel: "Create my account",
-            ctaUrl: `${base}/sign-up`,
+            calloutTitle: "This link is just for you",
+            calloutText: "It works once and expires in 14 days. If it has expired, ask the Rehabify team for a new one.",
+            ctaLabel: "Accept the invite",
+            ctaUrl: args.link ?? `${base}/sign-up`,
           }
         : {
             badge: role.label,
