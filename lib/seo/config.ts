@@ -33,8 +33,11 @@ export const SITE_CONFIG = {
   title: 'Physio Around Me by Rehabify Health — Book a Verified Physiotherapist in Nigeria',
   description:
     'Find and book licensed, verified physiotherapists in Nigeria. Online video sessions or in-person care at home or in clinic, with secure payment by Paystack.',
-  ogImage: '/opengraph-image', // app/opengraph-image.tsx
-  ogImageAlt: 'Physio Around Me by Rehabify Health — Book a Verified Physiotherapist',
+  // Link previews (1200x630). og:image is app/share-image: the Joy card, or the Africa card for
+  // LinkedIn's crawler. X reads twitter:image, the Joy card file itself.
+  ogImage: '/share-image',
+  twitterImage: '/og/rehabify-joy.jpg',
+  ogImageAlt: 'Joy by Rehabify: clinician-led AI for recovery, supporting patients on WhatsApp between physiotherapy sessions',
   locale: 'en_NG',
 
   organization: {

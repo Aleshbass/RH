@@ -102,7 +102,7 @@ export const metadata: Metadata = {
     siteName: SITE_CONFIG.name,
     images: [
       {
-        url: '/opengraph-image', // Next.js auto-generates from opengraph-image.tsx
+        url: SITE_CONFIG.ogImage, // app/share-image: the Joy card, or the Africa card for LinkedIn
         width: 1200,
         height: 630,
         alt: SITE_CONFIG.ogImageAlt,
@@ -113,7 +113,7 @@ export const metadata: Metadata = {
     card: 'summary_large_image',
     title: 'Physio Around Me by Rehabify Health — Book a Verified Physiotherapist in Nigeria',
     description: 'Find and book licensed, verified physiotherapists in Nigeria. Online video sessions or in-person care at home or in clinic.',
-    images: ['/opengraph-image'],
+    images: [SITE_CONFIG.twitterImage],
   },
   robots: {
     index: true,
