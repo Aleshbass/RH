@@ -20,6 +20,7 @@ import {
 import { useViewerGrant } from '@/lib/exercise3d/useViewerGrant'
 import { saveFromLinkRef } from '@/lib/motion/convexRefs'
 import { cn } from '@/lib/utils'
+import { RehabifyLoader } from '@/components/brand/RehabifyLoader'
 
 // Exercise programme sent on WhatsApp: /x/<token>. No account; the patient unlocks it with a PIN
 // and this device keeps a session (in localStorage) until the link expires.
@@ -211,7 +212,7 @@ function Unlocked({ code, session, onSessionLost }: { code: string; session: str
   if (data === undefined) {
     return (
       <div className="flex justify-center py-20">
-        <Loader2 className="h-6 w-6 animate-spin text-rh-teal" />
+        <RehabifyLoader size={56} />
       </div>
     )
   }
@@ -277,7 +278,7 @@ export default function ShareLinkPage() {
   if (!ready || status === undefined) {
     body = (
       <div className="flex justify-center py-20">
-        <Loader2 className="h-6 w-6 animate-spin text-rh-teal" />
+        <RehabifyLoader size={56} />
       </div>
     )
   } else if (status.state === 'not_found') {

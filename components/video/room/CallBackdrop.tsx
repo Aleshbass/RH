@@ -3,6 +3,7 @@
 import { useEffect } from 'react'
 import Image from 'next/image'
 import { cn } from '@/lib/utils'
+import { RehabifyLoader } from '@/components/brand/RehabifyLoader'
 
 /**
  * The call screens are designed light-only. Arriving from a dashboard in dark mode leaves `dark`
@@ -51,11 +52,14 @@ export function CallBrandMark({ className }: { className?: string }) {
 /** Centered status card (loading, errors, call ended) in the call room's visual language. */
 export function CallStatusScreen({
   icon,
+  loading,
   title,
   description,
   children,
 }: {
   icon?: React.ReactNode
+  /** Waiting: the Rehabify loader in place of an icon */
+  loading?: boolean
   title: string
   description?: React.ReactNode
   children?: React.ReactNode
@@ -67,7 +71,11 @@ export function CallStatusScreen({
       </header>
       <main className="flex flex-1 items-center justify-center px-4 pb-10">
         <div className="w-full max-w-sm rounded-[28px] bg-white/85 p-8 text-center shadow-[0_20px_60px_-20px_rgba(0,0,0,0.18)] ring-1 ring-black/5 backdrop-blur-xl">
-          {icon && <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-full bg-neutral-100 text-neutral-600">{icon}</div>}
+          {loading ? (
+            <RehabifyLoader size={64} label={title} className="mx-auto mb-5 block" />
+          ) : (
+            icon && <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-full bg-neutral-100 text-neutral-600">{icon}</div>
+          )}
           <h1 className="text-xl font-semibold tracking-tight">{title}</h1>
           {description && <div className="mt-2 text-[15px] leading-relaxed text-neutral-500">{description}</div>}
           {children && <div className="mt-6 flex flex-col gap-2">{children}</div>}

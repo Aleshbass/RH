@@ -3,7 +3,8 @@
  * convex/actions/marketingSend.ts) and the live preview in the composer, so what admins see is
  * what people get. Everything typed by the admin is escaped.
  */
-import { actions, button, escapeEmailText, greeting, paragraph, renderEmail } from "./layout";
+import { actions, button, escapeEmailText, greeting, renderEmail } from "./layout";
+import { renderEmailBody } from "./richText";
 
 export type MarketingContent = {
   subject: string;
@@ -33,12 +34,8 @@ export function renderMarketingEmail(
   const image = isHttps(content.imageUrl)
     ? `<img src="${escapeEmailText(content.imageUrl!.trim())}" alt="" width="520" style="display:block;width:100%;max-width:100%;height:auto;border:0;border-radius:16px;margin:0 0 24px;" />`
     : "";
-  const paragraphs = content.body
-    .split(/\n\s*\n/)
-    .map((p) => p.trim())
-    .filter(Boolean)
-    .map((p) => paragraph(escapeEmailText(p).replace(/\n/g, "<br />")))
-    .join("");
+  // Rich text from the editor, or plain text from older campaigns (lib/email/richText.ts)
+  const paragraphs = renderEmailBody(content.body);
   const cta =
     content.ctaLabel?.trim() && isHttps(content.ctaUrl)
       ? actions(button(escapeEmailText(content.ctaLabel.trim()), escapeEmailText(content.ctaUrl!.trim())))

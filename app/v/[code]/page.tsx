@@ -6,7 +6,7 @@ import { useAction, useQuery } from 'convex/react'
 import { StreamCall, StreamTheme, StreamVideo, StreamVideoClient } from '@stream-io/video-react-sdk'
 import '@stream-io/video-react-sdk/dist/css/styles.css'
 import Link from 'next/link'
-import { CalendarCheck, CalendarClock, CalendarX, CreditCard, Hourglass, Link2Off, Loader2, PhoneOff, UserSearch, WifiOff } from '@/components/icons'
+import { CalendarCheck, CalendarClock, CalendarX, CreditCard, Hourglass, Link2Off, PhoneOff, UserSearch, WifiOff } from '@/components/icons'
 import { api } from '@/convex/_generated/api'
 import { CallLobby, CallRoom, CallStatusScreen } from '@/components/video/room'
 import { SERVICE_MODE, type JoyBookingState, type JoyServiceMode } from '@/lib/joyJourney'
@@ -141,12 +141,12 @@ export default function PatientJoinPage() {
   }, [])
 
   if (session === undefined || session?.clinicianCallPath) {
-    return <CallStatusScreen icon={<Loader2 className="h-6 w-6 animate-spin text-brand" />} title="Loading your appointment" />
+    return <CallStatusScreen loading title="Loading your appointment" />
   }
 
   if (session === null) {
     if (bookingStatus === undefined) {
-      return <CallStatusScreen icon={<Loader2 className="h-6 w-6 animate-spin text-brand" />} title="Loading your booking" />
+      return <CallStatusScreen loading title="Loading your booking" />
     }
     if (bookingStatus) return <BookingStatusScreen status={bookingStatus} />
     return (
@@ -242,7 +242,7 @@ export default function PatientJoinPage() {
     )
   }
 
-  return <CallStatusScreen icon={<Loader2 className="h-6 w-6 animate-spin text-brand" />} title="Getting your appointment ready" />
+  return <CallStatusScreen loading title="Getting your appointment ready" />
 }
 
 /**

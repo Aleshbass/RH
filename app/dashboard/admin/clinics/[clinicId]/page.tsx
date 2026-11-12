@@ -7,7 +7,7 @@ import { useMutation, useQuery } from 'convex/react'
 import { ConvexError } from 'convex/values'
 import { format } from 'date-fns'
 import { toast } from 'sonner'
-import { ArrowLeft, Banknote, Building2, Inbox, Mail, ShieldCheck, ShieldOff, Users } from '@/components/icons'
+import { ArrowLeft, Banknote, Building2, Inbox, Mail, ShieldCheck, ShieldOff, Trash2, Users } from '@/components/icons'
 import { api } from '@/convex/_generated/api'
 import type { Id } from '@/convex/_generated/dataModel'
 import { Button } from '@/components/ui/button'
@@ -38,6 +38,7 @@ import type { ClinicDetailResult } from '@/components/admin/clinics/types'
 import { RehabifyId } from '@/components/shared/RehabifyId'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
+import { DeleteAccountDialog } from '@/components/admin/DeleteAccountDialog'
 
 const errorText = (err: unknown, fallback: string) =>
   err instanceof ConvexError && typeof err.data === 'string' ? err.data : err instanceof Error && err.message ? err.message : fallback
@@ -60,6 +61,7 @@ export default function AdminClinicDetailPage() {
 
   const [tab, setTab] = useState('overview')
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [deleteOwnerOpen, setDeleteOwnerOpen] = useState(false)
   const [reason, setReason] = useState('')
 
   if (data === undefined) {
@@ -168,6 +170,16 @@ export default function AdminClinicDetailPage() {
               Suspend clinic
             </Button>
           )}
+          {owner && (
+            <Button
+              variant="outline"
+              className={cn(softButtonClass, 'text-rose-700 hover:text-rose-800 dark:text-rose-300')}
+              onClick={() => setDeleteOwnerOpen(true)}
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              Delete owner
+            </Button>
+          )}
         </div>
       </div>
 
@@ -254,6 +266,10 @@ export default function AdminClinicDetailPage() {
           <ClinicFeesTab data={data} />
         </TabsContent>
       </Tabs>
+
+      {owner && (
+        <DeleteAccountDialog userId={owner._id} open={deleteOwnerOpen} onOpenChange={setDeleteOwnerOpen} />
+      )}
 
       <ConfirmDialog
         open={dialogOpen}

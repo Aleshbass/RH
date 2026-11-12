@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { AlertCircle } from '@/components/icons';
 import Link from 'next/link';
+import { RehabifyLoader } from '@/components/brand/RehabifyLoader';
 
 export default function VideoCallPage() {
   const params = useParams();
@@ -54,8 +55,10 @@ export default function VideoCallPage() {
     <div className="min-h-screen flex items-center justify-center bg-gray-50">
       <Card className="w-full max-w-md">
         <CardContent className="p-6">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="text-center mt-4 text-gray-600">Redirecting to Stream video call...</p>
+          <div className="text-center">
+            <RehabifyLoader size={64} />
+          </div>
+          <p className="text-center mt-4 text-gray-600">Opening your video call…</p>
         </CardContent>
       </Card>
     </div>

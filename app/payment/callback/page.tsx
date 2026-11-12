@@ -6,10 +6,11 @@ import { useAction } from 'convex/react'
 import { api } from '@/convex/_generated/api'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { CheckCircle, XCircle, Loader2 } from '@/components/icons'
+import { CheckCircle, XCircle } from '@/components/icons'
 import { toast } from 'sonner'
 import { playSound } from '@/lib/sounds'
 import { PaystackTestModeBanner } from '@/components/billing/PaystackTestModeBanner'
+import { RehabifyLoader } from '@/components/brand/RehabifyLoader'
 
 function PaymentCallbackContent() {
   const searchParams = useSearchParams()
@@ -157,9 +158,7 @@ function PaymentCallbackContent() {
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <div className="mx-auto mb-4">
-            {status === 'loading' && (
-              <Loader2 className="h-12 w-12 animate-spin text-blue-600" />
-            )}
+            {status === 'loading' && <RehabifyLoader size={64} label="Checking your payment" />}
             {status === 'success' && (
               <CheckCircle className="h-12 w-12 text-green-600" />
             )}
@@ -211,9 +210,9 @@ export default function PaymentCallbackPage() {
         <Card className="w-full max-w-md">
           <CardHeader className="text-center">
             <div className="mx-auto mb-4">
-              <Loader2 className="h-12 w-12 animate-spin text-blue-600" />
+              <RehabifyLoader size={64} />
             </div>
-            <CardTitle>Loading...</CardTitle>
+            <CardTitle>Loading…</CardTitle>
           </CardHeader>
         </Card>
       </div>

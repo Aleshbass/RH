@@ -24,6 +24,7 @@ import {
 } from "@/components/icons";
 import { toast } from "sonner";
 import { rememberReferralCode } from "@/lib/referralCookie";
+import { RehabifyPageLoader } from "@/components/brand/RehabifyLoader";
 
 interface PageProps {
   params: Promise<{ code: string }>;
@@ -148,12 +149,7 @@ export default function PartnerReferralLandingPage({ params }: PageProps) {
   // Loading state
   if (linkData === undefined) {
     return (
-      <div className="min-h-screen bg-pt-canvas flex flex-col items-center justify-center space-y-4">
-        <div className="w-10 h-10 rounded-full border-3 border-pt-line-strong border-t-pt-ink animate-spin" />
-        <p className="text-xs font-semibold uppercase tracking-wider text-pt-muted">
-          Loading healthcare referral...
-        </p>
-      </div>
+      <RehabifyPageLoader message="Loading your referral…" className="min-h-screen bg-pt-canvas" />
     );
   }
 

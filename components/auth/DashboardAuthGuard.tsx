@@ -6,6 +6,7 @@ import { api } from '@/convex/_generated/api'
 import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import PendingApprovalPage from '@/components/dashboard/shared/PendingApprovalPage'
+import { RehabifySplash } from '@/components/brand/RehabifyLoader'
 
 interface DashboardAuthGuardProps {
   children: React.ReactNode
@@ -172,14 +173,8 @@ export default function DashboardAuthGuard({ children, loadingFallback }: Dashbo
     (currentUser?.role === 'physiotherapist' || currentUser?.role === 'clinic_owner') && approvalStatus === undefined) {
     if (loadingFallback) return <>{loadingFallback}</>
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-teal-600 mx-auto"></div>
-          <p className="mt-2 text-gray-600">
-            {isRedirecting ? 'Redirecting...' : 'Loading...'}
-          </p>
-        </div>
-      </div>
+      // The first screen after the phone's launch screen when the app opens: the Rehabify splash
+      <RehabifySplash message={isRedirecting ? 'One moment…' : 'Opening your dashboard…'} />
     )
   }
 

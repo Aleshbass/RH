@@ -6,6 +6,7 @@ import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { ArrowLeft, Check, Copy, MessageSquare } from "@/components/icons";
 import { Button } from "@/components/ui/button";
+import { RehabifyLoader } from "@/components/brand/RehabifyLoader";
 
 type TrackStep = { key: string; label: string; done: boolean; at: number | null };
 
@@ -42,7 +43,7 @@ export default function PatientTrackPage({ params }: TrackPageProps) {
     return (
       <div className="min-h-screen bg-[#fafafa] dark:bg-[#0a0a0a] flex items-center justify-center p-6">
         <div className="w-full max-w-md p-10 bg-white dark:bg-neutral-900 rounded-2xl border border-neutral-100 dark:border-neutral-800 text-center space-y-3">
-          <div className="w-6 h-6 border-2 border-neutral-900 dark:border-neutral-100 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <RehabifyLoader size={56} label="Loading care status" className="mx-auto mb-4" />
           <p className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">Loading care status…</p>
         </div>
       </div>

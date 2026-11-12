@@ -10,7 +10,7 @@ import { SITE_CONFIG } from './config';
 
 export type OgImage = { url: string; width?: number; height?: number; alt?: string };
 
-/** The site-wide 1200x630 card from app/opengraph-image.tsx. */
+/** The site-wide 1200x630 link-preview card (app/share-image; see SITE_CONFIG.ogImage). */
 export const DEFAULT_OG_IMAGE: OgImage = {
   url: SITE_CONFIG.ogImage,
   width: 1200,
@@ -27,8 +27,8 @@ export const DEFAULT_OG_IMAGE: OgImage = {
  * pages are duplicates of the parent.
  *
  * `title` is the short page title; the root layout's template appends the site name.
- * A child `openGraph` replaces the parent's entirely (images included), so the site image from
- * app/opengraph-image.tsx is set explicitly unless `ogImage` is given.
+ * A child `openGraph` replaces the parent's entirely (images included), so the site image
+ * (DEFAULT_OG_IMAGE) is set explicitly unless `ogImage` is given.
  */
 export function pageMetadata({
   title,
@@ -67,7 +67,8 @@ export function pageMetadata({
       card: 'summary_large_image',
       title: socialTitle,
       description,
-      images: [image.url],
+      // X gets the card file itself; LinkedIn's different picture only applies to og:image
+      images: [image.url === DEFAULT_OG_IMAGE.url ? SITE_CONFIG.twitterImage : image.url],
     },
     ...(noIndex && { robots: { index: false, follow: true } }),
   };

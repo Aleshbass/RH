@@ -25,7 +25,6 @@ import { action, httpAction, internalAction, internalMutation, internalQuery, qu
 import type { ActionCtx, MutationCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
-import { requireAdmin } from "./helpers/partnerAccess";
 import { removeImagekitFilesLater } from "./helpers/imagekit";
 import {
   r2AbortMultipart,
@@ -38,7 +37,7 @@ import {
   type R2Config,
 } from "./helpers/r2";
 import { deriveVideoKey, randomHex, signPlaybackToken, toBase64, verifyPlaybackToken, videoMasterKey, workerSecretOk } from "./helpers/videoCrypto";
-import { canUserWatchLesson } from "./learn";
+import { canUserWatchLesson, courseEditor } from "./learn";
 
 const MINUTE = 60 * 1000;
 const HOUR = 60 * MINUTE;
@@ -90,9 +89,17 @@ const clean = (value: string | undefined | null, max: number) => (value ?? "").r
 // Records
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** Admins and Learn instructors may upload; instructors only touch their own uploads. */
 export const adminUser = internalQuery({
-  args: {},
-  handler: async (ctx): Promise<Id<"users">> => (await requireAdmin(ctx)).user._id,
+  args: { assetId: v.optional(v.id("learnVideoAssets")) },
+  handler: async (ctx, args): Promise<Id<"users">> => {
+    const editor = await courseEditor(ctx);
+    if (args.assetId && !editor.isAdmin) {
+      const asset = await ctx.db.get(args.assetId);
+      if (!asset || asset.createdBy !== editor.user._id) throw new ConvexError("Video not found.");
+    }
+    return editor.user._id;
+  },
 });
 
 export const createAsset = internalMutation({
@@ -308,7 +315,7 @@ export const wakeWorker = internalAction({
 export const adminVideoSetup = query({
   args: {},
   handler: async (ctx) => {
-    await requireAdmin(ctx);
+    await courseEditor(ctx);
     const missing = missingSetup();
     return { ready: missing.length === 0, missing, encoder: Boolean(process.env.LEARN_VIDEO_WORKER_URL) };
   },
@@ -318,8 +325,10 @@ export const adminVideoSetup = query({
 export const adminVideoAssets = query({
   args: {},
   handler: async (ctx) => {
-    await requireAdmin(ctx);
-    const rows = await ctx.db.query("learnVideoAssets").order("desc").take(60);
+    const editor = await courseEditor(ctx);
+    const rows = (await ctx.db.query("learnVideoAssets").order("desc").take(200))
+      .filter((a) => editor.isAdmin || a.createdBy === editor.user._id)
+      .slice(0, 60);
     return rows.map((a) => ({
       id: a._id,
       title: a.title,
@@ -370,7 +379,7 @@ export const adminStartVideoUpload = action({
 export const adminFinishVideoUpload = action({
   args: { assetId: v.id("learnVideoAssets"), parts: v.array(v.object({ partNumber: v.number(), etag: v.string() })) },
   handler: async (ctx, args): Promise<void> => {
-    await ctx.runQuery(internal.learnVideo.adminUser, {});
+    await ctx.runQuery(internal.learnVideo.adminUser, { assetId: args.assetId });
     const config = requireR2();
     const asset: Doc<"learnVideoAssets"> | null = await ctx.runQuery(internal.learnVideo.getAsset, { assetId: args.assetId });
     if (!asset || asset.status !== "uploading" || !asset.uploadId || !asset.sourceKey) throw new ConvexError("This upload isn't open any more.");
@@ -383,7 +392,7 @@ export const adminFinishVideoUpload = action({
 export const adminAbortVideoUpload = action({
   args: { assetId: v.id("learnVideoAssets") },
   handler: async (ctx, args): Promise<void> => {
-    await ctx.runQuery(internal.learnVideo.adminUser, {});
+    await ctx.runQuery(internal.learnVideo.adminUser, { assetId: args.assetId });
     await ctx.runAction(internal.learnVideo.deleteAsset, { assetId: args.assetId });
   },
 });

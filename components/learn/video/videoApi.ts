@@ -110,6 +110,10 @@ export const videoApi = {
   ),
   moveCourse: makeFunctionReference<'mutation', { courseId: CourseId; direction: Direction }, null>('learn:adminMoveVideoCourse'),
   deleteCourse: makeFunctionReference<'mutation', { courseId: CourseId }, null>('learn:adminDeleteVideoCourse'),
+  // Learn instructors send a draft for review; an admin publishes it or asks for changes
+  submitCourse: makeFunctionReference<'mutation', { courseId: CourseId }, null>('learn:submitVideoCourse'),
+  withdrawCourse: makeFunctionReference<'mutation', { courseId: CourseId }, null>('learn:withdrawVideoCourse'),
+  requestChanges: makeFunctionReference<'mutation', { courseId: CourseId; note: string }, null>('learn:requestVideoCourseChanges'),
   saveLesson: makeFunctionReference<
     'mutation',
     {

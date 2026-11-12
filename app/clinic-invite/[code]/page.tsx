@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { Loader2 } from '@/components/icons';
+import { RehabifyLoader } from '@/components/brand/RehabifyLoader';
 
 /**
  * Older invitation links used /clinic-invite. Every clinic invitation is now handled
@@ -19,7 +19,7 @@ export default function ClinicInviteRedirect() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50">
-      <Loader2 className="h-6 w-6 animate-spin text-[#005b57]" aria-label="Opening invitation" />
+      <RehabifyLoader size={64} label="Opening invitation" />
     </div>
   );
 }

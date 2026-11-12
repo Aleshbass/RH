@@ -10,9 +10,10 @@ import type { ReactNode } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { motion, useReducedMotion } from "framer-motion";
-import { Check, Loader2 } from "@/components/icons";
+import { Check } from "@/components/icons";
 import { AUTH_COPY, authRoutes, type AuthAudience } from "./authConfig";
 import { EASE } from "./AuthControls";
+import { RehabifyLoader } from "@/components/brand/RehabifyLoader";
 
 function BrandPanel({ audience, home }: { audience: AuthAudience; home: string }) {
   const copy = AUTH_COPY[audience].panel;
@@ -153,7 +154,7 @@ export function AuthLoading({
   return (
     <AuthShell audience={audience} partnersHost={partnersHost}>
       <div className="flex flex-col items-center justify-center gap-3 py-16 text-sm text-rh-night/60" role="status">
-        <Loader2 className="h-7 w-7 animate-spin text-rh-teal" />
+        <RehabifyLoader size={56} label={label ?? "Loading"} />
         {label}
       </div>
     </AuthShell>

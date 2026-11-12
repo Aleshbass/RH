@@ -17,6 +17,7 @@ import { usePatientOnboardingAction } from '@/lib/onboardingHelpers'
 import { PATIENT_CONSENT_POLICIES, POLICIES, policyVersions } from '@/lib/policies'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
+import { RehabifyLoader } from '@/components/brand/RehabifyLoader'
 
 const PENDING_INVITE_KEY = 'rehabify_pending_invite'
 const PATIENT_HOME = '/dashboard/patient'
@@ -198,7 +199,7 @@ export default function PatientInvitePage() {
     return (
       <Screen>
         <Card className="flex items-center justify-center py-16">
-          <Loader2 className="h-6 w-6 animate-spin text-pt-muted" />
+          <RehabifyLoader size={56} />
         </Card>
       </Screen>
     )

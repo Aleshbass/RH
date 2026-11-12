@@ -28,6 +28,7 @@ import {
   Handshake,
   HelpCircle,
   Newspaper,
+  GraduationCap,
 } from '@/components/icons'
 
 import { api } from '@/convex/_generated/api'
@@ -92,6 +93,7 @@ export const ROLE_META: Record<
   partner: { label: 'Partner', plural: 'Partners', icon: Handshake, tone: 'amber' },
   admin: { label: 'Administrator', plural: 'Administrators', icon: Shield, tone: 'red' },
   blog_editor: { label: 'Blog writer', plural: 'Blog writers', icon: Newspaper, tone: 'amber' },
+  learn_instructor: { label: 'Learn instructor', plural: 'Learn instructors', icon: GraduationCap, tone: 'amber' },
   none: { label: 'No role yet', plural: 'No role yet', icon: HelpCircle, tone: 'neutral' },
 }
 
@@ -134,7 +136,7 @@ export function UserAvatar({
 }
 
 /** Roles an admin can assign with users.setUserRole. */
-export const ASSIGNABLE_ROLES = ['patient', 'physiotherapist', 'clinic_owner', 'family_member', 'blog_editor', 'admin'] as const
+export const ASSIGNABLE_ROLES = ['patient', 'physiotherapist', 'clinic_owner', 'family_member', 'blog_editor', 'learn_instructor', 'admin'] as const
 export type AssignableRole = (typeof ASSIGNABLE_ROLES)[number]
 
 /**
@@ -233,6 +235,13 @@ export function RoleChangeDialog({
               </div>
             )}
 
+            {selected === 'learn_instructor' && user.role !== 'learn_instructor' && (
+              <div className="flex items-start gap-2 rounded-xl bg-rh-honeydew p-3 text-xs text-rh-ink dark:bg-white/[0.06] dark:text-white/80">
+                <GraduationCap className="mt-0.5 h-4 w-4 shrink-0" />
+                <p>Learn instructors only see Rehabify Learn video courses. They build their own courses and send them for review; an administrator publishes them.</p>
+              </div>
+            )}
+
             {selected === 'admin' && user.role !== 'admin' && (
               <div className="flex items-start gap-2 rounded-xl bg-rh-peach p-3 text-xs text-[#b4690e] dark:bg-amber-400/10 dark:text-amber-300">
                 <Crown className="mt-0.5 h-4 w-4 shrink-0" />
@@ -280,6 +289,7 @@ type RoleFilter =
   | 'family_member'
   | 'partner'
   | 'blog_editor'
+  | 'learn_instructor'
   | 'admin'
   | 'none'
 
@@ -293,6 +303,7 @@ const ROLE_FILTERS: RoleFilter[] = [
   'family_member',
   'partner',
   'blog_editor',
+  'learn_instructor',
   'admin',
   'none',
 ]

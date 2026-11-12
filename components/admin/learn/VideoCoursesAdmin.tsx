@@ -21,10 +21,12 @@ import {
   Play,
   PlayCircle,
   Plus,
+  Send,
   Trash2,
   UploadCloud,
   X,
 } from '@/components/icons'
+import { useConsoleRole } from '@/components/admin/shell/consoleRole'
 import type { Id } from '@/convex/_generated/dataModel'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -101,6 +103,14 @@ function Thumb({ url, title, className }: { url: string | null; title: string; c
       )}
     </div>
   )
+}
+
+/** Published, or for a draft where it is in the instructor review. */
+function CourseBadge({ course }: { course: AdminVideoCourse }) {
+  if (course.status === 'published') return <StatusBadge tone="green">Published</StatusBadge>
+  if (course.reviewStatus === 'in_review') return <StatusBadge tone="amber">In review</StatusBadge>
+  if (course.reviewStatus === 'changes_requested') return <StatusBadge tone="red">Changes requested</StatusBadge>
+  return <StatusBadge tone="neutral">Draft</StatusBadge>
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -271,6 +281,9 @@ function CourseForm({
 }) {
   const saveCourse = useMutation(videoApi.saveCourse)
   const uploadAuth = useAction(videoApi.uploadAuth)
+  const isAdmin = useConsoleRole() === 'admin'
+  // Instructors can't change a course that is live or with an admin for review
+  const locked = Boolean(course && !course.canEdit)
   const [title, setTitle] = useState(course?.title ?? '')
   const [summary, setSummary] = useState(course?.summary ?? '')
   const [benefits, setBenefits] = useState<string[]>(course?.benefits.length ? course.benefits : ['', '', ''])
@@ -321,9 +334,14 @@ function CourseForm({
         benefits: benefits.map((b) => b.trim()).filter(Boolean),
         coverUrl: cover?.url,
         coverFileId: cover?.fileId,
-        access,
-        rehabifyPrice: access === 'paid' ? Number(rehabifyPrice.replace(/[^\d.]/g, '')) || undefined : undefined,
-        externalPrice: access === 'paid' ? Number(externalPrice.replace(/[^\d.]/g, '')) || undefined : undefined,
+        // Who can watch and the prices are set by an admin
+        ...(isAdmin
+          ? {
+              access,
+              rehabifyPrice: access === 'paid' ? Number(rehabifyPrice.replace(/[^\d.]/g, '')) || undefined : undefined,
+              externalPrice: access === 'paid' ? Number(externalPrice.replace(/[^\d.]/g, '')) || undefined : undefined,
+            }
+          : {}),
         details: {
           category: category || undefined,
           level: level || undefined,
@@ -405,6 +423,8 @@ function CourseForm({
               )}
             </div>
           </Field>
+          {isAdmin && (
+          <>
           <Field
             label="Who can watch"
             hint={
@@ -462,6 +482,8 @@ function CourseForm({
                 />
               </Field>
             </div>
+          )}
+          </>
           )}
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Topic" htmlFor="vc-category" hint="Where it shows under Browse by topic on Learn.">
@@ -549,10 +571,15 @@ function CourseForm({
       </div>
 
       <div className="mt-6 flex flex-wrap gap-2 border-t border-black/[0.05] pt-5 dark:border-white/[0.06]">
-        <Button onClick={save} disabled={saving || uploading} className={primaryButtonClass}>
+        <Button onClick={save} disabled={saving || uploading || locked} className={primaryButtonClass}>
           {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
           {course ? 'Save details' : 'Create course'}
         </Button>
+        {locked && (
+          <p className="self-center text-xs text-neutral-500">
+            {course?.status === 'published' ? 'Live courses are changed by an admin.' : 'Withdraw it from review to make changes.'}
+          </p>
+        )}
         {onCancel && (
           <Button variant="ghost" className="rounded-xl" onClick={onCancel}>
             Cancel
@@ -1037,10 +1064,33 @@ function CourseManager({ course, onBack }: { course: AdminVideoCourse; onBack: (
   const deleteCourse = useMutation(videoApi.deleteCourse)
   const moveLesson = useMutation(videoApi.moveLesson)
   const deleteLesson = useMutation(videoApi.deleteLesson)
+  const submitCourse = useMutation(videoApi.submitCourse)
+  const withdrawCourse = useMutation(videoApi.withdrawCourse)
+  const requestChanges = useMutation(videoApi.requestChanges)
+  const isAdmin = useConsoleRole() === 'admin'
   const [drawer, setDrawer] = useState<{ lesson: AdminVideoLesson | null } | null>(null)
   const [preview, setPreview] = useState<AdminVideoLesson | null>(null)
   const [confirm, setConfirm] = useState<'publish' | 'unpublish' | 'delete' | { lesson: AdminVideoLesson } | null>(null)
+  const [changesOpen, setChangesOpen] = useState(false)
+  const [changesNote, setChangesNote] = useState('')
+  const [busy, setBusy] = useState(false)
   const published = course.status === 'published'
+  const inReview = course.reviewStatus === 'in_review'
+  const editable = course.canEdit
+
+  const run = async (fn: () => Promise<unknown>, done: string) => {
+    setBusy(true)
+    try {
+      await fn()
+      toast.success(done)
+      playSound('success')
+    } catch (err) {
+      toast.error(errorMessage(err, 'Something went wrong. Please try again.'))
+      playSound('error')
+    } finally {
+      setBusy(false)
+    }
+  }
 
   return (
     <div className="space-y-5">
@@ -1053,18 +1103,48 @@ function CourseManager({ course, onBack }: { course: AdminVideoCourse; onBack: (
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-lg font-semibold text-rh-ink dark:text-white">{course.title}</h2>
-            <StatusBadge tone={published ? 'green' : 'neutral'}>{published ? 'Published' : 'Draft'}</StatusBadge>
+            <CourseBadge course={course} />
           </div>
+          {isAdmin && course.instructorName ? (
+            <p className="mt-0.5 text-xs font-medium text-neutral-500">By {course.instructorName}, Learn instructor</p>
+          ) : null}
           <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
             {course.lessonCount} {course.lessonCount === 1 ? 'lesson' : 'lessons'} · {formatLength(course.durationSec)} ·{' '}
             {course.learnerCount} {course.learnerCount === 1 ? 'learner' : 'learners'} · {course.completedCount} completed
           </p>
           <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
-            {published ? 'Paid MSK learners can watch this now.' : 'Only admins can see it until you publish.'}
+            {isAdmin
+              ? published
+                ? 'Learners can watch this now.'
+                : 'Only admins can see it until you publish.'
+              : published
+                ? 'Live on Rehabify Learn. To change it, ask an admin to unpublish it.'
+                : inReview
+                  ? 'With an admin for review. They publish it or send it back with notes.'
+                  : 'Only you and the admins can see it. Send it for review when it is ready.'}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          {published ? (
+          {!isAdmin ? (
+            published ? null : inReview ? (
+              <Button variant="ghost" className={softButtonClass} disabled={busy} onClick={() => run(() => withdrawCourse({ courseId: course.id }), 'Taken back from review')}>
+                Withdraw
+              </Button>
+            ) : (
+              <>
+                <Button
+                  className={primaryButtonClass}
+                  disabled={busy || course.lessonCount === 0}
+                  onClick={() => run(() => submitCourse({ courseId: course.id }), 'Sent for review. An admin will publish it or send notes.')}
+                >
+                  <Send className="mr-2 h-4 w-4" /> Send for review
+                </Button>
+                <Button variant="ghost" className="rounded-xl text-rose-600 hover:bg-rose-50 hover:text-rose-700 dark:hover:bg-white/[0.06]" onClick={() => setConfirm('delete')}>
+                  <Trash2 className="mr-2 h-4 w-4" /> Delete
+                </Button>
+              </>
+            )
+          ) : published ? (
             <Button variant="ghost" className={softButtonClass} onClick={() => setConfirm('unpublish')}>
               Unpublish
             </Button>
@@ -1073,6 +1153,11 @@ function CourseManager({ course, onBack }: { course: AdminVideoCourse; onBack: (
               <Button className={primaryButtonClass} disabled={course.lessonCount === 0} onClick={() => setConfirm('publish')}>
                 Publish
               </Button>
+              {inReview && (
+                <Button variant="ghost" className={softButtonClass} onClick={() => setChangesOpen(true)}>
+                  Ask for changes
+                </Button>
+              )}
               <Button variant="ghost" className="rounded-xl text-rose-600 hover:bg-rose-50 hover:text-rose-700 dark:hover:bg-white/[0.06]" onClick={() => setConfirm('delete')}>
                 <Trash2 className="mr-2 h-4 w-4" /> Delete
               </Button>
@@ -1081,17 +1166,24 @@ function CourseManager({ course, onBack }: { course: AdminVideoCourse; onBack: (
         </div>
       </div>
 
+      {course.reviewStatus === 'changes_requested' && course.reviewNote && (
+        <Callout title="Changes requested">{course.reviewNote}</Callout>
+      )}
       {!published && course.lessonCount === 0 && (
-        <Callout title="Add a lesson to publish">Upload at least one lesson video, then publish the course.</Callout>
+        <Callout title={isAdmin ? 'Add a lesson to publish' : 'Add a lesson first'}>
+          {isAdmin ? 'Upload at least one lesson video, then publish the course.' : 'Upload at least one lesson video, then send the course for review.'}
+        </Callout>
       )}
 
       <Panel
         title="Lessons"
         description="Played in this order. Learners resume where they stopped."
         actions={
-          <Button className={primaryButtonClass} onClick={() => setDrawer({ lesson: null })}>
-            <Plus className="mr-2 h-4 w-4" /> Add lesson
-          </Button>
+          editable ? (
+            <Button className={primaryButtonClass} onClick={() => setDrawer({ lesson: null })}>
+              <Plus className="mr-2 h-4 w-4" /> Add lesson
+            </Button>
+          ) : undefined
         }
       >
         {course.lessons.length === 0 ? (
@@ -1125,7 +1217,7 @@ function CourseManager({ course, onBack }: { course: AdminVideoCourse; onBack: (
                     <p className="mt-0.5 text-xs font-medium text-rose-600">This video couldn&apos;t be encoded. Edit the lesson and upload it again.</p>
                   )}
                 </div>
-                <div className="flex shrink-0 items-center gap-0.5">
+                <div className={cn('flex shrink-0 items-center gap-0.5', !editable && '[&>button:not([aria-label=Preview])]:hidden')}>
                   <IconButton label="Move up" disabled={i === 0} onClick={() => moveLesson({ lessonId: lesson.id, direction: 'up' })}>
                     <ArrowUp className="h-4 w-4" />
                   </IconButton>
@@ -1162,6 +1254,39 @@ function CourseManager({ course, onBack }: { course: AdminVideoCourse; onBack: (
       />
       <PreviewDialog lesson={preview} onClose={() => setPreview(null)} />
 
+      <Dialog open={changesOpen} onOpenChange={(o) => !busy && setChangesOpen(o)}>
+        <DialogContent className="rounded-2xl sm:max-w-lg dark:border-white/10 dark:bg-rh-ink-2">
+          <DialogHeader>
+            <DialogTitle className="dark:text-white">Ask for changes</DialogTitle>
+            <DialogDescription>The instructor sees this note on the course and gets a notification.</DialogDescription>
+          </DialogHeader>
+          <textarea
+            value={changesNote}
+            onChange={(e) => setChangesNote(e.target.value)}
+            rows={5}
+            maxLength={1000}
+            placeholder="e.g. Please re-record lesson 2 with clearer audio and add a summary at the end."
+            className={textareaClass}
+          />
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" className="rounded-xl" onClick={() => setChangesOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              className={primaryButtonClass}
+              disabled={busy || !changesNote.trim()}
+              onClick={async () => {
+                await run(() => requestChanges({ courseId: course.id, note: changesNote }), 'Sent back to the instructor')
+                setChangesOpen(false)
+                setChangesNote('')
+              }}
+            >
+              Send to the instructor
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <ConfirmDialog
         open={confirm !== null}
         onOpenChange={(o) => !o && setConfirm(null)}
@@ -1176,7 +1301,7 @@ function CourseManager({ course, onBack }: { course: AdminVideoCourse; onBack: (
         }
         description={
           confirm === 'publish'
-            ? 'Paid MSK learners will see it under Courses straight away.'
+            ? 'Learners who can watch it see it under Courses straight away.'
             : confirm === 'unpublish'
               ? 'Learners won’t see it any more. Their progress is kept if you publish it again.'
               : confirm === 'delete'
@@ -1243,6 +1368,7 @@ function IconButton({
 export function VideoCoursesAdmin() {
   const courses = useQuery(videoApi.adminCourses, {})
   const moveCourse = useMutation(videoApi.moveCourse)
+  const isAdmin = useConsoleRole() === 'admin'
   const [selected, setSelected] = useState<CourseId | 'new' | null>(null)
   const [fromYoutube, setFromYoutube] = useState(false)
 
@@ -1250,8 +1376,12 @@ export function VideoCoursesAdmin() {
     <>
       <PageHeader
         eyebrow="Rehabify Learn"
-        title="Video courses"
-        description="On-demand courses for physios who paid for the MSK Specialist Program. Their course page shows these courses and nothing else."
+        title={isAdmin ? 'Video courses' : 'My courses'}
+        description={
+          isAdmin
+            ? 'On-demand courses on Rehabify Learn. Courses from Learn instructors arrive here for review before you publish them.'
+            : 'Build your video courses here. When one is ready, send it for review; an admin sets who can watch and publishes it.'
+        }
         actions={
           selected === null && courses && courses.length > 0 ? (
             <div className="flex flex-wrap gap-2">
@@ -1337,9 +1467,10 @@ export function VideoCoursesAdmin() {
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="truncate font-semibold text-rh-ink dark:text-white">{course.title}</span>
-                      <StatusBadge tone={course.status === 'published' ? 'green' : 'neutral'}>
-                        {course.status === 'published' ? 'Published' : 'Draft'}
-                      </StatusBadge>
+                      <CourseBadge course={course} />
+                      {isAdmin && course.instructorName ? (
+                        <span className="text-xs font-medium text-neutral-500">by {course.instructorName}</span>
+                      ) : null}
                     </div>
                     <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
                       {course.lessonCount} {course.lessonCount === 1 ? 'lesson' : 'lessons'} · {formatLength(course.durationSec)} ·{' '}
@@ -1355,7 +1486,7 @@ export function VideoCoursesAdmin() {
                     </p>
                   </div>
                 </button>
-                <div className="flex shrink-0 items-center gap-0.5">
+                <div className={cn('flex shrink-0 items-center gap-0.5', !isAdmin && '[&>button:not([aria-label=Open])]:hidden')}>
                   <IconButton label="Move up" disabled={i === 0} onClick={() => moveCourse({ courseId: course.id, direction: 'up' })}>
                     <ArrowUp className="h-4 w-4" />
                   </IconButton>

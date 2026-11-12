@@ -81,7 +81,7 @@ export default function DashboardLinkPage() {
   }
 
   if (link === undefined || !authLoaded || link.state === 'signed_in') {
-    return <CallStatusScreen icon={<Loader2 className="h-6 w-6 animate-spin text-brand" />} title="Opening your dashboard" />
+    return <CallStatusScreen loading title="Opening your dashboard" />
   }
 
   const greeting = link.firstName ? `Hi ${link.firstName}` : 'Hi there'

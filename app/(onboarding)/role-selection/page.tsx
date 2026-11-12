@@ -12,7 +12,6 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth, useUser } from '@clerk/nextjs';
 import { useMutation, useQuery } from 'convex/react';
 import { api } from '@/convex/_generated/api';
-import { Loader2 } from '@/components/icons';
 import { INTENT_ICONS } from '@/components/auth/GetStartedMenu';
 import { useOnboardingStore, UserRole } from '@/stores/onboardingStore';
 import { programError } from '@/components/exercise-programs/errors';
@@ -28,13 +27,14 @@ import {
   SIGNUP_INTENTS,
   type SignupIntent,
 } from '@/lib/auth/signupIntent';
+import { RehabifySplash } from '@/components/brand/RehabifyLoader';
 
 type OnboardingRole = Exclude<UserRole, 'admin'>;
 
 // A simple way to generate a unique ID for the onboarding session
 const generateOnboardingId = () => `onboarding_${new Date().getTime()}_${Math.random().toString(36).substring(2, 10)}`;
 
-const DASHBOARD_ROLES = new Set(['physiotherapist', 'clinic_owner', 'patient', 'family_member', 'doctor', 'admin', 'clinic_staff', 'blog_editor']);
+const DASHBOARD_ROLES = new Set(['physiotherapist', 'clinic_owner', 'patient', 'family_member', 'doctor', 'admin', 'clinic_staff', 'blog_editor', 'learn_instructor']);
 
 type AccountLike = { role?: string | null; patientProfileId?: unknown };
 
@@ -195,12 +195,7 @@ function RoleSelectionContent() {
   if (!showPicker || loadingIntent) {
     const settingUp = loadingIntent ? SIGNUP_INTENTS[loadingIntent].chip.toLowerCase() : null;
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-rh-canvas px-4 text-center" role="status">
-        <Loader2 className="h-6 w-6 animate-spin text-rh-ink/60" />
-        <p className="text-sm font-medium text-rh-ink/70">
-          {settingUp ? `Setting up your ${settingUp} account…` : 'Setting up your account…'}
-        </p>
-      </div>
+      <RehabifySplash className="bg-rh-canvas" message={settingUp ? `Setting up your ${settingUp} account…` : 'Setting up your account…'} />
     );
   }
 
@@ -260,9 +255,7 @@ export default function RoleSelectionPage() {
   return (
     <React.Suspense
       fallback={
-        <div className="flex min-h-screen items-center justify-center bg-rh-canvas">
-          <Loader2 className="h-6 w-6 animate-spin text-rh-ink/60" />
-        </div>
+        <RehabifySplash className="bg-rh-canvas" />
       }
     >
       <RoleSelectionContent />

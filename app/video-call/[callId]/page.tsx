@@ -6,7 +6,7 @@ import { useUser } from '@clerk/nextjs'
 import StreamVideoCall from '@/components/video/StreamVideoCall'
 import { useMutation, useQuery } from 'convex/react'
 import { api } from '@/convex/_generated/api'
-import { Loader2 } from '@/components/icons'
+import { RehabifyLoader } from '@/components/brand/RehabifyLoader'
 
 export default function VideoCallPage() {
   const params = useParams()
@@ -73,8 +73,8 @@ export default function VideoCallPage() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-900 text-white">
         <div className="text-center space-y-4">
-          <Loader2 className="h-12 w-12 animate-spin mx-auto" />
-          <p className="text-xl">Loading...</p>
+          <RehabifyLoader size={72} className="mx-auto" />
+          <p className="text-xl">Loading…</p>
         </div>
       </div>
     )

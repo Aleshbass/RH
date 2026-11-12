@@ -2,7 +2,7 @@
 import { insertNotification } from "./helpers/pushNotify";
 import { ConvexError, v } from "convex/values";
 import { paginationOptsValidator } from "convex/server";
-import { internalMutation, mutation, query, action, QueryCtx, MutationCtx, internalQuery } from "./_generated/server";
+import { internalMutation, mutation, query, action, internalAction, QueryCtx, MutationCtx, internalQuery } from "./_generated/server";
 import { Doc, Id } from "./_generated/dataModel";
 import { api, internal } from "./_generated/api";
 import { getAuthenticatedUser, ensureUserRole } from "./auth";
@@ -11,6 +11,7 @@ import { attributeUserToLink } from "./helpers/partnerAttribution";
 import { normalizePhone } from "./helpers/partnerShared";
 import { assertSignupAllowed } from "./platformSettings";
 import { logSecurityEvent } from "./helpers/securityLog";
+import { claimTeamInvite } from "./teamAccess";
 import { ensureClinicNumber, ensureUserNumbers, findUserByRehabifyId } from "./helpers/rehabifyIds";
 import { matchesRehabifyId, parseRehabifyId } from "./helpers/rehabifyIdFormat";
 import { isClinicInviteApproval } from "./helpers/clinicApproval";
@@ -250,6 +251,10 @@ export const updateOrCreateUser = internalMutation({
       if (Object.keys(updates).length > 0) {
         await ctx.db.patch(existingUser._id, updates);
       }
+      // A blog writer / Learn instructor invite for this email, once the email is verified
+      if (!existingUser.role && primaryEmailObj?.verification?.status === "verified") {
+        await claimTeamInvite(ctx, existingUser._id, email);
+      }
       return existingUser._id;
     }
 
@@ -274,6 +279,8 @@ export const updateOrCreateUser = internalMutation({
       hasCompletedOnboarding: false,
       onboardingVersion: 1,
     });
+    // Invited as a blog writer or Learn instructor: becomes that role straight away
+    await claimTeamInvite(ctx, userId, primaryEmailObj?.verification?.status === "verified" ? email : null);
 
     return userId;
   },
@@ -425,6 +432,9 @@ export const storeUserFromClerk = mutation({
       if (args.referralPublicCode && !existingUser.referredByPartnerCode) {
         await attributeUserToLink(ctx, { ...existingUser, ...updates } as Doc<"users">, args.referralPublicCode, "referral_link", { countSignup: true });
       }
+      if (!existingUser.role && identity.emailVerified && typeof identity.email === "string") {
+        await claimTeamInvite(ctx, existingUser._id, identity.email);
+      }
       return existingUser._id;
     } else {
       // Only Clerk's verified email is trusted here, never the client argument.
@@ -467,6 +477,8 @@ export const storeUserFromClerk = mutation({
         hasCompletedOnboarding: false,
         onboardingVersion: 1,
       });
+      // Invited as a blog writer or Learn instructor: becomes that role straight away
+      await claimTeamInvite(ctx, newUserId, verifiedEmail);
       if (args.referralPublicCode) {
         const created = await ctx.db.get(newUserId);
         if (created) await attributeUserToLink(ctx, created, args.referralPublicCode, "referral_link", { countSignup: true });
@@ -1135,7 +1147,9 @@ export const setUserRole = mutation({
       v.literal("family_member"),
       v.literal("admin"),
       // Blog writer: sees only the blog pages of the admin console
-      v.literal("blog_editor")
+      v.literal("blog_editor"),
+      // Learn instructor: sees only Learn › Video courses
+      v.literal("learn_instructor")
     ),
   },
   handler: async (ctx, args) => {
@@ -1170,7 +1184,8 @@ export const setUserRole = mutation({
       clinic_owner: "Clinic Owner",
       family_member: "Family Member",
       admin: "Administrator",
-      blog_editor: "Blog Writer"
+      blog_editor: "Blog Writer",
+      learn_instructor: "Learn Instructor"
     };
 
     await ctx.runMutation(api.notifications.create, {
@@ -1228,6 +1243,7 @@ const ADMIN_LISTABLE_ROLES = [
   "partner",
   "clinic_staff",
   "blog_editor",
+  "learn_instructor",
 ] as const;
 
 const adminRoleFilterValidator = v.union(
@@ -2365,5 +2381,173 @@ export const adminDeleteUser = mutation({
     // Optional: Log the deletion
 
     return { success: true, message: "User deleted successfully" };
+  },
+});
+
+// ─── Admin: delete a clinician's or clinic owner's account (owner, 12 Nov 2026) ───
+//
+// Not a hard delete: patients' visits, clinical notes, invoices and payments stay (they are the
+// patients' records), shown under "Deleted user". The person's details are erased, they leave the
+// marketplace and their sign-in is deleted, so they can't sign in again (signing up starts a new
+// account). A clinic owner's clinic is suspended. Refused while they have upcoming visits.
+
+const CLOSABLE_ROLES = ["physiotherapist", "clinic_owner", "clinic_staff"] as const;
+type ClosableRole = (typeof CLOSABLE_ROLES)[number];
+const isClosable = (role: string | undefined): role is ClosableRole => CLOSABLE_ROLES.includes(role as ClosableRole);
+
+async function upcomingVisitsAsClinician(ctx: QueryCtx, userId: Id<"users">) {
+  const upcoming = await ctx.db
+    .query("appointments")
+    .withIndex("by_physiotherapist_id_and_time", (q) => q.eq("physiotherapistId", userId).gt("startTime", Date.now()))
+    .take(200);
+  return upcoming.filter((a) => a.status === "scheduled" || a.status === "confirmed").length;
+}
+
+/** What deleting this account would change, for the admin's confirm dialog. */
+export const adminAccountClosurePreview = query({
+  args: { userId: v.id("users") },
+  handler: async (ctx, args) => {
+    const admin = await ensureUserRole(ctx, ["admin"]);
+    const user = await ctx.db.get(args.userId);
+    if (!user) return null;
+    const name = [user.firstName, user.lastName].filter(Boolean).join(" ") || user.email || "This account";
+    const relationships = await ctx.db
+      .query("patientPhysiotherapistRelationships")
+      .withIndex("by_physiotherapist", (q) => q.eq("physiotherapistId", user._id))
+      .take(1000);
+    const ownedClinics = await ctx.db
+      .query("clinics")
+      .withIndex("by_owner_id", (q) => q.eq("ownerId", user._id))
+      .take(10);
+    const clinics = [];
+    for (const clinic of ownedClinics) {
+      const team = await ctx.db
+        .query("users")
+        .withIndex("by_clinic_id", (q) => q.eq("clinicId", clinic._id))
+        .take(200);
+      clinics.push({
+        id: clinic._id,
+        name: clinic.name,
+        suspended: clinic.status === "suspended",
+        teamCount: team.filter((m) => m._id !== user._id && !m.deletedAt).length,
+      });
+    }
+    const memberOf = user.clinicId && !ownedClinics.some((c) => c._id === user.clinicId) ? await ctx.db.get(user.clinicId) : null;
+    return {
+      name,
+      role: user.role ?? null,
+      closable: isClosable(user.role),
+      isMe: admin._id === user._id,
+      alreadyClosed: Boolean(user.deletedAt),
+      upcomingVisits: await upcomingVisitsAsClinician(ctx, user._id),
+      activePatients: relationships.filter((r) => r.status === "active").length,
+      clinics,
+      memberOf: memberOf ? { id: memberOf._id, name: memberOf.name } : null,
+    };
+  },
+});
+
+/** Delete a clinician's or clinic owner's account (see above). Type DELETE to confirm. */
+export const adminCloseAccount = mutation({
+  args: { userId: v.id("users"), confirm: v.literal("DELETE"), reason: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const admin = await ensureUserRole(ctx, ["admin"]);
+    if (admin._id === args.userId) throw new ConvexError("You can't delete your own account here.");
+    const user = await ctx.db.get(args.userId);
+    if (!user) throw new ConvexError("Account not found.");
+    if (user.deletedAt) throw new ConvexError("This account has already been deleted.");
+    if (!isClosable(user.role)) throw new ConvexError("Only clinicians, clinic owners and clinic staff can be deleted here.");
+
+    const upcoming = await upcomingVisitsAsClinician(ctx, user._id);
+    if (upcoming > 0) {
+      throw new ConvexError(
+        `They have ${upcoming} upcoming visit${upcoming === 1 ? "" : "s"}. Cancel or reassign ${upcoming === 1 ? "it" : "them"} first, then delete the account.`
+      );
+    }
+
+    const now = Date.now();
+    const reason = args.reason?.trim().slice(0, 500) || undefined;
+    const name = [user.firstName, user.lastName].filter(Boolean).join(" ") || user.email || "Unknown";
+
+    // Their clinic is suspended: the team keeps read access, nothing new can happen there
+    const ownedClinics = await ctx.db
+      .query("clinics")
+      .withIndex("by_owner_id", (q) => q.eq("ownerId", user._id))
+      .take(10);
+    const suspended: string[] = [];
+    for (const clinic of ownedClinics) {
+      if (clinic.status === "suspended") continue;
+      await ctx.db.patch(clinic._id, {
+        status: "suspended",
+        suspendedReason: "The owner's account was closed by Rehabify.",
+        suspendedAt: now,
+        suspendedBy: admin._id,
+      });
+      await ctx.db.insert("auditLogs", {
+        actorUserId: admin._id,
+        action: "clinic_suspended",
+        targetEntityType: "clinic",
+        targetEntityId: clinic._id,
+        timestamp: now,
+        details: { clinicName: clinic.name, reason: "Owner account closed" },
+      });
+      suspended.push(clinic.name);
+    }
+
+    // A clinic physio or staff member leaves the clinic's team
+    const leftClinic = user.clinicId && !ownedClinics.some((c) => c._id === user.clinicId) ? user.clinicId : undefined;
+    if (leftClinic) {
+      await ctx.db.patch(user._id, { clinicId: undefined });
+      const physioProfile = await ctx.db
+        .query("physiotherapistProfiles")
+        .withIndex("by_user_id", (q) => q.eq("userId", user._id))
+        .first();
+      if (physioProfile?.clinicId) await ctx.db.patch(physioProfile._id, { clinicId: undefined });
+    }
+
+    // Their patients keep their records; the link to this clinician is no longer active
+    const relationships = await ctx.db
+      .query("patientPhysiotherapistRelationships")
+      .withIndex("by_physiotherapist", (q) => q.eq("physiotherapistId", user._id))
+      .take(1000);
+    let unlinked = 0;
+    for (const relationship of relationships) {
+      if (relationship.status !== "active") continue;
+      await ctx.db.patch(relationship._id, { status: "inactive" });
+      unlinked++;
+    }
+
+    const clerkId = user.clerkId;
+    await erasePersonalData(ctx, user, "admin_closed");
+
+    await ctx.db.insert("auditLogs", {
+      actorUserId: admin._id,
+      action: "admin_account_closed",
+      targetEntityType: "user",
+      targetEntityId: user._id,
+      timestamp: now,
+      details: { name, role: user.role, reason, clinicsSuspended: suspended, leftClinic, patientsUnlinked: unlinked },
+    });
+
+    // Their Clerk sign-in goes too, so the old login can't open a new, empty account
+    if (clerkId?.startsWith("user_")) {
+      await ctx.scheduler.runAfter(0, internal.users.deleteClerkLogin, { clerkId });
+    }
+    return { success: true, clinicsSuspended: suspended };
+  },
+});
+
+/** Deletes a Clerk user (after adminCloseAccount). A missing user is fine: it's already gone. */
+export const deleteClerkLogin = internalAction({
+  args: { clerkId: v.string() },
+  handler: async (_ctx, args) => {
+    const secret = process.env.CLERK_SECRET_KEY;
+    if (!secret) throw new Error("CLERK_SECRET_KEY is not set");
+    const res = await fetch(`https://api.clerk.com/v1/users/${encodeURIComponent(args.clerkId)}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${secret}` },
+    });
+    if (!res.ok && res.status !== 404) throw new Error(`Clerk user delete failed: ${res.status}`);
+    return { deleted: res.ok };
   },
 });

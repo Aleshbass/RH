@@ -10,6 +10,8 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { cardClass, ConfirmDialog, inputClass, primaryButtonClass, softButtonClass } from '@/components/admin/ui'
 import { AUDIENCE_LABEL, renderMarketingEmail, type MarketingAudience, type MarketingContent } from '@/lib/email/marketing'
+import { bodyHasText } from '@/lib/email/richText'
+import { EmailBodyEditor } from './EmailBodyEditor'
 import { marketingApi, type MarketingOverview } from '@/lib/marketingApi'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
@@ -45,6 +47,8 @@ export function Composer({ overview, onSent }: { overview: MarketingOverview | u
   const [device, setDevice] = useState<'desktop' | 'phone'>('desktop')
   const [confirming, setConfirming] = useState(false)
   const [testing, setTesting] = useState(false)
+  // Bumped after a send so the message editor starts empty again
+  const [editorKey, setEditorKey] = useState(0)
 
   const q = useDebounced(search.trim())
   const people = useQuery(marketingApi.findPeople, audience === 'individual' && q.length >= 2 ? { q } : 'skip')
@@ -58,7 +62,8 @@ export function Composer({ overview, onSent }: { overview: MarketingOverview | u
   }, [picked, pasted])
 
   const count = audience === 'individual' ? individualEmails.length : overview?.counts[audience] ?? 0
-  const ready = Boolean(content.subject.trim() && content.heading.trim() && content.body.trim()) && count > 0
+  const hasMessage = bodyHasText(content.body)
+  const ready = Boolean(content.subject.trim() && content.heading.trim() && hasMessage) && count > 0
 
   const preview = useMemo(
     () =>
@@ -66,12 +71,12 @@ export function Composer({ overview, onSent }: { overview: MarketingOverview | u
         {
           ...content,
           heading: content.heading || 'Your heading',
-          body: content.body || 'Your message appears here. Leave a blank line between paragraphs.',
+          body: hasMessage ? content.body : 'Your message appears here.',
         },
         // Previewed with a sample name; each person gets their own first name ("Hi there," when it isn't known)
         { greetingName: 'Ada', unsubscribeUrl: audience === 'individual' ? undefined : '#' }
       ),
-    [content, audience]
+    [content, audience, hasMessage]
   )
 
   const payload = () => ({
@@ -107,6 +112,7 @@ export function Composer({ overview, onSent }: { overview: MarketingOverview | u
       playSound('send')
       toast.success(`Sending to ${recipientCount} ${recipientCount === 1 ? 'person' : 'people'}. Follow it under Sent.`)
       setContent(EMPTY)
+      setEditorKey((k) => k + 1)
       setPicked([])
       setPasted('')
       onSent()
@@ -234,8 +240,8 @@ export function Composer({ overview, onSent }: { overview: MarketingOverview | u
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="mk-body" className={labelClass}>Message</Label>
-            <Textarea id="mk-body" rows={9} value={content.body} onChange={(e) => set('body')(e.target.value)} className={cn(inputClass, 'resize-y')} />
-            <p className={hintClass}>Leave a blank line between paragraphs. Each email starts with &ldquo;Hello&rdquo; and the person&apos;s first name.</p>
+            <EmailBodyEditor key={editorKey} id="mk-body" value={content.body} onChange={set('body')} />
+            <p className={hintClass}>Bold, links, headings, lists and quotes show in every email app. Each email starts with &ldquo;Hello&rdquo; and the person&apos;s first name.</p>
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
@@ -265,7 +271,7 @@ export function Composer({ overview, onSent }: { overview: MarketingOverview | u
             <Button
               variant="ghost"
               onClick={test}
-              disabled={testing || !(content.subject.trim() && content.heading.trim() && content.body.trim())}
+              disabled={testing || !(content.subject.trim() && content.heading.trim() && hasMessage)}
               className={softButtonClass}
             >
               {testing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Send me a test

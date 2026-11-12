@@ -6,7 +6,7 @@ import { useMutation, useQuery } from 'convex/react'
 import { makeFunctionReference } from 'convex/server'
 import { format } from 'date-fns'
 import { toast } from 'sonner'
-import { ArrowUpRight, Building2, House, Mail, Phone, SearchX, Store, UserCheck, Users, Video } from '@/components/icons'
+import { ArrowUpRight, Building2, House, Mail, Phone, SearchX, Store, Trash2, UserCheck, Users, Video } from '@/components/icons'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
@@ -40,6 +40,8 @@ import {
 } from './shared'
 import { JoyMatching } from './JoyMatching'
 import { WorkDetails } from './WorkDetails'
+import { DeleteAccountDialog } from '@/components/admin/DeleteAccountDialog'
+import type { Id } from '@/convex/_generated/dataModel'
 
 // A plain reference: the generated `api` type is at TypeScript's depth limit (TS2589)
 const setPracticeModeRef = makeFunctionReference<
@@ -109,14 +111,23 @@ export function PhysioSheet({
             </div>
           </>
         ) : (
-          <SheetBody data={data} preview={shownPreview?.userId === shownId ? shownPreview : null} />
+          <SheetBody data={data} preview={shownPreview?.userId === shownId ? shownPreview : null} onClose={onClose} />
         )}
       </SheetContent>
     </Sheet>
   )
 }
 
-function SheetBody({ data, preview }: { data: CaseloadResult | undefined; preview: DirectoryRow | null }) {
+function SheetBody({
+  data,
+  preview,
+  onClose,
+}: {
+  data: CaseloadResult | undefined
+  preview: DirectoryRow | null
+  /** Closes the drawer (after the account is deleted) */
+  onClose: () => void
+}) {
   const physio = data?.physio
   // Header details: the loaded caseload, else the directory row we already have
   const head = physio ?? preview
@@ -160,7 +171,7 @@ function SheetBody({ data, preview }: { data: CaseloadResult | undefined; previe
                 </a>
               )}
             </div>
-            <QuickLinks userId={head.userId} mode={head.mode} clinicId={head.clinicId} />
+            <QuickLinks userId={head.userId} mode={head.mode} clinicId={head.clinicId} onDeleted={onClose} />
           </>
         ) : (
           <>
@@ -198,7 +209,18 @@ function SheetBody({ data, preview }: { data: CaseloadResult | undefined; previe
   )
 }
 
-function QuickLinks({ userId, mode, clinicId }: { userId: string; mode: DirectoryRow['mode']; clinicId: string | null }) {
+function QuickLinks({
+  userId,
+  mode,
+  clinicId,
+  onDeleted,
+}: {
+  userId: string
+  mode: DirectoryRow['mode']
+  clinicId: string | null
+  onDeleted: () => void
+}) {
+  const [deleteOpen, setDeleteOpen] = useState(false)
   return (
     <div className="flex flex-wrap gap-2">
       <Button asChild size="sm" className={cn(primaryButtonClass, 'h-9')}>
@@ -229,6 +251,16 @@ function QuickLinks({ userId, mode, clinicId }: { userId: string; mode: Director
           </Link>
         </Button>
       )}
+      <Button
+        size="sm"
+        variant="outline"
+        className={cn(softButtonClass, 'h-9 text-rose-700 hover:text-rose-800 dark:text-rose-300')}
+        onClick={() => setDeleteOpen(true)}
+      >
+        <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+        Delete account
+      </Button>
+      <DeleteAccountDialog userId={userId as Id<'users'>} open={deleteOpen} onOpenChange={setDeleteOpen} onDeleted={onDeleted} />
     </div>
   )
 }

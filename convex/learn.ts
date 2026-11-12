@@ -32,6 +32,7 @@ import { randomToken, sha256Hex } from "./helpers/exerciseCrypto";
 import { IMAGEKIT_URL, imagekitUploadAuth, removeImagekitFilesLater, signedImagekitUrl } from "./helpers/imagekit";
 import { lagosDateTime, lagosShortDate, lagosTime, zonedDateKey, zonedDateTimeToUtc, zonedTimeKey } from "./helpers/lagosTime";
 import { getViewer, requireAdmin } from "./helpers/partnerAccess";
+import { insertNotification } from "./helpers/pushNotify";
 import { verifyPaystackSignature } from "./helpers/paystackSignature";
 import { isJoyLoginEmail } from "../lib/auth/joyLoginEmail";
 import type { HlsPlayback } from "./learnVideo";
@@ -2707,6 +2708,67 @@ export const assertLearnAdmin = internalQuery({
   },
 });
 
+// -- Video course editors: admins, and Learn instructors (role learn_instructor) --------------
+// Instructors see and change only the courses they created, and only while those are drafts not
+// waiting for review. They can't publish, set who can watch or the prices, or change the order:
+// they send a course for review and an admin publishes it (or asks for changes).
+
+type CourseEditor = { user: Doc<"users">; isAdmin: boolean };
+
+/** Admins and Learn instructors (protected video uploads in learnVideo.ts use the same rule). */
+export async function courseEditor(ctx: Ctx): Promise<CourseEditor> {
+  const user = (await getViewer(ctx))?.user;
+  if (!user || (user.role !== "admin" && user.role !== "learn_instructor")) throw new ConvexError("Administrator access required.");
+  return { user, isAdmin: user.role === "admin" };
+}
+
+function canChangeCourse(editor: CourseEditor, course: Doc<"learnVideoCourses">) {
+  if (editor.isAdmin) return true;
+  return course.createdBy === editor.user._id && course.status !== "published" && course.reviewStatus !== "in_review";
+}
+
+/** The course, if this editor may change it now; otherwise the reason. */
+async function courseToChange(ctx: Ctx, editor: CourseEditor, courseId: Id<"learnVideoCourses">) {
+  const course = await ctx.db.get(courseId);
+  if (!course || (!editor.isAdmin && course.createdBy !== editor.user._id)) throw new ConvexError("Course not found.");
+  if (!canChangeCourse(editor, course)) {
+    throw new ConvexError(
+      course.status === "published"
+        ? "This course is live. Ask an administrator to unpublish it before making changes."
+        : "This course is with an administrator for review. Withdraw it to keep editing."
+    );
+  }
+  return course;
+}
+
+function personName(user: Doc<"users"> | null) {
+  if (!user) return "Someone";
+  return [user.firstName, user.lastName].filter(Boolean).join(" ").trim() || user.email || "Someone";
+}
+
+async function notifyUser(ctx: MutationCtx, userId: Id<"users">, title: string, message: string) {
+  const now = Date.now();
+  await insertNotification(ctx, {
+    userId,
+    type: "system_alert",
+    title,
+    message,
+    data: { actionUrl: "/dashboard/admin/learn/courses" },
+    status: "pending",
+    priority: "medium",
+    createdAt: now,
+    updatedAt: now,
+  });
+}
+
+export const assertCourseEditor = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    await courseEditor(ctx);
+    return null;
+  },
+});
+
 /** Signature for one browser upload to ImageKit. Each upload needs a fresh one. */
 export const adminVideoUploadAuth = action({
   args: { kind: v.union(v.literal("video"), v.literal("poster"), v.literal("cover")) },
@@ -2714,7 +2776,7 @@ export const adminVideoUploadAuth = action({
     ctx,
     args
   ): Promise<{ token: string; expire: number; signature: string; publicKey: string; folder: string }> => {
-    await ctx.runQuery(internal.learn.assertLearnAdmin, {});
+    await ctx.runQuery(internal.learn.assertCourseEditor, {});
     return imagekitUploadAuth(args.kind === "video" ? VIDEO_FOLDER : args.kind === "poster" ? POSTER_FOLDER : COVER_FOLDER);
   },
 });
@@ -2764,10 +2826,15 @@ function courseDetailsFields(input: {
 export const adminVideoCourses = query({
   args: {},
   handler: async (ctx) => {
-    await requireAdmin(ctx);
-    const courses = await ctx.db.query("learnVideoCourses").take(200);
+    const editor = await courseEditor(ctx);
+    const all = await ctx.db.query("learnVideoCourses").take(200);
+    // Instructors only ever see the courses they created
+    const courses = editor.isAdmin ? all : all.filter((c) => c.createdBy === editor.user._id);
+    const owners = new Map<string, Doc<"users"> | null>();
     const rows = [];
     for (const course of courses) {
+      if (!owners.has(course.createdBy)) owners.set(course.createdBy, await ctx.db.get(course.createdBy));
+      const owner = owners.get(course.createdBy) ?? null;
       const lessons = await courseLessons(ctx, course._id);
       const progress = await ctx.db
         .query("learnVideoProgress")
@@ -2796,6 +2863,12 @@ export const adminVideoCourses = query({
         // The cover learners see: the uploaded one, or the first lesson's picture
         shownCoverUrl: course.coverUrl ?? lessons.map((l) => lessonMedia(l).posterUrl).find(Boolean) ?? null,
         updatedAt: course.updatedAt,
+        reviewStatus: course.reviewStatus ?? null,
+        reviewNote: course.reviewNote ?? null,
+        submittedAt: course.submittedAt ?? null,
+        // An instructor's course shows their name to admins
+        instructorName: owner?.role === "learn_instructor" ? personName(owner) : null,
+        canEdit: canChangeCourse(editor, course),
         lessons: lessons.map((l) => ({
           id: l._id,
           title: l.title,
@@ -2839,7 +2912,15 @@ export const adminSaveVideoCourse = mutation({
     ),
   },
   handler: async (ctx, args) => {
-    const { user } = await requireAdmin(ctx);
+    const editor = await courseEditor(ctx);
+    const { user } = editor;
+    const existing = args.courseId ? await courseToChange(ctx, editor, args.courseId) : null;
+    // Who can watch and the prices are an admin's call: an instructor's save keeps them as they are
+    if (!editor.isAdmin) {
+      args.access = existing?.access ?? "msk";
+      args.rehabifyPrice = existing?.rehabifyPriceKobo !== undefined ? existing.rehabifyPriceKobo / 100 : undefined;
+      args.externalPrice = existing?.externalPriceKobo !== undefined ? existing.externalPriceKobo / 100 : undefined;
+    }
     const details = args.details ? courseDetailsFields(args.details) : {};
     const access = args.access ?? "msk";
     const toKobo = (naira: number | undefined) =>
@@ -2858,9 +2939,8 @@ export const adminSaveVideoCourse = mutation({
     assertImagekitUrl(args.coverUrl, "The cover image");
     const now = Date.now();
 
-    if (args.courseId) {
-      const course = await ctx.db.get(args.courseId);
-      if (!course) throw new ConvexError("Course not found.");
+    if (existing) {
+      const course = existing;
       if (course.coverFileId && course.coverFileId !== args.coverFileId) await removeFilesLater(ctx, [course.coverFileId]);
       await ctx.db.patch(course._id, {
         title,
@@ -2915,9 +2995,74 @@ export const adminSetVideoCourseStatus = mutation({
     await ctx.db.patch(course._id, {
       status: args.status,
       publishedAt: args.status === "published" ? (course.publishedAt ?? Date.now()) : course.publishedAt,
+      reviewStatus: undefined,
+      reviewNote: undefined,
       updatedBy: user._id,
       updatedAt: Date.now(),
     });
+    const owner = await ctx.db.get(course.createdBy);
+    if (owner?.role === "learn_instructor" && owner._id !== user._id) {
+      const live = args.status === "published";
+      await notifyUser(
+        ctx,
+        owner._id,
+        live ? "Your course is live" : "Your course was unpublished",
+        live ? `"${course.title}" is now on Rehabify Learn.` : `"${course.title}" is a draft again, so you can make changes.`
+      );
+    }
+  },
+});
+
+/** An instructor sends their draft course to the admins to publish. */
+export const submitVideoCourse = mutation({
+  args: { courseId: v.id("learnVideoCourses") },
+  handler: async (ctx, args) => {
+    const editor = await courseEditor(ctx);
+    const course = await courseToChange(ctx, editor, args.courseId);
+    if (course.status === "published") throw new ConvexError("This course is already live.");
+    if ((await courseLessons(ctx, course._id)).length === 0) throw new ConvexError("Add at least one lesson first.");
+    if (!course.summary.trim() || course.benefits.length === 0) {
+      throw new ConvexError("Add a description and what learners will get before sending it for review.");
+    }
+    const now = Date.now();
+    await ctx.db.patch(course._id, { reviewStatus: "in_review", reviewNote: undefined, submittedAt: now, updatedAt: now });
+    const admins = await ctx.db.query("users").withIndex("by_role", (q) => q.eq("role", "admin")).take(50);
+    for (const admin of admins) {
+      if (admin._id !== editor.user._id) {
+        await notifyUser(ctx, admin._id, "Course to review", `${personName(editor.user)} sent "${course.title}" for review.`);
+      }
+    }
+    return null;
+  },
+});
+
+/** The instructor takes a course back from review to keep editing. */
+export const withdrawVideoCourse = mutation({
+  args: { courseId: v.id("learnVideoCourses") },
+  handler: async (ctx, args) => {
+    const editor = await courseEditor(ctx);
+    const course = await ctx.db.get(args.courseId);
+    if (!course || (!editor.isAdmin && course.createdBy !== editor.user._id)) throw new ConvexError("Course not found.");
+    if (course.reviewStatus !== "in_review") return null;
+    await ctx.db.patch(course._id, { reviewStatus: undefined, submittedAt: undefined, updatedAt: Date.now() });
+    return null;
+  },
+});
+
+/** An admin sends a course back to its instructor with a note. */
+export const requestVideoCourseChanges = mutation({
+  args: { courseId: v.id("learnVideoCourses"), note: v.string() },
+  handler: async (ctx, args) => {
+    const { user } = await requireAdmin(ctx);
+    const course = await ctx.db.get(args.courseId);
+    if (!course) throw new ConvexError("Course not found.");
+    const note = cleanText(args.note, 1000);
+    if (!note) throw new ConvexError("Say what needs changing.");
+    await ctx.db.patch(course._id, { reviewStatus: "changes_requested", reviewNote: note, updatedBy: user._id, updatedAt: Date.now() });
+    if (course.createdBy !== user._id) {
+      await notifyUser(ctx, course.createdBy, "Changes requested on your course", `"${course.title}": ${note.slice(0, 140)}`);
+    }
+    return null;
   },
 });
 
@@ -2937,10 +3082,11 @@ export const adminMoveVideoCourse = mutation({
 export const adminDeleteVideoCourse = mutation({
   args: { courseId: v.id("learnVideoCourses") },
   handler: async (ctx, args) => {
-    await requireAdmin(ctx);
-    const course = await ctx.db.get(args.courseId);
+    const editor = await courseEditor(ctx);
+    const course = editor.isAdmin ? await ctx.db.get(args.courseId) : await courseToChange(ctx, editor, args.courseId);
     if (!course) return;
     if (course.status === "published") throw new ConvexError("Unpublish the course before deleting it.");
+    if (!editor.isAdmin && course.publishedAt) throw new ConvexError("This course has been live before. Ask an administrator to delete it.");
     const lessons = await courseLessons(ctx, course._id);
     const files = [course.coverFileId, ...lessons.flatMap(lessonFiles)];
     for (const lesson of lessons) await ctx.db.delete(lesson._id);
@@ -2981,9 +3127,8 @@ export const adminSaveVideoLesson = mutation({
     hlsAssetId: v.optional(v.id("learnVideoAssets")),
   },
   handler: async (ctx, args): Promise<Id<"learnVideoLessons">> => {
-    await requireAdmin(ctx);
-    const course = await ctx.db.get(args.courseId);
-    if (!course) throw new ConvexError("Course not found.");
+    const editor = await courseEditor(ctx);
+    const course = await courseToChange(ctx, editor, args.courseId);
     const title = clean(args.title, 140);
     if (!title) throw new ConvexError("Give the lesson a title.");
     const description = cleanText(args.description, 1500) || undefined;
@@ -2992,6 +3137,8 @@ export const adminSaveVideoLesson = mutation({
     }
     const asset = args.hlsAssetId ? await ctx.db.get(args.hlsAssetId) : null;
     if (args.hlsAssetId && !asset) throw new ConvexError("That video wasn't found. Upload it again.");
+    // Instructors use their own uploads; admins any video (including laptop-published ones)
+    if (asset && !editor.isAdmin && asset.createdBy !== editor.user._id) throw new ConvexError("That video wasn't found. Upload it again.");
     const hls = asset
       ? {
           assetId: asset._id,
@@ -3060,7 +3207,7 @@ export const adminYoutubeInfo = action({
     ctx,
     args
   ): Promise<{ videoId: string; title: string; channel: string; durationSec: number; thumbnailUrl: string; description: string }> => {
-    await ctx.runQuery(internal.learn.assertLearnAdmin, {});
+    await ctx.runQuery(internal.learn.assertCourseEditor, {});
     const videoId = youtubeIdFrom(args.link);
     if (!videoId) throw new ConvexError("Paste a YouTube video link, like https://youtu.be/…");
     const watch = `https://www.youtube.com/watch?v=${videoId}`;
@@ -3108,7 +3255,7 @@ export const adminYoutubeInfo = action({
 export const adminCreateCourseFromYoutube = mutation({
   args: { title: v.string(), summary: v.optional(v.string()), youtube: youtubeValidator },
   handler: async (ctx, args) => {
-    const { user } = await requireAdmin(ctx);
+    const { user } = await courseEditor(ctx);
     const title = clean(args.title, 120);
     if (!title) throw new ConvexError("Give the course a title.");
     const youtube = checkYoutube(args.youtube);
@@ -3133,9 +3280,10 @@ export const adminCreateCourseFromYoutube = mutation({
 export const adminMoveVideoLesson = mutation({
   args: { lessonId: v.id("learnVideoLessons"), direction: v.union(v.literal("up"), v.literal("down")) },
   handler: async (ctx, args) => {
-    await requireAdmin(ctx);
+    const editor = await courseEditor(ctx);
     const lesson = await ctx.db.get(args.lessonId);
     if (!lesson) return;
+    await courseToChange(ctx, editor, lesson.courseId);
     const lessons = await courseLessons(ctx, lesson.courseId);
     const i = lessons.findIndex((l) => l._id === lesson._id);
     const j = args.direction === "up" ? i - 1 : i + 1;
@@ -3148,10 +3296,10 @@ export const adminMoveVideoLesson = mutation({
 export const adminDeleteVideoLesson = mutation({
   args: { lessonId: v.id("learnVideoLessons") },
   handler: async (ctx, args) => {
-    await requireAdmin(ctx);
+    const editor = await courseEditor(ctx);
     const lesson = await ctx.db.get(args.lessonId);
     if (!lesson) return;
-    const course = await ctx.db.get(lesson.courseId);
+    const course = await courseToChange(ctx, editor, lesson.courseId);
     const lessons = await courseLessons(ctx, lesson.courseId);
     if (course?.status === "published" && lessons.length === 1) {
       throw new ConvexError("A published course needs at least one lesson. Unpublish it first.");

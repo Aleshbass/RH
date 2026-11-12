@@ -7,10 +7,10 @@ import PersonalInfoForm, { PatientInfoValues } from '@/components/onboarding/pat
 import { useValidateInvitationCode } from '@/lib/api/patientInvitations';
 import { useMutation, useQuery } from 'convex/react';
 import { api } from '@/convex/_generated/api';
-import { Loader2 } from '@/components/icons';
 import { toast } from 'sonner';
 import { programError } from '@/components/exercise-programs/errors';
 import { PATIENT_CONSENT_POLICIES, policyVersions } from '@/lib/policies';
+import { RehabifyLoader } from '@/components/brand/RehabifyLoader';
 
 function PatientStep1Content() {
   const router = useRouter();
@@ -160,7 +160,7 @@ export default function PatientStep1Page() {
   return (
     <Suspense fallback={
       <div className="flex flex-col items-center justify-center min-h-screen p-4 bg-rh-canvas">
-        <Loader2 className="h-8 w-8 animate-spin text-rh-ink" />
+        <RehabifyLoader size={64} />
       </div>
     }>
       <PatientStep1Content />

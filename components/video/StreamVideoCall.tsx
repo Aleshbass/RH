@@ -3,7 +3,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { StreamVideo, StreamVideoClient, StreamCall, StreamTheme, CallingState } from '@stream-io/video-react-sdk'
 import '@stream-io/video-react-sdk/dist/css/styles.css'
 import { useUser } from '@clerk/nextjs'
-import { Loader2, PhoneOff } from '@/components/icons'
+import { PhoneOff } from '@/components/icons'
 import { toast } from 'sonner'
 import { StreamChat } from 'stream-chat'
 import { useAction, useMutation, useQuery } from 'convex/react'
@@ -269,7 +269,7 @@ export default function StreamVideoCall({
   const shownClient = resumed?.client ?? client
   const shownCall = resumed?.call ?? call
   if (!isLoaded || !shownClient || !shownCall) {
-    return <CallStatusScreen icon={<Loader2 className="h-6 w-6 animate-spin text-rh-ink" />} title="Getting your call ready" />
+    return <CallStatusScreen loading title="Getting your call ready" />
   }
 
   return (

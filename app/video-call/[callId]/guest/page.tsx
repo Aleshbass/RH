@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useParams, useSearchParams } from 'next/navigation'
 import { StreamCall, StreamTheme, StreamVideo, StreamVideoClient } from '@stream-io/video-react-sdk'
 import '@stream-io/video-react-sdk/dist/css/styles.css'
-import { Loader2, PhoneOff, Shield, XOctagon } from '@/components/icons'
+import { PhoneOff, Shield, XOctagon } from '@/components/icons'
 import { CallLobby, CallRoom, CallStatusScreen } from '@/components/video/room'
 
 type StreamCallHandle = ReturnType<StreamVideoClient['call']>
@@ -147,7 +147,7 @@ export default function GuestVideoCallPage() {
   }
 
   if (!client || !call || phase === 'validating') {
-    return <CallStatusScreen icon={<Loader2 className="h-6 w-6 animate-spin text-rh-ink" />} title="Verifying your access" description="Powered by Rehabify Health" />
+    return <CallStatusScreen loading title="Verifying your access" description="Powered by Rehabify Health" />
   }
 
   return (

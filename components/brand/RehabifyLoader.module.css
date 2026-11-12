@@ -1,0 +1,249 @@
+/*
+ * Rehabify loader and splash (components/brand/RehabifyLoader.tsx).
+ * The favicon mark: the lime arc travels round it while the "r" lifts gently, a quiet nod to
+ * recovery. The splash plays once (the disc settles, the "r" rises into it, the wordmark wipes in)
+ * and then becomes the loader. CSS only; reduced motion gets a still mark that breathes softly.
+ */
+
+.loader {
+  display: inline-block;
+  flex: none;
+  --rl-track: rgba(0, 46, 44, 0.1);
+  /* Quick loads never flash a loader */
+  animation: rl-appear 0.25s 0.12s both;
+}
+:global(.dark) .loader {
+  --rl-track: rgba(255, 255, 255, 0.12);
+}
+.loader svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.track {
+  fill: none;
+  stroke: var(--rl-track);
+  stroke-width: 4.5;
+}
+.arc {
+  fill: none;
+  stroke: #00cd0f;
+  stroke-width: 4.5;
+  stroke-linecap: round;
+  transform-origin: 60px 60px;
+  animation:
+    rl-spin 1.6s var(--rl-phase, 0s) linear infinite,
+    rl-dash 1.6s var(--rl-phase, 0s) cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+.r {
+  animation: rl-lift 1.6s var(--rl-phase, 0s) cubic-bezier(0.45, 0, 0.25, 1) infinite;
+}
+/* A splash after another splash in the same visit: there at once, no fade-in */
+.instant {
+  animation: none;
+}
+.disc {
+  transform-origin: 60px 60px;
+}
+
+@keyframes rl-appear {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes rl-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes rl-dash {
+  0% {
+    stroke-dasharray: 4 96;
+    stroke-dashoffset: 0;
+  }
+  50% {
+    stroke-dasharray: 34 66;
+    stroke-dashoffset: -16;
+  }
+  100% {
+    stroke-dasharray: 4 96;
+    stroke-dashoffset: -100;
+  }
+}
+@keyframes rl-lift {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-16px);
+  }
+}
+
+/* ── Splash ── */
+
+.splash {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  text-align: center;
+}
+.word {
+  display: block;
+  width: 150px;
+  height: auto;
+}
+.wordInk {
+  fill: #005b57;
+}
+.wordLime {
+  fill: #00cd0f;
+}
+:global(.dark) .wordInk {
+  fill: #fff;
+}
+.message {
+  font-size: 14px;
+  line-height: 1.4;
+  color: rgba(0, 46, 44, 0.66);
+}
+:global(.dark) .message {
+  color: rgba(255, 255, 255, 0.66);
+}
+
+/* The intro, once per app open; the loop takes over after it */
+.intro {
+  animation: none;
+}
+.intro .disc {
+  animation: sp-disc 0.7s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+.intro .r {
+  animation:
+    sp-rise 0.8s 0.18s cubic-bezier(0.3, 1.35, 0.6, 1) both,
+    rl-lift 1.6s 1.15s cubic-bezier(0.45, 0, 0.25, 1) infinite;
+}
+.intro .track {
+  animation: rl-appear 0.5s 1.15s both;
+}
+.intro .arc {
+  animation:
+    rl-appear 0.5s 1.15s both,
+    rl-spin 1.6s 1.15s linear infinite,
+    rl-dash 1.6s 1.15s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+.splashIntro .word {
+  animation: sp-word 0.8s 0.6s cubic-bezier(0.65, 0, 0.35, 1) both;
+}
+.splashIntro .message {
+  animation: sp-message 0.6s 1.4s both;
+}
+
+@keyframes sp-disc {
+  from {
+    transform: scale(0.55);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+@keyframes sp-rise {
+  from {
+    transform: translateY(440px);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+@keyframes sp-word {
+  from {
+    clip-path: inset(0 100% 0 0);
+    transform: translateY(6px);
+    opacity: 0;
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+    transform: none;
+    opacity: 1;
+  }
+}
+@keyframes sp-message {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/*
+ * Opened from the home screen: Android has just shown the app icon on white, so the logo doesn't
+ * grow in again. It stays where it is and comes alive: the arc sweeps in, the wordmark wipes in.
+ * Decided in CSS, so it applies from the very first frame (before any script runs).
+ */
+@media (display-mode: standalone) {
+  .intro .disc {
+    animation: none;
+  }
+  .intro .r {
+    animation: rl-lift 1.6s 0.15s cubic-bezier(0.45, 0, 0.25, 1) infinite;
+  }
+  .intro .track {
+    animation: rl-appear 0.4s 0.15s both;
+  }
+  .intro .arc {
+    animation:
+      rl-appear 0.4s 0.15s both,
+      rl-spin 1.6s 0.15s linear infinite,
+      rl-dash 1.6s 0.15s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  }
+  .splashIntro .word {
+    animation: sp-word 0.7s 0.25s cubic-bezier(0.65, 0, 0.35, 1) both;
+  }
+  .splashIntro .message {
+    animation: sp-message 0.5s 0.8s both;
+  }
+}
+
+/* ── Reduced motion: a still mark that breathes softly ── */
+@keyframes rl-breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .loader,
+  .intro,
+  .instant {
+    animation: rl-breathe 2.4s ease-in-out infinite;
+  }
+  .arc,
+  .intro .arc {
+    animation: none;
+    opacity: 0;
+  }
+  .r,
+  .disc,
+  .track,
+  .intro .r,
+  .intro .disc,
+  .intro .track,
+  .splashIntro .word,
+  .splashIntro .message {
+    animation: none;
+  }
+}

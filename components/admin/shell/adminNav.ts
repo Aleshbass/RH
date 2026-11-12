@@ -59,6 +59,8 @@ export type AdminNavItem = {
   badgeKey?: AdminBadgeKey
   /** Extra words the command palette matches on. */
   keywords?: string[]
+  /** Hidden from blog writers and Learn instructors even when they see the rest of the section. */
+  adminOnly?: boolean
 }
 
 export type AdminNavSection = {
@@ -72,14 +74,34 @@ export type AdminNavSection = {
   alsoFor?: ConsoleRole[]
 }
 
-/** Who is using the console: administrators, or blog writers (role blog_editor). */
-export type ConsoleRole = 'admin' | 'blog_editor'
+/**
+ * Who is using the console: administrators, blog writers (role blog_editor) or Learn instructors
+ * (role learn_instructor). The last two only ever see their own area.
+ */
+export type ConsoleRole = 'admin' | 'blog_editor' | 'learn_instructor'
+export type LimitedRole = Exclude<ConsoleRole, 'admin'>
 
-/** The only part of the console a blog writer may open. */
 export const BLOG_HOME = '/dashboard/admin/blog'
+export const LEARN_COURSES_HOME = '/dashboard/admin/learn/courses'
+
+/** Where each limited role starts, which is also the only part of the console it may open. */
+const ROLE_AREAS: Record<LimitedRole, { home: string; label: string }> = {
+  blog_editor: { home: BLOG_HOME, label: 'Blog' },
+  learn_instructor: { home: LEARN_COURSES_HOME, label: 'Learn' },
+}
+
+export const consoleHome = (role: ConsoleRole) => (role === 'admin' ? ADMIN_HOME : ROLE_AREAS[role].home)
+export const consoleLabel = (role: ConsoleRole) => (role === 'admin' ? 'Admin' : ROLE_AREAS[role].label)
 
 export function consoleAllows(role: ConsoleRole, pathname: string) {
-  return role === 'admin' || pathname === BLOG_HOME || pathname.startsWith(`${BLOG_HOME}/`)
+  if (role === 'admin') return true
+  const home = ROLE_AREAS[role].home
+  return pathname === home || pathname.startsWith(`${home}/`)
+}
+
+/** The console role of a users.role value, or null when they have no console. */
+export function toConsoleRole(role: string | undefined | null): ConsoleRole | null {
+  return role === 'admin' || role === 'blog_editor' || role === 'learn_instructor' ? role : null
 }
 
 const a = (path: string) => `${ADMIN_HOME}${path}`
@@ -191,8 +213,9 @@ export const ADMIN_NAV: AdminNavSection[] = [
     id: 'learn',
     label: 'Rehabify Learn',
     icon: GraduationCap,
+    alsoFor: ['learn_instructor'],
     items: [
-      { title: 'MSK Specialist Program', href: a('/learn'), icon: GraduationCap, keywords: ['cohort', 'course', 'training', 'certificate', 'registrations', 'cpd'] },
+      { title: 'MSK Specialist Program', href: a('/learn'), icon: GraduationCap, adminOnly: true, keywords: ['cohort', 'course', 'training', 'certificate', 'registrations', 'cpd'] },
       { title: 'Video courses', href: a('/learn/courses'), icon: PlayCircle, keywords: ['upload', 'lessons', 'videos', 'imagekit', 'on demand'] },
     ],
   },
@@ -214,6 +237,7 @@ export const ADMIN_NAV: AdminNavSection[] = [
     icon: Settings,
     items: [
       { title: 'Users & roles', href: a('/users'), icon: Users, keywords: ['accounts', 'permissions', 'admins'] },
+      { title: 'Blog & Learn access', href: a('/team-access'), icon: UserCheck, keywords: ['blog writer', 'learn instructor', 'invite', 'email', 'teach', 'write', 'access'] },
       { title: 'Agreements', href: a('/agreements'), icon: FileSignature, badgeKey: 'agreements', keywords: ['contracts', 'sign', 'countersign', 'contractor', 'clinic saas', 'independent', 'e-signature'] },
       { title: 'Announcements', href: a('/announcements'), icon: Megaphone, keywords: ['broadcast', 'notify'] },
       { title: 'Email campaigns', href: a('/emails'), icon: Mail, keywords: ['marketing', 'newsletter', 'broadcast', 'resend', 'contacts'] },
@@ -242,7 +266,9 @@ export function devToolsEnabled() {
 
 export function visibleAdminNav(role: ConsoleRole = 'admin'): AdminNavSection[] {
   const showDev = devToolsEnabled()
-  return ADMIN_NAV.filter((section) => (!section.devOnly || showDev) && (role === 'admin' || section.alsoFor?.includes(role)))
+  return ADMIN_NAV.filter((section) => (!section.devOnly || showDev) && (role === 'admin' || section.alsoFor?.includes(role))).map(
+    (section) => (role === 'admin' ? section : { ...section, items: section.items.filter((item) => !item.adminOnly) })
+  )
 }
 
 /** How well a nav href matches the current URL: higher is better, 0 means no match. */

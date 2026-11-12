@@ -14,8 +14,9 @@ import { ClinicThemeProvider, ClinicThemeToggle } from '@/components/clinic/Clin
 import { PhysioNotifications } from '@/components/physio/PhysioNotifications'
 import { AdminSidebar } from './AdminSidebar'
 import { AdminCommandPalette, OPEN_ADMIN_PALETTE_EVENT } from './AdminCommandPalette'
-import { BLOG_HOME, adminBreadcrumbs, consoleAllows, type ConsoleRole } from './adminNav'
-import { ConsoleRoleContext } from './consoleRole'
+import { adminBreadcrumbs, consoleAllows, consoleHome, toConsoleRole, type ConsoleRole } from './adminNav'
+import { ConsoleRoleContext, useConsoleRole } from './consoleRole'
+import { TeamAccessIntro } from '@/components/admin/TeamAccessIntro'
 import { WebsiteLink } from '@/components/dashboard/shared/WebsiteLink'
 import { AppIconBadge, AppSetupButton, AppSetupPrompt } from '@/components/pwa/AppSetup'
 
@@ -123,6 +124,7 @@ function PageTransition({ children }: { children: ReactNode }) {
 }
 
 function ShellFrame({ children }: { children: ReactNode }) {
+  const isAdmin = useConsoleRole() === 'admin'
   const [menuOpen, setMenuOpen] = useState(false)
   const pathname = usePathname()
   useEffect(() => setMenuOpen(false), [pathname])
@@ -173,6 +175,8 @@ function ShellFrame({ children }: { children: ReactNode }) {
       </div>
 
       <AdminCommandPalette />
+      {/* One-time "New" pop-up for admins (Blog & Learn access) */}
+      {isAdmin && <TeamAccessIntro />}
       {/* Demo requests, approvals and other alerts on the admin's phone */}
       <AppSetupPrompt />
       <AppIconBadge />
@@ -180,21 +184,21 @@ function ShellFrame({ children }: { children: ReactNode }) {
   )
 }
 
-/** Blog writers only have the blog: any other console page sends them there. */
-function BlogWriterGate({ children }: { children: ReactNode }) {
+/** Blog writers and Learn instructors only have their own area: any other page sends them there. */
+function LimitedRoleGate({ role, children }: { role: ConsoleRole; children: ReactNode }) {
   const pathname = usePathname() ?? ''
   const router = useRouter()
-  const allowed = consoleAllows('blog_editor', pathname)
+  const allowed = consoleAllows(role, pathname)
   useEffect(() => {
-    if (!allowed) router.replace(BLOG_HOME)
-  }, [allowed, router])
+    if (!allowed) router.replace(consoleHome(role))
+  }, [allowed, role, router])
   return allowed ? <>{children}</> : null
 }
 
 /** Wraps every /dashboard/admin page: theme, access check, sidebar, topbar and ⌘K search. */
 export function AdminShell({ children }: { children: ReactNode }) {
   const me = useQuery(api.users.getMyUser) as { role?: string } | null | undefined
-  const role: ConsoleRole | null = me?.role === 'admin' ? 'admin' : me?.role === 'blog_editor' ? 'blog_editor' : null
+  const role = toConsoleRole(me?.role)
 
   let body: ReactNode
   if (me === undefined) body = <ShellSkeleton />
@@ -204,7 +208,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
       <ConsoleRoleContext.Provider value={role}>
         {/* useSearchParams needs a Suspense boundary */}
         <Suspense fallback={<ShellSkeleton />}>
-          <ShellFrame>{role === 'admin' ? children : <BlogWriterGate>{children}</BlogWriterGate>}</ShellFrame>
+          <ShellFrame>{role === 'admin' ? children : <LimitedRoleGate role={role}>{children}</LimitedRoleGate>}</ShellFrame>
         </Suspense>
       </ConsoleRoleContext.Provider>
     )

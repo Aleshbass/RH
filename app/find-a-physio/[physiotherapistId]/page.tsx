@@ -7,13 +7,14 @@ import { useParams, useRouter } from "next/navigation";
 import { Id } from "@/convex/_generated/dataModel";
 import Image from "next/image";
 import Link from "next/link";
-import { ArrowLeft, BadgeCheck, Check, Loader2, Star } from "@/components/icons";
+import { ArrowLeft, BadgeCheck, Check, Star } from "@/components/icons";
 import BookingWidget from "@/components/marketplace/BookingWidget";
 import ReviewsList from "@/components/marketplace/ReviewsList";
 import RatingBreakdown from "@/components/marketplace/RatingBreakdown";
 import { cn } from "@/lib/utils";
 import { PublicProof } from "@/components/outcomes/PublicProof";
 import { rememberViewedPhysio } from "@/lib/viewedPhysios";
+import { RehabifyLoader } from "@/components/brand/RehabifyLoader";
 
 function titleCase(value: string): string {
   return value.toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase());
@@ -62,7 +63,7 @@ export default function PhysiotherapistProfilePage() {
   if (profile === undefined) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-rh-canvas text-rh-ink">
-        <Loader2 className="h-7 w-7 animate-spin" />
+        <RehabifyLoader size={64} label="Loading profile" />
         <p className="mt-4 text-sm text-rh-ink/60">Loading profile…</p>
       </div>
     );

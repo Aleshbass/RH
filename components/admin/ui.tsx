@@ -138,6 +138,7 @@ export function ConfirmDialog({
   confirmLabel = 'Confirm',
   destructive = false,
   onConfirm,
+  confirmDisabled = false,
   children,
 }: {
   open: boolean
@@ -147,6 +148,8 @@ export function ConfirmDialog({
   confirmLabel?: string
   destructive?: boolean
   onConfirm: () => void | Promise<void>
+  /** Keeps the confirm button off until the dialog's own checks pass (e.g. typing DELETE) */
+  confirmDisabled?: boolean
   children?: ReactNode
 }) {
   const [busy, setBusy] = useState(false)
@@ -163,7 +166,7 @@ export function ConfirmDialog({
             Cancel
           </AlertDialogCancel>
           <AlertDialogAction
-            disabled={busy}
+            disabled={busy || confirmDisabled}
             className={destructive ? dangerButtonClass : 'rounded-xl bg-rh-lime text-rh-ink hover:bg-rh-lime-deep dark:bg-rh-lime dark:text-rh-ink'}
             onClick={async (e) => {
               e.preventDefault()

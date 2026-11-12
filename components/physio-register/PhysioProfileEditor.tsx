@@ -16,6 +16,7 @@ import { Textarea } from '@/components/ui/textarea';
 import MapboxAddressInput from '@/components/physio-register/MapboxAddressInput';
 import { useFileUpload } from '@/lib/hooks/useFileUpload';
 import Link from 'next/link';
+import { RehabifyLoader } from '@/components/brand/RehabifyLoader';
 
 export default function PhysioProfileEditor() {
     const params = useParams();
@@ -72,7 +73,7 @@ export default function PhysioProfileEditor() {
     if (!isLoaded || profile === undefined) {
         return (
             <div className="min-h-screen flex items-center justify-center bg-gray-50/50">
-                <Loader2 className="w-8 h-8 animate-spin text-[#005b57]" />
+                <RehabifyLoader size={64} />
             </div>
         );
     }

@@ -25,8 +25,8 @@ import { PhysioBrand } from '@/components/physio/PhysioSidebar'
 import { playSound, setSoundsEnabled, soundsEnabled, SOUND_SETTING_EVENT } from '@/lib/sounds'
 import { useConsoleRole } from './consoleRole'
 import {
-  ADMIN_HOME,
-  BLOG_HOME,
+  consoleHome,
+  consoleLabel,
   findActiveItem,
   visibleAdminNav,
   type AdminBadgeKey,
@@ -334,10 +334,10 @@ export function AdminSidebar({
     >
       <div className={cn('flex h-16 shrink-0 items-center justify-between px-5', collapsed && 'justify-center px-0')}>
         {!collapsed && (
-          <Link href={role === 'admin' ? ADMIN_HOME : BLOG_HOME} onClick={onNavigate} aria-label={role === 'admin' ? 'Admin home' : 'Blog home'} className="flex items-center gap-2">
+          <Link href={consoleHome(role)} onClick={onNavigate} aria-label={`${consoleLabel(role)} home`} className="flex items-center gap-2">
             <PhysioBrand onBrand />
             <span className="rounded-md bg-white/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-white/90">
-              {role === 'admin' ? 'Admin' : 'Blog'}
+              {consoleLabel(role)}
             </span>
           </Link>
         )}
