@@ -33,7 +33,7 @@ export function InviteDialog({
           : 'They join with their phone number and a PIN. No email or password.'
       }
     >
-      {open && <InviteStep patientId={patientId} firstName={firstName} reset={joined} onDone={() => onOpenChange(false)} />}
+      {open && <InviteStep patientId={patientId} firstName={firstName} onDone={() => onOpenChange(false)} />}
     </PatientDrawer>
   )
 }

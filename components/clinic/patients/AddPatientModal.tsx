@@ -176,15 +176,6 @@ export default function AddPatientModal({ isOpen, onClose, onSuccess }: AddPatie
               firstName={first}
               onDone={close}
               onAddAnother={reset}
-              afterJoin={
-                <Link
-                  href={`/dashboard/clinic/patients/${invite.patientId}`}
-                  onClick={close}
-                  className="inline-flex h-9 items-center rounded-full bg-pt-ink px-3.5 text-xs font-semibold text-pt-surface transition hover:opacity-90"
-                >
-                  Open their record
-                </Link>
-              }
             />
           ) : (
             <form onSubmit={handleSubmit} className="space-y-4">

@@ -1,12 +1,10 @@
 'use client'
 
 import { useRef, useState } from 'react'
-import Link from 'next/link'
 import { useAction } from 'convex/react'
-import { CalendarPlus, UserPlus } from '@/components/icons'
+import { UserPlus } from '@/components/icons'
 import { Button } from '@/components/ui/button'
 import { PhysioDrawer } from '@/components/physio/ui'
-import { useBooking } from '@/components/physio/schedule/BookingDrawer'
 import { InviteStep } from '@/components/patient-join/InviteStep'
 import { StepDots, StepSlide } from '@/components/patient-join/StepDrawerBody'
 import { getInviteLink } from '@/components/patient-join/inviteLinkCache'
@@ -17,9 +15,6 @@ interface AddPatientModalProps {
   trigger?: React.ReactNode
   onSuccess?: () => void
 }
-
-const nextAction =
-  'inline-flex h-9 items-center gap-1.5 rounded-full bg-rh-ink px-3.5 text-xs font-semibold text-white transition hover:opacity-90 active:scale-[0.97] dark:bg-white dark:text-rh-ink'
 
 /**
  * Add a patient in the portal's drawer (from the right; a bottom sheet on phones), in two quick
@@ -33,7 +28,6 @@ export default function AddPatientModal({ trigger, onSuccess }: AddPatientModalP
   // onAdded runs just before onSuccess in the same tick; without it, the person was invited by email
   const addedNow = useRef(false)
   const createLink = useAction(joinRefs.createInviteLink)
-  const openBooking = useBooking()
 
   const close = () => {
     setOpen(false)
@@ -68,24 +62,6 @@ export default function AddPatientModal({ trigger, onSuccess }: AddPatientModalP
                 setAdded(null)
                 setRound((n) => n + 1)
               }}
-              afterJoin={
-                <>
-                  <button
-                    type="button"
-                    className={nextAction}
-                    onClick={() => {
-                      close()
-                      openBooking({ patient: { id: added.patientId, name: added.name } })
-                    }}
-                  >
-                    <CalendarPlus className="h-3.5 w-3.5" />
-                    Book first session
-                  </button>
-                  <Link href={`/dashboard/physiotherapist/patients/${added.patientId}`} onClick={close} className={nextAction}>
-                    Open their record
-                  </Link>
-                </>
-              }
             />
           ) : (
             <AddPatientDirectForm
