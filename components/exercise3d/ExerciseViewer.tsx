@@ -67,9 +67,10 @@ export type ExerciseViewerProps = {
   /** Colour of the active controls: teal in the care dashboards, ink on Rehabify Learn. */
   accent?: 'teal' | 'ink'
   /**
-   * "showcase" is the public landing demo: play/pause, speed and "Drag to turn" only, side-to-side
-   * turning with slow auto-rotation, page scrolling never blocked, and a quiet poster if a clip
-   * isn't available.
+   * "showcase" is the public landing demo: voice guide, play/pause, speed and "Drag to turn" only,
+   * side-to-side turning with slow auto-rotation, page scrolling never blocked, and a quiet poster
+   * if a clip isn't available. (The voice guide was added for visitors at the owner's request,
+   * 12 Nov 2026; a bare card stays silent.)
    */
   variant?: 'full' | 'showcase'
 }
@@ -235,7 +236,7 @@ export function ExerciseViewer({ clipId, requestGrant, className, autoPlay = tru
           viewNonce={viewNonce}
           watermark={assets.watermark}
           onRep={handleRep}
-          onFrame={audio && !showcase ? handleFrame : undefined}
+          onFrame={audio && !bare ? handleFrame : undefined}
           showcase={showcase}
           onContextLost={() => {
             setLite('3D was paused to save memory')
@@ -292,7 +293,7 @@ export function ExerciseViewer({ clipId, requestGrant, className, autoPlay = tru
             </div>
           )}
           <div className="absolute inset-x-0 bottom-3 flex flex-wrap items-center justify-center gap-1.5 px-3">
-            {audio && !showcase && (
+            {audio && (
               <button
                 type="button"
                 onClick={() => void toggleVoice()}
