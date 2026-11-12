@@ -47,6 +47,21 @@ type Props = {
   onRewrite?: (text: string) => void
 }
 
+const IDLE_TOOLBAR = {
+  bold: false,
+  italic: false,
+  underline: false,
+  strike: false,
+  h2: false,
+  h3: false,
+  bullet: false,
+  ordered: false,
+  quote: false,
+  link: false,
+  canUndo: false,
+  canRedo: false,
+}
+
 const imageFiles = (list: FileList | null | undefined) => Array.from(list ?? []).filter((f) => f.type.startsWith('image/'))
 
 function ToolButton({ active, disabled, label, onClick, children }: { active?: boolean; disabled?: boolean; label: string; onClick: () => void; children: React.ReactNode }) {
@@ -219,7 +234,7 @@ export function BlogEditor({ initialBody, readOnly, onChange, onReady, onFiles, 
     if (editor && editor.isEditable === readOnly) editor.setEditable(!readOnly)
   }, [editor, readOnly])
 
-  const state = useEditorState({
+  const selected = useEditorState({
     editor,
     selector: ({ editor: e }) =>
       e
@@ -240,7 +255,12 @@ export function BlogEditor({ initialBody, readOnly, onChange, onReady, onFiles, 
         : null,
   })
 
-  if (!editor || !state) {
+  // useEditorState only reports the editor after its first change, so it is null until the
+  // writer types. Never wait for it to show the text (that left the body as a grey box no one
+  // could type in); the toolbar just starts with nothing active.
+  const state = selected ?? IDLE_TOOLBAR
+
+  if (!editor) {
     return <div className="min-h-[360px] animate-pulse rounded-2xl bg-black/[0.03]" />
   }
 
