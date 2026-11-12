@@ -1,8 +1,8 @@
 """A voice note back when the patient sends one (owner, 10 Nov 2026).
 
-Joy speaks its reply in Ogg/Opus (what WhatsApp plays as a voice note): English and Pidgin in
-OpenAI's coral voice (the owner's choice again on 12 Nov 2026), Yoruba and Hausa in ElevenLabs'
-Adeola. It uploads the audio to WhatsApp and sends it before any text. The written reply still goes when the
+Joy speaks its reply in Ogg/Opus (what WhatsApp plays as a voice note) in ElevenLabs' Adeola
+"Warm, Engaging and Soft" (the owner's pick, 12 Nov 2026). English and Pidgin fall back to OpenAI's
+coral voice; Yoruba and Hausa never fall back. It uploads the audio to WhatsApp and sends it before any text. The written reply still goes when the
 patient needs to tap or read something: buttons, a list, a link, or safety advice. Any failure
 falls back to the text alone, so a reply is never lost to a voice problem.
 
@@ -109,8 +109,8 @@ def _elevenlabs_languages() -> set[str]:
 def synthesize(text: str, language: str | None) -> bytes | None:
     """Ogg/Opus speech for this text, or None.
 
-    English and Pidgin: Joy's OpenAI voice (coral). Yoruba and Hausa: ElevenLabs (Adeola) only.
-    A language listed in ELEVENLABS_LANGUAGES uses Adeola first, with OpenAI as the fallback.
+    Languages in ELEVENLABS_LANGUAGES (English, Pidgin, Yoruba, Hausa by default) use Adeola first.
+    English and Pidgin fall back to OpenAI (coral); Yoruba and Hausa are ElevenLabs only.
     """
     settings = get_settings()
     lang = (language or "en").lower()

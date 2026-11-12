@@ -142,39 +142,41 @@ def _elevenlabs_post(calls, *, fail=False):
 
 
 @pytest.mark.parametrize("language", ["en", "pcm"])
-def test_english_and_pidgin_keep_joys_earlier_voice(whatsapp, monkeypatch, language):
-    # Owner, 12 Nov 2026: Adeola's English didn't sound Nigerian; Joy's earlier voice (coral) instead
+def test_english_and_pidgin_in_the_owners_adeola(whatsapp, monkeypatch, language):
+    # Owner, 12 Nov 2026: Adeola "Warm, Engaging and Soft", not "Warm & Soothing" (t2zuPBtbBvwLINfk1lqx)
     monkeypatch.setenv("ELEVENLABS_API_KEY", "el-test")
     calls = []
     monkeypatch.setattr(voice_reply.httpx, "post", _elevenlabs_post(calls))
     audio = voice_reply.synthesize("Hello Ada.", language)
-    assert audio.startswith(b"OggS\x00")
-    assert [url for url, _ in calls] == ["https://api.openai.com/v1/audio/speech"]
-    assert calls[0][1]["json"]["voice"] == "coral"
-
-
-def test_adeola_for_english_only_when_listed(whatsapp, monkeypatch):
-    monkeypatch.setenv("ELEVENLABS_API_KEY", "el-test")
-    monkeypatch.setenv("ELEVENLABS_LANGUAGES", "en,yo,ha")
-    calls = []
-    monkeypatch.setattr(voice_reply.httpx, "post", _elevenlabs_post(calls))
-    audio = voice_reply.synthesize("Hello Ada.", "en")
     assert audio.startswith(b"OggS\x01")
     url, kwargs = calls[0]
-    assert url.endswith("/text-to-speech/t2zuPBtbBvwLINfk1lqx")  # Adeola
+    assert url.endswith("/text-to-speech/tMe86XfyOYDzkWDEk6AQ")
     assert kwargs["params"]["output_format"].startswith("opus_")
     assert kwargs["json"]["model_id"] == "eleven_multilingual_v2"
     assert len(calls) == 1  # OpenAI not called
 
 
-def test_openai_takes_over_when_elevenlabs_fails(whatsapp, monkeypatch):
+def test_english_in_coral_when_not_listed(whatsapp, monkeypatch):
     monkeypatch.setenv("ELEVENLABS_API_KEY", "el-test")
-    monkeypatch.setenv("ELEVENLABS_LANGUAGES", "en")
+    monkeypatch.setenv("ELEVENLABS_LANGUAGES", "yo,ha")
+    calls = []
+    monkeypatch.setattr(voice_reply.httpx, "post", _elevenlabs_post(calls))
+    audio = voice_reply.synthesize("Hello Ada.", "en")
+    assert audio.startswith(b"OggS\x00")
+    assert [url for url, _ in calls] == ["https://api.openai.com/v1/audio/speech"]
+    assert calls[0][1]["json"]["voice"] == "coral"
+
+
+def test_coral_takes_over_when_elevenlabs_fails(whatsapp, monkeypatch):
+    # The fallback is Joy's earlier voice (coral), never the rejected Adeola
+    monkeypatch.setenv("ELEVENLABS_API_KEY", "el-test")
     calls = []
     monkeypatch.setattr(voice_reply.httpx, "post", _elevenlabs_post(calls, fail=True))
     audio = voice_reply.synthesize("Hello Ada.", "en")
     assert audio.startswith(b"OggS\x00")
     assert calls[-1][0] == "https://api.openai.com/v1/audio/speech"
+    assert calls[-1][1]["json"]["voice"] == "coral"
+    assert all("t2zuPBtbBvwLINfk1lqx" not in url for url, _ in calls)
 
 
 def test_yoruba_and_hausa_use_the_newer_model(whatsapp, monkeypatch):
