@@ -196,7 +196,6 @@ function RoleSelectionContent() {
     const settingUp = loadingIntent ? SIGNUP_INTENTS[loadingIntent].chip.toLowerCase() : null;
     return (
       <RehabifySplash className="bg-rh-canvas" message={settingUp ? `Setting up your ${settingUp} account…` : 'Setting up your account…'} />
-      </div>
     );
   }
 
