@@ -4,10 +4,13 @@ import { actorSchema, authenticatedJson, errorResponse, success } from "@/lib/jo
 import { JoyAuthError } from "@/lib/joy-integration/auth";
 import { callJoyConvexGateway } from "@/lib/joy-integration/convex-gateway";
 import { publicAppUrl } from "@/lib/public-app-url";
+import { joyLoginEmail } from "@/lib/auth/joyLoginEmail";
 
 export const runtime = "nodejs";
 
-const schema = z.object({ patient_id: z.string().min(1), email: z.string().email(), actor: actorSchema }).strict();
+// email is optional: a patient without one gets their receipt on WhatsApp, and Paystack gets their
+// private Rehabify address (never delivered; the same one as their Joy dashboard login)
+const schema = z.object({ patient_id: z.string().min(1), email: z.string().email().optional(), actor: actorSchema }).strict();
 
 export async function POST(request: Request, context: { params: Promise<{ bookingId: string }> }) {
   let requestId = request.headers.get("X-Request-Id") ?? "unknown";
@@ -37,7 +40,7 @@ export async function POST(request: Request, context: { params: Promise<{ bookin
     const appUrl = publicAppUrl();
     const response = await fetch("https://api.paystack.co/transaction/initialize", {
       method: "POST", headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY ?? ""}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ email: input.email, amount: chargeAmountKobo, currency: "NGN", reference, callback_url: `${appUrl}/payment/callback`, metadata: { rh_booking_id: bookingId, source_system: "joy_ai", source_channel: "whatsapp", correlation_id: requestId, ...feeMetadata } }),
+      body: JSON.stringify({ email: input.email ?? joyLoginEmail(input.patient_id), amount: chargeAmountKobo, currency: "NGN", reference, callback_url: `${appUrl}/payment/callback`, metadata: { rh_booking_id: bookingId, source_system: "joy_ai", source_channel: "whatsapp", correlation_id: requestId, ...feeMetadata } }),
     });
     let result: { status?: boolean; message?: string; data?: { authorization_url?: string; access_code?: string } };
     try {

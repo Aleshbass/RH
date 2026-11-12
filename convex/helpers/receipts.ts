@@ -9,6 +9,7 @@ import type { Id } from "../_generated/dataModel";
 import { appLink } from "./appUrl";
 import { randomToken } from "./exerciseCrypto";
 import { alertAdminsOfPayment } from "./adminPaymentAlerts";
+import { isJoyLoginEmail } from "../../lib/auth/joyLoginEmail";
 
 export type ReceiptRelationship = "rehabify_care" | "independent" | "clinic";
 
@@ -97,8 +98,10 @@ export async function issueReceipt(ctx: MutationCtx, input: ReceiptInput): Promi
     });
   }
 
+  // A private Rehabify address (WhatsApp-only patients, phone + PIN logins) delivers nowhere:
+  // those patients get the receipt on WhatsApp and in their dashboard instead
   const to = input.email?.trim();
-  if (to && input.notify !== false) {
+  if (to && !isJoyLoginEmail(to) && input.notify !== false) {
     const refund = input.kind === "refund";
     await ctx.scheduler.runAfter(0, sendEmail, {
       to,

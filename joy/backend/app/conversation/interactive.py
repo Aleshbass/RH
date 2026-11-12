@@ -29,6 +29,8 @@ from app.booking.booking_flow import (
     AWAITING_RH_SERVICE_MODE,
     AWAITING_RH_SLOT,
     AWAITING_TREATMENT_OPTION,
+    ADD_EMAIL_BUTTON,
+    WHATSAPP_RECEIPT_BUTTON,
     pin_lookup_enabled,
 )
 from app.models.conversation import Conversation
@@ -115,8 +117,11 @@ def interactive_for(conversation: Conversation | None) -> dict[str, Any] | None:
         if context.get("location_city") or context.get("location_asked_state"):
             return None  # waiting for a typed town or state
         return reply_buttons(("Lagos", "Lagos"), ("Abuja", "Abuja"), ("other state", "Other state"))
-    if step == AWAITING_RH_PAYMENT_EMAIL and context.get("suggested_email"):
-        return reply_buttons(("yes", "Yes, use that email"))
+    if step == AWAITING_RH_PAYMENT_EMAIL:
+        # Many patients have no email: the receipt can come here instead
+        if context.get("suggested_email"):
+            return reply_buttons(("yes", "Yes, use that email"), (WHATSAPP_RECEIPT_BUTTON, "WhatsApp is fine"))
+        return reply_buttons((WHATSAPP_RECEIPT_BUTTON, "WhatsApp is fine"), (ADD_EMAIL_BUTTON, "Add my email"))
     if step == AWAITING_RH_PROVIDER:
         providers = [p for p in context.get("providers") or [] if isinstance(p, dict)]
         if providers:

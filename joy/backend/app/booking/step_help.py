@@ -187,7 +187,7 @@ def step_reminder(substate: str | None, context: dict) -> str:
             )
         return "I'll message you here as soon as your payment comes through."
     if substate == AWAITING_RH_PAYMENT_EMAIL:
-        return "To go ahead, reply with the email address for your payment receipt."
+        return "To go ahead, tap WhatsApp is fine to get your receipt here, or reply with your email address."
     return "Tell me if anything about your problem has changed, or ask me anything else."
 
 

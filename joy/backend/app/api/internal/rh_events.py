@@ -125,9 +125,14 @@ async def receive_event(request: Request, settings: Settings = Depends(get_setti
                 context["payment_retry_count"] = int(context.get("payment_retry_count") or 0) + 1
                 conversation.booking_context = context
                 conversation.booking_substate = "rh_awaiting_payment_email"
+            # Someone who chose "WhatsApp is fine" isn't asked for an email now
             text = (
                 "We couldn’t complete your payment, so your appointment has not been confirmed. "
-                "Please reply with your email address to receive a new secure payment link."
+                + (
+                    "Reply PAY to get a new secure payment link."
+                    if context.get("receipt_by") == "whatsapp"
+                    else "Reply with your email address, or WhatsApp is fine, to get a new secure payment link."
+                )
             )
             enqueue_booking_confirmed(
                 patient.phone_e164,

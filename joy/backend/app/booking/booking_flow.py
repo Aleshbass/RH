@@ -374,15 +374,7 @@ def begin_selected_treatment(
     if known_email:
         ctx["suggested_email"] = known_email
     _set_substate(conversation, AWAITING_RH_PAYMENT_EMAIL, ctx)
-    if known_email:
-        return (
-            f"Your {config['label'].casefold()} booking is ready. Shall I send your secure payment "
-            f"receipt to {known_email}? Reply YES, or send a different email address."
-        )
-    return (
-        f"Your {config['label'].casefold()} booking is ready. "
-        "Which email address should I send your secure payment receipt to?"
-    )
+    return receipt_question(f"Your {config['label'].casefold()} booking is ready.", known_email)
 
 
 def _treatment_option(user_text: str) -> str | None:
@@ -894,9 +886,9 @@ def _continue_rh_slot(session: Session, conversation: Conversation, patient: Pat
                 "Please try again shortly."
             )
         return _refresh_rh_slots_after_hold_failure(conversation, provider, ctx)
-    # Paystack needs a deliverable receipt address. Never synthesize one from
-    # a phone number: the hold is valid, but payment must wait for the patient
-    # to provide an address they control.
+    # The receipt goes to the patient's email, or here on WhatsApp ("WhatsApp is fine"). Paystack
+    # then gets a private address built from their RH id (whatsapp_receipt_address), never from
+    # their phone number, and the real receipt link arrives in this chat.
     ctx.update({"rh_booking_id": booking.booking_id, "rh_amount_kobo": booking.amount_kobo})
     send_intake(session, conversation, patient, rh_patient_id=str(rh_patient_id), booking_id=booking.booking_id, policy=policy)
     known_email = _known_email(patient)
@@ -905,43 +897,94 @@ def _continue_rh_slot(session: Session, conversation: Conversation, patient: Pat
     _set_substate(conversation, AWAITING_RH_PAYMENT_EMAIL, ctx)
     append(session, kind=AuditKind.BOOKING, actor_phone=patient.phone_e164, person_id=patient.id,
            payload={"decision": "rh_booking_hold_created", "rh_booking_id": booking.booking_id})
-    if known_email:
-        return (
-            f"Your time is held. Shall I send your secure payment receipt to {known_email}? "
-            "Reply YES, or send a different email address."
-        )
-    return "Your time is held. Which email address should I send your secure payment receipt to?"
+    return receipt_question("Your time is held.", known_email)
 
 
 _USE_EMAIL = {"yes", "y", "yes please", "ok", "okay", "yes, use it", "use it", "use that", "use that email", "correct", "sure"}
+
+# ── Patients without email ────────────────────────────────────────────────────
+# Many patients don't use email. They tap "WhatsApp is fine": the payment link comes straight
+# away and the receipt arrives here (RH sends receipt_url with the payment event). Paystack still
+# needs an address, so it gets a private one built from the patient's RH id, never their phone
+# number, on a domain that delivers nowhere: the same address as RH's lib/auth/joyLoginEmail.ts.
+WHATSAPP_RECEIPT_BUTTON = "whatsapp is fine"
+ADD_EMAIL_BUTTON = "add my email"
+RECEIPT_EMAIL_DOMAIN = "patients.physioaroundme.com"
+_WHATSAPP_RECEIPT = {
+    WHATSAPP_RECEIPT_BUTTON, "whatsapp", "whatsapp only", "on whatsapp", "here", "send it here",
+    "no email", "none", "i don't have email", "i dont have email", "i don't have an email", "i dont have an email",
+    "don't have email", "dont have email", "don't have an email", "dont have an email", "i have no email", "skip",
+}
+_ADD_EMAIL = {ADD_EMAIL_BUTTON, "add email", "email", "use email"}
+_PLAIN_NO = {"no", "nope", "no thanks", "not that one", "different email"}
+
+
+def whatsapp_receipt_address(rh_patient_id: str) -> str:
+    """Paystack's address for a patient who gets their receipt on WhatsApp."""
+    return f"wa-{rh_patient_id.lower()}@{RECEIPT_EMAIL_DOMAIN}"
+
+
+def wants_whatsapp_receipt(user_text: str) -> bool:
+    text = (user_text or "").strip().casefold().strip(" .!")
+    return text in _WHATSAPP_RECEIPT or text.startswith("no email") or "whatsapp is fine" in text
+
+
+def wants_to_type_email(user_text: str) -> bool:
+    """They tapped "Add my email": ask them to type it."""
+    return (user_text or "").strip().casefold().strip(" .!") in _ADD_EMAIL
+
+
+def receipt_question(lead: str, known_email: str | None) -> str:
+    """Where the payment receipt should go: their email, or here on WhatsApp."""
+    if known_email:
+        return (
+            f"{lead} Shall I send your payment receipt to {known_email}? "
+            "Tap YES, send a different email, or tap WhatsApp is fine to get it here."
+        )
+    return f"{lead} Where should I send your payment receipt? Tap WhatsApp is fine to get it here, or reply with your email address."
 
 
 def _known_email(patient: Patient) -> str | None:
     """The email the patient gave in the sign-up form, if it is a real address."""
     email = (getattr(patient, "email", None) or "").strip().casefold()
+    if email.endswith(f"@{RECEIPT_EMAIL_DOMAIN}"):
+        return None  # a private address Rehabify made, never one to suggest
     return email if _PAYMENT_EMAIL_RE.fullmatch(email) and not email.endswith(".invalid") else None
 
 
 def _continue_rh_payment_email(session: Session, conversation: Conversation, patient: Patient, user_text: str) -> str:
-    email = user_text.strip().casefold()
+    text = user_text.strip().casefold()
     suggested = str((conversation.booking_context or {}).get("suggested_email") or "")
-    if suggested and email.strip(" .!") in _USE_EMAIL:
-        email = suggested
-    if not _PAYMENT_EMAIL_RE.fullmatch(email) or email.endswith(".invalid"):
-        if suggested:
-            return f"Reply YES to use {suggested}, or send the email address you'd like for your payment receipt."
-        return "Please reply with a valid email address for your secure payment receipt."
-    if email != suggested and not _known_email(patient):
-        patient.email = email  # remembered for next time (the sign-up form can change it)
+    if text.strip(" .!") in _ADD_EMAIL:
+        return "Sure. Type the email address you'd like your receipt sent to."
+    if suggested and text.strip(" .!") in _PLAIN_NO:
+        return "No problem. Send the email address you'd like, or tap WhatsApp is fine to get your receipt here."
+    email: str | None
+    # After a failed payment, someone who chose WhatsApp just replies PAY for a new link
+    again = (conversation.booking_context or {}).get("receipt_by") == "whatsapp" and text.strip(" .!") in {
+        "pay", "pay now", "try again", "retry", "new link", "send link", "yes", "ok", "okay",
+    }
+    if again or wants_whatsapp_receipt(text) or (not suggested and text.strip(" .!") in _PLAIN_NO):
+        email = None  # receipt here on WhatsApp
+    else:
+        email = suggested if suggested and text.strip(" .!") in _USE_EMAIL else text
+        if not _PAYMENT_EMAIL_RE.fullmatch(email) or email.endswith(".invalid") or email.endswith(f"@{RECEIPT_EMAIL_DOMAIN}"):
+            if suggested:
+                return f"Tap YES to use {suggested}, send a different email, or tap WhatsApp is fine to get your receipt here."
+            return "Please reply with your email address, or tap WhatsApp is fine to get your receipt here."
+        if email != suggested and not _known_email(patient):
+            patient.email = email  # remembered for next time (the sign-up form can change it)
     ctx = dict(conversation.booking_context or {})
     booking_id = ctx.get("rh_booking_id")
     rh_patient_id = ctx.get("rh_patient_id")
     if not booking_id or not rh_patient_id:
         return "I need to refresh your booking details before starting payment. Please try again."
     retry_count = int(ctx.get("payment_retry_count") or 0)
+    # payment_email stays None for a WhatsApp receipt, so nothing is ever emailed to the private address
+    ctx["receipt_by"] = "email" if email else "whatsapp"
     try:
         payment = configured_rh_client().initialize_booking_payment(
-            str(booking_id), patient_id=str(rh_patient_id), email=email,
+            str(booking_id), patient_id=str(rh_patient_id), email=email or whatsapp_receipt_address(str(rh_patient_id)),
             # A retry after a Paystack-declared failure must use a fresh RH
             # payment attempt/reference. Retries before a failure retain this
             # same key and remain idempotent.
@@ -971,12 +1014,13 @@ def _continue_rh_payment_email(session: Session, conversation: Conversation, pat
     append(session, kind=AuditKind.BOOKING, actor_phone=patient.phone_e164, person_id=patient.id,
            payload={"decision": "rh_pending_payment_created", "rh_booking_id": str(booking_id)})
     amount = _amount_text(ctx)
+    receipt_note = "" if email else "\n\nYour receipt will come here on WhatsApp once you’ve paid."
     if ctx.get("booking_route") == "admin_scheduled_virtual":
         return (
             f"Your virtual consultation booking is ready.{amount} Pay securely here: {payment.authorization_url}\n\n"
-            "I’ll message you as soon as your payment comes through."
+            f"I’ll message you as soon as your payment comes through.{'' if email else ' Your receipt will come here too.'}"
         )
-    return f"Your time is held.{amount} Pay securely here: {payment.authorization_url}"
+    return f"Your time is held.{amount} Pay securely here: {payment.authorization_url}{receipt_note}"
 
 
 def _amount_text(ctx: dict) -> str:
@@ -2033,9 +2077,7 @@ def _hold_named_slot(
     append(session, kind=AuditKind.BOOKING, actor_phone=patient.phone_e164, person_id=patient.id,
            payload={"decision": "rh_named_booking_held", "rh_booking_id": booking.booking_id})
     held = f"Your time with {provider.get('display_name') or 'your physiotherapist'} ({when}) is held for 30 minutes."
-    if known_email:
-        return f"{held} Shall I send your payment receipt to {known_email}? Reply YES, or send a different email address."
-    return f"{held} Please reply with the email address you'd like your payment receipt sent to."
+    return receipt_question(held, known_email)
 
 
 def named_payment_received_text(context: dict, due_at_ms: int | float | None = None) -> str:

@@ -23,6 +23,9 @@ from app.flows.signup import WELCOME_WITH_FORM, WELCOME_WITHOUT_FORM, is_signup_
 from app.identity.greetings import is_greeting_only
 from app.exercises.programme import asks_for_programme, done_command, reminder_command, show_programme
 from app.booking.booking_flow import (
+    wants_to_type_email,
+    wants_whatsapp_receipt,
+    whatsapp_receipt_address,
     AWAITING_RH_CONFIRM,
     AWAITING_RH_NAMED_PROVIDER,
     AWAITING_RH_OTHER_TIME,
@@ -881,11 +884,18 @@ def _resend_safety_block(
                 _set_substate(conversation, AWAITING_RH_PAYMENT_EMAIL, context)
             state.booking_context = context
             state.booking_substate = AWAITING_RH_PAYMENT_EMAIL
-            reply = "Your specialist safety review for a couple of minutes is ₦6,000. Please reply with the email address you want to use for your secure payment receipt."
+            reply = (
+                "Your specialist safety review for a couple of minutes is ₦6,000. Where should I send your payment receipt? "
+                "Tap WhatsApp is fine to get it here, or reply with your email address."
+            )
         elif context.get("amber_review_awaiting_email"):
             email = user_text.strip().casefold()
-            if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email) or email.endswith(".invalid"):
-                reply = "Please reply with a valid email address for your secure payment receipt."
+            if wants_to_type_email(email):
+                reply = "Sure. Type the email address you'd like your receipt sent to."
+            elif wants_whatsapp_receipt(email):
+                reply = _start_paid_amber_review(session, identity, state, email=None)  # receipt here on WhatsApp
+            elif not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email) or email.endswith(".invalid"):
+                reply = "Please reply with your email address, or tap WhatsApp is fine to get your receipt here."
             else:
                 reply = _start_paid_amber_review(session, identity, state, email=email)
         elif context.get("amber_review_id"):
@@ -1014,7 +1024,7 @@ def _safety_fire_reply(
     )
 
 
-def _start_paid_amber_review(session: Session, identity: Identity, state: ConversationState, *, email: str) -> str:
+def _start_paid_amber_review(session: Session, identity: Identity, state: ConversationState, *, email: str | None) -> str:
     """Create only the fixed-price RH review service; never a routine booking."""
     patient = session.get(Patient, identity.person_id)
     conversation = session.get(Conversation, state.conversation_id)
@@ -1077,7 +1087,7 @@ def _start_paid_amber_review(session: Session, identity: Identity, state: Conver
                 raise RHIntegrationError("PAYSTACK_CALLBACK_NOT_CONFIGURED", "RH payment callback URL is not configured")
             try:
                 paystack_payment = initialize_transaction(
-                    email,
+                    email or whatsapp_receipt_address(mapping.rh_record_id),
                     int(prepared["amount_kobo"]),
                     str(prepared["reference"]),
                     callback_url,
@@ -1108,7 +1118,7 @@ def _start_paid_amber_review(session: Session, identity: Identity, state: Conver
             )
         else:
             payment = client.initialize_specialist_review_payment(
-                review_id, patient_id=mapping.rh_record_id, email=email,
+                review_id, patient_id=mapping.rh_record_id, email=email or whatsapp_receipt_address(mapping.rh_record_id),
                 actor=RHActor(persona="patient", sender_phone=patient.phone_e164, rh_user_id=mapping.rh_record_id),
                 idempotency_key=payment_idempotency_key,
             )

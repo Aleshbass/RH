@@ -4,8 +4,10 @@ import { actorSchema, authenticatedJson, errorResponse, success } from "@/lib/jo
 import { JoyAuthError } from "@/lib/joy-integration/auth";
 import { callJoyConvexGateway } from "@/lib/joy-integration/convex-gateway";
 import { publicAppUrl } from "@/lib/public-app-url";
+import { joyLoginEmail } from "@/lib/auth/joyLoginEmail";
 
-const schema = z.object({ patient_id: z.string().min(1), email: z.string().email(), actor: actorSchema }).strict();
+// email is optional: without one the receipt goes on WhatsApp and Paystack gets the patient's private address
+const schema = z.object({ patient_id: z.string().min(1), email: z.string().email().optional(), actor: actorSchema }).strict();
 
 export async function POST(request: Request, context: { params: Promise<{ reviewId: string }> }) {
   let requestId = request.headers.get("X-Request-Id") ?? "unknown";
@@ -21,7 +23,7 @@ export async function POST(request: Request, context: { params: Promise<{ review
     const prepared = await callJoyConvexGateway("prepare_specialist_review_payment", { review_id: reviewId, patient_id: input.patient_id, request_id: requestId, idempotency_key: idempotencyKey, reference }) as { attempt_id: string; amount_kobo: number; authorization_url?: string };
     if (prepared.authorization_url) return success(requestId, { review_id: reviewId, reference, authorization_url: prepared.authorization_url, payment_status: "pending" });
     const appUrl = publicAppUrl();
-    const response = await fetch("https://api.paystack.co/transaction/initialize", { method: "POST", headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY ?? ""}`, "Content-Type": "application/json" }, body: JSON.stringify({ email: input.email, amount: prepared.amount_kobo, currency: "NGN", reference, callback_url: `${appUrl}/payment/callback`, metadata: { joy_specialist_review_id: reviewId, source_system: "joy_ai", source_channel: "whatsapp", correlation_id: requestId } }) });
+    const response = await fetch("https://api.paystack.co/transaction/initialize", { method: "POST", headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY ?? ""}`, "Content-Type": "application/json" }, body: JSON.stringify({ email: input.email ?? joyLoginEmail(input.patient_id), amount: prepared.amount_kobo, currency: "NGN", reference, callback_url: `${appUrl}/payment/callback`, metadata: { joy_specialist_review_id: reviewId, source_system: "joy_ai", source_channel: "whatsapp", correlation_id: requestId } }) });
     let result: { status?: boolean; message?: string; data?: { authorization_url?: string } };
     try {
       result = await response.json() as typeof result;
