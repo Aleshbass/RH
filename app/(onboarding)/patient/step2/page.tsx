@@ -6,7 +6,7 @@ import { useOnboardingStore } from '@/stores/onboardingStore';
 import HealthInfoForm, { PatientHealthInfoValues } from '@/components/onboarding/patient/HealthInfoForm';
 import { useCompletePatientOnboarding } from '@/lib/api/patientInvitations';
 import { toast } from 'sonner';
-import { Loader2 } from '@/components/icons';
+import { RehabifyLoader } from '@/components/brand/RehabifyLoader';
 
 function PatientStep2Content() {
   const router = useRouter();
@@ -122,7 +122,7 @@ export default function PatientStep2Page() {
   return (
     <Suspense fallback={
       <div className="flex flex-col items-center justify-center min-h-screen p-4 bg-rh-canvas">
-        <Loader2 className="h-8 w-8 animate-spin text-rh-ink" />
+        <RehabifyLoader size={64} />
       </div>
     }>
       <PatientStep2Content />

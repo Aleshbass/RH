@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@clerk/nextjs";
-import { Loader2 } from "@/components/icons";
+import { RehabifyLoader } from "@/components/brand/RehabifyLoader";
 
 export default function FAQsPage() {
   const router = useRouter();
@@ -20,7 +20,7 @@ export default function FAQsPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center">
-      <Loader2 className="h-8 w-8 animate-spin text-[#005b57]" />
+      <RehabifyLoader size={64} />
     </div>
   );
 }

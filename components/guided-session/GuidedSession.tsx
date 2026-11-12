@@ -28,6 +28,7 @@ import { SessionTracker, type SessionSummary } from '@/lib/motion/session'
 import { FrameSmoother } from '@/lib/motion/smoothing'
 import { cn } from '@/lib/utils'
 import { useCoachAssets } from './useCoachAssets'
+import { RehabifyLoader } from '@/components/brand/RehabifyLoader'
 
 const ExerciseStage = dynamic(() => import('@/components/exercise3d/ExerciseStage'), { ssr: false })
 
@@ -715,7 +716,7 @@ export default function GuidedSession({ clipId, exercise, name, itemIndex, plan:
 
           {phase === 'starting' && (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-6 text-center">
-              <Loader2 className="h-8 w-8 animate-spin text-rh-lime" />
+              <RehabifyLoader size={64} label="Getting the camera coach ready" />
               <p className="text-sm">
                 {progress && progress.loaded < progress.total * 0.98
                   ? `Getting the camera coach ready… ${Math.round((progress.loaded / progress.total) * 100)}%`

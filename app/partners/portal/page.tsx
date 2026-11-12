@@ -12,6 +12,7 @@ import {
   PartnerRejectedScreen,
 } from "@/components/partners/portal/PartnerOnboarding";
 import { PartnerDashboard } from "@/components/partners/portal/PartnerDashboard";
+import { RehabifyPageLoader } from "@/components/brand/RehabifyLoader";
 
 /**
  * Partner Portal entry, for partner organisations and referring doctors (partners of type
@@ -56,10 +57,7 @@ export default function PartnerPortalPage() {
   const waitingForAccount = me?.status === "no_partner" && !me.isAdmin && account === undefined;
   if (!isLoaded || (isSignedIn && me === undefined) || waitingForAccount || doctorNeedsProfile) {
     return (
-      <div className="min-h-[80vh] flex flex-col items-center justify-center space-y-4">
-        <div className="w-10 h-10 rounded-full border-3 border-rh-ink/20 border-t-rh-ink animate-spin" />
-        <p className="text-xs font-semibold uppercase tracking-wider text-[#52706e]">Loading your portal…</p>
-      </div>
+      <RehabifyPageLoader message="Loading your portal…" className="min-h-[80vh]" />
     );
   }
 

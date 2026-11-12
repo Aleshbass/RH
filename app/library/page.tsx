@@ -3,11 +3,12 @@
 import { useState } from 'react'
 import Image from 'next/image'
 import { useQuery } from 'convex/react'
-import { Loader2, Rotate3d } from '@/components/icons'
+import { Rotate3d } from '@/components/icons'
 import { api } from '@/convex/_generated/api'
 import { ExercisePreviewDialog } from '@/components/exercise-programs/ExercisePreviewDialog'
 import { LibraryPicker } from '@/components/exercise-programs/LibraryPicker'
 import type { LibraryData, LibraryEntry } from '@/components/exercise-programs/types'
+import { RehabifyLoader } from '@/components/brand/RehabifyLoader'
 
 // The 3D exercise library for organisations that license it (and Rehabify staff).
 
@@ -32,7 +33,7 @@ export default function LicensedLibraryPage() {
         </div>
         <section className="rounded-3xl bg-white p-5 shadow-soft dark:bg-rh-ink-2">
           {library === undefined ? (
-            <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-rh-teal" /></div>
+            <div className="flex justify-center py-16"><RehabifyLoader size={56} /></div>
           ) : !library ? (
             <div className="py-12 text-center">
               <p className="font-semibold text-rh-night dark:text-white">This library is for licensed organisations</p>

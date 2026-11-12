@@ -25,6 +25,7 @@ import {
     type ServiceQuote,
     type TravelZone,
 } from "@/components/booking/booking-shared";
+import { RehabifyLoader } from "@/components/brand/RehabifyLoader";
 
 /** One row of api.marketplace.search.findPhysiosForService. */
 type ServicePhysio = {
@@ -80,7 +81,7 @@ function Loading() {
     return (
         <Frame>
             <div className="flex min-h-[40vh] items-center justify-center">
-                <Loader2 className="h-8 w-8 animate-spin text-rh-lime" aria-label="Loading" />
+                <RehabifyLoader size={64} />
             </div>
         </Frame>
     );

@@ -13,6 +13,7 @@ import { initials, primaryButtonClass, secondaryButtonClass } from '@/components
 import { careRefs } from '@/components/family/refs'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
+import { RehabifyLoader } from '@/components/brand/RehabifyLoader'
 
 const FAMILY_HOME = '/dashboard/family'
 
@@ -84,7 +85,7 @@ export default function CareInvitePage() {
     return (
       <Screen>
         <Card className="flex items-center justify-center py-16">
-          <Loader2 className="h-6 w-6 animate-spin text-pt-faint" />
+          <RehabifyLoader size={56} />
         </Card>
       </Screen>
     )

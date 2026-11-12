@@ -4,7 +4,6 @@ import { useAuth } from '@clerk/nextjs'
 import { api } from '@/convex/_generated/api'
 import { useQueryUntyped } from '@/lib/convexUntyped'
 import { useRouter } from 'next/navigation'
-import { Loader2 } from '@/components/icons'
 import { useEffect, useState } from 'react'
 import { User } from '@/app/types'
 import PendingApprovalPage from '@/components/dashboard/shared/PendingApprovalPage'
@@ -15,6 +14,7 @@ import {
   isClinicClinician,
   isClinicFrontDesk,
 } from '@/components/clinic/clinician-routing'
+import { RehabifySplash } from '@/components/brand/RehabifyLoader'
 
 type UserRole = 'physiotherapist' | 'clinic_owner' | 'patient' | 'family_member' | 'doctor' | 'admin' | 'partner' | 'blog_editor';
 
@@ -157,12 +157,7 @@ export default function DashboardPage() {
   // Loading state while checking auth and user data
   if (!isLoaded || user === undefined || dashboardAccess === undefined) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-blue-600" />
-          <p className="text-gray-600">Loading dashboard...</p>
-        </div>
-      </div>
+      <RehabifySplash message="Opening your dashboard…" />
     )
   }
 
@@ -189,12 +184,7 @@ export default function DashboardPage() {
   // Clinic team members are always sent on to a portal (see the effect above)
   if (isRedirecting || isClinicianOnTeam || isClinicFrontDesk(user as unknown as { clinicId?: string; role?: string })) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-blue-600" />
-          <p className="text-gray-600">Redirecting to your dashboard...</p>
-        </div>
-      </div>
+      <RehabifySplash message="Opening your dashboard…" />
     )
   }
 
@@ -291,11 +281,6 @@ export default function DashboardPage() {
 
   // Show redirecting state while navigation happens
   return (
-    <div className="flex items-center justify-center min-h-screen">
-      <div className="text-center">
-        <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-blue-600" />
-        <p className="text-gray-600">Redirecting to your dashboard...</p>
-      </div>
-    </div>
+    <RehabifySplash message="Opening your dashboard…" />
   )
 } 

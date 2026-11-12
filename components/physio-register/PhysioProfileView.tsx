@@ -6,12 +6,7 @@ import { api } from '@/convex/_generated/api';
 import { useUser } from '@clerk/nextjs';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import {
-  Award, MapPin, Globe, Star, Users, ShieldCheck, Share2, Copy,
-  FileText, GraduationCap, Briefcase, Clock, ArrowLeft, ExternalLink,
-  Pencil, Loader2, Check, Stethoscope, ArrowRight, ChevronDown, ChevronUp,
-  MessageSquare, UserCheck,
-} from '@/components/icons';
+import { Award, MapPin, Globe, Star, Users, ShieldCheck, Share2, Copy, FileText, GraduationCap, Briefcase, Clock, ArrowLeft, ExternalLink, Pencil, Check, Stethoscope, ArrowRight, ChevronDown, ChevronUp, MessageSquare, UserCheck } from '@/components/icons';
 import { WhatsApp } from '@/components/icons';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -23,6 +18,7 @@ import { displayFont } from '@/components/learn/shared';
 import { initialsOf, regulatorLabel } from '@/components/physio-register/PhysioProfileCard';
 import Image from 'next/image';
 import { Id } from '@/convex/_generated/dataModel';
+import { RehabifyLoader } from '@/components/brand/RehabifyLoader';
 
 const RELATIONSHIP_LABELS: Record<string, string> = {
   school: 'School / University',
@@ -102,7 +98,7 @@ export default function PhysioProfilePage() {
     return (
       <div className="min-h-screen bg-rh-cream flex items-center justify-center">
         <div className="text-center">
-          <Loader2 className="w-10 h-10 animate-spin text-rh-ink mx-auto mb-4" />
+          <RehabifyLoader size={64} label="Loading profile" className="mx-auto mb-4" />
           <p className="text-rh-ink/60">Loading profile...</p>
         </div>
       </div>
