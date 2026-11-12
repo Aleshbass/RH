@@ -1,8 +1,8 @@
 """A voice note back when the patient sends one (owner, 10 Nov 2026).
 
-Joy speaks its reply in Ogg/Opus (what WhatsApp plays as a voice note) with ElevenLabs (Adeola, a
-Nigerian voice) when ELEVENLABS_API_KEY is set, else OpenAI text-to-speech, uploads it to
-WhatsApp and sends it before any text. The written reply still goes when the
+Joy speaks its reply in Ogg/Opus (what WhatsApp plays as a voice note): English and Pidgin in
+OpenAI's coral voice (the owner's choice again on 12 Nov 2026), Yoruba and Hausa in ElevenLabs'
+Adeola. It uploads the audio to WhatsApp and sends it before any text. The written reply still goes when the
 patient needs to tap or read something: buttons, a list, a link, or safety advice. Any failure
 falls back to the text alone, so a reply is never lost to a voice problem.
 
@@ -101,13 +101,24 @@ def _elevenlabs(text: str, language: str | None) -> bytes | None:
     return audio if len(audio) > 100 and audio[:4] == b"OggS" else None
 
 
+def _elevenlabs_languages() -> set[str]:
+    listed = {item.strip().lower() for item in (get_settings().elevenlabs_languages or "").split(",") if item.strip()}
+    return listed | _LOCAL_LANGUAGE_MODEL
+
+
 def synthesize(text: str, language: str | None) -> bytes | None:
-    """Ogg/Opus speech for this text, or None. ElevenLabs (Adeola) first, then OpenAI."""
-    audio = _elevenlabs(text, language)
-    if audio is not None:
-        return audio
+    """Ogg/Opus speech for this text, or None.
+
+    English and Pidgin: Joy's OpenAI voice (coral). Yoruba and Hausa: ElevenLabs (Adeola) only.
+    A language listed in ELEVENLABS_LANGUAGES uses Adeola first, with OpenAI as the fallback.
+    """
     settings = get_settings()
-    if not settings.openai_api_key or (language or "en").lower() in _LOCAL_LANGUAGE_MODEL:
+    lang = (language or "en").lower()
+    if lang in _elevenlabs_languages():
+        audio = _elevenlabs(text, lang)
+        if audio is not None:
+            return audio
+    if not settings.openai_api_key or lang in _LOCAL_LANGUAGE_MODEL:
         return None  # Yoruba and Hausa never fall back to another voice: text instead
     try:
         response = httpx.post(

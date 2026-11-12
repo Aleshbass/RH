@@ -43,10 +43,14 @@ class Settings(BaseSettings):
     joy_voice_reply_languages: str = "en,pcm,yo,ha"
     openai_tts_model: str = "gpt-4o-mini-tts"
     openai_tts_voice: str = "coral"
-    # ElevenLabs voice for Joy's voice notes when ELEVENLABS_API_KEY is set (OpenAI is the fallback).
+    # ElevenLabs voice for Joy's voice notes when ELEVENLABS_API_KEY is set.
     # Adeola, "Warm & Soothing": a young female Nigerian English voice (owner's choice, 11 Nov 2026).
     elevenlabs_api_key: str = ""
     elevenlabs_voice_id: str = "t2zuPBtbBvwLINfk1lqx"
+    # Languages spoken in the ElevenLabs voice; the rest use the OpenAI voice above (coral). The owner
+    # heard Adeola's English as "not Nigerian" on 12 Nov 2026 and asked for Joy's earlier voice, so
+    # English and Pidgin are OpenAI again. Yoruba and Hausa are always ElevenLabs (nothing else speaks them).
+    elevenlabs_languages: str = "yo,ha"
     # English and Pidgin; Yoruba and Hausa need the newer model (Igbo isn't supported by ElevenLabs yet)
     elevenlabs_model: str = "eleven_multilingual_v2"
     elevenlabs_local_language_model: str = "eleven_v4"

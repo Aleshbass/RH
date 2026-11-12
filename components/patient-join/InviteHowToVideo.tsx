@@ -15,7 +15,7 @@ const PHONE = '(max-width: 640px)'
  */
 const FILMS = {
   landscape: { url: MARKETING_VIDEOS.patientInvites, poster: '/media/patient-invites-landscape.webp', length: '1:37' },
-  vertical: { url: MARKETING_VIDEOS.patientInvitesVertical, poster: '/media/patient-invites-vertical.webp', length: '1:44' },
+  vertical: { url: MARKETING_VIDEOS.patientInvitesVertical, poster: '/media/patient-invites-vertical.webp', length: '1:43' },
 }
 
 /**

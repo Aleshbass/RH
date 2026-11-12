@@ -38,6 +38,7 @@ def whatsapp(monkeypatch):
     monkeypatch.setenv("WHATSAPP_PHONE_NUMBER_ID", "123")
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
     monkeypatch.delenv("ELEVENLABS_API_KEY", raising=False)  # OpenAI path unless a test sets it
+    monkeypatch.delenv("ELEVENLABS_LANGUAGES", raising=False)
     monkeypatch.setenv("DISABLE_WHATSAPP_DELIVERY", "false")
     monkeypatch.delenv("JOY_VOICE_REPLIES", raising=False)
     monkeypatch.delenv("JOY_VOICE_REPLY_LANGUAGES", raising=False)
@@ -140,8 +141,21 @@ def _elevenlabs_post(calls, *, fail=False):
     return post
 
 
-def test_adeola_from_elevenlabs_when_the_key_is_set(whatsapp, monkeypatch):
+@pytest.mark.parametrize("language", ["en", "pcm"])
+def test_english_and_pidgin_keep_joys_earlier_voice(whatsapp, monkeypatch, language):
+    # Owner, 12 Nov 2026: Adeola's English didn't sound Nigerian; Joy's earlier voice (coral) instead
     monkeypatch.setenv("ELEVENLABS_API_KEY", "el-test")
+    calls = []
+    monkeypatch.setattr(voice_reply.httpx, "post", _elevenlabs_post(calls))
+    audio = voice_reply.synthesize("Hello Ada.", language)
+    assert audio.startswith(b"OggS\x00")
+    assert [url for url, _ in calls] == ["https://api.openai.com/v1/audio/speech"]
+    assert calls[0][1]["json"]["voice"] == "coral"
+
+
+def test_adeola_for_english_only_when_listed(whatsapp, monkeypatch):
+    monkeypatch.setenv("ELEVENLABS_API_KEY", "el-test")
+    monkeypatch.setenv("ELEVENLABS_LANGUAGES", "en,yo,ha")
     calls = []
     monkeypatch.setattr(voice_reply.httpx, "post", _elevenlabs_post(calls))
     audio = voice_reply.synthesize("Hello Ada.", "en")
@@ -155,6 +169,7 @@ def test_adeola_from_elevenlabs_when_the_key_is_set(whatsapp, monkeypatch):
 
 def test_openai_takes_over_when_elevenlabs_fails(whatsapp, monkeypatch):
     monkeypatch.setenv("ELEVENLABS_API_KEY", "el-test")
+    monkeypatch.setenv("ELEVENLABS_LANGUAGES", "en")
     calls = []
     monkeypatch.setattr(voice_reply.httpx, "post", _elevenlabs_post(calls, fail=True))
     audio = voice_reply.synthesize("Hello Ada.", "en")
