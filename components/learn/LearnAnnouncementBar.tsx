@@ -119,7 +119,7 @@ function AnnouncementBar({ collapsed }: { collapsed: boolean }) {
               </span>
             </p>
             <Link
-              href="/learn"
+              href="/learn/programs/msk-specialist"
               className="inline-flex shrink-0 items-center gap-1 rounded-full bg-rh-lime px-3 py-1 text-xs font-semibold text-rh-ink transition hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
             >
               Register <ArrowRight className="h-3 w-3" />

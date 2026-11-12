@@ -171,7 +171,7 @@ function PublishCard({ cohort, onDeleted }: { cohort: AdminCohort; onDeleted: ()
         <div className="flex flex-wrap gap-2">
           {cohort.status !== 'draft' && (
             <Button asChild variant="ghost" className={softButtonClass}>
-              <Link href="/learn" target="_blank">
+              <Link href="/learn/programs/msk-specialist" target="_blank">
                 <ExternalLink className="mr-2 h-4 w-4" /> View page
               </Link>
             </Button>
@@ -297,7 +297,7 @@ export default function AdminLearnPage() {
       actions={
         <>
           <Button asChild variant="ghost" className={softButtonClass}>
-            <Link href="/learn" target="_blank">
+            <Link href="/learn/programs/msk-specialist" target="_blank">
               <ExternalLink className="mr-2 h-4 w-4" /> Program page
             </Link>
           </Button>

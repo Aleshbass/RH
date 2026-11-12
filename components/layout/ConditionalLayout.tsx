@@ -13,9 +13,11 @@ import { useState, useEffect } from 'react'
 interface ConditionalLayoutProps {
   children: React.ReactNode
   isSubdomainHost?: boolean
+  /** learn.* host: Rehabify Learn draws its own header and footer (app/learn/layout.tsx). */
+  isLearnHost?: boolean
 }
 
-export default function ConditionalLayout({ children, isSubdomainHost = false }: ConditionalLayoutProps) {
+export default function ConditionalLayout({ children, isSubdomainHost = false, isLearnHost = false }: ConditionalLayoutProps) {
   const pathname = usePathname()
   const [clientIsSubdomain, setClientIsSubdomain] = useState(false)
 
@@ -74,8 +76,11 @@ export default function ConditionalLayout({ children, isSubdomainHost = false }:
     pathname.startsWith('/go/') ||
     pathname.startsWith('/video-call') ||
     pathname.startsWith('/track') ||
-    // Rehabify Learn course and its one-tap links have their own top bar (/course on the learn host)
-    /^\/(?:learn\/)?(?:course|start|verify)(?:\/|$)/.test(pathname) ||
+    // Rehabify Learn has its own header and footer (app/learn/layout.tsx)
+    pathname === '/learn' ||
+    pathname.startsWith('/learn/') ||
+    isLearnHost ||
+    (typeof window !== 'undefined' && window.location.hostname.toLowerCase().startsWith('learn.')) ||
     pathname.includes('physioaroundme.com')
 
   // Check subdomains (docs.physioaroundme.com, api.physioaroundme.com, partners.physioaroundme.com)

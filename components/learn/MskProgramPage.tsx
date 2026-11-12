@@ -10,6 +10,7 @@ import {
   Award,
   BadgeCheck,
   CalendarDays,
+  ChevronRight,
   Clock3,
   Lock,
   MonitorPlay,
@@ -38,7 +39,7 @@ import {
   type PublicCohort,
   type Track,
 } from './shared'
-import { VideoCoursesSection } from './video/CourseEnrolment'
+import { learnPath } from './platform/learnApi'
 
 type RegistrationContext = {
   signedIn: boolean
@@ -166,8 +167,20 @@ function Hero({ cohort }: { cohort: PublicCohort | null | undefined }) {
   const reduce = useReducedMotion()
   const duration = cohort?.duration || DEFAULT_DURATION
   return (
-    <section className="bg-rh-cream px-4 pb-16 pt-24 sm:px-6 sm:pt-28 lg:pb-24">
+    <section className="bg-rh-cream px-4 pb-16 pt-8 sm:px-6 sm:pt-12 lg:pb-24">
       <div className="mx-auto max-w-6xl">
+        {/* One course in the Learn catalogue, not the whole of Learn */}
+        <nav aria-label="Breadcrumb" className="flex flex-wrap items-center gap-1.5 text-sm text-rh-ink/55">
+          <Link href={learnPath('/courses')} className="hover:text-rh-ink hover:underline">
+            Courses
+          </Link>
+          <ChevronRight className="h-3.5 w-3.5" />
+          <Link href={`${learnPath('/courses')}?type=live`} className="hover:text-rh-ink hover:underline">
+            Live programs
+          </Link>
+          <ChevronRight className="h-3.5 w-3.5" />
+          <span className="text-rh-ink">{PROGRAM.shortTitle}</span>
+        </nav>
         <div className="grid gap-14 py-4 sm:py-8 lg:grid-cols-[1.12fr_0.88fr] lg:items-center lg:gap-16">
           <motion.div
             initial={reduce ? false : { opacity: 0, y: 16 }}
@@ -567,7 +580,6 @@ export function MskProgramPage({ initialCohort }: { initialCohort?: PublicCohort
       <Skills />
       <HowItWorks cohort={cohort} />
       <Pricing cohort={cohort} />
-      <VideoCoursesSection />
       <Faq cohort={cohort} />
       <FinalCta cohort={cohort} />
     </div>

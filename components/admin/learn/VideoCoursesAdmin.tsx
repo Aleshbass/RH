@@ -60,6 +60,7 @@ import {
   type YoutubeVideo,
 } from '@/components/learn/video/videoApi'
 import { playSound } from '@/lib/sounds'
+import { COURSE_CATEGORIES, COURSE_LEVELS } from '@/lib/learn/catalog'
 import { cn } from '@/lib/utils'
 
 type CourseId = Id<'learnVideoCourses'>
@@ -282,6 +283,12 @@ function CourseForm({
   const [access, setAccess] = useState<CourseAccess>(course?.access ?? 'msk')
   const [rehabifyPrice, setRehabifyPrice] = useState(course?.rehabifyPrice ? String(course.rehabifyPrice) : '')
   const [externalPrice, setExternalPrice] = useState(course?.externalPrice ? String(course.externalPrice) : '')
+  // Catalogue card: topic, level and teacher (Learn home and /courses)
+  const [category, setCategory] = useState(course?.category ?? '')
+  const [level, setLevel] = useState(course?.level ?? '')
+  const [instructorName, setInstructorName] = useState(course?.instructor?.name ?? '')
+  const [instructorTitle, setInstructorTitle] = useState(course?.instructor?.title ?? '')
+  const [instructorPhotoUrl, setInstructorPhotoUrl] = useState(course?.instructor?.photoUrl ?? '')
 
   const pickCover = async (file: File | undefined) => {
     if (!file) return
@@ -316,6 +323,13 @@ function CourseForm({
         access,
         rehabifyPrice: access === 'paid' ? Number(rehabifyPrice.replace(/[^\d.]/g, '')) || undefined : undefined,
         externalPrice: access === 'paid' ? Number(externalPrice.replace(/[^\d.]/g, '')) || undefined : undefined,
+        details: {
+          category: category || undefined,
+          level: level || undefined,
+          instructorName: instructorName.trim() || undefined,
+          instructorTitle: instructorTitle.trim() || undefined,
+          instructorPhotoUrl: instructorPhotoUrl.trim() || undefined,
+        },
       })
       toast.success(course ? 'Course saved' : 'Course created. Now add its lessons.')
       playSound('success')
@@ -448,6 +462,59 @@ function CourseForm({
               </Field>
             </div>
           )}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Topic" htmlFor="vc-category" hint="Where it shows under Browse by topic on Learn.">
+              <select id="vc-category" value={category} onChange={(e) => setCategory(e.target.value)} className={inputClass}>
+                <option value="">No topic</option>
+                {COURSE_CATEGORIES.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.label}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Level" htmlFor="vc-level">
+              <select id="vc-level" value={level} onChange={(e) => setLevel(e.target.value)} className={inputClass}>
+                <option value="">Not set</option>
+                {COURSE_LEVELS.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.label}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Teacher" htmlFor="vc-teacher" hint="Shown on the course card. Leave empty to hide.">
+              <Input
+                id="vc-teacher"
+                value={instructorName}
+                onChange={(e) => setInstructorName(e.target.value)}
+                maxLength={80}
+                placeholder="Mary Akinwola"
+                className={inputClass}
+              />
+            </Field>
+            <Field label="Teacher's credentials" htmlFor="vc-teacher-title">
+              <Input
+                id="vc-teacher-title"
+                value={instructorTitle}
+                onChange={(e) => setInstructorTitle(e.target.value)}
+                maxLength={80}
+                placeholder="BPT, MSc (Oxford)"
+                className={inputClass}
+              />
+            </Field>
+          </div>
+          <Field label="Teacher's photo link" htmlFor="vc-teacher-photo" hint="Optional. Copy an image link from Admin › Blog › Media (ik.imagekit.io).">
+            <Input
+              id="vc-teacher-photo"
+              value={instructorPhotoUrl}
+              onChange={(e) => setInstructorPhotoUrl(e.target.value)}
+              placeholder="https://ik.imagekit.io/…"
+              className={inputClass}
+            />
+          </Field>
         </div>
 
         <Field label="Cover image" hint="Landscape works best. Without one, the first lesson's frame is used.">

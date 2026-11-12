@@ -150,6 +150,7 @@ export default async function RootLayout({
   children: React.ReactNode;
 }>) {
   let isSubdomainHost = false;
+  let isLearnHost = false;
   let isClinicPortal = false;
   try {
     const headersList = await headers();
@@ -161,6 +162,7 @@ export default async function RootLayout({
       pathname.startsWith("/dashboard/patient");
     const host = (headersList.get("host") || "").toLowerCase();
     const isSubdomainHeader = headersList.get("x-is-b2b-subdomain") === "true";
+    isLearnHost = headersList.get("x-subdomain-type") === "learn" || host.startsWith("learn.");
     isSubdomainHost =
       isSubdomainHeader ||
       host.startsWith("docs.") ||
@@ -198,7 +200,7 @@ export default async function RootLayout({
               <ConsentProvider>
                 {/* A joined video call keeps going in a small window while you use the app */}
                 <ActiveCallProvider>
-                  <ConditionalLayout isSubdomainHost={isSubdomainHost}>
+                  <ConditionalLayout isSubdomainHost={isSubdomainHost} isLearnHost={isLearnHost}>
                     {children}
                   </ConditionalLayout>
                 </ActiveCallProvider>

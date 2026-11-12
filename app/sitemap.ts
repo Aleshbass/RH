@@ -51,7 +51,10 @@ const STATIC_ROUTES: StaticRoute[] = [
   { path: '/platform/doctors', changeFrequency: 'monthly', priority: 0.6 },
   { path: '/partnerships', changeFrequency: 'monthly', priority: 0.6 },
   { path: '/physio-register', changeFrequency: 'weekly', priority: 0.6 },
-  { path: '/learn', changeFrequency: 'weekly', priority: 0.7 }, // MSK Specialist Program (cohort dates change per intake)
+  // Rehabify Learn: home, catalogue and the MSK Specialist Program (cohort dates change per intake)
+  { path: '/learn', changeFrequency: 'weekly', priority: 0.7 },
+  { path: '/learn/courses', changeFrequency: 'weekly', priority: 0.6 },
+  { path: '/learn/programs/msk-specialist', changeFrequency: 'weekly', priority: 0.6 },
   // Policies
   { path: '/terms-and-conditions', changeFrequency: 'yearly', priority: 0.3, lastModified: '2026-10-26' },
   { path: '/privacy-policy', changeFrequency: 'yearly', priority: 0.3, lastModified: '2026-10-26' },
@@ -91,7 +94,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   const staticEntries: MetadataRoute.Sitemap = STATIC_ROUTES.map((route) => ({
     // Learn has its own host once NEXT_PUBLIC_LEARN_URL is set
-    url: route.path === '/learn' && LEARN_URL ? `${LEARN_URL}/` : `${baseUrl}${route.path}`,
+    url: route.path.startsWith('/learn') && LEARN_URL ? `${LEARN_URL}${route.path.slice('/learn'.length) || '/'}` : `${baseUrl}${route.path}`,
     changeFrequency: route.changeFrequency,
     priority: route.priority,
     ...(route.lastModified && { lastModified: new Date(route.lastModified) }),

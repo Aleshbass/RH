@@ -79,7 +79,8 @@ export default function CustomSignUp({
   const reduceMotion = useReducedMotion();
   const routes = authRoutes(audience, partnersHost);
   const copy = AUTH_COPY[audience].signUp;
-  const isPartner = audience === "partner";
+  // The partner portal and Rehabify Learn each have one audience: no "who are you" picker
+  const fixedAudience = audience !== "default";
   const explicitRedirect = searchParams?.get("redirect") || searchParams?.get("redirect_url");
   // ?as= from "Get started" (or the older ?role=), else what the page they're returning to is for
   // (e.g. /clinic-owner); failing both, the visitor's remembered choice
@@ -87,7 +88,7 @@ export default function CustomSignUp({
   // Invited (by a clinic or physio as a patient, to a relative's care circle, or to a clinic team):
   // the invite already says who they'll be, so no other Rehabify options get in the way
   const invited = Boolean(explicitRedirect && /^\/(patient-invite|care-invite|staff-invite)\//.test(explicitRedirect));
-  const urlIntent = isPartner
+  const urlIntent = fixedAudience
     ? null
     : (parseIntent(searchParams?.get("as")) ??
       parseIntent(searchParams?.get("role")) ??
@@ -95,10 +96,10 @@ export default function CustomSignUp({
   const [intent, setIntent] = useState<SignupIntent | null>(urlIntent);
   // The intent rides in the redirect, so it survives Google's round trip as well as email sign-up.
   // A page's own redirect wins, unless it's another role's onboarding and the person picked differently.
-  const keepRedirect = !pageIntent || isPartner || pageIntent === intent;
+  const keepRedirect = !pageIntent || fixedAudience || pageIntent === intent;
   const redirectTarget = toSafeInternalPath(
     keepRedirect ? explicitRedirect : null,
-    isPartner ? routes.defaultRedirect.signUp : afterSignUpPathFor(intent),
+    fixedAudience ? routes.defaultRedirect.signUp : afterSignUpPathFor(intent),
   );
   const heading = intent ? SIGNUP_INTENTS[intent] : copy;
 
@@ -118,10 +119,10 @@ export default function CustomSignUp({
   const google = useGoogleAuth(redirectTarget, setError);
 
   useEffect(() => {
-    if (isPartner) return;
+    if (fixedAudience) return;
     if (urlIntent) rememberIntent(urlIntent);
     else setIntent((current) => current ?? readRememberedIntent());
-  }, [isPartner, urlIntent]);
+  }, [fixedAudience, urlIntent]);
 
   const pickIntent = (next: SignupIntent) => {
     rememberIntent(next);
@@ -170,7 +171,7 @@ export default function CustomSignUp({
   // "Sign in" still opens its onboarding); returning users still end up on their own dashboard
   const signInHref = explicitRedirect
     ? authHref(routes.signIn, redirectTarget, routes.defaultRedirect.signUp)
-    : !isPartner && intent
+    : !fixedAudience && intent
       ? `${routes.signIn}?as=${intent}`
       : routes.signIn;
 
@@ -318,7 +319,7 @@ export default function CustomSignUp({
         {step === "details" ? (
           <>
             <StepHeading eyebrow={copy.eyebrow} title={heading.title} subtitle={heading.subtitle} optionalSubtitle />
-            {!isPartner && !invited && (
+            {!fixedAudience && !invited && (
               <div className={SPACE.section}>
                 <IntentPicker value={intent} onChange={pickIntent} disabled={busy} />
               </div>

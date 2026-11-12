@@ -79,6 +79,7 @@ export const videoApi = {
       access?: CourseAccess
       rehabifyPrice?: number
       externalPrice?: number
+      details?: { category?: string; level?: string; instructorName?: string; instructorTitle?: string; instructorPhotoUrl?: string }
     },
     CourseId
   >('learn:adminSaveVideoCourse'),

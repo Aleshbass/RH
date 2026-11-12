@@ -36,7 +36,7 @@ type Paid = Extract<VerifyResult, { status: 'paid' }>
 
 function Frame({ children }: { children: ReactNode }) {
   return (
-    <div className="min-h-screen bg-rh-cream px-4 pb-20 pt-24 sm:px-6 sm:pt-28">
+    <div className="min-h-screen bg-rh-cream px-4 pb-20 pt-8 sm:px-6 sm:pt-12">
       <div className="mx-auto max-w-2xl">{children}</div>
     </div>
   )
@@ -188,7 +188,7 @@ function Success({ result, reference }: { result: Paid; reference: string }) {
       )}
 
       <div className="mt-6 flex justify-center gap-6 text-sm font-semibold text-rh-ink/60">
-        <Link href="/learn" className="hover:text-rh-ink">
+        <Link href="/learn/programs/msk-specialist" className="hover:text-rh-ink">
           Program details
         </Link>
         <Link href="/" className="hover:text-rh-ink">
@@ -272,7 +272,7 @@ export function ConfirmationFlow() {
           tone="bone"
           title="No payment to confirm"
           actions={
-            <Link href="/learn" className={cn(pillInk, 'h-12')}>
+            <Link href="/learn/programs/msk-specialist" className={cn(pillInk, 'h-12')}>
               Go to the program
             </Link>
           }
@@ -339,7 +339,7 @@ export function ConfirmationFlow() {
                 <Link href="/learn/register" className={cn(pillInk, 'h-12')}>
                   Try again <ArrowRight className="h-4 w-4" />
                 </Link>
-                <Link href="/learn" className={cn(pillOutline, 'h-12')}>
+                <Link href="/learn/programs/msk-specialist" className={cn(pillOutline, 'h-12')}>
                   Program details
                 </Link>
               </>

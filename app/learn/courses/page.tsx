@@ -1,11 +1,20 @@
+import { Suspense } from 'react'
 import type { Metadata } from 'next'
-import { CourseCatalog } from '@/components/learn/video/CourseEnrolment'
+import { CatalogPage } from '@/components/learn/platform/CatalogPage'
+import { learnUrl } from '@/lib/site-hosts'
+import { pageMetadata } from '@/lib/seo/utils'
 
-export const metadata: Metadata = {
-  title: 'Video courses — Rehabify Learn',
-  description: 'Short, practical video courses for physiotherapists from Rehabify Learn. Free and paid courses, at your own pace.',
-}
+export const metadata: Metadata = pageMetadata({
+  title: 'All courses — Rehabify Learn',
+  description: 'Video courses and live programs for physiotherapists and physio students. Free and paid, at your own pace or with a cohort.',
+  path: learnUrl('/courses'),
+})
 
 export default function LearnCoursesPage() {
-  return <CourseCatalog />
+  // Suspense: search, topic and type live in the URL
+  return (
+    <Suspense fallback={null}>
+      <CatalogPage />
+    </Suspense>
+  )
 }

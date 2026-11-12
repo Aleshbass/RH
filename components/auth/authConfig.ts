@@ -5,7 +5,7 @@
  */
 import { publicAppUrl } from "@/lib/public-app-url";
 
-export type AuthAudience = "default" | "partner";
+export type AuthAudience = "default" | "partner" | "learn";
 
 export type AuthRoutes = {
   signIn: string;
@@ -22,7 +22,19 @@ export type AuthRoutes = {
  * and /sso-callback to the portal, so partner auth uses those paths there and links to
  * main-site pages are absolute.
  */
+/** `partnersHost`: the form is served on the audience's own subdomain (partners.*, or learn.* for Learn). */
 export function authRoutes(audience: AuthAudience, partnersHost = false): AuthRoutes {
+  // Rehabify Learn (learn.*): back to Learn after auth; a new account picks its learner tag at /welcome
+  if (audience === "learn") {
+    const prefix = partnersHost ? "" : "/learn";
+    return {
+      signIn: "/sign-in",
+      signUp: "/sign-up",
+      home: prefix || "/",
+      siteOrigin: partnersHost ? publicAppUrl() : "",
+      defaultRedirect: { signIn: prefix || "/", signUp: `${prefix}/welcome` },
+    };
+  }
   if (audience === "partner") {
     const siteOrigin = partnersHost ? publicAppUrl() : "";
     return {
@@ -74,6 +86,25 @@ export const AUTH_COPY: Record<
       highlight: "moves with you",
       body: "See licensed physiotherapists in clinic, at home or by video, and follow your recovery plan in one place.",
       points: ["Licensed physiotherapists near you", "Guided home exercise programmes", "Progress you and your physio can see"],
+    },
+  },
+  learn: {
+    signIn: {
+      eyebrow: "Rehabify Learn",
+      title: "Welcome back",
+      subtitle: "Sign in to pick up your courses. Rehabify physios and clinics use their usual login.",
+    },
+    signUp: {
+      eyebrow: "Rehabify Learn",
+      title: "Join Rehabify Learn",
+      subtitle: "A free account. One login for every course.",
+    },
+    panel: {
+      badge: "Rehabify Learn",
+      lead: "Become the physio patients",
+      highlight: "ask for",
+      body: "Video courses, live programs and certificates from Rehabify clinicians, for physio students and physiotherapists.",
+      points: ["Video courses and live programs", "Certificates anyone can check", "From student to Rehabify physio with one login"],
     },
   },
   partner: {

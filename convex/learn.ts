@@ -34,6 +34,7 @@ import { lagosDateTime, lagosShortDate, lagosTime, zonedDateKey, zonedDateTimeTo
 import { getViewer, requireAdmin } from "./helpers/partnerAccess";
 import { verifyPaystackSignature } from "./helpers/paystackSignature";
 import { isJoyLoginEmail } from "../lib/auth/joyLoginEmail";
+import { isCourseCategory, isCourseLevel, STUDENT_LEVELS, type LearnerTagKind } from "../lib/learn/catalog";
 import {
   defaultCohortLabel,
   endOfLagosDay,
@@ -853,7 +854,7 @@ export const adminOverview = query({
       .withIndex("by_program_email", (q) => q.eq("program", MSK_PROGRAM))
       .collect();
     // Absolute, so follow-up WhatsApp and email messages carry a working link
-    return { cohorts: rows, interestCount: interest.length, programUrl: appLink("/learn") };
+    return { cohorts: rows, interestCount: interest.length, programUrl: appLink("/learn/programs/msk-specialist") };
   },
 });
 
@@ -2671,6 +2672,24 @@ function assertImagekitUrl(url: string | undefined, label: string) {
   if (url && !IMAGEKIT_URL.test(url)) throw new ConvexError(`${label} must be an ImageKit link.`);
 }
 
+/** Category, level and instructor for the catalogue card. Unknown ids and blank names are dropped. */
+function courseDetailsFields(input: {
+  category?: string;
+  level?: string;
+  instructorName?: string;
+  instructorTitle?: string;
+  instructorPhotoUrl?: string;
+}) {
+  const name = clean(input.instructorName, 80);
+  const photoUrl = (input.instructorPhotoUrl ?? "").trim() || undefined;
+  assertImagekitUrl(photoUrl, "The instructor photo");
+  return {
+    category: isCourseCategory(input.category) ? input.category : undefined,
+    level: isCourseLevel(input.level) ? input.level : undefined,
+    instructor: name ? { name, title: clean(input.instructorTitle, 80) || undefined, photoUrl } : undefined,
+  };
+}
+
 /** Every course with its lessons and numbers, for the admin page. */
 export const adminVideoCourses = query({
   args: {},
@@ -2698,6 +2717,9 @@ export const adminVideoCourses = query({
         externalPrice: course.externalPriceKobo !== undefined ? course.externalPriceKobo / 100 : null,
         enrolledCount: course.enrolledCount ?? 0,
         learnerCount: course.learnerCount,
+        category: course.category ?? null,
+        level: course.level ?? null,
+        instructor: course.instructor ?? null,
         completedCount: progress.filter((p) => p.completedAt).length,
         lessonCount: lessons.length,
         durationSec: lessons.reduce((sum, l) => sum + lessonMedia(l).durationSec, 0),
@@ -2731,9 +2753,20 @@ export const adminSaveVideoCourse = mutation({
     access: v.optional(v.union(v.literal("msk"), v.literal("free"), v.literal("paid"))),
     rehabifyPrice: v.optional(v.number()),
     externalPrice: v.optional(v.number()),
+    // Catalogue card details; left as they are when an older admin page doesn't send them
+    details: v.optional(
+      v.object({
+        category: v.optional(v.string()),
+        level: v.optional(v.string()),
+        instructorName: v.optional(v.string()),
+        instructorTitle: v.optional(v.string()),
+        instructorPhotoUrl: v.optional(v.string()),
+      })
+    ),
   },
   handler: async (ctx, args) => {
     const { user } = await requireAdmin(ctx);
+    const details = args.details ? courseDetailsFields(args.details) : {};
     const access = args.access ?? "msk";
     const toKobo = (naira: number | undefined) =>
       typeof naira === "number" && Number.isFinite(naira) && naira > 0 ? Math.round(naira * 100) : undefined;
@@ -2764,6 +2797,7 @@ export const adminSaveVideoCourse = mutation({
         access,
         rehabifyPriceKobo,
         externalPriceKobo,
+        ...details,
         updatedBy: user._id,
         updatedAt: now,
       });
@@ -2780,6 +2814,7 @@ export const adminSaveVideoCourse = mutation({
       access,
       rehabifyPriceKobo,
       externalPriceKobo,
+      ...details,
       status: "draft",
       order: last + 1,
       learnerCount: 0,
@@ -3046,6 +3081,11 @@ type CourseOffer = {
   durationSec: number;
   access: "msk" | "free" | "paid";
   prices: { rehabify: number; external: number } | null;
+  category: string | null;
+  level: string | null;
+  instructor: { name: string; title?: string; photoUrl?: string } | null;
+  learners: number; // enrolled or started, whichever is higher
+  createdAt: number;
   viewer: {
     signedIn: boolean;
     canWatch: boolean;
@@ -3080,6 +3120,11 @@ async function courseOffer(ctx: Ctx, course: Doc<"learnVideoCourses">, lessons: 
     durationSec: lessons.reduce((sum, l) => sum + lessonMedia(l).durationSec, 0),
     access,
     prices,
+    category: course.category ?? null,
+    level: course.level ?? null,
+    instructor: course.instructor ?? null,
+    learners: Math.max(course.enrolledCount ?? 0, course.learnerCount),
+    createdAt: course.publishedAt ?? course.createdAt,
     viewer: {
       signedIn: Boolean(viewer?.user),
       canWatch: Boolean(watcher && (await canWatchCourse(ctx, watcher, course))),
@@ -3349,5 +3394,160 @@ export const recordCoursePaystackWebhook = mutation({
       amountKobo: Number(data.amount), currency: String(data.currency ?? ""), channel: typeof data.channel === "string" ? data.channel : undefined,
     });
     return { handled: true, ...result };
+  },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Learner identity (Learn platform, Nov 2026)
+//
+// Everyone on Learn carries a tag: Rehabify physios, clinic owners and clinic teams are known from
+// their Rehabify account; anyone else tells us once who they are (learnProfiles, self-declared:
+// owner 2026-11-12). Students who later qualify join Rehabify as clinicians from the same login.
+// ─────────────────────────────────────────────────────────────────────────────
+
+type LearnerTag = { kind: LearnerTagKind; label: string; detail: string | null; verified: boolean };
+
+export type LearnerIdentity =
+  | { signedIn: false }
+  | {
+      signedIn: true;
+      firstName: string;
+      tag: LearnerTag;
+      /** No Rehabify role and hasn't said who they are yet: show the welcome step. */
+      needsWelcome: boolean;
+      profile: {
+        kind: Doc<"learnProfiles">["kind"];
+        school: string | null;
+        studentLevel: string | null;
+        graduationYear: number | null;
+        profession: string | null;
+      } | null;
+      /** No Rehabify role yet, so they can still join as a clinician (role-selection). */
+      canJoinAsClinician: boolean;
+      /** Has a Rehabify dashboard on the main site. */
+      hasDashboard: boolean;
+      /** Holds a paid MSK Specialist Program seat (the course app at /course). */
+      mskLearner: boolean;
+    };
+
+const ROLES_WITHOUT_WELCOME = new Set(["physiotherapist", "clinic_owner", "clinic_staff", "doctor", "admin", "partner", "blog_editor"]);
+
+async function learnProfileFor(ctx: Ctx, userId: Id<"users">) {
+  return await ctx.db
+    .query("learnProfiles")
+    .withIndex("by_user", (q) => q.eq("userId", userId))
+    .first();
+}
+
+async function clinicNameFor(ctx: Ctx, user: Doc<"users">): Promise<string | null> {
+  if (user.role === "clinic_owner") {
+    const clinic = await ctx.db
+      .query("clinics")
+      .withIndex("by_owner_id", (q) => q.eq("ownerId", user._id))
+      .first();
+    return clinic?.name ?? null;
+  }
+  if (user.clinicId) return (await ctx.db.get(user.clinicId))?.name ?? null;
+  return null;
+}
+
+async function learnerTag(ctx: Ctx, user: Doc<"users">, profile: Doc<"learnProfiles"> | null): Promise<LearnerTag> {
+  if (user.role === "admin") return { kind: "team", label: "Rehabify team", detail: null, verified: true };
+  if (user.role === "physiotherapist") {
+    return (await isRehabifyPhysio(ctx, user))
+      ? { kind: "rehabify_physio", label: "Rehabify physio", detail: null, verified: true }
+      : { kind: "physio_pending", label: "Physio", detail: "Rehabify approval pending", verified: false };
+  }
+  if (user.role === "clinic_owner") return { kind: "clinic_owner", label: "Clinic owner", detail: await clinicNameFor(ctx, user), verified: true };
+  if (user.role === "clinic_staff") return { kind: "clinic_team", label: "Clinic team", detail: await clinicNameFor(ctx, user), verified: true };
+  if (user.role === "doctor") return { kind: "doctor", label: "Doctor", detail: null, verified: false };
+  if (profile?.kind === "student") return { kind: "student", label: "Physio student", detail: profile.school ?? null, verified: false };
+  if (profile?.kind === "physio") return { kind: "physio", label: "Physiotherapist", detail: null, verified: false };
+  return { kind: "learner", label: "Learner", detail: profile?.profession ?? null, verified: false };
+}
+
+/** Who is looking at Learn: their tag for the header, prices and the welcome step. */
+export const getLearnerIdentity = query({
+  args: {},
+  handler: async (ctx): Promise<LearnerIdentity> => {
+    const viewer = await getViewer(ctx);
+    if (!viewer) return { signedIn: false };
+    const firstName = (viewer.user?.firstName || viewer.identity.givenName || "").trim();
+    const user = viewer.user;
+    // Signed in, but the account row is still being created (first seconds after sign-up)
+    if (!user) {
+      return {
+        signedIn: true,
+        firstName,
+        tag: { kind: "learner", label: "Learner", detail: null, verified: false },
+        needsWelcome: false,
+        profile: null,
+        canJoinAsClinician: true,
+        hasDashboard: false,
+        mskLearner: false,
+      };
+    }
+    const profile = await learnProfileFor(ctx, user._id);
+    return {
+      signedIn: true,
+      firstName,
+      tag: await learnerTag(ctx, user, profile),
+      needsWelcome: !profile && !ROLES_WITHOUT_WELCOME.has(user.role ?? ""),
+      profile: profile
+        ? {
+            kind: profile.kind,
+            school: profile.school ?? null,
+            studentLevel: profile.studentLevel ?? null,
+            graduationYear: profile.graduationYear ?? null,
+            profession: profile.profession ?? null,
+          }
+        : null,
+      canJoinAsClinician: !user.role,
+      hasDashboard: Boolean(user.role),
+      mskLearner: (await paidLearnRegistrations(ctx, user, await verifiedIdentityEmail(ctx))).length > 0,
+    };
+  },
+});
+
+/** The welcome step: a learner says who they are (students: school, year, graduation). */
+export const saveLearnerProfile = mutation({
+  args: {
+    kind: v.union(v.literal("student"), v.literal("physio"), v.literal("other")),
+    school: v.optional(v.string()),
+    studentLevel: v.optional(v.string()),
+    graduationYear: v.optional(v.number()),
+    profession: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const viewer = await getViewer(ctx);
+    if (!viewer) throw new ConvexError("Please sign in first.");
+    if (!viewer.user) throw new ConvexError("Your account is still being set up. Try again in a few seconds.");
+    const user = viewer.user;
+
+    let fields: { school?: string; studentLevel?: string; graduationYear?: number; profession?: string } = { school: undefined, studentLevel: undefined, graduationYear: undefined, profession: undefined };
+    if (args.kind === "student") {
+      const school = clean(args.school, 120);
+      if (!school) throw new ConvexError("Tell us your school.");
+      const studentLevel = (STUDENT_LEVELS as readonly string[]).includes(args.studentLevel ?? "") ? args.studentLevel : undefined;
+      if (!studentLevel) throw new ConvexError("Pick your level.");
+      const thisYear = new Date().getUTCFullYear();
+      const year = args.graduationYear;
+      if (year !== undefined && (!Number.isInteger(year) || year < thisYear - 1 || year > thisYear + 8)) {
+        throw new ConvexError("Check your graduation year.");
+      }
+      fields = { ...fields, school, studentLevel, graduationYear: year };
+    } else if (args.kind === "other") {
+      const profession = clean(args.profession, 80);
+      if (!profession) throw new ConvexError("Tell us what you do.");
+      fields = { ...fields, profession };
+    }
+
+    const now = Date.now();
+    const existing = await learnProfileFor(ctx, user._id);
+    if (existing) {
+      await ctx.db.patch(existing._id, { kind: args.kind, ...fields, updatedAt: now });
+      return existing._id;
+    }
+    return await ctx.db.insert("learnProfiles", { userId: user._id, kind: args.kind, ...fields, createdAt: now, updatedAt: now });
   },
 });

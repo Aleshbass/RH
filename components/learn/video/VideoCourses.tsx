@@ -6,7 +6,7 @@
  * back button and shared links behave.
  */
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { useQuery } from 'convex/react'
@@ -185,18 +185,21 @@ function Catalog({
   library,
   onOpen,
   onPlay,
+  heading,
 }: {
   library: Extract<VideoLibrary, { state: 'ok' }>
   onOpen: (id: CourseId) => void
   onPlay: (id: CourseId, lessonId: LessonId) => void
+  heading?: CatalogHeading
 }) {
   const resume = library.courses.find((c) => c.id === library.resumeCourseId) ?? null
   return (
     <div>
       <div className="mb-6">
-        <h1 className={cn('text-[30px] leading-tight tracking-tight text-rh-ink sm:text-[38px]', displayFont)}>Courses</h1>
+        <h1 className={cn('text-[30px] leading-tight tracking-tight text-rh-ink sm:text-[38px]', displayFont)}>{heading?.title ?? 'Courses'}</h1>
         <p className="mt-1 text-[15px] text-rh-ink/60">Watch at your own pace. We’ll keep your place in every lesson.</p>
       </div>
+      {heading?.extra}
 
       {library.courses.length === 0 ? (
         <div className="rounded-[2rem] bg-white px-6 py-16 text-center shadow-soft">
@@ -388,7 +391,10 @@ function CatalogSkeleton() {
 // The tab
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function VideoCourses() {
+/** My learning (Learn) titles the list and puts the learner's live programs above it. */
+type CatalogHeading = { title: string; extra?: ReactNode }
+
+export function VideoCourses({ heading }: { heading?: CatalogHeading } = {}) {
   const reduce = useReducedMotion()
   const [route, setRoute] = useState<Route>({ courseId: null, lessonId: null })
 
@@ -425,6 +431,7 @@ export function VideoCourses() {
   if (!route.courseId || !known) {
     return (
       <Catalog
+        heading={heading}
         library={library}
         onOpen={(courseId) => go({ courseId, lessonId: null })}
         onPlay={(courseId, lessonId) => go({ courseId, lessonId })}

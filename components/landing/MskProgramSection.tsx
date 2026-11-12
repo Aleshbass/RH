@@ -170,10 +170,10 @@ function Section() {
             {imageUrl && <PriceChips cohort={cohort} />}
 
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-              <Link href="/learn#register" className={cn(pillLime, 'h-12 px-7 text-[15px] focus-visible:ring-offset-rh-ink')}>
+              <Link href="/learn/programs/msk-specialist#register" className={cn(pillLime, 'h-12 px-7 text-[15px] focus-visible:ring-offset-rh-ink')}>
                 Register now <ArrowRight className="h-4 w-4" />
               </Link>
-              <Link href="/learn" className={cn(pillGhostOnDark, 'h-12 px-7 text-[15px] focus-visible:ring-offset-rh-ink')}>
+              <Link href="/learn/programs/msk-specialist" className={cn(pillGhostOnDark, 'h-12 px-7 text-[15px] focus-visible:ring-offset-rh-ink')}>
                 See the program
               </Link>
             </div>

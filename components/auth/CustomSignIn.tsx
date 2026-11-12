@@ -112,7 +112,7 @@ export default function CustomSignIn({
   const copy = AUTH_COPY[audience].signIn;
   // Came from a "Join as…" button (?as=): a new Google account finishes in that onboarding,
   // and an existing account still ends up on its dashboard (role-selection forwards it)
-  const intent = audience === "partner" ? null : parseIntent(searchParams?.get("as"));
+  const intent = audience !== "default" ? null : parseIntent(searchParams?.get("as"));
   const redirectTarget = toSafeInternalPath(
     searchParams?.get("redirect") || searchParams?.get("redirect_url"),
     intent ? afterSignUpPathFor(intent) : routes.defaultRedirect.signIn,
@@ -132,7 +132,7 @@ export default function CustomSignIn({
   const cooldown = useCooldown();
   const google = useGoogleAuth(redirectTarget, setError);
   // Phone + PIN (patients without email); the partner portal stays email only
-  const phoneAllowed = audience !== "partner";
+  const phoneAllowed = audience === "default";
   const signInWithPin = useAction(joinRefs.signInWithPin);
   const [pin, setPin] = useState("");
   const [pinChoices, setPinChoices] = useState<{ loginId: string; firstName: string }[] | null>(null);
@@ -510,11 +510,11 @@ export default function CustomSignIn({
                 Continue
               </PrimaryButton>
             </form>
-            {audience === "partner" || signUpHref !== routes.signUp ? (
+            {audience !== "default" || signUpHref !== routes.signUp ? (
               <p className={cn("text-center text-sm text-rh-night/65", SPACE.section)}>
-                {audience === "partner" ? "New partner? " : "New to Rehabify? "}
+                {audience === "partner" ? "New partner? " : audience === "learn" ? "New to Rehabify Learn? " : "New to Rehabify? "}
                 <Link href={signUpHref} className="font-semibold text-rh-teal underline-offset-4 hover:underline">
-                  {audience === "partner" ? "Apply for access" : "Create an account"}
+                  {audience === "partner" ? "Apply for access" : audience === "learn" ? "Join for free" : "Create an account"}
                 </Link>
               </p>
             ) : (

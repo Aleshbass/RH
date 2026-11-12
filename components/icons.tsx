@@ -43,7 +43,7 @@ import {
   faRotateLeft, faRulerCombined, faScaleBalanced, faShare, faShareNodes, faShield, faShieldHalved, faShoePrints,
   faSliders, faSquare, faSquarePlus, faStar, faStethoscope, faStopwatch, faStore, faSun, faTableCellsLarge,
   faTableColumns, faTag, faTags, faTemperatureHalf, faTerminal, faThumbsUp, faTrash, faTrashCan,
-  faTriangleExclamation, faTv, faUpload, faUser, faUserCheck, faUserGear, faUserGroup,
+  faTowerBroadcast, faTriangleExclamation, faTv, faUpload, faUser, faUserCheck, faUserGear, faUserGroup,
   faUserPlus, faUserXmark, faUsers, faVideo, faVideoSlash, faVolumeHigh, faVolumeXmark,
   faWallet, faWeightScale, faWifi, faWrench, faXmark,
 } from '@fortawesome/free-solid-svg-icons'
@@ -289,6 +289,8 @@ export const Plus = /*#__PURE__*/ createIcon('Plus', faPlus)
 export const Printer = /*#__PURE__*/ createIcon('Printer', faPrint)
 export const QrCode = /*#__PURE__*/ createIcon('QrCode', faQrcode)
 export const Quote = /*#__PURE__*/ createIcon('Quote', faQuoteLeft)
+/** Live (programs, Spaces) */
+export const Radio = /*#__PURE__*/ createIcon('Radio', faTowerBroadcast)
 export const Receipt = /*#__PURE__*/ createIcon('Receipt', faReceipt)
 export const ReceiptText = /*#__PURE__*/ createIcon('ReceiptText', faReceipt)
 export const RefreshCw = /*#__PURE__*/ createIcon('RefreshCw', faArrowsRotate)

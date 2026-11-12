@@ -2,23 +2,23 @@ import type { Metadata } from 'next'
 import { fetchQuery } from 'convex/nextjs'
 import { api } from '@/convex/_generated/api'
 import type { PublicCohort } from '@/convex/learn'
-import { MskProgramPage } from '@/components/learn/MskProgramPage'
+import { LearnHome } from '@/components/learn/platform/LearnHome'
 import { learnUrl } from '@/lib/site-hosts'
 import { pageMetadata } from '@/lib/seo/utils'
 
 export const revalidate = 60
 
 const description =
-  'Become a Rehabify Certified MSK Specialist in 5 weeks. Structured online learning, weekly live clinical sessions, case-based discussions and a final assessment for physiotherapists.'
+  'Practical online courses for physiotherapists and physiotherapy students: video courses, live programs and verifiable certificates from Rehabify clinicians.'
 
 // The root template adds the brand, so the title carries none of its own
 export const metadata: Metadata = pageMetadata({
-  title: 'MSK Specialist Program for physiotherapists',
+  title: 'Rehabify Learn: courses for physiotherapists',
   description,
   path: learnUrl(),
 })
 
-/** Server-rendered so the cohort dates are in the HTML; the client query keeps them live. */
+/** Server-rendered so the featured program is in the HTML; the client queries keep it live. */
 async function loadCohort(): Promise<PublicCohort | null | undefined> {
   try {
     return (await fetchQuery(api.learn.getPublicCohort, {})) as PublicCohort | null
@@ -30,5 +30,5 @@ async function loadCohort(): Promise<PublicCohort | null | undefined> {
 
 export default async function LearnPage() {
   const cohort = await loadCohort()
-  return <MskProgramPage initialCohort={cohort} />
+  return <LearnHome initialCohort={cohort} />
 }

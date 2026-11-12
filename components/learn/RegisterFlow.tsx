@@ -265,10 +265,10 @@ function Panel({ tone, icon: Icon, title, children }: { tone: 'calm' | 'jasmine'
 
 function PageFrame({ children, aside }: { children: ReactNode; aside?: ReactNode }) {
   return (
-    <div className="min-h-screen bg-rh-cream px-4 pb-20 pt-24 sm:px-6 sm:pt-28">
+    <div className="min-h-screen bg-rh-cream px-4 pb-20 pt-8 sm:px-6 sm:pt-12">
       <div className="mx-auto max-w-6xl">
         <Link
-          href="/learn"
+          href="/learn/programs/msk-specialist"
           className="inline-flex items-center gap-2 rounded-full text-sm font-semibold text-rh-ink underline-offset-4 hover:underline"
         >
           <ArrowLeft className="h-4 w-4" /> Program details

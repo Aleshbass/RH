@@ -133,7 +133,7 @@ function SignedOut() {
           <Link href={SIGN_IN_HREF} className="inline-flex items-center gap-1.5 font-semibold text-rh-ink hover:underline">
             <LogIn className="h-4 w-4" /> Sign in with a password
           </Link>
-          <Link href="/learn" className="text-rh-ink/55 hover:text-rh-ink">
+          <Link href="/learn/programs/msk-specialist" className="text-rh-ink/55 hover:text-rh-ink">
             Not registered yet?
           </Link>
         </div>
@@ -153,7 +153,7 @@ function NotRegistered({ email }: { email: string | null }) {
         </p>
         <EmailLinkForm cta="Email a link to that address" />
         <div className="mt-6 flex flex-col gap-2 border-t border-rh-ink/[0.07] pt-5 sm:flex-row">
-          <Link href="/learn#register" className={cn(pillOutline, 'h-11 flex-1')}>
+          <Link href="/learn/programs/msk-specialist#register" className={cn(pillOutline, 'h-11 flex-1')}>
             Register for the next cohort
           </Link>
           <button type="button" onClick={() => void signOut({ redirectUrl: '/learn/course' })} className="h-11 flex-1 text-sm font-semibold text-rh-ink/60 hover:text-rh-ink">
@@ -174,7 +174,7 @@ function Ended({ course }: { course: Extract<MyCourse, { state: 'ended' }> }) {
           {course.accessUntil ? ` Your courses closed on ${dateOnly(course.accessUntil)}.` : ''} Join the next cohort to
           keep going.
         </p>
-        <Link href="/learn" className={cn(pillInk, 'mt-6 h-12 w-full text-[15px]')}>
+        <Link href="/learn/programs/msk-specialist" className={cn(pillInk, 'mt-6 h-12 w-full text-[15px]')}>
           See the next cohort <ArrowRight className="h-4 w-4" />
         </Link>
         <p className="mt-4 text-sm">

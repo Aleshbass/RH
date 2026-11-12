@@ -5736,6 +5736,10 @@ export default defineSchema({
     rehabifyPriceKobo: v.optional(v.number()),
     externalPriceKobo: v.optional(v.number()),
     enrolledCount: v.optional(v.number()), // active enrolments (free and paid)
+    // Catalogue details (Learn platform, Nov 2026): ids from lib/learn/catalog.ts
+    category: v.optional(v.string()),
+    level: v.optional(v.string()),
+    instructor: v.optional(v.object({ name: v.string(), title: v.optional(v.string()), photoUrl: v.optional(v.string()) })),
     publishedAt: v.optional(v.number()),
     createdBy: v.id("users"),
     updatedBy: v.optional(v.id("users")),
@@ -5893,6 +5897,19 @@ export default defineSchema({
     .index("by_consent_id", ["consentId"])
     .index("by_user", ["userId", "decidedAt"])
     .index("by_decided", ["decidedAt"]),
+
+  // Who a learner says they are on Rehabify Learn (lib/learn/catalog.ts LEARNER_KINDS). Self-declared
+  // (owner 2026-11-12). Physios, clinic owners and clinic teams are known from users.role instead.
+  learnProfiles: defineTable({
+    userId: v.id("users"),
+    kind: v.union(v.literal("student"), v.literal("physio"), v.literal("other")),
+    school: v.optional(v.string()),
+    studentLevel: v.optional(v.string()),
+    graduationYear: v.optional(v.number()),
+    profession: v.optional(v.string()), // kind "other"
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_user", ["userId"]),
 
   // People who asked to hear about the next cohort while registration was closed.
   learnInterest: defineTable({
