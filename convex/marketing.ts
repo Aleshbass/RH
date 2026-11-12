@@ -18,6 +18,7 @@ import { requireAdmin } from "./helpers/partnerAccess";
 import { partnerApprovalStatus } from "./helpers/partnerShared";
 import { isJoyLoginEmail } from "../lib/auth/joyLoginEmail";
 import { MARKETING_SEGMENTS, type MarketingSegment } from "../lib/email/marketing";
+import { bodyHasText, isRichBody } from "../lib/email/richText";
 
 type Recipient = { email: string; name?: string };
 type Content = {
@@ -72,12 +73,14 @@ function cleanContent(args: Content) {
     subject: clean(args.subject, 150),
     previewText: clean(args.previewText, 200) || undefined,
     heading: clean(args.heading, 150),
-    body: clean(args.body, 10000),
+    // Rich text is saved as editor JSON, which is several times longer than the words in it
+    body: (args.body ?? "").trim(),
     ctaLabel: clean(args.ctaLabel, 60) || undefined,
     ctaUrl: clean(args.ctaUrl, 500) || undefined,
     imageUrl: clean(args.imageUrl, 500) || undefined,
   };
-  if (!out.subject || !out.heading || !out.body) throw new ConvexError("Add a subject, a heading and a message.");
+  if (!out.subject || !out.heading || !bodyHasText(out.body)) throw new ConvexError("Add a subject, a heading and a message.");
+  if (out.body.length > (isRichBody(out.body) ? 120_000 : 10_000)) throw new ConvexError("The message is too long. Shorten it or split it into two emails.");
   if (out.ctaUrl && !/^https:\/\//i.test(out.ctaUrl)) throw new ConvexError("The button link must start with https://");
   if (out.ctaUrl && !out.ctaLabel) throw new ConvexError("Give the button a label, or remove its link.");
   if (out.imageUrl && !/^https:\/\//i.test(out.imageUrl)) throw new ConvexError("The image link must start with https://");
