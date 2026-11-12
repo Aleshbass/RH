@@ -111,14 +111,23 @@ export function PhysioSheet({
             </div>
           </>
         ) : (
-          <SheetBody data={data} preview={shownPreview?.userId === shownId ? shownPreview : null} />
+          <SheetBody data={data} preview={shownPreview?.userId === shownId ? shownPreview : null} onClose={onClose} />
         )}
       </SheetContent>
     </Sheet>
   )
 }
 
-function SheetBody({ data, preview }: { data: CaseloadResult | undefined; preview: DirectoryRow | null }) {
+function SheetBody({
+  data,
+  preview,
+  onClose,
+}: {
+  data: CaseloadResult | undefined
+  preview: DirectoryRow | null
+  /** Closes the drawer (after the account is deleted) */
+  onClose: () => void
+}) {
   const physio = data?.physio
   // Header details: the loaded caseload, else the directory row we already have
   const head = physio ?? preview
