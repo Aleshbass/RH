@@ -12,6 +12,7 @@ import { ensureUserNumbers } from "./helpers/rehabifyIds";
 import { activePaymentLink, closeInvoicePaymentLinks } from "./helpers/paymentLinks";
 import { isClinicInviteApproval } from "./helpers/clinicApproval";
 import { usableSubaccount } from "./helpers/paystackMode";
+import { offlinePaidAt, settleClinicInvoiceOffline } from "./helpers/clinicOfflinePayment";
 import { assertClinicNotBillingReadOnly, subscriptionForClinic } from "./helpers/clinicSubscriptions";
 import {
   CLEAR_PROPOSAL,
@@ -2133,6 +2134,8 @@ export async function insertClinicInvoice(
     appointmentIds?: Id<"appointments">[];
     /** Who on the team asked for it (for their own records and the paid notification) */
     issuedById?: Id<"users">;
+    /** false: money the clinic already has (Record payment), so the patient isn't asked to pay */
+    notifyPatient?: boolean;
   }
 ) {
     // Clinic-owned and Rehabify-sent patients are billed apart, so the invoice keeps the source. Any
@@ -2182,7 +2185,9 @@ export async function insertClinicInvoice(
     });
 
     // The patient hears it from their clinic, by name, wherever they are
-    await notifyPatientOfClinicInvoice(ctx, clinic, input.patientId, invoiceId, totalKobo, input.items[0]?.description, "new");
+    if (input.notifyPatient !== false) {
+      await notifyPatientOfClinicInvoice(ctx, clinic, input.patientId, invoiceId, totalKobo, input.items[0]?.description);
+    }
 
     return { success: true, invoiceId, invoiceNumber };
 }
@@ -2193,14 +2198,11 @@ async function notifyPatientOfClinicInvoice(
   patientId: Id<"users">,
   invoiceId: Id<"invoices">,
   totalKobo: number,
-  what: string | undefined,
-  /** "corrected": the clinic changed the amount or service of a request already sent */
-  kind: "new" | "corrected"
+  what: string | undefined
 ) {
   const amount = `₦${(totalKobo / 100).toLocaleString("en-NG", { maximumFractionDigits: 2 })}`;
   const path = `/dashboard/patient/invoices/${invoiceId}`;
-  const headline = kind === "corrected" ? `${clinic.name} corrected your payment request` : `${clinic.name} sent you a payment request`;
-  const lead = kind === "corrected" ? "It is now " : "";
+  const headline = `${clinic.name} sent you a payment request`;
   await insertNotification(ctx, {
     userId: patientId,
     type: "invoice_created",
@@ -2209,7 +2211,7 @@ async function notifyPatientOfClinicInvoice(
     createdAt: Date.now(),
     payload: {
       title: headline,
-      body: `${lead}${amount}${what ? ` for ${what}` : ""}. Pay by card, transfer or USSD.`,
+      body: `${amount}${what ? ` for ${what}` : ""}. Pay by card, transfer or USSD.`,
       data: { entityId: String(invoiceId), entityType: "invoice" },
       link: path,
     },
@@ -2218,12 +2220,11 @@ async function notifyPatientOfClinicInvoice(
   if (patient?.email && patientHasAccount(patient)) {
     await ctx.scheduler.runAfter(0, internal.actions.emails.sendPatientCareEmail.sendPatientCareEmail, {
       to: patient.email,
-      subject: kind === "corrected" ? `${clinic.name}: corrected payment request, now ${amount}` : `${clinic.name}: payment request for ${amount}`,
+      subject: `${clinic.name}: payment request for ${amount}`,
       greetingName: patient.firstName,
       heading: headline,
       paragraphs: [
-        `${lead}${amount}${what ? ` for ${what}` : ""}. You can pay by card, bank transfer or USSD, and the payment goes straight to ${clinic.name}.`,
-        ...(kind === "corrected" ? ["This replaces the earlier request. If you already have a payment link for it, please use the new one."] : []),
+        `${amount}${what ? ` for ${what}` : ""}. You can pay by card, bank transfer or USSD, and the payment goes straight to ${clinic.name}.`,
         clinic.contactPhone ? `Questions about it? Call ${clinic.name} on ${clinic.contactPhone}.` : `Questions about it? Message ${clinic.name} in your patient portal.`,
       ],
       buttonLabel: "View and pay",
@@ -2249,28 +2250,13 @@ export const createClinicPaymentRequest = mutation({
     // Billing its own patients keeps working while the clinic is read-only for Rehabify's invoice
     const member = await requireClinicWrite(ctx, "billing", { allowBillingReadOnly: true });
     const { clinic } = member;
-    await assertPatientInClinic(ctx, clinic, args.patientId);
-
-    if (!(args.amountNaira > 0)) {
-      throw new ConvexError("Amount must be greater than zero");
-    }
-    if (!args.serviceName.trim()) {
-      throw new ConvexError("Say what the payment is for");
-    }
     if (args.dueDate !== undefined && !Number.isFinite(args.dueDate)) {
       throw new ConvexError("Pick a valid due date");
     }
-    if (args.appointmentId) {
-      const appointment = await getClinicAppointmentOrThrow(ctx, clinic, args.appointmentId);
-      if (appointment.patientId !== args.patientId) {
-        throw new ConvexError("That visit belongs to a different patient");
-      }
-    }
-
-    const amountKobo = Math.round(args.amountNaira * 100);
+    const item = await checkedClinicPaymentLine(ctx, clinic, args);
     return await insertClinicInvoice(ctx, clinic, {
       patientId: args.patientId,
-      items: [{ description: args.serviceName.trim(), quantity: 1, unitPrice: amountKobo, totalPrice: amountKobo }],
+      items: [item],
       notes: args.notes,
       dueDate: args.dueDate,
       appointmentIds: args.appointmentId ? [args.appointmentId] : undefined,
@@ -2279,9 +2265,81 @@ export const createClinicPaymentRequest = mutation({
   },
 });
 
+/** The one invoice line for a request or a recorded payment, after checking who and what it's for. */
+async function checkedClinicPaymentLine(
+  ctx: MutationCtx,
+  clinic: Doc<"clinics">,
+  args: { patientId: Id<"users">; serviceName: string; amountNaira: number; appointmentId?: Id<"appointments"> }
+) {
+  await assertPatientInClinic(ctx, clinic, args.patientId);
+  if (!(args.amountNaira > 0)) {
+    throw new ConvexError("Amount must be greater than zero");
+  }
+  const description = args.serviceName.trim();
+  if (!description) {
+    throw new ConvexError("Say what the payment is for");
+  }
+  if (args.appointmentId) {
+    const appointment = await getClinicAppointmentOrThrow(ctx, clinic, args.appointmentId);
+    if (appointment.patientId !== args.patientId) {
+      throw new ConvexError("That visit belongs to a different patient");
+    }
+  }
+  const amountKobo = Math.round(args.amountNaira * 100);
+  return { description, quantity: 1, unitPrice: amountKobo, totalPrice: amountKobo };
+}
+
 /**
- * Correct an unpaid payment request: a wrong amount or service. The invoice keeps its number, the
- * old payment link is closed (a new one is made for the new amount) and the patient is told.
+ * Record money the clinic already has (bank transfer, cash or POS) in one step: the invoice is
+ * saved as paid and nothing is sent to the patient. Counts like "Mark as paid" everywhere (Billing
+ * totals, commissions, admin alerts) and can be undone the same way.
+ */
+export const recordClinicPayment = mutation({
+  args: {
+    patientId: v.id("users"),
+    serviceName: v.string(),
+    amountNaira: v.number(),
+    method: v.union(v.literal("cash"), v.literal("bank_transfer"), v.literal("pos")),
+    /** When the money arrived, if not now */
+    paidAt: v.optional(v.number()),
+    notes: v.optional(v.string()),
+    appointmentId: v.optional(v.id("appointments")),
+  },
+  handler: async (ctx, args) => {
+    // Recording a patient's payment keeps working while the clinic is read-only
+    const member = await requireClinicWrite(ctx, "billing", { allowBillingReadOnly: true });
+    const { clinic } = member;
+    const item = await checkedClinicPaymentLine(ctx, clinic, args);
+    const paidAt = offlinePaidAt(args.paidAt);
+    const created = await insertClinicInvoice(ctx, clinic, {
+      patientId: args.patientId,
+      items: [item],
+      notes: args.notes?.trim() || undefined,
+      dueDate: paidAt,
+      appointmentIds: args.appointmentId ? [args.appointmentId] : undefined,
+      issuedById: member.user._id,
+      notifyPatient: false,
+    });
+    const invoice = await ctx.db.get(created.invoiceId);
+    if (!invoice) throw new ConvexError("Could not save the payment, please try again");
+    // Throws for a patient Rehabify referred (they pay online), which also undoes the insert above
+    await settleClinicInvoiceOffline(ctx, clinic, invoice, args.method, paidAt);
+    await ctx.db.insert("auditLogs", {
+      actorUserId: member.user._id,
+      action: "clinic_payment_recorded",
+      targetEntityType: "invoice",
+      targetEntityId: invoice._id,
+      timestamp: Date.now(),
+      details: { clinicId: clinic._id, invoiceNumber: invoice.invoiceNumber, method: args.method, amountKobo: item.totalPrice, paidAt },
+    });
+    return { success: true, invoiceId: invoice._id, invoiceNumber: invoice.invoiceNumber, paidAt };
+  },
+});
+
+/**
+ * Correct an unpaid payment request: a wrong amount or service. The invoice keeps its number and
+ * the old payment link is closed (a new one is made for the new amount). The patient isn't
+ * messaged again: their invoice simply shows the new amount, and the clinic can send the new link.
  * A paid invoice is first reopened with clinicBilling.undoMarkInvoicePaid if it was marked paid by mistake.
  */
 export const updateClinicPaymentRequest = mutation({
@@ -2339,7 +2397,7 @@ export const updateClinicPaymentRequest = mutation({
       timestamp: Date.now(),
       details: { clinicId: clinic._id, invoiceNumber: invoice.invoiceNumber, before, after: { serviceName, amountKobo } },
     });
-    await notifyPatientOfClinicInvoice(ctx, clinic, invoice.patientId, invoice._id, amountKobo, serviceName, "corrected");
+    // No new email or push: corrections were sending patients a second message for every fix
     return { success: true, changed: true };
   },
 });
@@ -2363,6 +2421,7 @@ export const getClinicBillingSummary = query({
         feesThisMonthNaira: 0,
         processingFeesThisMonthNaira: 0,
         payoutAccount: null,
+        payoutNeedsRenewal: false,
         priceList: [],
         invoices: [],
       };
@@ -2481,6 +2540,9 @@ export const getClinicBillingSummary = query({
       payoutAccount: payout && usableSubaccount(payout)
         ? { bankName: payout.bankName, accountName: payout.accountName, accountNumberLast4: payout.accountNumber.slice(-4) }
         : null,
+      // Saved, but under the other Paystack mode: the page renews it (clinicBilling.renewPayoutAccount)
+      // instead of asking the owner for bank details they already gave
+      payoutNeedsRenewal: Boolean(payout) && !usableSubaccount(payout),
       priceList: clinic.priceList ?? [],
       invoices: enrichedInvoices,
     };

@@ -5,6 +5,8 @@
 export const CLINIC_BOOK_EVENT = 'rehabify:clinic-book'
 export const CLINIC_ADD_PATIENT_EVENT = 'rehabify:clinic-add-patient'
 export const CLINIC_REQUEST_PAYMENT_EVENT = 'rehabify:clinic-request-payment'
+/** "Record payment": money a patient has already paid (transfer, cash, POS), `?record=1` */
+export const CLINIC_RECORD_PAYMENT_EVENT = 'rehabify:clinic-record-payment'
 
 /** Reads a query parameter once and removes it from the address bar (e.g. ?patient=<id>). */
 export function takeQueryParam(name: string): string | null {

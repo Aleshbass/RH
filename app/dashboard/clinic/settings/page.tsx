@@ -643,6 +643,21 @@ function PayoutSection() {
   const verifyAccount = useAction(api.clinicBilling.verifyPayoutAccount)
   const connectAccount = useAction(api.clinicBilling.connectPayoutAccount)
   const removeAccount = useAction(api.clinicBilling.removePayoutAccount)
+  const renewPayout = useAction(api.clinicBilling.renewPayoutAccount)
+
+  // Saved under Paystack test keys: made again under the live key from the saved details, once,
+  // so "Connected" is only shown for an account payments can actually reach
+  const [renewal, setRenewal] = useState<'idle' | 'working' | 'failed'>('idle')
+  const renewTried = useRef(false)
+  const needsRenewal = account?.usable === false
+  useEffect(() => {
+    if (!needsRenewal || renewTried.current) return
+    renewTried.current = true
+    setRenewal('working')
+    renewPayout({})
+      .then(({ status }) => setRenewal(status === 'failed' ? 'failed' : 'idle'))
+      .catch(() => setRenewal('failed'))
+  }, [needsRenewal, renewPayout])
 
   const [editing, setEditing] = useState(false)
   const [banks, setBanks] = useState<Bank[] | null>(null)
@@ -732,13 +747,26 @@ function PayoutSection() {
       description="Paystack sends your share of each online payment to this account."
       actions={
         account === undefined ? undefined : account ? (
-          <StatusBadge tone="green">Connected</StatusBadge>
+          account.usable ? (
+            <StatusBadge tone="green">Connected</StatusBadge>
+          ) : renewal === 'failed' ? (
+            <StatusBadge tone="amber">Needs reconnecting</StatusBadge>
+          ) : (
+            <StatusBadge tone="neutral">Checking…</StatusBadge>
+          )
         ) : (
           <StatusBadge tone="neutral">Not connected</StatusBadge>
         )
       }
     >
       <div id="payouts" className="scroll-mt-20 space-y-4 p-4 sm:p-5">
+        {account && !account.usable && renewal === 'failed' && !showForm && (
+          <p className="text-sm text-pt-amber-fg">
+            Paystack couldn&apos;t confirm this account for online payments, so patients can&apos;t pay into it yet.
+            {isOwner ? ' Choose Change account and enter it again.' : ' The clinic owner can reconnect it.'} Cash, POS and transfer
+            payments can still be recorded in Billing.
+          </p>
+        )}
         {account === undefined ? (
           <Skeleton className="h-10 w-full rounded-lg" />
         ) : !showForm && account ? (

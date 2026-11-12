@@ -148,6 +148,7 @@ import type * as helpers_careMoments from "../helpers/careMoments.js";
 import type * as helpers_careSignals from "../helpers/careSignals.js";
 import type * as helpers_clinicApproval from "../helpers/clinicApproval.js";
 import type * as helpers_clinicClock from "../helpers/clinicClock.js";
+import type * as helpers_clinicOfflinePayment from "../helpers/clinicOfflinePayment.js";
 import type * as helpers_clinicSubscriptions from "../helpers/clinicSubscriptions.js";
 import type * as helpers_clinicalMeasures from "../helpers/clinicalMeasures.js";
 import type * as helpers_displayIdentity from "../helpers/displayIdentity.js";
@@ -467,6 +468,7 @@ declare const fullApi: ApiFromModules<{
   "helpers/careSignals": typeof helpers_careSignals;
   "helpers/clinicApproval": typeof helpers_clinicApproval;
   "helpers/clinicClock": typeof helpers_clinicClock;
+  "helpers/clinicOfflinePayment": typeof helpers_clinicOfflinePayment;
   "helpers/clinicSubscriptions": typeof helpers_clinicSubscriptions;
   "helpers/clinicalMeasures": typeof helpers_clinicalMeasures;
   "helpers/displayIdentity": typeof helpers_displayIdentity;

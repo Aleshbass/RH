@@ -28,9 +28,9 @@ import {
 import { ensureUserRole, getAuthenticatedUser } from "./auth";
 import { appLink, publicAppUrl } from "./helpers/appUrl";
 import { activePaymentLink, closeInvoicePaymentLinks, PAYMENT_LINK_TTL_MS } from "./helpers/paymentLinks";
-import { recordInvoicePartnerCommission, reverseCommissionsForPayment } from "./helpers/partnerLedger";
-import { alertAdminsOfPayment } from "./helpers/adminPaymentAlerts";
+import { reverseCommissionsForPayment } from "./helpers/partnerLedger";
 import { currentPaystackMode, usableSubaccount } from "./helpers/paystackMode";
+import { offlinePaidAt, settleClinicInvoiceOffline } from "./helpers/clinicOfflinePayment";
 import { verifyPaystackSignature } from "./helpers/paystackSignature";
 import { issueReceipt } from "./helpers/receipts";
 import { createRefundRequest } from "./helpers/refunds";
@@ -130,6 +130,9 @@ export const getClinicPayoutAccount = query({
       accountName: account.accountName,
       accountNumberLast4: account.accountNumber.slice(-4),
       updatedAt: account.updatedAt,
+      // Saved under the other Paystack mode (test keys): payments can't reach it until it's renewed
+      // (renewPayoutAccount does that from the saved details, without asking the owner again)
+      usable: usableSubaccount(account) !== null,
     };
   },
 });
@@ -235,21 +238,10 @@ export const connectPayoutAccount = action({
       `/bank/resolve?account_number=${encodeURIComponent(args.accountNumber)}&bank_code=${encodeURIComponent(args.bankCode)}`,
       { method: "GET" }
     );
-    const subaccount = await paystackRequest("/subaccount", {
-      method: "POST",
-      body: JSON.stringify({
-        business_name: owner.clinicName,
-        settlement_bank: args.bankCode,
-        account_number: args.accountNumber,
-        // The Rehabify fee is taken per transaction (transaction_charge), not as a percentage here
-        percentage_charge: 0,
-        primary_contact_email: owner.email || undefined,
-        description: `Rehabify clinic ${owner.clinicId}`,
-      }),
-    });
+    const subaccountCode = await createClinicSubaccount(owner, args.bankCode, args.accountNumber);
     await ctx.runMutation(internal.clinicBilling.savePayoutAccount, {
       clinicId: owner.clinicId,
-      subaccountCode: subaccount.subaccount_code,
+      subaccountCode,
       bankCode: args.bankCode,
       bankName: args.bankName,
       bankSlug: args.bankSlug,
@@ -257,6 +249,132 @@ export const connectPayoutAccount = action({
       accountName: resolved.account_name,
     });
     return { accountName: resolved.account_name as string };
+  },
+});
+
+/** A Paystack subaccount for the clinic's bank account, under the current key. Returns its code. */
+async function createClinicSubaccount(
+  clinic: { clinicId: Id<"clinics">; clinicName: string; email: string },
+  bankCode: string,
+  accountNumber: string
+): Promise<string> {
+  const subaccount = await paystackRequest("/subaccount", {
+    method: "POST",
+    body: JSON.stringify({
+      business_name: clinic.clinicName,
+      settlement_bank: bankCode,
+      account_number: accountNumber,
+      // The Rehabify fee is taken per transaction (transaction_charge), not as a percentage here
+      percentage_charge: 0,
+      primary_contact_email: clinic.email || undefined,
+      description: `Rehabify clinic ${clinic.clinicId}`,
+    }),
+  });
+  return subaccount.subaccount_code as string;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Renewing a payout account from another Paystack mode
+//
+// A subaccount made with test keys doesn't exist once Rehabify runs on live keys, so the clinic
+// looked "Connected" in Settings while Billing asked for a bank account and payment links failed.
+// The bank details are already saved and were checked by Paystack when the owner connected, so
+// the subaccount is simply made again under the current key: no action from the owner.
+// ─────────────────────────────────────────────────────────────────────────────
+
+type PayoutRenewal = "usable" | "renewed" | "none" | "failed";
+
+export const payoutAccountForRenewal = internalQuery({
+  args: { clinicId: v.id("clinics") },
+  handler: async (ctx, args) => {
+    const row = await ctx.db
+      .query("clinicPayoutAccounts")
+      .withIndex("by_clinic_id", (q) => q.eq("clinicId", args.clinicId))
+      .first();
+    if (!row) return null;
+    const clinic = await ctx.db.get(args.clinicId);
+    const owner = clinic ? await ctx.db.get(clinic.ownerId) : null;
+    return {
+      usable: usableSubaccount(row) !== null,
+      bankCode: row.bankCode,
+      bankName: row.bankName,
+      bankSlug: row.bankSlug,
+      accountNumber: row.accountNumber,
+      accountName: row.accountName,
+      clinicName: clinic?.name ?? "Clinic",
+      email: clinic?.contactEmail || owner?.email || "",
+    };
+  },
+});
+
+async function renewClinicSubaccount(ctx: ActionCtx, clinicId: Id<"clinics">): Promise<PayoutRenewal> {
+  const row = await ctx.runQuery(internal.clinicBilling.payoutAccountForRenewal, { clinicId });
+  if (!row) return "none";
+  if (row.usable) return "usable";
+  try {
+    const subaccountCode = await createClinicSubaccount(
+      { clinicId, clinicName: row.clinicName, email: row.email },
+      row.bankCode,
+      row.accountNumber
+    );
+    await ctx.runMutation(internal.clinicBilling.savePayoutAccount, {
+      clinicId,
+      subaccountCode,
+      bankCode: row.bankCode,
+      bankName: row.bankName,
+      bankSlug: row.bankSlug,
+      accountNumber: row.accountNumber,
+      accountName: row.accountName,
+    });
+    return "renewed";
+  } catch (err) {
+    // No bank details in the log: the clinic and Paystack's reason are enough to follow up
+    console.error("Could not renew clinic payout subaccount", clinicId, err instanceof Error ? err.message : String(err));
+    return "failed";
+  }
+}
+
+export const resolveBillingClinicForAction = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const { clinic } = await requireClinicWrite(ctx, "billing", { allowBillingReadOnly: true });
+    return { clinicId: clinic._id };
+  },
+});
+
+/** Billing and Settings call this when the saved account is from the other Paystack mode. */
+export const renewPayoutAccount = action({
+  args: {},
+  handler: async (ctx): Promise<{ status: PayoutRenewal }> => {
+    const { clinicId } = await ctx.runQuery(internal.clinicBilling.resolveBillingClinicForAction, {});
+    return { status: await renewClinicSubaccount(ctx, clinicId) };
+  },
+});
+
+export const stalePayoutAccountClinicIds = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const rows = await ctx.db.query("clinicPayoutAccounts").take(1000);
+    return rows.filter((row) => usableSubaccount(row) === null).map((row) => row.clinicId);
+  },
+});
+
+/**
+ * One-off after a key change: renew every clinic payout account from the other Paystack mode.
+ * `npx convex run --prod clinicBilling:renewStalePayoutAccounts` (counts only, no bank details).
+ */
+export const renewStalePayoutAccounts = internalAction({
+  args: {},
+  handler: async (ctx): Promise<{ stale: number; renewed: number; failed: number }> => {
+    const clinicIds = await ctx.runQuery(internal.clinicBilling.stalePayoutAccountClinicIds, {});
+    let renewed = 0;
+    let failed = 0;
+    for (const clinicId of clinicIds) {
+      const status = await renewClinicSubaccount(ctx, clinicId);
+      if (status === "renewed") renewed++;
+      if (status === "failed") failed++;
+    }
+    return { stale: clinicIds.length, renewed, failed };
   },
 });
 
@@ -340,13 +458,16 @@ export const getInvoiceForPaymentLink = internalQuery({
       .first();
     // Patients pay the clinic directly: no bank account connected, no payment link (the clinic
     // can still record cash, POS or transfer payments)
-    const subaccountCode = usableSubaccount(payout);
-    if (!subaccountCode) {
+    if (!payout) {
       throw new ConvexError(
         "Connect your clinic's bank account first (Clinic settings → Payouts), so patients' payments go straight to you."
       );
     }
+    // An account saved under the other Paystack mode is renewed by the caller, then this runs again
+    const subaccountCode = usableSubaccount(payout);
     return {
+      clinicId: clinic._id,
+      needsRenewal: subaccountCode === null,
       invoiceId: invoice._id,
       invoiceNumber: invoice.invoiceNumber,
       status: invoice.status,
@@ -450,15 +571,28 @@ export const createPaymentLink = action({
  */
 export async function createClinicPaymentLink(ctx: ActionCtx, invoiceId: Id<"invoices">): Promise<{ paymentLink: string }> {
     let invoice = await ctx.runQuery(internal.clinicBilling.getInvoiceForPaymentLink, { invoiceId });
-    if (invoice.staleSplit && invoice.status !== "paid" && invoice.status !== "void") {
-      await ctx.runMutation(internal.clinicBilling.refreshClinicInvoiceSplit, { invoiceId });
-      invoice = await ctx.runQuery(internal.clinicBilling.getInvoiceForPaymentLink, { invoiceId });
-    }
     if (invoice.status === "paid") {
       throw new ConvexError("This invoice is already paid");
     }
     if (invoice.status === "void") {
       throw new ConvexError("This invoice was cancelled");
+    }
+    // A bank account saved under test keys is made again under the current key, quietly (or was
+    // just renewed by another tab: reading again picks that up too)
+    if (invoice.needsRenewal) {
+      await renewClinicSubaccount(ctx, invoice.clinicId);
+    }
+    if (invoice.staleSplit) {
+      await ctx.runMutation(internal.clinicBilling.refreshClinicInvoiceSplit, { invoiceId });
+    }
+    if (invoice.needsRenewal || invoice.staleSplit) {
+      invoice = await ctx.runQuery(internal.clinicBilling.getInvoiceForPaymentLink, { invoiceId });
+    }
+    const subaccountCode = invoice.subaccountCode;
+    if (!subaccountCode) {
+      throw new ConvexError(
+        "Your clinic's bank account needs reconnecting before patients can pay online. Go to Clinic settings → Payouts → Change account. Cash, POS and transfer payments can still be recorded."
+      );
     }
     if (invoice.paymentLink) {
       return { paymentLink: invoice.paymentLink };
@@ -488,13 +622,11 @@ export async function createClinicPaymentLink(ctx: ActionCtx, invoiceId: Id<"inv
         ],
       },
     };
-    if (invoice.subaccountCode) {
-      payload.subaccount = invoice.subaccountCode;
-      // The clinic's subaccount receives exactly its share (stamp duty is deducted from it on payout);
-      // Rehabify's account keeps the rest and pays Paystack's fee out of it (see convex/clinicFees.ts)
-      payload.transaction_charge = invoice.mainAccountChargeKobo;
-      payload.bearer = "account";
-    }
+    payload.subaccount = subaccountCode;
+    // The clinic's subaccount receives exactly its share (stamp duty is deducted from it on payout);
+    // Rehabify's account keeps the rest and pays Paystack's fee out of it (see convex/clinicFees.ts)
+    payload.transaction_charge = invoice.mainAccountChargeKobo;
+    payload.bearer = "account";
 
     const data = await paystackRequest("/transaction/initialize", {
       method: "POST",
@@ -507,22 +639,24 @@ export async function createClinicPaymentLink(ctx: ActionCtx, invoiceId: Id<"inv
       reference,
       amountKobo: invoice.totalKobo,
       paymentLink: data.authorization_url,
-      subaccountCode: invoice.subaccountCode,
+      subaccountCode,
     });
 
     return { paymentLink: data.authorization_url as string };
 }
 
-/** Record a payment taken outside Paystack (cash, POS, bank transfer). */
+/** Record a payment taken outside Paystack (cash, POS, bank transfer) against a payment request. */
 export const markInvoicePaid = mutation({
   args: {
     invoiceId: v.id("invoices"),
     method: v.union(v.literal("cash"), v.literal("bank_transfer"), v.literal("pos")),
+    /** When the money arrived, if not today (transfers are often logged a day or two later) */
+    paidAt: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     // Recording a patient's payment keeps working while the clinic is read-only
     const member = await requireClinicWrite(ctx, "billing", { allowBillingReadOnly: true });
-    const { user, clinic } = member;
+    const { clinic } = member;
     const invoice = await ctx.db.get(args.invoiceId);
     if (!invoice || invoice.clinicId !== clinic._id) {
       throw new ConvexError("Invoice not found");
@@ -530,40 +664,10 @@ export const markInvoicePaid = mutation({
     if (invoice.status === "paid") {
       return { success: true };
     }
-    // A patient Rehabify referred pays online, so Rehabify's share is collected with the payment
-    if (invoice.patientSource === "rehabify_referral") {
-      throw new ConvexError("Rehabify referred this patient, so they pay online with the payment link. Send them the link instead.");
+    if (invoice.status === "void") {
+      throw new ConvexError("This invoice was cancelled. Record the payment on its own instead.");
     }
-    const paidAt = Date.now();
-    await ctx.db.patch(args.invoiceId, {
-      status: "paid",
-      paymentMethod: args.method,
-      paymentDate: paidAt,
-      paidAmount: invoice.totalAmount,
-    });
-    // Paid in person: the online link must not collect a second time
-    await closeInvoicePaymentLinks(ctx, args.invoiceId);
-    // A referred patient's partner or doctor earns on this too, once an admin approves it
-    // (Rehabify didn't see the money arrive). After an undo (undoMarkInvoicePaid) the first
-    // reference's commission is reversed, so this payment earns under its own reference.
-    const earlier = await ctx.db
-      .query("partnerCommissions")
-      .withIndex("by_payment_reference", (q) => q.eq("paymentReference", `manual:${args.invoiceId}`))
-      .first();
-    await recordInvoicePartnerCommission(ctx, {
-      invoice,
-      paidKobo: invoice.subtotalAmount > 0 ? invoice.subtotalAmount : invoice.totalAmount,
-      paymentReference: earlier?.status === "reversed" ? `manual:${args.invoiceId}:${paidAt}` : `manual:${args.invoiceId}`,
-      verified: false,
-    });
-    // The team sees money taken outside Rehabify
-    await alertAdminsOfPayment(ctx, {
-      amountKobo: Math.max(0, invoice.totalAmount - (invoice.paidAmount ?? 0)),
-      description: `invoice ${invoice.invoiceNumber ?? ""}`.trim(),
-      relationship: "clinic",
-      payerUserId: invoice.patientId,
-      recordedOutside: { by: clinic.name ?? "A clinic", method: args.method },
-    });
+    await settleClinicInvoiceOffline(ctx, clinic, invoice, args.method, offlinePaidAt(args.paidAt));
     return { success: true };
   },
 });

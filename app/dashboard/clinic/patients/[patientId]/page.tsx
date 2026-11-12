@@ -9,6 +9,7 @@ import { format } from 'date-fns'
 import { toast } from 'sonner'
 import {
   CalendarPlus,
+  CheckCircle2,
   ChevronLeft,
   Eye,
   MessageSquare,
@@ -198,6 +199,8 @@ function ClinicPatientRecord({ patientId }: { patientId: Id<'users'> }) {
 
   const bookHref = `${CLINIC}/appointments?book=1&patient=${patientId}`
   const requestHref = `${CLINIC}/billing?request=1&patient=${patientId}`
+  // Money they've already paid (transfer, cash, POS): saved as paid, nothing sent to them
+  const recordHref = `${CLINIC}/billing?record=1&patient=${patientId}`
 
   const handleResendInvite = async () => {
     if (!requireFullAccess('Resend invite')) return
@@ -329,6 +332,11 @@ function ClinicPatientRecord({ patientId }: { patientId: Id<'users'> }) {
                       <Link href={requestHref}>Request a payment</Link>
                     </DropdownMenuItem>
                   )}
+                  {canUse('billing') && (
+                    <DropdownMenuItem asChild className="rounded-xl px-3 py-2.5 focus:bg-pt-hover">
+                      <Link href={recordHref}>Record a payment they made</Link>
+                    </DropdownMenuItem>
+                  )}
                   <DropdownMenuSeparator className="bg-pt-line" />
                   <DropdownMenuItem className="rounded-xl px-3 py-2.5 focus:bg-pt-hover" onSelect={() => go('followups')}>
                     Log a follow-up call
@@ -434,7 +442,9 @@ function ClinicPatientRecord({ patientId }: { patientId: Id<'users'> }) {
         {tab === 'followups' && (
           <ClinicFollowUpsTab patientId={patientId} calls={followUps} nextCheckInAt={isActive ? record.nextCheckInAt : null} phone={patient.phoneNumber} />
         )}
-        {tab === 'payments' && canUse('billing') && <ClinicPatientPayments workspace={workspace} requestHref={requestHref} />}
+        {tab === 'payments' && canUse('billing') && (
+          <ClinicPatientPayments workspace={workspace} requestHref={requestHref} recordHref={recordHref} />
+        )}
 
         {workspace.pastEpisodes.length > 0 && tab === 'overview' && (
           <Panel title="Earlier courses of care">
@@ -504,8 +514,16 @@ type BillingInvoice = {
   paidAt?: number | null
 }
 
-/** This patient's payment requests from the clinic, and a shortcut to ask for another. */
-function ClinicPatientPayments({ workspace, requestHref }: { workspace: Workspace; requestHref: string }) {
+/** This patient's payments to the clinic (requested or recorded), with shortcuts for both. */
+function ClinicPatientPayments({
+  workspace,
+  requestHref,
+  recordHref,
+}: {
+  workspace: Workspace
+  requestHref: string
+  recordHref: string
+}) {
   const billing = useQuery(api.clinicTools.getClinicBillingSummary) as { invoices: BillingInvoice[] } | undefined
   const invoices = useMemo(
     () => (billing?.invoices ?? []).filter((invoice) => invoice.patientId === workspace.patient._id),
@@ -540,14 +558,22 @@ function ClinicPatientPayments({ workspace, requestHref }: { workspace: Workspac
       </div>
 
       <Panel
-        title="Payment requests"
+        title="Payments"
         actions={
-          <Button asChild size="sm" className={cn(primaryButtonClass, 'h-9')}>
-            <Link href={requestHref}>
-              <Receipt className="mr-1.5 h-4 w-4" />
-              Request payment
-            </Link>
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button asChild size="sm" variant="outline" className="h-9">
+              <Link href={recordHref}>
+                <CheckCircle2 className="mr-1.5 h-4 w-4" />
+                Record payment
+              </Link>
+            </Button>
+            <Button asChild size="sm" className={cn(primaryButtonClass, 'h-9')}>
+              <Link href={requestHref}>
+                <Receipt className="mr-1.5 h-4 w-4" />
+                Request payment
+              </Link>
+            </Button>
+          </div>
         }
       >
         {billing === undefined ? (
@@ -555,7 +581,11 @@ function ClinicPatientPayments({ workspace, requestHref }: { workspace: Workspac
             <Skeleton className="h-12 rounded-xl bg-pt-sunken" />
           </div>
         ) : invoices.length === 0 ? (
-          <EmptyState icon={<Receipt />} title="No payment requests yet" description="Request a payment and they can pay by card, transfer or USSD." />
+          <EmptyState
+            icon={<Receipt />}
+            title="No payments yet"
+            description="Request a payment they can pay by card, transfer or USSD, or record one they've already made."
+          />
         ) : (
           <ul className="px-5 pb-3 sm:px-6">
             {invoices.map((invoice) => (
