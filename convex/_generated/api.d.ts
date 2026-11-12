@@ -42,6 +42,7 @@ import type * as actions_emails_sendPatientOnboardedProviderEmail from "../actio
 import type * as actions_emails_sendPatientOnboardingCompleteEmail from "../actions/emails/sendPatientOnboardingCompleteEmail.js";
 import type * as actions_emails_sendPaymentReceiptEmail from "../actions/emails/sendPaymentReceiptEmail.js";
 import type * as actions_emails_sendReferralCreatedEmails from "../actions/emails/sendReferralCreatedEmails.js";
+import type * as actions_emails_sendTeamEmails from "../actions/emails/sendTeamEmails.js";
 import type * as actions_emails_sendVerificationBadgeEmail from "../actions/emails/sendVerificationBadgeEmail.js";
 import type * as actions_emails_sendVideoCallInvitation from "../actions/emails/sendVideoCallInvitation.js";
 import type * as actions_index from "../actions/index.js";
@@ -310,6 +311,7 @@ import type * as settings_service from "../settings/service.js";
 import type * as stream from "../stream.js";
 import type * as stream_mutations from "../stream_mutations.js";
 import type * as stream_queries from "../stream_queries.js";
+import type * as teamAccess from "../teamAccess.js";
 import type * as test_reminders from "../test_reminders.js";
 import type * as testing_testReminders from "../testing/testReminders.js";
 import type * as therapistDashboard from "../therapistDashboard.js";
@@ -362,6 +364,7 @@ declare const fullApi: ApiFromModules<{
   "actions/emails/sendPatientOnboardingCompleteEmail": typeof actions_emails_sendPatientOnboardingCompleteEmail;
   "actions/emails/sendPaymentReceiptEmail": typeof actions_emails_sendPaymentReceiptEmail;
   "actions/emails/sendReferralCreatedEmails": typeof actions_emails_sendReferralCreatedEmails;
+  "actions/emails/sendTeamEmails": typeof actions_emails_sendTeamEmails;
   "actions/emails/sendVerificationBadgeEmail": typeof actions_emails_sendVerificationBadgeEmail;
   "actions/emails/sendVideoCallInvitation": typeof actions_emails_sendVideoCallInvitation;
   "actions/index": typeof actions_index;
@@ -630,6 +633,7 @@ declare const fullApi: ApiFromModules<{
   stream: typeof stream;
   stream_mutations: typeof stream_mutations;
   stream_queries: typeof stream_queries;
+  teamAccess: typeof teamAccess;
   test_reminders: typeof test_reminders;
   "testing/testReminders": typeof testing_testReminders;
   therapistDashboard: typeof therapistDashboard;
