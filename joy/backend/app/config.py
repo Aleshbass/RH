@@ -38,8 +38,9 @@ class Settings(BaseSettings):
     openai_transcribe_model: str = "gpt-4o-transcribe"
     # A voice note back when the patient sends one (app/conversation/voice_reply.py)
     joy_voice_replies: bool = True
-    # Languages Joy speaks; the others get text. Add yo, ig, ha once someone has listened to them.
-    joy_voice_reply_languages: str = "en,pcm"
+    # Languages Joy answers in a voice note; the others get text. Yoruba and Hausa added by the owner
+    # (11 Nov 2026): spoken only by ElevenLabs. Igbo stays text (no ElevenLabs model speaks it yet).
+    joy_voice_reply_languages: str = "en,pcm,yo,ha"
     openai_tts_model: str = "gpt-4o-mini-tts"
     openai_tts_voice: str = "coral"
     # ElevenLabs voice for Joy's voice notes when ELEVENLABS_API_KEY is set (OpenAI is the fallback).

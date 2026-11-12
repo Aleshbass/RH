@@ -168,3 +168,23 @@ def test_yoruba_and_hausa_use_the_newer_model(whatsapp, monkeypatch):
     monkeypatch.setattr(voice_reply.httpx, "post", _elevenlabs_post(calls))
     voice_reply.synthesize("Ẹ kú àárọ̀", "yo")
     assert calls[0][1]["json"]["model_id"] == "eleven_v4" and calls[0][1]["json"]["language_code"] == "yo"
+
+
+def test_yoruba_and_hausa_are_spoken_only_with_elevenlabs(whatsapp, monkeypatch):
+    # Without ElevenLabs: text (OpenAI would sound wrong to a native speaker)
+    assert not voice_reply.speaks("yo") and not voice_reply.speaks("ha")
+    monkeypatch.setenv("ELEVENLABS_API_KEY", "el-test")
+    assert voice_reply.speaks("yo") and voice_reply.speaks("ha")
+
+
+def test_yoruba_never_falls_back_to_another_voice(whatsapp, monkeypatch):
+    monkeypatch.setenv("ELEVENLABS_API_KEY", "el-test")
+    calls = []
+    monkeypatch.setattr(voice_reply.httpx, "post", _elevenlabs_post(calls, fail=True))
+    assert voice_reply.synthesize("Ẹ kú àárọ̀", "yo") is None
+    assert all("openai.com" not in url for url, _ in calls)
+
+
+def test_igbo_stays_text(whatsapp, monkeypatch):
+    monkeypatch.setenv("ELEVENLABS_API_KEY", "el-test")
+    assert not voice_reply.speaks("ig")

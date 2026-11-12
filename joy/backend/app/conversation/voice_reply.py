@@ -63,8 +63,10 @@ def speakable(text: str) -> tuple[str, bool]:
 def speaks(language: str | None) -> bool:
     settings = get_settings()
     allowed = {item.strip().lower() for item in (settings.joy_voice_reply_languages or "").split(",") if item.strip()}
-    has_voice = bool(settings.elevenlabs_api_key or settings.openai_api_key)
-    return bool(settings.joy_voice_replies and has_voice and (language or "en").lower() in allowed)
+    lang = (language or "en").lower()
+    # Yoruba and Hausa only in the ElevenLabs voice: anything else would sound wrong to a native speaker
+    has_voice = bool(settings.elevenlabs_api_key) if lang in _LOCAL_LANGUAGE_MODEL else bool(settings.elevenlabs_api_key or settings.openai_api_key)
+    return bool(settings.joy_voice_replies and has_voice and lang in allowed)
 
 
 # Languages only ElevenLabs' newer model speaks (Igbo isn't supported by ElevenLabs yet)
@@ -105,8 +107,8 @@ def synthesize(text: str, language: str | None) -> bytes | None:
     if audio is not None:
         return audio
     settings = get_settings()
-    if not settings.openai_api_key:
-        return None
+    if not settings.openai_api_key or (language or "en").lower() in _LOCAL_LANGUAGE_MODEL:
+        return None  # Yoruba and Hausa never fall back to another voice: text instead
     try:
         response = httpx.post(
             "https://api.openai.com/v1/audio/speech",
