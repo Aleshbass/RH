@@ -11,6 +11,7 @@ import { attributeUserToLink } from "./helpers/partnerAttribution";
 import { normalizePhone } from "./helpers/partnerShared";
 import { assertSignupAllowed } from "./platformSettings";
 import { logSecurityEvent } from "./helpers/securityLog";
+import { claimTeamInvite } from "./teamAccess";
 import { ensureClinicNumber, ensureUserNumbers, findUserByRehabifyId } from "./helpers/rehabifyIds";
 import { matchesRehabifyId, parseRehabifyId } from "./helpers/rehabifyIdFormat";
 import { isClinicInviteApproval } from "./helpers/clinicApproval";
@@ -250,6 +251,10 @@ export const updateOrCreateUser = internalMutation({
       if (Object.keys(updates).length > 0) {
         await ctx.db.patch(existingUser._id, updates);
       }
+      // A blog writer / Learn instructor invite for this email, once the email is verified
+      if (!existingUser.role && primaryEmailObj?.verification?.status === "verified") {
+        await claimTeamInvite(ctx, existingUser._id, email);
+      }
       return existingUser._id;
     }
 
@@ -274,6 +279,8 @@ export const updateOrCreateUser = internalMutation({
       hasCompletedOnboarding: false,
       onboardingVersion: 1,
     });
+    // Invited as a blog writer or Learn instructor: becomes that role straight away
+    await claimTeamInvite(ctx, userId, primaryEmailObj?.verification?.status === "verified" ? email : null);
 
     return userId;
   },
@@ -425,6 +432,9 @@ export const storeUserFromClerk = mutation({
       if (args.referralPublicCode && !existingUser.referredByPartnerCode) {
         await attributeUserToLink(ctx, { ...existingUser, ...updates } as Doc<"users">, args.referralPublicCode, "referral_link", { countSignup: true });
       }
+      if (!existingUser.role && identity.emailVerified && typeof identity.email === "string") {
+        await claimTeamInvite(ctx, existingUser._id, identity.email);
+      }
       return existingUser._id;
     } else {
       // Only Clerk's verified email is trusted here, never the client argument.
@@ -467,6 +477,8 @@ export const storeUserFromClerk = mutation({
         hasCompletedOnboarding: false,
         onboardingVersion: 1,
       });
+      // Invited as a blog writer or Learn instructor: becomes that role straight away
+      await claimTeamInvite(ctx, newUserId, verifiedEmail);
       if (args.referralPublicCode) {
         const created = await ctx.db.get(newUserId);
         if (created) await attributeUserToLink(ctx, created, args.referralPublicCode, "referral_link", { countSignup: true });
@@ -1135,7 +1147,9 @@ export const setUserRole = mutation({
       v.literal("family_member"),
       v.literal("admin"),
       // Blog writer: sees only the blog pages of the admin console
-      v.literal("blog_editor")
+      v.literal("blog_editor"),
+      // Learn instructor: sees only Learn › Video courses
+      v.literal("learn_instructor")
     ),
   },
   handler: async (ctx, args) => {
@@ -1170,7 +1184,8 @@ export const setUserRole = mutation({
       clinic_owner: "Clinic Owner",
       family_member: "Family Member",
       admin: "Administrator",
-      blog_editor: "Blog Writer"
+      blog_editor: "Blog Writer",
+      learn_instructor: "Learn Instructor"
     };
 
     await ctx.runMutation(api.notifications.create, {
@@ -1228,6 +1243,7 @@ const ADMIN_LISTABLE_ROLES = [
   "partner",
   "clinic_staff",
   "blog_editor",
+  "learn_instructor",
 ] as const;
 
 const adminRoleFilterValidator = v.union(

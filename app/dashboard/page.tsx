@@ -16,7 +16,7 @@ import {
 } from '@/components/clinic/clinician-routing'
 import { RehabifySplash } from '@/components/brand/RehabifyLoader'
 
-type UserRole = 'physiotherapist' | 'clinic_owner' | 'patient' | 'family_member' | 'doctor' | 'admin' | 'partner' | 'blog_editor';
+type UserRole = 'physiotherapist' | 'clinic_owner' | 'patient' | 'family_member' | 'doctor' | 'admin' | 'partner' | 'blog_editor' | 'learn_instructor';
 
 // Plain references: the generated `api` type is at TypeScript's depth limit here (TS2589)
 const root = api as unknown as Record<string, Record<string, unknown>>
@@ -143,6 +143,10 @@ export default function DashboardPage() {
         case 'blog_editor':
           // Blog writers only have the blog pages of the admin console
           router.replace('/dashboard/admin/blog')
+          break
+        case 'learn_instructor':
+          // Learn instructors only have Learn › Video courses in the admin console
+          router.replace('/dashboard/admin/learn/courses')
           break
         case 'partner':
           router.replace('/partners/portal')

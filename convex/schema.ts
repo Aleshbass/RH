@@ -50,7 +50,9 @@ export default defineSchema({
       // Non-clinical clinic team member (receptionist, administrator...), works only in the clinic dashboard
       v.literal("clinic_staff"),
       // Blog writer: only the blog pages of the admin console (convex/blog.ts); posts need an admin to publish
-      v.literal("blog_editor")
+      v.literal("blog_editor"),
+      // Learn instructor: only Learn › Video courses in the admin console (their own courses; an admin publishes)
+      v.literal("learn_instructor")
     )),
     // Clinic dashboard role (page permissions). None means full access.
     clinicRoleId: v.optional(v.id("clinicRoles")),
@@ -5737,6 +5739,11 @@ export default defineSchema({
     externalPriceKobo: v.optional(v.number()),
     enrolledCount: v.optional(v.number()), // active enrolments (free and paid)
     publishedAt: v.optional(v.number()),
+    // Learn instructors (role learn_instructor) send their draft courses for review; an admin
+    // publishes them or asks for changes (convex/learn.ts)
+    reviewStatus: v.optional(v.union(v.literal("in_review"), v.literal("changes_requested"))),
+    reviewNote: v.optional(v.string()),
+    submittedAt: v.optional(v.number()),
     createdBy: v.id("users"),
     updatedBy: v.optional(v.id("users")),
     createdAt: v.number(),
@@ -5901,5 +5908,25 @@ export default defineSchema({
     name: v.optional(v.string()),
     createdAt: v.number(),
   }).index("by_program_email", ["program", "email"]),
+
+  // Blog writer and Learn instructor access given by email (convex/teamAccess.ts). An email with
+  // no account yet stays "pending" and becomes the role when that person signs up with it
+  // (verified email only); an existing account is switched straight away ("accepted").
+  teamInvites: defineTable({
+    email: v.string(), // lowercase
+    role: v.union(v.literal("blog_editor"), v.literal("learn_instructor")),
+    status: v.union(v.literal("pending"), v.literal("accepted"), v.literal("revoked")),
+    invitedBy: v.id("users"),
+    userId: v.optional(v.id("users")),
+    /** The role the account had before, put back if the access is removed */
+    previousRole: v.optional(v.string()),
+    emailedAt: v.optional(v.number()),
+    acceptedAt: v.optional(v.number()),
+    revokedAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_email", ["email"])
+    .index("by_status", ["status", "updatedAt"]),
 
 });
