@@ -27,6 +27,7 @@ import {
   X,
 } from '@/components/icons'
 import { useConsoleRole } from '@/components/admin/shell/consoleRole'
+import { VideoUploadGuideButton } from '@/components/admin/learn/VideoUploadGuide'
 import type { Id } from '@/convex/_generated/dataModel'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -1383,16 +1384,20 @@ export function VideoCoursesAdmin() {
             : 'Build your video courses here. When one is ready, send it for review; an admin sets who can watch and publishes it.'
         }
         actions={
-          selected === null && courses && courses.length > 0 ? (
-            <div className="flex flex-wrap gap-2">
-              <Button className={softButtonClass} onClick={() => setFromYoutube(true)}>
-                <PlayCircle className="mr-2 h-4 w-4" /> From a YouTube link
-              </Button>
-              <Button className={primaryButtonClass} onClick={() => setSelected('new')}>
-                <Plus className="mr-2 h-4 w-4" /> New course
-              </Button>
-            </div>
-          ) : undefined
+          <div className="flex flex-wrap gap-2">
+            {/* Always on hand: how to add a protected lesson video */}
+            <VideoUploadGuideButton />
+            {selected === null && courses && courses.length > 0 && (
+              <>
+                <Button className={softButtonClass} onClick={() => setFromYoutube(true)}>
+                  <PlayCircle className="mr-2 h-4 w-4" /> From a YouTube link
+                </Button>
+                <Button className={primaryButtonClass} onClick={() => setSelected('new')}>
+                  <Plus className="mr-2 h-4 w-4" /> New course
+                </Button>
+              </>
+            )}
+          </div>
         }
       />
       <YoutubeCourseDialog open={fromYoutube} onOpenChange={setFromYoutube} onCreated={(id) => setSelected(id)} />
