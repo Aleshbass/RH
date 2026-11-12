@@ -44,12 +44,6 @@ export const LEARN_PHOTOS = {
     width: 1254,
     height: 1254,
   },
-  mary: {
-    src: `${BLOG}/mary-akinwola_CKpIiy_lw.jpg`,
-    alt: 'Mary Akinwola',
-    width: 1145,
-    height: 1374,
-  },
 } satisfies Record<string, LearnPhoto>
 
 /** ImageKit picks the size, quality and WebP/AVIF for each screen. */

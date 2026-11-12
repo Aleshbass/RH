@@ -55,11 +55,13 @@ import {
   type AdminVideoCourse,
   type CourseAccess,
   type AdminVideoLesson,
+  type BunnyUpload,
   type UploadedVideo,
   type YoutubeInfo,
   type YoutubeVideo,
 } from '@/components/learn/video/videoApi'
 import { playSound } from '@/lib/sounds'
+import { tusUploadToBunny } from '@/lib/video/tusUpload'
 import { COURSE_CATEGORIES, COURSE_LEVELS } from '@/lib/learn/catalog'
 import { cn } from '@/lib/utils'
 
@@ -570,7 +572,11 @@ type UploadState =
   | { stage: 'idle' }
   | { stage: 'reading'; name: string }
   | { stage: 'uploading'; name: string; sizeBytes: number; fraction: number }
-  | { stage: 'done'; video: UploadedVideo; name: string }
+  // An ImageKit file (`video`) or a protected Bunny Stream upload (`bunny`)
+  | { stage: 'done'; name: string; video?: UploadedVideo; bunny?: BunnyUpload }
+
+/** Bunny takes long lessons; ImageKit's free plan stops at 100 MB. */
+const MAX_PROTECTED_VIDEO_BYTES = 4 * 1024 * 1024 * 1024
 
 function LessonDrawer({
   open,
@@ -585,6 +591,10 @@ function LessonDrawer({
 }) {
   const saveLesson = useMutation(videoApi.saveLesson)
   const uploadAuth = useAction(videoApi.uploadAuth)
+  const startBunnyUpload = useAction(videoApi.startBunnyUpload)
+  // Protected streaming (Bunny Stream) once its keys are set on Convex; ImageKit until then
+  const hosting = useQuery(videoApi.hosting, open ? {} : 'skip')
+  const protectedHosting = Boolean(hosting?.protected)
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [upload, setUpload] = useState<UploadState>({ stage: 'idle' })
@@ -613,9 +623,11 @@ function LessonDrawer({
       toast.error('Choose a video file (MP4 works everywhere).')
       return
     }
-    if (file.size > MAX_VIDEO_BYTES) {
+    if (file.size > (protectedHosting ? MAX_PROTECTED_VIDEO_BYTES : MAX_VIDEO_BYTES)) {
       toast.error(
-        `This video is ${formatBytes(file.size)}. Videos must be 100 MB or smaller: export it at 720p, or split it into shorter lessons.`,
+        protectedHosting
+          ? `This video is ${formatBytes(file.size)}. Videos must be 4 GB or smaller.`
+          : `This video is ${formatBytes(file.size)}. Videos must be 100 MB or smaller: export it at 720p, or split it into shorter lessons.`,
         { duration: 9000 }
       )
       return
@@ -630,6 +642,18 @@ function LessonDrawer({
       if (!durationSec) throw new Error('We couldn’t read this video’s length. Try exporting it again as MP4.')
 
       setUpload({ stage: 'uploading', name: file.name, sizeBytes: file.size, fraction: 0 })
+      if (protectedHosting) {
+        // Straight to Bunny Stream (resumable). Bunny makes the thumbnail and the streams itself.
+        const lessonTitle = title.trim() || file.name.replace(/\.[^.]+$/, '')
+        const auth = await startBunnyUpload({ title: lessonTitle })
+        await tusUploadToBunny(file, lessonTitle, auth, {
+          signal: controller.signal,
+          onProgress: (fraction) => setUpload({ stage: 'uploading', name: file.name, sizeBytes: file.size, fraction }),
+        })
+        setUpload({ stage: 'done', name: file.name, bunny: { videoId: auth.videoId, sizeBytes: file.size, durationSec } })
+        playSound('success')
+        return
+      }
       const videoAuth = await uploadAuth({ kind: 'video' })
       const uploaded = await uploadToImagekit(file, file.name, videoAuth, {
         isPrivate: true,
@@ -684,6 +708,7 @@ function LessonDrawer({
         title,
         description: description || undefined,
         video: source === 'upload' && upload.stage === 'done' ? upload.video : undefined,
+        bunny: source === 'upload' && upload.stage === 'done' ? upload.bunny : undefined,
         youtube: source === 'youtube' && youtube ? toYoutubeVideo(youtube) : undefined,
       })
       toast.success(lesson ? 'Lesson saved' : 'Lesson added')
@@ -715,7 +740,11 @@ function LessonDrawer({
       open={open}
       onOpenChange={close}
       title={lesson ? 'Edit lesson' : 'Add a lesson'}
-      description="Upload a video (private: only paid learners can play it) or use a YouTube video. Either way, learners watch inside Rehabify."
+      description={
+        protectedHosting
+          ? 'Upload a video (protected streaming: only enrolled learners can play it, and it can’t be downloaded) or use a YouTube video.'
+          : 'Upload a video (private: only paid learners can play it) or use a YouTube video. Either way, learners watch inside Rehabify.'
+      }
       footer={
         <>
           <Button onClick={save} disabled={!canSave || saving} className={primaryButtonClass}>
@@ -733,7 +762,9 @@ function LessonDrawer({
           label="Video"
           hint={
             source === 'upload'
-              ? 'MP4, up to 100 MB. About 15 minutes at 720p fits comfortably.'
+              ? protectedHosting
+                ? 'MP4 or MOV, any length up to 4 GB. Bunny prepares the stream after the upload; the lesson plays once that finishes (a few minutes).'
+                : 'MP4, up to 100 MB. About 15 minutes at 720p fits comfortably.'
               : 'A public or unlisted video that allows embedding. Its title, length and thumbnail come from YouTube. Anyone with the link can also watch it on YouTube.'
           }
         >
@@ -802,11 +833,12 @@ function LessonDrawer({
             </div>
           ) : upload.stage === 'done' ? (
             <div className="flex items-center gap-3 rounded-2xl bg-rh-honeydew p-3 dark:bg-white/[0.06]">
-              <Thumb url={upload.video.posterUrl ?? null} title="" className="aspect-video w-28" />
+              <Thumb url={upload.video?.posterUrl ?? null} title="" className="aspect-video w-28" />
               <div className="min-w-0 flex-1 text-sm">
                 <p className="truncate font-medium text-rh-ink dark:text-white">{upload.name}</p>
                 <p className="text-xs text-neutral-600 dark:text-neutral-400">
-                  Uploaded · {formatLength(upload.video.durationSec)} · {formatBytes(upload.video.sizeBytes)}
+                  {upload.bunny ? 'Uploaded (protected)' : 'Uploaded'} · {formatLength(upload.video?.durationSec ?? upload.bunny?.durationSec ?? 0)} ·{' '}
+                  {formatBytes(upload.video?.sizeBytes ?? upload.bunny?.sizeBytes ?? 0)}
                 </p>
               </div>
               <button type="button" onClick={() => fileInput.current?.click()} className="shrink-0 text-xs font-medium text-rh-ink hover:underline dark:text-white">
@@ -850,7 +882,7 @@ function LessonDrawer({
                 <span className="text-sm font-medium text-rh-ink dark:text-white">
                   {lesson && !lesson.youtubeId ? 'Replace the video' : 'Choose a video or drop it here'}
                 </span>
-                <span className="text-xs text-neutral-500">MP4 · 100 MB max</span>
+                <span className="text-xs text-neutral-500">{protectedHosting ? 'MP4 · protected streaming' : 'MP4 · 100 MB max'}</span>
               </button>
             </>
           )}
@@ -888,16 +920,22 @@ function LessonDrawer({
 function PreviewDialog({ lesson, onClose }: { lesson: AdminVideoLesson | null; onClose: () => void }) {
   const getPlayback = useAction(videoApi.playback)
   const [url, setUrl] = useState<string | null>(null)
+  const [embedUrl, setEmbedUrl] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     setUrl(null)
+    setEmbedUrl(null)
     setError(null)
     // YouTube lessons play in YouTube's own player; uploads need a signed link
     if (!lesson || lesson.youtubeId) return
     let live = true
     getPlayback({ lessonId: lesson.id as LessonId })
-      .then((r) => live && setUrl(r.url))
+      .then((r) => {
+        if (!live) return
+        setUrl(r.url ?? null)
+        setEmbedUrl(r.embedUrl ?? null)
+      })
       .catch((err) => live && setError(errorMessage(err, 'Couldn’t load the video.')))
     return () => {
       live = false
@@ -919,6 +957,14 @@ function PreviewDialog({ lesson, onClose }: { lesson: AdminVideoLesson | null; o
               allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
               allowFullScreen
               className="h-full w-full"
+            />
+          ) : embedUrl ? (
+            <iframe
+              src={embedUrl}
+              title={lesson?.title ?? 'Lesson'}
+              allow="accelerometer; gyroscope; autoplay; encrypted-media; fullscreen"
+              allowFullScreen
+              className="h-full w-full border-0"
             />
           ) : url ? (
             <video src={url} poster={lesson?.posterUrl ?? undefined} controls autoPlay playsInline className="h-full w-full" />
@@ -1017,8 +1063,16 @@ function CourseManager({ course, onBack }: { course: AdminVideoCourse; onBack: (
                   <p className="text-xs text-neutral-500">
                     {lesson.youtubeId
                       ? [lesson.durationSec ? formatLength(lesson.durationSec) : null, 'YouTube'].filter(Boolean).join(' · ')
-                      : `${formatLength(lesson.durationSec)} · ${formatBytes(lesson.sizeBytes)}`}
+                      : `${formatLength(lesson.durationSec)} · ${formatBytes(lesson.sizeBytes)}${lesson.hosting === 'bunny' ? ' · Protected' : ''}`}
                   </p>
+                  {lesson.processing && (
+                    <p className="mt-0.5 inline-flex items-center gap-1 text-xs font-medium text-rh-amber">
+                      <Loader2 className="h-3 w-3 animate-spin" /> Preparing the stream. It plays once this finishes.
+                    </p>
+                  )}
+                  {lesson.failed && (
+                    <p className="mt-0.5 text-xs font-medium text-rose-600">This video couldn&apos;t be processed. Edit the lesson and upload it again.</p>
+                  )}
                 </div>
                 <div className="flex shrink-0 items-center gap-0.5">
                   <IconButton label="Move up" disabled={i === 0} onClick={() => moveLesson({ lessonId: lesson.id, direction: 'up' })}>

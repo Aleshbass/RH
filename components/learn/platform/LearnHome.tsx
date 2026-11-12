@@ -518,9 +518,8 @@ function HowItWorks() {
 function Team() {
   return (
     <section className="bg-white px-4 pb-16 sm:px-6 lg:pb-24">
-      <div className="mx-auto grid max-w-7xl gap-8 overflow-hidden rounded-[2rem] bg-rh-honeydew lg:grid-cols-[0.8fr_1.2fr]">
-        <Photo photo={LEARN_PHOTOS.mary} sizes="(min-width: 1024px) 480px, 100vw" className="aspect-[5/4] lg:aspect-auto lg:min-h-[26rem]" />
-        <FadeUp className="flex flex-col justify-center p-6 pb-10 sm:p-10 lg:py-14 lg:pl-4 lg:pr-14">
+      <FadeUp className="mx-auto grid max-w-7xl gap-8 border-t border-rh-ink/[0.08] pt-12 lg:grid-cols-[1.2fr_0.8fr] lg:items-end lg:gap-16 lg:pt-16">
+        <div>
           <h2 className={cn('text-[30px] leading-[1.1] tracking-tight text-rh-ink sm:text-[40px]', displayFont)}>Built by clinicians who treat patients</h2>
           <p className="mt-4 max-w-xl text-[16px] leading-relaxed text-rh-ink/65">
             Rehabify Learn courses come from the Rehabify clinical team: practical, case-based and made for the patients you see every week.
@@ -532,14 +531,18 @@ function Team() {
               <p className="text-sm text-rh-ink/60">BPT, MSc (Oxford) · Rehabify</p>
             </div>
           </div>
-          <p className="mt-8 text-sm text-rh-ink/65">
-            Want to teach on Rehabify Learn?{' '}
-            <a href="mailto:support@physioaroundme.com?subject=Teaching%20on%20Rehabify%20Learn" className="font-semibold text-rh-ink underline-offset-4 hover:underline">
-              Tell us about your course
-            </a>
-          </p>
-        </FadeUp>
-      </div>
+        </div>
+        <div className="rounded-[1.75rem] border border-rh-ink/10 p-6 sm:p-7">
+          <p className={cn('text-xl tracking-tight text-rh-ink', displayFont)}>Want to teach on Rehabify Learn?</p>
+          <p className="mt-2 text-[15px] leading-6 text-rh-ink/60">Physiotherapists with a course to share can teach here. Tell us what you&apos;d cover.</p>
+          <a
+            href="mailto:support@physioaroundme.com?subject=Teaching%20on%20Rehabify%20Learn"
+            className="mt-5 inline-flex items-center gap-1.5 text-sm font-semibold text-rh-ink hover:underline"
+          >
+            Tell us about your course <ArrowRight className="h-4 w-4" />
+          </a>
+        </div>
+      </FadeUp>
     </section>
   )
 }

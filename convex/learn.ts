@@ -30,6 +30,7 @@ import { appLink, publicAppUrl } from "./helpers/appUrl";
 import { LEARNER_ACCESS_DAYS, learnerAccessOpen, paidLearnRegistrations, verifiedIdentityEmail } from "./helpers/exerciseAccess";
 import { randomToken, sha256Hex } from "./helpers/exerciseCrypto";
 import { IMAGEKIT_URL, imagekitUploadAuth, removeImagekitFilesLater, signedImagekitUrl } from "./helpers/imagekit";
+import { bunnyConfig, bunnyEmbedUrl, bunnyUploadAuth, createBunnyVideo, deleteBunnyVideo, getBunnyVideo, isBunnyVideoId } from "./helpers/bunnyStream";
 import { lagosDateTime, lagosShortDate, lagosTime, zonedDateKey, zonedDateTimeToUtc, zonedTimeKey } from "./helpers/lagosTime";
 import { getViewer, requireAdmin } from "./helpers/partnerAccess";
 import { verifyPaystackSignature } from "./helpers/paystackSignature";
@@ -2344,6 +2345,11 @@ const COVER_FOLDER = "/learn/covers";
 // ImageKit's free plan caps a video file at 100 MB; the admin page checks this before uploading
 const MAX_VIDEO_BYTES = 100 * 1024 * 1024;
 const PLAYBACK_LINK_MS = 6 * HOUR_MS;
+// Bunny checks the token when the player opens, so a long lesson keeps playing after it expires
+const BUNNY_PLAYER_LINK_MS = 2 * HOUR_MS;
+
+/** A signed file link (ImageKit lessons) or a Bunny player link (protected lessons). */
+export type LessonPlayback = { url?: string; embedUrl?: string; expiresAt: number };
 
 const videoValidator = v.object({
   fileId: v.string(),
@@ -2364,7 +2370,20 @@ function lessonMedia(lesson: Doc<"learnVideoLessons">) {
   if (lesson.youtube) {
     return { durationSec: lesson.youtube.durationSec, posterUrl: lesson.youtube.thumbnailUrl, youtubeId: lesson.youtube.videoId };
   }
+  if (lesson.bunny) return { durationSec: lesson.bunny.durationSec, posterUrl: lesson.bunny.thumbnailUrl ?? null, youtubeId: null };
   return { durationSec: lesson.video?.durationSec ?? 0, posterUrl: lesson.video?.posterUrl ?? null, youtubeId: null };
+}
+
+/** Where a lesson's video lives: protected Bunny streaming, a private ImageKit file, or YouTube. */
+function lessonHosting(lesson: Doc<"learnVideoLessons">): "bunny" | "imagekit" | "youtube" {
+  return lesson.youtube ? "youtube" : lesson.bunny ? "bunny" : "imagekit";
+}
+
+/** Bunny videos to delete with a lesson or course. */
+const lessonBunnyIds = (lesson: Doc<"learnVideoLessons">) => (lesson.bunny ? [lesson.bunny.videoId] : []);
+
+async function removeBunnyVideosLater(ctx: MutationCtx, videoIds: string[]) {
+  if (videoIds.length) await ctx.scheduler.runAfter(0, internal.learn.deleteBunnyVideos, { videoIds });
 }
 
 /** The ImageKit files behind a lesson (none for YouTube lessons), for clean-up. */
@@ -2564,18 +2583,29 @@ export const lessonForPlayback = internalQuery({
     if (!lesson || !course || (course.status !== "published" && !learner.isAdmin)) {
       throw new ConvexError("This lesson isn't available.");
     }
+    if (lesson.bunny) {
+      if (lesson.bunny.failed) throw new ConvexError("This lesson's video couldn't be processed. Please let us know.");
+      if (!lesson.bunny.ready) throw new ConvexError("This lesson is still being prepared. Try again in a few minutes.");
+      return { kind: "bunny" as const, videoId: lesson.bunny.videoId };
+    }
     if (!lesson.video) throw new ConvexError("This lesson plays from YouTube.");
-    return { url: lesson.video.url, filePath: lesson.video.filePath };
+    return { kind: "file" as const, url: lesson.video.url, filePath: lesson.video.filePath };
   },
 });
 
 /** A playback link for one lesson, valid for a few hours. */
 export const getLessonPlayback = action({
   args: { lessonId: v.id("learnVideoLessons") },
-  handler: async (ctx, args): Promise<{ url: string; expiresAt: number }> => {
-    const lesson: { url: string; filePath: string } = await ctx.runQuery(internal.learn.lessonForPlayback, {
-      lessonId: args.lessonId,
-    });
+  handler: async (ctx, args): Promise<LessonPlayback> => {
+    const lesson: { kind: "bunny"; videoId: string } | { kind: "file"; url: string; filePath: string } = await ctx.runQuery(
+      internal.learn.lessonForPlayback,
+      { lessonId: args.lessonId }
+    );
+    // Protected lessons: a short-lived player link for Bunny's own player (no file to download)
+    if (lesson.kind === "bunny") {
+      const expiresAt = Date.now() + BUNNY_PLAYER_LINK_MS;
+      return { embedUrl: await bunnyEmbedUrl(lesson.videoId, Math.floor(expiresAt / 1000)), expiresAt };
+    }
     const expiresAt = Date.now() + PLAYBACK_LINK_MS;
     return { url: await signedImagekitUrl(lesson.url, lesson.filePath, expiresAt), expiresAt };
   },
@@ -2731,7 +2761,10 @@ export const adminVideoCourses = query({
           title: l.title,
           description: l.description ?? null,
           durationSec: lessonMedia(l).durationSec,
-          sizeBytes: l.video?.sizeBytes ?? 0,
+          sizeBytes: l.video?.sizeBytes ?? l.bunny?.sizeBytes ?? 0,
+          hosting: lessonHosting(l),
+          processing: Boolean(l.bunny && !l.bunny.ready && !l.bunny.failed),
+          failed: Boolean(l.bunny?.failed),
           posterUrl: lessonMedia(l).posterUrl,
           youtubeId: lessonMedia(l).youtubeId,
         })),
@@ -2877,6 +2910,7 @@ export const adminDeleteVideoCourse = mutation({
     for (const row of progress) await ctx.db.delete(row._id);
     await ctx.db.delete(course._id);
     await removeFilesLater(ctx, files);
+    await removeBunnyVideosLater(ctx, lessons.flatMap(lessonBunnyIds));
   },
 });
 
@@ -2902,15 +2936,23 @@ export const adminSaveVideoLesson = mutation({
     description: v.optional(v.string()),
     video: v.optional(videoValidator),
     youtube: v.optional(youtubeValidator),
+    // A protected upload: the Bunny video the browser just uploaded (adminStartBunnyUpload)
+    bunny: v.optional(v.object({ videoId: v.string(), sizeBytes: v.number(), durationSec: v.number() })),
   },
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<Id<"learnVideoLessons">> => {
     await requireAdmin(ctx);
     const course = await ctx.db.get(args.courseId);
     if (!course) throw new ConvexError("Course not found.");
     const title = clean(args.title, 140);
     if (!title) throw new ConvexError("Give the lesson a title.");
     const description = cleanText(args.description, 1500) || undefined;
-    if (args.video && args.youtube) throw new ConvexError("Choose either an uploaded video or a YouTube link, not both.");
+    if ([args.video, args.youtube, args.bunny].filter(Boolean).length > 1) {
+      throw new ConvexError("Choose one video for the lesson: an upload or a YouTube link.");
+    }
+    if (args.bunny && !isBunnyVideoId(args.bunny.videoId)) throw new ConvexError("That upload isn't a Bunny Stream video.");
+    const bunny = args.bunny
+      ? { videoId: args.bunny.videoId, sizeBytes: Math.max(0, args.bunny.sizeBytes), durationSec: Math.max(0, Math.round(args.bunny.durationSec)), ready: false }
+      : undefined;
     if (args.video) {
       assertImagekitUrl(args.video.url, "The video");
       assertImagekitUrl(args.video.posterUrl, "The poster");
@@ -2924,26 +2966,130 @@ export const adminSaveVideoLesson = mutation({
     if (args.lessonId) {
       const lesson = await ctx.db.get(args.lessonId);
       if (!lesson || lesson.courseId !== course._id) throw new ConvexError("Lesson not found.");
-      const media = args.video ? { video: args.video, youtube: undefined } : youtube ? { video: undefined, youtube } : {};
-      // A new upload, or a switch to YouTube, retires the old file
-      if (lesson.video && (youtube || (args.video && args.video.fileId !== lesson.video.fileId))) {
+      const media = args.video
+        ? { video: args.video, youtube: undefined, bunny: undefined }
+        : youtube
+          ? { video: undefined, youtube, bunny: undefined }
+          : bunny
+            ? { video: undefined, youtube: undefined, bunny }
+            : {};
+      // A new upload, or a switch to another source, retires the old file
+      const replaced = Boolean(args.video || youtube || bunny);
+      if (lesson.video && replaced && args.video?.fileId !== lesson.video.fileId) {
         await removeFilesLater(ctx, lessonFiles(lesson));
       }
+      if (lesson.bunny && replaced && bunny?.videoId !== lesson.bunny.videoId) {
+        await removeBunnyVideosLater(ctx, lessonBunnyIds(lesson));
+      }
       await ctx.db.patch(lesson._id, { title, description, ...media, updatedAt: now });
+      if (bunny && bunny.videoId !== lesson.bunny?.videoId) {
+        await ctx.scheduler.runAfter(BUNNY_CHECK_MS, internal.learn.refreshBunnyLesson, { lessonId: lesson._id, videoId: bunny.videoId, attempt: 1 });
+      }
       return lesson._id;
     }
 
-    if (!args.video && !youtube) throw new ConvexError("Upload the lesson video or paste a YouTube link.");
+    if (!args.video && !youtube && !bunny) throw new ConvexError("Upload the lesson video or paste a YouTube link.");
     const last = (await courseLessons(ctx, course._id)).reduce((max, l) => Math.max(max, l.order), 0);
-    return await ctx.db.insert("learnVideoLessons", {
+    const lessonId = await ctx.db.insert("learnVideoLessons", {
       courseId: course._id,
       order: last + 1,
       title,
       description,
-      ...(args.video ? { video: args.video } : { youtube }),
+      ...(args.video ? { video: args.video } : bunny ? { bunny } : { youtube }),
       createdAt: now,
       updatedAt: now,
     });
+    if (bunny) await ctx.scheduler.runAfter(BUNNY_CHECK_MS, internal.learn.refreshBunnyLesson, { lessonId, videoId: bunny.videoId, attempt: 1 });
+    return lessonId;
+  },
+});
+
+// ── Protected hosting (Bunny Stream) ─────────────────────────────────────────
+
+const BUNNY_CHECK_MS = 30 * 1000;
+const BUNNY_MAX_CHECKS = 80; // ~40 minutes of encoding before giving up
+const BUNNY_UPLOAD_AUTH_SEC = 6 * 60 * 60;
+
+/** Whether lesson uploads go to protected Bunny streaming (all four env vars set). */
+export const adminVideoHosting = query({
+  args: {},
+  handler: async (ctx) => {
+    await requireAdmin(ctx);
+    return { protected: bunnyConfig() !== null };
+  },
+});
+
+/** Creates the Bunny video and signs one browser upload to it (TUS). */
+export const adminStartBunnyUpload = action({
+  args: { title: v.string() },
+  handler: async (ctx, args): Promise<{ endpoint: string; libraryId: string; videoId: string; expires: number; signature: string }> => {
+    await ctx.runQuery(internal.learn.assertLearnAdmin, {});
+    const videoId = await createBunnyVideo(clean(args.title, 140));
+    return await bunnyUploadAuth(videoId, Math.floor(Date.now() / 1000) + BUNNY_UPLOAD_AUTH_SEC);
+  },
+});
+
+/** Polls Bunny until the lesson's video is encoded, then records its length and thumbnail. */
+export const refreshBunnyLesson = internalAction({
+  args: { lessonId: v.id("learnVideoLessons"), videoId: v.string(), attempt: v.number() },
+  handler: async (ctx, args): Promise<void> => {
+    let state: Awaited<ReturnType<typeof getBunnyVideo>> | undefined;
+    try {
+      state = await getBunnyVideo(args.videoId);
+    } catch (error) {
+      // A network or API hiccup: check again later rather than failing the lesson
+      console.warn("[learn] Bunny status check failed; retrying", error);
+    }
+    // null: Bunny no longer has the video
+    if (state !== undefined && (state === null || state.ready || state.failed)) {
+      await ctx.runMutation(internal.learn.setBunnyLessonState, {
+        lessonId: args.lessonId,
+        videoId: args.videoId,
+        ready: Boolean(state?.ready),
+        failed: !state?.ready,
+        durationSec: state?.durationSec,
+        thumbnailUrl: state?.thumbnailUrl ?? undefined,
+      });
+      return;
+    }
+    if (args.attempt >= BUNNY_MAX_CHECKS) {
+      await ctx.runMutation(internal.learn.setBunnyLessonState, { lessonId: args.lessonId, videoId: args.videoId, ready: false, failed: true });
+      return;
+    }
+    await ctx.scheduler.runAfter(BUNNY_CHECK_MS, internal.learn.refreshBunnyLesson, { ...args, attempt: args.attempt + 1 });
+  },
+});
+
+export const setBunnyLessonState = internalMutation({
+  args: {
+    lessonId: v.id("learnVideoLessons"),
+    videoId: v.string(),
+    ready: v.boolean(),
+    failed: v.boolean(),
+    durationSec: v.optional(v.number()),
+    thumbnailUrl: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const lesson = await ctx.db.get(args.lessonId);
+    // The lesson moved on to another video meanwhile
+    if (!lesson?.bunny || lesson.bunny.videoId !== args.videoId) return;
+    await ctx.db.patch(lesson._id, {
+      bunny: {
+        ...lesson.bunny,
+        ready: args.ready,
+        failed: args.failed || undefined,
+        durationSec: args.durationSec && args.durationSec > 0 ? args.durationSec : lesson.bunny.durationSec,
+        thumbnailUrl: args.thumbnailUrl ?? lesson.bunny.thumbnailUrl,
+      },
+      updatedAt: Date.now(),
+    });
+  },
+});
+
+export const deleteBunnyVideos = internalAction({
+  args: { videoIds: v.array(v.string()) },
+  handler: async (_ctx, args) => {
+    for (const videoId of args.videoIds) if (isBunnyVideoId(videoId)) await deleteBunnyVideo(videoId);
   },
 });
 
@@ -3055,6 +3201,7 @@ export const adminDeleteVideoLesson = mutation({
     }
     await ctx.db.delete(lesson._id);
     await removeFilesLater(ctx, lessonFiles(lesson));
+    await removeBunnyVideosLater(ctx, lessonBunnyIds(lesson));
   },
 });
 

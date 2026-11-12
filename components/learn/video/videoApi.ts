@@ -4,7 +4,13 @@
  */
 
 import { makeFunctionReference } from 'convex/server'
-import type { adminVideoCourses, getCourseCatalog, getCourseOfferPage, getVideoCourse, getVideoLibrary } from '@/convex/learn'
+import type { adminVideoCourses, getCourseCatalog, getCourseOfferPage, getVideoCourse, getVideoLibrary, LessonPlayback } from '@/convex/learn'
+import type { BunnyUploadAuth } from '@/lib/video/tusUpload'
+
+export type { LessonPlayback }
+
+/** A lesson video uploaded to Bunny Stream (protected streaming). */
+export type BunnyUpload = { videoId: string; sizeBytes: number; durationSec: number }
 import type { Id } from '@/convex/_generated/dataModel'
 import type { QueryResult } from '@/lib/convexUntyped'
 
@@ -40,7 +46,8 @@ export type UploadedVideo = {
 export const videoApi = {
   library: makeFunctionReference<'query', Record<string, never>, VideoLibrary>('learn:getVideoLibrary'),
   course: makeFunctionReference<'query', { courseId: CourseId }, VideoCourse | null>('learn:getVideoCourse'),
-  playback: makeFunctionReference<'action', { lessonId: LessonId }, { url: string; expiresAt: number }>('learn:getLessonPlayback'),
+  // A signed file link (`url`), or for protected lessons a Bunny player link (`embedUrl`)
+  playback: makeFunctionReference<'action', { lessonId: LessonId }, LessonPlayback>('learn:getLessonPlayback'),
   // Enrolment: the public catalogue, one course's page, a free enrol and Paystack for paid ones
   catalog: makeFunctionReference<'query', Record<string, never>, CourseOffer[]>('learn:getCourseCatalog'),
   offer: makeFunctionReference<'query', { courseId: string }, CourseOfferPage | null>('learn:getCourseOfferPage'),
@@ -90,9 +97,20 @@ export const videoApi = {
   deleteCourse: makeFunctionReference<'mutation', { courseId: CourseId }, null>('learn:adminDeleteVideoCourse'),
   saveLesson: makeFunctionReference<
     'mutation',
-    { courseId: CourseId; lessonId?: LessonId; title: string; description?: string; video?: UploadedVideo; youtube?: YoutubeVideo },
+    {
+      courseId: CourseId
+      lessonId?: LessonId
+      title: string
+      description?: string
+      video?: UploadedVideo
+      youtube?: YoutubeVideo
+      bunny?: BunnyUpload
+    },
     LessonId
   >('learn:adminSaveVideoLesson'),
+  // Protected hosting: whether uploads go to Bunny Stream, and one signed browser upload
+  hosting: makeFunctionReference<'query', Record<string, never>, { protected: boolean }>('learn:adminVideoHosting'),
+  startBunnyUpload: makeFunctionReference<'action', { title: string }, BunnyUploadAuth>('learn:adminStartBunnyUpload'),
   youtubeInfo: makeFunctionReference<'action', { link: string }, YoutubeInfo>('learn:adminYoutubeInfo'),
   createFromYoutube: makeFunctionReference<'mutation', { title: string; summary?: string; youtube: YoutubeVideo }, CourseId>(
     'learn:adminCreateCourseFromYoutube'

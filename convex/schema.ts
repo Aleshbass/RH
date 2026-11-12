@@ -5796,6 +5796,17 @@ export default defineSchema({
         thumbnailUrl: v.string(), // YouTube's own thumbnail (i.ytimg.com)
       })
     ),
+    // …or protected streaming on Bunny Stream (convex/helpers/bunnyStream.ts): no downloadable file
+    bunny: v.optional(
+      v.object({
+        videoId: v.string(),
+        sizeBytes: v.number(),
+        durationSec: v.number(), // read in the browser, then Bunny's once encoded
+        thumbnailUrl: v.optional(v.string()),
+        ready: v.boolean(), // encoded and playable
+        failed: v.optional(v.boolean()),
+      })
+    ),
     createdAt: v.number(),
     updatedAt: v.number(),
   }).index("by_course_order", ["courseId", "order"]),
