@@ -5,12 +5,7 @@
 
 import { makeFunctionReference } from 'convex/server'
 import type { adminVideoCourses, getCourseCatalog, getCourseOfferPage, getVideoCourse, getVideoLibrary, LessonPlayback } from '@/convex/learn'
-import type { BunnyUploadAuth } from '@/lib/video/tusUpload'
-
-export type { LessonPlayback }
-
-/** A lesson video uploaded to Bunny Stream (protected streaming). */
-export type BunnyUpload = { videoId: string; sizeBytes: number; durationSec: number }
+import type { adminVideoAssets, adminVideoSetup } from '@/convex/learnVideo'
 import type { Id } from '@/convex/_generated/dataModel'
 import type { QueryResult } from '@/lib/convexUntyped'
 
@@ -42,11 +37,31 @@ export type UploadedVideo = {
   posterFileId?: string
 }
 
+export type { LessonPlayback }
+export type VideoAssetId = Id<'learnVideoAssets'>
+export type VideoSetup = QueryResult<typeof adminVideoSetup>
+export type VideoAsset = QueryResult<typeof adminVideoAssets>[number]
+
+// Protected video (convex/learnVideo.ts): setup state, published videos and the browser upload to R2
+export const protectedVideoApi = {
+  setup: makeFunctionReference<'query', Record<string, never>, VideoSetup>('learnVideo:adminVideoSetup'),
+  assets: makeFunctionReference<'query', Record<string, never>, VideoAsset[]>('learnVideo:adminVideoAssets'),
+  startUpload: makeFunctionReference<
+    'action',
+    { title: string; fileName: string; contentType: string; sizeBytes: number },
+    { assetId: VideoAssetId; partBytes: number; parts: { partNumber: number; url: string }[] }
+  >('learnVideo:adminStartVideoUpload'),
+  finishUpload: makeFunctionReference<'action', { assetId: VideoAssetId; parts: { partNumber: number; etag: string }[] }, null>(
+    'learnVideo:adminFinishVideoUpload'
+  ),
+  abortUpload: makeFunctionReference<'action', { assetId: VideoAssetId }, null>('learnVideo:adminAbortVideoUpload'),
+}
+
 // Plain references: the generated `api` type is at TypeScript's depth limit (TS2589)
 export const videoApi = {
   library: makeFunctionReference<'query', Record<string, never>, VideoLibrary>('learn:getVideoLibrary'),
   course: makeFunctionReference<'query', { courseId: CourseId }, VideoCourse | null>('learn:getVideoCourse'),
-  // A signed file link (`url`), or for protected lessons a Bunny player link (`embedUrl`)
+  // A signed file link (older lessons, `url`) or a protected stream with its token (`hls`)
   playback: makeFunctionReference<'action', { lessonId: LessonId }, LessonPlayback>('learn:getLessonPlayback'),
   // Enrolment: the public catalogue, one course's page, a free enrol and Paystack for paid ones
   catalog: makeFunctionReference<'query', Record<string, never>, CourseOffer[]>('learn:getCourseCatalog'),
@@ -104,13 +119,10 @@ export const videoApi = {
       description?: string
       video?: UploadedVideo
       youtube?: YoutubeVideo
-      bunny?: BunnyUpload
+      hlsAssetId?: VideoAssetId
     },
     LessonId
   >('learn:adminSaveVideoLesson'),
-  // Protected hosting: whether uploads go to Bunny Stream, and one signed browser upload
-  hosting: makeFunctionReference<'query', Record<string, never>, { protected: boolean }>('learn:adminVideoHosting'),
-  startBunnyUpload: makeFunctionReference<'action', { title: string }, BunnyUploadAuth>('learn:adminStartBunnyUpload'),
   youtubeInfo: makeFunctionReference<'action', { link: string }, YoutubeInfo>('learn:adminYoutubeInfo'),
   createFromYoutube: makeFunctionReference<'mutation', { title: string; summary?: string; youtube: YoutubeVideo }, CourseId>(
     'learn:adminCreateCourseFromYoutube'

@@ -8,6 +8,7 @@ import {
 import { readResolvePhysiotherapist, readFindMatches, readAvailability, readBooking, operationalQuery, operationalMutation, upsertIntake, recordJourneyEvent, issueDashboardLink, placeForPin, programmeWatchLink } from "./joyGateway";
 import { rpc as partnerGatewayRpc } from "./partnerGateway";
 import { resendWebhook } from "./emailEvents";
+import { videoKey, videoMaster, videoMedia, videoPreflight, workerClaim, workerComplete, workerCreate, workerFail, workerUploadUrls } from "./learnVideo";
 
 const http = httpRouter();
 
@@ -68,6 +69,20 @@ http.route({ path: "/joy-read/resolve_physiotherapist", method: "POST", handler:
 http.route({ path: "/joy-read/find_matches", method: "POST", handler: readFindMatches });
 http.route({ path: "/joy-read/availability", method: "POST", handler: readAvailability });
 http.route({ path: "/joy-read/get_booking", method: "POST", handler: readBooking });
+
+// Rehabify Learn protected video (learnVideo.ts): playlists and key for players with a playback
+// token; the encoder / laptop script API with LEARN_VIDEO_WORKER_SECRET
+for (const path of ["/learn/video/master.m3u8", "/learn/video/media.m3u8", "/learn/video/key"]) {
+  http.route({ path, method: "OPTIONS", handler: videoPreflight });
+}
+http.route({ path: "/learn/video/master.m3u8", method: "GET", handler: videoMaster });
+http.route({ path: "/learn/video/media.m3u8", method: "GET", handler: videoMedia });
+http.route({ path: "/learn/video/key", method: "GET", handler: videoKey });
+http.route({ path: "/learn/video/worker/create", method: "POST", handler: workerCreate });
+http.route({ path: "/learn/video/worker/claim", method: "POST", handler: workerClaim });
+http.route({ path: "/learn/video/worker/upload-urls", method: "POST", handler: workerUploadUrls });
+http.route({ path: "/learn/video/worker/complete", method: "POST", handler: workerComplete });
+http.route({ path: "/learn/video/worker/fail", method: "POST", handler: workerFail });
 
 export default http;
 

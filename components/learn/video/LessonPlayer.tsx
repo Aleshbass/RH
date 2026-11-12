@@ -16,6 +16,7 @@ import type { Id } from '@/convex/_generated/dataModel'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
 import { displayFont, pillLime, pillOutline } from '../shared'
+import { ProtectedStream, type HlsStream } from './ProtectedStream'
 import { formatClock, formatLength, imagekitLoader, videoApi, type VideoCourse } from './videoApi'
 
 type LessonId = Id<'learnVideoLessons'>
@@ -211,110 +212,6 @@ function YoutubeFrame({
   return <div ref={host} className="h-full w-full [&_iframe]:h-full [&_iframe]:w-full" />
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Protected lessons: Bunny Stream's own player (no file to download), driven through the
-// player.js protocol so position, pause and end report like a <video>
-// ─────────────────────────────────────────────────────────────────────────────
-
-function BunnyFrame({
-  src,
-  title,
-  playerRef,
-  onReady,
-  onTick,
-  onPlay,
-  onPause,
-  onEnded,
-}: {
-  src: string
-  title: string
-  playerRef: RefObject<YouTubePlayer | null>
-  onReady: () => void
-  onTick: () => void
-  onPlay: () => void
-  onPause: () => void
-  onEnded: () => void
-}) {
-  const frame = useRef<HTMLIFrameElement>(null)
-  const handlers = useRef({ onReady, onTick, onPlay, onPause, onEnded })
-  useEffect(() => {
-    handlers.current = { onReady, onTick, onPlay, onPause, onEnded }
-  })
-
-  useEffect(() => {
-    const iframe = frame.current
-    if (!iframe) return
-    const origin = new URL(src).origin
-    const state = { seconds: 0, duration: 0, playing: false, ready: false }
-    const post = (method: string, value?: unknown) =>
-      iframe.contentWindow?.postMessage(
-        JSON.stringify({ context: 'player.js', version: '0.0.11', method, value, listener: typeof value === 'string' ? value : undefined }),
-        origin
-      )
-    // Same shape as the YouTube player, so the lesson logic treats both alike
-    playerRef.current = {
-      getCurrentTime: () => state.seconds,
-      getDuration: () => state.duration,
-      getPlayerState: () => (state.playing ? YT_PLAYING : YT_PAUSED),
-      seekTo: (seconds) => post('setCurrentTime', seconds),
-      playVideo: () => post('play'),
-      destroy: () => {},
-    }
-    const onMessage = (event: MessageEvent) => {
-      if (event.origin !== origin || event.source !== iframe.contentWindow) return
-      let data: { context?: string; event?: string; value?: { seconds?: number; duration?: number } } | null = null
-      try {
-        data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data
-      } catch {
-        return
-      }
-      if (data?.context !== 'player.js') return
-      switch (data.event) {
-        case 'ready':
-          if (state.ready) return
-          state.ready = true
-          for (const name of ['play', 'pause', 'ended', 'timeupdate']) post('addEventListener', name)
-          handlers.current.onReady()
-          break
-        case 'timeupdate':
-          state.seconds = Number(data.value?.seconds) || 0
-          state.duration = Number(data.value?.duration) || state.duration
-          handlers.current.onTick()
-          break
-        case 'play':
-          state.playing = true
-          handlers.current.onPlay()
-          break
-        case 'pause':
-          state.playing = false
-          handlers.current.onPause()
-          break
-        case 'ended':
-          state.playing = false
-          handlers.current.onEnded()
-          break
-      }
-    }
-    window.addEventListener('message', onMessage)
-    return () => {
-      window.removeEventListener('message', onMessage)
-      playerRef.current = null
-    }
-  }, [src, playerRef])
-
-  return (
-    <iframe
-      ref={frame}
-      src={src}
-      title={title}
-      allow="accelerometer; gyroscope; autoplay; encrypted-media; fullscreen"
-      allowFullScreen
-      referrerPolicy="strict-origin-when-cross-origin"
-      className="h-full w-full border-0"
-    />
-  )
-}
-
 /** Everything that belongs to one lesson; keyed by lesson so it starts fresh on every switch. */
 function Stage({
   course,
@@ -339,8 +236,9 @@ function Stage({
     course.progress.resume?.lessonId === lessonId && !lesson?.done ? course.progress.resume.positionSec : 0
   )
   const [source, setSource] = useState<string | null>(null)
-  // Protected lessons: Bunny's player link instead of a file
-  const [embed, setEmbed] = useState<string | null>(null)
+  // Protected lessons: an encrypted stream with a short-lived token (ProtectedStream)
+  const [stream, setStream] = useState<HlsStream | null>(null)
+  const frameRef = useRef<HTMLDivElement>(null)
   const [error, setError] = useState<string | null>(null)
   const [ended, setEnded] = useState(false)
   const [countdown, setCountdown] = useState<number | null>(null)
@@ -369,9 +267,9 @@ function Stage({
     // YouTube lessons need no link: YouTube's own player loads them
     if (youtubeId) return
     try {
-      const { url, embedUrl } = await getPlayback({ lessonId })
-      if (embedUrl) setEmbed(embedUrl)
-      else setSource(url ?? null)
+      const playback = await getPlayback({ lessonId })
+      if (playback.hls) setStream(playback.hls)
+      else setSource(playback.url ?? null)
     } catch (err) {
       setError(errorMessage(err, 'We couldn’t load this lesson. Please try again.'))
     }
@@ -471,7 +369,12 @@ function Stage({
   }
 
   // A link that expired mid-lesson (or a dropped connection): fetch a fresh one once and carry on
+  // Protected streams: a fresh token (Convex re-checks access each time)
+  const refreshStream = async () => (await getPlayback({ lessonId })).hls ?? null
+
   const onVideoError = () => {
+    // hls.js reports its own errors (ProtectedStream); this is for the older file links
+    if (stream) return
     if (retried.current) {
       setError('This lesson stopped playing. Check your connection and try again.')
       return
@@ -501,7 +404,10 @@ function Stage({
 
   return (
     <div className="min-w-0">
-      <div className="relative aspect-video overflow-hidden rounded-[1.5rem] bg-rh-ink shadow-soft sm:rounded-[1.75rem]">
+      <div
+        ref={frameRef}
+        className="relative aspect-video overflow-hidden rounded-[1.5rem] bg-rh-ink shadow-soft sm:rounded-[1.75rem] [&:fullscreen]:rounded-none [&:fullscreen_video]:h-full"
+      >
         {youtubeId && !error ? (
           <YoutubeFrame
             key={ytAttempt}
@@ -514,22 +420,11 @@ function Stage({
             onEnded={onEnded}
             onError={setError}
           />
-        ) : embed && !error ? (
-          <BunnyFrame
-            key={embed}
-            src={embed}
-            title={lesson.title}
-            playerRef={ytRef}
-            onReady={restore}
-            onTick={tick}
-            onPlay={onPlay}
-            onPause={() => !markedDone.current && save(false)}
-            onEnded={onEnded}
-          />
-        ) : source ? (
+        ) : (source || stream) && !error ? (
           <video
             ref={videoRef}
-            src={source}
+            src={source ?? undefined}
+            disablePictureInPicture
             poster={lesson.posterUrl ?? undefined}
             controls
             autoPlay
@@ -563,6 +458,17 @@ function Stage({
               </div>
             )}
           </>
+        )}
+
+        {stream && !error && (
+          <ProtectedStream
+            stream={stream}
+            videoRef={videoRef}
+            frameRef={frameRef}
+            refresh={refreshStream}
+            onFatal={setError}
+            onTamper={() => setError('Playback paused: the name on the video was hidden. Reload the lesson to keep watching.')}
+          />
         )}
 
         {resumedChip && (

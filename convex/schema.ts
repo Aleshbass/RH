@@ -5796,20 +5796,62 @@ export default defineSchema({
         thumbnailUrl: v.string(), // YouTube's own thumbnail (i.ytimg.com)
       })
     ),
-    // …or protected streaming on Bunny Stream (convex/helpers/bunnyStream.ts): no downloadable file
-    bunny: v.optional(
+    // …or a protected video: encrypted HLS in the private R2 bucket (learnVideoAssets, learnVideo.ts)
+    hls: v.optional(
       v.object({
-        videoId: v.string(),
-        sizeBytes: v.number(),
-        durationSec: v.number(), // read in the browser, then Bunny's once encoded
-        thumbnailUrl: v.optional(v.string()),
-        ready: v.boolean(), // encoded and playable
+        assetId: v.id("learnVideoAssets"),
+        durationSec: v.number(),
+        posterUrl: v.optional(v.string()),
+        ready: v.boolean(),
         failed: v.optional(v.boolean()),
       })
     ),
     createdAt: v.number(),
     updatedAt: v.number(),
   }).index("by_course_order", ["courseId", "order"]),
+
+  // A protected lesson video (Nov 2026): AES-128 encrypted HLS (480p + 720p) in the private R2
+  // bucket under `path`. The key is derived from LEARN_VIDEO_MASTER_KEY and `keyId` (never stored).
+  // Made by the encoder (browser upload) or the laptop script (npm run video:publish).
+  learnVideoAssets: defineTable({
+    title: v.string(),
+    lessonId: v.optional(v.id("learnVideoLessons")), // the lesson it plays in
+    status: v.union(
+      v.literal("uploading"), // browser upload to R2 in progress
+      v.literal("queued"), // source uploaded, waiting for the encoder
+      v.literal("encoding"),
+      v.literal("ready"),
+      v.literal("failed")
+    ),
+    path: v.string(), // "videos/<assetId>/" in R2
+    keyId: v.string(),
+    source: v.union(v.literal("upload"), v.literal("script")),
+    sourceKey: v.optional(v.string()), // the raw upload in R2 (incoming/…), deleted once encoded
+    sourceBytes: v.optional(v.number()),
+    uploadId: v.optional(v.string()), // R2 multipart upload in progress
+    renditions: v.optional(v.array(v.object({ name: v.string(), width: v.number(), height: v.number(), bandwidth: v.number() }))),
+    // Each rendition's encrypted-HLS playlist (segment names only), served with signed links
+    playlists: v.optional(v.array(v.object({ name: v.string(), body: v.string() }))),
+    durationSec: v.optional(v.number()),
+    posterStorageId: v.optional(v.id("_storage")),
+    posterUrl: v.optional(v.string()),
+    claimedAt: v.optional(v.number()), // encoder started (a stuck job is re-queued)
+    attempts: v.optional(v.number()),
+    error: v.optional(v.string()),
+    createdBy: v.optional(v.id("users")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    readyAt: v.optional(v.number()),
+  })
+    .index("by_status", ["status", "createdAt"])
+    .index("by_lesson", ["lessonId"]),
+
+  // Fixed-window counters for protected video (playback tokens, keys, playlists) per user.
+  learnVideoRateLimits: defineTable({
+    key: v.string(), // "<kind>:<userId>"
+    windowStart: v.number(),
+    count: v.number(),
+  }).index("by_key", ["key"]),
 
   // One row per learner per course, keyed by the email of their paid registration
   learnVideoProgress: defineTable({
