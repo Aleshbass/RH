@@ -14,10 +14,11 @@ export const MARKETING_VIDEOS = {
   launchFilm: "https://res.cloudinary.com/dubeogufg/video/upload/Rehabify_Launch_Film_16x9_t6cbda.mp4",
   /**
    * Physio portal "How inviting works" (Patients page, Your patient link card): add a patient,
-   * send their link on WhatsApp, they join with a PIN. Hosted on ImageKit, 16:9 and 9:16 cuts.
+   * send their link on WhatsApp, they join with a PIN. 16:9 and 9:16 cuts, played as uploaded
+   * (already web-ready H.264), so they use no Cloudinary transformation credits.
    */
-  patientInvites: "https://ik.imagekit.io/benqpjfyv/marketing/demos/rehabify-patient-invites-landscape.mp4",
-  patientInvitesVertical: "https://ik.imagekit.io/benqpjfyv/marketing/demos/rehabify-patient-invites-vertical.mp4",
+  patientInvites: "https://res.cloudinary.com/dubeogufg/video/upload/marketing/demos/rehabify-patient-invites-landscape.mp4",
+  patientInvitesVertical: "https://res.cloudinary.com/dubeogufg/video/upload/marketing/demos/rehabify-patient-invites-vertical.mp4",
 } as const;
 
 const UPLOAD = "/video/upload/";

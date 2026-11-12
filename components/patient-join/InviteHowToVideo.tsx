@@ -1,13 +1,22 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { PlayCircle } from '@/components/icons'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { MARKETING_VIDEOS } from '@/lib/marketingVideos'
 import { cn } from '@/lib/utils'
 
-/** ImageKit makes a still from the video: the title card, a few seconds in. */
-const poster = (url: string) => `${url}/ik-thumbnail.jpg?tr=so-3`
+const PHONE = '(max-width: 640px)'
+
+/**
+ * Played exactly as uploaded to Cloudinary (no f_auto/q_auto): the MP4s are already web-ready, and
+ * re-encoding would spend the free plan's monthly credits. Posters are the title card of each cut,
+ * served from the site.
+ */
+const FILMS = {
+  landscape: { url: MARKETING_VIDEOS.patientInvites, poster: '/media/patient-invites-landscape.webp', length: '1:37' },
+  vertical: { url: MARKETING_VIDEOS.patientInvitesVertical, poster: '/media/patient-invites-vertical.webp', length: '1:44' },
+}
 
 /**
  * "How inviting works": the 1½-minute film of adding a patient, sending their link on WhatsApp and
@@ -16,14 +25,15 @@ const poster = (url: string) => `${url}/ik-thumbnail.jpg?tr=so-3`
 export function InviteHowToVideo({ className, label = 'How inviting works' }: { className?: string; label?: string }) {
   const [open, setOpen] = useState(false)
   const [vertical, setVertical] = useState(false)
-  const url = vertical ? MARKETING_VIDEOS.patientInvitesVertical : MARKETING_VIDEOS.patientInvites
+  useEffect(() => setVertical(window.matchMedia(PHONE).matches), [])
+  const film = vertical ? FILMS.vertical : FILMS.landscape
 
   return (
     <>
       <button
         type="button"
         onClick={() => {
-          setVertical(typeof window !== 'undefined' && window.matchMedia('(max-width: 640px)').matches)
+          setVertical(window.matchMedia(PHONE).matches)
           setOpen(true)
         }}
         className={cn(
@@ -33,7 +43,7 @@ export function InviteHowToVideo({ className, label = 'How inviting works' }: { 
       >
         <PlayCircle className="h-4 w-4 text-rh-lime-deep dark:text-rh-lime" />
         {label}
-        <span className="font-normal text-neutral-500 dark:text-neutral-400">· 1:37</span>
+        <span className="font-normal text-neutral-500 dark:text-neutral-400">· {film.length}</span>
       </button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent
@@ -50,9 +60,9 @@ export function InviteHowToVideo({ className, label = 'How inviting works' }: { 
           </DialogHeader>
           {open && (
             <video
-              key={url}
-              src={url}
-              poster={poster(url)}
+              key={film.url}
+              src={film.url}
+              poster={film.poster}
               controls
               autoPlay
               playsInline

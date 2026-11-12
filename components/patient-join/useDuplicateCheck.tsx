@@ -47,7 +47,7 @@ export function DuplicateHint({ duplicate, onUse, actionLabel = 'Send their link
           <div className="mt-2 flex items-center gap-3 rounded-2xl bg-amber-50 px-3.5 py-3 text-amber-900 ring-1 ring-inset ring-amber-200 dark:bg-amber-500/10 dark:text-amber-200 dark:ring-amber-500/30">
             <Users className="h-4 w-4 shrink-0" />
             <div className="min-w-0 flex-1 text-sm">
-              <p className="truncate font-semibold">{duplicate.name} is already on your list</p>
+              <p className="font-semibold leading-snug [overflow-wrap:anywhere]">{duplicate.name} is already on your list</p>
               <p className="text-xs opacity-80">
                 {duplicate.patientNumber ? `${duplicate.patientNumber} · ` : ''}
                 {JOIN_STATUS_LABELS[duplicate.join.status]}
