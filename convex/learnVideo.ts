@@ -721,7 +721,7 @@ export const workerComplete = httpAction(async (ctx, request) => {
 
 export const normaliseStorageId = internalQuery({
   args: { id: v.string() },
-  handler: async (ctx, args) => ctx.db.normalizeId("_storage", args.id),
+  handler: async (ctx, args) => ctx.db.system.normalizeId("_storage", args.id),
 });
 
 export const workerFail = httpAction(async (ctx, request) => {
