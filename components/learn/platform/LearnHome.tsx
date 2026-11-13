@@ -42,6 +42,7 @@ import { CourseCard, CourseCardSkeleton, CoverImage, programItem, useCatalog, ty
 import { TagBadge, useLearnerIdentity } from './identity'
 import { learnPath, learnSignUpHref, mainSiteUrl, MSK_PROGRAM_PATH, MY_LEARNING_PATH, WELCOME_PATH } from './learnApi'
 import { imagekitPhotoLoader, LEARN_PHOTOS, type LearnPhoto } from './media'
+import { LearnTogether } from '../social/LearnTogether'
 
 const CATEGORY_ICON: Record<CourseCategory, ComponentType<{ className?: string }>> = {
   msk: Bone,
@@ -672,6 +673,7 @@ export function LearnHome({ initialCohort }: { initialCohort?: PublicCohort | nu
       <CourseRow items={items} />
       <FeaturedProgram cohort={cohort} />
       <Audiences />
+      <LearnTogether />
       <HowItWorks />
       <Team />
       <VerifyBand />

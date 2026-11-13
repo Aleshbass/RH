@@ -8,6 +8,7 @@ import { communityTables } from "./schema/community";
 import { offlineTables } from "./schema/offline";
 import { scribeTables } from "./schema/scribe";
 import { blogTables } from "./schema/blog";
+import { learnSocialTables } from "./schema/learnSocial";
 import { measureValidator } from "./helpers/clinicalMeasures";
 import { goalMeasureValidator } from "./helpers/goalMeasures";
 import { reportSnapshotValidator } from "./helpers/progressReport";
@@ -4527,6 +4528,7 @@ export default defineSchema({
 
   // Blog posts, authors, categories and media (schema/blog.ts)
   ...blogTables,
+  ...learnSocialTables,
 
   partnershipInquiries: defineTable({
     // "demo" = Book a demo on the partners page; missing on older rows, which are partnership inquiries

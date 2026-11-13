@@ -36,8 +36,15 @@ function Frame({ children }: { children: React.ReactNode }) {
   return <main className="mx-auto w-full max-w-2xl px-4 pb-20 pt-10 sm:px-6 sm:pt-16">{children}</main>
 }
 
+/** Where the person was going before the welcome step (a Learn path only). */
+function useNextPath() {
+  const next = useSearchParams().get('next')
+  return next && next.startsWith('/') && !next.startsWith('//') && !next.startsWith('/\\') ? next : null
+}
+
 function Done({ identity }: { identity: SignedInLearner }) {
   const student = identity.profile?.kind === 'student'
+  const next = useNextPath()
   return (
     <Frame>
       <div className="rounded-[2rem] bg-rh-cream p-7 text-center sm:p-10">
@@ -61,9 +68,15 @@ function Done({ identity }: { identity: SignedInLearner }) {
                 : 'Your account is ready.'}
         </p>
         <div className="mt-7 flex flex-col justify-center gap-3 sm:flex-row">
-          <Link href={student ? `${learnPath('/courses')}?category=students` : learnPath('/courses')} className={cn(pillInk, 'h-12 px-7')}>
-            {student ? 'Courses for students' : 'Browse courses'} <ArrowRight className="h-4 w-4" />
-          </Link>
+          {next ? (
+            <Link href={next} className={cn(pillInk, 'h-12 px-7')}>
+              Continue <ArrowRight className="h-4 w-4" />
+            </Link>
+          ) : (
+            <Link href={student ? `${learnPath('/courses')}?category=students` : learnPath('/courses')} className={cn(pillInk, 'h-12 px-7')}>
+              {student ? 'Courses for students' : 'Browse courses'} <ArrowRight className="h-4 w-4" />
+            </Link>
+          )}
           {identity.profile && (
             <Link href={`${WELCOME_PATH}?edit=1`} className={cn(pillOutline, 'h-12 px-7')}>
               Edit my details

@@ -3803,3 +3803,45 @@ export const saveLearnerProfile = mutation({
     return await ctx.db.insert("learnProfiles", { userId: user._id, kind: args.kind, ...fields, createdAt: now, updatedAt: now });
   },
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Shared with Learn community and Spaces (learnCommunity.ts, learnSpaces.ts)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const CLINICAL_LEARN_ROLES = new Set(["physiotherapist", "clinic_owner", "clinic_staff", "doctor", "admin", "learn_instructor"]);
+
+/**
+ * Someone who belongs on Learn's community and Spaces: Rehabify clinicians, the team, and anyone
+ * who has told Learn who they are (students and other learners). Patients without a learner
+ * profile are not.
+ */
+export async function learnMemberInfo(ctx: Ctx, user: Doc<"users"> | null) {
+  if (!user || user.deletedAt) return null;
+  const profile = await learnProfileFor(ctx, user._id);
+  if (!profile && !CLINICAL_LEARN_ROLES.has(user.role ?? "")) return null;
+  const tag = await learnerTag(ctx, user, profile);
+  const name = [user.firstName, user.lastName].filter(Boolean).join(" ").trim() || "Rehabify learner";
+  return {
+    user,
+    name,
+    imageUrl: user.imageUrl ?? null,
+    tag,
+    isAdmin: user.role === "admin",
+    isRehabifyPhysio: user.role === "physiotherapist" && (await isRehabifyPhysio(ctx, user)),
+    isStudent: profile?.kind === "student",
+  };
+}
+
+export type LearnMemberInfo = NonNullable<Awaited<ReturnType<typeof learnMemberInfo>>>;
+
+/** Whether this user may watch this video course (enrolled, an MSK seat for MSK courses, or admin). */
+export async function canUserWatchCourse(ctx: Ctx, user: Doc<"users">, course: Doc<"learnVideoCourses">) {
+  const viewer = await viewerFromUser(ctx, user, user.email?.toLowerCase().trim() ?? null, user.role === "admin");
+  return Boolean(viewer && (await canWatchCourse(ctx, viewer, course)));
+}
+
+/** Holds an open MSK Specialist Program seat (the program's community room). */
+export async function isMskProgramLearner(ctx: Ctx, user: Doc<"users">) {
+  const viewer = await viewerFromUser(ctx, user, user.email?.toLowerCase().trim() ?? null, user.role === "admin");
+  return Boolean(viewer?.isMskLearner || user.role === "admin");
+}

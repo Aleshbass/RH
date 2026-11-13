@@ -12,6 +12,7 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useClerk, useUser } from '@clerk/nextjs'
+import { useQuery } from 'convex/react'
 import {
   ArrowRight,
   ArrowUpRight,
@@ -21,6 +22,8 @@ import {
   LayoutDashboard,
   LogOut,
   Menu,
+  MessageCircle,
+  Radio,
   Search,
   Stethoscope,
   UserCog,
@@ -40,6 +43,7 @@ import {
   WELCOME_PATH,
   type SignedInLearner,
 } from './learnApi'
+import { COMMUNITY_PATH, SPACES_PATH, spacesApi } from '../social/socialApi'
 
 const SUPPORT_EMAIL = 'support@physioaroundme.com'
 
@@ -288,6 +292,7 @@ const PANEL_EASE = [0.32, 0.72, 0, 1] as const
 /** The phone menu: a panel that slides in over a soft backdrop, its sections easing in one after another. */
 function MobileMenu({ open, onClose }: { open: boolean; onClose: () => void }) {
   const identity = useLearnerIdentity()
+  const spaceLive = useSpaceLive()
   const reduce = useReducedMotion()
   const pathname = usePathname()
   const closeRef = useRef<HTMLButtonElement>(null)
@@ -396,6 +401,14 @@ function MobileMenu({ open, onClose }: { open: boolean; onClose: () => void }) {
                   ))}
                 </div>
               </motion.div>
+              <motion.div variants={section} className="mt-5 grid grid-cols-2 gap-2">
+                <Link href={COMMUNITY_PATH} onClick={onClose} className="flex items-center gap-2.5 rounded-2xl bg-rh-cream px-4 py-3.5 text-[15px] font-semibold text-rh-ink active:scale-[0.98]">
+                  <MessageCircle className="h-4 w-4" /> Community
+                </Link>
+                <Link href={SPACES_PATH} onClick={onClose} className="flex items-center gap-2.5 rounded-2xl bg-rh-cream px-4 py-3.5 text-[15px] font-semibold text-rh-ink active:scale-[0.98]">
+                  <Radio className="h-4 w-4" /> Spaces {spaceLive && <LiveDot />}
+                </Link>
+              </motion.div>
               <motion.div variants={section} className="mt-5 flex flex-col gap-1 border-t border-rh-ink/[0.07] pt-5">
                 <Link href={learnPath('/courses')} onClick={onClose} className="py-2 text-[15px] font-semibold text-rh-ink">
                   All courses
@@ -422,7 +435,40 @@ function MobileMenu({ open, onClose }: { open: boolean; onClose: () => void }) {
   )
 }
 
+/** Lime dot while a Space is live. */
+function useSpaceLive() {
+  const spaces = useQuery(spacesApi.list, {})
+  return Boolean(spaces?.live.length)
+}
+
+function LiveDot() {
+  return (
+    <span className="relative flex h-2 w-2" aria-label="A Space is live">
+      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-rh-lime opacity-60" />
+      <span className="relative inline-flex h-2 w-2 rounded-full bg-rh-lime" />
+    </span>
+  )
+}
+
+function NavLink({ href, children }: { href: string; children: ReactNode }) {
+  const pathname = usePathname() ?? ''
+  const active = pathname === href || pathname.startsWith(`${href}/`) || pathname === `/learn${href}` || pathname.startsWith(`/learn${href}/`)
+  return (
+    <Link
+      href={href}
+      aria-current={active ? 'page' : undefined}
+      className={cn(
+        'inline-flex h-10 items-center gap-2 rounded-full px-3.5 text-sm font-semibold text-rh-ink transition hover:bg-rh-ink/[0.05]',
+        active && 'bg-rh-ink/[0.06]'
+      )}
+    >
+      {children}
+    </Link>
+  )
+}
+
 export function LearnHeader() {
+  const spaceLive = useSpaceLive()
   const [menuOpen, setMenuOpen] = useState(false)
   const closeMenu = useCallback(() => setMenuOpen(false), [])
   return (
@@ -431,9 +477,10 @@ export function LearnHeader() {
         <Logo />
         <nav className="ml-3 hidden items-center lg:flex" aria-label="Learn">
           <ExploreMenu />
-          <Link href={`${learnPath('/courses')}?type=live`} className="inline-flex h-10 items-center rounded-full px-3.5 text-sm font-semibold text-rh-ink transition hover:bg-rh-ink/[0.05]">
-            Live programs
-          </Link>
+          <NavLink href={COMMUNITY_PATH}>Community</NavLink>
+          <NavLink href={SPACES_PATH}>
+            Spaces {spaceLive && <LiveDot />}
+          </NavLink>
         </nav>
         <SearchBox className="mx-auto hidden w-full max-w-md md:block" />
         <div className="ml-auto flex items-center gap-1 md:ml-0">
@@ -464,6 +511,8 @@ export function LearnFooter() {
         { label: 'All courses', href: learnPath('/courses') },
         { label: 'Live programs', href: `${learnPath('/courses')}?type=live` },
         { label: 'Free courses', href: `${learnPath('/courses')}?type=free` },
+        { label: 'Community', href: COMMUNITY_PATH },
+        { label: 'Spaces', href: SPACES_PATH },
         { label: 'My learning', href: MY_LEARNING_PATH },
       ],
     },

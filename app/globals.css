@@ -469,3 +469,58 @@ html.learn-theme-fade * {
     border-color 0.4s ease,
     fill 0.4s ease !important;
 }
+
+/* ── Rehabify Spaces: live voice rings and equaliser (components/learn/spaces/voiceMeter.ts
+   writes --v and --b0..--b3 every frame; the smoothing happens there, so no transitions here) ── */
+.space-voice {
+  --v: 0;
+  --b0: 0;
+  --b1: 0;
+  --b2: 0;
+  --b3: 0;
+}
+.space-voice .space-ring-inner {
+  transform: scale(calc(1 + var(--v) * 0.14));
+  opacity: calc(var(--v) * 1.8);
+  will-change: transform, opacity;
+}
+.space-voice .space-ring-outer {
+  transform: scale(calc(1.02 + var(--v) * 0.32));
+  opacity: calc(var(--v) * 0.7);
+  will-change: transform, opacity;
+}
+.space-voice .space-avatar {
+  transform: scale(calc(1 + var(--v) * 0.035));
+}
+.space-eq {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 12px;
+}
+.space-eq > span {
+  display: block;
+  width: 3px;
+  height: 100%;
+  border-radius: 999px;
+  background: currentColor;
+  transform-origin: center;
+  will-change: transform;
+}
+.space-eq > span:nth-child(1) { transform: scaleY(calc(0.2 + var(--b0) * 0.8)); }
+.space-eq > span:nth-child(2) { transform: scaleY(calc(0.2 + var(--b1) * 0.8)); }
+.space-eq > span:nth-child(3) { transform: scaleY(calc(0.2 + var(--b2) * 0.8)); }
+.space-eq > span:nth-child(4) { transform: scaleY(calc(0.2 + var(--b3) * 0.8)); }
+/* The LIVE badge's own little equaliser, for cards where no audio is playing */
+@keyframes space-live-bar {
+  0%, 100% { transform: scaleY(0.3); }
+  50% { transform: scaleY(1); }
+}
+.space-live-eq > span { animation: space-live-bar 0.9s ease-in-out infinite; }
+.space-live-eq > span:nth-child(2) { animation-delay: -0.3s; animation-duration: 0.7s; }
+.space-live-eq > span:nth-child(3) { animation-delay: -0.55s; animation-duration: 1.05s; }
+.space-live-eq > span:nth-child(4) { animation-delay: -0.15s; animation-duration: 0.8s; }
+@media (prefers-reduced-motion: reduce) {
+  .space-live-eq > span { animation: none; transform: scaleY(0.6); }
+  .space-voice .space-ring-outer { display: none; }
+}

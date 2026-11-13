@@ -31,7 +31,7 @@ import {
   faEllipsis, faEllipsisVertical, faEnvelope, faExpand, faEye, faEyeSlash, faFaceFrown,
   faFaceMeh, faFaceSmile, faFile, faFileCircleCheck, faFileLines, faFileMedical,
   faFileSignature, faFilter, faFire, faFlag, faFlask, faFloppyDisk, faFolderOpen, faGaugeSimple,
-  faGear, faGlobe, faGraduationCap, faHandHoldingHeart, faHandshake, faHashtag, faHeadphones,
+  faGear, faGlobe, faGraduationCap, faHand, faHandHoldingHeart, faHandshake, faHashtag, faHeadphones,
   faHeart, faHeartPulse, faHourglassHalf, faHouse, faImage, faInbox, faKey, faLandmark,
   faLanguage, faLaptop, faLayerGroup, faLightbulb, faLink, faLinkSlash, faList, faListCheck,
   faLocationCrosshairs, faLocationDot, faLock, faMagnifyingGlass, faMap, faMapLocationDot,
@@ -207,6 +207,7 @@ export const Footprints = /*#__PURE__*/ createIcon('Footprints', faShoePrints)
 export const Frown = /*#__PURE__*/ createIcon('Frown', faFaceFrown)
 export const Globe = /*#__PURE__*/ createIcon('Globe', faGlobe)
 export const GraduationCap = /*#__PURE__*/ createIcon('GraduationCap', faGraduationCap)
+export const Hand = /*#__PURE__*/ createIcon('Hand', faHand)
 export const HandHeart = /*#__PURE__*/ createIcon('HandHeart', faHandHoldingHeart)
 export const Handshake = /*#__PURE__*/ createIcon('Handshake', faHandshake)
 export const Hash = /*#__PURE__*/ createIcon('Hash', faHashtag)
