@@ -37,6 +37,9 @@ export function Avatar({
   )
 }
 
+/** A fixed dark tint. Not bg-black: Learn's dark mode turns the "black" token white, which flashed. */
+const BACKDROP = 'bg-[rgb(3_8_7/0.5)]'
+
 /**
  * A panel that slides up from the bottom on phones and sits in the middle on larger screens.
  * Escape and the backdrop close it; the page behind doesn't scroll.
@@ -58,20 +61,36 @@ export function Sheet({
 }) {
   const reduce = useReducedMotion()
   const panel = useRef<HTMLDivElement>(null)
+  // Parents pass a new onClose on every render (live data updates); keep the latest without
+  // re-running the open effect, which would unlock/relock scrolling and re-focus (a flicker)
+  const closeRef = useRef(onClose)
+  closeRef.current = onClose
 
   useEffect(() => {
     if (!open) return
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
-    const overflow = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && closeRef.current()
+    const body = document.body
+    const before = { overflow: body.style.overflow, paddingRight: body.style.paddingRight }
+    // Hiding the scrollbar would shift the page sideways: pad by its width instead
+    const scrollbar = window.innerWidth - document.documentElement.clientWidth
+    body.style.overflow = 'hidden'
+    if (scrollbar > 0) body.style.paddingRight = `${scrollbar}px`
     window.addEventListener('keydown', onKey)
-    const focus = window.setTimeout(() => panel.current?.querySelector<HTMLElement>('input, textarea, select, button[data-autofocus]')?.focus(), 60)
+    // Focus the first field with a keyboard and mouse; on phones that would pop the keyboard mid-animation
+    const finePointer = window.matchMedia('(pointer: fine)').matches
+    const focus = finePointer
+      ? window.setTimeout(
+          () => panel.current?.querySelector<HTMLElement>('[data-autofocus], input:not([type=hidden]), textarea')?.focus({ preventScroll: true }),
+          280
+        )
+      : 0
     return () => {
-      document.body.style.overflow = overflow
+      body.style.overflow = before.overflow
+      body.style.paddingRight = before.paddingRight
       window.removeEventListener('keydown', onKey)
       window.clearTimeout(focus)
     }
-  }, [open, onClose])
+  }, [open])
 
   return (
     <AnimatePresence>
@@ -81,11 +100,11 @@ export function Sheet({
             type="button"
             aria-label="Close"
             onClick={onClose}
-            className="absolute inset-0 cursor-default bg-black/45 backdrop-blur-[2px]"
+            className={cn('absolute inset-0 cursor-default', BACKDROP)}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
+            transition={{ duration: 0.22, ease: 'easeOut' }}
           />
           <motion.div
             ref={panel}
