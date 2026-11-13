@@ -23,11 +23,21 @@ import {
   Plus,
   Send,
   Trash2,
-  UploadCloud,
   X,
 } from '@/components/icons'
 import { useConsoleRole } from '@/components/admin/shell/consoleRole'
 import { VideoUploadGuideButton } from '@/components/admin/learn/VideoUploadGuide'
+import {
+  LessonVideoChip,
+  peekVideo,
+  PublishedPicker,
+  SetupNotice,
+  UploadDropzone,
+  UploadedCard,
+  UploadFailedCard,
+  UploadProgressCard,
+  type FileFacts,
+} from '@/components/admin/learn/ProtectedUpload'
 import type { Id } from '@/convex/_generated/dataModel'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -51,7 +61,6 @@ import {
   formatBytes,
   formatLength,
   imagekitLoader,
-  inspectVideo,
   protectedVideoApi,
   uploadToImagekit,
   videoApi,
@@ -305,6 +314,29 @@ function CourseForm({
   const [instructorTitle, setInstructorTitle] = useState(course?.instructor?.title ?? '')
   const [instructorPhotoUrl, setInstructorPhotoUrl] = useState(course?.instructor?.photoUrl ?? '')
 
+  // The teacher's photo is uploaded (public, small), never pasted as a link
+  const [photoUploading, setPhotoUploading] = useState(false)
+  const photoInput = useRef<HTMLInputElement>(null)
+  const pickTeacherPhoto = async (file: File | undefined) => {
+    if (!file) return
+    if (!file.type.startsWith('image/')) {
+      toast.error('Choose a photo (JPG, PNG or WebP).')
+      return
+    }
+    setPhotoUploading(true)
+    try {
+      const blob = await shrinkImage(file)
+      const auth = await uploadAuth({ kind: 'cover' })
+      const uploaded = await uploadToImagekit(blob, `teacher-${file.name.replace(/.[^.]+$/, '')}.webp`, auth, { isPrivate: false })
+      setInstructorPhotoUrl(uploaded.url)
+    } catch (err) {
+      toast.error(errorMessage(err, 'Couldn’t upload the photo.'))
+    } finally {
+      setPhotoUploading(false)
+      if (photoInput.current) photoInput.current.value = ''
+    }
+  }
+
   const pickCover = async (file: File | undefined) => {
     if (!file) return
     if (!file.type.startsWith('image/')) {
@@ -530,14 +562,32 @@ function CourseForm({
               />
             </Field>
           </div>
-          <Field label="Teacher's photo link" htmlFor="vc-teacher-photo" hint="Optional. Copy an image link from Admin › Blog › Media (ik.imagekit.io).">
-            <Input
-              id="vc-teacher-photo"
-              value={instructorPhotoUrl}
-              onChange={(e) => setInstructorPhotoUrl(e.target.value)}
-              placeholder="https://ik.imagekit.io/…"
-              className={inputClass}
-            />
+          <Field label="Teacher's photo" hint="Optional. A clear head-and-shoulders photo; it shows as a small circle on the course card.">
+            <div className="flex items-center gap-4">
+              <span className="relative flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-full bg-rh-canvas text-lg font-semibold text-rh-ink dark:bg-white/[0.06] dark:text-white">
+                {instructorPhotoUrl ? (
+                  <Image src={instructorPhotoUrl} loader={imagekitLoader} alt="" fill sizes="64px" className="object-cover" />
+                ) : (
+                  (instructorName.trim()[0] ?? '?').toUpperCase()
+                )}
+                {photoUploading && (
+                  <span className="absolute inset-0 flex items-center justify-center bg-white/70 dark:bg-rh-ink/70">
+                    <Loader2 className="h-5 w-5 animate-spin text-rh-ink dark:text-white" />
+                  </span>
+                )}
+              </span>
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" variant="ghost" className={softButtonClass} disabled={photoUploading} onClick={() => photoInput.current?.click()}>
+                  <ImageUp className="mr-2 h-4 w-4" /> {instructorPhotoUrl ? 'Change photo' : 'Upload photo'}
+                </Button>
+                {instructorPhotoUrl && (
+                  <Button type="button" variant="ghost" className="rounded-xl" disabled={photoUploading} onClick={() => setInstructorPhotoUrl('')}>
+                    Remove
+                  </Button>
+                )}
+              </div>
+              <input ref={photoInput} type="file" accept="image/*" className="hidden" onChange={(e) => void pickTeacherPhoto(e.target.files?.[0])} />
+            </div>
           </Field>
         </div>
 
@@ -600,10 +650,12 @@ const MAX_PROTECTED_SOURCE_BYTES = 8 * 1024 * 1024 * 1024
 
 type UploadState =
   | { stage: 'idle' }
-  | { stage: 'reading'; name: string }
-  | { stage: 'uploading'; name: string; sizeBytes: number; fraction: number }
+  | { stage: 'reading' | 'uploading'; facts: FileFacts; fraction: number; startedAt: number }
   // Uploaded to the private bucket; the encoder makes the protected stream from it
-  | { stage: 'done'; name: string; assetId: VideoAssetId; sizeBytes: number; durationSec: number }
+  | { stage: 'done'; facts: FileFacts; assetId: VideoAssetId }
+  | { stage: 'failed'; facts: FileFacts; message: string; file: File }
+
+type VideoSource = 'upload' | 'published' | 'youtube'
 
 /** One part of a multipart upload, with progress (XHR: fetch can't report upload progress). */
 function putPart(url: string, blob: Blob, onBytes: (sent: number) => void, signal: AbortSignal): Promise<string> {
@@ -681,13 +733,10 @@ function LessonDrawer({
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [upload, setUpload] = useState<UploadState>({ stage: 'idle' })
-  // Where the lesson plays from: a video uploaded here, or a YouTube video
-  const [source, setSource] = useState<'upload' | 'youtube'>('upload')
+  const [source, setSource] = useState<VideoSource>('upload')
   const [youtube, setYoutube] = useState<YoutubeInfo | null>(null)
   const [saving, setSaving] = useState(false)
-  const [dragging, setDragging] = useState(false)
   const abort = useRef<AbortController | null>(null)
-  const fileInput = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (!open) return
@@ -700,15 +749,19 @@ function LessonDrawer({
   }, [open, lesson])
 
   const busy = upload.stage === 'reading' || upload.stage === 'uploading'
+  // Ready videos published from the laptop that no other lesson uses
+  const published = (assets ?? []).filter((a) => a.status === 'ready' && a.source === 'script' && (!a.lessonId || a.lessonId === lesson?.id))
+  // The uploaded video's live status (the encoder updates it)
+  const uploadedAsset = upload.stage === 'done' ? assets?.find((a) => a.id === upload.assetId) : undefined
 
   const pickVideo = async (file: File | undefined) => {
     if (!file) return
-    if (!file.type.startsWith('video/')) {
+    if (!file.type.startsWith('video/') && !/\.(mp4|mov|m4v|webm|mkv)$/i.test(file.name)) {
       toast.error('Choose a video file (MP4 or MOV).')
       return
     }
     if (!setup?.ready) {
-      toast.error('Protected video storage isn’t set up yet.')
+      toast.error('Uploads aren’t switched on yet.')
       return
     }
     if (file.size > MAX_PROTECTED_SOURCE_BYTES) {
@@ -721,34 +774,36 @@ function LessonDrawer({
     const controller = new AbortController()
     abort.current = controller
     let assetId: VideoAssetId | null = null
+    let facts: FileFacts = { name: file.name, sizeBytes: file.size, durationSec: 0, width: 0, height: 0, posterUrl: null }
     try {
-      setUpload({ stage: 'reading', name: file.name })
-      const { durationSec } = await inspectVideo(file)
-      setUpload({ stage: 'uploading', name: file.name, sizeBytes: file.size, fraction: 0 })
-      const started = await startUpload({ title: lessonTitle, fileName: file.name, contentType: file.type, sizeBytes: file.size })
+      setUpload({ stage: 'reading', facts, fraction: 0, startedAt: Date.now() })
+      // Best effort: a file the browser can't preview (e.g. iPhone HEVC) still uploads and encodes
+      facts = { ...facts, ...(await peekVideo(file)) }
+      const startedAt = Date.now()
+      setUpload({ stage: 'uploading', facts, fraction: 0, startedAt })
+      const started = await startUpload({ title: lessonTitle, fileName: file.name, contentType: file.type || 'video/mp4', sizeBytes: file.size })
       assetId = started.assetId
       const parts = await uploadInParts(
         file,
         started.parts,
         started.partBytes,
-        (fraction) => setUpload({ stage: 'uploading', name: file.name, sizeBytes: file.size, fraction }),
+        (fraction) => setUpload({ stage: 'uploading', facts, fraction, startedAt }),
         controller.signal
       )
       await finishUpload({ assetId: started.assetId, parts })
-      setUpload({ stage: 'done', name: file.name, assetId: started.assetId, sizeBytes: file.size, durationSec })
+      setUpload({ stage: 'done', facts, assetId: started.assetId })
       playSound('success')
     } catch (err) {
       if (assetId) void abortUpload({ assetId }).catch(() => {})
       if (err instanceof DOMException && err.name === 'AbortError') {
         toast('Upload cancelled')
+        setUpload({ stage: 'idle' })
       } else {
-        toast.error(errorMessage(err, 'The upload failed. Please try again.'))
+        setUpload({ stage: 'failed', facts, file, message: errorMessage(err, 'The upload didn’t finish. Check the connection and try again.') })
         playSound('error')
       }
-      setUpload({ stage: 'idle' })
     } finally {
       abort.current = null
-      if (fileInput.current) fileInput.current.value = ''
     }
   }
 
@@ -760,7 +815,8 @@ function LessonDrawer({
         lessonId: lesson?.id,
         title,
         description: description || undefined,
-        hlsAssetId: source === 'upload' ? (upload.stage === 'done' ? upload.assetId : (picked ?? undefined)) : undefined,
+        hlsAssetId:
+          source === 'upload' && upload.stage === 'done' ? upload.assetId : source === 'published' ? (picked ?? undefined) : undefined,
         youtube: source === 'youtube' && youtube ? toYoutubeVideo(youtube) : undefined,
       })
       toast.success(lesson ? 'Lesson saved' : 'Lesson added')
@@ -774,25 +830,32 @@ function LessonDrawer({
   }
 
   const close = (next: boolean) => {
-    if (!next && busy) {
-      abort.current?.abort()
-    }
+    if (!next && busy) abort.current?.abort()
     onOpenChange(next)
   }
 
   // Editing without a new video keeps the current one, as long as it's the same kind
+  const keepsCurrent = Boolean(lesson && !lesson.youtubeId)
   const hasVideo =
     source === 'youtube'
       ? Boolean(youtube) || Boolean(lesson?.youtubeId)
-      : upload.stage === 'done' || Boolean(picked) || Boolean(lesson && !lesson.youtubeId)
+      : source === 'published'
+        ? Boolean(picked) || keepsCurrent
+        : upload.stage === 'done' || keepsCurrent
   const canSave = Boolean(title.trim()) && !busy && hasVideo
+
+  const tabs: { value: VideoSource; label: string }[] = [
+    { value: 'upload', label: 'Upload' },
+    ...(published.length > 0 || source === 'published' ? [{ value: 'published' as const, label: `From laptop (${published.length})` }] : []),
+    { value: 'youtube', label: 'YouTube' },
+  ]
 
   return (
     <AdminDrawer
       open={open}
       onOpenChange={close}
       title={lesson ? 'Edit lesson' : 'Add a lesson'}
-      description="Upload a video (protected: encrypted, only enrolled learners can play it, with their name on screen) or use a YouTube video."
+      description="Protected videos are encrypted, can’t be downloaded and show each learner’s name while they watch."
       footer={
         <>
           <Button onClick={save} disabled={!canSave || saving} className={primaryButtonClass}>
@@ -800,43 +863,32 @@ function LessonDrawer({
             {lesson ? 'Save lesson' : 'Add lesson'}
           </Button>
           <Button variant="ghost" className="rounded-xl" onClick={() => close(false)}>
-            Cancel
+            {busy ? 'Cancel upload' : 'Cancel'}
           </Button>
         </>
       }
     >
-      <div className="space-y-5">
-        <Field
-          label="Video"
-          hint={
-            source === 'upload'
-              ? 'MP4 or MOV, up to 8 GB. After the upload it’s encoded (480p and 720p) and encrypted; the lesson plays once that finishes.'
-              : 'A public or unlisted video that allows embedding. Its title, length and thumbnail come from YouTube. Anyone with the link can also watch it on YouTube.'
-          }
-        >
-          <div className="mb-3 inline-flex rounded-full bg-rh-canvas p-1 dark:bg-white/[0.06]" role="radiogroup" aria-label="Where the video comes from">
-            {(
-              [
-                { value: 'upload', label: 'Upload a video' },
-                { value: 'youtube', label: 'YouTube link' },
-              ] as const
-            ).map((option) => (
+      <div className="space-y-6">
+        <div>
+          <div className="mb-4 flex rounded-full bg-rh-canvas p-1 dark:bg-white/[0.06]" role="tablist" aria-label="Where the video comes from">
+            {tabs.map((tab) => (
               <button
-                key={option.value}
+                key={tab.value}
                 type="button"
-                role="radio"
-                aria-checked={source === option.value}
-                onClick={() => setSource(option.value)}
+                role="tab"
+                aria-selected={source === tab.value}
+                onClick={() => setSource(tab.value)}
                 disabled={busy}
                 className={cn(
-                  'rounded-full px-3.5 py-1.5 text-xs font-semibold transition',
-                  source === option.value ? 'bg-white text-rh-ink shadow-sm dark:bg-rh-ink-3 dark:text-white' : 'text-neutral-500 hover:text-rh-ink dark:hover:text-white'
+                  'flex-1 rounded-full px-3 py-2 text-xs font-semibold transition',
+                  source === tab.value ? 'bg-white text-rh-ink shadow-sm dark:bg-rh-ink-3 dark:text-white' : 'text-neutral-500 hover:text-rh-ink dark:hover:text-white'
                 )}
               >
-                {option.label}
+                {tab.label}
               </button>
             ))}
           </div>
+
           {source === 'youtube' ? (
             <div className="space-y-3">
               {lesson?.youtubeId && !youtube && (
@@ -855,129 +907,60 @@ function LessonDrawer({
                   if (info && !title.trim()) setTitle(info.title)
                 }}
               />
+              <p className="text-xs leading-5 text-neutral-500">For free, public material: anyone with the link can also watch it on YouTube.</p>
             </div>
-          ) : upload.stage === 'uploading' || upload.stage === 'reading' ? (
-            <div className="rounded-2xl border border-black/[0.06] p-4 dark:border-white/10">
-              <div className="flex items-center justify-between gap-3 text-sm">
-                <span className="min-w-0 truncate font-medium text-rh-ink dark:text-white">{upload.name}</span>
-                <span className="shrink-0 tabular-nums text-neutral-500">
-                  {upload.stage === 'reading' ? 'Preparing…' : `${Math.round(upload.fraction * 100)}%`}
-                </span>
-              </div>
-              <div className="mt-3 h-2 overflow-hidden rounded-full bg-rh-canvas dark:bg-white/[0.06]">
-                <div
-                  className="h-full rounded-full bg-rh-lime transition-[width] duration-300"
-                  style={{ width: `${upload.stage === 'uploading' ? Math.max(2, upload.fraction * 100) : 2}%` }}
-                />
-              </div>
-              <div className="mt-3 flex items-center justify-between gap-3 text-xs text-neutral-500">
-                <span>{upload.stage === 'uploading' ? `${formatBytes(upload.sizeBytes * upload.fraction)} of ${formatBytes(upload.sizeBytes)}` : 'Reading the video'}</span>
-                <button type="button" onClick={() => abort.current?.abort()} className="font-medium text-rh-ink hover:underline dark:text-white">
-                  Cancel upload
-                </button>
-              </div>
-            </div>
-          ) : upload.stage === 'done' ? (
-            <div className="flex items-center gap-3 rounded-2xl bg-rh-honeydew p-3 dark:bg-white/[0.06]">
-              <Thumb url={null} title="" className="aspect-video w-28" />
-              <div className="min-w-0 flex-1 text-sm">
-                <p className="truncate font-medium text-rh-ink dark:text-white">{upload.name}</p>
-                <p className="text-xs text-neutral-600 dark:text-neutral-400">
-                  Uploaded · {formatLength(upload.durationSec)} · {formatBytes(upload.sizeBytes)} · encoding next
-                </p>
-              </div>
-              <button type="button" onClick={() => fileInput.current?.click()} className="shrink-0 text-xs font-medium text-rh-ink hover:underline dark:text-white">
-                Replace
-              </button>
-            </div>
+          ) : source === 'published' ? (
+            <PublishedPicker assets={published} picked={picked} onPick={setPicked} />
           ) : (
-            <>
-              {lesson && !lesson.youtubeId && (
-                <div className="mb-3 flex items-center gap-3 rounded-2xl bg-rh-canvas p-3 dark:bg-white/[0.04]">
+            <div className="space-y-3">
+              {keepsCurrent && upload.stage === 'idle' && lesson && (
+                <div className="flex items-center gap-3 rounded-2xl bg-rh-canvas p-3 dark:bg-white/[0.04]">
                   <Thumb url={lesson.posterUrl} title="" className="aspect-video w-28" />
-                  <div className="min-w-0 flex-1 text-sm">
-                    <p className="font-medium text-rh-ink dark:text-white">Current video</p>
-                    <p className="text-xs text-neutral-500">
-                      {formatLength(lesson.durationSec)} · {formatBytes(lesson.sizeBytes)}
-                    </p>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold text-rh-ink dark:text-white">Current video</p>
+                    <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-neutral-500">
+                      <LessonVideoChip hosting={lesson.hosting} processing={lesson.processing} failed={lesson.failed} />
+                      {lesson.durationSec ? formatLength(lesson.durationSec) : null}
+                    </div>
                   </div>
                 </div>
               )}
-              <button
-                type="button"
-                onClick={() => fileInput.current?.click()}
-                onDragOver={(e) => {
-                  e.preventDefault()
-                  setDragging(true)
-                }}
-                onDragLeave={() => setDragging(false)}
-                onDrop={(e) => {
-                  e.preventDefault()
-                  setDragging(false)
-                  void pickVideo(e.dataTransfer.files?.[0])
-                }}
-                className={cn(
-                  'flex w-full flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed px-4 py-8 text-center transition',
-                  dragging
-                    ? 'border-rh-lime bg-rh-honeydew dark:bg-white/[0.06]'
-                    : 'border-black/10 hover:border-rh-ink/30 hover:bg-rh-canvas dark:border-white/15 dark:hover:bg-white/[0.04]'
-                )}
-              >
-                <UploadCloud className="h-7 w-7 text-rh-ink dark:text-white" />
-                <span className="text-sm font-medium text-rh-ink dark:text-white">
-                  {lesson && !lesson.youtubeId ? 'Replace the video' : 'Choose a video or drop it here'}
-                </span>
-                <span className="text-xs text-neutral-500">MP4 or MOV · encrypted after upload</span>
-              </button>
-              {setup && !setup.ready && (
-                <p className="mt-2 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:bg-amber-500/10 dark:text-amber-200">
-                  Protected video isn’t set up yet. Missing on Convex: {setup.missing.join('; ')}.
-                </p>
+              {upload.stage === 'reading' || upload.stage === 'uploading' ? (
+                <UploadProgressCard
+                  facts={upload.facts}
+                  stage={upload.stage}
+                  fraction={upload.fraction}
+                  startedAt={upload.startedAt}
+                  onCancel={() => abort.current?.abort()}
+                />
+              ) : upload.stage === 'done' ? (
+                <UploadedCard
+                  facts={upload.facts}
+                  status={uploadedAsset?.status ?? 'queued'}
+                  error={uploadedAsset?.error}
+                  onReplace={() => setUpload({ stage: 'idle' })}
+                />
+              ) : upload.stage === 'failed' ? (
+                <UploadFailedCard
+                  facts={upload.facts}
+                  message={upload.message}
+                  onRetry={() => void pickVideo(upload.file)}
+                  onPickAnother={() => setUpload({ stage: 'idle' })}
+                />
+              ) : setup && !setup.ready ? (
+                <SetupNotice missing={setup.missing} />
+              ) : (
+                <UploadDropzone onFile={(file) => void pickVideo(file)} disabled={!setup} replacing={keepsCurrent} />
               )}
-              {(() => {
-                const free = (assets ?? []).filter((a) => a.status === 'ready' && (!a.lessonId || a.lessonId === lesson?.id))
-                if (free.length === 0) return null
-                return (
-                  <label className="mt-3 block text-xs text-neutral-500">
-                    Or choose a video published from the laptop (npm run video:publish)
-                    <select
-                      value={picked ?? ''}
-                      onChange={(e) => setPicked((e.target.value || null) as VideoAssetId | null)}
-                      className={cn(inputClass, 'mt-1.5')}
-                    >
-                      <option value="">Choose a published video</option>
-                      {free.map((a) => (
-                        <option key={a.id} value={a.id}>
-                          {a.title} · {formatLength(a.durationSec)}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                )
-              })()}
-            </>
+            </div>
           )}
-          <input
-            ref={fileInput}
-            type="file"
-            accept="video/mp4,video/webm,video/quicktime,video/*"
-            className="hidden"
-            onChange={(e) => void pickVideo(e.target.files?.[0])}
-          />
-        </Field>
+        </div>
 
         <Field label="Lesson title" htmlFor="vl-title">
-          <Input id="vl-title" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={140} className={inputClass} />
+          <Input id="vl-title" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={140} placeholder="e.g. Assessing the shoulder" className={inputClass} />
         </Field>
         <Field label="Notes (optional)" htmlFor="vl-notes" hint="Shown under the video: key points, timestamps or reading.">
-          <textarea
-            id="vl-notes"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            maxLength={1500}
-            rows={5}
-            className={textareaClass}
-          />
+          <textarea id="vl-notes" value={description} onChange={(e) => setDescription(e.target.value)} maxLength={1500} rows={4} className={textareaClass} />
         </Field>
       </div>
     </AdminDrawer>
@@ -1209,14 +1192,9 @@ function CourseManager({ course, onBack }: { course: AdminVideoCourse; onBack: (
                         ? [lesson.durationSec ? formatLength(lesson.durationSec) : null, 'Protected'].filter(Boolean).join(' · ')
                         : `${formatLength(lesson.durationSec)} · ${formatBytes(lesson.sizeBytes)}`}
                   </p>
-                  {lesson.processing && (
-                    <p className="mt-0.5 inline-flex items-center gap-1 text-xs font-medium text-rh-amber">
-                      <Loader2 className="h-3 w-3 animate-spin" /> Encoding and encrypting. It plays once this finishes.
-                    </p>
-                  )}
-                  {lesson.failed && (
-                    <p className="mt-0.5 text-xs font-medium text-rose-600">This video couldn&apos;t be encoded. Edit the lesson and upload it again.</p>
-                  )}
+                  <div className="mt-1">
+                    <LessonVideoChip hosting={lesson.hosting} processing={lesson.processing} failed={lesson.failed} />
+                  </div>
                 </div>
                 <div className={cn('flex shrink-0 items-center gap-0.5', !editable && '[&>button:not([aria-label=Preview])]:hidden')}>
                   <IconButton label="Move up" disabled={i === 0} onClick={() => moveLesson({ lessonId: lesson.id, direction: 'up' })}>
