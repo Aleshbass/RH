@@ -1,0 +1,346 @@
+{
+  "slug": "ankle-sprain-after-football",
+  "version": 1,
+  "title": "Rolled ankle before the final",
+  "summary": "A university striker rolled his ankle in yesterday's match and the inter-varsity final is in three weeks. Assess him, decide on an X-ray and plan his recovery.",
+  "specialty": "sports",
+  "difficulty": 1,
+  "mode": "full",
+  "estimatedMinutes": 6,
+  "audio": true,
+  "setting": "University sports clinic, Nsukka",
+  "patient": {
+    "name": "Tunde Bakare",
+    "age": 22,
+    "sex": "M",
+    "occupation": "Engineering student and university striker",
+    "presentingComplaint": "Left ankle pain and swelling after rolling it in a football match yesterday"
+  },
+  "speakers": {
+    "patient": { "name": "Tunde", "role": "Patient", "voice": "zwbf3iHXH6YGoTCPStfx" }
+  },
+  "monitor": false,
+  "vitals": { "hr": 72, "spo2": 99, "bpSys": 118, "bpDia": 74, "rr": 14 },
+  "pain": 6,
+  "phases": [
+    { "id": "subjective", "label": "History", "budgetSec": 90 },
+    { "id": "objective", "label": "Examination", "budgetSec": 120 },
+    { "id": "plan", "label": "Plan", "budgetSec": 60 }
+  ],
+  "startNode": "history",
+  "nodes": {
+    "history": {
+      "id": "history",
+      "phase": "subjective",
+      "prompt": "Tunde, 22, hops in on one leg, supported by a teammate. His left ankle is swollen. Take his history: each question takes time.",
+      "lines": [
+        { "speaker": "patient", "text": "Good morning. I rolled my ankle in the match yesterday. Please, the final is in three weeks. I have to play." }
+      ],
+      "choices": [
+        {
+          "id": "a-mech",
+          "label": "How exactly did it happen?",
+          "costSec": 15,
+          "next": "history",
+          "points": 8,
+          "tag": "high-yield",
+          "feedback": "Good: landing on someone's foot and rolling in (inversion) is the classic lateral ligament mechanism.",
+          "reveals": ["f-mech"],
+          "reply": { "speaker": "patient", "text": "I landed on a defender's foot and my ankle rolled in. I felt a pop on the outside." }
+        },
+        {
+          "id": "a-weight",
+          "label": "Could you walk straight after it happened? Can you walk now?",
+          "costSec": 15,
+          "next": "history",
+          "points": 15,
+          "tag": "critical",
+          "feedback": "Essential: weight-bearing, straight after the injury and now, is part of the Ottawa ankle rules.",
+          "reveals": ["f-weight"],
+          "reply": { "speaker": "patient", "text": "At the time I couldn't put it down; my teammates carried me off. This morning I can take a few steps, but I'm limping." }
+        },
+        {
+          "id": "a-history",
+          "label": "Have you sprained this ankle before?",
+          "costSec": 15,
+          "next": "history",
+          "points": 8,
+          "tag": "high-yield",
+          "feedback": "Good: previous sprains are the biggest risk factor for another one, so his rehab must include balance training.",
+          "reveals": ["f-history"],
+          "reply": { "speaker": "patient", "text": "Yes, twice. Last season, and once in secondary school." }
+        },
+        {
+          "id": "a-goals",
+          "label": "What are you training for, and when?",
+          "costSec": 15,
+          "next": "history",
+          "points": 5,
+          "tag": "high-yield",
+          "feedback": "Good: his goal shapes the plan and the return-to-sport criteria.",
+          "reveals": ["f-goals"],
+          "reply": { "speaker": "patient", "text": "The inter-varsity final, three weeks from Saturday. Coach is counting on me." }
+        },
+        {
+          "id": "a-screen",
+          "label": "Any numbness, tingling, colour change in the foot, or pain in the calf?",
+          "costSec": 10,
+          "next": "history",
+          "points": 5,
+          "tag": "high-yield",
+          "feedback": "Good: a quick screen for nerve, circulation and calf problems.",
+          "reveals": ["f-screen"],
+          "reply": { "speaker": "patient", "text": "No, none of that." }
+        },
+        {
+          "id": "a-pain",
+          "label": "How bad is the pain, out of ten?",
+          "costSec": 10,
+          "next": "history",
+          "points": 2,
+          "tag": "neutral",
+          "feedback": "Useful as a baseline to track progress.",
+          "reply": { "speaker": "patient", "text": "About six when I walk, three when I rest." }
+        },
+        {
+          "id": "to-exam",
+          "label": "Move on to the examination",
+          "costSec": 0,
+          "next": "exam",
+          "points": 0,
+          "tag": "neutral",
+          "feedback": "Move on once you know the mechanism, weight-bearing and history."
+        }
+      ]
+    },
+    "exam": {
+      "id": "exam",
+      "phase": "objective",
+      "prompt": "He's sitting on the couch with his shoe off. What do you examine?",
+      "choices": [
+        {
+          "id": "b-ottawa",
+          "label": "Press on the Ottawa points: back edge and tip of both malleoli, base of the fifth metatarsal and the navicular",
+          "costSec": 30,
+          "next": "exam",
+          "points": 15,
+          "tag": "critical",
+          "feedback": "Essential: no bone tenderness at the Ottawa points, plus four steps today, means the Ottawa rules are negative.",
+          "reveals": ["f-ottawa"]
+        },
+        {
+          "id": "b-look",
+          "label": "Look at the swelling and bruising",
+          "costSec": 15,
+          "next": "exam",
+          "points": 3,
+          "tag": "neutral",
+          "feedback": "Fine to note, but swelling and bruising don't tell you whether it's broken.",
+          "reveals": ["f-look"]
+        },
+        {
+          "id": "b-drawer",
+          "label": "Gentle anterior drawer test",
+          "costSec": 20,
+          "next": "exam",
+          "points": 5,
+          "tag": "high-yield",
+          "feedback": "Useful, but it's more accurate repeated 4–5 days after the injury, once the swelling settles.",
+          "reveals": ["f-drawer"]
+        },
+        {
+          "id": "b-syndesmosis",
+          "label": "Squeeze test and external rotation test for a high ankle sprain",
+          "costSec": 20,
+          "next": "exam",
+          "points": 8,
+          "tag": "high-yield",
+          "feedback": "Good: a high ankle (syndesmosis) sprain takes much longer to recover and changes the plan.",
+          "reveals": ["f-syndesmosis"]
+        },
+        {
+          "id": "b-nv",
+          "label": "Check the foot pulses and sensation",
+          "costSec": 10,
+          "next": "exam",
+          "points": 5,
+          "tag": "high-yield",
+          "feedback": "Good: a quick check of circulation and nerves.",
+          "reveals": ["f-nv"]
+        },
+        {
+          "id": "b-hop",
+          "label": "Ask him to hop on the injured leg to test function",
+          "costSec": 15,
+          "next": "exam",
+          "points": -10,
+          "tag": "harmful",
+          "feedback": "Far too early: it's painful and risks more injury. Hop tests belong in return-to-sport testing weeks later.",
+          "reply": { "speaker": "patient", "text": "Ah! I can't. It's too painful." },
+          "effects": { "pain": 2 }
+        },
+        {
+          "id": "to-plan",
+          "label": "Finish the examination",
+          "costSec": 0,
+          "next": "xray",
+          "points": 0,
+          "tag": "neutral",
+          "feedback": "Move on once you've checked the Ottawa points and ruled out a high ankle sprain."
+        }
+      ]
+    },
+    "xray": {
+      "id": "xray",
+      "phase": "plan",
+      "prompt": "Tunde asks about an X-ray.",
+      "lines": [
+        { "speaker": "patient", "text": "Do I need an X-ray? Coach says I must do one before anything." }
+      ],
+      "choices": [
+        {
+          "id": "c-noxray",
+          "label": "No X-ray: the Ottawa rules are negative. Explain why, and tell him to come back if he can't bear weight in 5–7 days or it gets worse.",
+          "costSec": 15,
+          "next": "manage",
+          "points": 15,
+          "tag": "critical",
+          "feedback": "Correct. The Ottawa ankle rules are very sensitive: when they're negative, a fracture is very unlikely, so the X-ray adds cost and radiation without helping.",
+          "reply": { "speaker": "patient", "text": "Okay. If it's not broken, that's good news." }
+        },
+        {
+          "id": "c-xray",
+          "label": "Send him for an X-ray of the ankle and foot, to be safe",
+          "costSec": 15,
+          "next": "manage",
+          "points": -5,
+          "tag": "wasteful",
+          "feedback": "Not needed: the Ottawa rules are negative. It's not dangerous, but it costs him money and time, and exposes him to radiation for no benefit."
+        }
+      ]
+    },
+    "manage": {
+      "id": "manage",
+      "phase": "plan",
+      "prompt": "What's your management plan?",
+      "choices": [
+        {
+          "id": "m-load",
+          "label": "Protect and load: lace-up brace, walk as pain allows (crutches only if needed), early range of movement, then balance training. Explain the plan and the return-to-sport criteria.",
+          "costSec": 30,
+          "next": "end-good",
+          "points": 20,
+          "tag": "critical",
+          "feedback": "Right. Functional support with early, progressive loading gives the fastest return, and balance training cuts his risk of another sprain.",
+          "reply": { "speaker": "patient", "text": "So I can still walk on it? Okay, I'll do the exercises." }
+        },
+        {
+          "id": "m-rest",
+          "label": "Complete rest with no weight on it for three weeks, then start rehab",
+          "costSec": 20,
+          "next": "end-stiff",
+          "points": -10,
+          "tag": "harmful",
+          "feedback": "Long rest slows recovery: the ankle stiffens and the calf weakens. Early loading is better for most lateral sprains."
+        },
+        {
+          "id": "m-cast",
+          "label": "Put it in a below-knee cast for three weeks",
+          "costSec": 15,
+          "next": "end-stiff",
+          "points": -10,
+          "tag": "harmful",
+          "feedback": "Rigid immobilisation for weeks isn't recommended for a lateral ankle sprain like this: functional support works better."
+        },
+        {
+          "id": "m-play",
+          "label": "Strap it tightly and let him play his league match this weekend",
+          "costSec": 15,
+          "next": "end-reinjury",
+          "points": -20,
+          "tag": "harmful",
+          "feedback": "Returning before the ligament has healed and he has passed return-to-sport tests risks a worse re-injury."
+        },
+        {
+          "id": "m-ice",
+          "label": "Ice and rest only, and review in six weeks",
+          "costSec": 10,
+          "next": "end-slow",
+          "points": -3,
+          "tag": "wasteful",
+          "feedback": "Ice may help comfort early on, but without a loading and balance programme he'll recover slowly and stay at risk."
+        }
+      ]
+    },
+    "end-good": {
+      "id": "end-good",
+      "phase": "plan",
+      "prompt": "",
+      "end": {
+        "outcome": "good",
+        "title": "Back for the final",
+        "summary": "Tunde wore the brace, did his balance work and was back in training in two and a half weeks. He passed his hop and agility tests and played the final. The balance training also lowers his risk of a fourth sprain."
+      }
+    },
+    "end-stiff": {
+      "id": "end-stiff",
+      "phase": "plan",
+      "prompt": "",
+      "end": {
+        "outcome": "poor",
+        "title": "Stiff and weak",
+        "summary": "Three weeks without loading left his ankle stiff and his calf weak. He missed the final and needed another six weeks of rehab."
+      }
+    },
+    "end-reinjury": {
+      "id": "end-reinjury",
+      "phase": "plan",
+      "prompt": "",
+      "end": {
+        "outcome": "harm",
+        "title": "Re-injured",
+        "summary": "Twenty minutes into the match he rolled the same ankle again, worse this time. He was out for two months and missed the final."
+      }
+    },
+    "end-slow": {
+      "id": "end-slow",
+      "phase": "plan",
+      "prompt": "",
+      "end": {
+        "outcome": "fair",
+        "title": "A slow recovery",
+        "summary": "His ankle healed, but without a rehab plan he was slow to get back, missed the final, and is still at high risk of spraining it again."
+      }
+    }
+  },
+  "findings": {
+    "f-mech": { "id": "f-mech", "label": "Mechanism", "detail": "Inversion injury landing on an opponent's foot, with a pop over the outside of the ankle.", "abnormal": true },
+    "f-weight": { "id": "f-weight", "label": "Weight-bearing", "detail": "Couldn't bear weight straight after the injury; now takes four steps with a limp, so this Ottawa criterion isn't met.", "abnormal": true },
+    "f-history": { "id": "f-history", "label": "Previous sprains", "detail": "Two previous sprains of the same ankle.", "abnormal": true },
+    "f-goals": { "id": "f-goals", "label": "Goal", "detail": "Inter-varsity final in three weeks." },
+    "f-screen": { "id": "f-screen", "label": "Screen", "detail": "No numbness, tingling, colour change or calf pain." },
+    "f-ottawa": { "id": "f-ottawa", "label": "Ottawa points", "detail": "Tender in front of the lateral malleolus, over the ATFL. No bone tenderness at the back edge or tip of either malleolus, the base of the fifth metatarsal or the navicular.", "abnormal": true },
+    "f-look": { "id": "f-look", "label": "Observation", "detail": "Moderate swelling and bruising over the outside of the ankle." },
+    "f-drawer": { "id": "f-drawer", "label": "Anterior drawer", "detail": "More give than the other side, with a soft end feel. Painful." },
+    "f-syndesmosis": { "id": "f-syndesmosis", "label": "High ankle sprain tests", "detail": "Squeeze test and external rotation test negative.", "abnormal": true },
+    "f-nv": { "id": "f-nv", "label": "Nerves and circulation", "detail": "Foot pulses present; sensation normal." }
+  },
+  "mustDo": ["a-weight", "b-ottawa", "c-noxray", "m-load"],
+  "autoFail": ["m-play"],
+  "expertPath": ["a-mech", "a-weight", "a-history", "a-goals", "a-screen", "to-exam", "b-ottawa", "b-drawer", "b-syndesmosis", "b-nv", "to-plan", "c-noxray", "m-load"],
+  "passMark": 70,
+  "learningPoints": [
+    "Ottawa ankle rules: X-ray only if there's bone tenderness at the back edge or tip of either malleolus, the base of the fifth metatarsal or the navicular, or the person couldn't take four steps both straight after the injury and when you see them.",
+    "Rule out a high ankle (syndesmosis) sprain, and check the nerves and circulation.",
+    "For most lateral ankle sprains, functional support and early, progressive loading beat rest and casting.",
+    "Previous sprains raise the risk of another one; balance (neuromuscular) training lowers it.",
+    "Return to sport on criteria (pain-free hopping, balance, sport-specific drills), not on a date.",
+    "The anterior drawer test is more accurate 4–5 days after the injury, once the swelling settles."
+  ],
+  "references": [
+    { "label": "Stiell IG, et al. Implementation of the Ottawa ankle rules. JAMA. 1994;271(11):827–832." },
+    { "label": "Vuurberg G, et al. Diagnosis, treatment and prevention of ankle sprains: update of an evidence-based clinical guideline. Br J Sports Med. 2018;52(15):956.", "url": "https://bjsm.bmj.com/content/52/15/956" },
+    { "label": "Martin RL, et al. Ankle Stability and Movement Coordination Impairments: Lateral Ankle Ligament Sprains Revision 2021. J Orthop Sports Phys Ther. 2021;51(4):CPG1–CPG80.", "url": "https://www.jospt.org/doi/10.2519/jospt.2021.0302" },
+    { "label": "Dubois B, Esculier JF. Soft-tissue injuries simply need PEACE and LOVE. Br J Sports Med. 2020;54(2):72–73." }
+  ]
+}

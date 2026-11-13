@@ -1,0 +1,364 @@
+{
+  "slug": "back-pain-saddle-numbness",
+  "version": 1,
+  "title": "Back pain after carrying water",
+  "summary": "A teacher with five days of low back pain after lifting a keg up the stairs. Take her history, examine her and decide what happens next.",
+  "specialty": "msk",
+  "difficulty": 2,
+  "mode": "full",
+  "estimatedMinutes": 8,
+  "audio": true,
+  "setting": "Outpatient physiotherapy clinic, Ibadan",
+  "patient": {
+    "name": "Mrs Funmilayo Adebayo",
+    "age": 42,
+    "sex": "F",
+    "occupation": "Secondary school teacher",
+    "presentingComplaint": "Low back pain for five days after lifting a 25-litre keg of water"
+  },
+  "speakers": {
+    "patient": { "name": "Mrs Adebayo", "role": "Patient", "voice": "tMe86XfyOYDzkWDEk6AQ" }
+  },
+  "monitor": false,
+  "vitals": { "hr": 88, "spo2": 98, "bpSys": 132, "bpDia": 84, "rr": 16 },
+  "pain": 8,
+  "phases": [
+    { "id": "subjective", "label": "History", "budgetSec": 150 },
+    { "id": "objective", "label": "Examination", "budgetSec": 180 },
+    { "id": "plan", "label": "Plan", "budgetSec": 60 }
+  ],
+  "startNode": "history",
+  "nodes": {
+    "history": {
+      "id": "history",
+      "phase": "subjective",
+      "prompt": "Mrs Adebayo, 42, was referred by her GP with 'low back pain' after carrying a 25-litre keg of water up the stairs five days ago. She walks in stiffly. Take her history: each question takes time.",
+      "lines": [
+        { "speaker": "patient", "text": "Good afternoon. My back has been so bad since I carried water up the stairs on Saturday. Now even my legs are not well." }
+      ],
+      "choices": [
+        {
+          "id": "q-pain",
+          "label": "Where exactly is the pain, and does it spread anywhere?",
+          "costSec": 20,
+          "next": "history",
+          "points": 8,
+          "tag": "high-yield",
+          "feedback": "Good: pain spreading down both legs is a warning sign that more than one nerve root is involved.",
+          "reveals": ["f-bilateral"],
+          "reply": { "speaker": "patient", "text": "In the middle of my back. And since yesterday it goes down both legs, all the way to my feet." }
+        },
+        {
+          "id": "q-saddle",
+          "label": "Any numbness or tingling between your legs, or around your back passage?",
+          "costSec": 20,
+          "next": "history",
+          "points": 15,
+          "tag": "critical",
+          "feedback": "Essential. Saddle numbness is a key red flag for cauda equina syndrome, and patients rarely mention it unless you ask.",
+          "reveals": ["f-saddle"],
+          "reply": { "speaker": "patient", "text": "Now that you ask... when I wipe after the toilet, it feels numb. Like it's not my own skin." }
+        },
+        {
+          "id": "q-bladder",
+          "label": "Any change in passing urine?",
+          "costSec": 20,
+          "next": "history",
+          "points": 15,
+          "tag": "critical",
+          "feedback": "Essential. New difficulty passing urine, or not feeling the bladder fill or empty, is a cauda equina red flag.",
+          "reveals": ["f-bladder"],
+          "reply": { "speaker": "patient", "text": "Since this morning I have to strain to pass urine, and I'm not sure it all comes out." }
+        },
+        {
+          "id": "q-bowel",
+          "label": "Any change in your bowel control?",
+          "costSec": 15,
+          "next": "history",
+          "points": 8,
+          "tag": "high-yield",
+          "feedback": "Good: altered bowel sensation adds to the picture.",
+          "reveals": ["f-bowel"],
+          "reply": { "speaker": "patient", "text": "No accident. But I can't really feel when I need to go." }
+        },
+        {
+          "id": "q-sexual",
+          "label": "Any change in sexual function? I ask everyone with back pain like this.",
+          "costSec": 15,
+          "next": "history",
+          "points": 5,
+          "tag": "high-yield",
+          "feedback": "Good practice: ask sensitively and explain why you're asking. Changes in sexual function are part of the cauda equina screen.",
+          "reveals": ["f-sexual"],
+          "reply": { "speaker": "patient", "text": "I haven't noticed anything. It's been a painful week." }
+        },
+        {
+          "id": "q-serious",
+          "label": "Any weight loss, fever, pain at night, or history of cancer?",
+          "costSec": 20,
+          "next": "history",
+          "points": 5,
+          "tag": "high-yield",
+          "feedback": "Good: this screens for other serious causes such as cancer or infection.",
+          "reveals": ["f-screen"],
+          "reply": { "speaker": "patient", "text": "No, nothing like that. No cancer in me or my family." }
+        },
+        {
+          "id": "q-work",
+          "label": "Tell me about your work and how you usually lift things",
+          "costSec": 20,
+          "next": "history",
+          "points": 0,
+          "tag": "neutral",
+          "feedback": "Useful context for later, but not the priority with leg symptoms like these.",
+          "reply": { "speaker": "patient", "text": "I teach JSS 3. When there's no light, we carry water up from the tank. Three floors." }
+        },
+        {
+          "id": "q-meds",
+          "label": "What have you taken for the pain?",
+          "costSec": 15,
+          "next": "history",
+          "points": 2,
+          "tag": "neutral",
+          "feedback": "Reasonable to ask, but it doesn't change today's decision.",
+          "reply": { "speaker": "patient", "text": "Paracetamol and some diclofenac from the chemist. It's not helping." }
+        },
+        {
+          "id": "to-exam",
+          "label": "Move on to the examination",
+          "costSec": 0,
+          "next": "exam",
+          "points": 0,
+          "tag": "neutral",
+          "feedback": "Move on once you've asked about the red flags."
+        }
+      ]
+    },
+    "exam": {
+      "id": "exam",
+      "phase": "objective",
+      "prompt": "She's on the plinth. What do you examine?",
+      "choices": [
+        {
+          "id": "x-saddle",
+          "label": "Test sensation in the saddle area (explain why, get consent, with a chaperone)",
+          "costSec": 40,
+          "next": "exam",
+          "points": 15,
+          "tag": "critical",
+          "feedback": "Essential, and done properly: explain, consent and use a chaperone. Reduced saddle sensation confirms what she told you.",
+          "reveals": ["f-saddle-sens"],
+          "reply": { "speaker": "patient", "text": "Okay, if it will help." }
+        },
+        {
+          "id": "x-neuro",
+          "label": "Full lower-limb neurological exam: power, sensation and reflexes",
+          "costSec": 60,
+          "next": "exam",
+          "points": 10,
+          "tag": "high-yield",
+          "feedback": "Good: findings on both sides at S1 support a large central disc pressing on several roots.",
+          "reveals": ["f-neuro"]
+        },
+        {
+          "id": "x-slr",
+          "label": "Straight leg raise",
+          "costSec": 20,
+          "next": "exam",
+          "points": 2,
+          "tag": "neutral",
+          "feedback": "Positive on both sides, which fits nerve root irritation, but it doesn't change the urgency.",
+          "reveals": ["f-slr"]
+        },
+        {
+          "id": "x-rom",
+          "label": "Lumbar range of movement and repeated movements",
+          "costSec": 40,
+          "next": "exam",
+          "points": -3,
+          "tag": "wasteful",
+          "feedback": "Not the priority with red flags present. It delays referral, and repeated loading isn't appropriate right now.",
+          "reveals": ["f-rom"]
+        },
+        {
+          "id": "x-pr",
+          "label": "Do a digital rectal exam yourself to check anal tone",
+          "costSec": 30,
+          "next": "exam",
+          "points": -10,
+          "tag": "harmful",
+          "feedback": "Not in a physiotherapist's scope in this setting. Leave it to the emergency medical team: her history and saddle sensation are enough to refer."
+        },
+        {
+          "id": "to-plan",
+          "label": "Finish the examination and decide what happens next",
+          "costSec": 0,
+          "next": "plan",
+          "points": 0,
+          "tag": "neutral",
+          "feedback": "Move on once you've tested saddle sensation and the lower-limb neurology."
+        }
+      ]
+    },
+    "plan": {
+      "id": "plan",
+      "phase": "plan",
+      "prompt": "You've seen enough. What's your plan?",
+      "choices": [
+        {
+          "id": "p-emergency",
+          "label": "Emergency referral today: she goes to the emergency department now for an urgent MRI and spinal surgical review. Phone ahead and write a referral letter.",
+          "costSec": 20,
+          "next": "explain",
+          "points": 25,
+          "tag": "critical",
+          "feedback": "Correct. Suspected cauda equina syndrome needs same-day emergency assessment and MRI. Phoning ahead and writing it down helps her get seen fast."
+        },
+        {
+          "id": "p-gp",
+          "label": "Back care advice and a letter to her GP asking for a routine MRI",
+          "costSec": 15,
+          "next": "end-delayed",
+          "points": -30,
+          "tag": "harmful",
+          "feedback": "Too slow. A routine referral for suspected cauda equina syndrome risks permanent bladder, bowel and sexual dysfunction."
+        },
+        {
+          "id": "p-mckenzie",
+          "label": "Start extension exercises and review her in a week",
+          "costSec": 15,
+          "next": "end-worse",
+          "points": -30,
+          "tag": "harmful",
+          "feedback": "Exercise isn't the answer with red flags like these: she needs emergency imaging and a surgical review today."
+        },
+        {
+          "id": "p-tens",
+          "label": "TENS and heat for the pain today, and review her tomorrow",
+          "costSec": 15,
+          "next": "end-worse",
+          "points": -30,
+          "tag": "harmful",
+          "feedback": "Treating the pain while the nerves are being compressed loses hours that matter."
+        }
+      ]
+    },
+    "explain": {
+      "id": "explain",
+      "phase": "plan",
+      "prompt": "Mrs Adebayo looks worried.",
+      "lines": [
+        { "speaker": "patient", "text": "Please, can I go home first? My children are coming back from school, and the hospital will cost money. I'll go tomorrow morning." }
+      ],
+      "choices": [
+        {
+          "id": "e-now",
+          "label": "Explain kindly but clearly that it can't wait: the nerves to her bladder and bowel are being squeezed, and hours matter. Help her call family and arrange transport now.",
+          "costSec": 30,
+          "next": "end-good",
+          "points": 15,
+          "tag": "critical",
+          "feedback": "Excellent. A clear safety-net in plain words, plus help with the practical barriers, is what gets the patient there.",
+          "reply": { "speaker": "patient", "text": "Okay... I'll call my husband to meet me there." }
+        },
+        {
+          "id": "e-tomorrow",
+          "label": "Agree she can go first thing tomorrow, as long as she goes",
+          "costSec": 10,
+          "next": "end-tomorrow",
+          "points": -30,
+          "tag": "harmful",
+          "feedback": "Suspected cauda equina syndrome can't wait overnight: function can be lost within hours."
+        },
+        {
+          "id": "e-leaflet",
+          "label": "Give her a leaflet about back pain and let her decide",
+          "costSec": 10,
+          "next": "end-unsure",
+          "points": -10,
+          "tag": "harmful",
+          "feedback": "A leaflet isn't enough. She needs to understand the urgency and get practical help to go today."
+        }
+      ]
+    },
+    "end-good": {
+      "id": "end-good",
+      "phase": "plan",
+      "prompt": "",
+      "end": {
+        "outcome": "good",
+        "title": "Seen in time",
+        "summary": "Mrs Adebayo had an MRI that evening showing a large central disc prolapse pressing on the cauda equina. She had surgery that night, and her bladder recovered over the following weeks. Your questions about saddle numbness and bladder changes are what caught it."
+      }
+    },
+    "end-delayed": {
+      "id": "end-delayed",
+      "phase": "plan",
+      "prompt": "",
+      "end": {
+        "outcome": "harm",
+        "title": "Routine referral",
+        "summary": "The GP letter took days. By the time she had an MRI, she couldn't pass urine at all. She had surgery, but was left with lasting bladder and bowel problems."
+      }
+    },
+    "end-worse": {
+      "id": "end-worse",
+      "phase": "plan",
+      "prompt": "",
+      "end": {
+        "outcome": "harm",
+        "title": "Treated as simple back pain",
+        "summary": "That night she couldn't pass urine and was rushed to the emergency department. The surgery came too late to fully save her bladder and bowel function."
+      }
+    },
+    "end-tomorrow": {
+      "id": "end-tomorrow",
+      "phase": "plan",
+      "prompt": "",
+      "end": {
+        "outcome": "harm",
+        "title": "She waited overnight",
+        "summary": "By morning she couldn't pass urine. She had emergency surgery, but some of the nerve damage was permanent."
+      }
+    },
+    "end-unsure": {
+      "id": "end-unsure",
+      "phase": "plan",
+      "prompt": "",
+      "end": {
+        "outcome": "poor",
+        "title": "Left to decide",
+        "summary": "She went home to think about it and went to hospital two days later, when her symptoms were worse. The delay made a full recovery less likely."
+      }
+    }
+  },
+  "findings": {
+    "f-bilateral": { "id": "f-bilateral", "label": "Leg symptoms", "detail": "Central low back pain, now spreading down both legs to the feet since yesterday.", "abnormal": true },
+    "f-saddle": { "id": "f-saddle", "label": "Saddle sensation (reported)", "detail": "Numbness around the perineum when wiping after the toilet.", "abnormal": true },
+    "f-bladder": { "id": "f-bladder", "label": "Bladder", "detail": "New straining to pass urine since this morning; unsure she empties fully.", "abnormal": true },
+    "f-bowel": { "id": "f-bowel", "label": "Bowel", "detail": "No incontinence, but reduced awareness of needing to open her bowels.", "abnormal": true },
+    "f-sexual": { "id": "f-sexual", "label": "Sexual function", "detail": "No change noticed." },
+    "f-screen": { "id": "f-screen", "label": "Other red flags", "detail": "No weight loss, fever, night pain or history of cancer." },
+    "f-saddle-sens": { "id": "f-saddle-sens", "label": "Saddle sensation (tested)", "detail": "Reduced light touch and pinprick around the perianal area and inner buttocks (S3–S5), both sides.", "abnormal": true },
+    "f-neuro": { "id": "f-neuro", "label": "Lower-limb neurology", "detail": "Weak ankle plantarflexion both sides (S1), reduced ankle reflexes both sides, reduced sensation over the outer border of both feet.", "abnormal": true },
+    "f-slr": { "id": "f-slr", "label": "Straight leg raise", "detail": "Positive at 40° on the left and 50° on the right, reproducing leg pain." },
+    "f-rom": { "id": "f-rom", "label": "Lumbar movement", "detail": "Flexion limited to knee level by pain." }
+  },
+  "mustDo": ["q-saddle", "q-bladder", "x-saddle", "p-emergency", "e-now"],
+  "autoFail": ["p-gp", "p-mckenzie", "p-tens", "e-tomorrow"],
+  "expertPath": ["q-pain", "q-saddle", "q-bladder", "q-bowel", "q-sexual", "q-serious", "to-exam", "x-saddle", "x-neuro", "to-plan", "p-emergency", "e-now"],
+  "passMark": 70,
+  "learningPoints": [
+    "Leg symptoms on both sides, saddle numbness, and new bladder, bowel or sexual changes after back pain are red flags for cauda equina syndrome. Ask every patient with back and leg pain, directly and kindly.",
+    "Suspected cauda equina syndrome is an emergency: same-day referral to emergency care for an MRI and a spinal surgical review. Never a routine letter.",
+    "Hours matter. Outcomes are best when the nerves are decompressed before the patient goes into urinary retention.",
+    "Safety-net in plain words, and help with practical barriers (transport, cost, childcare) so the patient actually goes.",
+    "Don't start exercise or electrotherapy for back pain until the red flags are ruled out."
+  ],
+  "references": [
+    { "label": "Finucane LM, et al. International Framework for Red Flags for Potential Serious Spinal Pathologies. J Orthop Sports Phys Ther. 2020;50(7):350–372.", "url": "https://www.jospt.org/doi/10.2519/jospt.2020.9971" },
+    { "label": "NICE NG59. Low back pain and sciatica in over 16s: assessment and management (2016, updated 2020).", "url": "https://www.nice.org.uk/guidance/ng59" },
+    { "label": "GIRFT and Society of British Neurological Surgeons. National Suspected Cauda Equina Syndrome Pathway (2023)." },
+    { "label": "Greenhalgh S, et al. Development of a toolkit for early identification of cauda equina syndrome. Prim Health Care Res Dev. 2016;17(6):559–567." }
+  ]
+}

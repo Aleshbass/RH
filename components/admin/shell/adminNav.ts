@@ -84,10 +84,13 @@ export type LimitedRole = Exclude<ConsoleRole, 'admin'>
 export const BLOG_HOME = '/dashboard/admin/blog'
 export const LEARN_COURSES_HOME = '/dashboard/admin/learn/courses'
 
-/** Where each limited role starts, which is also the only part of the console it may open. */
-const ROLE_AREAS: Record<LimitedRole, { home: string; label: string }> = {
+export const LEARN_SIMULATIONS_HOME = '/dashboard/admin/learn/simulations'
+
+/** Where each limited role starts, which (with `also`) is the only part of the console it may open. */
+const ROLE_AREAS: Record<LimitedRole, { home: string; label: string; also?: string[] }> = {
   blog_editor: { home: BLOG_HOME, label: 'Blog' },
-  learn_instructor: { home: LEARN_COURSES_HOME, label: 'Learn' },
+  // Learn instructors also sign off simulation cases (physio reviewers)
+  learn_instructor: { home: LEARN_COURSES_HOME, label: 'Learn', also: [LEARN_SIMULATIONS_HOME] },
 }
 
 export const consoleHome = (role: ConsoleRole) => (role === 'admin' ? ADMIN_HOME : ROLE_AREAS[role].home)
@@ -95,8 +98,8 @@ export const consoleLabel = (role: ConsoleRole) => (role === 'admin' ? 'Admin' :
 
 export function consoleAllows(role: ConsoleRole, pathname: string) {
   if (role === 'admin') return true
-  const home = ROLE_AREAS[role].home
-  return pathname === home || pathname.startsWith(`${home}/`)
+  const area = ROLE_AREAS[role]
+  return [area.home, ...(area.also ?? [])].some((base) => pathname === base || pathname.startsWith(`${base}/`))
 }
 
 /** The console role of a users.role value, or null when they have no console. */
@@ -217,6 +220,7 @@ export const ADMIN_NAV: AdminNavSection[] = [
     items: [
       { title: 'MSK Specialist Program', href: a('/learn'), icon: GraduationCap, adminOnly: true, keywords: ['cohort', 'course', 'training', 'certificate', 'registrations', 'cpd'] },
       { title: 'Video courses', href: a('/learn/courses'), icon: PlayCircle, keywords: ['upload', 'lessons', 'videos', 'imagekit', 'on demand'] },
+      { title: 'Simulations', href: a('/learn/simulations'), icon: HeartPulse, keywords: ['cases', 'clinical', 'triage', 'sign-off', 'review', 'game'] },
     ],
   },
   {

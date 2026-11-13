@@ -16,6 +16,7 @@
     "typecheck:convex": "tsc -p convex/tsconfig.json --noEmit",
     "video:publish": "node scripts/learn-video/publish.mjs",
     "test:video": "node --test tests/learn-video/",
+    "test:sim": "node --test \"tests/learn-simulation/*.test.mjs\"",
     "test": "playwright test",
     "test:ui": "playwright test --ui",
     "test:headed": "playwright test --headed",

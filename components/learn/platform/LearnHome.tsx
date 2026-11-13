@@ -43,6 +43,7 @@ import { TagBadge, useLearnerIdentity } from './identity'
 import { learnPath, learnSignUpHref, mainSiteUrl, MSK_PROGRAM_PATH, MY_LEARNING_PATH, WELCOME_PATH } from './learnApi'
 import { imagekitPhotoLoader, LEARN_PHOTOS, type LearnPhoto } from './media'
 import { LearnTogether } from '../social/LearnTogether'
+import { SimsHomeBand } from '../sims/SimsHomeBand'
 
 const CATEGORY_ICON: Record<CourseCategory, ComponentType<{ className?: string }>> = {
   msk: Bone,
@@ -673,6 +674,7 @@ export function LearnHome({ initialCohort }: { initialCohort?: PublicCohort | nu
       <CourseRow items={items} />
       <FeaturedProgram cohort={cohort} />
       <Audiences />
+      <SimsHomeBand />
       <LearnTogether />
       <HowItWorks />
       <Team />

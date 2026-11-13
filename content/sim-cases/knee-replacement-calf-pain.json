@@ -1,0 +1,269 @@
+{
+  "slug": "knee-replacement-calf-pain",
+  "version": 1,
+  "title": "Breathless on day 3 after a knee replacement",
+  "summary": "You arrive to walk Mr Okafor three days after his knee replacement. His calf hurts and he can't catch his breath. You have 90 seconds.",
+  "specialty": "cardioresp",
+  "difficulty": 2,
+  "mode": "triage",
+  "timeLimitSec": 90,
+  "estimatedMinutes": 2,
+  "audio": true,
+  "setting": "Orthopaedic ward, private hospital, Lagos",
+  "patient": {
+    "name": "Mr Emeka Okafor",
+    "age": 64,
+    "sex": "M",
+    "occupation": "Retired civil servant",
+    "presentingComplaint": "Right calf pain and breathlessness, day 3 after a right total knee replacement"
+  },
+  "speakers": {
+    "patient": { "name": "Mr Okafor", "role": "Patient", "voice": "47Gsa5u66HaZn1cmiO9i" },
+    "wife": { "name": "Mrs Okafor", "role": "His wife", "voice": "2vbhUP8zyKg4dEZaTWGn" },
+    "nurse": { "name": "Nurse Aisha", "role": "Ward nurse", "voice": "Z8dg0fyk7p6js7cQ7lgi" },
+    "doctor": { "name": "Dr Bello", "role": "Doctor on call", "voice": "TyAD2ntJFdDReoa55SLn" }
+  },
+  "monitor": true,
+  "vitals": { "hr": 112, "spo2": 91, "bpSys": 128, "bpDia": 82, "rr": 24 },
+  "pain": 6,
+  "drift": { "everySec": 15, "vitals": { "spo2": -1, "hr": 3, "rr": 1 }, "maxSteps": 6, "stopFlag": "escalated" },
+  "phases": [{ "id": "triage", "label": "Triage", "budgetSec": 90 }],
+  "startNode": "start",
+  "nodes": {
+    "start": {
+      "id": "start",
+      "phase": "triage",
+      "prompt": "Day 3 after a right total knee replacement. You've come to walk Mr Okafor down the corridor. He's sitting on the edge of the bed, breathing fast.",
+      "lines": [
+        { "speaker": "patient", "text": "Physio, good morning o. My right calf has been paining me since last night, and I can't catch my breath, even sitting here." },
+        { "speaker": "wife", "text": "He doesn't look like himself today. He was sweating in the night." }
+      ],
+      "choices": [
+        {
+          "id": "stop",
+          "label": "Stop the session and help him back onto the bed",
+          "costSec": 2,
+          "next": "assess",
+          "points": 10,
+          "tag": "critical",
+          "feedback": "Right first move. New calf pain with breathlessness after surgery could be a clot that has reached the lungs. Walking him could make it worse.",
+          "reply": { "speaker": "patient", "text": "Thank you. I really don't feel well." }
+        },
+        {
+          "id": "walk",
+          "label": "Encourage him to walk: moving prevents clots",
+          "costSec": 4,
+          "next": "end-collapse",
+          "points": -30,
+          "tag": "harmful",
+          "feedback": "Early walking helps prevent clots, but once a DVT or PE is suspected, walking is unsafe. Stop and escalate first."
+        },
+        {
+          "id": "later",
+          "label": "Reassure him it's normal soreness and come back after lunch",
+          "costSec": 2,
+          "next": "end-dismissed",
+          "points": -30,
+          "tag": "harmful",
+          "feedback": "Calf pain with breathlessness, a fast pulse or low oxygen after surgery is never 'normal soreness'. Leaving him alone delays life-saving treatment."
+        }
+      ]
+    },
+    "assess": {
+      "id": "assess",
+      "phase": "triage",
+      "prompt": "He's back on the bed, propped up on pillows. What do you do next?",
+      "choices": [
+        {
+          "id": "vitals",
+          "label": "Check his vital signs",
+          "costSec": 8,
+          "next": "assess",
+          "points": 15,
+          "tag": "critical",
+          "feedback": "Essential. Heart rate, oxygen saturation and breathing rate tell you how unwell he is and belong in your handover.",
+          "reveals": ["f-vitals"],
+          "effects": { "flags": ["monitor"] }
+        },
+        {
+          "id": "calf",
+          "label": "Look at and gently feel both calves",
+          "costSec": 6,
+          "next": "assess",
+          "points": 10,
+          "tag": "high-yield",
+          "feedback": "Good: a swollen, warm, tender calf on the operated side points to a DVT. Look and feel gently; don't squeeze or massage.",
+          "reveals": ["f-calf"],
+          "reply": { "speaker": "patient", "text": "Ah! That's where it hurts." }
+        },
+        {
+          "id": "chest",
+          "label": "Ask about chest pain and coughing",
+          "costSec": 4,
+          "next": "assess",
+          "points": 10,
+          "tag": "high-yield",
+          "feedback": "Good: sharp pain on breathing in (pleuritic pain) supports a PE. Ask about coughing up blood too.",
+          "reveals": ["f-chest"],
+          "reply": { "speaker": "patient", "text": "It catches me here on the right when I breathe in. No blood when I cough." }
+        },
+        {
+          "id": "upright",
+          "label": "Sit him upright and ask the nurse to start oxygen, as the ward protocol allows",
+          "costSec": 4,
+          "next": "assess",
+          "points": 5,
+          "tag": "high-yield",
+          "feedback": "Helpful while help is coming: sitting up eases breathing, and oxygen per protocol supports his saturation.",
+          "reply": { "speaker": "nurse", "text": "Oxygen is on, two litres. I'm staying with him." },
+          "effects": { "vitals": { "spo2": 2 }, "flags": ["oxygen"] }
+        },
+        {
+          "id": "rom",
+          "label": "Measure his knee range of motion while you're here",
+          "costSec": 8,
+          "next": "assess",
+          "points": -3,
+          "tag": "wasteful",
+          "feedback": "Not now. His knee isn't the problem today, and every minute counts.",
+          "reveals": ["f-knee"]
+        },
+        {
+          "id": "massage",
+          "label": "Massage the calf to ease the cramp",
+          "costSec": 5,
+          "next": "assess",
+          "points": -15,
+          "tag": "harmful",
+          "feedback": "Never massage a calf you suspect has a DVT. It hurts, and it could push more clot towards the lungs.",
+          "effects": { "vitals": { "hr": 6, "spo2": -2 }, "pain": 2 },
+          "reply": { "speaker": "patient", "text": "Ah! Please stop, that's too painful." }
+        },
+        {
+          "id": "pumps",
+          "label": "Teach him ankle pumps to get the blood moving",
+          "costSec": 4,
+          "next": "assess",
+          "points": -3,
+          "tag": "wasteful",
+          "feedback": "Ankle pumps help prevent clots. They don't treat a suspected one, and they delay escalation."
+        },
+        {
+          "id": "escalate",
+          "label": "Call for help now: the nurse in charge and the doctor on call",
+          "costSec": 4,
+          "next": "handover",
+          "points": 20,
+          "tag": "critical",
+          "feedback": "Yes. Suspected PE is an emergency: escalate the same minute and stay with him.",
+          "effects": { "flags": ["escalated"] }
+        }
+      ]
+    },
+    "handover": {
+      "id": "handover",
+      "phase": "triage",
+      "prompt": "The ward phone puts you through to the doctor on call.",
+      "lines": [{ "speaker": "doctor", "text": "Hello, Dr Bello here. What's happening with the patient?" }],
+      "choices": [
+        {
+          "id": "sbar",
+          "label": "“Mr Okafor, 64, day 3 after a right knee replacement. New right calf pain and swelling, breathless at rest, heart rate 112, saturation 91 percent, breathing 24. I'm worried about a DVT with a PE. Please come and see him now.”",
+          "costSec": 6,
+          "next": "end-reviewed",
+          "points": 20,
+          "tag": "critical",
+          "feedback": "A clear SBAR handover: situation, background, assessment and what you need. It gets him seen within minutes.",
+          "reply": { "speaker": "doctor", "text": "That's clear, thank you. I'm coming now. Keep him on the bed with oxygen on, and don't let him walk." }
+        },
+        {
+          "id": "vague",
+          "label": "“He's a bit breathless. Can someone see him when they're free?”",
+          "costSec": 3,
+          "next": "end-delayed",
+          "points": -10,
+          "tag": "harmful",
+          "feedback": "Too vague. Without the numbers and what you suspect, the doctor can't tell how urgent this is.",
+          "reply": { "speaker": "doctor", "text": "I'm in theatre at the moment. I'll come when I finish." }
+        },
+        {
+          "id": "anxious",
+          "label": "“I think he's just anxious. I'll try the walk again tomorrow.”",
+          "costSec": 3,
+          "next": "end-dismissed",
+          "points": -30,
+          "tag": "harmful",
+          "feedback": "Breathlessness with a fast pulse and low oxygen after surgery must never be put down to anxiety without a medical review."
+        }
+      ]
+    },
+    "end-reviewed": {
+      "id": "end-reviewed",
+      "phase": "triage",
+      "prompt": "",
+      "end": {
+        "outcome": "good",
+        "title": "Seen within minutes",
+        "summary": "Dr Bello arrived in five minutes, started treatment and sent Mr Okafor for a CT pulmonary angiogram, which confirmed a pulmonary embolism. Stopping the walk and escalating with a clear handover made the difference."
+      }
+    },
+    "end-delayed": {
+      "id": "end-delayed",
+      "phase": "triage",
+      "prompt": "",
+      "end": {
+        "outcome": "poor",
+        "title": "Help came too slowly",
+        "summary": "Your handover didn't say how unwell he was or what you suspected, so the review waited 45 minutes. His oxygen kept falling and the emergency team was called. He survived, but the delay put him at real risk."
+      }
+    },
+    "end-collapse": {
+      "id": "end-collapse",
+      "phase": "triage",
+      "prompt": "",
+      "end": {
+        "outcome": "harm",
+        "title": "He collapsed in the corridor",
+        "summary": "Ten steps into the walk, Mr Okafor went grey, gasped and collapsed. A clot had travelled to his lungs. The emergency team was called. Walking a patient with a suspected PE can be fatal."
+      }
+    },
+    "end-dismissed": {
+      "id": "end-dismissed",
+      "phase": "triage",
+      "prompt": "",
+      "end": {
+        "outcome": "harm",
+        "title": "Left without help",
+        "summary": "Two hours later his wife found him struggling to breathe and the emergency team was called. The signs of a pulmonary embolism were there at your visit."
+      }
+    }
+  },
+  "findings": {
+    "f-vitals": { "id": "f-vitals", "label": "Vital signs", "detail": "Heart rate 112, SpO₂ 91% on room air, breathing rate 24, blood pressure 128/82, temperature 37.4 °C.", "abnormal": true },
+    "f-calf": { "id": "f-calf", "label": "Right calf", "detail": "Swollen (3 cm larger than the left at the same level), warm, red and tender along the deep veins, with pitting oedema.", "abnormal": true },
+    "f-chest": { "id": "f-chest", "label": "Chest", "detail": "Sharp right-sided pain on breathing in (pleuritic). No coughing up blood.", "abnormal": true },
+    "f-knee": { "id": "f-knee", "label": "Knee", "detail": "Range 10° to 75°, as expected on day 3. Not today's problem." }
+  },
+  "mustDo": ["stop", "vitals", "escalate", "sbar"],
+  "autoFail": ["walk", "later", "anxious"],
+  "expertPath": ["stop", "vitals", "calf", "chest", "upright", "escalate", "sbar"],
+  "passMark": 70,
+  "timeoutEnd": {
+    "outcome": "poor",
+    "title": "Time ran out",
+    "summary": "You were still at the bedside when time ran out. Mr Okafor's breathing got worse and the nurse had to call the emergency team."
+  },
+  "learningPoints": [
+    "New calf pain or swelling after lower-limb surgery, with breathlessness, a fast heart rate or low oxygen, is a pulmonary embolism until proven otherwise. Stop, don't mobilise, and escalate the same minute.",
+    "Wells score for PE here: signs of a DVT (3) + PE the most likely diagnosis (3) + heart rate over 100 (1.5) + surgery in the last 4 weeks (1.5) = 9, so a PE is likely (more than 4).",
+    "Never massage a calf you suspect has a DVT.",
+    "Hand over with SBAR: Situation, Background, Assessment, Recommendation. Give the numbers, say what you suspect and say what you need.",
+    "Physiotherapists don't diagnose a PE, but recognising it and escalating fast is part of safe practice."
+  ],
+  "references": [
+    { "label": "NICE NG158. Venous thromboembolic diseases: diagnosis, management and thrombophilia testing (2020, updated 2023).", "url": "https://www.nice.org.uk/guidance/ng158" },
+    { "label": "Wells PS, et al. Derivation of a simple clinical model to categorize patients' probability of pulmonary embolism. Thromb Haemost. 2000;83(3):416–420." },
+    { "label": "NICE NG89. Venous thromboembolism in over 16s: reducing the risk of hospital-acquired DVT or PE (2018, updated 2019).", "url": "https://www.nice.org.uk/guidance/ng89" },
+    { "label": "Institute for Healthcare Improvement. SBAR tool: Situation-Background-Assessment-Recommendation." }
+  ]
+}

@@ -19,6 +19,7 @@ import {
   BookOpen,
   ChevronDown,
   GraduationCap,
+  HeartPulse,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -45,6 +46,7 @@ import {
   type SignedInLearner,
 } from './learnApi'
 import { COMMUNITY_PATH, SPACES_PATH, spacesApi } from '../social/socialApi'
+import { simApi, SIMULATIONS_PATH } from '../sims/simApi'
 
 const SUPPORT_EMAIL = 'support@physioaroundme.com'
 
@@ -497,6 +499,7 @@ function ShortcutTile({ item, active, onClose }: { item: Shortcut; active: boole
 function MobileMenu({ open, onClose }: { open: boolean; onClose: () => void }) {
   const identity = useLearnerIdentity()
   const liveSpace = useLiveSpace()
+  const simsAvailable = useSimsAvailable()
   const reduce = useReducedMotion()
   const pathname = usePathname() ?? ''
   const { signOut } = useClerk()
@@ -606,6 +609,29 @@ function MobileMenu({ open, onClose }: { open: boolean; onClose: () => void }) {
                 ))}
               </motion.div>
 
+              {simsAvailable && (
+                <motion.div variants={section} className="mt-2.5">
+                  <Link
+                    href={SIMULATIONS_PATH}
+                    onClick={onClose}
+                    aria-current={isActive(SIMULATIONS_PATH) ? 'page' : undefined}
+                    className={cn(
+                      'flex items-center gap-3 rounded-[22px] p-4 transition active:scale-[0.98]',
+                      isActive(SIMULATIONS_PATH) ? 'bg-rh-ink text-white' : 'bg-rh-cream text-rh-ink'
+                    )}
+                  >
+                    <span className={cn('flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl', isActive(SIMULATIONS_PATH) ? 'bg-white/10 text-rh-lime' : 'bg-white text-rh-ink')}>
+                      <HeartPulse className="h-[18px] w-[18px]" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-[16px] font-semibold leading-tight">Simulations</span>
+                      <span className={cn('mt-0.5 block text-xs', isActive(SIMULATIONS_PATH) ? 'text-white/60' : 'text-rh-ink/55')}>Practise real cases against the clock</span>
+                    </span>
+                    <ArrowRight className="h-4 w-4 shrink-0 opacity-50" />
+                  </Link>
+                </motion.div>
+              )}
+
               {liveSpace && (
                 <motion.div variants={section} className="mt-2.5">
                   <Link
@@ -701,6 +727,12 @@ function useLiveSpace() {
   return spaces?.live[0] ?? null
 }
 
+/** Simulations show up in the menus once a case is live (reviewers also see drafts). */
+function useSimsAvailable() {
+  const sims = useQuery(simApi.list, {})
+  return Boolean(sims?.cases.length)
+}
+
 function useSpaceLive() {
   return Boolean(useLiveSpace())
 }
@@ -733,6 +765,7 @@ function NavLink({ href, children }: { href: string; children: ReactNode }) {
 
 export function LearnHeader() {
   const spaceLive = useSpaceLive()
+  const simsAvailable = useSimsAvailable()
   const [menuOpen, setMenuOpen] = useState(false)
   const closeMenu = useCallback(() => setMenuOpen(false), [])
   const [searchOpen, setSearchOpen] = useState(false)
@@ -747,6 +780,7 @@ export function LearnHeader() {
           <NavLink href={SPACES_PATH}>
             Spaces {spaceLive && <LiveDot />}
           </NavLink>
+          {simsAvailable && <NavLink href={SIMULATIONS_PATH}>Simulations</NavLink>}
         </nav>
         <SearchBox className="mx-auto hidden w-full max-w-md md:block" />
         <div className="ml-auto flex items-center gap-1 md:ml-0">
@@ -789,6 +823,7 @@ export function LearnFooter() {
         { label: 'Free courses', href: `${learnPath('/courses')}?type=free` },
         { label: 'Community', href: COMMUNITY_PATH },
         { label: 'Spaces', href: SPACES_PATH },
+        { label: 'Simulations', href: SIMULATIONS_PATH },
         { label: 'My learning', href: MY_LEARNING_PATH },
       ],
     },
