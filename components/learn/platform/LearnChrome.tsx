@@ -289,20 +289,51 @@ function AuthArea() {
 
 const PANEL_EASE = [0.32, 0.72, 0, 1] as const
 
-/** The phone menu: a panel that slides in over a soft backdrop, its sections easing in one after another. */
+type Shortcut = { href: string; label: string; sub: string; icon: typeof BookOpen; live?: boolean }
+
+/** One big tap target for the phone menu: Courses, Community, Spaces, My learning. */
+function ShortcutTile({ item, active, onClose }: { item: Shortcut; active: boolean; onClose: () => void }) {
+  return (
+    <Link
+      href={item.href}
+      onClick={onClose}
+      aria-current={active ? 'page' : undefined}
+      className={cn(
+        'flex flex-col justify-between gap-5 rounded-[22px] p-4 transition active:scale-[0.97]',
+        active ? 'bg-rh-ink text-white' : 'bg-rh-cream text-rh-ink'
+      )}
+    >
+      <span className="flex items-center justify-between">
+        <span className={cn('flex h-10 w-10 items-center justify-center rounded-2xl', active ? 'bg-white/10 text-rh-lime' : 'bg-white text-rh-ink')}>
+          <item.icon className="h-[18px] w-[18px]" />
+        </span>
+        {item.live && <LiveDot />}
+      </span>
+      <span>
+        <span className="block text-[16px] font-semibold leading-tight">{item.label}</span>
+        <span className={cn('mt-0.5 block text-xs', active ? 'text-white/60' : 'text-rh-ink/55')}>{item.sub}</span>
+      </span>
+    </Link>
+  )
+}
+
+/** The phone menu: a solid panel with the main places as big tiles, then topics and the account. */
 function MobileMenu({ open, onClose }: { open: boolean; onClose: () => void }) {
   const identity = useLearnerIdentity()
-  const spaceLive = useSpaceLive()
+  const liveSpace = useLiveSpace()
   const reduce = useReducedMotion()
-  const pathname = usePathname()
+  const pathname = usePathname() ?? ''
+  const { signOut } = useClerk()
   const closeRef = useRef<HTMLButtonElement>(null)
+  const closeLatest = useRef(onClose)
+  closeLatest.current = onClose
 
   // Lock the page behind, close on Escape, and put focus on the close button
   useEffect(() => {
     if (!open) return
     const previous = document.body.style.overflow
     document.body.style.overflow = 'hidden'
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && closeLatest.current()
     document.addEventListener('keydown', onKey)
     const focus = window.setTimeout(() => closeRef.current?.focus({ preventScroll: true }), 50)
     return () => {
@@ -310,7 +341,7 @@ function MobileMenu({ open, onClose }: { open: boolean; onClose: () => void }) {
       document.removeEventListener('keydown', onKey)
       window.clearTimeout(focus)
     }
-  }, [open, onClose])
+  }, [open])
 
   // A new page closes the menu
   const lastPath = useRef(pathname)
@@ -323,17 +354,32 @@ function MobileMenu({ open, onClose }: { open: boolean; onClose: () => void }) {
     hidden: reduce ? { opacity: 0 } : { opacity: 0, y: 14 },
     shown: { opacity: 1, y: 0, transition: { duration: 0.32, ease: PANEL_EASE } },
   }
+  const isActive = (href: string) => {
+    const path = href.split('?')[0]
+    return pathname === path || pathname.startsWith(`${path}/`) || pathname === `/learn${path}` || pathname.startsWith(`/learn${path}/`)
+  }
+
+  const shortcuts: Shortcut[] = [
+    { href: learnPath('/courses'), label: 'Courses', sub: 'Browse everything', icon: GraduationCap },
+    { href: COMMUNITY_PATH, label: 'Community', sub: 'Ask and discuss', icon: MessageCircle },
+    { href: SPACES_PATH, label: 'Spaces', sub: liveSpace ? 'Live now' : 'Live audio rooms', icon: Radio, live: Boolean(liveSpace) },
+    identity?.signedIn
+      ? { href: MY_LEARNING_PATH, label: 'My learning', sub: 'Pick up where you left off', icon: BookOpen }
+      : { href: `${learnPath('/courses')}?type=live`, label: 'Live programs', sub: 'Learn with a cohort', icon: BookOpen },
+  ]
+  const account = identity?.signedIn ? accountLinks(identity).filter((link) => link.href !== MY_LEARNING_PATH) : []
 
   return (
     <AnimatePresence>
       {open && (
         <div className="fixed inset-0 z-[60] lg:hidden" role="dialog" aria-modal="true" aria-label="Menu">
+          {/* Solid dim behind the panel on tablets (phones see only the panel) */}
           <motion.button
             type="button"
             aria-label="Close menu"
             tabIndex={-1}
             onClick={onClose}
-            className="absolute inset-0 h-full w-full cursor-default bg-[rgb(5_10_9/0.4)] backdrop-blur-[2px]"
+            className="absolute inset-0 h-full w-full cursor-default bg-[rgb(5_10_9/0.6)]"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -362,61 +408,99 @@ function MobileMenu({ open, onClose }: { open: boolean; onClose: () => void }) {
               </motion.button>
             </div>
             <motion.div
-              className="flex-1 overflow-y-auto overscroll-contain px-4 pb-10 pt-5"
+              className="flex-1 overflow-y-auto overscroll-contain px-4 pb-10 pt-4"
               initial="hidden"
               animate="shown"
               variants={{ hidden: {}, shown: { transition: { staggerChildren: reduce ? 0 : 0.05, delayChildren: reduce ? 0 : 0.12 } } }}
             >
-              <motion.div variants={section}>
-                <SearchBox onDone={onClose} />
-              </motion.div>
-              <motion.div variants={section} className="mt-4">
-                <ThemeSwitchRow />
-              </motion.div>
               {identity?.signedIn && (
-                <motion.div variants={section} className="mt-5 rounded-2xl bg-rh-cream p-4">
-                  <p className="text-sm font-semibold text-rh-ink">{identity.firstName ? `Hi, ${identity.firstName}` : 'Your account'}</p>
-                  <TagBadge tag={identity.tag} size="xs" className="mt-1.5" />
-                  <div className="mt-3 flex flex-col">
-                    {accountLinks(identity).map((link) => (
-                      <Link key={link.href} href={link.href} onClick={onClose} className="flex items-center gap-3 rounded-lg py-2 text-sm text-rh-ink active:bg-rh-ink/[0.04]">
-                        <link.icon className="h-4 w-4 text-rh-ink/60" /> {link.label}
-                      </Link>
-                    ))}
+                <motion.div variants={section} className="mb-4 flex items-center gap-3 px-1">
+                  <Avatar size={40} />
+                  <div className="min-w-0">
+                    <p className="truncate text-[15px] font-semibold text-rh-ink">{identity.firstName ? `Hi, ${identity.firstName}` : 'Your account'}</p>
+                    <TagBadge tag={identity.tag} size="xs" className="mt-1" />
                   </div>
                 </motion.div>
               )}
+
+              {/* The main places, one tap each */}
+              <motion.div variants={section} className="grid grid-cols-2 gap-2.5">
+                {shortcuts.map((item) => (
+                  <ShortcutTile key={item.href} item={item} active={isActive(item.href)} onClose={onClose} />
+                ))}
+              </motion.div>
+
+              {liveSpace && (
+                <motion.div variants={section} className="mt-2.5">
+                  <Link
+                    href={learnPath(`/spaces/${liveSpace.id}`)}
+                    onClick={onClose}
+                    className="flex items-center gap-3 rounded-[22px] bg-rh-ink p-4 text-white active:scale-[0.98]"
+                  >
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-rh-lime text-rh-ink">
+                      <Radio className="h-[18px] w-[18px]" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-xs font-semibold text-rh-lime">Live now</span>
+                      <span className="block truncate text-[15px] font-semibold">{liveSpace.title}</span>
+                    </span>
+                    <ArrowRight className="h-4 w-4 shrink-0 text-white/60" />
+                  </Link>
+                </motion.div>
+              )}
+
               <motion.div variants={section}>
-                <p className="mt-7 text-xs font-semibold uppercase tracking-[0.14em] text-rh-ink/45">Explore</p>
-                <div className="mt-2 grid grid-cols-2 gap-1">
+                <p className="mt-7 px-1 text-xs font-semibold uppercase tracking-[0.14em] text-rh-ink/45">Topics</p>
+                <div className="mt-3 flex flex-wrap gap-2">
                   {COURSE_CATEGORIES.map((c) => (
                     <Link
                       key={c.id}
                       href={`${learnPath('/courses')}?category=${c.id}`}
                       onClick={onClose}
-                      className="rounded-xl px-2 py-2.5 text-sm text-rh-ink transition-colors active:bg-rh-cream"
+                      className="rounded-full border border-rh-ink/10 px-3.5 py-2 text-sm font-medium text-rh-ink transition-colors active:bg-rh-cream"
                     >
                       {c.label}
                     </Link>
                   ))}
                 </div>
               </motion.div>
-              <motion.div variants={section} className="mt-5 grid grid-cols-2 gap-2">
-                <Link href={COMMUNITY_PATH} onClick={onClose} className="flex items-center gap-2.5 rounded-2xl bg-rh-cream px-4 py-3.5 text-[15px] font-semibold text-rh-ink active:scale-[0.98]">
-                  <MessageCircle className="h-4 w-4" /> Community
-                </Link>
-                <Link href={SPACES_PATH} onClick={onClose} className="flex items-center gap-2.5 rounded-2xl bg-rh-cream px-4 py-3.5 text-[15px] font-semibold text-rh-ink active:scale-[0.98]">
-                  <Radio className="h-4 w-4" /> Spaces {spaceLive && <LiveDot />}
-                </Link>
+
+              {account.length > 0 && (
+                <motion.div variants={section} className="mt-7 border-t border-rh-ink/[0.07] pt-3">
+                  {account.map((link) => (
+                    <Link
+                      key={link.href}
+                      href={link.href}
+                      onClick={onClose}
+                      className="flex items-center gap-3 rounded-xl px-1 py-3 text-[15px] text-rh-ink active:bg-rh-cream"
+                    >
+                      <link.icon className="h-4 w-4 text-rh-ink/55" />
+                      <span className="flex-1">{link.label}</span>
+                      {link.external && <ArrowUpRight className="h-3.5 w-3.5 text-rh-ink/40" />}
+                    </Link>
+                  ))}
+                </motion.div>
+              )}
+
+              <motion.div variants={section} className={cn(account.length > 0 ? 'mt-1' : 'mt-7 border-t border-rh-ink/[0.07] pt-4')}>
+                <ThemeSwitchRow />
               </motion.div>
-              <motion.div variants={section} className="mt-5 flex flex-col gap-1 border-t border-rh-ink/[0.07] pt-5">
-                <Link href={learnPath('/courses')} onClick={onClose} className="py-2 text-[15px] font-semibold text-rh-ink">
-                  All courses
-                </Link>
-                <Link href={`${learnPath('/courses')}?type=live`} onClick={onClose} className="py-2 text-[15px] font-semibold text-rh-ink">
-                  Live programs
-                </Link>
-              </motion.div>
+
+              {identity?.signedIn && (
+                <motion.div variants={section}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClose()
+                      void signOut({ redirectUrl: learnPath() })
+                    }}
+                    className="mt-2 flex w-full items-center gap-3 rounded-xl px-1 py-3 text-left text-[15px] text-rh-ink/70 active:bg-rh-cream"
+                  >
+                    <LogOut className="h-4 w-4" /> Sign out
+                  </button>
+                </motion.div>
+              )}
+
               {identity && !identity.signedIn && (
                 <motion.div variants={section} className="mt-8 grid gap-2">
                   <Link href={learnSignUpHref()} onClick={onClose} className={cn(pillInk, 'h-12 w-full')}>
@@ -435,10 +519,14 @@ function MobileMenu({ open, onClose }: { open: boolean; onClose: () => void }) {
   )
 }
 
-/** Lime dot while a Space is live. */
-function useSpaceLive() {
+/** The first live Space, if any (for the live dot and the menu's "Live now" card). */
+function useLiveSpace() {
   const spaces = useQuery(spacesApi.list, {})
-  return Boolean(spaces?.live.length)
+  return spaces?.live[0] ?? null
+}
+
+function useSpaceLive() {
+  return Boolean(useLiveSpace())
 }
 
 function LiveDot() {
@@ -472,7 +560,7 @@ export function LearnHeader() {
   const [menuOpen, setMenuOpen] = useState(false)
   const closeMenu = useCallback(() => setMenuOpen(false), [])
   return (
-    <header className="sticky top-0 z-40 border-b border-rh-ink/[0.06] bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/85">
+    <header className="sticky top-0 z-40 border-b border-rh-ink/[0.06] bg-white">
       <div className="mx-auto flex h-16 max-w-7xl items-center gap-2 px-4 sm:gap-3 sm:px-6">
         <Logo />
         <nav className="ml-3 hidden items-center lg:flex" aria-label="Learn">
@@ -484,6 +572,13 @@ export function LearnHeader() {
         </nav>
         <SearchBox className="mx-auto hidden w-full max-w-md md:block" />
         <div className="ml-auto flex items-center gap-1 md:ml-0">
+          <Link
+            href={learnPath("/courses")}
+            aria-label="Search courses"
+            className="flex h-10 w-10 items-center justify-center rounded-full text-rh-ink transition hover:bg-rh-ink/[0.05] active:scale-95 md:hidden"
+          >
+            <Search className="h-[18px] w-[18px]" />
+          </Link>
           <ThemeToggle />
           <AuthArea />
           <button
