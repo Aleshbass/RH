@@ -217,6 +217,32 @@ export const getCommunityHome = query({
   },
 });
 
+/**
+ * Physio dashboard › Community › Learn (owner 2026-11-13): approved physios see the Learn rooms
+ * from their own community too, with students' questions nobody has answered yet first.
+ */
+export const forClinicians = query({
+  args: {},
+  handler: async (ctx) => {
+    const member = await memberOrNull(ctx);
+    if (!member) return null;
+    const rooms = await roomsFor(ctx, member);
+    const roomIds = new Map(rooms.filter((r) => r.doc).map((r) => [r.doc!._id as string, { slug: r.slug, title: r.title }]));
+    const recent = await ctx.db.query("learnPosts").withIndex("by_activity").order("desc").take(200);
+    const visible = recent.filter((p) => p.status === "open" && roomIds.has(p.roomId));
+    const unanswered = visible.filter((p) => p.kind === "question" && p.replyCount === 0).slice(0, 8);
+    const shown = new Set(unanswered.map((p) => p._id as string));
+    const latest = visible.filter((p) => !shown.has(p._id)).slice(0, 10);
+    const authors = await authorsFor(ctx, [...unanswered, ...latest].map((p) => p.authorId));
+    const summary = (p: Doc<"learnPosts">) => postSummary(p, authors.get(p.authorId), roomIds.get(p.roomId)!);
+    return {
+      rooms: rooms.map(publicRoom),
+      unanswered: unanswered.map(summary),
+      latest: latest.map(summary),
+    };
+  },
+});
+
 export const getRoom = query({
   args: { slug: v.string(), limit: v.optional(v.number()) },
   handler: async (ctx, args) => {

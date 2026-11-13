@@ -10,11 +10,12 @@ import { EmptyState, PageContainer, PageSkeleton, Panel, StatusBadge, primaryBut
 import { RegionChips } from '@/components/exercise-programs/templates'
 import { TierBadge } from '@/components/rewards/TierBadge'
 import { AskQuestionDrawer, PublishCaseDrawer } from '@/components/community/drawers'
+import { LearnRoomsTab } from '@/components/community/LearnRoomsTab'
 import { closesLabel, communityRefs, type PostRow } from '@/components/community/refs'
 import { cpdHours } from '@/lib/rewards/rules'
 import { cn } from '@/lib/utils'
 
-type Tab = 'case' | 'questions' | 'mine'
+type Tab = 'case' | 'questions' | 'learn' | 'mine'
 
 const BASE = '/dashboard/physiotherapist/community'
 
@@ -64,11 +65,12 @@ export default function CommunityPage() {
         </span>
       </div>
 
-      <div className="grid grid-cols-3 gap-1 rounded-full bg-pt-sunken p-1" role="tablist">
+      <div className="grid grid-cols-4 gap-1 rounded-full bg-pt-sunken p-1" role="tablist">
         {(
           [
             ['case', 'Case of the Week'],
             ['questions', 'Questions'],
+            ['learn', 'Learn'],
             ['mine', 'My activity'],
           ] as const
         ).map(([key, label]) => (
@@ -174,6 +176,8 @@ export default function CommunityPage() {
           )}
         </div>
       )}
+
+      {tab === 'learn' && <LearnRoomsTab />}
 
       {tab === 'mine' && <MyActivity />}
 
