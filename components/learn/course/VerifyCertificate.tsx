@@ -14,10 +14,11 @@ import { BadgeCheck, Search, SearchX, ShieldAlert } from '@/components/icons'
 import { api } from '@/convex/_generated/api'
 import type { verifyCertificate } from '@/convex/learn'
 import type { QueryResult } from '@/lib/convexUntyped'
-import { playSound } from '@/lib/sounds'
+import { playSoundFile } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
 import { displayFont, fieldClass, pillInk } from '../shared'
 import { CertificatePreview, useCertificate } from './Certificate'
+import { celebrate } from './shared'
 import { dateOnly } from './shared'
 
 type Verified = QueryResult<typeof verifyCertificate>
@@ -49,7 +50,11 @@ function Lookup({ initial = '' }: { initial?: string }) {
 }
 
 function Valid({ result }: { result: Extract<Verified, { state: 'valid' }> }) {
-  useEffect(() => playSound('approve'), [result.code])
+  // A real certificate is worth celebrating: confetti and a chime (owner 2026-11-13)
+  useEffect(() => {
+    playSoundFile('certificate')
+    celebrate()
+  }, [result.code])
   const { src, failed } = useCertificate({
     name: result.name,
     code: result.code,

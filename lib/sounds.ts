@@ -96,6 +96,40 @@ function note(ctx: AudioContext, frequency: number, start: number, duration: num
   overtone.stop(start + duration + 0.05)
 }
 
+// ── Recorded sounds (ElevenLabs sound effects, public/sounds/learn) ─────────────
+
+/** Short recorded sounds, for moments that deserve more than a synthesised tone. */
+export type SoundFile = 'theme-dark' | 'theme-light' | 'certificate'
+
+const SOUND_FILES: Record<SoundFile, { src: string; volume: number }> = {
+  'theme-dark': { src: '/sounds/learn/theme-dark.mp3', volume: 0.7 },
+  'theme-light': { src: '/sounds/learn/theme-light.mp3', volume: 0.55 },
+  certificate: { src: '/sounds/learn/certificate.mp3', volume: 0.6 },
+}
+
+const loaded = new Map<SoundFile, HTMLAudioElement>()
+
+/** Fetches a sound ahead of time, so it plays the instant it's needed. */
+export function preloadSoundFile(name: SoundFile) {
+  if (typeof window === 'undefined' || loaded.has(name)) return
+  const audio = new Audio(SOUND_FILES[name].src)
+  audio.preload = 'auto'
+  audio.volume = SOUND_FILES[name].volume
+  loaded.set(name, audio)
+}
+
+export function playSoundFile(name: SoundFile) {
+  if (typeof window === 'undefined' || !soundsEnabled()) return
+  preloadSoundFile(name)
+  const audio = loaded.get(name)!
+  try {
+    audio.currentTime = 0
+    void audio.play().catch(() => undefined) // blocked before any tap: stay silent
+  } catch {
+    // No audio on this device
+  }
+}
+
 export function playSound(name: SoundName) {
   if (typeof window === 'undefined' || !soundsEnabled()) return
   const ctx = context()

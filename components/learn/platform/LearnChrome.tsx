@@ -30,6 +30,7 @@ import { COURSE_CATEGORIES } from '@/lib/learn/catalog'
 import { cn } from '@/lib/utils'
 import { pillInk } from '../shared'
 import { LearnerIdentityProvider, TagBadge, useLearnerIdentity } from './identity'
+import { ThemeSwitchRow, ThemeToggle } from './theme'
 import {
   learnPath,
   learnSignInHref,
@@ -327,7 +328,7 @@ function MobileMenu({ open, onClose }: { open: boolean; onClose: () => void }) {
             aria-label="Close menu"
             tabIndex={-1}
             onClick={onClose}
-            className="absolute inset-0 h-full w-full cursor-default bg-rh-ink/30 backdrop-blur-[2px]"
+            className="absolute inset-0 h-full w-full cursor-default bg-[rgb(5_10_9/0.4)] backdrop-blur-[2px]"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -363,6 +364,9 @@ function MobileMenu({ open, onClose }: { open: boolean; onClose: () => void }) {
             >
               <motion.div variants={section}>
                 <SearchBox onDone={onClose} />
+              </motion.div>
+              <motion.div variants={section} className="mt-4">
+                <ThemeSwitchRow />
               </motion.div>
               {identity?.signedIn && (
                 <motion.div variants={section} className="mt-5 rounded-2xl bg-rh-cream p-4">
@@ -433,6 +437,7 @@ export function LearnHeader() {
         </nav>
         <SearchBox className="mx-auto hidden w-full max-w-md md:block" />
         <div className="ml-auto flex items-center gap-1 md:ml-0">
+          <ThemeToggle />
           <AuthArea />
           <button
             type="button"

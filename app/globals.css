@@ -418,3 +418,54 @@ body {
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background-color: #9ca3af;
 }
+/* ── Rehabify Learn dark mode (components/learn/platform/theme.tsx) ────────────────────────────
+   The `learn-dark` class on <html> swaps Learn's colour tokens, so every Learn page follows.
+   Ink panels (footer, featured program, enrol box) keep their light-mode look: inside them the
+   tokens are set back. Ink buttons and links stay swapped, so they read as light buttons. */
+html.learn-dark {
+  color-scheme: dark;
+  --color-white: #121b1a;
+  --color-black: #ffffff;
+  --color-rh-ink: #ecefe9;
+  --color-rh-ink-2: #dfe4dd;
+  --color-rh-ink-3: #cfd6ce;
+  --color-rh-cream: #0c1413;
+  --color-rh-canvas: #182322;
+  --color-rh-sand: #1b2625;
+  --color-rh-bone: #2b3431;
+  --color-rh-honeydew: #14261b;
+  --color-rh-jasmine: #3b3313;
+  --shadow-soft: 0 1px 2px rgb(0 0 0 / 0.45), 0 8px 24px -14px rgb(0 0 0 / 0.7);
+  --shadow-lift: 0 2px 4px rgb(0 0 0 / 0.5), 0 14px 32px -16px rgb(0 0 0 / 0.75);
+}
+html.learn-dark body {
+  background-color: #121b1a;
+}
+html.learn-dark .bg-rh-ink:not(a):not(button) {
+  --color-rh-ink: #070e0d;
+  --color-white: #ffffff;
+  --color-black: #000000;
+}
+/* Lime always pairs with dark ink text (light text on lime would be hard to read) */
+html.learn-dark .bg-rh-lime {
+  --color-rh-ink: #0b1312;
+}
+/* The ink-and-lime logo turns light, its lime kept */
+html.learn-dark img[src*="Ink"][src*="MainRehabify"] {
+  filter: invert(1) hue-rotate(180deg);
+}
+/* Theme switch: the new theme grows in a circle from the tap (no default cross-fade) */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+/* Browsers without View Transitions, and reduced motion: a soft cross-fade */
+html.learn-theme-fade,
+html.learn-theme-fade * {
+  transition:
+    background-color 0.4s ease,
+    color 0.4s ease,
+    border-color 0.4s ease,
+    fill 0.4s ease !important;
+}
