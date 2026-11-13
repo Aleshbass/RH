@@ -107,6 +107,17 @@ export function relativeTime(at: number, now = Date.now()) {
   return 'just now'
 }
 
+/**
+ * The person's own photo, or null. Clerk gives everyone without a photo a generated placeholder
+ * (img.clerk.com/<base64 of {"type":"default",…}>); that counts as no photo.
+ */
+export function realPhoto(url: string | null | undefined) {
+  if (!url) return null
+  if (/img\.clerk\.com\/eyJ0eXBlIjoiZGVmYXVsdCI/.test(url)) return null
+  if (/gravatar\.com\/avatar\/[^?]*\?.*d=blank/.test(url)) return null
+  return url
+}
+
 export function initials(name: string) {
   return (
     name

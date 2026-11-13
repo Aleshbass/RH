@@ -17,7 +17,7 @@ import { cn } from '@/lib/utils'
 import { displayFont, fieldClass, pillInk, pillLime, pillOutline } from '../shared'
 import { TagBadge } from '../platform/identity'
 import { errorText, relativeTime, SPACES_PATH, spacePath, spacesApi, type SpaceCard } from '../social/socialApi'
-import { Avatar, EmptyState, JoinPrompt, Sheet, Skeleton } from '../social/ui'
+import { EmptyState, JoinPrompt, Sheet, Skeleton, SpaceAvatar } from '../social/ui'
 
 export function LiveEq({ className }: { className?: string }) {
   return (
@@ -52,7 +52,7 @@ function LiveCard({ space, index }: { space: SpaceCard; index: number }) {
           {space.description && <p className="mt-2 line-clamp-2 text-sm leading-6 text-white/60">{space.description}</p>}
         </div>
         <div className="flex items-center gap-3">
-          <Avatar name={space.host.name} imageUrl={space.host.imageUrl} size={40} className="ring-2 ring-rh-lime ring-offset-2 ring-offset-rh-ink" />
+          <SpaceAvatar name={space.host.name} imageUrl={space.host.imageUrl} size={40} className="bg-white/10 text-white/75 ring-2 ring-rh-lime ring-offset-2 ring-offset-rh-ink" />
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-semibold">{space.host.name}</p>
             <p className="text-xs text-white/55">Host · started {relativeTime(space.startedAt ?? Date.now())}</p>
@@ -93,7 +93,7 @@ function UpcomingRow({ space, canAct }: { space: SpaceCard; canAct: boolean }) {
       <Link href={spacePath(space.id)} className="min-w-0 flex-1">
         <p className="text-[17px] font-semibold leading-snug text-rh-ink hover:underline hover:underline-offset-4">{space.title}</p>
         <div className="mt-2 flex flex-wrap items-center gap-2">
-          <Avatar name={space.host.name} imageUrl={space.host.imageUrl} size={22} />
+          <SpaceAvatar name={space.host.name} imageUrl={space.host.imageUrl} size={22} />
           <span className="text-sm text-rh-ink/70">{space.host.name}</span>
           {space.host.tag && <TagBadge tag={space.host.tag} size="xs" />}
         </div>
@@ -308,7 +308,7 @@ export function SpacesHome() {
                   <li key={space.id} className="rounded-3xl border border-rh-ink/[0.07] p-5">
                     <p className="line-clamp-2 font-semibold leading-snug text-rh-ink">{space.title}</p>
                     <div className="mt-3 flex items-center gap-2 text-xs text-rh-ink/55">
-                      <Avatar name={space.host.name} imageUrl={space.host.imageUrl} size={20} />
+                      <SpaceAvatar name={space.host.name} imageUrl={space.host.imageUrl} size={20} />
                       <span className="truncate">{space.host.name}</span>
                       <span>·</span>
                       <span>{relativeTime(space.endedAt ?? space.startedAt ?? Date.now())}</span>

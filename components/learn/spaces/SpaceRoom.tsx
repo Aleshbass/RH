@@ -50,7 +50,7 @@ import type { Id } from '@/convex/_generated/dataModel'
 import { displayFont, pillInk, pillLime, pillOutline } from '../shared'
 import { TagBadge } from '../platform/identity'
 import { errorText, relativeTime, SPACES_PATH, spacePath, spacesApi, type SpacePage, type StageSeat } from '../social/socialApi'
-import { Avatar, JoinPrompt, Sheet, Skeleton } from '../social/ui'
+import { JoinPrompt, Sheet, Skeleton, SpaceAvatar } from '../social/ui'
 import { LiveEq, spaceWhen } from './SpacesHome'
 import { useVoiceMeter, wakeVoiceMeters } from './voiceMeter'
 
@@ -138,7 +138,7 @@ function Tile({
           </>
         )}
         <span className="space-avatar relative block rounded-full transition-[filter] group-focus-visible:ring-2 group-focus-visible:ring-white" style={{ width: size, height: size }}>
-          <Avatar name={name} imageUrl={imageUrl} size={size} className="bg-white/10 text-white" />
+          <SpaceAvatar name={name} imageUrl={imageUrl} size={size} className="bg-white/10 text-white/75" />
         </span>
 
         {/* Muted: a small mic-off badge that pops in */}
@@ -623,7 +623,7 @@ function LiveRoom({ page, joinedAs, onLeft }: { page: SpacePage; joinedAs: { isH
           <ul className="divide-y divide-rh-ink/[0.07]">
             {hands.map((person) => (
               <li key={person.participant.userId} className="flex items-center gap-3 py-3">
-                <Avatar name={person.participant.name || 'Member'} imageUrl={person.participant.image} size={40} />
+                <SpaceAvatar name={person.participant.name || 'Member'} imageUrl={person.participant.image} size={40} />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold text-rh-ink">{person.participant.name || 'Member'}</p>
                   {person.seat?.tag && <TagBadge tag={person.seat.tag} size="xs" className="mt-1" />}
@@ -845,7 +845,7 @@ export function SpaceRoom({ spaceId }: { spaceId: string }) {
 
   const hostLine = (
     <div className="mt-6 flex items-center gap-3">
-      <Avatar name={space.host.name} imageUrl={space.host.imageUrl} size={44} className="bg-white/10 text-white ring-2 ring-rh-lime ring-offset-2 ring-offset-rh-ink" />
+      <SpaceAvatar name={space.host.name} imageUrl={space.host.imageUrl} size={44} className="bg-white/10 text-white/75 ring-2 ring-rh-lime ring-offset-2 ring-offset-rh-ink" />
       <div className="min-w-0">
         <p className="text-sm font-semibold">{space.host.name}</p>
         <p className="text-xs text-white/50">Host</p>

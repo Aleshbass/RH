@@ -6,35 +6,52 @@ import { useEffect, useRef, type ReactNode } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
-import { ArrowRight, X } from '@/components/icons'
+import { ArrowRight, Mic, X } from '@/components/icons'
 import { cn } from '@/lib/utils'
 import { pillInk, pillOutline } from '../shared'
 import { learnSignInHref, learnSignUpHref, WELCOME_PATH } from '../platform/learnApi'
-import { initials } from './socialApi'
+import { initials, realPhoto } from './socialApi'
 
+/**
+ * A round profile picture. Only a photo the person set up shows; otherwise `fallback` (Spaces use
+ * the mic icon) or their initials.
+ */
 export function Avatar({
   name,
   imageUrl,
   size = 40,
   className,
+  fallback,
 }: {
   name: string
   imageUrl?: string | null
   size?: number
   className?: string
+  fallback?: ReactNode
 }) {
+  const photo = realPhoto(imageUrl)
   return (
     <span
       className={cn('relative inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-rh-sand font-semibold text-rh-ink', className)}
       style={{ width: size, height: size, fontSize: Math.max(11, Math.round(size * 0.36)) }}
     >
-      {imageUrl ? (
-        <Image src={imageUrl} alt="" fill sizes={`${size}px`} unoptimized className="object-cover" />
+      {photo ? (
+        <Image src={photo} alt="" fill sizes={`${size}px`} unoptimized className="object-cover" />
+      ) : fallback ? (
+        <span aria-hidden className="flex items-center justify-center">
+          {fallback}
+        </span>
       ) : (
         <span aria-hidden>{initials(name)}</span>
       )}
     </span>
   )
+}
+
+/** A person in Spaces: their photo if they set one up, otherwise the mic icon. */
+export function SpaceAvatar({ name, imageUrl, size = 40, className }: { name: string; imageUrl?: string | null; size?: number; className?: string }) {
+  const icon = Math.max(10, Math.round(size * 0.38))
+  return <Avatar name={name} imageUrl={imageUrl} size={size} className={className} fallback={<Mic style={{ width: icon, height: icon }} />} />
 }
 
 /** A fixed dark tint. Not bg-black: Learn's dark mode turns the "black" token white, which flashed. */

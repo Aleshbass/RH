@@ -5,16 +5,19 @@
 import Link from 'next/link'
 import { useQuery } from 'convex/react'
 import { motion, useReducedMotion } from 'framer-motion'
-import { ArrowRight, Headphones, MessageCircle } from '@/components/icons'
+import { ArrowRight, MessageCircle, Mic } from '@/components/icons'
 import { cn } from '@/lib/utils'
 import { displayFont } from '../shared'
 import { COMMUNITY_PATH, relativeTime, SPACES_PATH, spacePath, spacesApi } from './socialApi'
-import { Avatar } from './ui'
+import { SpaceAvatar } from './ui'
 
 const ROOMS = ['Student lounge', 'Ask a physio', 'Study group', 'Your course rooms']
 
-/** Three avatars "talking": the rings breathe on a loop (no audio on the home page). */
-function TalkingAvatars() {
+/**
+ * Three avatars "talking": the rings breathe on a loop (no audio on the home page). While a Space is
+ * live the first circle is its host: their photo, or the mic icon if they have none.
+ */
+function TalkingAvatars({ host }: { host?: { name: string; imageUrl: string | null } | null }) {
   const reduce = useReducedMotion()
   const people = [
     { name: 'Host', delay: 0 },
@@ -32,9 +35,13 @@ function TalkingAvatars() {
               transition={{ duration: 2.4, delay: p.delay, repeat: Infinity, repeatDelay: 0.3, ease: 'easeInOut' }}
             />
           )}
-          <span className="flex h-14 w-14 items-center justify-center rounded-full bg-white/10 text-white/70">
-            <Headphones className="h-5 w-5" />
-          </span>
+          {i === 0 && host ? (
+            <SpaceAvatar name={host.name} imageUrl={host.imageUrl} size={56} className="bg-white/10 text-white/70" />
+          ) : (
+            <span className="flex h-14 w-14 items-center justify-center rounded-full bg-white/10 text-white/70">
+              <Mic className="h-5 w-5" />
+            </span>
+          )}
         </span>
       ))}
     </div>
@@ -81,7 +88,7 @@ export function LearnTogether() {
             className="group flex flex-col justify-between gap-10 rounded-[2rem] bg-rh-ink p-7 text-white transition hover:-translate-y-0.5 hover:bg-black sm:p-9"
           >
             <div>
-              <TalkingAvatars />
+              <TalkingAvatars host={live?.host ?? null} />
               <h3 className={cn('mt-8 text-[26px] leading-tight tracking-tight', displayFont)}>Rehabify Spaces</h3>
               {live ? (
                 <div className="mt-3">
@@ -94,7 +101,7 @@ export function LearnTogether() {
                   </p>
                   <p className="mt-1 text-lg font-semibold leading-snug">{live.title}</p>
                   <div className="mt-2 flex items-center gap-2 text-sm text-white/60">
-                    <Avatar name={live.host.name} imageUrl={live.host.imageUrl} size={22} className="bg-white/10 text-white" /> {live.host.name}
+                    <SpaceAvatar name={live.host.name} imageUrl={live.host.imageUrl} size={22} className="bg-white/10 text-white/75" /> {live.host.name}
                   </div>
                 </div>
               ) : next ? (
