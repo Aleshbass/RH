@@ -83,7 +83,7 @@ function FlagList({ flags }: { flags: Flag[] }) {
               <Icon className="mr-1 h-3 w-3" /> {FLAG_STYLE[f.tone].label}
             </StatusBadge>
             <span className="text-neutral-700 dark:text-neutral-200">
-              <span className="font-semibold text-rh-ink dark:text-white">{f.title}.</span> {f.detail}
+              <span className="font-semibold text-rh-ink dark:text-white">{/[.?!]$/.test(f.title) ? f.title : `${f.title}.`}</span> {f.detail}
             </span>
           </li>
         )
@@ -407,7 +407,8 @@ export function CameraSessions({
   const recent = sessions.filter((s) => s.createdAt > Date.now() - 14 * DAY)
   const hasWeek = sessions.some((s) => s.createdAt > Date.now() - 7 * DAY)
   const latest = sessions[0]
-  const previous = sessions[1]
+  // Compared with the same exercise's session before, not with a different exercise
+  const previous = sessions.slice(1).find((s) => s.itemIndex === latest.itemIndex)
   const trend = previous ? latest.rehabifyScore - previous.rehabifyScore : 0
 
   return (
