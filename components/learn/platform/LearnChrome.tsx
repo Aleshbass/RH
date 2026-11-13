@@ -6,7 +6,7 @@
  * My learning, their Rehabify dashboard and the welcome step if they haven't said who they are.
  */
 
-import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import Image from 'next/image'
 import Link from 'next/link'
@@ -32,6 +32,7 @@ import {
 import { COURSE_CATEGORIES } from '@/lib/learn/catalog'
 import { cn } from '@/lib/utils'
 import { pillInk } from '../shared'
+import { CoverImage, matchesQuery, useCatalog } from './catalog'
 import { LearnerIdentityProvider, TagBadge, useLearnerIdentity } from './identity'
 import { ThemeSwitchRow, ThemeToggle } from './theme'
 import {
@@ -91,31 +92,206 @@ function useOutsideClose(open: boolean, close: () => void) {
   return ref
 }
 
-function SearchBox({ className, autoFocus, onDone }: { className?: string; autoFocus?: boolean; onDone?: () => void }) {
+/**
+ * Live course matches under a search field. Typing never leaves the page (owner 2026-11-13: tapping
+ * search while watching a lesson must not navigate away); only picking a course or "See all" does.
+ */
+function SearchResults({ q, onPick }: { q: string; onPick: () => void }) {
+  const items = useCatalog()
+  const term = q.trim()
+  const matches = useMemo(() => (items && term ? items.filter((item) => matchesQuery(item, term)).slice(0, 6) : []), [items, term])
+  const allHref = term ? `${learnPath('/courses')}?q=${encodeURIComponent(term)}` : learnPath('/courses')
+
+  if (!term) {
+    return (
+      <div className="p-4">
+        <p className="px-1 text-xs font-semibold uppercase tracking-[0.14em] text-rh-ink/45">Browse topics</p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {COURSE_CATEGORIES.map((c) => (
+            <Link
+              key={c.id}
+              href={`${learnPath('/courses')}?category=${c.id}`}
+              onClick={onPick}
+              className="rounded-full border border-rh-ink/10 px-3.5 py-2 text-sm font-medium text-rh-ink transition hover:border-rh-ink/25 active:bg-rh-cream"
+            >
+              {c.label}
+            </Link>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="p-2">
+      {items === undefined ? (
+        <div className="space-y-2 p-2">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="h-12 animate-pulse rounded-2xl bg-rh-ink/[0.05]" />
+          ))}
+        </div>
+      ) : matches.length === 0 ? (
+        <p className="px-3 py-4 text-sm text-rh-ink/60">No courses match “{term}”.</p>
+      ) : (
+        <ul>
+          {matches.map((item) => (
+            <li key={item.key}>
+              <Link href={item.href} onClick={onPick} className="flex items-center gap-3 rounded-2xl p-2 transition hover:bg-rh-cream active:bg-rh-cream">
+                <span className="relative h-11 w-16 shrink-0 overflow-hidden rounded-xl bg-rh-sand">
+                  <CoverImage cover={item.cover} sizes="64px" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-semibold text-rh-ink">{item.title}</span>
+                  <span className="block truncate text-xs text-rh-ink/55">
+                    {item.isLive ? 'Live program' : 'Video course'} · {item.price}
+                  </span>
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+      <Link
+        href={allHref}
+        onClick={onPick}
+        className="mt-1 flex items-center justify-between gap-3 rounded-2xl px-3 py-3 text-sm font-semibold text-rh-ink transition hover:bg-rh-cream active:bg-rh-cream"
+      >
+        <span className="truncate">See all results for “{term}”</span>
+        <ArrowRight className="h-4 w-4 shrink-0" />
+      </Link>
+    </div>
+  )
+}
+
+/** The header search (tablet and up): results drop down under it as you type. */
+function SearchBox({ className }: { className?: string }) {
   const router = useRouter()
+  const pathname = usePathname()
   const [q, setQ] = useState('')
+  const [open, setOpen] = useState(false)
+  const close = useCallback(() => setOpen(false), [])
+  const ref = useOutsideClose(open, close)
+
+  // A new page closes the results
+  useEffect(() => setOpen(false), [pathname])
+
   const submit = (e: FormEvent) => {
     e.preventDefault()
     const term = q.trim()
     router.push(term ? `${learnPath('/courses')}?q=${encodeURIComponent(term)}` : learnPath('/courses'))
-    onDone?.()
+    setOpen(false)
   }
   return (
-    <form role="search" onSubmit={submit} className={cn('relative', className)}>
-      <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-rh-ink/45" />
-      <label htmlFor="learn-search" className="sr-only">
-        Search courses
-      </label>
-      <input
-        id="learn-search"
-        type="search"
-        value={q}
-        onChange={(e) => setQ(e.target.value)}
-        autoFocus={autoFocus}
-        placeholder="What do you want to learn?"
-        className="h-11 w-full rounded-full border border-rh-ink/10 bg-rh-cream/70 pl-11 pr-4 text-sm text-rh-ink placeholder:text-rh-ink/45 transition focus:border-rh-ink focus:bg-white focus:outline-none focus:ring-4 focus:ring-rh-ink/[0.07]"
-      />
-    </form>
+    <div ref={ref} className={cn('relative', className)}>
+      <form role="search" onSubmit={submit} className="relative">
+        <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-rh-ink/45" />
+        <label htmlFor="learn-search" className="sr-only">
+          Search courses
+        </label>
+        <input
+          id="learn-search"
+          type="search"
+          value={q}
+          onChange={(e) => {
+            setQ(e.target.value)
+            setOpen(true)
+          }}
+          onFocus={() => setOpen(true)}
+          autoComplete="off"
+          placeholder="What do you want to learn?"
+          className="h-11 w-full rounded-full border border-rh-ink/10 bg-rh-cream/70 pl-11 pr-4 text-sm text-rh-ink placeholder:text-rh-ink/45 transition focus:border-rh-ink focus:bg-white focus:outline-none focus:ring-4 focus:ring-rh-ink/[0.07]"
+        />
+      </form>
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -6 }}
+            transition={{ duration: 0.16, ease: 'easeOut' }}
+            className="absolute left-0 right-0 top-[52px] z-50 max-h-[70vh] overflow-y-auto rounded-3xl bg-white shadow-lift ring-1 ring-rh-ink/[0.06]"
+          >
+            <SearchResults q={q} onPick={close} />
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  )
+}
+
+/** Phone search: a panel over the page (nothing behind it moves or stops), results as you type. */
+function PhoneSearch({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const router = useRouter()
+  const reduce = useReducedMotion()
+  const pathname = usePathname()
+  const [q, setQ] = useState('')
+  const closeLatest = useRef(onClose)
+  closeLatest.current = onClose
+
+  useEffect(() => {
+    if (!open) return
+    const previous = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && closeLatest.current()
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.body.style.overflow = previous
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+
+  // A new page closes the panel
+  const lastPath = useRef(pathname)
+  useEffect(() => {
+    if (lastPath.current !== pathname && open) onClose()
+    lastPath.current = pathname
+  }, [pathname, open, onClose])
+
+  const submit = (e: FormEvent) => {
+    e.preventDefault()
+    const term = q.trim()
+    router.push(term ? `${learnPath('/courses')}?q=${encodeURIComponent(term)}` : learnPath('/courses'))
+    onClose()
+  }
+
+  return (
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Search courses"
+          className="fixed inset-0 z-[60] flex flex-col bg-white md:hidden"
+          initial={reduce ? { opacity: 0 } : { opacity: 0, y: -16 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={reduce ? { opacity: 0 } : { opacity: 0, y: -16 }}
+          transition={{ duration: 0.22, ease: [0.32, 0.72, 0, 1] }}
+        >
+          <form role="search" onSubmit={submit} className="flex h-16 shrink-0 items-center gap-2 border-b border-rh-ink/[0.06] px-4">
+            <div className="relative flex-1">
+              <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-rh-ink/45" />
+              <input
+                type="search"
+                autoFocus
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                enterKeyHint="search"
+                autoComplete="off"
+                aria-label="Search courses"
+                placeholder="What do you want to learn?"
+                className="h-11 w-full rounded-full border border-rh-ink/10 bg-rh-cream pl-11 pr-4 text-[16px] text-rh-ink placeholder:text-rh-ink/45 focus:border-rh-ink focus:outline-none"
+              />
+            </div>
+            <button type="button" onClick={onClose} className="h-10 shrink-0 px-2 text-sm font-semibold text-rh-ink">
+              Cancel
+            </button>
+          </form>
+          <div className="flex-1 overflow-y-auto overscroll-contain">
+            <SearchResults q={q} onPick={onClose} />
+          </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   )
 }
 
@@ -559,6 +735,8 @@ export function LearnHeader() {
   const spaceLive = useSpaceLive()
   const [menuOpen, setMenuOpen] = useState(false)
   const closeMenu = useCallback(() => setMenuOpen(false), [])
+  const [searchOpen, setSearchOpen] = useState(false)
+  const closeSearch = useCallback(() => setSearchOpen(false), [])
   return (
     <header className="sticky top-0 z-40 border-b border-rh-ink/[0.06] bg-white">
       <div className="mx-auto flex h-16 max-w-7xl items-center gap-2 px-4 sm:gap-3 sm:px-6">
@@ -572,13 +750,15 @@ export function LearnHeader() {
         </nav>
         <SearchBox className="mx-auto hidden w-full max-w-md md:block" />
         <div className="ml-auto flex items-center gap-1 md:ml-0">
-          <Link
-            href={learnPath("/courses")}
+          <button
+            type="button"
+            onClick={() => setSearchOpen(true)}
             aria-label="Search courses"
+            aria-expanded={searchOpen}
             className="flex h-10 w-10 items-center justify-center rounded-full text-rh-ink transition hover:bg-rh-ink/[0.05] active:scale-95 md:hidden"
           >
             <Search className="h-[18px] w-[18px]" />
-          </Link>
+          </button>
           <ThemeToggle />
           <AuthArea />
           <button
@@ -593,6 +773,7 @@ export function LearnHeader() {
         </div>
       </div>
       <MobileMenu open={menuOpen} onClose={closeMenu} />
+      <PhoneSearch open={searchOpen} onClose={closeSearch} />
     </header>
   )
 }
