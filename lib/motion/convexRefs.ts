@@ -1,6 +1,8 @@
 import { makeFunctionReference } from 'convex/server'
 import type { Id } from '@/convex/_generated/dataModel'
 import type { SessionSummary } from './session'
+import type { SessionMeasure, SessionPain } from './insights'
+import type { CameraSummary } from './aiSummary'
 
 /**
  * Convex functions of the camera coach (convex/guidedSessions.ts), by name: the generated `api`
@@ -55,6 +57,11 @@ export type CareTeamSessionRow = {
   topMistake: string | null
   snapshotCount: number
   source: 'app' | 'link'
+  repScores: number[]
+  /** Range per rep; null for sessions saved before Nov 2026 */
+  measure: SessionMeasure | null
+  /** Pain the patient reported straight after the session, if any */
+  pain: SessionPain | null
 }
 export const forPatientRef = makeFunctionReference<'query', { patientId: Id<'users'> }, CareTeamSessionRow[] | null>(
   'guidedSessions:forPatient'
@@ -71,4 +78,16 @@ export type SessionDetail = {
 }
 export const sessionDetailRef = makeFunctionReference<'query', { sessionId: Id<'guidedSessions'> }, SessionDetail | null>(
   'guidedSessions:sessionDetail'
+)
+
+/** AI weekly summary of a programme's camera sessions (convex/cameraInsights.ts) */
+export type LatestCameraSummary = {
+  enabled: boolean
+  summary: (CameraSummary & { createdAt: number; weekSessions: number; totalSessions: number }) | null
+}
+export const latestSummaryRef = makeFunctionReference<'query', { programId: Id<'exercisePrograms'> }, LatestCameraSummary | null>(
+  'cameraInsights:latestSummary'
+)
+export const draftSummaryRef = makeFunctionReference<'action', { programId: Id<'exercisePrograms'> }, CameraSummary>(
+  'cameraInsights:draftSummary'
 )

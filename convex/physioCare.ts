@@ -21,6 +21,7 @@ import { isPlaceholderUser } from "./helpers/whatsappLink";
 import { shownEmail } from "./helpers/patientJoinStatus";
 import { awaitingConfirmationFrom, hasPendingProposal } from "./helpers/appointmentStatus";
 import { lagosDateTime } from "./helpers/lagosTime";
+import { exerciseFlags, pairPain, type Flag } from "../lib/motion/insights";
 import { assertNoteTextLength, earlierVersions, keepRevision, revisionCountOf } from "./helpers/noteRevisions";
 import { canReadNote, clinicNoteReader, noteReaderFor, physioNoteReader, type NoteReader } from "./helpers/noteAccess";
 import { getClinicMember, getClinicStaffUserIds } from "./clinicTools";
@@ -260,6 +261,52 @@ function planSnapshot(plan: Doc<"treatmentPlans">) {
 }
 
 /** Home-programme logs with the programme title and exercise name, newest first. */
+/**
+ * The camera coach's most useful flag for one patient (lib/motion/insights.ts), from sessions in the
+ * last week: amber ones (range down, pain rising, reps short, form fading) first, then "ready to
+ * progress". High pain is left to the exercise-pain item. Null when there is nothing to say.
+ */
+async function cameraFlagFor(
+  ctx: Ctx,
+  patientId: Id<"users">,
+  logs: Doc<"exerciseProgramLogs">[],
+  now: number
+): Promise<{ flag: Flag; exerciseName: string; at: number } | null> {
+  const sessions = await ctx.db
+    .query("guidedSessions")
+    .withIndex("by_patient", (q) => q.eq("patientId", patientId).gte("createdAt", now - 30 * DAY))
+    .take(80);
+  if (!sessions.some((s) => s.createdAt >= now - 7 * DAY)) return null;
+  const pains = pairPain(sessions, logs);
+  const groups = new Map<string, number[]>();
+  sessions.forEach((s, i) => {
+    const key = `${s.programId}:${s.itemIndex}`;
+    groups.set(key, [...(groups.get(key) ?? []), i]);
+  });
+  let best: { flag: Flag; index: number } | null = null;
+  for (const indexes of groups.values()) {
+    const latest = indexes[indexes.length - 1];
+    if (sessions[latest].createdAt < now - 7 * DAY) continue;
+    const flags = exerciseFlags(
+      indexes.map((i) => ({ ...sessions[i], measure: sessions[i].measure ?? null, pain: pains[i] }))
+    ).filter((f) => f.tone === "amber" || f.code === "ready_to_progress");
+    const flag = flags[0];
+    if (!flag) continue;
+    const better =
+      !best ||
+      (flag.tone === "amber" && best.flag.tone !== "amber") ||
+      (flag.tone === best.flag.tone && sessions[latest].createdAt > sessions[best.index].createdAt);
+    if (better) best = { flag, index: latest };
+  }
+  if (!best) return null;
+  const session = sessions[best.index];
+  const program = await ctx.db.get(session.programId);
+  const item = program?.items[session.itemIndex];
+  let exerciseName = item?.name ?? null;
+  if (item?.exerciseId) exerciseName = (await ctx.db.get(item.exerciseId))?.name ?? exerciseName;
+  return { flag: best.flag, exerciseName: exerciseName ?? "an exercise", at: session.createdAt };
+}
+
 async function describeProgramLogs(ctx: Ctx, logs: Doc<"exerciseProgramLogs">[]) {
   const programs = new Map<string, Doc<"exercisePrograms"> | null>();
   const exercises = new Map<string, string | null>();
@@ -810,7 +857,7 @@ export const getNeedsAttention = query({
     const now = args.now ?? Math.floor(Date.now() / 3_600_000) * 3_600_000;
     type Item = {
       key: string;
-      kind: "check_in" | "exercise_pain" | "plan_review" | "no_booking" | "unconfirmed" | "overdue_invoice";
+      kind: "check_in" | "exercise_pain" | "camera_flag" | "plan_review" | "no_booking" | "unconfirmed" | "overdue_invoice";
       severity: "high" | "medium" | "low";
       patientId: Id<"users">;
       patientName: string;
@@ -860,13 +907,12 @@ export const getNeedsAttention = query({
       const patientId = relationship.patientId;
 
       // High pain logged during home exercises and not yet reviewed: one item per patient
-      const painLogs = (
-        await ctx.db
-          .query("exerciseProgramLogs")
-          .withIndex("by_patient", (q) => q.eq("patientId", patientId).gte("createdAt", now - 14 * DAY))
-          .collect()
-      )
-        .filter((l) => (l.painScore ?? 0) >= HIGH_PAIN && !l.reviewedAt)
+      const exerciseLogs = await ctx.db
+        .query("exerciseProgramLogs")
+        .withIndex("by_patient", (q) => q.eq("patientId", patientId).gte("createdAt", now - 31 * DAY))
+        .take(500);
+      const painLogs = exerciseLogs
+        .filter((l) => l.createdAt >= now - 14 * DAY && (l.painScore ?? 0) >= HIGH_PAIN && !l.reviewedAt)
         .sort((a, b) => b.createdAt - a.createdAt);
       if (painLogs.length > 0) {
         const [latest] = await describeProgramLogs(ctx, [painLogs[0]]);
@@ -885,6 +931,22 @@ export const getNeedsAttention = query({
                 : `From “${latest.programTitle}”`,
           href: `/dashboard/physiotherapist/patients/${patientId}?tab=checkins`,
           at: latest.createdAt,
+        });
+      }
+
+      // What the camera coach measured this week (range, pain trend, short reps, ready to progress)
+      const camera = await cameraFlagFor(ctx, patientId, exerciseLogs, now);
+      if (camera) {
+        items.push({
+          key: `camera-${patientId}-${camera.flag.code}-${camera.at}`,
+          kind: "camera_flag",
+          severity: camera.flag.tone === "amber" ? "medium" : "low",
+          patientId,
+          patientName: await nameOf(patientId),
+          title: `${camera.flag.title} · ${camera.exerciseName}`,
+          detail: camera.flag.detail,
+          href: `/dashboard/physiotherapist/patients/${patientId}?tab=plan`,
+          at: camera.at,
         });
       }
 

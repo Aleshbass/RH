@@ -1,5 +1,6 @@
 import { RepEngine, type Reference, type RepResult } from './engine'
 import type { CueCode, MotionExercise } from './exercises'
+import type { SessionMeasure } from './insights'
 import type { Frame, Side } from './pose'
 
 /** Sets and reps of one session, from the programme. */
@@ -23,6 +24,8 @@ export type SessionSummary = {
   mistakes: { code: CueCode; count: number }[]
   /** The lowest-scoring reps (up to 3), with stick-figure frames for the physio */
   snapshots: { rep: number; score: number; mistakes: CueCode[]; frames: number[][] }[]
+  /** The joint's angles per counted rep, for the physio's range and tempo trends (lib/motion/insights) */
+  measure: SessionMeasure
 }
 
 /**
@@ -34,6 +37,8 @@ export class SessionTracker {
   set = 1
   repsThisSet = 0
   private reps: RepResult[] = []
+  /** The set each counted rep was in */
+  private repSets: number[] = []
   private partials = 0
   private setMistakes = new Map<CueCode, number>()
   private finished = false
@@ -68,6 +73,7 @@ export class SessionTracker {
         continue
       }
       this.reps.push(event.rep)
+      this.repSets.push(this.set)
       this.repsThisSet += 1
       for (const code of event.rep.mistakes) this.bump(code)
       out.push({ type: 'rep', rep: event.rep, repInSet: this.repsThisSet })
@@ -130,6 +136,14 @@ export class SessionTracker {
         .slice(0, 3)
         .filter((r) => r.snapshot.length > 0)
         .map((r) => ({ rep: r.index, score: r.score, mistakes: r.mistakes, frames: r.snapshot })),
+      measure: {
+        joint: this.exercise.primaryJoint,
+        startAngle: Math.round(this.engine.startAngle),
+        peakAngles: this.reps.map((r) => Math.round(r.stats.peakAngle)),
+        ranges: this.reps.map((r) => Math.round(Math.abs(r.stats.peakAngle - this.engine.startAngle))),
+        repSeconds: this.reps.map((r) => Math.round(r.stats.activeMs / 100) / 10),
+        repSets: [...this.repSets],
+      },
     }
   }
 }

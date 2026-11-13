@@ -7,6 +7,7 @@ import { rewardTables } from "./schema/rewards";
 import { communityTables } from "./schema/community";
 import { offlineTables } from "./schema/offline";
 import { scribeTables } from "./schema/scribe";
+import { cameraInsightTables } from "./schema/cameraInsights";
 import { blogTables } from "./schema/blog";
 import { measureValidator } from "./helpers/clinicalMeasures";
 import { goalMeasureValidator } from "./helpers/goalMeasures";
@@ -4524,6 +4525,7 @@ export default defineSchema({
 
   // AI scribe recordings and their unsigned draft notes (schema/scribe.ts)
   ...scribeTables,
+  ...cameraInsightTables,
 
   // Blog posts, authors, categories and media (schema/blog.ts)
   ...blogTables,
@@ -5399,6 +5401,18 @@ export default defineSchema({
       v.object({ rep: v.number(), score: v.number(), mistakes: v.array(v.string()), frames: v.array(v.array(v.number())) })
     ),
     tracking: v.object({ model: v.string(), delegate: v.string(), fps: v.number() }),
+    // The joint's angle per counted rep (since Nov 2026; older sessions don't have it): range moved,
+    // time and set of each rep, for the physio's trends and flags (lib/motion/insights.ts)
+    measure: v.optional(
+      v.object({
+        joint: v.string(),
+        startAngle: v.number(),
+        peakAngles: v.array(v.number()),
+        ranges: v.array(v.number()),
+        repSeconds: v.array(v.number()),
+        repSets: v.array(v.number()),
+      })
+    ),
     source: v.union(v.literal("app"), v.literal("link")),
     linkId: v.optional(v.id("exerciseShareLinks")),
     createdAt: v.number(),

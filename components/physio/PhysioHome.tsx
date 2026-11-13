@@ -8,6 +8,7 @@ import {
   AlertTriangle,
   ArrowRight,
   CalendarClock,
+  Camera,
   CalendarDays,
   Check,
   ChevronRight,
@@ -82,7 +83,7 @@ type Stats = { totalPatients?: number; todaysAppointments?: number; completedSes
 
 type AttentionItem = {
   key: string
-  kind: 'check_in' | 'exercise_pain' | 'plan_review' | 'no_booking' | 'unconfirmed' | 'overdue_invoice'
+  kind: 'check_in' | 'exercise_pain' | 'camera_flag' | 'plan_review' | 'no_booking' | 'unconfirmed' | 'overdue_invoice'
   severity: 'high' | 'medium' | 'low'
   patientId: string
   patientName: string
@@ -106,6 +107,8 @@ const CANCELLED = new Set(['cancelled_by_patient', 'cancelled_by_therapist'])
 const ATTENTION_STYLE: Record<AttentionItem['kind'], { icon: typeof HeartPulse; tone: Tone }> = {
   check_in: { icon: HeartPulse, tone: 'rose' },
   exercise_pain: { icon: Activity, tone: 'rose' },
+  // What the camera coach measured: range down, pain rising, short reps, or ready to progress
+  camera_flag: { icon: Camera, tone: 'violet' },
   plan_review: { icon: ClipboardCheck, tone: 'violet' },
   no_booking: { icon: CalendarClock, tone: 'neutral' },
   unconfirmed: { icon: CalendarDays, tone: 'ink' },

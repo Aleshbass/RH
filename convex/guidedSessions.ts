@@ -5,7 +5,9 @@
  * worst reps. Never video. The care team sees them with the programme (ExerciseProgramsPanel).
  *
  * Pain is still reported through the normal exercise log (exercisePrograms.logExercise), which the
- * patient is asked for straight after a session, so high-pain alerts work as before.
+ * patient is asked for straight after a session, so high-pain alerts work as before. The care team
+ * sees it paired with the session (lib/motion/insights pairPain), next to the range of movement
+ * measured on every rep (`measure`), with flags and an optional AI weekly summary.
  */
 import { ConvexError, v } from "convex/values";
 import { mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
@@ -14,6 +16,7 @@ import { currentUser } from "./helpers/careAccess";
 import { careTeamOrNull, itemClipId, programmeInScope, resolveShareSession } from "./helpers/exerciseAccess";
 import { assertProgramUnlocked } from "./helpers/patientPlans";
 import { CAMERA_COACH_CLIPS } from "./cameraCoachClips";
+import { pairPain, type SessionMeasure } from "../lib/motion/insights";
 
 type Ctx = QueryCtx | MutationCtx;
 
@@ -45,6 +48,17 @@ const resultArgs = {
     v.object({ rep: v.number(), score: v.number(), mistakes: v.array(v.string()), frames: v.array(v.array(v.number())) })
   ),
   tracking: v.object({ model: v.string(), delegate: v.string(), fps: v.number() }),
+  // Sent by app versions from Nov 2026 on
+  measure: v.optional(
+    v.object({
+      joint: v.string(),
+      startAngle: v.number(),
+      peakAngles: v.array(v.number()),
+      ranges: v.array(v.number()),
+      repSeconds: v.array(v.number()),
+      repSets: v.array(v.number()),
+    })
+  ),
 };
 
 type ResultArgs = {
@@ -65,7 +79,27 @@ type ResultArgs = {
   mistakes: { code: string; count: number }[];
   snapshots: { rep: number; score: number; mistakes: string[]; frames: number[][] }[];
   tracking: { model: string; delegate: string; fps: number };
+  measure?: SessionMeasure;
 };
+
+/** Angles within a joint's possible range; one decimal for seconds. */
+function cleanMeasure(m: SessionMeasure | undefined, counted: number): SessionMeasure | undefined {
+  if (!m) return undefined;
+  const n = Math.min(counted, MAX_REPS);
+  const angle = (x: number) => (Number.isFinite(x) ? Math.max(0, Math.min(180, Math.round(x))) : 0);
+  const seconds = (x: number) => (Number.isFinite(x) ? Math.max(0, Math.min(600, Math.round(x * 10) / 10)) : 0);
+  const joint = ["knee", "hip", "shoulder", "elbow", "ankle"].includes(m.joint) ? m.joint : "joint";
+  const ranges = m.ranges.slice(0, n).map(angle);
+  if (ranges.length === 0) return undefined;
+  return {
+    joint,
+    startAngle: angle(m.startAngle),
+    peakAngles: m.peakAngles.slice(0, n).map(angle),
+    ranges,
+    repSeconds: m.repSeconds.slice(0, n).map(seconds),
+    repSets: m.repSets.slice(0, n).map((s) => whole(s, 20)),
+  };
+}
 
 const whole = (n: number, max: number) => (Number.isFinite(n) ? Math.max(0, Math.min(max, Math.round(n))) : 0);
 const code = (s: string) => s.replace(/[^a-z_]/g, "").slice(0, 40);
@@ -130,6 +164,7 @@ async function insertSession(
       delegate: args.tracking.delegate === "GPU" ? "GPU" : "CPU",
       fps: whole(args.tracking.fps, 120),
     },
+    measure: cleanMeasure(args.measure, counted),
     source,
     linkId,
     createdAt: now,
@@ -205,34 +240,44 @@ export const forPatient = query({
   handler: async (ctx, args) => {
     const programs = await scopedPrograms(ctx, args.patientId);
     if (!programs) return null;
-    const rows = await ctx.db
-      .query("guidedSessions")
-      .withIndex("by_patient", (q) => q.eq("patientId", args.patientId).gt("createdAt", Date.now() - 60 * DAY))
-      .order("desc")
-      .take(200);
-    return rows
-      .filter((r) => programs.has(r.programId))
-      .map((r) => ({
-        _id: r._id,
-        programId: r.programId,
-        itemIndex: r.itemIndex,
-        clipId: r.clipId,
-        exerciseKey: r.exerciseKey,
-        side: r.side,
-        createdAt: r.createdAt,
-        durationSeconds: r.durationSeconds,
-        setsDone: r.setsDone,
-        setsPlanned: r.setsPlanned,
-        repsCounted: r.repsCounted,
-        repsTarget: r.repsTarget,
-        partialReps: r.partialReps,
-        averageScore: r.averageScore,
-        rehabifyScore: r.rehabifyScore,
-        mistakes: r.mistakes,
-        topMistake: topMistake(r.mistakes),
-        snapshotCount: r.snapshots.length,
-        source: r.source,
-      }));
+    const since = Date.now() - 60 * DAY;
+    const rows = (
+      await ctx.db
+        .query("guidedSessions")
+        .withIndex("by_patient", (q) => q.eq("patientId", args.patientId).gt("createdAt", since))
+        .order("desc")
+        .take(200)
+    ).filter((r) => programs.has(r.programId));
+    // Pain reported straight after each session (the normal exercise log)
+    const logs = await ctx.db
+      .query("exerciseProgramLogs")
+      .withIndex("by_patient", (q) => q.eq("patientId", args.patientId).gt("createdAt", since - DAY))
+      .take(2000);
+    const pains = pairPain(rows, logs);
+    return rows.map((r, i) => ({
+      _id: r._id,
+      programId: r.programId,
+      itemIndex: r.itemIndex,
+      clipId: r.clipId,
+      exerciseKey: r.exerciseKey,
+      side: r.side,
+      createdAt: r.createdAt,
+      durationSeconds: r.durationSeconds,
+      setsDone: r.setsDone,
+      setsPlanned: r.setsPlanned,
+      repsCounted: r.repsCounted,
+      repsTarget: r.repsTarget,
+      partialReps: r.partialReps,
+      averageScore: r.averageScore,
+      rehabifyScore: r.rehabifyScore,
+      mistakes: r.mistakes,
+      topMistake: topMistake(r.mistakes),
+      snapshotCount: r.snapshots.length,
+      source: r.source,
+      repScores: r.repScores,
+      measure: r.measure ?? null,
+      pain: pains[i],
+    }));
   },
 });
 

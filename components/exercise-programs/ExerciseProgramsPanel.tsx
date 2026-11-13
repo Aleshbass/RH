@@ -214,7 +214,7 @@ function ProgramCard({
         )}
       </div>
 
-      <CameraSessions sessions={cameraSessions} itemName={(index) => program.items[index]?.name ?? ''} />
+      <CameraSessions sessions={cameraSessions} programId={program._id} itemName={(index) => program.items[index]?.name ?? ''} />
 
       {a.recent.length > 0 && (
         <details className="rounded-xl bg-rh-canvas px-3 py-2 text-xs dark:bg-white/[0.03]">

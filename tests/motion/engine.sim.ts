@@ -217,9 +217,14 @@ for (const c of cases) {
   if (c.noCues && cues.size) problems.push(`unexpected cues: ${[...cues].join(', ')}`)
   if (c.minScore !== undefined && s.averageScore < c.minScore) problems.push(`score ${s.averageScore} < ${c.minScore}`)
   if (c.maxScore !== undefined && s.averageScore > c.maxScore) problems.push(`score ${s.averageScore} > ${c.maxScore}`)
+  // Per-rep measurements for the physio: one entry per counted rep, ranges that moved
+  const m = s.measure
+  if ([m.ranges, m.peakAngles, m.repSeconds, m.repSets].some((xs) => xs.length !== s.repsCounted)) problems.push(`measure has ${m.ranges.length} reps`)
+  if (s.repsCounted > 0 && Math.min(...m.ranges) < 10) problems.push(`a range of ${Math.min(...m.ranges)}°`)
+  if (m.repSeconds.some((x) => x <= 0)) problems.push('a rep with no time')
   if (problems.length) failed++
   console.log(
-    `${problems.length ? 'FAIL' : 'ok  '} ${c.name.padEnd(48)} reps ${s.repsCounted}/${c.expectReps} partials ${s.partialReps} score ${s.averageScore} rehabify ${s.rehabifyScore} sets ${s.setsDone} cues [${[...cues].join(' ')}]${problems.length ? '  <- ' + problems.join('; ') : ''}`
+    `${problems.length ? 'FAIL' : 'ok  '} ${c.name.padEnd(48)} reps ${s.repsCounted}/${c.expectReps} partials ${s.partialReps} score ${s.averageScore} rehabify ${s.rehabifyScore} sets ${s.setsDone} range ${m.ranges.length ? Math.round(m.ranges.reduce((x, y) => x + y, 0) / m.ranges.length) : '-'}° cues [${[...cues].join(' ')}]${problems.length ? '  <- ' + problems.join('; ') : ''}`
   )
 }
 console.log(failed ? `\n${failed} of ${cases.length} cases failed` : `\nall ${cases.length} cases passed`)

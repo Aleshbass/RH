@@ -181,6 +181,11 @@ export class RepEngine {
     return this.state
   }
 
+  /** The patient's start position for this session (degrees), which ranges are measured from. */
+  get startAngle() {
+    return this.restAngle
+  }
+
   /** Between reps: at rest, so spoken corrections may play. */
   get betweenReps() {
     return this.state === 'rest'
