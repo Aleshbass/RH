@@ -336,13 +336,14 @@ function PainMeter({ pain }: { pain: number }) {
   )
 }
 
-function Player({ attempt }: { attempt: SimAttempt }) {
+function Player({ attempt, onDone }: { attempt: SimAttempt; onDone: () => void }) {
   const choose = useMutation(simApi.choose)
   const finishIfExpired = useMutation(simApi.finishIfExpired)
   const reduce = useReducedMotion()
   const [pending, setPending] = useState<{ id: string; ms: number } | null>(null)
   const [transcript, setTranscript] = useState<TranscriptLine[]>([])
   const [speaking, setSpeaking] = useState<string | null>(null)
+  const [voiceBusy, setVoiceBusy] = useState(false)
   const [findingsOpen, setFindingsOpen] = useState(true)
   const c = attempt.case
 
@@ -371,14 +372,26 @@ function Player({ attempt }: { attempt: SimAttempt }) {
     if (lines.length === 0) return
     setTranscript((t) => [...t, ...lines].slice(-6))
     if (c.audio) {
+      setVoiceBusy(true)
       queueVoice(
         lines.map((l) => ({ url: voiceUrl(c.slug, c.version, l.audioId), onStart: () => setSpeaking(l.key) })),
-        () => setSpeaking(null)
+        () => {
+          setSpeaking(null)
+          setVoiceBusy(false)
+        }
       )
     }
   }, [attempt.stepCount, attempt.node, attempt.lastChoice, c.audio, c.slug, c.version])
 
   useEffect(() => () => stopVoice(), [])
+
+  const over = attempt.status !== 'active'
+  useEffect(() => {
+    if (!over) return
+    // After the last voice line (or straight away without one), a short pause to read, then the debrief
+    const id = window.setTimeout(onDone, voiceBusy ? 15000 : 1800)
+    return () => window.clearTimeout(id)
+  }, [over, voiceBusy, onDone])
 
   const expire = useCallback(() => {
     void finishIfExpired({ attemptId: attemptRef.current.attemptId }).catch(() => undefined)
@@ -386,6 +399,9 @@ function Player({ attempt }: { attempt: SimAttempt }) {
 
   const pick = async (choiceId: string, costSec: number) => {
     if (pending) return
+    stopVoice()
+    setSpeaking(null)
+    setVoiceBusy(false)
     const ms = reduce ? 200 : Math.min(1400, 350 + costSec * 40)
     setPending({ id: choiceId, ms })
     try {
@@ -577,10 +593,25 @@ function Player({ attempt }: { attempt: SimAttempt }) {
         </section>
       )}
 
-      {attempt.status !== 'active' && (
-        <div className="mt-8 flex items-center justify-center gap-2 text-sm text-rh-ink/60">
-          <Loader2 className="h-4 w-4 animate-spin" /> Preparing your debrief…
-        </div>
+      {over && (
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="sticky bottom-4 z-10 mt-8 rounded-[24px] bg-rh-ink p-5 text-white shadow-2xl"
+        >
+          {attempt.lastChoice?.reply && (
+            <p className="text-[15px] leading-6 text-white/85">
+              <span className="font-semibold text-rh-lime">{attempt.lastChoice.reply.name}: </span>
+              {attempt.lastChoice.reply.text}
+            </p>
+          )}
+          <div className={cn('flex items-center justify-between gap-3', attempt.lastChoice?.reply && 'mt-4')}>
+            <p className="text-sm font-semibold">{attempt.ending?.title ?? 'The case is over'}</p>
+            <button type="button" onClick={onDone} className={cn(pillLime, 'h-10 shrink-0 px-4')}>
+              See your debrief <ArrowRight className="h-4 w-4" />
+            </button>
+          </div>
+        </motion.div>
       )}
       <p className="mt-10 text-xs leading-5 text-rh-ink/45">{DISCLAIMER}</p>
     </main>
@@ -592,19 +623,15 @@ function Player({ attempt }: { attempt: SimAttempt }) {
 function AttemptScreen({ slug, attemptId }: { slug: string; attemptId: string }) {
   const attempt = useQuery(simApi.attempt, { attemptId })
   const router = useRouter()
-  // A case that ends while you play holds for a moment (the last reply is heard), then the debrief
+  // A case that ends while you play stays on screen until its last line is heard (Player calls
+  // onDone); one that was already over when the page opened goes straight to the debrief
   const sawActive = useRef(false)
   const [showDebrief, setShowDebrief] = useState(false)
+  const showDebriefNow = useCallback(() => setShowDebrief(true), [])
   const status = attempt?.status
   useEffect(() => {
-    if (status === "active") sawActive.current = true
-    if (status !== "finished") return
-    if (!sawActive.current) {
-      setShowDebrief(true)
-      return
-    }
-    const id = window.setTimeout(() => setShowDebrief(true), 2600)
-    return () => window.clearTimeout(id)
+    if (status === 'active') sawActive.current = true
+    if (status === 'finished' && !sawActive.current) setShowDebrief(true)
   }, [status])
   if (attempt === undefined) {
     return (
@@ -627,7 +654,7 @@ function AttemptScreen({ slug, attemptId }: { slug: string; attemptId: string })
     )
   }
   if (attempt.status === 'finished' && showDebrief) return <SimDebrief attemptId={attempt.attemptId} slug={slug} />
-  return <Player attempt={attempt} />
+  return <Player attempt={attempt} onDone={showDebriefNow} />
 }
 
 export function SimCasePage({ slug }: { slug: string }) {
