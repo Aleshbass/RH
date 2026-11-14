@@ -36,7 +36,7 @@ import { displayFont, pillInk, pillLime } from '../../shared'
 import { DISCLAIMER, formatClock, modeLabel, simApi, SPECIALTY_LABEL, voiceUrl } from '../simApi'
 import { heartBeep, queueVoice, setVoiceOn, stopVoice, unlockSimAudio, vibrate, voiceOn } from '../simAudio'
 import { Countdown } from '../SimPlayer'
-import { PatientStage } from './PatientStage'
+import { MonitorRow, PatientStage } from './PatientStage'
 
 type Item =
   | { kind: 'scene'; key: string; text: string }
@@ -374,11 +374,26 @@ function PreviewPlayer({ def, onExit }: { def: SimCase; onExit: () => void }) {
     <div className="fixed inset-0 z-[80] flex justify-center bg-[rgb(3_8_7/0.6)]">
       <div className="flex h-[100dvh] w-full max-w-[460px] flex-col overflow-hidden bg-rh-cream sm:border-x sm:border-[rgb(255_255_255/0.1)]">
         {/* Top bar */}
-        <div className="learn-fixed-dark flex h-12 shrink-0 items-center gap-2 bg-[rgb(8_16_15)] px-2 text-white">
-          <button type="button" onClick={leave} aria-label="Leave the case" className="flex h-10 w-10 items-center justify-center rounded-full hover:bg-white/10">
+        <div className="learn-fixed-dark flex h-14 shrink-0 items-center gap-1.5 bg-[rgb(8_16_15)] px-1.5 text-white">
+          <button type="button" onClick={leave} aria-label="Leave the case" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full hover:bg-white/10">
             <X className="h-5 w-5" />
           </button>
-          <p className="min-w-0 flex-1 truncate text-sm font-semibold">{def.title}</p>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-[13.5px] font-semibold leading-tight">
+              {def.patient.name}, {def.patient.age}
+            </p>
+            <p className="truncate text-[11px] leading-tight text-white/55">{def.setting}</p>
+          </div>
+          {stage !== 'debrief' &&
+            (limit ? (
+              <div className="-my-1 shrink-0 scale-[0.8]">
+                <Countdown getClock={getClock} limit={limit} onExpire={onExpire} />
+              </div>
+            ) : (
+              <span className="flex shrink-0 items-center gap-1 rounded-full bg-white/10 px-2.5 py-1 font-mono text-[11px] tabular-nums">
+                <Clock className="h-3 w-3" /> {formatClock(sim.virtualSec)}
+              </span>
+            ))}
           <button
             type="button"
             onClick={() => {
@@ -412,29 +427,15 @@ function PreviewPlayer({ def, onExit }: { def: SimCase; onExit: () => void }) {
         ) : (
           <>
             {/* Patient */}
-            <div className="h-[32dvh] max-h-[290px] min-h-[180px] shrink-0">
+            <div className="h-[34dvh] max-h-[320px] min-h-[190px] shrink-0">
               <PatientStage
-                name={def.patient.name}
-                age={def.patient.age}
-                setting={def.setting}
                 pain={sim.pain}
                 breathsPerMin={breaths}
                 speaking={Boolean(speaking)}
                 scene={sim.scene && def.scenes?.[sim.scene] ? def.scenes[sim.scene] : null}
-                monitor={{ enabled: def.monitor, on: Boolean(timeline), timeline, getClock, live: sim.status === 'active' }}
-                topRight={
-                  limit ? (
-                    <div className="rounded-full bg-[rgb(3_8_7/0.55)] p-1 backdrop-blur-sm">
-                      <Countdown getClock={getClock} limit={limit} onExpire={onExpire} />
-                    </div>
-                  ) : (
-                    <span className="flex items-center gap-1.5 rounded-full bg-[rgb(3_8_7/0.55)] px-3 py-1.5 font-mono text-xs tabular-nums text-white backdrop-blur-sm">
-                      <Clock className="h-3.5 w-3.5" /> {formatClock(sim.virtualSec)}
-                    </span>
-                  )
-                }
               />
             </div>
+            {def.monitor && <MonitorRow timeline={timeline} on={Boolean(timeline)} getClock={getClock} live={sim.status === 'active'} />}
 
             {/* Conversation */}
             <div ref={thread} className="min-h-0 flex-1 space-y-2.5 overflow-y-auto px-3 py-3" aria-live="polite">
@@ -469,7 +470,7 @@ function PreviewPlayer({ def, onExit }: { def: SimCase; onExit: () => void }) {
                             ) : (
                               <Play className="h-2.5 w-2.5" />
                             )}
-                            {speaking === item.key ? 'Speaking' : 'Tap to replay'}
+                            {speaking === item.key ? 'Speaking' : ''}
                           </span>
                         )}
                       </button>

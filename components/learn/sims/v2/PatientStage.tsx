@@ -5,10 +5,9 @@
  * breathing at the real breathing rate, a ring while someone speaks, and a slim monitor strip.
  */
 
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Image from 'next/image'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
-import { MapPin } from '@/components/icons'
 import { cn } from '@/lib/utils'
 import { vitalsFromTimeline, type SimScene, type Vitals, type VitalsTimeline } from '@/lib/learn/simulation/engine'
 import { heartBeep, monitorAlarm, vibrate } from '../simAudio'
@@ -155,24 +154,14 @@ function PatientVideo({ scene }: { scene: SimScene }) {
 }
 
 export function PatientStage({
-  name,
-  age,
-  setting,
   pain,
   breathsPerMin,
   speaking,
-  monitor,
-  topRight,
   scene = null,
 }: {
-  name: string
-  age: number
-  setting: string
   pain: number
   breathsPerMin: number
   speaking: boolean
-  monitor: { enabled: boolean; on: boolean; timeline: VitalsTimeline | null; getClock: () => number; live: boolean }
-  topRight?: ReactNode
   scene?: SimScene | null
 }) {
   const reduce = useReducedMotion()
@@ -215,23 +204,21 @@ export function PatientStage({
           />
         )}
       </svg>
-      <div className="absolute inset-x-0 top-0 flex items-start justify-between gap-3 p-3">
-        <div className="min-w-0 rounded-2xl bg-[rgb(3_8_7/0.55)] px-3 py-1.5 text-white backdrop-blur-sm">
-          <p className="truncate text-[13px] font-semibold">
-            {name}, {age}
-          </p>
-          <p className="flex items-center gap-1 truncate text-[11px] text-white/60">
-            <MapPin className="h-2.5 w-2.5 shrink-0" /> {setting}
-          </p>
-        </div>
-        {topRight}
-      </div>
-      {scene && speaking && <span className="absolute bottom-14 left-1/2 -translate-x-1/2 rounded-full bg-[rgb(3_8_7/0.6)] px-2.5 py-1 text-[10px] font-semibold text-white/80 backdrop-blur-sm">Speaking…</span>}
-      {monitor.enabled && (
-        <div className="absolute inset-x-2 bottom-2">
-          <MonitorStrip timeline={monitor.timeline} on={monitor.on} getClock={monitor.getClock} live={monitor.live} />
-        </div>
+      {/* Nothing sits over the patient: name and timer are in the top bar, the monitor below */}
+      {scene && speaking && (
+        <span className="absolute bottom-2 left-1/2 -translate-x-1/2 rounded-full bg-[rgb(3_8_7/0.6)] px-2.5 py-1 text-[10px] font-semibold text-white/80 backdrop-blur-sm">
+          Speaking…
+        </span>
       )}
+    </div>
+  )
+}
+
+/** The monitor as its own slim row under the patient (never on top of him). */
+export function MonitorRow(props: { timeline: VitalsTimeline | null; on: boolean; getClock: () => number; live: boolean }) {
+  return (
+    <div className="learn-fixed-dark shrink-0 bg-[rgb(8_16_15)] px-2 pb-2 pt-1">
+      <MonitorStrip {...props} />
     </div>
   )
 }
