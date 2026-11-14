@@ -42,8 +42,8 @@ const TAG_STYLE: Record<Tag, { label: string; className: string }> = {
   critical: { label: 'Essential', className: 'bg-rh-ink text-white' },
   'high-yield': { label: 'Useful', className: 'bg-rh-honeydew text-rh-ink' },
   neutral: { label: 'Neutral', className: 'bg-rh-cream text-rh-ink/70' },
-  wasteful: { label: 'Wasted time', className: 'bg-amber-100 text-amber-900' },
-  harmful: { label: 'Unsafe', className: 'bg-rose-100 text-rose-800' },
+  wasteful: { label: 'Wasted time', className: 'bg-rh-warn-soft text-rh-warn-ink' },
+  harmful: { label: 'Unsafe', className: 'bg-rh-danger-soft text-rh-danger-ink' },
 }
 
 function ScoreRing({ pct, passed }: { pct: number; passed: boolean }) {
@@ -69,7 +69,7 @@ function ScoreRing({ pct, passed }: { pct: number; passed: boolean }) {
       </svg>
       <div className="text-center">
         <p className={cn('text-[40px] leading-none tracking-tight', displayFont)}>{pct}%</p>
-        <p className={cn('mt-1 text-xs font-semibold', passed ? 'text-[#0f7a1b]' : 'text-orange-600')}>{passed ? 'Passed' : 'Not passed'}</p>
+        <p className={cn('mt-1 text-xs font-semibold', passed ? 'text-rh-success-ink' : 'text-orange-600')}>{passed ? 'Passed' : 'Not passed'}</p>
       </div>
     </div>
   )
@@ -235,11 +235,11 @@ export function SimDebrief({ attemptId, slug }: { attemptId: string; slug: strin
       <Section title="Critical actions" icon={<CheckCircle2 className="h-4 w-4" />}>
         <ul className="space-y-2">
           {d.critical.map((item) => (
-            <li key={item.choiceId} className={cn('flex gap-3 rounded-2xl p-4', item.done ? 'bg-rh-honeydew' : 'bg-rose-50')}>
-              {item.done ? <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-[#0f7a1b]" /> : <XCircle className="mt-0.5 h-5 w-5 shrink-0 text-rose-600" />}
+            <li key={item.choiceId} className={cn('flex gap-3 rounded-2xl p-4', item.done ? 'bg-rh-honeydew' : 'bg-rh-danger-soft')}>
+              {item.done ? <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-rh-success-ink" /> : <XCircle className="mt-0.5 h-5 w-5 shrink-0 text-rh-danger-ink" />}
               <span className="min-w-0">
-                <span className={cn('block text-[15px] font-semibold', item.done ? 'text-rh-ink' : 'text-rose-900')}>{item.label}</span>
-                <span className={cn('mt-0.5 block text-sm leading-6', item.done ? 'text-rh-ink/65' : 'text-rose-800/80')}>{item.feedback}</span>
+                <span className={cn('block text-[15px] font-semibold', item.done ? 'text-rh-ink' : 'text-rh-danger-ink')}>{item.label}</span>
+                <span className={cn('mt-0.5 block text-sm leading-6', item.done ? 'text-rh-ink/65' : 'text-rh-danger-ink/85')}>{item.feedback}</span>
               </span>
             </li>
           ))}

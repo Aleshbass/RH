@@ -189,7 +189,7 @@ export function VitalsMonitor({
   )
 
   return (
-    <div className="relative overflow-hidden rounded-[24px] bg-[rgb(4_9_9)] p-3 ring-1 ring-[rgb(255_255_255/0.06)] sm:p-4">
+    <div className="learn-fixed-dark relative overflow-hidden rounded-[24px] bg-[rgb(4_9_9)] p-3 ring-1 ring-[rgb(255_255_255/0.06)] sm:p-4">
       <div className="mb-2 flex items-center justify-between">
         <span className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.16em] text-[rgb(255_255_255/0.5)]">
           <HeartPulse className="h-3.5 w-3.5 text-[#22e36b]" /> Monitor

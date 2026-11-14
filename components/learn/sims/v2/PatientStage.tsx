@@ -141,7 +141,7 @@ export function PatientStage({
   const breath = Math.max(1.2, 60 / Math.max(6, breathsPerMin))
   const distress = Math.min(1, pain / 10)
   return (
-    <div className="relative h-full overflow-hidden bg-[radial-gradient(120%_100%_at_50%_0%,rgb(32_56_52)_0%,rgb(8_16_15)_72%)]">
+    <div className="learn-fixed-dark relative h-full overflow-hidden bg-[radial-gradient(120%_100%_at_50%_0%,rgb(32_56_52)_0%,rgb(8_16_15)_72%)]">
       <div className="absolute inset-0 opacity-[0.06] [background-image:linear-gradient(rgb(255_255_255)_1px,transparent_1px),linear-gradient(90deg,rgb(255_255_255)_1px,transparent_1px)] [background-size:26px_26px]" />
       {/* Stand-in patient: shoulders breathe, a ring while speaking */}
       <svg viewBox="0 0 200 150" className="absolute inset-x-0 bottom-10 mx-auto h-[78%] w-auto" aria-hidden>

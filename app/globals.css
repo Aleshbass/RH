@@ -132,6 +132,13 @@ body {
   --color-rh-lime: #00cd0f;
   --color-rh-lime-deep: #00b30d; /* hover/pressed state of rh-lime */
   --color-rh-honeydew: #f1ffe9;
+  /* Soft alert surfaces with their text colours (Learn's dark mode swaps them) */
+  --color-rh-danger-soft: #fff1f2;
+  --color-rh-danger-line: #fecdd3;
+  --color-rh-danger-ink: #9f1239;
+  --color-rh-warn-soft: #fef3c7;
+  --color-rh-warn-ink: #92400e;
+  --color-rh-success-ink: #0f7a1b;
   --color-rh-bone: #e3dfd2;
   --color-rh-jasmine: #ffe682;
   --color-rh-ink: #0b1312;
@@ -435,6 +442,12 @@ html.learn-dark {
   --color-rh-bone: #2b3431;
   --color-rh-honeydew: #14261b;
   --color-rh-jasmine: #3b3313;
+  --color-rh-danger-soft: #2e1417;
+  --color-rh-danger-line: #5b2028;
+  --color-rh-danger-ink: #fda4af;
+  --color-rh-warn-soft: #2f2610;
+  --color-rh-warn-ink: #fcd34d;
+  --color-rh-success-ink: #4ade80;
   --shadow-soft: 0 1px 2px rgb(0 0 0 / 0.45), 0 8px 24px -14px rgb(0 0 0 / 0.7);
   --shadow-lift: 0 2px 4px rgb(0 0 0 / 0.5), 0 14px 32px -16px rgb(0 0 0 / 0.75);
 }
@@ -443,6 +456,11 @@ html.learn-dark body {
 }
 html.learn-dark .bg-rh-ink:not(a):not(button) {
   --color-rh-ink: #070e0d;
+  --color-white: #ffffff;
+  --color-black: #000000;
+}
+/* Surfaces that are dark in both themes (the simulation stage, monitor and top bar): white stays white */
+html.learn-dark .learn-fixed-dark {
   --color-white: #ffffff;
   --color-black: #000000;
 }

@@ -118,7 +118,7 @@ function MoreMenu({ target, canDelete, canModerate, onReport }: { target: Target
                 </button>
               )}
               {canDelete && (
-                <button type="button" onClick={() => void del()} className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm text-rose-700 hover:bg-rose-50">
+                <button type="button" onClick={() => void del()} className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm text-rh-danger-ink hover:bg-rh-danger-soft">
                   <Trash2 className="h-3.5 w-3.5" /> Delete
                 </button>
               )}
@@ -281,7 +281,7 @@ export function PostView({ postId }: { postId: string }) {
           <span className={cn('rounded-full px-2.5 py-1 font-semibold', post.kind === 'question' ? 'bg-rh-honeydew text-rh-ink' : 'bg-rh-cream text-rh-ink/75')}>
             {post.kind === 'question' ? 'Question' : 'Discussion'}
           </span>
-          {post.hidden && <span className="rounded-full bg-rose-50 px-2.5 py-1 font-semibold text-rose-700">Hidden from members</span>}
+          {post.hidden && <span className="rounded-full bg-rh-danger-soft px-2.5 py-1 font-semibold text-rh-danger-ink">Hidden from members</span>}
         </div>
         <h1 className={cn('mt-4 text-[28px] leading-tight tracking-tight text-rh-ink sm:text-[36px]', displayFont)}>{post.title}</h1>
         <div className="mt-5 flex items-center gap-3">

@@ -26,7 +26,7 @@ export function CaseCard({ card, index }: { card: SimCaseCard; index: number }) 
         <div className="relative">
           <SceneArt scene={card.cover} patientName={card.patient.name} setting={card.setting} className="aspect-[16/10] w-full" sizes="(min-width: 1024px) 400px, 100vw" />
           <div className="absolute left-3 top-3 flex flex-wrap gap-1.5">
-            <span className={cn('rounded-full px-2.5 py-1 text-[11px] font-bold', card.mode === 'triage' ? 'bg-rh-lime text-[#0b1312]' : 'bg-white text-[#0b1312]')}>
+            <span className={cn('rounded-full px-2.5 py-1 text-[11px] font-bold', card.mode === 'triage' ? 'bg-rh-lime text-[#0b1312]' : 'bg-[#ffffff] text-[#0b1312]')}>
               {modeLabel(card)}
             </span>
             {!card.live && <span className="rounded-full bg-amber-300 px-2.5 py-1 text-[11px] font-bold text-[#3b2a00]">Draft</span>}
@@ -35,7 +35,7 @@ export function CaseCard({ card, index }: { card: SimCaseCard; index: number }) 
             <span
               className={cn(
                 'absolute right-3 top-3 flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold',
-                mine.passed ? 'bg-rh-lime text-[#0b1312]' : 'bg-white text-[#0b1312]'
+                mine.passed ? 'bg-rh-lime text-[#0b1312]' : 'bg-[#ffffff] text-[#0b1312]'
               )}
             >
               {mine.passed && <Check className="h-3 w-3" />} Best {mine.best}%

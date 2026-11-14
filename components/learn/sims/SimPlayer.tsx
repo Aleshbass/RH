@@ -98,7 +98,7 @@ export function SceneArt({
   }
   return (
     <div
-      className={cn('relative flex items-center justify-center overflow-hidden bg-[radial-gradient(120%_90%_at_50%_0%,rgb(30_52_48)_0%,rgb(9_17_16)_70%)]', className)}
+      className={cn('learn-fixed-dark relative flex items-center justify-center overflow-hidden bg-[radial-gradient(120%_90%_at_50%_0%,rgb(30_52_48)_0%,rgb(9_17_16)_70%)]', className)}
       aria-hidden
     >
       <div className="absolute inset-0 opacity-[0.07] [background-image:linear-gradient(rgb(255_255_255)_1px,transparent_1px),linear-gradient(90deg,rgb(255_255_255)_1px,transparent_1px)] [background-size:28px_28px]" />

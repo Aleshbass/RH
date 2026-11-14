@@ -79,7 +79,7 @@ export function PostRow({ post, showRoom = true, index = 0 }: { post: PostSummar
             {KIND_LABEL[post.kind]}
           </span>
           {showRoom && <span className="font-medium text-rh-ink/50">in {post.room.title}</span>}
-          {post.hidden && <span className="rounded-full bg-rose-50 px-2.5 py-1 font-semibold text-rose-700">Hidden</span>}
+          {post.hidden && <span className="rounded-full bg-rh-danger-soft px-2.5 py-1 font-semibold text-rh-danger-ink">Hidden</span>}
         </div>
         <h3 className="mt-3 text-[17px] font-semibold leading-snug text-rh-ink group-hover:underline group-hover:decoration-rh-ink/30 group-hover:underline-offset-4">
           {post.title}
@@ -257,8 +257,8 @@ function ReportsPanel() {
     }
   }
   return (
-    <section className="mt-8 rounded-3xl border border-rose-200 bg-rose-50/60 p-5 sm:p-6">
-      <h2 className="flex items-center gap-2 text-sm font-semibold text-rose-900">
+    <section className="mt-8 rounded-3xl border border-rh-danger-line bg-rh-danger-soft p-5 sm:p-6">
+      <h2 className="flex items-center gap-2 text-sm font-semibold text-rh-danger-ink">
         <ShieldAlert className="h-4 w-4" /> Reported ({reports.length})
       </h2>
       <ul className="mt-4 space-y-3">

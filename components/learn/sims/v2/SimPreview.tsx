@@ -121,7 +121,7 @@ function DebriefCards({ def, state, onAgain, onExit }: { def: SimCase; state: Si
                   <p className="mt-3 text-[15px] leading-6 text-rh-ink/75">{d.ending.summary}</p>
                   <div className="mt-5 flex items-end gap-4">
                     <p className={cn('text-[56px] leading-none tracking-tight text-rh-ink', displayFont)}>{d.score.pct}%</p>
-                    <p className={cn('pb-2 text-sm font-semibold', d.score.passed ? 'text-[#0f7a1b]' : 'text-orange-600')}>{d.score.passed ? 'Passed' : 'Not passed'}</p>
+                    <p className={cn('pb-2 text-sm font-semibold', d.score.passed ? 'text-rh-success-ink' : 'text-orange-600')}>{d.score.passed ? 'Passed' : 'Not passed'}</p>
                   </div>
                   <p className="mt-2 flex items-center gap-1.5 text-sm text-rh-ink/55">
                     <Clock className="h-3.5 w-3.5" /> {formatClock(d.timeSec)}
@@ -133,8 +133,8 @@ function DebriefCards({ def, state, onAgain, onExit }: { def: SimCase; state: Si
               {card.id === 'critical' && (
                 <ul className="mt-3 space-y-2">
                   {d.critical.map((c) => (
-                    <li key={c.choiceId} className={cn('flex gap-2.5 rounded-2xl p-3', c.done ? 'bg-rh-honeydew' : 'bg-rose-50')}>
-                      {c.done ? <Check className="mt-0.5 h-4 w-4 shrink-0 text-[#0f7a1b]" /> : <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-rose-600" />}
+                    <li key={c.choiceId} className={cn('flex gap-2.5 rounded-2xl p-3', c.done ? 'bg-rh-honeydew' : 'bg-rh-danger-soft')}>
+                      {c.done ? <Check className="mt-0.5 h-4 w-4 shrink-0 text-rh-success-ink" /> : <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-rh-danger-ink" />}
                       <span className="text-sm leading-6 text-rh-ink">{c.label}</span>
                     </li>
                   ))}
@@ -374,7 +374,7 @@ function PreviewPlayer({ def, onExit }: { def: SimCase; onExit: () => void }) {
     <div className="fixed inset-0 z-[80] flex justify-center bg-[rgb(3_8_7/0.6)]">
       <div className="flex h-[100dvh] w-full max-w-[460px] flex-col overflow-hidden bg-rh-cream sm:border-x sm:border-[rgb(255_255_255/0.1)]">
         {/* Top bar */}
-        <div className="flex h-12 shrink-0 items-center gap-2 bg-[rgb(8_16_15)] px-2 text-white">
+        <div className="learn-fixed-dark flex h-12 shrink-0 items-center gap-2 bg-[rgb(8_16_15)] px-2 text-white">
           <button type="button" onClick={leave} aria-label="Leave the case" className="flex h-10 w-10 items-center justify-center rounded-full hover:bg-white/10">
             <X className="h-5 w-5" />
           </button>
@@ -482,8 +482,8 @@ function PreviewPlayer({ def, onExit }: { def: SimCase; onExit: () => void }) {
                       </div>
                     )}
                     {item.kind === 'finding' && (
-                      <div className={cn('mx-1 flex gap-2.5 rounded-2xl border px-3.5 py-2.5', item.abnormal ? 'border-rose-200 bg-rose-50' : 'border-rh-ink/10 bg-white')}>
-                        <Stethoscope className={cn('mt-0.5 h-4 w-4 shrink-0', item.abnormal ? 'text-rose-600' : 'text-rh-ink/50')} />
+                      <div className={cn('mx-1 flex gap-2.5 rounded-2xl border px-3.5 py-2.5', item.abnormal ? 'border-rh-danger-line bg-rh-danger-soft' : 'border-rh-ink/10 bg-white')}>
+                        <Stethoscope className={cn('mt-0.5 h-4 w-4 shrink-0', item.abnormal ? 'text-rh-danger-ink' : 'text-rh-ink/50')} />
                         <span className="min-w-0">
                           <span className="block text-xs font-bold uppercase tracking-[0.08em] text-rh-ink/55">{item.label}</span>
                           <span className="block text-[14px] leading-5 text-rh-ink">{item.detail}</span>
