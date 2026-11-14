@@ -245,7 +245,7 @@ function CaseIntro({ slug, card, signedIn, member, forcePreview }: { slug: strin
 
 type TranscriptLine = SimLineView & { key: string }
 
-function Countdown({ getClock, limit, onExpire }: { getClock: () => number; limit: number; onExpire: () => void }) {
+export function Countdown({ getClock, limit, onExpire }: { getClock: () => number; limit: number; onExpire: () => void }) {
   const [left, setLeft] = useState(limit)
   const fired = useRef(false)
   const lastWhole = useRef<number | null>(null)

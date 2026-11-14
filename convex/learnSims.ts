@@ -374,6 +374,19 @@ export const getDebrief = query({
   },
 });
 
+/**
+ * Reviewers only: the full case definitions from the repo, for the new mobile player preview
+ * (/simulations/preview), which runs the engine on the device. Never sent to learners.
+ */
+export const reviewerCases = query({
+  args: {},
+  handler: async (ctx) => {
+    const member = await memberOrNull(ctx);
+    if (!isReviewer(member)) return null;
+    return SIM_CASES;
+  },
+});
+
 /** "Sim Pass: get notified" (measures who would pay before we build the paid layer). */
 export const registerInterest = mutation({
   args: { caseSlug: v.optional(v.string()) },

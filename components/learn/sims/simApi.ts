@@ -6,6 +6,7 @@
 import { makeFunctionReference, type RegisteredMutation, type RegisteredQuery } from 'convex/server'
 import type { Id } from '@/convex/_generated/dataModel'
 import type * as sims from '@/convex/learnSims'
+import type { SimCase } from '@/lib/learn/simulation/engine'
 import { track } from '@/lib/analytics/posthog'
 import { learnPath } from '../platform/learnApi'
 
@@ -36,6 +37,7 @@ export const simApi = {
   finishIfExpired: makeFunctionReference<'mutation', { attemptId: AttemptId }, { finished: boolean; serverNow?: number }>('learnSims:finishIfExpired'),
   debrief: makeFunctionReference<'query', { attemptId: string }, SimDebriefView | null>('learnSims:getDebrief'),
   registerInterest: makeFunctionReference<'mutation', { caseSlug?: string }, { interested: boolean }>('learnSims:registerInterest'),
+  reviewerCases: makeFunctionReference<'query', Record<string, never>, SimCase[] | null>('learnSims:reviewerCases'),
   adminCases: makeFunctionReference<'query', Record<string, never>, SimAdmin | null>('learnSims:adminCases'),
   adminLoad: makeFunctionReference<
     'mutation',

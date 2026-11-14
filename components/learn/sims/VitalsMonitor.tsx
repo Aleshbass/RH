@@ -19,7 +19,7 @@ const ECG = '#22e36b'
 const PLETH = '#7dd3fc'
 const SWEEP_PX_PER_SEC = 110
 
-function alarmFor(v: Vitals) {
+export function alarmFor(v: Vitals) {
   return {
     hr: v.hr > 120 || v.hr < 50,
     spo2: v.spo2 < 92,
@@ -29,13 +29,13 @@ function alarmFor(v: Vitals) {
 }
 
 /** One heartbeat of ECG, phase 0..1 → -1..1 (P wave, QRS, T wave). */
-function ecgAt(p: number) {
+export function ecgAt(p: number) {
   const bump = (c: number, w: number, h: number) => h * Math.exp(-(((p - c) / w) ** 2))
   return bump(0.12, 0.025, 0.12) + bump(0.285, 0.008, -0.12) + bump(0.3, 0.01, 1) + bump(0.318, 0.01, -0.25) + bump(0.55, 0.05, 0.22)
 }
 
 /** One pulse of the pleth wave, phase 0..1 → 0..1 (upstroke after the QRS, dicrotic notch). */
-function plethAt(p: number) {
+export function plethAt(p: number) {
   const q = (p + 0.62) % 1
   const rise = Math.exp(-(((q - 0.18) / 0.09) ** 2))
   const notch = 0.35 * Math.exp(-(((q - 0.42) / 0.07) ** 2))
