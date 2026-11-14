@@ -8,6 +8,14 @@
   "mode": "full",
   "estimatedMinutes": 6,
   "audio": true,
+  "scenes": {
+    "couch": {
+      "src": "/sims/ankle-sprain-after-football/v1/scene/couch.webp",
+      "alt": "Tunde sits on the treatment couch in his football kit, legs out, his left ankle swollen.",
+      "video": "/sims/ankle-sprain-after-football/v1/scene/couch.mp4",
+      "mouth": "/sims/ankle-sprain-after-football/v1/scene/couch.json"
+    }
+  },
   "setting": "University sports clinic, Nsukka",
   "patient": {
     "name": "Tunde Bakare",
@@ -32,6 +40,7 @@
     "history": {
       "id": "history",
       "phase": "subjective",
+      "scene": "couch",
       "prompt": "Tunde, 22, hops in on one leg, supported by a teammate. His left ankle is swollen. Take his history: each question takes time.",
       "lines": [
         { "speaker": "patient", "text": "Good morning. I rolled my ankle in the match yesterday. Please, the final is in three weeks. I have to play." }

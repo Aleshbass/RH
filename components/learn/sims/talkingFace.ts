@@ -1,12 +1,13 @@
 /**
- * The patient's mouth, drawn in the browser (free, no AI service): the talking close-up plays as a
- * video, and each frame is copied to a canvas where the lower lip and chin slide down in thin
- * strips and a mouth opening (dark inside, a hint of teeth and tongue) fills the gap. How open, how
- * wide and how round comes from the voice line's mouth shapes (lips.json, scripts/sims/lips.mjs),
- * read at the voice's current time, so the lips follow the words.
+ * The patient's mouth, drawn in the browser (free, no AI service): the scene video plays, and each
+ * frame is copied to a canvas where the lower lip and chin slide down in thin strips and a mouth
+ * opening (dark inside, a hint of teeth and tongue) fills the gap. How open, how wide and how round
+ * comes from the voice line's mouth shapes (lips.json, scripts/sims/lips.mjs), read at the voice's
+ * current time, so the lips follow the words.
  *
  * Geometry per video frame comes from Blender (the mouth corners, lip line and chin projected
- * through the camera): `<talk>.json` next to the close-up video.
+ * through the scene camera): the scene's `mouth` JSON. Faces are small in a scene, so the opening
+ * has a floor in pixels (it stays visible on a phone).
  */
 
 /** [x, y] in video pixels. Per frame: corner (her left), corner (her right), lip centre, lower lip, chin, nose. */
@@ -85,12 +86,12 @@ export function drawTalkingFrame(ctx: CanvasRenderingContext2D, video: HTMLVideo
     return cr[1] * a + c[1] * b + cl[1] * d
   }
   const mouthWidth = x1 - x0
-  const openPx = mouth.open * 0.16 * mouthWidth
+  const openPx = mouth.open * Math.max(0.16 * mouthWidth, 3.4)
   const mid = (x0 + x1) / 2
   const half = (mouthWidth / 2) * mouth.width
   const left = mid - half
-  const chinY = chin[1] + 4
-  const bottom = chinY + 26
+  const chinY = chin[1] + Math.max(1.5, 0.04 * mouthWidth)
+  const bottom = chinY + Math.max(8, 0.27 * mouthWidth)
   const gapAt = (x: number) => {
     const u = (x - left) / (2 * half)
     return u <= 0 || u >= 1 ? 0 : openPx * Math.pow(Math.sin(Math.PI * u), mouth.round)

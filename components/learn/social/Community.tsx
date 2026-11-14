@@ -69,7 +69,7 @@ export function PostRow({ post, showRoom = true, index = 0 }: { post: PostSummar
     >
       <Link
         href={postPath(post.id)}
-        className="group block rounded-3xl border border-rh-ink/[0.07] bg-white p-5 transition hover:-translate-y-0.5 hover:border-rh-ink/15 hover:shadow-[0_12px_32px_-18px_rgba(10,20,18,0.35)] sm:p-6"
+        className="group block min-w-0 rounded-3xl border border-rh-ink/[0.07] bg-white p-4 transition hover:-translate-y-0.5 hover:border-rh-ink/15 hover:shadow-[0_12px_32px_-18px_rgba(10,20,18,0.35)] sm:p-6"
       >
         <div className="flex flex-wrap items-center gap-2 text-xs">
           <span
@@ -83,10 +83,10 @@ export function PostRow({ post, showRoom = true, index = 0 }: { post: PostSummar
           {showRoom && <span className="font-medium text-rh-ink/50">in {post.room.title}</span>}
           {post.hidden && <span className="rounded-full bg-rh-danger-soft px-2.5 py-1 font-semibold text-rh-danger-ink">Hidden</span>}
         </div>
-        <h3 className="mt-3 text-[17px] font-semibold leading-snug text-rh-ink group-hover:underline group-hover:decoration-rh-ink/30 group-hover:underline-offset-4">
+        <h3 className="mt-3 break-words text-[17px] font-semibold leading-snug text-rh-ink [overflow-wrap:anywhere] group-hover:underline group-hover:decoration-rh-ink/30 group-hover:underline-offset-4">
           {post.title}
         </h3>
-        <p className="mt-1.5 line-clamp-2 text-[14px] leading-6 text-rh-ink/60">{post.excerpt}</p>
+        <p className="mt-1.5 line-clamp-2 break-words text-[14px] leading-6 text-rh-ink/60 [overflow-wrap:anywhere]">{post.excerpt}</p>
         <div className="mt-4 flex items-center gap-3">
           <Avatar name={post.author?.name ?? 'Member'} imageUrl={post.author?.imageUrl} size={28} />
           <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
@@ -428,7 +428,7 @@ export function CommunityHome() {
           href={mainSiteUrl('/dashboard/physiotherapist/community')}
           className="mt-6 flex items-center justify-between gap-4 rounded-2xl border border-rh-ink/[0.08] bg-rh-cream px-5 py-4 text-sm transition hover:border-rh-ink/20"
         >
-          <span className="text-rh-ink/70">
+          <span className="min-w-0 text-rh-ink/70">
             <span className="font-semibold text-rh-ink">Rehabify physio community</span> · the clinicians-only space in your dashboard
           </span>
           <ArrowUpRight className="h-4 w-4 shrink-0 text-rh-ink/50" />
@@ -439,8 +439,28 @@ export function CommunityHome() {
 
       {data?.member && <MyGroups />}
 
-      <div className="mt-10 grid gap-10 lg:grid-cols-[minmax(0,1fr)_340px]">
-        <section aria-labelledby="latest-heading">
+      {data?.member && data.rooms.some((room) => room.kind !== 'group') && (
+        <nav aria-label="Rooms" className="-mx-4 mt-6 flex snap-x gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] lg:hidden">
+          {data.rooms
+            .filter((room) => room.kind !== 'group')
+            .map((room) => {
+              const Icon = roomIcon(room)
+              return (
+                <Link
+                  key={room.slug}
+                  href={roomPath(room.slug)}
+                  className="flex h-10 shrink-0 snap-start items-center gap-2 rounded-full border border-rh-ink/10 bg-white px-4 text-sm font-semibold text-rh-ink transition active:scale-[0.98]"
+                >
+                  <Icon className="h-3.5 w-3.5 text-rh-ink/60" />
+                  <span className="whitespace-nowrap">{room.title}</span>
+                </Link>
+              )
+            })}
+        </nav>
+      )}
+
+      <div className="mt-8 grid gap-10 lg:mt-10 lg:grid-cols-[minmax(0,1fr)_340px]">
+        <section aria-labelledby="latest-heading" className="min-w-0">
           <h2 id="latest-heading" className="text-sm font-semibold uppercase tracking-[0.14em] text-rh-ink/50">
             Latest
           </h2>
@@ -471,9 +491,9 @@ export function CommunityHome() {
           </div>
         </section>
 
-        <aside className="space-y-6 lg:sticky lg:top-24 lg:self-start">
+        <aside className="min-w-0 space-y-6 lg:sticky lg:top-24 lg:self-start">
           <SpacesPromo />
-          <section aria-labelledby="rooms-heading" className="rounded-3xl border border-rh-ink/[0.07] bg-white p-3">
+          <section aria-labelledby="rooms-heading" className="hidden rounded-3xl border border-rh-ink/[0.07] bg-white p-3 lg:block">
             <h2 id="rooms-heading" className="px-3 pb-1 pt-2 text-sm font-semibold uppercase tracking-[0.14em] text-rh-ink/50">
               Rooms
             </h2>
@@ -535,7 +555,7 @@ export function RoomView({ slug }: { slug: string }) {
     <main className="mx-auto w-full max-w-3xl px-4 pb-20 pt-6 sm:px-6 sm:pt-10">
       <BackToCommunity />
       <div className="mt-6 flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
-        <div className="flex items-start gap-4">
+        <div className="flex min-w-0 items-start gap-4">
           <span
             className={cn('flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl', !tone && 'bg-rh-ink text-rh-lime')}
             style={tone ? { background: tone.soft, color: tone.ink } : undefined}
@@ -548,7 +568,7 @@ export function RoomView({ slug }: { slug: string }) {
                 <Lock className="h-3 w-3" /> Private group{group.myRole === 'lead' ? ' · you lead it' : ''}
               </p>
             )}
-            <h1 className={cn('text-[30px] leading-tight tracking-tight text-rh-ink sm:text-[38px]', displayFont)}>{data.room.title}</h1>
+            <h1 className={cn('break-words text-[28px] leading-tight tracking-tight text-rh-ink sm:text-[38px]', displayFont)}>{data.room.title}</h1>
             {data.room.description && <p className="mt-1.5 max-w-lg text-[15px] leading-6 text-rh-ink/60">{data.room.description}</p>}
             {group && group.members.length > 0 && (
               <div className="mt-3 flex items-center gap-2">

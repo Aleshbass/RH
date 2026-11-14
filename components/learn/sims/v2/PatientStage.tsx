@@ -159,16 +159,6 @@ export function SceneCredit({ text }: { text: string }) {
  */
 function PatientVideo({ scene, talking, lipsUrl }: { scene: SimScene; talking: boolean; lipsUrl: string | null }) {
   const [playing, setPlaying] = useState(false)
-  // Cut to the close-up while the patient speaks; stay a moment between lines so it doesn't flicker
-  const [closeUp, setCloseUp] = useState(false)
-  useEffect(() => {
-    if (talking) {
-      setCloseUp(true)
-      return
-    }
-    const id = window.setTimeout(() => setCloseUp(false), 700)
-    return () => window.clearTimeout(id)
-  }, [talking])
   return (
     <AnimatePresence initial={false}>
       <motion.div
@@ -179,8 +169,13 @@ function PatientVideo({ scene, talking, lipsUrl }: { scene: SimScene; talking: b
         exit={{ opacity: 0 }}
         transition={{ duration: 0.45, ease: 'easeOut' }}
       >
-        <Image src={scene.src} alt={scene.alt} fill sizes="460px" className="object-cover" priority />
-        {scene.video && (
+        {scene.video && scene.mouth ? (
+          // The patient's lips move to their voice right in the scene
+          <TalkingFace video={scene.video} still={scene.src} alt={scene.alt} mouthUrl={scene.mouth} lipsUrl={lipsUrl} active={talking} />
+        ) : (
+          <Image src={scene.src} alt={scene.alt} fill sizes="460px" className="object-cover" priority />
+        )}
+        {scene.video && !scene.mouth && (
           <video
             src={scene.video}
             className={cn('absolute inset-0 h-full w-full object-cover transition-opacity duration-300', playing ? 'opacity-100' : 'opacity-0')}
@@ -193,7 +188,6 @@ function PatientVideo({ scene, talking, lipsUrl }: { scene: SimScene; talking: b
             aria-hidden
           />
         )}
-        {scene.talk && <TalkingFace talk={scene.talk} lipsUrl={lipsUrl} visible={closeUp} />}
         {scene.credit && <SceneCredit text={scene.credit} />}
       </motion.div>
     </AnimatePresence>
@@ -259,7 +253,7 @@ export function PatientStage({
         )}
       </svg>
       {/* Nothing sits over the patient: name and timer are in the top bar, the monitor below */}
-      {scene && speaking && !(scene.talk && talking) && (
+      {scene && speaking && (
         <span className="absolute bottom-2 left-1/2 -translate-x-1/2 rounded-full bg-[rgb(3_8_7/0.6)] px-2.5 py-1 text-[10px] font-semibold text-white/80 backdrop-blur-sm">
           Speaking…
         </span>

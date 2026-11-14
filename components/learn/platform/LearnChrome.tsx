@@ -449,7 +449,7 @@ function AuthArea() {
         <Link href={learnSignInHref(pathname || learnPath())} className="hidden h-10 items-center rounded-full px-4 text-sm font-semibold text-rh-ink hover:bg-rh-ink/[0.05] sm:inline-flex">
           Sign in
         </Link>
-        <Link href={learnSignUpHref()} className={cn(pillInk, 'h-10 px-4 sm:px-5')}>
+        <Link href={learnSignUpHref()} className={cn(pillInk, 'h-10 whitespace-nowrap px-3.5 text-[13px] sm:px-5 sm:text-sm')}>
           Join for free
         </Link>
       </div>

@@ -283,7 +283,7 @@ export function PostView({ postId }: { postId: string }) {
           </span>
           {post.hidden && <span className="rounded-full bg-rh-danger-soft px-2.5 py-1 font-semibold text-rh-danger-ink">Hidden from members</span>}
         </div>
-        <h1 className={cn('mt-4 text-[28px] leading-tight tracking-tight text-rh-ink sm:text-[36px]', displayFont)}>{post.title}</h1>
+        <h1 className={cn('mt-4 break-words text-[26px] leading-tight tracking-tight text-rh-ink [overflow-wrap:anywhere] sm:text-[36px]', displayFont)}>{post.title}</h1>
         <div className="mt-5 flex items-center gap-3">
           <Avatar name={post.author?.name ?? 'Member'} imageUrl={post.author?.imageUrl} size={40} />
           <div className="min-w-0 flex-1">
