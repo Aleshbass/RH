@@ -11,6 +11,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { cn } from '@/lib/utils'
 import { vitalsFromTimeline, type SimScene, type Vitals, type VitalsTimeline } from '@/lib/learn/simulation/engine'
 import { heartBeep, monitorAlarm, vibrate } from '../simAudio'
+import { TalkingFace } from './TalkingFace'
 import { alarmFor, ecgAt } from '../VitalsMonitor'
 
 /** Attaching the monitor is one of the actions on offer: the strip becomes a button for it. */
@@ -156,8 +157,18 @@ export function SceneCredit({ text }: { text: string }) {
  * The patient on video: a silent looping clip per state (the voices play separately), crossfading
  * when the state changes. The still shows until the video can play, and stays if a phone blocks it.
  */
-function PatientVideo({ scene }: { scene: SimScene }) {
+function PatientVideo({ scene, talking, lipsUrl }: { scene: SimScene; talking: boolean; lipsUrl: string | null }) {
   const [playing, setPlaying] = useState(false)
+  // Cut to the close-up while the patient speaks; stay a moment between lines so it doesn't flicker
+  const [closeUp, setCloseUp] = useState(false)
+  useEffect(() => {
+    if (talking) {
+      setCloseUp(true)
+      return
+    }
+    const id = window.setTimeout(() => setCloseUp(false), 700)
+    return () => window.clearTimeout(id)
+  }, [talking])
   return (
     <AnimatePresence initial={false}>
       <motion.div
@@ -182,6 +193,7 @@ function PatientVideo({ scene }: { scene: SimScene }) {
             aria-hidden
           />
         )}
+        {scene.talk && <TalkingFace talk={scene.talk} lipsUrl={lipsUrl} visible={closeUp} />}
         {scene.credit && <SceneCredit text={scene.credit} />}
       </motion.div>
     </AnimatePresence>
@@ -192,11 +204,18 @@ export function PatientStage({
   pain,
   breathsPerMin,
   speaking,
+  talking = false,
+  lipsUrl = null,
   scene = null,
 }: {
   pain: number
   breathsPerMin: number
+  /** Someone's voice is playing (the "Speaking…" label). */
   speaking: boolean
+  /** The patient's own voice is playing (the close-up with a moving mouth, if the scene has one). */
+  talking?: boolean
+  /** The case's mouth timings (public/sims/<slug>/v<version>/lips.json). */
+  lipsUrl?: string | null
   scene?: SimScene | null
 }) {
   const reduce = useReducedMotion()
@@ -205,7 +224,7 @@ export function PatientStage({
   return (
     <div className="learn-fixed-dark relative h-full overflow-hidden bg-[radial-gradient(120%_100%_at_50%_0%,rgb(32_56_52)_0%,rgb(8_16_15)_72%)]">
       <div className="absolute inset-0 opacity-[0.06] [background-image:linear-gradient(rgb(255_255_255)_1px,transparent_1px),linear-gradient(90deg,rgb(255_255_255)_1px,transparent_1px)] [background-size:26px_26px]" />
-      {scene && <PatientVideo scene={scene} />}
+      {scene && <PatientVideo scene={scene} talking={talking} lipsUrl={lipsUrl} />}
       {/* Stand-in patient (cases without video yet): shoulders breathe, a ring while speaking */}
       <svg style={scene ? { display: 'none' } : undefined} viewBox="0 0 200 150" className="absolute inset-x-0 bottom-10 mx-auto h-[78%] w-auto" aria-hidden>
         <motion.g
@@ -240,7 +259,7 @@ export function PatientStage({
         )}
       </svg>
       {/* Nothing sits over the patient: name and timer are in the top bar, the monitor below */}
-      {scene && speaking && (
+      {scene && speaking && !(scene.talk && talking) && (
         <span className="absolute bottom-2 left-1/2 -translate-x-1/2 rounded-full bg-[rgb(3_8_7/0.6)] px-2.5 py-1 text-[10px] font-semibold text-white/80 backdrop-blur-sm">
           Speaking…
         </span>

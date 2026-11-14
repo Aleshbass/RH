@@ -59,10 +59,14 @@ export type SimNode = {
 }
 
 /**
- * A scene: the still (also the video's first frame) and a silent idle loop. `credit`: attribution
- * when the model's licence asks for it (CC BY).
+ * A scene: the still (also the video's first frame) and a silent idle loop. `talk`: the patient's
+ * close-up the player cuts to while they speak, with the mouth moved in the browser to the voice
+ * (components/learn/sims/talkingFace.ts). `credit`: attribution a CC BY model needs.
  */
-export type SimScene = { src: string; alt: string; video?: string; credit?: string }
+export type SimScene = { src: string; alt: string; video?: string; talk?: SimTalk; credit?: string }
+
+/** The talking close-up: looping video, its first frame, and the mouth's position per frame (JSON). */
+export type SimTalk = { video: string; src: string; mouth: string }
 export type SimFinding = { id: string; label: string; detail: string; abnormal?: boolean }
 export type SimSpeaker = { name: string; role: string; voice?: string }
 export type SimPhase = { id: PhaseId; label: string; budgetSec: number }

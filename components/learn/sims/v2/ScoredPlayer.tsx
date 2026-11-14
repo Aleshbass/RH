@@ -172,6 +172,9 @@ export function ScoredPlayer({ attempt, onDone }: { attempt: SimAttempt; onDone:
     router.push(simPath(c.slug))
   }
 
+  // The patient's own voice moves their mouth (a relative's line doesn't)
+  const talker = speaking ? items.find((i) => i.key === speaking) : undefined
+  const talking = talker?.kind === 'speech' && talker.speaker === 'patient'
   const choices: DockChoice[] = useMemo(() => attempt.choices.map((x) => ({ id: x.id, label: x.label, costSec: x.costSec, category: x.category })), [attempt.choices])
   const attach = attempt.choices.find((x) => x.attachesMonitor)
   const breaths = attempt.vitals ? vitalsFromTimeline(attempt.vitals, getClock()).rr : 16
@@ -202,7 +205,14 @@ export function ScoredPlayer({ attempt, onDone }: { attempt: SimAttempt; onDone:
           onFindings={() => setFindingsOpen(true)}
         />
         <div className={STAGE_CLASS}>
-          <PatientStage pain={attempt.pain} breathsPerMin={breaths} speaking={Boolean(speaking)} scene={attempt.scene} />
+          <PatientStage
+            pain={attempt.pain}
+            breathsPerMin={breaths}
+            speaking={Boolean(speaking)}
+            talking={talking}
+            lipsUrl={c.audio ? `/sims/${c.slug}/v${c.version}/lips.json` : null}
+            scene={attempt.scene}
+          />
         </div>
         {c.monitor && (
           <MonitorRow

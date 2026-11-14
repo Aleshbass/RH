@@ -264,7 +264,17 @@ function PreviewPlayer({ def, onExit }: { def: SimCase; onExit: () => void }) {
         ) : (
           <>
             <div className={STAGE_CLASS}>
-              <PatientStage pain={sim.pain} breathsPerMin={breaths} speaking={Boolean(speaking)} scene={sim.scene && def.scenes?.[sim.scene] ? def.scenes[sim.scene] : null} />
+              <PatientStage
+                pain={sim.pain}
+                breathsPerMin={breaths}
+                speaking={Boolean(speaking)}
+                talking={(() => {
+                  const talker = speaking ? items.find((i) => i.key === speaking) : undefined
+                  return talker?.kind === 'speech' && talker.speaker === 'patient'
+                })()}
+                lipsUrl={def.audio ? `/sims/${def.slug}/v${def.version}/lips.json` : null}
+                scene={sim.scene && def.scenes?.[sim.scene] ? def.scenes[sim.scene] : null}
+              />
             </div>
             {def.monitor && (
               <MonitorRow

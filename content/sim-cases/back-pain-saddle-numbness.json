@@ -13,6 +13,11 @@
       "src": "/sims/back-pain-saddle-numbness/v1/scene/standing.webp",
       "alt": "Mrs Adebayo stands stiffly in the clinic room, one hand pressed to her lower back.",
       "video": "/sims/back-pain-saddle-numbness/v1/scene/standing.mp4",
+      "talk": {
+        "video": "/sims/back-pain-saddle-numbness/v1/scene/talk.mp4",
+        "src": "/sims/back-pain-saddle-numbness/v1/scene/talk.webp",
+        "mouth": "/sims/back-pain-saddle-numbness/v1/scene/talk.json"
+      },
       "credit": "3D model: Attractive African woman 236 by deep3dstudio (Sketchfab), CC BY 4.0, modified"
     },
     "plinth": {
@@ -25,6 +30,11 @@
       "src": "/sims/back-pain-saddle-numbness/v1/scene/worried.webp",
       "alt": "Mrs Adebayo looks worried.",
       "video": "/sims/back-pain-saddle-numbness/v1/scene/worried.mp4",
+      "talk": {
+        "video": "/sims/back-pain-saddle-numbness/v1/scene/talk.mp4",
+        "src": "/sims/back-pain-saddle-numbness/v1/scene/talk.webp",
+        "mouth": "/sims/back-pain-saddle-numbness/v1/scene/talk.json"
+      },
       "credit": "3D model: Attractive African woman 236 by deep3dstudio (Sketchfab), CC BY 4.0, modified"
     }
   },
