@@ -2,7 +2,8 @@
 
 /** Small pieces shared by Learn community rooms and Spaces. */
 
-import { useEffect, useRef, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import Image from 'next/image'
 import Link from 'next/link'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
@@ -58,8 +59,33 @@ export function SpaceAvatar({ name, imageUrl, size = 40, className }: { name: st
 const BACKDROP = 'bg-[rgb(3_8_7/0.5)]'
 
 /**
+ * How much of the screen the on-screen keyboard covers (iPhone; Android resizes the page instead,
+ * see interactiveWidget in app/learn/layout.tsx), so a sheet's fields and buttons stay above it.
+ */
+function useKeyboardInset(active: boolean) {
+  const [inset, setInset] = useState(0)
+  useEffect(() => {
+    const vv = window.visualViewport
+    if (!active || !vv) return
+    const update = () => setInset(Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop)))
+    update()
+    vv.addEventListener('resize', update)
+    vv.addEventListener('scroll', update)
+    return () => {
+      vv.removeEventListener('resize', update)
+      vv.removeEventListener('scroll', update)
+      setInset(0)
+    }
+  }, [active])
+  return inset
+}
+
+/**
  * A panel that slides up from the bottom on phones and sits in the middle on larger screens.
  * Escape and the backdrop close it; the page behind doesn't scroll.
+ * Phone fixes (owner 2026-11-14: "breaks", "white glitch"): rendered into <body> so no page layout,
+ * header or bar can cover or clip it; a plain slide up (no fade or zoom of the white panel); kept
+ * above the keyboard; 16px fields so iPhones don't zoom; no tap flash on the backdrop.
  */
 export function Sheet({
   open,
@@ -78,6 +104,9 @@ export function Sheet({
 }) {
   const reduce = useReducedMotion()
   const panel = useRef<HTMLDivElement>(null)
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => setMounted(true), [])
+  const keyboard = useKeyboardInset(open)
   // Parents pass a new onClose on every render (live data updates); keep the latest without
   // re-running the open effect, which would unlock/relock scrolling and re-focus (a flicker)
   const closeRef = useRef(onClose)
@@ -109,48 +138,66 @@ export function Sheet({
     }
   }, [open])
 
-  return (
+  if (!mounted) return null
+  const phone = window.matchMedia('(max-width: 639px)').matches
+  const enter = reduce ? { opacity: 0 } : phone ? { y: '100%' } : { y: 24, opacity: 0 }
+  const shown = reduce ? { opacity: 1 } : phone ? { y: 0 } : { y: 0, opacity: 1 }
+
+  return createPortal(
     <AnimatePresence>
       {open && (
-        <div className="fixed inset-0 z-[70] flex items-end justify-center sm:items-center sm:p-6" role="dialog" aria-modal="true" aria-label={title}>
-          <motion.button
-            type="button"
-            aria-label="Close"
+        <div
+          className="fixed inset-x-0 top-0 z-[100] flex items-end justify-center [-webkit-tap-highlight-color:transparent] sm:items-center sm:p-6"
+          style={{ bottom: keyboard }}
+          role="dialog"
+          aria-modal="true"
+          aria-label={title}
+        >
+          <motion.div
+            aria-hidden
             onClick={onClose}
-            className={cn('absolute inset-0 cursor-default', BACKDROP)}
+            className={cn('absolute inset-0 touch-none', BACKDROP)}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.22, ease: 'easeOut' }}
+            transition={{ duration: 0.2, ease: 'easeOut' }}
           />
           <motion.div
             ref={panel}
             className={cn(
-              'relative flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-[28px] bg-white shadow-2xl sm:rounded-[28px]',
+              'relative flex max-h-[calc(100%-1.5rem)] w-full flex-col overflow-hidden rounded-t-[28px] bg-white shadow-2xl sm:max-h-[92dvh] sm:rounded-[28px]',
+              // 16px fields on phones: iPhones zoom into anything smaller
+              'max-sm:[&_input]:text-base max-sm:[&_select]:text-base max-sm:[&_textarea]:text-base',
               wide ? 'sm:max-w-2xl' : 'sm:max-w-lg'
             )}
-            initial={reduce ? { opacity: 0 } : { y: 40, opacity: 0, scale: 0.98 }}
-            animate={{ y: 0, opacity: 1, scale: 1 }}
-            exit={reduce ? { opacity: 0 } : { y: 30, opacity: 0, scale: 0.98 }}
-            transition={{ type: 'spring', stiffness: 420, damping: 36 }}
+            initial={enter}
+            animate={shown}
+            exit={enter}
+            transition={phone ? { type: 'tween', duration: 0.28, ease: [0.32, 0.72, 0, 1] } : { type: 'spring', stiffness: 420, damping: 36 }}
           >
-            <div className="flex items-center justify-between gap-4 px-5 pb-2 pt-5 sm:px-6">
+            <div className="mx-auto mt-2 h-1.5 w-10 shrink-0 rounded-full bg-rh-ink/15 sm:hidden" aria-hidden />
+            <div className="flex items-center justify-between gap-4 px-5 pb-2 pt-3 sm:px-6 sm:pt-5">
               <h2 className="text-lg font-semibold text-rh-ink">{title}</h2>
               <button
                 type="button"
                 onClick={onClose}
                 aria-label="Close"
-                className="flex h-9 w-9 items-center justify-center rounded-full text-rh-ink/60 transition hover:bg-rh-ink/[0.06] hover:text-rh-ink"
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-rh-ink/60 transition hover:bg-rh-ink/[0.06] hover:text-rh-ink"
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5 sm:px-6">{children}</div>
-            {footer && <div className="border-t border-rh-ink/[0.07] px-5 py-4 sm:px-6">{footer}</div>}
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-5 sm:px-6">{children}</div>
+            {footer && (
+              <div className={cn('shrink-0 border-t border-rh-ink/[0.07] px-5 pt-4 sm:px-6 sm:pb-4', keyboard ? 'pb-3' : 'pb-[calc(1rem+env(safe-area-inset-bottom))]')}>
+                {footer}
+              </div>
+            )}
           </motion.div>
         </div>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body
   )
 }
 

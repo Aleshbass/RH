@@ -252,6 +252,11 @@ body {
     @apply bg-background text-foreground;
   }
 
+  html {
+    /* No grey/white flash over buttons and cards when tapped on phones (owner 2026-11-14) */
+    -webkit-tap-highlight-color: transparent;
+  }
+
   h1,
   h2,
   h3,

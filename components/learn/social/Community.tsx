@@ -179,7 +179,14 @@ export function PostComposer({
       }
     >
       <form onSubmit={submit} className="space-y-5 pt-2">
-        <div className="flex rounded-full bg-rh-cream p-1" role="radiogroup" aria-label="Kind of post">
+        <div className="relative flex rounded-full bg-rh-cream p-1" role="radiogroup" aria-label="Kind of post">
+          <span
+            aria-hidden
+            className={cn(
+              'absolute inset-y-1 left-1 w-[calc(50%-0.25rem)] rounded-full bg-white shadow-sm transition-transform duration-300 ease-out',
+              kind === 'discussion' && 'translate-x-full'
+            )}
+          />
           {(['question', 'discussion'] as const).map((k) => (
             <button
               key={k}
@@ -192,9 +199,6 @@ export function PostComposer({
                 kind === k ? 'text-rh-ink' : 'text-rh-ink/55 hover:text-rh-ink'
               )}
             >
-              {kind === k && (
-                <motion.span layoutId="composer-kind" className="absolute inset-0 rounded-full bg-white shadow-sm" transition={{ type: 'spring', stiffness: 500, damping: 38 }} />
-              )}
               <span className="relative">{k === 'question' ? 'Ask a question' : 'Start a discussion'}</span>
             </button>
           ))}

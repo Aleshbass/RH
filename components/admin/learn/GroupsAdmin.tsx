@@ -318,7 +318,13 @@ function MemberRow({ groupId, m }: { groupId: Id<'learnGroups'>; m: AdminGroupMe
 }
 
 function GroupDrawer({ groupId, onOpenChange }: { groupId: Id<'learnGroups'> | null; onOpenChange: (o: boolean) => void }) {
-  const group = useQuery(groupRef, groupId ? { groupId } : 'skip')
+  // Keep showing the group while the drawer slides away (closing used to swap the content for a
+  // spinner mid-slide, so the phone sheet jumped in height: the "white flash")
+  const [shownId, setShownId] = useState(groupId)
+  useEffect(() => {
+    if (groupId) setShownId(groupId)
+  }, [groupId])
+  const group = useQuery(groupRef, shownId ? { groupId: shownId } : 'skip')
   const update = useMutation(groupUpdateRef)
   const archive = useMutation(groupArchiveRef)
   const [editing, setEditing] = useState(false)
@@ -386,7 +392,7 @@ function GroupDrawer({ groupId, onOpenChange }: { groupId: Id<'learnGroups'> | n
       }
     >
       {group === undefined ? (
-        <div className="flex justify-center py-12">
+        <div className="flex min-h-[40dvh] items-center justify-center py-12">
           <Loader2 className="h-5 w-5 animate-spin text-neutral-400" />
         </div>
       ) : group === null ? (

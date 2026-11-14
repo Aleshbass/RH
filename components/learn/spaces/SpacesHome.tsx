@@ -5,7 +5,7 @@
  * Admins and approved Rehabify physios can host.
  */
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useMutation, useQuery } from 'convex/react'
@@ -170,6 +170,16 @@ function HostSheet({ open, onClose, groups, canHostOpen }: { open: boolean; onCl
   const [when, setWhen] = useState<'now' | 'later'>('now')
   const [at, setAt] = useState('')
   const [busy, setBusy] = useState(false)
+  // A fresh form each time it opens (it used to remount instead, which cut the closing slide short)
+  useEffect(() => {
+    if (!open) return
+    setAudience(canHostOpen ? 'everyone' : (groups[0]?.id ?? 'everyone'))
+    setTitle('')
+    setDescription('')
+    setWhen('now')
+    setAt('')
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only on opening, not on live updates
+  }, [open])
 
   const submit = async () => {
     setBusy(true)
@@ -396,7 +406,7 @@ export function SpacesHome() {
       )}
 
       {data?.canHost && (
-        <HostSheet open={hosting} onClose={() => setHosting(false)} groups={data.hostGroups} canHostOpen={data.canHostOpen} key={String(hosting)} />
+        <HostSheet open={hosting} onClose={() => setHosting(false)} groups={data.hostGroups} canHostOpen={data.canHostOpen} />
       )}
     </main>
   )
