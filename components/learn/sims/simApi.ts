@@ -88,3 +88,10 @@ export function simTrack(event: 'sim_open' | 'sim_start' | 'sim_choice' | 'sim_f
 }
 
 export const DISCLAIMER = 'Education, not clinical advice or a licence. Cases follow published guidelines; local protocols come first.'
+
+/** Server clock minus this device's clock, from the last mutation reply (the case clock runs on it). */
+let serverOffsetMs = 0
+export const noteServerTime = (serverNow?: number) => {
+  if (typeof serverNow === 'number') serverOffsetMs = serverNow - Date.now()
+}
+export const serverNowMs = () => Date.now() + serverOffsetMs

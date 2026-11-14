@@ -16,7 +16,9 @@ import { learnMemberInfo, type LearnMemberInfo } from "./learn";
 import { SIM_CASES } from "../content/sim-cases";
 import {
   applyChoice,
+  attachesMonitor,
   availableChoices,
+  choiceCategory,
   buildDebrief,
   choiceIndex,
   endingOf,
@@ -119,7 +121,16 @@ function attemptView(def: SimCase, attempt: Doc<"learnSimAttempts">) {
       active && node
         ? { id: node.id, phase: node.phase, prompt: node.prompt, lines: (node.lines ?? []).map((l, i) => lineView(def, l, `${node.id}-${i}`)) }
         : null,
-    choices: active ? availableChoices(def, state).map((c) => ({ id: c.id, label: c.label, costSec: c.costSec })) : [],
+    choices: active
+      ? availableChoices(def, state).map((c) => ({
+          id: c.id,
+          label: c.label,
+          costSec: c.costSec,
+          category: choiceCategory(c),
+          attachesMonitor: def.monitor && attachesMonitor(c),
+        }))
+      : [],
+    escalated: state.flags.includes("escalated"),
     lastChoice: last ? { id: last.id, label: last.label, reply: last.reply ? lineView(def, last.reply, last.id) : null } : null,
     findings: state.findings
       .map((id) => def.findings[id])

@@ -13,7 +13,22 @@ import { vitalsFromTimeline, type SimScene, type Vitals, type VitalsTimeline } f
 import { heartBeep, monitorAlarm, vibrate } from '../simAudio'
 import { alarmFor, ecgAt } from '../VitalsMonitor'
 
-function MonitorStrip({ timeline, on, getClock, live }: { timeline: VitalsTimeline | null; on: boolean; getClock: () => number; live: boolean }) {
+/** Attaching the monitor is one of the actions on offer: the strip becomes a button for it. */
+export type MonitorAttach = { label: string; costSec: number; onTap: () => void; disabled?: boolean }
+
+function MonitorStrip({
+  timeline,
+  on,
+  getClock,
+  live,
+  attach,
+}: {
+  timeline: VitalsTimeline | null
+  on: boolean
+  getClock: () => number
+  live: boolean
+  attach?: MonitorAttach | null
+}) {
   const canvas = useRef<HTMLCanvasElement>(null)
   const [v, setV] = useState<Vitals | null>(null)
   const vRef = useRef<Vitals | null>(null)
@@ -111,10 +126,29 @@ function MonitorStrip({ timeline, on, getClock, live }: { timeline: VitalsTimeli
           {num('BP', v ? `${v.bpSys}/${v.bpDia}` : '--', '#f1f5f9', Boolean(alarms?.bp))}
           {num('RR', v ? String(v.rr) : '--', '#fde68a', Boolean(alarms?.rr))}
         </div>
+      ) : attach ? (
+        <button
+          type="button"
+          onClick={attach.onTap}
+          disabled={attach.disabled}
+          className="flex flex-1 items-center justify-between gap-2 rounded-xl bg-rh-lime px-3 py-1.5 text-left text-[12.5px] font-semibold text-[#0b1312] transition active:scale-[0.98] disabled:opacity-60"
+        >
+          <span className="truncate">Attach monitor</span>
+          <span className="shrink-0 rounded-full bg-[rgb(11_19_18/0.12)] px-1.5 py-0.5 font-mono text-[10px]">+{attach.costSec}s</span>
+        </button>
       ) : (
-        <span className="flex-1 text-[11px] font-semibold text-[rgb(255_255_255/0.6)]">Monitor not connected</span>
+        <span className="flex-1 text-[11px] font-medium text-[rgb(255_255_255/0.45)]">Not on the monitor yet</span>
       )}
     </div>
+  )
+}
+
+/** Licence attribution for a patient model (CC BY needs it wherever the art shows). */
+export function SceneCredit({ text }: { text: string }) {
+  return (
+    <span className="pointer-events-none absolute bottom-1 right-1.5 max-w-[70%] truncate text-[9px] leading-tight text-[rgb(255_255_255/0.6)] [text-shadow:0_1px_2px_rgb(0_0_0/0.7)]">
+      {text}
+    </span>
   )
 }
 
@@ -148,6 +182,7 @@ function PatientVideo({ scene }: { scene: SimScene }) {
             aria-hidden
           />
         )}
+        {scene.credit && <SceneCredit text={scene.credit} />}
       </motion.div>
     </AnimatePresence>
   )
@@ -215,7 +250,7 @@ export function PatientStage({
 }
 
 /** The monitor as its own slim row under the patient (never on top of him). */
-export function MonitorRow(props: { timeline: VitalsTimeline | null; on: boolean; getClock: () => number; live: boolean }) {
+export function MonitorRow(props: { timeline: VitalsTimeline | null; on: boolean; getClock: () => number; live: boolean; attach?: MonitorAttach | null }) {
   return (
     <div className="learn-fixed-dark shrink-0 bg-[rgb(8_16_15)] px-2 pb-2 pt-1">
       <MonitorStrip {...props} />

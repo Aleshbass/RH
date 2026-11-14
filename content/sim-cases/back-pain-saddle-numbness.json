@@ -8,6 +8,26 @@
   "mode": "full",
   "estimatedMinutes": 8,
   "audio": true,
+  "scenes": {
+    "standing": {
+      "src": "/sims/back-pain-saddle-numbness/v1/scene/standing.webp",
+      "alt": "Mrs Adebayo stands stiffly in the clinic room, one hand pressed to her lower back.",
+      "video": "/sims/back-pain-saddle-numbness/v1/scene/standing.mp4",
+      "credit": "3D model: Attractive African woman 236 by deep3dstudio (Sketchfab), CC BY 4.0, modified"
+    },
+    "plinth": {
+      "src": "/sims/back-pain-saddle-numbness/v1/scene/plinth.webp",
+      "alt": "Mrs Adebayo lies on her back on the treatment couch.",
+      "video": "/sims/back-pain-saddle-numbness/v1/scene/plinth.mp4",
+      "credit": "3D model: Attractive African woman 236 by deep3dstudio (Sketchfab), CC BY 4.0, modified"
+    },
+    "worried": {
+      "src": "/sims/back-pain-saddle-numbness/v1/scene/worried.webp",
+      "alt": "Mrs Adebayo looks worried.",
+      "video": "/sims/back-pain-saddle-numbness/v1/scene/worried.mp4",
+      "credit": "3D model: Attractive African woman 236 by deep3dstudio (Sketchfab), CC BY 4.0, modified"
+    }
+  },
   "setting": "Outpatient physiotherapy clinic, Ibadan",
   "patient": {
     "name": "Mrs Funmilayo Adebayo",
@@ -32,6 +52,7 @@
     "history": {
       "id": "history",
       "phase": "subjective",
+      "scene": "standing",
       "prompt": "Mrs Adebayo, 42, was referred by her GP with 'low back pain' after carrying a 25-litre keg of water up the stairs five days ago. She walks in stiffly. Take her history: each question takes time.",
       "lines": [
         { "speaker": "patient", "text": "Good afternoon. My back has been so bad since I carried water up the stairs on Saturday. Now even my legs are not well." }
@@ -137,6 +158,7 @@
     "exam": {
       "id": "exam",
       "phase": "objective",
+      "scene": "plinth",
       "prompt": "She's on the plinth. What do you examine?",
       "choices": [
         {
@@ -207,6 +229,7 @@
       "choices": [
         {
           "id": "p-emergency",
+          "category": "do",
           "label": "Emergency referral today: she goes to the emergency department now for an urgent MRI and spinal surgical review. Phone ahead and write a referral letter.",
           "costSec": 20,
           "next": "explain",
@@ -246,6 +269,7 @@
     "explain": {
       "id": "explain",
       "phase": "plan",
+      "scene": "worried",
       "prompt": "Mrs Adebayo looks worried.",
       "lines": [
         { "speaker": "patient", "text": "Please, can I go home first? My children are coming back from school, and the hospital will cost money. I'll go tomorrow morning." }

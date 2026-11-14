@@ -170,6 +170,7 @@
         },
         {
           "id": "b-hop",
+          "category": "examine",
           "label": "Ask him to hop on the injured leg to test function",
           "costSec": 15,
           "next": "exam",

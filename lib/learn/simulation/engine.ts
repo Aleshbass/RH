@@ -20,9 +20,18 @@ export type Outcome = 'good' | 'fair' | 'poor' | 'harm'
 /** Something said aloud: shown as a caption and voiced (public/sims/<slug>/v<version>/<audio id>.mp3). */
 export type SimLine = { speaker: string; text: string }
 
+/**
+ * How an action reads in the player's dock (Ask · Examine · Do · Get help, or a "move on" button).
+ * Neutral on purpose: it says what kind of action it is, never whether it's right.
+ */
+export type SimCategory = 'ask' | 'examine' | 'do' | 'help' | 'next'
+export const SIM_CATEGORIES: SimCategory[] = ['ask', 'examine', 'do', 'help', 'next']
+
 export type SimChoice = {
   id: string
   label: string
+  /** Optional; otherwise read from the wording (choiceCategory). */
+  category?: SimCategory
   costSec: number
   next: string
   points: number
@@ -49,7 +58,11 @@ export type SimNode = {
   end?: SimEnd
 }
 
-export type SimScene = { src: string; alt: string; video?: string }
+/**
+ * A scene: the still (also the video's first frame) and a silent idle loop. `credit`: attribution
+ * when the model's licence asks for it (CC BY).
+ */
+export type SimScene = { src: string; alt: string; video?: string; credit?: string }
 export type SimFinding = { id: string; label: string; detail: string; abnormal?: boolean }
 export type SimSpeaker = { name: string; role: string; voice?: string }
 export type SimPhase = { id: PhaseId; label: string; budgetSec: number }
@@ -127,6 +140,20 @@ export class SimError extends Error {
 /** Seconds allowed for network lag when a triage choice arrives right at the limit. */
 export const GRACE_SEC = 3
 export const MONITOR_FLAG = 'monitor'
+
+/** The dock group for an action: the case's own category, else read from the wording. */
+export function choiceCategory(choice: Pick<SimChoice, 'label' | 'category' | 'costSec'>): SimCategory {
+  if (choice.category) return choice.category
+  const l = choice.label.toLowerCase().trim()
+  if (choice.costSec === 0) return 'next'
+  if (l.startsWith('“') || /^(call|escalate)|referral|refer |emergency department|doctor on call|phone ahead/.test(l)) return 'help'
+  if (l.endsWith('?') || /^(ask|how |what |where |any |have you|could you|tell me|did you)/.test(l)) return 'ask'
+  if (/^(check|look|test|press|measure|palpate|gentle|squeeze|straight leg|full lower|lumbar|observe|do a |feel)/.test(l)) return 'examine'
+  return 'do'
+}
+
+/** Whether taking this action puts the patient on the monitor (the player offers it as a chip). */
+export const attachesMonitor = (choice: Pick<SimChoice, 'effects'>) => Boolean(choice.effects?.flags?.includes(MONITOR_FLAG))
 
 const VITAL_LIMITS: Record<keyof Vitals, [number, number]> = {
   hr: [30, 200],
@@ -453,6 +480,7 @@ export function validateCase(def: SimCase): string[] {
       seenChoices.add(c.id)
       if (!def.nodes[c.next]) say(`choice "${c.id}" goes to missing node "${c.next}"`)
       if (c.costSec < 0) say(`choice "${c.id}" has a negative time cost`)
+      if (c.category && !SIM_CATEGORIES.includes(c.category)) say(`choice "${c.id}" has an unknown category "${c.category}"`)
       if (!c.feedback) say(`choice "${c.id}" has no feedback`)
       for (const f of c.reveals ?? []) if (!def.findings[f]) say(`choice "${c.id}" reveals missing finding "${f}"`)
       if (c.effects?.scene && def.scenes && !def.scenes[c.effects.scene]) say(`choice "${c.id}": unknown scene "${c.effects.scene}"`)
