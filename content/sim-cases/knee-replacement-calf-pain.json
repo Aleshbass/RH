@@ -29,10 +29,18 @@
   "drift": { "everySec": 15, "vitals": { "spo2": -1, "hr": 3, "rr": 1 }, "maxSteps": 6, "stopFlag": "escalated" },
   "phases": [{ "id": "triage", "label": "Triage", "budgetSec": 90 }],
   "startNode": "start",
+  "scenes": {
+    "tripod": {
+      "src": "/sims/knee-replacement-calf-pain/v1/scene/tripod.webp",
+      "alt": "Mr Okafor sitting on the edge of his hospital bed, leaning forward on his knees and breathing fast",
+      "video": "/sims/knee-replacement-calf-pain/v1/scene/tripod.mp4"
+    }
+  },
   "nodes": {
     "start": {
       "id": "start",
       "phase": "triage",
+      "scene": "tripod",
       "prompt": "Day 3 after a right total knee replacement. You've come to walk Mr Okafor down the corridor. He's sitting on the edge of the bed, breathing fast.",
       "lines": [
         { "speaker": "patient", "text": "Physio, good morning o. My right calf has been paining me since last night, and I can't catch my breath, even sitting here." },

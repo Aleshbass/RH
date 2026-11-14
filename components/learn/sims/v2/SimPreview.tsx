@@ -420,6 +420,7 @@ function PreviewPlayer({ def, onExit }: { def: SimCase; onExit: () => void }) {
                 pain={sim.pain}
                 breathsPerMin={breaths}
                 speaking={Boolean(speaking)}
+                scene={sim.scene && def.scenes?.[sim.scene] ? def.scenes[sim.scene] : null}
                 monitor={{ enabled: def.monitor, on: Boolean(timeline), timeline, getClock, live: sim.status === 'active' }}
                 topRight={
                   limit ? (

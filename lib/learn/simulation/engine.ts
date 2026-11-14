@@ -49,6 +49,7 @@ export type SimNode = {
   end?: SimEnd
 }
 
+export type SimScene = { src: string; alt: string; video?: string }
 export type SimFinding = { id: string; label: string; detail: string; abnormal?: boolean }
 export type SimSpeaker = { name: string; role: string; voice?: string }
 export type SimPhase = { id: PhaseId; label: string; budgetSec: number }
@@ -86,7 +87,8 @@ export type SimCase = {
   passMark: number
   learningPoints: string[]
   references: SimReference[]
-  scenes?: Record<string, { src: string; alt: string }>
+  /** Scene art: a still (also the video's first frame) and, optionally, a looping video of the patient. */
+  scenes?: Record<string, SimScene>
   timeoutEnd?: SimEnd
   /** Voice lines have been generated for this version. */
   audio?: boolean

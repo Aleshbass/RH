@@ -6,10 +6,11 @@
  */
 
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { motion, useReducedMotion } from 'framer-motion'
+import Image from 'next/image'
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { MapPin } from '@/components/icons'
 import { cn } from '@/lib/utils'
-import { vitalsFromTimeline, type Vitals, type VitalsTimeline } from '@/lib/learn/simulation/engine'
+import { vitalsFromTimeline, type SimScene, type Vitals, type VitalsTimeline } from '@/lib/learn/simulation/engine'
 import { heartBeep, monitorAlarm, vibrate } from '../simAudio'
 import { alarmFor, ecgAt } from '../VitalsMonitor'
 
@@ -118,6 +119,41 @@ function MonitorStrip({ timeline, on, getClock, live }: { timeline: VitalsTimeli
   )
 }
 
+/**
+ * The patient on video: a silent looping clip per state (the voices play separately), crossfading
+ * when the state changes. The still shows until the video can play, and stays if a phone blocks it.
+ */
+function PatientVideo({ scene }: { scene: SimScene }) {
+  const [playing, setPlaying] = useState(false)
+  return (
+    <AnimatePresence initial={false}>
+      <motion.div
+        key={scene.video ?? scene.src}
+        className="absolute inset-0"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.45, ease: 'easeOut' }}
+      >
+        <Image src={scene.src} alt={scene.alt} fill sizes="460px" className="object-cover" priority />
+        {scene.video && (
+          <video
+            src={scene.video}
+            className={cn('absolute inset-0 h-full w-full object-cover transition-opacity duration-300', playing ? 'opacity-100' : 'opacity-0')}
+            autoPlay
+            loop
+            muted
+            playsInline
+            preload="auto"
+            onPlaying={() => setPlaying(true)}
+            aria-hidden
+          />
+        )}
+      </motion.div>
+    </AnimatePresence>
+  )
+}
+
 export function PatientStage({
   name,
   age,
@@ -127,6 +163,7 @@ export function PatientStage({
   speaking,
   monitor,
   topRight,
+  scene = null,
 }: {
   name: string
   age: number
@@ -136,6 +173,7 @@ export function PatientStage({
   speaking: boolean
   monitor: { enabled: boolean; on: boolean; timeline: VitalsTimeline | null; getClock: () => number; live: boolean }
   topRight?: ReactNode
+  scene?: SimScene | null
 }) {
   const reduce = useReducedMotion()
   const breath = Math.max(1.2, 60 / Math.max(6, breathsPerMin))
@@ -143,8 +181,9 @@ export function PatientStage({
   return (
     <div className="learn-fixed-dark relative h-full overflow-hidden bg-[radial-gradient(120%_100%_at_50%_0%,rgb(32_56_52)_0%,rgb(8_16_15)_72%)]">
       <div className="absolute inset-0 opacity-[0.06] [background-image:linear-gradient(rgb(255_255_255)_1px,transparent_1px),linear-gradient(90deg,rgb(255_255_255)_1px,transparent_1px)] [background-size:26px_26px]" />
-      {/* Stand-in patient: shoulders breathe, a ring while speaking */}
-      <svg viewBox="0 0 200 150" className="absolute inset-x-0 bottom-10 mx-auto h-[78%] w-auto" aria-hidden>
+      {scene && <PatientVideo scene={scene} />}
+      {/* Stand-in patient (cases without video yet): shoulders breathe, a ring while speaking */}
+      <svg style={scene ? { display: 'none' } : undefined} viewBox="0 0 200 150" className="absolute inset-x-0 bottom-10 mx-auto h-[78%] w-auto" aria-hidden>
         <motion.g
           style={{ transformOrigin: '100px 150px' }}
           animate={reduce ? undefined : { scaleY: [1, 1.035, 1], scaleX: [1, 1.012, 1] }}
@@ -187,7 +226,7 @@ export function PatientStage({
         </div>
         {topRight}
       </div>
-      <span className="absolute right-3 top-[58px] rounded-full bg-[rgb(255_255_255/0.08)] px-2 py-0.5 text-[10px] font-semibold text-white/50">3D patient coming</span>
+      {scene && speaking && <span className="absolute bottom-14 left-1/2 -translate-x-1/2 rounded-full bg-[rgb(3_8_7/0.6)] px-2.5 py-1 text-[10px] font-semibold text-white/80 backdrop-blur-sm">Speaking…</span>}
       {monitor.enabled && (
         <div className="absolute inset-x-2 bottom-2">
           <MonitorStrip timeline={monitor.timeline} on={monitor.on} getClock={monitor.getClock} live={monitor.live} />
