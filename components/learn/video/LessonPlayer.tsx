@@ -38,13 +38,32 @@ export function ProgressBar({ value, className, tone = 'ink' }: { value: number;
   )
 }
 
+/**
+ * How far through the course the learner is, counting the part of the lesson they're in (so the bar
+ * moves while they watch, not only when a lesson finishes). `live`: the current lesson's watched
+ * fraction while it plays; otherwise the saved resume point is used.
+ */
+export function courseFraction(
+  progress: { completed: number; total: number; isComplete: boolean; resume?: { positionSec: number; durationSec: number } | null },
+  live?: number | null
+) {
+  if (!progress.total) return 0
+  if (progress.isComplete) return 1
+  const r = progress.resume
+  const partial = live ?? (r && r.durationSec > 0 ? r.positionSec / r.durationSec : 0)
+  return Math.min(1, (progress.completed + Math.min(0.999, Math.max(0, partial))) / progress.total)
+}
+
 export function LessonList({
   course,
   currentId,
+  currentFraction,
   onSelect,
 }: {
   course: VideoCourse
   currentId?: LessonId | null
+  /** How much of the current lesson has been watched (0 to 1), shown as a thin bar under it. */
+  currentFraction?: number
   onSelect: (id: LessonId) => void
 }) {
   return (
@@ -73,6 +92,14 @@ export function LessonList({
               <span className="min-w-0 flex-1">
                 <span className={cn('block truncate text-sm font-semibold', current ? 'text-white' : 'text-rh-ink')}>{lesson.title}</span>
                 <span className={cn('block text-xs', current ? 'text-white/60' : 'text-rh-ink/50')}>{formatLength(lesson.durationSec)}</span>
+                {current && !lesson.done && Boolean(currentFraction) && (
+                  <span className="mt-1.5 block h-1 overflow-hidden rounded-full bg-white/15" aria-hidden>
+                    <span
+                      className="block h-full rounded-full bg-rh-lime transition-[width] duration-700 ease-linear"
+                      style={{ width: `${Math.min(100, (currentFraction ?? 0) * 100)}%` }}
+                    />
+                  </span>
+                )}
               </span>
               {current ? (
                 <Play className="h-3.5 w-3.5 shrink-0 text-rh-lime" />
@@ -217,10 +244,13 @@ function Stage({
   course,
   lessonId,
   onSelectLesson,
+  onWatch,
 }: {
   course: VideoCourse
   lessonId: LessonId
   onSelectLesson: (id: LessonId) => void
+  /** How much of this lesson has been watched (0 to 1), reported as it plays. */
+  onWatch?: (fraction: number) => void
 }) {
   const reduce = useReducedMotion()
   const getPlayback = useAction(videoApi.playback)
@@ -253,6 +283,13 @@ function Stage({
   const retried = useRef(false)
   const played = useRef(false)
   const restoreAt = useRef(resumeAt)
+  const reported = useRef(-1)
+  const report = (fraction: number) => {
+    const f = Math.min(1, Math.max(0, fraction))
+    if (Math.abs(f - reported.current) < 0.002 && f < 1) return
+    reported.current = f
+    onWatch?.(f)
+  }
 
   // The same questions of either player: where it is, how long the video is, whether it's playing
   const position = () => ytRef.current?.getCurrentTime() ?? videoRef.current?.currentTime ?? 0
@@ -342,6 +379,7 @@ function Stage({
     if (at > 5 && (!duration || at < duration - 10)) {
       seek(at)
       if (at === resumeAt && !retried.current) setResumedChip(true)
+      if (duration) report(at / duration)
     }
   }
 
@@ -350,6 +388,7 @@ function Stage({
     if (!duration) return
     const now = position()
     restoreAt.current = now
+    report(markedDone.current ? 1 : now / duration)
     // Counts as watched near the end, so skipping the last seconds still completes it
     if (!markedDone.current && now >= duration - Math.min(15, duration * 0.05)) {
       markedDone.current = true
@@ -360,6 +399,7 @@ function Stage({
   }
 
   const onEnded = () => {
+    report(1)
     if (!markedDone.current) {
       markedDone.current = true
       save(true)
@@ -572,7 +612,11 @@ export function LessonPlayer({
   onSelectLesson: (id: LessonId) => void
   onBack: () => void
 }) {
-  const fraction = course.progress.total ? course.progress.completed / course.progress.total : 0
+  // The current lesson's watched part, while it plays (dropped once the lesson counts as done)
+  const [watch, setWatch] = useState<{ id: LessonId; fraction: number } | null>(null)
+  const current = course.lessons.find((l) => l.id === lessonId)
+  const live = watch && watch.id === lessonId && current && !current.done ? watch.fraction : null
+  const fraction = courseFraction(course.progress, live)
   return (
     <div>
       <button
@@ -585,7 +629,7 @@ export function LessonPlayer({
       </button>
 
       <div className="mt-4 grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start">
-        <Stage key={lessonId} course={course} lessonId={lessonId} onSelectLesson={onSelectLesson} />
+        <Stage key={lessonId} course={course} lessonId={lessonId} onSelectLesson={onSelectLesson} onWatch={(f) => setWatch({ id: lessonId, fraction: f })} />
 
         <aside className="min-w-0 rounded-[1.75rem] bg-white p-4 shadow-soft lg:sticky lg:top-28">
           <div className="px-2 pb-3 pt-1">
@@ -598,7 +642,7 @@ export function LessonPlayer({
             <ProgressBar value={fraction} className="mt-2.5" />
           </div>
           <div className="max-h-[60vh] overflow-y-auto lg:max-h-[calc(100vh-14rem)]">
-            <LessonList course={course} currentId={lessonId} onSelect={onSelectLesson} />
+            <LessonList course={course} currentId={lessonId} currentFraction={live ?? undefined} onSelect={onSelectLesson} />
           </div>
         </aside>
       </div>

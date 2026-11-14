@@ -15,7 +15,7 @@ import { ArrowLeft, Check, Play, PlayCircle } from '@/components/icons'
 import type { Id } from '@/convex/_generated/dataModel'
 import { cn } from '@/lib/utils'
 import { displayFont, pillInk, pillLime } from '../shared'
-import { LessonList, LessonPlayer, ProgressBar } from './LessonPlayer'
+import { courseFraction, LessonList, LessonPlayer, ProgressBar } from './LessonPlayer'
 import {
   formatLength,
   imagekitLoader,
@@ -130,7 +130,7 @@ function CourseCard({ course, onOpen }: { course: VideoCourseCard; onOpen: () =>
           {course.lessonCount} {course.lessonCount === 1 ? 'lesson' : 'lessons'}
           {learners ? ` · ${learners}` : ''}
         </p>
-        {progress.started && !progress.isComplete && <ProgressBar value={progress.completed / progress.total} className="mt-3" />}
+        {progress.started && !progress.isComplete && <ProgressBar value={courseFraction(progress)} className="mt-3" />}
       </div>
     </button>
   )
@@ -170,7 +170,7 @@ function ResumeCard({ course, onResume }: { course: VideoCourseCard; onResume: (
             <Play className="h-3.5 w-3.5" /> Resume
           </button>
           <div className="min-w-[160px] flex-1">
-            <ProgressBar value={course.progress.completed / course.progress.total} tone="light" />
+            <ProgressBar value={courseFraction(course.progress)} tone="light" />
             <p className="mt-1.5 text-xs text-white/55">
               {course.progress.completed} of {course.progress.total} lessons done
             </p>
@@ -297,7 +297,7 @@ function CourseDetail({
             )}
             {progress.started && (
               <div className="min-w-[180px] max-w-xs flex-1">
-                <ProgressBar value={progress.completed / Math.max(1, progress.total)} />
+                <ProgressBar value={courseFraction(progress)} />
                 <p className="mt-1.5 text-xs text-rh-ink/55">
                   {progress.isComplete ? 'All lessons done' : `${progress.completed} of ${progress.total} lessons done`}
                 </p>
