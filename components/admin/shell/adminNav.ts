@@ -75,22 +75,29 @@ export type AdminNavSection = {
 }
 
 /**
- * Who is using the console: administrators, blog writers (role blog_editor) or Learn instructors
- * (role learn_instructor). The last two only ever see their own area.
+ * Who is using the console: administrators, blog writers (role blog_editor), Learn instructors
+ * (role learn_instructor) or Learn super admins (a learnAdmins row, any role; Mary 2026-11-14).
+ * Everyone but admins only ever sees their own area.
  */
-export type ConsoleRole = 'admin' | 'blog_editor' | 'learn_instructor'
+export type ConsoleRole = 'admin' | 'blog_editor' | 'learn_instructor' | 'learn_admin'
 export type LimitedRole = Exclude<ConsoleRole, 'admin'>
 
 export const BLOG_HOME = '/dashboard/admin/blog'
 export const LEARN_COURSES_HOME = '/dashboard/admin/learn/courses'
 
 export const LEARN_SIMULATIONS_HOME = '/dashboard/admin/learn/simulations'
+export const LEARN_HOME = '/dashboard/admin/learn'
+
+/** Full Learn powers: admins and Learn super admins (publish, prices, groups, the MSK program). */
+export const hasLearnAdmin = (role: ConsoleRole | null | undefined) => role === 'admin' || role === 'learn_admin'
 
 /** Where each limited role starts, which (with `also`) is the only part of the console it may open. */
 const ROLE_AREAS: Record<LimitedRole, { home: string; label: string; also?: string[] }> = {
   blog_editor: { home: BLOG_HOME, label: 'Blog' },
   // Learn instructors also sign off simulation cases (physio reviewers)
   learn_instructor: { home: LEARN_COURSES_HOME, label: 'Learn', also: [LEARN_SIMULATIONS_HOME] },
+  // Learn super admins: all of Admin › Learn
+  learn_admin: { home: LEARN_HOME, label: 'Learn' },
 }
 
 export const consoleHome = (role: ConsoleRole) => (role === 'admin' ? ADMIN_HOME : ROLE_AREAS[role].home)
@@ -216,11 +223,12 @@ export const ADMIN_NAV: AdminNavSection[] = [
     id: 'learn',
     label: 'Rehabify Learn',
     icon: GraduationCap,
-    alsoFor: ['learn_instructor'],
+    alsoFor: ['learn_instructor', 'learn_admin'],
     items: [
       { title: 'MSK Specialist Program', href: a('/learn'), icon: GraduationCap, adminOnly: true, keywords: ['cohort', 'course', 'training', 'certificate', 'registrations', 'cpd'] },
       { title: 'Video courses', href: a('/learn/courses'), icon: PlayCircle, keywords: ['upload', 'lessons', 'videos', 'imagekit', 'on demand'] },
       { title: 'Simulations', href: a('/learn/simulations'), icon: HeartPulse, keywords: ['cases', 'clinical', 'triage', 'sign-off', 'review', 'game'] },
+      { title: 'Groups', href: a('/learn/groups'), icon: Users, adminOnly: true, keywords: ['small groups', 'cohort', 'class', 'members', 'leads', 'activities', 'team'] },
     ],
   },
   {
@@ -271,7 +279,8 @@ export function devToolsEnabled() {
 export function visibleAdminNav(role: ConsoleRole = 'admin'): AdminNavSection[] {
   const showDev = devToolsEnabled()
   return ADMIN_NAV.filter((section) => (!section.devOnly || showDev) && (role === 'admin' || section.alsoFor?.includes(role))).map(
-    (section) => (role === 'admin' ? section : { ...section, items: section.items.filter((item) => !item.adminOnly) })
+    // Learn super admins keep the admin-only Learn items (their area is all of Admin › Learn)
+    (section) => (hasLearnAdmin(role) ? section : { ...section, items: section.items.filter((item) => !item.adminOnly) })
   )
 }
 

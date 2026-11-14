@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { AdminPage, ConfirmDialog, EmptyState, PageHeader, Panel, StatusBadge, inputClass, primaryButtonClass, softButtonClass } from '@/components/admin/ui'
 import { roleMeta } from '@/components/dashboard/admin/UserManagement'
+import { LearnSuperAdmins } from '@/components/admin/learn/LearnSuperAdmins'
 import {
   TEAM_ROLE_LABEL,
   formatPhone,
@@ -338,6 +339,8 @@ export default function TeamAccessPage() {
         confirmLabel="Switch"
         onConfirm={() => submit(true)}
       />
+      <LearnSuperAdmins />
+
       <ConfirmDialog
         open={removing !== null}
         onOpenChange={(o) => !o && setRemoving(null)}

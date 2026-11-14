@@ -103,8 +103,8 @@ export const AUTH_COPY: Record<
       badge: "Rehabify Learn",
       lead: "Become the physio patients",
       highlight: "ask for",
-      body: "Video courses, live programs and certificates from Rehabify clinicians, for physio students and physiotherapists.",
-      points: ["Video courses and live programs", "Certificates anyone can check", "From student to Rehabify physio with one login"],
+      body: "Learn with peers through clinical cases, video courses and live sessions. Earn certificates. For students, graduates and practising physios.",
+      points: ["Clinical cases, video courses and live sessions", "Certificates anyone can check", "From student to Rehabify physio with one login"],
     },
   },
   partner: {

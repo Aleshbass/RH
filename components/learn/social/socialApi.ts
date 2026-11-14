@@ -47,7 +47,7 @@ export const spacesApi = {
   list: makeFunctionReference<'query', Record<string, never>, SpacesList>('learnSpaces:listSpaces'),
   get: makeFunctionReference<'query', { spaceId: string }, SpacePage | null>('learnSpaces:getSpace'),
   stage: makeFunctionReference<'query', { spaceId: string }, StageSeat[]>('learnSpaces:getStage'),
-  create: makeFunctionReference<'mutation', { title: string; description?: string; scheduledFor?: number }, Id<'learnSpaces'>>(
+  create: makeFunctionReference<'mutation', { title: string; description?: string; scheduledFor?: number; groupId?: Id<'learnGroups'> }, Id<'learnSpaces'>>(
     'learnSpaces:createSpace'
   ),
   cancel: makeFunctionReference<'mutation', { spaceId: Id<'learnSpaces'> }, null>('learnSpaces:cancelSpace'),

@@ -31,7 +31,8 @@ import { LEARNER_ACCESS_DAYS, learnerAccessOpen, paidLearnRegistrations, verifie
 import { randomToken, sha256Hex } from "./helpers/exerciseCrypto";
 import { IMAGEKIT_URL, imagekitUploadAuth, removeImagekitFilesLater, signedImagekitUrl } from "./helpers/imagekit";
 import { lagosDateTime, lagosShortDate, lagosTime, zonedDateKey, zonedDateTimeToUtc, zonedTimeKey } from "./helpers/lagosTime";
-import { getViewer, requireAdmin } from "./helpers/partnerAccess";
+import { getViewer } from "./helpers/partnerAccess";
+import { isLearnAdminUser, requireLearnAdmin } from "./helpers/learnAccess";
 import { insertNotification } from "./helpers/pushNotify";
 import { verifyPaystackSignature } from "./helpers/paystackSignature";
 import { isJoyLoginEmail } from "../lib/auth/joyLoginEmail";
@@ -798,7 +799,7 @@ function cohortFields(input: CohortInput) {
 export const adminOverview = query({
   args: {},
   handler: async (ctx) => {
-    await requireAdmin(ctx);
+    await requireLearnAdmin(ctx);
     const now = Date.now();
     const cohorts = (await ctx.db.query("learnCohorts").collect())
       .filter((c) => c.program === MSK_PROGRAM)
@@ -864,7 +865,7 @@ export const adminOverview = query({
 export const adminGenerateImageUploadUrl = mutation({
   args: {},
   handler: async (ctx) => {
-    await requireAdmin(ctx);
+    await requireLearnAdmin(ctx);
     return await ctx.storage.generateUploadUrl();
   },
 });
@@ -873,7 +874,7 @@ export const adminGenerateImageUploadUrl = mutation({
 export const adminSaveCohort = mutation({
   args: { cohortId: v.optional(v.id("learnCohorts")), ...cohortInput },
   handler: async (ctx, args) => {
-    const { user } = await requireAdmin(ctx);
+    const { user } = await requireLearnAdmin(ctx);
     const { cohortId, imageStorageId, ...input } = args;
     const fields = cohortFields(input);
     if (imageStorageId) await assertCohortImage(ctx, imageStorageId);
@@ -908,7 +909,7 @@ export const adminSaveCohort = mutation({
 export const adminSetCohortStatus = mutation({
   args: { cohortId: v.id("learnCohorts"), status: cohortStatusValidator },
   handler: async (ctx, args) => {
-    const { user } = await requireAdmin(ctx);
+    const { user } = await requireLearnAdmin(ctx);
     const cohort = await ctx.db.get(args.cohortId);
     if (!cohort) throw new ConvexError("Cohort not found.");
     const now = Date.now();
@@ -951,7 +952,7 @@ export const adminSetCohortStatus = mutation({
 export const adminDeleteCohort = mutation({
   args: { cohortId: v.id("learnCohorts") },
   handler: async (ctx, args) => {
-    await requireAdmin(ctx);
+    await requireLearnAdmin(ctx);
     const cohort = await ctx.db.get(args.cohortId);
     if (!cohort) return;
     if (cohort.status !== "draft") throw new ConvexError("Only draft cohorts can be deleted. Close registration instead.");
@@ -971,7 +972,7 @@ export const adminDeleteCohort = mutation({
 export const adminListRegistrations = query({
   args: { cohortId: v.id("learnCohorts") },
   handler: async (ctx, args) => {
-    await requireAdmin(ctx);
+    await requireLearnAdmin(ctx);
     const registrations = await ctx.db
       .query("learnRegistrations")
       .withIndex("by_cohort", (q) => q.eq("cohortId", args.cohortId))
@@ -1021,7 +1022,7 @@ export const adminUpdateRegistration = mutation({
     contacted: v.optional(v.boolean()), // true marks a follow-up done now, false clears it
   },
   handler: async (ctx, args) => {
-    const { user } = await requireAdmin(ctx);
+    const { user } = await requireLearnAdmin(ctx);
     const registration = await ctx.db.get(args.registrationId);
     if (!registration) throw new ConvexError("Registration not found.");
     const now = Date.now();
@@ -1061,7 +1062,7 @@ export const adminUpdateRegistration = mutation({
 export const adminResendConfirmation = mutation({
   args: { registrationId: v.id("learnRegistrations") },
   handler: async (ctx, args) => {
-    await requireAdmin(ctx);
+    await requireLearnAdmin(ctx);
     const registration = await ctx.db.get(args.registrationId);
     if (!registration || registration.status !== "paid") throw new ConvexError("Only paid registrations get a confirmation email.");
     await scheduleConfirmationEmail(ctx, registration._id);
@@ -1071,7 +1072,7 @@ export const adminResendConfirmation = mutation({
 export const registrationForRecheck = internalQuery({
   args: { registrationId: v.id("learnRegistrations") },
   handler: async (ctx, args) => {
-    await requireAdmin(ctx);
+    await requireLearnAdmin(ctx);
     const registration = await ctx.db.get(args.registrationId);
     if (!registration) throw new ConvexError("Registration not found.");
     return { reference: registration.paymentReference ?? null, status: registration.status };
@@ -1103,7 +1104,7 @@ export const adminRecheckPayment = action({
 export const adminListInterest = query({
   args: {},
   handler: async (ctx) => {
-    await requireAdmin(ctx);
+    await requireLearnAdmin(ctx);
     const rows = await ctx.db
       .query("learnInterest")
       .withIndex("by_program_email", (q) => q.eq("program", MSK_PROGRAM))
@@ -1494,7 +1495,7 @@ function httpsUrl(value: string | undefined, label: string) {
 export const adminCourseContent = query({
   args: { cohortId: v.id("learnCohorts") },
   handler: async (ctx, args) => {
-    await requireAdmin(ctx);
+    await requireLearnAdmin(ctx);
     const cohort = await ctx.db.get(args.cohortId);
     if (!cohort) return null;
     const paid = await ctx.db
@@ -1537,7 +1538,7 @@ export const adminSaveSession = mutation({
     notifyLearners: v.boolean(),
   },
   handler: async (ctx, args) => {
-    await requireAdmin(ctx);
+    await requireLearnAdmin(ctx);
     const cohort = await ctx.db.get(args.cohortId);
     if (!cohort) throw new ConvexError("Cohort not found.");
     if (!isCalendarDate(args.date)) throw new ConvexError("Choose the session date.");
@@ -1615,7 +1616,7 @@ export const adminSaveSession = mutation({
 export const adminDeleteSession = mutation({
   args: { sessionId: v.id("learnSessions") },
   handler: async (ctx, args) => {
-    await requireAdmin(ctx);
+    await requireLearnAdmin(ctx);
     await ctx.db.delete(args.sessionId);
   },
 });
@@ -1624,7 +1625,7 @@ export const adminDeleteSession = mutation({
 export const adminSaveCourseLinks = mutation({
   args: { cohortId: v.id("learnCohorts"), links: v.array(v.object({ id: v.optional(v.string()), label: v.string(), url: v.string() })) },
   handler: async (ctx, args) => {
-    const { user } = await requireAdmin(ctx);
+    const { user } = await requireLearnAdmin(ctx);
     const cohort = await ctx.db.get(args.cohortId);
     if (!cohort) throw new ConvexError("Cohort not found.");
     if (args.links.length > 12) throw new ConvexError("Add at most 12 links.");
@@ -1664,7 +1665,7 @@ export const adminSaveWeek = mutation({
     resourceKeys: v.array(v.string()),
   },
   handler: async (ctx, args) => {
-    await requireAdmin(ctx);
+    await requireLearnAdmin(ctx);
     const cohort = await ctx.db.get(args.cohortId);
     if (!cohort) throw new ConvexError("Cohort not found.");
     if (!Number.isInteger(args.week) || args.week < 1 || args.week > 20) throw new ConvexError("Choose a week between 1 and 20.");
@@ -1708,7 +1709,7 @@ export const adminSaveWeek = mutation({
 export const adminDeleteWeek = mutation({
   args: { moduleId: v.id("learnModules") },
   handler: async (ctx, args) => {
-    await requireAdmin(ctx);
+    await requireLearnAdmin(ctx);
     const week = await ctx.db.get(args.moduleId);
     if (!week) return;
     for (const f of week.files) await ctx.storage.delete(f.storageId);
@@ -1720,7 +1721,7 @@ export const adminDeleteWeek = mutation({
 export const adminGenerateFileUploadUrl = mutation({
   args: {},
   handler: async (ctx) => {
-    await requireAdmin(ctx);
+    await requireLearnAdmin(ctx);
     return await ctx.storage.generateUploadUrl();
   },
 });
@@ -2085,7 +2086,7 @@ export const sendSessionReminders = internalMutation({
 export const adminAssessment = query({
   args: { cohortId: v.id("learnCohorts") },
   handler: async (ctx, args) => {
-    await requireAdmin(ctx);
+    await requireLearnAdmin(ctx);
     const assessment = await cohortAssessment(ctx, args.cohortId);
     const attempts = assessment
       ? await ctx.db
@@ -2129,7 +2130,7 @@ export const adminSaveAssessment = mutation({
     ),
   },
   handler: async (ctx, args) => {
-    const { user } = await requireAdmin(ctx);
+    const { user } = await requireLearnAdmin(ctx);
     const cohort = await ctx.db.get(args.cohortId);
     if (!cohort) throw new ConvexError("Cohort not found.");
     if (!Number.isInteger(args.passMark) || args.passMark < 1 || args.passMark > 100) throw new ConvexError("Set a pass mark between 1% and 100%.");
@@ -2188,7 +2189,7 @@ export const adminSaveAssessment = mutation({
 export const adminLearnerProgress = query({
   args: { cohortId: v.id("learnCohorts") },
   handler: async (ctx, args) => {
-    await requireAdmin(ctx);
+    await requireLearnAdmin(ctx);
     const cohort = await ctx.db.get(args.cohortId);
     const assessment = await cohortAssessment(ctx, args.cohortId);
     const sessions = await cohortSessions(ctx, args.cohortId);
@@ -2238,7 +2239,7 @@ export const adminLearnerProgress = query({
 export const adminSetAttendance = mutation({
   args: { registrationId: v.id("learnRegistrations"), sessionId: v.id("learnSessions"), attended: v.boolean() },
   handler: async (ctx, args) => {
-    await requireAdmin(ctx);
+    await requireLearnAdmin(ctx);
     const registration = await ctx.db.get(args.registrationId);
     const session = await ctx.db.get(args.sessionId);
     if (!registration || !session || session.cohortId !== registration.cohortId) throw new ConvexError("Session not found.");
@@ -2254,7 +2255,7 @@ export const adminSetAttendance = mutation({
 export const adminIssueCertificate = mutation({
   args: { registrationId: v.id("learnRegistrations"), name: v.string() },
   handler: async (ctx, args) => {
-    await requireAdmin(ctx);
+    await requireLearnAdmin(ctx);
     const registration = await ctx.db.get(args.registrationId);
     if (!registration || registration.status !== "paid") throw new ConvexError("Only paid registrations get a certificate.");
     const keep = registration.certificateCode && !registration.certificateRevokedAt;
@@ -2279,7 +2280,7 @@ const MAX_SIGNATURE_PATH = 60_000;
 export const adminCertificateSignatures = query({
   args: {},
   handler: async (ctx) => {
-    await requireAdmin(ctx);
+    await requireLearnAdmin(ctx);
     const rows = await ctx.db.query("learnSignatures").withIndex("by_slot").collect();
     return [1, 2].map((slot) => {
       const row = rows.find((r) => r.slot === slot);
@@ -2291,7 +2292,7 @@ export const adminCertificateSignatures = query({
 export const adminSaveCertificateSignature = mutation({
   args: { slot: v.number(), name: v.string(), title: v.string(), path: v.string() },
   handler: async (ctx, args) => {
-    const admin = await requireAdmin(ctx);
+    const admin = await requireLearnAdmin(ctx);
     if (args.slot !== 1 && args.slot !== 2) throw new ConvexError("There are two signature places: 1 (left) and 2 (right).");
     const name = clean(args.name, 80);
     const title = clean(args.title, 80);
@@ -2313,7 +2314,7 @@ export const adminSaveCertificateSignature = mutation({
 export const adminRemoveCertificateSignature = mutation({
   args: { slot: v.number() },
   handler: async (ctx, args) => {
-    await requireAdmin(ctx);
+    await requireLearnAdmin(ctx);
     const rows = await ctx.db
       .query("learnSignatures")
       .withIndex("by_slot", (q) => q.eq("slot", args.slot))
@@ -2325,7 +2326,7 @@ export const adminRemoveCertificateSignature = mutation({
 export const adminRevokeCertificate = mutation({
   args: { registrationId: v.id("learnRegistrations") },
   handler: async (ctx, args) => {
-    await requireAdmin(ctx);
+    await requireLearnAdmin(ctx);
     const registration = await ctx.db.get(args.registrationId);
     if (!registration?.certificateCode) return;
     await ctx.db.patch(registration._id, { certificateRevokedAt: Date.now(), updatedAt: Date.now() });
@@ -2428,7 +2429,7 @@ type VideoViewer = { email: string; userId?: Id<"users">; isAdmin: boolean; isMs
 async function videoViewer(ctx: Ctx): Promise<VideoViewer | null> {
   const viewer = await getViewer(ctx);
   if (!viewer) return null;
-  return viewerFromUser(ctx, viewer.user, await verifiedIdentityEmail(ctx), viewer.isAdmin);
+  return viewerFromUser(ctx, viewer.user, await verifiedIdentityEmail(ctx), await isLearnAdminUser(ctx, viewer.user));
 }
 
 async function viewerFromUser(ctx: Ctx, user: Doc<"users"> | null, verifiedEmail: string | null, isAdmin: boolean): Promise<VideoViewer | null> {
@@ -2449,7 +2450,7 @@ export async function canUserWatchLesson(ctx: Ctx, userId: Id<"users">, lessonId
   const lesson = await ctx.db.get(lessonId);
   const course = lesson ? await ctx.db.get(lesson.courseId) : null;
   if (!lesson || !course) return false;
-  const isAdmin = user.role === "admin";
+  const isAdmin = await isLearnAdminUser(ctx, user);
   if (course.status !== "published" && !isAdmin) return false;
   const viewer = await viewerFromUser(ctx, user, user.email?.toLowerCase().trim() ?? null, isAdmin);
   return Boolean(viewer && (await canWatchCourse(ctx, viewer, course)));
@@ -2703,7 +2704,7 @@ export const saveLessonProgress = mutation({
 export const assertLearnAdmin = internalQuery({
   args: {},
   handler: async (ctx) => {
-    await requireAdmin(ctx);
+    await requireLearnAdmin(ctx);
     return null;
   },
 });
@@ -2718,8 +2719,9 @@ type CourseEditor = { user: Doc<"users">; isAdmin: boolean };
 /** Admins and Learn instructors (protected video uploads in learnVideo.ts use the same rule). */
 export async function courseEditor(ctx: Ctx): Promise<CourseEditor> {
   const user = (await getViewer(ctx))?.user;
-  if (!user || (user.role !== "admin" && user.role !== "learn_instructor")) throw new ConvexError("Administrator access required.");
-  return { user, isAdmin: user.role === "admin" };
+  const isAdmin = await isLearnAdminUser(ctx, user);
+  if (!user || (!isAdmin && user.role !== "learn_instructor")) throw new ConvexError("Administrator access required.");
+  return { user, isAdmin };
 }
 
 function canChangeCourse(editor: CourseEditor, course: Doc<"learnVideoCourses">) {
@@ -2982,7 +2984,7 @@ export const adminSaveVideoCourse = mutation({
 export const adminSetVideoCourseStatus = mutation({
   args: { courseId: v.id("learnVideoCourses"), status: v.union(v.literal("draft"), v.literal("published")) },
   handler: async (ctx, args) => {
-    const { user } = await requireAdmin(ctx);
+    const { user } = await requireLearnAdmin(ctx);
     const course = await ctx.db.get(args.courseId);
     if (!course) throw new ConvexError("Course not found.");
     if (args.status === "published" && (await courseLessons(ctx, course._id)).length === 0) {
@@ -3053,7 +3055,7 @@ export const withdrawVideoCourse = mutation({
 export const requestVideoCourseChanges = mutation({
   args: { courseId: v.id("learnVideoCourses"), note: v.string() },
   handler: async (ctx, args) => {
-    const { user } = await requireAdmin(ctx);
+    const { user } = await requireLearnAdmin(ctx);
     const course = await ctx.db.get(args.courseId);
     if (!course) throw new ConvexError("Course not found.");
     const note = cleanText(args.note, 1000);
@@ -3069,7 +3071,7 @@ export const requestVideoCourseChanges = mutation({
 export const adminMoveVideoCourse = mutation({
   args: { courseId: v.id("learnVideoCourses"), direction: v.union(v.literal("up"), v.literal("down")) },
   handler: async (ctx, args) => {
-    await requireAdmin(ctx);
+    await requireLearnAdmin(ctx);
     const courses = (await ctx.db.query("learnVideoCourses").take(200)).sort((a, b) => a.order - b.order);
     const i = courses.findIndex((c) => c._id === args.courseId);
     const j = args.direction === "up" ? i - 1 : i + 1;
@@ -3826,7 +3828,7 @@ export async function learnMemberInfo(ctx: Ctx, user: Doc<"users"> | null) {
     name,
     imageUrl: user.imageUrl ?? null,
     tag,
-    isAdmin: user.role === "admin",
+    isAdmin: await isLearnAdminUser(ctx, user),
     isRehabifyPhysio: user.role === "physiotherapist" && (await isRehabifyPhysio(ctx, user)),
     isStudent: profile?.kind === "student",
   };
@@ -3836,12 +3838,13 @@ export type LearnMemberInfo = NonNullable<Awaited<ReturnType<typeof learnMemberI
 
 /** Whether this user may watch this video course (enrolled, an MSK seat for MSK courses, or admin). */
 export async function canUserWatchCourse(ctx: Ctx, user: Doc<"users">, course: Doc<"learnVideoCourses">) {
-  const viewer = await viewerFromUser(ctx, user, user.email?.toLowerCase().trim() ?? null, user.role === "admin");
+  const viewer = await viewerFromUser(ctx, user, user.email?.toLowerCase().trim() ?? null, await isLearnAdminUser(ctx, user));
   return Boolean(viewer && (await canWatchCourse(ctx, viewer, course)));
 }
 
 /** Holds an open MSK Specialist Program seat (the program's community room). */
 export async function isMskProgramLearner(ctx: Ctx, user: Doc<"users">) {
-  const viewer = await viewerFromUser(ctx, user, user.email?.toLowerCase().trim() ?? null, user.role === "admin");
-  return Boolean(viewer?.isMskLearner || user.role === "admin");
+  const isAdmin = await isLearnAdminUser(ctx, user);
+  const viewer = await viewerFromUser(ctx, user, user.email?.toLowerCase().trim() ?? null, isAdmin);
+  return Boolean(viewer?.isMskLearner || isAdmin);
 }

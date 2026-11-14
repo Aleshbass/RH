@@ -46,10 +46,12 @@ import {
   type ReportRow,
 } from './socialApi'
 import { Avatar, EmptyState, JoinPrompt, Sheet, Skeleton } from './ui'
+import { groupTone, myGroupsRef } from '@/lib/learnAdminsApi'
 
 const KIND_LABEL = { question: 'Question', discussion: 'Discussion' } as const
 
 function roomIcon(room: Pick<CommunityRoom, 'kind' | 'slug'>) {
+  if (room.kind === 'group') return Users
   if (room.kind === 'course') return GraduationCap
   if (room.kind === 'program') return Users
   if (room.slug === 'ask-a-physio') return HelpCircle
@@ -304,7 +306,9 @@ function RoomLink({ room }: { room: CommunityRoom }) {
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-1.5 text-[15px] font-semibold text-rh-ink">
           <span className="truncate">{room.title}</span>
-          {room.kind !== 'open' && <Lock className="h-3 w-3 shrink-0 text-rh-ink/40" aria-label="For learners only" />}
+          {room.kind !== 'open' && (
+            <Lock className="h-3 w-3 shrink-0 text-rh-ink/40" aria-label={room.kind === 'group' ? 'Private group' : 'For learners only'} />
+          )}
         </span>
         <span className="mt-0.5 block text-xs text-rh-ink/50">
           {room.postCount === 0 ? 'No posts yet' : `${room.postCount} post${room.postCount === 1 ? '' : 's'}`}
@@ -352,6 +356,46 @@ function SpacesPromo() {
   )
 }
 
+/** The member's small groups (Admin › Learn › Groups): each opens its private room. */
+function MyGroups() {
+  const groups = useQuery(myGroupsRef, {})
+  if (!groups?.length) return null
+  return (
+    <section aria-labelledby="groups-heading" className="mt-8">
+      <h2 id="groups-heading" className="text-sm font-semibold uppercase tracking-[0.14em] text-rh-ink/50">
+        Your groups
+      </h2>
+      <div className="-mx-4 mt-3 flex snap-x gap-3 overflow-x-auto px-4 pb-1 sm:mx-0 sm:grid sm:grid-cols-2 sm:overflow-visible sm:px-0 lg:grid-cols-3">
+        {groups.map((g) => {
+          const tone = groupTone(g.color)
+          return (
+            <Link
+              key={g.id}
+              href={roomPath(g.roomSlug)}
+              className="group flex w-[78vw] max-w-[320px] shrink-0 snap-start items-start gap-3 rounded-2xl border border-rh-ink/[0.07] bg-white p-4 transition hover:border-rh-ink/20 sm:w-auto sm:max-w-none"
+            >
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl" style={{ background: tone.soft, color: tone.ink }}>
+                <Users className="h-4 w-4" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="flex items-center gap-1.5">
+                  <span className="truncate text-[15px] font-semibold text-rh-ink">{g.name}</span>
+                  {g.role === 'lead' && <span className="shrink-0 rounded-full bg-rh-lime px-1.5 py-px text-[10px] font-semibold text-[#0a0a0a]">Lead</span>}
+                </span>
+                <span className="mt-0.5 block text-xs text-rh-ink/50">
+                  {g.memberCount} {g.memberCount === 1 ? 'person' : 'people'}
+                  {g.lastActivityAt ? ` · active ${relativeTime(g.lastActivityAt)}` : ' · say hello'}
+                </span>
+              </span>
+              <ArrowUpRight className="h-4 w-4 shrink-0 text-rh-ink/30 transition group-hover:text-rh-ink" />
+            </Link>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
 // ── Community home ────────────────────────────────────────────────────────────
 
 export function CommunityHome() {
@@ -388,6 +432,8 @@ export function CommunityHome() {
       )}
 
       {data?.member && <ReportsPanel />}
+
+      {data?.member && <MyGroups />}
 
       <div className="mt-10 grid gap-10 lg:grid-cols-[minmax(0,1fr)_340px]">
         <section aria-labelledby="latest-heading">
@@ -435,9 +481,11 @@ export function CommunityHome() {
               </div>
             ) : (
               <div>
-                {data.rooms.map((room) => (
-                  <RoomLink key={room.slug} room={room} />
-                ))}
+                {data.rooms
+                  .filter((room) => room.kind !== 'group')
+                  .map((room) => (
+                    <RoomLink key={room.slug} room={room} />
+                  ))}
               </div>
             )}
           </section>
@@ -476,18 +524,47 @@ export function RoomView({ slug }: { slug: string }) {
     )
   }
   const Icon = roomIcon(data.room)
+  const group = data.state === 'ok' ? data.group : null
+  const tone = group ? groupTone(group.color) : null
 
   return (
     <main className="mx-auto w-full max-w-3xl px-4 pb-20 pt-6 sm:px-6 sm:pt-10">
       <BackToCommunity />
       <div className="mt-6 flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
         <div className="flex items-start gap-4">
-          <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-rh-ink text-rh-lime">
+          <span
+            className={cn('flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl', !tone && 'bg-rh-ink text-rh-lime')}
+            style={tone ? { background: tone.soft, color: tone.ink } : undefined}
+          >
             <Icon className="h-5 w-5" />
           </span>
           <div className="min-w-0">
+            {group && (
+              <p className="mb-1 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-rh-ink/50">
+                <Lock className="h-3 w-3" /> Private group{group.myRole === 'lead' ? ' · you lead it' : ''}
+              </p>
+            )}
             <h1 className={cn('text-[30px] leading-tight tracking-tight text-rh-ink sm:text-[38px]', displayFont)}>{data.room.title}</h1>
             {data.room.description && <p className="mt-1.5 max-w-lg text-[15px] leading-6 text-rh-ink/60">{data.room.description}</p>}
+            {group && group.members.length > 0 && (
+              <div className="mt-3 flex items-center gap-2">
+                <div className="flex -space-x-2">
+                  {group.members.slice(0, 8).map((m) => (
+                    <Avatar key={m.id} name={m.name} imageUrl={m.imageUrl} size={28} className="ring-2 ring-white" />
+                  ))}
+                </div>
+                <span className="text-xs text-rh-ink/55">
+                  {group.memberCount} {group.memberCount === 1 ? 'person' : 'people'}
+                  {group.members.some((m) => m.role === 'lead')
+                    ? ` · led by ${group.members
+                        .filter((m) => m.role === 'lead')
+                        .slice(0, 2)
+                        .map((m) => m.name.split(' ')[0])
+                        .join(' & ')}`
+                    : ''}
+                </span>
+              </div>
+            )}
           </div>
         </div>
         {data.state === 'ok' && (
@@ -501,10 +578,12 @@ export function RoomView({ slug }: { slug: string }) {
         {data.state === 'join' ? (
           <JoinPrompt signedIn={data.signedIn} returnTo={roomPath(slug)} />
         ) : data.state === 'locked' ? (
-          <EmptyState icon={<Lock className="h-5 w-5" />} title="For this course’s learners">
-            {data.room.kind === 'program'
-              ? 'This room is for learners on the MSK Specialist Program.'
-              : 'Enrol in the course to join its room and ask the instructor questions.'}
+          <EmptyState icon={<Lock className="h-5 w-5" />} title={data.room.kind === 'group' ? 'A private group' : 'For this course’s learners'}>
+            {data.room.kind === 'group'
+              ? 'Only the group’s members can see this room. The Learn team adds people to groups.'
+              : data.room.kind === 'program'
+                ? 'This room is for learners on the MSK Specialist Program.'
+                : 'Enrol in the course to join its room and ask the instructor questions.'}
           </EmptyState>
         ) : data.posts.length === 0 ? (
           <EmptyState

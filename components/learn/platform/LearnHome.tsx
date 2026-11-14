@@ -174,8 +174,8 @@ function Hero({ cohort }: { cohort: PublicCohort | null | undefined }) {
             .
           </h1>
           <p className="mt-6 max-w-xl text-lg leading-relaxed text-rh-ink/65">
-            Video courses, live programs and certificates from Rehabify clinicians. For physio students, new graduates and experienced
-            physiotherapists.
+            Learn with peers through clinical cases, video courses and live sessions. Earn certificates. For students, graduates and
+            practising physios.
           </p>
           <HeroSearch />
           <div className="mt-4 flex flex-wrap items-center gap-2">

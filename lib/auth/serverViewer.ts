@@ -1,5 +1,6 @@
 import { auth } from '@clerk/nextjs/server'
 import { ConvexHttpClient } from 'convex/browser'
+import { makeFunctionReference } from 'convex/server'
 import { api } from '@/convex/_generated/api'
 
 /**
@@ -22,4 +23,19 @@ export async function getServerViewer(): Promise<{ _id: string; role?: string } 
 export async function viewerHasRole(roles: string[]): Promise<boolean> {
   const me = await getServerViewer()
   return Boolean(me?.role && roles.includes(me.role))
+}
+
+const learnAdminMe = makeFunctionReference<'query', Record<string, never>, { learnAdmin: boolean; platformAdmin: boolean }>('learnAdmins:me')
+
+/** True for platform admins and Learn super admins (learnAdmins rows). False when unsure. */
+export async function viewerIsLearnAdmin(): Promise<boolean> {
+  const { userId, getToken } = await auth()
+  if (!userId) return false
+  const token = await getToken({ template: 'convex' }).catch(() => null)
+  const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL
+  if (!token || !convexUrl) return false
+  const client = new ConvexHttpClient(convexUrl)
+  client.setAuth(token)
+  const me = await client.query(learnAdminMe, {}).catch(() => null)
+  return Boolean(me?.learnAdmin)
 }

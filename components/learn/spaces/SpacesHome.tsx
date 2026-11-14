@@ -11,12 +11,13 @@ import { useRouter } from 'next/navigation'
 import { useMutation, useQuery } from 'convex/react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { toast } from 'sonner'
-import { Bell, BellRing, CalendarClock, Headphones, Loader2, Mic, Plus, Radio, Users } from '@/components/icons'
+import { Bell, BellRing, CalendarClock, Headphones, Loader2, Lock, Mic, Plus, Radio, Users } from '@/components/icons'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
 import { displayFont, fieldClass, pillInk, pillLime, pillOutline } from '../shared'
 import { TagBadge } from '../platform/identity'
-import { errorText, relativeTime, SPACES_PATH, spacePath, spacesApi, type SpaceCard } from '../social/socialApi'
+import { errorText, relativeTime, SPACES_PATH, spacePath, spacesApi, type SpaceCard, type SpacesList } from '../social/socialApi'
+import { groupTone } from '@/lib/learnAdminsApi'
 import { EmptyState, JoinPrompt, Sheet, Skeleton, SpaceAvatar } from '../social/ui'
 
 export function LiveEq({ className }: { className?: string }) {
@@ -37,6 +38,21 @@ export function spaceWhen(space: Pick<SpaceCard, 'scheduledFor'>) {
   return space.scheduledFor <= Date.now() ? 'Starting soon' : timeFormat.format(space.scheduledFor)
 }
 
+/** A group-only Space: just the group's members see it. */
+function GroupPill({ group, dark = false }: { group: SpaceCard['group']; dark?: boolean }) {
+  if (!group) return null
+  const tone = groupTone(group.color)
+  return (
+    <span
+      className={cn('inline-flex max-w-full items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold', dark ? 'bg-[rgb(255_255_255/0.1)] text-[rgb(255_255_255/0.85)]' : '')}
+      style={dark ? undefined : { background: tone.soft, color: tone.ink }}
+    >
+      <Lock className="h-3 w-3 shrink-0" />
+      <span className="truncate">{group.name}</span>
+    </span>
+  )
+}
+
 function LiveCard({ space, index }: { space: SpaceCard; index: number }) {
   return (
     <motion.li initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: index * 0.05, ease: [0.22, 1, 0.36, 1] }}>
@@ -48,6 +64,11 @@ function LiveCard({ space, index }: { space: SpaceCard; index: number }) {
           <span className="inline-flex items-center gap-2 rounded-full bg-rh-lime px-3 py-1 text-xs font-bold uppercase tracking-[0.12em] text-rh-ink">
             <LiveEq className="h-2.5 text-rh-ink" /> Live
           </span>
+          {space.group && (
+            <span className="ml-2 align-middle">
+              <GroupPill group={space.group} dark />
+            </span>
+          )}
           <h3 className={cn('mt-5 line-clamp-3 text-[24px] leading-tight tracking-tight sm:text-[28px]', displayFont)}>{space.title}</h3>
           {space.description && <p className="mt-2 line-clamp-2 text-sm leading-6 text-white/60">{space.description}</p>}
         </div>
@@ -91,6 +112,11 @@ function UpcomingRow({ space, canAct }: { space: SpaceCard; canAct: boolean }) {
         </span>
       </div>
       <Link href={spacePath(space.id)} className="min-w-0 flex-1">
+        {space.group && (
+          <div className="mb-1.5">
+            <GroupPill group={space.group} />
+          </div>
+        )}
         <p className="text-[17px] font-semibold leading-snug text-rh-ink hover:underline hover:underline-offset-4">{space.title}</p>
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <SpaceAvatar name={space.host.name} imageUrl={space.host.imageUrl} size={22} />
@@ -132,9 +158,13 @@ function UpcomingRow({ space, canAct }: { space: SpaceCard; canAct: boolean }) {
   )
 }
 
-function HostSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
+type HostGroup = SpacesList['hostGroups'][number]
+
+function HostSheet({ open, onClose, groups, canHostOpen }: { open: boolean; onClose: () => void; groups: HostGroup[]; canHostOpen: boolean }) {
   const router = useRouter()
   const create = useMutation(spacesApi.create)
+  // Who it's for: everyone on Learn, or one group (group leads can only hold their groups' Spaces)
+  const [audience, setAudience] = useState<string>(canHostOpen ? 'everyone' : (groups[0]?.id ?? 'everyone'))
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [when, setWhen] = useState<'now' | 'later'>('now')
@@ -146,7 +176,8 @@ function HostSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
     try {
       const scheduledFor = when === 'later' && at ? new Date(at).getTime() : undefined
       if (when === 'later' && !scheduledFor) throw new Error('Choose a date and time.')
-      const id = await create({ title, description: description || undefined, scheduledFor })
+      const group = groups.find((g) => g.id === audience)
+      const id = await create({ title, description: description || undefined, scheduledFor, groupId: group?.id })
       playSound('success')
       onClose()
       router.push(spacePath(id))
@@ -170,6 +201,44 @@ function HostSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
       }
     >
       <div className="space-y-5 pt-2">
+        {groups.length > 0 && (
+          <div>
+            <p className="text-sm font-semibold text-rh-ink">Who’s it for?</p>
+            <div className="mt-2 flex flex-wrap gap-2" role="radiogroup" aria-label="Who the Space is for">
+              {canHostOpen && (
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={audience === 'everyone'}
+                  onClick={() => setAudience('everyone')}
+                  className={cn(
+                    'rounded-full border px-3.5 py-2 text-sm font-semibold transition',
+                    audience === 'everyone' ? 'border-rh-ink bg-rh-cream text-rh-ink' : 'border-rh-ink/10 text-rh-ink/70 hover:border-rh-ink/25'
+                  )}
+                >
+                  Everyone on Learn
+                </button>
+              )}
+              {groups.map((g) => (
+                <button
+                  key={g.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={audience === g.id}
+                  onClick={() => setAudience(g.id)}
+                  className={cn(
+                    'inline-flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-sm font-semibold transition',
+                    audience === g.id ? 'border-rh-ink bg-rh-cream text-rh-ink' : 'border-rh-ink/10 text-rh-ink/70 hover:border-rh-ink/25'
+                  )}
+                >
+                  <span className="h-2 w-2 rounded-full" style={{ background: groupTone(g.color).dot }} aria-hidden />
+                  {g.name}
+                </button>
+              ))}
+            </div>
+            {audience !== 'everyone' && <p className="mt-2 text-xs text-rh-ink/50">Only the group’s members see it. They get a notification now and when you go live.</p>}
+          </div>
+        )}
         <div>
           <label htmlFor="space-title" className="text-sm font-semibold text-rh-ink">
             What’s it about?
@@ -326,7 +395,9 @@ export function SpacesHome() {
         </>
       )}
 
-      {data?.canHost && <HostSheet open={hosting} onClose={() => setHosting(false)} />}
+      {data?.canHost && (
+        <HostSheet open={hosting} onClose={() => setHosting(false)} groups={data.hostGroups} canHostOpen={data.canHostOpen} key={String(hosting)} />
+      )}
     </main>
   )
 }

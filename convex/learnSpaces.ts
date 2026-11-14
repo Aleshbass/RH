@@ -9,6 +9,7 @@ import { internalMutation, internalQuery, mutation, query } from "./_generated/s
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { getViewer } from "./helpers/partnerAccess";
+import { groupRoleOf } from "./helpers/learnAccess";
 import { insertNotification } from "./helpers/pushNotify";
 import { learnMemberInfo, type LearnMemberInfo } from "./learn";
 
@@ -23,6 +24,39 @@ const CREATE_LIMIT = { limit: 6, windowMs: 24 * 60 * 60 * 1000 };
 const clean = (value: string | undefined | null, max: number) => (value ?? "").replace(/\s+/g, " ").trim().slice(0, max);
 
 const canHost = (m: LearnMemberInfo | null) => Boolean(m && (m.isAdmin || m.isRehabifyPhysio));
+
+/** Group-only Spaces (Mary 2026-11-14): just the group's members, its host and the Learn admins. */
+async function canSeeSpace(ctx: Ctx, space: Doc<"learnSpaces">, member: LearnMemberInfo | null) {
+  if (!space.groupId) return true;
+  if (!member) return false;
+  if (member.isAdmin || space.hostId === member.user._id) return true;
+  return Boolean(await groupRoleOf(ctx, space.groupId, member.user._id));
+}
+
+/** Groups this person may hold a group Space for: Learn admins any active group, leads their own. */
+async function hostGroups(ctx: Ctx, member: LearnMemberInfo | null) {
+  if (!member) return [];
+  if (member.isAdmin) {
+    const all = await ctx.db.query("learnGroups").withIndex("by_created").order("desc").take(60);
+    return all.filter((g) => !g.archived).map((g) => ({ id: g._id, name: g.name, color: g.color }));
+  }
+  const rows = await ctx.db
+    .query("learnGroupMembers")
+    .withIndex("by_user", (q) => q.eq("userId", member.user._id))
+    .take(50);
+  const out: { id: Id<"learnGroups">; name: string; color: string }[] = [];
+  for (const r of rows) {
+    if (r.role !== "lead") continue;
+    const g = await ctx.db.get(r.groupId);
+    if (g && !g.archived) out.push({ id: g._id, name: g.name, color: g.color });
+  }
+  return out;
+}
+
+async function groupLabel(ctx: Ctx, groupId: Id<"learnGroups">) {
+  const g = await ctx.db.get(groupId);
+  return g ? { id: g._id, name: g.name, color: g.color } : null;
+}
 
 async function memberOrNull(ctx: Ctx) {
   const viewer = await getViewer(ctx);
@@ -75,6 +109,7 @@ async function spaceCard(ctx: Ctx, space: Doc<"learnSpaces">, member: LearnMembe
     host: await personFor(ctx, space.hostId, withStreamId),
     reminded,
     isHost: member?.user._id === space.hostId,
+    group: space.groupId ? await groupLabel(ctx, space.groupId) : null,
   };
 }
 
@@ -96,13 +131,22 @@ export const listSpaces = query({
     const recent = (await ctx.db.query("learnSpaces").withIndex("by_created").order("desc").take(40))
       .filter((s) => s.status === "ended")
       .slice(0, 6);
+    const visible = async (list: Doc<"learnSpaces">[]) => {
+      const out: Doc<"learnSpaces">[] = [];
+      for (const s of list) if (await canSeeSpace(ctx, s, member)) out.push(s);
+      return out;
+    };
+    const groups = await hostGroups(ctx, member);
     return {
       signedIn: Boolean(await ctx.auth.getUserIdentity()),
       member: member ? { name: member.name, imageUrl: member.imageUrl } : null,
-      canHost: canHost(member),
-      live: await Promise.all(live.map((s) => spaceCard(ctx, s, member))),
-      upcoming: await Promise.all(upcoming.map((s) => spaceCard(ctx, s, member))),
-      recent: await Promise.all(recent.map((s) => spaceCard(ctx, s, member))),
+      canHost: canHost(member) || groups.length > 0,
+      // Whether they can hold a Space for everyone (group leads only hold their group's)
+      canHostOpen: canHost(member),
+      hostGroups: groups,
+      live: await Promise.all((await visible(live)).map((s) => spaceCard(ctx, s, member))),
+      upcoming: await Promise.all((await visible(upcoming)).map((s) => spaceCard(ctx, s, member))),
+      recent: await Promise.all((await visible(recent)).map((s) => spaceCard(ctx, s, member))),
     };
   },
 });
@@ -113,6 +157,7 @@ export const getSpace = query({
     const space = await spaceById(ctx, args.spaceId);
     if (!space) return null;
     const member = await memberOrNull(ctx);
+    if (!(await canSeeSpace(ctx, space, member))) return null;
     return {
       space: await spaceCard(ctx, space, member, Boolean(member)),
       viewer: {
@@ -135,7 +180,7 @@ export const getStage = query({
   handler: async (ctx, args) => {
     const space = await spaceById(ctx, args.spaceId);
     const member = await memberOrNull(ctx);
-    if (!space || !member || space.status !== "live") return [];
+    if (!space || !member || space.status !== "live" || !(await canSeeSpace(ctx, space, member))) return [];
     const seats = await ctx.db
       .query("learnSpaceSeats")
       .withIndex("by_space", (q) => q.eq("spaceId", space._id))
@@ -149,10 +194,22 @@ export const getStage = query({
 // ── Hosting ───────────────────────────────────────────────────────────────────
 
 export const createSpace = mutation({
-  args: { title: v.string(), description: v.optional(v.string()), scheduledFor: v.optional(v.number()) },
+  args: {
+    title: v.string(),
+    description: v.optional(v.string()),
+    scheduledFor: v.optional(v.number()),
+    groupId: v.optional(v.id("learnGroups")),
+  },
   handler: async (ctx, args): Promise<Id<"learnSpaces">> => {
     const member = await requireMember(ctx);
-    if (!canHost(member)) throw new ConvexError("Spaces are hosted by the Rehabify team and approved Rehabify physiotherapists.");
+    const group = args.groupId ? await ctx.db.get(args.groupId) : null;
+    if (args.groupId) {
+      if (!group || group.archived) throw new ConvexError("That group isn't active.");
+      const lead = (await groupRoleOf(ctx, group._id, member.user._id)) === "lead";
+      if (!member.isAdmin && !lead) throw new ConvexError("Group Spaces are hosted by the group's leads and the Learn team.");
+    } else if (!canHost(member)) {
+      throw new ConvexError("Spaces are hosted by the Rehabify team and approved Rehabify physiotherapists.");
+    }
     const title = clean(args.title, 100);
     if (title.length < 4) throw new ConvexError("Give your Space a title.");
     const now = Date.now();
@@ -175,7 +232,7 @@ export const createSpace = mutation({
     }
 
     const random = Array.from(crypto.getRandomValues(new Uint8Array(9)), (b) => b.toString(16).padStart(2, "0")).join("");
-    return await ctx.db.insert("learnSpaces", {
+    const spaceId = await ctx.db.insert("learnSpaces", {
       title,
       description: clean(args.description, 280) || undefined,
       hostId: member.user._id,
@@ -183,8 +240,31 @@ export const createSpace = mutation({
       scheduledFor: args.scheduledFor ?? now,
       callId: `learn-space-${random}`,
       reminderCount: 0,
+      groupId: group?._id,
       createdAt: now,
     });
+    // A group Space: every member hears about it now, and gets the "it's live" alert later
+    if (group) {
+      const rows = (
+        await ctx.db
+          .query("learnGroupMembers")
+          .withIndex("by_group", (q) => q.eq("groupId", group._id))
+          .take(200)
+      ).filter((r) => r.userId !== member.user._id);
+      for (const r of rows) {
+        await ctx.db.insert("learnSpaceReminders", { spaceId, userId: r.userId, createdAt: now });
+        await insertNotification(ctx, {
+          userId: r.userId,
+          type: "learn_group_space",
+          priority: "medium",
+          status: "pending",
+          payload: { title: `${member.name} set up a Space for ${group.name}`, body: title, link: `${LEARN_URL}/spaces/${spaceId}` },
+          createdAt: now,
+        });
+      }
+      await ctx.db.patch(spaceId, { reminderCount: rows.length });
+    }
+    return spaceId;
   },
 });
 
@@ -204,7 +284,7 @@ export const toggleReminder = mutation({
   handler: async (ctx, args) => {
     const member = await requireMember(ctx);
     const space = await ctx.db.get(args.spaceId);
-    if (!space || space.status !== "scheduled") throw new ConvexError("This Space isn't coming up.");
+    if (!space || space.status !== "scheduled" || !(await canSeeSpace(ctx, space, member))) throw new ConvexError("This Space isn't coming up.");
     const existing = await ctx.db
       .query("learnSpaceReminders")
       .withIndex("by_user_space", (q) => q.eq("userId", member.user._id).eq("spaceId", space._id))
@@ -235,7 +315,7 @@ export const setHand = mutation({
   handler: async (ctx, args) => {
     const member = await requireMember(ctx);
     const space = await ctx.db.get(args.spaceId);
-    if (!space || space.status !== "live") throw new ConvexError("This Space isn't live.");
+    if (!space || space.status !== "live" || !(await canSeeSpace(ctx, space, member))) throw new ConvexError("This Space isn't live.");
     if (space.hostId === member.user._id) return;
     const seat = await seatFor(ctx, space._id, member.user._id);
     if (seat?.state === "speaker") return;
@@ -279,6 +359,7 @@ export const access = internalQuery({
       .unique();
     const member = await learnMemberInfo(ctx, user);
     if (!member) return { ok: false as const, reason: "Join Rehabify Learn to listen to Spaces." };
+    if (!(await canSeeSpace(ctx, space, member))) return { ok: false as const, reason: "This Space is for a group you're not in." };
     const seat = await seatFor(ctx, space._id, member.user._id);
     const isHost = space.hostId === member.user._id;
     return {

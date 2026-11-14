@@ -11,7 +11,8 @@ import { ConvexError, v } from "convex/values";
 import { internalMutation, mutation, query } from "./_generated/server";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
-import { getViewer, requireAdmin } from "./helpers/partnerAccess";
+import { getViewer } from "./helpers/partnerAccess";
+import { groupRoleOf, isLearnAdminUser, requireLearnAdmin } from "./helpers/learnAccess";
 import { insertNotification } from "./helpers/pushNotify";
 import { blockingPrivacyIssue } from "../lib/community/privacy";
 import { canUserWatchCourse, isMskProgramLearner, learnMemberInfo, type LearnMemberInfo } from "./learn";
@@ -49,8 +50,9 @@ type RoomView = {
   slug: string;
   title: string;
   description: string | null;
-  kind: "open" | "course" | "program";
+  kind: "open" | "course" | "program" | "group";
   courseId: Id<"learnVideoCourses"> | null;
+  groupId: Id<"learnGroups"> | null;
   postCount: number;
   lastActivityAt: number | null;
   doc: Doc<"learnRooms"> | null;
@@ -63,6 +65,7 @@ function roomView(doc: Doc<"learnRooms">): RoomView {
     description: doc.description ?? null,
     kind: doc.kind,
     courseId: doc.courseId ?? null,
+    groupId: doc.groupId ?? null,
     postCount: doc.postCount,
     lastActivityAt: doc.lastActivityAt ?? null,
     doc,
@@ -77,14 +80,14 @@ async function resolveRoom(ctx: Ctx, slug: string): Promise<RoomView | null> {
     .first();
   if (doc) return doc.archived ? null : roomView(doc);
   const preset = DEFAULT_ROOMS.find((r) => r.slug === slug);
-  if (preset) return { ...preset, kind: "open", courseId: null, postCount: 0, lastActivityAt: null, doc: null };
+  if (preset) return { ...preset, kind: "open", courseId: null, groupId: null, postCount: 0, lastActivityAt: null, doc: null };
   if (slug === "msk-program") {
     return {
       slug,
       title: "MSK Specialist Program",
       description: "For this cohort's learners: questions between sessions, cases and resources.",
       kind: "program",
-      courseId: null,
+      courseId: null, groupId: null,
       postCount: 0,
       lastActivityAt: null,
       doc: null,
@@ -100,6 +103,7 @@ async function resolveRoom(ctx: Ctx, slug: string): Promise<RoomView | null> {
     description: "Questions and discussion for this course's learners.",
     kind: "course",
     courseId: course._id,
+    groupId: null,
     postCount: 0,
     lastActivityAt: null,
     doc: null,
@@ -108,6 +112,7 @@ async function resolveRoom(ctx: Ctx, slug: string): Promise<RoomView | null> {
 
 async function canEnterRoom(ctx: Ctx, member: LearnMemberInfo, room: RoomView) {
   if (room.kind === "open" || member.isAdmin) return true;
+  if (room.kind === "group") return Boolean(room.groupId && (await groupRoleOf(ctx, room.groupId, member.user._id)));
   if (room.kind === "program") return await isMskProgramLearner(ctx, member.user);
   const course = room.courseId ? await ctx.db.get(room.courseId) : null;
   if (!course) return false;
@@ -121,10 +126,21 @@ async function roomsFor(ctx: Ctx, member: LearnMemberInfo | null) {
   const bySlug = new Map(docs.map((d) => [d.slug, roomView(d)]));
   const rooms: RoomView[] = [];
   for (const preset of DEFAULT_ROOMS) {
-    rooms.push(bySlug.get(preset.slug) ?? { ...preset, kind: "open", courseId: null, postCount: 0, lastActivityAt: null, doc: null });
+    rooms.push(bySlug.get(preset.slug) ?? { ...preset, kind: "open", courseId: null, groupId: null, postCount: 0, lastActivityAt: null, doc: null });
   }
   for (const d of docs) if (d.kind === "open" && !DEFAULT_ROOMS.some((p) => p.slug === d.slug)) rooms.push(roomView(d));
   if (!member) return rooms;
+
+  // Their groups' private rooms (admins open other groups from Admin › Learn › Groups)
+  const memberships = await ctx.db
+    .query("learnGroupMembers")
+    .withIndex("by_user", (q) => q.eq("userId", member.user._id))
+    .take(50);
+  for (const m of memberships) {
+    const group = await ctx.db.get(m.groupId);
+    const doc = group?.roomId && !group.archived ? await ctx.db.get(group.roomId) : null;
+    if (doc && !doc.archived) rooms.push(roomView(doc));
+  }
 
   if (await isMskProgramLearner(ctx, member.user)) {
     const program = bySlug.get("msk-program") ?? (await resolveRoom(ctx, "msk-program"));
@@ -145,6 +161,7 @@ async function roomsFor(ctx: Ctx, member: LearnMemberInfo | null) {
         description: "Questions and discussion for this course's learners.",
         kind: "course",
         courseId: course._id,
+        groupId: null,
         postCount: 0,
         lastActivityAt: null,
         doc: null,
@@ -266,6 +283,7 @@ export const getRoom = query({
     const authors = await authorsFor(ctx, posts.map((p) => p.authorId));
     return {
       state: "ok" as const,
+      group: room.kind === "group" && room.groupId ? await groupCard(ctx, room.groupId, member) : null,
       room: publicRoom(room),
       posts: posts.map((p) => ({ ...postSummary(p, authors.get(p.authorId), room), hidden: p.status === "hidden" })),
       hasMore: posts.length === limit,
@@ -331,6 +349,27 @@ export const getPost = query({
   },
 });
 
+/** A group room's header: name, colour, people (leads first) and the viewer's place in it. */
+async function groupCard(ctx: Ctx, groupId: Id<"learnGroups">, member: LearnMemberInfo) {
+  const group = await ctx.db.get(groupId);
+  if (!group) return null;
+  const rows = await ctx.db
+    .query("learnGroupMembers")
+    .withIndex("by_group", (q) => q.eq("groupId", groupId))
+    .take(200);
+  rows.sort((a, b) => (a.role === b.role ? a.addedAt - b.addedAt : a.role === "lead" ? -1 : 1));
+  const people = await authorsFor(ctx, rows.slice(0, 24).map((r) => r.userId));
+  return {
+    id: group._id,
+    name: group.name,
+    description: group.description ?? null,
+    color: group.color,
+    memberCount: group.memberCount,
+    myRole: rows.find((r) => r.userId === member.user._id)?.role ?? null,
+    members: rows.slice(0, 24).map((r) => ({ ...(people.get(r.userId) ?? { id: r.userId, name: "Member", imageUrl: null, tag: null }), role: r.role })),
+  };
+}
+
 // ── Writing ───────────────────────────────────────────────────────────────────
 
 async function rateLimit(ctx: MutationCtx, kind: keyof typeof LIMITS, userId: Id<"users">) {
@@ -364,6 +403,7 @@ async function roomDocFor(ctx: MutationCtx, room: RoomView, userId: Id<"users">)
     description: room.description ?? undefined,
     kind: room.kind,
     courseId: room.courseId ?? undefined,
+    groupId: room.groupId ?? undefined,
     order: room.kind === "open" ? (DEFAULT_ROOMS.find((r) => r.slug === room.slug)?.order ?? 50) : 100,
     postCount: 0,
     createdBy: userId,
@@ -405,6 +445,29 @@ export const createPost = mutation({
       createdAt: now,
     });
     await ctx.db.patch(doc._id, { postCount: doc.postCount + 1, lastActivityAt: now });
+    if (room.kind === "group" && room.groupId) {
+      const group = await ctx.db.get(room.groupId);
+      const others = (
+        await ctx.db
+          .query("learnGroupMembers")
+          .withIndex("by_group", (q) => q.eq("groupId", room.groupId!))
+          .take(150)
+      ).filter((m) => m.userId !== member.user._id);
+      for (const m of others) {
+        await insertNotification(ctx, {
+          userId: m.userId,
+          type: "learn_group_post",
+          priority: "medium",
+          status: "pending",
+          payload: {
+            title: `${member.name} posted in ${group?.name ?? "your group"}`,
+            body: title,
+            link: `${LEARN_URL}/community/post/${postId}`,
+          },
+          createdAt: now,
+        });
+      }
+    }
     return postId;
   },
 });
@@ -544,7 +607,7 @@ export const adminReports = query({
   args: {},
   handler: async (ctx) => {
     const viewer = await getViewer(ctx);
-    if (!viewer?.isAdmin) return [];
+    if (!(await isLearnAdminUser(ctx, viewer?.user))) return [];
     const open = await ctx.db
       .query("learnReports")
       .withIndex("by_open", (q) => q.eq("resolvedAt", undefined))
@@ -580,7 +643,7 @@ export const adminReports = query({
 export const adminModerate = mutation({
   args: { ...targetArgs, action: v.union(v.literal("hide"), v.literal("restore"), v.literal("dismiss")) },
   handler: async (ctx, args) => {
-    await requireAdmin(ctx);
+    await requireLearnAdmin(ctx);
     const t = await target(ctx, args.targetType, args.targetId);
     if (t && args.action !== "dismiss") await ctx.db.patch(t.doc._id, { status: args.action === "hide" ? "hidden" : "open", reportCount: 0 });
     const reports = await ctx.db
@@ -596,11 +659,11 @@ export const adminModerate = mutation({
 export const adminCreateRoom = mutation({
   args: { title: v.string(), description: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    const { user } = await requireAdmin(ctx);
+    const { user } = await requireLearnAdmin(ctx);
     const title = clean(args.title, 60);
     if (title.length < 3) throw new ConvexError("Give the room a name.");
     const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40);
-    if (!slug || slug.startsWith("course-") || slug === "msk-program") throw new ConvexError("Choose another name.");
+    if (!slug || slug.startsWith("course-") || slug.startsWith("group-") || slug === "msk-program") throw new ConvexError("Choose another name.");
     const existing = await ctx.db
       .query("learnRooms")
       .withIndex("by_slug", (q) => q.eq("slug", slug))
@@ -626,7 +689,7 @@ export const adminCreateRoom = mutation({
 export const adminArchiveRoom = mutation({
   args: { slug: v.string() },
   handler: async (ctx, args) => {
-    await requireAdmin(ctx);
+    await requireLearnAdmin(ctx);
     const room = await ctx.db
       .query("learnRooms")
       .withIndex("by_slug", (q) => q.eq("slug", args.slug))

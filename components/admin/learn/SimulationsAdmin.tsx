@@ -11,6 +11,7 @@ import { useMutation, useQuery } from 'convex/react'
 import { toast } from 'sonner'
 import { BarChart3, CheckCircle2, ExternalLink, HeartPulse, Loader2, RefreshCw, ShieldCheck, Users } from '@/components/icons'
 import { useConsoleRole } from '@/components/admin/shell/consoleRole'
+import { hasLearnAdmin } from '@/components/admin/shell/adminNav'
 import { AdminPage, EmptyState, inputClass, PageHeader, Panel, primaryButtonClass, softButtonClass, StatTile, StatusBadge } from '@/components/admin/ui'
 import { AdminDrawer, Field } from '@/components/admin/learn/drawer'
 import { LoadingBlock, textareaClass } from '@/components/admin/partners/shared'
@@ -159,7 +160,7 @@ export function SimulationsAdmin() {
   const load = useMutation(simApi.adminLoad)
   const publish = useMutation(simApi.adminPublish)
   const unpublish = useMutation(simApi.adminUnpublish)
-  const isAdmin = useConsoleRole() === 'admin'
+  const isAdmin = hasLearnAdmin(useConsoleRole())
   const [loading, setLoading] = useState(false)
   const [signing, setSigning] = useState<SimAdminCase | null>(null)
   const [statsFor, setStatsFor] = useState<string | null>(null)

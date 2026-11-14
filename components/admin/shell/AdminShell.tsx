@@ -15,6 +15,7 @@ import { PhysioNotifications } from '@/components/physio/PhysioNotifications'
 import { AdminSidebar } from './AdminSidebar'
 import { AdminCommandPalette, OPEN_ADMIN_PALETTE_EVENT } from './AdminCommandPalette'
 import { adminBreadcrumbs, consoleAllows, consoleHome, toConsoleRole, type ConsoleRole } from './adminNav'
+import { learnAdminMeRef } from '@/lib/learnAdminsApi'
 import { ConsoleRoleContext, useConsoleRole } from './consoleRole'
 import { TeamAccessIntro } from '@/components/admin/TeamAccessIntro'
 import { WebsiteLink } from '@/components/dashboard/shared/WebsiteLink'
@@ -198,10 +199,12 @@ function LimitedRoleGate({ role, children }: { role: ConsoleRole; children: Reac
 /** Wraps every /dashboard/admin page: theme, access check, sidebar, topbar and ⌘K search. */
 export function AdminShell({ children }: { children: ReactNode }) {
   const me = useQuery(api.users.getMyUser) as { role?: string } | null | undefined
-  const role = toConsoleRole(me?.role)
+  const learnMe = useQuery(learnAdminMeRef, {})
+  // Learn super admins (any account type) get all of Admin › Learn
+  const role: ConsoleRole | null = me?.role === 'admin' ? 'admin' : learnMe?.learnAdmin ? 'learn_admin' : toConsoleRole(me?.role)
 
   let body: ReactNode
-  if (me === undefined) body = <ShellSkeleton />
+  if (me === undefined || learnMe === undefined) body = <ShellSkeleton />
   else if (!me || !role) body = <AccessDenied />
   else
     body = (

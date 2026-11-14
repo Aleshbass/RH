@@ -9,7 +9,7 @@ import { pageMetadata } from '@/lib/seo/utils'
 export const revalidate = 60
 
 const description =
-  'Practical online courses for physiotherapists and physiotherapy students: video courses, live programs and verifiable certificates from Rehabify clinicians.'
+  'Learn with peers through clinical cases, video courses and live sessions, and earn verifiable certificates. For physiotherapy students, graduates and practising physios.'
 
 // The root template adds the brand, so the title carries none of its own
 export const metadata: Metadata = pageMetadata({

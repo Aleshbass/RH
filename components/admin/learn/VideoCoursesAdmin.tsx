@@ -26,6 +26,7 @@ import {
   X,
 } from '@/components/icons'
 import { useConsoleRole } from '@/components/admin/shell/consoleRole'
+import { hasLearnAdmin } from '@/components/admin/shell/adminNav'
 import { VideoUploadGuideButton } from '@/components/admin/learn/VideoUploadGuide'
 import {
   LessonVideoChip,
@@ -291,7 +292,7 @@ function CourseForm({
 }) {
   const saveCourse = useMutation(videoApi.saveCourse)
   const uploadAuth = useAction(videoApi.uploadAuth)
-  const isAdmin = useConsoleRole() === 'admin'
+  const isAdmin = hasLearnAdmin(useConsoleRole())
   // Instructors can't change a course that is live or with an admin for review
   const locked = Boolean(course && !course.canEdit)
   const [title, setTitle] = useState(course?.title ?? '')
@@ -1051,7 +1052,7 @@ function CourseManager({ course, onBack }: { course: AdminVideoCourse; onBack: (
   const submitCourse = useMutation(videoApi.submitCourse)
   const withdrawCourse = useMutation(videoApi.withdrawCourse)
   const requestChanges = useMutation(videoApi.requestChanges)
-  const isAdmin = useConsoleRole() === 'admin'
+  const isAdmin = hasLearnAdmin(useConsoleRole())
   const [drawer, setDrawer] = useState<{ lesson: AdminVideoLesson | null } | null>(null)
   const [preview, setPreview] = useState<AdminVideoLesson | null>(null)
   const [confirm, setConfirm] = useState<'publish' | 'unpublish' | 'delete' | { lesson: AdminVideoLesson } | null>(null)
@@ -1347,7 +1348,7 @@ function IconButton({
 export function VideoCoursesAdmin() {
   const courses = useQuery(videoApi.adminCourses, {})
   const moveCourse = useMutation(videoApi.moveCourse)
-  const isAdmin = useConsoleRole() === 'admin'
+  const isAdmin = hasLearnAdmin(useConsoleRole())
   const [selected, setSelected] = useState<CourseId | 'new' | null>(null)
   const [fromYoutube, setFromYoutube] = useState(false)
 

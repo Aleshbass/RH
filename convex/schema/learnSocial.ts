@@ -9,11 +9,12 @@ import { v } from "convex/values";
 export const learnSocialTables = {
   // A room: "open" for every Learn member, or "course" for one course's learners (made on first post)
   learnRooms: defineTable({
-    slug: v.string(), // "student-lounge", "course-<courseId>", "msk-program"
+    slug: v.string(), // "student-lounge", "course-<courseId>", "msk-program", "group-<groupId>"
     title: v.string(),
     description: v.optional(v.string()),
-    kind: v.union(v.literal("open"), v.literal("course"), v.literal("program")),
+    kind: v.union(v.literal("open"), v.literal("course"), v.literal("program"), v.literal("group")),
     courseId: v.optional(v.id("learnVideoCourses")),
+    groupId: v.optional(v.id("learnGroups")), // kind "group": only its members (and Learn admins) see it
     order: v.number(),
     archived: v.optional(v.boolean()),
     postCount: v.number(),
@@ -82,6 +83,7 @@ export const learnSocialTables = {
     callId: v.string(), // Stream call id (audio_room:<callId>)
     peakListeners: v.optional(v.number()),
     reminderCount: v.number(),
+    groupId: v.optional(v.id("learnGroups")), // a group-only Space: only its members (and Learn admins) see it
     createdAt: v.number(),
   })
     .index("by_status_time", ["status", "scheduledFor"])
@@ -107,4 +109,37 @@ export const learnSocialTables = {
   })
     .index("by_space", ["spaceId", "updatedAt"])
     .index("by_space_user", ["spaceId", "userId"]),
+
+  // Learn super admins (Mary 2026-11-14): every Learn admin power, none of the rest of the platform.
+  // A flag row, not a role, so a physio or instructor keeps their own account type. Platform admins add them.
+  learnAdmins: defineTable({
+    userId: v.id("users"),
+    addedBy: v.id("users"),
+    addedAt: v.number(),
+  }).index("by_user", ["userId"]),
+
+  // Small groups for group activities (Mary 2026-11-14): Learn admins create them and assign people.
+  // Each group has a private community room (learnRooms kind "group") and can hold group-only Spaces.
+  learnGroups: defineTable({
+    name: v.string(),
+    description: v.optional(v.string()),
+    color: v.string(), // a key from GROUP_COLORS in learnGroups.ts
+    roomId: v.optional(v.id("learnRooms")),
+    memberCount: v.number(),
+    archived: v.optional(v.boolean()),
+    createdBy: v.id("users"),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_created", ["createdAt"]),
+
+  learnGroupMembers: defineTable({
+    groupId: v.id("learnGroups"),
+    userId: v.id("users"),
+    role: v.union(v.literal("member"), v.literal("lead")),
+    addedBy: v.id("users"),
+    addedAt: v.number(),
+  })
+    .index("by_group", ["groupId", "addedAt"])
+    .index("by_user", ["userId"])
+    .index("by_group_user", ["groupId", "userId"]),
 };
