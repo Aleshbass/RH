@@ -33,12 +33,7 @@
     "tripod": {
       "src": "/sims/knee-replacement-calf-pain/v1/scene/tripod.webp",
       "alt": "Mr Okafor sitting on the edge of his hospital bed, leaning forward on his knees and breathing fast",
-      "video": "/sims/knee-replacement-calf-pain/v1/scene/tripod.mp4",
-      "talk": {
-        "video": "/sims/knee-replacement-calf-pain/v1/scene/talk.mp4",
-        "src": "/sims/knee-replacement-calf-pain/v1/scene/talk.webp",
-        "mouth": "/sims/knee-replacement-calf-pain/v1/scene/talk.json"
-      }
+      "video": "/sims/knee-replacement-calf-pain/v1/scene/tripod.mp4"
     }
   },
   "nodes": {
