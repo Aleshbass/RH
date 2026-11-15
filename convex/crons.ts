@@ -267,4 +267,7 @@ crons.monthly("learn-leaderboard-close-month", { day: 1, hourUTC: 0, minuteUTC: 
 // Naira exchange rates for the local-currency estimate shown to people outside Nigeria (exchangeRates.ts)
 crons.daily("exchange-rates-refresh", { hourUTC: 6, minuteUTC: 5 }, internal.exchangeRates.refresh, {});
 
+// Live presence (presence.ts): old heartbeat rows go every hour
+crons.hourly("presence-cleanup", { minuteUTC: 17 }, internal.presence.cleanup, {});
+
 export default crons;

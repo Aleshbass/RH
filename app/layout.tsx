@@ -12,6 +12,7 @@ import ConditionalLayout from '@/components/layout/ConditionalLayout';
 import PwaRegister from '@/components/pwa/PwaRegister';
 import OfflineBridge from '@/components/offline/OfflineBridge';
 import { ActiveCallProvider } from '@/components/video/activeCall/ActiveCallProvider';
+import { PresenceBeat } from '@/components/presence/PresenceBeat';
 import { publicAppUrl } from '@/lib/public-app-url';
 import { SITE_CONFIG } from '@/lib/seo/config';
 
@@ -198,6 +199,8 @@ export default async function RootLayout({
 
               {/* Cookie banner and settings; also loads analytics (Umami) only once allowed */}
               <ConsentProvider>
+                {/* Who is on the platform right now, for the admin Live now page (convex/presence.ts) */}
+                <PresenceBeat />
                 {/* A joined video call keeps going in a small window while you use the app */}
                 <ActiveCallProvider>
                   <ConditionalLayout isSubdomainHost={isSubdomainHost} isLearnHost={isLearnHost}>
