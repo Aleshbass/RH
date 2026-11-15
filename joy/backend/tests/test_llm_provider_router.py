@@ -6,7 +6,7 @@ from app.llm.gemini_client import OpenAIClient, OpenRouterClient
 
 def test_openai_requires_its_own_api_key():
     with pytest.raises(RuntimeError, match="OPENAI_API_KEY"):
-        OpenAIClient(Settings(llm_provider="openai"))._models()
+        OpenAIClient(Settings(llm_provider="openai", openai_api_key=""))._models()
 
 
 def test_openrouter_uses_a_bounded_ordered_model_fallback():
