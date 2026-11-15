@@ -42,7 +42,7 @@ def rh_booking_reconciliation_job(
     conversation context and sends a notification on a status transition.
     """
     if not settings.rh_reconciliation_enabled:
-        return {"checked": 0, "notified": 0, "unavailable": 0, "disabled": 1}
+        return {"checked": 0, "notified": 0, "unavailable": 0, "disabled": 1, "remembered": _refresh_memories(session)}
     checked = notified = unavailable = 0
     client = configured_rh_client()
     conversations = session.scalars(select(Conversation).where(Conversation.booking_context.is_not(None)).limit(200)).all()
