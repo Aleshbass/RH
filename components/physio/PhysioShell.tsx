@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, type ReactNode } from 'react'
+import { Suspense, useEffect, type ReactNode } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useQuery } from 'convex/react'
@@ -27,6 +27,7 @@ import { AppIconBadge, AppSetupButton, AppSetupPrompt } from '@/components/pwa/A
 import { ClockPill } from '@/components/clock/ClinicClock'
 import { Quiet } from '@/components/physio/schedule/shared'
 import { ScribeIntro } from '@/components/physio/notes/scribe/ScribeIntro'
+import { VisitSafetyBar } from '@/components/visit-safety/VisitSafetyBar'
 
 /** The top bar's main action: book a patient in, in a drawer, without leaving the page. */
 function NewAppointmentButton() {
@@ -199,6 +200,14 @@ function PhysioPortal({ children }: { children: ReactNode }) {
           </div>
           {/* Phones and tablets: a slim strip under the top bar, inside the sticky header so it never covers the page */}
           <LiveSessionBanner enabled={liveSessions} layout="row" className="lg:hidden" />
+          {/* A home visit under way: who they're with, the help button, "Are you OK?" (on every page) */}
+          {access === 'full' && !clinic.active && (
+            <Quiet>
+              <Suspense fallback={null}>
+                <VisitSafetyBar />
+              </Suspense>
+            </Quiet>
+          )}
         </header>
 
         {/* Bottom room so the last card clears the tab bar and the phone's home indicator */}

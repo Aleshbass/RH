@@ -253,6 +253,11 @@ crons.daily("awadoc-purge-event-log", { hourUTC: 2, minuteUTC: 15 }, internal.aw
 crons.interval("clinic-clock-checks", { minutes: 10 }, internal.clinicAttendance.runClockChecks, {});
 crons.daily("clinic-clock-purge-nudges", { hourUTC: 2, minuteUTC: 40 }, internal.clinicAttendance.purgeOldNudges, {});
 
+// Home-visit safety (homeVisitSafety.ts): "Are you OK?" 20 min after a visit should have ended, the care
+// team 10 min later if there's no answer; positions cleared after 30 days.
+crons.interval("home-visit-safety-checks", { minutes: 2 }, internal.homeVisitSafety.runSafetyChecks, {});
+crons.daily("home-visit-safety-purge-positions", { hourUTC: 2, minuteUTC: 50 }, internal.homeVisitSafety.purgeOldPositions, {});
+
 // AI scribe (scribe.ts): recordings discarded or never signed go after 7 days, transcript and all.
 crons.daily("scribe-purge-unsigned", { hourUTC: 2, minuteUTC: 55 }, internal.scribe.purgeScribeSessions, {});
 

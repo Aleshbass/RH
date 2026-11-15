@@ -82,6 +82,8 @@ export const getNavBadges = query({
       refunds: refunds.length,
       inquiries: newInquiries.length,
       careQueue: await openCareSignalCount(ctx, BADGE_CAP),
+      // Home-visit safety alerts nobody has closed (homeVisitSafety.ts)
+      safety: (await ctx.db.query("safetyAlerts").withIndex("by_status", (q) => q.eq("status", "open")).take(BADGE_CAP)).length,
       cap: BADGE_CAP,
     };
   },

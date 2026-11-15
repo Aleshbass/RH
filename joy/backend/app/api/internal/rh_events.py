@@ -14,7 +14,7 @@ from app.models.rh_integration_event import RHIntegrationEvent
 from app.models.types import AuditKind
 from app.models.rh_identity_mapping import RHIdentityMapping
 from app.models.patient import Patient
-from app.queue.tasks import enqueue_booking_confirmed
+from app.queue.tasks import enqueue_booking_confirmed, enqueue_notify_admin_escalation
 from app.integrations.rh_client import RHActor, RHIntegrationError, configured_rh_client
 from app.models.conversation import Conversation
 from app.models.types import ConversationStage, PatientPhase
@@ -256,6 +256,24 @@ async def receive_event(request: Request, settings: Settings = Depends(get_setti
             forget_care_summary(_patient_conversation(session, patient))
             append(session, kind=AuditKind.BOOKING, actor_phone="rh-service", person_id=patient.id,
                    payload={"event": "appointment_scheduled_notified"})
+    elif event_type == "visit.on_the_way":
+        # A home-visit physio tapped "On my way" (RH homeVisitSafety.startVisit): who is coming + the door code
+        data = payload.get("data") or {}
+        patient = _patient_for_rh_id(session, str(data.get("patient_id") or ""))
+        if patient:
+            enqueue_booking_confirmed(patient.phone_e164, "", visit_on_the_way_text(data))
+            append(session, kind=AuditKind.BOOKING, actor_phone="rh-service", person_id=patient.id,
+                   payload={"event": "visit_on_the_way_notified"})
+    elif event_type == "safety.notify":
+        # Home-visit safety (RH homeVisitSafety.ts): "Are you OK?" to a physio, or an alert to the care team
+        data = payload.get("data") or {}
+        recipients = safety_recipients(data.get("recipients"))
+        text = str(data.get("text") or "").strip()[:1500]
+        if text:
+            for phone in recipients:
+                enqueue_notify_admin_escalation(phone, text)
+            append(session, kind=AuditKind.BOOKING, actor_phone="rh-service", person_id=None,
+                   payload={"event": "safety_notified", "recipients": len(recipients)})
     elif event_type == "specialist_review.payment_confirmed":
         data = payload.get("data") or {}
         rh_patient_id = str(data.get("patient_id") or "")
@@ -313,6 +331,37 @@ def appointment_scheduled_text(data: dict) -> str:
         lines.append("Please pay within 24 hours to confirm it. Reply *dashboard link* and I'll send you a link to pay.")
     lines.append("If the time doesn't suit you, tell me here and I'll pass it on.")
     return "\n".join(lines)
+
+
+def visit_on_the_way_text(data: dict) -> str:
+    name = _short(data.get("physio_name"), 80) or "Your physiotherapist"
+    first = _short(data.get("physio_first_name"), 40) or name
+    code = "".join(ch for ch in str(data.get("door_code") or "") if ch.isdigit())[:6]
+    start = data.get("start_time")
+    when = f" at {format_lagos_appointment_time(appointment_start_from_ms(start))}" if isinstance(start, (int, float)) else ""
+    page = str(data.get("page_url") or "")
+    lines = [f"🚪 {name} is on the way for your home visit{when}."]
+    if page.startswith("https://"):
+        lines += ["", f"Before you open the door, check {first}'s photo here: {page}"]
+    licence = _short(data.get("licence_number"), 40)
+    if licence:
+        lines.append(f"Physiotherapy licence number: {licence}")
+    if code:
+        lines += ["", f"When it's really {first}, give them this code: *{code}*"]
+    lines += ["", "Only give the code to the person in the photo. If someone else comes, don't let them in, and message me here."]
+    return "\n".join(lines)
+
+
+def safety_recipients(value: object) -> list[str]:
+    """E.164 numbers only ('+' and 8-15 digits), at most 10, no repeats."""
+    if not isinstance(value, list):
+        return []
+    phones: list[str] = []
+    for item in value:
+        phone = str(item or "").strip()
+        if phone.startswith("+") and phone[1:].isdigit() and 8 <= len(phone) - 1 <= 15 and phone not in phones:
+            phones.append(phone)
+    return phones[:10]
 
 
 def _patient_conversation(session: Session, patient: Patient) -> Conversation | None:

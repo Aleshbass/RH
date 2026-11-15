@@ -52,6 +52,8 @@ import { PatientQuestionnaireBanner } from '@/components/questionnaires/PatientQ
 import { JoyJourneyCard } from '@/components/patient/JoyJourneyCard'
 import { OpenBookingsCard } from '@/components/patient/OpenBookingsCard'
 import { BookingDecisionCard } from '@/components/patient/BookingDecisionCard'
+import { IncomingVisitCard } from '@/components/visit-safety/IncomingVisitCard'
+import { Quiet } from '@/components/physio/schedule/shared'
 import { MediLoanCard } from '@/components/patient/MediLoanCard'
 import { AccessAwardCard } from '@/components/patient/AccessAwardCard'
 import { YourPlanCard } from '@/components/patient/YourPlanCard'
@@ -412,6 +414,11 @@ export function PatientDashboard({ initialUser, initialAppointments, initialStat
         </h1>
         <p className="mt-1 text-sm text-pt-muted sm:text-[15px]">Here’s what’s next for your recovery.</p>
       </div>
+
+      {/* A home-visit physio on the way or with them now: photo and the door code come first */}
+      <Quiet>
+        <IncomingVisitCard />
+      </Quiet>
 
       {/* Clinic mode: the clinic looking after them leads */}
       <YourClinicCard />

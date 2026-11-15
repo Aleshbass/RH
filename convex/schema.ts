@@ -11,6 +11,7 @@ import { blogTables } from "./schema/blog";
 import { learnSocialTables } from "./schema/learnSocial";
 import { learnSimTables } from "./schema/learnSims";
 import { learnPointsTables } from "./schema/learnPoints";
+import { visitSafetyTables } from "./schema/visitSafety";
 import { measureValidator } from "./helpers/clinicalMeasures";
 import { goalMeasureValidator } from "./helpers/goalMeasures";
 import { reportSnapshotValidator } from "./helpers/progressReport";
@@ -4536,6 +4537,7 @@ export default defineSchema({
   ...learnSocialTables,
   ...learnSimTables,
   ...learnPointsTables,
+  ...visitSafetyTables,
 
   partnershipInquiries: defineTable({
     // "demo" = Book a demo on the partners page; missing on older rows, which are partnership inquiries

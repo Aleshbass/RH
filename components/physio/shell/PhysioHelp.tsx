@@ -78,6 +78,10 @@ function helpTopics(independent: boolean, clinicName: string | null): HelpTopic[
       q: 'What does On duty do?',
       a: 'While you do home visits it shares your location with Rehabify. Turn it off when you finish for the day.',
     },
+    {
+      q: 'How does visit safety work on home visits?',
+      a: 'Open the visit and tap On my way when you set off: your patient gets your photo and a 4-digit door code. At the door they give you the code, which checks you in. Tap Left safely when you go. If a visit runs 20 minutes over we ask if you’re OK; no answer in 10 minutes and the care team calls you. During a visit, hold the red Help button at the top of any page and the care team gets your location at once.',
+    },
   ]
 }
 

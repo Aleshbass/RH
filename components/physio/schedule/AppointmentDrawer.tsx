@@ -56,11 +56,13 @@ import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
 import { Choice, HomeVisitFields, earningsFor, suggestService, useRehabifyServices, type HomeVisit, type ScheduleService } from './rehabifyServices'
 import { JoinVideoButton } from './JoinVideoButton'
+import { VisitSafetyCard } from '@/components/visit-safety/VisitSafetyCard'
 import {
   asLike,
   minutesOf,
   needsMyAnswer,
   patientName,
+  Quiet,
   readableError,
   scheduleApi,
   useNow,
@@ -256,6 +258,12 @@ export function AppointmentDrawer({
             </DetailRow>
           )}
         </div>
+        {/* Home visits: "On my way", the door code check-in, "Left safely" and the help button */}
+        {!video && !answer && (
+          <Quiet>
+            <VisitSafetyCard appointmentId={appointment._id} patientFirstName={first} />
+          </Quiet>
+        )}
         {hasPendingProposal(asLike(appointment), now) && appointment.proposedStartTime && (
           <p className="rounded-2xl bg-pt-blue-bg p-3 text-sm text-pt-blue-fg">
             You suggested {lagosDateTime(appointment.proposedStartTime)}. Waiting for {first} to answer.

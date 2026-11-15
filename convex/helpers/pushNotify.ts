@@ -7,7 +7,7 @@ import { makeFunctionReference } from "convex/server";
 import type { WithoutSystemFields } from "convex/server";
 import type { MutationCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
-import { inQuietHours, pushCategoryFor, URGENT_PUSH_TYPES, type PushCategory } from "./pushCategories";
+import { inQuietHours, isSafetyType, pushCategoryFor, URGENT_PUSH_TYPES, type PushCategory } from "./pushCategories";
 import { zonedTimeKey } from "./lagosTime";
 
 export type PushMessage = {
@@ -173,10 +173,12 @@ export async function insertNotification(
         url: linkOf(doc) ?? "/dashboard/notifications",
         tag: pushTagOf(doc),
       },
-      {
-        category: pushCategoryFor(doc.type),
-        urgent: URGENT_PUSH_TYPES.has(doc.type) || doc.priority === "urgent",
-      }
+      isSafetyType(doc.type)
+        ? { urgent: true }
+        : {
+            category: pushCategoryFor(doc.type),
+            urgent: URGENT_PUSH_TYPES.has(doc.type) || doc.priority === "urgent",
+          }
     );
     await tellCareCircle(ctx, doc, title);
   }

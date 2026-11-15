@@ -35,6 +35,7 @@ import {
   PlayCircle,
   ReceiptText,
   Settings,
+  ShieldAlert,
   ShieldCheck,
   Stethoscope,
   Store,
@@ -49,7 +50,7 @@ import {
 export const ADMIN_HOME = '/dashboard/admin'
 
 /** Live counts shown next to nav items. Resolved in AdminSidebar. */
-export type AdminBadgeKey = 'approvals' | 'partnerApplications' | 'openReports' | 'bankTransfers' | 'accessApplications' | 'agreements' | 'refunds' | 'inquiries' | 'careQueue'
+export type AdminBadgeKey = 'approvals' | 'partnerApplications' | 'openReports' | 'bankTransfers' | 'accessApplications' | 'agreements' | 'refunds' | 'inquiries' | 'careQueue' | 'safety'
 
 export type AdminNavItem = {
   title: string
@@ -137,6 +138,7 @@ export const ADMIN_NAV: AdminNavSection[] = [
     items: [
       { title: 'All physiotherapists', href: a('/physiotherapists'), icon: Stethoscope, keywords: ['physio', 'clinicians'] },
       { title: 'Approvals', href: a('/approvals'), icon: UserCheck, badgeKey: 'approvals', keywords: ['pending', 'review', 'verify'] },
+      { title: 'Visit safety', href: a('/safety'), icon: ShieldAlert, badgeKey: 'safety', keywords: ['home visit', 'panic', 'help button', 'sos', 'overdue', 'check-in', 'door code', 'location'] },
       { title: 'Declined', href: a('/declined-physios'), icon: UserX, keywords: ['rejected'] },
       { title: 'Marketplace listing', href: a('/marketplace-listing'), icon: Store, keywords: ['find a physio', 'live', 'hidden', 'setup'] },
       { title: 'Public registry', href: a('/physio-registry'), icon: ShieldCheck, keywords: ['directory', 'listing'] },

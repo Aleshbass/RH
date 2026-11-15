@@ -89,6 +89,8 @@ const CATEGORY_OF: Record<string, PushCategory> = {
   // Reminders
   appointment_reminder: "reminders",
   session_starting: "reminders",
+  // A home-visit physio is on the way: photo, name and the door code (homeVisitSafety.ts)
+  visit_on_the_way: "reminders",
   daily_reminder: "reminders",
   exercise_program: "reminders",
   patient_plan: "reminders",
@@ -131,7 +133,16 @@ export const URGENT_PUSH_TYPES = new Set([
   "patient_waiting_in_call",
   "session_starting",
   "exercise_pain_flag",
+  "visit_on_the_way",
 ]);
+
+/**
+ * Home-visit safety (homeVisitSafety.ts): "Are you OK?" and the care team's alerts. Always pushed,
+ * whatever the person switched off and even in quiet hours.
+ */
+export function isSafetyType(type: string): boolean {
+  return type.startsWith("safety_");
+}
 
 export type QuietHours = { start: string; end: string };
 

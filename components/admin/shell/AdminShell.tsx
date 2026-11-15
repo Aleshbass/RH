@@ -20,6 +20,7 @@ import { ConsoleRoleContext, useConsoleRole } from './consoleRole'
 import { TeamAccessIntro } from '@/components/admin/TeamAccessIntro'
 import { WebsiteLink } from '@/components/dashboard/shared/WebsiteLink'
 import { AppIconBadge, AppSetupButton, AppSetupPrompt } from '@/components/pwa/AppSetup'
+import { SafetyAlertBanner } from '@/components/visit-safety/SafetyAlertBanner'
 
 function ShellSkeleton() {
   return (
@@ -169,6 +170,9 @@ function ShellFrame({ children }: { children: ReactNode }) {
             <PhysioNotifications />
           </div>
         </header>
+
+        {/* A home-visit safety alert is open: on every admin page until someone closes it */}
+        {isAdmin && <SafetyAlertBanner />}
 
         <main className="w-full min-w-0 flex-1 px-4 pb-[calc(4rem+env(safe-area-inset-bottom))] pt-4 sm:px-6 lg:px-8 lg:pb-16 lg:pt-6">
           <PageTransition>{children}</PageTransition>
