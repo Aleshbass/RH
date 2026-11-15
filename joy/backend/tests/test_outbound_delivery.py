@@ -17,6 +17,23 @@ from app.queue import worker
 class FakeRedis:
     def __init__(self):
         self.lists: dict[str, list[str]] = {}
+        self.keys: dict[str, str] = {}
+        self.sets: dict[str, set[str]] = {}
+
+    def set(self, key, value, ex=None):
+        self.keys[key] = value
+
+    def exists(self, key):
+        return int(key in self.keys)
+
+    def sadd(self, key, value):
+        self.sets.setdefault(key, set()).add(value)
+
+    def srem(self, key, value):
+        self.sets.setdefault(key, set()).discard(value)
+
+    def smembers(self, key):
+        return set(self.sets.get(key, set()))
 
     def _l(self, key):
         return self.lists.setdefault(key, [])
@@ -177,3 +194,27 @@ def test_info_goes_to_stdout_and_errors_to_stderr(capsys):
     out, err = capsys.readouterr()
     assert out.count("hello-info") == 1 and "hello-error" not in out
     assert err.count("hello-error") == 1 and "hello-info" not in err
+
+
+def test_two_workers_never_take_each_others_jobs(monkeypatch, redis):
+    """Each replica claims onto its own list; one starting up doesn't steal the other's job."""
+    monkeypatch.setattr(worker, "WORKER_ID", "worker-a")
+    worker._heartbeat(force=True)
+    redis.lpush(worker._mine(tasks.processing_list(QUEUE)), json.dumps({"phone": "+234", "text": "in flight on A"}))
+    # Worker B starts: A is alive, so A's in-flight job stays where it is
+    monkeypatch.setattr(worker, "WORKER_ID", "worker-b")
+    worker._heartbeat(force=True)
+    assert worker._recover_processing_lists() == 0
+    assert redis.lists.get(QUEUE, []) == []
+    assert len(redis.lists[tasks.processing_list(QUEUE) + ":worker-a"]) == 1
+
+
+def test_a_stopped_workers_jobs_come_back(monkeypatch, redis):
+    monkeypatch.setattr(worker, "WORKER_ID", "worker-a")
+    worker._heartbeat(force=True)
+    redis.lpush(worker._mine(tasks.processing_list(QUEUE)), json.dumps({"phone": "+234", "text": "claimed by A"}))
+    del redis.keys["joy:worker:alive:worker-a"]  # A crashed: its heartbeat expired
+    monkeypatch.setattr(worker, "WORKER_ID", "worker-b")
+    worker._heartbeat(force=True)
+    assert worker._reap_stopped_workers(force=True) == 1
+    assert len(redis.lists[QUEUE]) == 1 and "worker-a" not in redis.sets["joy:workers"]

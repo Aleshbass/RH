@@ -221,13 +221,13 @@ def _undo_turn(turn) -> None:
 
 def _claim(timeout: int) -> str | None:
     try:
-        return _redis().brpoplpush(INBOUND_QUEUE, PROCESSING_QUEUE, timeout=timeout)
+        return _redis().brpoplpush(INBOUND_QUEUE, _mine(PROCESSING_QUEUE), timeout=timeout)
     except TimeoutError:
         return None
 
 
 def _ack(raw: str) -> None:
-    _redis().lrem(PROCESSING_QUEUE, 1, raw)
+    _redis().lrem(_mine(PROCESSING_QUEUE), 1, raw)
 
 
 def _backoff_seconds(attempts: int) -> float:
@@ -236,7 +236,7 @@ def _backoff_seconds(attempts: int) -> float:
 
 def _retry_or_dead(raw: str, payload: dict, error: BaseException, session: Session) -> None:
     client = _redis()
-    client.lrem(PROCESSING_QUEUE, 1, raw)
+    client.lrem(_mine(PROCESSING_QUEUE), 1, raw)
     attempts = int(payload.get("attempts") or 0) + 1
     payload["attempts"] = attempts
     logger.warning(
@@ -385,10 +385,10 @@ def process_booking_email_once(timeout: int = 1) -> bool:
     try:
         payload_str = (
             client.brpoplpush(
-                BOOKING_EMAIL_QUEUE, BOOKING_EMAIL_PROCESSING_QUEUE, timeout=timeout
+                BOOKING_EMAIL_QUEUE, _mine(BOOKING_EMAIL_PROCESSING_QUEUE), timeout=timeout
             )
             if timeout > 0
-            else client.rpoplpush(BOOKING_EMAIL_QUEUE, BOOKING_EMAIL_PROCESSING_QUEUE)
+            else client.rpoplpush(BOOKING_EMAIL_QUEUE, _mine(BOOKING_EMAIL_PROCESSING_QUEUE))
         )
     except TimeoutError:
         return False
@@ -408,7 +408,7 @@ def process_booking_email_once(timeout: int = 1) -> bool:
             ),
         )
     except Exception as exc:
-        client.lrem(BOOKING_EMAIL_PROCESSING_QUEUE, 1, payload_str)
+        client.lrem(_mine(BOOKING_EMAIL_PROCESSING_QUEUE), 1, payload_str)
         try:
             retry_payload = json.loads(payload_str)
         except json.JSONDecodeError:
@@ -430,7 +430,7 @@ def process_booking_email_once(timeout: int = 1) -> bool:
                 retry_payload.get("booking_id"), attempts, type(exc).__name__,
             )
         return False
-    client.lrem(BOOKING_EMAIL_PROCESSING_QUEUE, 1, payload_str)
+    client.lrem(_mine(BOOKING_EMAIL_PROCESSING_QUEUE), 1, payload_str)
     return True
 
 
@@ -711,7 +711,7 @@ def _process_reliably(queue: str, handler, *, timeout: int = 1) -> bool:
     are added on retry, so jobs queued before this existed ({"phone","text"}) still work.
     """
     client = _redis()
-    processing = processing_list(queue)
+    processing = _mine(processing_list(queue))
     try:
         raw = (
             client.brpoplpush(queue, processing, timeout=timeout)
@@ -766,7 +766,7 @@ def _retry_or_dead_letter_outbound(client, queue: str, raw: str, payload: dict, 
         return
     delay = _outbound_backoff_seconds(attempts)
     payload["next_attempt_at"] = time.time() + delay
-    _move(client, processing_list(queue), raw, queue, json.dumps(payload))
+    _move(client, _mine(processing_list(queue)), raw, queue, json.dumps(payload))
     # The queue name, booking id and Meta's code only: never the number or the message
     logger.warning(
         "joy_outbound_retry queue=%s attempts=%s retry_in_s=%d error_type=%s http_status=%s graph_code=%s booking_id=%s",
@@ -785,7 +785,7 @@ def _outbound_dead_letter(client, queue: str, raw: str, payload, *, attempts: in
         payload = json.dumps(payload)
     else:
         booking_id = None
-    _move(client, processing_list(queue), raw, dead_letter_list(queue), payload, keep=_DEAD_LETTER_KEEP)
+    _move(client, _mine(processing_list(queue)), raw, dead_letter_list(queue), payload, keep=_DEAD_LETTER_KEEP)
     logger.error(
         "joy_outbound_dead_letter queue=%s attempts=%s error_type=%s http_status=%s graph_code=%s booking_id=%s",
         queue, attempts, type(error).__name__, status, code, booking_id,
@@ -835,23 +835,83 @@ def _record_delivery_failure(payload: dict) -> None:
     )
 
 
-def _recover_processing_lists() -> int:
-    """Put jobs a crashed worker had claimed but not finished back on their queues.
+# ── Several worker replicas ─────────────────────────────────────────────────────────────────
+# Each worker claims jobs onto its OWN processing lists ("<list>:<worker id>") and keeps a
+# heartbeat key alive. A worker whose heartbeat has stopped (crash, redeploy) has its claimed
+# jobs put back by whichever worker notices, so two replicas never take each other's jobs and a
+# crash still loses nothing. Without a worker id (tests, one-off scripts) the plain list names
+# are used, as before.
+WORKER_ID = ""
+_WORKERS_SET = "joy:workers"
+_HEARTBEAT_SECONDS = 90
+_last_heartbeat = 0.0
+_last_reaper = 0.0
 
-    Redis can't know the process that claimed them died. The worker runs as a single replica,
-    so at start-up anything still on a processing list is from before the restart. A job that
-    was sent just before the crash may go out twice; none is lost.
-    """
-    client = _redis()
+
+def _mine(name: str) -> str:
+    return f"{name}:{WORKER_ID}" if WORKER_ID else name
+
+
+def _processing_bases() -> list[tuple[str, str]]:
+    """(queue, its processing list) for every queue a worker claims from."""
+    return [
+        *((queue, processing_list(queue)) for queue in OUTBOUND_TEXT_QUEUES),
+        (WHATSAPP_DELIVERY_FAILED_QUEUE, processing_list(WHATSAPP_DELIVERY_FAILED_QUEUE)),
+        (INBOUND_QUEUE, PROCESSING_QUEUE),
+        (BOOKING_EMAIL_QUEUE, BOOKING_EMAIL_PROCESSING_QUEUE),
+    ]
+
+
+def _requeue(client, suffix: str | None) -> int:
+    """Put the jobs on one worker's processing lists back on their queues (None: the plain lists)."""
     recovered = 0
-    for queue in (*OUTBOUND_TEXT_QUEUES, WHATSAPP_DELIVERY_FAILED_QUEUE, INBOUND_QUEUE):
+    for queue, processing in _processing_bases():
+        source = f"{processing}:{suffix}" if suffix else processing
         count = 0
-        while client.rpoplpush(processing_list(queue), queue):
+        while client.rpoplpush(source, queue):
             count += 1
         if count:
             logger.warning("joy_recovered_unacknowledged_jobs queue=%s count=%s", queue, count)
         recovered += count
-    return recovered + recover_booking_email_processing()
+    return recovered
+
+
+def _heartbeat(force: bool = False) -> None:
+    global _last_heartbeat
+    if not WORKER_ID or (not force and time.monotonic() - _last_heartbeat < _HEARTBEAT_SECONDS / 3):
+        return
+    client = _redis()
+    client.set(f"joy:worker:alive:{WORKER_ID}", "1", ex=_HEARTBEAT_SECONDS)
+    client.sadd(_WORKERS_SET, WORKER_ID)
+    _last_heartbeat = time.monotonic()
+
+
+def _reap_stopped_workers(force: bool = False) -> int:
+    """Return the claimed jobs of workers whose heartbeat has stopped, then forget them."""
+    global _last_reaper
+    if not force and time.monotonic() - _last_reaper < 60:
+        return 0
+    _last_reaper = time.monotonic()
+    client = _redis()
+    recovered = 0
+    for raw in client.smembers(_WORKERS_SET) or []:
+        worker = raw.decode() if isinstance(raw, bytes) else str(raw)
+        if worker == WORKER_ID or client.exists(f"joy:worker:alive:{worker}"):
+            continue
+        recovered += _requeue(client, worker)
+        client.srem(_WORKERS_SET, worker)
+    return recovered
+
+
+def _recover_processing_lists() -> int:
+    """Put jobs a stopped worker had claimed but not finished back on their queues.
+
+    At start-up: the plain (single-worker) lists, which only a worker from before this change
+    used, and the lists of any worker whose heartbeat has stopped. A job sent just before a
+    crash may go out twice; none is lost.
+    """
+    client = _redis()
+    return _requeue(client, None) + _reap_stopped_workers(force=True)
 
 
 def _wait_for_redis(*, retry_seconds: int = 5) -> None:
@@ -912,10 +972,15 @@ def wait_for_schema(*, max_wait_seconds: int = 300, retry_seconds: int = 5) -> b
 
 
 def run_forever(timeout: int = 5) -> None:
+    global WORKER_ID
+    from uuid import uuid4
+
+    WORKER_ID = uuid4().hex[:12]  # this replica's processing lists and heartbeat
     wait_for_schema()
     while True:
         _wait_for_redis()
         try:
+            _heartbeat(force=True)
             _recover_processing_lists()
             break
         except RedisConnectionError:
@@ -927,6 +992,8 @@ def run_forever(timeout: int = 5) -> None:
     while True:
         try:
             _redis().ping()
+            _heartbeat()
+            _reap_stopped_workers()
         except RedisConnectionError:
             _wait_for_redis()
             continue
