@@ -285,3 +285,71 @@ export const myPoints = query({
     return { total: account?.total ?? 0 };
   },
 });
+
+/**
+ * One-off: credit what learners did before points existed (owner 2026-11-14: "credit past
+ * activity"). Uses the same unique keys as the live awards, so running it again (or alongside new
+ * activity) never pays twice. Daily caps and streaks don't apply to past activity.
+ * `npx convex run --prod learnPoints:backfillPoints '{"dryRun":true}'` first, then with false.
+ */
+export const backfillPoints = internalMutation({
+  args: { dryRun: v.boolean() },
+  handler: async (ctx, args) => {
+    const plan: { userId: Id<"users">; reason: Parameters<typeof awardLearnPoints>[1]["reason"]; key: string; label?: string }[] = [];
+    // Lessons and whole courses
+    for (const row of await ctx.db.query("learnVideoProgress").collect()) {
+      if (!row.userId) continue;
+      for (const lessonId of row.completedLessonIds) {
+        const lesson = await ctx.db.get(lessonId);
+        plan.push({ userId: row.userId, reason: "lesson", key: `lesson:${row.userId}:${lessonId}`, label: lesson ? `Finished: ${lesson.title}` : undefined });
+      }
+      if (row.completedAt) {
+        const course = await ctx.db.get(row.courseId);
+        plan.push({ userId: row.userId, reason: "course", key: `course:${row.userId}:${row.courseId}`, label: course ? `Finished the course: ${course.title}` : undefined });
+      }
+    }
+    // Simulation cases (not previews)
+    for (const a of await ctx.db.query("learnSimAttempts").collect()) {
+      if (a.preview || a.status !== "finished") continue;
+      const doc = await ctx.db.query("learnSimCases").withIndex("by_slug", (q) => q.eq("slug", a.caseSlug)).unique();
+      const title = doc?.title ?? a.caseSlug;
+      plan.push({ userId: a.userId, reason: "sim_finish", key: `simfinish:${a.userId}:${a.caseSlug}`, label: `Finished: ${title}` });
+      if (a.passed) plan.push({ userId: a.userId, reason: "sim_pass", key: `simpass:${a.userId}:${a.caseSlug}`, label: `Passed: ${title}` });
+    }
+    // Community posts, replies and helpful marks
+    for (const p of await ctx.db.query("learnPosts").collect()) plan.push({ userId: p.authorId, reason: "post", key: `post:${p._id}` });
+    for (const r of await ctx.db.query("learnReplies").collect()) plan.push({ userId: r.authorId, reason: "reply", key: `reply:${r._id}` });
+    for (const h of await ctx.db.query("learnHelpful").collect()) {
+      const id = h.targetType === "post" ? ctx.db.normalizeId("learnPosts", h.targetId) : ctx.db.normalizeId("learnReplies", h.targetId);
+      const target = id ? await ctx.db.get(id) : null;
+      if (!target || target.authorId === h.userId) continue;
+      plan.push({ userId: target.authorId, reason: "helpful", key: `helpful:${h.targetType}:${h.targetId}:${h.userId}` });
+    }
+    // MSK program: passed assessments and certificates
+    for (const reg of await ctx.db.query("learnRegistrations").collect()) {
+      if (!reg.userId) continue;
+      if (reg.certificateCode && !reg.certificateRevokedAt) plan.push({ userId: reg.userId, reason: "certificate", key: `certificate:${reg._id}` });
+    }
+    for (const att of await ctx.db.query("learnAttempts").collect()) {
+      if (!att.passed) continue;
+      const reg = await ctx.db.get(att.registrationId);
+      if (reg?.userId) plan.push({ userId: reg.userId, reason: "assessment", key: `assessment:${reg._id}` });
+    }
+    // Spaces that went live
+    for (const s of await ctx.db.query("learnSpaces").collect()) {
+      if (s.startedAt) plan.push({ userId: s.hostId, reason: "space_host", key: `spacehost:${s._id}`, label: `Hosted a Space: ${s.title}` });
+    }
+    // Skip what's already been paid
+    const fresh = [];
+    for (const item of plan) {
+      const seen = await ctx.db.query("learnPointsLedger").withIndex("by_key", (q) => q.eq("key", item.key)).first();
+      if (!seen) fresh.push(item);
+    }
+    const byReason: Record<string, number> = {};
+    for (const item of fresh) byReason[item.reason] = (byReason[item.reason] ?? 0) + 1;
+    if (args.dryRun) return { dryRun: true, awards: fresh.length, learners: new Set(fresh.map((f) => String(f.userId))).size, byReason };
+    let points = 0;
+    for (const item of fresh) points += await awardLearnPoints(ctx, { ...item, backfill: true });
+    return { dryRun: false, awards: fresh.length, points, byReason };
+  },
+});

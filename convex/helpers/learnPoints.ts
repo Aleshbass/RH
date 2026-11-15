@@ -44,7 +44,7 @@ async function checkBadges(ctx: MutationCtx, userId: Id<"users">, total: number,
  */
 export async function awardLearnPoints(
   ctx: MutationCtx,
-  input: { userId: Id<"users">; reason: LearnEarnReason; key: string; label?: string }
+  input: { userId: Id<"users">; reason: LearnEarnReason; key: string; label?: string; backfill?: boolean }
 ): Promise<number> {
   const rule = LEARN_EARN[input.reason];
   const seen = await ctx.db.query("learnPointsLedger").withIndex("by_key", (q) => q.eq("key", input.key)).first();
@@ -57,7 +57,8 @@ export async function awardLearnPoints(
     .withIndex("by_user_day", (q) => q.eq("userId", input.userId).eq("day", day))
     .collect();
   const earnedToday = today.filter((r) => r.reason === input.reason).reduce((sum, r) => sum + r.points, 0);
-  const points = Math.min(rule.points, rule.dailyCap - earnedToday);
+  // Crediting past activity (one-off backfill) ignores today's caps
+  const points = input.backfill ? rule.points : Math.min(rule.points, rule.dailyCap - earnedToday);
   if (points <= 0) return 0;
   await ctx.db.insert("learnPointsLedger", {
     userId: input.userId,
@@ -76,15 +77,15 @@ export async function awardLearnPoints(
   if (countKey) counts[countKey] = (counts[countKey] ?? 0) + 1;
   // Streak: one learning day at a time (Lagos days)
   let streak = account.streak;
-  if (account.lastDay !== day) streak = account.lastDay === dayBefore(day) ? account.streak + 1 : 1;
+  if (!input.backfill && account.lastDay !== day) streak = account.lastDay === dayBefore(day) ? account.streak + 1 : 1;
   const bestStreak = Math.max(account.bestStreak, streak);
   const total = account.total + points;
-  await ctx.db.patch(account._id, { total, counts, streak, bestStreak, lastDay: day, updatedAt: now });
+  await ctx.db.patch(account._id, { total, counts, streak, bestStreak, lastDay: input.backfill ? account.lastDay : day, updatedAt: now });
   await addMonthly(ctx, input.userId, month, points);
   await checkBadges(ctx, input.userId, total, bestStreak, counts);
 
   // Every 7 days in a row earns a streak bonus (once that day)
-  if (input.reason !== "streak" && streak > account.streak && streak % 7 === 0) {
+  if (!input.backfill && input.reason !== "streak" && streak > account.streak && streak % 7 === 0) {
     await awardLearnPoints(ctx, { userId: input.userId, reason: "streak", key: `streak:${input.userId}:${day}`, label: `${streak} days of learning in a row` });
   }
   return points;
