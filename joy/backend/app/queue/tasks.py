@@ -114,6 +114,14 @@ def _in_service_window(phone: str) -> bool:
         return True  # Unknown: fall back to a plain message, as before.
 
 
+def forget_service_window(phone: str) -> None:
+    """Meta says the 24-hour window is closed (error 131047): the next message goes as the template."""
+    try:
+        _redis().delete(_service_window_key(phone))
+    except redis.RedisError:
+        pass
+
+
 def _localized(phone: str, text: str) -> str:
     """The message in the language this number writes in (app/conversation/localize.py)."""
     try:
@@ -151,6 +159,32 @@ TAKEOVER_QUEUE = "joy:notify_takeover"
 BOOKING_EMAIL_QUEUE = "joy:booking_email"
 BOOKING_EMAIL_PROCESSING_QUEUE = "joy:booking_email:processing"
 BOOKING_EMAIL_DEAD_LETTER_QUEUE = "joy:booking_email:dead"
+# WhatsApp "failed" delivery statuses from the webhook, recorded by the worker
+WHATSAPP_DELIVERY_FAILED_QUEUE = "joy:wa_delivery_failed"
+
+# The outbound WhatsApp text queues the worker delivers at least once: a job sits on
+# "<queue>:processing" until Meta accepts it, failures retry with backoff, then "<queue>:dead".
+OUTBOUND_TEXT_QUEUES = (
+    BOOKING_CONFIRMED_QUEUE,
+    PHYSIO_BOOKING_ALERT_QUEUE,
+    FAMILY_SAFETY_QUEUE,
+    PHYSIO_RELAY_QUEUE,
+    FAMILY_RELAY_QUEUE,
+    PARTNER_REFERRAL_QUEUE,
+    ADMIN_ESCALATION_QUEUE,
+    BROADCAST_QUEUE,
+    TAKEOVER_QUEUE,
+)
+OUTBOUND_MAX_ATTEMPTS = 5
+
+
+def processing_list(queue: str) -> str:
+    """Where a claimed job waits until it is acknowledged (same naming as the inbound queue)."""
+    return f"{queue}:processing"
+
+
+def dead_letter_list(queue: str) -> str:
+    return f"{queue}:dead"
 
 
 def enqueue_booking_confirmed(
@@ -355,7 +389,8 @@ def send_whatsapp_text(phone: str, text: str) -> None:
                 "components": [{"type": "body", "parameters": [{"type": "text", "text": _template_body_parameter(text)}]}],
             },
         }
-    _post_message(settings, message)
+    wa_message_id = _post_message(settings, message)
+    _remember_outbound(wa_message_id, "template" if message["type"] == "template" else "text")
 
 
 _INTERACTIVE_BODY_LIMIT = 1024
@@ -393,7 +428,7 @@ def send_whatsapp_interactive(phone: str, text: str, interactive: dict, *, text_
         "interactive": {**interactive, "body": {"text": body}},
     }
     try:
-        _post_message(settings, message)
+        _remember_outbound(_post_message(settings, message), "interactive")
     except httpx.HTTPError as exc:
         # Meta's reason (for example 139000 "Blocked by Integrity" for a form while the business
         # isn't verified). Only the status and error code: no phone number or message text.
@@ -410,7 +445,8 @@ def send_whatsapp_interactive(phone: str, text: str, interactive: dict, *, text_
             send_text(phone, text)
 
 
-def _post_message(settings, message: dict) -> None:
+def _post_message(settings, message: dict) -> str | None:
+    """Send one message through the Graph API; returns Meta's message id (wamid) if it gave one."""
     response = httpx.post(
         f"https://graph.facebook.com/v21.0/{settings.whatsapp_phone_number_id}/messages",
         headers={"Authorization": f"Bearer {settings.whatsapp_access_token}"},
@@ -426,3 +462,74 @@ def _post_message(settings, message: dict) -> None:
             request=exc.request,
             response=exc.response,
         ) from exc
+    return _sent_message_id(response)
+
+
+def _sent_message_id(response) -> str | None:
+    try:
+        data = response.json()
+    except Exception:
+        return None
+    messages = data.get("messages") if isinstance(data, dict) else None
+    if isinstance(messages, list) and messages and isinstance(messages[0], dict) and messages[0].get("id"):
+        return str(messages[0]["id"])
+    return None
+
+
+# How each sent message went out ("text", "interactive" or "template"), by its wamid, so a
+# "failed" status from Meta can tell a template sent outside the 24h window from a free-form one.
+_OUTBOUND_TTL_SECONDS = 60 * 60 * 24 * 7
+
+
+def _outbound_key(wa_message_id: str) -> str:
+    return f"joy:wa_out:{wa_message_id}"
+
+
+def _remember_outbound(wa_message_id: str | None, sent_as: str) -> None:
+    if not wa_message_id:
+        return
+    try:
+        _redis().set(_outbound_key(wa_message_id), sent_as, ex=_OUTBOUND_TTL_SECONDS)
+    except Exception:
+        pass  # Bookkeeping only: never fail a delivered message over it.
+
+
+def outbound_sent_as(wa_message_id: str) -> str | None:
+    if not wa_message_id:
+        return None
+    try:
+        value = _redis().get(_outbound_key(wa_message_id))
+    except redis.RedisError:
+        return None
+    return str(value) if value else None
+
+
+def delivery_failure_action(sent_as: str | None, code) -> str:
+    """What Joy does about a message Meta accepted but could not deliver. Nothing is re-sent blindly.
+
+    - 131047 on a free-form message: more than 24h had passed since the person last wrote, so the
+      window bookkeeping was wrong. It is cleared, and the next message to them goes as the update
+      template ("window_closed").
+    - Anything else, including every failed template (sent outside the window): sending the same
+      thing again cannot help (131049 marketing limit, 131050 stopped marketing messages, 131026
+      undeliverable), so it is only recorded ("not_retried").
+    """
+    if sent_as != "template" and str(code) == "131047":
+        return "window_closed"
+    return "not_retried"
+
+
+def enqueue_delivery_failure(wa_message_id: str, *, recipient: str, code: int | None, title: str) -> bool:
+    """Queue one "failed" delivery status for the worker to record, once per message id."""
+    payload = json.dumps(
+        {"wa_message_id": wa_message_id, "recipient": recipient, "code": code, "title": title}
+    )
+    result = _redis().eval(
+        _ENQUEUE_LUA,
+        2,
+        f"joy:wa_failed:{wa_message_id}",
+        WHATSAPP_DELIVERY_FAILED_QUEUE,
+        payload,
+        str(_OUTBOUND_TTL_SECONDS),
+    )
+    return bool(result)

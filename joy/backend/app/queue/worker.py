@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 import time
 from datetime import datetime, timedelta, timezone
 
@@ -36,13 +37,21 @@ from app.queue.tasks import (
     FAMILY_SAFETY_QUEUE,
     INBOUND_QUEUE,
     MAX_ATTEMPTS,
+    OUTBOUND_MAX_ATTEMPTS,
+    OUTBOUND_TEXT_QUEUES,
     PARTNER_REFERRAL_QUEUE,
     PHYSIO_BOOKING_ALERT_QUEUE,
     PHYSIO_RELAY_QUEUE,
     PROCESSING_QUEUE,
     TAKEOVER_QUEUE,
+    WHATSAPP_DELIVERY_FAILED_QUEUE,
     _redis,
     appointment_email_idempotency_key,
+    dead_letter_list,
+    delivery_failure_action,
+    forget_service_window,
+    outbound_sent_as,
+    processing_list,
     remember_language,
     send_appointment_email,
     send_whatsapp_interactive,
@@ -62,7 +71,8 @@ def _payload_media(payload: dict) -> list[str] | None:
 
 GEMINI_TIMEOUT_APOLOGY = "Sorry, I had a brief hiccup. Please send that again in a moment."
 VOICE_FAIL_REPLY = (
-    "I couldn't process that voice note. Please try sending it again, or type what you said."
+    "I couldn't process that voice note. Please try sending it again, or type what you said. "
+    "If this is an emergency, call 112."
 )
 
 
@@ -645,20 +655,203 @@ def _interactive_reply(db, phone: str, result) -> dict | None:
 
 
 def _drain_text_queue(queue: str, timeout: int = 1) -> bool:
+    """Deliver one queued WhatsApp text (physio alerts, family safety, relays, staff notices...)."""
+    return _process_reliably(queue, _send_queued_text, timeout=timeout)
+
+
+def _send_queued_text(payload: dict) -> None:
+    phone, text = payload.get("phone"), payload.get("text")
+    if not phone or not isinstance(text, str) or not text:
+        raise _InvalidJob("phone or text missing")
+    send_whatsapp_text(str(phone), text)
+
+
+class _InvalidJob(ValueError):
+    """A job that can never succeed (bad JSON, missing fields): dead-lettered without retries."""
+
+
+# Outbound jobs are delivered at least once: a claimed job waits on "<queue>:processing" and is
+# only removed after Meta accepted the message. A failure goes back on the queue with a backoff
+# (30s, 1m, 2m, 4m) without blocking the worker; after OUTBOUND_MAX_ATTEMPTS it moves to
+# "<queue>:dead". A crash mid-send leaves the job on the processing list, and the next worker
+# start puts it back (_recover_processing_lists), so a crash can repeat a message, never lose it.
+_OUTBOUND_BACKOFF_SECONDS = 30
+_OUTBOUND_BACKOFF_CAP_SECONDS = 15 * 60
+_DEAD_LETTER_KEEP = 1000
+# Graph API errors that the same request can never get past: dead-lettered at once.
+# (100 invalid parameter, 131008/131009 missing or bad parameter, 131021 sending to itself,
+# 131026 undeliverable, 131030 not in the test allow-list, 131051 unsupported type,
+# 132xxx template problems, 133010 not a WhatsApp number.)
+_PERMANENT_GRAPH_CODES = frozenset(
+    {
+        "100", "131008", "131009", "131021", "131026", "131030", "131051",
+        "132000", "132001", "132005", "132007", "132012", "132015", "132016", "132068", "132069",
+        "133010",
+    }
+)
+_GRAPH_CODE = re.compile(r'"code":\s*(\d+)')
+
+
+def _outbound_backoff_seconds(attempts: int) -> float:
+    return float(min(_OUTBOUND_BACKOFF_SECONDS * 2 ** max(attempts - 1, 0), _OUTBOUND_BACKOFF_CAP_SECONDS))
+
+
+def _graph_error(error: BaseException) -> tuple[int | None, str | None]:
+    """HTTP status and Meta error code of a failed send (never the response text itself)."""
+    if not isinstance(error, httpx.HTTPStatusError):
+        return None, None
+    code = _GRAPH_CODE.search(str(error))
+    return getattr(error.response, "status_code", None), code.group(1) if code else None
+
+
+def _process_reliably(queue: str, handler, *, timeout: int = 1) -> bool:
+    """Claim one job from ``queue``, run ``handler(payload)``, ack only if it succeeded.
+
+    Payloads are the JSON objects the enqueue_* helpers push; "attempts" and "next_attempt_at"
+    are added on retry, so jobs queued before this existed ({"phone","text"}) still work.
+    """
     client = _redis()
+    processing = processing_list(queue)
     try:
-        if timeout <= 0:
-            payload_str = client.rpop(queue)
-        else:
-            raw = client.brpop(queue, timeout=timeout)
-            payload_str = None if raw is None else raw[1]
+        raw = (
+            client.brpoplpush(queue, processing, timeout=timeout)
+            if timeout > 0
+            else client.rpoplpush(queue, processing)
+        )
     except TimeoutError:
         return False
-    if not payload_str:
+    if not raw:
         return False
-    payload = json.loads(payload_str)
-    send_whatsapp_text(str(payload["phone"]), str(payload["text"]))
+    try:
+        payload = json.loads(raw)
+        if not isinstance(payload, dict):
+            raise _InvalidJob("payload is not a JSON object")
+    except ValueError as exc:
+        _outbound_dead_letter(client, queue, raw, raw, attempts=0, error=exc)
+        return False
+    due = payload.get("next_attempt_at")
+    if isinstance(due, (int, float)) and due > time.time():
+        # A retry that isn't due yet: to the back of the queue, untouched.
+        _move(client, processing, raw, queue, raw)
+        return False
+    try:
+        handler(payload)
+    except Exception as exc:
+        _retry_or_dead_letter_outbound(client, queue, raw, payload, exc)
+        return False
+    client.lrem(processing, 1, raw)
     return True
+
+
+def _move(client, source: str, raw: str, destination: str, new_raw: str, *, keep: int | None = None) -> None:
+    """Take ``raw`` off ``source`` and push ``new_raw`` onto ``destination`` in one transaction."""
+    pipe = client.pipeline(transaction=True)
+    pipe.lrem(source, 1, raw)
+    pipe.lpush(destination, new_raw)
+    if keep:
+        pipe.ltrim(destination, 0, keep - 1)
+    pipe.execute()
+
+
+def _retry_or_dead_letter_outbound(client, queue: str, raw: str, payload: dict, error: BaseException) -> None:
+    attempts = int(payload.get("attempts") or 0) + 1
+    payload["attempts"] = attempts
+    status, code = _graph_error(error)
+    if code == "131047" and payload.get("phone"):
+        # Meta says the 24h window is closed: the retry goes as the update template.
+        forget_service_window(str(payload["phone"]))
+    permanent = isinstance(error, _InvalidJob) or code in _PERMANENT_GRAPH_CODES
+    if permanent or attempts >= OUTBOUND_MAX_ATTEMPTS:
+        _outbound_dead_letter(client, queue, raw, payload, attempts=attempts, error=error)
+        return
+    delay = _outbound_backoff_seconds(attempts)
+    payload["next_attempt_at"] = time.time() + delay
+    _move(client, processing_list(queue), raw, queue, json.dumps(payload))
+    # The queue name, booking id and Meta's code only: never the number or the message
+    logger.warning(
+        "joy_outbound_retry queue=%s attempts=%s retry_in_s=%d error_type=%s http_status=%s graph_code=%s booking_id=%s",
+        queue, attempts, int(delay), type(error).__name__, status, code, payload.get("booking_id"),
+    )
+
+
+def _outbound_dead_letter(client, queue: str, raw: str, payload, *, attempts: int, error: BaseException) -> None:
+    status, code = _graph_error(error)
+    if isinstance(payload, dict):
+        payload = dict(payload)
+        payload.pop("next_attempt_at", None)
+        payload["dead_at"] = datetime.now(timezone.utc).isoformat()
+        payload["error"] = ":".join(str(part) for part in (type(error).__name__, status, code) if part)
+        booking_id = payload.get("booking_id")
+        payload = json.dumps(payload)
+    else:
+        booking_id = None
+    _move(client, processing_list(queue), raw, dead_letter_list(queue), payload, keep=_DEAD_LETTER_KEEP)
+    logger.error(
+        "joy_outbound_dead_letter queue=%s attempts=%s error_type=%s http_status=%s graph_code=%s booking_id=%s",
+        queue, attempts, type(error).__name__, status, code, booking_id,
+    )
+
+
+def process_delivery_failures_once(timeout: int = 1) -> bool:
+    """Record one WhatsApp "failed" delivery status (queued by the webhook)."""
+    return _process_reliably(WHATSAPP_DELIVERY_FAILED_QUEUE, _record_delivery_failure, timeout=timeout)
+
+
+def _record_delivery_failure(payload: dict) -> None:
+    wa_message_id = str(payload.get("wa_message_id") or "")
+    if not wa_message_id:
+        raise _InvalidJob("wa_message_id missing")
+    recipient = str(payload.get("recipient") or "")
+    code = payload.get("code")
+    sent_as = outbound_sent_as(wa_message_id) or "unknown"
+    action = delivery_failure_action(sent_as, code)
+    if action == "window_closed" and recipient:
+        forget_service_window(recipient)
+    db = SessionLocal()
+    try:
+        append(
+            db,
+            kind=AuditKind.ADMIN,
+            actor_phone=recipient or "joy-worker",
+            person_id=None,
+            payload={
+                "event": "whatsapp_delivery_failed",
+                "wa_message_id": wa_message_id,
+                "error_code": code,
+                "error_title": payload.get("title"),
+                "sent_as": sent_as,
+                "action": action,
+            },
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+    logger.info(
+        "joy_whatsapp_delivery_failure_recorded wa_message_id=%s code=%s sent_as=%s action=%s",
+        wa_message_id, code, sent_as, action,
+    )
+
+
+def _recover_processing_lists() -> int:
+    """Put jobs a crashed worker had claimed but not finished back on their queues.
+
+    Redis can't know the process that claimed them died. The worker runs as a single replica,
+    so at start-up anything still on a processing list is from before the restart. A job that
+    was sent just before the crash may go out twice; none is lost.
+    """
+    client = _redis()
+    recovered = 0
+    for queue in (*OUTBOUND_TEXT_QUEUES, WHATSAPP_DELIVERY_FAILED_QUEUE, INBOUND_QUEUE):
+        count = 0
+        while client.rpoplpush(processing_list(queue), queue):
+            count += 1
+        if count:
+            logger.warning("joy_recovered_unacknowledged_jobs queue=%s count=%s", queue, count)
+        recovered += count
+    return recovered + recover_booking_email_processing()
 
 
 def _wait_for_redis(*, retry_seconds: int = 5) -> None:
@@ -723,7 +916,7 @@ def run_forever(timeout: int = 5) -> None:
     while True:
         _wait_for_redis()
         try:
-            recover_booking_email_processing()
+            _recover_processing_lists()
             break
         except RedisConnectionError:
             # Redis may disappear between the readiness check and startup
@@ -786,15 +979,20 @@ def run_forever(timeout: int = 5) -> None:
         except Exception:
             logger.exception("takeover job failed")
         try:
+            process_delivery_failures_once(timeout=0)
+        except Exception:
+            logger.exception("delivery failure job failed")
+        try:
             process_queue_once(timeout=timeout)
         except Exception:
             logger.exception("inbound job failed")
 
 
 if __name__ == "__main__":
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s %(message)s",
-    )
+    from app.logging_setup import configure_logging
+
+    # Same format as before; INFO/WARNING to stdout and errors to stderr, so Railway
+    # stops showing every line as an error (app/logging_setup.py).
+    configure_logging(logging.INFO)
     logger.info("Joy inbound worker starting")
     run_forever()

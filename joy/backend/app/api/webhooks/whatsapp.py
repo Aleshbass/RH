@@ -1,11 +1,14 @@
 import hashlib
 import hmac
 import json
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 
 from app.config import Settings, get_settings
-from app.queue.tasks import enqueue_inbound
+from app.queue.tasks import enqueue_delivery_failure, enqueue_inbound
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -47,6 +50,9 @@ async def inbound_webhook(
     for entry in payload.get("entry") or []:
         for change in entry.get("changes") or []:
             value = change.get("value") or {}
+            for status in value.get("statuses") or []:
+                # Delivery receipts for messages Joy sent: only failures are acted on
+                _failed_delivery(status)
             for message in value.get("messages") or []:
                 wa_message_id = str(message.get("id") or "")
                 phone = _e164(str(message.get("from") or ""))
@@ -110,6 +116,34 @@ async def inbound_webhook(
                             location_lng=float(lng),
                         )
     return {"status": "ok"}
+
+
+def _failed_delivery(status) -> None:
+    """A message Meta accepted but could not deliver: logged, and queued for the worker to record.
+
+    Only the message id and Meta's error code and title are logged, never the number or the text.
+    Common codes: 131047 more than 24h since they last wrote, 131049 marketing limit for this
+    person, 131050 they stopped marketing messages, 131026 undeliverable.
+    """
+    if not isinstance(status, dict) or status.get("status") != "failed":
+        return
+    wa_message_id = str(status.get("id") or "")
+    if not wa_message_id:
+        return
+    errors = [error for error in status.get("errors") or [] if isinstance(error, dict)]
+    error = errors[0] if errors else {}
+    try:
+        code = int(error["code"]) if error.get("code") is not None else None
+    except (TypeError, ValueError):
+        code = None
+    title = " ".join(str(error.get("title") or "").split())[:120]
+    logger.warning(
+        "joy_whatsapp_delivery_failed wa_message_id=%s code=%s title=%s", wa_message_id, code, title
+    )
+    recipient = str(status.get("recipient_id") or "")
+    enqueue_delivery_failure(
+        wa_message_id, recipient=_e164(recipient) if recipient else "", code=code, title=title
+    )
 
 
 def _tapped_reply(message: dict) -> str:

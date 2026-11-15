@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
+from app.logging_setup import configure_logging
 from app.safety.protocol_runtime import validate_active_protocol
 from app.api.health import router as health_router
 from app.api.internal.admin_panel import router as admin_panel_router
@@ -14,6 +15,11 @@ from app.api.internal.dev_console import router as dev_console_router
 from app.api.internal.ops import router as ops_router
 from app.api.webhooks.paystack import router as paystack_router
 from app.api.webhooks.whatsapp import router as whatsapp_router
+
+# INFO/WARNING to stdout, errors to stderr (app/logging_setup.py). uvicorn sets up its own
+# logging before it imports this module, so its stderr handler is split here too.
+configure_logging()
+
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
