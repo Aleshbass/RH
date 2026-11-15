@@ -38,7 +38,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { ensureUserRole } from "./auth";
 import { computePhysioSetup, servesRehabifyNetwork } from "./physioSetup";
 import { controlledTags, displayName, kmBetween } from "./joyIntegration";
-import { isJoyProviderEligible, isListedForJoy, joyModes, JoyPricingError, quoteJoyProviderBooking } from "./helpers/joyPricing";
+import { isJoyProviderEligible, isListedForJoy, joyModes, JoyPricingError, loadJoyEligibilitySettings, quoteJoyProviderBooking } from "./helpers/joyPricing";
 import { zoneForArea } from "./helpers/rehabifyPricing";
 
 const HOUR = 60 * 60 * 1000;
@@ -154,6 +154,8 @@ export const matchCandidates = internalQuery({
     // (the index on true alone missed every physio who never touched the switch)
     const profiles = (await ctx.db.query("physiotherapistProfiles").collect())
       .filter(isListedForJoy);
+    // Read once, not once per physio (12 Nov 2026: a search took 10.6 s and timed out)
+    const eligibilitySettings = await loadJoyEligibilitySettings(ctx);
     const candidates = [];
     for (const profile of profiles) {
       if (!profile.availabilitySchedule) continue;
@@ -163,7 +165,7 @@ export const matchCandidates = internalQuery({
       const coversArea = Boolean(zoneId && (profile.coveredZoneIds ?? []).includes(zoneId));
       if (args.serviceMode === "home_visit" && !coversArea) continue;
       if (!speaksLanguage(profile.languagesSpoken, args.language)) continue;
-      if (!(await isJoyProviderEligible(ctx, profile))) continue;
+      if (!(await isJoyProviderEligible(ctx, profile, eligibilitySettings))) continue;
       const user = await ctx.db.get(profile.userId);
       const name = user ? displayName(user) : undefined;
       if (!user || !name) continue;  // never offer "Physiotherapist" with no name
@@ -175,9 +177,11 @@ export const matchCandidates = internalQuery({
           q.eq("physiotherapistId", profile.userId).gte("startTime", now).lt("startTime", now + 7 * DAY))
         .collect();
       const booked7d = upcoming.filter((a) => a.status !== "cancelled_by_patient" && a.status !== "cancelled_by_therapist").length;
+      // The newest bookings are enough for 30- and 90-day figures (bounded as the history grows)
       const bookings = await ctx.db.query("marketplaceBookings")
         .withIndex("by_physiotherapist", (q) => q.eq("physiotherapistId", profile.userId))
-        .collect();
+        .order("desc")
+        .take(300);
       const paid = bookings.filter((b) => b.paymentStatus === "completed" && b.paystackMode !== "test");
       const recentReferrals = paid.filter((b) => (b.paidAt ?? b.createdAt ?? 0) >= now - 30 * DAY).length;
       const answered = paid.filter((b) => (b.paidAt ?? b.createdAt ?? 0) >= now - 90 * DAY && (b.providerResponse === "accepted" || b.providerResponse === "rejected"));
@@ -301,17 +305,20 @@ export async function rankedJoyMatches(
   const now = Date.now();
   const start = Math.max(now + NOTICE_MS, typeof args.notBefore === "number" ? args.notBefore : 0);
   const end = now + Math.min(Math.max(args.withinHours, 3), 8 * 24) * HOUR;
-  const free: Ranked[] = [];
-  for (const candidate of shortlist) {
-    let slots: Array<{ start: number; end: number }> = [];
+  // All the physios' free times at once, not one after another (the search used to time out)
+  const lookups = await Promise.all(shortlist.map(async (candidate) => {
     try {
-      slots = await ctx.runQuery((api as any).calendar.availability.getAvailableSlots, {
+      const slots: Array<{ start: number; end: number }> = await ctx.runQuery((api as any).calendar.availability.getAvailableSlots, {
         physiotherapistId: candidate.physiotherapist_user_id, startDate: start, endDate: end,
         sessionDuration: args.durationMinutes,
       });
+      return { candidate, slots };
     } catch {
-      continue;
+      return { candidate, slots: [] as Array<{ start: number; end: number }> };
     }
+  }));
+  const free: Ranked[] = [];
+  for (const { candidate, slots } of lookups) {
     const open = slots.filter((slot) => slot.start >= start && slot.start < end).sort((a, b) => a.start - b.start);
     if (open.length) free.push({ ...candidate, next_slot_start: open[0].start, next_slot_end: open[0].end, slots: open.slice(0, 12) });
   }

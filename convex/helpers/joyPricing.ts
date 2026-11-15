@@ -109,10 +109,20 @@ export async function isJoyBookable(ctx: QueryCtx, profile: Doc<"physiotherapist
  * under their clinic's terms). Once the admin's network-terms date passes, Joy applies the same
  * full bookability gate as the website.
  */
-export async function isJoyProviderEligible(ctx: QueryCtx, profile: Doc<"physiotherapistProfiles">): Promise<boolean> {
-  if (!servesRehabifyNetwork(profile)) return false;
+export type JoyEligibilitySettings = { networkTermsEnforcedAt?: number; agreementsEnforcedAt?: number };
+
+/** The two admin dates the eligibility rule reads: load once when checking many physios. */
+export async function loadJoyEligibilitySettings(ctx: QueryCtx): Promise<JoyEligibilitySettings> {
   const { networkTermsEnforcedAt } = await loadPricingSettings(ctx);
   const agreementsEnforcedAt = await loadAgreementsEnforcedAt(ctx);
+  return { networkTermsEnforcedAt, agreementsEnforcedAt };
+}
+
+export async function isJoyProviderEligible(
+  ctx: QueryCtx, profile: Doc<"physiotherapistProfiles">, settings?: JoyEligibilitySettings,
+): Promise<boolean> {
+  if (!servesRehabifyNetwork(profile)) return false;
+  const { networkTermsEnforcedAt, agreementsEnforcedAt } = settings ?? await loadJoyEligibilitySettings(ctx);
   const passed = (at: number | undefined) => typeof at === "number" && at <= Date.now();
   if (passed(networkTermsEnforcedAt) || passed(agreementsEnforcedAt)) {
     return isPhysioNetworkEligible(ctx, profile.userId);

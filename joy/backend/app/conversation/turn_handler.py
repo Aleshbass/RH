@@ -765,13 +765,15 @@ def _defer_amber_until_summary_is_complete(
 
 
 def _user_history(state: ConversationState) -> list[dict[str, str]]:
-    """The latest messages from both sides: Joy's own replies too, so it knows what it already
-    asked, answered or promised (it used to see only the patient's side). Older history is in
-    the patient's memory note (app/conversation/memory.py)."""
+    """The patient's own latest messages only. Joy's replies stay out on purpose: its safety
+    wording ("watch for chest pain or saddle numbness") must never be read as something the
+    patient reported, now that the model can raise a red flag. What Joy already asked, said or
+    promised reaches the model through the memory note (app/conversation/memory.py), which keeps
+    who said what."""
     return [
-        {"role": "patient" if message.role == "user" else "joy", "text": message.text}
+        {"role": message.role, "text": message.text}
         for message in state.recent_messages
-        if (message.text or "").strip()
+        if message.role == "user"
     ]
 
 
