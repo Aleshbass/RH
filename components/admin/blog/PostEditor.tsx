@@ -436,13 +436,13 @@ export function PostEditor({ postId }: { postId: PostId }) {
         </div>
 
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
-          {/* Writing area: a white page, like the post on the site */}
-          <div className="min-w-0 rounded-[1.75rem] bg-white px-5 py-8 text-rh-ink shadow-soft sm:px-10 lg:px-16">
+          {/* Writing area: a white page like the post on the site (an ink page in dark mode) */}
+          <div className="min-w-0 rounded-[1.75rem] bg-white px-5 py-8 text-rh-ink shadow-soft sm:px-10 lg:px-16 dark:bg-rh-ink-2 dark:text-white dark:shadow-none dark:ring-1 dark:ring-white/[0.06]">
             <div className="mx-auto max-w-[720px]">
               {form.cover ? (
                 <div className="group relative mb-8">
                   {/* eslint-disable-next-line @next/next/no-img-element -- editor preview of the cover */}
-                  <img src={imagekitTransform(form.cover.url, { w: 1400, q: 75 })} alt={form.cover.alt} className="max-h-[380px] w-full rounded-2xl bg-rh-canvas object-cover" />
+                  <img src={imagekitTransform(form.cover.url, { w: 1400, q: 75 })} alt={form.cover.alt} className="max-h-[380px] w-full rounded-2xl bg-rh-canvas object-cover dark:bg-white/[0.04]" />
                   {canEdit ? (
                     <div className="mt-2 flex items-center gap-2">
                       <input
@@ -451,8 +451,8 @@ export function PostEditor({ postId }: { postId: PostId }) {
                         placeholder="Cover alt text: describe the picture"
                         maxLength={200}
                         className={cn(
-                          'h-9 min-w-0 flex-1 rounded-lg border border-black/10 px-2.5 text-[13px] outline-none focus:border-rh-lime focus:ring-2 focus:ring-rh-lime/30',
-                          form.cover.alt.trim().length < 5 && 'border-amber-400 bg-amber-50'
+                          'h-9 min-w-0 flex-1 rounded-lg border border-black/10 bg-transparent px-2.5 text-[13px] outline-none focus:border-rh-lime focus:ring-2 focus:ring-rh-lime/30 dark:border-white/15',
+                          form.cover.alt.trim().length < 5 && 'border-amber-400 bg-amber-50 dark:border-amber-400/60 dark:bg-amber-400/10'
                         )}
                       />
                       {tools.suggestAlt ? (
@@ -485,7 +485,7 @@ export function PostEditor({ postId }: { postId: PostId }) {
                     pickResolve.current = (imgs) => imgs[0] && update({ cover: imgs[0] })
                     setPicker({ multiple: false, title: 'Cover image' })
                   }}
-                  className="mb-6 inline-flex items-center gap-2 rounded-xl px-3 py-2 text-[13px] font-semibold text-neutral-500 hover:bg-rh-canvas hover:text-rh-ink"
+                  className="mb-6 inline-flex items-center gap-2 rounded-xl px-3 py-2 text-[13px] font-semibold text-neutral-500 hover:bg-rh-canvas hover:text-rh-ink dark:text-neutral-400 dark:hover:bg-white/[0.06] dark:hover:text-white"
                 >
                   <ImagePlus className="h-4 w-4" /> Add a cover image
                 </button>
@@ -498,7 +498,7 @@ export function PostEditor({ postId }: { postId: PostId }) {
                 maxLength={160}
                 readOnly={!canEdit}
                 aria-label="Title"
-                className="text-[34px] font-bold leading-[1.12] tracking-tight placeholder:text-rh-ink/25 sm:text-[42px]"
+                className="text-[34px] font-bold leading-[1.12] tracking-tight placeholder:text-rh-ink/25 sm:text-[42px] dark:placeholder:text-white/25"
               />
               <AutoTextarea
                 value={form.excerpt}
@@ -507,9 +507,9 @@ export function PostEditor({ postId }: { postId: PostId }) {
                 maxLength={400}
                 readOnly={!canEdit}
                 aria-label="Summary"
-                className="mt-4 text-[18px] font-medium leading-relaxed text-rh-ink/70 placeholder:text-rh-ink/30"
+                className="mt-4 text-[18px] font-medium leading-relaxed text-rh-ink/70 placeholder:text-rh-ink/30 dark:text-white/70 dark:placeholder:text-white/30"
               />
-              <div className="my-8 h-px bg-black/[0.06]" />
+              <div className="my-8 h-px bg-black/[0.06] dark:bg-white/[0.08]" />
 
               <BlogEditor
                 initialBody={initialBody}

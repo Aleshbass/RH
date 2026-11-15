@@ -76,7 +76,7 @@ function ToolButton({ active, disabled, label, onClick, children }: { active?: b
       onClick={onClick}
       className={cn(
         'flex h-8 min-w-8 items-center justify-center rounded-lg px-1.5 text-[13px] font-semibold transition-colors disabled:opacity-35',
-        active ? 'bg-rh-ink text-white' : 'text-rh-ink hover:bg-black/[0.06]'
+        active ? 'bg-rh-ink text-white dark:bg-white dark:text-rh-ink' : 'text-rh-ink hover:bg-black/[0.06] dark:text-white dark:hover:bg-white/10'
       )}
     >
       {children}
@@ -84,7 +84,7 @@ function ToolButton({ active, disabled, label, onClick, children }: { active?: b
   )
 }
 
-const Divider = () => <span aria-hidden className="mx-1 h-5 w-px bg-black/10" />
+const Divider = () => <span aria-hidden className="mx-1 h-5 w-px bg-black/10 dark:bg-white/15" />
 
 function LinkEditor({ editor, onDone }: { editor: Editor; onDone: () => void }) {
   const current = String(editor.getAttributes('link').href ?? '')
@@ -112,7 +112,7 @@ function LinkEditor({ editor, onDone }: { editor: Editor; onDone: () => void }) 
           if (e.key === 'Escape') onDone()
         }}
         placeholder="Paste a link, or /pricing for our own pages"
-        className="h-8 w-72 rounded-lg bg-black/[0.04] px-2.5 text-[13px] outline-none focus:ring-2 focus:ring-rh-lime/40"
+        className="h-8 w-72 rounded-lg bg-black/[0.04] px-2.5 text-[13px] outline-none focus:ring-2 focus:ring-rh-lime/40 dark:bg-white/[0.08] dark:text-white"
       />
       <button type="button" onClick={apply} className="h-8 rounded-lg bg-rh-lime px-3 text-[12px] font-semibold text-rh-ink hover:bg-rh-lime-deep">
         Save
@@ -261,7 +261,7 @@ export function BlogEditor({ initialBody, readOnly, onChange, onReady, onFiles, 
   const state = selected ?? IDLE_TOOLBAR
 
   if (!editor) {
-    return <div className="min-h-[360px] animate-pulse rounded-2xl bg-black/[0.03]" />
+    return <div className="min-h-[360px] animate-pulse rounded-2xl bg-black/[0.03] dark:bg-white/[0.04]" />
   }
 
   const chain = () => editor.chain().focus()
@@ -269,7 +269,7 @@ export function BlogEditor({ initialBody, readOnly, onChange, onReady, onFiles, 
   return (
     <div className="relative">
       {!readOnly ? (
-        <div className="sticky top-16 z-20 -mx-2 mb-6 flex flex-wrap items-center gap-0.5 rounded-xl bg-white/90 p-1 shadow-soft ring-1 ring-black/[0.06] backdrop-blur">
+        <div className="sticky top-16 z-20 -mx-2 mb-6 flex flex-wrap items-center gap-0.5 rounded-xl bg-white/90 p-1 shadow-soft ring-1 ring-black/[0.06] backdrop-blur dark:bg-rh-ink-3/90 dark:shadow-none dark:ring-white/10">
           <ToolButton label="Undo" disabled={!state.canUndo} onClick={() => chain().undo().run()}>
             <Undo2 className="h-3.5 w-3.5" />
           </ToolButton>
@@ -318,9 +318,9 @@ export function BlogEditor({ initialBody, readOnly, onChange, onReady, onFiles, 
             type="button"
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => chain().insertContent(editor.state.selection.$from.parent.textContent ? ' /' : '/').run()}
-            className="ml-auto h-8 rounded-lg bg-rh-honeydew px-3 text-[12px] font-semibold text-rh-ink hover:bg-[#e2f7d8]"
+            className="ml-auto h-8 rounded-lg bg-rh-honeydew px-3 text-[12px] font-semibold text-rh-ink hover:bg-[#e2f7d8] dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
           >
-            + Add block <span className="ml-1 rounded bg-white px-1 text-[11px] text-neutral-500">/</span>
+            + Add block <span className="ml-1 rounded bg-white px-1 text-[11px] text-neutral-500 dark:bg-white/10 dark:text-neutral-300">/</span>
           </button>
         </div>
       ) : null}
@@ -337,7 +337,7 @@ export function BlogEditor({ initialBody, readOnly, onChange, onReady, onFiles, 
         <BubbleMenu
           editor={editor}
           shouldShow={({ editor: e, state: s }) => e.isEditable && !s.selection.empty && s.selection instanceof TextSelection}
-          className="flex items-center gap-0.5 rounded-xl bg-white p-1 shadow-xl ring-1 ring-black/10"
+          className="flex items-center gap-0.5 rounded-xl bg-white p-1 shadow-xl ring-1 ring-black/10 dark:bg-rh-ink-3 dark:ring-white/10"
         >
           {linkOpen ? (
             <LinkEditor editor={editor} onDone={() => setLinkOpen(false)} />
@@ -375,7 +375,7 @@ export function BlogEditor({ initialBody, readOnly, onChange, onReady, onFiles, 
                       const { from, to } = editor.state.selection
                       onRewrite(editor.state.doc.textBetween(from, to, '\n\n'))
                     }}
-                    className="flex h-8 items-center gap-1.5 rounded-lg px-2 text-[12px] font-semibold text-rh-ink hover:bg-rh-honeydew"
+                    className="flex h-8 items-center gap-1.5 rounded-lg px-2 text-[12px] font-semibold text-rh-ink hover:bg-rh-honeydew dark:text-white dark:hover:bg-white/10"
                   >
                     <Lightbulb className="h-3.5 w-3.5" /> Rewrite
                   </button>
@@ -387,7 +387,7 @@ export function BlogEditor({ initialBody, readOnly, onChange, onReady, onFiles, 
       ) : null}
 
       {linkOpen && editor.state.selection.empty ? (
-        <div className="fixed inset-x-0 top-24 z-50 mx-auto w-fit rounded-xl bg-white shadow-xl ring-1 ring-black/10">
+        <div className="fixed inset-x-0 top-24 z-50 mx-auto w-fit rounded-xl bg-white shadow-xl ring-1 ring-black/10 dark:bg-rh-ink-3 dark:ring-white/10">
           <LinkEditor editor={editor} onDone={() => setLinkOpen(false)} />
         </div>
       ) : null}

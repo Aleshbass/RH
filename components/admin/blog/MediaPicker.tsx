@@ -107,7 +107,7 @@ export function MediaPicker({
           }}
           className={cn(
             'flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed px-6 py-6 text-center transition-colors',
-            dragging ? 'border-rh-lime bg-rh-honeydew' : 'border-black/10 dark:border-white/15'
+            dragging ? 'border-rh-lime bg-rh-honeydew dark:bg-white/10' : 'border-black/10 dark:border-white/15'
           )}
         >
           {uploading ? (
@@ -163,7 +163,7 @@ export function MediaPicker({
                     onClick={() => toggle(m.url)}
                     className={cn(
                       'group relative aspect-square overflow-hidden rounded-xl bg-rh-canvas ring-2 ring-offset-2 transition dark:bg-white/5 dark:ring-offset-rh-ink-2',
-                      on ? 'ring-rh-lime' : 'ring-transparent hover:ring-black/10'
+                      on ? 'ring-rh-lime' : 'ring-transparent hover:ring-black/10 dark:hover:ring-white/20'
                     )}
                     title={m.alt || 'No alt text yet'}
                   >

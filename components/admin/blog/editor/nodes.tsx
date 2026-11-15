@@ -17,8 +17,16 @@ import { useBlogEditorTools } from './context'
  */
 
 const field =
-  'w-full rounded-lg border border-black/10 bg-white px-2.5 py-1.5 text-[13px] text-rh-ink outline-none placeholder:text-neutral-400 focus:border-rh-lime focus:ring-2 focus:ring-rh-lime/30'
-const iconButton = 'flex h-7 w-7 items-center justify-center rounded-lg text-neutral-500 transition-colors hover:bg-black/5 hover:text-rh-ink'
+  'w-full rounded-lg border border-black/10 bg-white px-2.5 py-1.5 text-[13px] text-rh-ink outline-none placeholder:text-neutral-400 focus:border-rh-lime focus:ring-2 focus:ring-rh-lime/30 dark:border-white/15 dark:bg-white/[0.06] dark:text-white'
+/** Callouts in the admin's dark mode: dark boxes so the (light) text stays readable. */
+const CALLOUT_DARK: Record<CalloutKind, string> = {
+  note: 'dark:bg-white/[0.04] dark:ring-white/10',
+  tip: 'dark:bg-[#14261b]',
+  warning: 'dark:bg-[#33231a]',
+  takeaways: 'dark:ring-1 dark:ring-white/10',
+}
+
+const iconButton = 'flex h-7 w-7 items-center justify-center rounded-lg text-neutral-500 transition-colors hover:bg-black/5 hover:text-rh-ink dark:text-neutral-400 dark:hover:bg-white/10 dark:hover:text-white'
 
 const jsonAttr = (name: string, fallback: unknown) => ({
   default: fallback,
@@ -42,7 +50,7 @@ function BlockFrame({ selected, label, children, onDelete }: { selected: boolean
   const { readOnly } = useBlogEditorTools()
   return (
     <NodeViewWrapper
-      className={cn('blog-block group/block relative my-6 rounded-2xl transition-shadow', selected && 'ring-2 ring-rh-lime ring-offset-4')}
+      className={cn('blog-block group/block relative my-6 rounded-2xl transition-shadow', selected && 'ring-2 ring-rh-lime ring-offset-4 dark:ring-offset-transparent')}
       contentEditable={false}
     >
       {!readOnly ? (
@@ -77,7 +85,7 @@ function AltButton({ url, caption, onAlt }: { url: string; caption?: string; onA
           setBusy(false)
         }
       }}
-      className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-rh-honeydew px-2 py-1.5 text-[12px] font-semibold text-rh-ink hover:bg-[#e2f7d8] disabled:opacity-60"
+      className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-rh-honeydew px-2 py-1.5 text-[12px] font-semibold text-rh-ink hover:bg-[#e2f7d8] disabled:opacity-60 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
       title="Let AI describe the picture"
     >
       {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Lightbulb className="h-3.5 w-3.5" />}
@@ -98,9 +106,9 @@ function ImageView({ node, updateAttributes, deleteNode, selected }: NodeViewPro
       <figure className="m-0">
         {src ? (
           // eslint-disable-next-line @next/next/no-img-element -- editor preview of an ImageKit picture
-          <img src={imagekitTransform(src, { w: 1200, q: 75 })} alt={alt} className="mx-auto block max-h-[520px] w-auto max-w-full rounded-2xl bg-rh-canvas" />
+          <img src={imagekitTransform(src, { w: 1200, q: 75 })} alt={alt} className="mx-auto block max-h-[520px] w-auto max-w-full rounded-2xl bg-rh-canvas dark:bg-white/[0.04]" />
         ) : (
-          <div className="flex h-40 items-center justify-center rounded-2xl bg-rh-canvas text-sm text-neutral-500">Picture missing</div>
+          <div className="flex h-40 items-center justify-center rounded-2xl bg-rh-canvas text-sm text-neutral-500 dark:bg-white/[0.04]">Picture missing</div>
         )}
         {!readOnly ? (
           <div className="mt-2.5 space-y-2">
@@ -174,7 +182,7 @@ function GalleryView({ node, updateAttributes, deleteNode, selected }: NodeViewP
       <div className={cn('grid gap-3', images.length === 2 ? 'grid-cols-2' : 'grid-cols-2 sm:grid-cols-3')}>
         {images.map((img, i) => (
           <div key={`${img.src}-${i}`} className="space-y-1.5">
-            <div className="relative aspect-square overflow-hidden rounded-xl bg-rh-canvas">
+            <div className="relative aspect-square overflow-hidden rounded-xl bg-rh-canvas dark:bg-white/[0.04]">
               {/* eslint-disable-next-line @next/next/no-img-element -- editor preview */}
               <img src={imagekitTransform(img.src, { w: 480, q: 70 })} alt={img.alt} className="h-full w-full object-cover" />
               {!readOnly ? (
@@ -209,7 +217,7 @@ function GalleryView({ node, updateAttributes, deleteNode, selected }: NodeViewP
               const picked = await pickImages({ multiple: true, title: 'Add to the gallery' })
               if (picked.length) set([...images, ...picked.map((p) => ({ src: p.url, alt: p.alt, width: p.width, height: p.height }))].slice(0, 12))
             }}
-            className="flex aspect-square flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-black/10 text-[13px] font-semibold text-neutral-500 hover:border-rh-lime hover:text-rh-ink"
+            className="flex aspect-square flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-black/10 text-[13px] font-semibold text-neutral-500 hover:border-rh-lime hover:text-rh-ink dark:border-white/15 dark:hover:text-white"
           >
             <Plus className="h-5 w-5" />
             Add pictures
@@ -247,19 +255,19 @@ function CalloutView({ node, updateAttributes, selected }: NodeViewProps) {
   const kind = (String(node.attrs.kind) in CALLOUT_KINDS ? String(node.attrs.kind) : 'note') as CalloutKind
   const style = CALLOUT_KINDS[kind]
   return (
-    <NodeViewWrapper className={cn('my-6 rounded-2xl p-5', style.box, selected && 'ring-2 ring-rh-lime ring-offset-4')}>
+    <NodeViewWrapper className={cn('my-6 rounded-2xl p-5', style.box, CALLOUT_DARK[kind], selected && 'ring-2 ring-rh-lime ring-offset-4 dark:ring-offset-transparent')}>
       <div contentEditable={false} className="mb-2 flex items-center gap-2">
         {readOnly ? (
-          <span className={cn('text-[12px] font-bold uppercase tracking-wide', style.title)}>{style.label}</span>
+          <span className={cn('text-[12px] font-bold uppercase tracking-wide', style.title, kind !== 'takeaways' && 'dark:text-white')}>{style.label}</span>
         ) : (
           <select
             value={kind}
             onChange={(e) => updateAttributes({ kind: e.target.value })}
-            className={cn('cursor-pointer rounded-md border-0 bg-transparent py-0 pl-0 pr-6 text-[12px] font-bold uppercase tracking-wide outline-none', style.title)}
+            className={cn('cursor-pointer rounded-md border-0 bg-transparent py-0 pl-0 pr-6 text-[12px] font-bold uppercase tracking-wide outline-none', style.title, kind !== 'takeaways' && 'dark:text-white')}
             aria-label="Callout type"
           >
             {(Object.keys(CALLOUT_KINDS) as CalloutKind[]).map((k) => (
-              <option key={k} value={k} className="text-rh-ink">
+              <option key={k} value={k} className="text-rh-ink dark:bg-rh-ink-3 dark:text-white">
                 {CALLOUT_KINDS[k].label}
               </option>
             ))}
@@ -314,7 +322,7 @@ function FaqView({ node, updateAttributes, deleteNode, selected }: NodeViewProps
   }
   return (
     <BlockFrame selected={selected} label="FAQ" onDelete={readOnly ? undefined : deleteNode}>
-      <div className="rounded-2xl bg-white p-5 ring-1 ring-black/10">
+      <div className="rounded-2xl bg-white p-5 ring-1 ring-black/10 dark:bg-white/[0.04] dark:ring-white/10">
         {readOnly ? (
           <p className="text-xl font-bold">{title || 'Frequently asked questions'}</p>
         ) : (
@@ -322,18 +330,18 @@ function FaqView({ node, updateAttributes, deleteNode, selected }: NodeViewProps
             value={title}
             onChange={(e) => updateAttributes({ title: e.target.value })}
             placeholder="Frequently asked questions"
-            className="w-full border-0 bg-transparent p-0 text-xl font-bold text-rh-ink outline-none placeholder:text-rh-ink/40"
+            className="w-full border-0 bg-transparent p-0 text-xl font-bold text-rh-ink outline-none placeholder:text-rh-ink/40 dark:text-white dark:placeholder:text-white/40"
             maxLength={120}
           />
         )}
         <p className="mt-1 text-[12px] text-neutral-500">Shown as an accordion, and sent to Google as FAQ structured data.</p>
         <div className="mt-4 space-y-3">
           {items.map((item, i) => (
-            <div key={i} className="rounded-xl bg-rh-canvas/70 p-3">
+            <div key={i} className="rounded-xl bg-rh-canvas/70 p-3 dark:bg-white/[0.05]">
               {readOnly ? (
                 <>
                   <p className="font-semibold">{item.question}</p>
-                  <p className="mt-1 whitespace-pre-line text-sm text-neutral-600">{item.answer}</p>
+                  <p className="mt-1 whitespace-pre-line text-sm text-neutral-600 dark:text-neutral-300">{item.answer}</p>
                 </>
               ) : (
                 <>
@@ -378,7 +386,7 @@ function FaqView({ node, updateAttributes, deleteNode, selected }: NodeViewProps
               }
               set([...items, { question: '', answer: '' }])
             }}
-            className="mt-3 inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-[13px] font-semibold text-rh-ink hover:bg-black/5"
+            className="mt-3 inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-[13px] font-semibold text-rh-ink hover:bg-black/5 dark:text-white dark:hover:bg-white/10"
           >
             <Plus className="h-4 w-4" /> Add a question
           </button>
@@ -416,7 +424,7 @@ function CtaView({ node, updateAttributes, deleteNode, selected }: NodeViewProps
   const input = 'w-full border-0 bg-transparent p-0 outline-none placeholder:text-white/40'
   return (
     <BlockFrame selected={selected} label="Button" onDelete={readOnly ? undefined : deleteNode}>
-      <div className="rounded-[1.5rem] bg-rh-ink p-6 text-white">
+      <div className="rounded-[1.5rem] bg-rh-ink p-6 text-white dark:ring-1 dark:ring-white/10">
         {readOnly ? (
           <>
             <p className="text-xl font-bold">{a.title || DEFAULT_CTA.title}</p>

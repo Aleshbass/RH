@@ -226,3 +226,35 @@
 .blog-drag-handle:active {
   cursor: grabbing;
 }
+
+/* Dark mode (the admin's `dark` class on <html>): light text on the ink page */
+.dark .blog-editor {
+  color: #e8ecea;
+}
+.dark .blog-editor hr {
+  border-top-color: rgba(255, 255, 255, 0.14);
+}
+.dark .blog-editor code {
+  background: rgba(255, 255, 255, 0.08);
+}
+.dark .blog-editor pre {
+  background: #070c0b;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+.dark .blog-editor th,
+.dark .blog-editor td {
+  border-color: rgba(255, 255, 255, 0.14);
+}
+.dark .blog-editor th {
+  background: rgba(255, 255, 255, 0.05);
+}
+.dark .blog-editor .is-empty::before {
+  color: rgba(255, 255, 255, 0.32);
+}
+.dark .blog-drag-handle {
+  color: rgba(255, 255, 255, 0.35);
+}
+.dark .blog-drag-handle:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+}

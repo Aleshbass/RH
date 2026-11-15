@@ -111,11 +111,11 @@ const SlashMenu = forwardRef<MenuHandle, MenuProps>(function SlashMenu({ items, 
   }, [index])
 
   if (items.length === 0) {
-    return <div className="w-72 rounded-2xl bg-white p-3 text-sm text-neutral-500 shadow-xl ring-1 ring-black/10">No block matches</div>
+    return <div className="w-72 rounded-2xl bg-white p-3 text-sm text-neutral-500 shadow-xl ring-1 ring-black/10 dark:bg-rh-ink-3 dark:text-neutral-400 dark:ring-white/10">No block matches</div>
   }
   let lastGroup = ''
   return (
-    <div className="max-h-[360px] w-72 overflow-y-auto rounded-2xl bg-white p-1.5 shadow-xl ring-1 ring-black/10" role="listbox" aria-label="Add a block">
+    <div className="max-h-[360px] w-72 overflow-y-auto rounded-2xl bg-white p-1.5 shadow-xl ring-1 ring-black/10 dark:bg-rh-ink-3 dark:ring-white/10" role="listbox" aria-label="Add a block">
       {items.map((item, i) => {
         const header = item.group !== lastGroup ? item.group : null
         lastGroup = item.group
@@ -133,13 +133,13 @@ const SlashMenu = forwardRef<MenuHandle, MenuProps>(function SlashMenu({ items, 
                 e.preventDefault()
                 command(item)
               }}
-              className={cn('flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left', i === index ? 'bg-rh-honeydew' : 'hover:bg-black/[0.03]')}
+              className={cn('flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left', i === index ? 'bg-rh-honeydew dark:bg-white/10' : 'hover:bg-black/[0.03] dark:hover:bg-white/[0.05]')}
             >
-              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white ring-1 ring-black/10">
-                <Icon className="h-4 w-4 text-rh-ink" />
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white ring-1 ring-black/10 dark:bg-white/[0.06] dark:ring-white/10">
+                <Icon className="h-4 w-4 text-rh-ink dark:text-white" />
               </span>
               <span className="min-w-0">
-                <span className="block text-[13px] font-semibold text-rh-ink">{item.title}</span>
+                <span className="block text-[13px] font-semibold text-rh-ink dark:text-white">{item.title}</span>
                 <span className="block truncate text-[12px] text-neutral-500">{item.hint}</span>
               </span>
             </button>
