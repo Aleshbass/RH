@@ -4,6 +4,7 @@
  * brings them up. The audio is a Stream "audio_room" call (learnSpacesNode.ts); who's on stage
  * lives here (learnSpaceSeats), so every listener sees hands and speakers change in real time.
  */
+import { awardLearnPoints } from "./helpers/learnPoints";
 import { ConvexError, v } from "convex/values";
 import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
@@ -385,6 +386,7 @@ export const markLive = internalMutation({
     if (!space || space.status !== "scheduled") return;
     const now = Date.now();
     await ctx.db.patch(space._id, { status: "live", startedAt: now });
+    await awardLearnPoints(ctx, { userId: space.hostId, reason: "space_host", key: `spacehost:${space._id}`, label: `Hosted a Space: ${space.title}` });
     // Everyone who asked to be reminded hears it's live
     const host = await personFor(ctx, space.hostId);
     const reminders = await ctx.db
@@ -453,6 +455,9 @@ export const setSeat = internalMutation({
     const now = Date.now();
     if (seat) await ctx.db.patch(seat._id, { state: "speaker", updatedAt: now });
     else await ctx.db.insert("learnSpaceSeats", { spaceId: space._id, userId: user._id, streamUserId: user.clerkId, state: "speaker", updatedAt: now });
+    if (user._id !== space.hostId) {
+      await awardLearnPoints(ctx, { userId: user._id, reason: "space_speak", key: `spacespeak:${space._id}:${user._id}`, label: `Spoke in a Space: ${space.title}` });
+    }
   },
 });
 

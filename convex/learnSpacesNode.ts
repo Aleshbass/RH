@@ -40,6 +40,7 @@ const accessRef = makeFunctionReference<"query", { spaceId: string; clerkId: str
 const markLiveRef = makeFunctionReference<"mutation", { spaceId: Id<"learnSpaces"> }, null>("learnSpaces:markLive");
 const markEndedRef = makeFunctionReference<"mutation", { spaceId: Id<"learnSpaces">; peakListeners?: number }, null>("learnSpaces:markEnded");
 const recordListenersRef = makeFunctionReference<"mutation", { spaceId: Id<"learnSpaces">; count: number }, null>("learnSpaces:recordListeners");
+const awardListenRef = makeFunctionReference<"mutation", { spaceId: string; clerkId: string }, null>("learnPoints:awardSpaceListen");
 const setSeatRef = makeFunctionReference<"mutation", { spaceId: Id<"learnSpaces">; userId: Id<"users">; speaker: boolean }, null>("learnSpaces:setSeat");
 const streamIdForRef = makeFunctionReference<"query", { userId: Id<"users"> }, string | null>("learnSpaces:streamIdFor");
 const liveSpacesRef = makeFunctionReference<"query", Record<string, never>, { id: Id<"learnSpaces">; callId: string; startedAt: number }[]>(
@@ -73,6 +74,8 @@ export const joinSpace = action({
     if (access.status !== "live" && !access.isHost) throw new ConvexError("This Space hasn't started yet.");
     const { apiKey, client } = stream();
     await client.upsertUsers([{ id: clerkId, name: access.name, image: access.imageUrl ?? undefined, role: "user" }]);
+    // Learn points for joining a live Space (best effort: never blocks the audio)
+    if (access.status === "live" && !access.isHost) await ctx.runMutation(awardListenRef, { spaceId: args.spaceId, clerkId }).catch(() => undefined);
     const token = client.generateCallToken({
       user_id: clerkId,
       call_cids: [`${CALL_TYPE}:${access.callId}`],

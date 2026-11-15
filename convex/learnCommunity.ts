@@ -7,6 +7,7 @@
  * Posts are questions or discussions with replies, "helpful" marks and reports (3 reports hide).
  * The patient-privacy check from lib/community/privacy.ts runs on every post and reply.
  */
+import { awardLearnPoints, revokeLearnPoints } from "./helpers/learnPoints";
 import { ConvexError, v } from "convex/values";
 import { internalMutation, mutation, query } from "./_generated/server";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
@@ -444,6 +445,7 @@ export const createPost = mutation({
       lastActivityAt: now,
       createdAt: now,
     });
+    await awardLearnPoints(ctx, { userId: member.user._id, reason: "post", key: `post:${postId}` });
     await ctx.db.patch(doc._id, { postCount: doc.postCount + 1, lastActivityAt: now });
     if (room.kind === "group" && room.groupId) {
       const group = await ctx.db.get(room.groupId);
@@ -494,6 +496,7 @@ export const reply = mutation({
       reportCount: 0,
       createdAt: now,
     });
+    await awardLearnPoints(ctx, { userId: member.user._id, reason: "reply", key: `reply:${replyId}` });
     await ctx.db.patch(post._id, { replyCount: post.replyCount + 1, lastActivityAt: now });
     await ctx.db.patch(roomDoc._id, { lastActivityAt: now });
     if (post.authorId !== member.user._id) {
@@ -545,6 +548,10 @@ export const toggleHelpful = mutation({
     if (existing) await ctx.db.delete(existing._id);
     else await ctx.db.insert("learnHelpful", { userId: member.user._id, targetType: args.targetType, targetId: args.targetId, createdAt: Date.now() });
     await ctx.db.patch(t.doc._id, { helpfulCount: Math.max(0, t.doc.helpfulCount + delta) });
+    // Points for the author: one award per person who marks it, taken back if they unmark it
+    const helpKey = `helpful:${args.targetType}:${args.targetId}:${member.user._id}`;
+    if (existing) await revokeLearnPoints(ctx, helpKey);
+    else await awardLearnPoints(ctx, { userId: t.doc.authorId, reason: "helpful", key: helpKey });
     return { marked: !existing };
   },
 });

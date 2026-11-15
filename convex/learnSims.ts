@@ -7,6 +7,7 @@
  * Cases come from git (content/sim-cases) as drafts. A physio signs off a version (admin or
  * learn_instructor), an admin publishes it, and learners play that immutable snapshot.
  */
+import { awardLearnPoints } from "./helpers/learnPoints";
 import { ConvexError, v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
@@ -193,6 +194,11 @@ async function saveState(ctx: MutationCtx, attempt: Doc<"learnSimAttempts">, def
     finishedAt: now,
   });
   if (attempt.preview) return;
+  // Learn points: once per case for finishing, once per case for passing
+  await awardLearnPoints(ctx, { userId: attempt.userId, reason: "sim_finish", key: `simfinish:${attempt.userId}:${attempt.caseSlug}`, label: `Finished: ${def.title}` });
+  if (score.passed) {
+    await awardLearnPoints(ctx, { userId: attempt.userId, reason: "sim_pass", key: `simpass:${attempt.userId}:${attempt.caseSlug}`, label: `Passed: ${def.title}` });
+  }
   const doc = await caseBySlug(ctx, attempt.caseSlug);
   if (doc) {
     await ctx.db.patch(doc._id, {

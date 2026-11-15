@@ -44,8 +44,7 @@ import {
   UserX,
   Users,
   WalletCards,
-  type IconComponent,
-} from '@/components/icons'
+  type IconComponent, Crown } from '@/components/icons'
 
 export const ADMIN_HOME = '/dashboard/admin'
 
@@ -229,6 +228,7 @@ export const ADMIN_NAV: AdminNavSection[] = [
       { title: 'Video courses', href: a('/learn/courses'), icon: PlayCircle, keywords: ['upload', 'lessons', 'videos', 'imagekit', 'on demand'] },
       { title: 'Simulations', href: a('/learn/simulations'), icon: HeartPulse, keywords: ['cases', 'clinical', 'triage', 'sign-off', 'review', 'game'] },
       { title: 'Groups', href: a('/learn/groups'), icon: Users, adminOnly: true, keywords: ['small groups', 'cohort', 'class', 'members', 'leads', 'activities', 'team'] },
+      { title: 'Leaderboard', href: a('/learn/leaderboard'), icon: Crown, adminOnly: true, keywords: ['points', 'badges', 'top learners', 'monthly', 'prize', 'ranking'] },
     ],
   },
   {

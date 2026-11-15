@@ -18,6 +18,7 @@ import {
   ArrowUpRight,
   BookOpen,
   ChevronDown,
+  Crown,
   GraduationCap,
   HeartPulse,
   LayoutDashboard,
@@ -27,6 +28,7 @@ import {
   Radio,
   Search,
   Stethoscope,
+  TrendingUp,
   UserCog,
   X,
 } from '@/components/icons'
@@ -47,6 +49,8 @@ import {
 } from './learnApi'
 import { COMMUNITY_PATH, SPACES_PATH, spacesApi } from '../social/socialApi'
 import { simApi, SIMULATIONS_PATH } from '../sims/simApi'
+import { LEADERBOARD_PATH, PROGRESS_PATH } from '../points/pointsApi'
+import { PointsPill } from '../points/PointsPill'
 
 const SUPPORT_EMAIL = 'support@physioaroundme.com'
 
@@ -368,6 +372,8 @@ function Avatar({ size = 36 }: { size?: number }) {
 function accountLinks(identity: SignedInLearner) {
   const links: { href: string; label: string; icon: typeof BookOpen; external?: boolean }[] = [
     { href: MY_LEARNING_PATH, label: 'My learning', icon: BookOpen },
+    { href: PROGRESS_PATH, label: 'My progress', icon: TrendingUp },
+    { href: LEADERBOARD_PATH, label: 'Leaderboard', icon: Crown },
   ]
   if (identity.hasDashboard) links.push({ href: mainSiteUrl('/dashboard'), label: 'My Rehabify dashboard', icon: LayoutDashboard, external: true })
   if (identity.needsWelcome || identity.profile) {
@@ -457,6 +463,7 @@ function AuthArea() {
   }
   return (
     <div className="flex items-center gap-1 sm:gap-2">
+      <PointsPill />
       <Link href={MY_LEARNING_PATH} className="hidden h-10 items-center rounded-full px-4 text-sm font-semibold text-rh-ink hover:bg-rh-ink/[0.05] md:inline-flex">
         My learning
       </Link>
@@ -545,8 +552,12 @@ function MobileMenu({ open, onClose }: { open: boolean; onClose: () => void }) {
     identity?.signedIn
       ? { href: MY_LEARNING_PATH, label: 'My learning', sub: 'Pick up where you left off', icon: BookOpen }
       : { href: `${learnPath('/courses')}?type=live`, label: 'Live programs', sub: 'Learn with a cohort', icon: BookOpen },
+    { href: LEADERBOARD_PATH, label: 'Leaderboard', sub: 'This month’s top learners', icon: Crown },
+    ...(identity?.signedIn ? [{ href: PROGRESS_PATH, label: 'My progress', sub: 'Points, badges, streak', icon: TrendingUp }] : []),
   ]
-  const account = identity?.signedIn ? accountLinks(identity).filter((link) => link.href !== MY_LEARNING_PATH) : []
+  const account = identity?.signedIn
+    ? accountLinks(identity).filter((link) => link.href !== MY_LEARNING_PATH && link.href !== PROGRESS_PATH && link.href !== LEADERBOARD_PATH)
+    : []
 
   return (
     <AnimatePresence>
@@ -781,6 +792,7 @@ export function LearnHeader() {
             Spaces {spaceLive && <LiveDot />}
           </NavLink>
           {simsAvailable && <NavLink href={SIMULATIONS_PATH}>Simulations</NavLink>}
+          <NavLink href={LEADERBOARD_PATH}>Leaderboard</NavLink>
         </nav>
         <SearchBox className="mx-auto hidden w-full max-w-md md:block" />
         <div className="ml-auto flex items-center gap-1 md:ml-0">

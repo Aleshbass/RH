@@ -38,6 +38,7 @@ import { verifyPaystackSignature } from "./helpers/paystackSignature";
 import { isJoyLoginEmail } from "../lib/auth/joyLoginEmail";
 import type { HlsPlayback } from "./learnVideo";
 import { isCourseCategory, isCourseLevel, STUDENT_LEVELS, type LearnerTagKind } from "../lib/learn/catalog";
+import { awardLearnPoints } from "./helpers/learnPoints";
 import {
   defaultCohortLabel,
   endOfLagosDay,
@@ -1929,6 +1930,9 @@ export const submitAssessment = mutation({
       passed,
       submittedAt: Date.now(),
     });
+    if (passed && registration.userId) {
+      await awardLearnPoints(ctx, { userId: registration.userId, reason: "assessment", key: `assessment:${registration._id}` });
+    }
     const attemptsLeft = passed ? 0 : assessment.maxAttempts - attempts.length - 1;
     return {
       correct,
@@ -1992,6 +1996,7 @@ export const claimCertificate = mutation({
       certificateRevokedAt: undefined,
       updatedAt: now,
     });
+    if (registration.userId) await awardLearnPoints(ctx, { userId: registration.userId, reason: "certificate", key: `certificate:${registration._id}` });
     return code;
   },
 });
@@ -2267,6 +2272,7 @@ export const adminIssueCertificate = mutation({
       certificateRevokedAt: undefined,
       updatedAt: now,
     });
+    if (registration.userId) await awardLearnPoints(ctx, { userId: registration.userId, reason: "certificate", key: `certificate:${registration._id}` });
   },
 });
 
@@ -2695,6 +2701,16 @@ export const saveLessonProgress = mutation({
       userId: row.userId ?? learner.userId,
       updatedAt: now,
     });
+    // Learn points (the team previewing a course doesn't earn)
+    const pointsUser = row.userId ?? learner.userId;
+    if (pointsUser && !learner.isAdmin) {
+      if (args.completed && !row.completedLessonIds.includes(lesson._id)) {
+        await awardLearnPoints(ctx, { userId: pointsUser, reason: "lesson", key: `lesson:${pointsUser}:${lesson._id}`, label: `Finished: ${lesson.title}` });
+      }
+      if (allDone && !row.completedAt) {
+        await awardLearnPoints(ctx, { userId: pointsUser, reason: "course", key: `course:${pointsUser}:${course._id}`, label: `Finished the course: ${course.title}` });
+      }
+    }
     return { completedCourse: allDone && !row.completedAt };
   },
 });
