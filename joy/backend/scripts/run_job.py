@@ -14,7 +14,7 @@ import sys
 
 import httpx
 
-JOBS = {"rh_booking_reconciliation", "stats_digest"}
+JOBS = {"rh_booking_reconciliation", "stats_digest", "patient_memory"}
 
 
 def main(argv: list[str]) -> int:

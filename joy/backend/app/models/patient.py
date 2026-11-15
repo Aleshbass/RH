@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, String, func, text
+from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text, func, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -33,6 +33,9 @@ class Patient(Base):
     # "yo", "ig", "ha") and when they agreed to the Privacy Policy, Terms and storing their details
     preferred_language: Mapped[str | None] = mapped_column(String(8), nullable=True)
     care_consent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Joy's long-term note about them (app/conversation/memory.py), refreshed when a chat goes quiet
+    memory_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    memory_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # Booking location is deliberately structured.  The legacy display string
     # remains for compatibility with existing records and appointment notes.
     city: Mapped[str | None] = mapped_column(String, nullable=True)

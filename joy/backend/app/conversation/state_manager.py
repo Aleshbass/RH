@@ -11,7 +11,8 @@ from app.models.patient import Patient
 from app.models.triage_session import TriageSession
 from app.models.types import ConversationStage, ExtractedTriage, Identity, PatientPhase, Persona
 
-RECENT_MESSAGE_LIMIT = 12
+# Both sides of the chat (Joy's own replies too); older history lives in the memory note
+RECENT_MESSAGE_LIMIT = 30
 
 _last_stamp: datetime | None = None
 
@@ -63,6 +64,12 @@ def _known_facts(session: Session, patient_id: UUID | None) -> dict:
         facts["area"] = patient.area
     if patient.location is not None:
         facts["location"] = patient.location
+    from app.conversation.memory import memory_fact
+
+    remembered = memory_fact(patient)
+    if remembered:
+        # Everything from earlier chats (app/conversation/memory.py); their newest message wins
+        facts["memory_from_earlier_chats"] = remembered
     return facts
 
 

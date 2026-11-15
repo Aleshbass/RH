@@ -70,4 +70,25 @@ def rh_booking_reconciliation_job(
             if patient:
                 enqueue_booking_confirmed(patient.phone_e164, booking_id, "Your appointment is confirmed. I’ll send the details here.")
                 notified += 1
-    return {"checked": checked, "notified": notified, "unavailable": unavailable, "disabled": 0}
+    # Joy's long-term memory: fold quiet chats into each patient's note (the joy-reconcile cron
+    # runs this job every 10 minutes, so no new Railway service is needed)
+    remembered = _refresh_memories(session)
+    return {"checked": checked, "notified": notified, "unavailable": unavailable, "disabled": 0, "remembered": remembered}
+
+
+def _refresh_memories(session: Session) -> int:
+    try:
+        from app.conversation.memory import refresh_due_memories
+        from app.llm.gemini_client import get_llm_client
+
+        return refresh_due_memories(session, get_llm_client())
+    except Exception:
+        import logging
+
+        logging.getLogger(__name__).warning("joy_memory_job_failed", exc_info=True)
+        return 0
+
+
+@router.post("/api/internal/jobs/patient_memory", dependencies=[Depends(require_job_token)])
+def patient_memory_job(session: Session = Depends(get_session)) -> dict[str, int]:
+    return {"remembered": _refresh_memories(session)}
