@@ -598,6 +598,9 @@ export default function AdminUserDetailPage() {
                       <Field icon={BookOpen} label="Certification board">
                         {physioProfile?.certificationBoard || 'Medical Rehabilitation Therapists Board (MRTB)'}
                       </Field>
+                      <Field icon={Globe} label="Country of practice">
+                        {(physioProfile as { country?: string } | undefined)?.country || 'Nigeria'}
+                      </Field>
                       <Field icon={Calendar} label="Certification year">
                         {physioProfile?.certificationYear || '—'}
                       </Field>

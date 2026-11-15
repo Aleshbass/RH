@@ -21,6 +21,7 @@ import { assertSelfRoleChangeAllowed } from "./helpers/roleLock";
 import { claimJoyRecordWithLink } from "./joyAccounts";
 import { isJoyLoginEmail } from "../lib/auth/joyLoginEmail";
 import { handOverManagedProfile } from "./helpers/careCircleAccess";
+import { isOutsideRehabifyCare } from "../lib/practiceCountries";
 import { missingPolicies, recordMissingPolicyAcceptances } from "./helpers/policyAcceptance";
 import { PATIENT_CONSENT_POLICIES, POLICIES, PROFESSIONAL_SIGNUP_POLICIES } from "../lib/policies";
 
@@ -536,6 +537,7 @@ export const removeProfileImage = mutation({
 const physiotherapistProfileDataValidator = v.object({
   clinicId: v.optional(v.id("clinics")),
   practiceMode: v.optional(v.union(v.literal("network"), v.literal("independent"), v.literal("both"))),
+  country: v.optional(v.string()),
   specializations: v.optional(v.array(v.string())),
   licenseNumber: v.optional(v.string()),
   certificationBoard: v.optional(v.string()),
@@ -654,6 +656,11 @@ export const completeUserProfile = mutation({
         // (alone or with their own) lists them again, e.g. after changing their mind mid-application
         // It's one or the other now: "both" (from a page opened before that) is saved as a Rehabify physio
         if (physioData.practiceMode === "both") physioData.practiceMode = "network";
+        // Rehabify Care patients are only in Nigeria for now: physios elsewhere join as independent physios
+        if (physioData.country !== undefined) {
+          physioData.country = physioData.country.trim().slice(0, 60) || undefined;
+          if (isOutsideRehabifyCare(physioData.country)) physioData.practiceMode = "independent";
+        }
         if (physioData.practiceMode) physioData.isAvailableOnMarketplace = physioData.practiceMode !== "independent";
         let physioProfileId: Id<"physiotherapistProfiles">;
         try {

@@ -114,6 +114,8 @@ export function DocumentRow({
   onRemove,
   required,
   disabled,
+  title,
+  hint,
 }: {
   type: PhysioDocumentType
   documents: PhysioDocument[]
@@ -121,10 +123,13 @@ export function DocumentRow({
   onRemove?: (doc: PhysioDocument) => Promise<unknown>
   required?: boolean
   disabled?: boolean
+  /** Overrides the standard label, e.g. a licence named for the physio's country */
+  title?: string
+  hint?: string
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [busy, setBusy] = useState(false)
-  const label = DOCUMENT_LABELS[type]
+  const label = { title: title ?? DOCUMENT_LABELS[type].title, hint: hint ?? DOCUMENT_LABELS[type].hint }
   const current = documents
     .filter((doc) => doc.documentType === type)
     .sort((a, b) => b.uploadedAt - a.uploadedAt)[0]

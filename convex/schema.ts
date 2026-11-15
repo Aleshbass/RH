@@ -654,6 +654,9 @@ export default defineSchema({
     // Rehabify prices, fixed payouts); "independent" = only their own private patients; "both".
     // Unset = network. The rules follow the patient and the service, not the physio.
     practiceMode: v.optional(v.union(v.literal("network"), v.literal("independent"), v.literal("both"))),
+    // Where they practise, e.g. "Ghana" (lib/practiceCountries.ts). Unset = Nigeria. Outside Nigeria
+    // they're independent only: Rehabify Care patients, prices and payouts are Nigerian today.
+    country: v.optional(v.string()),
     specializations: v.optional(v.array(v.string())),
     bio: v.optional(v.string()),
     licenseNumber: v.optional(v.string()),

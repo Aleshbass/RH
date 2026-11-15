@@ -27,6 +27,10 @@ interface MapboxLocationPickerProps {
     };
     onChange: (data: LocationData) => void;
     className?: string;
+    /** ISO country code to search within (default Nigeria); OTHER searches everywhere */
+    countryCode?: string;
+    /** Where the map opens before a pin is dropped (default: the middle of Nigeria) */
+    center?: { lat: number; lng: number; zoom: number };
 }
 
 interface GeocoderResult {
@@ -36,22 +40,23 @@ interface GeocoderResult {
     text: string;
 }
 
-export default function MapboxLocationPicker({ value, onChange, className }: MapboxLocationPickerProps) {
+export default function MapboxLocationPicker({ value, onChange, className, countryCode = 'NG', center }: MapboxLocationPickerProps) {
     const [query, setQuery] = useState(value?.location || '');
     const [results, setResults] = useState<GeocoderResult[]>([]);
     const [isSearching, setIsSearching] = useState(false);
     const [showResults, setShowResults] = useState(false);
     const [markerPosition, setMarkerPosition] = useState<{ lat: number; lng: number }>({
-        lat: value?.latitude || NIGERIA_CENTER.lat,
-        lng: value?.longitude || NIGERIA_CENTER.lng,
+        lat: value?.latitude || center?.lat || NIGERIA_CENTER.lat,
+        lng: value?.longitude || center?.lng || NIGERIA_CENTER.lng,
     });
     const [hasPlacedPin, setHasPlacedPin] = useState(!!(value?.latitude && value?.longitude));
     const [viewState, setViewState] = useState({
-        longitude: value?.longitude || NIGERIA_CENTER.lng,
-        latitude: value?.latitude || NIGERIA_CENTER.lat,
-        zoom: value?.latitude ? 14 : 6,
+        longitude: value?.longitude || center?.lng || NIGERIA_CENTER.lng,
+        latitude: value?.latitude || center?.lat || NIGERIA_CENTER.lat,
+        zoom: value?.latitude ? 14 : center?.zoom ?? 6,
     });
     const [isDragging, setIsDragging] = useState(false);
+    const countryFilter = /^[A-Z]{2}$/.test(countryCode) ? `&country=${countryCode.toLowerCase()}` : '';
     const searchRef = useRef<HTMLDivElement>(null);
     const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -66,6 +71,15 @@ export default function MapboxLocationPicker({ value, onChange, className }: Map
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
+    // Changing country before dropping a pin moves the map there
+    const centerKey = center ? `${center.lat},${center.lng},${center.zoom}` : '';
+    useEffect(() => {
+        if (!center || hasPlacedPin) return;
+        setMarkerPosition({ lat: center.lat, lng: center.lng });
+        setViewState({ longitude: center.lng, latitude: center.lat, zoom: center.zoom });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [centerKey]);
+
     // Debounced Mapbox geocoder search
     const searchLocations = useCallback(async (searchQuery: string) => {
         if (searchQuery.length < 3 || !MAPBOX_TOKEN) return;
@@ -75,7 +89,7 @@ export default function MapboxLocationPicker({ value, onChange, className }: Map
             const res = await fetch(
                 `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(
                     searchQuery
-                )}.json?access_token=${MAPBOX_TOKEN}&country=NG&limit=5&types=place,locality,neighborhood,address`
+                )}.json?access_token=${MAPBOX_TOKEN}${countryFilter}&limit=5&types=place,locality,neighborhood,address`
             );
             const data = await res.json();
             if (data.features) {
@@ -87,7 +101,7 @@ export default function MapboxLocationPicker({ value, onChange, className }: Map
         } finally {
             setIsSearching(false);
         }
-    }, []);
+    }, [countryFilter]);
 
     // Handle search input
     const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {

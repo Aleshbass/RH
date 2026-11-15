@@ -3,9 +3,10 @@
 /**
  * Physiotherapist application: four short steps, only what Rehabify needs to verify someone.
  *
- *   1. How you'll work  Rehabify physio or independent physio, one or the other (lib/practiceModes.ts)
+ *   1. How you'll work  country (Nigeria by default), then Rehabify physio or independent physio
+ *                       (lib/practiceModes.ts); outside Nigeria it's independent only (lib/practiceCountries.ts)
  *   2. About you        name and phone
- *   3. Your licence     board, licence number and expiry, experience, ID and a licence document
+ *   3. Your licence     board (the country's own), licence number and expiry, experience, ID and a licence document
  *   4. Your practice    where you work, what you treat, terms; then submit for review
  *
  * Both kinds of physio go through the same licence check and approval.
@@ -41,6 +42,17 @@ import {
 import { useOnboardingStore } from '@/stores/onboardingStore';
 import { choiceOf, PRACTICE_CHOICES, type PracticeChoice, type PracticeMode } from '@/lib/practiceModes';
 import { PROFESSIONAL_SIGNUP_POLICIES, policyVersions } from '@/lib/policies';
+import {
+    countryCodeFromName,
+    DEFAULT_COUNTRY_CODE,
+    hasRehabifyCare,
+    internationalPhone,
+    localPhone,
+    OTHER_COUNTRY,
+    practiceCountry,
+    type PracticeCountry,
+} from '@/lib/practiceCountries';
+import { CountryFlag, CountryPicker } from '@/components/onboarding/common/CountryPicker';
 import { cn } from '@/lib/utils';
 
 const MapboxLocationPicker = dynamic(() => import('@/components/onboarding/physiotherapist/MapboxLocationPicker'), {
@@ -49,16 +61,16 @@ const MapboxLocationPicker = dynamic(() => import('@/components/onboarding/physi
 });
 
 const STEPS = [
-    { id: 'path', title: 'How you’ll work', subtitle: 'Are you joining as a Rehabify physio or an independent physio?' },
+    { id: 'path', title: 'How you’ll work', subtitle: 'Where you practise, and whether you’re joining as a Rehabify physio or an independent physio.' },
     { id: 'about', title: 'About you', subtitle: 'So patients and our team know who you are.' },
     { id: 'licence', title: 'Your licence', subtitle: 'We verify every physiotherapist before they can see patients.' },
     { id: 'practice', title: 'Your practice', subtitle: 'Where you work and what you treat.' },
 ] as const;
 
-const MRTB = 'Medical Rehabilitation Therapists Board (MRTB)';
 const REFERRAL_OPTIONS = ['A colleague', 'Instagram', 'LinkedIn', 'X (Twitter)', 'Google search', 'An event or conference', 'Other'];
-const LICENCE_PROOFS: { type: PhysioDocumentType; label: string }[] = [
-    { type: 'mrtbLicense', label: 'MRTB licence' },
+// The licence is stored as "mrtbLicense" whatever the country; only its label changes
+const licenceProofs = (country: PracticeCountry): { type: PhysioDocumentType; label: string }[] => [
+    { type: 'mrtbLicense', label: country.licenceLabel },
     { type: 'degreeCertificate', label: 'Degree certificate' },
 ];
 // Licence uploads from the older application form still count as proof
@@ -79,6 +91,7 @@ type Draft = {
     phoneNumber: string;
     profileId: string | null;
     practiceMode: PracticeMode | null;
+    country: string;
     gender: string | null;
     licenseNumber: string;
     certificationBoard: string;
@@ -158,27 +171,40 @@ function PracticeModeChoice({
     value,
     onChange,
     error,
+    rehabifyAvailable,
+    countryName,
 }: {
     value: PracticeChoice | null;
     onChange: (mode: PracticeChoice) => void;
     error?: string;
+    /** Rehabify Care patients are only in Nigeria for now */
+    rehabifyAvailable: boolean;
+    countryName: string;
 }) {
     return (
         <div>
-            <p className="mb-3 text-sm text-neutral-600">Choose how you’ll work. You can change it later.</p>
+            <p className="mb-3 text-sm text-neutral-600">
+                {rehabifyAvailable
+                    ? 'Choose how you’ll work. You can change it later.'
+                    : `Rehabify Care patients are only in Nigeria for now, so physios in ${countryName || 'your country'} join as independent physios.`}
+            </p>
             <div role="radiogroup" aria-label="How you’ll work with Rehabify" className="grid gap-3">
                 {PRACTICE_CHOICES.map((mode) => {
                     const selected = value === mode.id;
+                    // Rehabify physio (alone or with own patients) needs Rehabify Care, which is Nigeria only
+                    const unavailable = mode.id !== 'independent' && !rehabifyAvailable;
                     return (
                         <button
                             key={mode.id}
                             type="button"
                             role="radio"
                             aria-checked={selected}
+                            disabled={unavailable}
                             onClick={() => onChange(mode.id)}
                             className={cn(
                                 'flex w-full items-start gap-4 rounded-2xl border-2 bg-white p-5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-ink focus-visible:ring-offset-2',
-                                selected ? 'border-rh-ink' : 'border-neutral-200 hover:border-neutral-400'
+                                selected ? 'border-rh-ink' : 'border-neutral-200 hover:border-neutral-400',
+                                unavailable && 'cursor-not-allowed opacity-50 hover:border-neutral-200'
                             )}
                         >
                             <span
@@ -283,11 +309,14 @@ export default function PhysiotherapistOnboardingWizard() {
 
     // Answers
     const [practiceMode, setPracticeMode] = useState<PracticeChoice | null>(null);
+    const [countryCode, setCountryCode] = useState(DEFAULT_COUNTRY_CODE);
+    const [otherCountry, setOtherCountry] = useState(''); // typed when the country isn't listed
     const [firstName, setFirstName] = useState('');
     const [lastName, setLastName] = useState('');
     const [phone, setPhone] = useState('');
     const [gender, setGender] = useState('');
-    const [board, setBoard] = useState(MRTB);
+    // Licensed by a board other than their country's own (or the country has no single board)
+    const [useOtherBoard, setUseOtherBoard] = useState(false);
     const [otherBoard, setOtherBoard] = useState('');
     const [licenseNumber, setLicenseNumber] = useState('');
     const [expiry, setExpiry] = useState('');
@@ -348,13 +377,21 @@ export default function PhysiotherapistOnboardingWizard() {
         const savedExpiry = draft.licenseExpiryDate || r?.licenseExpiryDate || '';
         const expiryValue = savedExpiry >= todayIso() ? savedExpiry : '';
 
-        setPracticeMode(choiceOf(draft.practiceMode));
+        // Applications from before countries were asked are Nigerian
+        const code = countryCodeFromName(draft.country);
+        const savedCountry = practiceCountry(code);
+        setCountryCode(code);
+        if (code === OTHER_COUNTRY) setOtherCountry(draft.country);
+        setPracticeMode(hasRehabifyCare(code) ? choiceOf(draft.practiceMode) : 'independent');
         setFirstName(first);
         setLastName(last);
-        setPhone(phoneValue);
+        setPhone(localPhone(code, phoneValue));
         setGender(draft.gender ?? '');
-        if (boardValue && boardValue !== MRTB && !/mrtb|medical rehabilitation/i.test(boardValue)) {
-            setBoard('other');
+        const isCountryBoard =
+            savedCountry.board &&
+            (boardValue === savedCountry.board || Boolean(savedCountry.boardMatch?.test(boardValue)));
+        if (boardValue && !isCountryBoard) {
+            setUseOtherBoard(true);
             setOtherBoard(boardValue);
         }
         setLicenseNumber(licence);
@@ -387,6 +424,11 @@ export default function PhysiotherapistOnboardingWizard() {
     const uploaded = useMemo(() => new Set((documents ?? []).map((doc) => doc.documentType)), [documents]);
     const legacyProofOnFile =
         !uploaded.has('mrtbLicense') && !uploaded.has('degreeCertificate') && LEGACY_LICENCE_PROOFS.some((t) => uploaded.has(t));
+    const country = practiceCountry(countryCode);
+    const countryName = countryCode === OTHER_COUNTRY ? otherCountry.trim() : country.name;
+    const rehabifyAvailable = hasRehabifyCare(countryCode);
+    const boardIsTyped = useOtherBoard || !country.board;
+    const boardName = boardIsTyped ? otherBoard.trim() : (country.board ?? '');
 
     if (!authLoaded) return <WizardSkeleton />;
     if (!isSignedIn) return <SignInFirst />;
@@ -402,16 +444,34 @@ export default function PhysiotherapistOnboardingWizard() {
         window.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
+    const changeCountry = (code: string) => {
+        setCountryCode(code);
+        // The new country's own board is picked again (anything typed is kept for "Another board")
+        setUseOtherBoard(false);
+        if (!hasRehabifyCare(code)) setPracticeMode('independent');
+        setErrors((prev) => {
+            const nextErrors = { ...prev };
+            delete nextErrors.country;
+            delete nextErrors.practiceMode;
+            return nextErrors;
+        });
+    };
+
     const validate = (): Record<string, string> => {
         const e: Record<string, string> = {};
-        if (step === 0 && !practiceMode) e.practiceMode = 'Choose Rehabify physio or independent physio';
+        if (step === 0) {
+            if (countryCode === OTHER_COUNTRY && otherCountry.trim().length < 2) e.country = 'Enter the country you practise in';
+            if (!practiceMode) e.practiceMode = 'Choose Rehabify physio or independent physio';
+        }
         if (step === 1) {
             if (!firstName.trim()) e.firstName = 'Enter your first name';
             if (!lastName.trim()) e.lastName = 'Enter your last name';
-            if (phone.replace(/\D/g, '').length < 10) e.phone = 'Enter a phone number we can reach you on';
+            // Nigerian numbers are typed with the leading 0; elsewhere after the dialling code
+            const minDigits = countryCode === DEFAULT_COUNTRY_CODE ? 10 : 7;
+            if (phone.replace(/\D/g, '').length < minDigits) e.phone = 'Enter a phone number we can reach you on';
         }
         if (step === 2) {
-            if (board === 'other' && otherBoard.trim().length < 2) e.board = 'Enter the board that issued your licence';
+            if (boardIsTyped && otherBoard.trim().length < 2) e.board = 'Enter the board that issued your licence';
             if (!licenseNumber.trim()) e.licenseNumber = 'Enter your licence number';
             if (!expiry) e.expiry = 'Enter the date your licence expires';
             else if (expiry < todayIso()) e.expiry = 'This licence has expired. Renew it, then apply with the new one.';
@@ -419,7 +479,9 @@ export default function PhysiotherapistOnboardingWizard() {
             if (years.trim() === '' || !Number.isFinite(y) || y < 0 || y > 60) e.years = 'Enter your years of experience';
             if (!uploaded.has('nationalId')) e.nationalId = 'Upload a photo or scan of your ID';
             if (!uploaded.has('mrtbLicense') && !uploaded.has('degreeCertificate') && !legacyProofOnFile) {
-                e.proof = 'Upload your MRTB licence or degree certificate';
+                // "AHPC licence" keeps its capitals; "Licence" and "State licence" read as plain words
+                const licence = /^[A-Z]{2,}/.test(country.licenceLabel) ? country.licenceLabel : country.licenceLabel.toLowerCase();
+                e.proof = `Upload your ${licence} or degree certificate`;
             }
         }
         if (step === 3) {
@@ -448,25 +510,33 @@ export default function PhysiotherapistOnboardingWizard() {
             if (step === 0) {
                 // Saved now if the profile exists (a returning applicant); otherwise with the next step
                 if (draft.profileId && practiceMode) {
-                    await completeUserProfile({ role: 'physiotherapist', profileData: { practiceMode } as never, finalStep: false });
+                    await completeUserProfile({
+                        role: 'physiotherapist',
+                        profileData: { practiceMode, country: countryName } as never,
+                        finalStep: false,
+                    });
                 }
                 go(1);
             } else if (step === 1) {
                 // Creates the physiotherapist profile on first save, so documents can be uploaded next
                 await completeUserProfile({
                     role: 'physiotherapist',
-                    profileData: compact({ gender: gender || undefined, practiceMode: practiceMode ?? undefined }) as never,
+                    profileData: compact({
+                        gender: gender || undefined,
+                        practiceMode: practiceMode ?? undefined,
+                        country: countryName,
+                    }) as never,
                     firstName: firstName.trim(),
                     lastName: lastName.trim(),
                     finalStep: false,
                 });
-                await updatePhysioProfile({ phoneNumber: phone.trim() });
+                await updatePhysioProfile({ phoneNumber: internationalPhone(countryCode, phone) });
                 go(2);
             } else if (step === 2) {
                 await completeUserProfile({
                     role: 'physiotherapist',
                     profileData: compact({
-                        certificationBoard: board === 'other' ? otherBoard.trim() : MRTB,
+                        certificationBoard: boardName,
                         licenseNumber: licenseNumber.trim(),
                         licenseExpiryDate: expiry,
                         yearsOfExperience: Number(years),
@@ -487,6 +557,7 @@ export default function PhysiotherapistOnboardingWizard() {
                         bio: registryBio || undefined,
                         termsAcceptedAt: termsAccepted ? Date.now() : undefined,
                         practiceMode: practiceMode ?? undefined,
+                        country: countryName,
                     }) as never,
                     firstName: firstName.trim(),
                     lastName: lastName.trim(),
@@ -574,7 +645,28 @@ export default function PhysiotherapistOnboardingWizard() {
                     className="space-y-5"
                 >
                     {step === 0 && (
-                        <PracticeModeChoice value={practiceMode} onChange={setPracticeMode} error={errors.practiceMode} />
+                        <>
+                            <Field id="country" label="Country you practise in" error={errors.country}>
+                                <CountryPicker id="country" value={countryCode} onChange={changeCountry} />
+                                {countryCode === OTHER_COUNTRY && (
+                                    <Input
+                                        className="mt-2 h-11"
+                                        value={otherCountry}
+                                        onChange={(e) => setOtherCountry(e.target.value)}
+                                        placeholder="Your country"
+                                        aria-label="Your country"
+                                        autoComplete="country-name"
+                                    />
+                                )}
+                            </Field>
+                            <PracticeModeChoice
+                                value={practiceMode}
+                                onChange={setPracticeMode}
+                                error={errors.practiceMode}
+                                rehabifyAvailable={rehabifyAvailable}
+                                countryName={countryName}
+                            />
+                        </>
                     )}
 
                     {step === 1 && (
@@ -591,7 +683,22 @@ export default function PhysiotherapistOnboardingWizard() {
                                 <Input id="email" className="h-11" value={draft.email} disabled />
                             </Field>
                             <Field id="phone" label="Phone" hint="For our team only, in case we need to reach you about your application." error={errors.phone}>
-                                <Input id="phone" className="h-11" type="tel" inputMode="tel" value={phone} onChange={(e) => setPhone(e.target.value)} autoComplete="tel" placeholder="0803 123 4567" />
+                                <div className="relative">
+                                    <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center gap-2 text-sm text-neutral-600">
+                                        <CountryFlag code={countryCode} />
+                                        {country.dialCode}
+                                    </span>
+                                    <Input
+                                        id="phone"
+                                        className={cn('h-11', country.dialCode ? (country.dialCode.length > 3 ? 'pl-[5.5rem]' : 'pl-[4.75rem]') : 'pl-10')}
+                                        type="tel"
+                                        inputMode="tel"
+                                        value={phone}
+                                        onChange={(e) => setPhone(e.target.value)}
+                                        autoComplete={countryCode === DEFAULT_COUNTRY_CODE || !country.dialCode ? 'tel' : 'tel-national'}
+                                        placeholder={country.phonePlaceholder}
+                                    />
+                                </div>
                             </Field>
                             <Field label="Gender (optional)" hint="Some patients prefer a physio of a particular gender.">
                                 <Select value={gender} onValueChange={setGender}>
@@ -611,21 +718,26 @@ export default function PhysiotherapistOnboardingWizard() {
                     {step === 2 && (
                         <>
                             <Field label="Licensing board" error={errors.board}>
-                                <Select value={board} onValueChange={setBoard}>
-                                    <SelectTrigger className="h-11">
-                                        <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value={MRTB}>{MRTB}</SelectItem>
-                                        <SelectItem value="other">Another board</SelectItem>
-                                    </SelectContent>
-                                </Select>
-                                {board === 'other' && (
+                                {country.board && (
+                                    <Select
+                                        value={useOtherBoard ? 'other' : 'country'}
+                                        onValueChange={(value) => setUseOtherBoard(value === 'other')}
+                                    >
+                                        <SelectTrigger className="h-11">
+                                            <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="country">{country.board}</SelectItem>
+                                            <SelectItem value="other">Another board</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                )}
+                                {boardIsTyped && (
                                     <Input
-                                        className="mt-2 h-11"
+                                        className={cn('h-11', country.board && 'mt-2')}
                                         value={otherBoard}
                                         onChange={(e) => setOtherBoard(e.target.value)}
-                                        placeholder="Name of the board"
+                                        placeholder={(!country.board && country.boardPlaceholder) || 'Name of the board'}
                                         aria-label="Name of the board"
                                     />
                                 )}
@@ -656,14 +768,20 @@ export default function PhysiotherapistOnboardingWizard() {
                                 </div>
                                 <div className="divide-y divide-neutral-100 px-4">
                                     <div>
-                                        <DocumentRow type="nationalId" required documents={documents ?? []} onUpload={uploadDoc('nationalId')} />
+                                        <DocumentRow
+                                            type="nationalId"
+                                            required
+                                            documents={documents ?? []}
+                                            onUpload={uploadDoc('nationalId')}
+                                            hint={country.idHint}
+                                        />
                                         {errors.nationalId && <p className={cn(errorClass, '-mt-1 pb-2')}>{errors.nationalId}</p>}
                                     </div>
                                     <div className="py-3">
                                         <p className="text-sm font-medium text-neutral-900">Proof of qualification</p>
                                         <p className="text-xs text-neutral-500">Upload whichever you have. You can add the other later.</p>
                                         <div className="mt-2 inline-flex rounded-lg border border-neutral-200 p-0.5" role="radiogroup" aria-label="Document type">
-                                            {LICENCE_PROOFS.map((proof) => (
+                                            {licenceProofs(country).map((proof) => (
                                                 <button
                                                     key={proof.type}
                                                     type="button"
@@ -680,7 +798,20 @@ export default function PhysiotherapistOnboardingWizard() {
                                                 </button>
                                             ))}
                                         </div>
-                                        <DocumentRow type={proofType} required documents={documents ?? []} onUpload={uploadDoc(proofType)} />
+                                        <DocumentRow
+                                            type={proofType}
+                                            required
+                                            documents={documents ?? []}
+                                            onUpload={uploadDoc(proofType)}
+                                            {...(proofType === 'mrtbLicense' && countryCode !== DEFAULT_COUNTRY_CODE
+                                                ? {
+                                                      title: country.licenceLabel,
+                                                      hint: country.board
+                                                          ? `Your current licence or registration from the ${country.board.replace(/\s*\([^)]*\)$/, '')}`
+                                                          : 'Your current licence or registration to practise',
+                                                  }
+                                                : {})}
+                                        />
                                         {errors.proof && <p className={cn(errorClass, '-mt-1')}>{errors.proof}</p>}
                                         {legacyProofOnFile && (
                                             <p className={hintClass}>
@@ -705,6 +836,8 @@ export default function PhysiotherapistOnboardingWizard() {
                                 error={errors.location}
                             >
                                 <MapboxLocationPicker
+                                    countryCode={countryCode}
+                                    center={country.center}
                                     value={location}
                                     onChange={(data) =>
                                         setLocation({ location: data.location, latitude: data.latitude, longitude: data.longitude })

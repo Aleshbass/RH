@@ -13,6 +13,7 @@ import { action, internalQuery, mutation, query, type MutationCtx, type QueryCtx
 import type { Doc, Id } from "./_generated/dataModel";
 import { getService, type BookableServiceId } from "../lib/rehabify-services";
 import { NETWORK_TERMS_VERSION } from "../lib/rehabify-network-terms";
+import { isOutsideRehabifyCare } from "../lib/practiceCountries";
 import { loadPricingSettings } from "./helpers/rehabifyPricing";
 import { adminDisplayName, requireAdmin } from "./helpers/partnerAccess";
 import { currentUser, isApproved } from "./helpers/careAccess";
@@ -317,6 +318,7 @@ export const getMyOnboardingDraft = query({
       phoneNumber: user.phoneNumber ?? "",
       profileId: profile?._id ?? null,
       practiceMode: profile?.practiceMode ?? null,
+      country: profile?.country ?? "",
       gender: profile?.gender ?? null,
       licenseNumber: profile?.licenseNumber ?? "",
       certificationBoard: profile?.certificationBoard ?? "",
@@ -395,6 +397,9 @@ export const setMyPracticeMode = mutation({
     const profile = user.physiotherapistProfileId ? await ctx.db.get(user.physiotherapistProfileId) : null;
     if (!profile) throw new ConvexError("Finish your application first.");
     if (profile.clinicId) throw new ConvexError("You work with a clinic, so your clinic decides how you see patients.");
+    if (args.practiceMode !== "independent" && isOutsideRehabifyCare(profile.country)) {
+      throw new ConvexError("Rehabify Care patients are only in Nigeria for now, so you stay an independent physio.");
+    }
     await ctx.db.patch(profile._id, {
       practiceMode: args.practiceMode,
       // Listed again when taking Rehabify Care patients (search still waits for approval and setup)
