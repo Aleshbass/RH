@@ -150,9 +150,11 @@ def interactive_for(conversation: Conversation | None) -> dict[str, Any] | None:
     if step == AWAITING_RH_OTHER_TIME:
         slots = [s for s in context.get("slots") or [] if isinstance(s, dict) and isinstance(s.get("start"), (int, float))]
         if slots:
+            kept = isinstance((context.get("selected_slot") or {}).get("start"), (int, float))
+            last = ("back", "Keep the first time", None) if kept else ("another physio", "Another physio", None)
             return list_menu("Choose a time", [
                 (str(index), slot_label(s["start"]), "Lagos time") for index, s in enumerate(slots, 1)
-            ][:9] + [("back", "Keep the first time", None)], section="Other times")
+            ][:9] + [last], section="Other times")
         return None
     if step == "rh_awaiting_reschedule":
         slots = [s for s in context.get("reschedule_slots") or [] if isinstance(s, dict) and isinstance(s.get("start"), (int, float))]

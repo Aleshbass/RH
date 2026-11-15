@@ -10,21 +10,17 @@ from time import monotonic
 from typing import Any, Protocol
 
 import httpx
-from google import genai
-from google.genai import types
 
 from app.config import Settings, get_settings
 
 logger = logging.getLogger(__name__)
 
-# Gemini enforces a 10-second minimum HTTP deadline. Keep one bounded request
-# (never a second application retry) so slow calls cannot become 20–30 second
-# worker stalls.
-_TEXT_TIMEOUT_MS = 10_000
+# Gemini was removed on 14 Nov 2026 (owner): its free tier may use data for training, so no
+# patient text or voice goes to Google. This module keeps its old name; OpenAI does the work.
 
 
 class GeminiTimeoutError(TimeoutError):
-    """Gemini timed out after the single allowed retry."""
+    """The language model timed out (historical name, still caught by the worker)."""
 
 _JSON_INSTRUCTION = (
     "Respond with a single JSON object only, no markdown, with keys "
@@ -74,52 +70,6 @@ def _parse_model_json(text: str) -> dict[str, Any]:
     return payload if isinstance(payload, dict) else {}
 
 
-def _is_timeout(exc: BaseException) -> bool:
-    if isinstance(exc, GeminiTimeoutError):
-        return True
-    if isinstance(exc, (TimeoutError, httpx.TimeoutException)):
-        return True
-    # google-genai raises ServerError for a provider-side deadline rather than
-    # httpx.TimeoutException. Treat that transient 504 exactly like a client
-    # deadline so the worker can return its bounded fallback response.
-    detail = f"{type(exc).__name__} {exc}".casefold()
-    return "timeout" in detail or "deadline_exceeded" in detail
-
-
-def _is_busy(exc: BaseException) -> bool:
-    """Google is overloaded or the quota is used up: another model may well answer."""
-    code = getattr(exc, "code", None)
-    if code in {429, 500, 503}:
-        return True
-    detail = f"{type(exc).__name__} {exc}".casefold()
-    return any(
-        marker in detail
-        for marker in ("503", "unavailable", "429", "resource_exhausted", "overloaded", "high demand", "500 internal")
-    )
-
-
-# A busy model moves on straight away; a timed-out one (a full 10-second deadline) gets one
-# more try on the next model only while the whole reply stays inside this budget, so an outage
-# means a slower answer rather than "please send that again" (about 20 seconds at worst).
-_FALLBACK_BUDGET_SECONDS = 12.0
-
-
-def _with_timeout_retry(call: Callable[[], LLMResponse], *, retry_on_timeout: bool = True) -> LLMResponse:
-    try:
-        return call()
-    except Exception as exc:
-        if not _is_timeout(exc):
-            raise
-        if not retry_on_timeout:
-            raise GeminiTimeoutError(str(exc)) from exc
-        try:
-            return call()
-        except Exception as retry_exc:
-            if _is_timeout(retry_exc):
-                raise GeminiTimeoutError(str(retry_exc)) from retry_exc
-            raise
-
-
 def _response_from_payload(payload: dict[str, Any]) -> LLMResponse:
     extraction = payload.get("extraction")
     decision = payload.get("triage_decision")
@@ -132,91 +82,10 @@ def _response_from_payload(payload: dict[str, Any]) -> LLMResponse:
     )
 
 
-class GeminiClient:
-    def __init__(self, settings: Settings | None = None) -> None:
-        self._settings = settings or get_settings()
-        # Reuse the SDK client across sequential worker jobs. Re-establishing
-        # a client every WhatsApp turn adds avoidable connection overhead.
-        self._client = genai.Client(
-            api_key=self._settings.gemini_api_key,
-            http_options=types.HttpOptions(timeout=_TEXT_TIMEOUT_MS),
-        )
-
-    def _models(self, primary: str) -> list[str]:
-        fallbacks = [m.strip() for m in self._settings.gemini_fallback_models.split(",") if m.strip()]
-        return list(dict.fromkeys([primary, *fallbacks]))[:3]
-
-    def _with_busy_fallback(self, primary: str, attempt: Callable[[str], LLMResponse]) -> LLMResponse:
-        """Try the primary model, then the fallbacks while Google reports it's busy."""
-        started = monotonic()
-        models = self._models(primary)
-        for index, model in enumerate(models):
-            try:
-                return attempt(model)
-            except Exception as exc:
-                last = index == len(models) - 1
-                if not (_is_busy(exc) or _is_timeout(exc)) or last or monotonic() - started > _FALLBACK_BUDGET_SECONDS:
-                    raise
-                logger.warning("joy_gemini_busy model=%s trying=%s", model, models[index + 1])
-        raise RuntimeError("unreachable")
-
-    def complete(self, prompt: str, user_text: str) -> LLMResponse:
-        def _call(model: str) -> LLMResponse:
-            system = f"{prompt}\n\n{_JSON_INSTRUCTION}"
-            response = self._client.models.generate_content(
-                model=model,
-                contents=user_text,
-                config=types.GenerateContentConfig(
-                    system_instruction=system,
-                    response_mime_type="application/json",
-                ),
-            )
-            payload = _parse_model_json(response.text or "")
-            return _response_from_payload(payload)
-
-        started = monotonic()
-        try:
-            # A retry could consume another full deadline and violate the
-            # WhatsApp triage response target. The worker sends its concise
-            # fallback immediately when this single bounded request times out.
-            # A busy model (fast 503/429) moves on to the next model instead.
-            return self._with_busy_fallback(
-                self._settings.gemini_text_model,
-                lambda model: _with_timeout_retry(lambda: _call(model), retry_on_timeout=False),
-            )
-        finally:
-            logger.info("joy_gemini_text_complete latency_ms=%d", int((monotonic() - started) * 1000))
-
-    def complete_voice(self, audio_bytes: bytes, mime: str) -> LLMResponse:
-        # Plan 1: send audio bytes via generate_content on gemini_live_model (no Live websocket).
-        def _call(model: str) -> LLMResponse:
-            audio_part = types.Part.from_bytes(data=audio_bytes, mime_type=mime)
-            prompt = (
-                "Transcribe this voice note exactly. "
-                f"{_JSON_INSTRUCTION} "
-                "reply_text must be the transcript."
-            )
-            response = self._client.models.generate_content(
-                model=model,
-                contents=[prompt, audio_part],
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                ),
-            )
-            payload = _parse_model_json(response.text or "")
-            return _response_from_payload(payload)
-
-        return self._with_busy_fallback(
-            self._settings.gemini_live_model, lambda model: _with_timeout_retry(lambda: _call(model))
-        )
-
-
 class _HTTPJSONTextClient:
-    """Provider-neutral JSON text adapter for explicit OpenAI/OpenRouter use.
+    """Provider-neutral JSON text adapter (OpenAI; OpenRouter only when chosen explicitly).
 
-    It is intentionally limited to text triage. Voice remains on Gemini's
-    dedicated audio path, rather than pretending another text provider can
-    safely transcribe clinical audio.
+    Voice notes are transcribed by OpenAI's own audio endpoint (OpenAIClient.complete_voice).
     """
 
     provider_name = ""
@@ -269,9 +138,13 @@ class _HTTPJSONTextClient:
                 if not payload:
                     raise RuntimeError(f"{self.provider_name} returned invalid JSON")
                 return _response_from_payload(payload)
-            except httpx.TimeoutException:
-                # A slow provider gets no second model: the next provider answers sooner
-                raise
+            except httpx.TimeoutException as exc:
+                # OpenAI is Joy's only provider since Gemini was removed: a slow first model gets
+                # one try on the backup model rather than "please send that again"
+                last_error = exc
+                if index == len(models) - 1:
+                    raise
+                logger.warning("joy_llm_model_timeout provider=%s model=%s trying=%s", self.provider_name, model, models[index + 1])
             except Exception as exc:
                 last_error = exc
                 if index == len(models) - 1:
@@ -279,9 +152,7 @@ class _HTTPJSONTextClient:
         raise RuntimeError(f"{self.provider_name} text request failed safely") from last_error
 
     def complete_voice(self, audio_bytes: bytes, mime: str) -> LLMResponse:
-        if not self._settings.gemini_api_key:
-            raise RuntimeError("Gemini is required for Joy voice transcription")
-        return GeminiClient(self._settings).complete_voice(audio_bytes, mime)
+        raise RuntimeError(f"{self.provider_name} can't transcribe voice notes; OpenAI does")
 
 
 class OpenAIClient(_HTTPJSONTextClient):
@@ -377,25 +248,18 @@ class ProviderChainClient:
 
 @lru_cache(maxsize=1)
 def get_configured_llm_client() -> LLMClient:
-    """The selected provider first, then the other configured ones as backups.
+    """OpenAI for text and voice notes (its backup model takes over when the first is busy or slow).
 
-    LLM_PROVIDER=openai (the paid plan, owner's choice): text and voice notes on OpenAI first,
-    Gemini only as the backup.
+    Gemini was removed on 14 Nov 2026 (owner): LLM_PROVIDER=gemini, left over on a server, also
+    means OpenAI, so nothing is ever sent to Google. OpenRouter only when chosen explicitly.
     """
     settings = get_settings()
     provider = settings.llm_provider.casefold().strip()
-    gemini = GeminiClient(settings) if settings.gemini_api_key else None
-    openai = OpenAIClient(settings) if settings.openai_api_key else None
-    if provider == "openai":
-        if openai is None:
-            raise RuntimeError("OPENAI_API_KEY is required when LLM_PROVIDER=openai")
-        chain = [openai, *([gemini] if gemini else [])]
-        return ProviderChainClient(chain, chain)
-    if provider == "gemini":
-        if openai is None:
-            return GeminiClient(settings)
-        primary = gemini or GeminiClient(settings)
-        return ProviderChainClient([primary, openai], [primary, openai])
+    if provider in ("openai", "gemini"):
+        if not settings.openai_api_key:
+            raise RuntimeError("OPENAI_API_KEY is required: Joy's language model is OpenAI")
+        openai = OpenAIClient(settings)
+        return ProviderChainClient([openai], [openai])
     if provider == "openrouter":
         return OpenRouterClient(settings)
-    raise RuntimeError("LLM_PROVIDER must be gemini, openai, or openrouter")
+    raise RuntimeError("LLM_PROVIDER must be openai or openrouter")

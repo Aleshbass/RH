@@ -265,3 +265,49 @@ def test_direct_convex_gateway_operations_carry_the_actor_in_data() -> None:
     assert [body["data"]["actor"]["rh_user_id"] for body in seen] == ["physio-user-1", "physio-user-1"]
     assert seen[0]["data"]["physiotherapist_id"] == "profile-1"
     assert seen[1]["data"]["message"] == "Hi" and isinstance(seen[1]["request_id"], str)
+
+
+def _refusing_gateway(status: int, body) -> RHClient:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(status, json=body) if body is not None else httpx.Response(status, text="Internal Server Error")
+
+    gateway = RHConvexGatewayClient("https://convex.test", "gateway-test-secret", client=httpx.Client(transport=httpx.MockTransport(handler)))
+    return RHClient("https://rh.test", "joy-test", "adapter-secret", gateway_client=gateway)
+
+
+def _hold(client: RHClient):
+    return client.create_pending_booking(
+        patient_id="patient-1", physiotherapist_id="physio-1", slot_start=1_900_000_000_000,
+        duration_minutes=20, service_mode="online", session_type="physiotherapy",
+        triage_summary_reference="triage-1", assessment_id="triage-1", assessment_revision=1,
+        protocol_version="clinical_engine_v1", policy_version="policy-1", policy_acceptance_reference="accepted-1",
+        conversation_id="conversation-1", actor=RHActor(persona="patient", sender_phone="+2348012345678"),
+        idempotency_key="booking-key-1", required_specialties=["msk"], eligibility_reference="ref",
+    )
+
+
+def test_gateway_refusal_keeps_rh_reason_code() -> None:
+    """12 Nov 2026: a "not eligible" refusal reached the patient as "that time was taken"."""
+    import pytest
+
+    from app.integrations.rh_client import RHIntegrationError
+
+    with pytest.raises(RHIntegrationError) as refused:
+        _hold(_refusing_gateway(422, {"code": "PROVIDER_NOT_ELIGIBLE"}))
+    assert refused.value.code == "PROVIDER_NOT_ELIGIBLE"
+    with pytest.raises(RHIntegrationError) as taken:
+        _hold(_refusing_gateway(409, {"code": "SLOT_TAKEN"}))
+    assert taken.value.code == "SLOT_TAKEN"
+
+
+def test_gateway_refusal_without_reason_keeps_old_codes() -> None:
+    import pytest
+
+    from app.integrations.rh_client import RHIntegrationError
+
+    with pytest.raises(RHIntegrationError) as crashed:
+        _hold(_refusing_gateway(500, None))
+    assert crashed.value.code == "RH_CONVEX_GATEWAY_REJECTED"
+    with pytest.raises(RHIntegrationError) as odd:
+        _hold(_refusing_gateway(409, {"code": "lowercase not a code"}))
+    assert odd.value.code == "RH_CONVEX_GATEWAY_CONFLICT"

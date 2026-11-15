@@ -13,7 +13,6 @@ dependencies = [
     "redis",
     "httpx",
     "pytest",
-    "google-genai",
 ]
 
 [build-system]

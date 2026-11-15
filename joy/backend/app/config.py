@@ -17,24 +17,14 @@ class Settings(BaseSettings):
             return "postgresql+psycopg://" + value.removeprefix("postgres://")
         return value
     redis_url: str = "redis://localhost:6379/0"
-    gemini_api_key: str = ""
-    # Keep local/default deployments on current, supported Gemini models. The
-    # production environment can still override these explicitly.
-    gemini_text_model: str = "gemini-3.6-flash"
-    # Voice notes use generate_content; Live-only models (e.g. gemini-3.8-live) reject it.
-    gemini_live_model: str = "gemini-3.6-flash"
-    # Tried in order when the model above is busy (Google's 503 "high demand", 429 quota),
-    # so a Gemini spike doesn't turn into "Sorry, I had a brief hiccup".
-    gemini_fallback_models: str = "gemini-3.1-flash-lite,gemini-3.5-flash"
-    # Gemini remains Joy's default.  The other adapters are explicit
-    # server-side fallbacks; clients never receive any provider credential.
-    llm_provider: str = "gemini"
+    # OpenAI only: Gemini was removed on 14 Nov 2026 (owner) so no patient data goes to Google
+    llm_provider: str = "openai"
     openai_api_key: str = ""
     # Benchmarked on Joy's patient prompt (Nov 2026): gpt-5.4-mini answered in ~2.5s with valid
     # JSON in English, Pidgin and Yoruba; gpt-4.1-mini ~3.5s. Tried in order on 429/5xx.
     openai_text_model: str = "gpt-5.4-mini"
     openai_fallback_models: str = "gpt-4.1-mini"
-    # Voice notes with LLM_PROVIDER=openai: OpenAI transcription first, Gemini as the backup
+    # Voice notes are transcribed by OpenAI
     openai_transcribe_model: str = "gpt-4o-transcribe"
     # A voice note back when the patient sends one (app/conversation/voice_reply.py)
     joy_voice_replies: bool = True

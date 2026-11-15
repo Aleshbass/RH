@@ -961,10 +961,14 @@ def _continue_rh_payment_email(session: Session, conversation: Conversation, pat
         return "No problem. Send the email address you'd like, or tap WhatsApp is fine to get your receipt here."
     email: str | None
     # After a failed payment, someone who chose WhatsApp just replies PAY for a new link
-    again = (conversation.booking_context or {}).get("receipt_by") == "whatsapp" and text.strip(" .!") in {
+    prior = conversation.booking_context or {}
+    again = prior.get("receipt_by") in ("whatsapp", "email") and text.strip(" .!") in {
         "pay", "pay now", "try again", "retry", "new link", "send link", "yes", "ok", "okay",
     }
-    if again or wants_whatsapp_receipt(text) or (not suggested and text.strip(" .!") in _PLAIN_NO):
+    prior_email = str(prior.get("payment_email") or "") if prior.get("receipt_by") == "email" else ""
+    if again and prior_email:
+        email = prior_email  # PAY after a failed start: the same receipt email as before
+    elif again or wants_whatsapp_receipt(text) or (not suggested and text.strip(" .!") in _PLAIN_NO):
         email = None  # receipt here on WhatsApp
     else:
         email = suggested if suggested and text.strip(" .!") in _USE_EMAIL else text
@@ -1001,13 +1005,28 @@ def _continue_rh_payment_email(session: Session, conversation: Conversation, pat
                 "Your payment has already been received. Our care team will assign your clinician, date, and time shortly. "
                 "I’ll send your appointment details and joining link here once that is done."
             )
+        append(session, kind=AuditKind.BOOKING, actor_phone=patient.phone_e164, person_id=patient.id,
+               payload={"decision": "rh_payment_initialization_failed", "rh_booking_id": str(booking_id), "error_code": error.code})
+        if error.code in {"HOLD_EXPIRED", "BOOKING_NOT_PAYABLE"} and ctx.get("booking_route") == NAMED_ROUTE:
+            # The 30-minute hold ran out and someone else has the time now (RH re-holds it when it's
+            # still free): say so and offer other times, never "try again" for ever
+            provider = ctx.get("selected_provider") or {}
+            lead = "I'm sorry, the time I was holding for you has gone, so nothing was charged."
+            if provider:
+                return _other_times_after_failure(session, conversation, patient, ctx, provider, lead)
+            return _drop_provider(session, conversation, patient, ctx, provider, lead, alerted=False)
         # Keep the held booking state and the supplied address, but do not
         # expose payment-provider details in the WhatsApp reply.
         ctx["payment_email"] = email
+        first_failure = not ctx.get("payment_failure_alerted")
+        ctx["payment_failure_alerted"] = True
         _set_substate(conversation, AWAITING_RH_PAYMENT_EMAIL, ctx)
-        append(session, kind=AuditKind.BOOKING, actor_phone=patient.phone_e164, person_id=patient.id,
-               payload={"decision": "rh_payment_initialization_failed", "rh_booking_id": str(booking_id), "error_code": error.code})
-        return "Your time is held, but I can’t start secure payment right now. Please try again shortly."
+        if first_failure:
+            alert_booking_failure(session, conversation, patient, str(rh_patient_id), code=error.code, stage="Starting payment")
+        return (
+            "Your time is held, but I can’t start secure payment right now. Please reply *PAY* in a few minutes "
+            "to try again. I've also told our care team, so someone can help if it keeps happening."
+        )
     ctx.update({"payment_email": email, "authorization_url": payment.authorization_url})
     _set_substate(conversation, AWAITING_RH_PAYMENT, ctx)
     journey(str(rh_patient_id), "payment_link_sent", f"payment-link-{booking_id}-{retry_count}", booking_id=str(booking_id))
@@ -1752,12 +1771,18 @@ def _norm_text(text: str) -> str:
     return " ".join((text or "").casefold().split()).strip(" .!?")
 
 
-def hand_to_care_team(session: Session, conversation: Conversation, patient: Patient, *, rh_patient_id: str | None, reason_text: str) -> str:
-    """Nobody fits and is free within 24 hours: the care team arranges it (owner decision, Nov 2026)."""
+def hand_to_care_team(
+    session: Session, conversation: Conversation, patient: Patient, *, rh_patient_id: str | None, reason_text: str,
+    alert: bool = True,
+) -> str:
+    """Nobody fits and is free within 24 hours: the care team arranges it (owner decision, Nov 2026).
+
+    ``alert=False`` when the care team has already been told why (a refused booking).
+    """
     from app.admin.escalation_router import route_escalation
     from app.triage.self_referral import CARE_TEAM, CARE_TEAM_HANDOFF, FLOW_KEY
 
-    if rh_patient_id:
+    if rh_patient_id and alert:
         try:
             configured_rh_client().operational_mutation(
                 "patient_request_callback", actor=_rh_actor(patient, rh_patient_id),
@@ -1767,9 +1792,10 @@ def hand_to_care_team(session: Session, conversation: Conversation, patient: Pat
         except RHIntegrationError as error:
             logger.warning("joy_no_match_alert_failed code=%s", error.code)
         journey(rh_patient_id, "handed_to_human", f"no-match-{conversation.id}-{datetime.now(timezone.utc).strftime('%Y%m%d')}")
-    route_escalation(session, "no_match", {
-        "patient_id": str(patient.id), "phone": patient.phone_e164, "text": reason_text[:160],
-    })
+    if alert:
+        route_escalation(session, "no_match", {
+            "patient_id": str(patient.id), "phone": patient.phone_e164, "text": reason_text[:160],
+        })
     ctx = dict(conversation.booking_context or {})
     ctx[FLOW_KEY] = CARE_TEAM
     for key in ("providers", "providers_shown", "selected_provider", "selected_slot", "slots"):
@@ -1909,11 +1935,14 @@ def confirm_text(ctx: dict) -> str:
     )
 
 
-def _render_other_times(provider: dict, slots: list[dict]) -> str:
+def _render_other_times(provider: dict, slots: list[dict], *, can_keep: bool = True) -> str:
     lines = [f"Other free times with {provider.get('display_name') or 'this physiotherapist'} (Lagos time):"]
     for index, slot in enumerate(slots, 1):
         lines.append(f"{index}. {when_label(slot['start'])}")
-    lines.append("Reply with the number of the time you'd like, or *Back* to keep the first one.")
+    if can_keep:
+        lines.append("Reply with the number of the time you'd like, or *Back* to keep the first one.")
+    else:
+        lines.append("Reply with the number of the time you'd like, or *another physio* to choose someone else.")
     return "\n".join(lines)
 
 
@@ -1960,6 +1989,15 @@ def _continue_other_time(session: Session, conversation: Conversation, patient: 
     slots = [s for s in ctx.get("slots") or [] if isinstance(s, dict) and isinstance(s.get("start"), (int, float))]
     text = " ".join((user_text or "").casefold().split()).strip(" .!?")
     if text in {"back", "keep", "keep the first one", "keep first", "cancel", "no"}:
+        if not isinstance((ctx.get("selected_slot") or {}).get("start"), (int, float)):
+            # The first time is gone (taken, or the hold ran out): back to the physio list
+            providers = [p for p in ctx.get("providers") or [] if isinstance(p, dict)]
+            ctx.pop("slots", None)
+            _set_substate(conversation, AWAITING_RH_NAMED_PROVIDER, ctx)
+            if providers:
+                shown = int(ctx.get("providers_shown") or min(_PAGE, len(providers)))
+                return named_list_text(providers, 0, shown, when=str(ctx.get("window_label") or "in the next 24 hours"))
+            return "Reply *change day* to look at another day, or *CALL ME* and our care team will help."
         _set_substate(conversation, AWAITING_RH_CONFIRM, ctx)
         return confirm_text(ctx)
     selected = _parse_index(user_text, len(slots))
@@ -1971,6 +2009,79 @@ def _continue_other_time(session: Session, conversation: Conversation, patient: 
     ctx["selected_slot"] = {"start": slot["start"], "end": slot.get("end")}
     _set_substate(conversation, AWAITING_RH_CONFIRM, ctx)
     return confirm_text(ctx)
+
+
+# RH's reasons for refusing to hold a time (convex/joyGateway.ts REASON_STATUS)
+_RETRY_LATER_CODES = {"DEPENDENCY_UNAVAILABLE", "INTEGRATION_NOT_CONFIGURED", "RH_BOOKING_GATEWAY_UNAVAILABLE", "SAFETY_ELIGIBILITY_REQUIRED"}
+_SLOT_GONE_CODES = {"SLOT_TAKEN", "RH_CONVEX_GATEWAY_CONFLICT", "SLOT_NOTICE_REQUIRED"}
+
+
+def alert_booking_failure(
+    session: Session, conversation: Conversation, patient: Patient, rh_patient_id: str | None, *,
+    code: str, stage: str, physio: str | None = None,
+) -> None:
+    """A booking or payment Joy couldn't finish: the care team hears at once (bell and push on the
+    website, and WhatsApp), with the reason, so a patient is never silently lost (12 Nov 2026)."""
+    from app.admin.escalation_router import route_escalation
+
+    detail = f"{stage} failed ({code})" + (f" with {physio}" if physio else "")
+    if rh_patient_id:
+        try:
+            configured_rh_client().operational_mutation(
+                "patient_request_callback", actor=_rh_actor(patient, rh_patient_id),
+                data={"patient_id": rh_patient_id, "reason": "booking_failed", "text": detail[:200]},
+                idempotency_key=f"joy-booking-failed-{conversation.id}-{code}-{datetime.now(timezone.utc).strftime('%Y%m%d%H')}",
+            )
+        except RHIntegrationError as error:
+            logger.warning("joy_booking_failure_alert_failed code=%s", error.code)
+    try:
+        route_escalation(session, "booking_failed", {
+            "patient_id": rh_patient_id or str(patient.id), "phone": patient.phone_e164, "reason": detail,
+        })
+    except Exception:
+        logger.warning("joy_booking_failure_escalation_failed", exc_info=True)
+
+
+def _drop_provider(
+    session: Session, conversation: Conversation, patient: Patient, ctx: dict, provider: dict, lead: str, *, alerted: bool,
+) -> str:
+    """Take this physio off the list and show the others, or hand over when nobody is left."""
+    selected = provider.get("physiotherapist_id")
+    others = [p for p in ctx.get("providers") or [] if isinstance(p, dict) and p.get("physiotherapist_id") != selected]
+    for key in ("selected_provider", "selected_slot", "slots", "rh_booking_id", "authorization_url"):
+        ctx.pop(key, None)
+    if not others:
+        conversation.booking_context = ctx
+        handoff = hand_to_care_team(
+            session, conversation, patient, rh_patient_id=str(ctx.get("rh_patient_id") or "") or None,
+            reason_text=f"Couldn't book {provider.get('display_name') or 'the physio'} and nobody else was free.",
+            alert=not alerted,
+        )
+        return f"{lead}\n\n{handoff}"
+    ctx["providers"] = others
+    ctx["providers_shown"] = min(_PAGE, len(others))
+    _set_substate(conversation, AWAITING_RH_NAMED_PROVIDER, ctx)
+    when = str(ctx.get("window_label") or "in the next 24 hours")
+    return f"{lead}\n\n" + named_list_text(others, 0, ctx["providers_shown"], when=when)
+
+
+def _other_times_after_failure(
+    session: Session, conversation: Conversation, patient: Patient, ctx: dict, provider: dict, lead: str,
+) -> str:
+    """The time is gone: this physio's other free times, else the other physios."""
+    ctx.pop("selected_slot", None)  # gone: "Back" must not offer it again
+    for key in ("rh_booking_id", "authorization_url", "rh_amount_kobo"):
+        ctx.pop(key, None)
+    try:
+        slots = _slot_choices(configured_rh_client(), str(provider.get("physiotherapist_id")), "online", duration_minutes=INITIAL_CONSULT_MINUTES)
+    except RHIntegrationError:
+        slots = []
+    if slots:
+        ctx["slots"] = slots
+        _set_substate(conversation, AWAITING_RH_OTHER_TIME, ctx)
+        return f"{lead}\n\n" + _render_other_times(provider, slots, can_keep=False)
+    name = provider.get("display_name") or "This physiotherapist"
+    return _drop_provider(session, conversation, patient, ctx, provider, f"{lead} {name} has no other free times soon.", alerted=False)
 
 
 NAMED_HOLD_BLOCKED = (
@@ -2050,20 +2161,26 @@ def _hold_named_slot(
     except RHIntegrationError as error:
         append(session, kind=AuditKind.BOOKING, actor_phone=patient.phone_e164, person_id=patient.id,
                payload={"decision": "rh_named_hold_failed", "error_code": error.code})
-        if error.code in {"DEPENDENCY_UNAVAILABLE", "INTEGRATION_NOT_CONFIGURED", "RH_BOOKING_GATEWAY_UNAVAILABLE", "SAFETY_ELIGIBILITY_REQUIRED"}:
+        if error.code in _RETRY_LATER_CODES:
             conversation.booking_context = ctx
             return "I can't confirm that time with Rehabify right now, so nothing has been booked. Please tap *Confirm and pay* again in a few minutes."
-        try:
-            slots = _slot_choices(configured_rh_client(), str(provider["physiotherapist_id"]), "online", duration_minutes=INITIAL_CONSULT_MINUTES)
-        except RHIntegrationError:
-            slots = []
-        if slots:
-            ctx["slots"] = slots
-            _set_substate(conversation, AWAITING_RH_OTHER_TIME, ctx)
-            return "That time has just been taken, so nothing was booked.\n\n" + _render_other_times(provider, slots)
-        ctx.pop("selected_provider", None)
-        _set_substate(conversation, AWAITING_RH_NAMED_PROVIDER, ctx)
-        return "That time has just been taken, so nothing was booked. Please choose another physiotherapist: reply with their number."
+        if error.code in _SLOT_GONE_CODES:
+            lead = (
+                "That time is now too close to book (physiotherapists need 2 hours' notice), so nothing was booked."
+                if error.code == "SLOT_NOTICE_REQUIRED" else "That time has just been taken, so nothing was booked."
+            )
+            return _other_times_after_failure(session, conversation, patient, ctx, provider, lead)
+        # Any other refusal (not eligible, service not available...): never say the time was taken
+        # (12 Nov 2026: a patient was told that twice and never got a payment link). The care team
+        # hears why, and the patient can choose someone else straight away.
+        name = provider.get("display_name") or "this physiotherapist"
+        alert_booking_failure(session, conversation, patient, str(rh_patient_id), code=error.code,
+                              stage="Holding the time", physio=str(provider.get("display_name") or "") or None)
+        return _drop_provider(
+            session, conversation, patient, ctx, provider,
+            f"I'm sorry, I couldn't book {name} just now, so nothing has been booked or charged. I've told our care team.",
+            alerted=True,
+        )
     when = when_label(slot["start"])
     sr = dict(ctx.get(SR_KEY) or {})
     sr["physio_summary"] = physio_summary(patient, extracted, sr, appointment=when)

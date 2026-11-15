@@ -16,7 +16,7 @@ def ready(response: Response) -> dict[str, object]:
     settings = get_settings()
     provider = settings.llm_provider.casefold().strip()
     provider_configured = {
-        "gemini": bool(settings.gemini_api_key),
+        "openai": bool(settings.openai_api_key),
         "openai": bool(settings.openai_api_key),
         "openrouter": bool(settings.openrouter_api_key and settings.openrouter_text_model),
     }.get(provider, False)

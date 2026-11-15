@@ -197,6 +197,12 @@ def _admin_text(kind: str, payload: dict) -> str:
             f"safety check said {payload.get('reason') or 'no'}. Please contact {payload.get('phone') or 'them'} "
             "and book them by hand. Nothing was charged."
         )
+    if kind == "booking_failed":
+        return (
+            f"Joy couldn't finish a booking for patient {payload.get('patient_id') or ''}: "
+            f"{payload.get('reason') or 'unknown reason'}. Nothing was charged. "
+            f"Please contact {payload.get('phone') or 'them'} and help them book."
+        )
     if kind == "insurance":
         said = str(payload.get("text") or "").strip()
         return (

@@ -3,7 +3,8 @@ import { createHmac, randomUUID } from "crypto";
 type GatewayOperation = "record_external_request" | "resolve_patient" | "resolve_or_create_patient" | "link_referral" | "resolve_referral_context" | "resolve_partner_attribution" | "update_patient_location" | "resolve_physiotherapist" | "find_matches" | "resolve_availability_profile" | "create_pending_booking" | "create_admin_scheduled_virtual_booking" | "get_booking" | "cancel_booking" | "prepare_payment_attempt" | "record_payment_initialization" | "record_payment_webhook" | "record_payment_failed_webhook" | "create_specialist_review" | "prepare_specialist_review_payment" | "record_specialist_review_payment_webhook" | "record_specialist_review_payment_initialization" | "enqueue_event" | "mark_event_delivery" | "respond_to_booking" | "replacement_candidates" | "reassign_booking" | "operational_query" | "operational_mutation" | "upsert_intake" | "record_journey_event" | "issue_dashboard_link";
 
 export class GatewayError extends Error {
-  constructor(message: string, readonly status?: number) {
+  /** RH's reason for refusing a booking request ({ "code": "SLOT_TAKEN" }), when it gave one. */
+  constructor(message: string, readonly status?: number, readonly code?: string) {
     super(message);
     this.name = "GatewayError";
   }
@@ -44,7 +45,12 @@ export async function callJoyConvexGateway(operation: GatewayOperation, payload:
     // this fixed internal gateway never need to include credentials.
     const detail = (await response.text()).slice(0, 500);
     console.error("joy_convex_gateway_failed", { operation, status: response.status, detail });
-    throw new GatewayError(`Joy Convex gateway returned ${response.status}`, response.status);
+    let code: string | undefined;
+    try {
+      const parsed = JSON.parse(detail) as { code?: unknown };
+      if (typeof parsed.code === "string" && /^[A-Z][A-Z0-9_]{2,63}$/.test(parsed.code)) code = parsed.code;
+    } catch { /* not a reason body */ }
+    throw new GatewayError(`Joy Convex gateway returned ${response.status}`, response.status, code);
   }
   return response.json();
 }

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { JoyAuthError, verifyJoyRequest } from "./auth";
+import { GatewayError } from "./convex-gateway";
 
 export const actorSchema = z.object({
   persona: z.enum(["patient", "physiotherapist", "family", "admin", "partner"]),
@@ -25,6 +26,10 @@ function checkRateLimit(key: string): void {
 export function errorResponse(requestId: string, error: unknown): NextResponse {
   if (error instanceof JoyAuthError) {
     return NextResponse.json({ request_id: requestId, error: { code: error.code, message: error.message, retryable: error.status === 503 } }, { status: error.status });
+  }
+  if (error instanceof GatewayError && error.code && error.status && error.status < 500) {
+    // RH refused with a reason (SLOT_TAKEN, HOLD_EXPIRED...): Joy tells the patient the truth
+    return NextResponse.json({ request_id: requestId, error: { code: error.code, message: "The booking service refused this request", retryable: false } }, { status: error.status });
   }
   if (error instanceof z.ZodError) {
     return NextResponse.json({ request_id: requestId, error: { code: "INVALID_REQUEST", message: "Request does not match the integration schema", retryable: false } }, { status: 400 });

@@ -1,4 +1,4 @@
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { internalAction, internalMutation, internalQuery, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { providerResponseDueAt } from "../lib/bookingResponse";
 import { issueReceipt } from "./helpers/receipts";
@@ -18,14 +18,18 @@ import { JOY_PLACEHOLDER_PREFIX, emailHint, isPlaceholderUser, isWhatsAppLinked,
 import { servesRehabifyNetwork } from "./physioSetup";
 import { loadTariffs, quoteBooking, quoteSnapshot } from "./helpers/rehabifyPricing";
 import {
+  isJoyBookable,
   isJoyProviderEligible,
+  isListedForJoy,
   JOY_CONSULTATION_SERVICES,
+  joyModes,
   joyServiceFor,
   JoyPricingError,
   LEGACY_JOY_CONSULTATION_KOBO,
   quoteJoyProviderBooking,
 } from "./helpers/joyPricing";
 import { ensureMarketplaceInvoice } from "./helpers/marketplaceInvoices";
+import { findSlotClash } from "./helpers/slotHolds";
 import { calculatePaystackInboundGrossAmount } from "../lib/pricing";
 import { missingPolicies } from "./helpers/policyAcceptance";
 import { recoveryPlanForJoy } from "./helpers/patientPlans";
@@ -807,9 +811,8 @@ export const findMatches = internalQuery({
   handler: async (ctx, args) => {
     const patient = await ctx.db.get(args.patientId);
     if (!patient || patient.role !== "patient") throw new Error("Patient not found");
-    const profiles = await ctx.db.query("physiotherapistProfiles")
-      .withIndex("by_marketplace_availability", (q) => q.eq("isAvailableOnMarketplace", true))
-      .collect();
+    // Listed unless switched off, as in convex/joyMatching.ts (never-set counts as listed)
+    const profiles = (await ctx.db.query("physiotherapistProfiles").collect()).filter(isListedForJoy);
     // Every provider charges the same Rehabify price, so the amount is worked out once; for a home
     // visit this also finds the patient's travel zone (the same zones the website and prices use)
     let amountKobo: number;
@@ -824,9 +827,9 @@ export const findMatches = internalQuery({
     }
     const results = [];
     for (const profile of profiles) {
-      if (!(await isJoyProviderEligible(ctx, profile))) continue;
-      const modes = profile.joyServiceModes ?? [];
+      const modes = joyModes(profile);
       if (!modes.includes(args.serviceMode)) continue;
+      if (!(await isJoyProviderEligible(ctx, profile))) continue;
       const tags = controlledTags(profile);
       if (!args.requiredSpecialties.every((tag) => tags.includes(tag))) continue;
       // Home visits: only physios who cover the patient's travel zone (ticked in Settings → Marketplace)
@@ -862,10 +865,8 @@ export const resolveProfileForAvailability = internalQuery({
   },
   handler: async (ctx, args) => {
     const profile = await ctx.db.get(args.physiotherapistId);
-    if (!profile || !profile.joyServiceModes?.includes(args.serviceMode) || !profile.availabilitySchedule) {
-      return null;
-    }
-    if (!(await isJoyProviderEligible(ctx, profile))) return null;
+    if (!profile || !profile.availabilitySchedule) return null;
+    if (!(await isJoyBookable(ctx, profile, args.serviceMode))) return null;
     // Indicative: the booking fixes the exact service and any travel charge
     const amountKobo = await indicativeJoyAmountKobo(ctx, args.serviceMode, args.durationMinutes, (args.durationMinutes ?? 60) <= 45);
     return { physiotherapistUserId: profile.userId, amountKobo };
@@ -900,7 +901,7 @@ export const createPendingJoyBooking = internalMutation({
     referralId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    if (args.slotStart < Date.now() + 2 * HOUR_MS) throw new Error("Booking slots require at least two hours' notice");
+    if (args.slotStart < Date.now() + 2 * HOUR_MS) throw new ConvexError({ code: "SLOT_NOTICE_REQUIRED", message: "Booking slots require at least two hours' notice" });
     if (!Number.isInteger(args.durationMinutes) || args.durationMinutes < 5 || args.durationMinutes > 180) throw new Error("Invalid session duration");
 
     const existing = await ctx.db.query("marketplaceBookings")
@@ -912,30 +913,31 @@ export const createPendingJoyBooking = internalMutation({
 
     const patient = await ctx.db.get(args.patientId);
     const profile = await ctx.db.get(args.physiotherapistId);
-    if (!patient || patient.role !== "patient" || !profile) throw new Error("Patient or physiotherapist not found");
-    if (!profile.isAvailableOnMarketplace || !profile.joyServiceModes?.includes(args.serviceMode) || !(await isJoyProviderEligible(ctx, profile))) {
-      throw new Error("Physiotherapist is not eligible for this service");
+    if (!patient || patient.role !== "patient" || !profile) throw new ConvexError({ code: "NOT_FOUND", message: "Patient or physiotherapist not found" });
+    // The same rule matching used to show this physio (helpers/joyPricing.isJoyBookable)
+    if (!(await isJoyBookable(ctx, profile, args.serviceMode))) {
+      throw new ConvexError({ code: "PROVIDER_NOT_ELIGIBLE", message: "Physiotherapist is not eligible for this service" });
     }
     // Standard Rehabify price for the service this maps to; the session length is the service's
     let priced;
     try {
       priced = await quoteJoyProviderBooking(ctx, { patientId: args.patientId, serviceMode: args.serviceMode, durationMinutes: args.durationMinutes });
     } catch (error) {
-      if (error instanceof JoyPricingError) throw new Error(error.code === "AREA_NOT_COVERED" ? "Home visits are not available in the patient's area" : "This service is not available");
+      if (error instanceof JoyPricingError) {
+        throw new ConvexError(error.code === "AREA_NOT_COVERED"
+          ? { code: "AREA_NOT_COVERED", message: "Home visits are not available in the patient's area" }
+          : { code: "SERVICE_NOT_AVAILABLE", message: "This service is not available" });
+      }
       throw error;
     }
     const durationMinutes = priced.quote.durationMinutes;
 
     const slotEnd = args.slotStart + durationMinutes * 60_000;
-    const appointments = await ctx.db.query("appointments").withIndex("by_physiotherapist_id_and_time", (q) => q.eq("physiotherapistId", profile.userId)).collect();
-    const conflictingAppointment = appointments.some((appointment) =>
-      appointment.status !== "cancelled_by_patient" && appointment.status !== "cancelled_by_therapist" &&
-      appointment.startTime < slotEnd && appointment.endTime > args.slotStart
-    );
-    if (conflictingAppointment) throw new Error("Selected slot is no longer available");
-    const activeHolds = await ctx.db.query("marketplaceBookings").withIndex("by_physiotherapist", (q) => q.eq("physiotherapistId", profile.userId)).collect();
-    const conflictingHold = activeHolds.some((booking) => booking.bookingStatus === "pending_payment" && (booking.holdExpiresAt ?? 0) > Date.now() && (booking.sessionDate ?? 0) < slotEnd && ((booking.sessionDate ?? 0) + booking.sessionDuration * 60_000) > args.slotStart);
-    if (conflictingHold) throw new Error("Selected slot is temporarily held");
+    // Appointments, unpaid holds, and paid Joy bookings still waiting for the physio's answer
+    const clash = await findSlotClash(ctx, profile.userId, { start: args.slotStart, end: slotEnd });
+    if (clash) {
+      throw new ConvexError({ code: "SLOT_TAKEN", message: clash === "appointment" ? "Selected slot is no longer available" : "Selected slot is temporarily held" });
+    }
 
     // Resolve the patient's LIVE partner referral (validated: must belong to this patient).
     let linkedReferral: any = null;
@@ -1154,6 +1156,36 @@ export const cancelJoyBooking = internalMutation({
   },
 });
 
+/**
+ * Hold a Joy booking's time again when its 30-minute hold has run out and nobody else has taken
+ * it (Nov 2026 audit: "I can't start secure payment right now" for ever after 30 minutes).
+ * Throws HOLD_EXPIRED when the time is gone or now too close, so Joy can offer other times.
+ */
+async function renewJoyHoldIfExpired(ctx: MutationCtx, booking: Doc<"marketplaceBookings">): Promise<void> {
+  const now = Date.now();
+  if ((booking.holdExpiresAt ?? 0) > now) return;
+  const start = booking.sessionDate;
+  if (booking.physiotherapistId && typeof start === "number") {
+    if (start < now + 2 * HOUR_MS) throw new ConvexError({ code: "HOLD_EXPIRED", message: "The held time is now too close to book" });
+    const clash = await findSlotClash(ctx, booking.physiotherapistId, { start, end: start + booking.sessionDuration * 60_000 }, { excludeBookingId: booking._id });
+    if (clash) throw new ConvexError({ code: "HOLD_EXPIRED", message: "The held time has been taken" });
+  }
+  await ctx.db.patch(booking._id, { holdExpiresAt: now + BOOKING_HOLD_MS, updatedAt: now });
+}
+
+/**
+ * A payment that arrived after the hold ran out, for a time someone else now has (or that starts
+ * too soon for the physio to answer). The patient keeps their payment and is offered other times
+ * or a refund, rather than the physio being asked to accept a double booking.
+ */
+async function joyPaidSlotUnavailable(ctx: MutationCtx, booking: Doc<"marketplaceBookings">, now: number): Promise<boolean> {
+  if (!booking.physiotherapistId || typeof booking.sessionDate !== "number") return false;
+  if (booking.sessionDate < now + 30 * 60_000) return true;
+  if ((booking.holdExpiresAt ?? 0) > now) return false;  // still held: the time is theirs
+  const clash = await findSlotClash(ctx, booking.physiotherapistId, { start: booking.sessionDate, end: booking.sessionDate + booking.sessionDuration * 60_000 }, { excludeBookingId: booking._id });
+  return clash !== null;
+}
+
 export const prepareJoyPaymentAttempt = internalMutation({
   args: { bookingId: v.id("marketplaceBookings"), patientId: v.id("users"), requestId: v.string(), idempotencyKey: v.string(), reference: v.string() },
   handler: async (ctx, args) => {
@@ -1162,11 +1194,18 @@ export const prepareJoyPaymentAttempt = internalMutation({
       // An idempotency key may only ever identify the booking that created it.
       // Returning another booking's URL could expose a completed checkout.
       if (existing.bookingId !== args.bookingId) throw new Error("Payment idempotency key belongs to another booking");
+      if (existing.status !== "verified") {
+        const held = await ctx.db.get(existing.bookingId);
+        if (held && held.bookingStatus === "pending_payment" && held.paymentStatus === "pending") await renewJoyHoldIfExpired(ctx, held);
+      }
       return { attempt_id: existing._id, booking_id: existing.bookingId, reference: existing.reference, amount_kobo: existing.amountKobo, status: existing.status, authorization_url: existing.authorizationUrl };
     }
     const booking = await ctx.db.get(args.bookingId);
     if (!booking || booking.patientId !== args.patientId || booking.sourceSystem !== "joy_ai") throw new Error("Joy booking not found");
-    if (booking.bookingStatus !== "pending_payment" || booking.paymentStatus !== "pending" || (booking.holdExpiresAt ?? 0) <= Date.now()) throw new Error("Booking is not available for payment");
+    if (booking.bookingStatus !== "pending_payment" || booking.paymentStatus !== "pending") throw new ConvexError({ code: "BOOKING_NOT_PAYABLE", message: "Booking is not available for payment" });
+    // The 30-minute hold ran out (often while the patient chose where the receipt goes): hold the
+    // same time again when nobody else has it, instead of failing every retry for good
+    await renewJoyHoldIfExpired(ctx, booking);
     const now = Date.now();
     const attemptId = await ctx.db.insert("joyPaymentAttempts", { bookingId: booking._id, reference: args.reference, amountKobo: booking.totalAmount, currency: "NGN", status: "initializing", sourceSystem: "joy_ai", sourceChannel: "whatsapp", originRequestId: args.requestId, originIdempotencyKey: args.idempotencyKey, createdAt: now, updatedAt: now });
     await ctx.db.patch(booking._id, { paymentReference: args.reference, updatedAt: now });
@@ -1310,6 +1349,25 @@ export const recordJoyPaymentWebhook = internalMutation({
         admin_scheduling_required: true,
         event_id: args.paystackEventId,
       };
+    }
+    if (await joyPaidSlotUnavailable(ctx, booking, now)) {
+      await ctx.db.patch(booking._id, {
+        paymentStatus: "completed", paidAt: now, paymentReference: args.reference, paidAmountKobo: args.amountKobo, updatedAt: now,
+        providerResponse: "rejected", replacementStatus: "awaiting_patient_slot",
+      });
+      await creditPartnerForJoyPayment(ctx, booking, args.reference, now);
+      await logJourney(ctx, { patientId: booking.patientId, bookingId: booking._id, stage: "payment_completed", eventKey: `payment-completed-${booking._id}` });
+      const lateReceiptUrl = await joyPaymentReceipt(ctx, booking, args.reference, args.amountKobo, now);
+      await queueJoyEvent(ctx, `pay-${args.reference}`, "booking.payment_confirmed", {
+        booking_id: booking._id, patient_id: booking.patientId, payment_reference: args.reference,
+        receipt_url: lateReceiptUrl, slot_unavailable: true,
+      });
+      // Joy offers other times (or the care team arranges it / refunds), as after a physio declines
+      await queueJoyEvent(ctx, `booking-replacement-${booking._id}-late-payment`, "booking.provider_rejected", {
+        booking_id: booking._id, patient_id: booking.patientId,
+      });
+      await logJoyPaymentProblem(ctx, "joy_payment_after_hold_slot_taken", args.reference, { bookingId: booking._id, paid: args.amountKobo });
+      return { handled: true, duplicate: false, booking_id: booking._id, patient_id: booking.patientId, slot_unavailable: true, event_id: args.paystackEventId };
     }
     // Booking Policy 5.4: 2 hours to answer (never later than 10 minutes before the start)
     const joyResponseDueAt = providerResponseDueAt(now, booking.sessionDate);
@@ -1628,6 +1686,16 @@ export const respondToJoyBooking = internalMutation({
       return { outcome: "replacement_required", booking_id: booking._id, patient_id: booking.patientId };
     }
     if (!booking.sessionDate) throw new Error("Validated booking slot missing");
+    // Something was put in this time since the patient paid (e.g. the physio added a visit by
+    // hand): never create a double booking. The patient is offered other times, as after a decline.
+    const acceptClash = await findSlotClash(ctx, args.physiotherapistId, {
+      start: booking.sessionDate, end: booking.sessionDate + booking.sessionDuration * 60_000,
+    }, { excludeBookingId: booking._id });
+    if (acceptClash === "appointment") {
+      await ctx.db.patch(booking._id, { providerResponse: "rejected", replacementStatus: "awaiting_patient_slot", updatedAt: Date.now() });
+      await logJourney(ctx, { patientId: booking.patientId, bookingId: booking._id, stage: "provider_rejected", eventKey: `provider-rejected-${booking._id}-${args.physiotherapistId}` });
+      return { outcome: "replacement_required", booking_id: booking._id, patient_id: booking.patientId, reason: "slot_clash" };
+    }
     const appointmentId = await ctx.db.insert("appointments", {
       patientId: booking.patientId, physiotherapistId: booking.physiotherapistId,
       startTime: booking.sessionDate, endTime: booking.sessionDate + booking.sessionDuration * 60_000,
@@ -1979,20 +2047,25 @@ export const replacementCandidates = internalQuery({
     if (!booking || booking.sourceSystem !== "joy_ai" || booking.replacementStatus !== "awaiting_patient_slot") return [];
     const tags = booking.joyRequiredSpecialties ?? [];
     const mode = booking.joyServiceMode;
-    if (!mode || !tags.length) return [];
-    const profiles = await ctx.db.query("physiotherapistProfiles").withIndex("by_marketplace_availability", q => q.eq("isAvailableOnMarketplace", true)).collect();
-    const results = [];
+    if (!mode) return [];
+    // The same rule as matching and booking (helpers/joyPricing.isJoyBookable); specialty fit
+    // ranks the replacements like matching does, it doesn't rule physios out
+    const profiles = (await ctx.db.query("physiotherapistProfiles").collect()).filter(isListedForJoy);
+    const ranked: Array<{ fit: number; item: Record<string, unknown> }> = [];
     for (const profile of profiles) {
-      if (profile.userId === booking.physiotherapistId || !profile.joyServiceModes?.includes(mode)) continue;
-      if (!tags.every(tag => controlledTags(profile).includes(tag))) continue;
-      if (!profile.availabilitySchedule || !(await isJoyProviderEligible(ctx, profile))) continue;
+      if (profile.userId === booking.physiotherapistId || !profile.availabilitySchedule) continue;
+      if (!(await isJoyBookable(ctx, profile, mode))) continue;
       // Home visits: the replacement must cover the booking's travel zone
       if (booking.travelZoneId && !(profile.coveredZoneIds ?? []).includes(booking.travelZoneId)) continue;
       const user = await ctx.db.get(profile.userId);
-      // The patient already paid this booking's standard price, whoever takes it
-      results.push({ physiotherapist_id: profile._id, display_name: user ? displayName(user) : undefined, amount_kobo: booking.totalAmount, specialties: controlledTags(profile), service_modes: profile.joyServiceModes });
+      const name = user ? displayName(user) : undefined;
+      if (!name) continue;  // never "Physiotherapist" with no name
+      const fit = tags.length ? tags.filter(tag => controlledTags(profile).includes(tag)).length / tags.length : 0;
+      // The patient already paid this booking's standard price, whoever takes it. The booking's
+      // own mode and length, so Joy looks up the right free times.
+      ranked.push({ fit, item: { physiotherapist_id: profile._id, display_name: name, amount_kobo: booking.totalAmount, specialties: controlledTags(profile), service_modes: [mode], duration_minutes: booking.sessionDuration } });
     }
-    return results.slice(0, 3);
+    return ranked.sort((a, b) => b.fit - a.fit).slice(0, 3).map((entry) => entry.item);
   },
 });
 
@@ -2026,18 +2099,31 @@ export const reassignPaidJoyBooking = internalMutation({
     const booking = await ctx.db.get(args.bookingId);
     const profile = await ctx.db.get(args.physiotherapistId);
     if (!booking || !profile || booking.sourceSystem !== "joy_ai" || booking.replacementStatus !== "awaiting_patient_slot" || booking.paymentStatus !== "completed") throw new Error("Booking is not eligible for reassignment");
-    if (!profile.joyServiceModes?.includes(booking.joyServiceMode as any) || !(booking.joyRequiredSpecialties ?? []).every(tag => controlledTags(profile).includes(tag))) throw new Error("Replacement provider is not eligible");
-    const approval = await ctx.db.query("accountApprovalStatus").withIndex("by_user_id", q => q.eq("userId", profile.userId)).first();
-    if (approval?.status !== "approved") throw new Error("Replacement provider is not approved");
+    if (!booking.joyServiceMode || !(await isJoyBookable(ctx, profile, booking.joyServiceMode))) throw new ConvexError({ code: "PROVIDER_NOT_ELIGIBLE", message: "Replacement provider is not eligible" });
     const proposedEnd = args.slotStart + booking.sessionDuration * 60_000;
-    const conflicts = await ctx.db.query("appointments").withIndex("by_physiotherapist_id_and_time", q => q.eq("physiotherapistId", profile.userId)).filter(q => q.and(
-      q.lt(q.field("startTime"), proposedEnd), q.gt(q.field("endTime"), args.slotStart),
-      q.neq(q.field("status"), "cancelled_by_patient"), q.neq(q.field("status"), "cancelled_by_therapist"),
-    )).collect();
-    if (conflicts.length) throw new Error("Replacement slot is no longer available");
+    if (await findSlotClash(ctx, profile.userId, { start: args.slotStart, end: proposedEnd }, { excludeBookingId: booking._id })) {
+      throw new ConvexError({ code: "SLOT_TAKEN", message: "Replacement slot is no longer available" });
+    }
     const now = Date.now();
     await ctx.db.patch(booking._id, { physiotherapistId: profile.userId, sessionDate: args.slotStart, providerResponse: "pending", providerResponseDueAt: providerResponseDueAt(now, args.slotStart), replacementStatus: "not_needed", updatedAt: now });
     await logJourney(ctx, { patientId: booking.patientId, bookingId: booking._id, stage: "provider_requested", eventKey: `provider-requested-${booking._id}-${profile.userId}` });
-    return { booking_id: booking._id, physiotherapist_id: profile.userId, provider_response_due_at: providerResponseDueAt(now, args.slotStart) };
+    // Ask the new physio, as after payment (dashboard bell, push, email, and Joy on WhatsApp).
+    // Before Nov 2026 nobody told them, so a replacement always ran out its 2 hours.
+    const dueAt = providerResponseDueAt(now, args.slotStart);
+    const reassigned = await ctx.db.get(booking._id);
+    if (reassigned) {
+      await askPhysioToRespond(ctx, reassigned, dueAt);
+      const physioUser = await ctx.db.get(profile.userId);
+      const patientUser = await ctx.db.get(booking.patientId);
+      await queueJoyEvent(ctx, `provider-response-${booking._id}-${profile.userId}-${args.slotStart}`, "booking.provider_response_requested", {
+        booking_id: booking._id, patient_id: booking.patientId, physiotherapist_id: profile.userId,
+        provider_response_due_at: dueAt, booking_code: reassigned.bookingCode ?? null, start_time: args.slotStart,
+        service_mode: reassigned.joyServiceMode ?? (reassigned.isOnline ? "online" : "home_visit"),
+        area: reassigned.joyServiceMode === "home_visit" ? (reassigned.travelArea ?? null) : null,
+        patient_first_name: patientUser?.firstName && patientUser.firstName !== "Patient" ? patientUser.firstName : null,
+        physiotherapist_phone: normalizePhone(physioUser?.phoneNumber) ?? null,
+      });
+    }
+    return { booking_id: booking._id, physiotherapist_id: profile.userId, provider_response_due_at: dueAt };
   },
 });

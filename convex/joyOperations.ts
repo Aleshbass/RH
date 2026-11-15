@@ -394,16 +394,20 @@ export const executeMutation = internalMutation({
       //   "call_me" (default): they asked for a person ("call me", "I want to speak to someone")
       //   "no_match": no physio fits and is free within 24 hours, so the care team books them
       //   "red_flag": Joy stopped the booking on a warning sign and sent them to urgent care
+      //   "booking_failed": Joy couldn't hold the time or start payment; text says why (Nov 2026)
       const patient = await patientForActor(ctx, String(data.patient_id), data.actor);
       const name = [patient.firstName, patient.lastName].filter(Boolean).join(" ").trim() || "A patient";
       const who = patient.rehabifyId ? `${name} (${patient.rehabifyId})` : name;
       const phone = String(data.actor?.sender_phone ?? patient.phoneNumber ?? "").trim();
       const said = String(data.text ?? "").replace(/\s+/g, " ").trim().slice(0, 200);
-      const reason = data.reason === "no_match" || data.reason === "red_flag" ? data.reason : "call_me";
+      const reason = data.reason === "no_match" || data.reason === "red_flag" || data.reason === "booking_failed" ? data.reason : "call_me";
       const call = phone ? ` Call ${phone}.` : "";
       const wrote = said ? ` They wrote: "${said}"` : "";
-      const title = reason === "no_match" ? "Joy patient needs booking" : reason === "red_flag" ? "Joy red flag: urgent care advised" : "Patient asked for a call";
-      const body = reason === "no_match"
+      const title = reason === "no_match" ? "Joy patient needs booking" : reason === "red_flag" ? "Joy red flag: urgent care advised"
+        : reason === "booking_failed" ? "Joy booking failed" : "Patient asked for a call";
+      const body = reason === "booking_failed"
+        ? `${who} tried to book on WhatsApp, but it didn't go through${said ? ` (${said})` : ""}. Nothing was charged. Please help them book.${call}`
+        : reason === "no_match"
         ? `${who} finished Joy's triage, but no physio who fits is free in the next 24 hours. Please arrange their consultation.${call}${said ? ` ${said}` : ""}`
         : reason === "red_flag"
           ? `${who} reported a warning sign on WhatsApp. Joy stopped the booking and told them to get urgent medical care.${call}${said ? ` ${said}` : ""}`

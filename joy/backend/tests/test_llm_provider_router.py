@@ -34,22 +34,43 @@ def _chain(monkeypatch, provider):
     from app.llm import gemini_client
 
     gemini_client.get_configured_llm_client.cache_clear()
-    settings = Settings(llm_provider=provider, openai_api_key="k", gemini_api_key="g")
+    settings = Settings(llm_provider=provider, openai_api_key="k")
     monkeypatch.setattr(gemini_client, "get_settings", lambda: settings)
-    monkeypatch.setattr(gemini_client.genai, "Client", lambda **kwargs: object())
     try:
         return gemini_client.get_configured_llm_client()
     finally:
         gemini_client.get_configured_llm_client.cache_clear()
 
 
-def test_openai_first_with_gemini_as_backup(monkeypatch):
-    from app.llm.gemini_client import GeminiClient, ProviderChainClient
+@pytest.mark.parametrize("provider", ["openai", "gemini"])
+def test_openai_only_never_google(monkeypatch, provider):
+    """Gemini removed (owner, 14 Nov 2026): even a leftover LLM_PROVIDER=gemini means OpenAI."""
+    from app.llm.gemini_client import ProviderChainClient
 
-    chain = _chain(monkeypatch, "openai")
+    chain = _chain(monkeypatch, provider)
     assert isinstance(chain, ProviderChainClient)
-    assert [type(c) for c in chain._text] == [OpenAIClient, GeminiClient]
-    assert [type(c) for c in chain._voice] == [OpenAIClient, GeminiClient]
+    assert [type(c) for c in chain._text] == [OpenAIClient]
+    assert [type(c) for c in chain._voice] == [OpenAIClient]
+
+
+def test_a_slow_first_model_hands_over_to_the_backup_model(monkeypatch):
+    import httpx
+
+    from app.llm import gemini_client
+
+    used = []
+
+    def post(url, headers, json, timeout):
+        used.append(json["model"])
+        if json["model"] == "first":
+            raise httpx.ReadTimeout("slow")
+        return httpx.Response(200, json={"choices": [{"message": {"content": '{"reply_text": "Tell me more.", "language": "en"}'}}]},
+                              request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(gemini_client.httpx, "post", post)
+    client = OpenAIClient(Settings(openai_api_key="k", openai_text_model="first", openai_fallback_models="second"))
+    assert client.complete("p", "hi").reply_text == "Tell me more."
+    assert used == ["first", "second"]
 
 
 def test_a_failing_provider_hands_over_to_the_next():

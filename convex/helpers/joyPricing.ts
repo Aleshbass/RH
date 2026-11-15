@@ -79,6 +79,31 @@ export async function quoteJoyProviderBooking(
   }
 }
 
+/** Joy's service modes, or the website's own video / home-visit settings when they were never saved. */
+export function joyModes(profile: { joyServiceModes?: string[]; offersOnlineSessions?: boolean; offersInPersonSessions?: boolean }): string[] {
+  if (profile.joyServiceModes?.length) return profile.joyServiceModes;
+  return [
+    ...(profile.offersOnlineSessions !== false ? ["online"] : []),
+    ...(profile.offersInPersonSessions ? ["home_visit"] : []),
+  ];
+}
+
+/** Listed unless switched off: the marketplace treats "never set" as listed, and so does Joy. */
+export function isListedForJoy(profile: { isAvailableOnMarketplace?: boolean }): boolean {
+  return profile.isAvailableOnMarketplace !== false;
+}
+
+/**
+ * The one rule for "Joy may show AND book this physio for this mode". Matching, other times,
+ * holding a time, replacements and reassignment all use it, so a physio Joy shows can always be
+ * booked (12 Nov 2026: matching used the fallbacks above but booking didn't, and every
+ * "Confirm and pay" with those physios failed).
+ */
+export async function isJoyBookable(ctx: QueryCtx, profile: Doc<"physiotherapistProfiles">, mode: string): Promise<boolean> {
+  if (!isListedForJoy(profile) || !joyModes(profile).includes(mode)) return false;
+  return isJoyProviderEligible(ctx, profile);
+}
+
 /**
  * Whether Joy may offer this physio. Approved and in the Rehabify network (clinic members work
  * under their clinic's terms). Once the admin's network-terms date passes, Joy applies the same

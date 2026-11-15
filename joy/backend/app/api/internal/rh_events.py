@@ -93,7 +93,14 @@ async def receive_event(request: Request, settings: Settings = Depends(get_setti
             if context.get("rh_booking_id") == booking_id and receipt_link.startswith("https://") and conversation is not None:
                 context["receipt_url"] = receipt_link  # repeated in the booked message
                 conversation.booking_context = context
-            if context.get("booking_route") == "admin_scheduled_virtual":
+            if data.get("slot_unavailable"):
+                # Paid after the 30-minute hold ran out, and the time was taken meanwhile (RH then
+                # sends booking.provider_rejected, and Joy offers other times)
+                text = (
+                    "Payment received ✅ Thank you.\n\nThe time you chose was booked by someone else while "
+                    "you were paying, so I'm finding you another time now. If none suits you, you'll get a full refund."
+                )
+            elif context.get("booking_route") == "admin_scheduled_virtual":
                 text = (
                     "Your payment has been received. Our care team will assign your clinician, date, and time shortly. "
                     "I’ll send your appointment details and joining link here once that is done."
@@ -603,13 +610,19 @@ def _prepare_replacement(session: Session, data: dict) -> None:
         client = configured_rh_client()
         actor = RHActor(persona="patient", sender_phone=patient.phone_e164, rh_user_id=rh_patient_id)
         candidates = client.replacement_candidates(booking_id, patient_id=rh_patient_id, actor=actor)
-        now = datetime.now(timezone.utc)
+        # The booking's own length (the first consultation is 20 minutes, not 60)
+        try:
+            duration = int(client.booking_status(booking_id, patient_id=rh_patient_id).get("duration_minutes") or 60)
+        except (RHIntegrationError, TypeError, ValueError, AttributeError):
+            duration = 60
+        # RH needs 2 hours' notice to hold a time; a short margin so a choice can't expire in transit
+        start = datetime.now(timezone.utc) + timedelta(hours=2, minutes=5)
         choices: list[dict] = []
         for candidate in candidates:
             availability = client.availability(
-                candidate.physiotherapist_id, start_ms=int(now.timestamp() * 1000),
-                end_ms=int((now.timestamp() + 7 * 24 * 3600) * 1000), duration_minutes=60,
-                service_mode=(candidate.service_modes or ["clinic"])[0],
+                candidate.physiotherapist_id, start_ms=int(start.timestamp() * 1000),
+                end_ms=int((start.timestamp() + 7 * 24 * 3600) * 1000), duration_minutes=duration,
+                service_mode=(candidate.service_modes or ["online"])[0],
             )
             for slot in (availability.get("slots") or [])[:3]:
                 if isinstance(slot, dict) and isinstance(slot.get("start"), (int, float)):
@@ -630,8 +643,10 @@ def _prepare_replacement(session: Session, data: dict) -> None:
         conversation.booking_substate = "rh_awaiting_replacement"
         conversation.booking_context = ctx
         lines = ["Your specialist could not take the appointment. I found these replacement times:"]
+        from app.booking.booking_flow import when_label
+
         for index, choice in enumerate(choices, 1):
-            display = datetime.fromtimestamp(choice["slot_start"] / 1000, timezone.utc).strftime("%a %d %b, %I:%M %p")
+            display = f"{when_label(choice['slot_start'])} (Lagos time)"  # was shown in UTC, an hour early
             lines.append(f"{index}. {choice.get('display_name') or 'Physiotherapist'} — {display}")
         lines.append("Reply with the time number you prefer.")
         enqueue_booking_confirmed(patient.phone_e164, booking_id, "\n".join(lines))

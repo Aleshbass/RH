@@ -176,6 +176,20 @@ class RHConvexReadClient:
         return data
 
 
+_GATEWAY_TIMEOUTS: dict[str, float] = {"find_matches": 25.0}
+_GATEWAY_CODE_RE = re.compile(r"^[A-Z][A-Z0-9_]{2,63}$")
+
+
+def _gateway_error_code(response: httpx.Response) -> str | None:
+    """The reason code in RH's error body ({"code": "SLOT_TAKEN"}), when it sent one."""
+    try:
+        body = response.json()
+    except ValueError:
+        return None
+    code = body.get("code") if isinstance(body, dict) else None
+    return code if isinstance(code, str) and _GATEWAY_CODE_RE.fullmatch(code) else None
+
+
 class RHConvexGatewayClient:
     """Signed, allowlisted Joy -> RH Convex operational gateway.
 
@@ -210,6 +224,9 @@ class RHConvexGatewayClient:
                     "X-Joy-Gateway-Nonce": nonce,
                     "X-Joy-Gateway-Signature": signature,
                 },
+                # Matching ranks every listed physio's free times: it can take longer than 10 s
+                # (12 Nov 2026: 10.6 s, and the patient was told "can't reach booking")
+                timeout=_GATEWAY_TIMEOUTS.get(operation, httpx.USE_CLIENT_DEFAULT),
             )
         except httpx.HTTPError as error:
             raise RHIntegrationError("DEPENDENCY_UNAVAILABLE", "RH Convex booking service is unavailable", retryable=True) from error
@@ -219,7 +236,12 @@ class RHConvexGatewayClient:
                 code = "RH_CONVEX_GATEWAY_UNAUTHORIZED"
             elif response.status_code == 409:
                 code = "RH_CONVEX_GATEWAY_CONFLICT"
-            logger.warning("joy_convex_gateway_failed", extra={"operation": operation, "status": response.status_code})
+            # RH names the reason (SLOT_TAKEN, PROVIDER_NOT_ELIGIBLE, HOLD_EXPIRED...): keep it, so
+            # Joy can tell the patient the truth and staff can see why
+            reason = _gateway_error_code(response)
+            if reason and response.status_code != 401:
+                code = reason
+            logger.warning("joy_convex_gateway_failed operation=%s status=%s code=%s", operation, response.status_code, code)
             raise RHIntegrationError(code, "RH Convex booking service rejected the request", retryable=response.status_code >= 500)
         try:
             return response.json()

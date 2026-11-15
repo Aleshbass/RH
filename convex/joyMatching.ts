@@ -38,7 +38,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { ensureUserRole } from "./auth";
 import { computePhysioSetup, servesRehabifyNetwork } from "./physioSetup";
 import { controlledTags, displayName, kmBetween } from "./joyIntegration";
-import { isJoyProviderEligible, JoyPricingError, quoteJoyProviderBooking } from "./helpers/joyPricing";
+import { isJoyProviderEligible, isListedForJoy, joyModes, JoyPricingError, quoteJoyProviderBooking } from "./helpers/joyPricing";
 import { zoneForArea } from "./helpers/rehabifyPricing";
 
 const HOUR = 60 * 60 * 1000;
@@ -107,14 +107,8 @@ export function specialtyFit(required: string[], tags: string[]): number {
   return total / areas.length;
 }
 
-/** Joy's service modes, or the website's own video / home-visit settings when they were never saved. */
-export function joyModes(profile: { joyServiceModes?: string[]; offersOnlineSessions?: boolean; offersInPersonSessions?: boolean }): string[] {
-  if (profile.joyServiceModes?.length) return profile.joyServiceModes;
-  return [
-    ...(profile.offersOnlineSessions !== false ? ["online"] : []),
-    ...(profile.offersInPersonSessions ? ["home_visit"] : []),
-  ];
-}
+// Joy's service modes (with the website fallbacks) live with the booking rule, so both agree
+export { joyModes };
 
 function specialtyLabel(specializations: string[] | undefined): string | undefined {
   const names = (specializations ?? []).map((name) => name.trim()).filter(Boolean).slice(0, 2);
@@ -159,7 +153,7 @@ export const matchCandidates = internalQuery({
     // Listed unless switched off: the marketplace treats "never set" as listed, and so does Joy
     // (the index on true alone missed every physio who never touched the switch)
     const profiles = (await ctx.db.query("physiotherapistProfiles").collect())
-      .filter((profile) => profile.isAvailableOnMarketplace !== false);
+      .filter(isListedForJoy);
     const candidates = [];
     for (const profile of profiles) {
       if (!profile.availabilitySchedule) continue;

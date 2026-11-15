@@ -25,11 +25,18 @@ export function overlaps(a: Interval, b: Interval): boolean {
 
 /** A pending booking still holding its slot. */
 export function isLiveHold(
-  booking: Pick<Doc<"marketplaceBookings">, "bookingStatus" | "holdExpiresAt"> & Partial<Pick<Doc<"marketplaceBookings">, "providerResponse">>,
+  booking: Pick<Doc<"marketplaceBookings">, "bookingStatus" | "holdExpiresAt"> & Partial<Pick<Doc<"marketplaceBookings">, "providerResponse" | "paymentStatus" | "sourceSystem">>,
   now: number
 ): boolean {
   // A paid request waiting for the physio's answer keeps its time until they answer
   if (booking.bookingStatus === "awaiting_physio") return booking.providerResponse === "pending";
+  // A paid Joy booking stays "pending_payment" until the physio answers (joyIntegration
+  // recordJoyPaymentWebhook); its 30-minute hold has long run out by then, but the time is theirs.
+  // Without this, the same time could be sold again while the physio had 2 hours to accept.
+  if (
+    booking.sourceSystem === "joy_ai" && booking.bookingStatus === "pending_payment" &&
+    booking.paymentStatus === "completed" && booking.providerResponse === "pending"
+  ) return true;
   return booking.bookingStatus === "pending_payment" && (booking.holdExpiresAt ?? 0) > now;
 }
 

@@ -1,3 +1,4 @@
+import { ConvexError } from "convex/values";
 import { httpAction } from "./_generated/server";
 import { api, internal } from "./_generated/api";
 import { rankedJoyMatches } from "./joyMatching";
@@ -50,6 +51,25 @@ async function readReadOnlyJson(request: Request, path: string): Promise<{ data:
 async function reserveNonce(ctx: { runMutation: (reference: any, args: any) => Promise<any> }, nonce: string): Promise<boolean> {
   const result = await ctx.runMutation((internal as any).joyIntegration.recordGatewayNonce, { nonce, expiresAt: Date.now() + 5 * 60_000 });
   return result.accepted === true;
+}
+
+// Booking refusals RH names (ConvexError { code }), sent to Joy as { code } with a 4xx instead of
+// a bare 500, so Joy can tell the patient the truth and staff can see why (Nov 2026 audit: a
+// "not eligible" refusal reached the patient as "That time has just been taken").
+const REASON_STATUS: Record<string, number> = {
+  SLOT_TAKEN: 409, SLOT_NOTICE_REQUIRED: 409, HOLD_EXPIRED: 409, BOOKING_NOT_PAYABLE: 409,
+  PROVIDER_NOT_ELIGIBLE: 422, SERVICE_NOT_AVAILABLE: 422, AREA_NOT_COVERED: 422, NOT_FOUND: 404,
+};
+
+async function withReason(run: () => Promise<unknown>): Promise<Response> {
+  try {
+    return Response.json(await run());
+  } catch (error) {
+    const data = error instanceof ConvexError ? (error.data as { code?: unknown } | null) : null;
+    const code = typeof data?.code === "string" ? data.code : null;
+    if (code && REASON_STATUS[code]) return Response.json({ code }, { status: REASON_STATUS[code] });
+    throw error;
+  }
 }
 
 // This is intentionally a fixed allowlist, not a generic Convex function dispatcher.
@@ -297,7 +317,7 @@ export const createPendingBooking = httpAction(async (ctx, request) => {
   if (data.slot_start < Date.now() + JOY_MINIMUM_NOTICE_MS) {
     return Response.json({ code: "SLOT_NOTICE_REQUIRED" }, { status: 409 });
   }
-  return Response.json(await ctx.runMutation((internal as any).joyIntegration.createPendingJoyBooking, {
+  return withReason(() => ctx.runMutation((internal as any).joyIntegration.createPendingJoyBooking, {
     patientId: data.patient_id, physiotherapistId: data.physiotherapist_id, slotStart: data.slot_start,
     durationMinutes: data.duration_minutes, serviceMode: data.service_mode, sessionType: data.session_type,
     patientAddress: typeof data.patient_address === "string" ? data.patient_address : undefined,
@@ -390,7 +410,7 @@ export const reassignBooking = httpAction(async (ctx, request) => {
   if (parsed instanceof Response) return parsed;
   if (!(await reserveNonce(ctx, parsed.nonce))) return new Response("Replay detected", { status: 409 });
   if (typeof parsed.data.booking_id !== "string" || typeof parsed.data.physiotherapist_id !== "string" || typeof parsed.data.slot_start !== "number") return new Response("Invalid payload", { status: 400 });
-  return Response.json(await ctx.runMutation((internal as any).joyIntegration.reassignPaidJoyBooking, { bookingId: parsed.data.booking_id, physiotherapistId: parsed.data.physiotherapist_id, slotStart: parsed.data.slot_start }));
+  return withReason(() => ctx.runMutation((internal as any).joyIntegration.reassignPaidJoyBooking, { bookingId: parsed.data.booking_id, physiotherapistId: parsed.data.physiotherapist_id, slotStart: parsed.data.slot_start }));
 });
 
 export const getBooking = httpAction(async (ctx, request) => {
@@ -415,7 +435,7 @@ export const preparePaymentAttempt = httpAction(async (ctx, request) => {
   if (!(await reserveNonce(ctx, parsed.nonce))) return new Response("Replay detected", { status: 409 });
   const data = parsed.data;
   if (!["booking_id", "patient_id", "request_id", "idempotency_key", "reference"].every((key) => typeof data[key] === "string")) return new Response("Invalid payload", { status: 400 });
-  return Response.json(await ctx.runMutation((internal as any).joyIntegration.prepareJoyPaymentAttempt, { bookingId: data.booking_id, patientId: data.patient_id, requestId: data.request_id, idempotencyKey: data.idempotency_key, reference: data.reference }));
+  return withReason(() => ctx.runMutation((internal as any).joyIntegration.prepareJoyPaymentAttempt, { bookingId: data.booking_id, patientId: data.patient_id, requestId: data.request_id, idempotencyKey: data.idempotency_key, reference: data.reference }));
 });
 
 export const recordPaymentInitialization = httpAction(async (ctx, request) => {
