@@ -13,7 +13,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useMutation, useQuery } from 'convex/react'
 import { toast } from 'sonner'
-import { BellRing, Check, Loader2, RotateCcw, WhatsApp, X } from '@/components/icons'
+import { BellRing, Check, Loader2, RotateCcw, X } from '@/components/icons'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
 import { pillInk, pillLime, pillOutline } from '../shared'
@@ -102,8 +102,6 @@ export function SimDebrief({ attemptId, slug }: { attemptId: string; slug: strin
   }
 
   const { debrief: d, case: c } = data
-  const shareText = `I scored ${d.score.pct}% on “${c.title}”, a clinical simulation on Rehabify Learn. Can you beat it?`
-  const shareUrl = typeof window !== 'undefined' ? `${window.location.origin}${simPath(c.slug)}` : simPath(c.slug)
 
   const again = async () => {
     setRestarting(true)
@@ -131,22 +129,10 @@ export function SimDebrief({ attemptId, slug }: { attemptId: string; slug: strin
         d={d}
         stats={{ best: data.best, average: data.average }}
         extra={{
-          title: data.preview ? 'Share and keep going' : 'Share your run',
+          title: 'Share your run',
           body: (
             <div className="space-y-4">
-              {data.preview ? (
-                <a
-                  href={`https://wa.me/?text=${encodeURIComponent(`${shareText} ${shareUrl}`)}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={() => playSound('share')}
-                  className={cn(pillOutline, 'h-11 w-full px-5')}
-                >
-                  <WhatsApp className="h-4 w-4" /> Share your score on WhatsApp
-                </a>
-              ) : (
-                <ShareReplayCard attemptId={attemptId} slug={c.slug} pct={d.score.pct} title={c.title} />
-              )}
+              <ShareReplayCard attemptId={attemptId} slug={c.slug} pct={d.score.pct} title={c.title} />
               {!data.preview && <InterestCard slug={c.slug} interested={data.interested} />}
               <p className="text-xs leading-5 text-rh-ink/45">{DISCLAIMER}</p>
             </div>

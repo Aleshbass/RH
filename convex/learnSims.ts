@@ -633,7 +633,7 @@ export const createShare = mutation({
   handler: async (ctx, args) => {
     const own = await ownAttempt(ctx, args.attemptId);
     if (!own || own.attempt.status !== "finished") throw new ConvexError("Finish the case first, then share it.");
-    if (own.attempt.preview) throw new ConvexError("Preview runs can't be shared.");
+    // Preview runs (reviewers play-testing a draft) can be shared too, so the team can try it
     const existing = await ctx.db.query("learnSimShares").withIndex("by_attempt", (q) => q.eq("attemptId", own.attempt._id)).first();
     if (existing) return { code: existing.code };
     let code = "";

@@ -127,10 +127,16 @@ export const learnSocialTables = {
     roomId: v.optional(v.id("learnRooms")),
     memberCount: v.number(),
     archived: v.optional(v.boolean()),
+    // Group home (owner 2026-11-15): a note the lead pins at the top, and an invite link anyone
+    // signed in to Learn can use to join (off when unset; a new code replaces the old link)
+    announcement: v.optional(v.object({ text: v.string(), by: v.id("users"), at: v.number() })),
+    inviteCode: v.optional(v.string()),
     createdBy: v.id("users"),
     createdAt: v.number(),
     updatedAt: v.number(),
-  }).index("by_created", ["createdAt"]),
+  })
+    .index("by_created", ["createdAt"])
+    .index("by_invite", ["inviteCode"]),
 
   learnGroupMembers: defineTable({
     groupId: v.id("learnGroups"),
@@ -142,4 +148,20 @@ export const learnSocialTables = {
     .index("by_group", ["groupId", "addedAt"])
     .index("by_user", ["userId"])
     .index("by_group_user", ["groupId", "userId"]),
+
+  // Work a lead sets the group (owner 2026-11-15): a course, one lesson or a simulation case, with an
+  // optional due date. Who has done it is worked out from course progress and case attempts.
+  learnGroupAssignments: defineTable({
+    groupId: v.id("learnGroups"),
+    kind: v.union(v.literal("course"), v.literal("lesson"), v.literal("sim")),
+    courseId: v.optional(v.id("learnVideoCourses")), // course, and the lesson's course
+    lessonId: v.optional(v.id("learnVideoLessons")),
+    caseSlug: v.optional(v.string()),
+    title: v.string(), // as it was when set
+    note: v.optional(v.string()),
+    dueAt: v.optional(v.number()),
+    archived: v.optional(v.boolean()),
+    createdBy: v.id("users"),
+    createdAt: v.number(),
+  }).index("by_group", ["groupId", "createdAt"]),
 };

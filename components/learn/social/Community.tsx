@@ -47,6 +47,7 @@ import {
 } from './socialApi'
 import { Avatar, EmptyState, JoinPrompt, Sheet, Skeleton } from './ui'
 import { groupTone, myGroupsRef } from '@/lib/learnAdminsApi'
+import { GroupHub, GroupInviteButton } from './GroupHub'
 
 const KIND_LABEL = { question: 'Question', discussion: 'Discussion' } as const
 
@@ -592,19 +593,56 @@ export function RoomView({ slug }: { slug: string }) {
           </div>
         </div>
         {data.state === 'ok' && (
-          <button type="button" onClick={() => setComposing(true)} className={cn(pillInk, 'h-12 shrink-0 self-start px-6 sm:self-auto')}>
-            <Plus className="h-4 w-4" /> New post
-          </button>
+          <div className="flex shrink-0 gap-2 self-start sm:self-auto">
+            {group && <GroupInviteButton groupId={group.id} groupName={group.name} />}
+            <button type="button" onClick={() => setComposing(true)} className={cn(pillInk, 'h-12 shrink-0 px-6')}>
+              <Plus className="h-4 w-4" /> New post
+            </button>
+          </div>
         )}
       </div>
 
-      <div className="mt-8">
-        {data.state === 'join' ? (
+      <div className={group && data.state === 'ok' ? '' : 'mt-8'}>
+        {group && data.state === 'ok' ? (
+          <GroupHub
+            groupId={group.id}
+            posts={
+              data.posts.length === 0 ? (
+                <EmptyState
+                  icon={<MessageCircle className="h-5 w-5" />}
+                  title="Nothing here yet"
+                  action={
+                    <button type="button" onClick={() => setComposing(true)} className={cn(pillInk, 'h-11 px-5')}>
+                      Start the first post
+                    </button>
+                  }
+                >
+                  Say hello, share notes or ask the group a question.
+                </EmptyState>
+              ) : (
+                <>
+                  <ul className="space-y-3">
+                    {data.posts.map((post, i) => (
+                      <PostRow key={post.id} post={post} showRoom={false} index={i} />
+                    ))}
+                  </ul>
+                  {data.hasMore && (
+                    <div className="mt-6 text-center">
+                      <button type="button" onClick={() => setLimit((l) => l + 20)} className={cn(pillOutline, 'h-11 px-6')}>
+                        Show more
+                      </button>
+                    </div>
+                  )}
+                </>
+              )
+            }
+          />
+        ) : data.state === 'join' ? (
           <JoinPrompt signedIn={data.signedIn} returnTo={roomPath(slug)} />
         ) : data.state === 'locked' ? (
           <EmptyState icon={<Lock className="h-5 w-5" />} title={data.room.kind === 'group' ? 'A private group' : 'For this course’s learners'}>
             {data.room.kind === 'group'
-              ? 'Only the group’s members can see this room. The Learn team adds people to groups.'
+              ? 'Only the group’s members can see this room. Ask the group’s lead for an invite link.'
               : data.room.kind === 'program'
                 ? 'This room is for learners on the MSK Specialist Program.'
                 : 'Enrol in the course to join its room and ask the instructor questions.'}
