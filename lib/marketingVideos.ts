@@ -24,7 +24,7 @@ export const MARKETING_VIDEOS = {
    * Pastor Francis narration, captions), played as uploaded so reviewers see it before signing off.
    */
   learnSimulationsDemo:
-    "https://res.cloudinary.com/dubeogufg/video/upload/v1794715116/marketing/demos/rehabify-learn-simulations-demo-vertical.mp4",
+    "https://res.cloudinary.com/dubeogufg/video/upload/v1794716413/marketing/demos/rehabify-learn-simulations-demo-vertical.mp4",
 } as const;
 
 const UPLOAD = "/video/upload/";
