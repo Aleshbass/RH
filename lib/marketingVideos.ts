@@ -19,6 +19,12 @@ export const MARKETING_VIDEOS = {
    */
   patientInvites: "https://res.cloudinary.com/dubeogufg/video/upload/marketing/demos/rehabify-patient-invites-landscape.mp4",
   patientInvitesVertical: "https://res.cloudinary.com/dubeogufg/video/upload/marketing/demos/rehabify-patient-invites-vertical.mp4",
+  /**
+   * Admin › Learn › Simulations, under the cases: the Learn simulations demo (1080x1920, 3:43,
+   * Pastor Francis narration, captions), played as uploaded so reviewers see it before signing off.
+   */
+  learnSimulationsDemo:
+    "https://res.cloudinary.com/dubeogufg/video/upload/v1794715116/marketing/demos/rehabify-learn-simulations-demo-vertical.mp4",
 } as const;
 
 const UPLOAD = "/video/upload/";

@@ -19,6 +19,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { simApi, type SimAdminCase } from '@/components/learn/sims/simApi'
 import { learnUrl } from '@/lib/site-hosts'
+import { cloudinaryPoster, MARKETING_VIDEOS } from '@/lib/marketingVideos'
 import { cn } from '@/lib/utils'
 
 const errorText = (err: unknown, fallback: string) => {
@@ -335,7 +336,51 @@ export function SimulationsAdmin() {
           })}
         </div>
       )}
+      <DemoPanel />
       <SignOffDrawer item={signing} onClose={() => setSigning(null)} />
     </AdminPage>
+  )
+}
+
+/**
+ * The simulations demo under the cases (owner 2026-11-14): reviewers see a whole case played, with
+ * the voices, the debrief and the rest of Learn, before they sign one off. Hosted on Cloudinary,
+ * 1080x1920, played as uploaded; nothing downloads until someone presses play.
+ */
+function DemoPanel() {
+  const url = MARKETING_VIDEOS.learnSimulationsDemo
+  if (!url) return null
+  return (
+    <Panel
+      title="Watch how a case plays"
+      description="A 4-minute walkthrough: Mrs Adebayo's case played end to end with her voice, then the debrief, video courses, Community and Spaces. Watch it before you sign off, or share it with partners."
+    >
+      <div className="flex flex-col gap-5 sm:flex-row sm:items-start">
+        <div className="mx-auto w-full max-w-[300px] shrink-0 overflow-hidden rounded-[28px] border-[6px] border-rh-ink bg-rh-ink shadow-lg sm:mx-0">
+          <video
+            src={url}
+            poster={cloudinaryPoster(url, 720)}
+            controls
+            playsInline
+            preload="none"
+            className="aspect-[9/16] w-full bg-rh-ink object-cover"
+            aria-label="Rehabify Learn simulations demo"
+          />
+        </div>
+        <div className="space-y-3 text-sm text-neutral-600 dark:text-neutral-300">
+          <p>
+            <span className="font-semibold text-rh-ink dark:text-white">What it shows:</span> the timed history (each question costs time), the saddle
+            sensation test, the emergency referral, her worried question about going home, and the expert debrief.
+          </p>
+          <p>Portrait 1080×1920 with captions, so it works on phones and with the sound off.</p>
+          <a
+            href={url.replace('/video/upload/', '/video/upload/fl_attachment:rehabify-learn-simulations-demo/')}
+            className={cn(softButtonClass, 'inline-flex h-9 items-center px-3 text-sm')}
+          >
+            Download the video
+          </a>
+        </div>
+      </div>
+    </Panel>
   )
 }
