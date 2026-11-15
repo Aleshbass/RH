@@ -10,12 +10,13 @@ import Link from 'next/link'
 import { useMutation, useQuery } from 'convex/react'
 import { motion, useReducedMotion } from 'framer-motion'
 import { toast } from 'sonner'
-import { Flame, Lock, Star, TrendingUp } from '@/components/icons'
+import { Flame, Star, TrendingUp, WhatsApp } from '@/components/icons'
 import { cn } from '@/lib/utils'
 import { displayFont, pillOutline } from '../shared'
 import { Avatar, JoinPrompt, Skeleton } from '../social/ui'
 import { relativeTime } from '../social/socialApi'
-import { BADGE_ICON, DefaultBadgeIcon, formatPoints, LEADERBOARD_PATH, pointsApi, PROGRESS_PATH } from './pointsApi'
+import { BadgeArt } from './BadgeArt'
+import { formatPoints, LEADERBOARD_PATH, pointsApi, PROGRESS_PATH } from './pointsApi'
 
 function Tile({ icon: Icon, label, value, sub, accent }: { icon: typeof Star; label: string; value: string; sub?: string; accent?: boolean }) {
   return (
@@ -102,7 +103,6 @@ export function MyProgress() {
         </div>
         <ul className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
           {data.badges.map((b, i) => {
-            const Icon = BADGE_ICON[b.id] ?? DefaultBadgeIcon
             const got = Boolean(b.earnedAt)
             return (
               <motion.li
@@ -110,20 +110,23 @@ export function MyProgress() {
                 initial={reduce ? false : { opacity: 0, scale: 0.96 }}
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ duration: 0.3, delay: Math.min(i, 10) * 0.03 }}
-                className={cn('flex flex-col rounded-3xl border p-4', got ? 'border-rh-lime/50 bg-white' : 'border-dashed border-rh-ink/15 bg-rh-cream/60')}
+                className={cn('flex flex-col items-center rounded-3xl border p-4 text-center', got ? 'border-rh-ink/[0.07] bg-white' : 'border-dashed border-rh-ink/15 bg-rh-cream/60')}
               >
-                <span
-                  className={cn(
-                    'flex h-11 w-11 items-center justify-center rounded-2xl',
-                    got ? 'bg-rh-lime text-rh-ink' : 'bg-rh-ink/[0.06] text-rh-ink/35'
-                  )}
-                >
-                  {got ? <Icon className="h-5 w-5" /> : <Lock className="h-4 w-4" />}
-                </span>
+                <BadgeArt id={b.id} earned={got} size={64} />
                 <p className={cn('mt-3 text-sm font-semibold', got ? 'text-rh-ink' : 'text-rh-ink/55')}>{b.name}</p>
                 <p className="mt-0.5 text-xs leading-5 text-rh-ink/50">
                   {got ? (b.detail ?? `Earned ${new Date(b.earnedAt!).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`) : b.how}
                 </p>
+                {got && (
+                  <a
+                    href={`https://wa.me/?text=${encodeURIComponent(`I earned the “${b.name}” badge on Rehabify Learn. ${typeof window !== 'undefined' ? window.location.origin : ''}`)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-rh-ink/55 transition hover:text-rh-ink"
+                  >
+                    <WhatsApp className="h-3 w-3" /> Share
+                  </a>
+                )}
               </motion.li>
             )
           })}

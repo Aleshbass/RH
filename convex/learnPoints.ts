@@ -353,3 +353,15 @@ export const backfillPoints = internalMutation({
     return { dryRun: false, awards: fresh.length, points, byReason };
   },
 });
+
+/** Your badges (ids and when), for the "badge unlocked" celebration in the Learn header. */
+export const myBadges = query({
+  args: {},
+  handler: async (ctx) => {
+    const viewer = await getViewer(ctx);
+    if (!viewer?.user) return null;
+    const userId = viewer.user._id;
+    const rows = await ctx.db.query("learnBadges").withIndex("by_user", (q) => q.eq("userId", userId)).collect();
+    return rows.map((b) => ({ id: b.badge, earnedAt: b.earnedAt, detail: b.detail ?? null }));
+  },
+});

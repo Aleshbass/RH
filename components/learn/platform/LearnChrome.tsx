@@ -51,6 +51,7 @@ import { COMMUNITY_PATH, SPACES_PATH, spacesApi } from '../social/socialApi'
 import { simApi, SIMULATIONS_PATH } from '../sims/simApi'
 import { LEADERBOARD_PATH, PROGRESS_PATH } from '../points/pointsApi'
 import { PointsPill } from '../points/PointsPill'
+import { BadgeUnlock } from '../points/BadgeUnlock'
 
 const SUPPORT_EMAIL = 'support@physioaroundme.com'
 
@@ -464,6 +465,7 @@ function AuthArea() {
   return (
     <div className="flex items-center gap-1 sm:gap-2">
       <PointsPill />
+      <BadgeUnlock />
       <Link href={MY_LEARNING_PATH} className="hidden h-10 items-center rounded-full px-4 text-sm font-semibold text-rh-ink hover:bg-rh-ink/[0.05] md:inline-flex">
         My learning
       </Link>

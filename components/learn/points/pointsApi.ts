@@ -68,6 +68,7 @@ export type AdminMonthTop = {
 export const pointsApi = {
   leaderboard: makeFunctionReference<'query', { period: Period; scope: Scope }, LeaderboardData>('learnPoints:leaderboard'),
   myPoints: makeFunctionReference<'query', Record<string, never>, { total: number } | null>('learnPoints:myPoints'),
+  myBadges: makeFunctionReference<'query', Record<string, never>, { id: string; earnedAt: number; detail: string | null }[] | null>('learnPoints:myBadges'),
   myProgress: makeFunctionReference<'query', Record<string, never>, ProgressData>('learnPoints:myProgress'),
   setHidden: makeFunctionReference<'mutation', { hidden: boolean }, { hidden: boolean }>('learnPoints:setLeaderboardHidden'),
   adminMonthTop: makeFunctionReference<'query', { month?: string }, AdminMonthTop>('learnPoints:adminMonthTop'),
