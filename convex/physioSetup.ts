@@ -391,7 +391,20 @@ export const getMyCareTeamPractice = query({
   args: {},
   handler: async (ctx): Promise<PracticeSettings | null> => {
     const user = await currentUser(ctx);
-    if (!user) return null;
+    return user ? await practiceForUser(ctx, user) : null;
+  },
+});
+
+/**
+ * Money and time settings for someone: a physio's own practice, a patient's physio's (see above);
+ * Nigeria's for everyone else.
+ */
+export async function practiceForUser(ctx: QueryCtx, user: Doc<"users">): Promise<PracticeSettings> {
+  if (user.role === "physiotherapist") {
+    const own = user.physiotherapistProfileId ? await ctx.db.get(user.physiotherapistProfileId) : null;
+    return practiceSettings(own?.country, own?.timeZone);
+  }
+  {
     const links = await ctx.db
       .query("patientPhysiotherapistRelationships")
       .withIndex("by_patient", (q) => q.eq("patientId", user._id))
@@ -406,8 +419,8 @@ export const getMyCareTeamPractice = query({
     const first = settings[0];
     const allSame = first && settings.every((s) => s.countryCode === first.countryCode && s.timeZone === first.timeZone);
     return allSame && !first.hasRehabifyCare ? first : practiceSettings(null);
-  },
-});
+  }
+}
 
 /** Rehabify physio, independent physio, or both (owner, 5 Nov 2026: "both" is offered again). */
 const practiceChoice = v.union(v.literal("network"), v.literal("independent"), v.literal("both"));

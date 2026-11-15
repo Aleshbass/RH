@@ -19,6 +19,7 @@ import { InstructorAvatar } from '../platform/catalog'
 import { TagBadge, useLearnerIdentity } from '../platform/identity'
 import { learnPath, learnSignInHref, MY_LEARNING_PATH } from '../platform/learnApi'
 import { cn } from '@/lib/utils'
+import { LocalPriceHint } from '@/components/payments/LocalPriceHint'
 import { displayFont, naira, pillInk, pillLime } from '../shared'
 import { formatLength, imagekitLoader, videoApi, type CourseOfferPage } from './videoApi'
 
@@ -134,6 +135,7 @@ function EnrolBox({ offer }: { offer: CourseOfferPage }) {
       {offer.access === 'msk' && <p className="mt-3 text-sm text-white/70">Included for paid MSK Specialist learners.</p>}
       <ViewerTag />
       <div className="mt-6">{action}</div>
+      {offer.access === 'paid' && <LocalPriceHint naira={offer.viewer.priceToPay ?? 0} className="mt-3 text-center text-white/60" />}
       <ul className="mt-6 space-y-2 text-sm text-white/70">
         <li className="flex items-center gap-2"><BookOpen className="h-4 w-4 text-rh-lime" /> {offer.lessonCount} lessons</li>
         <li className="flex items-center gap-2"><Clock className="h-4 w-4 text-rh-lime" /> {formatLength(offer.durationSec)} of video</li>

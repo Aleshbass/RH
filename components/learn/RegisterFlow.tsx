@@ -22,6 +22,7 @@ import {
 import { api } from '@/convex/_generated/api'
 import { errorMessage } from '@/components/partners/portal/shared'
 import { cn } from '@/lib/utils'
+import { LocalPriceHint } from '@/components/payments/LocalPriceHint'
 import {
   CLOSED_COPY,
   displayFont,
@@ -587,6 +588,7 @@ export function RegisterFlow() {
               </>
             )}
           </button>
+          <LocalPriceHint naira={price} className="mt-3 text-center text-rh-ink/60" />
           <p className="mt-4 text-center text-xs leading-5 text-rh-ink/50">{PROGRAM.certificationNote}</p>
         </form>
       )}

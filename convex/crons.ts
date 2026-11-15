@@ -264,4 +264,7 @@ crons.daily("scribe-purge-unsigned", { hourUTC: 2, minuteUTC: 55 }, internal.scr
 // Learn leaderboard (learnPoints.ts): on the 1st, last month's top 10 is frozen for admins and gets the Top 10 badge.
 crons.monthly("learn-leaderboard-close-month", { day: 1, hourUTC: 0, minuteUTC: 30 }, internal.learnPoints.closeMonth, {});
 
+// Naira exchange rates for the local-currency estimate shown to people outside Nigeria (exchangeRates.ts)
+crons.daily("exchange-rates-refresh", { hourUTC: 6, minuteUTC: 5 }, internal.exchangeRates.refresh, {});
+
 export default crons;

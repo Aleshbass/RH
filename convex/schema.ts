@@ -6021,4 +6021,14 @@ export default defineSchema({
     .index("by_code_hash", ["codeHash"])
     .index("by_status", ["status", "updatedAt"]),
 
+  // Official Naira rates (convex/exchangeRates.ts), one row per currency, refreshed daily. Only to
+  // show people outside Nigeria roughly what a Naira price is in their money; never to charge.
+  exchangeRates: defineTable({
+    base: v.string(), // "NGN"
+    currency: v.string(), // "GHS", "KES"...
+    rate: v.number(), // units of `currency` per ₦1
+    source: v.string(),
+    fetchedAt: v.number(),
+  }).index("by_currency", ["currency"]),
+
 });
