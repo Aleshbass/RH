@@ -27,6 +27,17 @@ _RED_PHRASES: dict[str, tuple[str, ...]] = {
         r"tight(?:ness)?\s+(?:in\s+)?(?:my\s+)?chest",
         r"chest\s+(?:de|dey)\s+pain",
     ),
+    "breathing_difficulty": (
+        r"(?:can['’]?t|cannot|can\s+not|unable\s+to|struggling\s+to|i\s+no\s+fit)\s+breathe?",
+        r"short(?:ness)?\s+of\s+breath",
+        r"(?:difficulty|trouble|problem)\s+breathing",
+        r"breathless(?:ness)?",
+    ),
+    "syncope": (
+        r"(?:i|he|she|they)\s+(?:just\s+)?(?:fainted|collapsed|passed\s+out|blacked\s+out)",
+        r"(?:keep|kept)\s+(?:fainting|collapsing|passing\s+out)",
+        r"fainting\s+(?:spells?|episodes?)",
+    ),
     "sudden_neuro_deficit": (
         r"sudden\s+(?:weakness|numbness|loss\s+of\s+(?:strength|feeling|speech|vision))",
         r"(?:can['’]?t|cannot|can\s+not)\s+(?:speak|talk|move\s+(?:my\s+)?(?:arm|leg|face))",
@@ -43,13 +54,37 @@ _RED_PHRASES: dict[str, tuple[str, ...]] = {
         r"lost\s+control\s+of\s+(?:my\s+)?(?:bladder|bowels?|urine|stool)",
         r"(?:bladder|bowel|urinary|faecal|fecal)\s+incontinence",
         r"wetting\s+myself|soiling\s+myself",
+        r"(?:can['’]?t|cannot|can\s+not|unable\s+to|i\s+no\s+fit)\s+hold\s+(?:my\s+)?(?:urine|pee|wee|stool|poo|toilet)",
+        r"wet(?:ting)?\s+(?:the|my)\s+bed",
+        r"(?:pee|peeing|poo|pooing)\s+(?:on\s+)?myself",
+        r"leaking\s+(?:urine|stool)",
+        r"urine\s+(?:dey|just)\s+(?:comot|come|leak)",
     ),
     "bilateral_leg_weakness": (
         r"weak(?:ness)?\s+in\s+both\s+(?:my\s+)?legs",
         r"both\s+(?:my\s+)?legs\s+(?:are\s+|feel\s+|keep\s+)?(?:weak|giving\s+way|numb)",
         r"bilateral\s+leg\s+weakness",
+        r"(?:my\s+)?legs\s+(?:are\s+|feel\s+|have\s+(?:become|gone)\s+)?(?:so\s+|very\s+|suddenly\s+)?(?:weak|numb|giving\s+way)",
     ),
 }
+
+# Flags the language model may RAISE (never clear) when the chat isn't in English, where the
+# phrases above don't reach (Yoruba, Igbo, Hausa, Pidgin, voice notes). Each maps to a red-flag
+# rule in app/safety/red_flag_rules.py, so any one stops the booking.
+# (Fever, weight loss and accidents stay with the 7-item screen, which stops the booking for them;
+# the engine rates them specialist review, so mid-chat they would change nothing.)
+MODEL_RAISABLE_FLAGS = frozenset(_RED_PHRASES) | {"unexplained_numbness"}
+
+
+def model_raised_red_flags(model_extraction: object, language: str | None) -> dict[str, bool]:
+    """Red flags the model set True in a non-English chat (English relies on the phrases above)."""
+    code = (language or "en").split("-")[0].strip().lower()
+    if code in ("", "en"):
+        return {}
+    flags = model_extraction.get("flags") if isinstance(model_extraction, dict) else None
+    if not isinstance(flags, dict):
+        return {}
+    return {key: True for key, value in flags.items() if key in MODEL_RAISABLE_FLAGS and value is True}
 
 _COMPILED = {
     flag: tuple(re.compile(rf"\b(?:{pattern})", re.IGNORECASE) for pattern in patterns)

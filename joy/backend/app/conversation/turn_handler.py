@@ -134,7 +134,8 @@ from app.safety.semantic_normalization import (
 )
 from app.safety.escalation import notify_family_on_safety, patient_message, specialist_review_offer
 from app.safety.evaluator import evaluate
-from app.safety.volunteered_red_flags import detect_volunteered_red_flags
+from app.safety.crisis import FLAGGED_BY_OTHERS_REPLY, crisis_reply, detect_crisis
+from app.safety.volunteered_red_flags import detect_volunteered_red_flags, model_raised_red_flags
 from app.physio.availability import apply_availability_turn
 from app.physio.booking_alerts import apply_physio_reply
 from app.physio.home_visit_checkin import apply_checkin_turn
@@ -764,10 +765,13 @@ def _defer_amber_until_summary_is_complete(
 
 
 def _user_history(state: ConversationState) -> list[dict[str, str]]:
+    """The latest messages from both sides: Joy's own replies too, so it knows what it already
+    asked, answered or promised (it used to see only the patient's side). Older history is in
+    the patient's memory note (app/conversation/memory.py)."""
     return [
-        {"role": message.role, "text": message.text}
+        {"role": "patient" if message.role == "user" else "joy", "text": message.text}
         for message in state.recent_messages
-        if message.role == "user"
+        if (message.text or "").strip()
     ]
 
 
@@ -2531,6 +2535,9 @@ def _alert_care_team(patient: Patient, reason: str, text: str) -> None:
         session = object_session(patient)
         rh_patient_id = _booking_rh_patient_id(session, patient) if session is not None else None
         if not rh_patient_id:
+            # No Rehabify record yet: the WhatsApp alert, so "I've let our care team know" is true
+            if session is not None:
+                route_escalation(session, reason, {"patient_id": str(patient.id), "phone": patient.phone_e164, "text": text[:160]})
             return
         configured_rh_client().operational_mutation(
             "patient_request_callback",
@@ -2540,6 +2547,54 @@ def _alert_care_team(patient: Patient, reason: str, text: str) -> None:
         )
     except Exception:
         logger.warning("joy_care_team_alert_failed reason=%s", reason, exc_info=True)
+
+
+def _record_exchange(session: Session, identity: Identity | None, user_text: str, reply: str, wa_message_id: str | None) -> None:
+    """Keep a crisis or urgent-care exchange in the patient's chat, so later turns (and the memory) know."""
+    if identity is None or identity.persona != Persona.PATIENT:
+        return
+    from app.models.conversation import Message
+
+    conversation = session.scalar(select(Conversation).where(
+        Conversation.person_id == identity.person_id, Conversation.persona == identity.persona,
+    ))
+    if conversation is None:
+        return
+    seen = bool(wa_message_id) and session.scalar(select(Message.id).where(Message.wa_message_id == wa_message_id)) is not None
+    session.add(Message(conversation_id=conversation.id, role="user", text=user_text, wa_message_id=None if seen else wa_message_id))
+    session.add(Message(conversation_id=conversation.id, role="joy", text=reply))
+    session.flush()
+
+
+def _crisis_turn(
+    session: Session, identity: Identity | None, phone: str, user_text: str, kind: str, wa_message_id: str | None,
+) -> TurnResult:
+    """Possible self-harm or abuse: a safe reply with 112, and the care team is told at once."""
+    reply = crisis_reply(kind, get_settings().joy_crisis_helplines)
+    person_id = identity.person_id if identity is not None else None
+    route_escalation(session, "crisis", {"patient_id": str(person_id or ""), "phone": phone, "kind": kind})
+    if identity is not None and identity.persona == Persona.PATIENT:
+        patient = session.get(Patient, identity.person_id)
+        if patient is not None:
+            _alert_care_team(patient, "crisis", "self-harm or suicide" if kind == "self_harm" else "abuse or violence")
+    append(session, kind=AuditKind.TRIAGE, actor_phone=phone, person_id=person_id,
+           payload={"decision": "crisis_detected", "kind": kind})
+    _record_exchange(session, identity, user_text, reply, wa_message_id)
+    return TurnResult(reply_text=reply, language="en", phase=PatientPhase.FIRST_CONTACT)
+
+
+def _flagged_by_others_turn(
+    session: Session, identity: Identity | None, phone: str, user_text: str, flags: dict[str, bool],
+) -> TurnResult:
+    """A warning sign from a family member or a new number: urgent care, and the care team is told."""
+    who = "a family member" if identity is not None else "a new number"
+    route_escalation(session, "safety", {
+        "rule_ids": sorted(flags), "action": "urgent_care",
+        "reason": f"Warning sign reported on WhatsApp by {who}. Joy told them to call 112. Call {phone}.",
+    })
+    append(session, kind=AuditKind.TRIAGE, actor_phone=phone, person_id=identity.person_id if identity else None,
+           payload={"decision": "red_flag_from_non_patient", "flags": sorted(flags)})
+    return TurnResult(reply_text=FLAGGED_BY_OTHERS_REPLY, language="en", phase=PatientPhase.FIRST_CONTACT)
 
 
 def _booking_rh_patient_id(session: Session, patient: Patient) -> str | None:
@@ -2777,6 +2832,10 @@ def handle_turn(
     price_answered: bool = False,
 ) -> TurnResult:
     identity = resolve(session, phone)
+    # Suicide, self-harm or abuse: before anything else, from anyone (app/safety/crisis.py)
+    crisis = detect_crisis(user_text)
+    if crisis:
+        return _crisis_turn(session, identity, phone, user_text, crisis, wa_message_id)
     # `PT` is discovery, never local physiotherapist provisioning. RH's exact
     # verified phone lookup is the only way an unknown sender enters this flow.
     # A physio answering Joy's booking request ("ACCEPT <booking ID>") may never have written to
@@ -2833,6 +2892,12 @@ def handle_turn(
                 identity = Identity(persona=Persona.FAMILY, person_id=person_id, phone_e164=phone)
         elif resolved.get("resolution") == "MULTIPLE":
             return TurnResult(reply_text="You have access to more than one patient. Please tell me which patient you want an update about.", language="en", phase=PatientPhase.FIRST_CONTACT)
+    # A warning sign from a new number or a family member: urgent care first, whoever they are
+    # (Nov 2026 audit: a new number got a model reply, a family member the progress relay)
+    if identity is None or identity.persona == Persona.FAMILY:
+        others_flags = detect_volunteered_red_flags(user_text)
+        if others_flags:
+            return _flagged_by_others_turn(session, identity, phone, user_text, others_flags)
     if identity is None:
         identity = maybe_provision_from_referral(session, phone, user_text)
     if identity is None:
@@ -3450,6 +3515,20 @@ def handle_turn(
         user_text,
     )
     extracted = _apply_inferred_area(extracted)
+    # A warning sign the model heard in a chat that isn't in English (Yoruba, Igbo, Hausa, Pidgin,
+    # a voice note), where Joy's phrase lists don't reach: the model may raise one, never clear one
+    if identity.persona == Persona.PATIENT:
+        raised = model_raised_red_flags(model_extraction, language)
+        if raised:
+            raised_flags = _record_fact_sources(merge_extraction(state.extracted, {"flags": raised}), wa_message_id)
+            raised_safety = evaluate(raised_flags)
+            if raised_safety.fired:
+                append(session, kind=AuditKind.TRIAGE, actor_phone=identity.phone_e164, person_id=identity.person_id,
+                       payload={"decision": "model_raised_red_flag", "flags": sorted(raised), "language": language})
+                return _safety_fire_reply(
+                    session, identity, state, user_text, raised_flags,
+                    raised_safety, phase, language, wa_message_id,
+                )
     reduction = reduce_triage_turn(
         extracted,
         user_text=user_text,

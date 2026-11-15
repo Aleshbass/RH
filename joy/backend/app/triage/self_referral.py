@@ -732,17 +732,23 @@ def _is_neck(extracted: ExtractedTriage) -> bool:
 RED_FLAG_ITEMS = (
     # (id, list title <= 24, full wording, level, words that mean it when typed)
     ("1", "Chest pain or breathing", "Chest pain, trouble breathing, or fainting", "RED",
-     ("chest pain", "chest", "breath", "breathing", "faint", "fainted", "passed out", "collapse")),
+     ("chest pain", "chest", "breath", "breathing", "faint", "fainted", "passed out", "collapse", "blacked out",
+      "can't breathe", "cannot breathe", "no fit breathe")),
     ("2", "Weakness or numbness", "New weakness, numbness, or trouble speaking", "RED",
      ("weak", "weakness", "numb", "numbness", "speak", "speaking", "speech", "slurred", "face droop")),
     ("3", "Bladder or bowel", "Loss of bladder or bowel control", "RED",
-     ("bladder", "bowel", "incontinen", "wet myself", "can't pee", "cannot pee", "control my urine")),
+     ("bladder", "bowel", "incontinen", "wet myself", "can't pee", "cannot pee", "control my urine",
+      "hold my urine", "hold urine", "hold my pee", "hold my stool", "wet the bed", "wetting the bed",
+      "wet my bed", "pee myself", "peeing myself", "leaking urine", "urine dey", "soil myself")),
     ("4", "Severe or worsening pain", "Severe or rapidly worsening pain", "ORANGE",
-     ("severe", "worsening", "getting worse", "unbearable", "excruciating", "worst pain")),
+     ("severe", "worsening", "getting worse", "unbearable", "excruciating", "worst pain", "much worse",
+      "worse and worse", "worse every day", "pain too much", "e don worse", "e dey worse")),
     ("5", "Weight loss or fever", "Unexplained weight loss, fever, or night sweats", "ORANGE",
-     ("weight loss", "losing weight", "lost weight", "fever", "night sweat", "high temperature")),
+     ("weight loss", "losing weight", "lost weight", "fever", "night sweat", "high temperature",
+      "sweating at night", "temperature dey")),
     ("6", "Major injury or accident", "Recent major injury or accident", "ORANGE",
-     ("accident", "crash", "major injury", "serious injury", "hit by", "fell from")),
+     ("accident", "crash", "major injury", "serious injury", "hit by", "fell from", "knocked down",
+      "fell down the stairs", "fell off")),
 )
 NONE_ID = "7"
 _BACK_BLADDER = "Loss of bladder or bowel control, or numbness in your groin or bottom"
@@ -750,6 +756,20 @@ _BACK_WORDS = ("groin", "saddle", "genital", "numb bottom", "numbness around")
 _NONE_WORDS = {"none", "no", "none of these", "none of them", "nope", "no to all", "nothing", "non", "no none",
                "none apply", "not at all", "no i haven't", "no i have not", "i haven't", "i have not", "nah", "never"}
 _NEGATION_RE = re.compile(r"\b(?:no|not|never|without|don't|dont|haven't|havent|hasn't|didn't|isn't|nor)\b[^.,;!?]{0,40}$")
+# A negation never reaches past these: "no chest pain but my legs are weak" reports weak legs
+_CLAUSE_BREAK_RE = re.compile(r"[.,;!?]|\b(?:but|however|except|although|though|apart from|only|and)\b")
+_CONTRAST_RE = re.compile(r"\b(?:but|however|except|although|though|apart from|only)\b")
+
+
+_PIDGIN_NOT_A_DENIAL_RE = re.compile(r"\bno\s+(?:fit|dey|wan|sabi)\b")
+
+
+def _negated(before: str) -> bool:
+    """A negation in the same clause as the word (the clause ends at "but", "and", a comma...)."""
+    clause = _CLAUSE_BREAK_RE.split(before)[-1]
+    # Pidgin "I no fit / no dey / no wan" means can't / am not / don't want: not a denial
+    clause = _PIDGIN_NOT_A_DENIAL_RE.sub("x", clause)
+    return bool(_NEGATION_RE.search(clause))
 
 
 def red_flag_items(extracted: ExtractedTriage) -> list[tuple[str, str, str, str, tuple[str, ...]]]:
@@ -797,11 +817,15 @@ def parse_red_flags(text: str, extracted: ExtractedTriage) -> tuple[str, set[str
     for ident, _, _, _, words in red_flag_items(extracted):
         for word in words:
             for match in re.finditer(rf"\b{re.escape(word)}", norm):
-                if not _NEGATION_RE.search(norm[: match.start()]):
+                if not _negated(norm[: match.start()]):
                     found.add(ident)
     if found:
         return "positive", found
-    if norm in _NONE_WORDS or re.match(r"^(?:no|none|nope|nothing)\b", norm):
+    if norm in _NONE_WORDS:
+        return "none", set()
+    # "No, but ..." or a long answer that names nothing on the list: ask which number, never
+    # assume none (Nov 2026 audit: "no but the pain is very severe" was read as none)
+    if re.match(r"^(?:no|none|nope|nothing)\b", norm) and not _CONTRAST_RE.search(norm) and len(norm.split()) <= 6:
         return "none", set()
     if norm in {"yes", "yeah", "yep", "y", "i have", "some", "one of them", "yes i have"}:
         return "which", set()

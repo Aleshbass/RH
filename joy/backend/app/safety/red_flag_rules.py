@@ -62,7 +62,7 @@ RULES: tuple[RedFlagRule, ...] = (
     ),
     RedFlagRule(
         id="cardiac",
-        any_of=("chest_pain",),
+        any_of=("chest_pain", "breathing_difficulty", "syncope"),
         reason_plain_language=(
             "Chest pain can be a sign of a heart problem that needs urgent medical "
             "care rather than a delayed check."

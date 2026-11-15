@@ -63,13 +63,13 @@ _DEFAULT_OPENER = (
 )
 
 _RED_INSTRUCTION = (
-    "Please see a doctor or go to an emergency hospital now. "
+    "Please call 112 or go to the nearest hospital emergency department now. "
     "This needs medical care today, not a later appointment."
 )
 
 _ORANGE_INSTRUCTION = (
-    "Please see a doctor or urgent medical assessment before we book routine "
-    "physiotherapy. Once a clinician says rehab is appropriate, I can help you match."
+    "Please see a doctor today for an urgent medical assessment before we book routine "
+    "physiotherapy (if it gets worse, call 112). Once a clinician says rehab is appropriate, I can help you match."
 )
 
 _AMBER_MESSAGE = (

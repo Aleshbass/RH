@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     # OpenAI only: Gemini was removed on 14 Nov 2026 (owner) so no patient data goes to Google
     llm_provider: str = "openai"
+    # Crisis replies always give 112; vetted mental-health / GBV helplines are added here only once
+    # the clinical lead approves them (app/safety/crisis.py)
+    joy_crisis_helplines: str = ""
     openai_api_key: str = ""
     # Benchmarked on Joy's patient prompt (Nov 2026): gpt-5.4-mini answered in ~2.5s with valid
     # JSON in English, Pidgin and Yoruba; gpt-4.1-mini ~3.5s. Tried in order on 429/5xx.
