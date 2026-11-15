@@ -50,6 +50,7 @@ import {
     localPhone,
     OTHER_COUNTRY,
     practiceCountry,
+    signupTimeZone,
     type PracticeCountry,
 } from '@/lib/practiceCountries';
 import { CountryFlag, CountryPicker } from '@/components/onboarding/common/CountryPicker';
@@ -261,7 +262,16 @@ function SignInFirst() {
     );
 }
 
-function Submitted({ practiceMode }: { practiceMode: PracticeMode }) {
+/** This browser's time zone, used outside Nigeria where a country has several (US, Canada...). */
+function browserTimeZone() {
+    try {
+        return Intl.DateTimeFormat().resolvedOptions().timeZone;
+    } catch {
+        return undefined;
+    }
+}
+
+function Submitted({ practiceMode, outsideNigeria }: { practiceMode: PracticeMode; outsideNigeria?: boolean }) {
     return (
         <motion.div
             initial={{ opacity: 0, y: 12 }}
@@ -278,7 +288,9 @@ function Submitted({ practiceMode }: { practiceMode: PracticeMode }) {
             </p>
             <p className="mt-3 text-sm leading-relaxed text-neutral-600">
                 {practiceMode === 'independent'
-                    ? 'While you wait, add your photo and payout account. Once you’re approved, you can invite your patients.'
+                    ? outsideNigeria
+                        ? 'While you wait, add your photo. Once you’re approved, you can invite your patients.'
+                        : 'While you wait, add your photo and payout account. Once you’re approved, you can invite your patients.'
                     : 'While you wait, finish setting up your profile, hours and payout account so you can start seeing patients the day you’re approved.'}
             </p>
             <Button asChild className={cn('mt-6 h-11 w-full', primary)}>
@@ -429,10 +441,12 @@ export default function PhysiotherapistOnboardingWizard() {
     const rehabifyAvailable = hasRehabifyCare(countryCode);
     const boardIsTyped = useOtherBoard || !country.board;
     const boardName = boardIsTyped ? otherBoard.trim() : (country.board ?? '');
+    // Lagos time in Nigeria (not saved); elsewhere the country's zone, or this browser's where it has several
+    const practiceTimeZone = rehabifyAvailable ? undefined : signupTimeZone(countryCode, browserTimeZone());
 
     if (!authLoaded) return <WizardSkeleton />;
     if (!isSignedIn) return <SignInFirst />;
-    if (submitted) return <Submitted practiceMode={practiceMode ?? 'network'} />;
+    if (submitted) return <Submitted practiceMode={practiceMode ?? 'network'} outsideNigeria={countryCode !== DEFAULT_COUNTRY_CODE} />;
     if (draft === undefined || draft === null || !initialised.current) {
         return <WizardSkeleton message={draft === null ? 'Setting up your account…' : undefined} />;
     }
@@ -512,7 +526,7 @@ export default function PhysiotherapistOnboardingWizard() {
                 if (draft.profileId && practiceMode) {
                     await completeUserProfile({
                         role: 'physiotherapist',
-                        profileData: { practiceMode, country: countryName } as never,
+                        profileData: { practiceMode, country: countryName, timeZone: practiceTimeZone } as never,
                         finalStep: false,
                     });
                 }
@@ -525,6 +539,7 @@ export default function PhysiotherapistOnboardingWizard() {
                         gender: gender || undefined,
                         practiceMode: practiceMode ?? undefined,
                         country: countryName,
+                        timeZone: practiceTimeZone,
                     }) as never,
                     firstName: firstName.trim(),
                     lastName: lastName.trim(),
@@ -558,6 +573,7 @@ export default function PhysiotherapistOnboardingWizard() {
                         termsAcceptedAt: termsAccepted ? Date.now() : undefined,
                         practiceMode: practiceMode ?? undefined,
                         country: countryName,
+                        timeZone: practiceTimeZone,
                     }) as never,
                     firstName: firstName.trim(),
                     lastName: lastName.trim(),

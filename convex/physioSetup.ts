@@ -13,7 +13,7 @@ import { action, internalQuery, mutation, query, type MutationCtx, type QueryCtx
 import type { Doc, Id } from "./_generated/dataModel";
 import { getService, type BookableServiceId } from "../lib/rehabify-services";
 import { NETWORK_TERMS_VERSION } from "../lib/rehabify-network-terms";
-import { isOutsideRehabifyCare } from "../lib/practiceCountries";
+import { isOutsideRehabifyCare, practiceSettings, type PracticeSettings } from "../lib/practiceCountries";
 import { loadPricingSettings } from "./helpers/rehabifyPricing";
 import { adminDisplayName, requireAdmin } from "./helpers/partnerAccess";
 import { currentUser, isApproved } from "./helpers/careAccess";
@@ -125,15 +125,19 @@ export async function computePhysioSetup(
     const requiredRemaining = items.filter((item) => item.required && !item.done).length;
     return { items, requiredRemaining, isComplete: requiredRemaining === 0 };
   }
-  items.push(
-    {
+  // Payouts go to Nigerian banks only (Rehabify's Paystack account is Nigerian). Physios elsewhere
+  // collect from their patients themselves and record the payment, so there's nothing to set up.
+  if (!isOutsideRehabifyCare(profile?.country)) {
+    items.push({
       id: "payout",
       title: "Add a payout account",
       description: independent ? "Where we send what your patients pay on your invoices." : "Where we send your earnings from sessions.",
       href: `${SETTINGS}/payout`,
       done: Boolean(bankAccount),
       required: true,
-    },
+    });
+  }
+  items.push(
     {
       id: "documents",
       title: "Upload remaining documents",
@@ -366,6 +370,8 @@ export const getMySetupStatus = query({
        */
       practiceMode: !profile || profile.clinicId ? ("network" as const) : (profile.practiceMode ?? null),
       isClinicMember: Boolean(profile?.clinicId),
+      /** Country, currency, time zone and whether online payments work (lib/practiceCountries.ts) */
+      practice: practiceSettings(profile?.country, profile?.timeZone),
       /** Live for patients = approved + on the network + listed + required setup done. */
       isBookable:
         approval?.status === "approved" &&
@@ -373,6 +379,33 @@ export const getMySetupStatus = query({
         profile?.isAvailableOnMarketplace !== false &&
         setup.isComplete,
     };
+  },
+});
+
+/**
+ * Money and time settings for a patient's screens: their physio's when every active physio they
+ * see practises in the same country outside Nigeria (e.g. a Ghana physio's patients see GH₵ and
+ * Accra time), otherwise Nigeria's, as before. Null for anyone signed out.
+ */
+export const getMyCareTeamPractice = query({
+  args: {},
+  handler: async (ctx): Promise<PracticeSettings | null> => {
+    const user = await currentUser(ctx);
+    if (!user) return null;
+    const links = await ctx.db
+      .query("patientPhysiotherapistRelationships")
+      .withIndex("by_patient", (q) => q.eq("patientId", user._id))
+      .take(20);
+    const settings: PracticeSettings[] = [];
+    for (const link of links) {
+      if (link.status !== "active") continue;
+      const physio = await ctx.db.get(link.physiotherapistId);
+      const profile = physio?.physiotherapistProfileId ? await ctx.db.get(physio.physiotherapistProfileId) : null;
+      settings.push(practiceSettings(profile?.country, profile?.timeZone));
+    }
+    const first = settings[0];
+    const allSame = first && settings.every((s) => s.countryCode === first.countryCode && s.timeZone === first.timeZone);
+    return allSame && !first.hasRehabifyCare ? first : practiceSettings(null);
   },
 });
 

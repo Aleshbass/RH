@@ -28,6 +28,7 @@ import { ClockPill } from '@/components/clock/ClinicClock'
 import { Quiet } from '@/components/physio/schedule/shared'
 import { ScribeIntro } from '@/components/physio/notes/scribe/ScribeIntro'
 import { VisitSafetyBar } from '@/components/visit-safety/VisitSafetyBar'
+import { practiceDisplayKey, setPracticeDisplay } from '@/lib/practiceDisplay'
 
 /** The top bar's main action: book a patient in, in a drawer, without leaving the page. */
 function NewAppointmentButton() {
@@ -129,6 +130,8 @@ function PhysioPortal({ children }: { children: ReactNode }) {
   const pathname = usePathname() ?? ''
   usePortalHome(PHYSIO_HOME)
   const { access, setup, isUnderReview } = usePhysioAccess(pathname)
+  // Their currency and time zone (₦ and Lagos in Nigeria), set before any page renders
+  setPracticeDisplay(setup?.practice)
   const patientUnread = useQuery(api.chat.getUnreadCount, access === 'full' ? {} : 'skip') as number | undefined
   // Clinic members work the clinic's hours, not Rehabify's on-duty matching
   const clinic = useClinicMode()
@@ -150,7 +153,7 @@ function PhysioPortal({ children }: { children: ReactNode }) {
   if (access === 'declined') return <PhysioDeclined reason={setup?.approvalComments ?? undefined} />
 
   return (
-    <BookingProvider>
+    <BookingProvider key={practiceDisplayKey(setup?.practice)}>
     <div className="flex min-h-screen bg-pt-canvas text-pt-ink">
       <div className="hidden shrink-0 p-3 pr-0 lg:flex">
         <PhysioSidebar className="sticky top-3 h-[calc(100vh-1.5rem)]" limited={isUnderReview} unreadMessages={unreadMessages} />

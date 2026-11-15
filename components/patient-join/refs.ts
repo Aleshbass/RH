@@ -16,6 +16,8 @@ export type JoinPage =
       access: 'placeholder' | 'pin' | 'rehabify_login' | 'own_account'
       viewer: 'signed_out' | 'this_patient' | 'someone_else'
       patient: { firstName: string; lastName: string; phone: string }
+      /** The physio's country (lib/practiceCountries.ts): local numbers get its dialling code */
+      countryCode?: string
     } & Sender)
 
 export type PhysioLinkPage =
@@ -26,6 +28,8 @@ export type PhysioLinkPage =
       physioImageUrl: string | null
       clinicName: string | null
       signedIn: { role: string | null; firstName: string | null; alreadyLinked: boolean } | null
+      /** The physio's country (lib/practiceCountries.ts): local numbers get its dialling code */
+      countryCode?: string
     }
 
 /** What a join or sign-in action returns. `ticket: null` means the login is ready but signing in must be done by hand. */

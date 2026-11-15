@@ -229,7 +229,7 @@ export default function PatientInvoicesPage() {
                     </span>
                     <ChevronRight className="hidden h-3.5 w-3.5 shrink-0 text-pt-faint sm:block" />
                   </button>
-                  {invoice.canPay && !loanOpen && (
+                  {invoice.canPay && invoice.payOnline !== false && !loanOpen && (
                     <div className="px-2 pb-2 sm:pb-0">
                       <Button
                         size="sm"
@@ -261,7 +261,12 @@ export default function PatientInvoicesPage() {
         footer={
           openInvoice ? (
             <div className="space-y-2">
-              {openInvoice.canPay && !loanIsOpen(openLoan) && (
+              {openInvoice.canPay && openInvoice.payOnline === false && (
+                <p className="rounded-2xl border border-pt-line px-4 py-3 text-sm text-pt-muted">
+                  Pay your physiotherapist directly, the way you agreed. They’ll mark this invoice as paid.
+                </p>
+              )}
+              {openInvoice.canPay && openInvoice.payOnline !== false && !loanIsOpen(openLoan) && (
                 <Button
                   onClick={() => handlePayNow(openInvoice)}
                   disabled={payingId !== null}
@@ -275,7 +280,7 @@ export default function PatientInvoicesPage() {
                   {lastAttemptFailed(openInvoice) ? 'Try again' : 'Pay'} {money(payableOf(openInvoice), openInvoice.currency)}
                 </Button>
               )}
-              {openInvoice.canPay && !loanIsOpen(openLoan) && (
+              {openInvoice.canPay && openInvoice.payOnline !== false && !loanIsOpen(openLoan) && (
                 <PayWithMediLoan
                   target={{ invoiceId: openInvoice._id }}
                   // MediLoan covers what's owed; card fees don't apply

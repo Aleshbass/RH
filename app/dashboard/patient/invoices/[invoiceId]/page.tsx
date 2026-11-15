@@ -84,7 +84,8 @@ export default function PatientInvoiceDetailPage() {
   const state = invoiceState(invoice)
   const loan = loanForInvoice(loans, invoice._id)
   // While a MediLoan is deciding this invoice, card payment steps aside so nobody pays twice
-  const canPayNow = invoice.canPay && !loanIsOpen(loan)
+  // Invoices in another currency (e.g. a Ghana physio's) are paid to the physio directly
+  const canPayNow = invoice.canPay && invoice.payOnline !== false && !loanIsOpen(loan)
 
   const handlePayNow = async () => {
     setPaying(true)
@@ -185,6 +186,11 @@ export default function PatientInvoiceDetailPage() {
             )}
 
             <div className="space-y-2">
+              {invoice.canPay && invoice.payOnline === false && (
+                <p className="rounded-2xl border border-pt-line px-4 py-3 text-sm text-pt-muted">
+                  Pay your physiotherapist directly, the way you agreed. They’ll mark this invoice as paid.
+                </p>
+              )}
               {canPayNow && (
                 <Button onClick={handlePayNow} disabled={paying} className={cn(accentButtonClass, 'h-12 w-full text-base')}>
                   {paying ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Lock className="mr-2 h-4 w-4" />}

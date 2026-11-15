@@ -25,6 +25,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { primaryButtonClass, StatusBadge } from '@/components/physio/ui';
 import { SettingsPageHeader, SettingsSection, fieldHintClass, fieldLabelClass } from '@/components/physio/SettingsUI';
 import { usePracticeMode } from '@/components/physio/practiceMode';
+import { practiceDisplay } from '@/lib/practiceDisplay';
 
 type BankAccount = {
     _id: Id<'physiotherapistBankAccounts'>;
@@ -198,6 +199,26 @@ export default function PayoutSettingsPage() {
             setConfirmRemove(false);
         }
     };
+
+    // Payouts go to Nigerian banks only (Rehabify's Paystack account is Nigerian)
+    if (!practiceDisplay().onlinePayments) {
+        return (
+            <div className="space-y-6">
+                <SettingsPageHeader title="Payouts" description="How you get paid by your patients." />
+                <SettingsSection title="Getting paid">
+                    <div className="space-y-2 text-sm leading-relaxed text-neutral-600 dark:text-neutral-300">
+                        <p>
+                            Payment links and payouts only work in Nigeria for now, so there’s no payout account to add.
+                        </p>
+                        <p>
+                            Your patients pay you directly, by cash, bank transfer or mobile money. When they do, record the
+                            payment on the invoice so your records and theirs stay right.
+                        </p>
+                    </div>
+                </SettingsSection>
+            </div>
+        );
+    }
 
     return (
         <div className="space-y-6">

@@ -14,6 +14,8 @@ import { Textarea } from '@/components/ui/textarea'
 import { primaryButtonClass } from '@/components/physio/ui'
 import { DuplicateHint, formatLocalPhone, useDuplicateCheck } from '@/components/patient-join/useDuplicateCheck'
 import { cn } from '@/lib/utils'
+import { DEFAULT_COUNTRY_CODE, internationalPhone, practiceCountry } from '@/lib/practiceCountries'
+import { practiceDisplay } from '@/lib/practiceDisplay'
 import { playSound } from '@/lib/sounds'
 
 type Source = 'referred' | 'existing_patient'
@@ -76,7 +78,10 @@ export default function AddPatientDirectForm({ onSuccess, onAdded, onCancel }: A
   const [more, setMore] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
-  const duplicate = useDuplicateCheck(phone)
+  // The physio's country: Nigerian numbers go as typed, elsewhere a local number gets its code (+233…)
+  const countryCode = practiceDisplay().countryCode
+  const fullPhone = internationalPhone(countryCode, phone)
+  const duplicate = useDuplicateCheck(fullPhone)
 
   const useExisting = () => {
     if (!duplicate) return
@@ -88,7 +93,7 @@ export default function AddPatientDirectForm({ onSuccess, onAdded, onCancel }: A
   const submit = async (event: React.FormEvent) => {
     event.preventDefault()
     const next: Record<string, string> = {}
-    if (phone.replace(/\D/g, '').length < 10) next.phone = 'Enter their WhatsApp number. They join and sign in with it'
+    if (phone.replace(/\D/g, '').length < (countryCode === DEFAULT_COUNTRY_CODE ? 10 : 7)) next.phone = 'Enter their WhatsApp number. They join and sign in with it'
     if (!firstName.trim()) next.firstName = 'Enter their first name'
     if (!lastName.trim()) next.lastName = 'Enter their last name'
     if (email.trim() && !/^\S+@\S+\.\S+$/.test(email.trim())) {
@@ -103,7 +108,7 @@ export default function AddPatientDirectForm({ onSuccess, onAdded, onCancel }: A
       const result = await addPatient({
         firstName: firstName.trim(),
         lastName: lastName.trim(),
-        phoneNumber: phone.trim(),
+        phoneNumber: fullPhone,
         email: email.trim().toLowerCase() || undefined,
         source,
         referredBy: source === 'referred' ? referredBy.trim() || undefined : undefined,
@@ -142,7 +147,7 @@ export default function AddPatientDirectForm({ onSuccess, onAdded, onCancel }: A
           value={phone}
           onChange={(e) => setPhone(e.target.value)}
           onBlur={() => setPhone((value) => formatLocalPhone(value))}
-          placeholder="0803 123 4567"
+          placeholder={practiceCountry(countryCode).phonePlaceholder}
           autoComplete="off"
         />
         {fieldError('phone')}

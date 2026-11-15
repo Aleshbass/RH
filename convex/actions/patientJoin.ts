@@ -11,6 +11,26 @@ import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import { publicAppUrl } from "../helpers/appUrl";
 import { normalizePhone } from "../helpers/partnerShared";
+import { DEFAULT_COUNTRY_CODE, PRACTICE_COUNTRIES } from "../../lib/practiceCountries";
+
+/**
+ * Numbers a phone typed on /sign-in could be (the page doesn't know the country): as typed when it's
+ * international or Nigerian, then, for a local number like 024 123 4567, each other country's
+ * code (+233 24 123 4567 for Ghana). Patients of physios outside Nigeria have numbers like that.
+ */
+function signInPhoneCandidates(raw: string): string[] {
+  const first = normalizePhone(raw);
+  const out = first ? [first] : [];
+  const digits = raw.replace(/[\s().\-]/g, "");
+  if (/^0\d{6,11}$/.test(digits)) {
+    for (const country of PRACTICE_COUNTRIES) {
+      if (!country.dialCode || country.code === DEFAULT_COUNTRY_CODE) continue;
+      const e164 = normalizePhone(`${country.dialCode}${digits.slice(1)}`);
+      if (e164 && !out.includes(e164)) out.push(e164);
+    }
+  }
+  return out;
+}
 import { pinLoginEmail } from "../../lib/auth/joyLoginEmail";
 import { weakPinReason } from "../../lib/auth/pin";
 
@@ -356,9 +376,13 @@ export const signInWithPin = action({
     ctx,
     args
   ): Promise<{ ok: true; ticket: string } | { ok: false; reason: "choose"; choices: { loginId: Id<"patientPinLogins">; firstName: string }[] } | Fail> => {
-    const phone = normalizePhone(args.phone);
-    if (!phone || !/^\d{4}$/.test(args.pin)) return { ok: false, reason: "wrong_pin" };
-    const all: (PinRow & { firstName: string })[] = await ctx.runQuery(internal.patientJoin.pinLoginRows, { phone });
+    if (!/^\d{4}$/.test(args.pin)) return { ok: false, reason: "wrong_pin" };
+    // The first reading of the number that has a PIN login (Nigerian first, as before)
+    let all: (PinRow & { firstName: string })[] = [];
+    for (const phone of signInPhoneCandidates(args.phone)) {
+      all = await ctx.runQuery(internal.patientJoin.pinLoginRows, { phone });
+      if (all.length > 0) break;
+    }
     const rows = args.loginId ? all.filter((row) => row.loginId === args.loginId) : all;
     if (rows.length === 0) return { ok: false, reason: "wrong_pin" };
 

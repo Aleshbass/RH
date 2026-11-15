@@ -13,6 +13,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState, InfoTip, Panel, StatusBadge, formatNaira, primaryButtonClass, secondaryButtonClass } from '@/components/physio/ui'
 import { useFileUpload } from '@/lib/hooks/useFileUpload'
 import { cn } from '@/lib/utils'
+import { practiceDisplay } from '@/lib/practiceDisplay'
 import { NoteMediaView } from '@/components/physio/NoteMedia'
 import { programError } from '@/components/exercise-programs/errors'
 import { DIFFICULTY_LABELS, EXERCISES_LABELS, HIGH_PAIN, MOOD_LABELS, PainPill, useWorkspaceReadOnly, type ExerciseLog, type Workspace } from './shared'
@@ -49,6 +50,11 @@ const createPhysioPaymentLinkRef = makeFunctionReference<
   { invoiceId: string; emailPatient: boolean },
   { paymentLink: string; emailed: boolean }
 >('physioBilling:createPhysioPaymentLink')
+const recordPaymentRef = makeFunctionReference<
+  'mutation',
+  { invoiceId: string; paymentAmount: number; paymentMethod: string; paymentReference?: string; notes?: string },
+  unknown
+>('billing:recordPayment')
 
 /** Notes shown at first, and how many more each "Show older notes" adds. */
 const NOTES_PAGE = 30
@@ -576,6 +582,7 @@ type Invoice = {
   patientId: Id<'users'>
   /** For a Rehabify Care invoice this is the physio's payout, never what the patient paid */
   totalAmount: number
+  paidAmount?: number
   rehabifyCare?: boolean
   status: string
   issueDate: number
@@ -595,7 +602,10 @@ export function PaymentsTab({ workspace, onRequest }: { workspace: Workspace; on
   // Just this patient's invoices (not the physio's whole billing list)
   const invoices = useQuery(getMyInvoicesRef, { patientId: workspace.patient._id, limit: 200 }) as Invoice[] | undefined
   const createLink = useAction(createPhysioPaymentLinkRef)
+  const recordPayment = useMutation(recordPaymentRef)
   const [busyId, setBusyId] = useState<string | null>(null)
+  // Outside Nigeria there are no payment links: the patient pays the physio, who records it here
+  const online = practiceDisplay().onlinePayments
   // Rehabify Care invoices show the physio's payout, never the patient's price (server-side)
   const mine = (invoices ?? []).filter((i) => i.patientId === workspace.patient._id)
   const isActive = workspace.episode.status === 'active'
@@ -617,13 +627,40 @@ export function PaymentsTab({ workspace, onRequest }: { workspace: Workspace; on
     }
   }
 
+  const recordPaid = async (invoice: Invoice) => {
+    const remainingKobo = Math.max(0, invoice.totalAmount - (invoice.paidAmount ?? 0))
+    const ok = window.confirm(
+      `Record ${formatNaira(remainingKobo / 100)} as paid to you? Only do this once the money has reached you. The patient will see the invoice as paid.`
+    )
+    if (!ok) return
+    setBusyId(invoice._id)
+    try {
+      await recordPayment({
+        invoiceId: invoice._id,
+        paymentAmount: remainingKobo,
+        paymentMethod: 'paid_directly',
+        paymentReference: `MANUAL-${Date.now()}`,
+        notes: 'Recorded from the patient record',
+      })
+      toast.success('Payment recorded')
+    } catch (error) {
+      toast.error(programError(error, 'Couldn’t record the payment. Please try again.'))
+    } finally {
+      setBusyId(null)
+    }
+  }
+
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 gap-4">
         <div className="rounded-3xl border border-pt-line bg-pt-surface p-5 shadow-pt dark:shadow-none">
           <p className="flex items-center gap-1 text-[13px] font-medium text-pt-muted">
             Waiting for payment
-            <InfoTip>Invoices sent to this patient that aren’t paid yet. Send the pay link again from the list below.</InfoTip>
+            <InfoTip>
+              {online
+                ? 'Invoices sent to this patient that aren’t paid yet. Send the pay link again from the list below.'
+                : 'Invoices sent to this patient that aren’t paid yet. Record each one when they pay you.'}
+            </InfoTip>
           </p>
           <p className="mt-1 text-2xl font-semibold tabular-nums text-pt-ink">{formatNaira(workspace.payments.unpaidKobo / 100)}</p>
           <p className="text-xs text-pt-muted">{workspace.payments.unpaidCount} invoice{workspace.payments.unpaidCount === 1 ? '' : 's'}</p>
@@ -651,7 +688,7 @@ export function PaymentsTab({ workspace, onRequest }: { workspace: Workspace; on
             <Skeleton className="h-12 rounded-xl" />
           </div>
         ) : mine.length === 0 ? (
-          <EmptyState icon={<Receipt />} title="No invoices for this patient" description="Request a payment and they can pay by card, transfer or USSD." />
+          <EmptyState icon={<Receipt />} title="No invoices for this patient" description={online ? 'Request a payment and they can pay by card, transfer or USSD.' : 'Request a payment, then record it when they pay you.'} />
         ) : (
           <ul className="divide-y divide-black/[0.04] dark:divide-white/[0.05]">
             {mine.map((invoice) => {
@@ -667,7 +704,15 @@ export function PaymentsTab({ workspace, onRequest }: { workspace: Workspace; on
                       {invoice.rehabifyCare && 'Your payout · Paid through Rehabify · '}#{invoice.invoiceNumber} · issued {Number.isFinite(invoice.issueDate) ? formatDistanceToNow(invoice.issueDate, { addSuffix: true }) : '—'} · due {Number.isFinite(invoice.dueDate) ? format(invoice.dueDate, 'd MMM') : '—'}
                     </p>
                   </div>
-                  {unpaid && (
+                  {unpaid && !online && !invoice.rehabifyCare && (
+                    <div className="flex shrink-0 gap-2">
+                      <Button size="sm" className={cn(secondaryButtonClass, 'h-9')} disabled={busyId === invoice._id} onClick={() => void recordPaid(invoice)}>
+                        {busyId === invoice._id ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Receipt className="mr-1.5 h-3.5 w-3.5" />}
+                        Record payment
+                      </Button>
+                    </div>
+                  )}
+                  {unpaid && online && (
                     <div className="flex shrink-0 gap-2">
                       <Button size="sm" className={cn(secondaryButtonClass, 'h-9')} disabled={busyId === invoice._id} onClick={() => sendLink(invoice, false)}>
                         <Copy className="mr-1.5 h-3.5 w-3.5" />

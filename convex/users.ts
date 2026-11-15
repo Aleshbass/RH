@@ -21,7 +21,7 @@ import { assertSelfRoleChangeAllowed } from "./helpers/roleLock";
 import { claimJoyRecordWithLink } from "./joyAccounts";
 import { isJoyLoginEmail } from "../lib/auth/joyLoginEmail";
 import { handOverManagedProfile } from "./helpers/careCircleAccess";
-import { isOutsideRehabifyCare } from "../lib/practiceCountries";
+import { isOutsideRehabifyCare, isValidTimeZone } from "../lib/practiceCountries";
 import { missingPolicies, recordMissingPolicyAcceptances } from "./helpers/policyAcceptance";
 import { PATIENT_CONSENT_POLICIES, POLICIES, PROFESSIONAL_SIGNUP_POLICIES } from "../lib/policies";
 
@@ -538,6 +538,7 @@ const physiotherapistProfileDataValidator = v.object({
   clinicId: v.optional(v.id("clinics")),
   practiceMode: v.optional(v.union(v.literal("network"), v.literal("independent"), v.literal("both"))),
   country: v.optional(v.string()),
+  timeZone: v.optional(v.string()),
   specializations: v.optional(v.array(v.string())),
   licenseNumber: v.optional(v.string()),
   certificationBoard: v.optional(v.string()),
@@ -660,7 +661,10 @@ export const completeUserProfile = mutation({
         if (physioData.country !== undefined) {
           physioData.country = physioData.country.trim().slice(0, 60) || undefined;
           if (isOutsideRehabifyCare(physioData.country)) physioData.practiceMode = "independent";
+          // Nigeria runs on Lagos time; elsewhere the zone chosen at sign-up, if it's a real one
+          else physioData.timeZone = undefined;
         }
+        if (physioData.timeZone !== undefined && !isValidTimeZone(physioData.timeZone)) physioData.timeZone = undefined;
         if (physioData.practiceMode) physioData.isAvailableOnMarketplace = physioData.practiceMode !== "independent";
         let physioProfileId: Id<"physiotherapistProfiles">;
         try {

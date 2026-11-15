@@ -13,6 +13,8 @@ import { programError } from '@/components/exercise-programs/errors';
 import { useActionUntyped, useMutationUntyped, useQueryUntyped } from '@/lib/convexUntyped';
 import { playSound } from '@/lib/sounds';
 import { cn } from '@/lib/utils';
+import { currencySymbol } from '@/lib/practiceCountries';
+import { practiceDisplay } from '@/lib/practiceDisplay';
 
 interface CreateInvoiceModalProps {
     isOpen: boolean;
@@ -106,7 +108,11 @@ export function CreateInvoiceModal({ isOpen, onClose, preselectedPatientId }: Cr
     // Same sums as billing.createInvoice: Rehabify takes nothing from a physio's own invoice; their
     // patient pays only Paystack's 1.5% + ₦100 on top. A clinic's patient pays the quoted price.
     const throughClinic = Boolean(me?.clinicId);
-    const processing = throughClinic || subtotal <= 0 ? 0 : Math.round(subtotal * 0.015) + 100;
+    // Outside Nigeria there's no payment link (it charges Naira and pays Nigerian banks): the
+    // patient pays the physio directly, with no card fee, and the physio records it
+    const online = practiceDisplay().onlinePayments;
+    const symbol = currencySymbol(practiceDisplay().currency).trim();
+    const processing = throughClinic || !online || subtotal <= 0 ? 0 : Math.round(subtotal * 0.015) + 100;
     const patientPays = subtotal + processing;
     const first = patient?.firstName || 'The patient';
 
@@ -168,7 +174,7 @@ export function CreateInvoiceModal({ isOpen, onClose, preselectedPatientId }: Cr
             open={isOpen}
             onOpenChange={(open) => !open && !saving && onClose()}
             title={sent ? 'Payment request sent' : 'Request payment'}
-            description={sent ? `${first} has been told in their app.` : 'They pay by card, transfer or USSD.'}
+            description={sent ? `${first} has been told in their app.` : online ? 'They pay by card, transfer or USSD.' : 'They pay you directly. Record it when they do.'}
             footer={
                 sent ? (
                     <Button className={cn(primaryButtonClass, 'h-11 w-full')} onClick={onClose}>
@@ -196,6 +202,7 @@ export function CreateInvoiceModal({ isOpen, onClose, preselectedPatientId }: Cr
                         <p className="mt-3 text-2xl font-semibold tabular-nums text-pt-ink">{formatNaira(sent.total)}</p>
                         <p className="text-sm text-pt-muted">{sent.invoiceNumber ? `Invoice #${sent.invoiceNumber}` : 'Invoice created'} · {nameOf(patient)}</p>
                     </div>
+                    {online ? (
                     <Section label="Send them the pay link" info="The link opens a secure Paystack page. When they pay, the invoice is marked paid and you get a notification.">
                         <div className="grid gap-2">
                             <Button className="h-11 rounded-xl bg-[#25D366] text-white shadow-none hover:bg-[#1ebe5b]" disabled={linkBusy !== null} onClick={() => void share('whatsapp')}>
@@ -214,6 +221,11 @@ export function CreateInvoiceModal({ isOpen, onClose, preselectedPatientId }: Cr
                             </div>
                         </div>
                     </Section>
+                    ) : (
+                        <p className="rounded-2xl border border-pt-line px-4 py-3 text-sm text-pt-muted">
+                            When {first} pays you, open the invoice under Payments and record the payment.
+                        </p>
+                    )}
                 </div>
             ) : (
                 <div className="space-y-5">
@@ -283,9 +295,9 @@ export function CreateInvoiceModal({ isOpen, onClose, preselectedPatientId }: Cr
                                         list="invoice-item-suggestions"
                                     />
                                     <div className="relative w-32 shrink-0">
-                                        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-pt-muted">₦</span>
+                                        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-pt-muted">{symbol}</span>
                                         <Input
-                                            className={cn(fieldClass, 'pl-7 tabular-nums')}
+                                            className={cn(fieldClass, symbol.length > 1 ? 'pl-12' : 'pl-7', 'tabular-nums')}
                                             inputMode="numeric"
                                             value={item.amount}
                                             onChange={(e) => setItem(index, { amount: e.target.value.replace(/[^\d]/g, '') })}
@@ -367,7 +379,7 @@ export function CreateInvoiceModal({ isOpen, onClose, preselectedPatientId }: Cr
                             <span>You charge</span>
                             <span className="tabular-nums text-pt-ink">{formatNaira(subtotal)}</span>
                         </div>
-                        {!throughClinic && (
+                        {!throughClinic && online && (
                             <div className="mt-1.5 flex justify-between text-pt-muted">
                                 <span className="flex items-center gap-1">
                                     Card and transfer fee
@@ -385,7 +397,11 @@ export function CreateInvoiceModal({ isOpen, onClose, preselectedPatientId }: Cr
                         </div>
                         <p className="mt-2 flex items-center gap-1.5 text-xs text-pt-muted">
                             <FileText className="h-3.5 w-3.5" />
-                            {throughClinic ? 'Billed through your clinic, to the clinic’s payout account.' : `You receive ${formatNaira(subtotal)} to your payout account.`}
+                            {throughClinic
+                                ? 'Billed through your clinic, to the clinic’s payout account.'
+                                : online
+                                  ? `You receive ${formatNaira(subtotal)} to your payout account.`
+                                  : 'They pay you directly. Record the payment when they do.'}
                         </p>
                     </div>
 

@@ -174,6 +174,7 @@ export default function PhysioJoinLinkPage() {
       />
       <JoinDetailsForm
         showEmail
+        countryCode={page.countryCode}
         submitLabel="Accept and start"
         onSubmit={async (details) => {
           const result = await join({ slug, ...details })

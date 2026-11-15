@@ -47,6 +47,7 @@ export async function POST(request: NextRequest) {
       patientEmail?: string;
       platformFeeAmount?: number;
       feeBreakdown?: { total: number };
+      currency?: string;
     };
 
     if (!invoice) {
@@ -66,6 +67,13 @@ export async function POST(request: NextRequest) {
     if (invoice.status === 'paid') {
       return NextResponse.json(
         { error: 'Invoice is already paid' },
+        { status: 400 }
+      );
+    }
+    // Paystack charges Naira: an invoice in another currency (e.g. a Ghana physio's) is paid to the physio directly
+    if (invoice.currency && invoice.currency !== 'NGN') {
+      return NextResponse.json(
+        { error: 'Pay your physiotherapist directly for this invoice. They will mark it as paid.' },
         { status: 400 }
       );
     }

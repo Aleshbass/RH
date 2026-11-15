@@ -27,6 +27,8 @@ export interface PatientInvoice {
   notes?: string
   isOverdue: boolean
   canPay: boolean
+  /** False for invoices in another currency (e.g. a Ghana physio's): paid to the physio directly */
+  payOnline?: boolean
   currency: string
   paymentMethod?: string
   paymentDate?: number

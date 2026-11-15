@@ -14,6 +14,7 @@ import { requireClinicCareAccess } from "./helpers/careAccess";
 import { isRehabifyCare } from "./rehabifyFollowUps";
 import { isRehabifyCareInvoice, rehabifyCarePayoutKobo } from "./helpers/marketplaceInvoices";
 import { alertAdminsOfPayment } from "./helpers/adminPaymentAlerts";
+import { formatMoney, practiceSettings } from "../lib/practiceCountries";
 
 /**
  * True when the signed-in caller is a party to the invoice: its patient, its
@@ -169,6 +170,13 @@ export const createInvoice = mutation({
       }
     }
 
+    // Outside Nigeria the invoice is in the physio's own currency and paid to them directly
+    // (no payment link, so no card fee); amounts are still kept in hundredths, like kobo
+    const physioProfile = physiotherapist.physiotherapistProfileId
+      ? await ctx.db.get(physiotherapist.physiotherapistProfileId)
+      : null;
+    const practice = practiceSettings(physioProfile?.country, physioProfile?.timeZone);
+
     // Calculate totals - ALL amounts should be in Naira from the UI
     // Convert ALL amounts to kobo (multiply by 100)
     const convertedItems = args.items.map(item => {
@@ -196,8 +204,8 @@ export const createInvoice = mutation({
     const baseAmount = subtotalAmount - discountAmount;
 
     // Paystack fees: 1.5% + ₦100
-    const paystackPercentageFee = Math.round((baseAmount + platformFeeAmount) * 0.015); // 1.5%
-    const paystackFlatFee = 10000; // ₦100 in kobo
+    const paystackPercentageFee = practice.onlinePayments ? Math.round((baseAmount + platformFeeAmount) * 0.015) : 0; // 1.5%
+    const paystackFlatFee = practice.onlinePayments ? 10000 : 0; // ₦100 in kobo
     const paystackFeeAmount = paystackPercentageFee + paystackFlatFee;
     
     // Patient payable total (for checkout) = base + platform fee + paystack fee
@@ -231,7 +239,7 @@ export const createInvoice = mutation({
       totalAmount,
       physiotherapistShare,
       platformShare,
-      currency: "NGN",
+      currency: practice.currency,
       status: "sent" as const,
       notes: args.notes || "",
       relatedAppointmentIds: args.appointmentIds || [],
@@ -264,7 +272,7 @@ export const createInvoice = mutation({
       status: "pending",
       payload: {
         title: "New Invoice Received",
-        body: `${practitionerName} has sent you an invoice #${invoiceNumber} for ₦${(totalAmount / 100).toLocaleString()}. Due date: ${new Date(args.dueDate).toLocaleDateString()}`,
+        body: `${practitionerName} has sent you an invoice #${invoiceNumber} for ${formatMoney(totalAmount / 100, practice.currency)}. Due date: ${new Date(args.dueDate).toLocaleDateString()}`,
         data: {
           entityId: invoiceId,
           entityType: "invoice",
@@ -286,7 +294,7 @@ export const createInvoice = mutation({
       status: "pending",
       payload: {
         title: "Invoice Sent Successfully",
-        body: `Invoice #${invoiceNumber} for ₦${(totalAmount / 100).toLocaleString()} has been sent to ${patient?.firstName} ${patient?.lastName}`,
+        body: `Invoice #${invoiceNumber} for ${formatMoney(totalAmount / 100, practice.currency)} has been sent to ${patient?.firstName} ${patient?.lastName}`,
         data: {
           entityId: invoiceId,
           entityType: "invoice",
@@ -480,6 +488,8 @@ export const getInvoiceForPatient = query({
       notes: v.optional(v.string()),
       isOverdue: v.boolean(),
       canPay: v.boolean(),
+      // Online payment (Paystack) charges Naira only; other currencies are paid to the physio directly
+      payOnline: v.optional(v.boolean()),
       currency: v.string(),
       paymentMethod: v.optional(v.string()),
       paymentDate: v.optional(v.number()),
@@ -550,6 +560,7 @@ export const getInvoiceForPatient = query({
       notes: invoice.notes,
       isOverdue,
       canPay,
+      payOnline: (invoice.currency || "NGN") === "NGN",
       currency: invoice.currency,
       paymentMethod: invoice.paymentMethod,
       paymentDate: invoice.paymentDate,
@@ -849,6 +860,8 @@ export const getPatientInvoices = query({
     currency: v.string(),
     isOverdue: v.boolean(),
     canPay: v.boolean(),
+    // Online payment (Paystack) charges Naira only; other currencies are paid to the physio directly
+    payOnline: v.optional(v.boolean()),
   })),
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
@@ -891,6 +904,7 @@ export const getPatientInvoices = query({
         currency: inv.currency,
         isOverdue,
         canPay,
+        payOnline: (inv.currency || "NGN") === "NGN",
       };
     }));
 
@@ -919,6 +933,8 @@ const invoicePaymentView = v.union(
       total: v.number(),
       physiotherapistEarnings: v.number(),
     })),
+    // Checkout charges Naira only (/api/payments/initiate refuses other currencies)
+    currency: v.optional(v.string()),
   })
 );
 
@@ -935,6 +951,7 @@ async function loadInvoicePaymentView(ctx: QueryCtx, invoice: Doc<"invoices">) {
     platformFeeAmount: (invoice as any).platformFeeAmount,
     paystackFeeAmount: (invoice as any).paystackFeeAmount,
     feeBreakdown: (invoice as any).feeBreakdown,
+    currency: invoice.currency,
   };
 }
 

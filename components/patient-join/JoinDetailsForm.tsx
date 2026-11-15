@@ -6,6 +6,7 @@ import { AuthField, FormNotice, PrimaryButton, SPACE } from '@/components/auth/A
 import { weakPinReason } from '@/lib/auth/pin'
 import { PATIENT_CONSENT_POLICIES, policyVersions } from '@/lib/policies'
 import { cn } from '@/lib/utils'
+import { DEFAULT_COUNTRY_CODE, internationalPhone, practiceCountry } from '@/lib/practiceCountries'
 import { PinField } from './PinField'
 
 export type JoinDetails = {
@@ -30,8 +31,11 @@ export function JoinDetailsForm({
   onSubmit,
   formError,
   children,
+  countryCode = DEFAULT_COUNTRY_CODE,
 }: {
   initial?: { firstName?: string; lastName?: string; phone?: string }
+  /** The physio's country: a local number (024… in Ghana) gets its dialling code. Nigeria by default. */
+  countryCode?: string
   showEmail?: boolean
   submitLabel: string
   pinLabel?: string
@@ -48,11 +52,15 @@ export function JoinDetailsForm({
   const [pin, setPin] = useState('')
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<{ field?: 'name' | 'phone' | 'pin'; message: string } | null>(null)
+  const country = practiceCountry(countryCode)
+  const phoneExample = country.dialCode ? `e.g. ${country.phonePlaceholder}` : 'with its country code, e.g. +44 7700 900123'
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
     if (!firstName.trim() || !lastName.trim()) return setError({ field: 'name', message: 'Enter your first and last name.' })
-    if (phone.replace(/\D/g, '').length < 10) return setError({ field: 'phone', message: 'Enter your phone number, e.g. 0803 123 4567.' })
+    if (phone.replace(/\D/g, '').length < (countryCode === DEFAULT_COUNTRY_CODE ? 10 : 7)) {
+      return setError({ field: 'phone', message: `Enter your phone number, ${phoneExample}.` })
+    }
     const weak = weakPinReason(pin, phone)
     if (weak) return setError({ field: 'pin', message: weak })
     setPending(true)
@@ -61,7 +69,8 @@ export function JoinDetailsForm({
       const problem = await onSubmit({
         firstName: firstName.trim(),
         lastName: lastName.trim(),
-        phone: phone.trim(),
+        // Nigerian numbers go as typed; elsewhere a local number gets the country's code (+233…)
+        phone: internationalPhone(countryCode, phone),
         email: showEmail ? email.trim() || undefined : undefined,
         pin,
         accepted: policyVersions(PATIENT_CONSENT_POLICIES),
@@ -93,7 +102,7 @@ export function JoinDetailsForm({
         type="tel"
         inputMode="tel"
         autoComplete="tel"
-        placeholder="0803 123 4567"
+        placeholder={country.phonePlaceholder}
         value={phone}
         onChange={(e) => setPhone(e.target.value)}
         error={fieldError('phone')}

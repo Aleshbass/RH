@@ -28,6 +28,8 @@ import { programError } from '@/components/exercise-programs/errors';
 import { usePracticeMode } from '@/components/physio/practiceMode';
 import { useClinicMode } from '@/components/physio/clinicMode';
 import { PhysioPayouts } from '@/components/physio/PhysioPayouts';
+import { formatMoney } from '@/lib/practiceCountries';
+import { practiceDisplay } from '@/lib/practiceDisplay';
 
 type InvoiceFromQuery = {
   _id: Id<'invoices'>;
@@ -163,7 +165,7 @@ export default function BillingPage() {
     async (invoiceId: Id<'invoices'>, amount: number, method: string) => {
       // Marking an invoice paid by hand is final, so the physio confirms the money really arrived
       const ok = window.confirm(
-        `Record ₦${amount.toLocaleString('en-NG')} as received by ${method === 'cash' ? 'cash' : 'bank transfer'}? ` +
+        `Record ${formatMoney(amount, practiceDisplay().currency)} as received by ${method === 'cash' ? 'cash' : 'bank transfer'}? ` +
           'Only do this once the money is in your account. The patient will see the invoice as paid.'
       );
       if (!ok) return;

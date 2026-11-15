@@ -166,6 +166,7 @@ export default function PatientJoinPage() {
       />
       <JoinDetailsForm
         initial={page.patient}
+        countryCode={page.countryCode}
         submitLabel={reset ? 'Save PIN and sign in' : 'Accept and start'}
         pinLabel={reset ? 'New 4-digit PIN' : 'Choose a 4-digit PIN'}
         onSubmit={async (details) => {

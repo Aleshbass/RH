@@ -29,6 +29,15 @@ import { ensureUserNumbers } from "./helpers/rehabifyIds";
 import { isJoyLoginEmail } from "../lib/auth/joyLoginEmail";
 import { accountKind, patientJoinStatus, pinLoginOf } from "./helpers/patientJoinStatus";
 import { PATIENT_CONSENT_POLICIES } from "../lib/policies";
+import { countryCodeFromName, DEFAULT_COUNTRY_CODE } from "../lib/practiceCountries";
+
+/** The physio's country (lib/practiceCountries.ts), so the join page gives local numbers its dialling code. */
+async function practiceCountryCode(ctx: QueryCtx | MutationCtx, physioId?: Id<"users">) {
+  if (!physioId) return DEFAULT_COUNTRY_CODE;
+  const physio = await ctx.db.get(physioId);
+  const profile = physio?.physiotherapistProfileId ? await ctx.db.get(physio.physiotherapistProfileId) : null;
+  return countryCodeFromName(profile?.country);
+}
 
 const DAY = 86_400_000;
 export const JOIN_LINK_DAYS = 30;
@@ -264,6 +273,7 @@ export const getJoinPage = query({
         lastName: patient.lastName ?? "",
         phone: localPhone(patient.phoneNumber),
       },
+      countryCode: await practiceCountryCode(ctx, link.physioId),
     };
   },
 });
@@ -450,6 +460,7 @@ export const getPhysioLinkPage = query({
       physioImageUrl: physio.imageUrl ?? null,
       clinicName: clinic?.name ?? null,
       signedIn,
+      countryCode: await practiceCountryCode(ctx, physio._id),
     };
   },
 });

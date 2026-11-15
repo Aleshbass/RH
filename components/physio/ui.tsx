@@ -4,6 +4,8 @@ import Link from 'next/link'
 import type { ComponentType, ReactNode } from 'react'
 import { ArrowLeft } from '@/components/icons'
 import { cn } from '@/lib/utils'
+import { formatMoney } from '@/lib/practiceCountries'
+import { practiceDisplay } from '@/lib/practiceDisplay'
 import {
   InfoTip,
   cardClass as ptCardClass,
@@ -37,8 +39,13 @@ export {
   useIsPhone,
 } from '@/components/patient/ui'
 
+/**
+ * Money on the physio portal, in the physio's own currency: ₦ in Nigeria (exactly as before), GH₵
+ * for a Ghana physio... (lib/practiceDisplay.ts, set by PhysioShell). Physios outside Nigeria are
+ * independent, so every amount they see is their own.
+ */
 export function formatNaira(amount: number) {
-  return `₦${Math.round(amount).toLocaleString('en-NG')}`
+  return formatMoney(amount, practiceDisplay().currency)
 }
 
 /** The one main action on a screen (ink). */

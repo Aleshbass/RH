@@ -658,6 +658,9 @@ export default defineSchema({
     // Where they practise, e.g. "Ghana" (lib/practiceCountries.ts). Unset = Nigeria. Outside Nigeria
     // they're independent only: Rehabify Care patients, prices and payouts are Nigerian today.
     country: v.optional(v.string()),
+    // IANA zone their schedule is booked and shown in, set at sign-up outside Nigeria (e.g.
+    // "Africa/Accra"). Unset = Africa/Lagos. Read through practiceSettings().
+    timeZone: v.optional(v.string()),
     specializations: v.optional(v.array(v.string())),
     bio: v.optional(v.string()),
     licenseNumber: v.optional(v.string()),

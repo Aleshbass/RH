@@ -25,6 +25,12 @@ export type PracticeCountry = {
     idHint: string;
     /** Where the map opens before a pin is dropped */
     center: { lat: number; lng: number; zoom: number };
+    /** Currency of the physio's own invoices and prices (ISO 4217) */
+    currency: string;
+    /** Time zone appointments are booked and shown in (IANA). Countries with several zones use the browser's at sign-up. */
+    timeZone: string;
+    /** Only one time zone in the country, so the browser's is never needed */
+    singleTimeZone?: boolean;
 };
 
 export const DEFAULT_COUNTRY_CODE = 'NG';
@@ -41,6 +47,9 @@ export const PRACTICE_COUNTRIES: PracticeCountry[] = [
         licenceLabel: 'MRTB licence',
         idHint: 'NIN slip, national ID card, international passport or driver’s licence',
         center: { lat: 9.082, lng: 8.6753, zoom: 6 },
+        currency: 'NGN',
+        timeZone: 'Africa/Lagos',
+        singleTimeZone: true,
     },
     {
         code: 'GH',
@@ -52,6 +61,9 @@ export const PRACTICE_COUNTRIES: PracticeCountry[] = [
         licenceLabel: 'AHPC licence',
         idHint: 'Ghana Card, passport or driver’s licence',
         center: { lat: 7.9465, lng: -1.0232, zoom: 6 },
+        currency: 'GHS',
+        timeZone: 'Africa/Accra',
+        singleTimeZone: true,
     },
     {
         code: 'KE',
@@ -63,6 +75,9 @@ export const PRACTICE_COUNTRIES: PracticeCountry[] = [
         licenceLabel: 'PCK licence',
         idHint: 'National ID card, passport or driver’s licence',
         center: { lat: 0.0236, lng: 37.9062, zoom: 5.5 },
+        currency: 'KES',
+        timeZone: 'Africa/Nairobi',
+        singleTimeZone: true,
     },
     {
         code: 'ZA',
@@ -74,6 +89,9 @@ export const PRACTICE_COUNTRIES: PracticeCountry[] = [
         licenceLabel: 'HPCSA registration',
         idHint: 'Smart ID card, ID book, passport or driver’s licence',
         center: { lat: -30.5595, lng: 22.9375, zoom: 4.5 },
+        currency: 'ZAR',
+        timeZone: 'Africa/Johannesburg',
+        singleTimeZone: true,
     },
     {
         code: 'UG',
@@ -85,6 +103,9 @@ export const PRACTICE_COUNTRIES: PracticeCountry[] = [
         licenceLabel: 'AHPC licence',
         idHint: 'National ID card, passport or driver’s licence',
         center: { lat: 1.3733, lng: 32.2903, zoom: 6 },
+        currency: 'UGX',
+        timeZone: 'Africa/Kampala',
+        singleTimeZone: true,
     },
     {
         code: 'RW',
@@ -96,6 +117,9 @@ export const PRACTICE_COUNTRIES: PracticeCountry[] = [
         licenceLabel: 'RAHPC licence',
         idHint: 'National ID card, passport or driver’s licence',
         center: { lat: -1.9403, lng: 29.8739, zoom: 7.5 },
+        currency: 'RWF',
+        timeZone: 'Africa/Kigali',
+        singleTimeZone: true,
     },
     {
         code: 'GB',
@@ -107,6 +131,9 @@ export const PRACTICE_COUNTRIES: PracticeCountry[] = [
         licenceLabel: 'HCPC registration',
         idHint: 'Passport, driving licence or national ID card',
         center: { lat: 54, lng: -2.5, zoom: 4.5 },
+        currency: 'GBP',
+        timeZone: 'Europe/London',
+        singleTimeZone: true,
     },
     {
         code: 'US',
@@ -117,6 +144,8 @@ export const PRACTICE_COUNTRIES: PracticeCountry[] = [
         licenceLabel: 'State licence',
         idHint: 'Passport, driver’s license or state ID',
         center: { lat: 39.8283, lng: -98.5795, zoom: 3 },
+        currency: 'USD',
+        timeZone: 'America/New_York',
     },
     {
         code: 'CA',
@@ -127,6 +156,8 @@ export const PRACTICE_COUNTRIES: PracticeCountry[] = [
         licenceLabel: 'Licence',
         idHint: 'Passport, driver’s licence or provincial ID',
         center: { lat: 56.1304, lng: -106.3468, zoom: 3 },
+        currency: 'CAD',
+        timeZone: 'America/Toronto',
     },
     {
         code: OTHER_COUNTRY,
@@ -137,6 +168,8 @@ export const PRACTICE_COUNTRIES: PracticeCountry[] = [
         licenceLabel: 'Licence',
         idHint: 'National ID card, passport or driver’s licence',
         center: { lat: 12, lng: 15, zoom: 1.5 },
+        currency: 'USD',
+        timeZone: 'UTC',
     },
 ];
 
@@ -181,4 +214,72 @@ export function localPhone(code: string, phone: string) {
     if (code === DEFAULT_COUNTRY_CODE || !country.dialCode) return phone;
     const trimmed = phone.trim();
     return trimmed.startsWith(country.dialCode) ? trimmed.slice(country.dialCode.length).trim() : trimmed;
+}
+
+const CURRENCY_SYMBOLS: Record<string, string> = {
+    NGN: '₦',
+    GHS: 'GH₵',
+    KES: 'KSh ',
+    ZAR: 'R',
+    UGX: 'USh ',
+    RWF: 'FRw ',
+    GBP: '£',
+    USD: '$',
+    CAD: 'CA$',
+};
+
+/** "GH₵", "₦"…; a currency not listed shows its code. */
+export function currencySymbol(currency?: string | null) {
+    const code = (currency || 'NGN').toUpperCase();
+    return CURRENCY_SYMBOLS[code] ?? `${code} `;
+}
+
+/** A whole-unit amount (naira, cedis…) for display: "₦12,000", "GH₵250". Naira looks exactly as before. */
+export function formatMoney(amount: number, currency?: string | null) {
+    const code = (currency || 'NGN').toUpperCase();
+    return `${currencySymbol(code)}${Math.round(amount).toLocaleString(code === 'NGN' ? 'en-NG' : 'en-GB')}`;
+}
+
+export function isValidTimeZone(zone: unknown): zone is string {
+    if (typeof zone !== 'string' || !zone || zone.length > 64) return false;
+    try {
+        new Intl.DateTimeFormat('en-GB', { timeZone: zone });
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+export type PracticeSettings = {
+    countryCode: string;
+    countryName: string;
+    /** Currency of the physio's own invoices and prices */
+    currency: string;
+    /** Zone their schedule is booked and shown in */
+    timeZone: string;
+    hasRehabifyCare: boolean;
+    /** Payment links and payouts: Rehabify's Paystack account is Nigerian (NGN, Nigerian banks) */
+    onlinePayments: boolean;
+};
+
+/** What a physio's saved country and time zone mean for money and times. Unset = Nigeria, as before. */
+export function practiceSettings(countryName?: string | null, timeZone?: string | null): PracticeSettings {
+    const code = countryCodeFromName(countryName);
+    const country = practiceCountry(code);
+    const nigeria = hasRehabifyCare(code);
+    return {
+        countryCode: code,
+        countryName: code === OTHER_COUNTRY ? (countryName ?? '').trim() : country.name,
+        currency: country.currency,
+        timeZone: !nigeria && isValidTimeZone(timeZone) ? timeZone : country.timeZone,
+        hasRehabifyCare: nigeria,
+        onlinePayments: nigeria,
+    };
+}
+
+/** The zone saved at sign-up: the country's own, or the browser's where the country has several. */
+export function signupTimeZone(code: string, browserZone?: string | null): string {
+    const country = practiceCountry(code);
+    if (country.singleTimeZone || !isValidTimeZone(browserZone)) return country.timeZone;
+    return browserZone;
 }

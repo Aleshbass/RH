@@ -10,6 +10,7 @@ import { createClinicPaymentLink, mainAccountChargeKobo, paystackRequest } from 
 import { publicAppUrl } from "./helpers/appUrl";
 import { activePaymentLink } from "./helpers/paymentLinks";
 import { usableSubaccount } from "./helpers/paystackMode";
+import { isOutsideRehabifyCare } from "../lib/practiceCountries";
 
 export const getPhysioInvoiceForPaymentLink = internalQuery({
   args: { invoiceId: v.id("invoices") },
@@ -28,6 +29,7 @@ export const getPhysioInvoiceForPaymentLink = internalQuery({
       throw new ConvexError("Invoice not found");
     }
     const patient = await ctx.db.get(invoice.patientId);
+    const profile = user.physiotherapistProfileId ? await ctx.db.get(user.physiotherapistProfileId) : null;
     const account = await ctx.db
       .query("physiotherapistBankAccounts")
       .withIndex("by_physiotherapist_id", (q) => q.eq("physiotherapistId", user._id))
@@ -47,6 +49,8 @@ export const getPhysioInvoiceForPaymentLink = internalQuery({
       physioEmail: user.email ?? null,
       // Only a verified payout account receives the split directly
       subaccountCode: account?.isVerified ? usableSubaccount(account) : null,
+      // Links charge in Naira and pay out to Nigerian banks only
+      outsideNigeria: isOutsideRehabifyCare(profile?.country),
     };
   },
 });
@@ -60,6 +64,9 @@ export const createPhysioPaymentLink = action({
     // Clinic invoices: the clinic's link (the patient already got the request from the clinic)
     if ("clinicInvoice" in found) return { ...(await createClinicPaymentLink(ctx, args.invoiceId)), emailed: false };
     const invoice = found;
+    if (invoice.outsideNigeria) {
+      throw new ConvexError("Payment links only work in Nigeria for now. When your patient pays you, record the payment on the invoice.");
+    }
     if (invoice.status === "paid") throw new ConvexError("This invoice is already paid");
     if (invoice.status === "void") throw new ConvexError("This invoice was cancelled");
 

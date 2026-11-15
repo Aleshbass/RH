@@ -53,6 +53,8 @@ import { useCareBillingMode } from '@/components/physio/practiceMode'
 import { useMutationUntyped, useQueryUntyped, useActionUntyped } from '@/lib/convexUntyped'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
+import { currencySymbol } from '@/lib/practiceCountries'
+import { practiceDisplay } from '@/lib/practiceDisplay'
 import { ClinicalNoteEditor } from '@/components/physio/notes/ClinicalNoteEditor'
 import { clearNoteDraft, loadNoteDraft, saveNoteDraft } from '@/components/physio/notes/draftStore'
 import { ScribePanel } from '@/components/physio/notes/scribe/ScribePanel'
@@ -1192,7 +1194,11 @@ export function RequestPaymentDrawer({ workspace, open, onOpenChange }: { worksp
   // Same sums as billing.createInvoice: Rehabify takes nothing from a physio's own invoice; their
   // patient pays only Paystack's 1.5% + ₦100 on top. A clinic's patient pays the quoted price.
   const throughClinic = Boolean(me?.clinicId)
-  const processing = throughClinic || subtotal <= 0 ? 0 : Math.round(subtotal * 0.015) + 100
+  // Outside Nigeria there's no payment link (it charges Naira and pays Nigerian banks): the
+  // patient pays the physio directly, with no card fee, and the physio records it
+  const online = practiceDisplay().onlinePayments
+  const symbol = currencySymbol(practiceDisplay().currency).trim()
+  const processing = throughClinic || !online || subtotal <= 0 ? 0 : Math.round(subtotal * 0.015) + 100
   const patientPays = subtotal + processing
 
   const setItem = (index: number, patch: Partial<Item>) => setItems((list) => list.map((item, i) => (i === index ? { ...item, ...patch } : item)))
@@ -1287,7 +1293,7 @@ export function RequestPaymentDrawer({ workspace, open, onOpenChange }: { worksp
       open={open}
       onOpenChange={(next) => !saving && onOpenChange(next)}
       title={sent ? 'Payment request sent' : 'Request payment'}
-      description={sent ? `${name} has been told in their app.` : `${workspace.patient.firstName ?? 'Your patient'} pays by card, transfer or USSD.`}
+      description={sent ? `${name} has been told in their app.` : online ? `${workspace.patient.firstName ?? 'Your patient'} pays by card, transfer or USSD.` : 'They pay you directly. Record it when they do.'}
       footer={
         sent ? (
           <Button className={cn(primaryButtonClass, 'h-11 w-full')} onClick={() => onOpenChange(false)}>
@@ -1315,6 +1321,11 @@ export function RequestPaymentDrawer({ workspace, open, onOpenChange }: { worksp
             <p className="mt-3 text-2xl font-semibold tabular-nums text-pt-ink">{formatNaira(sent.total)}</p>
             <p className="text-sm text-pt-muted">{sent.invoiceNumber ? `Invoice #${sent.invoiceNumber}` : 'Invoice created'}</p>
           </div>
+          {!online ? (
+            <p className="rounded-2xl border border-pt-line px-4 py-3 text-sm text-pt-muted">
+              When {name} pays you, record the payment on the invoice under Payments.
+            </p>
+          ) : (
           <div>
             <p className="flex items-center gap-1 text-sm font-medium text-pt-ink">
               Send them the pay link
@@ -1337,6 +1348,7 @@ export function RequestPaymentDrawer({ workspace, open, onOpenChange }: { worksp
               </div>
             </div>
           </div>
+          )}
         </div>
       ) : (
         <div className="space-y-5">
@@ -1354,9 +1366,9 @@ export function RequestPaymentDrawer({ workspace, open, onOpenChange }: { worksp
                     list="payment-item-suggestions"
                   />
                   <div className="relative w-32 shrink-0">
-                    <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-pt-muted">₦</span>
+                    <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-pt-muted">{symbol}</span>
                     <Input
-                      className={cn(fieldClass, 'pl-7 tabular-nums')}
+                      className={cn(fieldClass, symbol.length > 1 ? 'pl-12' : 'pl-7', 'tabular-nums')}
                       inputMode="numeric"
                       value={item.amount}
                       onChange={(e) => setItem(index, { amount: e.target.value.replace(/[^\d]/g, '') })}
@@ -1392,7 +1404,7 @@ export function RequestPaymentDrawer({ workspace, open, onOpenChange }: { worksp
               <span>You charge</span>
               <span className="tabular-nums text-pt-ink">{formatNaira(subtotal)}</span>
             </div>
-            {!throughClinic && (
+            {!throughClinic && online && (
               <div className="mt-1.5 flex justify-between text-pt-muted">
                 <span className="flex items-center gap-1">
                   Card and transfer fee
@@ -1410,7 +1422,11 @@ export function RequestPaymentDrawer({ workspace, open, onOpenChange }: { worksp
             </div>
             <p className="mt-2 flex items-center gap-1.5 text-xs text-pt-muted">
               <FileText className="h-3.5 w-3.5" />
-              {throughClinic ? 'Billed through your clinic, to the clinic’s payout account.' : `You receive ${formatNaira(subtotal)} to your payout account.`}
+              {throughClinic
+                ? 'Billed through your clinic, to the clinic’s payout account.'
+                : online
+                  ? `You receive ${formatNaira(subtotal)} to your payout account.`
+                  : 'They pay you directly. Record the payment when they do.'}
             </p>
           </div>
         </div>
