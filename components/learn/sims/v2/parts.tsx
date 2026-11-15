@@ -426,15 +426,27 @@ export function Dock({
 
 // ── Debrief as swipeable cards ────────────────────────────────────────────────
 
+/** How each decision counted (the "Your decisions" card). */
+const DECISION_TAG: Record<SimDebrief['timeline'][number]['tag'], { label: string; className: string }> = {
+  critical: { label: 'Essential', className: 'bg-rh-ink text-white' },
+  'high-yield': { label: 'Useful', className: 'bg-rh-honeydew text-rh-ink' },
+  neutral: { label: 'Neutral', className: 'bg-rh-cream text-rh-ink/70' },
+  wasteful: { label: 'Wasted time', className: 'bg-rh-warn-soft text-rh-warn-ink' },
+  harmful: { label: 'Unsafe', className: 'bg-rh-danger-soft text-rh-danger-ink' },
+}
+
 export function DebriefCards({
   d,
   footer,
   extra,
+  stats,
 }: {
   d: SimDebrief
   footer: ReactNode
   /** A last card (e.g. the Sim Pass and sharing). */
   extra?: { title: string; body: ReactNode }
+  /** Scored attempts: your best and everyone's average on this case. */
+  stats?: { best: number; average: number | null }
 }) {
   const scroller = useRef<HTMLDivElement>(null)
   const [page, setPage] = useState(0)
@@ -449,6 +461,7 @@ export function DebriefCards({
     { id: 'critical', title: 'Critical actions' },
     { id: 'decisions', title: 'Your decisions' },
     { id: 'expert', title: 'What an expert would do' },
+    ...(d.missedFindings.length ? [{ id: 'missed', title: 'Findings you missed' }] : []),
     { id: 'learn', title: 'Take-home points' },
     ...(extra ? [{ id: 'extra', title: extra.title }] : []),
   ]
@@ -465,7 +478,7 @@ export function DebriefCards({
         onScroll={(e) => setPage(Math.round(e.currentTarget.scrollLeft / Math.max(1, e.currentTarget.clientWidth)))}
         className="flex min-h-0 flex-1 snap-x snap-mandatory overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
-        {cards.map((card) => (
+        {cards.map((card, i) => (
           <section key={card.id} className="w-full shrink-0 snap-center overflow-y-auto px-4 pb-4 pt-3">
             <div className="rounded-[24px] bg-white p-5 shadow-sm">
               <p className="text-xs font-semibold uppercase tracking-[0.14em] text-rh-ink/45">{card.title}</p>
@@ -477,10 +490,19 @@ export function DebriefCards({
                     <p className={cn('text-[56px] leading-none tracking-tight text-rh-ink', displayFont)}>{d.score.pct}%</p>
                     <p className={cn('pb-2 text-sm font-semibold', d.score.passed ? 'text-rh-success-ink' : 'text-orange-600')}>{d.score.passed ? 'Passed' : 'Not passed'}</p>
                   </div>
-                  <p className="mt-2 flex items-center gap-1.5 text-sm text-rh-ink/55">
-                    <Clock className="h-3.5 w-3.5" /> {formatClock(d.timeSec)}
-                    {d.score.reason === 'timeout' && ' · time ran out'}
+                  <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-rh-ink/55">
+                    <span className="flex items-center gap-1.5">
+                      <Clock className="h-3.5 w-3.5" /> {formatClock(d.timeSec)}
+                      {d.score.reason === 'timeout' && ' · time ran out'}
+                    </span>
+                    {stats && <span>Your best: {stats.best}%</span>}
+                    {stats && stats.average !== null && <span>Average: {stats.average}%</span>}
                   </p>
+                  {d.score.overBudget.length > 0 && (
+                    <p className="mt-3 rounded-2xl bg-rh-warn-soft px-3 py-2 text-xs leading-5 text-rh-warn-ink">
+                      Over the time budget in {d.score.overBudget.length === 1 ? 'one phase' : `${d.score.overBudget.length} phases`} (−5 points each).
+                    </p>
+                  )}
                   <p className="mt-6 text-xs text-rh-ink/45">Swipe for the details →</p>
                 </div>
               )}
@@ -498,8 +520,11 @@ export function DebriefCards({
                 <ol className="mt-3 space-y-3">
                   {d.timeline.map((t, i) => (
                     <li key={`${t.choiceId}-${i}`} className="border-l-2 border-rh-ink/10 pl-3">
-                      <p className="text-xs font-semibold text-rh-ink/50">
-                        {formatClock(t.clockSec)} · {t.points > 0 ? `+${t.points}` : t.points}
+                      <p className="flex flex-wrap items-center gap-2 text-xs font-semibold text-rh-ink/50">
+                        <span className={cn('rounded-full px-2 py-0.5', DECISION_TAG[t.tag].className)}>{DECISION_TAG[t.tag].label}</span>
+                        <span>
+                          {formatClock(t.clockSec)} · {t.points > 0 ? `+${t.points}` : t.points}
+                        </span>
                       </p>
                       <p className="text-sm font-medium leading-6 text-rh-ink">{t.label}</p>
                       <p className="text-sm leading-6 text-rh-ink/65">{t.feedback}</p>
@@ -516,6 +541,16 @@ export function DebriefCards({
                     </li>
                   ))}
                 </ol>
+              )}
+              {card.id === 'missed' && (
+                <ul className="mt-3 space-y-2">
+                  {d.missedFindings.map((f) => (
+                    <li key={f.id} className="rounded-2xl bg-rh-cream p-3">
+                      <p className="text-sm font-semibold text-rh-ink">{f.label}</p>
+                      <p className="mt-0.5 text-sm leading-6 text-rh-ink/70">{f.detail}</p>
+                    </li>
+                  ))}
+                </ul>
               )}
               {card.id === 'learn' && (
                 <div className="mt-3 space-y-3">
@@ -541,6 +576,15 @@ export function DebriefCards({
               )}
               {card.id === 'extra' && extra && <div className="mt-3">{extra.body}</div>}
             </div>
+            {i < cards.length - 1 && (
+              <button
+                type="button"
+                onClick={() => go(i + 1)}
+                className="mx-auto mt-4 flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold text-rh-ink/70 transition hover:bg-white hover:text-rh-ink"
+              >
+                Next: {cards[i + 1].title} <ArrowRight className="h-3.5 w-3.5" />
+              </button>
+            )}
           </section>
         ))}
       </div>
