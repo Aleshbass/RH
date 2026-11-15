@@ -13,6 +13,7 @@ import { learnSimTables } from "./schema/learnSims";
 import { learnPointsTables } from "./schema/learnPoints";
 import { visitSafetyTables } from "./schema/visitSafety";
 import { presenceTables } from "./schema/presence";
+import { joySyncTables } from "./schema/joySync";
 import { measureValidator } from "./helpers/clinicalMeasures";
 import { goalMeasureValidator } from "./helpers/goalMeasures";
 import { reportSnapshotValidator } from "./helpers/progressReport";
@@ -4544,6 +4545,7 @@ export default defineSchema({
   ...visitSafetyTables,
   // Who is on the platform right now (schema/presence.ts)
   ...presenceTables,
+  ...joySyncTables,
 
   partnershipInquiries: defineTable({
     // "demo" = Book a demo on the partners page; missing on older rows, which are partnership inquiries

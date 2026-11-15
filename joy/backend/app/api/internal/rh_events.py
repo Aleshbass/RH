@@ -245,12 +245,22 @@ async def receive_event(request: Request, settings: Settings = Depends(get_setti
             forget_care_summary(_patient_conversation(session, patient))
             append(session, kind=AuditKind.BOOKING, actor_phone="rh-service", person_id=patient.id,
                    payload={"event": "programme_sent_notified", "change": str(data.get("change") or "")})
+    elif event_type == "appointment.rescheduled":
+        _appointment_rescheduled(session, payload.get("data") or {})
+    elif event_type == "appointment.cancelled":
+        _appointment_cancelled(session, payload.get("data") or {})
+    elif event_type == "booking.payment_reminder":
+        _hold_nudge(session, payload.get("data") or {}, expired=False)
+    elif event_type == "booking.hold_expired":
+        _hold_nudge(session, payload.get("data") or {}, expired=True)
     elif event_type == "appointment.scheduled":
         # A physio or clinic booked a visit for a patient on Joy (RH queueJoyAppointmentScheduled)
         data = payload.get("data") or {}
         patient = _patient_for_rh_id(session, str(data.get("patient_id") or ""))
         if patient:
             enqueue_booking_confirmed(patient.phone_e164, "", appointment_scheduled_text(data))
+            # The same day-before, 30-minute and start reminders as Joy's own bookings (Nov 2026)
+            _schedule_visit_reminders(session, patient, data)
             from app.conversation.companion import forget_care_summary
 
             forget_care_summary(_patient_conversation(session, patient))
@@ -562,6 +572,130 @@ def booking_cancelled_text(data: dict) -> str:
     elif data.get("paid"):
         text += " If you paid, our care team will contact you about your payment under our cancellation policy."
     return text + " Reply here if you'd like to book another time."
+
+
+# ── Visits changed on the website (convex/joySync.ts), and holds about to lapse ────────────────
+
+def _visit_key(data: dict) -> str:
+    """Reminders for a Joy booking are keyed by its booking id; other visits by the appointment."""
+    return str(data.get("booking_id") or "") or f"appt-{data.get('appointment_id')}"
+
+
+def _visit_reminders(session: Session, key: str) -> list:
+    from app.models.appointment_reminder import AppointmentReminder
+
+    return list(session.scalars(select(AppointmentReminder).where(AppointmentReminder.rh_booking_id == key)).all())
+
+
+def _schedule_visit_reminders(session: Session, patient: Patient, data: dict) -> None:
+    start_ms, end_ms = data.get("start_time"), data.get("end_time")
+    if not isinstance(start_ms, (int, float)):
+        return
+    key = _visit_key(data)
+    known = _visit_reminders(session, key)
+    previous = known[0] if known else None
+    online = bool(data.get("online"))
+    duration = int((end_ms - start_ms) / 60_000) if isinstance(end_ms, (int, float)) and end_ms > start_ms else 60
+    schedule_appointment_reminder(
+        session, rh_booking_id=key, patient=patient, email=_appointment_email(session, patient),
+        provider_name=str(data.get("physio_name") or (previous.provider_name if previous else "your physiotherapist")),
+        # A Joy booking's reminders keep their mode, code and joining link
+        service_mode=previous.service_mode if previous else ("online" if online else "clinic" if data.get("clinic_name") else "in_person"),
+        session_start=appointment_start_from_ms(start_ms), duration_minutes=max(5, duration),
+        booking_code=previous.booking_code if previous else None, meeting_url=previous.meeting_url if previous else None,
+    )
+
+
+def _appointment_rescheduled(session: Session, data: dict) -> None:
+    """A visit was moved on the website: tell the patient and move Joy's reminders."""
+    patient = _patient_for_rh_id(session, str(data.get("patient_id") or ""))
+    start_ms = data.get("start_time")
+    if patient is None or not isinstance(start_ms, (int, float)):
+        return
+    start = appointment_start_from_ms(start_ms)
+    # Joy moved it itself (booking.rescheduled already told them): only keep the reminders right
+    already_known = any(r.session_start == start for r in _visit_reminders(session, _visit_key(data)))
+    _schedule_visit_reminders(session, patient, data)
+    if already_known:
+        return
+    who = str(data.get("physio_name") or "your physiotherapist")
+    text = (
+        f"Your appointment with {who} has moved to {format_lagos_appointment_time(start)}"
+        + (" (online video call)." if data.get("online") else ".")
+        + " Reply here if the new time doesn't suit you."
+    )
+    enqueue_booking_confirmed(patient.phone_e164, _visit_key(data), text, email=_appointment_email(session, patient))
+    append(session, kind=AuditKind.BOOKING, actor_phone="rh-service", person_id=patient.id,
+           payload={"event": "appointment_rescheduled_disclosed", "appointment_id": str(data.get("appointment_id") or "")})
+
+
+def _appointment_cancelled(session: Session, data: dict) -> None:
+    """A visit was cancelled on the website: stop its reminders and tell the patient."""
+    for reminder in _visit_reminders(session, _visit_key(data)):
+        if reminder.status == "pending":
+            reminder.status = "cancelled"
+    patient = _patient_for_rh_id(session, str(data.get("patient_id") or ""))
+    if patient is None:
+        return
+    booking_id = str(data.get("booking_id") or "")
+    conversation = _patient_conversation(session, patient)
+    context = (conversation.booking_context or {}) if conversation is not None else {}
+    if booking_id and context.get("rh_booking_id") == booking_id and context.get("rh_booking_status") == "cancelled":
+        return  # booking.cancelled already told them
+    who = str(data.get("physio_name") or "your physiotherapist")
+    start_ms = data.get("start_time")
+    when = f" on {format_lagos_appointment_time(appointment_start_from_ms(start_ms))}" if isinstance(start_ms, (int, float)) else ""
+    by = data.get("cancelled_by")
+    if by == "patient":
+        text = f"Your appointment with {who}{when} has been cancelled, as you asked. Reply here whenever you'd like to book another time."
+    elif by == "physiotherapist":
+        text = f"I'm sorry, {who} has had to cancel your appointment{when}. Reply here and I'll help you find another time."
+    else:
+        text = f"Your appointment with {who}{when} has been cancelled. Reply here and I'll help you find another time."
+    enqueue_booking_confirmed(patient.phone_e164, _visit_key(data), text, email=_appointment_email(session, patient))
+    append(session, kind=AuditKind.BOOKING, actor_phone="rh-service", person_id=patient.id,
+           payload={"event": "appointment_cancelled_disclosed", "appointment_id": str(data.get("appointment_id") or ""),
+                    "cancelled_by": str(by or "")})
+
+
+def _hold_nudge(session: Session, data: dict, *, expired: bool) -> None:
+    """The time Joy is holding runs out in ~10 minutes (pay now), or has just run out."""
+    from app.booking.appointment_reminders import LAGOS
+
+    booking_id = str(data.get("booking_id") or "")
+    patient = _patient_for_rh_id(session, str(data.get("patient_id") or ""))
+    conversation = _patient_conversation(session, patient) if patient is not None else None
+    if patient is None or conversation is None or not booking_id:
+        return
+    context = conversation.booking_context or {}
+    step = conversation.booking_substate
+    # Only the booking this chat is paying for, and never once it's paid or moved on
+    if context.get("rh_booking_id") != booking_id or context.get("rh_payment_status") == "succeeded":
+        return
+    if step not in {"rh_awaiting_payment", "rh_awaiting_payment_email"}:
+        return
+    who = str(data.get("physio_name") or "your physiotherapist")
+    url = str(context.get("authorization_url") or "")
+    if expired:
+        text = (
+            f"The time I was holding with {who} has now been released, and nothing was charged. "
+            + ("Reply *PAY* and I'll try to hold it again." if step == "rh_awaiting_payment"
+               else "Reply *WhatsApp is fine* or your email and I'll try to hold it again.")
+            + " If you've just paid, you can ignore this: I'll confirm here."
+        )
+    else:
+        expires_ms = data.get("hold_expires_at")
+        until = ""
+        if isinstance(expires_ms, (int, float)):
+            local = datetime.fromtimestamp(expires_ms / 1000, timezone.utc).astimezone(LAGOS)
+            until = f" until {local.strftime('%I:%M %p').lstrip('0')}"
+        if step == "rh_awaiting_payment" and url.startswith("https://"):
+            text = f"Your time with {who} is held{until}. Pay securely here to keep it: {url}"
+        else:
+            text = f"Your time with {who} is held{until}. To get your payment link, tap *WhatsApp is fine* or reply with your email."
+    enqueue_booking_confirmed(patient.phone_e164, booking_id, text)
+    append(session, kind=AuditKind.BOOKING, actor_phone="rh-service", person_id=patient.id,
+           payload={"event": "hold_expired_notified" if expired else "hold_reminder_sent", "booking_id": booking_id})
 
 
 def _booking_cancelled(session: Session, data: dict) -> None:

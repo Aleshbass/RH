@@ -13,6 +13,8 @@ from app.models.patient import Patient
 
 LAGOS = ZoneInfo("Africa/Lagos")
 REMINDER_LEAD = timedelta(minutes=30)
+DAY_BEFORE_LEAD = timedelta(hours=24)
+DAY_BEFORE = "day_before"
 THIRTY_MINUTES_BEFORE = "thirty_minutes_before"
 AT_APPOINTMENT_START = "at_appointment_start"
 
@@ -97,6 +99,12 @@ def appointment_reminder_text(reminder: AppointmentReminder) -> str:
             f"Your {mode}appointment with {reminder.provider_name} starts now. "
             f"{attendance_instruction}"
         )
+    elif reminder.reminder_kind == DAY_BEFORE:
+        text = (
+            f"Reminder: your {mode}appointment with {reminder.provider_name} is in 24 hours, "
+            f"at {format_lagos_appointment_time(reminder.session_start)}. "
+            "Reply here if you need to change it."
+        )
     else:
         text = (
         f"Reminder: your {mode}appointment with {reminder.provider_name} starts in 30 minutes "
@@ -142,7 +150,7 @@ def schedule_appointment_reminder(
     booking_code: str | None = None,
     meeting_url: str | None = None,
 ) -> list[AppointmentReminder]:
-    """Create/update the 30-minute and appointment-start reminders for an RH booking.
+    """Create/update the day-before, 30-minute and appointment-start reminders for an RH booking.
 
     The schedule lives in Postgres, rather than a process timer, so a worker
     restart cannot lose a patient reminder.
@@ -155,7 +163,12 @@ def schedule_appointment_reminder(
     }
     now = datetime.now(timezone.utc)
     reminders: list[AppointmentReminder] = []
+    def first_status(kind: str, reminder_at: datetime) -> str:
+        # A reminder point already past can't be sent truthfully; the start-time one always can
+        return "skipped" if kind != AT_APPOINTMENT_START and reminder_at <= now else "pending"
+
     for kind, reminder_at in (
+        (DAY_BEFORE, session_start - DAY_BEFORE_LEAD),
         (THIRTY_MINUTES_BEFORE, session_start - REMINDER_LEAD),
         (AT_APPOINTMENT_START, session_start),
     ):
@@ -176,7 +189,7 @@ def schedule_appointment_reminder(
                 duration_minutes=duration_minutes,
                 booking_code=booking_code,
                 meeting_url=meeting_url,
-                status="skipped" if kind == THIRTY_MINUTES_BEFORE and reminder_at <= now else "pending",
+                status=first_status(kind, reminder_at),
             )
             session.add(reminder)
         elif reminder.status != "sent":
@@ -189,6 +202,8 @@ def schedule_appointment_reminder(
             reminder.duration_minutes = duration_minutes
             reminder.booking_code = booking_code
             reminder.meeting_url = meeting_url
+            # A moved or re-booked visit: a skipped or cancelled point is live again (Nov 2026)
+            reminder.status = first_status(kind, reminder_at)
         elif reminder.session_start != session_start:
             # A moved appointment needs fresh notifications at its new times;
             # the previous delivery remains visible in the audit log.
@@ -201,7 +216,7 @@ def schedule_appointment_reminder(
             reminder.duration_minutes = duration_minutes
             reminder.booking_code = booking_code
             reminder.meeting_url = meeting_url
-            reminder.status = "skipped" if kind == THIRTY_MINUTES_BEFORE and reminder_at <= now else "pending"
+            reminder.status = first_status(kind, reminder_at)
             reminder.whatsapp_sent_at = None
             reminder.email_sent_at = None
             reminder.sent_at = None

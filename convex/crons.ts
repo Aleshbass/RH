@@ -119,6 +119,9 @@ crons.interval("push-session-starting", { minutes: 5 }, internal.pushAlerts.sess
 crons.daily("push-licence-expiry", { hourUTC: 7, minuteUTC: 5 }, internal.pushAlerts.checkLicenceExpiry, {});
 crons.daily("push-exercise-inactivity", { hourUTC: 7, minuteUTC: 15 }, internal.pushAlerts.checkExerciseInactivity, {});
 crons.interval("retry-joy-event-outbox", { minutes: 1 }, internal.joyIntegration.retryJoyEvents, {});
+// Joy hears about visits booked, moved or cancelled anywhere on the website, and nudges unpaid holds
+crons.interval("joy-appointment-sync", { minutes: 5 }, internal.joySync.syncJoyAppointments, {});
+crons.interval("joy-hold-nudges", { minutes: 5 }, internal.joySync.nudgeJoyHolds, {});
 
 // Partner webhooks: safety net for deliveries whose scheduled retry was lost.
 crons.interval(
