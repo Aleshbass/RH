@@ -26,6 +26,12 @@ import {
     DayAvailability,
 } from "./availabilityTypes";
 import { LAGOS_TIME_ZONE, startOfZonedDay, zonedDateTimeToUtc } from "../helpers/lagosTime";
+import { practiceSettings } from "../../lib/practiceCountries";
+
+/** The zone a physio's working hours are in: Lagos in Nigeria, their own elsewhere (lib/practiceCountries.ts). */
+export function practiceZoneOf(profile: { country?: string; timeZone?: string } | null | undefined): string {
+    return practiceSettings(profile?.country, profile?.timeZone).timeZone;
+}
 import { isLiveHold } from "../helpers/slotHolds";
 
 // ============================================================================
@@ -101,7 +107,13 @@ function isOldOperatingHoursFormat(schedule: unknown): schedule is OperatingHour
 /**
  * Normalize availability schedule - handles both old and new formats
  */
-export function normalizeAvailabilitySchedule(schedule: unknown): AvailabilitySchedule {
+export function normalizeAvailabilitySchedule(schedule: unknown, practiceZone?: string): AvailabilitySchedule {
+    const normalized = normalizeStoredSchedule(schedule);
+    // Outside Nigeria the hours are always in the physio's own zone (e.g. Accra), whatever was stored
+    return practiceZone && practiceZone !== LAGOS_TIME_ZONE ? { ...normalized, timezone: practiceZone } : normalized;
+}
+
+function normalizeStoredSchedule(schedule: unknown): AvailabilitySchedule {
     if (!schedule) {
         return DEFAULT_AVAILABILITY_SCHEDULE;
     }
@@ -320,7 +332,7 @@ export const getAvailableSlots = query({
         }
 
         // Parse availability - handles both old onboarding format and new format
-        const availability = normalizeAvailabilitySchedule(physioProfile.availabilitySchedule);
+        const availability = normalizeAvailabilitySchedule(physioProfile.availabilitySchedule, practiceZoneOf(physioProfile));
 
         const sessionDuration = args.sessionDuration || availability.defaultSessionDuration;
 
@@ -483,7 +495,7 @@ export const getAvailabilitySchedule = query({
         }
 
         // Normalize to handle both old onboarding format and new format
-        const schedule = normalizeAvailabilitySchedule(physioProfile.availabilitySchedule);
+        const schedule = normalizeAvailabilitySchedule(physioProfile.availabilitySchedule, practiceZoneOf(physioProfile));
 
         const caller = await getCallerOrNull(ctx);
         if (caller && (caller._id === args.physiotherapistId || caller.role === "admin")) {
@@ -541,7 +553,8 @@ export const updateAvailabilitySchedule = mutation({
         }
 
         await ctx.db.patch(physioProfile._id, {
-            availabilitySchedule: args.schedule,
+            // Outside Nigeria the hours are saved in the physio's own zone (Lagos is left as sent)
+            availabilitySchedule: normalizeAvailabilitySchedule(args.schedule, practiceZoneOf(physioProfile)),
         });
 
         return { success: true };
@@ -581,7 +594,8 @@ export const setDateOverride = mutation({
 
         // Onboarding stored hours by day name; convert first or the override is lost on read
         const currentSchedule: AvailabilitySchedule = normalizeAvailabilitySchedule(
-            physioProfile.availabilitySchedule
+            physioProfile.availabilitySchedule,
+            practiceZoneOf(physioProfile)
         );
 
         // Remove existing override for this date if any
@@ -637,7 +651,8 @@ export const removeDateOverride = mutation({
 
         // Onboarding stored hours by day name; convert first or the override is lost on read
         const currentSchedule: AvailabilitySchedule = normalizeAvailabilitySchedule(
-            physioProfile.availabilitySchedule
+            physioProfile.availabilitySchedule,
+            practiceZoneOf(physioProfile)
         );
 
         const updatedOverrides = (currentSchedule.dateOverrides || []).filter(
@@ -685,7 +700,7 @@ export const getAvailableSlotsInternal = internalQuery({
         // Keep this internal path consistent with the public availability
         // query. Test and legacy providers can still have the onboarding
         // operating-hours shape, which must be normalized before use.
-        const availability = normalizeAvailabilitySchedule(physioProfile.availabilitySchedule);
+        const availability = normalizeAvailabilitySchedule(physioProfile.availabilitySchedule, practiceZoneOf(physioProfile));
 
         const sessionDuration = args.sessionDuration || availability.defaultSessionDuration;
 

@@ -4,6 +4,9 @@ import { useEffect, type ReactNode } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useQuery } from 'convex/react'
+import { makeFunctionReference } from 'convex/server'
+import type { PracticeSettings } from '@/lib/practiceCountries'
+import { practiceDisplayKey, setPracticeDisplay } from '@/lib/practiceDisplay'
 import { CalendarPlus } from '@/components/icons'
 import { api } from '@/convex/_generated/api'
 import DashboardAuthGuard from '@/components/auth/DashboardAuthGuard'
@@ -55,6 +58,11 @@ function ShellSkeleton() {
  * with help, theme and notifications, and the first-visit tour. Colours come from
  * app/patient-portal.css; <html data-portal="patient"> lets shared components follow them.
  */
+// Their physio's time zone when that physio practises outside Nigeria (Accra for Ghana); else Lagos
+const careTeamPracticeRef = makeFunctionReference<'query', Record<string, never>, PracticeSettings | null>(
+  'physioSetup:getMyCareTeamPractice'
+)
+
 export function PatientShell({ children }: { children: ReactNode }) {
   // Offline, the PIN opens the data saved on this phone before anything shows
   return (
@@ -72,6 +80,9 @@ function PatientPortal({ children }: { children: ReactNode }) {
   const user = useQuery(api.users.getMyUser) as { role?: string; firstName?: string } | null | undefined
   const isStaff = Boolean(user?.role && STAFF_ROLES.has(user.role))
   const unreadMessages = useQuery(api.chat.getUnreadCount, user?.role === 'patient' ? {} : 'skip') as number | undefined
+  const careTeamPractice = useQuery(careTeamPracticeRef, user?.role === 'patient' ? {} : 'skip')
+  // Set before any page renders; pages remount if it changes (Nigeria's patients: never)
+  setPracticeDisplay(careTeamPractice)
   // The welcome tour waits until consent is done: two overlays at once block each other's buttons
   const consentsSettled = useConsentsSettled(user?.role === 'patient')
 
@@ -93,7 +104,7 @@ function PatientPortal({ children }: { children: ReactNode }) {
 
   return (
     <DashboardAuthGuard loadingFallback={<ShellSkeleton />}>
-      <div className="flex min-h-screen bg-pt-canvas text-pt-ink">
+      <div key={practiceDisplayKey(careTeamPractice)} className="flex min-h-screen bg-pt-canvas text-pt-ink">
         <div className="hidden shrink-0 p-3 pr-0 lg:flex">
           <PatientSidebar unreadMessages={unreadMessages} className="sticky top-3 h-[calc(100vh-1.5rem)]" />
         </div>

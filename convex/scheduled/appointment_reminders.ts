@@ -4,6 +4,7 @@ import { internalMutation } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { publicAppUrl } from "../helpers/appUrl";
 import { lagosTimeRange, startOfZonedDay } from "../helpers/lagosTime";
+import { practiceZoneForPhysio } from "../helpers/practiceZone";
 
 /**
  * Send appointment reminders for all appointments happening tomorrow (Lagos day window).
@@ -42,7 +43,8 @@ export const sendDailyAppointmentReminders = internalMutation({
         // Compute names and strings
         const patientName = `${patient.firstName || ""} ${patient.lastName || ""}`.trim() || patient.email;
         const physiotherapistName = `${physio.firstName || ""} ${physio.lastName || ""}`.trim() || "Physiotherapist";
-        const appointmentTime = lagosTimeRange(appt.startTime, appt.endTime);
+        // Where the visit happens: Lagos, or the physio's own zone outside Nigeria
+        const appointmentTime = lagosTimeRange(appt.startTime, appt.endTime, await practiceZoneForPhysio(ctx, appt.physiotherapistId));
 
         // Resolve clinic name best-effort
         let clinicName = "Rehabify Health";

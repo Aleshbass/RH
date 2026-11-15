@@ -5,6 +5,7 @@ import { useQuery } from 'convex/react'
 import { makeFunctionReference } from 'convex/server'
 import { ChevronRight, Receipt } from '@/components/icons'
 import { Panel, StatusBadge } from '@/components/patient/ui'
+import { displayTimeZone } from '@/convex/helpers/lagosTime'
 
 type ReceiptRow = {
   number: string
@@ -19,7 +20,7 @@ type ReceiptRow = {
 const myReceiptsRef = makeFunctionReference<'query', Record<string, never>, ReceiptRow[]>('payments:myReceipts')
 
 const naira = (kobo: number) => `₦${(kobo / 100).toLocaleString('en-NG', { maximumFractionDigits: 2 })}`
-const day = (ms: number) => new Date(ms).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Africa/Lagos' })
+const day = (ms: number) => new Date(ms).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: displayTimeZone() })
 
 /** Every payment and refund receipt, each opening a printable copy. */
 export function ReceiptsPanel() {

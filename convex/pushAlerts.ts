@@ -21,6 +21,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { insertNotification } from "./helpers/pushNotify";
 import { isOpenAppointment } from "./helpers/appointmentStatus";
 import { lagosDate, lagosDateTime, lagosTime, zonedDateKey } from "./helpers/lagosTime";
+import { practiceZoneForPhysio } from "./helpers/practiceZone";
 import { canUseArea, resolveClinicMember } from "./clinicTools";
 
 const MINUTE = 60_000;
@@ -164,7 +165,7 @@ export const sessionStartingSoon = internalMutation({
         type: "session_starting",
         priority: "urgent",
         title: "Session starts in 10 minutes",
-        body: `${fullName(patient, "Your patient")} at ${lagosTime(apt.startTime)}, by video call. Tap to open the call.`,
+        body: `${fullName(patient, "Your patient")} at ${lagosTime(apt.startTime, await practiceZoneForPhysio(ctx, apt.physiotherapistId))}, by video call. Tap to open the call.`,
         link: callPath(apt),
         entityType: "appointment",
         entityId,
@@ -191,7 +192,9 @@ async function notifyPatientWaiting(
     type: "patient_waiting_in_call",
     priority: "urgent",
     title: `${args.patientName} is waiting in the video call`,
-    body: args.startTime ? `Your ${lagosTime(args.startTime)} session. Tap to join.` : "Tap to join.",
+    body: args.startTime
+      ? `Your ${lagosTime(args.startTime, await practiceZoneForPhysio(ctx, args.physioId))} session. Tap to join.`
+      : "Tap to join.",
     link: args.link,
     entityType: "appointment",
     entityId,

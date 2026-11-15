@@ -5,6 +5,7 @@
  * Shared formatters read them, so a Ghana physio sees GH₵ and Accra time on every screen.
  */
 import { practiceSettings, type PracticeSettings } from '@/lib/practiceCountries'
+import { setDisplayTimeZone } from '@/convex/helpers/lagosTime'
 
 const NIGERIA = practiceSettings(null)
 let current: PracticeSettings = NIGERIA
@@ -12,6 +13,8 @@ let current: PracticeSettings = NIGERIA
 /** Called while the portal renders, before its pages do; null/undefined goes back to Nigeria. */
 export function setPracticeDisplay(next: PracticeSettings | null | undefined) {
   current = next ?? NIGERIA
+  // Every shared time formatter (convex/helpers/lagosTime.ts) follows it
+  setDisplayTimeZone(current.timeZone)
 }
 
 export function practiceDisplay(): PracticeSettings {

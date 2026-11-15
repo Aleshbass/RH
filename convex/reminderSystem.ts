@@ -4,6 +4,13 @@ import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import type { Doc } from "./_generated/dataModel";
 import { lagosDateTime, lagosTime } from "./helpers/lagosTime";
+import { practiceZoneForPhysio } from "./helpers/practiceZone";
+
+/** The zone a physio's reminders state times in: Lagos, or their own outside Nigeria. */
+export const getPracticeZone = internalQuery({
+  args: { physioId: v.id("users") },
+  handler: async (ctx, args): Promise<string> => practiceZoneForPhysio(ctx, args.physioId),
+});
 
 // Note: typing this file fully (or reshaping the invoice functions) tips the Convex tsc over
 // TypeScript's instantiation depth limit elsewhere (TS2589), so it stays @ts-nocheck for now.
@@ -253,7 +260,8 @@ export const sendAppointmentReminders = internalAction({
         });
         if (!patient || !physio) continue;
 
-        const at = lagosTime(appointment.startTime);
+        const tz: string = await ctx.runQuery(internal.reminderSystem.getPracticeZone, { physioId: appointment.physiotherapistId });
+        const at = lagosTime(appointment.startTime, tz);
         // Patients can switch reminders off in their settings
         if (patient.notificationPreferences?.appointmentReminders !== false) {
           await remind(
@@ -284,13 +292,14 @@ export const sendAppointmentReminders = internalAction({
           userId: appointment.patientId,
         });
         if (!patient) continue;
+        const dayTz: string = await ctx.runQuery(internal.reminderSystem.getPracticeZone, { physioId: appointment.physiotherapistId });
 
         await remind(
           appointment,
           appointment.physiotherapistId,
           "day",
           "Appointment in 24 hours",
-          `Your appointment with ${fullName(patient, "your patient")} is on ${lagosDateTime(appointment.startTime)}.`,
+          `Your appointment with ${fullName(patient, "your patient")} is on ${lagosDateTime(appointment.startTime, dayTz)}.`,
           "/dashboard/physiotherapist/appointments"
         );
       } catch (e) {

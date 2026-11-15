@@ -27,6 +27,7 @@ import { platformAdminEmails } from "./helpers/adminRecipients";
 import { appLink } from "./helpers/appUrl";
 import { personName } from "./helpers/displayIdentity";
 import { lagosTime } from "./helpers/lagosTime";
+import { practiceZoneForPhysio } from "./helpers/practiceZone";
 import { normalizePhone } from "./helpers/partnerShared";
 import { randomToken } from "./helpers/exerciseCrypto";
 import { linkableEmail } from "./helpers/whatsappLink";
@@ -443,7 +444,7 @@ export const startVisit = mutation({
     if (!isHomeVisit(apt)) throw new ConvexError("Visit safety is for home visits.");
     if (apt.status !== "scheduled" && apt.status !== "confirmed") throw new ConvexError("This visit isn't booked any more.");
     const now = Date.now();
-    if (now < apt.startTime - OPENS_BEFORE_MS) throw new ConvexError(`You can start this from ${lagosTime(apt.startTime - OPENS_BEFORE_MS)}.`);
+    if (now < apt.startTime - OPENS_BEFORE_MS) throw new ConvexError(`You can start this from ${lagosTime(apt.startTime - OPENS_BEFORE_MS, await practiceZoneForPhysio(ctx, apt.physiotherapistId))}.`);
     if (now > apt.endTime) throw new ConvexError("This visit's time has passed. Suggest a new time instead.");
 
     const existing = await ctx.db
@@ -484,6 +485,8 @@ async function tellPatientOnTheWay(ctx: MutationCtx, visit: Visit, physio: Doc<"
   const patient = await ctx.db.get(visit.patientId);
   if (!patient) return;
   const profile = await physioProfile(ctx, physio._id);
+  // Times are where the visit happens: Lagos, or the physio's own zone outside Nigeria
+  const tz = await practiceZoneForPhysio(ctx, physio._id);
   const name = personName(physio, "Your physiotherapist");
   const first = physio.firstName?.trim() || name;
   const licence = profile?.licenseNumber?.trim();
@@ -497,7 +500,7 @@ async function tellPatientOnTheWay(ctx: MutationCtx, visit: Visit, physio: Doc<"
     status: "pending",
     payload: {
       title: `${first} is on the way`,
-      body: `Your physio for ${lagosTime(apt.startTime)}. Check ${first}'s face against the photo, then give the code ${visit.doorCode}. Never give it to anyone else.`,
+      body: `Your physio for ${lagosTime(apt.startTime, tz)}. Check ${first}'s face against the photo, then give the code ${visit.doorCode}. Never give it to anyone else.`,
       link: page,
       data: { entityType: "home_visit", entityId: visit._id, actionUrl: page },
     },
@@ -512,7 +515,7 @@ async function tellPatientOnTheWay(ctx: MutationCtx, visit: Visit, physio: Doc<"
       greetingName: patient.firstName?.trim() || undefined,
       heading: `${name} is on the way`,
       paragraphs: [
-        `${name} is coming for your home visit at ${lagosTime(apt.startTime)}.`,
+        `${name} is coming for your home visit at ${lagosTime(apt.startTime, tz)}.`,
         `When they arrive, check their face matches the photo on the page below. Then give them this code: ${visit.doorCode}.`,
         ...(licence ? [`Their physiotherapy licence number is ${licence}.`] : []),
         "Only give the code to the person in the photo. If someone else comes, don't let them in, and call us or reply to Joy on WhatsApp.",
@@ -1010,7 +1013,7 @@ async function sendPhysioCheck(ctx: MutationCtx, visit: Visit) {
   await ctx.db.patch(visit._id, { check: "check_sent", checkSentAt: now, updatedAt: now });
   if (!physio) return;
   const who = patient?.firstName?.trim() || "your patient";
-  const body = `Your visit with ${who} was due to end at ${lagosTime(visit.expectedEndAt)}. Tap to tell us you're safe. If we don't hear from you in 10 minutes, the care team will call you.`;
+  const body = `Your visit with ${who} was due to end at ${lagosTime(visit.expectedEndAt, await practiceZoneForPhysio(ctx, visit.physiotherapistId))}. Tap to tell us you're safe. If we don't hear from you in 10 minutes, the care team will call you.`;
   await insertNotification(ctx, {
     userId: physio._id,
     type: "safety_check",

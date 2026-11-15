@@ -15,6 +15,7 @@ import { playSound } from '@/lib/sounds';
 import { cn } from '@/lib/utils';
 import { currencySymbol } from '@/lib/practiceCountries';
 import { practiceDisplay } from '@/lib/practiceDisplay';
+import { displayTimeZone } from '@/convex/helpers/lagosTime';
 
 interface CreateInvoiceModalProps {
     isOpen: boolean;
@@ -367,7 +368,7 @@ export function CreateInvoiceModal({ isOpen, onClose, preselectedPatientId }: Cr
                                             visitId === visit._id ? 'border-pt-primary bg-pt-primary text-pt-on-primary' : 'border-pt-line-strong text-pt-ink hover:bg-pt-hover'
                                         )}
                                     >
-                                        {new Date(visit.startTime).toLocaleString('en-NG', { timeZone: 'Africa/Lagos', weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}
+                                        {new Date(visit.startTime).toLocaleString('en-NG', { timeZone: displayTimeZone(), weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}
                                     </button>
                                 ))}
                             </div>

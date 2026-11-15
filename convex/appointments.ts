@@ -8,6 +8,7 @@ import { internal } from "./_generated/api";
 import { onPatientSessionCompleted } from "./helpers/partnerAttribution";
 import { isRehabifyCare, mustPayToConfirm, needsInvoiceOnAccept, releaseCancelledVisit, settleNoShow, settlePatientCancellation, useFreeReschedule } from "./rehabifyFollowUps";
 import { lagosDate, lagosDateTime, lagosShortDate, lagosTime, lagosTimeRange, startOfZonedDay, zonedDateTimeToUtc } from "./helpers/lagosTime";
+import { practiceZoneForPhysio, zoneLabel } from "./helpers/practiceZone";
 import { awaitingConfirmationFrom, isOpenAppointment } from "./helpers/appointmentStatus";
 import { isGoogleBusy } from "./helpers/slotHolds";
 import { requireClinicCareAccess } from "./helpers/careAccess";
@@ -139,6 +140,8 @@ export const createAppointment = mutation({
     skipped?: number[];
   }> => {
     const user = await getAuthenticatedUser(ctx);
+    // Times in messages are where the visit happens: Lagos, or the physio's own zone outside Nigeria
+    const tz = await practiceZoneForPhysio(ctx, user?._id);
 
     // Verify user has access to this patient
     const relationship = await ctx.db
@@ -193,7 +196,7 @@ export const createAppointment = mutation({
     const conflictingAppointments = await clashesWith(args.startTime, args.endTime);
     if (conflictingAppointments.length > 0) {
       const sorted = conflictingAppointments.sort((a, b) => a.startTime - b.startTime);
-      const details = sorted.slice(0, 3).map((a) => `${lagosShortDate(a.startTime)}, ${lagosTimeRange(a.startTime, a.endTime)}`).join("; ");
+      const details = sorted.slice(0, 3).map((a) => `${lagosShortDate(a.startTime, tz)}, ${lagosTimeRange(a.startTime, a.endTime, tz)}`).join("; ");
       throw new ConvexError(`That time overlaps another appointment (${details}). Pick another time.`);
     }
 
@@ -282,7 +285,7 @@ export const createAppointment = mutation({
       }
     }
     // Precompute a friendly time range string for emails (Convex runs in UTC; people read Lagos time)
-    const appointmentTimeStr = lagosTimeRange(firstUpcoming.startTime, firstUpcoming.startTime + length);
+    const appointmentTimeStr = lagosTimeRange(firstUpcoming.startTime, firstUpcoming.startTime + length, tz);
     // Repeat visits: one message for the whole set, not one per visit
     const moreVisits = upcoming.length - 1;
 
@@ -296,8 +299,8 @@ export const createAppointment = mutation({
         title: moreVisits > 0 ? `${upcoming.length} Appointments Scheduled` : "Appointment Scheduled",
         body:
           moreVisits > 0
-            ? `${physiotherapistName} booked ${upcoming.length} visits, starting ${lagosDateTime(firstUpcoming.startTime)}. Please confirm them on your appointments page.`
-            : `${physiotherapistName} booked a visit for ${lagosDateTime(firstUpcoming.startTime)}. Please confirm it on your appointments page.`,
+            ? `${physiotherapistName} booked ${upcoming.length} visits, starting ${lagosDateTime(firstUpcoming.startTime, tz)}. Please confirm them on your appointments page.`
+            : `${physiotherapistName} booked a visit for ${lagosDateTime(firstUpcoming.startTime, tz)}. Please confirm it on your appointments page.`,
         data: {
           entityId: firstUpcoming.id,
           entityType: "appointment",
@@ -584,6 +587,8 @@ export const updateAppointmentStatus = mutation({
 
     // Get the appointment
     const appointment = await ctx.db.get(args.appointmentId);
+    // Times in messages are where the visit happens: Lagos, or the physio's own zone outside Nigeria
+    const tz = await practiceZoneForPhysio(ctx, appointment?.physiotherapistId);
     if (!appointment) {
       throw new Error("Appointment not found");
     }
@@ -657,7 +662,7 @@ export const updateAppointmentStatus = mutation({
     let notificationMessage = "";
 
     const physioName = personName(user, "Your physiotherapist");
-    const when = lagosDateTime(appointment.startTime);
+    const when = lagosDateTime(appointment.startTime, tz);
 
     switch (args.status) {
       case "confirmed":
@@ -697,7 +702,7 @@ export const updateAppointmentStatus = mutation({
         greetingName: patient?.firstName,
         heading: "Your visit is confirmed",
         paragraphs: [
-          `${physioName} confirmed your ${appointment.serviceType} on ${lagosDate(appointment.startTime)}, ${lagosTimeRange(appointment.startTime, appointment.endTime)} (Lagos time), ${visitPlace(appointment)}.`,
+          `${physioName} confirmed your ${appointment.serviceType} on ${lagosDate(appointment.startTime, tz)}, ${lagosTimeRange(appointment.startTime, appointment.endTime, tz)} ${zoneLabel(tz)}, ${visitPlace(appointment)}.`,
           appointment.appointmentType === "telehealth" || appointment.isOnline
             ? "Your video link is on your appointments page."
             : "If you need to change or cancel, you can do it from your appointments page.",
@@ -733,7 +738,7 @@ export const updateAppointmentStatus = mutation({
           : null;
         const physiotherapistName = personName(physiotherapist, "your physiotherapist");
         const patientNameForEmail = personName(patient, "Your patient");
-        const appointmentTimeStr = lagosTimeRange(appointment.startTime, appointment.endTime);
+        const appointmentTimeStr = lagosTimeRange(appointment.startTime, appointment.endTime, tz);
 
         await ctx.scheduler.runAfter(0, internal.actions.emails.sendAppointmentCanceledPatientEmail.sendAppointmentCanceledPatientEmail, {
           to: patient.email as string,
@@ -865,6 +870,8 @@ export const rescheduleAppointment = mutation({
 
     // Get the appointment
     const appointment = await ctx.db.get(args.appointmentId);
+    // Times in messages are where the visit happens: Lagos, or the physio's own zone outside Nigeria
+    const tz = await practiceZoneForPhysio(ctx, appointment?.physiotherapistId);
     if (!appointment) {
       throw new Error("Appointment not found");
     }
@@ -938,7 +945,7 @@ export const rescheduleAppointment = mutation({
       status: "pending",
       payload: {
         title: "Appointment Rescheduled",
-        body: `${personName(user, "Your physiotherapist")} moved your visit to ${lagosDateTime(args.newStartTime)}. Please confirm the new time.`,
+        body: `${personName(user, "Your physiotherapist")} moved your visit to ${lagosDateTime(args.newStartTime, tz)}. Please confirm the new time.`,
         data: {
           entityId: args.appointmentId,
           entityType: "appointment",
@@ -955,8 +962,8 @@ export const rescheduleAppointment = mutation({
     const physioEmail = physiotherapist?.email as string | undefined;
     const physiotherapistName = personName(physiotherapist, "Physiotherapist");
     const patientNameForEmail = personName(patient, "Patient");
-    const oldTimeStr = lagosTimeRange(oldStart, oldEnd);
-    const newTimeStr = lagosTimeRange(args.newStartTime, args.newEndTime);
+    const oldTimeStr = lagosTimeRange(oldStart, oldEnd, tz);
+    const newTimeStr = lagosTimeRange(args.newStartTime, args.newEndTime, tz);
     if (physioEmail) {
       await ctx.scheduler.runAfter(0, internal.actions.emails.sendAppointmentRescheduledProviderEmail.sendAppointmentRescheduledProviderEmail, {
         to: physioEmail,
@@ -1009,6 +1016,8 @@ export const proposeNewTime = mutation({
     const user = await getAuthenticatedUser(ctx, ["physiotherapist"]);
 
     const appointment = await ctx.db.get(args.appointmentId);
+    // Times in messages are where the visit happens: Lagos, or the physio's own zone outside Nigeria
+    const tz = await practiceZoneForPhysio(ctx, appointment?.physiotherapistId);
     if (!appointment) {
       throw new ConvexError("Appointment not found.");
     }
@@ -1046,7 +1055,7 @@ export const proposeNewTime = mutation({
       userId: appointment.patientId,
       type: "appointment_time_proposed",
       title: "New time proposed",
-      body: `${physioName} proposed moving your visit from ${lagosDateTime(appointment.startTime)} to ${lagosDateTime(args.startTime)}.${note ? ` "${note}"` : ""}`,
+      body: `${physioName} proposed moving your visit from ${lagosDateTime(appointment.startTime, tz)} to ${lagosDateTime(args.startTime, tz)}.${note ? ` "${note}"` : ""}`,
       appointmentId: args.appointmentId,
       actionUrl: PATIENT_APPOINTMENTS,
     });
@@ -1057,7 +1066,7 @@ export const proposeNewTime = mutation({
       greetingName: patient?.firstName,
       heading: "Your physio proposed a new time",
       paragraphs: [
-        `${physioName} proposed moving your ${appointment.serviceType} from ${lagosDate(appointment.startTime)}, ${lagosTimeRange(appointment.startTime, appointment.endTime)} to ${lagosDate(args.startTime)}, ${lagosTimeRange(args.startTime, args.endTime)} (Lagos time).`,
+        `${physioName} proposed moving your ${appointment.serviceType} from ${lagosDate(appointment.startTime, tz)}, ${lagosTimeRange(appointment.startTime, appointment.endTime, tz)} to ${lagosDate(args.startTime, tz)}, ${lagosTimeRange(args.startTime, args.endTime, tz)} ${zoneLabel(tz)}.`,
         ...(note ? [`Their note: "${note}"`] : []),
         "Open your appointments to accept the new time or keep the original one.",
       ],
@@ -1083,6 +1092,8 @@ export const respondToProposedTime = mutation({
     const patient = await getAuthenticatedPatient(ctx);
 
     const appointment = await ctx.db.get(args.appointmentId);
+    // Times in messages are where the visit happens: Lagos, or the physio's own zone outside Nigeria
+    const tz = await practiceZoneForPhysio(ctx, appointment?.physiotherapistId);
     if (!appointment || appointment.patientId !== patient._id) {
       throw new ConvexError("This is not your appointment.");
     }
@@ -1112,7 +1123,7 @@ export const respondToProposedTime = mutation({
           userId: appointment.physiotherapistId,
           type: "appointment_rescheduled",
           title: "New time accepted: send the invoice",
-          body: `${patientName} accepted ${lagosDateTime(start)}. Accept & send the invoice so they can pay to confirm it.`,
+          body: `${patientName} accepted ${lagosDateTime(start, tz)}. Accept & send the invoice so they can pay to confirm it.`,
           appointmentId: args.appointmentId,
           actionUrl: PHYSIO_APPOINTMENTS,
         });
@@ -1138,7 +1149,7 @@ export const respondToProposedTime = mutation({
         userId: appointment.physiotherapistId,
         type: "appointment_confirmed",
         title: "New time accepted",
-        body: `${patientName} accepted ${lagosDateTime(start)}. The visit is confirmed.`,
+        body: `${patientName} accepted ${lagosDateTime(start, tz)}. The visit is confirmed.`,
         appointmentId: args.appointmentId,
         actionUrl: PHYSIO_APPOINTMENTS,
       });
@@ -1146,7 +1157,7 @@ export const respondToProposedTime = mutation({
         userId: patient._id,
         type: "appointment_confirmed",
         title: "Appointment Confirmed",
-        body: `Your visit with ${physioName} is now on ${lagosDateTime(start)}.`,
+        body: `Your visit with ${physioName} is now on ${lagosDateTime(start, tz)}.`,
         appointmentId: args.appointmentId,
         actionUrl: PATIENT_APPOINTMENTS,
       });
@@ -1157,9 +1168,9 @@ export const respondToProposedTime = mutation({
             patientName,
             physiotherapistName: personName(physiotherapist, "Physiotherapist"),
             oldDate: appointment.startTime,
-            oldTime: lagosTimeRange(appointment.startTime, appointment.endTime),
+            oldTime: lagosTimeRange(appointment.startTime, appointment.endTime, tz),
             newDate: start,
-            newTime: lagosTimeRange(start, end),
+            newTime: lagosTimeRange(start, end, tz),
             viewLink: PHYSIO_APPOINTMENTS,
             subjectOverride: `${patientName} accepted your new time`,
           });
@@ -1173,12 +1184,12 @@ export const respondToProposedTime = mutation({
 
     await ctx.db.patch(args.appointmentId, { ...CLEAR_PROPOSAL });
     const stillPending = appointment.status === "scheduled";
-    const keptWhen = lagosDateTime(appointment.startTime);
+    const keptWhen = lagosDateTime(appointment.startTime, tz);
     await notifyAboutAppointment(ctx, {
       userId: appointment.physiotherapistId,
       type: "appointment_time_declined",
       title: "Patient kept the original time",
-      body: `${patientName} declined ${lagosDateTime(start)} and kept ${keptWhen}.${stillPending ? " Their request still needs your answer." : ""}`,
+      body: `${patientName} declined ${lagosDateTime(start, tz)} and kept ${keptWhen}.${stillPending ? " Their request still needs your answer." : ""}`,
       appointmentId: args.appointmentId,
       actionUrl: PHYSIO_APPOINTMENTS,
     });
@@ -1189,7 +1200,7 @@ export const respondToProposedTime = mutation({
       greetingName: physiotherapist?.firstName,
       heading: "Your proposed time was declined",
       paragraphs: [
-        `${patientName} declined ${lagosDate(start)}, ${lagosTimeRange(start, end)} and kept ${lagosDate(appointment.startTime)}, ${lagosTimeRange(appointment.startTime, appointment.endTime)} (Lagos time).`,
+        `${patientName} declined ${lagosDate(start, tz)}, ${lagosTimeRange(start, end, tz)} and kept ${lagosDate(appointment.startTime, tz)}, ${lagosTimeRange(appointment.startTime, appointment.endTime, tz)} ${zoneLabel(tz)}.`,
         stillPending
           ? "Their request is still waiting: confirm it, decline it, or propose another time."
           : "The visit stays confirmed at the original time.",
@@ -1505,6 +1516,8 @@ export const getAvailableTimeSlots = query({
     serviceType: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+  // Times in messages are where the visit happens: Lagos, or the physio's own zone outside Nigeria
+  const tz = await practiceZoneForPhysio(ctx, args.physiotherapistId);
     const patient = await getAuthenticatedPatient(ctx);
 
     // Verify patient has relationship with this physiotherapist
@@ -1523,7 +1536,7 @@ export const getAvailableTimeSlots = query({
 
     // The physio's real openings that day (working hours, days off, bookings and holds),
     // with the Lagos day boundaries: Convex runs in UTC.
-    const startOfDay = zonedDateTimeToUtc(args.date, "00:00");
+    const startOfDay = zonedDateTimeToUtc(args.date, "00:00", tz);
     const endOfDay = startOfDay + (24 * 60 * 60 * 1000) - 1;
     const openings: Array<{ start: number; end: number }> = await ctx.runQuery(
       internal.calendar.availability.getAvailableSlotsInternal,
@@ -1535,8 +1548,8 @@ export const getAvailableTimeSlots = query({
       .map((slot) => ({
         startTime: slot.start,
         endTime: slot.end,
-        startTimeFormatted: lagosTime(slot.start),
-        endTimeFormatted: lagosTime(slot.end),
+        startTimeFormatted: lagosTime(slot.start, tz),
+        endTimeFormatted: lagosTime(slot.end, tz),
         available: true,
       }));
   },
@@ -1563,6 +1576,8 @@ export const requestAppointment = mutation({
     googleCalendarLink?: string;
   }> => {
     const patient = await getAuthenticatedPatient(ctx);
+    // Times in messages are where the visit happens: Lagos, or the physio's own zone outside Nigeria
+    const tz = await practiceZoneForPhysio(ctx, args.physiotherapistId);
 
     if (args.startTime < Date.now() - 60_000) {
       throw new ConvexError("Please choose a time in the future.");
@@ -1682,7 +1697,7 @@ export const requestAppointment = mutation({
       }
     }
     // Convex runs in UTC; show times as patients and physios see them
-    const appointmentTimeStr = lagosTimeRange(args.startTime, args.endTime);
+    const appointmentTimeStr = lagosTimeRange(args.startTime, args.endTime, tz);
 
     // Create notification for physiotherapist
     await insertNotification(ctx, {
@@ -1693,8 +1708,8 @@ export const requestAppointment = mutation({
       payload: {
         title: "New Appointment Request",
         body: paidVisit
-          ? `${patientName} asked for a visit on ${lagosDateTime(args.startTime)}. It's a paid Rehabify visit: accept it and send the invoice, decline it, or propose another time.`
-          : `${patientName} asked for a visit on ${lagosDateTime(args.startTime)}. Accept it, decline it, or propose another time.`,
+          ? `${patientName} asked for a visit on ${lagosDateTime(args.startTime, tz)}. It's a paid Rehabify visit: accept it and send the invoice, decline it, or propose another time.`
+          : `${patientName} asked for a visit on ${lagosDateTime(args.startTime, tz)}. Accept it, decline it, or propose another time.`,
         data: {
           entityId: appointmentId,
           entityType: "appointment",
@@ -1713,8 +1728,8 @@ export const requestAppointment = mutation({
       payload: {
         title: "Appointment Requested",
         body: paidVisit
-          ? `You asked ${physiotherapistName} for a visit on ${lagosDateTime(args.startTime)}. When they accept, you'll get the invoice. Paying it confirms your visit.`
-          : `You asked ${physiotherapistName} for a visit on ${lagosDateTime(args.startTime)}. We'll let you know when they confirm.`,
+          ? `You asked ${physiotherapistName} for a visit on ${lagosDateTime(args.startTime, tz)}. When they accept, you'll get the invoice. Paying it confirms your visit.`
+          : `You asked ${physiotherapistName} for a visit on ${lagosDateTime(args.startTime, tz)}. We'll let you know when they confirm.`,
         data: {
           entityId: appointmentId,
           entityType: "appointment",
@@ -1749,7 +1764,7 @@ export const requestAppointment = mutation({
       greetingName: patient.firstName,
       heading: "We've sent your request",
       paragraphs: [
-        `You asked ${physiotherapistName} for a ${args.serviceType} on ${lagosDate(args.startTime)}, ${appointmentTimeStr} (Lagos time), ${args.appointmentType === "in-person" ? `at ${args.location?.trim()}` : "by video call"}.`,
+        `You asked ${physiotherapistName} for a ${args.serviceType} on ${lagosDate(args.startTime, tz)}, ${appointmentTimeStr} ${zoneLabel(tz)}, ${args.appointmentType === "in-person" ? `at ${args.location?.trim()}` : "by video call"}.`,
         paidVisit
           ? "Your physio will accept it and send you the invoice, or propose another time. Your visit is confirmed once you pay."
           : "Your physio will confirm it, or propose another time. We'll email you either way.",
@@ -1783,6 +1798,8 @@ export const cancelAppointmentAsPatient = mutation({
 
     // Get the appointment
     const appointment = await ctx.db.get(args.appointmentId);
+    // Times in messages are where the visit happens: Lagos, or the physio's own zone outside Nigeria
+    const tz = await practiceZoneForPhysio(ctx, appointment?.physiotherapistId);
     if (!appointment) {
       throw new Error("Appointment not found");
     }
@@ -1822,8 +1839,8 @@ export const cancelAppointmentAsPatient = mutation({
       payload: {
         title: wasRequest ? "Appointment Request Withdrawn" : "Appointment Cancelled",
         body: args.cancellationReason
-          ? `${patientName} cancelled their ${wasRequest ? "request for" : "visit on"} ${lagosDateTime(appointment.startTime)}: ${args.cancellationReason}`
-          : `${patientName} cancelled their ${wasRequest ? "request for" : "visit on"} ${lagosDateTime(appointment.startTime)}`,
+          ? `${patientName} cancelled their ${wasRequest ? "request for" : "visit on"} ${lagosDateTime(appointment.startTime, tz)}: ${args.cancellationReason}`
+          : `${patientName} cancelled their ${wasRequest ? "request for" : "visit on"} ${lagosDateTime(appointment.startTime, tz)}`,
         data: {
           entityId: args.appointmentId,
           entityType: "appointment",
@@ -1841,7 +1858,7 @@ export const cancelAppointmentAsPatient = mutation({
       status: "pending",
       payload: {
         title: "Appointment Cancelled",
-        body: `Your appointment with ${physiotherapistName} on ${lagosDateTime(appointment.startTime)} has been cancelled`,
+        body: `Your appointment with ${physiotherapistName} on ${lagosDateTime(appointment.startTime, tz)} has been cancelled`,
         data: {
           entityId: args.appointmentId,
           entityType: "appointment",
@@ -1853,7 +1870,7 @@ export const cancelAppointmentAsPatient = mutation({
 
     // Email: notify physiotherapist (provider-facing) about cancellation
     const physioEmail = physiotherapist?.email as string | undefined;
-    const appointmentTimeStr = lagosTimeRange(appointment.startTime, appointment.endTime);
+    const appointmentTimeStr = lagosTimeRange(appointment.startTime, appointment.endTime, tz);
     if (physioEmail) {
       await ctx.scheduler.runAfter(0, internal.actions.emails.sendAppointmentCanceledProviderEmail.sendAppointmentCanceledProviderEmail, {
         to: physioEmail,
@@ -1908,6 +1925,8 @@ export const confirmAppointmentAsPatient = mutation({
 
     // Get the appointment
     const appointment = await ctx.db.get(args.appointmentId);
+    // Times in messages are where the visit happens: Lagos, or the physio's own zone outside Nigeria
+    const tz = await practiceZoneForPhysio(ctx, appointment?.physiotherapistId);
     if (!appointment) {
       throw new Error("Appointment not found");
     }
@@ -1952,7 +1971,7 @@ export const confirmAppointmentAsPatient = mutation({
       status: "pending",
       payload: {
         title: "Appointment Confirmed",
-        body: `${patientName} confirmed their appointment for ${lagosDateTime(appointment.startTime)}`,
+        body: `${patientName} confirmed their appointment for ${lagosDateTime(appointment.startTime, tz)}`,
         data: {
           entityId: args.appointmentId,
           entityType: "appointment",
@@ -1973,7 +1992,7 @@ export const confirmAppointmentAsPatient = mutation({
 
     // Email: notify physiotherapist (provider-facing) about confirmation
     const physioEmail = physiotherapist?.email as string | undefined;
-    const appointmentTimeStr = lagosTimeRange(appointment.startTime, appointment.endTime);
+    const appointmentTimeStr = lagosTimeRange(appointment.startTime, appointment.endTime, tz);
     if (physioEmail) {
       try {
         await ctx.scheduler.runAfter(0, internal.actions.emails.sendAppointmentConfirmedProviderEmail.sendAppointmentConfirmedProviderEmail, {
@@ -2027,6 +2046,8 @@ export async function requestRescheduleAsPatient(
 
     // Get the appointment
     const appointment = await ctx.db.get(args.appointmentId);
+    // Times in messages are where the visit happens: Lagos, or the physio's own zone outside Nigeria
+    const tz = await practiceZoneForPhysio(ctx, appointment?.physiotherapistId);
     if (!appointment) {
       throw new Error("Appointment not found");
     }
@@ -2106,8 +2127,8 @@ export async function requestRescheduleAsPatient(
       payload: {
         title: "Appointment Rescheduled",
         body: args.reason
-          ? `${patientName} asked to move their visit to ${lagosDateTime(args.newStartTime)}: ${args.reason}. Please confirm the new time.`
-          : `${patientName} asked to move their visit to ${lagosDateTime(args.newStartTime)}. Please confirm the new time.`,
+          ? `${patientName} asked to move their visit to ${lagosDateTime(args.newStartTime, tz)}: ${args.reason}. Please confirm the new time.`
+          : `${patientName} asked to move their visit to ${lagosDateTime(args.newStartTime, tz)}. Please confirm the new time.`,
         data: {
           entityId: args.appointmentId,
           entityType: "appointment",
@@ -2125,7 +2146,7 @@ export async function requestRescheduleAsPatient(
       status: "pending",
       payload: {
         title: "Appointment Rescheduled",
-        body: `You asked ${physiotherapistName} to move your visit to ${lagosDateTime(args.newStartTime)}. We'll let you know when they confirm.`,
+        body: `You asked ${physiotherapistName} to move your visit to ${lagosDateTime(args.newStartTime, tz)}. We'll let you know when they confirm.`,
         data: {
           entityId: args.appointmentId,
           entityType: "appointment",
@@ -2138,8 +2159,8 @@ export async function requestRescheduleAsPatient(
     // 📧 EMAIL: Notify physiotherapist about patient-initiated reschedule
     const physioEmail = physiotherapist?.email as string | undefined;
     if (physioEmail) {
-      const oldTimeStr = lagosTimeRange(appointment.startTime, appointment.endTime);
-      const newTimeStr = lagosTimeRange(args.newStartTime, args.newEndTime);
+      const oldTimeStr = lagosTimeRange(appointment.startTime, appointment.endTime, tz);
+      const newTimeStr = lagosTimeRange(args.newStartTime, args.newEndTime, tz);
 
       try {
         await ctx.scheduler.runAfter(0, internal.actions.emails.sendAppointmentRescheduledProviderEmail.sendAppointmentRescheduledProviderEmail, {
@@ -2161,7 +2182,7 @@ export async function requestRescheduleAsPatient(
     // 📧 EMAIL: Notify patient about successful reschedule
     const patientEmail = patient?.email as string | undefined;
     if (patientEmail) {
-      const newTimeStr = lagosTimeRange(args.newStartTime, args.newEndTime);
+      const newTimeStr = lagosTimeRange(args.newStartTime, args.newEndTime, tz);
 
       try {
         await ctx.scheduler.runAfter(0, internal.actions.emails.sendAppointmentRescheduledPatientEmail.sendAppointmentRescheduledPatientEmail, {
@@ -2169,7 +2190,7 @@ export async function requestRescheduleAsPatient(
           patientName: patientName,
           physiotherapistName: physiotherapistName,
           oldDate: appointment.startTime,
-          oldTime: lagosTimeRange(appointment.startTime, appointment.endTime),
+          oldTime: lagosTimeRange(appointment.startTime, appointment.endTime, tz),
           newDate: args.newStartTime,
           newTime: newTimeStr,
           viewLink: "/dashboard/patient/appointments",
