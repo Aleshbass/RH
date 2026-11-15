@@ -25,6 +25,7 @@ const ART: Record<string, { shape: Shape; from: string; to: string; ribbon?: str
   'streak-7': { shape: 'hexagon', from: '#fdba74', to: '#dc2626' },
   certified: { shape: 'shield', from: '#818cf8', to: '#1e3a8a', ribbon: '#3730a3' },
   'club-1000': { shape: 'burst12', from: '#fde68a', to: '#d97706' },
+  ambassador: { shape: 'shield', from: '#67e8f9', to: '#0e7490', ribbon: '#155e75' },
   'top-10': { shape: 'circle', from: '#fde047', to: '#b45309', ribbon: '#b91c1c' },
 }
 

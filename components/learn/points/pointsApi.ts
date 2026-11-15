@@ -14,6 +14,7 @@ import {
   Star,
   Target,
   ThumbsUp,
+  UserPlus,
 } from '@/components/icons'
 import { learnPath } from '../platform/learnApi'
 
@@ -51,7 +52,7 @@ export type ProgressData =
       streak: number
       bestStreak: number
       counts: Record<string, number>
-      badges: { id: string; name: string; how: string; earnedAt: number | null; detail: string | null }[]
+      badges: { id: string; name: string; how: string; earnedAt: number | null; detail: string | null; rowId: string | null }[]
       weeks: { start: number; points: number }[]
       recent: { label: string; points: number; at: number }[]
       sims: { slug: string; title: string; score: number; passed: boolean }[]
@@ -73,7 +74,16 @@ export const pointsApi = {
   setHidden: makeFunctionReference<'mutation', { hidden: boolean }, { hidden: boolean }>('learnPoints:setLeaderboardHidden'),
   adminMonthTop: makeFunctionReference<'query', { month?: string }, AdminMonthTop>('learnPoints:adminMonthTop'),
   adminMarkContacted: makeFunctionReference<'mutation', { month: string; userId: string; contacted: boolean }, null>('learnPoints:adminMarkContacted'),
+  myInvite: makeFunctionReference<'query', Record<string, never>, { code: string | null; joined: number; learning: number; points: number } | null>('learnPoints:myInvite'),
+  createInvite: makeFunctionReference<'mutation', Record<string, never>, { code: string }>('learnPoints:createInvite'),
+  inviteFrom: makeFunctionReference<'query', { code: string }, { firstName: string } | null>('learnPoints:inviteFrom'),
+  claimInvite: makeFunctionReference<'mutation', { code: string }, { claimed: boolean; reason: string | null }>('learnPoints:claimInvite'),
 }
+
+/** A learner's invite link (the Learn home with ?invite=). */
+export const inviteLink = (code: string) => learnPath(`/?invite=${code}`)
+/** A public page for one earned badge. */
+export const badgePagePath = (rowId: string) => learnPath(`/badges/${rowId}`)
 
 /** An icon per badge (lib/learn/points.ts LEARN_BADGES). */
 export const BADGE_ICON: Record<string, typeof Award> = {
@@ -87,6 +97,7 @@ export const BADGE_ICON: Record<string, typeof Award> = {
   'streak-7': Flame,
   certified: ShieldCheck,
   'club-1000': Star,
+  ambassador: UserPlus,
   'top-10': Crown,
 }
 export const DefaultBadgeIcon = CheckCircle2

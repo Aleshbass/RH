@@ -6,7 +6,7 @@
  */
 
 import { useEffect, useState } from 'react'
-import { Check, Copy, Download, ImageIcon, Linkedin, Loader2 } from '@/components/icons'
+import { Check, Copy, Download, ImageIcon, Linkedin, Loader2, WhatsApp } from '@/components/icons'
 import { certificateSvg, downloadCertificatePdf, downloadCertificatePng, loadCertificateAssets, svgUrl, type CertificateData } from '@/lib/learn/certificate'
 import { learnUrl } from '@/lib/site-hosts'
 import { playSound } from '@/lib/sounds'
@@ -144,6 +144,26 @@ export function CertificateActions({ svg, data }: { svg: string | null; data: Om
         >
           {copied ? 'Copied' : 'Copy link'}
         </ActionButton>
+      </div>
+      {/* Tell people (owner 2026-11-15): the verify link shows a preview card of the certificate */}
+      <div className="mt-2 grid grid-cols-2 gap-2">
+        <a
+          href={`https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(verifyLink(data.code))}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex h-12 items-center justify-center gap-2 rounded-full bg-[#0a66c2] px-5 text-sm font-semibold text-white transition hover:brightness-110"
+        >
+          <Linkedin className="h-4 w-4" /> Post on LinkedIn
+        </a>
+        <a
+          href={`https://wa.me/?text=${encodeURIComponent(`I’ve earned my ${data.programTitle} certificate. Check it here: ${verifyLink(data.code)}`)}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={() => playSound('share')}
+          className="inline-flex h-12 items-center justify-center gap-2 rounded-full bg-white px-5 text-sm font-semibold text-rh-ink ring-1 ring-inset ring-rh-ink/10 transition hover:ring-rh-ink/25"
+        >
+          <WhatsApp className="h-4 w-4" /> WhatsApp
+        </a>
       </div>
       {error && <p className="mt-2 text-sm text-rose-600">{error}</p>}
       <p className="mt-3 text-xs leading-5 text-rh-ink/50">

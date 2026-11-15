@@ -8,6 +8,9 @@
 import type { MutationCtx } from "../_generated/server";
 import type { Id } from "../_generated/dataModel";
 import { COUNT_FOR, LEARN_BADGES, LEARN_EARN, dayBefore, lagosDay, lagosMonth, type LearnEarnReason } from "../../lib/learn/points";
+import { insertNotification } from "./pushNotify";
+
+const LEARN_URL = (process.env.LEARN_PUBLIC_URL ?? "https://learn.physioaroundme.com").replace(/\/+$/, "");
 
 async function accountFor(ctx: MutationCtx, userId: Id<"users">) {
   const existing = await ctx.db.query("learnPointsAccounts").withIndex("by_user", (q) => q.eq("userId", userId)).unique();
@@ -77,10 +80,11 @@ export async function awardLearnPoints(
   if (countKey) counts[countKey] = (counts[countKey] ?? 0) + 1;
   // Streak: one learning day at a time (Lagos days)
   let streak = account.streak;
-  if (!input.backfill && account.lastDay !== day) streak = account.lastDay === dayBefore(day) ? account.streak + 1 : 1;
+  const learningDay = !input.backfill && input.reason !== "invite";
+  if (learningDay && account.lastDay !== day) streak = account.lastDay === dayBefore(day) ? account.streak + 1 : 1;
   const bestStreak = Math.max(account.bestStreak, streak);
   const total = account.total + points;
-  await ctx.db.patch(account._id, { total, counts, streak, bestStreak, lastDay: input.backfill ? account.lastDay : day, updatedAt: now });
+  await ctx.db.patch(account._id, { total, counts, streak, bestStreak, lastDay: learningDay ? day : account.lastDay, updatedAt: now });
   await addMonthly(ctx, input.userId, month, points);
   await checkBadges(ctx, input.userId, total, bestStreak, counts);
 
@@ -88,7 +92,36 @@ export async function awardLearnPoints(
   if (!input.backfill && input.reason !== "streak" && streak > account.streak && streak % 7 === 0) {
     await awardLearnPoints(ctx, { userId: input.userId, reason: "streak", key: `streak:${input.userId}:${day}`, label: `${streak} days of learning in a row` });
   }
+  // A friend who joined with an invite has finished their first lesson: both of them earn
+  if (input.reason === "lesson" && !input.backfill) await creditInvite(ctx, input.userId);
   return points;
+}
+
+/** Invite a friend (owner 2026-11-15): pays out once the invited friend finishes a lesson. */
+async function creditInvite(ctx: MutationCtx, friendId: Id<"users">) {
+  const join = await ctx.db
+    .query("learnInviteJoins")
+    .withIndex("by_friend", (q) => q.eq("friendId", friendId))
+    .first();
+  if (!join || join.status !== "joined") return;
+  await ctx.db.patch(join._id, { status: "credited", creditedAt: Date.now() });
+  const friend = await ctx.db.get(friendId);
+  const first = friend?.firstName?.trim() || "A friend";
+  await awardLearnPoints(ctx, { userId: join.referrerId, reason: "invite", key: `invite:${friendId}`, label: `${first} joined with your invite and started learning` });
+  await awardLearnPoints(ctx, { userId: friendId, reason: "invited", key: `invited:${friendId}` });
+  const invite = await ctx.db
+    .query("learnInvites")
+    .withIndex("by_user", (q) => q.eq("userId", join.referrerId))
+    .first();
+  if (invite) await ctx.db.patch(invite._id, { credited: invite.credited + 1 });
+  await insertNotification(ctx, {
+    userId: join.referrerId,
+    type: "learn_invite_credited",
+    priority: "low",
+    status: "pending",
+    payload: { title: `${first} started learning with your invite`, body: "You both earned points. Thanks for spreading the word.", link: `${LEARN_URL}/progress` },
+    createdAt: Date.now(),
+  });
 }
 
 /** Takes back the points for an event that was undone (a "helpful" mark removed). Badges stay. */

@@ -477,3 +477,23 @@ export const liveSpaces = internalQuery({
     return live.map((s) => ({ id: s._id, callId: s.callId, startedAt: s.startedAt ?? s.createdAt }));
   },
 });
+
+/** A Space's preview card for shared links (owner 2026-11-15). Group-only Spaces stay private. */
+export const spacePreview = query({
+  args: { id: v.string() },
+  handler: async (ctx, args) => {
+    const id = ctx.db.normalizeId("learnSpaces", args.id);
+    if (!id) return null;
+    const space = await ctx.db.get(id);
+    if (!space || space.groupId || space.status === "cancelled") return null;
+    const host = await ctx.db.get(space.hostId);
+    const hostName = host ? [host.firstName, host.lastName].filter(Boolean).join(" ").trim() || "A Rehabify physio" : "A Rehabify physio";
+    return {
+      title: space.title,
+      description: space.description ?? null,
+      host: hostName,
+      status: space.status,
+      at: space.status === "live" ? (space.startedAt ?? null) : (space.scheduledFor ?? space.endedAt ?? null),
+    };
+  },
+});

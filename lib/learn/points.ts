@@ -21,6 +21,8 @@ export type LearnEarnReason =
   | 'assessment'
   | 'certificate'
   | 'streak'
+  | 'invite'
+  | 'invited'
 
 export const LEARN_EARN: Record<LearnEarnReason, { points: number; dailyCap: number; label: string }> = {
   lesson: { points: 10, dailyCap: 200, label: 'Finished a lesson' },
@@ -36,6 +38,9 @@ export const LEARN_EARN: Record<LearnEarnReason, { points: number; dailyCap: num
   assessment: { points: 150, dailyCap: 150, label: 'Passed a final assessment' },
   certificate: { points: 200, dailyCap: 400, label: 'Earned a certificate' },
   streak: { points: 25, dailyCap: 25, label: '7 days of learning in a row' },
+  // A friend joins with your invite link and finishes their first lesson: both of you earn
+  invite: { points: 50, dailyCap: 500, label: 'A friend you invited started learning' },
+  invited: { points: 25, dailyCap: 25, label: 'Joined Rehabify Learn with an invite' },
 }
 
 export type LearnBadgeId =
@@ -49,6 +54,7 @@ export type LearnBadgeId =
   | 'streak-7'
   | 'certified'
   | 'club-1000'
+  | 'ambassador'
   | 'top-10'
 
 /** `count`: the running count on the learner's account that unlocks it (see convex/learnPoints.ts). */
@@ -63,10 +69,11 @@ export const LEARN_BADGES: { id: LearnBadgeId; name: string; how: string; count?
   { id: 'streak-7', name: '7-day streak', how: 'Learn 7 days in a row', count: { key: 'bestStreak', atLeast: 7 } },
   { id: 'certified', name: 'Certified', how: 'Earn a certificate', count: { key: 'certificate', atLeast: 1 } },
   { id: 'club-1000', name: '1,000 club', how: 'Earn 1,000 points', count: { key: 'total', atLeast: 1000 } },
+  { id: 'ambassador', name: 'Ambassador', how: 'Invite 3 friends who start learning', count: { key: 'invite', atLeast: 3 } },
   { id: 'top-10', name: 'Top 10', how: 'Finish a month in the top 10' },
 ]
 
-export type LearnCountKey = 'lesson' | 'course' | 'sim_pass' | 'post' | 'helpful' | 'stage' | 'certificate' | 'bestStreak' | 'total'
+export type LearnCountKey = 'lesson' | 'course' | 'sim_pass' | 'post' | 'helpful' | 'stage' | 'certificate' | 'invite' | 'bestStreak' | 'total'
 
 /** Which running count each earn reason adds to (the badge rules read these). */
 export const COUNT_FOR: Partial<Record<LearnEarnReason, LearnCountKey>> = {
@@ -78,6 +85,7 @@ export const COUNT_FOR: Partial<Record<LearnEarnReason, LearnCountKey>> = {
   space_host: 'stage',
   space_speak: 'stage',
   certificate: 'certificate',
+  invite: 'invite',
 }
 
 const LAGOS_OFFSET_MS = 60 * 60 * 1000

@@ -52,6 +52,7 @@ import { TagBadge } from '../platform/identity'
 import { errorText, relativeTime, SPACES_PATH, spacePath, spacesApi, type SpacePage, type StageSeat } from '../social/socialApi'
 import { JoinPrompt, Sheet, Skeleton, SpaceAvatar } from '../social/ui'
 import { LiveEq, spaceWhen } from './SpacesHome'
+import { SpaceShareButton } from './SpaceShare'
 import { useVoiceMeter, wakeVoiceMeters } from './voiceMeter'
 
 type StreamCallHandle = ReturnType<StreamVideoClient['call']>
@@ -447,9 +448,13 @@ function LiveRoom({ page, joinedAs, onLeft }: { page: SpacePage; joinedAs: { isH
         <span className="ml-auto inline-flex items-center gap-1.5 rounded-full bg-white/[0.08] px-3 py-1.5 text-xs font-semibold text-white/80">
           <Users className="h-3.5 w-3.5" /> {participantCount}
         </span>
-        <button type="button" onClick={() => void copyLink()} aria-label="Copy link" className="flex h-9 w-9 items-center justify-center rounded-full text-white/70 transition hover:bg-white/10 hover:text-white">
-          <Link2 className="h-4 w-4" />
-        </button>
+        {page.space.group ? (
+          <button type="button" onClick={() => void copyLink()} aria-label="Copy link" className="flex h-9 w-9 items-center justify-center rounded-full text-white/70 transition hover:bg-white/10 hover:text-white">
+            <Link2 className="h-4 w-4" />
+          </button>
+        ) : (
+          <SpaceShareButton space={page.space} compact />
+        )}
       </div>
 
       {/* Title */}
@@ -970,6 +975,9 @@ export function SpaceRoom({ spaceId }: { spaceId: string }) {
                   'Remind me'
                 )}
               </button>
+              <span className="ml-2 inline-block align-top">
+                <SpaceShareButton space={space} />
+              </span>
               <p className="mt-3 text-xs text-white/50">You’ll get a notification when {space.host.name.split(' ')[0]} goes live.</p>
             </div>
           )}

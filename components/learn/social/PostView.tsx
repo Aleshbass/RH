@@ -15,6 +15,7 @@ import { displayFont, pillInk } from '../shared'
 import { TagBadge } from '../platform/identity'
 import { communityApi, errorText, postPath, relativeTime, roomPath, type PostPage } from './socialApi'
 import { BackToCommunity } from './Community'
+import { PostShareButton } from './PostShare'
 import { Avatar, EmptyState, JoinPrompt, Sheet, Skeleton } from './ui'
 
 type Ok = Extract<PostPage, { state: 'ok' }>
@@ -297,6 +298,7 @@ export function PostView({ postId }: { postId: string }) {
         <div className="mt-6 whitespace-pre-line break-words text-[16px] leading-7 text-rh-ink/85">{post.body}</div>
         <div className="mt-6 flex items-center gap-2">
           <HelpfulButton target={postTarget} own={post.author?.id === viewerId} />
+          {data.room.kind === 'open' && !post.hidden && <PostShareButton postId={post.id} title={post.title} />}
           <span className="ml-auto" />
           <MoreMenu target={postTarget} canDelete={post.author?.id === viewerId || canModerate} canModerate={canModerate} onReport={() => setReporting(postTarget)} />
         </div>

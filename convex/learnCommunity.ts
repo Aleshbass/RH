@@ -718,3 +718,21 @@ export const recountRooms = internalMutation({
     }
   },
 });
+
+/**
+ * A post's preview card for shared links (owner 2026-11-15: share posts). Open rooms only: posts in
+ * course, programme and group rooms stay private, and so do hidden posts.
+ */
+export const postPreview = query({
+  args: { id: v.string() },
+  handler: async (ctx, args) => {
+    const id = ctx.db.normalizeId("learnPosts", args.id);
+    if (!id) return null;
+    const post = await ctx.db.get(id);
+    if (!post || post.status !== "open") return null;
+    const room = await ctx.db.get(post.roomId);
+    if (!room || room.kind !== "open" || room.archived) return null;
+    const author = await ctx.db.get(post.authorId);
+    return { title: post.title, kind: post.kind, room: room.title, firstName: author?.firstName?.trim() || "A Rehabify learner", replies: post.replyCount };
+  },
+});

@@ -160,7 +160,7 @@ export const myProgress = query({
       counts: account?.counts ?? {},
       badges: LEARN_BADGES.map((b) => {
         const got = badges.find((x) => x.badge === b.id);
-        return { id: b.id, name: b.name, how: b.how, earnedAt: got?.earnedAt ?? null, detail: got?.detail ?? null };
+        return { id: b.id, name: b.name, how: b.how, earnedAt: got?.earnedAt ?? null, detail: got?.detail ?? null, rowId: got?._id ?? null };
       }),
       weeks,
       recent: ledger.slice(0, 15).map((r) => ({ label: r.label, points: r.points, at: r.createdAt })),
@@ -365,5 +365,108 @@ export const myBadges = query({
     const userId = viewer.user._id;
     const rows = await ctx.db.query("learnBadges").withIndex("by_user", (q) => q.eq("userId", userId)).collect();
     return rows.map((b) => ({ id: b.badge, earnedAt: b.earnedAt, detail: b.detail ?? null }));
+  },
+});
+
+// ── Invite a friend (owner 2026-11-15) ───────────────────────────────────────
+// Each learner has a personal link (learn.../?invite=<code>). A friend who signs up with it and
+// finishes a first lesson earns both of them points (helpers/learnPoints.ts creditInvite).
+
+const INVITE_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789";
+const INVITE_NEW_DAYS = 14; // only people who joined Learn recently can claim an invite
+
+/** The signed-in learner's invite link and how it's going. */
+export const myInvite = query({
+  args: {},
+  handler: async (ctx) => {
+    const viewer = await getViewer(ctx);
+    if (!viewer?.user) return null;
+    const userId = viewer.user._id;
+    const invite = await ctx.db.query("learnInvites").withIndex("by_user", (q) => q.eq("userId", userId)).first();
+    const joins = await ctx.db.query("learnInviteJoins").withIndex("by_referrer", (q) => q.eq("referrerId", userId)).take(200);
+    const points = (await ctx.db.query("learnPointsLedger").withIndex("by_user", (q) => q.eq("userId", userId)).take(2000))
+      .filter((r) => r.reason === "invite")
+      .reduce((sum, r) => sum + r.points, 0);
+    return {
+      code: invite?.code ?? null,
+      joined: joins.length,
+      learning: joins.filter((j) => j.status === "credited").length,
+      points,
+    };
+  },
+});
+
+export const createInvite = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const viewer = await getViewer(ctx);
+    if (!viewer?.user) throw new ConvexError("Please sign in.");
+    const userId = viewer.user._id;
+    if (!(await learnMemberInfo(ctx, viewer.user))) throw new ConvexError("Finish joining Rehabify Learn first.");
+    const existing = await ctx.db.query("learnInvites").withIndex("by_user", (q) => q.eq("userId", userId)).first();
+    if (existing) return { code: existing.code };
+    let code = "";
+    for (let tries = 0; tries < 6; tries++) {
+      code = Array.from({ length: 7 }, () => INVITE_ALPHABET[Math.floor(Math.random() * INVITE_ALPHABET.length)]).join("");
+      const clash = await ctx.db.query("learnInvites").withIndex("by_code", (q) => q.eq("code", code)).first();
+      if (!clash) break;
+    }
+    await ctx.db.insert("learnInvites", { userId, code, joined: 0, credited: 0, createdAt: Date.now() });
+    return { code };
+  },
+});
+
+/** Who invited a visitor (for the "Ada invited you" note). First name only. */
+export const inviteFrom = query({
+  args: { code: v.string() },
+  handler: async (ctx, args) => {
+    const code = args.code.trim().toLowerCase();
+    if (!/^[a-z0-9]{5,12}$/.test(code)) return null;
+    const invite = await ctx.db.query("learnInvites").withIndex("by_code", (q) => q.eq("code", code)).first();
+    if (!invite) return null;
+    const user = await ctx.db.get(invite.userId);
+    if (!user || user.deletedAt) return null;
+    return { firstName: user.firstName?.trim() || "A Rehabify learner" };
+  },
+});
+
+/** Called once a newly joined learner is signed in with an invite code saved from their first visit. */
+export const claimInvite = mutation({
+  args: { code: v.string() },
+  handler: async (ctx, args) => {
+    const viewer = await getViewer(ctx);
+    if (!viewer?.user) return { claimed: false, reason: "signin" as const };
+    const friend = viewer.user;
+    if (!(await learnMemberInfo(ctx, friend))) return { claimed: false, reason: "welcome" as const };
+    const code = args.code.trim().toLowerCase();
+    const invite = await ctx.db.query("learnInvites").withIndex("by_code", (q) => q.eq("code", code)).first();
+    if (!invite || invite.userId === friend._id) return { claimed: false, reason: "invalid" as const };
+    const already = await ctx.db.query("learnInviteJoins").withIndex("by_friend", (q) => q.eq("friendId", friend._id)).first();
+    if (already) return { claimed: false, reason: "already" as const };
+    // Only people new to Learn: their Learn profile (or account) is recent
+    const profile = await ctx.db.query("learnProfiles").withIndex("by_user", (q) => q.eq("userId", friend._id)).first();
+    const joinedAt = profile?.createdAt ?? friend._creationTime;
+    if (Date.now() - joinedAt > INVITE_NEW_DAYS * 86400000) return { claimed: false, reason: "not_new" as const };
+    await ctx.db.insert("learnInviteJoins", { referrerId: invite.userId, friendId: friend._id, code, status: "joined", createdAt: Date.now() });
+    await ctx.db.patch(invite._id, { joined: invite.joined + 1 });
+    return { claimed: true, reason: null };
+  },
+});
+
+// ── Sharing a badge (owner 2026-11-15) ───────────────────────────────────────
+
+/** A public badge page: who earned it (first name) and what it's for. */
+export const badgeShare = query({
+  args: { id: v.string() },
+  handler: async (ctx, args) => {
+    const id = ctx.db.normalizeId("learnBadges", args.id);
+    if (!id) return null;
+    const row = await ctx.db.get(id);
+    if (!row) return null;
+    const def = LEARN_BADGES.find((b) => b.id === row.badge);
+    if (!def) return null;
+    const user = await ctx.db.get(row.userId);
+    if (!user || user.deletedAt) return null;
+    return { badge: def.id, name: def.name, how: def.how, detail: row.detail ?? null, firstName: user.firstName?.trim() || "A Rehabify learner", earnedAt: row.earnedAt };
   },
 });

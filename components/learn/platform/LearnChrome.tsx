@@ -51,6 +51,7 @@ import { COMMUNITY_PATH, SPACES_PATH, spacesApi } from '../social/socialApi'
 import { simApi, SIMULATIONS_PATH } from '../sims/simApi'
 import { LEADERBOARD_PATH, PROGRESS_PATH } from '../points/pointsApi'
 import { PointsPill } from '../points/PointsPill'
+import { InviteCapture } from '../points/InviteCapture'
 import { BadgeUnlock } from '../points/BadgeUnlock'
 
 const SUPPORT_EMAIL = 'support@physioaroundme.com'
@@ -904,6 +905,7 @@ export function LearnShell({ children }: { children: ReactNode }) {
     <LearnerIdentityProvider>
       <div className="flex min-h-screen flex-col bg-white">
         <LearnHeader />
+        <InviteCapture />
         <div className="flex-1">{children}</div>
         <LearnFooter />
       </div>

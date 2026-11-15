@@ -63,4 +63,27 @@ export const learnPointsTables = {
     closedAt: v.number(),
     contacted: v.optional(v.array(v.id("users"))),
   }).index("by_month", ["month"]),
+
+  // Invite a friend (owner 2026-11-15): each learner's personal invite code, and who joined with
+  // it. A join pays out (points both ways) once the friend finishes their first lesson.
+  learnInvites: defineTable({
+    userId: v.id("users"),
+    code: v.string(),
+    joined: v.number(),
+    credited: v.number(),
+    createdAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_code", ["code"]),
+
+  learnInviteJoins: defineTable({
+    referrerId: v.id("users"),
+    friendId: v.id("users"),
+    code: v.string(),
+    status: v.union(v.literal("joined"), v.literal("credited")),
+    createdAt: v.number(),
+    creditedAt: v.optional(v.number()),
+  })
+    .index("by_friend", ["friendId"])
+    .index("by_referrer", ["referrerId", "createdAt"]),
 };

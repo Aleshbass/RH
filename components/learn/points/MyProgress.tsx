@@ -6,17 +6,23 @@
  * case, recent activity, and whether you show on the leaderboard.
  */
 
+import { useState } from 'react'
 import Link from 'next/link'
 import { useMutation, useQuery } from 'convex/react'
 import { motion, useReducedMotion } from 'framer-motion'
 import { toast } from 'sonner'
-import { Flame, Star, TrendingUp, WhatsApp } from '@/components/icons'
+import { Flame, Share2, Star, TrendingUp } from '@/components/icons'
+import { badgeStoryCard } from '@/lib/learn/storyCard'
 import { cn } from '@/lib/utils'
 import { displayFont, pillOutline } from '../shared'
 import { Avatar, JoinPrompt, Skeleton } from '../social/ui'
 import { relativeTime } from '../social/socialApi'
+import { learnShareUrl, ShareSheet } from '../shareKit'
 import { BadgeArt } from './BadgeArt'
-import { formatPoints, LEADERBOARD_PATH, pointsApi, PROGRESS_PATH } from './pointsApi'
+import { InviteCard } from './InviteCard'
+import { badgePagePath, formatPoints, LEADERBOARD_PATH, pointsApi, PROGRESS_PATH, type ProgressData } from './pointsApi'
+
+type ProgressBadge = Extract<ProgressData, { state: 'ok' }>['badges'][number]
 
 function Tile({ icon: Icon, label, value, sub, accent }: { icon: typeof Star; label: string; value: string; sub?: string; accent?: boolean }) {
   return (
@@ -34,6 +40,7 @@ export function MyProgress() {
   const data = useQuery(pointsApi.myProgress, {})
   const setHidden = useMutation(pointsApi.setHidden)
   const reduce = useReducedMotion()
+  const [sharing, setSharing] = useState<ProgressBadge | null>(null)
 
   if (data === undefined) {
     return (
@@ -117,21 +124,22 @@ export function MyProgress() {
                 <p className="mt-0.5 text-xs leading-5 text-rh-ink/50">
                   {got ? (b.detail ?? `Earned ${new Date(b.earnedAt!).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`) : b.how}
                 </p>
-                {got && (
-                  <a
-                    href={`https://wa.me/?text=${encodeURIComponent(`I earned the “${b.name}” badge on Rehabify Learn. ${typeof window !== 'undefined' ? window.location.origin : ''}`)}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                {got && b.rowId && (
+                  <button
+                    type="button"
+                    onClick={() => setSharing(b)}
                     className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-rh-ink/55 transition hover:text-rh-ink"
                   >
-                    <WhatsApp className="h-3 w-3" /> Share
-                  </a>
+                    <Share2 className="h-3 w-3" /> Share
+                  </button>
                 )}
               </motion.li>
             )
           })}
         </ul>
       </section>
+
+      <InviteCard />
 
       <section className="mt-8 rounded-3xl border border-rh-ink/[0.07] bg-white p-5">
         <div className="flex items-end justify-between gap-3">
@@ -222,6 +230,22 @@ export function MyProgress() {
           </Link>
         </div>
       </section>
+
+      {sharing?.rowId && (
+        <ShareSheet
+          open
+          onClose={() => setSharing(null)}
+          title={`Share “${sharing.name}”`}
+          url={learnShareUrl(badgePagePath(sharing.rowId))}
+          text={`I earned the “${sharing.name}” badge on Rehabify Learn.`}
+          linkedin
+          story={{
+            fileName: `rehabify-badge-${sharing.id}.png`,
+            make: () =>
+              badgeStoryCard({ badgeId: sharing.id, badgeName: sharing.name, firstName: data.name.split(' ')[0] || 'I', how: sharing.how, detail: sharing.detail }),
+          }}
+        />
+      )}
     </main>
   )
 }
