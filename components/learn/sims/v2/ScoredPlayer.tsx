@@ -16,7 +16,21 @@ import { vitalsFromTimeline } from '@/lib/learn/simulation/engine'
 import { errorText, noteServerTime, serverNowMs, simApi, simPath, simTrack, voiceUrl, type SimAttempt, type SimLineView } from '../simApi'
 import { heartBeep, queueVoice, setVoiceOn, stopVoice, vibrate, voiceOn } from '../simAudio'
 import { MonitorRow, PatientStage } from './PatientStage'
-import { CaseTopBar, ClockPill, Countdown, Dock, FindingsSheet, nextKey, STAGE_CLASS, Thread, type DockChoice, type Item } from './parts'
+import {
+  CaseTopBar,
+  ClockPill,
+  Countdown,
+  Dock,
+  FindingsPanel,
+  FindingsSheet,
+  nextKey,
+  PlayerFrame,
+  SplitPanes,
+  STAGE_CLASS,
+  Thread,
+  type DockChoice,
+  type Item,
+} from './parts'
 
 const speech = (l: SimLineView): Extract<Item, { kind: 'speech' }> => ({
   kind: 'speech',
@@ -181,8 +195,7 @@ export function ScoredPlayer({ attempt, onDone }: { attempt: SimAttempt; onDone:
   const limit = c.mode === 'triage' ? (c.timeLimitSec ?? 60) : null
 
   return (
-    <div className="fixed inset-0 z-[80] flex justify-center bg-[rgb(3_8_7/0.6)]">
-      <div className="relative flex h-[100dvh] w-full max-w-[460px] flex-col overflow-hidden bg-rh-cream sm:border-x sm:border-[rgb(255_255_255/0.1)]">
+    <PlayerFrame wide>
         <CaseTopBar
           name={`${c.patient.name}, ${c.patient.age}`}
           setting={c.setting}
@@ -204,6 +217,9 @@ export function ScoredPlayer({ attempt, onDone }: { attempt: SimAttempt; onDone:
           findings={attempt.findings.length}
           onFindings={() => setFindingsOpen(true)}
         />
+        <SplitPanes
+          left={
+            <>
         <div className={STAGE_CLASS}>
           <PatientStage
             pain={attempt.pain}
@@ -232,10 +248,17 @@ export function ScoredPlayer({ attempt, onDone }: { attempt: SimAttempt; onDone:
             }
           />
         )}
-        <Thread items={items} speaking={speaking} pending={Boolean(pending)} audio={Boolean(c.audio)} onReplay={replay} threadRef={thread} />
-        <Dock choices={choices} pending={pending} onPick={(x) => void pick(x)} over={over} onDebrief={onDone} nodeKey={attempt.node?.id ?? 'end'} />
+              <FindingsPanel findings={attempt.findings} />
+            </>
+          }
+          right={
+            <>
+              <Thread items={items} speaking={speaking} pending={Boolean(pending)} audio={Boolean(c.audio)} onReplay={replay} threadRef={thread} />
+              <Dock choices={choices} pending={pending} onPick={(x) => void pick(x)} over={over} onDebrief={onDone} nodeKey={attempt.node?.id ?? 'end'} />
+            </>
+          }
+        />
         <FindingsSheet open={findingsOpen} onClose={() => setFindingsOpen(false)} findings={attempt.findings} />
-      </div>
-    </div>
+    </PlayerFrame>
   )
 }

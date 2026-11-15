@@ -18,7 +18,8 @@ import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
 import { pillInk, pillLime, pillOutline } from '../shared'
 import { DISCLAIMER, errorText, simApi, simPath, SIMULATIONS_PATH, simTrack } from './simApi'
-import { DebriefCards } from './v2/parts'
+import { ShareReplayCard } from './replay/ShareReplay'
+import { DebriefCards, PlayerFrame } from './v2/parts'
 
 function InterestCard({ slug, interested }: { slug: string; interested: boolean }) {
   const register = useMutation(simApi.registerInterest)
@@ -80,11 +81,7 @@ export function SimDebrief({ attemptId, slug }: { attemptId: string; slug: strin
     simTrack('sim_finish', { case: slug, pct: s.pct, passed: s.passed, outcome: s.outcome, reason: s.reason ?? 'none', preview: data.preview })
   }, [data, slug])
 
-  const frame = (children: React.ReactNode) => (
-    <div className="fixed inset-0 z-[80] flex justify-center bg-[rgb(3_8_7/0.6)]">
-      <div className="relative flex h-[100dvh] w-full max-w-[460px] flex-col overflow-hidden bg-rh-cream sm:border-x sm:border-[rgb(255_255_255/0.1)]">{children}</div>
-    </div>
-  )
+  const frame = (children: React.ReactNode) => <PlayerFrame>{children}</PlayerFrame>
 
   if (data === undefined) {
     return frame(
@@ -134,18 +131,22 @@ export function SimDebrief({ attemptId, slug }: { attemptId: string; slug: strin
         d={d}
         stats={{ best: data.best, average: data.average }}
         extra={{
-          title: 'Share and keep going',
+          title: data.preview ? 'Share and keep going' : 'Share your run',
           body: (
             <div className="space-y-4">
-              <a
-                href={`https://wa.me/?text=${encodeURIComponent(`${shareText} ${shareUrl}`)}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={() => playSound('share')}
-                className={cn(pillOutline, 'h-11 w-full px-5')}
-              >
-                <WhatsApp className="h-4 w-4" /> Share your score on WhatsApp
-              </a>
+              {data.preview ? (
+                <a
+                  href={`https://wa.me/?text=${encodeURIComponent(`${shareText} ${shareUrl}`)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={() => playSound('share')}
+                  className={cn(pillOutline, 'h-11 w-full px-5')}
+                >
+                  <WhatsApp className="h-4 w-4" /> Share your score on WhatsApp
+                </a>
+              ) : (
+                <ShareReplayCard attemptId={attemptId} slug={c.slug} pct={d.score.pct} title={c.title} />
+              )}
               {!data.preview && <InterestCard slug={c.slug} interested={data.interested} />}
               <p className="text-xs leading-5 text-rh-ink/45">{DISCLAIMER}</p>
             </div>

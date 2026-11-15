@@ -24,6 +24,8 @@ export type SimAdmin = NonNullable<Returns<typeof sims.adminCases>>
 export type SimAdminCase = SimAdmin['cases'][number]
 export type SimStats = NonNullable<Returns<typeof sims.adminCaseStats>>
 export type SimLineView = NonNullable<SimAttempt['node']>['lines'][number]
+export type SimShare = NonNullable<Returns<typeof sims.getShare>>
+export type SimShareBeat = SimShare['beats'][number]
 
 type AttemptId = Id<'learnSimAttempts'>
 
@@ -48,6 +50,18 @@ export const simApi = {
   adminPublish: makeFunctionReference<'mutation', { slug: string }, null>('learnSims:adminPublish'),
   adminUnpublish: makeFunctionReference<'mutation', { slug: string }, null>('learnSims:adminUnpublish'),
   adminStats: makeFunctionReference<'query', { slug: string }, SimStats | null>('learnSims:adminCaseStats'),
+  createShare: makeFunctionReference<'mutation', { attemptId: string }, { code: string }>('learnSims:createShare'),
+  share: makeFunctionReference<'query', { code: string }, SimShare | null>('learnSims:getShare'),
+}
+
+/** A shared run's replay page (anyone with the link can watch it). */
+export const replayPath = (code: string) => learnPath(`/simulations/r/${code}`)
+/** The full address to send people (the Learn host once it has its own). */
+export function replayUrl(code: string) {
+  const path = replayPath(code)
+  const base = process.env.NEXT_PUBLIC_LEARN_URL?.replace(/\/+$/, '')
+  if (base) return `${base}${path}`
+  return typeof window !== 'undefined' ? `${window.location.origin}${path}` : path
 }
 
 export const SIMULATIONS_PATH = learnPath('/simulations')
@@ -79,7 +93,9 @@ export function errorText(err: unknown, fallback: string) {
 }
 
 /** Product analytics (consent-gated; no-op until PostHog has started). */
-export function simTrack(event: 'sim_open' | 'sim_start' | 'sim_choice' | 'sim_finish' | 'sim_abandon' | 'sim_interest', props: Record<string, string | number | boolean | null>) {
+export function simTrack(
+  event: 'sim_open' | 'sim_start' | 'sim_choice' | 'sim_finish' | 'sim_abandon' | 'sim_interest' | 'sim_share' | 'sim_replay' | 'sim_video',
+  props: Record<string, string | number | boolean | null>) {
   try {
     track(event, props)
   } catch {

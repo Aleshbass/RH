@@ -212,7 +212,9 @@ export function Leaderboard() {
               ) : !me.ranks ? (
                 <>
                   <span className="font-semibold">{formatPoints(me.points)} points</span>
-                  <span className="text-rh-ink/55"> · not ranked in this view</span>
+                  <span className="text-rh-ink/55">
+                    {me.team ? ' · admins and the Rehabify team don’t rank, so prizes go to learners' : ' · you’re not in this group. Switch to Everyone to see your rank'}
+                  </span>
                 </>
               ) : me.rank ? (
                 <>

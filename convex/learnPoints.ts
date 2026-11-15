@@ -91,6 +91,8 @@ export const leaderboard = query({
         hidden: Boolean(account?.hidden),
         // The team and people outside this filter don't rank
         ranks: ranks(me, false, args.scope),
+        // Why not: admins and the Rehabify team never rank (prizes go to learners)
+        team: Boolean(me.isAdmin || me.tag.kind === "team"),
       },
       totalRanked: rows.length,
     };

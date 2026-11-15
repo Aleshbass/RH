@@ -115,7 +115,8 @@ function CaseStats({ slug }: { slug: string }) {
   const stats = useQuery(simApi.adminStats, { slug })
   if (stats === undefined) return <LoadingBlock />
   if (!stats) return null
-  if (stats.started === 0) return <p className="text-sm text-neutral-500">No plays yet.</p>
+  if (stats.started === 0)
+    return <p className="text-sm text-neutral-500">No learner plays yet. It fills in as learners play this case (the team’s preview runs aren’t counted).</p>
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap gap-2 text-xs">
@@ -234,7 +235,7 @@ export function SimulationsAdmin() {
   return (
     <AdminPage>
       {header}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <StatTile label="Cases live" value={`${live} / ${data.cases.length}`} icon={HeartPulse} />
         <StatTile label="Plays" value={plays} icon={Users} />
         <StatTile label="Pass rate" value={completions ? `${Math.round((passes / completions) * 100)}%` : '–'} icon={CheckCircle2} />
@@ -253,7 +254,7 @@ export function SimulationsAdmin() {
           }
         />
       ) : (
-        <div className="space-y-4">
+        <div className="grid items-start gap-4 xl:grid-cols-2">
           {data.cases.map((item) => {
             const repoVersion = data.repo.find((r) => r.slug === item.slug)?.version
             return (
@@ -324,8 +325,11 @@ export function SimulationsAdmin() {
                   onClick={() => setStatsFor((s) => (s === item.slug ? null : item.slug))}
                   className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-rh-ink hover:underline dark:text-white"
                 >
-                  <BarChart3 className="h-4 w-4" /> {statsFor === item.slug ? 'Hide how learners play it' : 'How learners play it'}
+                  <BarChart3 className="h-4 w-4" /> {statsFor === item.slug ? 'Hide learners’ choices' : 'See learners’ choices, step by step'}
                 </button>
+                {statsFor !== item.slug && (
+                  <p className="mt-1 text-xs text-neutral-500">Which option learners pick at each step, where they stop, and how their cases end.</p>
+                )}
                 {statsFor === item.slug && (
                   <div className="mt-4">
                     <CaseStats slug={item.slug} />

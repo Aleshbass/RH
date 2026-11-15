@@ -60,6 +60,18 @@ export const learnSimTables = {
     .index("by_case", ["caseSlug", "startedAt"]),
 
   // One row per choice, for the admin's choice spread and drop-off
+  // A learner's shared run of a case (owner 2026-11-14: share simulations to social media). The
+  // public replay at /simulations/r/<code> rebuilds it from the attempt; never the expert path.
+  learnSimShares: defineTable({
+    code: v.string(),
+    attemptId: v.id("learnSimAttempts"),
+    userId: v.id("users"),
+    caseSlug: v.string(),
+    createdAt: v.number(),
+  })
+    .index("by_code", ["code"])
+    .index("by_attempt", ["attemptId"]),
+
   learnSimEvents: defineTable({
     attemptId: v.id("learnSimAttempts"),
     caseSlug: v.string(),

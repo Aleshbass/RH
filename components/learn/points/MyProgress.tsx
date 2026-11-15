@@ -20,11 +20,11 @@ import { formatPoints, LEADERBOARD_PATH, pointsApi, PROGRESS_PATH } from './poin
 
 function Tile({ icon: Icon, label, value, sub, accent }: { icon: typeof Star; label: string; value: string; sub?: string; accent?: boolean }) {
   return (
-    <div className={cn('rounded-3xl border p-4 sm:p-5', accent ? 'border-transparent bg-rh-ink text-white' : 'border-rh-ink/[0.07] bg-white')}>
-      <p className={cn('flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.12em]', accent ? 'text-white/60' : 'text-rh-ink/50')}>
-        <Icon className={cn('h-3.5 w-3.5', accent ? 'text-rh-lime' : '')} /> {label}
+    <div className={cn('min-w-0 rounded-3xl border p-4 sm:p-5', accent ? 'border-transparent bg-rh-ink text-white' : 'border-rh-ink/[0.07] bg-white')}>
+      <p className={cn('flex min-w-0 items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.1em] sm:text-xs sm:tracking-[0.12em]', accent ? 'text-white/60' : 'text-rh-ink/50')}>
+        <Icon className={cn('h-3.5 w-3.5 shrink-0', accent ? 'text-rh-lime' : '')} /> <span className="truncate">{label}</span>
       </p>
-      <p className={cn('mt-2 text-[28px] font-semibold leading-none tabular-nums', accent ? 'text-white' : 'text-rh-ink')}>{value}</p>
+      <p className={cn('mt-2 truncate text-[24px] font-semibold leading-none tabular-nums sm:text-[28px]', accent ? 'text-white' : 'text-rh-ink')}>{value}</p>
       {sub && <p className={cn('mt-1.5 text-xs', accent ? 'text-white/60' : 'text-rh-ink/55')}>{sub}</p>}
     </div>
   )
@@ -73,10 +73,10 @@ export function MyProgress() {
 
   return (
     <main className="mx-auto w-full max-w-4xl px-4 pb-20 pt-8 sm:px-6 sm:pt-12">
-      <div className="flex items-center gap-4">
-        <Avatar name={data.name} imageUrl={data.imageUrl} size={56} />
+      <div className="flex min-w-0 items-center gap-3 sm:gap-4">
+        <Avatar name={data.name} imageUrl={data.imageUrl} size={52} />
         <div className="min-w-0">
-          <h1 className={cn('text-[32px] leading-tight tracking-tight text-rh-ink sm:text-[44px]', displayFont)}>My progress</h1>
+          <h1 className={cn('text-[28px] leading-tight tracking-tight text-rh-ink sm:text-[44px]', displayFont)}>My progress</h1>
           <p className="truncate text-sm text-rh-ink/55">{data.name}</p>
         </div>
       </div>
@@ -110,7 +110,7 @@ export function MyProgress() {
                 initial={reduce ? false : { opacity: 0, scale: 0.96 }}
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ duration: 0.3, delay: Math.min(i, 10) * 0.03 }}
-                className={cn('flex flex-col items-center rounded-3xl border p-4 text-center', got ? 'border-rh-ink/[0.07] bg-white' : 'border-dashed border-rh-ink/15 bg-rh-cream/60')}
+                className={cn('flex min-w-0 flex-col items-center rounded-3xl border p-3 text-center sm:p-4', got ? 'border-rh-ink/[0.07] bg-white' : 'border-dashed border-rh-ink/15 bg-rh-cream/60')}
               >
                 <BadgeArt id={b.id} earned={got} size={64} />
                 <p className={cn('mt-3 text-sm font-semibold', got ? 'text-rh-ink' : 'text-rh-ink/55')}>{b.name}</p>
@@ -157,8 +157,8 @@ export function MyProgress() {
         </div>
       </section>
 
-      <div className="mt-8 grid gap-6 lg:grid-cols-2">
-        <section className="rounded-3xl border border-rh-ink/[0.07] bg-white p-5">
+      <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <section className="min-w-0 rounded-3xl border border-rh-ink/[0.07] bg-white p-5">
           <h2 className="text-lg font-semibold text-rh-ink">Simulation cases</h2>
           {data.sims.length === 0 ? (
             <p className="mt-3 text-sm text-rh-ink/55">No cases finished yet. Each case you pass is worth 50 points.</p>
@@ -166,7 +166,7 @@ export function MyProgress() {
             <ul className="mt-4 space-y-4">
               {data.sims.map((s) => (
                 <li key={s.slug}>
-                  <div className="flex items-baseline justify-between gap-3 text-sm">
+                  <div className="flex min-w-0 items-baseline justify-between gap-3 text-sm">
                     <span className="min-w-0 truncate font-medium text-rh-ink">{s.title}</span>
                     <span className={cn('shrink-0 text-xs font-semibold', s.passed ? 'text-rh-success-ink' : 'text-rh-ink/50')}>
                       {s.passed ? 'Passed' : 'Not passed yet'} · best {s.score}%
@@ -181,7 +181,7 @@ export function MyProgress() {
           )}
         </section>
 
-        <section className="rounded-3xl border border-rh-ink/[0.07] bg-white p-5">
+        <section className="min-w-0 rounded-3xl border border-rh-ink/[0.07] bg-white p-5">
           <h2 className="text-lg font-semibold text-rh-ink">Recent activity</h2>
           {data.recent.length === 0 ? (
             <p className="mt-3 text-sm text-rh-ink/55">Your points will show here as you learn.</p>
@@ -189,7 +189,7 @@ export function MyProgress() {
             <ul className="mt-3 divide-y divide-rh-ink/[0.06]">
               {data.recent.map((r, i) => (
                 <li key={i} className="flex items-center justify-between gap-3 py-2.5 text-sm">
-                  <span className="min-w-0">
+                  <span className="min-w-0 flex-1">
                     <span className="block truncate text-rh-ink">{r.label}</span>
                     <span className="block text-xs text-rh-ink/45">{relativeTime(r.at)}</span>
                   </span>

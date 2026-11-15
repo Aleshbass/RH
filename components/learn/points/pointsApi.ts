@@ -31,7 +31,7 @@ export type LeaderboardData =
       month: string
       monthLabel: string
       rows: LeaderRow[]
-      me: { name: string; imageUrl: string | null; points: number; rank: number | null; hidden: boolean; ranks: boolean }
+      me: { name: string; imageUrl: string | null; points: number; rank: number | null; hidden: boolean; ranks: boolean; team?: boolean }
       totalRanked: number
     }
 

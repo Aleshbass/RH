@@ -38,8 +38,11 @@ import {
   Countdown,
   DebriefCards,
   Dock,
+  FindingsPanel,
   FindingsSheet,
   nextKey,
+  PlayerFrame,
+  SplitPanes,
   STAGE_CLASS,
   Thread,
   type DockChoice,
@@ -217,8 +220,7 @@ function PreviewPlayer({ def, onExit }: { def: SimCase; onExit: () => void }) {
   const attach = live.find((c) => attachesMonitor(c))
 
   return (
-    <div className="fixed inset-0 z-[80] flex justify-center bg-[rgb(3_8_7/0.6)]">
-      <div className="relative flex h-[100dvh] w-full max-w-[460px] flex-col overflow-hidden bg-rh-cream sm:border-x sm:border-[rgb(255_255_255/0.1)]">
+    <PlayerFrame wide={stage !== 'debrief'}>
         <CaseTopBar
           name={`${def.patient.name}, ${def.patient.age}`}
           setting={def.setting}
@@ -262,7 +264,9 @@ function PreviewPlayer({ def, onExit }: { def: SimCase; onExit: () => void }) {
             }
           />
         ) : (
-          <>
+          <SplitPanes
+            left={
+              <>
             <div className={STAGE_CLASS}>
               <PatientStage
                 pain={sim.pain}
@@ -289,13 +293,19 @@ function PreviewPlayer({ def, onExit }: { def: SimCase; onExit: () => void }) {
                 }
               />
             )}
-            <Thread items={items} speaking={speaking} pending={Boolean(pending)} audio={Boolean(def.audio)} onReplay={replay} threadRef={thread} />
-            <Dock choices={choices} pending={pending} onPick={(c) => void pick(c)} over={over} onDebrief={() => setStage('debrief')} nodeKey={sim.nodeId} />
-          </>
+                <FindingsPanel findings={findings} />
+              </>
+            }
+            right={
+              <>
+                <Thread items={items} speaking={speaking} pending={Boolean(pending)} audio={Boolean(def.audio)} onReplay={replay} threadRef={thread} />
+                <Dock choices={choices} pending={pending} onPick={(c) => void pick(c)} over={over} onDebrief={() => setStage('debrief')} nodeKey={sim.nodeId} />
+              </>
+            }
+          />
         )}
         <FindingsSheet open={findingsOpen} onClose={() => setFindingsOpen(false)} findings={findings} />
-      </div>
-    </div>
+    </PlayerFrame>
   )
 }
 

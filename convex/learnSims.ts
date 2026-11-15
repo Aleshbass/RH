@@ -619,3 +619,103 @@ export const adminCaseStats = query({
     };
   },
 });
+
+// ── Sharing a run (owner 2026-11-14) ─────────────────────────────────────────
+// A learner shares a finished, scored run; anyone with the link watches it replayed (the patient,
+// their choices, the voices, the score). The expert path and the marking stay private, so the case
+// isn't spoiled for the next person.
+
+const SHARE_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789";
+
+/** The learner's share link for a finished run (made once, then reused). */
+export const createShare = mutation({
+  args: { attemptId: v.string() },
+  handler: async (ctx, args) => {
+    const own = await ownAttempt(ctx, args.attemptId);
+    if (!own || own.attempt.status !== "finished") throw new ConvexError("Finish the case first, then share it.");
+    if (own.attempt.preview) throw new ConvexError("Preview runs can't be shared.");
+    const existing = await ctx.db.query("learnSimShares").withIndex("by_attempt", (q) => q.eq("attemptId", own.attempt._id)).first();
+    if (existing) return { code: existing.code };
+    let code = "";
+    for (let tries = 0; tries < 5; tries++) {
+      code = Array.from({ length: 8 }, () => SHARE_ALPHABET[Math.floor(Math.random() * SHARE_ALPHABET.length)]).join("");
+      const clash = await ctx.db.query("learnSimShares").withIndex("by_code", (q) => q.eq("code", code)).first();
+      if (!clash) break;
+    }
+    await ctx.db.insert("learnSimShares", { code, attemptId: own.attempt._id, userId: own.member.user._id, caseSlug: own.attempt.caseSlug, createdAt: Date.now() });
+    return { code };
+  },
+});
+
+type ShareBeat =
+  | { kind: "scene"; text: string; scene: string | null }
+  | { kind: "speech"; speaker: string; name: string; role: string; text: string; audioId: string }
+  | { kind: "action"; label: string; clockSec: number; category: string; scene: string | null }
+  | { kind: "finding"; label: string; detail: string; abnormal: boolean }
+  | { kind: "ending"; title: string; summary: string; outcome: string };
+
+/** A shared run, rebuilt for the public replay (no sign-in needed). */
+export const getShare = query({
+  args: { code: v.string() },
+  handler: async (ctx, args) => {
+    const share = await ctx.db.query("learnSimShares").withIndex("by_code", (q) => q.eq("code", args.code)).first();
+    if (!share) return null;
+    const attempt = await ctx.db.get(share.attemptId);
+    if (!attempt || attempt.status !== "finished") return null;
+    const def = await versionDef(ctx, attempt.caseSlug, attempt.version);
+    if (!def) return null;
+    const user = await ctx.db.get(share.userId);
+    const state = attempt.state as SimState;
+    const beats: ShareBeat[] = [];
+    let scene: string | null = null;
+    const enter = (nodeId: string) => {
+      const node = def.nodes[nodeId];
+      if (!node) return;
+      if (node.scene) scene = node.scene;
+      if (node.prompt) beats.push({ kind: "scene", text: node.prompt, scene });
+      (node.lines ?? []).forEach((line, i) => beats.push({ kind: "speech", ...lineView(def, line, `${node.id}-${i}`) }));
+    };
+    // A situation shows once when the learner arrives (a hub they come back to doesn't repeat)
+    let entered = def.startNode;
+    let next: string | null = null;
+    enter(entered);
+    for (const step of state.steps) {
+      if (step.nodeId !== entered) {
+        entered = step.nodeId;
+        enter(entered);
+      }
+      const choice = (def.nodes[step.nodeId]?.choices ?? []).find((c) => c.id === step.choiceId);
+      if (!choice) continue;
+      if (choice.effects?.scene) scene = choice.effects.scene;
+      beats.push({ kind: "action", label: choice.label, clockSec: step.clockSec, category: choiceCategory(choice), scene });
+      if (choice.reply) beats.push({ kind: "speech", ...lineView(def, choice.reply, choice.id) });
+      for (const f of choice.reveals ?? []) {
+        const finding = def.findings[f];
+        if (finding) beats.push({ kind: "finding", label: finding.label, detail: finding.detail, abnormal: Boolean(finding.abnormal) });
+      }
+      next = choice.next ?? null;
+    }
+    // Where the last choice led (usually the ending's own scene and lines)
+    if (next && next !== entered) enter(next);
+    const debrief = buildDebrief(def, state);
+    beats.push({ kind: "ending", title: debrief.ending.title, summary: debrief.ending.summary, outcome: debrief.ending.outcome });
+    const doc = await caseBySlug(ctx, def.slug);
+    return {
+      code: share.code,
+      firstName: user?.firstName?.trim() || "A Rehabify learner",
+      case: {
+        slug: def.slug,
+        title: def.title,
+        version: def.version,
+        setting: def.setting,
+        patient: { name: def.patient.name, age: def.patient.age },
+        audio: Boolean(def.audio),
+        live: Boolean(doc?.published),
+      },
+      scenes: def.scenes ?? {},
+      beats,
+      result: { pct: debrief.score.pct, passed: debrief.score.passed, outcome: debrief.ending.outcome, title: debrief.ending.title, timeSec: debrief.timeSec },
+      sharedAt: share.createdAt,
+    };
+  },
+});

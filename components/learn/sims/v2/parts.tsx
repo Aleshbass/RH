@@ -55,9 +55,62 @@ export const OUTCOME_TONE: Record<Outcome, string> = {
   harm: 'bg-rose-500 text-white',
 }
 
-/** Patient stage height: a third of the screen, less on short phones so the answers stay in reach. */
+/**
+ * Patient stage height: a third of the screen on phones (less on short ones, so the answers stay in
+ * reach), taller on tablets, and the scene's own 3:2 shape on computers (capped so the monitor and
+ * findings fit under it).
+ */
 export const STAGE_CLASS =
-  'h-[32dvh] max-h-[320px] min-h-[150px] shrink-0 [@media(max-height:740px)]:h-[26dvh] [@media(max-height:640px)]:h-[22dvh]'
+  'h-[32dvh] max-h-[320px] min-h-[150px] shrink-0 [@media(max-height:740px)]:h-[26dvh] [@media(max-height:640px)]:h-[22dvh] md:h-[38dvh] md:max-h-[440px] lg:aspect-[3/2] lg:h-auto! lg:max-h-[64%]! lg:min-h-0!'
+
+/**
+ * The case screen (owner 2026-11-15: "looks so good on desktop and tablets too"): a phone column on
+ * phones, a wider column on tablets, and on computers and landscape tablets a rounded window: two
+ * panes when `wide` (the player: patient on the left, conversation on the right), one centred
+ * column otherwise (the debrief).
+ */
+export function PlayerFrame({ wide = false, children }: { wide?: boolean; children: ReactNode }) {
+  return (
+    <div className="fixed inset-0 z-[80] flex justify-center bg-[rgb(3_8_7/0.6)] lg:items-center lg:bg-[rgb(3_8_7/0.86)] lg:p-6">
+      <div
+        className={cn(
+          'relative flex h-[100dvh] w-full max-w-[460px] flex-col overflow-hidden bg-rh-cream sm:border-x sm:border-[rgb(255_255_255/0.1)] md:max-w-[640px] lg:h-[calc(100dvh-48px)] lg:max-h-[920px] lg:rounded-[28px] lg:border lg:shadow-[0_30px_90px_-24px_rgb(0_0_0/0.7)]',
+          wide ? 'lg:max-w-[1240px]' : 'lg:max-w-[600px]'
+        )}
+      >
+        {children}
+      </div>
+    </div>
+  )
+}
+
+/** Computers: the patient side and the conversation side next to each other. Phones and tablets: one column (the wrappers vanish). */
+export function SplitPanes({ left, right }: { left: ReactNode; right: ReactNode }) {
+  return (
+    <div className="contents lg:flex lg:min-h-0 lg:flex-1">
+      <div className="contents lg:flex lg:min-w-0 lg:flex-1 lg:flex-col lg:bg-[rgb(8_16_15)]">{left}</div>
+      <div className="contents lg:flex lg:w-[440px] lg:shrink-0 lg:flex-col lg:border-l lg:border-[rgb(255_255_255/0.08)] lg:bg-rh-cream">{right}</div>
+    </div>
+  )
+}
+
+/** Computers only: the findings stay in view under the patient (phones open the findings sheet). */
+export function FindingsPanel({ findings }: { findings: { id?: string; label: string; detail: string; abnormal: boolean }[] }) {
+  return (
+    <div className="hidden min-h-0 flex-1 flex-col overflow-y-auto px-4 pb-4 pt-3 lg:flex">
+      <p className="mb-2.5 text-xs font-semibold uppercase tracking-[0.14em] text-[rgb(255_255_255/0.5)]">Findings so far</p>
+      {findings.length === 0 ? (
+        <p className="text-sm text-[rgb(255_255_255/0.45)]">Nothing yet. Ask and examine to build the picture.</p>
+      ) : (
+        <div className="grid gap-2 xl:grid-cols-2">
+          {findings.map((f, i) => (
+            <FindingCard key={f.id ?? i} label={f.label} detail={f.detail} abnormal={f.abnormal} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
 // ── Action kinds ──────────────────────────────────────────────────────────────
 
@@ -289,7 +342,7 @@ export function FindingsSheet({
           <motion.div
             role="dialog"
             aria-label="Findings so far"
-            className="relative max-h-[70%] overflow-y-auto rounded-t-[24px] bg-rh-cream px-4 pb-[max(16px,env(safe-area-inset-bottom))] pt-4"
+            className="relative max-h-[70%] overflow-y-auto rounded-t-[24px] bg-rh-cream px-4 pb-[max(16px,env(safe-area-inset-bottom))] pt-4 lg:mx-auto lg:mb-6 lg:w-full lg:max-w-[520px] lg:rounded-[24px]"
             initial={{ y: '100%' }}
             animate={{ y: 0 }}
             exit={{ y: '100%' }}
@@ -382,7 +435,7 @@ export function Dock({
               })}
             </div>
           )}
-          <div className="grid max-h-[30dvh] grid-cols-2 gap-2 overflow-y-auto [@media(max-height:640px)]:max-h-[34dvh]">
+          <div className="grid max-h-[30dvh] grid-cols-2 gap-2 overflow-y-auto [@media(max-height:640px)]:max-h-[34dvh] lg:max-h-[38vh]">
             {(current ? grouped[current] : []).map((c) => {
               const isPending = pending?.id === c.id
               const meta = CATEGORY_META[c.category as DockTab] ?? CATEGORY_META.do
