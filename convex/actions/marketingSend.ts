@@ -19,6 +19,7 @@ import { action, internalAction } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
 import {
   AUDIENCE_LABEL,
+  fillMergeTags,
   renderMarketingEmail,
   RESEND_FIRST_NAME,
   RESEND_UNSUBSCRIBE_URL,
@@ -133,6 +134,7 @@ function contentOf(c: Doc<"marketingCampaigns">): MarketingContent {
     ctaLabel: c.ctaLabel,
     ctaUrl: c.ctaUrl,
     imageUrl: c.imageUrl,
+    greetBy: c.greetBy,
   };
 }
 
@@ -150,7 +152,7 @@ export const processCampaign = internalAction({
       const resend = client();
 
       // ── One-to-one ──
-      if (campaign.audience === "individual") {
+      if (campaign.audience === "individual" || campaign.oneByOne) {
         const { pending, remainingToday } = await ctx.runQuery(ref.directBatch, { campaignId: campaign._id, limit: DIRECT_BATCH });
         if (pending.length === 0) {
           await ctx.runMutation(ref.recordDirect, { campaignId: campaign._id, sent: [], failed: [] });
@@ -171,8 +173,9 @@ export const processCampaign = internalAction({
             batch.map((row) => ({
               from: fromAddress(),
               to: [row.email],
-              subject: content.subject,
-              html: renderMarketingEmail(content, { greetingName: row.name }),
+              // {first_name} / {clinic_name} filled in for this person (lib/email/marketing.ts)
+              subject: fillMergeTags(content.subject, { firstName: row.name, clinicName: row.clinicName }),
+              html: renderMarketingEmail(content, { greetingName: row.name, merge: { firstName: row.name, clinicName: row.clinicName } }),
               // Lets Resend's delivered / opened events find this campaign (emailEvents.ts)
               tags: [{ name: "campaign_id", value: String(campaign._id) }],
             }))
@@ -250,7 +253,7 @@ export const processCampaign = internalAction({
             subject: content.subject,
             previewText: content.previewText,
             name: broadcastName(content.subject, AUDIENCE_LABEL[segment]),
-            html: renderMarketingEmail(content, { greetingName: RESEND_FIRST_NAME, unsubscribeUrl: RESEND_UNSUBSCRIBE_URL }),
+            html: renderMarketingEmail(content, { greetingName: RESEND_FIRST_NAME, unsubscribeUrl: RESEND_UNSUBSCRIBE_URL, merge: "resend" }),
           })
         );
         if (created.error || !created.data) throw new Error(created.error?.message || "Could not create the broadcast");
@@ -303,6 +306,7 @@ export const sendTest = internalAction({
   args: {
     to: v.string(),
     name: v.optional(v.string()),
+    clinicName: v.optional(v.string()),
     subject: v.string(),
     previewText: v.optional(v.string()),
     heading: v.string(),
@@ -310,15 +314,17 @@ export const sendTest = internalAction({
     ctaLabel: v.optional(v.string()),
     ctaUrl: v.optional(v.string()),
     imageUrl: v.optional(v.string()),
+    greetBy: v.optional(v.union(v.literal("first_name"), v.literal("clinic_name"), v.literal("none"))),
   },
   handler: async (_ctx, args) => {
-    const { to, name, ...content } = args;
+    const { to, name, clinicName, ...content } = args;
+    const merge = { firstName: name, clinicName };
     const result = await call(() =>
       client().emails.send({
         from: fromAddress(),
         to: [to],
-        subject: `[Test] ${content.subject}`,
-        html: renderMarketingEmail(content, { greetingName: name || "there" }),
+        subject: `[Test] ${fillMergeTags(content.subject, merge)}`,
+        html: renderMarketingEmail(content, { greetingName: name || "there", merge }),
       })
     );
     if (result.error) console.error("Marketing test email failed:", result.error.message);

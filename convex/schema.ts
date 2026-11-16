@@ -4656,6 +4656,10 @@ export default defineSchema({
     clickedCount: v.optional(v.number()),
     bouncedCount: v.optional(v.number()),
     complainedCount: v.optional(v.number()),
+    // Who "Hello …," names (lib/email/marketing.ts GreetBy); first name when unset
+    greetBy: v.optional(v.union(v.literal("first_name"), v.literal("clinic_name"), v.literal("none"))),
+    // A group sent one email at a time through marketingQueue (it names each clinic), not as a Broadcast
+    oneByOne: v.optional(v.boolean()),
   }).index("by_created", ["createdAt"]),
 
   // Delivered / opened / clicked / bounced / spam events for campaign emails (emailEvents.ts)
@@ -4675,6 +4679,8 @@ export default defineSchema({
     campaignId: v.id("marketingCampaigns"),
     email: v.string(),
     name: v.optional(v.string()),
+    // For {clinic_name} and a clinic-name greeting
+    clinicName: v.optional(v.string()),
     status: v.union(v.literal("pending"), v.literal("sent"), v.literal("failed")),
     attempts: v.number(),
     lastError: v.optional(v.string()),

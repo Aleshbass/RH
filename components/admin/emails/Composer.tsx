@@ -9,7 +9,16 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { cardClass, ConfirmDialog, inputClass, primaryButtonClass, softButtonClass } from '@/components/admin/ui'
-import { AUDIENCE_LABEL, renderMarketingEmail, type MarketingAudience, type MarketingContent } from '@/lib/email/marketing'
+import {
+  AUDIENCE_LABEL,
+  MERGE_TAGS,
+  fillMergeTags,
+  renderMarketingEmail,
+  usesClinicName,
+  type GreetBy,
+  type MarketingAudience,
+  type MarketingContent,
+} from '@/lib/email/marketing'
 import { bodyHasText } from '@/lib/email/richText'
 import { EmailBodyEditor } from './EmailBodyEditor'
 import { marketingApi, type MarketingOverview } from '@/lib/marketingApi'
@@ -22,6 +31,15 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 const labelClass = 'text-sm font-medium text-rh-ink dark:text-white'
 const hintClass = 'text-xs text-neutral-500 dark:text-neutral-400'
+
+/** The preview fills the name tags with these; each real email gets its own */
+const SAMPLE = { firstName: 'Ada', clinicName: 'Your Clinic Name' }
+const GREETINGS: { id: GreetBy; label: string; clinicOnly?: boolean }[] = [
+  { id: 'first_name', label: 'Hello + first name' },
+  { id: 'clinic_name', label: 'Hello + clinic name', clinicOnly: true },
+  { id: 'none', label: 'No greeting' },
+]
+const tagButtonClass = 'rounded bg-rh-canvas px-1 font-mono text-rh-ink dark:bg-white/10 dark:text-white'
 
 function useDebounced<T>(value: T, ms = 250) {
   const [debounced, setDebounced] = useState(value)
@@ -53,7 +71,17 @@ export function Composer({ overview, onSent }: { overview: MarketingOverview | u
   const q = useDebounced(search.trim())
   const people = useQuery(marketingApi.findPeople, audience === 'individual' && q.length >= 2 ? { q } : 'skip')
 
-  const set = (key: keyof MarketingContent) => (value: string) => setContent((c) => ({ ...c, [key]: value }))
+  const set = (key: Exclude<keyof MarketingContent, 'greetBy'>) => (value: string) => setContent((c) => ({ ...c, [key]: value }))
+  // The clinic name is known only for clinics (and for chosen people who own one)
+  const clinicNameAllowed = audience === 'clinics' || audience === 'individual'
+  const greetBy: GreetBy = content.greetBy === 'clinic_name' && !clinicNameAllowed ? 'first_name' : content.greetBy ?? 'first_name'
+  const namesClinic = clinicNameAllowed && usesClinicName({ ...content, greetBy })
+  const copyTag = (tag: string) => {
+    const done = () => toast.success(`Copied ${tag}. Paste it where the name should go.`)
+    const fallback = () => toast.message(`Type ${tag} where the name should go.`)
+    if (navigator.clipboard) navigator.clipboard.writeText(tag).then(done, fallback)
+    else fallback()
+  }
 
   // One-to-one recipients: picked people plus anything pasted
   const individualEmails = useMemo(() => {
@@ -72,11 +100,12 @@ export function Composer({ overview, onSent }: { overview: MarketingOverview | u
           ...content,
           heading: content.heading || 'Your heading',
           body: hasMessage ? content.body : 'Your message appears here.',
+          greetBy,
         },
-        // Previewed with a sample name; each person gets their own first name ("Hi there," when it isn't known)
-        { greetingName: 'Ada', unsubscribeUrl: audience === 'individual' ? undefined : '#' }
+        // Previewed with sample names; each person gets their own ("Hello there," when it isn't known)
+        { greetingName: SAMPLE.firstName, unsubscribeUrl: audience === 'individual' || namesClinic ? undefined : '#', merge: SAMPLE }
       ),
-    [content, audience, hasMessage]
+    [content, audience, hasMessage, greetBy, namesClinic]
   )
 
   const payload = () => ({
@@ -87,6 +116,7 @@ export function Composer({ overview, onSent }: { overview: MarketingOverview | u
     ctaLabel: content.ctaLabel || undefined,
     ctaUrl: content.ctaUrl || undefined,
     imageUrl: content.imageUrl || undefined,
+    ...(greetBy !== 'first_name' ? { greetBy } : {}),
   })
 
   const test = async () => {
@@ -239,9 +269,46 @@ export function Composer({ overview, onSent }: { overview: MarketingOverview | u
             <Input id="mk-heading" maxLength={150} value={content.heading} onChange={(e) => set('heading')(e.target.value)} className={inputClass} />
           </div>
           <div className="space-y-1.5">
+            <p className={labelClass}>Greeting</p>
+            <div role="radiogroup" aria-label="Greeting" className="flex flex-wrap gap-2">
+              {GREETINGS.filter((g) => !g.clinicOnly || clinicNameAllowed).map((g) => (
+                <button
+                  key={g.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={greetBy === g.id}
+                  onClick={() => setContent((c) => ({ ...c, greetBy: g.id }))}
+                  className={cn(
+                    'rounded-full border px-3 py-1.5 text-xs font-medium',
+                    greetBy === g.id
+                      ? 'border-rh-ink bg-rh-ink text-white dark:border-white dark:bg-white dark:text-rh-ink'
+                      : 'border-black/10 text-rh-ink dark:border-white/15 dark:text-white'
+                  )}
+                >
+                  {g.label}
+                </button>
+              ))}
+            </div>
+            {!clinicNameAllowed && <p className={hintClass}>To greet by clinic name, send to Clinics or to people you choose.</p>}
+          </div>
+          <div className="space-y-1.5">
             <Label htmlFor="mk-body" className={labelClass}>Message</Label>
             <EmailBodyEditor key={editorKey} id="mk-body" value={content.body} onChange={set('body')} />
-            <p className={hintClass}>Bold, links, headings, lists and quotes show in every email app. Each email starts with &ldquo;Hello&rdquo; and the person&apos;s first name.</p>
+            <p className={hintClass}>
+              Bold, links, headings, lists and quotes show in every email app. To put a name anywhere, type{' '}
+              <button type="button" onClick={() => copyTag(MERGE_TAGS.firstName)} className={tagButtonClass}>
+                {MERGE_TAGS.firstName}
+              </button>
+              {clinicNameAllowed && (
+                <>
+                  {' or '}
+                  <button type="button" onClick={() => copyTag(MERGE_TAGS.clinicName)} className={tagButtonClass}>
+                    {MERGE_TAGS.clinicName}
+                  </button>
+                </>
+              )}
+              , and each email gets its own.
+            </p>
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
@@ -261,7 +328,7 @@ export function Composer({ overview, onSent }: { overview: MarketingOverview | u
 
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <p className={hintClass}>
-            {audience === 'individual'
+            {audience === 'individual' || namesClinic
               ? overview
                 ? `${overview.directSentToday} of ${overview.directDailyLimit} one-to-one emails sent today. Any over the limit go out tomorrow.`
                 : ''
@@ -306,8 +373,8 @@ export function Composer({ overview, onSent }: { overview: MarketingOverview | u
             </div>
           </div>
           <div className="border-b border-black/[0.05] px-4 py-3 dark:border-white/[0.06]">
-            <p className="truncate text-sm font-semibold text-rh-ink dark:text-white">{content.subject || 'Subject line'}</p>
-            <p className="truncate text-xs text-neutral-500">{content.previewText || content.heading || 'Preview text'}</p>
+            <p className="truncate text-sm font-semibold text-rh-ink dark:text-white">{content.subject ? fillMergeTags(content.subject, SAMPLE) : 'Subject line'}</p>
+            <p className="truncate text-xs text-neutral-500">{fillMergeTags(content.previewText || content.heading || 'Preview text', SAMPLE)}</p>
           </div>
           <div className="flex justify-center bg-rh-canvas p-3 dark:bg-black/20">
             <iframe
@@ -329,7 +396,9 @@ export function Composer({ overview, onSent }: { overview: MarketingOverview | u
             ? overToday > 0
               ? `${overToday} of these will go out tomorrow to stay within today's sending limit.`
               : 'They go out within a minute.'
-            : `"${content.subject}" goes to ${AUDIENCE_LABEL[audience].toLowerCase()} as a Resend Broadcast. Large audiences take a few minutes to prepare.`
+            : namesClinic
+              ? `"${content.subject}" goes to each clinic owner on its own, with their clinic's name filled in. It takes a minute or two.`
+              : `"${content.subject}" goes to ${AUDIENCE_LABEL[audience].toLowerCase()} as a Resend Broadcast. Large audiences take a few minutes to prepare.`
         }
         confirmLabel="Send now"
         onConfirm={send}

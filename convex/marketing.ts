@@ -13,14 +13,14 @@
 import { ConvexError, v } from "convex/values";
 import { makeFunctionReference } from "convex/server";
 import { internalMutation, internalQuery, mutation, query, type QueryCtx } from "./_generated/server";
-import type { Id } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
 import { requireAdmin } from "./helpers/partnerAccess";
 import { partnerApprovalStatus } from "./helpers/partnerShared";
 import { isJoyLoginEmail } from "../lib/auth/joyLoginEmail";
-import { MARKETING_SEGMENTS, type MarketingSegment } from "../lib/email/marketing";
+import { MARKETING_SEGMENTS, subjectHasMergeTag, usesClinicName, type GreetBy, type MarketingSegment } from "../lib/email/marketing";
 import { bodyHasText, isRichBody } from "../lib/email/richText";
 
-type Recipient = { email: string; name?: string };
+type Recipient = { email: string; name?: string; clinicName?: string };
 type Content = {
   subject: string;
   previewText?: string;
@@ -29,7 +29,10 @@ type Content = {
   ctaLabel?: string;
   ctaUrl?: string;
   imageUrl?: string;
+  greetBy?: GreetBy;
 };
+/** The test email and the composer preview name this clinic when an email uses the clinic name */
+const SAMPLE_CLINIC_NAME = "Your Clinic Name";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MAX_INDIVIDUAL = 50;
@@ -53,13 +56,14 @@ const content = {
   ctaLabel: v.optional(v.string()),
   ctaUrl: v.optional(v.string()),
   imageUrl: v.optional(v.string()),
+  greetBy: v.optional(v.union(v.literal("first_name"), v.literal("clinic_name"), v.literal("none"))),
 };
 
 // Plain references: these modules aren't in the generated api types until the next codegen
 const processCampaignRef = makeFunctionReference<"action", { campaignId: Id<"marketingCampaigns"> }, null>(
   "actions/marketingSend:processCampaign"
 );
-const sendTestRef = makeFunctionReference<"action", { to: string; name?: string } & Content, null>(
+const sendTestRef = makeFunctionReference<"action", { to: string; name?: string; clinicName?: string } & Content, null>(
   "actions/marketingSend:sendTest"
 );
 const utcDay = (ms = Date.now()) => new Date(ms).toISOString().slice(0, 10);
@@ -78,6 +82,7 @@ function cleanContent(args: Content) {
     ctaLabel: clean(args.ctaLabel, 60) || undefined,
     ctaUrl: clean(args.ctaUrl, 500) || undefined,
     imageUrl: clean(args.imageUrl, 500) || undefined,
+    greetBy: args.greetBy && args.greetBy !== "first_name" ? args.greetBy : undefined,
   };
   if (!out.subject || !out.heading || !bodyHasText(out.body)) throw new ConvexError("Add a subject, a heading and a message.");
   if (out.body.length > (isRichBody(out.body) ? 120_000 : 10_000)) throw new ConvexError("The message is too long. Shorten it or split it into two emails.");
@@ -92,6 +97,28 @@ const ROLE_FOR: Partial<Record<MarketingSegment, "patient" | "physiotherapist" |
   physiotherapists: "physiotherapist",
   clinics: "clinic_owner",
 };
+
+/** The clinic a person owns (or belongs to), for {clinic_name}. */
+async function clinicNameOf(ctx: QueryCtx, user: Doc<"users"> | null) {
+  if (!user) return undefined;
+  const owned = await ctx.db.query("clinics").withIndex("by_owner_id", (q) => q.eq("ownerId", user._id)).first();
+  const clinic = owned ?? (user.clinicId ? await ctx.db.get(user.clinicId) : null);
+  return clinic?.name?.trim() || undefined;
+}
+
+/** Clinic owners, each with their clinic's name: the Clinics group sent one by one. */
+async function clinicRecipients(ctx: QueryCtx): Promise<Recipient[]> {
+  const seen = new Set<string>();
+  const out: Recipient[] = [];
+  const owners = await ctx.db.query("users").withIndex("by_role", (q) => q.eq("role", "clinic_owner")).collect();
+  for (const owner of owners) {
+    const email = normalEmail(owner.email);
+    if (owner.deletedAt || !usable(email) || seen.has(email)) continue;
+    seen.add(email);
+    out.push({ email, name: owner.firstName?.trim() || undefined, clinicName: await clinicNameOf(ctx, owner) });
+  }
+  return out;
+}
 
 /** Everyone in a segment with a deliverable email. Deleted accounts and Joy placeholder logins are left out. */
 async function segmentRecipients(ctx: QueryCtx, seg: MarketingSegment): Promise<Recipient[]> {
@@ -166,7 +193,7 @@ export const adminListCampaigns = query({
     const campaigns = await ctx.db.query("marketingCampaigns").withIndex("by_created").order("desc").take(40);
     return Promise.all(
       campaigns.map(async (c) => {
-        if (c.audience !== "individual") return { ...c, pendingCount: 0 };
+        if (c.audience !== "individual" && !c.oneByOne) return { ...c, pendingCount: 0 };
         const pending = await ctx.db
           .query("marketingQueue")
           .withIndex("by_campaign_and_status", (q) => q.eq("campaignId", c._id).eq("status", "pending"))
@@ -210,7 +237,7 @@ export const adminCampaignDetail = query({
     type Row = { email: string; name?: string; segment?: string; status: "sent" | "pending" | "failed"; error?: string; sentAt?: number };
     let rows: Row[] = [];
     let listSource: "queue" | "saved" | "events" = "saved";
-    if (campaign.audience === "individual") {
+    if (campaign.audience === "individual" || campaign.oneByOne) {
       listSource = "queue";
       for (const status of ["sent", "pending", "failed"] as const) {
         const queued = await ctx.db
@@ -327,7 +354,12 @@ export const adminSendTest = mutation({
     const to = normalEmail(admin.user.email);
     if (!usable(to)) throw new ConvexError("Your admin account has no email to send a test to.");
     const cleaned = cleanContent(args);
-    await ctx.scheduler.runAfter(0, sendTestRef, { ...cleaned, to, name: admin.user.firstName });
+    await ctx.scheduler.runAfter(0, sendTestRef, {
+      ...cleaned,
+      to,
+      name: admin.user.firstName,
+      ...(usesClinicName(cleaned) ? { clinicName: SAMPLE_CLINIC_NAME } : {}),
+    });
     return { to };
   },
 });
@@ -339,6 +371,18 @@ export const adminCreateCampaign = mutation({
     const cleaned = cleanContent(args);
     const now = Date.now();
 
+    // Naming the clinic: each email goes one by one, since a Resend Broadcast only knows first names
+    const byClinic = usesClinicName(cleaned);
+    if (byClinic && args.audience !== "clinics" && args.audience !== "individual") {
+      throw new ConvexError("The clinic name only works when you send to Clinics or to people you choose.");
+    }
+    const oneByOne = args.audience === "individual" || byClinic;
+    if (!oneByOne && subjectHasMergeTag(cleaned)) {
+      throw new ConvexError(
+        "Names in the subject or preview text only work when each email goes one by one (Clinics with the clinic name, or people you choose). Take the tag out of the subject."
+      );
+    }
+
     let recipientCount = 0;
     let individuals: Recipient[] = [];
     if (args.audience === "individual") {
@@ -348,10 +392,14 @@ export const adminCreateCampaign = mutation({
       individuals = await Promise.all(
         unique.map(async (email) => {
           const user = await ctx.db.query("users").withIndex("by_email", (q) => q.eq("email", email)).first();
-          return { email, name: user?.firstName || undefined };
+          return { email, name: user?.firstName || undefined, clinicName: byClinic ? await clinicNameOf(ctx, user) : undefined };
         })
       );
       recipientCount = individuals.length;
+    } else if (byClinic) {
+      individuals = await clinicRecipients(ctx);
+      recipientCount = individuals.length;
+      if (recipientCount === 0) throw new ConvexError("No clinic owner has an email address yet.");
     } else {
       const counts = await segmentCounts(ctx);
       recipientCount = counts[args.audience];
@@ -361,8 +409,9 @@ export const adminCreateCampaign = mutation({
     const campaignId = await ctx.db.insert("marketingCampaigns", {
       ...cleaned,
       audience: args.audience,
-      status: args.audience === "individual" ? "sending" : "preparing",
-      segmentsToSend: args.audience === "everyone" ? [...MARKETING_SEGMENTS] : args.audience === "individual" ? [] : [args.audience],
+      ...(oneByOne && args.audience !== "individual" ? { oneByOne: true } : {}),
+      status: oneByOne ? "sending" : "preparing",
+      segmentsToSend: oneByOne ? [] : args.audience === "everyone" ? [...MARKETING_SEGMENTS] : [args.audience],
       broadcastIds: [],
       recipientCount,
       sentCount: 0,
@@ -374,7 +423,14 @@ export const adminCreateCampaign = mutation({
     });
 
     for (const r of individuals) {
-      await ctx.db.insert("marketingQueue", { campaignId, email: r.email, name: r.name, status: "pending", attempts: 0 });
+      await ctx.db.insert("marketingQueue", {
+        campaignId,
+        email: r.email,
+        name: r.name,
+        ...(r.clinicName ? { clinicName: r.clinicName } : {}),
+        status: "pending",
+        attempts: 0,
+      });
     }
 
     await ctx.scheduler.runAfter(0, processCampaignRef, { campaignId });

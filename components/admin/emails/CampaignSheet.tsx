@@ -87,7 +87,12 @@ function SheetBody({ data }: { data: MarketingCampaignDetail }) {
 
   // Same renderer as the real send; group emails greet by first name, so show a sample greeting
   const html = useMemo(
-    () => renderMarketingEmail(campaign, { greetingName: campaign.audience === 'individual' ? recipients[0]?.name?.split(' ')[0] || 'there' : 'there' }),
+    () =>
+      renderMarketingEmail(campaign, {
+        greetingName: campaign.audience === 'individual' ? recipients[0]?.name?.split(' ')[0] || 'there' : 'there',
+        // Name tags shown as a sample: each person got their own
+        merge: { firstName: 'Ada', clinicName: 'Your Clinic Name' },
+      }),
     [campaign, recipients]
   )
 
