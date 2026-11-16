@@ -13,6 +13,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useClerk, useUser } from '@clerk/nextjs'
 import { useQuery } from 'convex/react'
+import { learnAdminMeRef } from '@/lib/learnAdminsApi'
 import {
   ArrowRight,
   ArrowUpRight,
@@ -374,12 +375,14 @@ function Avatar({ size = 36 }: { size?: number }) {
   )
 }
 
-function accountLinks(identity: SignedInLearner) {
+function accountLinks(identity: SignedInLearner, learnAdmin = false) {
   const links: { href: string; label: string; icon: typeof BookOpen; external?: boolean }[] = [
     { href: MY_LEARNING_PATH, label: 'My learning', icon: BookOpen },
     { href: PROGRESS_PATH, label: 'My progress', icon: TrendingUp },
     { href: LEADERBOARD_PATH, label: 'Leaderboard', icon: Crown },
   ]
+  // Learn super admins and admins: the Learn part of the admin console
+  if (learnAdmin) links.push({ href: mainSiteUrl('/dashboard/admin/learn'), label: 'Learn admin', icon: LayoutDashboard, external: true })
   if (identity.hasDashboard) links.push({ href: mainSiteUrl('/dashboard'), label: 'My Rehabify dashboard', icon: LayoutDashboard, external: true })
   if (identity.needsWelcome || identity.profile) {
     links.push({ href: WELCOME_PATH, label: identity.profile ? 'Edit learner details' : 'Tell us about you', icon: UserCog })
@@ -401,6 +404,7 @@ function AccountMenu({ identity }: { identity: SignedInLearner }) {
   const [open, setOpen] = useState(false)
   const ref = useOutsideClose(open, () => setOpen(false))
   const name = user?.fullName || identity.firstName || 'Your account'
+  const adminMe = useQuery(learnAdminMeRef, {})
   return (
     <div ref={ref} className="relative">
       <button
@@ -424,7 +428,7 @@ function AccountMenu({ identity }: { identity: SignedInLearner }) {
             </div>
           </div>
           <nav className="mt-1 flex flex-col">
-            {accountLinks(identity).map((link) => (
+            {accountLinks(identity, Boolean(adminMe?.learnAdmin)).map((link) => (
               <Link
                 key={link.href}
                 href={link.href}
@@ -551,6 +555,7 @@ function MobileMenu({ open, onClose }: { open: boolean; onClose: () => void }) {
     return pathname === path || pathname.startsWith(`${path}/`) || pathname === `/learn${path}` || pathname.startsWith(`/learn${path}/`)
   }
 
+  const adminMe = useQuery(learnAdminMeRef, identity?.signedIn ? {} : 'skip')
   const shortcuts: Shortcut[] = [
     { href: learnPath('/courses'), label: 'Courses', sub: 'Browse everything', icon: GraduationCap },
     { href: COMMUNITY_PATH, label: 'Community', sub: 'Ask and discuss', icon: MessageCircle },
@@ -562,7 +567,7 @@ function MobileMenu({ open, onClose }: { open: boolean; onClose: () => void }) {
     ...(identity?.signedIn ? [{ href: PROGRESS_PATH, label: 'My progress', sub: 'Points, badges, streak', icon: TrendingUp }] : []),
   ]
   const account = identity?.signedIn
-    ? accountLinks(identity).filter((link) => link.href !== MY_LEARNING_PATH && link.href !== PROGRESS_PATH && link.href !== LEADERBOARD_PATH)
+    ? accountLinks(identity, Boolean(adminMe?.learnAdmin)).filter((link) => link.href !== MY_LEARNING_PATH && link.href !== PROGRESS_PATH && link.href !== LEADERBOARD_PATH)
     : []
 
   return (
