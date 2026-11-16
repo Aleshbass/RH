@@ -6,6 +6,7 @@ import { Doc, Id } from "./_generated/dataModel";
 import { ensureUserNumbers } from "./helpers/rehabifyIds";
 import { recordMissingPolicyAcceptances } from "./helpers/policyAcceptance";
 import { PATIENT_CONSENT_POLICIES } from "../lib/policies";
+import { celebrateFirstPatient } from "./physioFirsts";
 
 /** An unguessable invitation code (the link is what lets someone accept it). */
 function newInvitationCode(): string {
@@ -448,6 +449,7 @@ async function acceptPatientInvitation(
     },
     createdAt: Date.now(),
   });
+  await celebrateFirstPatient(ctx, invitation.physiotherapistId, ensuredUser, "email_invite");
 
   return {
     success: true,

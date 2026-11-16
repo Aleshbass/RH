@@ -30,6 +30,7 @@ import { isJoyLoginEmail } from "../lib/auth/joyLoginEmail";
 import { accountKind, patientJoinStatus, pinLoginOf } from "./helpers/patientJoinStatus";
 import { PATIENT_CONSENT_POLICIES } from "../lib/policies";
 import { countryCodeFromName, DEFAULT_COUNTRY_CODE } from "../lib/practiceCountries";
+import { celebrateFirstPatient } from "./physioFirsts";
 
 /** The physio's country (lib/practiceCountries.ts), so the join page gives local numbers its dialling code. */
 async function practiceCountryCode(ctx: QueryCtx | MutationCtx, physioId?: Id<"users">) {
@@ -399,6 +400,8 @@ async function tellPhysioJoined(ctx: MutationCtx, physioId: Id<"users"> | undefi
       link: `/dashboard/physiotherapist/patients/${patient._id}`,
     },
   });
+  // Their first patient ever: a celebration email (physioFirsts.ts)
+  await celebrateFirstPatient(ctx, physioId, patient, how);
 }
 
 /** Finishes /j/<code>: the PIN is set, the link is used up, and the physio hears they joined. */

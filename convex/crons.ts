@@ -200,6 +200,9 @@ crons.interval(
   {}
 );
 
+// Physios hear which patients did their exercises today: one email each at 19:00 WAT (physioFirsts.ts)
+crons.daily("physio-exercise-wins-email", { hourUTC: 18, minuteUTC: 0 }, internal.physioFirsts.emailTodaysExerciseWins, {});
+
 // Monday 08:00 WAT: Rehabify-referred visits at clinics without an online payment, and what
 // patients said they paid providers directly (visitCheckIns.ts). Sent only when there's something.
 crons.weekly(

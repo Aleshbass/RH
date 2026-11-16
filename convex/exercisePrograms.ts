@@ -800,7 +800,7 @@ export async function finishToday(ctx: MutationCtx, program: Doc<"exerciseProgra
 }
 
 /** Who hears about a patient's programme: their current clinician (primary first) and whoever sent it. */
-async function programCareTeam(ctx: Ctx, program: Doc<"exercisePrograms">) {
+export async function programCareTeam(ctx: Ctx, program: Doc<"exercisePrograms">) {
   const active = (
     await ctx.db
       .query("patientPhysiotherapistRelationships")

@@ -1,12 +1,31 @@
 /**
  * "Patients looking for care": moments when a patient wants a physio and the team can help
  * (careQueue.ts). Each raises one open signal (per booking, or per patient and kind a day) and
- * tells every admin at once by bell and phone push. Signals close themselves when the booking
- * moves on (careQueue.sweep) or when an admin marks them handled.
+ * tells every admin at once by bell and phone push, and the team inboxes by email (ADMIN_EMAIL,
+ * helpers/adminRecipients.ts). Signals close themselves when the booking moves on
+ * (careQueue.sweep) or when an admin marks them handled.
  */
+import { makeFunctionReference } from "convex/server";
 import type { MutationCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
+import { platformAdminEmails } from "./adminRecipients";
+import { appLink } from "./appUrl";
 import { insertNotification } from "./pushNotify";
+
+const sendEmail = makeFunctionReference<
+  "action",
+  { to: string; subject: string; skipGreeting?: boolean; heading: string; paragraphs: string[]; buttonLabel?: string; buttonUrl?: string }
+>("actions/emails/sendPatientCareEmail:sendPatientCareEmail");
+
+/** What the team should do next, per kind (the email's second line). */
+const NEXT_STEP: Record<CareSignalKind, string> = {
+  awaiting_physio: "They've paid. If the physio doesn't accept in time, reassign them from the care queue.",
+  unpaid_checkout: "A quick call or WhatsApp often helps them finish paying.",
+  joy_matching: "Joy is still with them. Step in from the care queue if they need help choosing.",
+  browsing: "They may need help choosing. Their details are in the care queue.",
+  no_physio: "Nobody is looking after them yet. Pair them with a physio or reach out.",
+  help_choosing: "They asked for help choosing a physio. Their answers are in the care queue.",
+};
 
 export type CareSignalKind = "awaiting_physio" | "unpaid_checkout" | "joy_matching" | "browsing" | "no_physio" | "help_choosing";
 
@@ -85,6 +104,19 @@ export async function alertAdmins(ctx: MutationCtx, kind: CareSignalKind, body: 
       status: "pending",
       payload: { title: TITLES[kind], body, link: CARE_QUEUE_PATH, data: { actionUrl: CARE_QUEUE_PATH } },
       createdAt: now,
+    });
+  }
+  // The team inboxes too, so nobody looking for care is missed when no one is in the dashboard.
+  // Rehabify IDs only: names and phone numbers stay in the care queue.
+  for (const to of platformAdminEmails()) {
+    await ctx.scheduler.runAfter(0, sendEmail, {
+      to,
+      subject: `${TITLES[kind]}: ${body}`.slice(0, 150),
+      skipGreeting: true,
+      heading: TITLES[kind],
+      paragraphs: [body, NEXT_STEP[kind]],
+      buttonLabel: "Open the care queue",
+      buttonUrl: appLink(CARE_QUEUE_PATH),
     });
   }
 }

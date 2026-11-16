@@ -31,6 +31,32 @@ const NO_PHYSIO_AFTER = 10 * MINUTE;
 const NO_PHYSIO_WITHIN = 3 * DAY;
 
 /** Someone is looking after them: an active physio link, or a booking of their own. */
+/** People a caregiver manages (Joy "book for someone I care for", Care circle): their care counts as the caregiver's. */
+async function managedPeople(ctx: MutationCtx, caregiverId: Id<"users">) {
+  const grants = await ctx.db
+    .query("familyAccessGrants")
+    .withIndex("by_family_member_user_id", (q) => q.eq("familyMemberUserId", caregiverId))
+    .take(10);
+  const people: { person: Doc<"users">; relationship: string }[] = [];
+  for (const grant of grants) {
+    if (!grant.managed || grant.status !== "active") continue;
+    const person = await ctx.db.get(grant.patientUserId);
+    if (person && !person.deletedAt) people.push({ person, relationship: grant.relationship });
+  }
+  return people;
+}
+
+const isManagedProfile = (user: Doc<"users">) => String(user.clerkId ?? "").startsWith("managed_");
+
+/** The patient, or anyone they manage, already has a physio or a booking. */
+async function careUnderway(ctx: MutationCtx, patientId: Id<"users">) {
+  if (await hasPhysioOrBooking(ctx, patientId)) return true;
+  for (const { person } of await managedPeople(ctx, patientId)) {
+    if (await hasPhysioOrBooking(ctx, person._id)) return true;
+  }
+  return false;
+}
+
 async function hasPhysioOrBooking(ctx: MutationCtx, patientId: Id<"users">) {
   const links = await ctx.db
     .query("patientPhysiotherapistRelationships")
@@ -206,7 +232,10 @@ export const sweep = internalMutation({
     for (const patient of newest) {
       if (now - patient._creationTime > NO_PHYSIO_WITHIN || patient.deletedAt) continue;
       if (now - patient._creationTime < NO_PHYSIO_AFTER) continue;
-      if (await hasPhysioOrBooking(ctx, patient._id)) continue;
+      // Someone a caregiver added has no phone or email of their own: their caregiver's signal
+      // covers them (it names the person), so the queue doesn't show one family twice
+      if (isManagedProfile(patient)) continue;
+      if (await careUnderway(ctx, patient._id)) continue;
       // Once per patient: an earlier signal (open or handled) is enough, and Joy has its own
       const earlier = await ctx.db
         .query("careSignals")
@@ -214,10 +243,13 @@ export const sweep = internalMutation({
         .first();
       if (earlier) continue;
       const viaJoy = String(patient.clerkId ?? "").startsWith("joy-whatsapp:");
+      const forWhom = (await managedPeople(ctx, patient._id))
+        .map(({ person, relationship }) => `${relationship} ${person.firstName ?? ""} (${person.patientNumber ?? "no ID"})`.replace(/\s+/g, " "))
+        .join(", ");
       await raiseCareSignal(ctx, {
         kind: "no_physio",
         patientId: patient._id,
-        detail: viaJoy ? "started on Joy and has no physio yet" : "signed up on the website and has no physio yet",
+        detail: `${viaJoy ? "started on Joy" : "signed up on the website"} and has no physio yet${forWhom ? `, looking for care for their ${forWhom}` : ""}`,
       });
       unlinked++;
     }
@@ -251,7 +283,11 @@ export const sweep = internalMutation({
           closed++;
         }
       } else if (signal.patientId && signal.kind === "no_physio") {
-        if (await hasPhysioOrBooking(ctx, signal.patientId)) {
+        const person = await ctx.db.get(signal.patientId);
+        if (person && isManagedProfile(person)) {
+          await closeCareSignal(ctx, signal, "Added by a caregiver: their caregiver's entry covers them");
+          closed++;
+        } else if (await careUnderway(ctx, signal.patientId)) {
           await closeCareSignal(ctx, signal, "Linked to a physio");
           closed++;
         }

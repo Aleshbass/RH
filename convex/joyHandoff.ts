@@ -13,6 +13,7 @@ import { internalMutation, query, type MutationCtx, type QueryCtx } from "./_gen
 import type { Doc, Id } from "./_generated/dataModel";
 import { currentUser, findRelationship, physioOrNull } from "./helpers/careAccess";
 import { tagPaidRehabifyRelationship } from "./helpers/rehabifySources";
+import { celebrateFirstPatient } from "./physioFirsts";
 
 type Ctx = QueryCtx | MutationCtx;
 export type JourneyStage = Doc<"joyJourneyEvents">["stage"];
@@ -153,6 +154,10 @@ export async function ensureJoyCareLink(
     });
   }
   await ctx.db.patch(booking._id, { patientPhysioRelationshipId: relationshipId, relationshipCreated: !existing, updatedAt: now });
+  if (!existing) {
+    const patient = await ctx.db.get(booking.patientId);
+    if (patient) await celebrateFirstPatient(ctx, physiotherapistId, patient, "joy");
+  }
 
   const openEpisode = await ctx.db
     .query("careEpisodes")
