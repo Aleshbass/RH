@@ -11,6 +11,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { useAction, useMutation, useQuery } from 'convex/react'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { toast } from 'sonner'
@@ -18,7 +19,6 @@ import {
   CallingState,
   hasAudio,
   OwnCapability,
-  ParticipantsAudio,
   StreamCall,
   StreamVideo,
   StreamVideoClient,
@@ -39,6 +39,7 @@ import {
   LogOut,
   Mic,
   MicOff,
+  Minimize,
   Radio,
   Smile,
   Users,
@@ -53,6 +54,8 @@ import { errorText, relativeTime, SPACES_PATH, spacePath, spacesApi, type SpaceP
 import { JoinPrompt, Sheet, Skeleton, SpaceAvatar } from '../social/ui'
 import { LiveEq, spaceWhen } from './SpacesHome'
 import { SpaceShareButton } from './SpaceShare'
+import { wakeLoudAudio } from './LoudAudio'
+import { useActiveSpace } from './ActiveSpace'
 import { useVoiceMeter, wakeVoiceMeters } from './voiceMeter'
 
 type StreamCallHandle = ReturnType<StreamVideoClient['call']>
@@ -232,6 +235,7 @@ function Timer({ since }: { since: number }) {
 
 function LiveRoom({ page, joinedAs, onLeft }: { page: SpacePage; joinedAs: { isHost: boolean; canModerate: boolean }; onLeft: (ended: boolean) => void }) {
   const call = useCall()!
+  const router = useRouter()
   const { useParticipants, useCallCallingState, useHasPermissions, useMicrophoneState, useParticipantCount } = useCallStateHooks()
   const participants = useParticipants()
   const callingState = useCallCallingState()
@@ -428,12 +432,10 @@ function LiveRoom({ page, joinedAs, onLeft }: { page: SpacePage; joinedAs: { isH
     }
   }
 
-  const remote = participants.filter((p) => !p.isLocalParticipant)
   const shownListeners = listeners.slice(0, 48)
 
   return (
     <>
-      <ParticipantsAudio participants={remote} />
 
       {/* Top bar */}
       <div className="flex items-center gap-2 px-5 pt-5 sm:px-7 sm:pt-6">
@@ -448,6 +450,15 @@ function LiveRoom({ page, joinedAs, onLeft }: { page: SpacePage; joinedAs: { isH
         <span className="ml-auto inline-flex items-center gap-1.5 rounded-full bg-white/[0.08] px-3 py-1.5 text-xs font-semibold text-white/80">
           <Users className="h-3.5 w-3.5" /> {participantCount}
         </span>
+        <button
+          type="button"
+          onClick={() => router.push(SPACES_PATH)}
+          aria-label="Minimise: keep listening while you browse"
+          title="Minimise: keep listening while you browse"
+          className="flex h-9 w-9 items-center justify-center rounded-full text-white/70 transition hover:bg-white/10 hover:text-white"
+        >
+          <Minimize className="h-4 w-4" />
+        </button>
         {page.space.group ? (
           <button type="button" onClick={() => void copyLink()} aria-label="Copy link" className="flex h-9 w-9 items-center justify-center rounded-full text-white/70 transition hover:bg-white/10 hover:text-white">
             <Link2 className="h-4 w-4" />
@@ -732,7 +743,6 @@ function MicCheck() {
   )
 }
 
-type Session = { client: StreamVideoClient; call: StreamCallHandle; isHost: boolean; canModerate: boolean }
 
 export function SpaceRoom({ spaceId }: { spaceId: string }) {
   const page = useQuery(spacesApi.get, { spaceId })
@@ -740,31 +750,12 @@ export function SpaceRoom({ spaceId }: { spaceId: string }) {
   const start = useAction(spacesApi.start)
   const cancel = useMutation(spacesApi.cancel)
   const toggleReminder = useMutation(spacesApi.toggleReminder)
-  const [session, setSession] = useState<Session | null>(null)
+  // The live Space lives in the Learn layout (ActiveSpace.tsx): leaving this page keeps it playing
+  const active = useActiveSpace()
+  const session = active.session?.spaceId === spaceId ? active.session : null
+  const disconnect = active.leave
   const [joining, setJoining] = useState<'listen' | 'start' | null>(null)
   const [left, setLeft] = useState<'left' | 'ended' | null>(null)
-  const sessionRef = useRef<Session | null>(null)
-  sessionRef.current = session
-
-  const disconnect = useCallback(async () => {
-    const s = sessionRef.current
-    if (!s) return
-    sessionRef.current = null
-    setSession(null)
-    try {
-      await s.call.leave()
-    } catch {
-      // already left
-    }
-    try {
-      await s.client.disconnectUser()
-    } catch {
-      // ignore
-    }
-  }, [])
-
-  // Leaving the page leaves the Space
-  useEffect(() => () => void disconnect(), [disconnect])
 
   const onLeft = useCallback(
     (ended: boolean) => {
@@ -779,6 +770,7 @@ export function SpaceRoom({ spaceId }: { spaceId: string }) {
   const enter = async (mode: 'listen' | 'start') => {
     if (!page) return
     wakeVoiceMeters()
+    wakeLoudAudio()
     setJoining(mode)
     try {
       if (mode === 'start') await start({ spaceId })
@@ -795,7 +787,7 @@ export function SpaceRoom({ spaceId }: { spaceId: string }) {
       await call.join()
       if (res.isHost) await call.microphone.enable().catch(() => toast.error('Allow the microphone so listeners can hear you.'))
       setLeft(null)
-      setSession({ client, call, isHost: res.isHost, canModerate: res.canModerate })
+      await active.start({ spaceId, title: page.space.title, host: page.space.host.name, client, call, isHost: res.isHost, canModerate: res.canModerate })
       playSound(mode === 'start' ? 'booked' : 'receive')
     } catch (err) {
       playSound('error')
@@ -931,6 +923,7 @@ export function SpaceRoom({ spaceId }: { spaceId: string }) {
                   {joining ? <Loader2 className="h-4 w-4 animate-spin" /> : <Radio className="h-4 w-4" />}
                   {due ? 'Start your Space' : 'Start now'}
                 </button>
+                <SpaceShareButton space={space} />
                 <button
                   type="button"
                   onClick={async () => {

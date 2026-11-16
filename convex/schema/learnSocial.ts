@@ -118,6 +118,14 @@ export const learnSocialTables = {
     addedAt: v.number(),
   }).index("by_user", ["userId"]),
 
+  // Super admins added before they had an account (owner 2026-11-16): the first sign-in with this
+  // (verified) email makes them a super admin (learnAdmins.ts claimLearnAdminInvite).
+  learnAdminInvites: defineTable({
+    email: v.string(), // lower-cased
+    addedBy: v.id("users"),
+    createdAt: v.number(),
+  }).index("by_email", ["email"]),
+
   // Small groups for group activities (Mary 2026-11-14): Learn admins create them and assign people.
   // Each group has a private community room (learnRooms kind "group") and can hold group-only Spaces.
   learnGroups: defineTable({

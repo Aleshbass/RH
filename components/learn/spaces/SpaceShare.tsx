@@ -6,7 +6,8 @@
  */
 
 import { useState } from 'react'
-import { Share2 } from '@/components/icons'
+import { toast } from 'sonner'
+import { Link2, Share2 } from '@/components/icons'
 import { cn } from '@/lib/utils'
 import { learnShareUrl, ShareSheet } from '../shareKit'
 import { spacePath } from '../social/socialApi'
@@ -15,7 +16,26 @@ type ShareableSpace = { id: string; title: string; status: string; group: unknow
 
 export function SpaceShareButton({ space, compact = false }: { space: ShareableSpace; compact?: boolean }) {
   const [open, setOpen] = useState(false)
-  if (space.group) return null
+  // A group-only Space: just the link, for the group's own chat (only members can open it)
+  if (space.group) {
+    const copy = async () => {
+      try {
+        await navigator.clipboard.writeText(learnShareUrl(spacePath(space.id)))
+        toast.success('Link copied. Only the group’s members can open it.')
+      } catch {
+        toast('Copy the link from the address bar')
+      }
+    }
+    return compact ? (
+      <button type="button" onClick={() => void copy()} aria-label="Copy link" className="flex h-9 w-9 items-center justify-center rounded-full text-white/70 transition hover:bg-white/10 hover:text-white">
+        <Link2 className="h-4 w-4" />
+      </button>
+    ) : (
+      <button type="button" onClick={() => void copy()} className="inline-flex h-12 items-center gap-2 rounded-full px-5 text-sm font-semibold text-white/85 ring-1 ring-inset ring-white/20 transition hover:bg-white/10">
+        <Link2 className="h-4 w-4" /> Copy link
+      </button>
+    )
+  }
   const host = space.host.name.split(' ')[0] || 'a Rehabify physio'
   const text =
     space.status === 'live'

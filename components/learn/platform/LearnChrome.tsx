@@ -52,12 +52,15 @@ import { simApi, SIMULATIONS_PATH } from '../sims/simApi'
 import { LEADERBOARD_PATH, PROGRESS_PATH } from '../points/pointsApi'
 import { PointsPill } from '../points/PointsPill'
 import { InviteCapture } from '../points/InviteCapture'
+import { ActiveSpaceProvider } from '../spaces/ActiveSpace'
 import { BadgeUnlock } from '../points/BadgeUnlock'
 
 const SUPPORT_EMAIL = 'support@physioaroundme.com'
 
 /** Learn pages that draw their own top bar (the MSK course app, one-tap links, certificate checks). */
 const OWN_TOP_BAR = /^\/(?:learn\/)?(?:course|start|verify)(?:\/|$)/
+// A Space fills the screen: no footer to scroll past (owner 2026-11-16)
+const NO_FOOTER = /^\/(?:learn\/)?spaces\/[^/]+\/?$/
 
 function Logo({ onDark = false }: { onDark?: boolean }) {
   return (
@@ -786,7 +789,8 @@ export function LearnHeader() {
   const closeSearch = useCallback(() => setSearchOpen(false), [])
   return (
     <header className="sticky top-0 z-40 border-b border-rh-ink/[0.06] bg-white">
-      <div className="mx-auto flex h-16 max-w-7xl items-center gap-2 px-4 sm:gap-3 sm:px-6">
+      {/* Fits a 360px phone: on very narrow screens the light/dark switch lives in the menu only (owner 2026-11-16: page shook sideways) */}
+      <div className="mx-auto flex h-16 max-w-7xl items-center gap-2 px-4 max-[379px]:px-3 sm:gap-3 sm:px-6">
         <Logo />
         <nav className="ml-3 hidden items-center lg:flex" aria-label="Learn">
           <ExploreMenu />
@@ -808,7 +812,7 @@ export function LearnHeader() {
           >
             <Search className="h-[18px] w-[18px]" />
           </button>
-          <ThemeToggle />
+          <ThemeToggle className="max-[399px]:hidden" />
           <AuthArea />
           <button
             type="button"
@@ -900,15 +904,18 @@ export function LearnFooter() {
 /** app/learn/layout.tsx: header and footer around every Learn page except those with their own top bar. */
 export function LearnShell({ children }: { children: ReactNode }) {
   const pathname = usePathname() || ''
-  if (OWN_TOP_BAR.test(pathname)) return <>{children}</>
+  // A live Space keeps playing across every Learn page (spaces/ActiveSpace.tsx)
+  if (OWN_TOP_BAR.test(pathname)) return <ActiveSpaceProvider>{children}</ActiveSpaceProvider>
   return (
-    <LearnerIdentityProvider>
-      <div className="flex min-h-screen flex-col bg-white">
-        <LearnHeader />
-        <InviteCapture />
-        <div className="flex-1">{children}</div>
-        <LearnFooter />
-      </div>
-    </LearnerIdentityProvider>
+    <ActiveSpaceProvider>
+      <LearnerIdentityProvider>
+        <div className="flex min-h-screen flex-col bg-white">
+          <LearnHeader />
+          <InviteCapture />
+          <div className="flex-1">{children}</div>
+          {!NO_FOOTER.test(pathname) && <LearnFooter />}
+        </div>
+      </LearnerIdentityProvider>
+    </ActiveSpaceProvider>
   )
 }

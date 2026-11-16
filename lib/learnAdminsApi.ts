@@ -22,7 +22,10 @@ export const learnAdminMeRef = makeFunctionReference<'query', Record<string, nev
   'learnAdmins:me'
 )
 export const learnAdminListRef = makeFunctionReference<'query', Record<string, never>, LearnAdminRow[]>('learnAdmins:list')
-export const learnAdminAddRef = makeFunctionReference<'mutation', { email: string }, { name: string; already: boolean }>('learnAdmins:add')
+export const learnAdminAddRef = makeFunctionReference<'mutation', { email: string }, { name: string; already: boolean; pending?: boolean }>('learnAdmins:add')
+/** Added before they had an account: they become super admins when they first sign in. */
+export const learnAdminPendingRef = makeFunctionReference<'query', Record<string, never>, { email: string; createdAt: number }[]>('learnAdmins:pending')
+export const learnAdminCancelInviteRef = makeFunctionReference<'mutation', { email: string }, null>('learnAdmins:cancelInvite')
 export const learnAdminRemoveRef = makeFunctionReference<'mutation', { userId: Id<'users'> }, null>('learnAdmins:remove')
 
 // ── Groups ────────────────────────────────────────────────────────────────────

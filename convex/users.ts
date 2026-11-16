@@ -12,6 +12,7 @@ import { normalizePhone } from "./helpers/partnerShared";
 import { assertSignupAllowed } from "./platformSettings";
 import { logSecurityEvent } from "./helpers/securityLog";
 import { claimTeamInvite } from "./teamAccess";
+import { claimLearnAdminInvite } from "./learnAdmins";
 import { ensureClinicNumber, ensureUserNumbers, findUserByRehabifyId } from "./helpers/rehabifyIds";
 import { matchesRehabifyId, parseRehabifyId } from "./helpers/rehabifyIdFormat";
 import { isClinicInviteApproval } from "./helpers/clinicApproval";
@@ -436,6 +437,10 @@ export const storeUserFromClerk = mutation({
       if (!existingUser.role && identity.emailVerified && typeof identity.email === "string") {
         await claimTeamInvite(ctx, existingUser._id, identity.email);
       }
+      // Added as a Learn super admin before they had an account
+      if (identity.emailVerified && typeof identity.email === "string") {
+        await claimLearnAdminInvite(ctx, existingUser._id, identity.email);
+      }
       return existingUser._id;
     } else {
       // Only Clerk's verified email is trusted here, never the client argument.
@@ -480,6 +485,7 @@ export const storeUserFromClerk = mutation({
       });
       // Invited as a blog writer or Learn instructor: becomes that role straight away
       await claimTeamInvite(ctx, newUserId, verifiedEmail);
+      await claimLearnAdminInvite(ctx, newUserId, verifiedEmail);
       if (args.referralPublicCode) {
         const created = await ctx.db.get(newUserId);
         if (created) await attributeUserToLink(ctx, created, args.referralPublicCode, "referral_link", { countSignup: true });
