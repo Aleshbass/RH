@@ -1806,6 +1806,27 @@ def hand_to_care_team(
     return CARE_TEAM_HANDOFF
 
 
+def booking_patient_id(session: Session, patient: Patient, conversation: Conversation) -> str | None:
+    """The Rehabify record the booking is for: the person they care for (their own managed
+    profile), or the phone owner. Never the phone owner's record for someone else."""
+    from app.triage.self_referral import SR_KEY, ensure_subject_record
+
+    sr = (conversation.booking_context or {}).get(SR_KEY) or {}
+    if sr.get("for_other"):
+        return ensure_subject_record(session, patient, conversation)
+    return _rh_patient_id(session, patient)
+
+
+def _booking_place(patient: Patient, conversation: Conversation) -> tuple[str | None, str | None]:
+    """Where the person being treated lives (for local matching)."""
+    from app.triage.self_referral import SR_KEY
+
+    subject = ((conversation.booking_context or {}).get(SR_KEY) or {}).get("subject") or {}
+    if (conversation.booking_context or {}).get(SR_KEY, {}).get("for_other") and not subject.get("place_same") and (subject.get("city") or subject.get("area")):
+        return subject.get("city") or None, subject.get("area") or None
+    return patient.city or None, patient.area or None
+
+
 def offer_named_physios(
     session: Session, conversation: Conversation, patient: Patient, extracted: ExtractedTriage, *,
     urgent: bool, language: str | None, intro: str, window: dict | None = None, physio_sex: str | None = None,
@@ -1820,7 +1841,8 @@ def offer_named_physios(
     ctx = dict(conversation.booking_context or {})
     lead = [{"text": intro}] if intro else []
     chosen = timing.window_from(window) or timing.Window(MATCH_WINDOW_HOURS, "in the next 24 hours", None, "soon")
-    rh_patient_id = _rh_patient_id(session, patient)
+    rh_patient_id = booking_patient_id(session, patient, conversation)
+    city, area = _booking_place(patient, conversation)
     tags = _required_specialties(extracted) or ["msk"]
     if not rh_patient_id:
         return _CANT_REACH, lead
@@ -1830,7 +1852,7 @@ def offer_named_physios(
         matches = configured_rh_client().match_physios(
             patient_id=rh_patient_id, assessment_id=str(_current_assessment(session, patient)), assessment_revision=1,
             required_specialties=tags, service_mode="online", actor=_rh_actor(patient, rh_patient_id),
-            city=patient.city or None, area=patient.area or None, latitude=patient.lat, longitude=patient.lng,
+            city=city, area=area, latitude=patient.lat, longitude=patient.lng,
             within_hours=chosen.within_hours, language=language, duration_minutes=INITIAL_CONSULT_MINUTES,
             urgent=urgent, limit=6, not_before_ms=chosen.not_before_ms,
             physio_sex=physio_sex if physio_sex in ("female", "male") else None,

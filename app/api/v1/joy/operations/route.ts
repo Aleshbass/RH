@@ -24,6 +24,8 @@ const schema = z.object({
     "patient_programme", "patient_log_exercise",
     // Additive (Nov 2026): the patient asked Joy for a person; admins are alerted
     "patient_request_callback",
+    // Additive (15 Nov 2026): booking for someone they care for (a managed care-circle profile)
+    "patient_add_cared_for",
     // Additive (Nov 2026): a pain and progress check-in from WhatsApp
     "patient_check_in",
     // Additive (Nov 2026): a question about the exercise plan, into the physio's Messages
@@ -42,7 +44,7 @@ const mutations = new Set([
   "physio_update_availability", "physio_session_note", "physio_visit_event", "physio_message_patient", "physio_feedback_request",
   "family_grant", "family_update_grant", "family_revoke_grant", "change_physio_request", "admin_escalation", "admin_verify_physio", "admin_reassign",
   "patient_record_consents", "patient_link_request", "patient_link_confirm", "patient_update_profile",
-  "patient_log_exercise", "patient_request_callback", "patient_check_in", "patient_ask_physio",
+  "patient_log_exercise", "patient_request_callback", "patient_add_cared_for", "patient_check_in", "patient_ask_physio",
   "patient_reschedule_booking", "patient_connect", "patient_message_physio", "patient_request_visit",
 ]);
 

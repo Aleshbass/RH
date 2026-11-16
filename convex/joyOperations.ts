@@ -7,6 +7,7 @@ import { recoveryPlanForJoy } from "./helpers/patientPlans";
 import { PATIENT_CONSENT_POLICIES, POLICIES, consentDocumentsForJoy } from "../lib/policies";
 import { assertJoyActorPersona } from "../lib/joy-integration/operationPersona";
 import { normalizePhone } from "./helpers/partnerShared";
+import { ensureUserNumbers } from "./helpers/rehabifyIds";
 import {
   LINK_CODE_MAX_ATTEMPTS, LINK_CODE_TTL_MS, LINK_REQUESTS_PER_HOUR, emailHint, hashLinkCode,
   isPlaceholderUser, linkableEmail, patientsByPhone, sixDigitCode,
@@ -40,6 +41,8 @@ type Operation =
   | "patient_programme" | "patient_log_exercise"
   // Additive (Nov 2026): the patient asked Joy for a person ("call me", "talk to someone")
   | "patient_request_callback"
+  // Additive (15 Nov 2026): booking for someone they care for (a child, a parent): a managed profile
+  | "patient_add_cared_for"
   // Additive (Nov 2026): a pain and progress check-in from WhatsApp, for the physio
   | "patient_check_in"
   // Additive (Nov 2026): a question about the physio's exercise plan, into the Messages chat
@@ -387,6 +390,54 @@ export const executeMutation = internalMutation({
       const row: any = await ctx.db.get(saved.checkInId);
       await audit(ctx, data, op, { actorUserId: patient._id, patientUserId: patient._id });
       return { saved: true, flagged: saved.flagged, has_physio: Boolean(row?.physiotherapistId) };
+    }
+    if (op === "patient_add_cared_for") {
+      // Someone on WhatsApp is booking for a person they care for (a child, an elderly parent).
+      // The person gets their own managed profile in the caregiver's care circle, as Care circle →
+      // "Add someone I care for" does on the website, so their visits, notes and payments never
+      // land on the caregiver's record (Nov 2026: they used to overwrite it).
+      // { patient_id (the caregiver), first_name, age_years?, sex?, relationship?, guardian_confirmed? }
+      const caregiver = await patientForActor(ctx, String(data.patient_id), data.actor);
+      const first = String(data.first_name ?? "").replace(/\s+/g, " ").trim().slice(0, 60);
+      if (!first) throw new ConvexError({ code: "INVALID", message: "first_name is required" });
+      const grants = (await ctx.db.query("familyAccessGrants")
+        .withIndex("by_family_member_user_id", (q: any) => q.eq("familyMemberUserId", caregiver._id))
+        .take(50)).filter((grant: any) => grant.managed && grant.status === "active");
+      // The same person booked again: reuse their profile
+      for (const grant of grants) {
+        const person: any = await ctx.db.get(grant.patientUserId);
+        if (person && String(person.firstName ?? "").trim().toLowerCase() === first.toLowerCase()) {
+          await audit(ctx, data, op, { actorUserId: caregiver._id, patientUserId: person._id, reused: true });
+          return { patient_id: person._id, reused: true };
+        }
+      }
+      if (grants.length >= 6) throw new ConvexError({ code: "CARE_CIRCLE_FULL", message: "Up to 6 people can be managed" });
+      const now = Date.now();
+      const sex = ["female", "male", "other", "prefer_not_to_say"].includes(String(data.sex)) ? data.sex : undefined;
+      const age = typeof data.age_years === "number" && data.age_years >= 0 && data.age_years < 120 ? Math.floor(data.age_years) : undefined;
+      const relationship = String(data.relationship ?? "").replace(/\s+/g, " ").trim().slice(0, 40) || "Someone I care for";
+      const code = Array.from(crypto.getRandomValues(new Uint8Array(12)), (b) => b.toString(36).padStart(2, "0")).join("").slice(0, 20);
+      const personId = await ctx.db.insert("users", {
+        clerkId: `managed_${code}`, firstName: first, role: "patient", onboarded: true, status: "active", joinedAt: now,
+      } as any);
+      await ensureUserNumbers(ctx, personId);
+      const caregiverProfile: any = caregiver.patientProfileId ? await ctx.db.get(caregiver.patientProfileId) : null;
+      const profileId = await ctx.db.insert("patientProfiles", {
+        userId: personId, gender: sex, city: caregiverProfile?.city,
+        ...(age !== undefined ? { ageYears: age, ageRecordedAt: now } : {}),
+      } as any);
+      await ctx.db.patch(personId, { patientProfileId: profileId } as any);
+      await ctx.db.insert("familyAccessGrants", {
+        patientUserId: personId, familyMemberUserId: caregiver._id, relationship,
+        permissions: ["view_progress", "book", "pay", "message"], status: "active", grantedAt: now,
+        managed: true, source: "joy", updatedAt: now,
+      });
+      await audit(ctx, data, op, {
+        actorUserId: caregiver._id, patientUserId: personId, relationship,
+        // A child (under 18): the caregiver confirmed on WhatsApp that they're the parent or guardian
+        guardianConfirmed: data.guardian_confirmed === true, minor: age !== undefined && age < 18,
+      });
+      return { patient_id: personId, reused: false };
     }
     if (op === "patient_request_callback") {
       // The patient needs a person. Every admin gets a bell + push saying who to call and why.

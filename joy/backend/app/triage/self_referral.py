@@ -345,6 +345,34 @@ def parse_profile(text: str, missing: list[str]) -> dict[str, Any]:
 _SEXES = ("female", "male", "other", "prefer_not_to_say")
 
 
+# Booking for someone they care for (a child, a parent): that person's details live in
+# sr["subject"] and on their own managed Rehabify profile (care circle), never over the phone
+# owner's record. Under 18: a parent or guardian must agree (Nov 2026 audit).
+ADULT_AGE = 18
+_FOR_OTHER_RE = re.compile(
+    r"\b(?:for|on behalf of)\s+(?:my|our)\s+(mum|mom|mother|mama|dad|father|papa|son|daughter|child|kid|baby|boy|girl|"
+    r"wife|husband|brother|sister|grand(?:ma|pa|mother|father|son|daughter)|aunt|aunty|uncle|niece|nephew|friend|"
+    r"neighbou?r|relative|parent)\b",
+    re.I,
+)
+_WHO_CARE_WORDS = ("someone i care for", "someone else", "care for", "for my", "for someone", "my child", "my mum", "my mother",
+                   "my dad", "my father", "my son", "my daughter", "my wife", "my husband")
+_WHO_NEW_WORDS = ("new person", "it's me", "its me", "me, a new person", "myself", "me")
+_GUARDIAN_YES = "i'm the parent or guardian"
+_GUARDIAN_NEEDED_SELF = (
+    "No problem. A parent or guardian needs to agree before I can book physiotherapy for someone under 18. "
+    "When they're with you, message me again, or ask them to message me and choose *Someone I care for*."
+)
+_GUARDIAN_NEEDED_PROXY = (
+    "Thank you for telling me. A parent or legal guardian needs to agree before I can book physiotherapy for "
+    "someone under 18. Please ask their parent or guardian to message me, or reply *CALL ME* and our care team will help."
+)
+
+
+def _subject(sr: dict | None) -> dict:
+    return dict((sr or {}).get("subject") or {})
+
+
 def profile_missing(patient: Patient, sr: dict | None = None) -> list[str]:
     """What the profile still needs, in the order Joy asks (one question per message).
 
@@ -355,10 +383,31 @@ def profile_missing(patient: Patient, sr: dict | None = None) -> list[str]:
     missing = []
     if sr is not None and sr.get("known_name") and not sr.get("identity_confirmed"):
         missing.append("confirm")
+    if sr is not None and sr.get("who_pending"):
+        return [*missing, "who"]
+    if sr is not None and sr.get("for_other"):
+        subject = _subject(sr)
+        if not subject.get("name"):
+            missing.append("s_name")
+        if subject.get("age") is None:
+            missing.append("s_age")
+        elif subject["age"] < ADULT_AGE and not subject.get("guardian_confirmed"):
+            missing.append("guardian")
+        if subject.get("sex") not in _SEXES and not subject.get("sex_skipped"):
+            missing.append("s_sex")
+        if not (subject.get("city") or subject.get("area") or subject.get("place_same")):
+            missing.append("s_place")
+        if "physio_pref" not in sr:
+            missing.append("physio_pref")
+        return missing
     if not (patient.name or "").strip():
         missing.append("name")
     if patient.age is None and patient.date_of_birth is None:
         missing.append("age")
+    elif sr is not None and isinstance(patient.age, int) and patient.age < ADULT_AGE:
+        guardian = sr.get("guardian") or {}
+        if not guardian.get("confirmed_at"):
+            missing.append("guardian_name" if guardian.get("pending_name") else "guardian")
     if (patient.gender or "") not in _SEXES and not (sr or {}).get("sex_skipped"):
         missing.append("sex")
     if not (patient.area or patient.city or patient.location):
@@ -378,6 +427,12 @@ _ASK_MISSING = {
     "sex": "Are you female or male?",
     "place": "Which state and area are you in? For example, *Bodija, Ibadan*. You can also tap *Send location*.",
     "physio_pref": "Would you prefer a female or male physiotherapist?",
+    "who": "Who would you like to book for?",
+    "s_name": "Of course. What's their first name?",
+    "s_age": "How old are they? A number is fine.",
+    "s_sex": "Are they female or male?",
+    "s_place": "Which state and area do they live in? For example, *Bodija, Ibadan*.",
+    "guardian_name": "Thank you. What's your name (the parent or guardian)?",
 }
 _YES_WORDS = {"yes", "yeah", "yep", "y", "yes that's me", "that's me", "it's me", "its me", "correct", "right",
               "yes it is", "yes i am", "sure", "ok", "okay", "yes, that's me", "na me", "yes na me"}
@@ -403,8 +458,27 @@ def _parse_physio_pref(text: str) -> str | None:
     return _parse_sex(plain)
 
 
-def _profile_prompt(field: str, patient: Patient) -> tuple[str, dict | None]:
+def _profile_prompt(field: str, patient: Patient, sr: dict | None = None) -> tuple[str, dict | None]:
     """The question for one profile field, with its buttons."""
+    if field == "who":
+        return _ASK_MISSING["who"], _buttons(("someone i care for", "Someone I care for"), ("new person", "Me, a new person"))
+    if field == "guardian":
+        subject = _subject(sr)
+        if (sr or {}).get("for_other"):
+            who = subject.get("name") or "they"
+            return (f"As {who} is under 18, are you their parent or legal guardian?",
+                    _buttons(("yes", "Yes, I am"), ("no", "No")))
+        return ("Thanks. As you're under 18, a parent or guardian needs to agree before I can book. "
+                "Is your parent or guardian with you now?",
+                _buttons((_GUARDIAN_YES, "I'm the parent/guardian"), ("not now", "Not now")))
+    if field == "s_sex":
+        return _ASK_MISSING["s_sex"], _buttons(("female", "Female"), ("male", "Male"))
+    if field == "s_place":
+        if patient.area or patient.city:
+            return _ASK_MISSING["s_place"], _buttons(("same as me", "Same area as me"))
+        return _ASK_MISSING["s_place"], None
+    if field in ("s_name", "s_age", "guardian_name"):
+        return _ASK_MISSING[field], None
     if field == "confirm":
         first = _first_name(patient) or "you"
         place = ", ".join(part for part in (patient.area, patient.city) if part)
@@ -446,7 +520,9 @@ def needs_front(patient: Patient, sr: dict | None = None) -> list[str]:
         steps.append(LANGUAGE)
     if patient.care_consent_at is None:
         steps.append(CONSENT)
-    if profile_missing(patient, sr if sr is not None else {}) and not (sr or {}).get("profile_skipped"):
+    missing = profile_missing(patient, sr if sr is not None else {})
+    # A parent's or guardian's agreement for someone under 18 is never skipped
+    if missing and (not (sr or {}).get("profile_skipped") or {"guardian", "guardian_name", "who"} & set(missing)):
         steps.append(PROFILE)
     return steps
 
@@ -501,6 +577,73 @@ def _sync_profile(session: Session, patient: Patient) -> None:
         logger.warning("joy_sr_profile_not_synced", exc_info=True)
 
 
+def _alert_number_changed(session: Session, patient: Patient) -> None:
+    """A different person now uses this number: the care team updates the record. Never raises."""
+    try:
+        from app.admin.escalation_router import route_escalation
+
+        route_escalation(session, "callback", {
+            "patient_id": str(patient.id), "phone": patient.phone_e164, "role": "patient",
+            "text": f"Says they are not {_first_name(patient) or 'the saved person'}: this number may now be someone else's. "
+                    "Please update the record before they book.",
+        })
+    except Exception:
+        logger.warning("joy_number_changed_alert_failed", exc_info=True)
+
+
+def ensure_subject_record(session: Session, patient: Patient, conversation: Conversation, *, sr: dict | None = None) -> str | None:
+    """The Rehabify record of the person they care for, made as a managed care-circle profile the
+    first time (RH patient_add_cared_for). Events about it reach this chat. None if RH can't be
+    reached (the booking then says so and nothing is booked on the wrong record)."""
+    from sqlalchemy import select
+
+    from app.booking.booking_flow import _rh_patient_id
+    from app.integrations.rh_client import RHActor, RHIntegrationError, configured_rh_client
+    from app.models.rh_identity_mapping import RHIdentityMapping
+
+    context = dict(conversation.booking_context or {})
+    state = sr if sr is not None else dict(context.get(SR_KEY) or {})
+    subject = _subject(state)
+    if subject.get("rh_patient_id"):
+        return str(subject["rh_patient_id"])
+    caregiver_id = _rh_patient_id(session, patient)
+    if not caregiver_id or not subject.get("name"):
+        return None
+    data = {k: v for k, v in {
+        "patient_id": caregiver_id, "first_name": subject.get("name"),
+        "age_years": subject.get("age") if isinstance(subject.get("age"), int) else None,
+        "sex": subject.get("sex") if subject.get("sex") in ("female", "male") else None,
+        "relationship": (subject.get("relationship") or "").capitalize() or None,
+        "guardian_confirmed": True if subject.get("guardian_confirmed") else None,
+    }.items() if v is not None}
+    try:
+        result = configured_rh_client().operational_mutation(
+            "patient_add_cared_for",
+            actor=RHActor(persona="patient", sender_phone=patient.phone_e164, rh_user_id=caregiver_id),
+            data=data, idempotency_key=f"joy-cared-for-{patient.id}-{str(subject.get('name')).casefold()}",
+        )
+    except RHIntegrationError as error:
+        logger.warning("joy_cared_for_not_created code=%s", error.code)
+        return None
+    rh_id = str(result.get("patient_id") or "")
+    if not rh_id:
+        return None
+    subject["rh_patient_id"] = rh_id
+    state["subject"] = subject
+    if sr is None:
+        context[SR_KEY] = state
+        conversation.booking_context = context
+    # RH events about this person (payment, confirmation, reminders) reach the caregiver's chat
+    if session.scalar(select(RHIdentityMapping).where(RHIdentityMapping.rh_record_id == rh_id)) is None:
+        session.add(RHIdentityMapping(persona=f"cared:{rh_id[-24:]}", joy_person_id=patient.id, rh_record_id=rh_id))
+    session.flush()
+    append(session, kind=AuditKind.TRIAGE, actor_phone=patient.phone_e164, person_id=patient.id,
+           payload={"event": "cared_for_profile", "relationship": subject.get("relationship"),
+                    "minor": isinstance(subject.get("age"), int) and subject["age"] < ADULT_AGE,
+                    "guardian_confirmed": bool(subject.get("guardian_confirmed"))})
+    return rh_id
+
+
 def _apply_place(patient: Patient, city: str | None, area: str | None) -> None:
     if city:
         patient.city = city
@@ -522,7 +665,7 @@ def _next_front(session: Session, patient: Patient, conversation: Conversation, 
         field = profile_missing(patient, sr)[0]
         sr["asking"] = field
         _save(conversation, context, sr, PROFILE)
-        ask, menu = _profile_prompt(field, patient)
+        ask, menu = _profile_prompt(field, patient, sr)
         return Step("reply", lead + ask, menu)
     sr["front_done_at"] = datetime.now(timezone.utc).isoformat()
     story = (sr.pop("opening_story", None) or "").strip()
@@ -634,18 +777,80 @@ def front_turn(
         field = sr.get("asking") if sr.get("asking") in missing else (missing[0] if missing else None)
         prefix = ""
         got = bool(pinned)
+        # "It's for my mum": booking for someone they care for, whatever was being asked
+        for_other = _FOR_OTHER_RE.search(user_text or "")
+        if for_other and not sr.get("for_other") and field in ("confirm", "who", "name", "age"):
+            sr["for_other"] = True
+            sr["subject"] = {"relationship": for_other.group(1).lower()}
+            sr["identity_confirmed"] = True
+            sr.pop("who_pending", None)
+            prefix = "Of course, I can help you book for them."
+            field, got = None, True
         if field == "confirm":
             if text in _YES_WORDS or text.startswith("yes"):
                 sr["identity_confirmed"] = True
                 got = True
             elif text in _NO_WORDS or text.startswith("no"):
-                # Someone else has this phone: take their own details, and use only those
-                for attr in ("name", "age", "date_of_birth", "gender", "city", "area", "location"):
-                    setattr(patient, attr, None)
+                # Someone else is using this phone. Never wipe or overwrite the saved person
+                # (Nov 2026: their details used to be replaced on Rehabify too): ask who it's for.
                 sr["identity_confirmed"] = True
-                sr["identity_changed"] = True
+                sr["who_pending"] = True
                 prefix = "Thanks for letting me know."
                 got = True
+        elif field == "who":
+            if any(word in text for word in _WHO_CARE_WORDS):
+                sr["for_other"] = True
+                sr["subject"] = _subject(sr)
+                sr.pop("who_pending", None)
+                got = True
+            elif text in _WHO_NEW_WORDS or text.startswith("new") or text.startswith("me"):
+                # This number belongs to someone else on Rehabify: a person sorts out the record
+                # rather than Joy overwriting theirs.
+                if not sr.get("new_person_alerted"):
+                    sr["new_person_alerted"] = True
+                    _alert_number_changed(session, patient)
+                _save(conversation, context, sr, PROFILE)
+                return Step("reply", (
+                    "Thanks. This number is saved for someone else, so I've asked our care team to update it before "
+                    "I book anything. Someone will message you here shortly.\n\n"
+                    "If you're booking for someone you care for instead, tap *Someone I care for*."
+                ), _buttons(("someone i care for", "Someone I care for")))
+        elif field == "guardian":
+            if sr.get("for_other"):
+                if text in _YES_WORDS or text.startswith("yes"):
+                    subject = _subject(sr)
+                    subject["guardian_confirmed"] = True
+                    subject["guardian_confirmed_at"] = datetime.now(timezone.utc).isoformat()
+                    sr["subject"] = subject
+                    got = True
+                elif text in _NO_WORDS or text.startswith("no"):
+                    _save(conversation, context, sr, PROFILE)
+                    return Step("reply", _GUARDIAN_NEEDED_PROXY)
+            elif text in _NO_WORDS or text in {"not now", "later"} or text.startswith("no") or text.startswith("not "):
+                _save(conversation, context, sr, PROFILE)
+                return Step("reply", _GUARDIAN_NEEDED_SELF)
+            elif text in {_GUARDIAN_YES, "yes", "yes i am", "i am the parent", "i'm the parent", "i am the guardian"} or "parent" in text or "guardian" in text:
+                sr["guardian"] = {"pending_name": True}
+                got = True
+        elif field == "guardian_name":
+            name = (user_text or "").strip()
+            if 1 < len(name) <= 80:
+                sr["guardian"] = {"name": name[:80], "confirmed_at": datetime.now(timezone.utc).isoformat()}
+                append(session, kind=AuditKind.POLICY, actor_phone=patient.phone_e164, person_id=patient.id,
+                       payload={"event": "guardian_agreed", "for": "self", "conversation_id": str(conversation.id)})
+                got = True
+        elif field == "s_sex":
+            sex = _parse_sex(user_text)
+            if sex:
+                subject = _subject(sr)
+                subject["sex"] = sex
+                sr["subject"] = subject
+                got = True
+        elif field == "s_place" and (text in {"same as me", "same", "same area", "same area as me"} or text.startswith("same")):
+            subject = _subject(sr)
+            subject["place_same"] = True
+            sr["subject"] = subject
+            got = True
         elif field == "sex":
             sex = _parse_sex(user_text)
             if sex:
@@ -656,6 +861,19 @@ def front_turn(
             if pref:
                 sr["physio_pref"] = pref
                 got = True
+        if field in ("s_name", "s_age", "s_place") and not pinned:
+            # The person they care for: "Tobi, 8, Yaba" fills what's still missing
+            core = [item[2:] for item in ("s_name", "s_age", "s_place") if item in missing]
+            found = parse_profile(user_text, core)
+            subject = _subject(sr)
+            if found.get("name") and "s_name" in missing:
+                subject["name"] = found["name"]
+            if found.get("age") and "s_age" in missing:
+                subject["age"] = int(found["age"])
+            if (found.get("city") or found.get("area")) and "s_place" in missing:
+                subject["city"], subject["area"] = found.get("city"), found.get("area")
+            sr["subject"] = subject
+            got = got or field[2:] in found or (field == "s_place" and bool(found.get("city") or found.get("area")))
         if field in ("name", "age", "place") and not pinned:
             # Their answer, and anything else they typed with it ("Ada, 34, Yaba")
             core = [item for item in ("name", "age", "place") if item in missing]
@@ -679,6 +897,16 @@ def front_turn(
                 sr["physio_pref"] = "none"
             elif field == "confirm" and tries >= 2:
                 sr["identity_confirmed"] = True
+            elif field == "s_sex" and tries >= 2:
+                subject = _subject(sr)
+                subject["sex_skipped"] = True
+                sr["subject"] = subject
+            elif field in ("s_name", "s_age", "s_place"):
+                attempts = int(sr.get("profile_attempts") or 0) + 1
+                sr["profile_attempts"] = attempts
+                if attempts >= 3:
+                    sr["profile_skipped"] = True
+                    sr["profile_missing"] = profile_missing(patient, sr)
             elif field in ("name", "age", "place"):
                 attempts = int(sr.get("profile_attempts") or 0) + 1
                 sr["profile_attempts"] = attempts
@@ -690,8 +918,12 @@ def front_turn(
             append(session, kind=AuditKind.TRIAGE, actor_phone=patient.phone_e164, person_id=patient.id,
                    payload={"event": "self_referral_profile", "has_age": patient.age is not None, "city": patient.city,
                             "sex": patient.gender, "physio_pref": sr.get("physio_pref"),
-                            "identity_changed": bool(sr.get("identity_changed"))})
-            _sync_profile(session, patient)
+                            "identity_changed": bool(sr.get("identity_changed")), "for_other": bool(sr.get("for_other"))})
+            if sr.get("for_other"):
+                # Their own managed profile on Rehabify; the phone owner's record is left alone
+                ensure_subject_record(session, patient, conversation, sr=sr)
+            else:
+                _sync_profile(session, patient)
         return _next_front(session, patient, conversation, context, sr, prefix=prefix)
 
     return None
@@ -1234,7 +1466,8 @@ _LANGUAGE_NAMES = {"en": "English", "pcm": "Pidgin", "yo": "Yorùbá", "ig": "Ig
 
 
 def physio_summary(patient: Patient, extracted: ExtractedTriage, sr: dict, *, appointment: str | None = None) -> str:
-    name = (patient.name or "").strip()
+    subject = _subject(sr) if sr.get("for_other") else {}
+    name = (subject.get("name") or patient.name or "").strip()
     parts = name.split()
     display = f"{parts[0][:1]}. {parts[-1]}" if len(parts) > 1 else (name or "Patient")
     answers = sr.get("answers") or {}
@@ -1251,8 +1484,9 @@ def physio_summary(patient: Patient, extracted: ExtractedTriage, sr: dict, *, ap
               "no": "No effect on sleep, work or daily activities"}.get(str(answers.get("impact") or ""), None)
     if impact is None and extracted.functional_limitations:
         impact = "; ".join(extracted.functional_limitations)
+    age = subject.get("age") if subject else patient.age
     lines = [
-        f"New self-referral — {display}{f', {patient.age}' if patient.age else ''}",
+        f"New self-referral — {display}{f', {age}' if age else ''}",
         "Triage outcome: " + ("Urgent clinician review (earliest available)" if sr.get("outcome") == "urgent" else "Routine MSK physiotherapy"),
         f"Presenting issue: {issue}",
         f"Pain today: {str(pain).capitalize() if pain else 'Not stated'}",
@@ -1264,8 +1498,16 @@ def physio_summary(patient: Patient, extracted: ExtractedTriage, sr: dict, *, ap
     if answers.get("seen"):
         lines.append(f"Seen a doctor or physio before: {answers['seen']}")
     lines.append(f"Preferred language: {_LANGUAGE_NAMES.get(patient.preferred_language or '', 'English')}")
-    if patient.location:
-        lines.append(f"Area: {patient.location}")
+    place = ", ".join(p for p in (subject.get("area"), subject.get("city")) if p) if subject and not subject.get("place_same") else patient.location
+    if place:
+        lines.append(f"Area: {place}")
+    if subject:
+        relation = f" ({subject['relationship']})" if subject.get("relationship") else ""
+        lines.append(f"Booked on WhatsApp by {_first_name(patient) or 'a family member'}{relation}, who is the contact for this visit.")
+        if subject.get("guardian_confirmed"):
+            lines.append("Under 18: the person booking confirmed they are the parent or legal guardian.")
+    elif (sr.get("guardian") or {}).get("confirmed_at"):
+        lines.append(f"Under 18: parent or guardian {sr['guardian'].get('name') or ''} agreed on WhatsApp.".replace("  ", " "))
     if appointment:
         lines.append(f"Consultation: {appointment}")
     return "\n".join(lines)

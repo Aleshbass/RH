@@ -94,14 +94,15 @@ def test_a_known_name_is_confirmed_before_it_is_used(db_session, known_patient, 
     assert sex.reply_text == "Are you female or male?"
 
 
-def test_someone_else_on_the_phone_gives_their_own_details(db_session, known_patient, rh):
+def test_someone_else_on_the_phone_is_asked_who_it_is_for(db_session, known_patient, rh):
+    # Nov 2026: the saved person is never wiped or overwritten (tests/test_cared_for.py)
     _turn(db_session, known_patient, STORY, "Hi")
     _turn(db_session, known_patient, STORY, "1")
     _turn(db_session, known_patient, STORY, "I agree")
-    name = _turn(db_session, known_patient, STORY, "No")
-    assert name.reply_text == "Thanks for letting me know.\n\nWhat's your first name?"
+    who = _turn(db_session, known_patient, STORY, "No")
+    assert who.reply_text == "Thanks for letting me know.\n\nWho would you like to book for?"
     patient = db_session.get(Patient, known_patient.person_id)
-    assert (patient.name, patient.age, patient.city) == (None, None, None)
+    assert (patient.name, patient.age, patient.city) == ("Simidara", 25, "Ibadan")
 
 
 def test_a_physio_preference_reaches_matching(db_session, new_patient, rh):

@@ -225,10 +225,7 @@ async def receive_event(request: Request, settings: Settings = Depends(get_setti
         data = payload.get("data") or {}
         rh_patient_id = str(data.get("patient_id") or "")
         message = str(data.get("message") or "").strip()
-        mapping = session.scalar(select(RHIdentityMapping).where(
-            RHIdentityMapping.persona == "patient", RHIdentityMapping.rh_record_id == rh_patient_id,
-        ))
-        patient = session.get(Patient, mapping.joy_person_id) if mapping else None
+        patient = _patient_for_rh_id(session, rh_patient_id)  # a cared-for person's reaches the caregiver
         if patient and message and len(message) <= 2000:
             enqueue_booking_confirmed(patient.phone_e164, str(data.get("booking_id") or ""), f"Message from your physiotherapist: {message}")
             append(session, kind=AuditKind.BOOKING, actor_phone="rh-service", person_id=patient.id,
@@ -783,10 +780,7 @@ def _prepare_replacement(session: Session, data: dict) -> None:
     rh_patient_id = str(data.get("patient_id") or "")
     if not booking_id or not rh_patient_id:
         return
-    mapping = session.scalar(select(RHIdentityMapping).where(
-        RHIdentityMapping.persona == "patient", RHIdentityMapping.rh_record_id == rh_patient_id,
-    ))
-    patient = session.get(Patient, mapping.joy_person_id) if mapping else None
+    patient = _patient_for_rh_id(session, rh_patient_id)  # a cared-for person's reaches the caregiver
     if patient is None:
         return
     try:
