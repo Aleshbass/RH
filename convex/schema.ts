@@ -284,12 +284,44 @@ export default defineSchema({
     switchedOnAt: v.optional(v.number()),
     switchedOnBy: v.optional(v.id("users")),
     cancelledAt: v.optional(v.number()),
+    // The clinic chose its plan itself (clinicSelfServe.ts), rather than an admin setting it up
+    chosenBy: v.optional(v.id("users")),
+    chosenAt: v.optional(v.number()),
+    // The clinic cancelled: billing stops when the current (paid) period ends
+    cancelAtPeriodEnd: v.optional(v.boolean()),
+    cancelRequestedAt: v.optional(v.number()),
     updatedBy: v.optional(v.id("users")),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
     .index("by_clinic", ["clinicId"])
     .index("by_status", ["status"]),
+
+  // The card a clinic saved for its plan (clinicSelfServe.ts). Rehabify charges it on each
+  // invoice's issue day with Paystack charge_authorization. The authorization code is a
+  // server-only secret: never return it to a page.
+  clinicBillingCards: defineTable({
+    clinicId: v.id("clinics"),
+    status: v.union(v.literal("active"), v.literal("removed")),
+    authorizationCode: v.string(),
+    // The Paystack customer email the card belongs to (charge_authorization needs the same one)
+    email: v.string(),
+    signature: v.optional(v.string()),
+    brand: v.optional(v.string()),
+    last4: v.optional(v.string()),
+    expMonth: v.optional(v.string()),
+    expYear: v.optional(v.string()),
+    bank: v.optional(v.string()),
+    // The small card check charged to save it, and its refund
+    checkReference: v.optional(v.string()),
+    checkAmountKobo: v.optional(v.number()),
+    checkRefundedAt: v.optional(v.number()),
+    checkRefundError: v.optional(v.string()),
+    addedBy: v.optional(v.id("users")),
+    addedAt: v.number(),
+    removedAt: v.optional(v.number()),
+    removedBy: v.optional(v.id("users")),
+  }).index("by_clinic_status", ["clinicId", "status"]),
 
   // Rehabify's invoices to a clinic: one per billing period, issued at the start of the period
   // and payable within 7 days. Paid through Paystack (CLINICSUB_ references) or marked paid by
@@ -318,6 +350,11 @@ export default defineSchema({
     paystackReference: v.optional(v.string()),
     authorizationUrl: v.optional(v.string()),
     checkoutCreatedAt: v.optional(v.number()),
+    // Charging the clinic's saved card (clinicSelfServe.chargeSavedCard): up to 3 tries
+    autoChargeAttempts: v.optional(v.number()),
+    lastAutoChargeAt: v.optional(v.number()),
+    lastAutoChargeStatus: v.optional(v.string()),
+    lastAutoChargeMessage: v.optional(v.string()),
     paidAt: v.optional(v.number()),
     paidReference: v.optional(v.string()),
     paidAmountKobo: v.optional(v.number()),

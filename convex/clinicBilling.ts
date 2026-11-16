@@ -36,6 +36,17 @@ import { issueReceipt } from "./helpers/receipts";
 import { createRefundRequest } from "./helpers/refunds";
 import { startOfZonedDay, zonedDateKey } from "./helpers/lagosTime";
 import {
+  CARD_CHECK_REFERENCE,
+  activeClinicCard,
+  cardLabel,
+  chargeSavedCardRef,
+  paystackMetadata,
+  saveClinicCard,
+  subscriptionForCardCheck,
+  wantsAutoChargeRetry,
+  type PaystackAuthorization,
+} from "./helpers/clinicCards";
+import {
   CLINIC_PLAN_PAGE,
   DAY_MS,
   LAUNCH_BILLING_FROM_MS,
@@ -825,7 +836,7 @@ const isWhole = (value: number | undefined, min: number, max: number): value is 
   typeof value === "number" && Number.isInteger(value) && value >= min && value <= max;
 
 /** Emails the clinic owner and the clinic's contact address (once each). */
-async function emailClinic(
+export async function emailClinic(
   ctx: MutationCtx,
   clinic: Doc<"clinics">,
   message: { subject: string; heading: string; paragraphs: string[]; buttonLabel?: string; buttonPath?: string }
@@ -912,6 +923,9 @@ async function insertSubscriptionInvoice(
     updatedAt: now,
   });
   const overage = lines.find((line) => line.kind === "overage");
+  // A saved card is charged today (clinicSelfServe.chargeSavedCard); the receipt follows
+  const card = await activeClinicCard(ctx, clinic._id);
+  if (card) await ctx.scheduler.runAfter(0, chargeSavedCardRef, { invoiceId: id });
   await emailClinic(ctx, clinic, {
     subject: `Your Rehabify invoice ${number} (${naira(amountKobo)})`,
     heading: "Your Rehabify invoice",
@@ -922,9 +936,11 @@ async function insertSubscriptionInvoice(
             `It includes ${overage.quantity} active patient programme${overage.quantity === 1 ? "" : "s"} over your allowance last period, at ${naira(overage.unitKobo)} each.`,
           ]
         : []),
-      `Please pay by ${longDate(dueAt)}. You can pay by card or bank transfer from your dashboard.`,
+      card
+        ? `We're charging ${cardLabel(card)} today, so there's nothing for you to do. Your receipt follows once it goes through.`
+        : `Please pay by ${longDate(dueAt)}. You can pay by card or bank transfer from your dashboard.`,
     ],
-    buttonLabel: "View and pay",
+    buttonLabel: card ? "View invoice" : "View and pay",
     buttonPath: CLINIC_PLAN_PAGE,
   });
   return id;
@@ -1226,6 +1242,30 @@ export const processClinicSubscription = internalMutation({
       // A missed day catches up; anything further behind is left for the next runs
       for (let guard = 0; guard < 3 && sub.currentPeriodStart !== undefined && sub.currentPeriodEnd !== undefined && sub.currentPeriodEnd <= now; guard++) {
         const closed = { start: sub.currentPeriodStart, end: sub.currentPeriodEnd };
+        // The clinic cancelled (clinicSelfServe.cancelClinicPlan): the paid period has ended, so stop
+        if (sub.cancelAtPeriodEnd) {
+          await ctx.db.patch(sub._id, { status: "cancelled", cancelledAt: now, cancelAtPeriodEnd: undefined, updatedAt: now });
+          await ctx.db.insert("systemLogs", {
+            type: "billing",
+            action: "clinic_subscription_status",
+            timestamp: now,
+            clinicId: sub.clinicId,
+            targetEntityType: "clinic_subscription",
+            targetEntityId: String(sub._id),
+            details: { from: sub.status, to: "cancelled", reason: "cancelled_by_clinic" },
+          });
+          await emailClinic(ctx, clinic, {
+            subject: `Your ${planName(sub.plan)} plan has ended`,
+            heading: "Your plan has ended",
+            paragraphs: [
+              `As you asked, ${clinic.name}'s ${planName(sub.plan)} plan ended on ${longDate(closed.end)}, and your card won't be charged again.`,
+              "Your records are still here, and you can export them or choose a plan again at any time.",
+            ],
+            buttonLabel: "Open your plan",
+            buttonPath: CLINIC_PLAN_PAGE,
+          });
+          return { skipped: false, cancelled: true };
+        }
         const periodNumber = (sub.periodNumber ?? 1) + 1;
         await ctx.db.patch(sub._id, {
           currentPeriodStart: closed.end,
@@ -1276,7 +1316,10 @@ export const processClinicSubscription = internalMutation({
     }
 
     // 3. Late payment: reminder on the due date, written notice 14 days after it
+    const savedCard = await activeClinicCard(ctx, clinic._id);
     for (const inv of await openSubscriptionInvoices(ctx, clinic._id)) {
+      // A declined saved card is tried again 2 days later, 3 times in all
+      if (savedCard && wantsAutoChargeRetry(inv, now)) await ctx.scheduler.runAfter(0, chargeSavedCardRef, { invoiceId: inv._id });
       if (inv.remindersSent === 0 && now >= startOfZonedDay(inv.dueAt)) {
         await ctx.db.patch(inv._id, { remindersSent: 1, reminderSentAt: now, updatedAt: now });
         await emailClinic(ctx, clinic, {
@@ -1340,7 +1383,15 @@ export const billableClinicSubscriptions = internalQuery({
 async function fetchPaystackTransaction(reference: string) {
   try {
     const data = await paystackRequest(`/transaction/verify/${encodeURIComponent(reference)}`, { method: "GET" });
-    return (data ?? null) as { status: string; amount: number; currency: string; reference: string } | null;
+    return (data ?? null) as {
+      status: string;
+      amount: number;
+      currency: string;
+      reference: string;
+      metadata?: unknown;
+      authorization?: PaystackAuthorization;
+      customer?: { email?: string };
+    } | null;
   } catch {
     return null;
   }
@@ -1470,6 +1521,54 @@ export const completeVerifiedSubscriptionPayment = internalMutation({
 });
 
 /**
+ * Saves the card from a successful, Paystack-verified payment the clinic made through "Add a card"
+ * (clinicSelfServe.startCardSetup): a card check, or an invoice paid with saveCard set. Paying an
+ * invoice any other way never saves the card: the clinic agreed to automatic charges only there.
+ */
+async function saveCardFromPayment(
+  ctx: MutationCtx,
+  reference: string,
+  tx: { amountKobo: number; metadata: unknown; authorization?: PaystackAuthorization; email?: string }
+): Promise<boolean> {
+  const isCardCheck = CARD_CHECK_REFERENCE.test(reference);
+  let clinicId: Id<"clinics"> | null = null;
+  if (isCardCheck) {
+    clinicId = (await subscriptionForCardCheck(ctx, reference))?.clinicId ?? null;
+  } else {
+    if (paystackMetadata(tx.metadata).saveCard !== true) return false;
+    const match = SUB_REFERENCE.exec(reference);
+    const invoiceId = match ? ctx.db.normalizeId("clinicSubscriptionInvoices", match[1]) : null;
+    clinicId = invoiceId ? ((await ctx.db.get(invoiceId))?.clinicId ?? null) : null;
+  }
+  if (!clinicId) return false;
+  const cardId = await saveClinicCard(ctx, {
+    clinicId,
+    authorization: tx.authorization,
+    email: tx.email,
+    reference,
+    amountKobo: tx.amountKobo,
+    isCardCheck,
+  });
+  return cardId !== null;
+}
+
+export const saveVerifiedClinicCard = internalMutation({
+  args: { reference: v.string(), amountKobo: v.number(), metadata: v.any(), authorization: v.any(), email: v.optional(v.string()) },
+  handler: async (ctx, args) =>
+    saveCardFromPayment(ctx, args.reference, {
+      amountKobo: args.amountKobo,
+      metadata: args.metadata,
+      authorization: args.authorization,
+      email: args.email,
+    }),
+});
+const saveCardRef = makeFunctionReference<
+  "mutation",
+  { reference: string; amountKobo: number; metadata: unknown; authorization: unknown; email?: string },
+  boolean
+>("clinicBilling:saveVerifiedClinicCard");
+
+/**
  * Called when Paystack sends the clinic back to the plan page. Re-verifies the reference with
  * Paystack's API before anything is marked paid; safe to repeat.
  */
@@ -1478,18 +1577,34 @@ export const verifyClinicSubscriptionPayment = action({
   handler: async (
     ctx,
     args
-  ): Promise<{ status: "paid" | "pending" | "failed" | "not_found" | "invalid" | "needs_review" }> => {
+  ): Promise<{
+    status: "paid" | "pending" | "failed" | "not_found" | "invalid" | "needs_review" | "card_saved" | "card_unusable";
+    cardSaved?: boolean;
+  }> => {
     const reference = args.reference.trim();
-    if (!SUB_REFERENCE.test(reference)) return { status: "invalid" };
+    const isCardCheck = CARD_CHECK_REFERENCE.test(reference);
+    if (!isCardCheck && !SUB_REFERENCE.test(reference)) return { status: "invalid" };
     const tx = await fetchPaystackTransaction(reference);
     if (!tx || tx.reference !== reference) return { status: "not_found" };
     if (tx.status === "success") {
+      const card = {
+        reference,
+        amountKobo: Number(tx.amount) || 0,
+        metadata: tx.metadata ?? null,
+        authorization: tx.authorization ?? null,
+        email: typeof tx.customer?.email === "string" ? tx.customer.email : undefined,
+      };
+      if (isCardCheck) {
+        const saved = await ctx.runMutation(saveCardRef, card);
+        return { status: saved ? "card_saved" : "card_unusable" };
+      }
       const result = await ctx.runMutation(completePaymentRef, {
         reference,
         amountKobo: Number(tx.amount) || 0,
         currency: String(tx.currency || ""),
       });
-      return { status: result.success ? "paid" : "needs_review" };
+      const cardSaved = await ctx.runMutation(saveCardRef, card);
+      return { status: result.success ? "paid" : "needs_review", cardSaved };
     }
     if (tx.status === "failed" || tx.status === "reversed") return { status: "failed" };
     return { status: "pending" };
@@ -1519,11 +1634,23 @@ export const recordClinicSubscriptionPaystackWebhook = mutation({
     if (data.status !== undefined && data.status !== "success") {
       return { handled: true, success: false, reason: `charge_${data.status}` };
     }
+    const card = {
+      amountKobo: Number(data.amount) || 0,
+      metadata: data.metadata,
+      authorization: data.authorization,
+      email: typeof data.customer?.email === "string" ? data.customer.email : undefined,
+    };
+    // A card check from "Add a card": save the card (and refund the check); nothing to settle
+    if (CARD_CHECK_REFERENCE.test(reference)) {
+      const saved = await saveCardFromPayment(ctx, reference, card);
+      return { handled: true, success: true, cardSaved: saved };
+    }
     const result = await completeSubscriptionPayment(ctx, reference, {
       amountKobo: Number(data.amount) || 0,
       currency: typeof data.currency === "string" ? data.currency : "",
     });
-    return { handled: true, ...result };
+    const cardSaved = await saveCardFromPayment(ctx, reference, card);
+    return { handled: true, ...result, cardSaved };
   },
 });
 

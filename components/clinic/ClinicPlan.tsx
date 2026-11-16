@@ -20,12 +20,13 @@ import {
 } from '@/lib/clinicSubscriptions'
 import { cn } from '@/lib/utils'
 import { playSound } from '@/lib/sounds'
+import ClinicPlanSetup from '@/components/clinic/ClinicPlanSetup'
 
 const planRef = makeFunctionReference<'query', Record<string, never>, MyClinicPlan>('clinicBilling:getMyClinicPlan')
 const payRef = makeFunctionReference<'action', { invoiceId: string }, { authorizationUrl: string }>(
   'clinicBilling:payClinicSubscriptionInvoice'
 )
-const verifyRef = makeFunctionReference<'action', { reference: string }, { status: string }>(
+const verifyRef = makeFunctionReference<'action', { reference: string }, { status: string; cardSaved?: boolean }>(
   'clinicBilling:verifyClinicSubscriptionPayment'
 )
 const upgradeRef = makeFunctionReference<'mutation', { plan: 'growth' | 'enterprise' }, { alreadyRequested: boolean }>(
@@ -92,9 +93,12 @@ function usePaymentReturn() {
     if (!reference || !reference.startsWith('CLINICSUB_')) return
     done.current = true
     verify({ reference })
-      .then(({ status }) => {
-        if (status === 'paid') playSound('paid')
-        if (status === 'paid') toast.success('Thanks, your payment went through. Your receipt is on its way.')
+      .then(({ status, cardSaved }) => {
+        if (status === 'paid' || status === 'card_saved') playSound('paid')
+        if (status === 'card_saved') toast.success("Your card is saved. We've refunded the card check, and your plan renews by itself.")
+        else if (status === 'card_unusable') toast.error("That card can't be charged again later. Please try another card.")
+        else if (status === 'paid')
+          toast.success(cardSaved ? 'Thanks, you’re paid up and your card is saved for next time.' : 'Thanks, your payment went through. Your receipt is on its way.')
         else if (status === 'pending') toast.message('Your payment is still processing. This page updates when it clears.')
         else if (status === 'failed') toast.error("That payment didn't go through. You can try again.")
         else if (status === 'needs_review') toast.error("We received a payment we couldn't match. We'll sort it out and email you.")
@@ -195,13 +199,7 @@ export default function ClinicPlan() {
 
   return (
     <div className="space-y-6">
-      {!sub ? (
-        <Panel title="Your plan">
-          <p className="px-5 py-4 text-sm text-pt-muted sm:px-6">
-            Your clinic isn&apos;t billed for Rehabify yet. We&apos;ll email you before that changes.
-          </p>
-        </Panel>
-      ) : (
+      {!sub ? null : (
         <Panel
           title="Your plan"
           actions={<StatusBadge tone={sub.status === 'active' ? 'green' : sub.status === 'cancelled' ? 'neutral' : sub.status === 'read_only' ? 'red' : 'amber'}>{SUBSCRIPTION_STATUS_LABEL[sub.status]}</StatusBadge>}
@@ -284,6 +282,9 @@ export default function ClinicPlan() {
           </div>
         </Panel>
       )}
+
+      {/* Choose a plan (when there isn't one), the saved card, switching and cancelling */}
+      <ClinicPlanSetup />
 
       {data.invoices.length > 0 && (
         <Panel

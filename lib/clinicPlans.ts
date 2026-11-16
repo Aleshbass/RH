@@ -88,6 +88,18 @@ export const CLINIC_LAUNCH_WEEK = {
   label: '9 to 15 November 2026',
 } as const;
 
+/**
+ * Clinics choose their own plan and save a card (owner, 16 Nov 2026; convex/clinicSelfServe.ts).
+ * A plan chosen before 1 December 2026 is first charged on 1 December, then on the 1st of each
+ * month. From 1 December a clinic is charged on the day it chooses, then on that date each month.
+ * Saving a card before the first charge takes a small card check, refunded straight away.
+ */
+export const CLINIC_SELF_SERVE = {
+  firstChargeDate: '2026-12-01',
+  firstChargeLabel: '1 December',
+  cardCheckKobo: 5_000,
+} as const;
+
 export const CLINIC_PROGRAMME_OVERAGE_KOBO = 50_000;
 // Allowance warnings at 80% and 100% are sent by convex/clinicBilling.ts
 export const CLINIC_PROGRAMME_OVERAGE =
