@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useState, type ComponentPropsWithoutRef, type ComponentType, type ReactNode } from 'react'
+import { useState, useSyncExternalStore, type ComponentPropsWithoutRef, type ComponentType, type ReactNode } from 'react'
 import { ArrowLeft, Info } from '@/components/icons'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
@@ -28,16 +28,24 @@ export function initials(name?: string | null) {
 }
 
 /** True below the `md` breakpoint. Drawers slide up from the bottom there. */
+const PHONE_QUERY = '(max-width: 767px)'
+function onPhoneChange(callback: () => void) {
+  const query = window.matchMedia(PHONE_QUERY)
+  query.addEventListener('change', callback)
+  return () => query.removeEventListener('change', callback)
+}
+
+/**
+ * Phone-sized screen? Read straight away on the client (owner 2026-11-16: drawers flashed white):
+ * a drawer that opens fresh is a bottom sheet from its very first frame, never a white panel from
+ * the right that then jumps. Server render (and hydration) assume not a phone.
+ */
 export function useIsPhone() {
-  const [isPhone, setIsPhone] = useState(false)
-  useEffect(() => {
-    const query = window.matchMedia('(max-width: 767px)')
-    const update = () => setIsPhone(query.matches)
-    update()
-    query.addEventListener('change', update)
-    return () => query.removeEventListener('change', update)
-  }, [])
-  return isPhone
+  return useSyncExternalStore(
+    onPhoneChange,
+    () => window.matchMedia(PHONE_QUERY).matches,
+    () => false
+  )
 }
 
 /* ----------------------------------------------------------------------------------------------
