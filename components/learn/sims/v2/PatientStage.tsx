@@ -12,6 +12,7 @@ import { cn } from '@/lib/utils'
 import { vitalsFromTimeline, type SimScene, type Vitals, type VitalsTimeline } from '@/lib/learn/simulation/engine'
 import { heartBeep, monitorAlarm, vibrate } from '../simAudio'
 import { TalkingFace } from './TalkingFace'
+import { Clinic2D } from '../art2d/Clinic2D'
 import { alarmFor, ecgAt } from '../VitalsMonitor'
 
 /** Attaching the monitor is one of the actions on offer: the strip becomes a button for it. */
@@ -157,7 +158,7 @@ export function SceneCredit({ text }: { text: string }) {
  * The patient on video: a silent looping clip per state (the voices play separately), crossfading
  * when the state changes. The still shows until the video can play, and stays if a phone blocks it.
  */
-function PatientVideo({ scene, talking, lipsUrl }: { scene: SimScene; talking: boolean; lipsUrl: string | null }) {
+function PatientVideo({ scene, talking, lipsUrl, breathsPerMin }: { scene: SimScene; talking: boolean; lipsUrl: string | null; breathsPerMin: number }) {
   const [playing, setPlaying] = useState(false)
   return (
     <AnimatePresence initial={false}>
@@ -169,7 +170,10 @@ function PatientVideo({ scene, talking, lipsUrl }: { scene: SimScene; talking: b
         exit={{ opacity: 0 }}
         transition={{ duration: 0.45, ease: 'easeOut' }}
       >
-        {scene.video && scene.mouth ? (
+        {scene.art2d ? (
+          // Drawn in 2D: she breathes, blinks and her lips follow her voice
+          <Clinic2D pose={scene.art2d.pose} talking={talking} lipsUrl={lipsUrl} breathsPerMin={breathsPerMin} />
+        ) : scene.video && scene.mouth ? (
           // The patient's lips move to their voice right in the scene
           <TalkingFace video={scene.video} still={scene.src} alt={scene.alt} mouthUrl={scene.mouth} lipsUrl={lipsUrl} active={talking} />
         ) : (
@@ -218,7 +222,7 @@ export function PatientStage({
   return (
     <div className="learn-fixed-dark relative h-full overflow-hidden bg-[radial-gradient(120%_100%_at_50%_0%,rgb(32_56_52)_0%,rgb(8_16_15)_72%)]">
       <div className="absolute inset-0 opacity-[0.06] [background-image:linear-gradient(rgb(255_255_255)_1px,transparent_1px),linear-gradient(90deg,rgb(255_255_255)_1px,transparent_1px)] [background-size:26px_26px]" />
-      {scene && <PatientVideo scene={scene} talking={talking} lipsUrl={lipsUrl} />}
+      {scene && <PatientVideo scene={scene} talking={talking} lipsUrl={lipsUrl} breathsPerMin={breathsPerMin} />}
       {/* Stand-in patient (cases without video yet): shoulders breathe, a ring while speaking */}
       <svg style={scene ? { display: 'none' } : undefined} viewBox="0 0 200 150" className="absolute inset-x-0 bottom-10 mx-auto h-[78%] w-auto" aria-hidden>
         <motion.g

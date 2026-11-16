@@ -64,7 +64,15 @@ export type SimNode = {
  * to their voice right in the scene (components/learn/sims/talkingFace.ts; no cut to a close-up,
  * owner 2026-11-14). `credit`: attribution a CC BY model needs.
  */
-export type SimScene = { src: string; alt: string; video?: string; mouth?: string; credit?: string }
+export type SimScene = {
+  src: string
+  alt: string
+  video?: string
+  mouth?: string
+  credit?: string
+  /** Drawn in 2D instead of video (components/learn/sims/art2d): the pose to draw; `src` is its still. */
+  art2d?: { pose: 'seated' | 'distress' | 'resting' }
+}
 export type SimFinding = { id: string; label: string; detail: string; abnormal?: boolean }
 export type SimSpeaker = { name: string; role: string; voice?: string }
 export type SimPhase = { id: PhaseId; label: string; budgetSec: number }

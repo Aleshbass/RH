@@ -7,5 +7,6 @@ import type { SimCase } from '../../lib/learn/simulation/engine'
 import ankle from './ankle-sprain-after-football.json'
 import backPain from './back-pain-saddle-numbness.json'
 import knee from './knee-replacement-calf-pain.json'
+import shoulderCardiac from './shoulder-pain-cardiac.json'
 
-export const SIM_CASES = [knee, backPain, ankle] as unknown as SimCase[]
+export const SIM_CASES = [knee, backPain, ankle, shoulderCardiac] as unknown as SimCase[]

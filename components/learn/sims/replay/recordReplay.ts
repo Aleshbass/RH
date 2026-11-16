@@ -13,6 +13,7 @@
 import type { SimScene } from '@/lib/learn/simulation/engine'
 import { voiceUrl, type SimShare, type SimShareBeat } from '../simApi'
 import { drawTalkingFrame, easeMouth, restMouth, shapeAt, type LipTimings, type MouthGeometry, type MouthState } from '../talkingFace'
+import { clinicSceneSvg } from '../art2d/clinicScene'
 
 const W = 1080
 const H = 1920
@@ -34,7 +35,14 @@ const OUTCOME_COLOUR: Record<string, { bg: string; fg: string }> = {
 
 type Shot = { kind: 'intro' | 'beat' | 'outro'; index: number; start: number; dur: number; audio: AudioBuffer | null; scene: string | null }
 type Card = { h: number; draw: (ctx: CanvasRenderingContext2D, top: number) => void }
-type SceneMedia = { scene: SimScene; still: HTMLImageElement | null; video: HTMLVideoElement | null; geo: MouthGeometry | null }
+type SceneMedia = {
+  scene: SimScene
+  still: HTMLImageElement | null
+  video: HTMLVideoElement | null
+  geo: MouthGeometry | null
+  /** 2D scenes: the drawing per lip shape (x, e, a, o). */
+  art: Record<string, HTMLImageElement> | null
+}
 
 export type RecordResult = { blob: Blob; ext: 'mp4' | 'webm'; mime: string; seconds: number }
 
@@ -218,7 +226,17 @@ async function record(share: SimShare, opts: RecordOptions, mime: string, audio:
         scene.mouth ? loadJson<MouthGeometry>(scene.mouth) : Promise.resolve(null),
       ])
       if (video) videos.push(video)
-      scenes.set(id, { scene, still, video, geo })
+      // 2D scenes: the drawing with each lip shape, swapped as she speaks
+      let art: Record<string, HTMLImageElement> | null = null
+      if (scene.art2d) {
+        const pose = scene.art2d.pose
+        const shapes = await Promise.all(
+          (['x', 'e', 'a', 'o'] as const).map(async (m) => [m, await loadImage(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(clinicSceneSvg({ pose, mouth: m }))}`)] as const)
+        )
+        art = Object.fromEntries(shapes.filter(([, img]) => img)) as Record<string, HTMLImageElement>
+        if (!art.x) art = null
+      }
+      scenes.set(id, { scene, still, video, geo, art })
     })
   )
   const lips = c.audio ? await loadJson<LipTimings>(`/sims/${c.slug}/v${c.version}/lips.json`) : null
@@ -411,7 +429,10 @@ async function record(share: SimShare, opts: RecordOptions, mime: string, audio:
       const dh = sh * scale
       ctx.drawImage(src, STAGE.x + (STAGE.w - dw) / 2, STAGE.y + (STAGE.h - dh) / 2, dw, dh)
     }
-    if (media?.video && media.video.readyState >= 2) {
+    if (media?.art) {
+      const img = media.art[shape] ?? media.art.x
+      cover(img, 1440, 960)
+    } else if (media?.video && media.video.readyState >= 2) {
       if (media.geo) {
         if (face.width !== media.geo.w) face.width = media.geo.w
         if (face.height !== media.geo.h) face.height = media.geo.h

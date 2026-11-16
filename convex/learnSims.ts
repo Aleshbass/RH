@@ -9,7 +9,7 @@
  */
 import { awardLearnPoints } from "./helpers/learnPoints";
 import { ConvexError, v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { internalMutation, mutation, query } from "./_generated/server";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { getViewer } from "./helpers/partnerAccess";
@@ -467,10 +467,8 @@ export const adminCases = query({
 });
 
 /** Loads the repo's cases as drafts (new versions need a new sign-off before publishing). */
-export const adminLoadCases = mutation({
-  args: {},
-  handler: async (ctx) => {
-    await requireReviewer(ctx);
+/** Copies the repo's cases (content/sim-cases) into Convex as drafts; a published version never changes. */
+async function loadCasesFromRepo(ctx: MutationCtx) {
     const now = Date.now();
     const report: { slug: string; version: number; result: "added" | "updated" | "unchanged" | "skipped"; message?: string }[] = [];
     for (const [order, def] of SIM_CASES.entries()) {
@@ -512,7 +510,20 @@ export const adminLoadCases = mutation({
       report.push({ slug: def.slug, version: def.version, result: changed ? "updated" : "unchanged" });
     }
     return report;
+}
+
+export const adminLoadCases = mutation({
+  args: {},
+  handler: async (ctx) => {
+    await requireReviewer(ctx);
+    return await loadCasesFromRepo(ctx);
   },
+});
+
+/** The same from the command line after a deploy: npx convex run --prod learnSims:loadCasesInternal */
+export const loadCasesInternal = internalMutation({
+  args: {},
+  handler: async (ctx) => await loadCasesFromRepo(ctx),
 });
 
 /** A physio confirms the clinical content of the current draft version. */
