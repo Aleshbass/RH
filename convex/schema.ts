@@ -4996,6 +4996,21 @@ export default defineSchema({
     createdAt: v.number(),
   }).index("by_physio", ["physioId", "createdAt"]),
 
+  // Every Flex checkout started (exercisePrograms.startFlexCheckout), so a payment that went
+  // through but whose webhook and browser check were both lost is still settled
+  // (paymentReconciliation.ts, every 10 minutes).
+  flexCheckouts: defineTable({
+    patientId: v.id("users"),
+    reference: v.string(),
+    plan: v.string(),
+    amountKobo: v.number(),
+    status: v.union(v.literal("pending"), v.literal("settled"), v.literal("failed")),
+    createdAt: v.number(),
+    settledAt: v.optional(v.number()),
+  })
+    .index("by_status_created", ["status", "createdAt"])
+    .index("by_reference", ["reference"]),
+
   // Free Pro given by an admin for a while, with a reason (testers, partners, make-goods)
   physioPlanGrants: defineTable({
     physioId: v.id("users"),

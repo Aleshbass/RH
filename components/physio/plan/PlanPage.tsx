@@ -364,7 +364,8 @@ export function PlanPage() {
             }
           />
         </div>
-        {kind !== 'clinic' && (
+        {/* Top-ups only matter once the limits apply (1 Jan, or from joining for new physios) */}
+        {kind !== 'clinic' && data.usage.limitsActive && (
           <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-dashed border-black/10 px-4 py-3 dark:border-white/15">
             <p className="text-sm text-neutral-600 dark:text-neutral-300">
               Need more Scribe? {s.scribeTopUpSessions} sessions for {naira(s.scribeTopUpKobo)}. They never expire.

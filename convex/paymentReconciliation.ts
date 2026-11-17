@@ -8,20 +8,36 @@
  *  - Joy bookings and specialist reviews (they have no browser-side verification);
  *  - marketplace bookings (MKT_ references recorded when checkout starts);
  *  - Rehabify Learn registrations;
- *  - invoice payments (patient checkout, clinic and physio payment links).
+ *  - invoice payments (patient checkout, clinic and physio payment links);
+ *  - Flex / Flex Max (FLEX_ checkouts recorded when they start);
+ *  - Individual Pro and Scribe top-ups (PHYSIOPRO_ checkouts).
  */
 import { v } from "convex/values";
+import { makeFunctionReference } from "convex/server";
 import { internalAction, internalQuery } from "./_generated/server";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { paystackEvidence } from "./payments";
+
+// By name: the generated api type is at TypeScript's depth limit (TS2589)
+const flexCompleteRef = makeFunctionReference<"mutation", { reference: string; amountKobo: number; currency: string; channel?: string }, unknown>(
+  "exercisePrograms:completeVerifiedFlexPayment"
+);
+const flexCardRef = makeFunctionReference<"mutation", { reference: string; metadata: unknown; authorization: unknown; email?: string }, unknown>(
+  "exercisePrograms:saveVerifiedFlexCard"
+);
+const proSettleRef = makeFunctionReference<
+  "mutation",
+  { reference: string; amountKobo: number; currency: string; channel?: string; authorization?: unknown; email?: string },
+  unknown
+>("physioPlans:settlePayment");
 
 const MIN_AGE_MS = 10 * 60_000;
 const MAX_AGE_MS = 48 * 60 * 60_000;
 const PER_RUN = 40;
 
 type Check =
-  | { kind: "joy_booking" | "joy_review" | "learn" | "invoice"; reference: string }
+  | { kind: "joy_booking" | "joy_review" | "learn" | "invoice" | "flex" | "physio_pro"; reference: string }
   | { kind: "marketplace"; reference: string; bookingId: Id<"marketplaceBookings"> };
 
 export const unconfirmedCheckouts = internalQuery({
@@ -77,6 +93,17 @@ export const unconfirmedCheckouts = internalQuery({
     for (const payment of payments) {
       const reference = payment.paystackReference ?? "";
       if (/^(INV|CLN|PHY)_/.test(reference) && inWindow(payment.createdAt)) checks.push({ kind: "invoice", reference });
+    }
+
+    const flex = await ctx.db
+      .query("flexCheckouts")
+      .withIndex("by_status_created", (q) => q.eq("status", "pending").gte("createdAt", from).lte("createdAt", to))
+      .take(PER_RUN);
+    checks.push(...flex.map((f) => ({ kind: "flex" as const, reference: f.reference })));
+
+    const pro = await ctx.db.query("physioPlanPayments").order("desc").take(300);
+    for (const p of pro) {
+      if (p.status === "pending" && p.method === "checkout" && inWindow(p.createdAt)) checks.push({ kind: "physio_pro", reference: p.reference });
     }
 
     return checks.slice(0, PER_RUN);
@@ -152,6 +179,28 @@ export const reconcilePaystackPayments = internalAction({
           case "invoice":
             await ctx.runMutation(internal.payments.updatePaymentStatus, {
               paystackReference: check.reference, status: "completed", paystackData: paystackEvidence(tx),
+            });
+            break;
+          case "flex": {
+            const channel = typeof tx.channel === "string" ? tx.channel : undefined;
+            await ctx.runMutation(flexCompleteRef, { reference: check.reference, amountKobo, currency, channel });
+            // "Renew automatically" ticked: keep the card, as the webhook would have
+            await ctx.runMutation(flexCardRef, {
+              reference: check.reference,
+              metadata: tx.metadata ?? null,
+              authorization: tx.authorization ?? null,
+              email: typeof (tx.customer as { email?: unknown } | undefined)?.email === "string" ? (tx.customer as { email: string }).email : undefined,
+            });
+            break;
+          }
+          case "physio_pro":
+            await ctx.runMutation(proSettleRef, {
+              reference: check.reference,
+              amountKobo,
+              currency,
+              channel: typeof tx.channel === "string" ? tx.channel : undefined,
+              authorization: tx.authorization ?? undefined,
+              email: typeof (tx.customer as { email?: unknown } | undefined)?.email === "string" ? (tx.customer as { email: string }).email : undefined,
             });
             break;
         }

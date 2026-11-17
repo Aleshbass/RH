@@ -1278,9 +1278,34 @@ export const startFlexCheckout = action({
     });
     const authorizationUrl = typeof data?.authorization_url === "string" ? data.authorization_url : "";
     if (!authorizationUrl.startsWith("https://")) throw new ConvexError("We couldn't start the payment. Please try again.");
+    // Remembered, so a payment whose webhook and browser check are both lost still settles
+    await ctx.runMutation(recordFlexCheckoutRef, { patientId: prep.patientId, reference, plan: prep.plan, amountKobo: prep.amountKobo });
     return { authorizationUrl, reference };
   },
 });
+
+const recordFlexCheckoutRef = makeFunctionReference<
+  "mutation",
+  { patientId: Id<"users">; reference: string; plan: string; amountKobo: number },
+  null
+>("exercisePrograms:recordFlexCheckout");
+
+export const recordFlexCheckout = internalMutation({
+  args: { patientId: v.id("users"), reference: v.string(), plan: v.string(), amountKobo: v.number() },
+  handler: async (ctx, args) => {
+    await ctx.db.insert("flexCheckouts", { ...args, status: "pending", createdAt: Date.now() });
+    return null;
+  },
+});
+
+/** Marks a started Flex checkout settled (or failed), when there is one. */
+async function closeFlexCheckout(ctx: MutationCtx, reference: string, status: "settled" | "failed") {
+  const row = await ctx.db
+    .query("flexCheckouts")
+    .withIndex("by_reference", (q) => q.eq("reference", reference))
+    .first();
+  if (row && row.status === "pending") await ctx.db.patch(row._id, { status, settledAt: Date.now() });
+}
 
 /**
  * Applies Paystack-verified payment evidence. The patient and plan come from the reference (which
@@ -1298,7 +1323,10 @@ async function completeFlexPayment(ctx: MutationCtx, reference: string, paid: Pa
     .query("patientPlanEntitlements")
     .withIndex("by_reference", (q) => q.eq("reference", reference))
     .first();
-  if (existing) return { success: true, alreadyCompleted: true, status: existing.status, plan: existing.plan };
+  if (existing) {
+    await closeFlexCheckout(ctx, reference, "settled");
+    return { success: true, alreadyCompleted: true, status: existing.status, plan: existing.plan };
+  }
 
   const now = Date.now();
   const priceKobo = planPriceKobo(parsed.plan);
@@ -1314,10 +1342,14 @@ async function completeFlexPayment(ctx: MutationCtx, reference: string, paid: Pa
     });
   if (paid.currency !== "NGN") {
     await flag("flex_payment_currency_mismatch");
+    await closeFlexCheckout(ctx, reference, "failed");
+    await alertShortFlexPayment(ctx, patient, reference, paid, priceKobo, "was paid in the wrong currency");
     return { success: false, reason: "currency_mismatch" };
   }
   if (!Number.isFinite(paid.amountKobo) || paid.amountKobo < priceKobo) {
     await flag("flex_payment_short");
+    await closeFlexCheckout(ctx, reference, "failed");
+    await alertShortFlexPayment(ctx, patient, reference, paid, priceKobo, "was less than the price");
     return { success: false, reason: "amount_mismatch" };
   }
 
@@ -1381,7 +1413,31 @@ async function completeFlexPayment(ctx: MutationCtx, reference: string, paid: Pa
     targetEntityId: String(entitlementId),
     details: { reference, plan: parsed.plan, amountKobo: paid.amountKobo, channel: paid.channel, status: period.status },
   });
+  await closeFlexCheckout(ctx, reference, "settled");
   return { success: true, alreadyCompleted: false, status: period.status, plan: parsed.plan };
+}
+
+/** A Flex payment we couldn't apply (short or wrong currency): the team hears at once, not just the logs. */
+async function alertShortFlexPayment(ctx: MutationCtx, patient: Doc<"users">, reference: string, paid: PaidEvidence, priceKobo: number, what: string) {
+  const admins = await ctx.db
+    .query("users")
+    .withIndex("by_role", (q) => q.eq("role", "admin"))
+    .take(20);
+  const naira = (k: number) => `₦${Math.round(k / 100).toLocaleString("en-NG")}`;
+  for (const admin of admins) {
+    await insertNotification(ctx, {
+      userId: admin._id,
+      type: "admin_payment_problem",
+      priority: "high",
+      status: "pending",
+      payload: {
+        title: "A Flex payment needs checking",
+        body: `${patient.patientNumber ?? "A patient"}'s Flex payment ${what}: ${naira(paid.amountKobo)} ${paid.currency} for a ${naira(priceKobo)} plan (${reference}). Refund it or apply it by hand.`,
+        link: "/dashboard/admin/finance",
+      },
+      createdAt: Date.now(),
+    });
+  }
 }
 
 export const completeVerifiedFlexPayment = internalMutation({
