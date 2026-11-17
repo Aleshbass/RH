@@ -134,7 +134,7 @@ export const safetyApi = {
 }
 
 /** Short "how it works" film for physios (set once the video is published; hidden while null). */
-export const SAFETY_GUIDE_VIDEO_URL: string | null = null
+export const SAFETY_GUIDE_VIDEO_URL: string | null = 'https://res.cloudinary.com/dubeogufg/video/upload/marketing/demos/rehabify-home-visit-safety.mp4'
 
 /**
  * The phone's position, or {} if it can't be had quickly. Never blocks an action for long:

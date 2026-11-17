@@ -34,7 +34,10 @@ export function VisitDoorPage({ token }: { token: string }) {
     <>
       {logo}
       <VisitIdentityCard visit={data} />
-      <p className="mt-4 px-2 text-center text-xs text-pt-muted">This page updates by itself. Keep it open until your physio has checked in.</p>
+      {/* Only while they wait at the door: once checked in (or the visit ended) it has done its job */}
+      {data.stage === 'on_the_way' && (
+        <p className="mt-4 px-2 text-center text-xs text-pt-muted">This page updates by itself. Keep it open until your physio has checked in.</p>
+      )}
     </>
   )
 }
