@@ -7,6 +7,7 @@ import { PairingShapes } from "@/components/learn/shared";
 import { AnimatedList } from "@/components/magicui/animated-list";
 import { NumberTicker } from "@/components/magicui/number-ticker";
 import { CallScene } from "@/components/marketing/CallScene";
+import { JoyAvatar } from "@/components/marketing/JoyAvatar";
 import { LoopVideo } from "@/components/marketing/LoopVideo";
 import { SnapCarousel } from "@/components/marketing/SnapCarousel";
 import { cn } from "@/lib/utils";
@@ -87,7 +88,7 @@ function JoyCheckPhone() {
   return (
     <div className="mx-auto w-full max-w-[400px] overflow-hidden rounded-[2rem] bg-white shadow-lift ring-1 ring-rh-ink/[0.06]">
       <div className="flex items-center gap-3 bg-rh-ink px-4 py-3.5">
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-rh-lime text-lg font-bold text-rh-ink">J</span>
+        <JoyAvatar />
         <div className="min-w-0">
           <p className="truncate text-[15px] font-bold leading-tight text-white">Joy · Rehabify for Work</p>
           <p className="text-[11px] font-medium text-white/70">WhatsApp · speaks your language</p>

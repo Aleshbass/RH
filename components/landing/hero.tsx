@@ -5,6 +5,7 @@ import { motion } from 'framer-motion';
 import { ArrowRight, ArrowUp } from '@/components/icons';
 import Link from 'next/link';
 import Image from 'next/image';
+import { JoyAvatar } from '@/components/marketing/JoyAvatar';
 import { FlipWords } from '@/components/ui/flip-words';
 import { joyWhatsAppUrl } from '@/lib/joyWhatsApp';
 
@@ -126,9 +127,7 @@ export function LandingHero() {
 
                 {/* WhatsApp header */}
                 <div className="bg-rh-ink px-4 py-3.5 flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-rh-lime flex items-center justify-center text-rh-ink font-bold text-lg flex-shrink-0">
-                    J
-                  </div>
+                  <JoyAvatar />
                   <div className="min-w-0">
                     <h3 className="text-white font-bold text-[15px] leading-tight truncate">Joy · Rehabify</h3>
                     <p className="text-white/80 text-[11px] font-medium">Online · AI-powered · speaks your language</p>

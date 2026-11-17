@@ -1,6 +1,7 @@
 import React from 'react';
 import { Bell, Eye, LineChart, MessageCircle } from '@/components/icons';
 import { WhatsApp } from '@/components/icons';
+import { JoyAvatar } from '@/components/marketing/JoyAvatar';
 import type { Metadata } from 'next';
 import { pageMetadata } from '@/lib/seo/utils';
 
@@ -70,9 +71,7 @@ export default function MeetJoyPage() {
                 
                 {/* WhatsApp Header */}
                 <div className="bg-[#008069] px-4 py-3 flex items-center gap-3 shadow-md relative z-10">
-                  <div className="w-10 h-10 rounded-full bg-[#E8A54F] flex items-center justify-center text-white font-semibold text-lg flex-shrink-0">
-                    J
-                  </div>
+                  <JoyAvatar />
                   <div>
                     <h3 className="text-white font-bold text-[17px] leading-tight">Joy · Rehabify</h3>
                     <p className="text-white/90 text-[13px] font-medium">Online</p>
