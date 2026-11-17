@@ -290,11 +290,24 @@ export function periodStart(existing: Entitlement[], plan: PaidPlan, now: number
 export async function newPeriod(ctx: MutationCtx, patientId: Id<"users">, plan: PaidPlan, now: number) {
   const program = await availableProgram(ctx, patientId);
   if (!program) return { status: "pending_activation" as const };
-  const start = periodStart(await patientEntitlements(ctx, patientId), plan, now);
+  const rows = await patientEntitlements(ctx, patientId);
+  const start = periodStart(rows, plan, now);
+  // Upgrading (Flex → Flex Max) mid-period: the lower plan ends now and its unused days become
+  // extra days on the new plan, at their value (a Flex day is worth less than a Flex Max day)
+  let creditMs = 0;
+  if (start === now) {
+    for (const row of rows) {
+      if (row.status !== "active" || row.expiresAt === undefined || row.expiresAt <= now || (row.activatedAt ?? 0) > now) continue;
+      if (RANK[row.plan] >= RANK[plan]) continue;
+      const remaining = row.expiresAt - now;
+      creditMs += Math.round((remaining * planPriceKobo(row.plan)) / Math.max(1, planPriceKobo(plan)));
+      await ctx.db.patch(row._id, { expiresAt: now });
+    }
+  }
   return {
     status: "active" as const,
     activatedAt: start,
-    expiresAt: start + PLAN_PERIOD_MS,
+    expiresAt: start + PLAN_PERIOD_MS + creditMs,
     programId: program._id,
     physiotherapistId: program.createdBy,
   };

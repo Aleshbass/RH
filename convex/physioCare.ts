@@ -1698,6 +1698,21 @@ export const completeCare = mutation({
       await ctx.db.patch(plan._id, { status: "completed", completedAt: now, updatedAt: now });
     }
 
+    // An independent physio's plan stops covering this patient's home programmes at discharge
+    // (Individual Pro spec): the patient keeps them, with Flex once Flex is open. Clinic patients
+    // stay with their clinic, so their programmes don't change.
+    if (!clinicCare) {
+      const programmes = await ctx.db
+        .query("exercisePrograms")
+        .withIndex("by_patient", (q) => q.eq("patientId", args.patientId))
+        .take(50);
+      for (const p of programmes) {
+        if (p.createdBy === physio._id && !p.clinicId && p.status === "active" && p.coverage !== "patient") {
+          await ctx.db.patch(p._id, { coverage: "patient", updatedAt: now });
+        }
+      }
+    }
+
     // Remaining bookings
     let cancelled = 0;
     if (args.cancelUpcoming) {

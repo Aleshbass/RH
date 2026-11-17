@@ -494,13 +494,20 @@ export const executeMutation = internalMutation({
       const patient = await patientForActor(ctx, String(data.patient_id), data.actor);
       const programs = (await ctx.db.query("exercisePrograms").withIndex("by_patient", (q: any) => q.eq("patientId", patient._id)).order("desc").collect())
         .filter((p: any) => p.status === "active" && (!data.programme_id || p._id === data.programme_id));
-      const program = programs[0];
-      if (!program) return { logged: 0, reason: "no_programme" };
-      try {
-        await assertProgramUnlocked(ctx, program, "log");
-      } catch {
-        return { logged: 0, reason: "locked" };
+      if (!programs[0]) return { logged: 0, reason: "no_programme" };
+      // Mixed care (a covered programme and one the patient pays for): log to one they can use,
+      // the same rule as the app, so Joy and the dashboard agree
+      let program: any = null;
+      for (const candidate of programs) {
+        try {
+          await assertProgramUnlocked(ctx, candidate, "log");
+          program = candidate;
+          break;
+        } catch {
+          // locked: try the next one
+        }
       }
+      if (!program) return { logged: 0, reason: "locked" };
       const today = await ctx.db.query("exerciseProgramLogs").withIndex("by_program", (q: any) => q.eq("programId", program._id).gt("createdAt", startOfLagosDay())).collect();
       const done = new Set(today.map((log: any) => log.itemIndex));
       const wanted = typeof data.item_index === "number" ? [data.item_index] : program.items.map((_: unknown, index: number) => index);
