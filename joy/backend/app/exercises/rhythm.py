@@ -89,7 +89,7 @@ def process_recovery_rhythm_once(*, now: datetime | None = None, session: Sessio
     from app.conversation.companion import BTN_EXERCISES, BTN_MESSAGE
     from app.conversation.interactive import reply_buttons
     from app.db import SessionLocal
-    from app.exercises.programme import _actor, _rh_patient, exercise_items, fetch_programmes, reminders_allowed
+    from app.exercises.programme import _actor, _rh_patient, exercise_items, fetch_programmes, note_care_message, reminders_allowed
     from app.queue.tasks import _redis, send_whatsapp_interactive, send_whatsapp_text
 
     current = (now or datetime.now(timezone.utc)).astimezone(LAGOS)
@@ -119,6 +119,7 @@ def process_recovery_rhythm_once(*, now: datetime | None = None, session: Sessio
                 done = {i for i in programme.get("done_today") or [] if isinstance(i, int)}
                 all_done = all(item.get("index") in done for item in exercise_items(programme))
                 pid = str(patient.id)
+                sent_before = sent
                 if idle_days >= 3 and _once(client, f"joy:rhythm:idle3:{pid}:{int(last)}"):
                     if tell_physio is not None:
                         tell_physio(patient, rh_patient_id)
@@ -150,6 +151,8 @@ def process_recovery_rhythm_once(*, now: datetime | None = None, session: Sessio
                 ):
                     text_sender(patient.phone_e164, weekly_text(programme))
                     sent += 1
+                if sent > sent_before:
+                    note_care_message(patient, rh_patient_id)
             except Exception:
                 logger.exception("joy_rhythm_patient_failed")
         if session is None:

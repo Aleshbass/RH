@@ -100,6 +100,18 @@ def fetch_programmes(patient: Patient, rh_patient_id: str) -> dict | None:
         return None
 
 
+def note_care_message(patient: Patient, rh_patient_id: str) -> None:
+    """Tell Rehabify that Joy just messaged this patient about their care: it counts them as one of
+    their physio's Joy patients this month (Individual Pro plans). Never blocks or undoes the message."""
+    try:
+        configured_rh_client().operational_mutation(
+            "patient_joy_message_sent", actor=_actor(patient, rh_patient_id), data={"patient_id": rh_patient_id},
+            idempotency_key=f"joy-care-message-{rh_patient_id}-{datetime.now(timezone.utc):%Y-%m-%d}",
+        )
+    except Exception:
+        logger.warning("joy_care_message_note_failed")
+
+
 def reminders_allowed(patient: Patient, rh_patient_id: str) -> bool | None:
     try:
         plan = configured_rh_client().operational_query(
@@ -485,6 +497,7 @@ def process_exercise_reminders_once(*, now: datetime | None = None, session: Ses
             patient.exercise_prompted_at = datetime.now(timezone.utc)
             append(db, kind=AuditKind.TRIAGE, actor_phone="joy-worker", person_id=patient.id,
                    payload={"event": "exercise_reminder_sent"})
+            note_care_message(patient, rh_patient_id)
             sent += 1
         if own:
             db.commit()

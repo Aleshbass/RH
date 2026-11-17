@@ -9,11 +9,11 @@ type Returns<T> = T extends RegisteredQuery<'public', infer _A, infer R> ? Await
 
 export type MyPlan = NonNullable<Returns<typeof plans.getMyPlan>>
 export type AdminPlans = Returns<typeof plans.adminOverview>
-export type Purpose = 'upgrade' | 'card' | 'renew' | 'topup'
+export type Purpose = 'upgrade' | 'card' | 'renew' | 'topup' | 'joy'
 
 export const planApi = {
   mine: makeFunctionReference<'query', Record<string, never>, MyPlan | null>('physioPlans:getMyPlan'),
-  start: makeFunctionReference<'action', { purpose: Purpose }, { authorizationUrl: string }>('physioPlans:startCheckout'),
+  start: makeFunctionReference<'action', { purpose: Purpose; patientId?: string }, { authorizationUrl: string }>('physioPlans:startCheckout'),
   verify: makeFunctionReference<'action', { reference: string }, { ok: boolean; already?: boolean; reason?: string; kind?: string }>(
     'physioPlans:verifyPayment'
   ),

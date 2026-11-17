@@ -28,6 +28,7 @@ import { addMonthsLagos } from "./helpers/clinicSubscriptions";
 import { zonedDateKey, zonedDateTimeToUtc } from "./helpers/lagosTime";
 import { appLink, publicAppUrl } from "./helpers/appUrl";
 import { insertNotification } from "./helpers/pushNotify";
+import { currentEntitlement, isIndependentPair } from "./helpers/patientPlans";
 import { DEFAULT_PHYSIO_PLAN_SETTINGS, PRO_CARD_CHECK_KOBO, dayLabel, isOutsideNigeria, naira, type PhysioPlanSettings } from "../lib/physioPlans";
 
 type Ctx = QueryCtx | MutationCtx;
@@ -42,14 +43,14 @@ const NOTICE_BATCH = 60;
 const noticeRef = makeFunctionReference<"mutation", { after?: string }, null>("physioPlans:sendLimitsNotice");
 export const PLAN_PAGE = "/dashboard/physiotherapist/settings/plan";
 const PREFIX = "PHYSIOPRO_";
-const REFERENCE = /^PHYSIOPRO_(CARD_|RENEW_|TOPUP_)?([a-z0-9]+)_\d+$/;
+const REFERENCE = /^PHYSIOPRO_(CARD_|RENEW_|TOPUP_|JOY_)?([a-z0-9]+)_\d+$/;
 const FOOTNOTE = "You're receiving this because you use Rehabify as a physiotherapist. Questions about your plan? Write to hello@myrehabifyhealth.com.";
 
 const sendEmailRef = makeFunctionReference<
   "action",
   { to: string; subject: string; greetingName?: string; heading: string; paragraphs: string[]; buttonLabel?: string; buttonUrl?: string; footnote?: string }
 >("actions/emails/sendPatientCareEmail:sendPatientCareEmail");
-const prepareRef = makeFunctionReference<"mutation", { purpose: Purpose }, Prepared>("physioPlans:prepareCheckout");
+const prepareRef = makeFunctionReference<"mutation", { purpose: Purpose; patientId?: Id<"users"> }, Prepared>("physioPlans:prepareCheckout");
 const completeRef = makeFunctionReference<"mutation", Settle, SettleResult>("physioPlans:settlePayment");
 const chargeInfoRef = makeFunctionReference<"query", { subscriptionId: Id<"physioSubscriptions"> }, ChargeInfo | null>("physioPlans:chargeInfo");
 const chargeFailedRef = makeFunctionReference<"mutation", { subscriptionId: Id<"physioSubscriptions">; reference: string; error: string }, null>(
@@ -60,7 +61,7 @@ const refundRef = makeFunctionReference<"action", { cardId: Id<"physioPlanCards"
 const refundInfoRef = makeFunctionReference<"query", { cardId: Id<"physioPlanCards"> }, { reference: string; refunded: boolean } | null>("physioPlans:refundInfo");
 const refundDoneRef = makeFunctionReference<"mutation", { cardId: Id<"physioPlanCards">; error?: string }, null>("physioPlans:recordRefund");
 
-type Purpose = "upgrade" | "card" | "renew" | "topup";
+type Purpose = "upgrade" | "card" | "renew" | "topup" | "joy";
 type Prepared = { reference: string; amountKobo: number; email: string; name: string; channels: string[]; label: string; subscriptionId: Id<"physioSubscriptions"> | null };
 type Settle = { reference: string; amountKobo: number; currency: string; channel?: string; authorization?: unknown; email?: string };
 type SettleResult = { ok: boolean; already?: boolean; reason?: string; kind?: string };
@@ -221,6 +222,100 @@ export async function scribeAllowance(ctx: Ctx, physio: Doc<"users">, now: numbe
   return { ok: false as const, used, included, onPro: plan.kind !== "free", topUpKobo: s.scribeTopUpKobo, topUpSessions: s.scribeTopUpSessions };
 }
 
+const monthKey = (now: number) => zonedDateKey(now).slice(0, 7);
+
+/** The independent physio looking after this patient (not a clinic, not Rehabify Care), if any. */
+async function independentPhysioOf(ctx: Ctx, patientId: Id<"users">) {
+  const relationships = await ctx.db
+    .query("patientPhysiotherapistRelationships")
+    .withIndex("by_patient", (q) => q.eq("patientId", patientId))
+    .take(20);
+  for (const r of relationships) {
+    if (r.status !== "active" || r.clinicId) continue;
+    if (await isIndependentPair(ctx, patientId, r.physiotherapistId)) return await ctx.db.get(r.physiotherapistId);
+  }
+  return null;
+}
+
+/** A month of Joy the physio paid for, for this patient. */
+async function joyMonthPaid(ctx: Ctx, physioId: Id<"users">, patientId: Id<"users">, month: string) {
+  const rows = await ctx.db
+    .query("physioPlanPayments")
+    .withIndex("by_physio", (q) => q.eq("physioId", physioId))
+    .order("desc")
+    .take(300);
+  return rows.some((p) => p.kind === "joy" && p.status === "paid" && p.joyPatientId === patientId && p.joyMonth === month);
+}
+
+export type JoyAllowance = {
+  allowed: boolean;
+  physioId: Id<"users"> | null;
+  via?: Doc<"physioJoyPatients">["via"] | "counted" | "not_independent";
+  reason?: "free" | "pro_full";
+};
+
+/**
+ * May Joy send this patient care messages (reminders, daily rhythm) this month? Patients of
+ * clinics and Rehabify Care aren't part of this. For an independent physio: before the limits,
+ * yes; a patient already counted this month, yes; Flex Max (the patient pays), yes; a month the
+ * physio paid for, yes; on Pro, the first proJoyPatients patients; otherwise not until someone pays.
+ */
+export async function joyAllowance(ctx: Ctx, patientId: Id<"users">, now: number): Promise<JoyAllowance> {
+  const physio = await independentPhysioOf(ctx, patientId);
+  if (!physio) return { allowed: true, physioId: null, via: "not_independent" };
+  const profile = await ctx.db
+    .query("physiotherapistProfiles")
+    .withIndex("by_user_id", (q) => q.eq("userId", physio._id))
+    .first();
+  const s = await loadPlanSettings(ctx);
+  const plan = await physioPlanFor(ctx, physio, profile, s, now);
+  const month = monthKey(now);
+  const counted = await ctx.db
+    .query("physioJoyPatients")
+    .withIndex("by_physio_month", (q) => q.eq("physioId", physio._id).eq("month", month))
+    .take(2000);
+  if (counted.some((c) => c.patientId === patientId)) return { allowed: true, physioId: physio._id, via: "counted" };
+  if (plan.kind === "clinic" || now < limitsFromFor(physio, profile, s)) return { allowed: true, physioId: physio._id, via: "before_limits" };
+  if ((await currentEntitlement(ctx, patientId, now))?.plan === "flex_max") return { allowed: true, physioId: physio._id, via: "flex_max" };
+  if (await joyMonthPaid(ctx, physio._id, patientId, month)) return { allowed: true, physioId: physio._id, via: "physio_paid" };
+  if (plan.kind !== "free" && counted.filter((c) => c.via === "plan").length < s.proJoyPatients) return { allowed: true, physioId: physio._id, via: "plan" };
+  return { allowed: false, physioId: physio._id, reason: plan.kind === "free" ? "free" : "pro_full" };
+}
+
+/** Joy sent this patient a care message: counts them for their physio this month (once). */
+export async function recordJoyCareMessage(ctx: MutationCtx, patientId: Id<"users">, now: number) {
+  const a = await joyAllowance(ctx, patientId, now);
+  if (!a.physioId || !a.allowed || a.via === "counted" || a.via === "not_independent" || !a.via) return { counted: false };
+  await ctx.db.insert("physioJoyPatients", { physioId: a.physioId, patientId, month: monthKey(now), via: a.via, firstMessageAt: now });
+  return { counted: true };
+}
+
+/** This physio's Joy this month: patients counted, the plan's included number, who is waiting. */
+async function joyThisMonth(ctx: Ctx, physioId: Id<"users">, now: number) {
+  const counted = await ctx.db
+    .query("physioJoyPatients")
+    .withIndex("by_physio_month", (q) => q.eq("physioId", physioId).eq("month", monthKey(now)))
+    .take(2000);
+  // Patients with a programme from this physio whose Joy is waiting for someone to pay
+  const programmes = await ctx.db
+    .query("exercisePrograms")
+    .withIndex("by_creator", (q) => q.eq("createdBy", physioId))
+    .order("desc")
+    .take(300);
+  const waiting: { patientId: Id<"users">; name: string }[] = [];
+  const seen = new Set<string>(counted.map((c) => c.patientId as string));
+  for (const p of programmes) {
+    if (p.status !== "active" || p.clinicId || seen.has(p.patientId) || waiting.length >= 30) continue;
+    seen.add(p.patientId);
+    const a = await joyAllowance(ctx, p.patientId, now);
+    if (a.allowed || a.physioId !== physioId) continue;
+    const patient = await ctx.db.get(p.patientId);
+    if (!patient?.phoneNumber) continue; // Joy can't reach them anyway
+    waiting.push({ patientId: p.patientId, name: [patient.firstName, patient.lastName].filter(Boolean).join(" ") || "Patient" });
+  }
+  return { counted: counted.length, included: counted.filter((c) => c.via === "plan").length, waiting };
+}
+
 /** This month's usage: different patients on programmes the physio covers, and Scribe sessions. */
 async function usageThisMonth(ctx: Ctx, physioId: Id<"users">, now: number) {
   const from = monthStart(now);
@@ -252,6 +347,7 @@ export const getMyPlan = query({
     const card = await activeCard(ctx, user._id);
     const usage = await usageThisMonth(ctx, user._id, now);
     const credits = await scribeCredits(ctx, user._id);
+    const joy = await joyThisMonth(ctx, user._id, now);
     const founding = sub?.founding ?? isFoundingPhysio(user, profile, s);
     const launchAt = dayStart(s.launchDate);
     const limitsAt = dayStart(s.limitsDate);
@@ -304,6 +400,12 @@ export const getMyPlan = query({
         scribe: { used: usage.scribe, limit: plan.kind === "clinic" ? null : onPro ? s.proScribeSessions : s.freeScribeSessions, credits },
         limitsFrom,
         limitsActive: now >= limitsFrom,
+        joy: {
+          patients: joy.counted,
+          included: plan.kind === "free" ? 0 : plan.kind === "clinic" ? null : s.proJoyPatients,
+          usedIncluded: joy.included,
+          waiting: now >= limitsFrom && plan.kind !== "clinic" ? joy.waiting : [],
+        },
       },
       offer: {
         founding,
@@ -335,7 +437,10 @@ export const getMyPlan = query({
 
 /** Starts a checkout: upgrade (or lock in before launch), save/replace a card, or pay a renewal by hand. */
 export const prepareCheckout = internalMutation({
-  args: { purpose: v.union(v.literal("upgrade"), v.literal("card"), v.literal("renew"), v.literal("topup")) },
+  args: {
+    purpose: v.union(v.literal("upgrade"), v.literal("card"), v.literal("renew"), v.literal("topup"), v.literal("joy")),
+    patientId: v.optional(v.id("users")),
+  },
   handler: async (ctx, args): Promise<Prepared> => {
     const { user, profile } = await requirePhysio(ctx);
     if (profile?.clinicId) throw new ConvexError("You're covered by your clinic's plan, so there's nothing to pay.");
@@ -343,6 +448,35 @@ export const prepareCheckout = internalMutation({
     if (!email || email.endsWith("@joy.rehabify")) throw new ConvexError("Add your email address in Settings › Profile first, so we can send your receipts.");
     const s = await loadPlanSettings(ctx);
     const now = Date.now();
+    if (args.purpose === "joy") {
+      // A month of Joy for one patient, paid by the physio
+      if (!args.patientId) throw new ConvexError("Choose the patient.");
+      const patient = await ctx.db.get(args.patientId);
+      if (!patient || !(await isIndependentPair(ctx, args.patientId, user._id))) throw new ConvexError("That patient isn't one of yours.");
+      const month = monthKey(now);
+      if (await joyMonthPaid(ctx, user._id, args.patientId, month)) throw new ConvexError("Joy is already paid for this patient this month.");
+      const reference = `${PREFIX}JOY_${user._id}_${now}`;
+      await ctx.db.insert("physioPlanPayments", {
+        physioId: user._id,
+        reference,
+        kind: "joy",
+        method: "checkout",
+        amountKobo: s.joyPerPatientKobo,
+        status: "pending",
+        joyPatientId: args.patientId,
+        joyMonth: month,
+        createdAt: now,
+      });
+      return {
+        reference,
+        amountKobo: s.joyPerPatientKobo,
+        email,
+        name: [user.firstName, user.lastName].filter(Boolean).join(" ") || "Physiotherapist",
+        channels: ["card", "bank_transfer"],
+        label: `Joy for ${patient.firstName ?? "your patient"} this month`,
+        subscriptionId: null,
+      };
+    }
     if (args.purpose === "topup") {
       // Scribe top-up: a one-off payment for more sessions, any plan
       const reference = `${PREFIX}TOPUP_${user._id}_${now}`;
@@ -428,9 +562,12 @@ export const prepareCheckout = internalMutation({
 });
 
 export const startCheckout = action({
-  args: { purpose: v.union(v.literal("upgrade"), v.literal("card"), v.literal("renew"), v.literal("topup")) },
+  args: {
+    purpose: v.union(v.literal("upgrade"), v.literal("card"), v.literal("renew"), v.literal("topup"), v.literal("joy")),
+    patientId: v.optional(v.id("users")),
+  },
   handler: async (ctx, args): Promise<{ authorizationUrl: string }> => {
-    const p = await ctx.runMutation(prepareRef, { purpose: args.purpose });
+    const p = await ctx.runMutation(prepareRef, { purpose: args.purpose, ...(args.patientId ? { patientId: args.patientId } : {}) });
     const data = await paystackRequest("/transaction/initialize", {
       method: "POST",
       body: JSON.stringify({
@@ -598,6 +735,26 @@ async function settle(ctx: MutationCtx, input: Settle): Promise<SettleResult> {
   if (!physio) return { ok: false, reason: "missing" };
   const now = Date.now();
   const s = await loadPlanSettings(ctx);
+  if (payment.kind === "joy") {
+    const patient = payment.joyPatientId ? await ctx.db.get(payment.joyPatientId) : null;
+    const receiptId = await issueReceipt(ctx, {
+      kind: "payment",
+      payerUserId: physio._id,
+      email: physio.email ?? undefined,
+      name: [physio.firstName, physio.lastName].filter(Boolean).join(" ") || undefined,
+      relatedType: "physio_joy_month",
+      relatedId: String(payment.joyPatientId ?? physio._id),
+      relationship: "independent",
+      description: `Joy on WhatsApp for ${patient?.firstName ?? "a patient"}, ${payment.joyMonth}`,
+      lines: [{ label: "Joy for one patient, one month", amountKobo: input.amountKobo }],
+      reference: input.reference,
+      dedupeKey: input.reference,
+      paidAt: now,
+    });
+    await ctx.db.patch(payment._id, { status: "paid", paidAt: now, receiptId });
+    await notifyPhysio(ctx, physio._id, "Joy is back on", `Joy will message ${patient?.firstName ?? "your patient"} again this month.`);
+    return { ok: true, kind: "joy" };
+  }
   if (payment.kind === "topup") {
     await ctx.db.insert("physioScribeCredits", { physioId: physio._id, delta: s.scribeTopUpSessions, reason: "purchase", reference: input.reference, createdAt: now });
     const receiptId = await issueReceipt(ctx, {

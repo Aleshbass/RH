@@ -1,4 +1,5 @@
 import { ConvexError, v } from "convex/values";
+import { joyAllowance, recordJoyCareMessage } from "./physioPlans";
 import { internalMutation, internalQuery } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { publicAppUrl } from "./helpers/appUrl";
@@ -53,7 +54,9 @@ type Operation =
   // clinic sent them, and who looks after them (joyConnect.ts)
   | "patient_connect" | "patient_care_summary"
   // Additive (10 Nov 2026): a message to their physio, and asking for the next visit (no ₦6,000)
-  | "patient_message_physio" | "patient_request_visit";
+  | "patient_message_physio" | "patient_request_visit"
+  // Additive (17 Nov 2026): Joy sent a care message (counts the patient for their physio's plan)
+  | "patient_joy_message_sent";
 
 const activeBooking = (status: unknown) => status === "pending" || status === "confirmed" || status === "scheduled";
 const nameOf = (user: { firstName?: string; lastName?: string } | null) =>
@@ -487,6 +490,12 @@ export const executeMutation = internalMutation({
       await audit(ctx, data, op, { actorUserId: patient._id, patientUserId: patient._id });
       return { accepted: true, notified: admins.length };
     }
+    if (op === "patient_joy_message_sent") {
+      // Joy sent this patient a care message (reminder, daily rhythm): they count as one of their
+      // physio's Joy patients this month (Individual Pro). Never blocks anything.
+      const patient = await patientForActor(ctx, String(data.patient_id), data.actor);
+      return await recordJoyCareMessage(ctx, patient._id, Date.now());
+    }
     if (op === "patient_log_exercise") {
       // The patient replied DONE to an exercise reminder: log today's session, for one exercise
       // (item_index) or every exercise not yet logged today. Same rules as the app (Flex gate,
@@ -713,7 +722,10 @@ export const executeQuery = internalQuery({
     }
     if (op === "patient_recovery_plan") {
       const patient = await patientForActor(ctx, String(data.patient_id), data.actor);
-      return { patient_id: patient._id, ...(await recoveryPlanForJoy(ctx, patient._id)) };
+      const base = await recoveryPlanForJoy(ctx, patient._id);
+      // Joy for an independent physio's patient: their plan, Flex Max, or a month someone paid for
+      const joy = await joyAllowance(ctx, patient._id, Date.now());
+      return { patient_id: patient._id, ...base, joy_reminders_allowed: base.joy_reminders_allowed && joy.allowed, joy_waiting_reason: joy.allowed ? null : joy.reason ?? null };
     }
     if (op === "physio_work_summary") {
       const profile = await profileFor(ctx, String(data.physiotherapist_id), data.actor);

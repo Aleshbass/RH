@@ -186,6 +186,9 @@ export function PlanPage() {
         } else if (res.kind === 'topup') {
           playSound('success')
           toast.success('Scribe top-up added. Those sessions never expire.')
+        } else if (res.kind === 'joy') {
+          playSound('success')
+          toast.success('Joy is back on for that patient this month.')
         }
       })
       .catch(() => toast.error('We couldn’t confirm that payment yet. It will show here when it lands.'))
@@ -229,10 +232,10 @@ export function PlanPage() {
   const founding = data.offer.founding
   const launched = data.offer.launched
 
-  const go = async (purpose: Purpose) => {
-    setBusy(purpose)
+  const go = async (purpose: Purpose, patientId?: string) => {
+    setBusy(patientId ? `${purpose}-${patientId}` : purpose)
     try {
-      const { authorizationUrl } = await start({ purpose })
+      const { authorizationUrl } = await start({ purpose, ...(patientId ? { patientId } : {}) })
       window.location.href = authorizationUrl
     } catch (err) {
       toast.error(errorText(err, 'We couldn’t open the payment page. Please try again.'))
@@ -364,6 +367,41 @@ export function PlanPage() {
             }
           />
         </div>
+        {kind !== 'clinic' && (
+          <div className="mt-4 rounded-2xl bg-rh-canvas p-4 dark:bg-white/[0.03]">
+            <div className="flex items-center justify-between gap-3">
+              <span className="flex items-center gap-2 text-sm font-medium text-rh-ink dark:text-white">
+                <Users className="h-4 w-4 text-neutral-500" /> Joy on WhatsApp
+              </span>
+              <span className="text-sm tabular-nums text-neutral-500">
+                <span className="font-semibold text-rh-ink dark:text-white">{data.usage.joy.patients}</span> patient{data.usage.joy.patients === 1 ? '' : 's'} this month
+                {onPro && data.usage.joy.included ? ` · ${data.usage.joy.usedIncluded} of ${data.usage.joy.included} included` : ''}
+              </span>
+            </div>
+            <p className="mt-2 text-xs leading-5 text-neutral-500">
+              {onPro
+                ? `Pro includes Joy for ${s.proJoyPatients} patients a month; each one after that is ${naira(s.joyPerPatientKobo)} for their month.`
+                : `On Free, Joy is ${naira(s.joyPerPatientKobo)} per patient a month: the patient pays with Flex Max, or you pay here.`}{' '}
+              A patient counts the first time Joy messages them about their care that month. Joy always answers when they message first.
+              {!data.usage.limitsActive ? ' Nothing is charged before the limits start.' : ''}
+            </p>
+            {data.usage.joy.waiting.length > 0 && (
+              <ul className="mt-3 divide-y divide-black/[0.05] rounded-xl bg-white dark:divide-white/[0.06] dark:bg-white/[0.03]">
+                {data.usage.joy.waiting.map((p) => (
+                  <li key={p.patientId} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5 text-sm">
+                    <span className="min-w-0">
+                      <span className="font-medium text-rh-ink dark:text-white">{p.name}</span>
+                      <span className="text-neutral-500"> · Joy is waiting this month</span>
+                    </span>
+                    <button type="button" className={outline} disabled={busy !== null} onClick={() => go('joy', p.patientId)}>
+                      {busy === `joy-${p.patientId}` && <Loader2 className="h-4 w-4 animate-spin" />} Pay {naira(s.joyPerPatientKobo)}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
         {/* Top-ups only matter once the limits apply (1 Jan, or from joining for new physios) */}
         {kind !== 'clinic' && data.usage.limitsActive && (
           <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-dashed border-black/10 px-4 py-3 dark:border-white/15">

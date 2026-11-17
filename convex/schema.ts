@@ -4970,9 +4970,11 @@ export default defineSchema({
   // Every Pro payment (and checkout started), for receipts, history and the Plans report
   physioPlanPayments: defineTable({
     physioId: v.id("users"),
-    subscriptionId: v.optional(v.id("physioSubscriptions")), // unset for Scribe top-ups
+    subscriptionId: v.optional(v.id("physioSubscriptions")), // unset for Scribe top-ups and Joy months
     reference: v.string(),
-    kind: v.union(v.literal("first"), v.literal("renewal"), v.literal("card_check"), v.literal("topup")),
+    kind: v.union(v.literal("first"), v.literal("renewal"), v.literal("card_check"), v.literal("topup"), v.literal("joy")),
+    joyPatientId: v.optional(v.id("users")), // kind "joy": Joy for this patient for joyMonth
+    joyMonth: v.optional(v.string()),
     method: v.union(v.literal("checkout"), v.literal("saved_card")),
     amountKobo: v.number(),
     status: v.union(v.literal("pending"), v.literal("paid"), v.literal("failed")),
@@ -4985,6 +4987,19 @@ export default defineSchema({
   })
     .index("by_reference", ["reference"])
     .index("by_physio", ["physioId", "createdAt"]),
+
+  // A physio's Joy patients this month (Lagos "YYYY-MM"): counted the first time Joy sends them a
+  // care message that month. via: the plan's included patients, before the limits, the patient's
+  // Flex Max, or a month the physio paid for.
+  physioJoyPatients: defineTable({
+    physioId: v.id("users"),
+    patientId: v.id("users"),
+    month: v.string(),
+    via: v.union(v.literal("plan"), v.literal("before_limits"), v.literal("flex_max"), v.literal("physio_paid")),
+    firstMessageAt: v.number(),
+  })
+    .index("by_physio_month", ["physioId", "month"])
+    .index("by_patient_month", ["patientId", "month"]),
 
   // Scribe top-up sessions: +N when bought, -1 for each session started beyond the plan's
   // sessions that month. Top-ups never expire (balance = sum of delta).

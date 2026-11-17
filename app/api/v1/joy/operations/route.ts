@@ -34,6 +34,8 @@ const schema = z.object({
     "patient_reschedule_booking",
     // Additive (10 Nov 2026): patients already in care (connect code, care summary)
     "patient_connect", "patient_care_summary", "patient_message_physio", "patient_request_visit",
+    // Additive (17 Nov 2026): Joy sent a care message (counts the patient for their physio's plan)
+    "patient_joy_message_sent",
   ]),
   actor: actorSchema,
   data: z.record(z.string(), z.unknown()).default({}),
@@ -46,6 +48,7 @@ const mutations = new Set([
   "patient_record_consents", "patient_link_request", "patient_link_confirm", "patient_update_profile",
   "patient_log_exercise", "patient_request_callback", "patient_add_cared_for", "patient_check_in", "patient_ask_physio",
   "patient_reschedule_booking", "patient_connect", "patient_message_physio", "patient_request_visit",
+  "patient_joy_message_sent",
 ]);
 
 export async function POST(request: Request) {
