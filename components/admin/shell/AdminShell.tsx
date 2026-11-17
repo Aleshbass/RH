@@ -6,7 +6,7 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useQuery } from 'convex/react'
 import { motion, useReducedMotion } from 'framer-motion'
 import { ChevronRight, Menu, Search, ShieldAlert } from '@/components/icons'
-import { api } from '@/convex/_generated/api'
+import { makeFunctionReference } from 'convex/server'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
@@ -18,6 +18,7 @@ import { adminBreadcrumbs, consoleAllows, consoleHome, toConsoleRole, type Conso
 import { learnAdminMeRef } from '@/lib/learnAdminsApi'
 import { ConsoleRoleContext, useConsoleRole } from './consoleRole'
 import { TeamAccessIntro } from '@/components/admin/TeamAccessIntro'
+import { AdminWhatsNew } from './AdminWhatsNew'
 import { WebsiteLink } from '@/components/dashboard/shared/WebsiteLink'
 import { AppIconBadge, AppSetupButton, AppSetupPrompt } from '@/components/pwa/AppSetup'
 import { SafetyAlertBanner } from '@/components/visit-safety/SafetyAlertBanner'
@@ -200,9 +201,12 @@ function LimitedRoleGate({ role, children }: { role: ConsoleRole; children: Reac
   return allowed ? <>{children}</> : null
 }
 
+// By name: the generated `api` type is at TypeScript's depth limit (TS2589)
+const myUserRef = makeFunctionReference<'query', Record<string, never>, { role?: string } | null>('users:getMyUser')
+
 /** Wraps every /dashboard/admin page: theme, access check, sidebar, topbar and ⌘K search. */
 export function AdminShell({ children }: { children: ReactNode }) {
-  const me = useQuery(api.users.getMyUser) as { role?: string } | null | undefined
+  const me = useQuery(myUserRef, {})
   const learnMe = useQuery(learnAdminMeRef, {})
   // Learn super admins (any account type) get all of Admin › Learn
   const role: ConsoleRole | null = me?.role === 'admin' ? 'admin' : learnMe?.learnAdmin ? 'learn_admin' : toConsoleRole(me?.role)
@@ -217,6 +221,8 @@ export function AdminShell({ children }: { children: ReactNode }) {
         <Suspense fallback={<ShellSkeleton />}>
           <ShellFrame>{role === 'admin' ? children : <LimitedRoleGate role={role}>{children}</LimitedRoleGate>}</ShellFrame>
         </Suspense>
+        {/* Once per admin after a release: what each new feature needs from them */}
+        <AdminWhatsNew role={role} />
       </ConsoleRoleContext.Provider>
     )
 

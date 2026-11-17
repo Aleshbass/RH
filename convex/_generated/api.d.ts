@@ -132,6 +132,7 @@ import type * as exerciseLibraryCatalog from "../exerciseLibraryCatalog.js";
 import type * as exerciseLibraryContent from "../exerciseLibraryContent.js";
 import type * as exercisePrograms from "../exercisePrograms.js";
 import type * as flexRenewal from "../flexRenewal.js";
+import type * as featureIntros from "../featureIntros.js";
 import type * as exerciseShareLinks from "../exerciseShareLinks.js";
 import type * as exerciseTemplates from "../exerciseTemplates.js";
 import type * as exercises from "../exercises.js";
@@ -490,6 +491,7 @@ declare const fullApi: ApiFromModules<{
   exerciseLibraryContent: typeof exerciseLibraryContent;
   exercisePrograms: typeof exercisePrograms;
   flexRenewal: typeof flexRenewal;
+  featureIntros: typeof featureIntros;
   exerciseShareLinks: typeof exerciseShareLinks;
   exerciseTemplates: typeof exerciseTemplates;
   exercises: typeof exercises;
