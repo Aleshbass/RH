@@ -183,6 +183,9 @@ export function PlanPage() {
         else if (res.kind === 'card_check') {
           playSound('success')
           toast.success('Card saved. We refunded the check.')
+        } else if (res.kind === 'topup') {
+          playSound('success')
+          toast.success('Scribe top-up added. Those sessions never expire.')
         }
       })
       .catch(() => toast.error('We couldn’t confirm that payment yet. It will show here when it lands.'))
@@ -354,9 +357,23 @@ export function PlanPage() {
             label="Rehabify Scribe sessions"
             used={data.usage.scribe.used}
             limit={data.usage.scribe.limit}
-            hint="A session is one visit up to 30 minutes; longer ones count as 2. Scribe never stops mid-session."
+            hint={
+              data.usage.scribe.credits > 0
+                ? `Plus ${data.usage.scribe.credits} top-up session${data.usage.scribe.credits === 1 ? '' : 's'}, used after these. A session is one visit up to 30 minutes.`
+                : 'A session is one visit up to 30 minutes; longer ones count as 2. Scribe never stops mid-session.'
+            }
           />
         </div>
+        {kind !== 'clinic' && (
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-dashed border-black/10 px-4 py-3 dark:border-white/15">
+            <p className="text-sm text-neutral-600 dark:text-neutral-300">
+              Need more Scribe? {s.scribeTopUpSessions} sessions for {naira(s.scribeTopUpKobo)}. They never expire.
+            </p>
+            <button type="button" className={outline} disabled={busy !== null} onClick={() => go('topup')}>
+              {busy === 'topup' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mic className="h-4 w-4" />} Buy {s.scribeTopUpSessions} sessions
+            </button>
+          </div>
+        )}
       </SettingsSection>
 
       {/* Free vs Pro */}

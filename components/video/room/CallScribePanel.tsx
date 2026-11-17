@@ -15,7 +15,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { cn } from '@/lib/utils'
 import type { Id } from '@/convex/_generated/dataModel'
 import { formatClock, LevelMeter, ScribeTranscript } from '@/components/physio/notes/scribe/ScribePanel'
-import { SCRIBE_NAME, SCRIBE_PILOT, scribeApi, scribeError, type ScribeSessionId } from '@/components/physio/notes/scribe/scribeApi'
+import { SCRIBE_NAME, SCRIBE_PILOT, SCRIBE_PLAN_PAGE, isScribeLimit, scribeApi, scribeError, type ScribeSessionId } from '@/components/physio/notes/scribe/scribeApi'
 import { useScribeRecorder, type RecorderState } from '@/components/physio/notes/scribe/useScribeRecorder'
 
 export type CallScribeConfig = {
@@ -91,7 +91,12 @@ export function CallScribePanel({
         recorder.elapsed
       )
     } catch (error) {
-      toast.error(scribeError(error, 'The scribe couldn’t start. Try again.'))
+      if (isScribeLimit(error)) {
+        toast.error(scribeError(error, 'You’ve used this month’s Scribe sessions.'), {
+          duration: 10000,
+          action: { label: 'Top up', onClick: () => window.open(SCRIBE_PLAN_PAGE, '_blank') },
+        })
+      } else toast.error(scribeError(error, 'The scribe couldn’t start. Try again.'))
     } finally {
       setStarting(false)
     }

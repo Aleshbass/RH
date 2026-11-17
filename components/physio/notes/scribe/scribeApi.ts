@@ -84,5 +84,15 @@ export const scribeApi = {
 export function scribeError(error: unknown, fallback: string): string {
   const data = (error as { data?: unknown } | null)?.data
   if (typeof data === 'string' && data.trim()) return data
+  if (data && typeof data === 'object' && typeof (data as { message?: unknown }).message === 'string') return (data as { message: string }).message
   return fallback
 }
+
+/** Out of Scribe sessions this month (convex/scribe.ts startScribe {code: "scribe_limit"}). */
+export function isScribeLimit(error: unknown) {
+  const data = (error as { data?: unknown } | null)?.data
+  return Boolean(data && typeof data === 'object' && (data as { code?: unknown }).code === 'scribe_limit')
+}
+
+/** The toast for "out of sessions": write by hand now, or top up / upgrade from the plan page. */
+export const SCRIBE_PLAN_PAGE = '/dashboard/physiotherapist/settings/plan'

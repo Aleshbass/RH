@@ -42,7 +42,7 @@ import type { ScribeDraft } from '@/convex/helpers/scribeDraft'
 import type { Id } from '@/convex/_generated/dataModel'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
-import { SCRIBE_NAME, SCRIBE_PILOT, scribeApi, scribeError, type ScribeSession, type ScribeSessionId } from './scribeApi'
+import { SCRIBE_NAME, SCRIBE_PILOT, SCRIBE_PLAN_PAGE, isScribeLimit, scribeApi, scribeError, type ScribeSession, type ScribeSessionId } from './scribeApi'
 import { openMicrophone, useScribeRecorder, type ScribeLine, type ScribeRecorder } from './useScribeRecorder'
 
 export const formatClock = (seconds: number) => {
@@ -341,7 +341,12 @@ export function ScribePanel({ patientId, patientFirstName, appointmentId, noteMe
     } catch (error) {
       stream?.getTracks().forEach((t) => t.stop())
       playSound('error')
-      toast.error(error instanceof Error && !('data' in error) ? error.message : scribeError(error, 'The scribe couldn’t start. Try again.'))
+      if (isScribeLimit(error)) {
+        toast.error(scribeError(error, 'You’ve used this month’s Scribe sessions.'), {
+          duration: 10000,
+          action: { label: 'Top up', onClick: () => window.location.assign(SCRIBE_PLAN_PAGE) },
+        })
+      } else toast.error(error instanceof Error && !('data' in error) ? error.message : scribeError(error, 'The scribe couldn’t start. Try again.'))
     } finally {
       setStarting(false)
     }

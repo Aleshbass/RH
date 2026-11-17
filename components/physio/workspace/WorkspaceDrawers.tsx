@@ -48,6 +48,7 @@ import {
   StatusBadge,
 } from '@/components/physio/ui'
 import { programError } from '@/components/exercise-programs/errors'
+import { PlanLimitDialog, planLimitOf, type PlanLimit } from '@/components/physio/plan/PlanLimitDialog'
 import { useBooking } from '@/components/physio/schedule/BookingDrawer'
 import { useCareBillingMode } from '@/components/physio/practiceMode'
 import { useMutationUntyped, useQueryUntyped, useActionUntyped } from '@/lib/convexUntyped'
@@ -85,7 +86,7 @@ const listLibraryRef = makeFunctionReference<'query', Record<string, never>, Lib
 const listProgramsRef = makeFunctionReference<'query', { patientId: Id<'users'> }, CareTeamProgram[] | null>('exercisePrograms:listForPatient')
 const createProgramRef = makeFunctionReference<
   'mutation',
-  { patientId: Id<'users'>; title: string; note?: string; items: PayloadItem[] } & ProgrammeVoice,
+  { patientId: Id<'users'>; title: string; note?: string; items: PayloadItem[]; coverage?: 'physio' | 'patient' } & ProgrammeVoice,
   Id<'exercisePrograms'>
 >('exercisePrograms:createProgram')
 const addToProgramRef = makeFunctionReference<
@@ -291,6 +292,8 @@ export function NoteDrawer({
   // What "Approve and send" has done so far, so "Try again" only repeats what failed
   const [approved, setApproved] = useState<{ note?: boolean; plan?: boolean; programme?: boolean }>({})
   const [failures, setFailures] = useState<{ plan?: string; programme?: string } | null>(null)
+  // Over Free's patients a month: the physio chooses (patient pays Flex, or upgrade)
+  const [limitHit, setLimitHit] = useState<{ limit: PlanLimit; retry: () => Promise<void> } | null>(null)
   const programmeVoice = useProgrammeVoice({ audioTypes: WHATSAPP_AUDIO_TYPES })
   const resetProgrammeVoice = programmeVoice.reset
   const reviewedDraftAt = useRef<number | null>(null)
@@ -475,6 +478,23 @@ export function NoteDrawer({
           done.programme = true
         } catch (error) {
           problems.programme = programError(error, 'The programme couldn’t be sent.')
+          const limit = planLimitOf(error)
+          if (limit && send.kind === 'create') {
+            const voice: ProgrammeVoice = programmeVoice.voiceStorageId
+              ? { voiceNoteStorageId: programmeVoice.voiceStorageId, voiceNoteSeconds: programmeVoice.voice?.seconds }
+              : {}
+            setLimitHit({
+              limit,
+              retry: async () => {
+                await createProgram({ patientId, title: send.title, ...(send.note ? { note: send.note } : {}), items: send.items, ...voice, coverage: 'patient' })
+                setLimitHit(null)
+                setApproved((a) => ({ ...a, programme: true }))
+                setFailures((f) => (f ? { ...f, programme: undefined } : f))
+                playSound('send')
+                toast.success('Programme sent', { description: 'Your patient unlocks the videos and tracking with Flex in their app.' })
+              },
+            })
+          }
         }
       }
     } catch (error) {
@@ -602,6 +622,19 @@ export function NoteDrawer({
 
   return (
     <>
+    <PlanLimitDialog
+      limit={limitHit?.limit ?? null}
+      patientName={workspace?.patient.firstName || 'Your patient'}
+      onClose={() => setLimitHit(null)}
+      onPatientPays={async () => {
+        try {
+          await limitHit?.retry()
+        } catch (error) {
+          playSound('error')
+          toast.error(programError(error, 'The programme couldn’t be sent.'))
+        }
+      }}
+    />
     <PhysioDrawer
       open={open}
       onOpenChange={(next) => (next ? onOpenChange(true) : requestClose())}

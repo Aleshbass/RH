@@ -33,6 +33,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useNoteMedia, WHATSAPP_AUDIO_TYPES } from '@/components/physio/NoteMedia'
+import { PlanLimitDialog, planLimitOf, type PlanLimit } from '@/components/physio/plan/PlanLimitDialog'
 import { primaryButtonClass, useIsPhone } from '@/components/physio/ui'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
@@ -506,6 +507,10 @@ export function SendProgramDialog({
       return [{ ...exercise, side: d.side ?? undefined, fromIndex }]
     })
 
+  // Over Free's patients a month: the choice (patient pays Flex, or upgrade), then the same send
+  const [limitHit, setLimitHit] = useState<{ limit: PlanLimit; retry: () => Promise<void> } | null>(null)
+  const retryCreate = useRef<(() => Promise<void>) | null>(null)
+
   const submit = async () => {
     const issue = problem()
     if (issue) {
@@ -579,7 +584,7 @@ export function SendProgramDialog({
         onOpenChange(false)
       } else {
         if (!patientId) throw new Error('no patient')
-        const programId = await create({
+        const createArgs = {
           patientId,
           templateId: usedTemplate ?? undefined,
           title: title.trim(),
@@ -587,14 +592,32 @@ export function SendProgramDialog({
           goals: goals.map((g) => g.trim()).filter(Boolean),
           items,
           ...voice,
-        })
-        playSound('send')
-        toast.success('Programme sent', { description: `${patientName} can see it in their app now.` })
-        await keepAsTemplate(title.trim())
-        onOpenChange(false)
-        onSent?.(programId)
+        }
+        const finish = async (programId: Id<'exercisePrograms'>, patientPays: boolean) => {
+          playSound('send')
+          toast.success('Programme sent', {
+            description: patientPays
+              ? `${patientName} can see it now and unlocks the videos and tracking with Flex in their app.`
+              : `${patientName} can see it in their app now.`,
+          })
+          await keepAsTemplate(title.trim())
+          onOpenChange(false)
+          onSent?.(programId)
+        }
+        retryCreate.current = async () => {
+          const programId = await create({ ...createArgs, coverage: 'patient' })
+          setLimitHit(null)
+          await finish(programId, true)
+        }
+        const programId = await create(createArgs)
+        await finish(programId, false)
       }
     } catch (error) {
+      const limit = planLimitOf(error)
+      if (limit && retryCreate.current) {
+        setLimitHit({ limit, retry: retryCreate.current })
+        return
+      }
       playSound('error')
       toast.error(programError(error, editing ? 'Couldn’t save the programme. Please try again.' : 'Couldn’t send the programme. Please try again.'))
     } finally {
@@ -617,6 +640,19 @@ export function SendProgramDialog({
 
   return (
     <>
+      <PlanLimitDialog
+        limit={limitHit?.limit ?? null}
+        patientName={patientName}
+        onClose={() => setLimitHit(null)}
+        onPatientPays={async () => {
+          try {
+            await limitHit?.retry()
+          } catch (error) {
+            playSound('error')
+            toast.error(programError(error, 'Couldn’t send the programme. Please try again.'))
+          }
+        }}
+      />
       {/* A wide drawer: from the right on a computer, from the bottom on a phone */}
       <Sheet open={open} onOpenChange={(o) => !saving && onOpenChange(o)}>
         <SheetContent
