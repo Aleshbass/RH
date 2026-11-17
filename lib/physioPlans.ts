@@ -33,6 +33,8 @@ export type PhysioPlanSettings = {
   /** A failed card is retried this many days, then this much grace, then Free */
   retryDays: number
   graceDays: number
+  /** Show physios the plans pop-up (founding offer) once; admins switch it on when ready */
+  announceOn: boolean
 }
 
 export const DEFAULT_PHYSIO_PLAN_SETTINGS: PhysioPlanSettings = {
@@ -53,6 +55,7 @@ export const DEFAULT_PHYSIO_PLAN_SETTINGS: PhysioPlanSettings = {
   reminderDays: 3,
   retryDays: 3,
   graceDays: 7,
+  announceOn: false,
 }
 
 /** Small card check to save a card before the first charge; refunded straight away. */

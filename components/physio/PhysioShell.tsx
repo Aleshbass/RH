@@ -4,9 +4,10 @@ import { Suspense, useEffect, type ReactNode } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useQuery } from 'convex/react'
-import { makeFunctionReference } from 'convex/server'
+import { makeFunctionReference, type RegisteredQuery } from 'convex/server'
+import type * as usersModule from '@/convex/users'
+import type * as physioSetupModule from '@/convex/physioSetup'
 import { CalendarPlus, MessageSquare } from '@/components/icons'
-import { api } from '@/convex/_generated/api'
 import { OfflineGate } from '@/components/offline/OfflineGate'
 import { usePortalHome } from '@/lib/pwa'
 import { Button } from '@/components/ui/button'
@@ -14,6 +15,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { primaryButtonClass } from '@/components/patient/ui'
 import { PatientNotifications, PatientThemeToggle } from '@/components/patient/shell/PatientControls'
 import { PortalBrand, PhysioMobileNav, PhysioSidebar, SectionTabs, PHYSIO_HOME } from '@/components/physio/PhysioSidebar'
+import { PlanAnnouncement } from '@/components/physio/plan/PlanAnnouncement'
 import { ClinicModeBanner } from '@/components/physio/shell/ClinicModeBanner'
 import { useClinicMode } from '@/components/physio/clinicMode'
 import { PhysioHelp } from '@/components/physio/shell/PhysioHelp'
@@ -68,6 +70,11 @@ function ShellSkeleton() {
 type Access = 'loading' | 'redirecting' | 'declined' | 'review' | 'full'
 
 const teamUnreadRef = makeFunctionReference<'query', Record<string, never>, number>('clinicTeamChat:getTeamUnreadCount')
+// By name: the generated `api` type is at TypeScript's depth limit (TS2589)
+type Returns<T> = T extends RegisteredQuery<'public', infer _A, infer R> ? Awaited<R> : never
+const myUserRef = makeFunctionReference<'query', Record<string, never>, Returns<typeof usersModule.getMyUser>>('users:getMyUser')
+const setupStatusRef = makeFunctionReference<'query', Record<string, never>, Returns<typeof physioSetupModule.getMySetupStatus>>('physioSetup:getMySetupStatus')
+const patientUnreadRef = makeFunctionReference<'query', Record<string, never>, number>('chat:getUnreadCount')
 
 /**
  * Decides what a signed-in user may see in the physiotherapist portal.
@@ -78,9 +85,9 @@ const teamUnreadRef = makeFunctionReference<'query', Record<string, never>, numb
 function usePhysioAccess(pathname: string) {
   const router = useRouter()
   // Offline, both come from this phone's saved answers (lib/offline/convexClient.ts)
-  const user = useQuery(api.users.getMyUser)
+  const user = useQuery(myUserRef, {})
   // Loaded alongside the user, not after it (it returns null for anyone who isn't a physio)
-  const setup = useQuery(api.physioSetup.getMySetupStatus, {})
+  const setup = useQuery(setupStatusRef, {})
 
   let redirectTo: string | null = null
   if (user === null) redirectTo = '/sign-in'
@@ -132,7 +139,7 @@ function PhysioPortal({ children }: { children: ReactNode }) {
   const { access, setup, isUnderReview } = usePhysioAccess(pathname)
   // Their currency and time zone (₦ and Lagos in Nigeria), set before any page renders
   setPracticeDisplay(setup?.practice)
-  const patientUnread = useQuery(api.chat.getUnreadCount, access === 'full' ? {} : 'skip') as number | undefined
+  const patientUnread = useQuery(patientUnreadRef, access === 'full' ? {} : 'skip')
   // Clinic members work the clinic's hours, not Rehabify's on-duty matching
   const clinic = useClinicMode()
   // Clinic members also have the team chat under Messages
@@ -228,6 +235,7 @@ function PhysioPortal({ children }: { children: ReactNode }) {
       </div>
 
       <PhysioMobileNav limited={isUnderReview} unreadMessages={unreadMessages} />
+      {!isUnderReview && <PlanAnnouncement />}
       {/* Home-screen app + notifications for new patients and messages, asked until done */}
       <AppSetupPrompt />
       {access === 'full' && <AppIconBadge />}

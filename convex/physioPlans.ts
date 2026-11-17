@@ -34,6 +34,8 @@ type Ctx = QueryCtx | MutationCtx;
 type Sub = Doc<"physioSubscriptions">;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+/** The plans pop-up, once per physio (featureIntros) */
+const ANNOUNCE_KEY = "plans:announce-2026-11";
 export const PLAN_PAGE = "/dashboard/physiotherapist/settings/plan";
 const PREFIX = "PHYSIOPRO_";
 const REFERENCE = /^PHYSIOPRO_(CARD_|RENEW_)?([a-z0-9]+)_\d+$/;
@@ -201,6 +203,12 @@ export const getMyPlan = query({
       .take(12);
     const nextPeriodStart = sub?.status === "scheduled" ? (sub.currentPeriodStart ?? launchAt) : (sub?.currentPeriodEnd ?? now);
     const pending = payments.find((p) => p.status === "pending" && now - p.createdAt < 2 * 60 * 60 * 1000 && p.kind !== "renewal");
+    // The pop-up: switched on by an admin, for physios on Free who haven't chosen Pro or closed it
+    const seen = await ctx.db
+      .query("featureIntros")
+      .withIndex("by_user_and_key", (q) => q.eq("userId", user._id).eq("key", ANNOUNCE_KEY))
+      .first();
+    const announce = s.announceOn && plan.kind === "free" && sub?.status !== "scheduled" && !seen;
     return {
       firstName: user.firstName ?? null,
       plan: {
@@ -256,6 +264,7 @@ export const getMyPlan = query({
         periodEnd: p.periodEnd ?? null,
       })),
       confirming: Boolean(pending),
+      announce,
     };
   },
 });
@@ -586,6 +595,20 @@ export const cancelPro = mutation({
     }
     await ctx.db.patch(sub._id, { cancelAtPeriodEnd: true, updatedAt: now });
     return { endsAt: sub.currentPeriodEnd ?? null };
+  },
+});
+
+/** "Not now" (or opened the plan page) on the plans pop-up: it doesn't come back. */
+export const dismissAnnouncement = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const { user } = await requirePhysio(ctx);
+    const seen = await ctx.db
+      .query("featureIntros")
+      .withIndex("by_user_and_key", (q) => q.eq("userId", user._id).eq("key", ANNOUNCE_KEY))
+      .first();
+    if (!seen) await ctx.db.insert("featureIntros", { userId: user._id, key: ANNOUNCE_KEY, seenAt: Date.now() });
+    return null;
   },
 });
 
@@ -954,6 +977,7 @@ export const adminSaveSettings = mutation({
     reminderDays: v.optional(v.number()),
     retryDays: v.optional(v.number()),
     graceDays: v.optional(v.number()),
+    announceOn: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const { user } = await requireAdmin(ctx);
@@ -971,6 +995,7 @@ export const adminSaveSettings = mutation({
       patch[key] = d;
     }
     if (args.abroadFreePro !== undefined) patch.abroadFreePro = args.abroadFreePro;
+    if (args.announceOn !== undefined) patch.announceOn = args.announceOn;
     const row = await ctx.db.query("physioPlanSettings").first();
     if (row) await ctx.db.patch(row._id, patch);
     else await ctx.db.insert("physioPlanSettings", patch as { updatedAt: number });

@@ -20,6 +20,7 @@ export const planApi = {
   cancel: makeFunctionReference<'mutation', Record<string, never>, { endsAt: number | null }>('physioPlans:cancelPro'),
   keep: makeFunctionReference<'mutation', Record<string, never>, null>('physioPlans:keepPro'),
   removeCard: makeFunctionReference<'mutation', Record<string, never>, null>('physioPlans:removeCard'),
+  dismissAnnouncement: makeFunctionReference<'mutation', Record<string, never>, null>('physioPlans:dismissAnnouncement'),
   adminOverview: makeFunctionReference<'query', Record<string, never>, AdminPlans>('physioPlans:adminOverview'),
   adminSave: makeFunctionReference<'mutation', Record<string, number | string | boolean>, null>('physioPlans:adminSaveSettings'),
   adminGrant: makeFunctionReference<'mutation', { email: string; days: number; reason: string }, null>('physioPlans:adminGrant'),

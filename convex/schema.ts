@@ -4908,6 +4908,7 @@ export default defineSchema({
     reminderDays: v.optional(v.number()),
     retryDays: v.optional(v.number()),
     graceDays: v.optional(v.number()),
+    announceOn: v.optional(v.boolean()),
     updatedBy: v.optional(v.id("users")),
     updatedAt: v.number(),
   }),

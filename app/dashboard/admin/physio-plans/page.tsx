@@ -71,6 +71,7 @@ export default function PhysioPlansAdminPage() {
   const revoke = useMutation(planApi.adminRevoke)
   const [form, setForm] = useState<Record<string, string>>({})
   const [abroad, setAbroad] = useState(true)
+  const [announce, setAnnounce] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
   const [g, setG] = useState({ email: '', days: '30', reason: '' })
 
@@ -85,6 +86,7 @@ export default function PhysioPlansAdminPage() {
       }
     setForm(next)
     setAbroad(s.abroadFreePro)
+    setAnnounce(s.announceOn)
   }, [data, form])
 
   const run = async (key: string, task: () => Promise<unknown>, done: string) => {
@@ -103,7 +105,7 @@ export default function PhysioPlansAdminPage() {
     run(
       'save',
       () => {
-        const args: Record<string, number | string | boolean> = { abroadFreePro: abroad }
+        const args: Record<string, number | string | boolean> = { abroadFreePro: abroad, announceOn: announce }
         for (const group of FIELDS)
           for (const f of group.fields) {
             const raw = form[f.key]
@@ -156,6 +158,15 @@ export default function PhysioPlansAdminPage() {
           <label className="flex items-center gap-2 text-sm text-rh-ink dark:text-white">
             <input type="checkbox" checked={abroad} onChange={(e) => setAbroad(e.target.checked)} />
             Physios outside Nigeria get Pro free as testers
+          </label>
+          <label className="flex items-start gap-2 text-sm text-rh-ink dark:text-white">
+            <input type="checkbox" className="mt-1" checked={announce} onChange={(e) => setAnnounce(e.target.checked)} />
+            <span>
+              Show physios the plans pop-up
+              <span className="block text-xs text-neutral-500">
+                Once per physio on Free: the founding offer (lock in the founding price now, first charge when Pro opens) with a button to their plan page.
+              </span>
+            </span>
           </label>
           <button type="button" className={primaryButtonClass} disabled={busy !== null || !data} onClick={saveSettings}>
             {busy === 'save' && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />} Save
