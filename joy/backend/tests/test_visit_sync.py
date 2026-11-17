@@ -44,14 +44,39 @@ def sent(monkeypatch):
     return out
 
 
-def test_three_reminder_points_and_a_late_booking_skips_the_day_before():
+def test_spec_reminder_points_for_a_video_call_and_a_late_booking_skips_the_day_before():
     session = FakeSession()
     rows = ar.schedule_appointment_reminder(
         session, rh_booking_id="appt-1", patient=PATIENT, email=None, provider_name="Ada Obi",
         service_mode="online", session_start=NOW + timedelta(hours=5), duration_minutes=20,
     )
     status = {r.reminder_kind: r.status for r in rows}
-    assert status == {ar.DAY_BEFORE: "skipped", ar.THIRTY_MINUTES_BEFORE: "pending", ar.AT_APPOINTMENT_START: "pending"}
+    assert status == {ar.DAY_BEFORE: "skipped", ar.ONE_HOUR_BEFORE: "pending", ar.TEN_MINUTES_BEFORE: "pending"}
+
+
+def test_a_home_visit_gets_a_morning_message_and_no_video_link():
+    from zoneinfo import ZoneInfo
+
+    lagos = ZoneInfo("Africa/Lagos")
+    visit = (NOW + timedelta(days=3)).astimezone(lagos).replace(hour=14, minute=0, second=0, microsecond=0)
+    rows = ar.schedule_appointment_reminder(
+        FakeSession(), rh_booking_id="appt-2", patient=PATIENT, email=None, provider_name="Ada Obi",
+        service_mode="home_visit", session_start=visit, duration_minutes=60,
+    )
+    kinds = {r.reminder_kind: r for r in rows}
+    assert set(kinds) == {ar.DAY_BEFORE, ar.ONE_HOUR_BEFORE, ar.MORNING_OF}
+    assert kinds[ar.MORNING_OF].reminder_at.astimezone(lagos).strftime("%H:%M") == "07:30"
+    assert "visiting you today" in ar.appointment_reminder_text(kinds[ar.MORNING_OF])
+
+
+def test_old_reminder_points_are_retired_when_a_visit_is_rescheduled():
+    old = SimpleNamespace(reminder_kind=ar.THIRTY_MINUTES_BEFORE, status="pending", rh_booking_id="appt-3")
+    session = FakeSession([old])
+    ar.schedule_appointment_reminder(
+        session, rh_booking_id="appt-3", patient=PATIENT, email=None, provider_name="Ada Obi",
+        service_mode="online", session_start=NOW + timedelta(days=2), duration_minutes=20,
+    )
+    assert old.status == "cancelled"
 
 
 def test_a_moved_visit_brings_a_skipped_or_cancelled_reminder_back():
@@ -67,8 +92,17 @@ def test_a_moved_visit_brings_a_skipped_or_cancelled_reminder_back():
         service_mode="online", session_start=NOW + timedelta(days=3), duration_minutes=20,
     )
     assert {r.reminder_kind: r.status for r in moved} == {
-        ar.DAY_BEFORE: "pending", ar.THIRTY_MINUTES_BEFORE: "pending", ar.AT_APPOINTMENT_START: "pending",
+        ar.DAY_BEFORE: "pending", ar.ONE_HOUR_BEFORE: "pending", ar.TEN_MINUTES_BEFORE: "pending",
     }
+
+
+def test_ten_minute_reminder_has_the_link_and_day_before_asks_to_confirm():
+    ten = SimpleNamespace(reminder_kind=ar.TEN_MINUTES_BEFORE, service_mode="online", provider_name="Ada Obi",
+                          session_start=NOW + timedelta(minutes=10), booking_code=None, meeting_url="https://physioaroundme.com/v/ab12cd")
+    assert ar.appointment_reminder_text(ten).endswith("Join here: https://physioaroundme.com/v/ab12cd")
+    day = SimpleNamespace(reminder_kind=ar.DAY_BEFORE, service_mode="online", provider_name="Ada Obi",
+                          session_start=NOW + timedelta(days=1), booking_code=None, meeting_url=None)
+    assert "*Confirm*" in ar.appointment_reminder_text(day) and "*Reschedule*" in ar.appointment_reminder_text(day)
 
 
 def test_day_before_text():

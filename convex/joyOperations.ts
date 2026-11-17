@@ -674,6 +674,12 @@ export const executeQuery = internalQuery({
           updated_at: view.updatedAt,
           locked: Boolean(view.plan?.locked),
           done_today: view.doneToday,
+          // Joy's recovery rhythm: weekly progress and the 2- and 3-day check-ins
+          sent_at: view._creationTime ?? null,
+          last_active_at: view.lastActiveAt ?? null,
+          active_days_last_7: view.activeDaysLast7 ?? 0,
+          pain_last_7: view.averagePainLast7 ?? null,
+          pain_prev_7: view.averagePainPrev7 ?? null,
           items: view.items.map((item: any) => ({
             index: item.index, kind: item.kind, name: item.name, sets: item.sets, reps: item.reps,
             hold_seconds: item.holdSeconds, frequency: item.frequency, note: item.note, side: item.side,

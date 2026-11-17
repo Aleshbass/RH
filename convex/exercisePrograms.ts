@@ -350,6 +350,27 @@ async function logsSummary(ctx: Ctx, programId: Id<"exercisePrograms">) {
       .sort((a, b) => b.createdAt - a.createdAt)
       .slice(0, 10)
       .map((l) => ({ itemIndex: l.itemIndex, painScore: l.painScore ?? null, difficulty: l.difficulty ?? null, note: l.note ?? null, source: l.source, createdAt: l.createdAt })),
+    // Joy's recovery rhythm (joy/backend/app/exercises/rhythm.py): the last day anything was done,
+    // and this week against last week, for the weekly progress message and the 2- and 3-day check-ins
+    lastActiveAt: Math.max(logs.length ? Math.max(...logs.map((l) => l.createdAt)) : 0, lastFinish?.createdAt ?? 0) || null,
+    ...weekly(logs, finishes),
+  };
+}
+
+function weekly(
+  logs: Array<{ createdAt: number; painScore?: number }>,
+  finishes: Array<{ createdAt: number }>,
+) {
+  const weekAgo = Date.now() - 7 * DAY;
+  const day = (t: number) => new Date(t + LAGOS_OFFSET).toISOString().slice(0, 10);
+  const average = (values: number[]) =>
+    values.length ? Math.round((values.reduce((a, b) => a + b, 0) / values.length) * 10) / 10 : null;
+  const thisWeek = logs.filter((l) => l.createdAt >= weekAgo);
+  const lastWeek = logs.filter((l) => l.createdAt < weekAgo);
+  return {
+    activeDaysLast7: new Set([...thisWeek.map((l) => day(l.createdAt)), ...finishes.filter((f) => f.createdAt >= weekAgo).map((f) => day(f.createdAt))]).size,
+    averagePainLast7: average(thisWeek.filter((l) => typeof l.painScore === "number").map((l) => l.painScore!)),
+    averagePainPrev7: average(lastWeek.filter((l) => typeof l.painScore === "number").map((l) => l.painScore!)),
   };
 }
 
@@ -736,6 +757,10 @@ export async function patientProgramView(ctx: Ctx, program: Doc<"exerciseProgram
     // When the patient pressed "Done for today" (sent to their care team), or null
     finishedToday: ticks.finishedAt,
     activeDaysLast14: summary.activeDaysLast14,
+    lastActiveAt: summary.lastActiveAt,
+    activeDaysLast7: summary.activeDaysLast7,
+    averagePainLast7: summary.averagePainLast7,
+    averagePainPrev7: summary.averagePainPrev7,
   };
 }
 

@@ -60,3 +60,11 @@ def test_worried_tells_the_physio_right_away(db_session, patient_identity, in_ca
     result = handle_turn(db_session, patient_identity.phone_e164, "I'm worried about my knee", FakeLLM(reply="Okay."))
     assert result.reply_text.startswith("I've told Bisi Okafor right away.")
     assert in_care and "worried" in in_care[0]
+
+
+def test_confirming_a_visit_from_the_reminder(db_session, patient_identity):
+    from app.conversation.turn_handler import handle_turn
+    from tests.fakes import FakeLLM
+
+    result = handle_turn(db_session, patient_identity.phone_e164, "confirm visit", FakeLLM(reply="Okay."))
+    assert result.reply_text.startswith("Thanks for confirming. See you then!")

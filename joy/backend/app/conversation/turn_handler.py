@@ -3177,6 +3177,14 @@ def handle_turn(
                     volunteered_safety, phase, language, wa_message_id,
                 )
 
+    # The day-before reminder's Confirm button (app/booking/appointment_reminders.py)
+    if identity.persona == Persona.PATIENT and (user_text or "").strip().casefold() == "confirm visit":
+        confirmed = "Thanks for confirming. See you then! Reply *RESCHEDULE* if anything changes."
+        append(session, kind=AuditKind.BOOKING, actor_phone=identity.phone_e164, person_id=identity.person_id,
+               payload={"event": "visit_confirmed_by_patient"})
+        save_turn(session, state, user_text, confirmed, state.extracted, state.phase, language, wa_message_id, stage=state.stage)
+        return TurnResult(reply_text=confirmed, language=language, phase=state.phase, extracted=state.extracted)
+
     # "What else can you do?" at any step, booking steps included: what Joy does, then the step again
     if identity.persona == Persona.PATIENT and not price_answered and is_capabilities_question(user_text):
         append(session, kind=AuditKind.TRIAGE, actor_phone=identity.phone_e164, person_id=identity.person_id,

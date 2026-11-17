@@ -23,7 +23,7 @@ from app.llm.gemini_client import GeminiTimeoutError, LLMClient, get_llm_client
 from app.models.conversation import Message
 from app.models.appointment_reminder import AppointmentReminder
 from app.models.types import AuditKind, PatientPhase, TurnResult
-from app.booking.appointment_reminders import AT_APPOINTMENT_START, appointment_reminder_text
+from app.booking.appointment_reminders import AT_APPOINTMENT_START, CONFIRM_VISIT, DAY_BEFORE, appointment_reminder_text
 from app.observability import elapsed_ms, log_event, timer_start
 from app.queue.tasks import (
     ADMIN_ESCALATION_QUEUE,
@@ -510,9 +510,20 @@ def process_appointment_reminders_once(
                 if reminder.whatsapp_sent_at is None:
                     from app.queue.templates import visit_reminder
 
-                    _send_text(reminder.phone_e164, text, visit_reminder(
+                    template = visit_reminder(
                         reminder.service_mode, reminder.provider_name, reminder.session_start, reminder.meeting_url,
-                    ))
+                    )
+                    if reminder.reminder_kind == DAY_BEFORE:
+                        from app.conversation.interactive import reply_buttons
+                        from app.queue.tasks import send_whatsapp_interactive
+
+                        send_whatsapp_interactive(
+                            reminder.phone_e164, text,
+                            reply_buttons((CONFIRM_VISIT, "Confirm"), ("RESCHEDULE", "Reschedule")),
+                            text_sender=lambda phone, body: _send_text(phone, body, template),
+                        )
+                    else:
+                        _send_text(reminder.phone_e164, text, template)
                     reminder.whatsapp_sent_at = current
                     # Persist this channel before attempting email. If Resend
                     # is temporarily unavailable, the next pass sends only
@@ -573,8 +584,11 @@ def _exercise_reminders_tick() -> None:
         return
     _last_exercise_tick = time.monotonic()
     from app.exercises.programme import process_exercise_reminders_once
+    from app.exercises.rhythm import process_recovery_rhythm_once
 
     process_exercise_reminders_once()
+    # The recovery companion's rhythm: evening nudge, 2- and 3-day check-ins, weekly progress
+    process_recovery_rhythm_once()
 
 
 def _send_after(phone: str, result) -> None:

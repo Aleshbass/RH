@@ -15,8 +15,16 @@ LAGOS = ZoneInfo("Africa/Lagos")
 REMINDER_LEAD = timedelta(minutes=30)
 DAY_BEFORE_LEAD = timedelta(hours=24)
 DAY_BEFORE = "day_before"
+# Joy coordination spec, 13. Reminders: 24 hours before (Confirm / Reschedule), 1 hour before, the
+# video link 10 minutes before, and the morning of a home visit. The 30-minute and start-time
+# kinds are what earlier bookings were scheduled with; they still send, and a move retires them.
+ONE_HOUR_BEFORE = "one_hour_before"
+TEN_MINUTES_BEFORE = "ten_minutes_before"
+MORNING_OF = "morning_of"
+MORNING_OF_HOUR = 7  # 7:30 AM Lagos on the day of a home visit
 THIRTY_MINUTES_BEFORE = "thirty_minutes_before"
 AT_APPOINTMENT_START = "at_appointment_start"
+CONFIRM_VISIT = "confirm visit"  # the day-before reminder's Confirm button
 
 
 def appointment_start_from_ms(value: int | float) -> datetime:
@@ -94,6 +102,27 @@ def appointment_reminder_text(reminder: AppointmentReminder) -> str:
         else "Please arrive now."
     )
     early_instruction = _early_instruction(reminder.service_mode)
+    if reminder.reminder_kind == ONE_HOUR_BEFORE:
+        text = (
+            f"Reminder: your {mode}appointment with {reminder.provider_name} starts in 1 hour, "
+            f"at {format_lagos_appointment_time(reminder.session_start)}. {early_instruction}"
+        )
+        if reminder.service_mode == "online":
+            text += " I'll send your joining link 10 minutes before."
+        if reminder.booking_code:
+            text += f" Your booking code is {reminder.booking_code}."
+        return text
+    if reminder.reminder_kind == TEN_MINUTES_BEFORE:
+        text = f"Your online appointment with {reminder.provider_name} starts in 10 minutes."
+        if reminder.meeting_url:
+            text += f" Join here: {reminder.meeting_url}"
+        return text
+    if reminder.reminder_kind == MORNING_OF:
+        return (
+            f"Good morning! {reminder.provider_name} is visiting you today, expected around "
+            f"{format_lagos_appointment_time(reminder.session_start)}. Please be ready a few minutes before. "
+            "Reply here if anything changes."
+        )
     if reminder.reminder_kind == AT_APPOINTMENT_START:
         text = (
             f"Your {mode}appointment with {reminder.provider_name} starts now. "
@@ -103,7 +132,7 @@ def appointment_reminder_text(reminder: AppointmentReminder) -> str:
         text = (
             f"Reminder: your {mode}appointment with {reminder.provider_name} is in 24 hours, "
             f"at {format_lagos_appointment_time(reminder.session_start)}. "
-            "Reply here if you need to change it."
+            "Tap *Confirm* if you'll be there, or *Reschedule* if you need another time."
         )
     else:
         text = (
@@ -167,11 +196,22 @@ def schedule_appointment_reminder(
         # A reminder point already past can't be sent truthfully; the start-time one always can
         return "skipped" if kind != AT_APPOINTMENT_START and reminder_at <= now else "pending"
 
-    for kind, reminder_at in (
-        (DAY_BEFORE, session_start - DAY_BEFORE_LEAD),
-        (THIRTY_MINUTES_BEFORE, session_start - REMINDER_LEAD),
-        (AT_APPOINTMENT_START, session_start),
-    ):
+    points = [(DAY_BEFORE, session_start - DAY_BEFORE_LEAD), (ONE_HOUR_BEFORE, session_start - timedelta(hours=1))]
+    if service_mode == "online":
+        points.append((TEN_MINUTES_BEFORE, session_start - timedelta(minutes=10)))
+    if service_mode == "home_visit":
+        local = session_start.astimezone(LAGOS)
+        morning = local.replace(hour=MORNING_OF_HOUR, minute=30, second=0, microsecond=0)
+        if morning < local - timedelta(hours=2):  # a visit before about 9:30 needs no morning message
+            points.append((MORNING_OF, morning.astimezone(timezone.utc)))
+    wanted = {kind for kind, _ in points}
+    # Points this visit no longer uses (the old 30-minute and start reminders, or a home visit
+    # moved to video) are retired, so a moved visit never gets a reminder at its old time
+    for kind, old in existing.items():
+        if kind not in wanted and old.status == "pending":
+            old.status = "cancelled"
+
+    for kind, reminder_at in points:
         reminder = existing.get(kind)
         if reminder is None:
             # A booking made less than 30 minutes before its start cannot get a
