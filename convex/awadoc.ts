@@ -851,7 +851,7 @@ export const guestJoin = query({
 export const adminOverview = query({
     args: {},
     handler: async (ctx) => {
-        await ensureUserRole(ctx, ["admin"]);
+        await ensureUserRole(ctx, ["admin"], "awadoc:adminOverview");
         const settings = await loadAwadocSettings(ctx);
         const offer = await loadAwadocOffer(ctx, settings.serviceId);
         const therapies = await ctx.db.query("awadocTherapies").order("desc").take(80);
@@ -947,7 +947,7 @@ export const adminSaveSettings = mutation({
         minLeadMinutes: v.number(),
     },
     handler: async (ctx, args) => {
-        const admin = await ensureUserRole(ctx, ["admin"]);
+        const admin = await ensureUserRole(ctx, ["admin"], "awadoc:adminSaveSettings");
         const modes = [...new Set(args.modes)];
         if (modes.length === 0) throw new ConvexError("Offer at least one visit type.");
         if (!REHABIFY_SERVICES.some((s) => s.id === args.serviceId && s.bookable)) throw new ConvexError("Pick a bookable service.");
@@ -969,7 +969,7 @@ export const adminSaveSettings = mutation({
 export const adminCandidates = query({
     args: { visitId: v.id("awadocVisits") },
     handler: async (ctx, args) => {
-        await ensureUserRole(ctx, ["admin"]);
+        await ensureUserRole(ctx, ["admin"], "awadoc:adminCandidates");
         const visit = await ctx.db.get(args.visitId);
         const therapy = visit ? await ctx.db.get(visit.therapyDocId) : null;
         if (!visit || !therapy) return [];
@@ -991,7 +991,7 @@ export const adminCandidates = query({
 export const adminAssign = mutation({
     args: { visitId: v.id("awadocVisits"), physiotherapistId: v.id("users") },
     handler: async (ctx, args) => {
-        await ensureUserRole(ctx, ["admin"]);
+        await ensureUserRole(ctx, ["admin"], "awadoc:adminAssign");
         const visit = await ctx.db.get(args.visitId);
         if (!visit || !OPEN_VISIT.has(visit.status) || visit.status === "started") throw new ConvexError("This visit can't be reassigned now.");
         const physio = await ctx.db.get(args.physiotherapistId);
@@ -1004,7 +1004,7 @@ export const adminAssign = mutation({
 export const adminMarkPayoutPaid = mutation({
     args: { visitId: v.id("awadocVisits") },
     handler: async (ctx, args) => {
-        const admin = await ensureUserRole(ctx, ["admin"]);
+        const admin = await ensureUserRole(ctx, ["admin"], "awadoc:adminMarkPayoutPaid");
         const visit = await ctx.db.get(args.visitId);
         if (!visit || visit.payoutStatus !== "owed") throw new ConvexError("Nothing is owed for this visit.");
         await ctx.db.patch(visit._id, { payoutStatus: "paid", payoutPaidAt: Date.now(), payoutPaidBy: admin._id, updatedAt: Date.now() });
@@ -1014,7 +1014,7 @@ export const adminMarkPayoutPaid = mutation({
 export const adminRetryOutbox = mutation({
     args: {},
     handler: async (ctx): Promise<number> => {
-        await ensureUserRole(ctx, ["admin"]);
+        await ensureUserRole(ctx, ["admin"], "awadoc:adminRetryOutbox");
         const now = Date.now();
         const rows = [
             ...(await ctx.db.query("awadocOutbox").withIndex("by_status_and_next", (q) => q.eq("status", "failed")).take(100)),

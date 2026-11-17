@@ -1433,7 +1433,7 @@ export const recordJoyPaymentFailedWebhook = internalMutation({
 export const adminScheduleJoyVirtualBooking = mutation({
   args: { bookingId: v.id("marketplaceBookings"), physiotherapistId: v.id("users"), startTime: v.number() },
   handler: async (ctx, args) => {
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "joyIntegration:adminScheduleJoyVirtualBooking");
     const booking = await ctx.db.get(args.bookingId);
     if (!booking || booking.sourceSystem !== "joy_ai" || booking.joyBookingRoute !== "admin_scheduled_virtual") throw new Error("Virtual consultation booking not found");
     if (booking.paymentStatus !== "completed" || booking.bookingStatus !== "awaiting_admin_schedule") throw new Error("This consultation is not awaiting scheduling");
@@ -1467,7 +1467,7 @@ export const adminScheduleJoyVirtualBooking = mutation({
 export const adminRescheduleJoyVirtualBooking = mutation({
   args: { bookingId: v.id("marketplaceBookings"), startTime: v.number() },
   handler: async (ctx, args) => {
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "joyIntegration:adminRescheduleJoyVirtualBooking");
     const booking = await ctx.db.get(args.bookingId);
     if (!booking || booking.sourceSystem !== "joy_ai" || booking.joyBookingRoute !== "admin_scheduled_virtual") {
       throw new Error("Virtual consultation booking not found");

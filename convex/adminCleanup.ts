@@ -39,7 +39,7 @@ async function livePaidBookings(ctx: QueryCtx, user: Doc<"users">) {
 export const listTestCandidates = query({
   args: {},
   handler: async (ctx) => {
-    const { user: me } = await requireAdmin(ctx);
+    const { user: me } = await requireAdmin(ctx, "adminCleanup:listTestCandidates");
     const users = await ctx.db.query("users").order("desc").take(3000);
     const rows = [];
     for (const user of users) {
@@ -94,7 +94,7 @@ async function deleteAccount(ctx: MutationCtx, user: Doc<"users">) {
 export const deleteTestAccounts = mutation({
   args: { userIds: v.array(v.id("users")) },
   handler: async (ctx, args) => {
-    const { user: me } = await requireAdmin(ctx);
+    const { user: me } = await requireAdmin(ctx, "adminCleanup:deleteTestAccounts");
     if (args.userIds.length > 100) throw new ConvexError("Delete up to 100 accounts at a time.");
     const deleted: string[] = [];
     const skipped: { name: string; reason: string }[] = [];

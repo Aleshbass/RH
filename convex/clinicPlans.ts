@@ -23,7 +23,7 @@ export const publicCatalogue = query({
 export const adminGet = query({
   args: {},
   handler: async (ctx) => {
-    await requireAdmin(ctx);
+    await requireAdmin(ctx, "clinicPlans:adminGet");
     const saved = await ctx.db.query("clinicPlanSettings").order("desc").first();
     return {
       catalogue: await loadClinicPlans(ctx),
@@ -49,7 +49,7 @@ const planInput = v.object({
 export const adminSave = mutation({
   args: { plans: v.array(planInput), includes: v.array(v.string()), excludes: v.array(v.string()) },
   handler: async (ctx, args) => {
-    const { user } = await requireAdmin(ctx);
+    const { user } = await requireAdmin(ctx, "clinicPlans:adminSave");
     const clean = (s: string, max: number) => s.trim().slice(0, max);
     const plans: SavedClinicPlans["plans"] = [];
     for (const p of args.plans) {

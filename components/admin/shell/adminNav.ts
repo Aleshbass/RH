@@ -45,7 +45,7 @@ import {
   UserX,
   Users,
   WalletCards,
-  type IconComponent, Crown } from '@/components/icons'
+  type IconComponent, Crown, LayoutDashboard, ListChecks, UserCog } from '@/components/icons'
 
 export const ADMIN_HOME = '/dashboard/admin'
 
@@ -63,6 +63,10 @@ export type AdminNavItem = {
   adminOnly?: boolean
   /** Courses and certificates: never for Learn super admins (owner 2026-11-17) */
   courseAdmin?: boolean
+  /** Every admin has it, whatever pages are ticked for them (My page) */
+  everyAdmin?: boolean
+  /** Only admins with access to everything (Admin access) */
+  fullOnly?: boolean
 }
 
 export type AdminNavSection = {
@@ -132,6 +136,7 @@ export const ADMIN_NAV: AdminNavSection[] = [
     icon: Home,
     items: [
       { title: 'Home', href: ADMIN_HOME, icon: Home, keywords: ['dashboard', 'start'] },
+      { title: 'My page', href: a('/me'), icon: LayoutDashboard, everyAdmin: true, keywords: ['my day', 'widgets', 'today', 'focus', 'personal', 'contacts'] },
       { title: 'Live now', href: a('/live'), icon: Activity, keywords: ['online', 'active', 'users', 'presence', 'realtime', 'concurrent', 'dau', 'right now'] },
       { title: 'Analytics', href: a('/analytics'), icon: BarChart3, keywords: ['stats', 'growth', 'revenue'] },
       { title: 'Website analytics', href: a('/web-analytics'), icon: LineChart, keywords: ['umami', 'posthog', 'visitors', 'traffic', 'tracking'] },
@@ -160,6 +165,7 @@ export const ADMIN_NAV: AdminNavSection[] = [
     icon: HeartPulse,
     items: [
       { title: 'All patients', href: a('/users?role=patient'), icon: UserRound, keywords: ['clients'] },
+      { title: 'Patient journeys', href: a('/journeys'), icon: ListChecks, keywords: ['booked', 'started', 'finished', 'treatment', 'paid', 'payout', 'sessions', 'progress', 'tracking'] },
       { title: 'Inbound referrals', href: a('/referrals'), icon: Inbox, keywords: ['intake', 'routing'] },
       { title: 'Patient feedback', href: a('/patient-feedback'), icon: Quote, keywords: ['testimonials', 'reviews', 'feedback cards', 'home page', 'consent'] },
       { title: 'Care follow-ups', href: a('/care-follow-ups'), icon: HeartPulse, keywords: ['check-ins', 'discharge'] },
@@ -259,6 +265,7 @@ export const ADMIN_NAV: AdminNavSection[] = [
     icon: Settings,
     items: [
       { title: 'Users & roles', href: a('/users'), icon: Users, keywords: ['accounts', 'permissions', 'admins'] },
+      { title: 'Admin access', href: a('/access'), icon: UserCog, fullOnly: true, keywords: ['permissions', 'admins', 'restrict', 'pages', 'checklist', 'roles', 'team'] },
       { title: 'Blog & Learn access', href: a('/team-access'), icon: UserCheck, keywords: ['blog writer', 'learn instructor', 'invite', 'email', 'teach', 'write', 'access'] },
       { title: 'Agreements', href: a('/agreements'), icon: FileSignature, badgeKey: 'agreements', keywords: ['contracts', 'sign', 'countersign', 'contractor', 'clinic saas', 'independent', 'e-signature'] },
       { title: 'Announcements', href: a('/announcements'), icon: Megaphone, keywords: ['broadcast', 'notify'] },
@@ -286,17 +293,67 @@ export function devToolsEnabled() {
   return process.env.NODE_ENV !== 'production' || process.env.NEXT_PUBLIC_ADMIN_DEV_TOOLS === 'true'
 }
 
-export function visibleAdminNav(role: ConsoleRole = 'admin'): AdminNavSection[] {
+/** What an admin may open: everything, or the ticked pages (nav hrefs). */
+export type AdminAccess = { full: boolean; pages: string[] }
+export const FULL_ACCESS: AdminAccess = { full: true, pages: [] }
+
+/** The nav items a URL belongs to: the longest matching path (Home only matches itself). */
+export function navHrefsForPath(pathname: string): string[] {
+  let best: string[] = []
+  let bestLen = -1
+  for (const section of ADMIN_NAV) {
+    for (const item of section.items) {
+      const p = item.href.split('?')[0]
+      const match = p === ADMIN_HOME ? pathname === ADMIN_HOME : pathname === p || pathname.startsWith(`${p}/`)
+      if (!match) continue
+      if (p.length > bestLen) {
+        best = [item.href]
+        bestLen = p.length
+      } else if (p.length === bestLen) best.push(item.href)
+    }
+  }
+  return best
+}
+
+const EVERY_ADMIN = new Set(ADMIN_NAV.flatMap((s) => s.items.filter((i) => i.everyAdmin).map((i) => i.href)))
+const FULL_ONLY = new Set(ADMIN_NAV.flatMap((s) => s.items.filter((i) => i.fullOnly).map((i) => i.href)))
+
+/** May this admin open this nav item? */
+export function adminItemAllowed(access: AdminAccess, href: string) {
+  if (EVERY_ADMIN.has(href)) return true
+  if (FULL_ONLY.has(href)) return access.full
+  return access.full || access.pages.includes(href)
+}
+
+/** May this admin open this URL? (Pages outside the menu are for full admins.) */
+export function adminPathAllowed(access: AdminAccess, pathname: string) {
+  if (access.full) return true
+  return navHrefsForPath(pathname).some((href) => adminItemAllowed(access, href))
+}
+
+/** Where an admin starts: Home, or My page when Home isn't one of their pages. */
+export const adminHomeFor = (access: AdminAccess) => (adminItemAllowed(access, ADMIN_HOME) ? ADMIN_HOME : `${ADMIN_HOME}/me`)
+
+/** The pages a full admin can tick for someone (everything except My page and Admin access). */
+export function tickableAdminSections(): AdminNavSection[] {
+  return ADMIN_NAV.filter((s) => !s.devOnly)
+    .map((s) => ({ ...s, items: s.items.filter((i) => !i.everyAdmin && !i.fullOnly) }))
+    .filter((s) => s.items.length > 0)
+}
+
+export function visibleAdminNav(role: ConsoleRole = 'admin', access: AdminAccess = FULL_ACCESS): AdminNavSection[] {
   const showDev = devToolsEnabled()
-  return ADMIN_NAV.filter((section) => (!section.devOnly || showDev) && (role === 'admin' || section.alsoFor?.includes(role))).map(
-    // Learn super admins keep the admin-only community items, but never courses or certificates
-    (section) =>
-      role === 'admin'
-        ? section
-        : role === 'learn_admin'
-          ? { ...section, items: section.items.filter((item) => !item.courseAdmin) }
-          : { ...section, items: section.items.filter((item) => !item.adminOnly) }
-  )
+  return ADMIN_NAV.filter((section) => (!section.devOnly || showDev) && (role === 'admin' || section.alsoFor?.includes(role)))
+    .map(
+      // Learn super admins keep the admin-only community items, but never courses or certificates
+      (section) =>
+        role === 'admin'
+          ? { ...section, items: section.items.filter((item) => adminItemAllowed(access, item.href)) }
+          : role === 'learn_admin'
+            ? { ...section, items: section.items.filter((item) => !item.courseAdmin && !item.everyAdmin && !item.fullOnly) }
+            : { ...section, items: section.items.filter((item) => !item.adminOnly && !item.everyAdmin && !item.fullOnly) }
+    )
+    .filter((section) => section.items.length > 0)
 }
 
 /** How well a nav href matches the current URL: higher is better, 0 means no match. */

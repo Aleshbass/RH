@@ -14,7 +14,7 @@ import { partnerApprovalStatus } from "./helpers/partnerShared";
 export const getPartnershipInquiries = query({
   args: {},
   handler: async (ctx) => {
-    await requireAdmin(ctx);
+    await requireAdmin(ctx, "adminPartnerships:getPartnershipInquiries");
     return ctx.db.query("partnershipInquiries").withIndex("by_created").order("desc").collect();
   },
 });
@@ -25,7 +25,7 @@ export const updatePartnershipInquiryStatus = mutation({
     status: v.union(v.literal("new"), v.literal("contacted"), v.literal("closed")),
   },
   handler: async (ctx, args) => {
-    await requireAdmin(ctx);
+    await requireAdmin(ctx, "adminPartnerships:updatePartnershipInquiryStatus");
     await ctx.db.patch(args.id, { status: args.status });
     return { success: true };
   },
@@ -37,7 +37,7 @@ export const getPartnerApplications = query({
     status: v.optional(v.union(v.literal("pending"), v.literal("approved"), v.literal("rejected"), v.literal("all"))),
   },
   handler: async (ctx, args) => {
-    await requireAdmin(ctx);
+    await requireAdmin(ctx, "adminPartnerships:getPartnerApplications");
     const partners = await ctx.db.query("partners").order("desc").collect();
     // For referring doctors, what the admin checks before approving (e.g. the MDCN folio)
     const doctorDetailsFor = async (p: (typeof partners)[number]) => {
@@ -95,7 +95,7 @@ export const reviewPartnerApplication = mutation({
     reason: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const admin = await requireAdmin(ctx);
+    const admin = await requireAdmin(ctx, "adminPartnerships:reviewPartnerApplication");
     const partner = await ctx.db.get(args.partnerId);
     if (!partner) throw new ConvexError("Partner not found.");
     const now = Date.now();
@@ -195,7 +195,7 @@ export const reviewProductionAccess = mutation({
     reason: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const admin = await requireAdmin(ctx);
+    const admin = await requireAdmin(ctx, "adminPartnerships:reviewProductionAccess");
     const partner = await ctx.db.get(args.partnerId);
     if (!partner) throw new ConvexError("Partner not found.");
     if (partnerApprovalStatus(partner) !== "approved" || !partner.isActive) {

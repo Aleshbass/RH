@@ -318,7 +318,7 @@ const KIND_ORDER: Record<string, number> = { awaiting_physio: 0, help_choosing: 
 export const adminList = query({
   args: {},
   handler: async (ctx) => {
-    await requireAdmin(ctx);
+    await requireAdmin(ctx, "careQueue:adminList");
     const open = await ctx.db
       .query("careSignals")
       .withIndex("by_status", (q) => q.eq("status", "open"))
@@ -395,7 +395,7 @@ export const adminList = query({
 export const adminMarkHandled = mutation({
   args: { signalId: v.id("careSignals"), note: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    const { user } = await requireAdmin(ctx);
+    const { user } = await requireAdmin(ctx, "careQueue:adminMarkHandled");
     const signal = await ctx.db.get(args.signalId);
     if (!signal) throw new ConvexError("Not found.");
     await closeCareSignal(ctx, signal, args.note?.trim() || "Handled by the team", user._id);
@@ -406,7 +406,7 @@ export const adminMarkHandled = mutation({
 export const adminNudgePhysio = mutation({
   args: { signalId: v.id("careSignals") },
   handler: async (ctx, args) => {
-    await requireAdmin(ctx);
+    await requireAdmin(ctx, "careQueue:adminNudgePhysio");
     const signal = await ctx.db.get(args.signalId);
     const booking = signal?.bookingId ? await ctx.db.get(signal.bookingId) : null;
     if (!signal || !booking) throw new ConvexError("This one has no booking to nudge about.");

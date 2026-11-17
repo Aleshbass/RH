@@ -340,7 +340,7 @@ const MODE_DETAIL: Record<string, string> = {
 export const adminAgreementsOverview = query({
   args: {},
   handler: async (ctx) => {
-    await requireAdmin(ctx);
+    await requireAdmin(ctx, "agreements:adminAgreementsOverview");
 
     const signatures = await ctx.db.query("agreementSignatures").withIndex("by_signed").order("desc").take(5000);
     const latest = new Map<string, Doc<"agreementSignatures">>();
@@ -433,7 +433,7 @@ export const adminAgreementsOverview = query({
 export const adminAgreementSignature = query({
   args: { signatureId: v.id("agreementSignatures") },
   handler: async (ctx, { signatureId }) => {
-    await requireAdmin(ctx);
+    await requireAdmin(ctx, "agreements:adminAgreementSignature");
     const row = await ctx.db.get(signatureId);
     if (!row) return null;
     const history = row.clinicId
@@ -465,7 +465,7 @@ export const adminAgreementSignature = query({
 export const adminCountersignAgreement = mutation({
   args: { signatureId: v.id("agreementSignatures"), signatory: v.number() },
   handler: async (ctx, { signatureId, signatory }) => {
-    const { user: admin } = await requireAdmin(ctx);
+    const { user: admin } = await requireAdmin(ctx, "agreements:adminCountersignAgreement");
     const row = await ctx.db.get(signatureId);
     if (!row) throw new ConvexError("Signature not found.");
     if (row.status !== "awaiting_countersign") throw new ConvexError("This agreement isn't waiting for Rehabify's signature.");
@@ -499,7 +499,7 @@ export const adminCountersignAgreement = mutation({
 export const adminVoidAgreementSignature = mutation({
   args: { signatureId: v.id("agreementSignatures"), reason: v.string() },
   handler: async (ctx, { signatureId, reason }) => {
-    const { user: admin } = await requireAdmin(ctx);
+    const { user: admin } = await requireAdmin(ctx, "agreements:adminVoidAgreementSignature");
     const row = await ctx.db.get(signatureId);
     if (!row) throw new ConvexError("Signature not found.");
     if (row.status === "void") return { success: true };
@@ -523,7 +523,7 @@ export const adminVoidAgreementSignature = mutation({
 export const adminSendAgreementRequest = mutation({
   args: { userId: v.id("users"), agreementId: v.string(), clinicId: v.optional(v.id("clinics")) },
   handler: async (ctx, args) => {
-    const { user: admin } = await requireAdmin(ctx);
+    const { user: admin } = await requireAdmin(ctx, "agreements:adminSendAgreementRequest");
     if (!isAgreementId(args.agreementId)) throw new ConvexError("That agreement doesn't exist.");
     const spec = AGREEMENTS[args.agreementId];
     const user = await ctx.db.get(args.userId);
@@ -574,7 +574,7 @@ export const adminSendAgreementRequest = mutation({
 export const adminSetAgreementsEnforcement = mutation({
   args: { enforcedAt: v.optional(v.number()) },
   handler: async (ctx, { enforcedAt }) => {
-    const { user: admin } = await requireAdmin(ctx);
+    const { user: admin } = await requireAdmin(ctx, "agreements:adminSetAgreementsEnforcement");
     await ctx.db.insert("agreementSettings", { enforcedAt, updatedAt: Date.now(), updatedBy: admin._id });
     return { success: true };
   },

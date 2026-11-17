@@ -1863,7 +1863,7 @@ export const requestClinicPlanUpgrade = mutation({
 export const adminGetClinicSubscription = query({
   args: { clinicId: v.id("clinics") },
   handler: async (ctx, args) => {
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "clinicBilling:adminGetClinicSubscription");
     const clinic = await ctx.db.get(args.clinicId);
     if (!clinic) return null;
     const now = Date.now();
@@ -1933,7 +1933,7 @@ export const adminSaveClinicSubscription = mutation({
     switchOn: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
-    const admin = await ensureUserRole(ctx, ["admin"]);
+    const admin = await ensureUserRole(ctx, ["admin"], "clinicBilling:adminSaveClinicSubscription");
     const clinic = await ctx.db.get(args.clinicId);
     if (!clinic) throw new ConvexError("Clinic not found");
     const now = Date.now();
@@ -2082,7 +2082,7 @@ export const adminSaveClinicSubscription = mutation({
 export const adminSwitchClinicBillingOff = mutation({
   args: { clinicId: v.id("clinics") },
   handler: async (ctx, args) => {
-    const admin = await ensureUserRole(ctx, ["admin"]);
+    const admin = await ensureUserRole(ctx, ["admin"], "clinicBilling:adminSwitchClinicBillingOff");
     const sub = await subscriptionForClinic(ctx, args.clinicId);
     if (!billingIsOn(sub)) return { changed: false };
     const now = Date.now();
@@ -2103,7 +2103,7 @@ export const adminSwitchClinicBillingOff = mutation({
 export const adminMarkSubscriptionInvoicePaid = mutation({
   args: { invoiceId: v.id("clinicSubscriptionInvoices"), note: v.string() },
   handler: async (ctx, args) => {
-    const admin = await ensureUserRole(ctx, ["admin"]);
+    const admin = await ensureUserRole(ctx, ["admin"], "clinicBilling:adminMarkSubscriptionInvoicePaid");
     const invoice = await ctx.db.get(args.invoiceId);
     if (!invoice) throw new ConvexError("Invoice not found");
     if (invoice.status === "paid") return { success: true };
@@ -2128,7 +2128,7 @@ export const adminMarkSubscriptionInvoicePaid = mutation({
 export const adminVoidSubscriptionInvoice = mutation({
   args: { invoiceId: v.id("clinicSubscriptionInvoices"), reason: v.string(), reissue: v.optional(v.boolean()) },
   handler: async (ctx, args) => {
-    const admin = await ensureUserRole(ctx, ["admin"]);
+    const admin = await ensureUserRole(ctx, ["admin"], "clinicBilling:adminVoidSubscriptionInvoice");
     const invoice = await ctx.db.get(args.invoiceId);
     if (!invoice) throw new ConvexError("Invoice not found");
     if (invoice.status === "paid") throw new ConvexError("Paid invoices can't be voided.");
@@ -2165,7 +2165,7 @@ export const adminVoidSubscriptionInvoice = mutation({
 export const adminClinicBillingAttention = query({
   args: {},
   handler: async (ctx) => {
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "clinicBilling:adminClinicBillingAttention");
     const subs = [
       ...(await ctx.db.query("clinicSubscriptions").withIndex("by_status", (q) => q.eq("status", "read_only")).take(100)),
       ...(await ctx.db.query("clinicSubscriptions").withIndex("by_status", (q) => q.eq("status", "past_due")).take(100)),

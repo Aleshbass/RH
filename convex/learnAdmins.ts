@@ -30,7 +30,7 @@ export const me = query({
 export const list = query({
   args: {},
   handler: async (ctx) => {
-    await requireAdmin(ctx);
+    await requireAdmin(ctx, "learnAdmins:list");
     const rows = await ctx.db.query("learnAdmins").take(200);
     const out = [];
     for (const r of rows) {
@@ -148,7 +148,7 @@ export const pending = query({
 export const cancelInvite = mutation({
   args: { email: v.string() },
   handler: async (ctx, args) => {
-    await requireAdmin(ctx);
+    await requireAdmin(ctx, "learnAdmins:cancelInvite");
     const rows = await ctx.db
       .query("learnAdminInvites")
       .withIndex("by_email", (q) => q.eq("email", args.email.toLowerCase().trim()))
@@ -161,7 +161,7 @@ export const cancelInvite = mutation({
 export const add = mutation({
   args: { email: v.string() },
   handler: async (ctx, args) => {
-    const { user: admin } = await requireAdmin(ctx);
+    const { user: admin } = await requireAdmin(ctx, "learnAdmins:add");
     const res = await addByEmail(ctx, args.email, admin._id);
     if (res.result === "invalid") throw new ConvexError("Enter a valid email address.");
     if (res.result === "platform_admin") throw new ConvexError("They're a platform admin already, so they have every Learn power.");
@@ -172,7 +172,7 @@ export const add = mutation({
 export const remove = mutation({
   args: { userId: v.id("users") },
   handler: async (ctx, args) => {
-    const { user: admin } = await requireAdmin(ctx);
+    const { user: admin } = await requireAdmin(ctx, "learnAdmins:remove");
     const rows = await ctx.db
       .query("learnAdmins")
       .withIndex("by_user", (q) => q.eq("userId", args.userId))

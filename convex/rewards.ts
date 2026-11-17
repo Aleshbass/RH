@@ -378,7 +378,7 @@ export const runDailyRewards = internalMutation({
 export const adminRewardsOverview = query({
   args: {},
   handler: async (ctx) => {
-    await requireAdmin(ctx);
+    await requireAdmin(ctx, "rewards:adminRewardsOverview");
     const items = (await ctx.db.query("rewardItems").collect()).sort((a, b) => a.sort - b.sort);
     const pending = await ctx.db
       .query("rewardRedemptions")
@@ -437,7 +437,7 @@ export const adminRewardsOverview = query({
 export const adminAddStarterRewards = mutation({
   args: {},
   handler: async (ctx) => {
-    await requireAdmin(ctx);
+    await requireAdmin(ctx, "rewards:adminAddStarterRewards");
     const existing = await ctx.db.query("rewardItems").collect();
     const now = Date.now();
     let added = 0;
@@ -462,7 +462,7 @@ export const adminSaveRewardItem = mutation({
     active: v.boolean(),
   },
   handler: async (ctx, args) => {
-    await requireAdmin(ctx);
+    await requireAdmin(ctx, "rewards:adminSaveRewardItem");
     const title = args.title.trim();
     if (title.length < 3) throw new ConvexError("Give the reward a name.");
     if (!Number.isInteger(args.cost) || args.cost < 0) throw new ConvexError("The price must be a whole number of points.");
@@ -490,7 +490,7 @@ export const adminSaveRewardItem = mutation({
 export const adminHandleRedemption = mutation({
   args: { redemptionId: v.id("rewardRedemptions"), action: v.union(v.literal("fulfil"), v.literal("cancel")), note: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    const { user: admin } = await requireAdmin(ctx);
+    const { user: admin } = await requireAdmin(ctx, "rewards:adminHandleRedemption");
     const redemption = await ctx.db.get(args.redemptionId);
     if (!redemption) throw new ConvexError("Request not found.");
     if (redemption.status !== "pending") throw new ConvexError("This request has already been handled.");
@@ -535,7 +535,7 @@ export const adminHandleRedemption = mutation({
 export const adminAdjustPoints = mutation({
   args: { email: v.string(), points: v.number(), reason: v.string() },
   handler: async (ctx, args) => {
-    const { user: admin } = await requireAdmin(ctx);
+    const { user: admin } = await requireAdmin(ctx, "rewards:adminAdjustPoints");
     const reason = args.reason.trim();
     if (reason.length < 5) throw new ConvexError("Say why, in a few words. The physio sees it.");
     if (!Number.isInteger(args.points) || args.points === 0 || Math.abs(args.points) > 10_000) {

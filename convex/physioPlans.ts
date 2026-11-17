@@ -1485,7 +1485,7 @@ const numKeys = [
 export const adminOverview = query({
   args: {},
   handler: async (ctx) => {
-    await requireAdmin(ctx);
+    await requireAdmin(ctx, "physioPlans:adminOverview");
     const now = Date.now();
     const s = await loadPlanSettings(ctx);
     const subs = await ctx.db.query("physioSubscriptions").order("desc").take(2000);
@@ -1582,7 +1582,7 @@ export const adminSaveSettings = mutation({
     noticeDate: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const { user } = await requireAdmin(ctx);
+    const { user } = await requireAdmin(ctx, "physioPlans:adminSaveSettings");
     const patch: Record<string, unknown> = { updatedBy: user._id, updatedAt: Date.now() };
     for (const key of numKeys) {
       const n = args[key];
@@ -1628,7 +1628,7 @@ export const adminSaveSettings = mutation({
 export const adminGrant = mutation({
   args: { email: v.string(), days: v.number(), reason: v.string() },
   handler: async (ctx, args) => {
-    const { user: admin } = await requireAdmin(ctx);
+    const { user: admin } = await requireAdmin(ctx, "physioPlans:adminGrant");
     const email = args.email.trim().toLowerCase();
     const physio = await ctx.db
       .query("users")
@@ -1650,7 +1650,7 @@ export const adminGrant = mutation({
 export const adminSetPhysioCountry = mutation({
   args: { userId: v.id("users"), country: v.string() },
   handler: async (ctx, args) => {
-    const { user: admin } = await requireAdmin(ctx);
+    const { user: admin } = await requireAdmin(ctx, "physioPlans:adminSetPhysioCountry");
     const country = args.country.trim().slice(0, 60);
     if (country.length < 2) throw new ConvexError("Choose a country.");
     const profile = await ctx.db
@@ -1677,7 +1677,7 @@ export const adminSetPhysioCountry = mutation({
 export const adminRevokeGrant = mutation({
   args: { grantId: v.id("physioPlanGrants") },
   handler: async (ctx, args) => {
-    await requireAdmin(ctx);
+    await requireAdmin(ctx, "physioPlans:adminRevokeGrant");
     await ctx.db.patch(args.grantId, { revokedAt: Date.now() });
     return null;
   },

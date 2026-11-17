@@ -176,7 +176,7 @@ async function segmentCounts(ctx: QueryCtx) {
 export const adminOverview = query({
   args: {},
   handler: async (ctx) => {
-    await requireAdmin(ctx);
+    await requireAdmin(ctx, "marketing:adminOverview");
     const usage = await ctx.db.query("marketingDailyUsage").withIndex("by_day", (q) => q.eq("day", utcDay())).first();
     return {
       counts: await segmentCounts(ctx),
@@ -189,7 +189,7 @@ export const adminOverview = query({
 export const adminListCampaigns = query({
   args: {},
   handler: async (ctx) => {
-    await requireAdmin(ctx);
+    await requireAdmin(ctx, "marketing:adminListCampaigns");
     const campaigns = await ctx.db.query("marketingCampaigns").withIndex("by_created").order("desc").take(40);
     return Promise.all(
       campaigns.map(async (c) => {
@@ -216,7 +216,7 @@ const DETAIL_LIMIT = 2000;
 export const adminCampaignDetail = query({
   args: { campaignId: v.id("marketingCampaigns") },
   handler: async (ctx, args) => {
-    await requireAdmin(ctx);
+    await requireAdmin(ctx, "marketing:adminCampaignDetail");
     const campaign = await ctx.db.get(args.campaignId);
     if (!campaign) return null;
 
@@ -285,7 +285,7 @@ export const adminCampaignDetail = query({
 export const adminListContacts = query({
   args: {},
   handler: async (ctx) => {
-    await requireAdmin(ctx);
+    await requireAdmin(ctx, "marketing:adminListContacts");
     const contacts = await ctx.db.query("marketingContacts").collect();
     return contacts.sort((a, b) => b.createdAt - a.createdAt);
   },
@@ -294,7 +294,7 @@ export const adminListContacts = query({
 export const adminAddContacts = mutation({
   args: { contacts: v.array(v.object({ email: v.string(), name: v.optional(v.string()) })), tags: v.optional(v.array(v.string())) },
   handler: async (ctx, args) => {
-    await requireAdmin(ctx);
+    await requireAdmin(ctx, "marketing:adminAddContacts");
     if (args.contacts.length > 1000) throw new ConvexError("Add up to 1,000 contacts at a time.");
     const tags = (args.tags ?? []).map((t) => clean(t, 40)).filter(Boolean).slice(0, 10);
     let added = 0;
@@ -320,7 +320,7 @@ export const adminAddContacts = mutation({
 export const adminRemoveContact = mutation({
   args: { id: v.id("marketingContacts") },
   handler: async (ctx, args) => {
-    await requireAdmin(ctx);
+    await requireAdmin(ctx, "marketing:adminRemoveContact");
     await ctx.db.delete(args.id);
     return { success: true };
   },
@@ -330,7 +330,7 @@ export const adminRemoveContact = mutation({
 export const adminFindPeople = query({
   args: { q: v.string() },
   handler: async (ctx, args) => {
-    await requireAdmin(ctx);
+    await requireAdmin(ctx, "marketing:adminFindPeople");
     const q = args.q.trim().toLowerCase();
     if (q.length < 2) return [];
     const users = await ctx.db.query("users").collect();
@@ -350,7 +350,7 @@ export const adminFindPeople = query({
 export const adminSendTest = mutation({
   args: content,
   handler: async (ctx, args) => {
-    const admin = await requireAdmin(ctx);
+    const admin = await requireAdmin(ctx, "marketing:adminSendTest");
     const to = normalEmail(admin.user.email);
     if (!usable(to)) throw new ConvexError("Your admin account has no email to send a test to.");
     const cleaned = cleanContent(args);
@@ -367,7 +367,7 @@ export const adminSendTest = mutation({
 export const adminCreateCampaign = mutation({
   args: { ...content, audience, emails: v.optional(v.array(v.string())) },
   handler: async (ctx, args) => {
-    const admin = await requireAdmin(ctx);
+    const admin = await requireAdmin(ctx, "marketing:adminCreateCampaign");
     const cleaned = cleanContent(args);
     const now = Date.now();
 

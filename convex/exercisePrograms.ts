@@ -1769,7 +1769,7 @@ export const sweepPatientPlans = internalMutation({
 export const adminPatientPlans = query({
   args: {},
   handler: async (ctx) => {
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "exercisePrograms:adminPatientPlans");
     const now = Date.now();
     const live = await planSettings(ctx);
     const running = (
@@ -1821,7 +1821,7 @@ export const adminPatientPlans = query({
 export const adminSetPlanLaunch = mutation({
   args: { plan: planValidator, live: v.boolean() },
   handler: async (ctx, args) => {
-    const admin = await ensureUserRole(ctx, ["admin"]);
+    const admin = await ensureUserRole(ctx, ["admin"], "exercisePrograms:adminSetPlanLaunch");
     const now = Date.now();
     const row = await ctx.db.query("patientPlanSettings").order("desc").first();
     const next = {
@@ -1850,7 +1850,7 @@ export const adminSetPlanLaunch = mutation({
 export const adminFindPatientForPlan = query({
   args: { search: v.string() },
   handler: async (ctx, args) => {
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "exercisePrograms:adminFindPatientForPlan");
     const search = args.search.trim();
     if (search.length < 3) return [];
     const byNumber = /^rh-p-\d+$/i.test(search)
@@ -1893,7 +1893,7 @@ export const adminGrantPlan = mutation({
     note: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const admin = await ensureUserRole(ctx, ["admin"]);
+    const admin = await ensureUserRole(ctx, ["admin"], "exercisePrograms:adminGrantPlan");
     const patient = await ctx.db.get(args.patientId);
     if (!patient || patient.role !== "patient") throw new ConvexError("That patient's account couldn't be found.");
     const now = Date.now();
@@ -2233,7 +2233,7 @@ export const reportProgramTemplate = mutation({
 export const adminReportedTemplates = query({
   args: {},
   handler: async (ctx) => {
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "exercisePrograms:adminReportedTemplates");
     const rows = (
       await ctx.db
         .query("programTemplates")
@@ -2256,7 +2256,7 @@ export const adminReportedTemplates = query({
 export const adminSetTemplateHidden = mutation({
   args: { templateId: v.id("programTemplates"), hidden: v.boolean() },
   handler: async (ctx, args) => {
-    const admin = await ensureUserRole(ctx, ["admin"]);
+    const admin = await ensureUserRole(ctx, ["admin"], "exercisePrograms:adminSetTemplateHidden");
     const template = await ctx.db.get(args.templateId);
     if (!template) throw new ConvexError("Template not found.");
     await ctx.db.patch(

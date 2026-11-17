@@ -59,7 +59,7 @@ async function syncSeed(ctx: MutationCtx) {
 export const syncLibraryResources = mutation({
   args: {},
   handler: async (ctx) => {
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "libraryResources:syncLibraryResources");
     return await syncSeed(ctx);
   },
 });

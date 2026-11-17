@@ -478,7 +478,7 @@ export const getUserActivityLogs = query({
     ipAddress: v.any(),
   })),
   handler: async (ctx, { limit = 50 }) => {
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "analytics/service:getUserActivityLogs");
     // Get recent analytics events as activity logs
     const events = await ctx.db
       .query("analytics_events")

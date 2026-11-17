@@ -34,7 +34,7 @@ function capMetadata(metadata: unknown): Record<string, unknown> | undefined {
 export const getSystemHealth = query({
   args: {},
   handler: async (ctx) => {
-    await ensureUserRole(ctx, ["admin"])
+    await ensureUserRole(ctx, ["admin"], "analytics:getSystemHealth")
     try {
       const now = Date.now()
       const oneHourAgo = now - (60 * 60 * 1000)

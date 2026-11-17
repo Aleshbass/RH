@@ -856,7 +856,7 @@ async function alertRow(ctx: QueryCtx, alert: Alert) {
 export const adminBoard = query({
   args: {},
   handler: async (ctx) => {
-    await requireAdmin(ctx);
+    await requireAdmin(ctx, "homeVisitSafety:adminBoard");
     const now = Date.now();
     const [open, handling] = await Promise.all([
       ctx.db.query("safetyAlerts").withIndex("by_status", (q) => q.eq("status", "open")).order("desc").take(50),
@@ -918,7 +918,7 @@ export const adminOpenAlerts = query({
 export const handleAlert = mutation({
   args: { alertId: v.id("safetyAlerts") },
   handler: async (ctx, args) => {
-    const { user } = await requireAdmin(ctx);
+    const { user } = await requireAdmin(ctx, "homeVisitSafety:handleAlert");
     const alert = await ctx.db.get(args.alertId);
     if (!alert || alert.status !== "open") return null;
     const now = Date.now();
@@ -933,7 +933,7 @@ export const handleAlert = mutation({
 export const resolveAlert = mutation({
   args: { alertId: v.id("safetyAlerts"), note: v.string(), falseAlarm: v.boolean(), closeVisit: v.optional(v.boolean()) },
   handler: async (ctx, args) => {
-    const { user } = await requireAdmin(ctx);
+    const { user } = await requireAdmin(ctx, "homeVisitSafety:resolveAlert");
     const alert = await ctx.db.get(args.alertId);
     if (!alert || alert.status === "resolved") return null;
     const note = args.note.trim().slice(0, 1000);
@@ -969,7 +969,7 @@ export const resolveAlert = mutation({
 export const adminCloseVisit = mutation({
   args: { visitId: v.id("homeVisitSafety") },
   handler: async (ctx, args) => {
-    await requireAdmin(ctx);
+    await requireAdmin(ctx, "homeVisitSafety:adminCloseVisit");
     const visit = await ctx.db.get(args.visitId);
     if (!visit || visit.stage === "left") return null;
     await closeVisit(ctx, visit, "care_team");

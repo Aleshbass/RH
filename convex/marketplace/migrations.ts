@@ -66,7 +66,7 @@ export const backfillPhysioDefaults = enableMarketplaceForAllPhysios;
  */
 export const enableMarketplaceForApprovedPhysios = mutation({
   handler: async (ctx) => {
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "marketplace/migrations:enableMarketplaceForApprovedPhysios");
     return applyMarketplaceDefaults(ctx);
   },
 });

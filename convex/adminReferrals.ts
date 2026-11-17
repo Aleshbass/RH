@@ -93,7 +93,7 @@ export const getInboundReferrals = query({
         limit: v.optional(v.number()),
     },
     handler: async (ctx, args) => {
-        await ensureUserRole(ctx, ["admin"]);
+        await ensureUserRole(ctx, ["admin"], "adminReferrals:getInboundReferrals");
         const limit = Math.min(Math.max(Math.floor(args.limit ?? 100), 1), MAX_PAGE);
         const { rows: referrals, hasMore } = await loadReferralPage(ctx, args, limit);
 
@@ -193,7 +193,7 @@ export const getInboundReferrals = query({
 export const getInboundReferralStageCounts = query({
     args: { partnerId: v.optional(v.string()) },
     handler: async (ctx, args) => {
-        await ensureUserRole(ctx, ["admin"]);
+        await ensureUserRole(ctx, ["admin"], "adminReferrals:getInboundReferralStageCounts");
         const counts = Object.fromEntries(STAGE_NAMES.map((s) => [s, 0])) as Record<ReferralStage, number>;
         const capped = Object.fromEntries(STAGE_NAMES.map((s) => [s, false])) as Record<ReferralStage, boolean>;
 
@@ -266,7 +266,7 @@ export const updateReferralStatus = mutation({
     },
     handler: async (ctx, args) => {
         // Admins only: this changes referral state and notifies the partner (webhook).
-        const adminUser = await ensureUserRole(ctx, ["admin"]);
+        const adminUser = await ensureUserRole(ctx, ["admin"], "adminReferrals:updateReferralStatus");
         const adminId = String(adminUser._id);
         const actorType = "admin";
 
@@ -308,7 +308,7 @@ export const updateReferralStatus = mutation({
 export const listClinicsForReferralRouting = query({
     args: {},
     handler: async (ctx) => {
-        await ensureUserRole(ctx, ["admin"]);
+        await ensureUserRole(ctx, ["admin"], "adminReferrals:listClinicsForReferralRouting");
 
         const clinics = await ctx.db.query("clinics").take(1000);
         const rows = await Promise.all(
@@ -338,7 +338,7 @@ export const assignReferralToClinic = mutation({
         clinicId: v.optional(v.id("clinics")),
     },
     handler: async (ctx, args) => {
-        const admin = await ensureUserRole(ctx, ["admin"]);
+        const admin = await ensureUserRole(ctx, ["admin"], "adminReferrals:assignReferralToClinic");
 
         const referral = await ctx.db.get(args.referralId);
         if (!referral) {
@@ -404,7 +404,7 @@ export const assignPhysiotherapistToReferral = mutation({
         unrouteClinic: v.optional(v.boolean()),
     },
     handler: async (ctx, args) => {
-        const adminUser = await ensureUserRole(ctx, ["admin"]);
+        const adminUser = await ensureUserRole(ctx, ["admin"], "adminReferrals:assignPhysiotherapistToReferral");
         const adminId = String(adminUser._id);
 
         const referral = await ctx.db.get(args.referralId);

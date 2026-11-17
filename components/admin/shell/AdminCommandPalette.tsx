@@ -8,8 +8,8 @@ import { ArrowRight, CornerDownLeft, Search, UserRound } from '@/components/icon
 import { api } from '@/convex/_generated/api'
 import { cn } from '@/lib/utils'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
-import { ADMIN_HOME, visibleAdminNav, type AdminNavItem } from './adminNav'
-import { useConsoleRole } from './consoleRole'
+import { ADMIN_HOME, adminItemAllowed, visibleAdminNav, type AdminNavItem } from './adminNav'
+import { useAdminAccess, useConsoleRole } from './consoleRole'
 
 export const OPEN_ADMIN_PALETTE_EVENT = 'rehabify:admin-palette'
 
@@ -56,15 +56,21 @@ export function AdminCommandPalette() {
   }, [open])
 
   const role = useConsoleRole()
-  // People search is admin-only
+  const access = useAdminAccess()
+  // People search is admin-only, and needs one of the people pages for admins limited to some pages
+  const canSearchPeople =
+    role === 'admin' &&
+    ['/dashboard/admin/users', '/dashboard/admin/users?role=patient', '/dashboard/admin/physiotherapists', '/dashboard/admin/clinics'].some((href) =>
+      adminItemAllowed(access, href)
+    )
   const people = useQuery(
     api.adminConsole.searchPeople,
-    role === 'admin' && open && debounced.trim().length >= 2 ? { term: debounced } : 'skip'
+    canSearchPeople && open && debounced.trim().length >= 2 ? { term: debounced } : 'skip'
   )
 
   const pages = useMemo<Result[]>(() => {
     const q = term.trim().toLowerCase()
-    const all = visibleAdminNav(role).flatMap((section) =>
+    const all = visibleAdminNav(role, access).flatMap((section) =>
       section.items.map((item) => ({ section, item }))
     )
     return all
@@ -82,7 +88,7 @@ export function AdminCommandPalette() {
         href: item.href,
         icon: item.icon,
       }))
-  }, [term, role])
+  }, [term, role, access])
 
   const results: Result[] = useMemo(() => {
     type Person = { _id: string; name: string; email: string; role: string; rehabifyId?: string }

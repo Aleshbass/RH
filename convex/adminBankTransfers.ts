@@ -76,7 +76,7 @@ async function enrich(ctx: QueryCtx, bookings: Doc<"marketplaceBookings">[]) {
 export const listAwaitingPayment = query({
   args: { limit: v.optional(v.number()) },
   handler: async (ctx, args) => {
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "adminBankTransfers:listAwaitingPayment");
     const limit = clampLimit(args.limit, 100);
     const pending = await ctx.db
       .query("marketplaceBookings")
@@ -96,7 +96,7 @@ export const listAwaitingPayment = query({
 export const listRecentlyConfirmed = query({
   args: { limit: v.optional(v.number()) },
   handler: async (ctx, args) => {
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "adminBankTransfers:listRecentlyConfirmed");
     const limit = clampLimit(args.limit, 50);
     const completed = await ctx.db
       .query("marketplaceBookings")

@@ -160,7 +160,7 @@ export const getApprovalDetails = query({
   },
   handler: async (ctx, args) => {
     // Admin review dialog only: includes the applicant's details and documents.
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "accountApproval:getApprovalDetails");
     // Verify user exists
     const user = await getUserByIdOrThrow(ctx, args.userId);
 
@@ -261,7 +261,7 @@ export const listPendingApprovals = query({
   },
   handler: async (ctx, args) => {
     // Admin dashboard only: lists applicants with their details.
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "accountApproval:listPendingApprovals");
     const limit = args.limit ?? 10;
 
     const statuses = await ctx.db
@@ -316,7 +316,7 @@ export const adminListApprovalQueue = query({
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "accountApproval:adminListApprovalQueue");
     const limit = Math.max(1, Math.min(Math.floor(args.limit ?? 100), 200));
 
     const statuses = await ctx.db

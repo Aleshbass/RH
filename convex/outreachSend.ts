@@ -341,7 +341,7 @@ const stepValidator = v.object({ subject: v.string(), body: v.string(), waitDays
 export const adminSenderOverview = query({
   args: {},
   handler: async (ctx) => {
-    await requireAdmin(ctx);
+    await requireAdmin(ctx, "outreachSend:adminSenderOverview");
     const now = Date.now();
     const row = await settingsRow(ctx);
     const s = withDefaults(row);
@@ -437,7 +437,7 @@ export const adminSaveSender = mutation({
     dailyMax: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const { user } = await requireAdmin(ctx);
+    const { user } = await requireAdmin(ctx, "outreachSend:adminSaveSender");
     const row = await settingsRow(ctx);
     const patch: Partial<Settings> = { updatedBy: user._id };
     if (args.fromName !== undefined) patch.fromName = args.fromName.trim().slice(0, 60) || SENDER_DEFAULTS.fromName;
@@ -474,7 +474,7 @@ export const adminSaveSequence = mutation({
     status: v.union(v.literal("draft"), v.literal("active"), v.literal("paused")),
   },
   handler: async (ctx, args) => {
-    const { user } = await requireAdmin(ctx);
+    const { user } = await requireAdmin(ctx, "outreachSend:adminSaveSequence");
     const name = args.name.trim().slice(0, 80);
     if (!name) throw new ConvexError("Give the sequence a name.");
     if (args.steps.length === 0 || args.steps.length > 5) throw new ConvexError("A sequence has one to five emails.");
@@ -510,7 +510,7 @@ export const adminEnroll = mutation({
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const { user } = await requireAdmin(ctx);
+    const { user } = await requireAdmin(ctx, "outreachSend:adminEnroll");
     const seq = await ctx.db.get(args.sequenceId);
     if (!seq) throw new ConvexError("That sequence isn't there any more.");
     const limit = clampInt(args.limit ?? 500, 1, 1000);
@@ -559,7 +559,7 @@ export const adminEnroll = mutation({
 export const adminStopEnrollment = mutation({
   args: { enrollmentId: v.id("outreachEnrollments") },
   handler: async (ctx, args) => {
-    await requireAdmin(ctx);
+    await requireAdmin(ctx, "outreachSend:adminStopEnrollment");
     const e = await ctx.db.get(args.enrollmentId);
     if (!e) throw new ConvexError("That clinic isn't in a sequence any more.");
     if (e.status === "active") await stopEnrollment(ctx, e, "stopped", "Removed by the team");

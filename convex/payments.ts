@@ -1040,7 +1040,7 @@ const refundEmailRef = makeFunctionReference<
 export const adminRefundRequests = query({
   args: {},
   handler: async (ctx) => {
-    await requireAdmin(ctx);
+    await requireAdmin(ctx, "payments:adminRefundRequests");
     const byStatus = (status: Doc<"refundRequests">["status"], take: number, order: "asc" | "desc" = "desc") =>
       ctx.db.query("refundRequests").withIndex("by_status", (q) => q.eq("status", status)).order(order).take(take);
     const rows = [
@@ -1082,7 +1082,7 @@ export const adminRefundRequests = query({
 export const adminDecideRefund = mutation({
   args: { requestId: v.id("refundRequests"), approve: v.boolean(), note: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    const { user: admin } = await requireAdmin(ctx);
+    const { user: admin } = await requireAdmin(ctx, "payments:adminDecideRefund");
     const request = await ctx.db.get(args.requestId);
     if (!request) throw new ConvexError("Refund request not found.");
     if (request.status !== "pending" && request.status !== "failed") throw new ConvexError("This refund has already been decided.");

@@ -460,7 +460,7 @@ export const myJoyMatchReadiness = query({
 export const adminJoyMatchReadiness = query({
   args: { physioUserId: v.id("users") },
   handler: async (ctx, args) => {
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "joyMatching:adminJoyMatchReadiness");
     const user = await ctx.db.get(args.physioUserId);
     if (!user || user.role !== "physiotherapist") return null;
     const profile = await ctx.db.query("physiotherapistProfiles").withIndex("by_user_id", (q) => q.eq("userId", user._id)).first();

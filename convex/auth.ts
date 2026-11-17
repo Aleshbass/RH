@@ -1,6 +1,7 @@
 import { QueryCtx, MutationCtx, ActionCtx } from "./_generated/server";
 import { ConvexError, v } from "convex/values"; // ConvexError is often here
 import { Id } from "./_generated/dataModel";
+import { adminPageGate } from "./helpers/adminAccess";
 
 export type UserRole = "physiotherapist" | "clinic_owner" | "patient" | "family_member" | "doctor" | "admin" | "partner" | "clinic_staff" | "blog_editor" | "learn_instructor";
 
@@ -31,9 +32,12 @@ export async function getAuthenticatedUser(ctx: QueryCtx | MutationCtx) {
  */
 export async function ensureUserRole(
   ctx: QueryCtx | MutationCtx,
-  allowedRoles: UserRole[]
+  allowedRoles: UserRole[],
+  /** "module:function": admins limited to some pages may only call what those pages use */
+  adminFunction?: string
 ) {
   const user = await getAuthenticatedUser(ctx);
+  if (adminFunction && user.role === "admin") await adminPageGate(ctx, user._id, adminFunction);
   
   if (!allowedRoles.includes(user.role as UserRole)) {
     throw new ConvexError(
