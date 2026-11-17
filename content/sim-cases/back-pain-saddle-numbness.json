@@ -8,26 +8,31 @@
   "mode": "full",
   "estimatedMinutes": 8,
   "audio": true,
+  "narration": true,
   "scenes": {
     "standing": {
       "src": "/sims/back-pain-saddle-numbness/v1/scene/standing.webp",
       "alt": "Mrs Adebayo stands stiffly in the clinic room, one hand pressed to her lower back.",
-      "video": "/sims/back-pain-saddle-numbness/v1/scene/standing.mp4",
-      "mouth": "/sims/back-pain-saddle-numbness/v1/scene/standing.json",
-      "credit": "3D model: Attractive African woman 236 by deep3dstudio (Sketchfab), CC BY 4.0, modified"
+      "art2d": {
+        "character": "funmi",
+        "pose": "standing"
+      }
     },
     "plinth": {
       "src": "/sims/back-pain-saddle-numbness/v1/scene/plinth.webp",
-      "alt": "Mrs Adebayo lies on her back on the treatment couch.",
-      "video": "/sims/back-pain-saddle-numbness/v1/scene/plinth.mp4",
-      "credit": "3D model: Attractive African woman 236 by deep3dstudio (Sketchfab), CC BY 4.0, modified"
+      "alt": "Mrs Adebayo sits on the edge of the treatment couch, holding it steady.",
+      "art2d": {
+        "character": "funmi",
+        "pose": "plinth"
+      }
     },
     "worried": {
       "src": "/sims/back-pain-saddle-numbness/v1/scene/worried.webp",
-      "alt": "Mrs Adebayo looks worried.",
-      "video": "/sims/back-pain-saddle-numbness/v1/scene/worried.mp4",
-      "mouth": "/sims/back-pain-saddle-numbness/v1/scene/worried.json",
-      "credit": "3D model: Attractive African woman 236 by deep3dstudio (Sketchfab), CC BY 4.0, modified"
+      "alt": "Mrs Adebayo looks worried, her hands clasped.",
+      "art2d": {
+        "character": "funmi",
+        "pose": "worried"
+      }
     }
   },
   "setting": "Outpatient physiotherapy clinic, Ibadan",
@@ -39,15 +44,37 @@
     "presentingComplaint": "Low back pain for five days after lifting a 25-litre keg of water"
   },
   "speakers": {
-    "patient": { "name": "Mrs Adebayo", "role": "Patient", "voice": "tMe86XfyOYDzkWDEk6AQ" }
+    "patient": {
+      "name": "Mrs Adebayo",
+      "role": "Patient",
+      "voice": "tMe86XfyOYDzkWDEk6AQ"
+    }
   },
   "monitor": false,
-  "vitals": { "hr": 88, "spo2": 98, "bpSys": 132, "bpDia": 84, "rr": 16 },
+  "vitals": {
+    "hr": 88,
+    "spo2": 98,
+    "bpSys": 132,
+    "bpDia": 84,
+    "rr": 16
+  },
   "pain": 8,
   "phases": [
-    { "id": "subjective", "label": "History", "budgetSec": 150 },
-    { "id": "objective", "label": "Examination", "budgetSec": 180 },
-    { "id": "plan", "label": "Plan", "budgetSec": 60 }
+    {
+      "id": "subjective",
+      "label": "History",
+      "budgetSec": 150
+    },
+    {
+      "id": "objective",
+      "label": "Examination",
+      "budgetSec": 180
+    },
+    {
+      "id": "plan",
+      "label": "Plan",
+      "budgetSec": 60
+    }
   ],
   "startNode": "history",
   "nodes": {
@@ -57,7 +84,10 @@
       "scene": "standing",
       "prompt": "Mrs Adebayo, 42, was referred by her GP with 'low back pain' after carrying a 25-litre keg of water up the stairs five days ago. She walks in stiffly. Take her history: each question takes time.",
       "lines": [
-        { "speaker": "patient", "text": "Good afternoon. My back has been so bad since I carried water up the stairs on Saturday. Now even my legs are not well." }
+        {
+          "speaker": "patient",
+          "text": "Good afternoon. My back has been so bad since I carried water up the stairs on Saturday. Now even my legs are not well."
+        }
       ],
       "choices": [
         {
@@ -68,8 +98,13 @@
           "points": 8,
           "tag": "high-yield",
           "feedback": "Good: pain spreading down both legs is a warning sign that more than one nerve root is involved.",
-          "reveals": ["f-bilateral"],
-          "reply": { "speaker": "patient", "text": "In the middle of my back. And since yesterday it goes down both legs, all the way to my feet." }
+          "reveals": [
+            "f-bilateral"
+          ],
+          "reply": {
+            "speaker": "patient",
+            "text": "In the middle of my back. And since yesterday it goes down both legs, all the way to my feet."
+          }
         },
         {
           "id": "q-saddle",
@@ -79,8 +114,13 @@
           "points": 15,
           "tag": "critical",
           "feedback": "Essential. Saddle numbness is a key red flag for cauda equina syndrome, and patients rarely mention it unless you ask.",
-          "reveals": ["f-saddle"],
-          "reply": { "speaker": "patient", "text": "Now that you ask... when I wipe after the toilet, it feels numb. Like it's not my own skin." }
+          "reveals": [
+            "f-saddle"
+          ],
+          "reply": {
+            "speaker": "patient",
+            "text": "Now that you ask... when I wipe after the toilet, it feels numb. Like it's not my own skin."
+          }
         },
         {
           "id": "q-bladder",
@@ -90,8 +130,13 @@
           "points": 15,
           "tag": "critical",
           "feedback": "Essential. New difficulty passing urine, or not feeling the bladder fill or empty, is a cauda equina red flag.",
-          "reveals": ["f-bladder"],
-          "reply": { "speaker": "patient", "text": "Since this morning I have to strain to pass urine, and I'm not sure it all comes out." }
+          "reveals": [
+            "f-bladder"
+          ],
+          "reply": {
+            "speaker": "patient",
+            "text": "Since this morning I have to strain to pass urine, and I'm not sure it all comes out."
+          }
         },
         {
           "id": "q-bowel",
@@ -101,8 +146,13 @@
           "points": 8,
           "tag": "high-yield",
           "feedback": "Good: altered bowel sensation adds to the picture.",
-          "reveals": ["f-bowel"],
-          "reply": { "speaker": "patient", "text": "No accident. But I can't really feel when I need to go." }
+          "reveals": [
+            "f-bowel"
+          ],
+          "reply": {
+            "speaker": "patient",
+            "text": "No accident. But I can't really feel when I need to go."
+          }
         },
         {
           "id": "q-sexual",
@@ -112,8 +162,13 @@
           "points": 5,
           "tag": "high-yield",
           "feedback": "Good practice: ask sensitively and explain why you're asking. Changes in sexual function are part of the cauda equina screen.",
-          "reveals": ["f-sexual"],
-          "reply": { "speaker": "patient", "text": "I haven't noticed anything. It's been a painful week." }
+          "reveals": [
+            "f-sexual"
+          ],
+          "reply": {
+            "speaker": "patient",
+            "text": "I haven't noticed anything. It's been a painful week."
+          }
         },
         {
           "id": "q-serious",
@@ -123,8 +178,13 @@
           "points": 5,
           "tag": "high-yield",
           "feedback": "Good: this screens for other serious causes such as cancer or infection.",
-          "reveals": ["f-screen"],
-          "reply": { "speaker": "patient", "text": "No, nothing like that. No cancer in me or my family." }
+          "reveals": [
+            "f-screen"
+          ],
+          "reply": {
+            "speaker": "patient",
+            "text": "No, nothing like that. No cancer in me or my family."
+          }
         },
         {
           "id": "q-work",
@@ -134,7 +194,10 @@
           "points": 0,
           "tag": "neutral",
           "feedback": "Useful context for later, but not the priority with leg symptoms like these.",
-          "reply": { "speaker": "patient", "text": "I teach JSS 3. When there's no light, we carry water up from the tank. Three floors." }
+          "reply": {
+            "speaker": "patient",
+            "text": "I teach JSS 3. When there's no light, we carry water up from the tank. Three floors."
+          }
         },
         {
           "id": "q-meds",
@@ -144,7 +207,10 @@
           "points": 2,
           "tag": "neutral",
           "feedback": "Reasonable to ask, but it doesn't change today's decision.",
-          "reply": { "speaker": "patient", "text": "Paracetamol and some diclofenac from the chemist. It's not helping." }
+          "reply": {
+            "speaker": "patient",
+            "text": "Paracetamol and some diclofenac from the chemist. It's not helping."
+          }
         },
         {
           "id": "to-exam",
@@ -171,8 +237,13 @@
           "points": 15,
           "tag": "critical",
           "feedback": "Essential, and done properly: explain, consent and use a chaperone. Reduced saddle sensation confirms what she told you.",
-          "reveals": ["f-saddle-sens"],
-          "reply": { "speaker": "patient", "text": "Okay, if it will help." }
+          "reveals": [
+            "f-saddle-sens"
+          ],
+          "reply": {
+            "speaker": "patient",
+            "text": "Okay, if it will help."
+          }
         },
         {
           "id": "x-neuro",
@@ -182,7 +253,9 @@
           "points": 10,
           "tag": "high-yield",
           "feedback": "Good: findings on both sides at S1 support a large central disc pressing on several roots.",
-          "reveals": ["f-neuro"]
+          "reveals": [
+            "f-neuro"
+          ]
         },
         {
           "id": "x-slr",
@@ -192,7 +265,9 @@
           "points": 2,
           "tag": "neutral",
           "feedback": "Positive on both sides, which fits nerve root irritation, but it doesn't change the urgency.",
-          "reveals": ["f-slr"]
+          "reveals": [
+            "f-slr"
+          ]
         },
         {
           "id": "x-rom",
@@ -202,7 +277,9 @@
           "points": -3,
           "tag": "wasteful",
           "feedback": "Not the priority with red flags present. It delays referral, and repeated loading isn't appropriate right now.",
-          "reveals": ["f-rom"]
+          "reveals": [
+            "f-rom"
+          ]
         },
         {
           "id": "x-pr",
@@ -274,7 +351,10 @@
       "scene": "worried",
       "prompt": "Mrs Adebayo looks worried.",
       "lines": [
-        { "speaker": "patient", "text": "Please, can I go home first? My children are coming back from school, and the hospital will cost money. I'll go tomorrow morning." }
+        {
+          "speaker": "patient",
+          "text": "Please, can I go home first? My children are coming back from school, and the hospital will cost money. I'll go tomorrow morning."
+        }
       ],
       "choices": [
         {
@@ -285,7 +365,10 @@
           "points": 15,
           "tag": "critical",
           "feedback": "Excellent. A clear safety-net in plain words, plus help with the practical barriers, is what gets the patient there.",
-          "reply": { "speaker": "patient", "text": "Okay... I'll call my husband to meet me there." }
+          "reply": {
+            "speaker": "patient",
+            "text": "Okay... I'll call my husband to meet me there."
+          }
         },
         {
           "id": "e-tomorrow",
@@ -359,20 +442,90 @@
     }
   },
   "findings": {
-    "f-bilateral": { "id": "f-bilateral", "label": "Leg symptoms", "detail": "Central low back pain, now spreading down both legs to the feet since yesterday.", "abnormal": true },
-    "f-saddle": { "id": "f-saddle", "label": "Saddle sensation (reported)", "detail": "Numbness around the perineum when wiping after the toilet.", "abnormal": true },
-    "f-bladder": { "id": "f-bladder", "label": "Bladder", "detail": "New straining to pass urine since this morning; unsure she empties fully.", "abnormal": true },
-    "f-bowel": { "id": "f-bowel", "label": "Bowel", "detail": "No incontinence, but reduced awareness of needing to open her bowels.", "abnormal": true },
-    "f-sexual": { "id": "f-sexual", "label": "Sexual function", "detail": "No change noticed." },
-    "f-screen": { "id": "f-screen", "label": "Other red flags", "detail": "No weight loss, fever, night pain or history of cancer." },
-    "f-saddle-sens": { "id": "f-saddle-sens", "label": "Saddle sensation (tested)", "detail": "Reduced light touch and pinprick around the perianal area and inner buttocks (S3–S5), both sides.", "abnormal": true },
-    "f-neuro": { "id": "f-neuro", "label": "Lower-limb neurology", "detail": "Weak ankle plantarflexion both sides (S1), reduced ankle reflexes both sides, reduced sensation over the outer border of both feet.", "abnormal": true },
-    "f-slr": { "id": "f-slr", "label": "Straight leg raise", "detail": "Positive at 40° on the left and 50° on the right, reproducing leg pain." },
-    "f-rom": { "id": "f-rom", "label": "Lumbar movement", "detail": "Flexion limited to knee level by pain." }
+    "f-bilateral": {
+      "id": "f-bilateral",
+      "label": "Leg symptoms",
+      "detail": "Central low back pain, now spreading down both legs to the feet since yesterday.",
+      "abnormal": true
+    },
+    "f-saddle": {
+      "id": "f-saddle",
+      "label": "Saddle sensation (reported)",
+      "detail": "Numbness around the perineum when wiping after the toilet.",
+      "abnormal": true
+    },
+    "f-bladder": {
+      "id": "f-bladder",
+      "label": "Bladder",
+      "detail": "New straining to pass urine since this morning; unsure she empties fully.",
+      "abnormal": true
+    },
+    "f-bowel": {
+      "id": "f-bowel",
+      "label": "Bowel",
+      "detail": "No incontinence, but reduced awareness of needing to open her bowels.",
+      "abnormal": true
+    },
+    "f-sexual": {
+      "id": "f-sexual",
+      "label": "Sexual function",
+      "detail": "No change noticed."
+    },
+    "f-screen": {
+      "id": "f-screen",
+      "label": "Other red flags",
+      "detail": "No weight loss, fever, night pain or history of cancer."
+    },
+    "f-saddle-sens": {
+      "id": "f-saddle-sens",
+      "label": "Saddle sensation (tested)",
+      "detail": "Reduced light touch and pinprick around the perianal area and inner buttocks (S3–S5), both sides.",
+      "abnormal": true
+    },
+    "f-neuro": {
+      "id": "f-neuro",
+      "label": "Lower-limb neurology",
+      "detail": "Weak ankle plantarflexion both sides (S1), reduced ankle reflexes both sides, reduced sensation over the outer border of both feet.",
+      "abnormal": true
+    },
+    "f-slr": {
+      "id": "f-slr",
+      "label": "Straight leg raise",
+      "detail": "Positive at 40° on the left and 50° on the right, reproducing leg pain."
+    },
+    "f-rom": {
+      "id": "f-rom",
+      "label": "Lumbar movement",
+      "detail": "Flexion limited to knee level by pain."
+    }
   },
-  "mustDo": ["q-saddle", "q-bladder", "x-saddle", "p-emergency", "e-now"],
-  "autoFail": ["p-gp", "p-mckenzie", "p-tens", "e-tomorrow"],
-  "expertPath": ["q-pain", "q-saddle", "q-bladder", "q-bowel", "q-sexual", "q-serious", "to-exam", "x-saddle", "x-neuro", "to-plan", "p-emergency", "e-now"],
+  "mustDo": [
+    "q-saddle",
+    "q-bladder",
+    "x-saddle",
+    "p-emergency",
+    "e-now"
+  ],
+  "autoFail": [
+    "p-gp",
+    "p-mckenzie",
+    "p-tens",
+    "e-tomorrow"
+  ],
+  "expertPath": [
+    "q-pain",
+    "q-saddle",
+    "q-bladder",
+    "q-bowel",
+    "q-sexual",
+    "q-serious",
+    "to-exam",
+    "x-saddle",
+    "x-neuro",
+    "to-plan",
+    "p-emergency",
+    "e-now"
+  ],
   "passMark": 70,
   "learningPoints": [
     "Leg symptoms on both sides, saddle numbness, and new bladder, bowel or sexual changes after back pain are red flags for cauda equina syndrome. Ask every patient with back and leg pain, directly and kindly.",
@@ -382,9 +535,19 @@
     "Don't start exercise or electrotherapy for back pain until the red flags are ruled out."
   ],
   "references": [
-    { "label": "Finucane LM, et al. International Framework for Red Flags for Potential Serious Spinal Pathologies. J Orthop Sports Phys Ther. 2020;50(7):350–372.", "url": "https://www.jospt.org/doi/10.2519/jospt.2020.9971" },
-    { "label": "NICE NG59. Low back pain and sciatica in over 16s: assessment and management (2016, updated 2020).", "url": "https://www.nice.org.uk/guidance/ng59" },
-    { "label": "GIRFT and Society of British Neurological Surgeons. National Suspected Cauda Equina Syndrome Pathway (2023)." },
-    { "label": "Greenhalgh S, et al. Development of a toolkit for early identification of cauda equina syndrome. Prim Health Care Res Dev. 2016;17(6):559–567." }
+    {
+      "label": "Finucane LM, et al. International Framework for Red Flags for Potential Serious Spinal Pathologies. J Orthop Sports Phys Ther. 2020;50(7):350–372.",
+      "url": "https://www.jospt.org/doi/10.2519/jospt.2020.9971"
+    },
+    {
+      "label": "NICE NG59. Low back pain and sciatica in over 16s: assessment and management (2016, updated 2020).",
+      "url": "https://www.nice.org.uk/guidance/ng59"
+    },
+    {
+      "label": "GIRFT and Society of British Neurological Surgeons. National Suspected Cauda Equina Syndrome Pathway (2023)."
+    },
+    {
+      "label": "Greenhalgh S, et al. Development of a toolkit for early identification of cauda equina syndrome. Prim Health Care Res Dev. 2016;17(6):559–567."
+    }
   ]
 }

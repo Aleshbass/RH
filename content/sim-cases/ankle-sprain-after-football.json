@@ -8,12 +8,15 @@
   "mode": "full",
   "estimatedMinutes": 6,
   "audio": true,
+  "narration": true,
   "scenes": {
     "couch": {
       "src": "/sims/ankle-sprain-after-football/v1/scene/couch.webp",
-      "alt": "Tunde sits on the treatment couch in his football kit, legs out, his left ankle swollen.",
-      "video": "/sims/ankle-sprain-after-football/v1/scene/couch.mp4",
-      "mouth": "/sims/ankle-sprain-after-football/v1/scene/couch.json"
+      "alt": "Tunde sits on the treatment couch in his football kit, legs out, his left ankle swollen and bruised.",
+      "art2d": {
+        "character": "tunde",
+        "pose": "couch"
+      }
     }
   },
   "setting": "University sports clinic, Nsukka",
@@ -25,15 +28,37 @@
     "presentingComplaint": "Left ankle pain and swelling after rolling it in a football match yesterday"
   },
   "speakers": {
-    "patient": { "name": "Tunde", "role": "Patient", "voice": "zwbf3iHXH6YGoTCPStfx" }
+    "patient": {
+      "name": "Tunde",
+      "role": "Patient",
+      "voice": "zwbf3iHXH6YGoTCPStfx"
+    }
   },
   "monitor": false,
-  "vitals": { "hr": 72, "spo2": 99, "bpSys": 118, "bpDia": 74, "rr": 14 },
+  "vitals": {
+    "hr": 72,
+    "spo2": 99,
+    "bpSys": 118,
+    "bpDia": 74,
+    "rr": 14
+  },
   "pain": 6,
   "phases": [
-    { "id": "subjective", "label": "History", "budgetSec": 90 },
-    { "id": "objective", "label": "Examination", "budgetSec": 120 },
-    { "id": "plan", "label": "Plan", "budgetSec": 60 }
+    {
+      "id": "subjective",
+      "label": "History",
+      "budgetSec": 90
+    },
+    {
+      "id": "objective",
+      "label": "Examination",
+      "budgetSec": 120
+    },
+    {
+      "id": "plan",
+      "label": "Plan",
+      "budgetSec": 60
+    }
   ],
   "startNode": "history",
   "nodes": {
@@ -43,7 +68,10 @@
       "scene": "couch",
       "prompt": "Tunde, 22, hops in on one leg, supported by a teammate. His left ankle is swollen. Take his history: each question takes time.",
       "lines": [
-        { "speaker": "patient", "text": "Good morning. I rolled my ankle in the match yesterday. Please, the final is in three weeks. I have to play." }
+        {
+          "speaker": "patient",
+          "text": "Good morning. I rolled my ankle in the match yesterday. Please, the final is in three weeks. I have to play."
+        }
       ],
       "choices": [
         {
@@ -54,8 +82,13 @@
           "points": 8,
           "tag": "high-yield",
           "feedback": "Good: landing on someone's foot and rolling in (inversion) is the classic lateral ligament mechanism.",
-          "reveals": ["f-mech"],
-          "reply": { "speaker": "patient", "text": "I landed on a defender's foot and my ankle rolled in. I felt a pop on the outside." }
+          "reveals": [
+            "f-mech"
+          ],
+          "reply": {
+            "speaker": "patient",
+            "text": "I landed on a defender's foot and my ankle rolled in. I felt a pop on the outside."
+          }
         },
         {
           "id": "a-weight",
@@ -65,8 +98,13 @@
           "points": 15,
           "tag": "critical",
           "feedback": "Essential: weight-bearing, straight after the injury and now, is part of the Ottawa ankle rules.",
-          "reveals": ["f-weight"],
-          "reply": { "speaker": "patient", "text": "At the time I couldn't put it down; my teammates carried me off. This morning I can take a few steps, but I'm limping." }
+          "reveals": [
+            "f-weight"
+          ],
+          "reply": {
+            "speaker": "patient",
+            "text": "At the time I couldn't put it down; my teammates carried me off. This morning I can take a few steps, but I'm limping."
+          }
         },
         {
           "id": "a-history",
@@ -76,8 +114,13 @@
           "points": 8,
           "tag": "high-yield",
           "feedback": "Good: previous sprains are the biggest risk factor for another one, so his rehab must include balance training.",
-          "reveals": ["f-history"],
-          "reply": { "speaker": "patient", "text": "Yes, twice. Last season, and once in secondary school." }
+          "reveals": [
+            "f-history"
+          ],
+          "reply": {
+            "speaker": "patient",
+            "text": "Yes, twice. Last season, and once in secondary school."
+          }
         },
         {
           "id": "a-goals",
@@ -87,8 +130,13 @@
           "points": 5,
           "tag": "high-yield",
           "feedback": "Good: his goal shapes the plan and the return-to-sport criteria.",
-          "reveals": ["f-goals"],
-          "reply": { "speaker": "patient", "text": "The inter-varsity final, three weeks from Saturday. Coach is counting on me." }
+          "reveals": [
+            "f-goals"
+          ],
+          "reply": {
+            "speaker": "patient",
+            "text": "The inter-varsity final, three weeks from Saturday. Coach is counting on me."
+          }
         },
         {
           "id": "a-screen",
@@ -98,8 +146,13 @@
           "points": 5,
           "tag": "high-yield",
           "feedback": "Good: a quick screen for nerve, circulation and calf problems.",
-          "reveals": ["f-screen"],
-          "reply": { "speaker": "patient", "text": "No, none of that." }
+          "reveals": [
+            "f-screen"
+          ],
+          "reply": {
+            "speaker": "patient",
+            "text": "No, none of that."
+          }
         },
         {
           "id": "a-pain",
@@ -109,7 +162,10 @@
           "points": 2,
           "tag": "neutral",
           "feedback": "Useful as a baseline to track progress.",
-          "reply": { "speaker": "patient", "text": "About six when I walk, three when I rest." }
+          "reply": {
+            "speaker": "patient",
+            "text": "About six when I walk, three when I rest."
+          }
         },
         {
           "id": "to-exam",
@@ -135,7 +191,9 @@
           "points": 15,
           "tag": "critical",
           "feedback": "Essential: no bone tenderness at the Ottawa points, plus four steps today, means the Ottawa rules are negative.",
-          "reveals": ["f-ottawa"]
+          "reveals": [
+            "f-ottawa"
+          ]
         },
         {
           "id": "b-look",
@@ -145,7 +203,9 @@
           "points": 3,
           "tag": "neutral",
           "feedback": "Fine to note, but swelling and bruising don't tell you whether it's broken.",
-          "reveals": ["f-look"]
+          "reveals": [
+            "f-look"
+          ]
         },
         {
           "id": "b-drawer",
@@ -155,7 +215,9 @@
           "points": 5,
           "tag": "high-yield",
           "feedback": "Useful, but it's more accurate repeated 4–5 days after the injury, once the swelling settles.",
-          "reveals": ["f-drawer"]
+          "reveals": [
+            "f-drawer"
+          ]
         },
         {
           "id": "b-syndesmosis",
@@ -165,7 +227,9 @@
           "points": 8,
           "tag": "high-yield",
           "feedback": "Good: a high ankle (syndesmosis) sprain takes much longer to recover and changes the plan.",
-          "reveals": ["f-syndesmosis"]
+          "reveals": [
+            "f-syndesmosis"
+          ]
         },
         {
           "id": "b-nv",
@@ -175,7 +239,9 @@
           "points": 5,
           "tag": "high-yield",
           "feedback": "Good: a quick check of circulation and nerves.",
-          "reveals": ["f-nv"]
+          "reveals": [
+            "f-nv"
+          ]
         },
         {
           "id": "b-hop",
@@ -186,8 +252,13 @@
           "points": -10,
           "tag": "harmful",
           "feedback": "Far too early: it's painful and risks more injury. Hop tests belong in return-to-sport testing weeks later.",
-          "reply": { "speaker": "patient", "text": "Ah! I can't. It's too painful." },
-          "effects": { "pain": 2 }
+          "reply": {
+            "speaker": "patient",
+            "text": "Ah! I can't. It's too painful."
+          },
+          "effects": {
+            "pain": 2
+          }
         },
         {
           "id": "to-plan",
@@ -205,7 +276,10 @@
       "phase": "plan",
       "prompt": "Tunde asks about an X-ray.",
       "lines": [
-        { "speaker": "patient", "text": "Do I need an X-ray? Coach says I must do one before anything." }
+        {
+          "speaker": "patient",
+          "text": "Do I need an X-ray? Coach says I must do one before anything."
+        }
       ],
       "choices": [
         {
@@ -216,7 +290,10 @@
           "points": 15,
           "tag": "critical",
           "feedback": "Correct. The Ottawa ankle rules are very sensitive: when they're negative, a fracture is very unlikely, so the X-ray adds cost and radiation without helping.",
-          "reply": { "speaker": "patient", "text": "Okay. If it's not broken, that's good news." }
+          "reply": {
+            "speaker": "patient",
+            "text": "Okay. If it's not broken, that's good news."
+          }
         },
         {
           "id": "c-xray",
@@ -242,7 +319,10 @@
           "points": 20,
           "tag": "critical",
           "feedback": "Right. Functional support with early, progressive loading gives the fastest return, and balance training cuts his risk of another sprain.",
-          "reply": { "speaker": "patient", "text": "So I can still walk on it? Okay, I'll do the exercises." }
+          "reply": {
+            "speaker": "patient",
+            "text": "So I can still walk on it? Okay, I'll do the exercises."
+          }
         },
         {
           "id": "m-rest",
@@ -324,20 +404,86 @@
     }
   },
   "findings": {
-    "f-mech": { "id": "f-mech", "label": "Mechanism", "detail": "Inversion injury landing on an opponent's foot, with a pop over the outside of the ankle.", "abnormal": true },
-    "f-weight": { "id": "f-weight", "label": "Weight-bearing", "detail": "Couldn't bear weight straight after the injury; now takes four steps with a limp, so this Ottawa criterion isn't met.", "abnormal": true },
-    "f-history": { "id": "f-history", "label": "Previous sprains", "detail": "Two previous sprains of the same ankle.", "abnormal": true },
-    "f-goals": { "id": "f-goals", "label": "Goal", "detail": "Inter-varsity final in three weeks." },
-    "f-screen": { "id": "f-screen", "label": "Screen", "detail": "No numbness, tingling, colour change or calf pain." },
-    "f-ottawa": { "id": "f-ottawa", "label": "Ottawa points", "detail": "Tender in front of the lateral malleolus, over the ATFL. No bone tenderness at the back edge or tip of either malleolus, the base of the fifth metatarsal or the navicular.", "abnormal": true },
-    "f-look": { "id": "f-look", "label": "Observation", "detail": "Moderate swelling and bruising over the outside of the ankle." },
-    "f-drawer": { "id": "f-drawer", "label": "Anterior drawer", "detail": "More give than the other side, with a soft end feel. Painful." },
-    "f-syndesmosis": { "id": "f-syndesmosis", "label": "High ankle sprain tests", "detail": "Squeeze test and external rotation test negative.", "abnormal": true },
-    "f-nv": { "id": "f-nv", "label": "Nerves and circulation", "detail": "Foot pulses present; sensation normal." }
+    "f-mech": {
+      "id": "f-mech",
+      "label": "Mechanism",
+      "detail": "Inversion injury landing on an opponent's foot, with a pop over the outside of the ankle.",
+      "abnormal": true
+    },
+    "f-weight": {
+      "id": "f-weight",
+      "label": "Weight-bearing",
+      "detail": "Couldn't bear weight straight after the injury; now takes four steps with a limp, so this Ottawa criterion isn't met.",
+      "abnormal": true
+    },
+    "f-history": {
+      "id": "f-history",
+      "label": "Previous sprains",
+      "detail": "Two previous sprains of the same ankle.",
+      "abnormal": true
+    },
+    "f-goals": {
+      "id": "f-goals",
+      "label": "Goal",
+      "detail": "Inter-varsity final in three weeks."
+    },
+    "f-screen": {
+      "id": "f-screen",
+      "label": "Screen",
+      "detail": "No numbness, tingling, colour change or calf pain."
+    },
+    "f-ottawa": {
+      "id": "f-ottawa",
+      "label": "Ottawa points",
+      "detail": "Tender in front of the lateral malleolus, over the ATFL. No bone tenderness at the back edge or tip of either malleolus, the base of the fifth metatarsal or the navicular.",
+      "abnormal": true
+    },
+    "f-look": {
+      "id": "f-look",
+      "label": "Observation",
+      "detail": "Moderate swelling and bruising over the outside of the ankle."
+    },
+    "f-drawer": {
+      "id": "f-drawer",
+      "label": "Anterior drawer",
+      "detail": "More give than the other side, with a soft end feel. Painful."
+    },
+    "f-syndesmosis": {
+      "id": "f-syndesmosis",
+      "label": "High ankle sprain tests",
+      "detail": "Squeeze test and external rotation test negative.",
+      "abnormal": true
+    },
+    "f-nv": {
+      "id": "f-nv",
+      "label": "Nerves and circulation",
+      "detail": "Foot pulses present; sensation normal."
+    }
   },
-  "mustDo": ["a-weight", "b-ottawa", "c-noxray", "m-load"],
-  "autoFail": ["m-play"],
-  "expertPath": ["a-mech", "a-weight", "a-history", "a-goals", "a-screen", "to-exam", "b-ottawa", "b-drawer", "b-syndesmosis", "b-nv", "to-plan", "c-noxray", "m-load"],
+  "mustDo": [
+    "a-weight",
+    "b-ottawa",
+    "c-noxray",
+    "m-load"
+  ],
+  "autoFail": [
+    "m-play"
+  ],
+  "expertPath": [
+    "a-mech",
+    "a-weight",
+    "a-history",
+    "a-goals",
+    "a-screen",
+    "to-exam",
+    "b-ottawa",
+    "b-drawer",
+    "b-syndesmosis",
+    "b-nv",
+    "to-plan",
+    "c-noxray",
+    "m-load"
+  ],
   "passMark": 70,
   "learningPoints": [
     "Ottawa ankle rules: X-ray only if there's bone tenderness at the back edge or tip of either malleolus, the base of the fifth metatarsal or the navicular, or the person couldn't take four steps both straight after the injury and when you see them.",
@@ -348,9 +494,19 @@
     "The anterior drawer test is more accurate 4–5 days after the injury, once the swelling settles."
   ],
   "references": [
-    { "label": "Stiell IG, et al. Implementation of the Ottawa ankle rules. JAMA. 1994;271(11):827–832." },
-    { "label": "Vuurberg G, et al. Diagnosis, treatment and prevention of ankle sprains: update of an evidence-based clinical guideline. Br J Sports Med. 2018;52(15):956.", "url": "https://bjsm.bmj.com/content/52/15/956" },
-    { "label": "Martin RL, et al. Ankle Stability and Movement Coordination Impairments: Lateral Ankle Ligament Sprains Revision 2021. J Orthop Sports Phys Ther. 2021;51(4):CPG1–CPG80.", "url": "https://www.jospt.org/doi/10.2519/jospt.2021.0302" },
-    { "label": "Dubois B, Esculier JF. Soft-tissue injuries simply need PEACE and LOVE. Br J Sports Med. 2020;54(2):72–73." }
+    {
+      "label": "Stiell IG, et al. Implementation of the Ottawa ankle rules. JAMA. 1994;271(11):827–832."
+    },
+    {
+      "label": "Vuurberg G, et al. Diagnosis, treatment and prevention of ankle sprains: update of an evidence-based clinical guideline. Br J Sports Med. 2018;52(15):956.",
+      "url": "https://bjsm.bmj.com/content/52/15/956"
+    },
+    {
+      "label": "Martin RL, et al. Ankle Stability and Movement Coordination Impairments: Lateral Ankle Ligament Sprains Revision 2021. J Orthop Sports Phys Ther. 2021;51(4):CPG1–CPG80.",
+      "url": "https://www.jospt.org/doi/10.2519/jospt.2021.0302"
+    },
+    {
+      "label": "Dubois B, Esculier JF. Soft-tissue injuries simply need PEACE and LOVE. Br J Sports Med. 2020;54(2):72–73."
+    }
   ]
 }

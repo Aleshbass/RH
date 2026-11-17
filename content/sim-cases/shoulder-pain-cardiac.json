@@ -8,6 +8,7 @@
   "mode": "full",
   "estimatedMinutes": 6,
   "audio": true,
+  "narration": true,
   "setting": "Outpatient physiotherapy clinic, Lagos",
   "patient": {
     "name": "Mrs Ngozi Okonkwo",

@@ -52,6 +52,23 @@ function linesOf(def) {
   return out
 }
 
+// The narrator reads each situation and each ending, for the shared replay and its video (owner
+// 2026-11-16: the video had long silent gaps). Files "<node>-narration" and "<node>-ending".
+const NARRATORS = ['tMe86XfyOYDzkWDEk6AQ' /* Adeola */, '47Gsa5u66HaZn1cmiO9i' /* Pastor Francis */, 'TyAD2ntJFdDReoa55SLn' /* Bill */]
+function narratorVoice(def) {
+  if (def.narrator?.voice) return def.narrator.voice
+  const used = new Set(Object.values(def.speakers).map((s) => s.voice))
+  return NARRATORS.find((v) => !used.has(v)) ?? NARRATORS[0]
+}
+function narrationOf(def) {
+  const out = []
+  for (const node of Object.values(def.nodes)) {
+    if (node.prompt) out.push({ id: `${node.id}-narration`, text: node.prompt })
+    if (node.end) out.push({ id: `${node.id}-ending`, text: `${node.end.title}. ${node.end.summary}` })
+  }
+  return out
+}
+
 const ffmpeg = hasFfmpeg()
 if (!ffmpeg) console.log('ffmpeg not found: lines are saved without loudness matching.')
 
@@ -87,5 +104,27 @@ for (const file of readdirSync(casesDir).filter((f) => f.endsWith('.json'))) {
     writeFileSync(jsonPath, marked)
   }
   console.log(`${def.slug} v${def.version}: ${made} new, ${lines.length} lines, ${complete ? 'complete' : 'INCOMPLETE'}`)
+
+  // Narration (replay and video only)
+  const narration = narrationOf(def)
+  const narratorId = narratorVoice(def)
+  let narrated = 0
+  for (const line of narration) {
+    const out = path.join(outDir, `${line.id}.mp3`)
+    if (!force && existsSync(out)) continue
+    if (!clients.has(narratorId)) clients.set(narratorId, await elevenTts(root, { voiceId: narratorId, model: MODEL, outputFormat: FORMAT, stability: 0.55, similarity: 0.8 }))
+    writeFileSync(out, await clients.get(narratorId).synthesize({ text: line.text }))
+    if (ffmpeg) normalise(out)
+    characters += line.text.length
+    narrated++
+    process.stdout.write(`  ${def.slug}/${line.id}.mp3 (narrator)\n`)
+  }
+  const narrationDone = narration.every((line) => existsSync(path.join(outDir, `${line.id}.mp3`)))
+  const now = readFileSync(jsonPath, 'utf8')
+  if (narrationDone && !/"narration":\s*true/.test(now)) {
+    const marked = now.replace(/("audio":\s*true,)/, '$1\n  "narration": true,')
+    if (marked !== now) writeFileSync(jsonPath, marked)
+  }
+  console.log(`${def.slug} v${def.version}: narration ${narrated} new, ${narration.length} lines, ${narrationDone ? 'complete' : 'INCOMPLETE'}`)
 }
 console.log(`Characters used: ${characters}`)

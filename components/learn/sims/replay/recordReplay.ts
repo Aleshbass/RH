@@ -13,7 +13,7 @@
 import type { SimScene } from '@/lib/learn/simulation/engine'
 import { voiceUrl, type SimShare, type SimShareBeat } from '../simApi'
 import { drawTalkingFrame, easeMouth, restMouth, shapeAt, type LipTimings, type MouthGeometry, type MouthState } from '../talkingFace'
-import { clinicSceneSvg } from '../art2d/clinicScene'
+import { sceneSvg } from '../art2d/clinicScene'
 
 const W = 1080
 const H = 1920
@@ -22,8 +22,8 @@ const INK = '#0b1312'
 const LIME = '#00cd0f'
 const STAGE = { x: 40, y: 176, w: 1000, h: 667 }
 const ZONE = { top: 1000, bottom: 1660 }
-const INTRO = 3.2
-const OUTRO = 5.5
+const INTRO = 2.6
+const OUTRO = 4.8
 
 const CATEGORY_DOT: Record<string, string> = { ask: '#38bdf8', examine: '#a78bfa', do: '#22c55e', help: '#f59e0b' }
 const OUTCOME_COLOUR: Record<string, { bg: string; fg: string }> = {
@@ -229,9 +229,9 @@ async function record(share: SimShare, opts: RecordOptions, mime: string, audio:
       // 2D scenes: the drawing with each lip shape, swapped as she speaks
       let art: Record<string, HTMLImageElement> | null = null
       if (scene.art2d) {
-        const pose = scene.art2d.pose
+        const art2d = scene.art2d
         const shapes = await Promise.all(
-          (['x', 'e', 'a', 'o'] as const).map(async (m) => [m, await loadImage(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(clinicSceneSvg({ pose, mouth: m }))}`)] as const)
+          (['x', 'e', 'a', 'o'] as const).map(async (m) => [m, await loadImage(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(sceneSvg(art2d, { mouth: m }))}`)] as const)
         )
         art = Object.fromEntries(shapes.filter(([, img]) => img)) as Record<string, HTMLImageElement>
         if (!art.x) art = null
@@ -245,7 +245,9 @@ async function record(share: SimShare, opts: RecordOptions, mime: string, audio:
   if (c.audio) {
     await Promise.all(
       share.beats.map(async (b, i) => {
-        if (b.kind === 'speech') voices.set(i, await loadVoice(audio, voiceUrl(c.slug, c.version, b.audioId)))
+        // Speakers' lines, and the narrator reading situations and the ending (narrated cases)
+        const id = b.kind === 'speech' ? b.audioId : (b.kind === 'scene' || b.kind === 'ending') && b.audioId ? b.audioId : null
+        if (id) voices.set(i, await loadVoice(audio, voiceUrl(c.slug, c.version, id)))
       })
     )
   }
@@ -258,18 +260,18 @@ async function record(share: SimShare, opts: RecordOptions, mime: string, audio:
   share.beats.forEach((b, i) => {
     if ((b.kind === 'scene' || b.kind === 'action') && b.scene) scene = b.scene
     const buf = voices.get(i) ?? null
-    const dur =
-      b.kind === 'scene'
-        ? clamp(1.6 + words(b.text) * 0.26, 2.4, 6)
+    // Brisk: a voiced beat lasts as long as its voice plus a breath; silent ones just long enough to read
+    const dur = buf
+      ? buf.duration + (b.kind === 'ending' ? 0.6 : 0.3)
+      : b.kind === 'scene'
+        ? clamp(1.2 + words(b.text) * 0.18, 2, 4.5)
         : b.kind === 'speech'
-          ? buf
-            ? buf.duration + 0.45
-            : clamp(1.4 + words(b.text) * 0.3, 2, 7)
+          ? clamp(1.2 + words(b.text) * 0.26, 1.8, 6)
           : b.kind === 'action'
-            ? 1.7
+            ? 1.2
             : b.kind === 'finding'
-              ? clamp(2 + words(b.detail) * 0.18, 2.4, 4.5)
-              : clamp(3 + words(b.summary) * 0.2, 4, 8)
+              ? clamp(1.6 + words(b.detail) * 0.12, 2, 3.2)
+              : clamp(2.5 + words(b.summary) * 0.18, 3.5, 7)
     shots.push({ kind: 'beat', index: i, start: t, dur, audio: buf, scene })
     t += dur
   })
@@ -640,21 +642,40 @@ async function record(share: SimShare, opts: RecordOptions, mime: string, audio:
     recorder.onstop = () => resolve()
   })
 
-  const t0 = audio.currentTime + 0.25
+  // One soundtrack, mixed ahead of time (every line exactly where it belongs), played as a single
+  // sound: far steadier on phones than dozens of separately timed sounds
+  const track = await mixSoundtrack(audio, shots, total)
+  const t0 = audio.currentTime + 0.35
   const sources: AudioBufferSourceNode[] = []
-  for (const s of shots) {
-    if (!s.audio) continue
+  if (track) {
     const src = audio.createBufferSource()
-    src.buffer = s.audio
+    src.buffer = track
     src.connect(dest)
-    src.start(t0 + s.start + 0.12)
+    src.start(t0)
     sources.push(src)
+  } else {
+    for (const s of shots) {
+      if (!s.audio) continue
+      const src = audio.createBufferSource()
+      src.buffer = s.audio
+      src.connect(dest)
+      src.start(t0 + s.start + 0.12)
+      sources.push(src)
+    }
+  }
+  // Keep the screen on: a dimmed or locked phone stops drawing and the video stalls
+  let wake: { release: () => Promise<void> } | null = null
+  try {
+    wake = await (navigator as Navigator & { wakeLock?: { request: (t: 'screen') => Promise<{ release: () => Promise<void> }> } }).wakeLock?.request('screen') ?? null
+  } catch {
+    // not supported: the page asks people to keep it open
   }
   recorder.start(1000)
   opts.onStage?.('recording')
 
   const preview = opts.preview?.getContext('2d') ?? null
   let aborted = false
+  let leftPage = false
   await new Promise<void>((resolve) => {
     let frame = 0
     const onAbort = () => {
@@ -662,6 +683,15 @@ async function record(share: SimShare, opts: RecordOptions, mime: string, audio:
       cancelAnimationFrame(frame)
       resolve()
     }
+    // Leaving the page part-way would leave gaps: stop cleanly and say why
+    const onHidden = () => {
+      if (document.visibilityState !== 'hidden') return
+      leftPage = true
+      document.removeEventListener('visibilitychange', onHidden)
+      onAbort()
+    }
+    document.addEventListener('visibilitychange', onHidden)
+    opts.signal?.addEventListener('abort', () => document.removeEventListener('visibilitychange', onHidden), { once: true })
     opts.signal?.addEventListener('abort', onAbort, { once: true })
     lastNow = performance.now()
     const tick = (now: number) => {
@@ -673,6 +703,7 @@ async function record(share: SimShare, opts: RecordOptions, mime: string, audio:
       opts.onProgress?.(clamp(at, 0, total), total)
       if (at >= total + 0.3) {
         opts.signal?.removeEventListener('abort', onAbort)
+        document.removeEventListener('visibilitychange', onHidden)
         resolve()
         return
       }
@@ -691,20 +722,47 @@ async function record(share: SimShare, opts: RecordOptions, mime: string, audio:
     }
   }
   stream.getTracks().forEach((tr) => tr.stop())
+  void wake?.release().catch(() => undefined)
+  if (leftPage) throw new Error('Recording stopped because the page was left. Keep this screen open until the video is done, then try again.')
   if (aborted) throw new DOMException('Stopped', 'AbortError')
   const type = mime.split(';')[0]
   return { blob: new Blob(chunks, { type }), ext: type === 'video/mp4' ? 'mp4' : 'webm', mime: type, seconds: Math.round(total) }
+}
+
+/**
+ * Every voice line placed at its moment in one buffer (OfflineAudioContext renders it in a blink).
+ * Null when there's nothing to mix or the browser can't, and the caller schedules lines one by one.
+ */
+async function mixSoundtrack(audio: AudioContext, shots: Shot[], total: number): Promise<AudioBuffer | null> {
+  const voiced = shots.filter((s) => s.audio)
+  if (!voiced.length) return null
+  const Offline = window.OfflineAudioContext || (window as unknown as { webkitOfflineAudioContext?: typeof OfflineAudioContext }).webkitOfflineAudioContext
+  if (!Offline) return null
+  try {
+    const rate = audio.sampleRate
+    const mix = new Offline(1, Math.ceil((total + 1) * rate), rate)
+    for (const s of voiced) {
+      const src = mix.createBufferSource()
+      src.buffer = s.audio
+      src.connect(mix.destination)
+      src.start(s.start + 0.12)
+    }
+    return await mix.startRendering()
+  } catch {
+    return null
+  }
 }
 
 /** Roughly how long the video will be (before any voices are loaded). */
 export function estimateSeconds(share: SimShare) {
   let t = INTRO + OUTRO
   for (const b of share.beats) {
-    if (b.kind === 'scene') t += clamp(1.6 + words(b.text) * 0.26, 2.4, 6)
-    else if (b.kind === 'speech') t += 0.45 + words(b.text) * 0.36
-    else if (b.kind === 'action') t += 1.7
-    else if (b.kind === 'finding') t += clamp(2 + words(b.detail) * 0.18, 2.4, 4.5)
-    else t += clamp(3 + words(b.summary) * 0.2, 4, 8)
+    const narrated = (b.kind === 'scene' || b.kind === 'ending') && Boolean(b.audioId)
+    if (b.kind === 'scene') t += narrated ? 0.3 + words(b.text) * 0.4 : clamp(1.2 + words(b.text) * 0.18, 2, 4.5)
+    else if (b.kind === 'speech') t += 0.3 + words(b.text) * 0.36
+    else if (b.kind === 'action') t += 1.2
+    else if (b.kind === 'finding') t += clamp(1.6 + words(b.detail) * 0.12, 2, 3.2)
+    else t += narrated ? 0.6 + words(`${b.title} ${b.summary}`) * 0.4 : clamp(2.5 + words(b.summary) * 0.18, 3.5, 7)
   }
   return Math.round(t)
 }

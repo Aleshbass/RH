@@ -659,11 +659,11 @@ export const createShare = mutation({
 });
 
 type ShareBeat =
-  | { kind: "scene"; text: string; scene: string | null }
+  | { kind: "scene"; text: string; scene: string | null; audioId?: string }
   | { kind: "speech"; speaker: string; name: string; role: string; text: string; audioId: string }
   | { kind: "action"; label: string; clockSec: number; category: string; scene: string | null }
   | { kind: "finding"; label: string; detail: string; abnormal: boolean }
-  | { kind: "ending"; title: string; summary: string; outcome: string };
+  | { kind: "ending"; title: string; summary: string; outcome: string; audioId?: string };
 
 /** A shared run, rebuilt for the public replay (no sign-in needed). */
 export const getShare = query({
@@ -683,7 +683,8 @@ export const getShare = query({
       const node = def.nodes[nodeId];
       if (!node) return;
       if (node.scene) scene = node.scene;
-      if (node.prompt) beats.push({ kind: "scene", text: node.prompt, scene });
+      // Narrated cases: the narrator reads the situation in the replay and its video
+      if (node.prompt) beats.push({ kind: "scene", text: node.prompt, scene, ...(def.narration ? { audioId: `${node.id}-narration` } : {}) });
       (node.lines ?? []).forEach((line, i) => beats.push({ kind: "speech", ...lineView(def, line, `${node.id}-${i}`) }));
     };
     // A situation shows once when the learner arrives (a hub they come back to doesn't repeat)
@@ -709,7 +710,14 @@ export const getShare = query({
     // Where the last choice led (usually the ending's own scene and lines)
     if (next && next !== entered) enter(next);
     const debrief = buildDebrief(def, state);
-    beats.push({ kind: "ending", title: debrief.ending.title, summary: debrief.ending.summary, outcome: debrief.ending.outcome });
+    const endNode = def.nodes[state.nodeId]?.end ? state.nodeId : null;
+    beats.push({
+      kind: "ending",
+      title: debrief.ending.title,
+      summary: debrief.ending.summary,
+      outcome: debrief.ending.outcome,
+      ...(def.narration && endNode ? { audioId: `${endNode}-ending` } : {}),
+    });
     const doc = await caseBySlug(ctx, def.slug);
     return {
       code: share.code,

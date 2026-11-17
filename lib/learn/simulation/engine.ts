@@ -71,7 +71,7 @@ export type SimScene = {
   mouth?: string
   credit?: string
   /** Drawn in 2D instead of video (components/learn/sims/art2d): the pose to draw; `src` is its still. */
-  art2d?: { pose: 'seated' | 'distress' | 'resting' }
+  art2d?: { pose: string; character?: string }
 }
 export type SimFinding = { id: string; label: string; detail: string; abnormal?: boolean }
 export type SimSpeaker = { name: string; role: string; voice?: string }
@@ -115,6 +115,13 @@ export type SimCase = {
   timeoutEnd?: SimEnd
   /** Voice lines have been generated for this version. */
   audio?: boolean
+  /**
+   * A narrator reads each situation ("<node>-narration") and ending ("<node>-ending") in the shared
+   * replay and its video (scripts/sims/voice.mjs). Not used in the game itself.
+   */
+  narration?: boolean
+  /** Narrator voice (ElevenLabs id); voice.mjs picks one no speaker uses when unset. */
+  narrator?: { voice: string }
 }
 
 // ── Attempt state ─────────────────────────────────────────────────────────────

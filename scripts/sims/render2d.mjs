@@ -19,13 +19,22 @@ const require = createRequire(import.meta.url)
 const args = process.argv.slice(2)
 const only = args.includes('--case') ? args[args.indexOf('--case') + 1] : null
 
-// The scene module is TypeScript: compile it on the fly (no build step needed)
+// The scene modules are TypeScript: compile them on the fly (no build step needed)
 const ts = require('typescript')
-const source = readFileSync(path.join(root, 'components/learn/sims/art2d/clinicScene.ts'), 'utf8')
-const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText
-const mod = { exports: {} }
-new Function('module', 'exports', 'require', compiled)(mod, mod.exports, require)
-const { clinicSceneSvg } = mod.exports
+const artDir = path.join(root, 'components/learn/sims/art2d')
+const loaded = new Map()
+function loadTs(name) {
+  if (loaded.has(name)) return loaded.get(name)
+  const source = readFileSync(path.join(artDir, `${name}.ts`), 'utf8')
+  const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText
+  const mod = { exports: {} }
+  loaded.set(name, mod.exports)
+  const local = (id) => (id.startsWith('./') ? loadTs(id.slice(2)) : require(id))
+  new Function('module', 'exports', 'require', compiled)(mod, mod.exports, local)
+  loaded.set(name, mod.exports)
+  return mod.exports
+}
+const { sceneSvg } = loadTs('clinicScene')
 
 const { chromium } = require('@playwright/test')
 const browser = await chromium.launch({ channel: 'msedge' })
@@ -41,7 +50,7 @@ for (const file of readdirSync(path.join(root, 'content/sim-cases')).filter((f) 
     const jpg = webp.replace(/\.webp$/i, '.jpg')
     const png = webp.replace(/\.webp$/i, '.tmp.png')
     mkdirSync(path.dirname(webp), { recursive: true })
-    await page.setContent(`<html><body style="margin:0">${clinicSceneSvg({ pose: scene.art2d.pose })}</body></html>`)
+    await page.setContent(`<html><body style="margin:0">${sceneSvg(scene.art2d)}</body></html>`)
     await page.waitForTimeout(200)
     await page.screenshot({ path: png })
     execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-i', png, '-c:v', 'libwebp', '-quality', '86', webp])

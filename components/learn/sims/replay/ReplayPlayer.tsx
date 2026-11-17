@@ -41,13 +41,20 @@ function toItem(b: SimShareBeat, key: string): Item {
   }
 }
 
-/** How long a beat stays before the next (when there's no voice to wait for). */
+/** How long a beat stays before the next (when there's no voice to wait for). Kept brisk. */
 function readMs(b: SimShareBeat) {
-  if (b.kind === 'scene') return Math.min(5500, 1400 + words(b.text) * 230)
-  if (b.kind === 'speech') return Math.min(6000, 1300 + words(b.text) * 280)
-  if (b.kind === 'action') return 1300
-  if (b.kind === 'finding') return Math.min(4000, 1800 + words(b.detail) * 150)
-  return 2600
+  if (b.kind === 'scene') return Math.min(4200, 1100 + words(b.text) * 170)
+  if (b.kind === 'speech') return Math.min(5000, 1000 + words(b.text) * 240)
+  if (b.kind === 'action') return 1000
+  if (b.kind === 'finding') return Math.min(3000, 1400 + words(b.detail) * 110)
+  return 2400
+}
+
+/** The voice for a beat: a speaker's line, or the narrator reading a situation or the ending. */
+function audioOf(b: SimShareBeat): string | null {
+  if (b.kind === 'speech') return b.audioId
+  if ((b.kind === 'scene' || b.kind === 'ending') && b.audioId) return b.audioId
+  return null
 }
 
 export function ReplayPage({ code }: { code: string }) {
@@ -121,13 +128,14 @@ function Replay({ share }: { share: SimShare }) {
         else setAt(at + 1)
       }, ms)
     }
-    if (beat.kind === 'speech' && c.audio && voice) {
+    const audioId = audioOf(beat)
+    if (audioId && c.audio && voice) {
       const started = performance.now()
-      queueVoice([{ url: voiceUrl(c.slug, c.version, beat.audioId), onStart: () => live && setSpeaking(`b${at - 1}`) }], () => {
+      queueVoice([{ url: voiceUrl(c.slug, c.version, audioId), onStart: () => live && beat.kind === 'speech' && setSpeaking(`b${at - 1}`) }], () => {
         if (!live) return
         setSpeaking(null)
         // No sound came out (sound off on this device): give time to read instead
-        advance(performance.now() - started < 300 ? readMs(beat) : 450)
+        advance(performance.now() - started < 300 ? readMs(beat) : 300)
       })
     } else advance(readMs(beat))
     return () => {

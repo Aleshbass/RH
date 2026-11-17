@@ -9,8 +9,12 @@
  * speaks). Nothing here touches the DOM.
  */
 
+import { PEOPLE_DEFS, peopleScene } from './people'
+
 export type Pose = 'seated' | 'distress' | 'resting'
 export type MouthShape = 'x' | 'm' | 'e' | 'a' | 'o'
+/** What a case scene asks for: a person (Mrs Okonkwo when unset) and their pose. */
+export type Art2dSpec = { pose: string; character?: string }
 
 export type SceneOptions = {
   pose: Pose
@@ -337,18 +341,43 @@ function body(pose: Pose) {
   return { lean, torso, skirt, arms }
 }
 
-/** The whole scene as an SVG string (1440 × 960). */
-export function clinicSceneSvg({ pose, mouth = 'x', eyes = 'open' }: SceneOptions): string {
-  const { lean, torso, skirt, arms } = body(pose)
+/** A university sports clinic's touches for Tunde's room: a football, cones and a team pennant. */
+function sportsExtras() {
+  return `
+  <g>
+    <ellipse cx="190" cy="902" rx="54" ry="10" fill="${C.shadow}"/>
+    <circle cx="190" cy="862" r="40" fill="#ffffff"/>
+    <path d="M190 840 L208 852 L202 872 L178 872 L172 852 Z" fill="${C.ink}"/>
+    <path d="M152 860 L172 852 M208 852 L228 858 M178 872 L170 892 M202 872 L210 892 M190 822 L190 840" stroke="${C.ink}" stroke-width="3"/>
+    <path d="M300 900 L322 840 L344 900 Z" fill="#f0872b"/><rect x="296" y="896" width="52" height="8" rx="3" fill="#d26f19"/>
+    <path d="M318 852 L326 852 L330 864 L314 864 Z" fill="#ffffff"/>
+    <path d="M524 176 L524 228 L606 202 Z" fill="#1f8f4e"/><path d="M524 192 L572 202 L524 212 Z" fill="#ffffff" opacity="0.9"/><rect x="518" y="168" width="7" height="70" rx="3" fill="#8f7a5c"/>
+  </g>`
+}
+
+function frame(inner: string, mouth: MouthShape = 'x', eyes: 'open' | 'closed' = 'open') {
   let svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 960" width="1440" height="960" preserveAspectRatio="xMidYMid slice">
 ${defs()}
+<defs>${PEOPLE_DEFS}</defs>
 <style>
   [data-breathe]{transform-box:view-box;transform-origin:760px 560px}
   .breathing [data-breathe]{animation:rh-breathe var(--breath,3.6s) ease-in-out infinite}
   @keyframes rh-breathe{0%,100%{transform:translateY(0) scale(1,1)}50%{transform:translateY(-3px) scale(1.008,1.014)}}
   @media (prefers-reduced-motion: reduce){.breathing [data-breathe]{animation:none}}
 </style>
-${room()}
+${inner}
+</svg>`
+  // Static renders pick one mouth and eye state
+  if (mouth !== 'x') svg = svg.replace('<g data-mouth="x">', '<g data-mouth="x" style="display:none">').replace(`<g data-mouth="${mouth}" style="display:none">`, `<g data-mouth="${mouth}">`)
+  if (eyes === 'closed') svg = svg.replace('<g data-eyes="open">', '<g data-eyes="open" style="display:none">').replace('<g data-eyes="closed" style="display:none">', '<g data-eyes="closed">')
+  return svg
+}
+
+/** Mrs Okonkwo's scene as an SVG string (1440 × 960). */
+export function clinicSceneSvg({ pose, mouth = 'x', eyes = 'open' }: SceneOptions): string {
+  const { lean, torso, skirt, arms } = body(pose)
+  return frame(
+    `${room()}
 ${couch(pose)}
 <ellipse cx="760" cy="812" rx="190" ry="18" fill="${C.shadow}"/>
 ${skirt}
@@ -358,10 +387,21 @@ ${skirt}
     ${head(pose)}
     ${arms}
   </g>
-</g>
-</svg>`
-  // Static renders pick one mouth and eye state
-  if (mouth !== 'x') svg = svg.replace('<g data-mouth="x">', '<g data-mouth="x" style="display:none">').replace(`<g data-mouth="${mouth}" style="display:none">`, `<g data-mouth="${mouth}">`)
-  if (eyes === 'closed') svg = svg.replace('<g data-eyes="open">', '<g data-eyes="open" style="display:none">').replace('<g data-eyes="closed" style="display:none">', '<g data-eyes="closed">')
-  return svg
+</g>`,
+    mouth,
+    eyes
+  )
+}
+
+/** Any case's scene: Mrs Okonkwo (default), Mrs Adebayo (funmi), Tunde (tunde) or Mr Okafor (emeka). */
+export function sceneSvg(art: Art2dSpec, opts: { mouth?: MouthShape; eyes?: 'open' | 'closed' } = {}): string {
+  const who = art.character ?? 'ngozi'
+  if (who === 'funmi' || who === 'tunde' || who === 'emeka') {
+    return frame(
+      peopleScene({ character: who, pose: art.pose }, (variant) => room() + (variant === 'sports' ? sportsExtras() : '')),
+      opts.mouth,
+      opts.eyes
+    )
+  }
+  return clinicSceneSvg({ pose: art.pose as Pose, mouth: opts.mouth, eyes: opts.eyes })
 }

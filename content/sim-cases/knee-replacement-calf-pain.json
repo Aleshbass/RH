@@ -9,6 +9,7 @@
   "timeLimitSec": 90,
   "estimatedMinutes": 2,
   "audio": true,
+  "narration": true,
   "setting": "Orthopaedic ward, private hospital, Lagos",
   "patient": {
     "name": "Mr Emeka Okafor",
@@ -18,23 +19,62 @@
     "presentingComplaint": "Right calf pain and breathlessness, day 3 after a right total knee replacement"
   },
   "speakers": {
-    "patient": { "name": "Mr Okafor", "role": "Patient", "voice": "47Gsa5u66HaZn1cmiO9i" },
-    "wife": { "name": "Mrs Okafor", "role": "His wife", "voice": "2vbhUP8zyKg4dEZaTWGn" },
-    "nurse": { "name": "Nurse Aisha", "role": "Ward nurse", "voice": "Z8dg0fyk7p6js7cQ7lgi" },
-    "doctor": { "name": "Dr Bello", "role": "Doctor on call", "voice": "TyAD2ntJFdDReoa55SLn" }
+    "patient": {
+      "name": "Mr Okafor",
+      "role": "Patient",
+      "voice": "47Gsa5u66HaZn1cmiO9i"
+    },
+    "wife": {
+      "name": "Mrs Okafor",
+      "role": "His wife",
+      "voice": "2vbhUP8zyKg4dEZaTWGn"
+    },
+    "nurse": {
+      "name": "Nurse Aisha",
+      "role": "Ward nurse",
+      "voice": "Z8dg0fyk7p6js7cQ7lgi"
+    },
+    "doctor": {
+      "name": "Dr Bello",
+      "role": "Doctor on call",
+      "voice": "TyAD2ntJFdDReoa55SLn"
+    }
   },
   "monitor": true,
-  "vitals": { "hr": 112, "spo2": 91, "bpSys": 128, "bpDia": 82, "rr": 24 },
+  "vitals": {
+    "hr": 112,
+    "spo2": 91,
+    "bpSys": 128,
+    "bpDia": 82,
+    "rr": 24
+  },
   "pain": 6,
-  "drift": { "everySec": 15, "vitals": { "spo2": -1, "hr": 3, "rr": 1 }, "maxSteps": 6, "stopFlag": "escalated" },
-  "phases": [{ "id": "triage", "label": "Triage", "budgetSec": 90 }],
+  "drift": {
+    "everySec": 15,
+    "vitals": {
+      "spo2": -1,
+      "hr": 3,
+      "rr": 1
+    },
+    "maxSteps": 6,
+    "stopFlag": "escalated"
+  },
+  "phases": [
+    {
+      "id": "triage",
+      "label": "Triage",
+      "budgetSec": 90
+    }
+  ],
   "startNode": "start",
   "scenes": {
     "tripod": {
       "src": "/sims/knee-replacement-calf-pain/v1/scene/tripod.webp",
       "alt": "Mr Okafor sitting on the edge of his hospital bed, leaning forward on his knees and breathing fast",
-      "video": "/sims/knee-replacement-calf-pain/v1/scene/tripod.mp4",
-      "mouth": "/sims/knee-replacement-calf-pain/v1/scene/tripod.json"
+      "art2d": {
+        "character": "emeka",
+        "pose": "tripod"
+      }
     }
   },
   "nodes": {
@@ -44,8 +84,14 @@
       "scene": "tripod",
       "prompt": "Day 3 after a right total knee replacement. You've come to walk Mr Okafor down the corridor. He's sitting on the edge of the bed, breathing fast.",
       "lines": [
-        { "speaker": "patient", "text": "Physio, good morning o. My right calf has been paining me since last night, and I can't catch my breath, even sitting here." },
-        { "speaker": "wife", "text": "He doesn't look like himself today. He was sweating in the night." }
+        {
+          "speaker": "patient",
+          "text": "Physio, good morning o. My right calf has been paining me since last night, and I can't catch my breath, even sitting here."
+        },
+        {
+          "speaker": "wife",
+          "text": "He doesn't look like himself today. He was sweating in the night."
+        }
       ],
       "choices": [
         {
@@ -56,7 +102,10 @@
           "points": 10,
           "tag": "critical",
           "feedback": "Right first move. New calf pain with breathlessness after surgery could be a clot that has reached the lungs. Walking him could make it worse.",
-          "reply": { "speaker": "patient", "text": "Thank you. I really don't feel well." }
+          "reply": {
+            "speaker": "patient",
+            "text": "Thank you. I really don't feel well."
+          }
         },
         {
           "id": "walk",
@@ -91,8 +140,14 @@
           "points": 15,
           "tag": "critical",
           "feedback": "Essential. Heart rate, oxygen saturation and breathing rate tell you how unwell he is and belong in your handover.",
-          "reveals": ["f-vitals"],
-          "effects": { "flags": ["monitor"] }
+          "reveals": [
+            "f-vitals"
+          ],
+          "effects": {
+            "flags": [
+              "monitor"
+            ]
+          }
         },
         {
           "id": "calf",
@@ -102,8 +157,13 @@
           "points": 10,
           "tag": "high-yield",
           "feedback": "Good: a swollen, warm, tender calf on the operated side points to a DVT. Look and feel gently; don't squeeze or massage.",
-          "reveals": ["f-calf"],
-          "reply": { "speaker": "patient", "text": "Ah! That's where it hurts." }
+          "reveals": [
+            "f-calf"
+          ],
+          "reply": {
+            "speaker": "patient",
+            "text": "Ah! That's where it hurts."
+          }
         },
         {
           "id": "chest",
@@ -113,8 +173,13 @@
           "points": 10,
           "tag": "high-yield",
           "feedback": "Good: sharp pain on breathing in (pleuritic pain) supports a PE. Ask about coughing up blood too.",
-          "reveals": ["f-chest"],
-          "reply": { "speaker": "patient", "text": "It catches me here on the right when I breathe in. No blood when I cough." }
+          "reveals": [
+            "f-chest"
+          ],
+          "reply": {
+            "speaker": "patient",
+            "text": "It catches me here on the right when I breathe in. No blood when I cough."
+          }
         },
         {
           "id": "upright",
@@ -124,8 +189,18 @@
           "points": 5,
           "tag": "high-yield",
           "feedback": "Helpful while help is coming: sitting up eases breathing, and oxygen per protocol supports his saturation.",
-          "reply": { "speaker": "nurse", "text": "Oxygen is on, two litres. I'm staying with him." },
-          "effects": { "vitals": { "spo2": 2 }, "flags": ["oxygen"] }
+          "reply": {
+            "speaker": "nurse",
+            "text": "Oxygen is on, two litres. I'm staying with him."
+          },
+          "effects": {
+            "vitals": {
+              "spo2": 2
+            },
+            "flags": [
+              "oxygen"
+            ]
+          }
         },
         {
           "id": "rom",
@@ -135,7 +210,9 @@
           "points": -3,
           "tag": "wasteful",
           "feedback": "Not now. His knee isn't the problem today, and every minute counts.",
-          "reveals": ["f-knee"]
+          "reveals": [
+            "f-knee"
+          ]
         },
         {
           "id": "massage",
@@ -145,8 +222,17 @@
           "points": -15,
           "tag": "harmful",
           "feedback": "Never massage a calf you suspect has a DVT. It hurts, and it could push more clot towards the lungs.",
-          "effects": { "vitals": { "hr": 6, "spo2": -2 }, "pain": 2 },
-          "reply": { "speaker": "patient", "text": "Ah! Please stop, that's too painful." }
+          "effects": {
+            "vitals": {
+              "hr": 6,
+              "spo2": -2
+            },
+            "pain": 2
+          },
+          "reply": {
+            "speaker": "patient",
+            "text": "Ah! Please stop, that's too painful."
+          }
         },
         {
           "id": "pumps",
@@ -165,7 +251,11 @@
           "points": 20,
           "tag": "critical",
           "feedback": "Yes. Suspected PE is an emergency: escalate the same minute and stay with him.",
-          "effects": { "flags": ["escalated"] }
+          "effects": {
+            "flags": [
+              "escalated"
+            ]
+          }
         }
       ]
     },
@@ -173,7 +263,12 @@
       "id": "handover",
       "phase": "triage",
       "prompt": "The ward phone puts you through to the doctor on call.",
-      "lines": [{ "speaker": "doctor", "text": "Hello, Dr Bello here. What's happening with the patient?" }],
+      "lines": [
+        {
+          "speaker": "doctor",
+          "text": "Hello, Dr Bello here. What's happening with the patient?"
+        }
+      ],
       "choices": [
         {
           "id": "sbar",
@@ -183,7 +278,10 @@
           "points": 20,
           "tag": "critical",
           "feedback": "A clear SBAR handover: situation, background, assessment and what you need. It gets him seen within minutes.",
-          "reply": { "speaker": "doctor", "text": "That's clear, thank you. I'm coming now. Keep him on the bed with oxygen on, and don't let him walk." }
+          "reply": {
+            "speaker": "doctor",
+            "text": "That's clear, thank you. I'm coming now. Keep him on the bed with oxygen on, and don't let him walk."
+          }
         },
         {
           "id": "vague",
@@ -193,7 +291,10 @@
           "points": -10,
           "tag": "harmful",
           "feedback": "Too vague. Without the numbers and what you suspect, the doctor can't tell how urgent this is.",
-          "reply": { "speaker": "doctor", "text": "I'm in theatre at the moment. I'll come when I finish." }
+          "reply": {
+            "speaker": "doctor",
+            "text": "I'm in theatre at the moment. I'll come when I finish."
+          }
         },
         {
           "id": "anxious",
@@ -248,14 +349,50 @@
     }
   },
   "findings": {
-    "f-vitals": { "id": "f-vitals", "label": "Vital signs", "detail": "Heart rate 112, SpO₂ 91% on room air, breathing rate 24, blood pressure 128/82, temperature 37.4 °C.", "abnormal": true },
-    "f-calf": { "id": "f-calf", "label": "Right calf", "detail": "Swollen (3 cm larger than the left at the same level), warm, red and tender along the deep veins, with pitting oedema.", "abnormal": true },
-    "f-chest": { "id": "f-chest", "label": "Chest", "detail": "Sharp right-sided pain on breathing in (pleuritic). No coughing up blood.", "abnormal": true },
-    "f-knee": { "id": "f-knee", "label": "Knee", "detail": "Range 10° to 75°, as expected on day 3. Not today's problem." }
+    "f-vitals": {
+      "id": "f-vitals",
+      "label": "Vital signs",
+      "detail": "Heart rate 112, SpO₂ 91% on room air, breathing rate 24, blood pressure 128/82, temperature 37.4 °C.",
+      "abnormal": true
+    },
+    "f-calf": {
+      "id": "f-calf",
+      "label": "Right calf",
+      "detail": "Swollen (3 cm larger than the left at the same level), warm, red and tender along the deep veins, with pitting oedema.",
+      "abnormal": true
+    },
+    "f-chest": {
+      "id": "f-chest",
+      "label": "Chest",
+      "detail": "Sharp right-sided pain on breathing in (pleuritic). No coughing up blood.",
+      "abnormal": true
+    },
+    "f-knee": {
+      "id": "f-knee",
+      "label": "Knee",
+      "detail": "Range 10° to 75°, as expected on day 3. Not today's problem."
+    }
   },
-  "mustDo": ["stop", "vitals", "escalate", "sbar"],
-  "autoFail": ["walk", "later", "anxious"],
-  "expertPath": ["stop", "vitals", "calf", "chest", "upright", "escalate", "sbar"],
+  "mustDo": [
+    "stop",
+    "vitals",
+    "escalate",
+    "sbar"
+  ],
+  "autoFail": [
+    "walk",
+    "later",
+    "anxious"
+  ],
+  "expertPath": [
+    "stop",
+    "vitals",
+    "calf",
+    "chest",
+    "upright",
+    "escalate",
+    "sbar"
+  ],
   "passMark": 70,
   "timeoutEnd": {
     "outcome": "poor",
@@ -270,9 +407,19 @@
     "Physiotherapists don't diagnose a PE, but recognising it and escalating fast is part of safe practice."
   ],
   "references": [
-    { "label": "NICE NG158. Venous thromboembolic diseases: diagnosis, management and thrombophilia testing (2020, updated 2023).", "url": "https://www.nice.org.uk/guidance/ng158" },
-    { "label": "Wells PS, et al. Derivation of a simple clinical model to categorize patients' probability of pulmonary embolism. Thromb Haemost. 2000;83(3):416–420." },
-    { "label": "NICE NG89. Venous thromboembolism in over 16s: reducing the risk of hospital-acquired DVT or PE (2018, updated 2019).", "url": "https://www.nice.org.uk/guidance/ng89" },
-    { "label": "Institute for Healthcare Improvement. SBAR tool: Situation-Background-Assessment-Recommendation." }
+    {
+      "label": "NICE NG158. Venous thromboembolic diseases: diagnosis, management and thrombophilia testing (2020, updated 2023).",
+      "url": "https://www.nice.org.uk/guidance/ng158"
+    },
+    {
+      "label": "Wells PS, et al. Derivation of a simple clinical model to categorize patients' probability of pulmonary embolism. Thromb Haemost. 2000;83(3):416–420."
+    },
+    {
+      "label": "NICE NG89. Venous thromboembolism in over 16s: reducing the risk of hospital-acquired DVT or PE (2018, updated 2019).",
+      "url": "https://www.nice.org.uk/guidance/ng89"
+    },
+    {
+      "label": "Institute for Healthcare Improvement. SBAR tool: Situation-Background-Assessment-Recommendation."
+    }
   ]
 }

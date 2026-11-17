@@ -11,7 +11,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { voiceClock } from '../simAudio'
 import { audioIdOf, shapeAt, type LipTimings } from '../talkingFace'
-import { clinicSceneSvg, type Pose } from './clinicScene'
+import { sceneSvg, type Art2dSpec } from './clinicScene'
 
 const lipsCache = new Map<string, Promise<LipTimings | null>>()
 function loadLips(url: string) {
@@ -27,14 +27,14 @@ function loadLips(url: string) {
 }
 
 export function Clinic2D({
-  pose,
+  art,
   talking,
   lipsUrl,
   breathsPerMin,
   className,
 }: {
-  pose: Pose
-  /** Her own voice is playing (a relative's line doesn't move her lips). */
+  art: Art2dSpec
+  /** The patient's own voice is playing (a relative's line doesn't move her lips). */
   talking: boolean
   lipsUrl: string | null
   breathsPerMin: number
@@ -44,7 +44,7 @@ export function Clinic2D({
   const [lips, setLips] = useState<LipTimings | null>(null)
   const talkingRef = useRef(talking)
   talkingRef.current = talking
-  const markup = useMemo(() => clinicSceneSvg({ pose }), [pose])
+  const markup = useMemo(() => sceneSvg(art), [art.character, art.pose]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!lipsUrl) return

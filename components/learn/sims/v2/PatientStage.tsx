@@ -172,7 +172,7 @@ function PatientVideo({ scene, talking, lipsUrl, breathsPerMin }: { scene: SimSc
       >
         {scene.art2d ? (
           // Drawn in 2D: she breathes, blinks and her lips follow her voice
-          <Clinic2D pose={scene.art2d.pose} talking={talking} lipsUrl={lipsUrl} breathsPerMin={breathsPerMin} />
+          <Clinic2D art={scene.art2d} talking={talking} lipsUrl={lipsUrl} breathsPerMin={breathsPerMin} />
         ) : scene.video && scene.mouth ? (
           // The patient's lips move to their voice right in the scene
           <TalkingFace video={scene.video} still={scene.src} alt={scene.alt} mouthUrl={scene.mouth} lipsUrl={lipsUrl} active={talking} />
