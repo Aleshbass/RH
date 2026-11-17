@@ -42,16 +42,20 @@ import { callLlmJson, createRealtimeTranscriptionSecret, transcribeAudioChunk } 
 import {
   isNotStated,
   parseScribeDraft,
+  programmeLine,
   redactText,
   SCRIBE_SYSTEM_PROMPT,
   scribeDraftValidator,
   scribeNoteTypeValidator,
   scribeUserPrompt,
   transcriptionPrompt,
+  type CurrentProgramme,
+  type LibraryCandidate,
   type RedactionTarget,
   type ScribeContext,
   type ScribeDraft,
 } from "./helpers/scribeDraft";
+import { isPlaceholderUser } from "./helpers/whatsappLink";
 import { activePlanFor, episodesFor, insertClinicalNote } from "./physioCare";
 import { loadPlatformControls } from "./platformSettings";
 import { billingIsOn, subscriptionForClinic } from "./helpers/clinicSubscriptions";
@@ -82,8 +86,11 @@ const channelValidator = v.union(v.literal("room"), v.literal("physio"), v.liter
 const speakerValidator = v.union(v.literal("physio"), v.literal("patient"));
 const SPEAKER_LABELS = { physio: "Physio", patient: "Patient" } as const;
 
+/** At most this many library names go to the AI (the 3D library first) */
+const MAX_LIBRARY_NAMES = 400;
+
 // Plain references: the generated api type is at TypeScript's depth limit (TS2589)
-type DraftInput = { transcript: string; context: ScribeContext };
+type DraftInput = { transcript: string; context: ScribeContext; library: LibraryCandidate[]; current: CurrentProgramme | null };
 type RecordingAccess = { physioId: Id<"users">; source: Doc<"scribeSessions">["source"]; tail: string };
 const beginDraftRef = makeFunctionReference<"mutation", { scribeSessionId: Id<"scribeSessions"> }, DraftInput>(
   "scribe:beginDraft"
@@ -435,6 +442,8 @@ export const generateSoapNote = action({
     const draft = parseScribeDraft(reply.text, {
       idPrefix: `ai${Date.now().toString(36)}`,
       firstVisit: input.context.earlierNotes === 0,
+      library: input.library,
+      current: input.current,
     });
     if (!draft) throw new ConvexError("The AI's draft couldn't be read. Try again.");
     await ctx.runMutation(saveDraftRef, { scribeSessionId: args.scribeSessionId, draft, model: `${reply.provider}:${reply.model}` });
@@ -493,6 +502,11 @@ export const beginDraft = internalMutation({
       return `${measureTitle(m)}${detail ? ` (${detail})` : ""}: ${measureResult(m)} (${lagosShortDate(measured!.sessionDate)})`;
     });
 
+    // The home programme: what the patient has now, what was planned last time, and what the library holds
+    const lastPlan = notes.find((n) => n.planForNextSession?.trim())?.planForNextSession?.trim();
+    const current = await currentProgrammeFor(ctx, physio._id, session.patientId, relationship?.clinicId);
+    const library = await libraryCandidates(ctx, physio);
+
     const context: ScribeContext = {
       source: session.source,
       earlierNotes: notes.length,
@@ -507,8 +521,95 @@ export const beginDraft = internalMutation({
           }
         : {}),
       ...(earlierMeasures.length ? { earlierMeasures } : {}),
+      ...(lastPlan ? { lastPlan: redact(lastPlan.slice(0, 600)) } : {}),
+      ...(current?.view.items.length
+        ? { programme: { title: redact(current.view.title), items: current.lines.map(redact) } }
+        : {}),
+      ...(library.length ? { library: library.map((e) => redact(e.name)) } : {}),
     };
-    return { transcript: redact(session.transcript), context };
+    return { transcript: redact(session.transcript), context, library, current: current?.view ?? null };
+  },
+});
+
+/**
+ * The patient's current home programme from this physio (or their clinic): the active one updated
+ * most recently. Exercises only, in order, with their place in the programme.
+ */
+async function currentProgrammeFor(ctx: Ctx, physioId: Id<"users">, patientId: Id<"users">, clinicId?: Id<"clinics">) {
+  const programmes = await ctx.db
+    .query("exercisePrograms")
+    .withIndex("by_patient", (q) => q.eq("patientId", patientId))
+    .collect();
+  const program = programmes
+    .filter((p) => p.status === "active" && (p.createdBy === physioId || (clinicId !== undefined && p.clinicId === clinicId)))
+    .sort((a, b) => b.updatedAt - a.updatedAt)[0];
+  if (!program) return null;
+  const items: CurrentProgramme["items"] = [];
+  const lines: string[] = [];
+  for (const [index, item] of program.items.entries()) {
+    if (item.kind === "education") continue;
+    const exercise = item.exerciseId ? await ctx.db.get(item.exerciseId) : null;
+    const name = exercise?.name ?? item.name ?? "Exercise";
+    items.push({ index, name, ...(item.exerciseId ? { exerciseId: item.exerciseId } : {}), ...(item.side ? { side: item.side } : {}) });
+    lines.push(programmeLine({ name, side: item.side, sets: item.sets, reps: item.reps, holdSeconds: item.holdSeconds, frequency: item.frequency }));
+  }
+  const view: CurrentProgramme = { programmeId: program._id, title: program.title, items };
+  return { program, view, lines };
+}
+
+/**
+ * Exercises the drafted programme may use, as the exercise library shows them to this physio
+ * (exerciseLibrary.listLibrary): the 3D library first, then their own and their clinic's, then the
+ * rest of the public library, up to MAX_LIBRARY_NAMES.
+ */
+async function libraryCandidates(ctx: Ctx, physio: Doc<"users">): Promise<LibraryCandidate[]> {
+  const clinicId = physio.clinicId;
+  const [publicRows, ownRows, clinicRows] = await Promise.all([
+    ctx.db.query("exercises").withIndex("by_public", (q) => q.eq("isPublic", true)).take(3000),
+    ctx.db.query("exercises").withIndex("by_creator", (q) => q.eq("createdBy", physio._id)).take(1000),
+    clinicId ? ctx.db.query("exercises").withIndex("by_clinic", (q) => q.eq("clinicId", clinicId)).take(1000) : Promise.resolve([]),
+  ]);
+  const live = (e: Doc<"exercises">) => !e.archivedAt && e.name.trim();
+  const ordered = [
+    ...publicRows.filter((e) => e.animationSlug),
+    ...ownRows.filter((e) => !e.isPublic),
+    ...clinicRows.filter((e) => !e.isPublic),
+    ...publicRows.filter((e) => !e.animationSlug),
+  ].filter(live);
+  const seen = new Set<string>();
+  const out: LibraryCandidate[] = [];
+  for (const e of ordered) {
+    const key = e.name.trim().toLowerCase();
+    if (seen.has(key) || seen.has(e._id)) continue;
+    seen.add(key);
+    seen.add(e._id);
+    out.push({ id: e._id, name: e.name.trim().slice(0, 80), ...(e.sided ? { sided: true } : {}) });
+    if (out.length >= MAX_LIBRARY_NAMES) break;
+  }
+  return out;
+}
+
+/**
+ * Where an approved programme reaches the patient, shown before the physio approves: WhatsApp
+ * (Joy) when the patient is connected, their app when they have their own login, and email. Also
+ * the programme the draft would update.
+ */
+export const getProgrammeDelivery = query({
+  args: { patientId: v.id("users") },
+  handler: async (ctx, args) => {
+    const physio = await physioOrNull(ctx);
+    if (!physio) return null;
+    const relationship = await findRelationship(ctx, physio._id, args.patientId);
+    if (relationship?.status !== "active") return null;
+    const patient = await ctx.db.get(args.patientId);
+    if (!patient) return null;
+    const current = await currentProgrammeFor(ctx, physio._id, args.patientId, relationship.clinicId);
+    return {
+      whatsapp: patient.clerkId.startsWith("joy-whatsapp:") || Boolean(patient.whatsappLinkedAt),
+      app: !isPlaceholderUser(patient) && !patient.clerkId.startsWith("joy-whatsapp:"),
+      email: Boolean(patient.email?.includes("@")),
+      current: current ? { _id: current.program._id, title: current.program.title, itemCount: current.program.items.length } : null,
+    };
   },
 });
 
@@ -596,16 +697,30 @@ export const labDraft = internalAction({
     source: v.optional(sourceValidator),
     condition: v.optional(v.string()),
     earlierNotes: v.optional(v.number()),
+    /** Exercise names to match the programme to (made-up ids are used) */
+    library: v.optional(v.array(v.string())),
+    /** The current programme, one line per exercise ("Straight leg raise: 3 × 10, Once a day") */
+    programme: v.optional(v.array(v.string())),
   },
   handler: async (_ctx, args): Promise<{ model: string; draft: ScribeDraft }> => {
     if (!args.transcript.trim()) throw new ConvexError("Paste a made-up transcript.");
+    const library = (args.library ?? []).map((name, i) => ({ id: `lab_exercise_${i}` as Id<"exercises">, name }));
+    const current: CurrentProgramme | null = args.programme?.length
+      ? {
+          programmeId: "lab_programme" as Id<"exercisePrograms">,
+          title: "Current programme",
+          items: args.programme.map((line, index) => ({ index, name: line.split(":")[0].trim() })),
+        }
+      : null;
     const context: ScribeContext = {
       source: args.source ?? "in_person",
       earlierNotes: args.earlierNotes ?? 0,
       ...(args.condition ? { condition: args.condition } : {}),
+      ...(current ? { programme: { title: current.title, items: args.programme! } } : {}),
+      ...(library.length ? { library: library.map((e) => e.name) } : {}),
     };
     const reply = await callLlmJson({ system: SCRIBE_SYSTEM_PROMPT, user: scribeUserPrompt(redactText(args.transcript, []), context) });
-    const draft = parseScribeDraft(reply.text, { idPrefix: "lab", firstVisit: context.earlierNotes === 0 });
+    const draft = parseScribeDraft(reply.text, { idPrefix: "lab", firstVisit: context.earlierNotes === 0, library, current });
     if (!draft) throw new ConvexError("The AI's reply wasn't a readable draft. Try again.");
     return { model: `${reply.provider}:${reply.model}`, draft };
   },

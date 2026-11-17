@@ -358,8 +358,23 @@ type ProgramChange =
   | { kind: "added"; title: string; what: string }
   | { kind: "updated"; title: string };
 
-async function notifyPatient(ctx: MutationCtx, patient: Doc<"users">, senderName: string, change: ProgramChange, programmeId?: Id<"exercisePrograms">) {
-  // On WhatsApp too, for patients connected to Joy
+/** A voice note sent with this change, for Joy to play on WhatsApp: its file link and type. */
+async function voiceNoteForJoy(ctx: MutationCtx, storageId?: Id<"_storage">, seconds?: number) {
+  if (!storageId) return undefined;
+  const [url, file] = await Promise.all([ctx.storage.getUrl(storageId), ctx.db.system.get(storageId)]);
+  if (!url) return undefined;
+  return { url, mime: file?.contentType ?? "audio/webm", seconds: cleanVoiceSeconds(seconds) };
+}
+
+async function notifyPatient(
+  ctx: MutationCtx,
+  patient: Doc<"users">,
+  senderName: string,
+  change: ProgramChange,
+  programmeId?: Id<"exercisePrograms">,
+  voice?: { storageId?: Id<"_storage">; seconds?: number }
+) {
+  // On WhatsApp too, for patients connected to Joy (with the physio's voice note, when one came with it)
   if (programmeId) {
     await queueJoyProgrammeSent(ctx, patient, {
       programmeId,
@@ -367,6 +382,7 @@ async function notifyPatient(ctx: MutationCtx, patient: Doc<"users">, senderName
       senderName,
       change: change.kind,
       what: change.kind === "added" ? change.what : undefined,
+      voiceNote: await voiceNoteForJoy(ctx, voice?.storageId, voice?.seconds),
     });
   }
   const text = {
@@ -474,7 +490,10 @@ export const createProgram = mutation({
       await advancePatientReferrals(ctx, args.patientId, "treatment_active", { actorType: "physiotherapist", actorId: String(team.user._id) });
       // Flex bought before the programme was ready starts its 30 days now
       await activatePendingPlans(ctx, args.patientId, now);
-      await notifyPatient(ctx, patient, team.senderName, { kind: "new", title }, programId);
+      await notifyPatient(ctx, patient, team.senderName, { kind: "new", title }, programId, {
+        storageId: args.voiceNoteStorageId,
+        seconds: args.voiceNoteSeconds,
+      });
       await creditAuthors(ctx, team.user._id, items, args.templateId, programId);
       return programId;
     }),
@@ -517,7 +536,12 @@ export const addExercisesToProgram = mutation({
       }
       await ctx.db.patch(program._id, patch);
       const patient = await ctx.db.get(program.patientId);
-      if (patient) await notifyPatient(ctx, patient, team.senderName, { kind: "added", title: program.title, what: countLabel(added) }, program._id);
+      if (patient) {
+        await notifyPatient(ctx, patient, team.senderName, { kind: "added", title: program.title, what: countLabel(added) }, program._id, {
+          storageId: args.voiceNoteStorageId,
+          seconds: args.voiceNoteSeconds,
+        });
+      }
       await creditAuthors(ctx, team.user._id, added, args.templateId, program._id);
       return program._id;
     }),
@@ -594,7 +618,12 @@ export const updateProgram = mutation({
       }
       await ctx.db.patch(program._id, patch);
       const patient = await ctx.db.get(program.patientId);
-      if (patient) await notifyPatient(ctx, patient, team.senderName, { kind: "updated", title }, program._id);
+      if (patient) {
+        await notifyPatient(ctx, patient, team.senderName, { kind: "updated", title }, program._id, {
+          storageId: args.voiceNoteStorageId,
+          seconds: args.voiceNoteSeconds,
+        });
+      }
       return program._id;
     }),
 });

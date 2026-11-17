@@ -664,6 +664,12 @@ def _send_queued_text(payload: dict) -> None:
     if not phone or not isinstance(text, str) or not text:
         raise _InvalidJob("phone or text missing")
     send_whatsapp_text(str(phone), text)
+    audio_url = payload.get("audio_url")
+    if isinstance(audio_url, str) and audio_url:
+        # Best effort after the text, never retried (that would send the text again)
+        from app.queue.voice_notes import send_programme_voice_note
+
+        send_programme_voice_note(str(phone), audio_url, str(payload.get("audio_mime") or ""))
 
 
 class _InvalidJob(ValueError):

@@ -33,7 +33,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
-import { useNoteMedia } from '@/components/physio/NoteMedia'
+import { useNoteMedia, WHATSAPP_AUDIO_TYPES } from '@/components/physio/NoteMedia'
 import { primaryButtonClass, useIsPhone } from '@/components/physio/ui'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
@@ -339,7 +339,8 @@ export function SendProgramDialog({
   const addTo = useMutation(api.exercisePrograms.addExercisesToProgram)
   const update = useMutation(api.exercisePrograms.updateProgram)
   const saveTemplate = useMutation(templateRefs.save)
-  const media = useNoteMedia()
+  // Recorded so it can play as a WhatsApp voice note for patients on Joy
+  const media = useNoteMedia({ audioTypes: WHATSAPP_AUDIO_TYPES })
   const listEndRef = useRef<HTMLDivElement>(null)
 
   const [step, setStep] = useState<1 | 2 | 3>(1)

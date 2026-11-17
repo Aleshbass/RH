@@ -164,6 +164,7 @@ import type * as helpers_escapeHtml from "../helpers/escapeHtml.js";
 import type * as helpers_exerciseAccess from "../helpers/exerciseAccess.js";
 import type * as helpers_flexCards from "../helpers/flexCards.js";
 import type * as helpers_exerciseCrypto from "../helpers/exerciseCrypto.js";
+import type * as helpers_exerciseMatch from "../helpers/exerciseMatch.js";
 import type * as helpers_goalMeasures from "../helpers/goalMeasures.js";
 import type * as helpers_guestMerge from "../helpers/guestMerge.js";
 import type * as helpers_imagekit from "../helpers/imagekit.js";
@@ -516,6 +517,7 @@ declare const fullApi: ApiFromModules<{
   "helpers/exerciseAccess": typeof helpers_exerciseAccess;
   "helpers/flexCards": typeof helpers_flexCards;
   "helpers/exerciseCrypto": typeof helpers_exerciseCrypto;
+  "helpers/exerciseMatch": typeof helpers_exerciseMatch;
   "helpers/goalMeasures": typeof helpers_goalMeasures;
   "helpers/guestMerge": typeof helpers_guestMerge;
   "helpers/imagekit": typeof helpers_imagekit;

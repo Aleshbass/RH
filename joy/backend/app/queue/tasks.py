@@ -194,17 +194,19 @@ def enqueue_booking_confirmed(
     *,
     email: str | None = None,
     email_subject: str = "Your Rehabify appointment details",
+    audio_url: str | None = None,
+    audio_mime: str | None = None,
 ) -> None:
-    _redis().lpush(
-        BOOKING_CONFIRMED_QUEUE,
-        json.dumps(
-            {
-                "phone": phone,
-                "booking_id": str(booking_id),
-                "text": text,
-            }
-        ),
-    )
+    job: dict = {
+        "phone": phone,
+        "booking_id": str(booking_id),
+        "text": text,
+    }
+    if audio_url:
+        # A physio's voice note sent after the text (app/queue/voice_notes.py)
+        job["audio_url"] = audio_url
+        job["audio_mime"] = audio_mime or ""
+    _redis().lpush(BOOKING_CONFIRMED_QUEUE, json.dumps(job))
     if email:
         _redis().lpush(
             BOOKING_EMAIL_QUEUE,

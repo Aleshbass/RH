@@ -47,6 +47,8 @@ export function OwnExerciseSheet({
   exercise,
   requestLinks,
   onSaved,
+  initialName,
+  initialDose,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -54,6 +56,9 @@ export function OwnExerciseSheet({
   exercise?: OwnExercise | null
   requestLinks: RequestMediaLinks
   onSaved?: (exerciseId: Id<'exercises'>) => void
+  /** A new exercise: the name and dose to start with (e.g. what Rehabify Scribe heard) */
+  initialName?: string
+  initialDose?: { sets?: number | null; reps?: number | null; holdSeconds?: number | null }
 }) {
   const getUploadAuth = useMutation(uploadAuthRef)
   const save = useMutation(saveRef)
@@ -91,15 +96,17 @@ export function OwnExerciseSheet({
     setPhotos([])
     setProgress(null)
     setConsent(null)
-    setName(exercise?.name ?? '')
+    setName(exercise?.name ?? initialName ?? '')
     setSteps(exercise?.instructions.length ? exercise.instructions : [''])
-    setSets(String(exercise?.defaults.sets ?? 3))
-    setReps(String(exercise?.defaults.reps ?? 10))
-    setHold(exercise?.defaults.holdSeconds ? String(exercise.defaults.holdSeconds) : '')
+    setSets(String(exercise?.defaults.sets ?? initialDose?.sets ?? 3))
+    setReps(String(exercise?.defaults.reps ?? initialDose?.reps ?? 10))
+    const startHold = exercise ? exercise.defaults.holdSeconds : initialDose?.holdSeconds
+    setHold(startHold ? String(startHold) : '')
     setArea(exercise?.bodyParts[0] ?? null)
     setShare(exercise?.libraryShare === 'pending' || exercise?.libraryShare === 'approved')
     setSaving(false)
     setTried(false)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, exercise])
 
   const uploading = progress !== null
