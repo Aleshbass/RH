@@ -17,7 +17,7 @@ import { programError } from './errors'
 export type { PaidPlan, PlanOffer }
 
 type Share = { code: string; session: string }
-type CheckoutArgs = { plan: PaidPlan; share?: Share; from?: 'dashboard' | 'exercises'; returnOrigin?: string }
+type CheckoutArgs = { plan: PaidPlan; share?: Share; from?: 'dashboard' | 'exercises'; returnOrigin?: string; autoRenew?: boolean }
 
 const livePlansRef = makeFunctionReference<'query', Record<string, never>, RecoveryPlansLive>('exercisePrograms:recoveryPlansLive')
 const startCheckoutRef = makeFunctionReference<'action', CheckoutArgs, { authorizationUrl: string; reference: string }>(
@@ -37,10 +37,10 @@ export function useFlexCheckout(options: { share?: Share; from?: 'dashboard' | '
   const [busy, setBusy] = useState<PaidPlan | null>(null)
   const { share, from } = options
   const checkout = useCallback(
-    async (plan: PaidPlan) => {
+    async (plan: PaidPlan, autoRenew = false) => {
       setBusy(plan)
       try {
-        const { authorizationUrl } = await start({ plan, share, from, returnOrigin: window.location.origin })
+        const { authorizationUrl } = await start({ plan, share, from, returnOrigin: window.location.origin, ...(autoRenew ? { autoRenew: true } : {}) })
         window.location.assign(authorizationUrl)
       } catch (error) {
         playSound('error')

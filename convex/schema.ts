@@ -233,6 +233,31 @@ export default defineSchema({
     .index("by_status_expires", ["status", "expiresAt"])
     .index("by_purchased", ["purchasedAt"]),
 
+  // A patient's saved card for Flex that renews by itself (helpers/flexCards.ts, flexRenewal.ts).
+  // The authorization code is a server-only Paystack token: never return it to a page.
+  patientPlanCards: defineTable({
+    patientId: v.id("users"),
+    status: v.union(v.literal("active"), v.literal("removed")),
+    authorizationCode: v.string(),
+    email: v.string(), // the Paystack customer email (charge_authorization needs the same one)
+    signature: v.optional(v.string()),
+    brand: v.optional(v.string()),
+    last4: v.optional(v.string()),
+    expMonth: v.optional(v.string()),
+    expYear: v.optional(v.string()),
+    bank: v.optional(v.string()),
+    reference: v.string(), // the Flex payment that saved it
+    addedAt: v.number(),
+    removedAt: v.optional(v.number()),
+    // Renewal attempts for the period that is ending (reset for the next one)
+    renewingEntitlementId: v.optional(v.id("patientPlanEntitlements")),
+    attempts: v.optional(v.number()),
+    lastAttemptAt: v.optional(v.number()),
+    lastStatus: v.optional(v.string()),
+    lastMessage: v.optional(v.string()),
+    lastReference: v.optional(v.string()),
+  }).index("by_patient_status", ["patientId", "status"]),
+
   // The launch switch for Flex and Flex Max (one row). Until a plan is live nobody is gated
   // and nobody can buy it.
   patientPlanSettings: defineTable({
@@ -5354,8 +5379,9 @@ export default defineSchema({
     marketplaceEnabled: v.boolean(),
     supportEmail: v.optional(v.string()),
     // AI scribe for physiotherapists (convex/scribe.ts): off unless an admin switches it on.
-    // "allowlist" = only the physio accounts in scribeAllowedEmails. Missing = off.
-    scribeMode: v.optional(v.union(v.literal("off"), v.literal("allowlist"), v.literal("everyone"))),
+    // "allowlist" = only the physio accounts in scribeAllowedEmails. "clinic_plans" (after the pilot,
+    // owner 16 Nov 2026) = clinicians of clinics on an active plan, plus the allowlist. Missing = off.
+    scribeMode: v.optional(v.union(v.literal("off"), v.literal("allowlist"), v.literal("everyone"), v.literal("clinic_plans"))),
     scribeAllowedEmails: v.optional(v.array(v.string())),
     updatedAt: v.number(),
     updatedBy: v.optional(v.id("users")),

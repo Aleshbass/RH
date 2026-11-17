@@ -41,13 +41,14 @@ type Controls = {
   scribeAllowedEmails: string
 }
 
-type ScribeMode = 'off' | 'allowlist' | 'everyone'
+type ScribeMode = 'off' | 'allowlist' | 'everyone' | 'clinic_plans'
 type SavedControls = Omit<Controls, 'scribeMode' | 'scribeAllowedEmails'> & { scribeMode?: ScribeMode; scribeAllowedEmails?: string[] }
 
 const SCRIBE_MODES: { value: ScribeMode; label: string }[] = [
   { value: 'off', label: 'Off' },
   { value: 'allowlist', label: 'Only these physios' },
   { value: 'everyone', label: 'Every physiotherapist' },
+  { value: 'clinic_plans', label: 'Included in clinic plans' },
 ]
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -252,7 +253,7 @@ export default function AdminSettingsPage() {
           <SettingsGroup
             icon={Mic}
             title="Rehabify Scribe"
-            description="Physiotherapists record or dictate a session; an AI drafts the clinical note for them to check, edit and sign. Audio isn’t kept. Free during the pilot; after the pilot it moves to the paid plan."
+            description="Physiotherapists record or dictate a session; an AI drafts the clinical note for them to check, edit and sign. Audio isn’t kept. Free during the pilot. After the pilot, choose “Included in clinic plans”: clinicians of clinics on an active plan get it, plus anyone on the list below."
           >
             <div className="space-y-3 px-5 py-4">
               <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Who can use Rehabify Scribe">
@@ -274,7 +275,7 @@ export default function AdminSettingsPage() {
                   </button>
                 ))}
               </div>
-              {draft.scribeMode === 'allowlist' && (
+              {(draft.scribeMode === 'allowlist' || draft.scribeMode === 'clinic_plans') && (
                 <div className="space-y-1.5">
                   <Label htmlFor="scribe-emails" className="text-sm font-medium text-rh-ink dark:text-white">
                     Physiotherapist emails

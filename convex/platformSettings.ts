@@ -144,7 +144,7 @@ export const DEFAULT_PLATFORM_CONTROLS = {
   scribeAllowedEmails: [] as string[],
 };
 
-export type ScribeMode = "off" | "allowlist" | "everyone";
+export type ScribeMode = "off" | "allowlist" | "everyone" | "clinic_plans";
 export type PlatformControls = typeof DEFAULT_PLATFORM_CONTROLS;
 const MAX_SCRIBE_EMAILS = 200;
 
@@ -233,7 +233,7 @@ export const updatePlatformControls = mutation({
     marketplaceEnabled: v.boolean(),
     supportEmail: v.string(),
     // Optional so a Settings page loaded before the AI scribe switch existed can still save
-    scribeMode: v.optional(v.union(v.literal("off"), v.literal("allowlist"), v.literal("everyone"))),
+    scribeMode: v.optional(v.union(v.literal("off"), v.literal("allowlist"), v.literal("everyone"), v.literal("clinic_plans"))),
     scribeAllowedEmails: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {

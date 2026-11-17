@@ -107,6 +107,8 @@ export const CLINIC_PROGRAMME_OVERAGE =
 
 export const DEFAULT_CLINIC_PLAN_INCLUDES = [
   'Clinical records with assessment and SOAP templates',
+  // Owner, 16 Nov 2026: after the pilot (Admin › Settings › Rehabify Scribe › Included in clinic plans)
+  'Rehabify Scribe: AI that drafts your clinical notes',
   'Scheduling for in-clinic and virtual sessions',
   'Staff and role-based access',
   'Exercise library and custom exercises',

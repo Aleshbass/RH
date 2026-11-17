@@ -54,6 +54,7 @@ import {
 } from "./helpers/scribeDraft";
 import { activePlanFor, episodesFor, insertClinicalNote } from "./physioCare";
 import { loadPlatformControls } from "./platformSettings";
+import { billingIsOn, subscriptionForClinic } from "./helpers/clinicSubscriptions";
 
 type Ctx = QueryCtx | MutationCtx;
 
@@ -122,6 +123,14 @@ export async function scribeAllowedFor(ctx: Ctx, user: Doc<"users">): Promise<bo
   const { controls } = await loadPlatformControls(ctx);
   if (controls.scribeMode === "everyone") return true;
   if (controls.scribeMode === "allowlist") return emailIn(user, controls.scribeAllowedEmails);
+  // After the pilot it is part of the clinic plans (owner, 16 Nov 2026): clinicians of a clinic on
+  // an active plan (not read-only), plus anyone still on the list
+  if (controls.scribeMode === "clinic_plans") {
+    if (emailIn(user, controls.scribeAllowedEmails)) return true;
+    if (!user.clinicId) return false;
+    const sub = await subscriptionForClinic(ctx, user.clinicId);
+    return billingIsOn(sub) && sub.status !== "read_only";
+  }
   return false;
 }
 

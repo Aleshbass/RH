@@ -39,6 +39,8 @@ import {
   type CareTeamAccess,
 } from "./helpers/exerciseAccess";
 import { programmeAllowanceInfo } from "./helpers/clinicSubscriptions";
+import { RENEW_BEFORE_MS, activeFlexCard, chargeFlexRenewalRef, flexCardView, saveFlexCardFromPayment, wantsRenewalCharge } from "./helpers/flexCards";
+import type { PaystackAuthorization } from "./helpers/clinicCards";
 import {
   REMINDER_BEFORE_MS,
   activatePendingPlans,
@@ -1022,6 +1024,11 @@ const flexPurchaseByReferenceRef = makeFunctionReference<
   { reference: string },
   { status: Doc<"patientPlanEntitlements">["status"]; plan: PaidPlan } | null
 >("exercisePrograms:flexPurchaseByReference");
+const saveFlexCardRef = makeFunctionReference<
+  "mutation",
+  { reference: string; metadata: unknown; authorization: unknown; email?: string },
+  boolean
+>("exercisePrograms:saveVerifiedFlexCard");
 
 const naira = (kobo: number) => `₦${(kobo / 100).toLocaleString("en-NG", { maximumFractionDigits: 2 })}`;
 
@@ -1100,6 +1107,8 @@ export const myRecoveryPlan = query({
       refundRequested: rows.filter((row) => row.status === "cancelled" && row.refundRequestId).map((row) => entitlementView(row, now)),
       offer: situation.independent ? planOffer(live) : [],
       canPay: receiptEmail(user.email) !== null,
+      // "Renews automatically with Visa ending 1234", or null (helpers/flexCards.ts)
+      autoRenew: flexCardView(await activeFlexCard(ctx, user._id)),
       refund,
     };
   },
@@ -1160,6 +1169,8 @@ export const startFlexCheckout = action({
     share: v.optional(shareValidator),
     from: v.optional(v.union(v.literal("dashboard"), v.literal("exercises"))),
     returnOrigin: v.optional(v.string()),
+    // "Renew automatically": card only, and the card is saved for the next 30 days
+    autoRenew: v.optional(v.boolean()),
   },
   handler: async (ctx, args): Promise<{ authorizationUrl: string; reference: string }> => {
     const prep: FlexCheckout = await ctx.runQuery(prepareFlexCheckoutRef, { plan: args.plan, share: args.share, from: args.from });
@@ -1173,10 +1184,11 @@ export const startFlexCheckout = action({
         email: prep.email,
         currency: "NGN",
         callback_url: back,
-        channels: ["card", "bank", "ussd", "bank_transfer"],
+        channels: args.autoRenew ? ["card"] : ["card", "bank", "ussd", "bank_transfer"],
         metadata: {
           source: "rehabify_flex",
           plan: prep.plan,
+          ...(args.autoRenew ? { autoRenew: true } : {}),
           cancel_action: back,
           custom_fields: [
             { display_name: "Plan", variable_name: "plan", value: `${planName(prep.plan)} (30 days)` },
@@ -1299,6 +1311,17 @@ export const completeVerifiedFlexPayment = internalMutation({
     completeFlexPayment(ctx, args.reference, { amountKobo: args.amountKobo, currency: args.currency, channel: args.channel }),
 });
 
+/** Saves the card after a verified Flex payment when the patient ticked "Renew automatically". */
+export const saveVerifiedFlexCard = internalMutation({
+  args: { reference: v.string(), metadata: v.any(), authorization: v.any(), email: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const parsed = parseFlexReference(args.reference);
+    const patientId = parsed ? ctx.db.normalizeId("users", parsed.patientId) : null;
+    if (!patientId) return false;
+    return await saveFlexCardFromPayment(ctx, patientId, args.reference, args);
+  },
+});
+
 export const flexPurchaseByReference = internalQuery({
   args: { reference: v.string() },
   handler: async (ctx, args) => {
@@ -1318,7 +1341,16 @@ async function fetchPaystackTransaction(reference: string) {
   });
   const data: any = await response.json().catch(() => null);
   if (!response.ok || !data?.status || !data.data) return null;
-  return data.data as { status: string; amount: number; currency: string; reference: string; channel?: string };
+  return data.data as {
+    status: string;
+    amount: number;
+    currency: string;
+    reference: string;
+    channel?: string;
+    metadata?: unknown;
+    authorization?: PaystackAuthorization;
+    customer?: { email?: string };
+  };
 }
 
 export type FlexVerifyResult =
@@ -1350,6 +1382,12 @@ export const verifyFlexPayment = action({
         channel: typeof tx.channel === "string" ? tx.channel : undefined,
       });
       if (!result.success) return { status: "needs_review", reason: result.reason };
+      await ctx.runMutation(saveFlexCardRef, {
+        reference,
+        metadata: tx.metadata ?? null,
+        authorization: tx.authorization ?? null,
+        email: typeof tx.customer?.email === "string" ? tx.customer.email : undefined,
+      });
       return { status: "paid", plan: result.plan, activation: result.status };
     }
     if (tx.status === "failed" || tx.status === "reversed") return { status: "failed" };
@@ -1387,6 +1425,15 @@ export const recordFlexPaystackWebhook = mutation({
       currency: typeof data.currency === "string" ? data.currency : "",
       channel: typeof data.channel === "string" ? data.channel : undefined,
     });
+    const parsed = parseFlexReference(reference);
+    const payer = parsed ? ctx.db.normalizeId("users", parsed.patientId) : null;
+    if (result.success && payer) {
+      await saveFlexCardFromPayment(ctx, payer, reference, {
+        metadata: data.metadata,
+        authorization: data.authorization,
+        email: typeof data.customer?.email === "string" ? data.customer.email : undefined,
+      });
+    }
     return { handled: true, ...result };
   },
 });
@@ -1468,8 +1515,22 @@ export const sweepPatientPlans = internalMutation({
       .withIndex("by_status_expires", (q) => q.eq("status", "active").gt("expiresAt", now).lte("expiresAt", now + REMINDER_BEFORE_MS))
       .take(200);
     let reminded = 0;
+    let renewing = 0;
     for (const row of ending) {
-      if (row.reminderSentAt || row.expiresAt === undefined) continue;
+      if (row.expiresAt === undefined) continue;
+      // "Renew automatically": charge the saved card a day before the end (flexRenewal.ts)
+      const card = await activeFlexCard(ctx, row.patientId);
+      if (card && row.expiresAt - now <= RENEW_BEFORE_MS && wantsRenewalCharge(card, row._id, now)) {
+        await ctx.db.patch(card._id, {
+          renewingEntitlementId: row._id,
+          lastStatus: "pending",
+          lastAttemptAt: now,
+          ...(card.renewingEntitlementId === row._id ? {} : { attempts: 0 }),
+        });
+        await ctx.scheduler.runAfter(0, chargeFlexRenewalRef, { entitlementId: row._id });
+        renewing++;
+      }
+      if (row.reminderSentAt) continue;
       await ctx.db.patch(row._id, { reminderSentAt: now });
       // Nothing to say when another period follows on (a renewal already bought)
       const others = await patientEntitlements(ctx, row.patientId, 20);
@@ -1483,6 +1544,25 @@ export const sweepPatientPlans = internalMutation({
       if (!patient) continue;
       const name = planName(row.plan);
       const ends = lagosDay(row.expiresAt);
+      if (card) {
+        // It renews by itself: a heads-up, not a nudge to pay
+        const label = flexCardView(card)?.label ?? "your card";
+        const price = (planPriceKobo(row.plan) / 100).toLocaleString("en-NG");
+        await insertNotification(ctx, {
+          userId: patient._id,
+          type: "patient_plan",
+          priority: "low",
+          status: "pending",
+          payload: {
+            title: `Your ${name} renews on ${ends}`,
+            body: `We'll charge ${label} ₦${price} for the next 30 days. You can turn this off from your dashboard.`,
+            data: { actionUrl: "/dashboard/patient#your-plan" },
+          },
+          createdAt: now,
+        });
+        reminded++;
+        continue;
+      }
       await insertNotification(ctx, {
         userId: patient._id,
         type: "patient_plan",
@@ -1522,7 +1602,7 @@ export const sweepPatientPlans = internalMutation({
     for (const patientId of new Set(waiting.map((row) => row.patientId))) {
       started += await activatePendingPlans(ctx, patientId, now);
     }
-    return { expired: ended.length, reminded, started };
+    return { expired: ended.length, reminded, renewing, started };
   },
 });
 

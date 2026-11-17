@@ -24,9 +24,10 @@ const myPlanRef = makeFunctionReference<'query', Record<string, never>, MyPlan>(
 const refundRef = makeFunctionReference<'mutation', { entitlementId: string }, { requested: boolean; amountKobo: number }>(
   'exercisePrograms:requestFlexRefund'
 )
+const stopRenewRef = makeFunctionReference<'mutation', Record<string, never>, null>('flexRenewal:stopFlexAutoRenew')
 
 const PLAN_INFO =
-  'Basic is always free: your exercises, doses, steps and your physio’s notes. Flex adds demonstrations and progress tracking; Flex Max adds Joy on WhatsApp. Each runs for 30 days from when your programme is ready, and never renews by itself.'
+  'Basic is always free: your exercises, doses, steps and your physio’s notes. Flex adds demonstrations and progress tracking; Flex Max adds Joy on WhatsApp. Each runs for 30 days from when your programme is ready. Tick “Renew automatically” to keep it going with your card, or renew by hand each time.'
 
 /**
  * "Your plan": Basic, Flex and Flex Max for an independent physio's own patients (everyone else
@@ -37,6 +38,10 @@ export function YourPlanCard() {
   const data = useQuery(myPlanRef, {})
   const { checkout, busy } = useFlexCheckout({ from: 'dashboard' })
   const requestRefund = useMutation(refundRef)
+  const stopRenew = useMutation(stopRenewRef)
+  // Opt-in: renews with the same card 24 hours before the 30 days end
+  const [autoRenew, setAutoRenew] = useState(false)
+  const [stopping, setStopping] = useState(false)
   const [confirmRefund, setConfirmRefund] = useState(false)
   const [refunding, setRefunding] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -71,6 +76,18 @@ export function YourPlanCard() {
     }
   }
 
+  const turnOffRenewal = async () => {
+    setStopping(true)
+    try {
+      await stopRenew({})
+      toast.success('Automatic renewal is off. Your current plan carries on until it ends.')
+    } catch (error) {
+      toast.error(programError(error, 'We couldn’t change that. Please try again.'))
+    } finally {
+      setStopping(false)
+    }
+  }
+
   const actionLabel = (plan: PaidPlan) => {
     if (!current) return `Get ${recoveryPlan(plan).name}`
     if (current.plan === plan) return 'Renew'
@@ -89,12 +106,30 @@ export function YourPlanCard() {
       info={PLAN_INFO}
       description={
         current
-          ? `Until ${format(current.expiresAt ?? Date.now(), 'd MMMM')}. It doesn’t renew by itself.`
+          ? data.autoRenew
+            ? `Renews on ${format(current.expiresAt ?? Date.now(), 'd MMMM')} with ${data.autoRenew.label}.`
+            : `Until ${format(current.expiresAt ?? Date.now(), 'd MMMM')}. It doesn’t renew by itself.`
           : 'Your exercises and your physio’s instructions are always free.'
       }
     >
       <FlexPaymentReturn />
       <div className="space-y-4">
+        {data.autoRenew && (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-pt-sunken px-4 py-3 text-sm text-pt-ink">
+            <span>
+              Renews automatically with {data.autoRenew.label}
+              {data.autoRenew.lastStatus === 'failed' ? '. The last try was declined: renew below, or we’ll try once more.' : '.'}
+            </span>
+            <button
+              type="button"
+              disabled={stopping}
+              onClick={() => void turnOffRenewal()}
+              className="text-[13px] font-medium text-pt-muted underline-offset-4 hover:text-pt-ink hover:underline"
+            >
+              {stopping ? 'Turning off…' : 'Turn off'}
+            </button>
+          </div>
+        )}
         {next && (
           <p className="rounded-2xl bg-pt-sunken px-4 py-3 text-sm text-pt-ink">
             {next.status === 'pending_activation'
@@ -144,7 +179,7 @@ export function YourPlanCard() {
                   <Button
                     type="button"
                     disabled={!data.canPay || Boolean(busy)}
-                    onClick={() => void checkout(plan.id)}
+                    onClick={() => void checkout(plan.id, autoRenew)}
                     className={cn(
                       'mt-4 h-11 w-full',
                       isCurrent || plan.id === 'flex' ? accentButtonClass : secondaryButtonClass
@@ -153,11 +188,23 @@ export function YourPlanCard() {
                     {busy === plan.id && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                     {actionLabel(plan.id)}
                   </Button>
-                  <p className={cn('mt-1.5 text-center text-[11px]', isCurrent ? 'text-white/55' : 'text-pt-faint')}>30 days · no auto-renewal</p>
+                  <p className={cn('mt-1.5 text-center text-[11px]', isCurrent ? 'text-white/55' : 'text-pt-faint')}>
+                    {autoRenew ? '30 days · renews by card' : '30 days · renew when you like'}
+                  </p>
                 </div>
               )
             })}
           </div>
+        )}
+
+        {data.mustBuy && offer.length > 0 && !data.autoRenew && (
+          <label className="flex items-start gap-2.5 text-[13px] text-pt-ink">
+            <input type="checkbox" checked={autoRenew} onChange={(e) => setAutoRenew(e.target.checked)} className="mt-0.5 h-4 w-4 accent-[#00cd0f]" />
+            <span>
+              Renew automatically every 30 days with my card. We charge the same plan a day before it ends and email a receipt. Turn it off any time
+              here. (Card only; untick to pay by transfer.)
+            </span>
+          </label>
         )}
 
         {data.mustBuy && !data.canPay && (
