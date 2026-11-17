@@ -24,7 +24,6 @@ import {
   X,
 } from '@/components/icons'
 import { toast } from 'sonner'
-import { api } from '@/convex/_generated/api'
 import type { Id } from '@/convex/_generated/dataModel'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -137,6 +136,14 @@ function draftFor(entry: LibraryEntry): Draft {
   }
 }
 
+// By name, not api.x.y: the generated api type is at TypeScript's depth limit (TS2589)
+type Args = Record<string, unknown>
+const listLibraryRef = makeFunctionReference<'query', Args, unknown>('exerciseLibrary:listLibrary')
+const allowanceRef = makeFunctionReference<'query', Args, unknown>('exercisePrograms:programmeAllowanceFor')
+const listForPatientRef = makeFunctionReference<'query', Args, unknown>('exercisePrograms:listForPatient')
+const createProgramRef = makeFunctionReference<'mutation', Args, Id<'exercisePrograms'>>('exercisePrograms:createProgram')
+const addExercisesRef = makeFunctionReference<'mutation', Args, unknown>('exercisePrograms:addExercisesToProgram')
+const updateProgramRef = makeFunctionReference<'mutation', Args, unknown>('exercisePrograms:updateProgram')
 const currentUserRef = makeFunctionReference<'query', Record<string, never>, { _id: Id<'users'>; clinicId?: Id<'clinics'> } | null>('queries:getCurrentUser')
 
 function draftsFromProgram(program: Pick<CareTeamProgram, 'items'>): Draft[] {
@@ -325,19 +332,19 @@ export function SendProgramDialog({
   const templateMode = mode === 'template'
   const me = useQuery(currentUserRef, open ? {} : 'skip')
   const hasClinic = Boolean(me?.clinicId)
-  const library = useQuery(api.exerciseLibrary.listLibrary, open ? {} : 'skip') as LibraryData | null | undefined
+  const library = useQuery(listLibraryRef, open ? {} : 'skip') as LibraryData | null | undefined
   // Clinic plans: where a new programme leaves the clinic's monthly allowance (null otherwise)
-  const allowance = useQuery(api.exercisePrograms.programmeAllowanceFor, open && mode === 'send' && patientId ? { patientId } : 'skip') as
+  const allowance = useQuery(allowanceRef, open && mode === 'send' && patientId ? { patientId } : 'skip') as
     | { allowance: number; count: number; alreadyCounted: boolean; overage: boolean; unitKobo: number }
     | null
     | undefined
-  const programs = useQuery(api.exercisePrograms.listForPatient, open && mode === 'send' && patientId ? { patientId } : 'skip') as
+  const programs = useQuery(listForPatientRef, open && mode === 'send' && patientId ? { patientId } : 'skip') as
     | CareTeamProgram[]
     | null
     | undefined
-  const create = useMutation(api.exercisePrograms.createProgram)
-  const addTo = useMutation(api.exercisePrograms.addExercisesToProgram)
-  const update = useMutation(api.exercisePrograms.updateProgram)
+  const create = useMutation(createProgramRef)
+  const addTo = useMutation(addExercisesRef)
+  const update = useMutation(updateProgramRef)
   const saveTemplate = useMutation(templateRefs.save)
   // Recorded so it can play as a WhatsApp voice note for patients on Joy
   const media = useNoteMedia({ audioTypes: WHATSAPP_AUDIO_TYPES })
