@@ -23,6 +23,7 @@ const POINTS = [
 
 export function ScribeIntro() {
   const intro = useQuery(scribeApi.intro, {})
+  const access = useQuery(scribeApi.access, {})
   const dismiss = useMutation(scribeApi.dismissIntro)
   const [ready, setReady] = useState(false)
   const [closed, setClosed] = useState(false)
@@ -56,7 +57,7 @@ export function ScribeIntro() {
       </button>
       <div className="flex items-center gap-2">
         <span className="rounded-full bg-pt-primary px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-pt-on-primary">New</span>
-        {SCRIBE_PILOT && <span className="rounded-full bg-pt-green-bg px-2 py-0.5 text-xs font-medium text-pt-green-fg">Free during the pilot</span>}
+        {(access?.pilot ?? SCRIBE_PILOT) && <span className="rounded-full bg-pt-green-bg px-2 py-0.5 text-xs font-medium text-pt-green-fg">Free during the pilot</span>}
       </div>
       <h2 id="scribe-intro-title" className="mt-3 text-lg font-semibold tracking-tight">
         Meet {SCRIBE_NAME}

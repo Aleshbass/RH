@@ -20,8 +20,9 @@ export type ProgrammeDelivery = {
 /** The product name physios see */
 export const SCRIBE_NAME = 'Rehabify Scribe'
 /**
- * Pilot: free for every physio an admin switches it on for. After the pilot it moves to the paid
- * plan; the access check (convex/scribe.ts scribeAllowedFor) is where that gate goes.
+ * Pilot: free for every physio an admin switches it on for. The "Free during the pilot" label
+ * follows Admin › Settings › Rehabify Scribe (getScribeAccess.pilot): gone once Scribe is part of
+ * the plans. Kept for screens that don't query access.
  */
 export const SCRIBE_PILOT = true
 
@@ -32,7 +33,7 @@ export type ScribeChannel = 'room' | 'physio' | 'patient'
 export type ScribeSpeaker = 'physio' | 'patient'
 
 export const scribeApi = {
-  access: makeFunctionReference<'query', Record<string, never>, { enabled: boolean }>('scribe:getScribeAccess'),
+  access: makeFunctionReference<'query', Record<string, never>, { enabled: boolean; pilot?: boolean }>('scribe:getScribeAccess'),
   intro: makeFunctionReference<'query', Record<string, never>, { show: boolean }>('scribe:getScribeIntro'),
   dismissIntro: makeFunctionReference<'mutation', Record<string, never>, null>('scribe:dismissScribeIntro'),
   session: makeFunctionReference<'query', { scribeSessionId: ScribeSessionId }, ScribeSession | null>('scribe:getScribeSession'),

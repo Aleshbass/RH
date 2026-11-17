@@ -204,7 +204,9 @@ export const getScribeAccess = query({
   args: {},
   handler: async (ctx) => {
     const physio = await physioOrNull(ctx);
-    return { enabled: physio ? await scribeAllowedFor(ctx, physio) : false };
+    const { controls } = await loadPlatformControls(ctx);
+    // "Free during the pilot" shows only while Scribe is in a pilot mode, not once it's part of the plans
+    return { enabled: physio ? await scribeAllowedFor(ctx, physio) : false, pilot: controls.scribeMode !== "clinic_plans" };
   },
 });
 

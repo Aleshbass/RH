@@ -406,7 +406,7 @@ export function ScribePanel({ patientId, patientFirstName, appointmentId, noteMe
         <Mic className="h-4 w-4" aria-hidden />
       </span>
       <p className="text-sm font-semibold text-pt-ink">{SCRIBE_NAME}</p>
-      {SCRIBE_PILOT && <span className="rounded-full bg-pt-green-bg px-2 py-0.5 text-xs font-medium text-pt-green-fg">Free during the pilot</span>}
+      {(access?.pilot ?? SCRIBE_PILOT) && <span className="rounded-full bg-pt-green-bg px-2 py-0.5 text-xs font-medium text-pt-green-fg">Free during the pilot</span>}
       <InfoTip>
         Records the session and drafts the note for you to check, edit and sign. The audio isn’t kept: only the words are saved, for you and
         the patient’s care team. Names and phone numbers are taken out before anything goes to the AI.
