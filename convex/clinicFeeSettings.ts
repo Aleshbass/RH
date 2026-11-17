@@ -41,7 +41,7 @@ export const updateClinicFeeSettings = mutation({
     stampDutyFromKobo: v.number(),
   },
   handler: async (ctx, args) => {
-    const admin = await ensureUserRole(ctx, ["admin"]);
+    const admin = await ensureUserRole(ctx, ["admin"], "clinicFeeSettings:updateClinicFeeSettings");
 
     const checks: [boolean, string][] = [
       [args.clinicSharePercent >= 0 && args.clinicSharePercent <= 100, "Clinic share must be between 0% and 100%"],
@@ -85,7 +85,7 @@ export const updateClinicFeeSettings = mutation({
 export const resetClinicFeeSettings = mutation({
   args: {},
   handler: async (ctx) => {
-    const admin = await ensureUserRole(ctx, ["admin"]);
+    const admin = await ensureUserRole(ctx, ["admin"], "clinicFeeSettings:resetClinicFeeSettings");
     const updatedBy = `${admin.firstName || ""} ${admin.lastName || ""}`.trim() || admin.email || "Admin";
     const existing = await ctx.db.query("clinicFeeSettings").order("desc").first();
     const values = { ...DEFAULT_CLINIC_FEE_CONFIG, updatedAt: Date.now(), updatedBy };

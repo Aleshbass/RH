@@ -409,7 +409,7 @@ function sum(rows: Doc<"payouts">[]) {
 export const adminGetPayoutStats = query({
   args: {},
   handler: async (ctx) => {
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "payouts:adminGetPayoutStats");
     const [pending, processing, failed, completed] = await Promise.all([
       readByStatus(ctx, "pending", STATS_READ_CAP),
       readByStatus(ctx, "processing", STATS_READ_CAP),
@@ -440,7 +440,7 @@ export const adminListPayouts = query({
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "payouts:adminListPayouts");
     const limit = Math.min(Math.max(Math.floor(args.limit ?? 100), 1), LIST_MAX);
 
     let rows: Doc<"payouts">[];
@@ -522,7 +522,7 @@ export const adminMarkPayoutsPaid = mutation({
     note: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const admin = await ensureUserRole(ctx, ["admin"]);
+    const admin = await ensureUserRole(ctx, ["admin"], "payouts:adminMarkPayoutsPaid");
     const ids = [...new Set(args.payoutIds)];
     if (ids.length === 0) throw new ConvexError("Choose at least one payout.");
     if (ids.length > 100) throw new ConvexError("Mark up to 100 payouts at a time.");
@@ -554,7 +554,7 @@ export const adminMarkPayoutsPaid = mutation({
 export const adminMarkPayoutFailed = mutation({
   args: { payoutId: v.id("payouts"), reason: v.string() },
   handler: async (ctx, args) => {
-    const admin = await ensureUserRole(ctx, ["admin"]);
+    const admin = await ensureUserRole(ctx, ["admin"], "payouts:adminMarkPayoutFailed");
     const payout = await ctx.db.get(args.payoutId);
     if (!payout) throw new ConvexError("Payout not found.");
     if (payout.status !== "pending" && payout.status !== "processing") {
@@ -571,7 +571,7 @@ export const adminMarkPayoutFailed = mutation({
 export const adminMarkPayoutProcessing = mutation({
   args: { payoutId: v.id("payouts"), transferReference: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    const admin = await ensureUserRole(ctx, ["admin"]);
+    const admin = await ensureUserRole(ctx, ["admin"], "payouts:adminMarkPayoutProcessing");
     const payout = await ctx.db.get(args.payoutId);
     if (!payout) throw new ConvexError("Payout not found.");
     if (payout.status !== "pending") throw new ConvexError(`Only pending payouts can be started (this one is ${payout.status}).`);
@@ -587,7 +587,7 @@ export const adminMarkPayoutProcessing = mutation({
 export const adminRetryPayout = mutation({
   args: { payoutId: v.id("payouts") },
   handler: async (ctx, args) => {
-    const admin = await ensureUserRole(ctx, ["admin"]);
+    const admin = await ensureUserRole(ctx, ["admin"], "payouts:adminRetryPayout");
     const payout = await ctx.db.get(args.payoutId);
     if (!payout) throw new ConvexError("Payout not found.");
     if (payout.status !== "failed") throw new ConvexError("Only failed payouts can be retried.");
@@ -1054,7 +1054,7 @@ export const sendPayoutNoteNudges = internalMutation({
 export const adminPrepareRun = mutation({
   args: {},
   handler: async (ctx) => {
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "payouts:adminPrepareRun");
     return prepareRun(ctx, Date.now());
   },
 });
@@ -1066,7 +1066,7 @@ export const adminPrepareRun = mutation({
 export const adminGetRun = query({
   args: { runId: v.optional(v.id("payoutRuns")) },
   handler: async (ctx, args) => {
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "payouts:adminGetRun");
     const now = Date.now();
     const run = args.runId
       ? await ctx.db.get(args.runId)
@@ -1158,7 +1158,7 @@ export const adminGetRun = query({
 export const adminListRuns = query({
   args: {},
   handler: async (ctx) => {
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "payouts:adminListRuns");
     const runs = await ctx.db.query("payoutRuns").order("desc").take(40);
     return runs.map((r) => ({
       _id: r._id,
@@ -1179,7 +1179,7 @@ export const adminListRuns = query({
 export const adminListWaiting = query({
   args: {},
   handler: async (ctx) => {
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "payouts:adminListWaiting");
     const now = Date.now();
     const draft = await draftRun(ctx);
     const pending = (
@@ -1236,7 +1236,7 @@ async function requireDraftLine(ctx: MutationCtx, payoutId: Id<"payouts">) {
 export const adminRemoveFromRun = mutation({
   args: { payoutId: v.id("payouts") },
   handler: async (ctx, args) => {
-    const admin = await ensureUserRole(ctx, ["admin"]);
+    const admin = await ensureUserRole(ctx, ["admin"], "payouts:adminRemoveFromRun");
     const { payout, run } = await requireDraftLine(ctx, args.payoutId);
     await ctx.db.patch(payout._id, { runId: undefined, skipRunId: run._id, updatedBy: admin._id, updatedAt: Date.now() });
     await refreshRunTotals(ctx, run._id);
@@ -1248,7 +1248,7 @@ export const adminRemoveFromRun = mutation({
 export const adminAddToRun = mutation({
   args: { payoutId: v.id("payouts") },
   handler: async (ctx, args) => {
-    const admin = await ensureUserRole(ctx, ["admin"]);
+    const admin = await ensureUserRole(ctx, ["admin"], "payouts:adminAddToRun");
     const payout = await ctx.db.get(args.payoutId);
     if (!payout || payout.type !== "physiotherapist_earning") throw new ConvexError("Payout not found.");
     const run = await draftRun(ctx);
@@ -1265,7 +1265,7 @@ export const adminAddToRun = mutation({
 export const adminHoldPayout = mutation({
   args: { payoutId: v.id("payouts"), reason: v.string() },
   handler: async (ctx, args) => {
-    const admin = await ensureUserRole(ctx, ["admin"]);
+    const admin = await ensureUserRole(ctx, ["admin"], "payouts:adminHoldPayout");
     const payout = await ctx.db.get(args.payoutId);
     if (!payout) throw new ConvexError("Payout not found.");
     if (payout.status !== "pending") throw new ConvexError("Only payouts that haven't been sent can be held.");
@@ -1291,7 +1291,7 @@ export const adminHoldPayout = mutation({
 export const adminReleasePayout = mutation({
   args: { payoutId: v.id("payouts"), note: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    const admin = await ensureUserRole(ctx, ["admin"]);
+    const admin = await ensureUserRole(ctx, ["admin"], "payouts:adminReleasePayout");
     const payout = await ctx.db.get(args.payoutId);
     if (!payout) throw new ConvexError("Payout not found.");
     if (payout.status !== "pending") throw new ConvexError("Only payouts that haven't been sent can be released.");
@@ -1345,7 +1345,7 @@ export const adminReleasePayout = mutation({
 export const beginRunPayment = internalMutation({
   args: { runId: v.id("payoutRuns") },
   handler: async (ctx, args): Promise<{ items: SendItem[]; skipped: Skipped[] }> => {
-    const admin = await ensureUserRole(ctx, ["admin"]);
+    const admin = await ensureUserRole(ctx, ["admin"], "payouts:beginRunPayment");
     const run = await ctx.db.get(args.runId);
     if (!run) throw new ConvexError("Run not found.");
     if (run.status !== "draft") throw new ConvexError("This run has already been paid, or is being paid now.");
@@ -1427,7 +1427,7 @@ export const beginRunPayment = internalMutation({
 export const beginTransferRetry = internalMutation({
   args: { transferId: v.id("payoutRunTransfers") },
   handler: async (ctx, args): Promise<SendItem> => {
-    const admin = await ensureUserRole(ctx, ["admin"]);
+    const admin = await ensureUserRole(ctx, ["admin"], "payouts:beginTransferRetry");
     const transfer = await ctx.db.get(args.transferId);
     if (!transfer) throw new ConvexError("Transfer not found.");
     if (transfer.status !== "failed" && transfer.status !== "reversed") throw new ConvexError("Only failed transfers can be retried.");
@@ -1502,7 +1502,7 @@ export const recordRunTransferState = internalMutation({
 export const getRunTransferForAdmin = internalQuery({
   args: { transferId: v.id("payoutRunTransfers") },
   handler: async (ctx, args) => {
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "payouts:getRunTransferForAdmin");
     return ctx.db.get(args.transferId);
   },
 });

@@ -187,7 +187,7 @@ export const getAllClinics = query({
   })),
   handler: async (ctx) => {
     // Get the authenticated user
-    const user = await ensureUserRole(ctx, ["admin"]);
+    const user = await ensureUserRole(ctx, ["admin"], "clinics:getAllClinics");
 
     // Get all clinics
     const clinics = await ctx.db

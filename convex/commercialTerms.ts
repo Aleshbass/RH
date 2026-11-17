@@ -45,7 +45,7 @@ export const upsertPartnerContract = mutation({
     ),
   },
   handler: async (ctx, args) => {
-    await requireAdmin(ctx);
+    await requireAdmin(ctx, "commercialTerms:upsertPartnerContract");
     const partner = await ctx.db
       .query("partners")
       .withIndex("by_code", (q) => q.eq("code", args.partnerId))
@@ -135,7 +135,7 @@ export const upsertPartnerContract = mutation({
 export const terminatePartnerContract = mutation({
   args: { contractId: v.id("partnerContracts"), reason: v.string() },
   handler: async (ctx, args) => {
-    const admin = await requireAdmin(ctx);
+    const admin = await requireAdmin(ctx, "commercialTerms:terminatePartnerContract");
     const reason = args.reason.trim();
     if (reason.length < 3) throw new ConvexError("Give a short reason for ending the contract.");
     if (reason.length > 500) throw new ConvexError("Keep the reason under 500 characters.");
@@ -163,7 +163,7 @@ export const terminatePartnerContract = mutation({
 export const adminListPartnerContracts = query({
   args: { partnerId: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    await requireAdmin(ctx);
+    await requireAdmin(ctx, "commercialTerms:adminListPartnerContracts");
     const partnerFilter = args.partnerId?.trim();
     const contracts = partnerFilter
       ? await ctx.db
@@ -380,7 +380,7 @@ export const getPartnerCommercialSummary = query({
 export const adminListPendingCommissions = query({
   args: { limit: v.optional(v.number()) },
   handler: async (ctx, args) => {
-    await requireAdmin(ctx);
+    await requireAdmin(ctx, "commercialTerms:adminListPendingCommissions");
     const limit = Math.min(Math.max(Math.floor(args.limit ?? 100), 1), 500);
     const rows = await ctx.db
       .query("partnerCommissions")
@@ -426,7 +426,7 @@ export const adminReviewCommission = mutation({
     reason: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const admin = await requireAdmin(ctx);
+    const admin = await requireAdmin(ctx, "commercialTerms:adminReviewCommission");
     const commission = await ctx.db.get(args.commissionId);
     if (!commission) throw new ConvexError("Commission not found.");
     if (commission.status !== "pending_approval") throw new ConvexError("This commission has already been reviewed.");

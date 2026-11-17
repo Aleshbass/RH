@@ -175,7 +175,7 @@ export const withdrawApplication = mutation({
 export const adminListApplications = query({
   args: { status: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "rehabifyAccess:adminListApplications");
     const rows = args.status
       ? await ctx.db
           .query("assistedCareApplications")
@@ -236,7 +236,7 @@ export const adminListApplications = query({
 export const adminEligiblePhysios = query({
   args: { serviceIds: v.array(v.string()), zoneId: v.optional(v.id("travelZones")) },
   handler: async (ctx, args) => {
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "rehabifyAccess:adminEligiblePhysios");
     const { tariffs } = await loadTariffs(ctx);
     const serviceIds = args.serviceIds.filter(isBookableServiceId);
     const profiles = await ctx.db.query("physiotherapistProfiles").collect();
@@ -283,7 +283,7 @@ const checklist = v.object({
 export const adminStartReview = mutation({
   args: { applicationId: v.id("assistedCareApplications") },
   handler: async (ctx, args) => {
-    const admin = await ensureUserRole(ctx, ["admin"]);
+    const admin = await ensureUserRole(ctx, ["admin"], "rehabifyAccess:adminStartReview");
     const application = await ctx.db.get(args.applicationId);
     if (!application) throw new ConvexError("Application not found.");
     if (application.status === "submitted" || application.status === "waitlisted") {
@@ -306,7 +306,7 @@ export const adminApprove = mutation({
     reviewNotes: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const admin = await ensureUserRole(ctx, ["admin"]);
+    const admin = await ensureUserRole(ctx, ["admin"], "rehabifyAccess:adminApprove");
     const application = await ctx.db.get(args.applicationId);
     if (!application) throw new ConvexError("Application not found.");
     if (application.status === "approved") throw new ConvexError("This application is already approved.");
@@ -399,7 +399,7 @@ export const adminDecide = mutation({
     reviewNotes: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const admin = await ensureUserRole(ctx, ["admin"]);
+    const admin = await ensureUserRole(ctx, ["admin"], "rehabifyAccess:adminDecide");
     const application = await ctx.db.get(args.applicationId);
     if (!application) throw new ConvexError("Application not found.");
     if (application.status === "approved") throw new ConvexError("This application is already approved. End the arrangement instead.");
@@ -427,7 +427,7 @@ export const adminUpdateAward = mutation({
     note: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "rehabifyAccess:adminUpdateAward");
     const award = await ctx.db.get(args.awardId);
     if (!award) throw new ConvexError("Arrangement not found.");
     const now = Date.now();
@@ -455,7 +455,7 @@ export const adminUpdateAward = mutation({
 export const adminAccessTariffs = query({
   args: {},
   handler: async (ctx) => {
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "rehabifyAccess:adminAccessTariffs");
     const { tariffs } = await loadTariffs(ctx);
     return BOOKABLE_SERVICE_IDS.map((id) => ({
       id,

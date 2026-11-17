@@ -106,7 +106,7 @@ export type LibraryItem = ReturnType<typeof libraryItem>;
 export const syncLibrary = mutation({
   args: { overwriteText: v.optional(v.boolean()) },
   handler: async (ctx, args) => {
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "exerciseLibrary:syncLibrary");
     return await syncCatalog(ctx, Boolean(args.overwriteText));
   },
 });
@@ -171,7 +171,7 @@ async function syncCatalog(ctx: MutationCtx, overwriteText: boolean) {
 export const setAnimationApproval = mutation({
   args: { exerciseId: v.id("exercises"), approved: v.boolean() },
   handler: async (ctx, args) => {
-    const admin = await ensureUserRole(ctx, ["admin"]);
+    const admin = await ensureUserRole(ctx, ["admin"], "exerciseLibrary:setAnimationApproval");
     const exercise = await ctx.db.get(args.exerciseId);
     if (!exercise?.animationSlug) throw new ConvexError("This exercise has no 3D demonstration.");
     await ctx.db.patch(args.exerciseId, args.approved
@@ -184,7 +184,7 @@ export const setAnimationApproval = mutation({
 export const adminLibraryStatus = query({
   args: {},
   handler: async (ctx) => {
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "exerciseLibrary:adminLibraryStatus");
     const rows = await ctx.db.query("exercises").collect();
     const bySlug = new Map(rows.filter((r) => r.animationSlug).map((r) => [r.animationSlug!, r]));
     const approvers = new Map<Id<"users">, string>();
@@ -685,7 +685,7 @@ export const requestExerciseMediaLinks = mutation({
 export const adminOwnExerciseShares = query({
   args: {},
   handler: async (ctx) => {
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "exerciseLibrary:adminOwnExerciseShares");
     const rows = await ctx.db
       .query("exercises")
       .withIndex("by_public", (q) => q.eq("isPublic", false))
@@ -707,7 +707,7 @@ export const adminOwnExerciseShares = query({
 export const adminReviewOwnExercise = mutation({
   args: { exerciseId: v.id("exercises"), approve: v.boolean(), note: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    const admin = await ensureUserRole(ctx, ["admin"]);
+    const admin = await ensureUserRole(ctx, ["admin"], "exerciseLibrary:adminReviewOwnExercise");
     const exercise = await ctx.db.get(args.exerciseId);
     if (!exercise?.libraryShare || exercise.libraryShare.status !== "pending") throw new ConvexError("This exercise isn't waiting for review.");
     await ctx.db.patch(exercise._id, {

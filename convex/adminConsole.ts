@@ -20,7 +20,7 @@ export const getNavBadges = query({
     // The sidebar stays mounted for a moment while an admin signs out: no badges, not an error
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) return null;
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "adminConsole:getNavBadges");
 
     const [approvals, pendingReports, reviewingReports, pendingBookings, partners, newAccess, reviewingAccess, countersign, refunds, newInquiries] = await Promise.all([
       ctx.db
@@ -93,7 +93,7 @@ export const getNavBadges = query({
 export const searchPeople = query({
   args: { term: v.string() },
   handler: async (ctx, args) => {
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "adminConsole:searchPeople");
     const term = args.term.trim().toLowerCase();
     if (term.length < 2) return [];
 

@@ -1,6 +1,6 @@
 'use client'
 
-import { Fragment, Suspense, useEffect, useState, type ReactNode } from 'react'
+import { Fragment, Suspense, useEffect, useMemo, useState, type ReactNode } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useQuery } from 'convex/react'
@@ -14,9 +14,20 @@ import { ClinicThemeProvider, ClinicThemeToggle } from '@/components/clinic/Clin
 import { PhysioNotifications } from '@/components/physio/PhysioNotifications'
 import { AdminSidebar } from './AdminSidebar'
 import { AdminCommandPalette, OPEN_ADMIN_PALETTE_EVENT } from './AdminCommandPalette'
-import { adminBreadcrumbs, consoleAllows, consoleHome, toConsoleRole, type ConsoleRole } from './adminNav'
+import {
+  FULL_ACCESS,
+  adminBreadcrumbs,
+  adminHomeFor,
+  adminItemAllowed,
+  adminPathAllowed,
+  consoleAllows,
+  consoleHome,
+  toConsoleRole,
+  type AdminAccess,
+  type ConsoleRole,
+} from './adminNav'
 import { learnAdminMeRef } from '@/lib/learnAdminsApi'
-import { ConsoleRoleContext, useConsoleRole } from './consoleRole'
+import { AdminAccessContext, ConsoleRoleContext, useAdminAccess, useConsoleRole } from './consoleRole'
 import { TeamAccessIntro } from '@/components/admin/TeamAccessIntro'
 import { AdminWhatsNew } from './AdminWhatsNew'
 import { WebsiteLink } from '@/components/dashboard/shared/WebsiteLink'
@@ -128,6 +139,7 @@ function PageTransition({ children }: { children: ReactNode }) {
 
 function ShellFrame({ children }: { children: ReactNode }) {
   const isAdmin = useConsoleRole() === 'admin'
+  const access = useAdminAccess()
   const [menuOpen, setMenuOpen] = useState(false)
   const pathname = usePathname()
   useEffect(() => setMenuOpen(false), [pathname])
@@ -173,7 +185,7 @@ function ShellFrame({ children }: { children: ReactNode }) {
         </header>
 
         {/* A home-visit safety alert is open: on every admin page until someone closes it */}
-        {isAdmin && <SafetyAlertBanner />}
+        {isAdmin && adminItemAllowed(access, '/dashboard/admin/safety') && <SafetyAlertBanner />}
 
         <main className="w-full min-w-0 flex-1 px-4 pb-[calc(4rem+env(safe-area-inset-bottom))] pt-4 sm:px-6 lg:px-8 lg:pb-16 lg:pt-6">
           <PageTransition>{children}</PageTransition>
@@ -182,7 +194,7 @@ function ShellFrame({ children }: { children: ReactNode }) {
 
       <AdminCommandPalette />
       {/* One-time "New" pop-up for admins (Blog & Learn access) */}
-      {isAdmin && <TeamAccessIntro />}
+      {isAdmin && access.full && <TeamAccessIntro />}
       {/* Demo requests, approvals and other alerts on the admin's phone */}
       <AppSetupPrompt />
       <AppIconBadge />
@@ -201,28 +213,56 @@ function LimitedRoleGate({ role, children }: { role: ConsoleRole; children: Reac
   return allowed ? <>{children}</> : null
 }
 
+/** Admins limited to some pages: any other page sends them to their own start page. */
+function AdminAccessGate({ access, children }: { access: AdminAccess; children: ReactNode }) {
+  const pathname = usePathname() ?? ''
+  const router = useRouter()
+  const allowed = adminPathAllowed(access, pathname)
+  useEffect(() => {
+    if (!allowed) router.replace(adminHomeFor(access))
+  }, [allowed, access, router])
+  return allowed ? <>{children}</> : null
+}
+
 // By name: the generated `api` type is at TypeScript's depth limit (TS2589)
 const myUserRef = makeFunctionReference<'query', Record<string, never>, { role?: string } | null>('users:getMyUser')
+const myAccessRef = makeFunctionReference<'query', Record<string, never>, { full: boolean; pages: string[]; widgets: string[] | null } | null>(
+  'adminAccess:me'
+)
 
 /** Wraps every /dashboard/admin page: theme, access check, sidebar, topbar and ⌘K search. */
 export function AdminShell({ children }: { children: ReactNode }) {
   const me = useQuery(myUserRef, {})
   const learnMe = useQuery(learnAdminMeRef, {})
+  const accessRow = useQuery(myAccessRef, me?.role === 'admin' ? {} : 'skip')
   // Learn super admins (any account type) get all of Admin › Learn
   const role: ConsoleRole | null = me?.role === 'admin' ? 'admin' : learnMe?.learnAdmin ? 'learn_admin' : toConsoleRole(me?.role)
 
+  // Admins: everything, unless a full admin limited them to some pages (Admin › Admin access)
+  const access = useMemo<AdminAccess>(() => (accessRow ? { full: accessRow.full, pages: accessRow.pages } : FULL_ACCESS), [accessRow])
+
   let body: ReactNode
-  if (me === undefined || learnMe === undefined) body = <ShellSkeleton />
+  if (me === undefined || learnMe === undefined || (me?.role === 'admin' && accessRow === undefined)) body = <ShellSkeleton />
   else if (!me || !role) body = <AccessDenied />
   else
     body = (
       <ConsoleRoleContext.Provider value={role}>
-        {/* useSearchParams needs a Suspense boundary */}
-        <Suspense fallback={<ShellSkeleton />}>
-          <ShellFrame>{role === 'admin' ? children : <LimitedRoleGate role={role}>{children}</LimitedRoleGate>}</ShellFrame>
-        </Suspense>
-        {/* Once per admin after a release: what each new feature needs from them */}
-        <AdminWhatsNew role={role} />
+        <AdminAccessContext.Provider value={access}>
+          {/* useSearchParams needs a Suspense boundary */}
+          <Suspense fallback={<ShellSkeleton />}>
+            <ShellFrame>
+              {role !== 'admin' ? (
+                <LimitedRoleGate role={role}>{children}</LimitedRoleGate>
+              ) : access.full ? (
+                children
+              ) : (
+                <AdminAccessGate access={access}>{children}</AdminAccessGate>
+              )}
+            </ShellFrame>
+          </Suspense>
+          {/* Once per admin after a release: what each new feature needs from them */}
+          {access.full && <AdminWhatsNew role={role} />}
+        </AdminAccessContext.Provider>
       </ConsoleRoleContext.Provider>
     )
 

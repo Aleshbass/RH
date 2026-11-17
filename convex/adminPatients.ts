@@ -57,7 +57,7 @@ function physioNameCache(ctx: { db: { get: (id: Id<"users">) => Promise<Doc<"use
 export const directory = query({
   args: {},
   handler: async (ctx) => {
-    await requireAdmin(ctx);
+    await requireAdmin(ctx, "adminPatients:directory");
     const users = await ctx.db
       .query("users")
       .withIndex("by_role", (q) => q.eq("role", "patient"))
@@ -85,7 +85,7 @@ export const directory = query({
 export const record = query({
   args: { patientId: v.string() },
   handler: async (ctx, args) => {
-    await requireAdmin(ctx);
+    await requireAdmin(ctx, "adminPatients:record");
     const patientId = ctx.db.normalizeId("users", args.patientId);
     const user = patientId ? await ctx.db.get(patientId) : null;
     if (!user || user.role !== "patient") return null;
@@ -240,7 +240,7 @@ export const updateDetails = mutation({
     careTeamNotes: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const { user: admin } = await requireAdmin(ctx);
+    const { user: admin } = await requireAdmin(ctx, "adminPatients:updateDetails");
     const patient = await ctx.db.get(args.patientId);
     if (!patient || patient.role !== "patient") throw new ConvexError("Patient not found.");
 
@@ -409,7 +409,7 @@ const requireAdminRef = makeFunctionReference<"query", Record<string, never>, { 
 export const assertAdmin = query({
   args: {},
   handler: async (ctx) => {
-    await requireAdmin(ctx);
+    await requireAdmin(ctx, "adminPatients:assertAdmin");
     return { ok: true };
   },
 });
@@ -515,7 +515,7 @@ export const suggestPhysios = action({
 export const pairWithPhysio = mutation({
   args: { patientId: v.id("users"), physiotherapistId: v.id("users"), note: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    const { user: admin } = await requireAdmin(ctx);
+    const { user: admin } = await requireAdmin(ctx, "adminPatients:pairWithPhysio");
     const patient = await ctx.db.get(args.patientId);
     const physio = await ctx.db.get(args.physiotherapistId);
     if (!patient || patient.role !== "patient" || patient.deletedAt) throw new ConvexError("Patient not found.");

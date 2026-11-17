@@ -76,7 +76,7 @@ export const updatePlatformRevenueSettings = mutation({
     )),
   },
   handler: async (ctx, args) => {
-    const admin = await ensureUserRole(ctx as any, ["admin"]);
+    const admin = await ensureUserRole(ctx as any, ["admin"], "platformSettings:updatePlatformRevenueSettings");
 
     const totalPercent = args.rehabifyPercent + args.physiotherapistPercent + args.partnerPercent;
     if (Math.abs(totalPercent - 100) > 0.01) {
@@ -204,7 +204,7 @@ export async function assertSignupAllowed(ctx: ReaderCtx, role: string) {
 export const getPlatformControls = query({
   args: {},
   handler: async (ctx) => {
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "platformSettings:getPlatformControls");
     const { controls, row } = await loadPlatformControls(ctx);
     const scribeEnv = (process.env.SCRIBE_ENABLED ?? "").trim().toLowerCase();
     return {
@@ -237,7 +237,7 @@ export const updatePlatformControls = mutation({
     scribeAllowedEmails: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
-    const admin = await ensureUserRole(ctx, ["admin"]);
+    const admin = await ensureUserRole(ctx, ["admin"], "platformSettings:updatePlatformControls");
 
     const { controls: previous, row } = await loadPlatformControls(ctx);
     const scribeAllowedEmails = [

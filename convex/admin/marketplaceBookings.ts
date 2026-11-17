@@ -193,7 +193,7 @@ export const adminGetAllMarketplaceBookings = query({
     status: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "admin/marketplaceBookings:adminGetAllMarketplaceBookings");
 
     const numItems = Math.min(Math.max(args.paginationOpts.numItems, 1), MAX_PAGE_SIZE);
     const result = await bookingsForStatus(ctx, args.status)
@@ -217,7 +217,7 @@ export const adminSearchMarketplaceBookings = query({
     status: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "admin/marketplaceBookings:adminSearchMarketplaceBookings");
 
     const needle = args.search.trim().toLowerCase();
     if (needle.length < 2) return { bookings: [], scanned: 0, capped: false };
@@ -262,7 +262,7 @@ export const adminSearchMarketplaceBookings = query({
 export const adminGetMarketplaceBookingStats = query({
   args: {},
   handler: async (ctx) => {
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "admin/marketplaceBookings:adminGetMarketplaceBookingStats");
 
     const recent = await ctx.db.query("marketplaceBookings").order("desc").take(STATS_SCAN_LIMIT + 1);
     const capped = recent.length > STATS_SCAN_LIMIT;
@@ -302,7 +302,7 @@ export const adminGetMarketplaceBookingStats = query({
 export const adminGetAllPhysiosForSelect = query({
   args: {},
   handler: async (ctx) => {
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "admin/marketplaceBookings:adminGetAllPhysiosForSelect");
 
     // Only approved physios (those with approval status "approved")
     const approvedStatuses = await ctx.db
@@ -350,7 +350,7 @@ export const adminReassignBookingPhysio = mutation({
     reason: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "admin/marketplaceBookings:adminReassignBookingPhysio");
 
     const booking = await ctx.db.get(args.bookingId);
     if (!booking) throw new Error("Booking not found");

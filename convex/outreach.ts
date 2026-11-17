@@ -288,14 +288,14 @@ async function searchWithAi(city: string, country: string): Promise<Candidate[]>
 
 export const adminGuard = query({
   args: {},
-  handler: async (ctx) => ({ adminId: (await requireAdmin(ctx)).user._id }),
+  handler: async (ctx) => ({ adminId: (await requireAdmin(ctx, "outreach:adminGuard")).user._id }),
 });
 
 /** The list, its counts and which finders are switched on. */
 export const adminLeads = query({
   args: { status: v.optional(statusValidator), city: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    await requireAdmin(ctx);
+    await requireAdmin(ctx, "outreach:adminLeads");
     const all = await ctx.db.query("outreachLeads").order("desc").take(3000);
     const counts: Record<string, number> = {};
     const cities = new Map<string, number>();
@@ -558,7 +558,7 @@ export const adminUpdateLead = mutation({
     note: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    await requireAdmin(ctx);
+    await requireAdmin(ctx, "outreach:adminUpdateLead");
     const lead = await ctx.db.get(args.leadId);
     if (!lead) throw new ConvexError("That clinic isn't on the list any more.");
     const now = Date.now();
@@ -591,7 +591,7 @@ export const adminUpdateLead = mutation({
 export const adminRecrawl = mutation({
   args: { leadId: v.id("outreachLeads"), website: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    await requireAdmin(ctx);
+    await requireAdmin(ctx, "outreach:adminRecrawl");
     const lead = await ctx.db.get(args.leadId);
     if (!lead) throw new ConvexError("That clinic isn't on the list any more.");
     const website = args.website?.trim() || lead.website;
@@ -610,7 +610,7 @@ export const adminRecrawl = mutation({
 export const adminExportLeads = mutation({
   args: { city: v.optional(v.string()), includeExported: v.optional(v.boolean()) },
   handler: async (ctx, args) => {
-    await requireAdmin(ctx);
+    await requireAdmin(ctx, "outreach:adminExportLeads");
     const now = Date.now();
     const want = new Set<LeadStatus>(args.includeExported ? ["ready", "exported"] : ["ready"]);
     const rows: Record<string, string>[] = [];

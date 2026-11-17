@@ -18,7 +18,7 @@ const statusV = v.union(v.literal("active"), v.literal("suspended"), v.literal("
 export const listLicences = query({
   args: {},
   handler: async (ctx) => {
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "libraryLicences:listLicences");
     const licences = await ctx.db.query("libraryLicences").order("desc").collect();
     const since = Date.now() - 30 * DAY;
     return await Promise.all(
@@ -54,7 +54,7 @@ export const createLicence = mutation({
     notes: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const admin = await ensureUserRole(ctx, ["admin"]);
+    const admin = await ensureUserRole(ctx, ["admin"], "libraryLicences:createLicence");
     const orgName = args.orgName.trim().slice(0, 120);
     if (!orgName) throw new ConvexError("Enter the organisation's name.");
     if (!Number.isInteger(args.seats) || args.seats < 1 || args.seats > 10_000) throw new ConvexError("Seats must be from 1 to 10,000.");
@@ -85,7 +85,7 @@ export const updateLicence = mutation({
     watermarkLabel: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "libraryLicences:updateLicence");
     const licence = await ctx.db.get(args.licenceId);
     if (!licence) throw new ConvexError("Licence not found.");
     if (args.seats !== undefined && (!Number.isInteger(args.seats) || args.seats < 1)) throw new ConvexError("Seats must be at least 1.");
@@ -103,7 +103,7 @@ export const updateLicence = mutation({
 export const addLicenceMember = mutation({
   args: { licenceId: v.id("libraryLicences"), email: v.string() },
   handler: async (ctx, args) => {
-    const admin = await ensureUserRole(ctx, ["admin"]);
+    const admin = await ensureUserRole(ctx, ["admin"], "libraryLicences:addLicenceMember");
     const licence = await ctx.db.get(args.licenceId);
     if (!licence) throw new ConvexError("Licence not found.");
     const email = args.email.trim().toLowerCase();
@@ -120,7 +120,7 @@ export const addLicenceMember = mutation({
 export const removeLicenceMember = mutation({
   args: { memberId: v.id("libraryLicenceMembers") },
   handler: async (ctx, args) => {
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "libraryLicences:removeLicenceMember");
     await ctx.db.delete(args.memberId);
   },
 });

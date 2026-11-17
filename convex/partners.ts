@@ -317,7 +317,7 @@ export const updatePartnerBranding = mutation({
 export const adminListPartners = query({
   args: {},
   handler: async (ctx) => {
-    await requireAdmin(ctx);
+    await requireAdmin(ctx, "partners:adminListPartners");
     const partners = await ctx.db.query("partners").order("desc").collect();
     return partners.map((p) => ({
       code: p.code,
@@ -341,7 +341,7 @@ export const adminCreatePartner = mutation({
     tier: v.optional(v.union(v.literal("standard"), v.literal("enterprise"))),
   },
   handler: async (ctx, args) => {
-    const admin = await requireAdmin(ctx);
+    const admin = await requireAdmin(ctx, "partners:adminCreatePartner");
     const email = args.ownerEmail.trim().toLowerCase();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new ConvexError("Enter a valid owner email.");
     const baseCode = args.name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 24) || "partner";

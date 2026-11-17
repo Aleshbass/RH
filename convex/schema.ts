@@ -4898,6 +4898,23 @@ export default defineSchema({
 
   // Independent physio plans: Free and Individual Pro (physioPlans.ts, owner spec 17 Nov 2026).
   // One settings row (prices, limits, dates; defaults in lib/physioPlans.ts).
+  // Admin access (owner 2026-11-17): no row (or full) = the whole console; otherwise only the
+  // ticked admin pages (nav hrefs). Set by full admins in Admin › Admin access.
+  adminAccess: defineTable({
+    userId: v.id("users"),
+    full: v.boolean(),
+    pages: v.array(v.string()),
+    updatedBy: v.optional(v.id("users")),
+    updatedAt: v.number(),
+  }).index("by_user", ["userId"]),
+
+  // "My page": the widgets each admin chose (keys from lib/adminWidgets.ts)
+  adminHomePrefs: defineTable({
+    userId: v.id("users"),
+    widgets: v.array(v.string()),
+    updatedAt: v.number(),
+  }).index("by_user", ["userId"]),
+
   physioPlanSettings: defineTable({
     proPriceKobo: v.optional(v.number()),
     foundingPriceKobo: v.optional(v.number()),

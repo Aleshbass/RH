@@ -28,7 +28,7 @@ export const createExercise = mutation({
   },
   handler: async (ctx, args) => {
     // The exercise library is managed from the admin dashboard only.
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "exercises:createExercise");
 
     // In a real app, we'd check for admin role here
     // const user = await ctx.db.query("users").withIndex("by_clerk_id", q => q.eq("clerkId", identity.subject)).unique();
@@ -113,7 +113,7 @@ export const updateExercise = mutation({
     tags: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "exercises:updateExercise");
     const { id, ...updates } = args;
     await ctx.db.patch(id, updates);
   },
@@ -125,7 +125,7 @@ export const deleteExercise = mutation({
     id: v.id("exercises"),
   },
   handler: async (ctx, args) => {
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "exercises:deleteExercise");
     await ctx.db.delete(args.id);
   },
 });

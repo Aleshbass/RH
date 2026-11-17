@@ -7,7 +7,7 @@ import { ensureUserRole } from "./auth";
 export const assertAdmin = internalQuery({
   args: {},
   handler: async (ctx) => {
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "test_reminders:assertAdmin");
     return null;
   },
 });

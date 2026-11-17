@@ -102,7 +102,7 @@ export const getAllPhysiotherapistEarnings = query({
   },
 
   handler: async (ctx, args) => {
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "admin/marketplaceEarnings:getAllPhysiotherapistEarnings");
 
     const { bookings: windowBookings, capped } = await bookingsInWindow(ctx, timeframeWindow(args.timeframe));
 
@@ -242,7 +242,7 @@ export const getPhysiotherapistEarningsDetail = query({
   },
 
   handler: async (ctx, args) => {
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "admin/marketplaceEarnings:getPhysiotherapistEarningsDetail");
 
     const physioUser = await ctx.db.get(args.physiotherapistId);
     if (!physioUser || physioUser.role !== "physiotherapist") return null;
@@ -337,7 +337,7 @@ export const getPhysiotherapistEarningsDetail = query({
  */
 export const getPlatformMarketplaceAnalytics = query({
   handler: async (ctx) => {
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "admin/marketplaceEarnings:getPlatformMarketplaceAnalytics");
 
     const { bookings: allBookings, capped } = await bookingsInWindow(ctx, timeframeWindow("all_time"));
     const completedBookings = allBookings.filter((b) => b.paymentStatus === "completed");

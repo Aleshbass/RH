@@ -67,7 +67,7 @@ export const listClinics = query({
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "adminClinics:listClinics");
 
     const clinics = await ctx.db.query("clinics").order("desc").take(CLINIC_SCAN_CAP);
     const base = await Promise.all(
@@ -155,7 +155,7 @@ const OPEN_REFERRAL_STATUSES = new Set<Doc<"inboundReferrals">["status"]>([
 export const getClinic = query({
   args: { clinicId: v.id("clinics") },
   handler: async (ctx, args) => {
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "adminClinics:getClinic");
     const clinic = await ctx.db.get(args.clinicId);
     if (!clinic) return null;
 
@@ -332,7 +332,7 @@ export const getClinic = query({
 export const listClinicStaff = query({
   args: { clinicId: v.id("clinics") },
   handler: async (ctx, args) => {
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "adminClinics:listClinicStaff");
     const clinic = await ctx.db.get(args.clinicId);
     if (!clinic) return null;
 
@@ -393,7 +393,7 @@ export const listClinicStaff = query({
 export const listClinicPatients = query({
   args: { clinicId: v.id("clinics"), limit: v.optional(v.number()) },
   handler: async (ctx, args) => {
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "adminClinics:listClinicPatients");
     const clinic = await ctx.db.get(args.clinicId);
     if (!clinic) return null;
 
@@ -470,7 +470,7 @@ export const listClinicPatients = query({
 export const listClinicReferrals = query({
   args: { clinicId: v.id("clinics") },
   handler: async (ctx, args) => {
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "adminClinics:listClinicReferrals");
     const referrals = await ctx.db
       .query("inboundReferrals")
       .withIndex("by_assigned_clinic", (q) => q.eq("assignedClinicId", args.clinicId))
@@ -505,7 +505,7 @@ export const setClinicStatus = mutation({
     reason: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const admin = await ensureUserRole(ctx, ["admin"]);
+    const admin = await ensureUserRole(ctx, ["admin"], "adminClinics:setClinicStatus");
     const clinic = await ctx.db.get(args.clinicId);
     if (!clinic) throw new ConvexError("Clinic not found");
     if (clinicStatus(clinic) === args.status) {
@@ -569,7 +569,7 @@ function heldForClinicKobo(inv: Doc<"invoices">): number {
 export const recordClinicTransfer = mutation({
   args: { clinicId: v.id("clinics"), reference: v.string() },
   handler: async (ctx, args) => {
-    const admin = await ensureUserRole(ctx, ["admin"]);
+    const admin = await ensureUserRole(ctx, ["admin"], "adminClinics:recordClinicTransfer");
     const reference = args.reference.trim();
     if (!reference) throw new ConvexError("Add the bank transfer reference.");
     const clinic = await ctx.db.get(args.clinicId);

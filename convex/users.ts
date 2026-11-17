@@ -1181,7 +1181,7 @@ export const setUserRole = mutation({
   },
   handler: async (ctx, args) => {
     // Verify the user making the change is an admin
-    const adminUser = await ensureUserRole(ctx, ["admin"]);
+    const adminUser = await ensureUserRole(ctx, ["admin"], "users:setUserRole");
 
     // Get the user to update
     const userToUpdate = await getUserByIdOrThrow(ctx, args.userId);
@@ -1255,7 +1255,7 @@ export const getAllAdmins = internalQuery({
 export const getAllUsers = query({
   args: {},
   handler: async (ctx) => {
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "users:getAllUsers");
     return await ctx.db.query("users").order("desc").take(500);
   },
 });
@@ -1300,7 +1300,7 @@ export const adminListUsers = query({
     search: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "users:adminListUsers");
 
     const term = (args.search ?? "").trim();
     const roleMatches = (u: Doc<"users">) =>
@@ -1390,7 +1390,7 @@ const ROLE_COUNT_CAP = 500;
 export const adminUserRoleCounts = query({
   args: {},
   handler: async (ctx) => {
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "users:adminUserRoleCounts");
     const roles = [...ADMIN_LISTABLE_ROLES, "none"] as const;
     const counts: Record<string, number> = {};
     const capped: string[] = [];
@@ -1640,7 +1640,7 @@ export const cleanupOrphanedApprovals = mutation({
   },
   handler: async (ctx, args) => {
     // Verify admin access
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "users:cleanupOrphanedApprovals");
 
     const batch = await ctx.db
       .query("accountApprovalStatus")
@@ -1683,7 +1683,7 @@ export const debugApprovalStatus = query({
   args: {},
   handler: async (ctx) => {
     // Verify admin access
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "users:debugApprovalStatus");
 
     const allApprovals = await ctx.db
       .query("accountApprovalStatus")
@@ -1731,7 +1731,7 @@ export const getPendingApprovals = query({
   })),
   handler: async (ctx) => {
     // Verify admin access
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "users:getPendingApprovals");
 
     // Bounded: the review queue is small in practice, and the dashboard only needs the
     // oldest 500 waiting applications.
@@ -1781,7 +1781,7 @@ export const getDeclinedApprovals = query({
   })),
   handler: async (ctx) => {
     // Verify admin access
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "users:getDeclinedApprovals");
 
     // Bounded: the newest 300 declined records (declines only accumulate over time).
     const declinedApprovals = await ctx.db
@@ -1861,7 +1861,7 @@ export const approveUser = mutation({
   }),
   handler: async (ctx, args) => {
     // Verify admin access
-    const currentUser = await ensureUserRole(ctx, ["admin"]);
+    const currentUser = await ensureUserRole(ctx, ["admin"], "users:approveUser");
 
     // Get user and approval status. Errors are ConvexErrors so the admin sees the reason
     // (a plain Error shows as "Server Error" in production).
@@ -2006,7 +2006,7 @@ export const declineUser = mutation({
   }),
   handler: async (ctx, args) => {
     // Verify admin access
-    const currentUser = await ensureUserRole(ctx, ["admin"]);
+    const currentUser = await ensureUserRole(ctx, ["admin"], "users:declineUser");
 
     // Get user and approval status
     const user = await ctx.db.get(args.userId);
@@ -2370,7 +2370,7 @@ export const adminDeleteUser = mutation({
   },
   handler: async (ctx, args) => {
     // Verify admin access
-    const currentUser = await ensureUserRole(ctx, ["admin"]);
+    const currentUser = await ensureUserRole(ctx, ["admin"], "users:adminDeleteUser");
 
     if (currentUser._id === args.userId) {
       throw new Error("You cannot delete your own admin account.");
@@ -2434,7 +2434,7 @@ async function upcomingVisitsAsClinician(ctx: QueryCtx, userId: Id<"users">) {
 export const adminAccountClosurePreview = query({
   args: { userId: v.id("users") },
   handler: async (ctx, args) => {
-    const admin = await ensureUserRole(ctx, ["admin"]);
+    const admin = await ensureUserRole(ctx, ["admin"], "users:adminAccountClosurePreview");
     const user = await ctx.db.get(args.userId);
     if (!user) return null;
     const name = [user.firstName, user.lastName].filter(Boolean).join(" ") || user.email || "This account";
@@ -2478,7 +2478,7 @@ export const adminAccountClosurePreview = query({
 export const adminCloseAccount = mutation({
   args: { userId: v.id("users"), confirm: v.literal("DELETE"), reason: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    const admin = await ensureUserRole(ctx, ["admin"]);
+    const admin = await ensureUserRole(ctx, ["admin"], "users:adminCloseAccount");
     if (admin._id === args.userId) throw new ConvexError("You can't delete your own account here.");
     const user = await ctx.db.get(args.userId);
     if (!user) throw new ConvexError("Account not found.");

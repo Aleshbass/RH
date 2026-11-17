@@ -135,7 +135,7 @@ export const getAllReports = query({
   },
 
   handler: async (ctx, args) => {
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "marketplace/reports:getAllReports");
 
     let reports: Doc<"physiotherapistReports">[];
     if (args.status) {
@@ -215,7 +215,7 @@ export const getAllReports = query({
 export const getReportCounts = query({
   args: {},
   handler: async (ctx) => {
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "marketplace/reports:getReportCounts");
     const count = async (status: Doc<"physiotherapistReports">["status"]) =>
       (
         await ctx.db
@@ -246,7 +246,7 @@ export const updateReportStatus = mutation({
   },
 
   handler: async (ctx, args) => {
-    const user = await ensureUserRole(ctx, ["admin"]);
+    const user = await ensureUserRole(ctx, ["admin"], "marketplace/reports:updateReportStatus");
 
     const report = await ctx.db.get(args.reportId);
     if (!report) {
@@ -296,7 +296,7 @@ export const getPhysiotherapistReports = query({
   },
 
   handler: async (ctx, args) => {
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "marketplace/reports:getPhysiotherapistReports");
 
     const reports = (
       await ctx.db

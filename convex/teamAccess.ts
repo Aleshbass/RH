@@ -154,7 +154,7 @@ async function giveRole(
 export const adminTeamAccess = query({
   args: {},
   handler: async (ctx) => {
-    await requireAdmin(ctx);
+    await requireAdmin(ctx, "teamAccess:adminTeamAccess");
     const acceptedRows = await ctx.db.query("teamInvites").withIndex("by_status", (q) => q.eq("status", "accepted")).order("desc").take(1000);
     const members = [];
     for (const role of TEAM_ROLES) {
@@ -210,7 +210,7 @@ export const adminGrantTeamRole = mutation({
     phone?: string;
     link?: string;
   }> => {
-    const { user: admin } = await requireAdmin(ctx);
+    const { user: admin } = await requireAdmin(ctx, "teamAccess:adminGrantTeamRole");
     const contact = readContact(args.contact);
     const now = Date.now();
     const target = await accountFor(ctx, contact);
@@ -264,7 +264,7 @@ export const adminGrantTeamRole = mutation({
 export const adminInviteLink = mutation({
   args: { inviteId: v.id("teamInvites"), email: v.optional(v.boolean()) },
   handler: async (ctx, args): Promise<{ link: string; phone: string | null; role: TeamRole }> => {
-    await requireAdmin(ctx);
+    await requireAdmin(ctx, "teamAccess:adminInviteLink");
     const invite = await ctx.db.get(args.inviteId);
     if (!invite || invite.status !== "pending") throw new ConvexError("That invite is no longer waiting.");
     const link = await newLink(ctx, invite._id);
@@ -281,7 +281,7 @@ export const adminInviteLink = mutation({
 export const adminRemoveTeamAccess = mutation({
   args: { inviteId: v.optional(v.id("teamInvites")), userId: v.optional(v.id("users")) },
   handler: async (ctx, args) => {
-    const { user: admin } = await requireAdmin(ctx);
+    const { user: admin } = await requireAdmin(ctx, "teamAccess:adminRemoveTeamAccess");
     const now = Date.now();
     if (args.inviteId) {
       const invite = await ctx.db.get(args.inviteId);
@@ -387,7 +387,7 @@ export const accessIntro = query({
 export const dismissAccessIntro = mutation({
   args: {},
   handler: async (ctx) => {
-    const { user } = await requireAdmin(ctx);
+    const { user } = await requireAdmin(ctx, "teamAccess:dismissAccessIntro");
     const seen = await ctx.db
       .query("featureIntros")
       .withIndex("by_user_and_key", (q) => q.eq("userId", user._id).eq("key", ACCESS_INTRO))

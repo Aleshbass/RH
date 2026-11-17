@@ -465,7 +465,7 @@ export const adminSetPracticeMode = mutation({
     practiceMode: practiceChoice,
   },
   handler: async (ctx, args) => {
-    await requireAdmin(ctx);
+    await requireAdmin(ctx, "physioSetup:adminSetPracticeMode");
     const user = await ctx.db.get(args.physiotherapistId);
     if (!user || user.role !== "physiotherapist") throw new ConvexError("This account isn't a physiotherapist.");
     const profile = user.physiotherapistProfileId
@@ -491,7 +491,7 @@ export const adminSetPracticeMode = mutation({
 export const getMarketplaceListingHealth = query({
   args: {},
   handler: async (ctx) => {
-    await requireAdmin(ctx);
+    await requireAdmin(ctx, "physioSetup:getMarketplaceListingHealth");
     const physios = await ctx.db
       .query("users")
       .withIndex("by_role", (q) => q.eq("role", "physiotherapist"))
@@ -626,7 +626,7 @@ export const getPracticeHandbookLink = action({
 export const assertHandbookAdmin = internalQuery({
   args: {},
   handler: async (ctx) => {
-    await requireAdmin(ctx);
+    await requireAdmin(ctx, "physioSetup:assertHandbookAdmin");
     return null;
   },
 });
@@ -653,7 +653,7 @@ export const adminPublishHandbook = mutation({
     size: v.number(),
   },
   handler: async (ctx, args) => {
-    const { user } = await requireAdmin(ctx);
+    const { user } = await requireAdmin(ctx, "physioSetup:adminPublishHandbook");
     const title = args.title.trim();
     const version = args.version.trim();
     if (!title || title.length > 120) throw new ConvexError("Give the handbook a title (up to 120 characters).");
@@ -681,7 +681,7 @@ export const adminPublishHandbook = mutation({
 export const adminListHandbooks = query({
   args: {},
   handler: async (ctx) => {
-    await requireAdmin(ctx);
+    await requireAdmin(ctx, "physioSetup:adminListHandbooks");
     const docs = await ctx.db.query("practiceHandbooks").withIndex("by_uploaded_at").order("desc").take(50);
     return await Promise.all(
       docs.map(async (doc, index) => ({

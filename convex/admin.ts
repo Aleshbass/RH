@@ -73,7 +73,7 @@ function resolveDayStart(requested: number | undefined, now: number) {
 export const getUserRoleCounts = query({
   args: {},
   handler: async (ctx) => {
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "admin:getUserRoleCounts");
     const entries = await Promise.all(
       [...PLATFORM_ROLES, undefined].map(async (role) => {
         const rows = await ctx.db
@@ -105,7 +105,7 @@ export const getUserRoleCounts = query({
 export const getAdminDashboardStats = query({
   args: { todayStart: v.optional(v.number()) },
   handler: async (ctx, args) => {
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "admin:getAdminDashboardStats");
 
     const now = Date.now();
     const todayStart = resolveDayStart(args.todayStart, now);
@@ -224,7 +224,7 @@ function fmtCount(rows: unknown[], cap: number) {
 export const getSystemHealth = query({
   args: {},
   handler: async (ctx) => {
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "admin:getSystemHealth");
 
     const now = Date.now();
     const dayAgo = now - DAY;
@@ -462,7 +462,7 @@ function signupGroup(role: Doc<"users">["role"]): SignupGroup {
 export const getPlatformAnalytics = query({
   args: { months: v.optional(v.number()) },
   handler: async (ctx, args) => {
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "admin:getPlatformAnalytics");
 
     const months = safeMonths(args.months);
     const { starts, rangeStart } = monthWindow(months);
@@ -508,7 +508,7 @@ export const getPlatformAnalytics = query({
 export const getAppointmentAnalytics = query({
   args: { months: v.optional(v.number()) },
   handler: async (ctx, args) => {
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "admin:getAppointmentAnalytics");
 
     const months = safeMonths(args.months);
     const { starts, rangeStart, rangeEnd } = monthWindow(months);
@@ -550,7 +550,7 @@ export const getAppointmentAnalytics = query({
 export const getRevenueAnalytics = query({
   args: { months: v.optional(v.number()) },
   handler: async (ctx, args) => {
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "admin:getRevenueAnalytics");
 
     const months = safeMonths(args.months);
     const { starts, rangeStart, rangeEnd } = monthWindow(months);
@@ -755,7 +755,7 @@ export const getUserActivityLogs = query({
     category: v.optional(activityCategoryValidator),
   },
   handler: async (ctx, args) => {
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "admin:getUserActivityLogs");
 
     const limit = Math.min(Math.max(1, Math.floor(args.limit ?? 50) || 50), MAX_ACTIVITY_LIMIT);
     const since = args.sinceMs ?? 0;
@@ -827,7 +827,7 @@ const SECURITY_SUMMARY = [
 export const getSecurityEvents = query({
   args: { sinceMs: v.optional(v.number()) },
   handler: async (ctx, args) => {
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "admin:getSecurityEvents");
     const since = args.sinceMs ?? Date.now() - DAY;
 
     return Promise.all(
@@ -874,7 +874,7 @@ const MAX_ANNOUNCEMENT_MESSAGE = 1000;
 export const getAnnouncements = query({
   args: { limit: v.optional(v.number()) },
   handler: async (ctx, args) => {
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "admin:getAnnouncements");
     const limit = Math.min(Math.max(1, Math.floor(args.limit ?? 20) || 20), 100);
     const rows = await ctx.db
       .query("platformAnnouncements")
@@ -898,7 +898,7 @@ export const broadcastAnnouncement = mutation({
     priority: v.optional(v.union(v.literal("low"), v.literal("medium"), v.literal("high"))),
   },
   handler: async (ctx, args): Promise<{ announcementId: Id<"platformAnnouncements"> }> => {
-    const admin = await ensureUserRole(ctx, ["admin"]);
+    const admin = await ensureUserRole(ctx, ["admin"], "admin:broadcastAnnouncement");
 
     const title = args.title.trim();
     const message = args.message.trim();
@@ -1024,7 +1024,7 @@ export const getMarketplaceTransactions = query({
     status: v.optional(invoiceStatusValidator),
   },
   handler: async (ctx, args) => {
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "admin:getMarketplaceTransactions");
 
     // Test-key payments moved no real money, so Transactions leaves them out (admin/testPayments.ts)
     let invoicesQuery = ctx.db
@@ -1107,7 +1107,7 @@ export const getMarketplaceTransactions = query({
 export const getAdminUserDetails = query({
   args: { userId: v.id("users") },
   handler: async (ctx, args) => {
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "admin:getAdminUserDetails");
 
     const user = await ctx.db.get(args.userId);
     if (!user) {
@@ -1501,7 +1501,7 @@ function buildCaseload(input: {
 export const adminPhysioDirectory = query({
   args: {},
   handler: async (ctx) => {
-    await requireAdmin(ctx);
+    await requireAdmin(ctx, "admin:adminPhysioDirectory");
     const now = Date.now();
     const since = now - CASELOAD_WINDOW;
 
@@ -1707,7 +1707,7 @@ async function physioWorkDetails(ctx: QueryCtx, profile: Doc<"physiotherapistPro
 export const adminPhysioCaseload = query({
   args: { physiotherapistId: v.string() },
   handler: async (ctx, args) => {
-    await requireAdmin(ctx);
+    await requireAdmin(ctx, "admin:adminPhysioCaseload");
     const physioId = ctx.db.normalizeId("users", args.physiotherapistId);
     const user = physioId ? await ctx.db.get(physioId) : null;
     if (!user || user.role !== "physiotherapist") return null;

@@ -952,7 +952,7 @@ export const adminListRegistrations = query({
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "physioRegistry:adminListRegistrations");
     const limit = Math.max(
       1,
       Math.min(Math.floor(args.limit ?? ADMIN_REGISTRY_DEFAULT_LIMIT), ADMIN_REGISTRY_MAX_LIMIT)
@@ -976,7 +976,7 @@ const ADMIN_REGISTRY_COUNT_CAP = 500;
 export const adminRegistrationCounts = query({
   args: {},
   handler: async (ctx) => {
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "physioRegistry:adminRegistrationCounts");
     const statuses = ["pending", "verified", "rejected", "listed"] as const;
     const counts: Record<string, number> = {};
     const capped: string[] = [];
@@ -999,7 +999,7 @@ export const adminRegistrationCounts = query({
 export const adminGetRegistration = query({
   args: { id: v.id("physioRegistry") },
   handler: async (ctx, args) => {
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "physioRegistry:adminGetRegistration");
     const entry = await ctx.db.get(args.id);
     if (!entry) return null;
 
@@ -1030,7 +1030,7 @@ export const adminGetRegistration = query({
 export const adminApprove = mutation({
   args: { id: v.id("physioRegistry") },
   handler: async (ctx, args) => {
-    const adminUser = await ensureUserRole(ctx, ["admin"]);
+    const adminUser = await ensureUserRole(ctx, ["admin"], "physioRegistry:adminApprove");
     const entry = await ctx.db.get(args.id);
     if (!entry) throw new Error("Registration not found");
 
@@ -1053,7 +1053,7 @@ export const adminReject = mutation({
     reason: v.string(),
   },
   handler: async (ctx, args) => {
-    const adminUser = await ensureUserRole(ctx, ["admin"]);
+    const adminUser = await ensureUserRole(ctx, ["admin"], "physioRegistry:adminReject");
     const entry = await ctx.db.get(args.id);
     if (!entry) throw new Error("Registration not found");
 

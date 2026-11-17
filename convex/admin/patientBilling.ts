@@ -15,7 +15,7 @@ export const setPatientBillingSource = mutation({
     rehabify: v.boolean(),
   },
   handler: async (ctx, args) => {
-    const { user: admin } = await requireAdmin(ctx);
+    const { user: admin } = await requireAdmin(ctx, "admin/patientBilling:setPatientBillingSource");
     const rows = await ctx.db
       .query("patientPhysiotherapistRelationships")
       .withIndex("by_patient_and_physiotherapist", (q) => q.eq("patientId", args.patientId).eq("physiotherapistId", args.physiotherapistId))

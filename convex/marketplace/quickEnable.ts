@@ -11,7 +11,7 @@ import { ensureUserRole } from "../auth";
 export const enableAllApprovedPhysios = mutation({
   handler: async (ctx) => {
     // Changes every approved physiotherapist's marketplace profile: admins only.
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "marketplace/quickEnable:enableAllApprovedPhysios");
     // Get all approved physiotherapists
     const approvals = await ctx.db
       .query("accountApprovalStatus")

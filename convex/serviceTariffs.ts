@@ -93,7 +93,7 @@ export const getPayoutSchedule = query({
 export const adminGetTariffs = query({
   args: {},
   handler: async (ctx) => {
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "serviceTariffs:adminGetTariffs");
     const { version, tariffs } = await loadTariffs(ctx);
     const history = await ctx.db.query("serviceTariffs").withIndex("by_version").order("desc").take(20);
     const settings = await loadPricingSettings(ctx);
@@ -153,7 +153,7 @@ const tariffRow = v.object({
 export const adminSaveTariffs = mutation({
   args: { tariffs: v.array(tariffRow), note: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    const admin = await ensureUserRole(ctx, ["admin"]);
+    const admin = await ensureUserRole(ctx, ["admin"], "serviceTariffs:adminSaveTariffs");
     const seen = new Set<string>();
     const rows: (ServiceTariff & { serviceId: string })[] = [];
     for (const row of args.tariffs) {
@@ -199,7 +199,7 @@ export const adminSaveTariffs = mutation({
 export const adminNetworkReadiness = query({
   args: {},
   handler: async (ctx) => {
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "serviceTariffs:adminNetworkReadiness");
     const approvals = await ctx.db.query("accountApprovalStatus").collect();
     const approved = new Set(approvals.filter((a) => a.status === "approved").map((a) => a.userId));
     const profiles = await ctx.db.query("physiotherapistProfiles").collect();
@@ -248,7 +248,7 @@ export const adminSavePricingSettings = mutation({
     networkTermsEnforcedAt: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const admin = await ensureUserRole(ctx, ["admin"]);
+    const admin = await ensureUserRole(ctx, ["admin"], "serviceTariffs:adminSavePricingSettings");
     if (!Number.isInteger(args.accessCapacity) || args.accessCapacity < 0 || args.accessCapacity > 10_000) {
       throw new ConvexError("Capacity must be a whole number between 0 and 10,000");
     }

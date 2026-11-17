@@ -351,7 +351,7 @@ export const getUsers = query({
   }),
   handler: async (ctx, args) => {
     // Ensure the requester is an admin
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "queries:getUsers");
 
     // Set defaults
     const limit = args.limit ?? 10;

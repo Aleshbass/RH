@@ -103,7 +103,7 @@ export const listMyDevices = query({
 export const setOfflinePilot = mutation({
   args: { userId: v.id("users"), on: v.boolean() },
   handler: async (ctx, { userId, on }) => {
-    await requireAdmin(ctx);
+    await requireAdmin(ctx, "offline:setOfflinePilot");
     const user = await ctx.db.get(userId);
     if (!user) throw new ConvexError("Account not found");
     await ctx.db.patch(userId, { offlinePilot: on ? true : undefined });

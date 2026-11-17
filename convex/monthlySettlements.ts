@@ -82,7 +82,7 @@ async function activeTransfer(ctx: QueryCtx | MutationCtx, partnerCode: string) 
 export const getMonthlyBulkPayoutSummary = query({
   args: { billingPeriod: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    await requireAdmin(ctx);
+    await requireAdmin(ctx, "monthlySettlements:getMonthlyBulkPayoutSummary");
     const period = args.billingPeriod || getCurrentBillingPeriod();
     assertPeriod(period);
     const settings = (await ctx.db.query("platformRevenueSettings").order("desc").first()) ?? DEFAULT_REVENUE_SETTINGS;
@@ -323,7 +323,7 @@ export const generatePartnerInvoice = query({
 export const confirmBankTransferBooking = mutation({
   args: { bookingId: v.id("marketplaceBookings"), senderName: v.string(), bankName: v.string(), referenceNote: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    const admin = await requireAdmin(ctx);
+    const admin = await requireAdmin(ctx, "monthlySettlements:confirmBankTransferBooking");
     const booking = await ctx.db.get(args.bookingId);
     if (!booking) throw new ConvexError("Booking not found.");
     if (booking.paymentStatus === "completed") throw new ConvexError("This booking is already paid.");
@@ -358,7 +358,7 @@ export const processMonthlyBulkPayout = mutation({
     note: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const admin = await requireAdmin(ctx);
+    const admin = await requireAdmin(ctx, "monthlySettlements:processMonthlyBulkPayout");
     assertPeriod(args.billingPeriod);
     const targetCode = args.partnerCode || args.partnerId;
     if (!targetCode) throw new ConvexError("Choose the partner to settle.");
@@ -409,7 +409,7 @@ export const processMonthlyBulkPayout = mutation({
 export const assertAdminForAction = internalQuery({
   args: {},
   handler: async (ctx) => {
-    const admin = await requireAdmin(ctx);
+    const admin = await requireAdmin(ctx, "monthlySettlements:assertAdminForAction");
     return { name: adminDisplayName(admin.user) };
   },
 });
@@ -417,7 +417,7 @@ export const assertAdminForAction = internalQuery({
 export const prepareTransfer = internalMutation({
   args: { partnerCode: v.string(), billingPeriod: v.string(), initiatedBy: v.string() },
   handler: async (ctx, args) => {
-    await requireAdmin(ctx);
+    await requireAdmin(ctx, "monthlySettlements:prepareTransfer");
     assertPeriod(args.billingPeriod);
     if (await activeTransfer(ctx, args.partnerCode)) throw new ConvexError("A payout for this partner is already in progress.");
     const partner = await ctx.db
@@ -747,7 +747,7 @@ export const finalizePartnerPayoutTransfer = action({
 export const listPayablePartners = internalQuery({
   args: { billingPeriod: v.string() },
   handler: async (ctx, args) => {
-    await requireAdmin(ctx);
+    await requireAdmin(ctx, "monthlySettlements:listPayablePartners");
     const partners = await ctx.db.query("partners").collect();
     const result: string[] = [];
     for (const partner of partners) {

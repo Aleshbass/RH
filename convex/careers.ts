@@ -221,7 +221,7 @@ const STATUS_ORDER: Record<Doc<"careerJobs">["status"], number> = { open: 0, dra
 export const adminListJobs = query({
   args: {},
   handler: async (ctx) => {
-    await requireAdmin(ctx);
+    await requireAdmin(ctx, "careers:adminListJobs");
     const jobs = await ctx.db.query("careerJobs").collect();
     const withCounts = await Promise.all(
       jobs.map(async (job) => {
@@ -240,7 +240,7 @@ export const adminListJobs = query({
 export const adminListApplications = query({
   args: { jobId: v.optional(v.id("careerJobs")) },
   handler: async (ctx, args) => {
-    await requireAdmin(ctx);
+    await requireAdmin(ctx, "careers:adminListApplications");
     const rows = args.jobId
       ? await ctx.db.query("careerApplications").withIndex("by_job", (q) => q.eq("jobId", args.jobId!)).collect()
       : await ctx.db.query("careerApplications").withIndex("by_created").order("desc").collect();
@@ -269,7 +269,7 @@ const jobFields = {
 export const adminSaveJob = mutation({
   args: { id: v.optional(v.id("careerJobs")), ...jobFields },
   handler: async (ctx, args) => {
-    await requireAdmin(ctx);
+    await requireAdmin(ctx, "careers:adminSaveJob");
     const now = Date.now();
     const fields = {
       title: clip(args.title, 120),
@@ -319,7 +319,7 @@ export const adminSaveJob = mutation({
 export const adminSetJobStatus = mutation({
   args: { id: v.id("careerJobs"), status: jobStatus },
   handler: async (ctx, args) => {
-    await requireAdmin(ctx);
+    await requireAdmin(ctx, "careers:adminSetJobStatus");
     const job = await ctx.db.get(args.id);
     if (!job) throw new ConvexError("Role not found.");
     if (args.status === "open" && (job.responsibilities.length === 0 || job.requirements.length === 0)) {
@@ -339,7 +339,7 @@ export const adminSetJobStatus = mutation({
 export const adminDeleteJob = mutation({
   args: { id: v.id("careerJobs") },
   handler: async (ctx, args) => {
-    await requireAdmin(ctx);
+    await requireAdmin(ctx, "careers:adminDeleteJob");
     const hasApplications = await ctx.db.query("careerApplications").withIndex("by_job", (q) => q.eq("jobId", args.id)).first();
     if (hasApplications) throw new ConvexError("This role has applications. Close it instead of deleting it.");
     await ctx.db.delete(args.id);
@@ -359,7 +359,7 @@ export const adminUpdateApplication = mutation({
     notifyApplicant: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
-    await requireAdmin(ctx);
+    await requireAdmin(ctx, "careers:adminUpdateApplication");
     const application = await ctx.db.get(args.id);
     if (!application) throw new ConvexError("Application not found.");
     const now = Date.now();

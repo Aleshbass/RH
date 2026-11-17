@@ -6,7 +6,7 @@ export const debugCallTokens = query({
   args: { callId: v.id("videoCalls") },
   handler: async (ctx, args) => {
     // Exposes call room details and participant tokens: admins only.
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "debugTokens:debugCallTokens");
     
     // Get the call
     const call = await ctx.db.get(args.callId);

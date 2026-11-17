@@ -10,6 +10,7 @@ import type { QueryCtx, MutationCtx } from "../_generated/server";
 import type { Doc } from "../_generated/dataModel";
 import type { UserIdentity } from "convex/server";
 import { hasProductionAccess, isPartnerApproved } from "./partnerShared";
+import { adminPageGate } from "./adminAccess";
 
 type Ctx = QueryCtx | MutationCtx;
 
@@ -35,9 +36,11 @@ export async function requireViewer(ctx: Ctx): Promise<Viewer> {
   return viewer;
 }
 
-export async function requireAdmin(ctx: Ctx): Promise<Viewer & { user: Doc<"users"> }> {
+/** `adminFunction` ("module:function"): admins limited to some pages may only call what those pages use. */
+export async function requireAdmin(ctx: Ctx, adminFunction?: string): Promise<Viewer & { user: Doc<"users"> }> {
   const viewer = await requireViewer(ctx);
   if (!viewer.isAdmin || !viewer.user) throw new ConvexError("Administrator access required.");
+  if (adminFunction) await adminPageGate(ctx, viewer.user._id, adminFunction);
   return viewer as Viewer & { user: Doc<"users"> };
 }
 

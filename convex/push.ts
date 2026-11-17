@@ -227,7 +227,7 @@ async function devicesWithRoles(ctx: Parameters<typeof requireAdmin>[0]) {
 export const adminOverview = query({
   args: {},
   handler: async (ctx) => {
-    await requireAdmin(ctx);
+    await requireAdmin(ctx, "push:adminOverview");
     const all = await devicesWithRoles(ctx);
     const audiences: Audience[] = ["physiotherapists", "clinics", "patients", "everyone"];
     const counts = {} as Record<Audience, { people: number; devices: number }>;
@@ -261,7 +261,7 @@ export const broadcast = mutation({
     url: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const admin = await requireAdmin(ctx);
+    const admin = await requireAdmin(ctx, "push:broadcast");
     const title = args.title.trim();
     const body = args.body.trim();
     const url = args.url?.trim() || undefined;

@@ -37,7 +37,7 @@ export const listZones = query({
 export const adminListZones = query({
   args: {},
   handler: async (ctx) => {
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "travelZones:adminListZones");
     const zones = await ctx.db.query("travelZones").collect();
     const profiles = await ctx.db.query("physiotherapistProfiles").collect();
     return zones
@@ -90,7 +90,7 @@ async function assertAreasUnique(ctx: any, city: string, areas: string[], except
 export const adminCreateZone = mutation({
   args: zoneFields,
   handler: async (ctx, args) => {
-    const admin = await ensureUserRole(ctx, ["admin"]);
+    const admin = await ensureUserRole(ctx, ["admin"], "travelZones:adminCreateZone");
     const zone = cleanZone(args);
     if (args.active) await assertAreasUnique(ctx, zone.city, zone.areas);
     const now = Date.now();
@@ -108,7 +108,7 @@ export const adminCreateZone = mutation({
 export const adminUpdateZone = mutation({
   args: { zoneId: v.id("travelZones"), ...zoneFields },
   handler: async (ctx, { zoneId, ...args }) => {
-    const admin = await ensureUserRole(ctx, ["admin"]);
+    const admin = await ensureUserRole(ctx, ["admin"], "travelZones:adminUpdateZone");
     const existing = await ctx.db.get(zoneId);
     if (!existing) throw new ConvexError("Zone not found");
     const zone = cleanZone(args);

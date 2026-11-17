@@ -13,7 +13,7 @@ import { ensureUserRole } from "../auth";
 export const debugMarketplaceProfiles = query({
   handler: async (ctx) => {
     // Lists every physiotherapist's name and email: admins only.
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "marketplace/debug:debugMarketplaceProfiles");
     const allProfiles = await ctx.db
       .query("physiotherapistProfiles")
       .collect();

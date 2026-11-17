@@ -989,7 +989,7 @@ export const adminListCareCircles = query({
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) return null;
-    await ensureUserRole(ctx, ["admin"]);
+    await ensureUserRole(ctx, ["admin"], "careCircle:adminListCareCircles");
     const limit = Math.min(500, Math.max(1, Math.floor(args.limit ?? 200)));
     const grants = await ctx.db.query("familyAccessGrants").order("desc").take(limit);
     const rows = await Promise.all(

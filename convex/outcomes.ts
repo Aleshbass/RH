@@ -1095,7 +1095,7 @@ export const getPublicProof = query({
 export const adminShareableFeedback = query({
   args: {},
   handler: async (ctx) => {
-    await requireAdmin(ctx);
+    await requireAdmin(ctx, "outcomes:adminShareableFeedback");
     const rows = (await ctx.db.query("outcomeChecks").order("desc").take(3000)).filter(
       (c) => c.moment === "discharge" && canShareCheck(c)
     );
@@ -1120,7 +1120,7 @@ export const adminShareableFeedback = query({
 export const adminSetFeatured = mutation({
   args: { checkId: v.id("outcomeChecks"), featured: v.boolean() },
   handler: async (ctx, args) => {
-    await requireAdmin(ctx);
+    await requireAdmin(ctx, "outcomes:adminSetFeatured");
     const check = await ctx.db.get(args.checkId);
     if (!check || (args.featured && !canShareCheck(check))) throw new ConvexError("These words can’t be shared.");
     await ctx.db.patch(check._id, { featuredOnSite: args.featured || undefined });
