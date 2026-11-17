@@ -8,6 +8,7 @@ import { topBarButtonClass } from '@/components/patient/shell/PatientControls'
 import { START_PHYSIO_TOUR_EVENT } from '@/components/physio/PhysioTour'
 import { usePracticeMode } from '@/components/physio/practiceMode'
 import { useClinicMode } from '@/components/physio/clinicMode'
+import { SafetyGuideDrawer } from '@/components/visit-safety/SafetyGuide'
 import { cn } from '@/lib/utils'
 
 const SUPPORT_EMAIL = 'support@physioaroundme.com'
@@ -88,6 +89,7 @@ function helpTopics(independent: boolean, clinicName: string | null): HelpTopic[
 /** “?” in the top bar: quick answers, the tour, and support. */
 export function PhysioHelp({ className }: { className?: string }) {
   const [open, setOpen] = useState(false)
+  const [safetyOpen, setSafetyOpen] = useState(false)
   const { isIndependent } = usePracticeMode()
   const clinic = useClinicMode()
   const HELP_TOPICS = helpTopics(isIndependent, clinic.active ? (clinic.clinicName ?? 'Your clinic') : null)
@@ -123,6 +125,23 @@ export function PhysioHelp({ className }: { className?: string }) {
         }
       >
         <div className="space-y-2">
+          {/* Home visits are for physios outside a clinic: the visit-safety film first */}
+          {!clinic.active && (
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false)
+                setSafetyOpen(true)
+              }}
+              className="flex w-full items-center gap-3 rounded-2xl bg-pt-primary p-4 text-left text-pt-on-primary transition hover:opacity-95"
+            >
+              <PlayCircle className="h-6 w-6 shrink-0" />
+              <span className="min-w-0">
+                <span className="block text-sm font-semibold">Watch: safe home visits</span>
+                <span className="block text-xs opacity-80">On my way, the door code and the help button. 1 min 22 s.</span>
+              </span>
+            </button>
+          )}
           {HELP_TOPICS.map((topic) => (
             <details key={topic.q} className="group rounded-2xl bg-pt-sunken px-4 py-3 [&_summary::-webkit-details-marker]:hidden">
               <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-semibold text-pt-ink">
@@ -136,6 +155,7 @@ export function PhysioHelp({ className }: { className?: string }) {
           ))}
         </div>
       </PatientDrawer>
+      <SafetyGuideDrawer open={safetyOpen} onOpenChange={setSafetyOpen} />
     </>
   )
 }

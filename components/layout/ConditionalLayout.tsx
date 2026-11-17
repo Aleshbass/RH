@@ -73,6 +73,8 @@ export default function ConditionalLayout({ children, isSubdomainHost = false, i
     pathname.startsWith('/api') ||
     pathname.startsWith('/r/') ||
     pathname.startsWith('/v/') ||
+    // A home visit's "who's at your door" page (patient link) has its own logo
+    pathname.startsWith('/visit/') ||
     pathname.startsWith('/go/') ||
     pathname.startsWith('/video-call') ||
     pathname.startsWith('/track') ||

@@ -132,7 +132,7 @@ export function ArriveForm({ visit }: { visit: SafetyVisit }) {
           onKeyDown={(e) => {
             if (e.key === 'Enter' && code.length === 4 && !busy) void submit(true)
           }}
-          placeholder="• • • •"
+          placeholder="••••"
           aria-label="Door code"
           className="h-12 w-36 rounded-xl border border-pt-line bg-pt-surface text-center font-mono text-2xl tracking-[0.4em] text-pt-ink outline-none placeholder:text-pt-faint focus:border-pt-ink"
         />

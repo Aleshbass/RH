@@ -58,7 +58,7 @@ export function SafetyGuideButton({ className, label = 'How it works' }: { class
 
 export function SafetyGuideDrawer({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   return (
-    <PhysioDrawer open={open} onOpenChange={onOpenChange} title="How visit safety works" description="For every home visit. About a minute.">
+    <PhysioDrawer open={open} onOpenChange={onOpenChange} title="How visit safety works" description="For every home visit. A short film, then the five steps.">
       <div className="space-y-5">
         {SAFETY_GUIDE_VIDEO_URL && (
           <video
