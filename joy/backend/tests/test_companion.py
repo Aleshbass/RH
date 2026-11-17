@@ -89,3 +89,15 @@ def test_a_booked_visit_is_sent_with_its_time_and_payment_note():
     assert text.startswith("📅 Bisi Okafor booked your next visit for ")
     assert "That's the first of 3 visits." in text
     assert "pay within 24 hours" in text.lower()
+
+
+def test_a_clinic_patient_asking_the_price_is_never_given_rehabify_prices(db_session, patient_identity, monkeypatch):
+    """Joy coordination spec, Prices: clinic and independent physios' patients pay their provider's prices."""
+    from app.conversation import turn_handler
+    from tests.fakes import FakeLLM
+
+    monkeypatch.setattr(turn_handler, "in_care", lambda *a, **k: _summary(clinic_name="Lighthouse Physio", care_type="clinic"))
+    result = turn_handler.handle_turn(db_session, patient_identity.phone_e164, "How much does a session cost?", FakeLLM(reply="Okay."))
+    text = " ".join(filter(None, [result.reply_text, *[str(item.get("text") or "") for item in (result.before or [])]]))
+    assert "Lighthouse Physio" in text and "their own prices apply" in text
+    assert "₦6,000" not in text and "₦20,000" not in text

@@ -515,7 +515,11 @@ export const sendMessage = mutation({
         await ctx.scheduler.runAfter(0, (internal as any).joyIntegration.deliverJoyEvent, {
           eventId: `chat-message-${messageId}`,
           eventType: "physio.patient_message",
-          data: { patient_id: String(receiver._id), message: args.content.trim().slice(0, 2000) },
+          data: {
+            patient_id: String(receiver._id), message: args.content.trim().slice(0, 2000),
+            // Joy's approved "message from your physiotherapist" template names them
+            physio_name: [user.firstName, user.lastName].filter((part) => part && part !== "undefined").join(" ").trim() || null,
+          },
         });
       }
     }

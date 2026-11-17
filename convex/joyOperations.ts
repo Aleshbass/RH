@@ -150,7 +150,13 @@ export const executeMutation = internalMutation({
       const eventKey = args.requestId && args.requestId !== "unknown" ? args.requestId : `${booking._id}-${Date.now()}`;
       await ctx.scheduler.runAfter(0, (internal as any).joyIntegration.deliverJoyEvent, {
         eventId: `physio-message-${eventKey}`, eventType: "physio.patient_message",
-        data: { booking_id: String(booking._id), patient_id: String(booking.patientId), message: body },
+        data: {
+          booking_id: String(booking._id), patient_id: String(booking.patientId), message: body,
+          physio_name: await (async () => {
+            const physio: any = await ctx.db.get(profile.userId);
+            return [physio?.firstName, physio?.lastName].filter((part: any) => part && part !== "undefined").join(" ").trim() || null;
+          })(),
+        },
       });
       return { accepted: true, delivery_content: body, patient_id: booking.patientId };
     }

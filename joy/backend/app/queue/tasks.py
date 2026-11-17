@@ -196,12 +196,16 @@ def enqueue_booking_confirmed(
     email_subject: str = "Your Rehabify appointment details",
     audio_url: str | None = None,
     audio_mime: str | None = None,
+    template: dict | None = None,
 ) -> None:
     job: dict = {
         "phone": phone,
         "booking_id": str(booking_id),
         "text": text,
     }
+    if template:
+        # The approved template for this kind of message, used after the 24-hour window
+        job["template"] = template
     if audio_url:
         # A physio's voice note sent after the text (app/queue/voice_notes.py)
         job["audio_url"] = audio_url
@@ -357,7 +361,24 @@ def _mirror_local_delivery(phone: str, text: str) -> None:
         session.commit()
 
 
-def send_whatsapp_text(phone: str, text: str) -> None:
+def _approved_template(template: dict | None, language: str) -> dict | None:
+    """The message's own approved template (app/queue/templates.py), when it can be used."""
+    if not isinstance(template, dict) or not isinstance(template.get("name"), str):
+        return None
+    body = template.get("body")
+    if not isinstance(body, list) or not body or not all(isinstance(v, str) and v.strip() for v in body):
+        return None
+    components: list[dict] = [{"type": "body", "parameters": [
+        {"type": "text", "text": _template_body_parameter(value)} for value in body
+    ]}]
+    button = template.get("button")
+    if isinstance(button, str) and button.strip():
+        components.append({"type": "button", "sub_type": "url", "index": "0",
+                           "parameters": [{"type": "text", "text": button.strip()}]})
+    return {"name": template["name"], "language": {"code": language}, "components": components}
+
+
+def send_whatsapp_text(phone: str, text: str, template: dict | None = None) -> None:
     settings = get_settings()
     if settings.disable_whatsapp_delivery:
         if settings.joy_environment.lower() != "development":
@@ -375,22 +396,28 @@ def send_whatsapp_text(phone: str, text: str) -> None:
         # A silent no-op is indistinguishable from a delivered reply and leaves
         # the patient waiting forever.  Let the worker retry and record this.
         raise RuntimeError("WhatsApp delivery is not configured")
+    original = text
     text = _localized(phone, text)
     message: dict = {"messaging_product": "whatsapp", "to": phone.lstrip("+"), "type": "text", "text": {"body": text}}
-    template = settings.whatsapp_update_template.strip()
-    if template and not _in_service_window(phone):
-        # Outside the 24-hour window (reminders, alerts, links sent later), Meta
-        # delivers only an approved template: its body carries the text as {{1}}.
-        message = {
-            "messaging_product": "whatsapp",
-            "to": phone.lstrip("+"),
-            "type": "template",
-            "template": {
-                "name": template,
-                "language": {"code": settings.whatsapp_update_template_language or "en"},
-                "components": [{"type": "body", "parameters": [{"type": "text", "text": _template_body_parameter(text)}]}],
-            },
-        }
+    generic = settings.whatsapp_update_template.strip()
+    if not _in_service_window(phone):
+        # Outside the 24-hour window (reminders, alerts, links sent later), Meta delivers only an
+        # approved template: the message's own (with its Pay / Join button) for an English chat,
+        # else the generic one carrying the (translated) text as {{1}}.
+        own = _approved_template(template, "en") if text == original else None
+        if own is not None:
+            message = {"messaging_product": "whatsapp", "to": phone.lstrip("+"), "type": "template", "template": own}
+        elif generic:
+            message = {
+                "messaging_product": "whatsapp",
+                "to": phone.lstrip("+"),
+                "type": "template",
+                "template": {
+                    "name": generic,
+                    "language": {"code": settings.whatsapp_update_template_language or "en"},
+                    "components": [{"type": "body", "parameters": [{"type": "text", "text": _template_body_parameter(text)}]}],
+                },
+            }
     wa_message_id = _post_message(settings, message)
     _remember_outbound(wa_message_id, "template" if message["type"] == "template" else "text")
 

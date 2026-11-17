@@ -96,7 +96,7 @@ def meta_error(code):
 
 def test_a_delivered_alert_is_acknowledged(monkeypatch, redis):
     sent = []
-    monkeypatch.setattr(worker, "send_whatsapp_text", lambda phone, text: sent.append((phone, text)))
+    monkeypatch.setattr(worker, "send_whatsapp_text", lambda phone, text, **k: sent.append((phone, text)))
     queue_job(redis, {"phone": "+2348030000000", "text": "New booking request"})  # the old payload shape
     assert worker._drain_text_queue(QUEUE, timeout=0)
     assert sent == [("+2348030000000", "New booking request")]
@@ -104,7 +104,7 @@ def test_a_delivered_alert_is_acknowledged(monkeypatch, redis):
 
 
 def test_a_failed_send_is_kept_and_retried_later(monkeypatch, redis):
-    monkeypatch.setattr(worker, "send_whatsapp_text", lambda *a: (_ for _ in ()).throw(httpx.ConnectError("down")))
+    monkeypatch.setattr(worker, "send_whatsapp_text", lambda *a, **k: (_ for _ in ()).throw(httpx.ConnectError("down")))
     queue_job(redis, {"phone": "+2348030000000", "text": "Family safety alert"})
     worker._drain_text_queue(QUEUE, timeout=0)
     assert redis.lists[tasks.processing_list(QUEUE)] == []
@@ -113,7 +113,7 @@ def test_a_failed_send_is_kept_and_retried_later(monkeypatch, redis):
     assert payload["attempts"] == 1 and payload["next_attempt_at"] > time.time()
     # Not due yet: left alone, not sent again
     called = []
-    monkeypatch.setattr(worker, "send_whatsapp_text", lambda *a: called.append(a))
+    monkeypatch.setattr(worker, "send_whatsapp_text", lambda *a, **k: called.append(a))
     worker._drain_text_queue(QUEUE, timeout=0)
     assert not called and len(redis.lists[QUEUE]) == 1
     # Due: delivered
@@ -124,7 +124,7 @@ def test_a_failed_send_is_kept_and_retried_later(monkeypatch, redis):
 
 
 def test_after_the_last_attempt_it_goes_to_the_dead_letter_list(monkeypatch, redis, caplog):
-    monkeypatch.setattr(worker, "send_whatsapp_text", lambda *a: (_ for _ in ()).throw(httpx.ConnectError("down")))
+    monkeypatch.setattr(worker, "send_whatsapp_text", lambda *a, **k: (_ for _ in ()).throw(httpx.ConnectError("down")))
     queue_job(redis, {"phone": "+2348030000000", "text": "x", "attempts": tasks.OUTBOUND_MAX_ATTEMPTS - 1})
     with caplog.at_level(logging.ERROR):
         worker._drain_text_queue(QUEUE, timeout=0)
@@ -133,7 +133,7 @@ def test_after_the_last_attempt_it_goes_to_the_dead_letter_list(monkeypatch, red
 
 
 def test_a_permanent_meta_error_is_not_retried(monkeypatch, redis):
-    monkeypatch.setattr(worker, "send_whatsapp_text", lambda *a: (_ for _ in ()).throw(meta_error(131026)))
+    monkeypatch.setattr(worker, "send_whatsapp_text", lambda *a, **k: (_ for _ in ()).throw(meta_error(131026)))
     queue_job(redis, {"phone": "+2348030000000", "text": "x"})
     worker._drain_text_queue(QUEUE, timeout=0)
     assert redis.lists[QUEUE] == [] and len(redis.lists[tasks.dead_letter_list(QUEUE)]) == 1
@@ -142,7 +142,7 @@ def test_a_permanent_meta_error_is_not_retried(monkeypatch, redis):
 def test_a_closed_24h_window_retries_as_the_template(monkeypatch, redis):
     forgotten = []
     monkeypatch.setattr(worker, "forget_service_window", lambda phone: forgotten.append(phone))
-    monkeypatch.setattr(worker, "send_whatsapp_text", lambda *a: (_ for _ in ()).throw(meta_error(131047)))
+    monkeypatch.setattr(worker, "send_whatsapp_text", lambda *a, **k: (_ for _ in ()).throw(meta_error(131047)))
     queue_job(redis, {"phone": "+2348030000000", "text": "x"})
     worker._drain_text_queue(QUEUE, timeout=0)
     assert forgotten == ["+2348030000000"] and json.loads(redis.lists[QUEUE][0])["attempts"] == 1

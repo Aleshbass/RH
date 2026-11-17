@@ -454,9 +454,12 @@ def process_exercise_reminders_once(*, now: datetime | None = None, session: Ses
             hour, minute = (int(x) for x in (patient.exercise_reminder_time or DEFAULT_TIME).split(":"))
             if (current.hour, current.minute) < (hour, minute):
                 continue
-            patient.exercise_reminder_last_sent_on = today  # once a day, even if the checks below say no
             rh_patient_id = _rh_patient(db, patient)
-            if not rh_patient_id or reminders_allowed(patient, rh_patient_id) is False:
+            allowed = reminders_allowed(patient, rh_patient_id) if rh_patient_id else False
+            if allowed is None:
+                continue  # Rehabify couldn't say: fail closed, and try again next minute (not marked sent)
+            patient.exercise_reminder_last_sent_on = today  # once a day, even if the checks below say no
+            if not allowed:
                 continue
             data = fetch_programmes(patient, rh_patient_id) or {}
             programmes = [p for p in data.get("programmes") or [] if isinstance(p, dict) and exercise_items(p)]
@@ -467,8 +470,15 @@ def process_exercise_reminders_once(*, now: datetime | None = None, session: Ses
             if all(item.get("index") in done for item in exercise_items(programme)):
                 continue  # already done today: no nagging
             try:
+                from app.queue.templates import exercise_reminder
+
                 buttons = reply_buttons(("DONE", "Done ✅"), ("my exercises", "Show details"), ("PAUSE", "Pause reminders"))
-                (sender or send_whatsapp_interactive)(patient.phone_e164, reminder_text(patient, programme), buttons, text_sender=send_whatsapp_text)
+                # After 24 hours the approved exercise-reminder template goes instead of the buttons
+                template = exercise_reminder([str(item.get("name") or "") for item in exercise_items(programme)])
+                (sender or send_whatsapp_interactive)(
+                    patient.phone_e164, reminder_text(patient, programme), buttons,
+                    text_sender=lambda phone, text: send_whatsapp_text(phone, text, template=template),
+                )
             except Exception:
                 logger.exception("exercise reminder delivery failed")
                 continue

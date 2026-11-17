@@ -3194,6 +3194,25 @@ def handle_turn(
         and not price_answered
         and not state.booking_substate
         and is_price_question(user_text)
+        and care_now is not None
+        and care_now.get("care_type") in ("clinic", "independent")
+    ):
+        # A clinic's or independent physio's own patient: their provider's prices apply, and Joy
+        # never quotes Rehabify Care prices to them (Joy coordination spec, Prices)
+        who = (care_now.get("clinic_name") or care_now.get("physio_name") or "your physiotherapist").strip()
+        own_prices = (
+            f"Your care is with {who}, so their own prices apply. Ask them directly, or reply "
+            "*message my physio* and I'll pass your question on. Chatting with me is always free."
+        )
+        return _answer_then_continue(
+            session, identity, state, user_text, own_prices, language, wa_message_id, llm,
+            paystack=paystack, media=media, location=location,
+        )
+    if (
+        identity.persona == Persona.PATIENT
+        and not price_answered
+        and not state.booking_substate
+        and is_price_question(user_text)
     ):
         return _price_question_turn(
             session, identity, state, user_text, language, wa_message_id, llm,

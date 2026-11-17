@@ -508,7 +508,11 @@ def process_appointment_reminders_once(
             try:
                 text = appointment_reminder_text(reminder)
                 if reminder.whatsapp_sent_at is None:
-                    send_whatsapp_text(reminder.phone_e164, text)
+                    from app.queue.templates import visit_reminder
+
+                    _send_text(reminder.phone_e164, text, visit_reminder(
+                        reminder.service_mode, reminder.provider_name, reminder.session_start, reminder.meeting_url,
+                    ))
                     reminder.whatsapp_sent_at = current
                     # Persist this channel before attempting email. If Resend
                     # is temporarily unavailable, the next pass sends only
@@ -659,11 +663,20 @@ def _drain_text_queue(queue: str, timeout: int = 1) -> bool:
     return _process_reliably(queue, _send_queued_text, timeout=timeout)
 
 
+def _send_text(phone: str, text: str, template: dict | None) -> None:
+    """Send a text, with its approved template for after the 24-hour window when it has one."""
+    if template:
+        send_whatsapp_text(phone, text, template=template)
+    else:
+        send_whatsapp_text(phone, text)
+
+
 def _send_queued_text(payload: dict) -> None:
     phone, text = payload.get("phone"), payload.get("text")
     if not phone or not isinstance(text, str) or not text:
         raise _InvalidJob("phone or text missing")
-    send_whatsapp_text(str(phone), text)
+    template = payload.get("template")
+    _send_text(str(phone), text, template if isinstance(template, dict) else None)
     audio_url = payload.get("audio_url")
     if isinstance(audio_url, str) and audio_url:
         # Best effort after the text, never retried (that would send the text again)

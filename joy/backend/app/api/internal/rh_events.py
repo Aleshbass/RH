@@ -75,7 +75,12 @@ async def receive_event(request: Request, settings: Settings = Depends(get_setti
                     if details is not None
                     else "Your appointment is confirmed. I’ll send your appointment details here."
                 )
-                enqueue_booking_confirmed(patient.phone_e164, booking_id, text, email=email)
+                from app.queue.templates import booking_confirmed
+
+                enqueue_booking_confirmed(patient.phone_e164, booking_id, text, email=email, template=(
+                    booking_confirmed(details["service_mode"], details["provider_name"], details["session_start"])
+                    if details is not None else None
+                ))
     elif event_type == "booking.payment_confirmed":
         data = payload.get("data") or {}
         rh_patient_id = str(data.get("patient_id") or "")
@@ -227,7 +232,10 @@ async def receive_event(request: Request, settings: Settings = Depends(get_setti
         message = str(data.get("message") or "").strip()
         patient = _patient_for_rh_id(session, rh_patient_id)  # a cared-for person's reaches the caregiver
         if patient and message and len(message) <= 2000:
-            enqueue_booking_confirmed(patient.phone_e164, str(data.get("booking_id") or ""), f"Message from your physiotherapist: {message}")
+            from app.queue.templates import physio_message
+
+            enqueue_booking_confirmed(patient.phone_e164, str(data.get("booking_id") or ""), f"Message from your physiotherapist: {message}",
+                                      template=physio_message(data.get("physio_name"), message))
             append(session, kind=AuditKind.BOOKING, actor_phone="rh-service", person_id=patient.id,
                    payload={"event": "physio_patient_message_disclosed", "booking_id": str(data.get("booking_id") or "")})
     elif event_type == "programme.sent":
@@ -701,7 +709,10 @@ def _hold_nudge(session: Session, data: dict, *, expired: bool) -> None:
             text = f"Your time with {who} is held{until}. Pay securely here to keep it: {url}"
         else:
             text = f"Your time with {who} is held{until}. To get your payment link, tap *WhatsApp is fine* or reply with your email."
-    enqueue_booking_confirmed(patient.phone_e164, booking_id, text)
+    from app.queue.templates import payment_pending
+
+    template = None if expired else payment_pending(who, data.get("start_time"), data.get("amount_kobo"), url)
+    enqueue_booking_confirmed(patient.phone_e164, booking_id, text, template=template)
     append(session, kind=AuditKind.BOOKING, actor_phone="rh-service", person_id=patient.id,
            payload={"event": "hold_expired_notified" if expired else "hold_reminder_sent", "booking_id": booking_id})
 
