@@ -14,7 +14,7 @@ import { getViewer } from "./helpers/partnerAccess";
 import { insertNotification } from "./helpers/pushNotify";
 import { learnMemberInfo } from "./learn";
 import { lagosMonth, monthLabel } from "../lib/learn/points";
-import { groupCapacity, groupIsFull } from "./helpers/learnGroupRules";
+import { groupCapacity, groupImageUrl, groupIsFull } from "./helpers/learnGroupRules";
 
 type Ctx = QueryCtx | MutationCtx;
 
@@ -158,7 +158,15 @@ export const invitePreview = query({
     const rows = await membersOf(ctx, group._id);
     const leads = [];
     for (const r of rows.filter((x) => x.role === "lead").slice(0, 3)) leads.push(fullName(await ctx.db.get(r.userId)).split(" ")[0]);
-    const card = { name: group.name, description: group.description ?? null, color: group.color, memberCount: group.memberCount, leads, roomSlug: roomSlug(group._id) };
+    const card = {
+      name: group.name,
+      description: group.description ?? null,
+      color: group.color,
+      imageUrl: await groupImageUrl(ctx, group),
+      memberCount: group.memberCount,
+      leads,
+      roomSlug: roomSlug(group._id),
+    };
     const user = (await getViewer(ctx))?.user ?? null;
     if (!user) return { state: "signin" as const, group: card };
     if (!(await learnMemberInfo(ctx, user))) return { state: "welcome" as const, group: card };

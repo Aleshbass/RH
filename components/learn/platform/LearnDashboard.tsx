@@ -34,6 +34,7 @@ import { learnPath, MY_LEARNING_PATH, WELCOME_PATH } from './learnApi'
 import { COMMUNITY_PATH, communityApi, postPath, relativeTime, roomPath, SPACES_PATH, spacePath, spacesApi, type PostSummary } from '../social/socialApi'
 import { Avatar, Skeleton, SpaceAvatar } from '../social/ui'
 import { GroupChip, GroupPicker, useNeedsGroup } from '../social/GroupPicker'
+import { GroupAvatar } from '../social/GroupAvatar'
 import { PostComposer } from '../social/Community'
 import { LoveCount } from '../social/Love'
 import { GroupStandings } from '../points/Leaderboard'
@@ -143,9 +144,13 @@ function MyGroupCard() {
       className="group mt-4 flex items-center gap-3 rounded-2xl p-3.5 transition hover:brightness-[0.98]"
       style={{ background: tone.soft }}
     >
-      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white" style={{ color: tone.ink }}>
-        <Users className="h-4 w-4" />
-      </span>
+      {info?.imageUrl ? (
+        <GroupAvatar group={info} size={40} />
+      ) : (
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white" style={{ color: tone.ink }}>
+          <Users className="h-4 w-4" />
+        </span>
+      )}
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm font-semibold text-rh-ink">
           {group.name}

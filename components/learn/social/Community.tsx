@@ -48,6 +48,7 @@ import { Avatar, EmptyState, JoinPrompt, Sheet, Skeleton } from './ui'
 import { groupTone, myGroupsRef } from '@/lib/learnAdminsApi'
 import { GroupHub, GroupInviteButton } from './GroupHub'
 import { GroupChip, GroupPicker, useNeedsGroup } from './GroupPicker'
+import { GroupAvatar, GroupImageButton } from './GroupAvatar'
 import { activeMentions, MentionTextarea, type Mention } from './Mentions'
 import { LoveCount } from './Love'
 
@@ -386,9 +387,7 @@ function MyGroups() {
               href={roomPath(g.roomSlug)}
               className="group flex w-[78vw] max-w-[320px] shrink-0 snap-start items-start gap-3 rounded-2xl border border-rh-ink/[0.07] bg-white p-4 transition hover:border-rh-ink/20 sm:w-auto sm:max-w-none"
             >
-              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl" style={{ background: tone.soft, color: tone.ink }}>
-                <Users className="h-4 w-4" />
-              </span>
+              <GroupAvatar group={g} size={44} />
               <span className="min-w-0 flex-1">
                 <span className="flex items-center gap-1.5">
                   <span className="truncate text-[15px] font-semibold text-rh-ink">{g.name}</span>
@@ -573,12 +572,16 @@ export function RoomView({ slug }: { slug: string }) {
       <BackToCommunity />
       <div className="mt-6 flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
         <div className="flex min-w-0 items-start gap-4">
-          <span
-            className={cn('flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl', !tone && 'bg-rh-ink text-rh-lime')}
-            style={tone ? { background: tone.soft, color: tone.ink } : undefined}
-          >
-            <Icon className="h-5 w-5" />
-          </span>
+          {group ? (
+            <GroupAvatar group={group} size={56} rounded="2xl" />
+          ) : (
+            <span
+              className={cn('flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl', !tone && 'bg-rh-ink text-rh-lime')}
+              style={tone ? { background: tone.soft, color: tone.ink } : undefined}
+            >
+              <Icon className="h-5 w-5" />
+            </span>
+          )}
           <div className="min-w-0">
             {group && (
               <p className="mb-1 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-rh-ink/50">
@@ -587,6 +590,8 @@ export function RoomView({ slug }: { slug: string }) {
             )}
             <h1 className={cn('break-words text-[28px] leading-tight tracking-tight text-rh-ink sm:text-[38px]', displayFont)}>{data.room.title}</h1>
             {data.room.description && <p className="mt-1.5 max-w-lg text-[15px] leading-6 text-rh-ink/60">{data.room.description}</p>}
+            {/* The champion (or a Learn admin) gives the group its picture */}
+            {group?.canEditImage && <GroupImageButton groupId={group.id} hasImage={Boolean(group.imageUrl)} className="mt-3" />}
             {group && group.members.length > 0 && (
               <div className="mt-3 flex items-center gap-2">
                 <div className="flex -space-x-2">

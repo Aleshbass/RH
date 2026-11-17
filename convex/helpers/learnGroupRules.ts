@@ -27,6 +27,11 @@ export function groupIsOpen(group: Pick<Doc<"learnGroups">, "openToJoin" | "arch
 }
 
 /** The person's group for badges in the general community: the one they lead, else the first they joined. */
+/** The group's picture, or null (then the group's colour stands in). */
+export async function groupImageUrl(ctx: Ctx, group: Pick<Doc<"learnGroups">, "imageStorageId">) {
+  return group.imageStorageId ? await ctx.storage.getUrl(group.imageStorageId) : null;
+}
+
 export async function groupBadgeFor(ctx: Ctx, userId: Id<"users">) {
   const rows = await ctx.db
     .query("learnGroupMembers")
@@ -35,7 +40,7 @@ export async function groupBadgeFor(ctx: Ctx, userId: Id<"users">) {
   rows.sort((a, b) => (a.role === b.role ? a.addedAt - b.addedAt : a.role === "lead" ? -1 : 1));
   for (const row of rows) {
     const group = await ctx.db.get(row.groupId);
-    if (group && !group.archived) return { id: group._id, name: group.name, color: group.color, lead: row.role === "lead" };
+    if (group && !group.archived) return { id: group._id, name: group.name, color: group.color, imageUrl: await groupImageUrl(ctx, group), lead: row.role === "lead" };
   }
   return null;
 }

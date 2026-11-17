@@ -11,16 +11,17 @@ import Link from 'next/link'
 import { useMutation, useQuery } from 'convex/react'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { toast } from 'sonner'
-import { ArrowRight, Check, Crown, Loader2, Users } from '@/components/icons'
+import { ArrowRight, Check, Crown, Loader2 } from '@/components/icons'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
 import { groupTone, joinableGroupsRef, joinGroupRef, type JoinableGroup } from '@/lib/learnAdminsApi'
 import { displayFont, pillInk } from '../shared'
 import { errorText, roomPath } from './socialApi'
 import { Avatar, Skeleton } from './ui'
+import { GroupAvatar } from './GroupAvatar'
 
 /** "Group 3" pill with the group's colour, used beside names in the community. */
-export function GroupChip({ group, className }: { group: { name: string; color: string; lead?: boolean } | null | undefined; className?: string }) {
+export function GroupChip({ group, className }: { group: { name: string; color: string; imageUrl?: string | null; lead?: boolean } | null | undefined; className?: string }) {
   if (!group) return null
   const tone = groupTone(group.color)
   return (
@@ -29,7 +30,13 @@ export function GroupChip({ group, className }: { group: { name: string; color: 
       style={{ background: tone.soft, color: tone.ink }}
       title={group.lead ? `${group.name} champion` : group.name}
     >
-      {group.lead ? <Crown className="h-3 w-3 shrink-0" /> : <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: tone.dot }} />}
+      {group.lead ? (
+        <Crown className="h-3 w-3 shrink-0" />
+      ) : group.imageUrl ? (
+        <GroupAvatar group={group} size={14} rounded="full" />
+      ) : (
+        <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: tone.dot }} />
+      )}
       <span className="truncate">{group.name}</span>
     </span>
   )
@@ -79,9 +86,7 @@ function GroupCard({ group, busy, onJoin, index }: { group: JoinableGroup; busy:
     >
       <span aria-hidden className="absolute inset-x-0 top-0 h-1" style={{ background: tone.dot }} />
       <div className="flex items-start gap-3">
-        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl" style={{ background: tone.soft, color: tone.ink }}>
-          <Users className="h-5 w-5" />
-        </span>
+        <GroupAvatar group={group} size={44} rounded="2xl" />
         <div className="min-w-0 flex-1">
           <p className="flex items-center gap-2">
             <span className="truncate text-[16px] font-semibold text-rh-ink">{group.name}</span>

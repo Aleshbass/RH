@@ -17,7 +17,7 @@ import { groupRoleOf, isLearnAdminUser, requireLearnAdmin } from "./helpers/lear
 import { insertNotification } from "./helpers/pushNotify";
 import { blockingPrivacyIssue } from "../lib/community/privacy";
 import { canUserWatchCourse, isMskProgramLearner, learnMemberInfo, type LearnMemberInfo } from "./learn";
-import { groupBadgeFor } from "./helpers/learnGroupRules";
+import { groupBadgeFor, groupImageUrl } from "./helpers/learnGroupRules";
 
 type Ctx = QueryCtx | MutationCtx;
 
@@ -177,7 +177,7 @@ const publicRoom = ({ doc: _doc, ...room }: RoomView) => room;
 
 // ── Authors ───────────────────────────────────────────────────────────────────
 
-type AuthorGroup = { id: Id<"learnGroups">; name: string; color: string; lead: boolean };
+type AuthorGroup = { id: Id<"learnGroups">; name: string; color: string; imageUrl: string | null; lead: boolean };
 type Author = { id: Id<"users">; name: string; imageUrl: string | null; tag: LearnMemberInfo["tag"] | null; group: AuthorGroup | null };
 
 async function authorsFor(ctx: Ctx, ids: Id<"users">[]) {
@@ -440,8 +440,10 @@ async function groupCard(ctx: Ctx, groupId: Id<"learnGroups">, member: LearnMemb
     name: group.name,
     description: group.description ?? null,
     color: group.color,
+    imageUrl: await groupImageUrl(ctx, group),
     memberCount: group.memberCount,
     myRole: rows.find((r) => r.userId === member.user._id)?.role ?? null,
+    canEditImage: member.isAdmin || rows.find((r) => r.userId === member.user._id)?.role === "lead",
     members: rows.slice(0, 24).map((r) => ({ ...(people.get(r.userId) ?? { id: r.userId, name: "Member", imageUrl: null, tag: null }), role: r.role })),
   };
 }

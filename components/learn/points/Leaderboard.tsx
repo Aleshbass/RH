@@ -12,6 +12,7 @@ import { useQuery } from 'convex/react'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { ChevronDown, Crown, Star, TrendingUp, Users } from '@/components/icons'
 import { groupStandingsRef, groupTone, type GroupStanding } from '@/lib/learnAdminsApi'
+import { GroupAvatar } from '@/components/learn/social/GroupAvatar'
 import { cn } from '@/lib/utils'
 import { LEARN_EARN } from '@/lib/learn/points'
 import { displayFont, pillInk } from '../shared'
@@ -162,9 +163,7 @@ export function GroupStandings({ period, limit, compact = false }: { period: Per
               >
                 {r.rank}
               </span>
-              <span className={cn('flex shrink-0 items-center justify-center rounded-xl', compact ? 'h-8 w-8' : 'h-10 w-10')} style={{ background: tone.soft, color: tone.ink }}>
-                <Users className="h-4 w-4" />
-              </span>
+              <GroupAvatar group={r} size={compact ? 32 : 40} />
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm font-semibold text-rh-ink">
                   {r.name}

@@ -16,7 +16,7 @@ import { requireLearnAdmin } from "./helpers/learnAccess";
 import { getViewer } from "./helpers/partnerAccess";
 import { insertNotification } from "./helpers/pushNotify";
 import { learnMemberInfo } from "./learn";
-import { DEFAULT_GROUP_CAPACITY, MAX_GROUP_CAPACITY, groupCapacity, groupIsFull, groupIsOpen, makeOnlyLead } from "./helpers/learnGroupRules";
+import { DEFAULT_GROUP_CAPACITY, MAX_GROUP_CAPACITY, groupCapacity, groupImageUrl, groupIsFull, groupIsOpen, makeOnlyLead } from "./helpers/learnGroupRules";
 
 type Ctx = QueryCtx | MutationCtx;
 
@@ -76,6 +76,7 @@ export const adminList = query({
         name: g.name,
         description: g.description ?? null,
         color: g.color,
+        imageUrl: await groupImageUrl(ctx, g),
         memberCount: g.memberCount,
         capacity: groupCapacity(g),
         openToJoin: g.openToJoin !== false,
@@ -135,6 +136,7 @@ export const adminGroup = query({
       name: group.name,
       description: group.description ?? null,
       color: group.color,
+      imageUrl: await groupImageUrl(ctx, group),
       archived: Boolean(group.archived),
       memberCount: group.memberCount,
       capacity: groupCapacity(group),
@@ -214,6 +216,51 @@ export const adminUpdate = mutation({
       updatedAt: Date.now(),
     });
     if (group.roomId) await ctx.db.patch(group.roomId, { title: name, description: description ?? "Your group's private room." });
+  },
+});
+
+// ── The group's picture ───────────────────────────────────────────────────────
+
+const MAX_GROUP_IMAGE_BYTES = 5 * 1024 * 1024;
+
+/** Learn admins, or the group's champion, may change its picture. */
+async function requireGroupEditor(ctx: MutationCtx, groupId: Id<"learnGroups">) {
+  const member = await learnMemberInfo(ctx, (await getViewer(ctx))?.user ?? null);
+  if (!member) throw new ConvexError("Sign in to Rehabify Learn first.");
+  if (member.isAdmin) return member;
+  const row = await ctx.db
+    .query("learnGroupMembers")
+    .withIndex("by_group_user", (q) => q.eq("groupId", groupId).eq("userId", member.user._id))
+    .unique();
+  if (row?.role !== "lead") throw new ConvexError("Only the group's champion or a Learn admin can change its picture.");
+  return member;
+}
+
+export const groupImageUploadUrl = mutation({
+  args: { groupId: v.id("learnGroups") },
+  handler: async (ctx, args) => {
+    await requireGroupEditor(ctx, args.groupId);
+    return await ctx.storage.generateUploadUrl();
+  },
+});
+
+/** Sets (or, with null, removes) the group's picture; the old one is deleted. */
+export const setGroupImage = mutation({
+  args: { groupId: v.id("learnGroups"), storageId: v.union(v.id("_storage"), v.null()) },
+  handler: async (ctx, args) => {
+    await requireGroupEditor(ctx, args.groupId);
+    const group = await groupOrThrow(ctx, args.groupId);
+    if (args.storageId) {
+      const file = await ctx.db.system.get(args.storageId);
+      if (!file) throw new ConvexError("The picture didn't finish uploading. Please try again.");
+      if (!file.contentType?.startsWith("image/") || file.size > MAX_GROUP_IMAGE_BYTES) {
+        await ctx.storage.delete(args.storageId);
+        throw new ConvexError(file.size > MAX_GROUP_IMAGE_BYTES ? "The picture is over 5 MB. Please use a smaller one." : "Use a JPG, PNG or WebP picture.");
+      }
+    }
+    if (group.imageStorageId && group.imageStorageId !== args.storageId) await ctx.storage.delete(group.imageStorageId);
+    await ctx.db.patch(group._id, { imageStorageId: args.storageId ?? undefined, updatedAt: Date.now() });
+    return null;
   },
 });
 
@@ -389,6 +436,7 @@ export const myGroups = query({
         name: g.name,
         description: g.description ?? null,
         color: g.color,
+        imageUrl: await groupImageUrl(ctx, g),
         memberCount: g.memberCount,
         role: r.role,
         roomSlug: roomSlug(g._id),
@@ -430,6 +478,7 @@ export const joinableGroups = query({
         name: g.name,
         description: g.description ?? null,
         color: g.color,
+        imageUrl: await groupImageUrl(ctx, g),
         memberCount: g.memberCount,
         capacity,
         placesLeft: Math.max(0, capacity - g.memberCount),

@@ -137,6 +137,8 @@ export const learnSocialTables = {
     name: v.string(),
     description: v.optional(v.string()),
     color: v.string(), // a key from GROUP_COLORS in learnGroups.ts
+    // The group's picture (user 2026-11-17): set by Learn admins or the group's champion
+    imageStorageId: v.optional(v.id("_storage")),
     roomId: v.optional(v.id("learnRooms")),
     memberCount: v.number(),
     archived: v.optional(v.boolean()),
