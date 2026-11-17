@@ -31,7 +31,7 @@ export const BOOK_SESSION_HREF = `${NAV.appointments.href}?book=1`
 
 function ShellSkeleton() {
   return (
-    <div className="flex min-h-screen bg-pt-canvas">
+    <div data-app-shell="pt" className="flex min-h-screen bg-pt-canvas">
       <div className="hidden p-3 pr-0 lg:block">
         <div className="h-[calc(100vh-1.5rem)] w-64 space-y-3 rounded-3xl border border-pt-line bg-pt-surface p-5">
           <Skeleton className="mb-6 h-6 w-28 rounded-lg bg-pt-sunken" />
@@ -104,7 +104,7 @@ function PatientPortal({ children }: { children: ReactNode }) {
 
   return (
     <DashboardAuthGuard loadingFallback={<ShellSkeleton />}>
-      <div key={practiceDisplayKey(careTeamPractice)} className="flex min-h-screen bg-pt-canvas text-pt-ink">
+      <div data-app-shell="pt" key={practiceDisplayKey(careTeamPractice)} className="flex min-h-screen bg-pt-canvas text-pt-ink">
         <div className="hidden shrink-0 p-3 pr-0 lg:flex">
           <PatientSidebar unreadMessages={unreadMessages} className="sticky top-3 h-[calc(100vh-1.5rem)]" />
         </div>

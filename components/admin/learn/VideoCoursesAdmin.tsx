@@ -48,7 +48,7 @@ import {
   cardClass,
   ConfirmDialog,
   EmptyState,
-  inputClass,
+  inputClass, fieldClass,
   PageHeader,
   Panel,
   primaryButtonClass,
@@ -521,7 +521,7 @@ function CourseForm({
           )}
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Topic" htmlFor="vc-category" hint="Where it shows under Browse by topic on Learn.">
-              <select id="vc-category" value={category} onChange={(e) => setCategory(e.target.value)} className={inputClass}>
+              <select id="vc-category" value={category} onChange={(e) => setCategory(e.target.value)} className={fieldClass}>
                 <option value="">No topic</option>
                 {COURSE_CATEGORIES.map((c) => (
                   <option key={c.id} value={c.id}>
@@ -531,7 +531,7 @@ function CourseForm({
               </select>
             </Field>
             <Field label="Level" htmlFor="vc-level">
-              <select id="vc-level" value={level} onChange={(e) => setLevel(e.target.value)} className={inputClass}>
+              <select id="vc-level" value={level} onChange={(e) => setLevel(e.target.value)} className={fieldClass}>
                 <option value="">Not set</option>
                 {COURSE_LEVELS.map((l) => (
                   <option key={l.id} value={l.id}>
