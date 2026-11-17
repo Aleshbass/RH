@@ -4703,6 +4703,65 @@ export default defineSchema({
     count: v.number(),
   }).index("by_day", ["day"]),
 
+  // Clinic outreach (outreach.ts): physiotherapy clinics found city by city, with a contact
+  // email read from their websites, worked through by the team and exported to a cold-email tool
+  outreachLeads: defineTable({
+    name: v.string(),
+    nameKey: v.string(), // normalised name + city, to spot the same clinic twice
+    city: v.string(),
+    country: v.optional(v.string()),
+    address: v.optional(v.string()),
+    phone: v.optional(v.string()),
+    email: v.optional(v.string()),
+    emailSource: v.optional(v.string()), // "website", "web_search", "google_places" or "admin"
+    otherEmails: v.optional(v.array(v.string())),
+    website: v.optional(v.string()),
+    domain: v.optional(v.string()),
+    mapsUrl: v.optional(v.string()),
+    placeId: v.optional(v.string()), // Google Places id
+    rating: v.optional(v.number()),
+    reviews: v.optional(v.number()),
+    source: v.union(v.literal("google_places"), v.literal("web_search"), v.literal("admin")),
+    sourceUrl: v.optional(v.string()),
+    status: v.union(
+      v.literal("new"), // found, email not looked for yet
+      v.literal("ready"), // has an email, not exported yet
+      v.literal("no_email"), // the website had none
+      v.literal("exported"),
+      v.literal("contacted"),
+      v.literal("replied"),
+      v.literal("not_interested"),
+      v.literal("do_not_contact"), // follows the email address into later searches
+      v.literal("on_rehabify")
+    ),
+    crawlStatus: v.optional(v.union(v.literal("pending"), v.literal("done"), v.literal("failed"))),
+    crawlError: v.optional(v.string()),
+    crawledAt: v.optional(v.number()),
+    note: v.optional(v.string()),
+    exportedAt: v.optional(v.number()),
+    contactedAt: v.optional(v.number()),
+    addedBy: v.optional(v.id("users")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_name_key", ["nameKey"])
+    .index("by_place", ["placeId"])
+    .index("by_domain", ["domain"])
+    .index("by_email", ["email"])
+    .index("by_status", ["status"])
+    .index("by_crawl", ["crawlStatus"]),
+
+  // Each "Find clinics" run, per finder, for Admin › Clinic outreach
+  outreachSearches: defineTable({
+    city: v.string(),
+    source: v.string(),
+    found: v.number(),
+    added: v.number(),
+    error: v.optional(v.string()),
+    by: v.id("users"),
+    createdAt: v.number(),
+  }),
+
   // Careers (convex/careers.ts): roles posted by admins on /careers, and the applications to them
   careerJobs: defineTable({
     slug: v.string(),

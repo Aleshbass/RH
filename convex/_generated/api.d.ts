@@ -267,6 +267,7 @@ import type * as notifications_retry from "../notifications/retry.js";
 import type * as notifications_service from "../notifications/service.js";
 import type * as offline from "../offline.js";
 import type * as outcomes from "../outcomes.js";
+import type * as outreach from "../outreach.js";
 import type * as partnerApi from "../partnerApi.js";
 import type * as partnerBankAccounts from "../partnerBankAccounts.js";
 import type * as partnerGateway from "../partnerGateway.js";
@@ -616,6 +617,7 @@ declare const fullApi: ApiFromModules<{
   "notifications/service": typeof notifications_service;
   offline: typeof offline;
   outcomes: typeof outcomes;
+  outreach: typeof outreach;
   partnerApi: typeof partnerApi;
   partnerBankAccounts: typeof partnerBankAccounts;
   partnerGateway: typeof partnerGateway;
