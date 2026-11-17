@@ -23,6 +23,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { ClinicBrand, PoweredByRehabify } from '@/components/clinic/ClinicBrand'
+import { LearnCard } from '@/components/learn/LearnCard'
 import { useClinicAccess, type ClinicArea } from '@/components/clinic/ClinicAccessContext'
 import { START_CLINIC_TOUR_EVENT } from '@/components/clinic/ClinicTour'
 import { PatientDrawer, initials } from '@/components/patient/ui'
@@ -253,6 +254,7 @@ export default function ClinicSidebar({ className }: { className?: string }) {
       </nav>
 
       <div className="space-y-2 p-3">
+        <LearnCard />
         <WorkspaceLink />
         <div className="border-t border-pt-line pt-2">
           <AccountMenu />
@@ -342,6 +344,7 @@ export function ClinicMobileNav() {
           </div>
 
           <WorkspaceLink onNavigate={() => setMoreOpen(false)} />
+          <LearnCard onNavigate={() => setMoreOpen(false)} />
 
           {groups.map((group, i) => {
             const items = group.items.filter((item) => !tabHrefs.has(item.href))
