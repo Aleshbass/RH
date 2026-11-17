@@ -1886,7 +1886,9 @@ export async function recordPatientCheckIn(
 
   const reasons: string[] = [];
   if (pain >= HIGH_PAIN) reasons.push(`Pain ${pain}/10`);
-  else if (previous && pain - previous.painScore >= 3) reasons.push(`Pain up from ${previous.painScore} to ${pain}`);
+  // 2 or more points above the last check-in (Joy coordination spec, escalation thresholds)
+  else if (previous && pain - previous.painScore >= 2) reasons.push(`Pain up from ${previous.painScore} to ${pain}`);
+  const painFlagged = reasons.length > 0;
   if (args.mood === "low") reasons.push("Feeling low");
   // Something written for the physio is flagged whatever the pain score, so it gets read
   if (args.concern) reasons.push("Raised a concern");
@@ -1918,7 +1920,7 @@ export async function recordPatientCheckIn(
       pain >= HIGH_PAIN || args.concern ? "high" : "medium"
     );
   }
-  return { checkInId: id, flagged };
+  return { checkInId: id, flagged, painFlagged };
 }
 
 /** The patient's own recent check-ins and whether they've checked in today. */

@@ -3221,6 +3221,19 @@ def handle_turn(
 
     # A patient in care: the greeting menu, "message my physio", "book a visit" with their own physio
     # or clinic. Exercises, DONE, dashboard and LINK still go to their own handlers below.
+    if identity.persona == Persona.PATIENT and care_now is not None and sr_patient is not None:
+        # A fall, a new injury or "I'm worried": the physio is told now (Joy coordination spec,
+        # escalation thresholds). After the crisis and red-flag checks, before the companion menu.
+        from app.conversation.care_signals import care_signal, care_signal_turn
+
+        signal = care_signal(user_text)
+        if signal is not None:
+            signal_text = care_signal_turn(session, sr_patient, care_now, signal, user_text)
+            save_turn(
+                session, state, user_text, signal_text, state.extracted, state.phase,
+                language, wa_message_id, stage=state.stage,
+            )
+            return TurnResult(reply_text=signal_text, language=language, phase=state.phase, extracted=state.extracted)
     if identity.persona == Persona.PATIENT and care_now is not None:
         companion = companion_turn(
             session, sr_patient, session.get(Conversation, state.conversation_id), user_text,

@@ -185,6 +185,9 @@ def _save(session: Session, identity, answers: dict, note: str | None) -> str:
         return "I couldn't send your check-in just now. Please type *CHECK IN* to try again in a few minutes."
     if not result.get("has_physio"):
         text = "Thanks, I've saved your check-in to your Rehabify record. Once you have a physio, they'll see it."
+    elif result.get("pain_flagged"):
+        # Pain 7 or more, or 2 or more points up since the last check-in (Joy coordination spec)
+        text = "Thanks for telling me. Please stop today's exercises for now. I've let your physio know, and they'll get back to you."
     elif result.get("flagged"):
         text = "Thanks, I've sent this to your physio and flagged it so they look at it soon."
     else:

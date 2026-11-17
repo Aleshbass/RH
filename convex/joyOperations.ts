@@ -383,7 +383,7 @@ export const executeMutation = internalMutation({
       if (!Number.isFinite(pain)) throw new Error("pain_score is required");
       const exercisesDone: "all" | "some" | "none" = data.exercises_done === "all" || data.exercises_done === "some" ? data.exercises_done : "none";
       const mood = (["great", "good", "okay", "low"] as const).find((m) => m === data.mood);
-      let saved: { checkInId: any; flagged: boolean };
+      let saved: { checkInId: any; flagged: boolean; painFlagged?: boolean };
       try {
         saved = await recordPatientCheckIn(ctx, patient, {
           painScore: pain, exercisesDone, mood, note: typeof data.note === "string" ? data.note : undefined,
@@ -395,7 +395,7 @@ export const executeMutation = internalMutation({
       }
       const row: any = await ctx.db.get(saved.checkInId);
       await audit(ctx, data, op, { actorUserId: patient._id, patientUserId: patient._id });
-      return { saved: true, flagged: saved.flagged, has_physio: Boolean(row?.physiotherapistId) };
+      return { saved: true, flagged: saved.flagged, pain_flagged: Boolean(saved.painFlagged), has_physio: Boolean(row?.physiotherapistId) };
     }
     if (op === "patient_add_cared_for") {
       // Someone on WhatsApp is booking for a person they care for (a child, an elderly parent).
