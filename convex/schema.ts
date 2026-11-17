@@ -4764,7 +4764,8 @@ export default defineSchema({
       v.literal("replied"),
       v.literal("not_interested"),
       v.literal("do_not_contact"), // follows the email address into later searches
-      v.literal("on_rehabify")
+      v.literal("on_rehabify"),
+      v.literal("bounced") // our email to it came back (outreachSend.ts)
     ),
     crawlStatus: v.optional(v.union(v.literal("pending"), v.literal("done"), v.literal("failed"))),
     crawlError: v.optional(v.string()),
@@ -4793,6 +4794,99 @@ export default defineSchema({
     by: v.id("users"),
     createdAt: v.number(),
   }),
+
+  // Outreach sending (outreachSend.ts + actions/outreachMail.ts): emails to clinics one at a time
+  // from the team's own Zoho inbox, with follow-ups, stopped by a reply, a bounce or "stop".
+  // One row: the on/off switch, sender, daily ramp, and where the inbox check got to.
+  outreachSettings: defineTable({
+    sendingOn: v.boolean(),
+    fromName: v.optional(v.string()),
+    signature: v.optional(v.string()),
+    optOut: v.optional(v.string()),
+    dailyStart: v.optional(v.number()),
+    rampPerDay: v.optional(v.number()),
+    dailyMax: v.optional(v.number()),
+    rampStartedOn: v.optional(v.string()), // Lagos day sending was first switched on
+    inFlightAt: v.optional(v.number()), // one email at a time
+    lastSendError: v.optional(v.string()),
+    lastSendErrorAt: v.optional(v.number()),
+    imapUidValidity: v.optional(v.number()),
+    imapLastUid: v.optional(v.number()),
+    lastInboxCheckAt: v.optional(v.number()),
+    lastInboxError: v.optional(v.string()),
+    updatedBy: v.optional(v.id("users")),
+    updatedAt: v.number(),
+  }),
+
+  // A sequence: the first email and its follow-ups (a blank subject replies in the same thread)
+  outreachSequences: defineTable({
+    name: v.string(),
+    steps: v.array(v.object({ subject: v.string(), body: v.string(), waitDays: v.number() })),
+    status: v.union(v.literal("draft"), v.literal("active"), v.literal("paused")),
+    createdBy: v.id("users"),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }),
+
+  // One clinic in one sequence. An email address is only ever enrolled once.
+  outreachEnrollments: defineTable({
+    sequenceId: v.id("outreachSequences"),
+    leadId: v.id("outreachLeads"),
+    email: v.string(),
+    status: v.union(
+      v.literal("active"),
+      v.literal("finished"), // every step sent, no reply
+      v.literal("replied"),
+      v.literal("bounced"),
+      v.literal("unsubscribed"),
+      v.literal("stopped") // removed by the team, or the clinic was closed
+    ),
+    nextStep: v.number(),
+    nextSendAt: v.optional(v.number()),
+    claimedAt: v.optional(v.number()),
+    attempts: v.optional(v.number()),
+    firstMessageId: v.optional(v.string()),
+    firstSubject: v.optional(v.string()),
+    lastSentAt: v.optional(v.number()),
+    repliedAt: v.optional(v.number()),
+    stoppedReason: v.optional(v.string()),
+    enrolledBy: v.id("users"),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_status_next", ["status", "nextSendAt"])
+    .index("by_email", ["email"])
+    .index("by_lead", ["leadId"])
+    .index("by_sequence", ["sequenceId"]),
+
+  // Every email sent, for threading, bounce matching and the daily count
+  outreachMessages: defineTable({
+    enrollmentId: v.id("outreachEnrollments"),
+    sequenceId: v.id("outreachSequences"),
+    leadId: v.id("outreachLeads"),
+    step: v.number(),
+    email: v.string(),
+    subject: v.string(),
+    messageId: v.string(),
+    day: v.string(), // Lagos "YYYY-MM-DD"
+    sentAt: v.number(),
+  })
+    .index("by_message_id", ["messageId"])
+    .index("by_day", ["day"])
+    .index("by_enrollment", ["enrollmentId"]),
+
+  // Replies, bounces and out-of-office answers to our emails (other inbox mail is never stored)
+  outreachInbox: defineTable({
+    kind: v.union(v.literal("reply"), v.literal("bounce"), v.literal("auto_reply")),
+    intent: v.optional(v.union(v.literal("stop"), v.literal("not_interested"))),
+    enrollmentId: v.id("outreachEnrollments"),
+    leadId: v.id("outreachLeads"),
+    fromEmail: v.optional(v.string()),
+    subject: v.string(),
+    snippet: v.string(),
+    uid: v.number(),
+    receivedAt: v.number(),
+  }).index("by_lead", ["leadId"]),
 
   // Careers (convex/careers.ts): roles posted by admins on /careers, and the applications to them
   careerJobs: defineTable({

@@ -276,4 +276,9 @@ crons.daily("exchange-rates-refresh", { hourUTC: 6, minuteUTC: 5 }, internal.exc
 // Live presence (presence.ts): old heartbeat rows go every hour
 crons.hourly("presence-cleanup", { minuteUTC: 17 }, internal.presence.cleanup, {});
 
+// Clinic outreach (outreachSend.ts): the next email every 5 minutes while sending is on (weekdays
+// 9:00–17:00 Lagos), and the inbox read for replies and bounces every 15 minutes
+crons.interval("outreach-send-tick", { minutes: 5 }, internal.outreachSend.tick, {});
+crons.interval("outreach-inbox-check", { minutes: 15 }, internal.actions.outreachMail.checkInbox, {});
+
 export default crons;

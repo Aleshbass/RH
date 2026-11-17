@@ -7,9 +7,9 @@
  *    picks up emails clinics publish in directories and on social pages.
  *  - Emails: each website's home and contact pages are read for published addresses
  *    (crawlPending, a few sites per run).
- *  - Sending is NOT done from here: cold email from Rehabify's own domain (Resend) would hurt
- *    receipts and reminders, and Resend doesn't allow it. The list exports as CSV for a cold-email
- *    tool on a separate domain. "Do not contact" sticks to the email address, across searches.
+ *  - Sending is in outreachSend.ts: one email at a time from the team's own Zoho inbox (never
+ *    Rehabify's product domain on Resend, which would hurt receipts and reminders and isn't
+ *    allowed there). The list also exports as CSV. "Do not contact" sticks to the email address.
  *  - Clinics already on Rehabify are marked and left out of exports.
  */
 import { ConvexError, v } from "convex/values";
@@ -42,10 +42,11 @@ const statusValidator = v.union(
   v.literal("replied"),
   v.literal("not_interested"),
   v.literal("do_not_contact"),
-  v.literal("on_rehabify")
+  v.literal("on_rehabify"),
+  v.literal("bounced")
 );
 /** Statuses that mean "leave this clinic alone": never exported again, never reset by a search */
-const CLOSED: ReadonlySet<LeadStatus> = new Set(["do_not_contact", "not_interested", "on_rehabify", "replied"]);
+const CLOSED: ReadonlySet<LeadStatus> = new Set(["do_not_contact", "not_interested", "on_rehabify", "replied", "bounced"]);
 const CRAWL_BATCH = 6;
 const FETCH_TIMEOUT_MS = 9_000;
 const MAX_PAGE_CHARS = 600_000;
@@ -567,7 +568,8 @@ export const adminUpdateLead = mutation({
       if (email && emailsIn(email)[0] !== email) throw new ConvexError("That doesn't look like an email address.");
       patch.email = email || undefined;
       patch.emailSource = email ? "admin" : undefined;
-      if (email && (lead.status === "new" || lead.status === "no_email")) patch.status = "ready";
+      // A new address for a clinic whose email bounced makes it ready again
+      if (email && (lead.status === "new" || lead.status === "no_email" || (lead.status === "bounced" && email !== lead.email))) patch.status = "ready";
     }
     if (args.status) {
       patch.status = args.status;

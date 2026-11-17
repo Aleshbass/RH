@@ -48,6 +48,7 @@ import type * as actions_emails_sendVideoCallInvitation from "../actions/emails/
 import type * as actions_index from "../actions/index.js";
 import type * as actions_joyDashboard from "../actions/joyDashboard.js";
 import type * as actions_marketingSend from "../actions/marketingSend.js";
+import type * as actions_outreachMail from "../actions/outreachMail.js";
 import type * as actions_notifications_cleanupDuplicates from "../actions/notifications/cleanupDuplicates.js";
 import type * as actions_notifications_index from "../actions/notifications/index.js";
 import type * as actions_notifications_sendNotification from "../actions/notifications/sendNotification.js";
@@ -163,6 +164,7 @@ import type * as helpers_doctorStages from "../helpers/doctorStages.js";
 import type * as helpers_escapeHtml from "../helpers/escapeHtml.js";
 import type * as helpers_exerciseAccess from "../helpers/exerciseAccess.js";
 import type * as helpers_flexCards from "../helpers/flexCards.js";
+import type * as helpers_outreachMail from "../helpers/outreachMail.js";
 import type * as helpers_exerciseCrypto from "../helpers/exerciseCrypto.js";
 import type * as helpers_exerciseMatch from "../helpers/exerciseMatch.js";
 import type * as helpers_goalMeasures from "../helpers/goalMeasures.js";
@@ -271,6 +273,7 @@ import type * as notifications_service from "../notifications/service.js";
 import type * as offline from "../offline.js";
 import type * as outcomes from "../outcomes.js";
 import type * as outreach from "../outreach.js";
+import type * as outreachSend from "../outreachSend.js";
 import type * as partnerApi from "../partnerApi.js";
 import type * as partnerBankAccounts from "../partnerBankAccounts.js";
 import type * as partnerGateway from "../partnerGateway.js";
@@ -401,6 +404,7 @@ declare const fullApi: ApiFromModules<{
   "actions/index": typeof actions_index;
   "actions/joyDashboard": typeof actions_joyDashboard;
   "actions/marketingSend": typeof actions_marketingSend;
+  "actions/outreachMail": typeof actions_outreachMail;
   "actions/notifications/cleanupDuplicates": typeof actions_notifications_cleanupDuplicates;
   "actions/notifications/index": typeof actions_notifications_index;
   "actions/notifications/sendNotification": typeof actions_notifications_sendNotification;
@@ -516,6 +520,7 @@ declare const fullApi: ApiFromModules<{
   "helpers/escapeHtml": typeof helpers_escapeHtml;
   "helpers/exerciseAccess": typeof helpers_exerciseAccess;
   "helpers/flexCards": typeof helpers_flexCards;
+  "helpers/outreachMail": typeof helpers_outreachMail;
   "helpers/exerciseCrypto": typeof helpers_exerciseCrypto;
   "helpers/exerciseMatch": typeof helpers_exerciseMatch;
   "helpers/goalMeasures": typeof helpers_goalMeasures;
@@ -624,6 +629,7 @@ declare const fullApi: ApiFromModules<{
   offline: typeof offline;
   outcomes: typeof outcomes;
   outreach: typeof outreach;
+  outreachSend: typeof outreachSend;
   partnerApi: typeof partnerApi;
   partnerBankAccounts: typeof partnerBankAccounts;
   partnerGateway: typeof partnerGateway;
