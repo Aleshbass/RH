@@ -16,6 +16,7 @@ import { SnapCarousel } from "@/components/marketing/SnapCarousel";
 import { signUpHrefFor } from "@/lib/auth/signupIntent";
 import { MARKETING_VIDEOS } from "@/lib/marketingVideos";
 import { cn } from "@/lib/utils";
+import { PhysioPricing } from "./PhysioPricing";
 
 /**
  * /platform/physiotherapists: hero, the two ways to use Rehabify (both visible; "Read more" opens
@@ -534,6 +535,9 @@ export default function PhysioPage() {
           </div>
         </div>
       </section>
+
+      {/* Free vs Individual Pro (owner spec 17 Nov 2026) */}
+      <PhysioPricing />
 
       {/* Questions */}
       <section id="faqs" className="scroll-mt-24 px-4 pb-20 sm:px-6 lg:pb-28">

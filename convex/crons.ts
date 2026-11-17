@@ -281,4 +281,8 @@ crons.hourly("presence-cleanup", { minuteUTC: 17 }, internal.presence.cleanup, {
 crons.interval("outreach-send-tick", { minutes: 5 }, internal.outreachSend.tick, {});
 crons.interval("outreach-inbox-check", { minutes: 15 }, internal.actions.outreachMail.checkInbox, {});
 
+// Individual Pro for independent physios (physioPlans.ts): launch-day charges, reminders,
+// renewals, retries and grace, every morning at 07:00 Lagos
+crons.daily("physio-pro-renewals", { hourUTC: 6, minuteUTC: 0 }, internal.physioPlans.sweep, {});
+
 export default crons;

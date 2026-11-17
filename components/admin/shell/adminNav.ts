@@ -182,6 +182,7 @@ export const ADMIN_NAV: AdminNavSection[] = [
       { title: 'Patients looking for care', href: a('/care-queue'), icon: HeartPulse, badgeKey: 'careQueue', keywords: ['waiting', 'unpaid', 'joy', 'nudge', 'match', 'help'] },
       { title: 'Bookings', href: a('/marketplace-bookings'), icon: CalendarCheck, keywords: ['appointments', 'joy', 'reassign'] },
       { title: 'Pricing & payouts', href: a('/service-tariffs'), icon: Tags, keywords: ['tariffs', 'prices', 'services', 'network terms', 'margin'] },
+      { title: 'Physio plans', href: a('/physio-plans'), icon: Crown, keywords: ['individual pro', 'free plan', 'founding', 'subscription', 'scribe', 'limits', 'grant'] },
       { title: 'Travel zones', href: a('/travel-zones'), icon: MapPinned, keywords: ['home visits', 'areas', 'surcharge', 'travel charge'] },
       { title: 'Rehabify Access', href: a('/rehabify-access'), icon: HandHeart, badgeKey: 'accessApplications', keywords: ['assisted care', 'reduced fee', 'applications', 'subsidy'] },
       { title: 'Reports', href: a('/marketplace-reports'), icon: Flag, badgeKey: 'openReports', keywords: ['moderation', 'complaints'] },

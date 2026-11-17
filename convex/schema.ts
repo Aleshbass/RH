@@ -4888,6 +4888,112 @@ export default defineSchema({
     receivedAt: v.number(),
   }).index("by_lead", ["leadId"]),
 
+  // Independent physio plans: Free and Individual Pro (physioPlans.ts, owner spec 17 Nov 2026).
+  // One settings row (prices, limits, dates; defaults in lib/physioPlans.ts).
+  physioPlanSettings: defineTable({
+    proPriceKobo: v.optional(v.number()),
+    foundingPriceKobo: v.optional(v.number()),
+    foundingCutoff: v.optional(v.string()),
+    foundingMonths: v.optional(v.number()),
+    freePatientsPerMonth: v.optional(v.number()),
+    freeScribeSessions: v.optional(v.number()),
+    proScribeSessions: v.optional(v.number()),
+    scribeTopUpKobo: v.optional(v.number()),
+    scribeTopUpSessions: v.optional(v.number()),
+    joyPerPatientKobo: v.optional(v.number()),
+    proJoyPatients: v.optional(v.number()),
+    launchDate: v.optional(v.string()),
+    limitsDate: v.optional(v.string()),
+    abroadFreePro: v.optional(v.boolean()),
+    reminderDays: v.optional(v.number()),
+    retryDays: v.optional(v.number()),
+    graceDays: v.optional(v.number()),
+    updatedBy: v.optional(v.id("users")),
+    updatedAt: v.number(),
+  }),
+
+  // A physio's Individual Pro. "scheduled": locked in before Pro opens (charged on the launch day);
+  // "active": paid up; "past_due": renewal failed, still Pro through retries + grace; "paused": in a
+  // clinic on a clinic plan; "cancelled": ended at the end of a paid period; "expired": unpaid → Free.
+  physioSubscriptions: defineTable({
+    physioId: v.id("users"),
+    status: v.union(
+      v.literal("scheduled"),
+      v.literal("active"),
+      v.literal("past_due"),
+      v.literal("paused"),
+      v.literal("cancelled"),
+      v.literal("expired")
+    ),
+    founding: v.boolean(),
+    foundingUntil: v.optional(v.number()), // founding price applies to periods starting before this
+    currentPeriodStart: v.optional(v.number()),
+    currentPeriodEnd: v.optional(v.number()),
+    cancelAtPeriodEnd: v.optional(v.boolean()),
+    renewalAttempts: v.optional(v.number()),
+    lastAttemptAt: v.optional(v.number()),
+    lastAttemptError: v.optional(v.string()),
+    graceUntil: v.optional(v.number()),
+    reminderSentFor: v.optional(v.number()), // the period end the "renews soon" email was for
+    pausedAt: v.optional(v.number()),
+    startedAt: v.number(),
+    endedAt: v.optional(v.number()),
+    updatedAt: v.number(),
+  })
+    .index("by_physio", ["physioId"])
+    .index("by_status_end", ["status", "currentPeriodEnd"]),
+
+  // The card a physio saved for Pro (Paystack keeps the card; we keep the reusable token, brand, last 4)
+  physioPlanCards: defineTable({
+    physioId: v.id("users"),
+    status: v.union(v.literal("active"), v.literal("removed"), v.literal("replaced")),
+    authorizationCode: v.string(),
+    signature: v.optional(v.string()),
+    email: v.string(),
+    brand: v.string(),
+    last4: v.optional(v.string()),
+    expMonth: v.optional(v.string()),
+    expYear: v.optional(v.string()),
+    bank: v.optional(v.string()),
+    reference: v.string(), // the payment that saved it
+    checkAmountKobo: v.optional(v.number()), // a card check, refunded
+    checkRefundedAt: v.optional(v.number()),
+    checkRefundError: v.optional(v.string()),
+    createdAt: v.number(),
+    removedAt: v.optional(v.number()),
+  })
+    .index("by_physio_status", ["physioId", "status"])
+    .index("by_reference", ["reference"]),
+
+  // Every Pro payment (and checkout started), for receipts, history and the Plans report
+  physioPlanPayments: defineTable({
+    physioId: v.id("users"),
+    subscriptionId: v.id("physioSubscriptions"),
+    reference: v.string(),
+    kind: v.union(v.literal("first"), v.literal("renewal"), v.literal("card_check")),
+    method: v.union(v.literal("checkout"), v.literal("saved_card")),
+    amountKobo: v.number(),
+    status: v.union(v.literal("pending"), v.literal("paid"), v.literal("failed")),
+    periodStart: v.optional(v.number()),
+    periodEnd: v.optional(v.number()),
+    receiptId: v.optional(v.id("receipts")),
+    error: v.optional(v.string()),
+    paidAt: v.optional(v.number()),
+    createdAt: v.number(),
+  })
+    .index("by_reference", ["reference"])
+    .index("by_physio", ["physioId", "createdAt"]),
+
+  // Free Pro given by an admin for a while, with a reason (testers, partners, make-goods)
+  physioPlanGrants: defineTable({
+    physioId: v.id("users"),
+    until: v.number(),
+    reason: v.string(),
+    grantedBy: v.id("users"),
+    revokedAt: v.optional(v.number()),
+    createdAt: v.number(),
+  }).index("by_physio", ["physioId"]),
+
   // Careers (convex/careers.ts): roles posted by admins on /careers, and the applications to them
   careerJobs: defineTable({
     slug: v.string(),
