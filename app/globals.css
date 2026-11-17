@@ -257,6 +257,22 @@ body {
     -webkit-tap-highlight-color: transparent;
   }
 
+  /* Tapping a field on a phone: the page background shows around the keyboard as it opens and
+     as the field scrolls into view. Match each dashboard's canvas instead of flashing white
+     (owner 2026-11-17). Shells mark themselves with data-app-shell. */
+  html:has([data-app-shell="pt"]),
+  html:has([data-app-shell="pt"]) body {
+    background-color: var(--pt-canvas);
+  }
+  html:has([data-app-shell="admin"]),
+  html:has([data-app-shell="admin"]) body {
+    background-color: var(--color-rh-canvas);
+  }
+  html.dark:has([data-app-shell="admin"]),
+  html.dark:has([data-app-shell="admin"]) body {
+    background-color: var(--color-rh-ink);
+  }
+
   h1,
   h2,
   h3,

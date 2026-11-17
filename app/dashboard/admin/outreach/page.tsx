@@ -32,7 +32,9 @@ import {
   StatTile,
   StatusBadge,
   downloadCsv,
-  inputClass,
+  fieldClass,
+  textareaFieldClass,
+  checkboxClass,
   primaryButtonClass,
   softButtonClass,
   tabsListClass,
@@ -301,14 +303,14 @@ export default function ClinicOutreachPage() {
                   }
                   placeholder="City, e.g. Ibadan"
                   aria-label="City"
-                  className={inputClass}
+                  className={fieldClass}
                 />
                 <input
                   value={country}
                   onChange={(e) => setCountry(e.target.value)}
                   placeholder="Country"
                   aria-label="Country"
-                  className={inputClass}
+                  className={fieldClass}
                 />
                 <button
                   type="button"
@@ -333,6 +335,7 @@ export default function ClinicOutreachPage() {
                 >
                   <input
                     type="checkbox"
+                    className={checkboxClass}
                     checked={useGoogle && Boolean(data?.finders.googlePlaces)}
                     disabled={!data?.finders.googlePlaces}
                     onChange={(e) => setUseGoogle(e.target.checked)}
@@ -352,6 +355,7 @@ export default function ClinicOutreachPage() {
                 >
                   <input
                     type="checkbox"
+                    className={checkboxClass}
                     checked={useAi && Boolean(data?.finders.aiSearch)}
                     disabled={!data?.finders.aiSearch}
                     onChange={(e) => setUseAi(e.target.checked)}
@@ -408,7 +412,7 @@ export default function ClinicOutreachPage() {
                   value={city}
                   onChange={(e) => setCity(e.target.value)}
                   aria-label="City"
-                  className={cn(inputClass, "h-9 w-auto py-1")}
+                  className={cn(fieldClass, "h-9 w-auto py-1")}
                 >
                   <option value="">All cities</option>
                   {data.cities.map((c) => (
@@ -554,7 +558,7 @@ export default function ClinicOutreachPage() {
                               })
                             }
                             placeholder="name@clinic.com"
-                            className={cn(inputClass, "h-8 w-64 py-1 text-sm")}
+                            className={cn(fieldClass, "h-8 w-64 py-1 text-sm")}
                           />
                           <button
                             type="submit"
@@ -622,7 +626,7 @@ export default function ClinicOutreachPage() {
                             }),
                           )
                         }
-                        className={cn(inputClass, "h-8 w-auto py-1 text-xs")}
+                        className={cn(fieldClass, "h-8 w-auto py-1 text-xs")}
                       >
                         {(Object.keys(STATUS) as Status[]).map((s) => (
                           <option key={s} value={s}>

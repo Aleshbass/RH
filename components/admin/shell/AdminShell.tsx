@@ -25,7 +25,7 @@ import { SafetyAlertBanner } from '@/components/visit-safety/SafetyAlertBanner'
 
 function ShellSkeleton() {
   return (
-    <div className="flex min-h-screen bg-rh-canvas dark:bg-rh-ink">
+    <div data-app-shell="admin" className="flex min-h-screen bg-rh-canvas dark:bg-rh-ink">
       <div className="m-3 hidden w-[17rem] rounded-3xl bg-rh-ink p-5 dark:bg-rh-ink-2 md:block">
         <Skeleton className="mb-6 h-7 w-28 rounded-md bg-white/15" />
         <div className="space-y-2">
@@ -49,7 +49,7 @@ function ShellSkeleton() {
 
 function AccessDenied() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-rh-canvas p-6 dark:bg-rh-ink">
+    <div data-app-shell="admin" className="flex min-h-screen items-center justify-center bg-rh-canvas p-6 dark:bg-rh-ink">
       <div className="max-w-sm rounded-3xl bg-white p-8 text-center shadow-soft dark:bg-rh-ink-2">
         <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-rh-blush text-rose-600 dark:bg-rose-400/10 dark:text-rose-300">
           <ShieldAlert className="h-6 w-6" />
@@ -133,7 +133,7 @@ function ShellFrame({ children }: { children: ReactNode }) {
   useEffect(() => setMenuOpen(false), [pathname])
 
   return (
-    <div className="flex min-h-screen bg-rh-canvas text-rh-ink dark:bg-rh-ink dark:text-neutral-50">
+    <div data-app-shell="admin" className="flex min-h-screen bg-rh-canvas text-rh-ink dark:bg-rh-ink dark:text-neutral-50">
       {/* Floating teal rail on desktop */}
       <div className="hidden shrink-0 p-3 pr-0 md:flex">
         <AdminSidebar className="sticky top-3 h-[calc(100vh-1.5rem)] rounded-3xl shadow-lift" />
