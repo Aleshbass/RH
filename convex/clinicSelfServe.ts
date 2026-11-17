@@ -30,6 +30,7 @@ import {
   cardLabel,
   cardView,
 } from "./helpers/clinicCards";
+import { invoiceReferences, withReference } from "./helpers/clinicAdminAlerts";
 import {
   CLINIC_PLAN_PAGE,
   billingIsOn,
@@ -68,6 +69,12 @@ const recordCheckoutRef = makeFunctionReference<
   null
 >("clinicBilling:recordSubscriptionCheckout");
 const cardSetupInfoRef = makeFunctionReference<"query", Record<string, never>, CardSetupInfo>("clinicSelfServe:cardSetupInfo");
+const recordCardCheckRef = makeFunctionReference<"mutation", { subscriptionId: Id<"clinicSubscriptions">; reference: string }, null>(
+  "clinicSelfServe:recordCardCheckStart"
+);
+const checkRefundFailedRef = makeFunctionReference<"mutation", { reference: string; clinicId: Id<"clinics">; error: string }, null>(
+  "clinicSelfServe:recordCardCheckReferenceRefundFailure"
+);
 const autoChargeInfoRef = makeFunctionReference<"query", { invoiceId: Id<"clinicSubscriptionInvoices"> }, AutoChargeInfo | null>(
   "clinicSelfServe:autoChargeInfo"
 );
@@ -205,7 +212,23 @@ export const chooseClinicPlan = mutation({
     };
     let subscriptionId: Id<"clinicSubscriptions">;
     if (existing) {
-      await ctx.db.patch(existing._id, { ...fields, ...(on ? {} : { switchedOnAt: now, switchedOnBy: user._id }) });
+      await ctx.db.patch(existing._id, {
+        ...fields,
+        // Back after cancelling: periods, invoices and warnings start again from the new start date
+        ...(on
+          ? {}
+          : {
+              switchedOnAt: now,
+              switchedOnBy: user._id,
+              currentPeriodStart: undefined,
+              currentPeriodEnd: undefined,
+              periodNumber: undefined,
+              warnedAt80: undefined,
+              warnedAt100: undefined,
+              readOnlySince: undefined,
+              endsWhenPaidNoticeAt: undefined,
+            }),
+      });
       subscriptionId = existing._id;
     } else {
       subscriptionId = await ctx.db.insert("clinicSubscriptions", { clinicId: clinic._id, createdAt: now, switchedOnAt: now, switchedOnBy: user._id, ...fields });
@@ -350,6 +373,8 @@ export const startCardSetup = action({
     if (!info.email) throw new ConvexError("Add an email address for your clinic in Clinic settings first.");
     const invoice = info.openInvoice;
     const reference = invoice ? `CLINICSUB_${invoice._id}_${Date.now()}` : `${CARD_CHECK_PREFIX}${info.subscriptionId}_${Date.now()}`;
+    // Only references recorded here can save a card (a payment made up elsewhere can't swap it)
+    if (!invoice) await ctx.runMutation(recordCardCheckRef, { subscriptionId: info.subscriptionId, reference });
     const data = await paystackRequest("/transaction/initialize", {
       method: "POST",
       body: JSON.stringify({
@@ -381,6 +406,45 @@ export const startCardSetup = action({
     if (!authorizationUrl.startsWith("https://")) throw new ConvexError("We couldn't open the card page. Please try again.");
     if (invoice) await ctx.runMutation(recordCheckoutRef, { invoiceId: invoice._id, reference, authorizationUrl });
     return { authorizationUrl };
+  },
+});
+
+export const recordCardCheckStart = internalMutation({
+  args: { subscriptionId: v.id("clinicSubscriptions"), reference: v.string() },
+  handler: async (ctx, args) => {
+    const sub = await ctx.db.get(args.subscriptionId);
+    if (!sub) return null;
+    const list = [...(sub.cardCheckReferences ?? []).filter((r) => r !== args.reference), args.reference].slice(-10);
+    await ctx.db.patch(sub._id, { cardCheckReferences: list, updatedAt: Date.now() });
+    return null;
+  },
+});
+
+/** A card check that left no reusable card: refunded by its reference (no card row to hang it on). */
+export const refundCardCheckReference = internalAction({
+  args: { reference: v.string(), clinicId: v.id("clinics") },
+  handler: async (ctx, args) => {
+    try {
+      await paystackRequest("/refund", { method: "POST", body: JSON.stringify({ transaction: args.reference }) });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "unknown error";
+      if (!/already.*refund|fully refunded/i.test(message)) await ctx.runMutation(checkRefundFailedRef, { ...args, error: message });
+    }
+    return null;
+  },
+});
+
+export const recordCardCheckReferenceRefundFailure = internalMutation({
+  args: { reference: v.string(), clinicId: v.id("clinics"), error: v.string() },
+  handler: async (ctx, args) => {
+    const clinic = await ctx.db.get(args.clinicId);
+    await alertAdmins(
+      ctx,
+      "Card check refund failed",
+      `${clinic?.name ?? "A clinic"}'s card check (${args.reference}) couldn't save the card and wasn't refunded: ${args.error.slice(0, 120)}. Refund it on Paystack.`,
+      args.clinicId
+    );
+    return null;
   },
 });
 
@@ -464,31 +528,51 @@ export const recordAutoCharge = internalMutation({
       lastAutoChargeAt: now,
       lastAutoChargeStatus: args.status,
       lastAutoChargeMessage: args.message?.slice(0, 200),
-      // The daily check verifies this reference if Paystack's webhook never arrives
-      paystackReference: args.reference,
-      checkoutCreatedAt: now,
+      lastAutoChargeReference: args.reference,
+      // The checks (every 10 minutes and daily) verify these references if Paystack's webhook never arrives
+      paystackReferences: withReference(invoiceReferences(invoice), args.reference),
       updatedAt: now,
     });
     if (args.status === "success" || args.status === "pending" || invoice.status !== "open") return null;
-    const clinic = await ctx.db.get(invoice.clinicId);
-    if (!clinic) return null;
-    const card = await activeClinicCard(ctx, clinic._id);
-    const retry = attempts < MAX_AUTO_CHARGES;
-    await emailClinic(ctx, clinic, {
-      subject: `We couldn't charge ${cardLabel(card)} for invoice ${invoice.number}`,
-      heading: "Your card payment didn't go through",
-      paragraphs: [
-        `We tried to charge ${cardLabel(card)} ${naira(invoice.amountKobo)} for invoice ${invoice.number}${args.message ? `, and the bank said: “${args.message.slice(0, 120)}”` : ""}.`,
-        retry
-          ? `We'll try again in 2 days. To sort it now, pay from your plan page or add another card. It's due by ${longDate(invoice.dueAt)}.`
-          : `Please pay from your plan page by ${longDate(invoice.dueAt)}, or add another card.`,
-      ],
-      buttonLabel: "Pay now",
-      buttonPath: CLINIC_PLAN_PAGE,
-    });
+    await tellCardDeclined(ctx, invoice, attempts, args.message);
     return null;
   },
 });
+
+/**
+ * A charge that was still going through (or had no answer) turned out declined, or wasn't confirmed
+ * within a day (clinicBilling.runDailyClinicSubscriptions): the clinic hears, and the retry can run.
+ */
+export const resolveAutoCharge = internalMutation({
+  args: { invoiceId: v.id("clinicSubscriptionInvoices"), reference: v.string(), message: v.string() },
+  handler: async (ctx, args) => {
+    const invoice = await ctx.db.get(args.invoiceId);
+    if (!invoice || invoice.lastAutoChargeReference !== args.reference || invoice.lastAutoChargeStatus !== "pending") return null;
+    await ctx.db.patch(invoice._id, { lastAutoChargeStatus: "failed", lastAutoChargeMessage: args.message.slice(0, 200), updatedAt: Date.now() });
+    if (invoice.status === "open") await tellCardDeclined(ctx, invoice, invoice.autoChargeAttempts ?? 1, args.message);
+    return null;
+  },
+});
+
+/** Tells the clinic its saved card was declined, and whether we'll try again. */
+async function tellCardDeclined(ctx: MutationCtx, invoice: Doc<"clinicSubscriptionInvoices">, attempts: number, message: string | undefined) {
+  const clinic = await ctx.db.get(invoice.clinicId);
+  if (!clinic) return;
+  const card = await activeClinicCard(ctx, clinic._id);
+  const retry = attempts < MAX_AUTO_CHARGES;
+  await emailClinic(ctx, clinic, {
+    subject: `We couldn't charge ${cardLabel(card)} for invoice ${invoice.number}`,
+    heading: "Your card payment didn't go through",
+    paragraphs: [
+      `We tried to charge ${cardLabel(card)} ${naira(invoice.amountKobo)} for invoice ${invoice.number}${message ? `, and the bank said: “${message.slice(0, 120)}”` : ""}.`,
+      retry
+        ? `We'll try again in 2 days. To sort it now, pay from your plan page or add another card. It's due by ${longDate(invoice.dueAt)}.`
+        : `Please pay from your plan page by ${longDate(invoice.dueAt)}, or add another card.`,
+    ],
+    buttonLabel: "Pay now",
+    buttonPath: CLINIC_PLAN_PAGE,
+  });
+}
 
 /** Charges an open invoice to the clinic's saved card (scheduled when it's issued, and for retries). */
 export const chargeSavedCard = internalAction({
@@ -525,6 +609,8 @@ export const chargeSavedCard = internalAction({
         status = "pending";
       }
     } catch (err) {
+      // No clear answer: the money may have gone. The checks settle it either way before any retry
+      status = "pending";
       message = err instanceof Error ? err.message : "Paystack didn't answer";
     }
     await ctx.runMutation(recordAutoChargeRef, { invoiceId: args.invoiceId, reference, status, message });

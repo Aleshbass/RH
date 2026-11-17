@@ -1298,6 +1298,9 @@ export const recordFlexCheckout = internalMutation({
   },
 });
 
+/** Flex checkouts and renewals are recorded from this moment (paymentReconciliation, completeFlexPayment). */
+const FLEX_CHECKOUTS_RECORDED_FROM = Date.parse("2026-11-18T06:00:00Z");
+
 /** Marks a started Flex checkout settled (or failed), when there is one. */
 async function closeFlexCheckout(ctx: MutationCtx, reference: string, status: "settled" | "failed") {
   const row = await ctx.db
@@ -1329,6 +1332,25 @@ async function completeFlexPayment(ctx: MutationCtx, reference: string, paid: Pa
   }
 
   const now = Date.now();
+  // Only Flex payments we started (checkout or renewal, both recorded in flexCheckouts) are applied.
+  // References from before that record existed (18 Nov 2026) are still honoured.
+  const started = await ctx.db
+    .query("flexCheckouts")
+    .withIndex("by_reference", (q) => q.eq("reference", reference))
+    .first();
+  if (!started && parsed.startedAt >= FLEX_CHECKOUTS_RECORDED_FROM) {
+    await ctx.db.insert("systemLogs", {
+      type: "payment",
+      action: "flex_payment_unknown_reference",
+      timestamp: now,
+      userId: String(patientId),
+      targetEntityType: "payment_reference",
+      targetEntityId: reference,
+      details: { amountKobo: paid.amountKobo, currency: paid.currency },
+    });
+    await alertShortFlexPayment(ctx, patient, reference, paid, planPriceKobo(parsed.plan), "didn't come from a Rehabify checkout");
+    return { success: false, reason: "unknown_checkout" };
+  }
   const priceKobo = planPriceKobo(parsed.plan);
   const flag = (action: string) =>
     ctx.db.insert("systemLogs", {

@@ -21,6 +21,9 @@ const completeFlexRef = makeFunctionReference<
   { success: boolean }
 >("exercisePrograms:completeVerifiedFlexPayment");
 const infoRef = makeFunctionReference<"query", { entitlementId: Id<"patientPlanEntitlements"> }, RenewalInfo>("flexRenewal:renewalInfo");
+const recordCheckoutRef = makeFunctionReference<"mutation", { patientId: Id<"users">; reference: string; plan: string; amountKobo: number }, null>(
+  "exercisePrograms:recordFlexCheckout"
+);
 const recordRef = makeFunctionReference<
   "mutation",
   { entitlementId: Id<"patientPlanEntitlements">; cardId: Id<"patientPlanCards">; reference: string; status: string; message?: string },
@@ -145,6 +148,8 @@ export const chargeFlexRenewal = internalAction({
     const info = await ctx.runQuery(infoRef, args);
     if (!info.ok) return { charged: false, reason: info.reason };
     const reference = flexReference(info.patientId, info.plan, Date.now());
+    // Recorded first: only Flex payments we started are applied, and the 10-minute check finds it
+    await ctx.runMutation(recordCheckoutRef, { patientId: info.patientId, reference, plan: info.plan, amountKobo: info.amountKobo });
     let status = "failed";
     let message: string | undefined;
     try {
@@ -173,6 +178,9 @@ export const chargeFlexRenewal = internalAction({
         status = "pending";
       }
     } catch (err) {
+      // No clear answer: the money may have gone. The 10-minute check applies it if it did; if not,
+      // the sweep tries again once this has been pending a while (never while it's renewed)
+      status = "pending";
       message = err instanceof Error ? err.message : "Paystack didn't answer";
     }
     await ctx.runMutation(recordRef, { entitlementId: args.entitlementId, cardId: info.cardId, reference, status, message });

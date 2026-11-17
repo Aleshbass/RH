@@ -23,6 +23,7 @@ import { claimJoyRecordWithLink } from "./joyAccounts";
 import { isJoyLoginEmail } from "../lib/auth/joyLoginEmail";
 import { handOverManagedProfile } from "./helpers/careCircleAccess";
 import { isOutsideRehabifyCare, isValidTimeZone } from "../lib/practiceCountries";
+import { isApproved } from "./helpers/careAccess";
 import { missingPolicies, recordMissingPolicyAcceptances } from "./helpers/policyAcceptance";
 import { PATIENT_CONSENT_POLICIES, POLICIES, PROFESSIONAL_SIGNUP_POLICIES } from "../lib/policies";
 
@@ -663,6 +664,15 @@ export const completeUserProfile = mutation({
         // (alone or with their own) lists them again, e.g. after changing their mind mid-application
         // It's one or the other now: "both" (from a page opened before that) is saved as a Rehabify physio
         if (physioData.practiceMode === "both") physioData.practiceMode = "network";
+        // The country decides plans and payments (physios abroad get Pro free as testers), so once a
+        // physio is approved only an admin changes it (Admin › the physio › Credentials)
+        if (physioData.country !== undefined && user.physiotherapistProfileId) {
+          const current = await ctx.db.get(user.physiotherapistProfileId);
+          const wanted = physioData.country.trim().slice(0, 60);
+          if (current?.country && wanted && wanted !== current.country && (await isApproved(ctx, user._id))) {
+            throw new ConvexError("Your country is fixed once you're approved. To change it, write to hello@myrehabifyhealth.com.");
+          }
+        }
         // Rehabify Care patients are only in Nigeria for now: physios elsewhere join as independent physios
         if (physioData.country !== undefined) {
           physioData.country = physioData.country.trim().slice(0, 60) || undefined;
