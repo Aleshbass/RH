@@ -26,7 +26,7 @@ import { SERVER_SECRET_HEADER } from '@/app/api/emails/_auth'
  * PAYSTACK_SECRET_KEY, so Vercel and Convex must hold the same key (same account and mode).
  */
 
-const OUR_PREFIXES = ['JOYREV_', 'JOY_', 'MKT_', 'VERIFICATION_', 'LEARNC_', 'LEARN_', 'FLEX_', 'CLINICSUB_', 'INV_', 'CLN_', 'PHY_', 'RH_']
+const OUR_PREFIXES = ['JOYREV_', 'JOY_', 'MKT_', 'VERIFICATION_', 'LEARNC_', 'LEARN_', 'FLEX_', 'CLINICSUB_', 'PHYSIOPRO_', 'INV_', 'CLN_', 'PHY_', 'RH_']
 const INVOICE_PREFIXES = ['INV_', 'CLN_', 'PHY_', 'RH_']
 const EMAIL_TIMEOUT_MS = 10_000
 
@@ -275,6 +275,21 @@ async function handlePaymentSuccess(data: {
             })
             log.info('Clinic subscription payment processed', {
                 action: 'paystack_clinic_subscription_payment',
+                metadata: { reference, result },
+            })
+            return
+        }
+
+        // Individual Pro for independent physios (PHYSIOPRO_ references): Convex re-verifies the
+        // signature, settles the month (or saves the card from a card check) and issues the receipt,
+        // idempotent with the plan page's own verify call
+        if (reference.startsWith('PHYSIOPRO_')) {
+            const result = await convex.mutation(api.physioPlans.recordProPaystackWebhook, {
+                rawBody,
+                signature,
+            })
+            log.info('Physio Pro payment processed', {
+                action: 'paystack_physio_pro_payment',
                 metadata: { reference, result },
             })
             return

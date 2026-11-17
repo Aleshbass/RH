@@ -25,6 +25,7 @@ import { START_PHYSIO_TOUR_EVENT } from '@/components/physio/PhysioTour'
 import { clearUserNoteDrafts } from '@/components/physio/notes/draftStore'
 import { usePracticeMode } from '@/components/physio/practiceMode'
 import { useClinicMode } from '@/components/physio/clinicMode'
+import { PlanBadge } from '@/components/physio/plan/PlanPage'
 import { cn } from '@/lib/utils'
 import {
   LIMITED_NAV,
@@ -279,6 +280,7 @@ export function PhysioSidebar({
       </nav>
 
       <div className="space-y-2 p-3">
+        {!limited && <PlanBadge />}
         {!limited && <FooterCard />}
         <div className="border-t border-pt-line pt-2">
           <AccountMenu />

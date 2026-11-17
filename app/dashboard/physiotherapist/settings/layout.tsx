@@ -3,11 +3,13 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useQuery } from 'convex/react';
-import { api } from '@/convex/_generated/api';
+import { makeFunctionReference } from 'convex/server';
 import { cn } from '@/lib/utils';
 import type { SetupStatus } from '@/components/physio/SetupChecklist';
 
 const BASE = '/dashboard/physiotherapist/settings';
+// By name: the generated `api` type is at TypeScript's depth limit (TS2589)
+const setupStatusRef = makeFunctionReference<'query', Record<string, never>, SetupStatus | null>('physioSetup:getMySetupStatus');
 
 /**
  * `network`: only for Rehabify network physios. `own`: not for clinic members. `clinic`: also shown
@@ -41,6 +43,8 @@ const GROUPS: { label: string; items: SettingsLink[] }[] = [
     {
         label: 'Account',
         items: [
+            // Free or Individual Pro (owner spec 17 Nov 2026); clinic members are covered by their clinic
+            { label: 'Plan & billing', href: `${BASE}/plan`, own: true },
             { label: 'Notifications', href: `${BASE}/alerts`, clinic: true },
             { label: 'Account & privacy', href: `${BASE}/privacy`, clinic: true },
         ],
@@ -49,7 +53,7 @@ const GROUPS: { label: string; items: SettingsLink[] }[] = [
 
 export default function SettingsLayout({ children }: { children: React.ReactNode }) {
     const pathname = usePathname() ?? '';
-    const setup = useQuery(api.physioSetup.getMySetupStatus) as SetupStatus | null | undefined;
+    const setup = useQuery(setupStatusRef, {});
     // Independent physios don't see network pages; clinic members don't choose how they work
     const independent = setup?.practiceMode === 'independent';
     const clinicMember = Boolean(setup?.isClinicMember);
