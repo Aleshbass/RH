@@ -24,7 +24,6 @@ import {
   Plus,
   Radio,
   ShieldAlert,
-  ThumbsUp,
   Users,
 } from '@/components/icons'
 import { playSound } from '@/lib/sounds'
@@ -50,6 +49,7 @@ import { groupTone, myGroupsRef } from '@/lib/learnAdminsApi'
 import { GroupHub, GroupInviteButton } from './GroupHub'
 import { GroupChip, GroupPicker, useNeedsGroup } from './GroupPicker'
 import { activeMentions, MentionTextarea, type Mention } from './Mentions'
+import { LoveCount } from './Love'
 
 const KIND_LABEL = { question: 'Question', discussion: 'Discussion' } as const
 
@@ -99,11 +99,7 @@ export function PostRow({ post, showRoom = true, index = 0 }: { post: PostSummar
             <span className="text-xs text-rh-ink/45">{relativeTime(post.lastActivityAt)}</span>
           </div>
           <span className="flex shrink-0 items-center gap-3 text-xs font-semibold text-rh-ink/55">
-            {post.helpfulCount > 0 && (
-              <span className="flex items-center gap-1">
-                <ThumbsUp className="h-3.5 w-3.5" /> {post.helpfulCount}
-              </span>
-            )}
+            <LoveCount count={post.helpfulCount} />
             <span className="flex items-center gap-1">
               <MessageSquare className="h-3.5 w-3.5" /> {post.replyCount}
             </span>

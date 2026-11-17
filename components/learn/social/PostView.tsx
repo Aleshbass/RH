@@ -9,7 +9,7 @@ import { useRouter } from 'next/navigation'
 import { useMutation, useQuery } from 'convex/react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { toast } from 'sonner'
-import { Eye, EyeOff, Flag, Loader2, Lock, MessageCircle, MoreHorizontal, Reply as ReplyIcon, Send, ThumbsUp, Trash2 } from '@/components/icons'
+import { Eye, EyeOff, Flag, Loader2, Lock, MessageCircle, MoreHorizontal, Reply as ReplyIcon, Send, Trash2 } from '@/components/icons'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
 import { displayFont, pillInk } from '../shared'
@@ -20,46 +20,45 @@ import { PostShareButton } from './PostShare'
 import { Avatar, EmptyState, JoinPrompt, Sheet, Skeleton } from './ui'
 import { GroupChip } from './GroupPicker'
 import { activeMentions, MentionText, MentionTextarea, type Mention, type MentionTextareaHandle } from './Mentions'
+import { DoubleTapLove, HeartButton, LovedBy, useLove } from './Love'
 
 type Ok = Extract<PostPage, { state: 'ok' }>
 type Target = { type: 'post' | 'reply'; id: string; authorId: string | null; hidden: boolean; helpfulCount: number; markedHelpful: boolean }
 
 const REPORT_REASONS = ['Shares patient details', 'Unsafe clinical advice', 'Spam or advertising', 'Rude or harassing', 'Something else']
 
-function HelpfulButton({ target, own }: { target: Target; own: boolean }) {
-  const toggle = useMutation(communityApi.toggleHelpful)
-  const [pending, setPending] = useState(false)
-  const click = async () => {
-    if (own) {
-      toast('You can’t mark your own post helpful.')
-      return
-    }
-    setPending(true)
-    try {
-      const res = await toggle({ targetType: target.type, targetId: target.id })
-      if (res.marked) playSound('helpful')
-    } catch (err) {
-      toast.error(errorText(err, 'Couldn’t update.'))
-    } finally {
-      setPending(false)
-    }
-  }
+/** A post or reply that can be loved: the heart below it, and double-tap anywhere on it. */
+function Lovable({
+  target,
+  own,
+  disabled,
+  children,
+  actions,
+  lovedBy,
+  className,
+}: {
+  target: Target
+  own: boolean
+  disabled?: boolean
+  children: React.ReactNode
+  actions: React.ReactNode
+  lovedBy?: string[]
+  className?: string
+}) {
+  const love = useLove({ type: target.type, id: target.id }, target.markedHelpful, target.helpfulCount, own)
   return (
-    <button
-      type="button"
-      onClick={() => void click()}
-      disabled={pending}
-      aria-pressed={target.markedHelpful}
-      className={cn(
-        'inline-flex h-9 items-center gap-1.5 rounded-full px-3.5 text-sm font-semibold transition active:scale-95',
-        target.markedHelpful ? 'bg-rh-ink text-white' : 'bg-rh-cream text-rh-ink/70 hover:text-rh-ink'
+    <DoubleTapLove onLove={() => void love.set(true)} disabled={disabled || own} className={className}>
+      {children}
+      <div className="mt-3 flex items-center gap-1">
+        <HeartButton loved={love.loved} count={love.count} own={own} onToggle={(next) => love.set(next)} />
+        {actions}
+      </div>
+      {lovedBy && (
+        <div className="mt-1 px-1">
+          <LovedBy names={lovedBy} count={love.count} loved={love.loved} />
+        </div>
       )}
-    >
-      <motion.span key={String(target.markedHelpful)} initial={{ scale: 0.6, rotate: -20 }} animate={{ scale: 1, rotate: 0 }} transition={{ type: 'spring', stiffness: 500, damping: 18 }} className="flex">
-        <ThumbsUp className={cn('h-3.5 w-3.5', target.markedHelpful && 'text-rh-lime')} />
-      </motion.span>
-      Helpful{target.helpfulCount > 0 ? ` · ${target.helpfulCount}` : ''}
-    </button>
+    </DoubleTapLove>
   )
 }
 
@@ -307,11 +306,14 @@ export function PostView({ postId }: { postId: string }) {
             <p className="text-xs text-rh-ink/50">{relativeTime(post.createdAt)}</p>
           </div>
         </div>
-        <div className="mt-6 whitespace-pre-line break-words text-[16px] leading-7 text-rh-ink/85">
-          <MentionText text={post.body} mentions={post.mentions} />
-        </div>
-        <div className="mt-6 flex items-center gap-2">
-          <HelpfulButton target={postTarget} own={post.author?.id === viewerId} />
+        <Lovable
+          target={postTarget}
+          own={post.author?.id === viewerId}
+          disabled={post.hidden}
+          lovedBy={post.lovedBy}
+          className="mt-6"
+          actions={
+            <>
           {!post.hidden && post.author && post.author.id !== viewerId && (
             <button
               type="button"
@@ -324,7 +326,13 @@ export function PostView({ postId }: { postId: string }) {
           {data.room.kind === 'open' && !post.hidden && <PostShareButton postId={post.id} title={post.title} />}
           <span className="ml-auto" />
           <MoreMenu target={postTarget} canDelete={post.author?.id === viewerId || canModerate} canModerate={canModerate} onReport={() => setReporting(postTarget)} />
-        </div>
+            </>
+          }
+        >
+          <div className="whitespace-pre-line break-words text-[16px] leading-7 text-rh-ink/85">
+            <MentionText text={post.body} mentions={post.mentions} />
+          </div>
+        </Lovable>
       </article>
 
       <section aria-labelledby="replies-heading" className="mt-10 border-t border-rh-ink/[0.08] pt-8">
@@ -355,11 +363,12 @@ export function PostView({ postId }: { postId: string }) {
                       {r.hidden && <span className="text-xs font-semibold text-rose-700">Hidden</span>}
                     </div>
                   </div>
-                  <p className="mt-3 whitespace-pre-line break-words text-[15px] leading-7 text-rh-ink/85">
-                    <MentionText text={r.body} mentions={r.mentions} />
-                  </p>
-                  <div className="mt-3 flex items-center gap-2">
-                    <HelpfulButton target={target} own={r.author?.id === viewerId} />
+                  <Lovable
+                    target={target}
+                    own={r.author?.id === viewerId}
+                    disabled={r.hidden}
+                    actions={
+                      <>
                     {!post.hidden && r.author && r.author.id !== viewerId && (
                       <button
                         type="button"
@@ -372,7 +381,13 @@ export function PostView({ postId }: { postId: string }) {
                     )}
                     <span className="ml-auto" />
                     <MoreMenu target={target} canDelete={r.author?.id === viewerId || canModerate} canModerate={canModerate} onReport={() => setReporting(target)} />
-                  </div>
+                      </>
+                    }
+                  >
+                    <p className="mt-3 whitespace-pre-line break-words text-[15px] leading-7 text-rh-ink/85">
+                      <MentionText text={r.body} mentions={r.mentions} />
+                    </p>
+                  </Lovable>
                 </motion.li>
               )
             })}

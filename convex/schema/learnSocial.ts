@@ -60,7 +60,10 @@ export const learnSocialTables = {
     targetType: v.union(v.literal("post"), v.literal("reply")),
     targetId: v.string(),
     createdAt: v.number(),
-  }).index("by_user_target", ["userId", "targetType", "targetId"]),
+  })
+    .index("by_user_target", ["userId", "targetType", "targetId"])
+    // Who loved a post or reply ("Loved by Tijjani and 3 others", Mary 2026-11-17)
+    .index("by_target", ["targetType", "targetId", "createdAt"]),
 
   learnReports: defineTable({
     userId: v.id("users"),

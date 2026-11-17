@@ -371,6 +371,18 @@ export const getPost = query({
     ).filter((r) => r.status === "open" || r.authorId === member.user._id || member.isAdmin);
     const authors = await authorsFor(ctx, [post.authorId, ...replies.map((r) => r.authorId)]);
     const canModerate = await canModerateRoom(ctx, member, room);
+    // "Loved by Tijjani and 3 others": the newest few people who loved the post (not the viewer)
+    const loveRows = await ctx.db
+      .query("learnHelpful")
+      .withIndex("by_target", (q) => q.eq("targetType", "post").eq("targetId", post._id))
+      .order("desc")
+      .take(12);
+    const lovedBy: string[] = [];
+    for (const row of loveRows) {
+      if (lovedBy.length >= 2 || row.userId === member.user._id) continue;
+      const info = await learnMemberInfo(ctx, await ctx.db.get(row.userId));
+      if (info) lovedBy.push(info.name.split(" ")[0] || info.name);
+    }
     const replyMentions = new Map<string, { id: Id<"users">; name: string }[]>();
     for (const r of replies) if (r.mentions?.length) replyMentions.set(r._id, await mentionNames(ctx, r.mentions));
     const marks = new Set<string>();
@@ -397,6 +409,7 @@ export const getPost = query({
         createdAt: post.createdAt,
         author: authors.get(post.authorId) ?? null,
         mentions: await mentionNames(ctx, post.mentions),
+        lovedBy,
       },
       replies: replies.map((r) => ({
         id: r._id,
@@ -609,7 +622,7 @@ export const toggleHelpful = mutation({
     const member = await requireMember(ctx);
     const t = await target(ctx, args.targetType, args.targetId);
     if (!t || t.doc.status !== "open") throw new ConvexError("This isn't available.");
-    if (t.doc.authorId === member.user._id) throw new ConvexError("You can't mark your own post helpful.");
+    if (t.doc.authorId === member.user._id) throw new ConvexError("You can't love your own post.");
     const room = await ctx.db.get(t.roomId);
     if (!room || !(await canEnterRoom(ctx, member, roomView(room)))) throw new ConvexError("This isn't available.");
     const existing = await ctx.db

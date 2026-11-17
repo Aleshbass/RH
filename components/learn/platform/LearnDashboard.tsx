@@ -35,6 +35,7 @@ import { COMMUNITY_PATH, communityApi, postPath, relativeTime, roomPath, SPACES_
 import { Avatar, Skeleton, SpaceAvatar } from '../social/ui'
 import { GroupChip, GroupPicker, useNeedsGroup } from '../social/GroupPicker'
 import { PostComposer } from '../social/Community'
+import { LoveCount } from '../social/Love'
 import { GroupStandings } from '../points/Leaderboard'
 import { LEADERBOARD_PATH } from '../points/pointsApi'
 import { SimsHomeBand } from '../sims/SimsHomeBand'
@@ -122,6 +123,7 @@ function CompactPost({ post, index }: { post: PostSummary; index: number }) {
             <span className="inline-flex shrink-0 items-center gap-1">
               <MessageSquare className="h-3 w-3" /> {post.replyCount}
             </span>
+            <LoveCount count={post.helpfulCount} className="shrink-0" />
           </span>
         </span>
       </Link>
