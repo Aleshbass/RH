@@ -96,7 +96,7 @@ export function FamilyShell({ children }: { children: ReactNode }) {
   }, [])
 
   return (
-    <div className="min-h-screen bg-pt-canvas text-pt-ink">
+    <div data-app-shell="pt" className="min-h-screen bg-pt-canvas text-pt-ink">
       <header className="sticky top-0 z-30 bg-pt-canvas/90 backdrop-blur-xl">
         <div className="mx-auto flex h-16 w-full max-w-5xl items-center justify-between gap-2 px-4 sm:px-6">
           <Link href={FAMILY_HOME} aria-label="Home" className="flex items-center gap-2.5">

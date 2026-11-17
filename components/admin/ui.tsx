@@ -51,6 +51,19 @@ export const dangerButtonClass =
 export const inputClass =
   'rounded-xl border-black/10 bg-white dark:border-white/10 dark:bg-rh-ink-3 dark:text-white dark:placeholder:text-neutral-500'
 
+/**
+ * The full field look for plain <input>, <select> and <textarea> tags (inputClass only tints the
+ * shadcn <Input>, which brings its own border and padding). Size with cn(fieldClass, 'h-9 w-auto').
+ */
+export const fieldClass =
+  'block h-10 w-full min-w-0 rounded-xl border border-black/10 bg-white px-3 text-sm text-rh-ink shadow-sm outline-none transition-colors placeholder:text-neutral-400 hover:border-black/20 focus:border-rh-lime focus:ring-1 focus:ring-rh-lime disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/10 dark:bg-rh-ink-3 dark:text-white dark:placeholder:text-neutral-500 dark:hover:border-white/20 dark:focus:border-rh-lime'
+
+/** Plain <textarea>: the field look, growing with its rows. */
+export const textareaFieldClass = `${fieldClass} h-auto py-2.5 leading-relaxed`
+
+/** Plain checkboxes in brand green. */
+export const checkboxClass = 'h-4 w-4 shrink-0 cursor-pointer rounded accent-rh-lime disabled:cursor-not-allowed'
+
 /** Table look shared by admin lists. Apply to shadcn <Table> wrappers. */
 export const tableWrapClass = 'overflow-x-auto [&_th]:text-xs [&_th]:font-medium [&_th]:uppercase [&_th]:tracking-wide [&_th]:text-neutral-500 dark:[&_th]:text-neutral-400 [&_tr]:border-black/[0.05] dark:[&_tr]:border-white/[0.06] [&_tbody_tr:hover]:bg-rh-canvas dark:[&_tbody_tr:hover]:bg-white/[0.03]'
 

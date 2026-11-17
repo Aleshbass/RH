@@ -10,7 +10,7 @@ import { useMutation, useQuery } from 'convex/react'
 import { format } from 'date-fns'
 import { toast } from 'sonner'
 import { Loader2 } from '@/components/icons'
-import { AdminPage, PageHeader, Panel, StatTile, StatusBadge, inputClass, primaryButtonClass, softButtonClass } from '@/components/admin/ui'
+import { AdminPage, PageHeader, Panel, StatTile, StatusBadge, fieldClass, checkboxClass, primaryButtonClass, softButtonClass } from '@/components/admin/ui'
 import { naira, type PhysioPlanSettings } from '@/lib/physioPlans'
 import { cn } from '@/lib/utils'
 import { planApi } from '@/components/physio/plan/planApi'
@@ -147,7 +147,7 @@ export default function PhysioPlansAdminPage() {
                         min={0}
                         value={form[f.key] ?? ''}
                         onChange={(e) => setForm({ ...form, [f.key]: e.target.value })}
-                        className={cn(inputClass, f.kind === 'naira' && 'pl-7')}
+                        className={cn(fieldClass, f.kind === 'naira' && 'pl-7')}
                       />
                     </div>
                     {f.hint && <span className="block text-xs text-neutral-500">{f.hint}</span>}
@@ -157,11 +157,11 @@ export default function PhysioPlansAdminPage() {
             </div>
           ))}
           <label className="flex items-center gap-2 text-sm text-rh-ink dark:text-white">
-            <input type="checkbox" checked={abroad} onChange={(e) => setAbroad(e.target.checked)} />
+            <input type="checkbox" className={checkboxClass} checked={abroad} onChange={(e) => setAbroad(e.target.checked)} />
             Physios outside Nigeria get Pro free as testers
           </label>
           <label className="flex items-start gap-2 text-sm text-rh-ink dark:text-white">
-            <input type="checkbox" className="mt-1" checked={announce} onChange={(e) => setAnnounce(e.target.checked)} />
+            <input type="checkbox" className={cn(checkboxClass, 'mt-0.5')} checked={announce} onChange={(e) => setAnnounce(e.target.checked)} />
             <span>
               Show physios the plans pop-up
               <span className="block text-xs text-neutral-500">
@@ -190,9 +190,9 @@ export default function PhysioPlansAdminPage() {
             )
           }}
         >
-          <input value={g.email} onChange={(e) => setG({ ...g, email: e.target.value })} placeholder="Physio's email" aria-label="Physio's email" className={inputClass} />
-          <input type="number" min={1} max={730} value={g.days} onChange={(e) => setG({ ...g, days: e.target.value })} aria-label="Days" className={inputClass} />
-          <input value={g.reason} onChange={(e) => setG({ ...g, reason: e.target.value })} placeholder="Why" aria-label="Reason" className={inputClass} />
+          <input value={g.email} onChange={(e) => setG({ ...g, email: e.target.value })} placeholder="Physio's email" aria-label="Physio's email" className={fieldClass} />
+          <input type="number" min={1} max={730} value={g.days} onChange={(e) => setG({ ...g, days: e.target.value })} aria-label="Days" className={fieldClass} />
+          <input value={g.reason} onChange={(e) => setG({ ...g, reason: e.target.value })} placeholder="Why" aria-label="Reason" className={fieldClass} />
           <button type="submit" className={primaryButtonClass} disabled={busy !== null}>
             {busy === 'grant' && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />} Give Pro
           </button>

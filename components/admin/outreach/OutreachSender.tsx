@@ -29,7 +29,9 @@ import {
   Panel,
   StatTile,
   StatusBadge,
-  inputClass,
+  fieldClass,
+  textareaFieldClass,
+  checkboxClass,
   primaryButtonClass,
   softButtonClass,
 } from "@/components/admin/ui";
@@ -457,7 +459,7 @@ export function OutreachSender({ defaultTestTo }: { defaultTestTo?: string }) {
                 }
                 placeholder="Sequence name"
                 aria-label="Sequence name"
-                className={inputClass}
+                className={fieldClass}
               />
               <select
                 value={editing.status}
@@ -468,7 +470,7 @@ export function OutreachSender({ defaultTestTo }: { defaultTestTo?: string }) {
                   })
                 }
                 aria-label="Status"
-                className={inputClass}
+                className={fieldClass}
               >
                 <option value="draft">Draft</option>
                 <option value="active">Sending</option>
@@ -506,7 +508,7 @@ export function OutreachSender({ defaultTestTo }: { defaultTestTo?: string }) {
                           })
                         }
                         aria-label={`Days before email ${i + 1}`}
-                        className={cn(inputClass, "h-7 w-16 px-2 py-0 text-xs")}
+                        className={cn(fieldClass, "h-7 w-16 px-2 py-0 text-xs")}
                       />
                       days after the one before, if there&apos;s no reply
                     </span>
@@ -543,7 +545,7 @@ export function OutreachSender({ defaultTestTo }: { defaultTestTo?: string }) {
                       : "Leave empty to reply in the same thread"
                   }
                   aria-label={`Subject of email ${i + 1}`}
-                  className={inputClass}
+                  className={fieldClass}
                 />
                 <textarea
                   value={step.body}
@@ -557,10 +559,7 @@ export function OutreachSender({ defaultTestTo }: { defaultTestTo?: string }) {
                   }
                   rows={i === 0 ? 10 : 7}
                   aria-label={`Words of email ${i + 1}`}
-                  className={cn(
-                    inputClass,
-                    "h-auto font-[inherit] leading-relaxed",
-                  )}
+                  className={textareaFieldClass}
                 />
               </div>
             ))}
@@ -606,7 +605,7 @@ export function OutreachSender({ defaultTestTo }: { defaultTestTo?: string }) {
                   onChange={(e) => setTestTo(e.target.value)}
                   placeholder="you@example.com"
                   aria-label="Send the test to"
-                  className={cn(inputClass, "h-9 w-60 py-1 text-sm")}
+                  className={cn(fieldClass, "h-9 w-60 py-1 text-sm")}
                 />
                 <button
                   type="button"
@@ -739,7 +738,7 @@ export function OutreachSender({ defaultTestTo }: { defaultTestTo?: string }) {
               value={enrollSeq}
               onChange={(e) => setEnrollSeq(e.target.value)}
               aria-label="Sequence"
-              className={cn(inputClass, "h-9 w-auto py-1")}
+              className={cn(fieldClass, "h-9 w-auto py-1")}
             >
               {data.sequences.map((q) => (
                 <option key={q._id} value={q._id}>
@@ -751,7 +750,7 @@ export function OutreachSender({ defaultTestTo }: { defaultTestTo?: string }) {
               value={enrollCity}
               onChange={(e) => setEnrollCity(e.target.value)}
               aria-label="City"
-              className={cn(inputClass, "h-9 w-auto py-1")}
+              className={cn(fieldClass, "h-9 w-auto py-1")}
             >
               <option value="">All cities ({data.eligible.total})</option>
               {data.eligible.cities.map((c) => (
@@ -769,7 +768,7 @@ export function OutreachSender({ defaultTestTo }: { defaultTestTo?: string }) {
                 value={enrollLimit}
                 onChange={(e) => setEnrollLimit(Number(e.target.value))}
                 aria-label="How many"
-                className={cn(inputClass, "h-9 w-20 py-1")}
+                className={cn(fieldClass, "h-9 w-20 py-1")}
               />
             </span>
             <button
@@ -963,7 +962,7 @@ export function OutreachSender({ defaultTestTo }: { defaultTestTo?: string }) {
               <input
                 value={form.fromName}
                 onChange={(e) => setForm({ ...form, fromName: e.target.value })}
-                className={inputClass}
+                className={fieldClass}
                 placeholder="e.g. Mary from Rehabify"
               />
             </label>
@@ -987,7 +986,7 @@ export function OutreachSender({ defaultTestTo }: { defaultTestTo?: string }) {
                     onChange={(e) =>
                       setForm({ ...form, [key]: Number(e.target.value) })
                     }
-                    className={inputClass}
+                    className={fieldClass}
                   />
                 </label>
               ))}
@@ -1000,7 +999,7 @@ export function OutreachSender({ defaultTestTo }: { defaultTestTo?: string }) {
                 onChange={(e) =>
                   setForm({ ...form, signature: e.target.value })
                 }
-                className={cn(inputClass, "h-auto font-[inherit]")}
+                className={textareaFieldClass}
               />
             </label>
             <label className="space-y-1 text-sm text-rh-ink dark:text-white">
@@ -1009,7 +1008,7 @@ export function OutreachSender({ defaultTestTo }: { defaultTestTo?: string }) {
                 rows={3}
                 value={form.optOut}
                 onChange={(e) => setForm({ ...form, optOut: e.target.value })}
-                className={cn(inputClass, "h-auto font-[inherit]")}
+                className={textareaFieldClass}
               />
             </label>
             <div className="sm:col-span-2">
