@@ -448,7 +448,7 @@ function WhoDoneIt({ assignmentId, dueAt }: { assignmentId: Id<'learnGroupAssign
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm font-medium text-rh-ink">
                   {p.name}
-                  {p.role === 'lead' && <span className="ml-1.5 rounded-full bg-rh-lime px-1.5 py-px text-[10px] font-semibold text-rh-ink">Lead</span>}
+                  {p.role === 'lead' && <span className="ml-1.5 rounded-full bg-rh-lime px-1.5 py-px text-[10px] font-semibold text-rh-ink">Champion</span>}
                 </span>
                 {p.detail && <span className="block truncate text-xs text-rh-ink/50">{p.detail}</span>}
               </span>
@@ -527,7 +527,7 @@ function SetWorkSheet({ groupId, open, onClose }: { groupId: GroupId; open: bool
       {options === undefined ? (
         <Skeleton className="h-48 rounded-2xl" />
       ) : options === null ? (
-        <p className="text-sm text-rh-ink/60">Only the group’s leads can set work.</p>
+        <p className="text-sm text-rh-ink/60">Only the group’s champion can set work.</p>
       ) : (
         <div className="space-y-5">
           <div className="flex gap-1 rounded-full bg-rh-ink/[0.05] p-1" role="radiogroup" aria-label="What to set">
@@ -679,7 +679,7 @@ function BoardTab({ groupId }: { groupId: GroupId }) {
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-semibold text-rh-ink">
                     {p.isMe ? `${p.name} (you)` : p.name}
-                    {p.role === 'lead' && <span className="ml-1.5 rounded-full bg-rh-lime px-1.5 py-px text-[10px] font-semibold text-rh-ink">Lead</span>}
+                    {p.role === 'lead' && <span className="ml-1.5 rounded-full bg-rh-lime px-1.5 py-px text-[10px] font-semibold text-rh-ink">Champion</span>}
                   </span>
                   {p.streak > 1 && (
                     <span className="flex items-center gap-1 text-xs text-rh-ink/50">
@@ -711,7 +711,7 @@ function PeopleTab({ groupId }: { groupId: GroupId }) {
           <span className="min-w-0 flex-1">
             <span className="block truncate text-sm font-semibold text-rh-ink">
               {p.isMe ? `${p.name} (you)` : p.name}
-              {p.role === 'lead' && <span className="ml-1.5 rounded-full bg-rh-lime px-1.5 py-px text-[10px] font-semibold text-rh-ink">Lead</span>}
+              {p.role === 'lead' && <span className="ml-1.5 rounded-full bg-rh-lime px-1.5 py-px text-[10px] font-semibold text-rh-ink">Champion</span>}
             </span>
             <span className="block truncate text-xs text-rh-ink/50">
               {p.tag ? `${p.tag} · ` : ''}joined {relativeTime(p.joinedAt)}

@@ -1,8 +1,9 @@
 'use client'
 
 /**
- * Learn super admins (Mary 2026-11-14): platform admins add people who get every Learn power
- * (courses, groups, community, Spaces, simulations, the MSK program) and nothing else.
+ * Learn super admins (Mary 2026-11-14): platform admins add people who run the Learn community:
+ * groups, posts, Spaces, simulations and the leaderboard. Courses, the MSK program and
+ * certificates stay with platform admins (owner 2026-11-17).
  * It's a flag on top of their account, so a physio stays a physio.
  */
 import { useState } from 'react'
@@ -63,7 +64,7 @@ export function LearnSuperAdmins() {
   return (
     <Panel
       title="Learn super admins"
-      description="Every Learn power: courses, groups, community, Spaces, simulations and the MSK program. Nothing else on the platform. Their own account type stays the same."
+      description="They run the Learn community: groups, posts (including deleting anyone's), Spaces, simulations and the leaderboard. Not courses, the MSK program or certificates, and nothing else on the platform. Their own account type stays the same."
       bodyClassName="p-0"
     >
       <form onSubmit={submit} className="flex flex-col gap-2 px-5 pb-4 pt-3 sm:flex-row">

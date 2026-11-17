@@ -174,6 +174,7 @@ import type * as helpers_joyEvents from "../helpers/joyEvents.js";
 import type * as helpers_joyPricing from "../helpers/joyPricing.js";
 import type * as helpers_lagosTime from "../helpers/lagosTime.js";
 import type * as helpers_learnAccess from "../helpers/learnAccess.js";
+import type * as helpers_learnGroupRules from "../helpers/learnGroupRules.js";
 import type * as helpers_learnFormat from "../helpers/learnFormat.js";
 import type * as helpers_learnPoints from "../helpers/learnPoints.js";
 import type * as helpers_llm from "../helpers/llm.js";
@@ -530,6 +531,7 @@ declare const fullApi: ApiFromModules<{
   "helpers/joyPricing": typeof helpers_joyPricing;
   "helpers/lagosTime": typeof helpers_lagosTime;
   "helpers/learnAccess": typeof helpers_learnAccess;
+  "helpers/learnGroupRules": typeof helpers_learnGroupRules;
   "helpers/learnFormat": typeof helpers_learnFormat;
   "helpers/learnPoints": typeof helpers_learnPoints;
   "helpers/llm": typeof helpers_llm;

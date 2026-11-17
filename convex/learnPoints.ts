@@ -99,6 +99,60 @@ export const leaderboard = query({
   },
 });
 
+/**
+ * Groups ranked against each other (Mary 2026-11-17: "which group is participating the most"):
+ * every member's points added up, this month or all time. The viewer's group is marked.
+ */
+export const groupStandings = query({
+  args: { period: v.union(v.literal("month"), v.literal("all")) },
+  handler: async (ctx, args) => {
+    const viewer = await getViewer(ctx);
+    const me = await learnMemberInfo(ctx, viewer?.user ?? null);
+    if (!me) return { state: "join" as const, signedIn: Boolean(viewer) };
+    const month = lagosMonth(Date.now());
+    const groups = (await ctx.db.query("learnGroups").withIndex("by_created").take(200)).filter((g) => !g.archived);
+    const rows = [];
+    for (const g of groups) {
+      const members = await ctx.db.query("learnGroupMembers").withIndex("by_group", (q) => q.eq("groupId", g._id)).take(250);
+      let points = 0;
+      let active = 0;
+      let leadName: string | null = null;
+      for (const m of members) {
+        const p =
+          args.period === "month"
+            ? ((await ctx.db.query("learnPointsMonthly").withIndex("by_month_user", (q) => q.eq("month", month).eq("userId", m.userId)).unique())?.points ?? 0)
+            : ((await accountOf(ctx, m.userId))?.total ?? 0);
+        points += p;
+        if (p > 0) active++;
+        if (m.role === "lead" && !leadName) {
+          const u = await ctx.db.get(m.userId);
+          leadName = [u?.firstName, u?.lastName].filter(Boolean).join(" ").trim() || null;
+        }
+      }
+      rows.push({
+        id: g._id,
+        name: g.name,
+        color: g.color,
+        memberCount: g.memberCount,
+        points,
+        active,
+        perMember: g.memberCount ? Math.round(points / g.memberCount) : 0,
+        leadName,
+        isMine: members.some((m) => m.userId === me.user._id),
+      });
+    }
+    rows.sort((a, b) => b.points - a.points || b.active - a.active);
+    let rank = 0;
+    let prev = -1;
+    const ranked = rows.map((r, i) => {
+      if (r.points !== prev) rank = i + 1;
+      prev = r.points;
+      return { ...r, rank };
+    });
+    return { state: "ok" as const, monthLabel: monthLabel(month), rows: ranked };
+  },
+});
+
 /** "My progress": points, this month's rank, streak, badges, a 12-week chart and recent activity. */
 export const myProgress = query({
   args: {},

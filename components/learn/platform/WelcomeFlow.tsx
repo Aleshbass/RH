@@ -17,6 +17,7 @@ import { cn } from '@/lib/utils'
 import { displayFont, fieldClass, pillInk, pillOutline } from '../shared'
 import { TagBadge, useLearnerIdentity } from './identity'
 import { learnPath, learnPlatformApi, learnSignInHref, learnSignUpHref, mainSiteUrl, WELCOME_PATH, type SignedInLearner } from './learnApi'
+import { GroupPicker, useNeedsGroup } from '../social/GroupPicker'
 
 type Choice = LearnerKind | 'clinic'
 
@@ -45,6 +46,22 @@ function useNextPath() {
 function Done({ identity }: { identity: SignedInLearner }) {
   const student = identity.profile?.kind === 'student'
   const next = useNextPath()
+  // Mary 2026-11-17: everyone joins a group as part of joining Learn
+  const needsGroup = useNeedsGroup()
+  if (needsGroup) {
+    return (
+      <main className="mx-auto w-full max-w-5xl px-4 pb-20 pt-10 sm:px-6 sm:pt-14">
+        <div className="flex items-center gap-3">
+          <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-rh-ink text-rh-lime">
+            <Check className="h-5 w-5" />
+          </span>
+          <TagBadge tag={identity.tag} />
+        </div>
+        <p className="mt-6 text-sm font-semibold text-rh-ink/50">One more step</p>
+        <GroupPicker className="mt-2" />
+      </main>
+    )
+  }
   return (
     <Frame>
       <div className="rounded-[2rem] bg-rh-cream p-7 text-center sm:p-10">
@@ -73,8 +90,13 @@ function Done({ identity }: { identity: SignedInLearner }) {
               Continue <ArrowRight className="h-4 w-4" />
             </Link>
           ) : (
-            <Link href={student ? `${learnPath('/courses')}?category=students` : learnPath('/courses')} className={cn(pillInk, 'h-12 px-7')}>
-              {student ? 'Courses for students' : 'Browse courses'} <ArrowRight className="h-4 w-4" />
+            <Link href={learnPath('/')} className={cn(pillInk, 'h-12 px-7')}>
+              Go to the community <ArrowRight className="h-4 w-4" />
+            </Link>
+          )}
+          {!next && (
+            <Link href={student ? `${learnPath('/courses')}?category=students` : learnPath('/courses')} className={cn(pillOutline, 'h-12 px-7')}>
+              {student ? 'Courses for students' : 'Browse courses'}
             </Link>
           )}
           {identity.profile && (
@@ -87,11 +109,13 @@ function Done({ identity }: { identity: SignedInLearner }) {
       {identity.canJoinAsClinician && identity.profile?.kind === 'physio' && (
         <a
           href={mainSiteUrl('/role-selection?as=physiotherapist')}
-          className="mt-4 flex items-center justify-between gap-4 rounded-[1.5rem] bg-rh-ink p-5 text-white transition hover:bg-black sm:p-6"
+          className="mt-4 flex items-center justify-between gap-4 rounded-[1.5rem] bg-rh-ink p-5 text-white transition hover:bg-[rgb(3_8_7)] sm:p-6"
         >
           <span>
-            <span className="block font-semibold">Practise with Rehabify</span>
-            <span className="mt-0.5 block text-sm text-white/65">Join as a physio to see patients, and get member prices on Learn.</span>
+            <span className="block font-semibold">You can also use Rehabify in your practice</span>
+            <span className="mt-0.5 block text-sm text-white/65">
+              Patient records, home exercise programmes with 3D videos, bookings and payments. Join as a physio to see patients and get member prices on Learn.
+            </span>
           </span>
           <ArrowUpRight className="h-5 w-5 shrink-0 text-rh-lime" />
         </a>

@@ -48,6 +48,8 @@ import {
 import { Avatar, EmptyState, JoinPrompt, Sheet, Skeleton } from './ui'
 import { groupTone, myGroupsRef } from '@/lib/learnAdminsApi'
 import { GroupHub, GroupInviteButton } from './GroupHub'
+import { GroupChip, GroupPicker, useNeedsGroup } from './GroupPicker'
+import { activeMentions, MentionTextarea, type Mention } from './Mentions'
 
 const KIND_LABEL = { question: 'Question', discussion: 'Discussion' } as const
 
@@ -93,6 +95,7 @@ export function PostRow({ post, showRoom = true, index = 0 }: { post: PostSummar
           <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
             <span className="truncate text-sm font-semibold text-rh-ink">{post.author?.name ?? 'Former member'}</span>
             {post.author?.tag && <TagBadge tag={post.author.tag} size="xs" />}
+            <GroupChip group={post.author?.group} />
             <span className="text-xs text-rh-ink/45">{relativeTime(post.lastActivityAt)}</span>
           </div>
           <span className="flex shrink-0 items-center gap-3 text-xs font-semibold text-rh-ink/55">
@@ -142,6 +145,7 @@ export function PostComposer({
   const [kind, setKind] = useState<'question' | 'discussion'>('question')
   const [title, setTitle] = useState('')
   const [body, setBody] = useState('')
+  const [mentions, setMentions] = useState<Mention[]>([])
   const [busy, setBusy] = useState(false)
 
   const submit = async (e?: FormEvent) => {
@@ -149,10 +153,12 @@ export function PostComposer({
     if (busy) return
     setBusy(true)
     try {
-      const id = await createPost({ roomSlug: room, kind, title, body })
+      const tagged = activeMentions(`${title}\n${body}`, mentions)
+      const id = await createPost({ roomSlug: room, kind, title, body, ...(tagged.length ? { mentions: tagged } : {}) })
       playSound('send')
       setTitle('')
       setBody('')
+      setMentions([])
       onClose()
       router.push(postPath(id))
     } catch (err) {
@@ -233,15 +239,20 @@ export function PostComposer({
           <label htmlFor="post-body" className="text-sm font-semibold text-rh-ink">
             Details
           </label>
-          <textarea
-            id="post-body"
-            value={body}
-            onChange={(e) => setBody(e.target.value)}
-            maxLength={5000}
-            rows={6}
-            placeholder="Add context, what you’ve tried, or what you’d like to talk about."
-            className={cn(fieldClass, 'mt-2 h-auto min-h-[140px] resize-y py-3 leading-6')}
-          />
+          <div className="mt-2">
+            <MentionTextarea
+              id="post-body"
+              value={body}
+              onValueChange={setBody}
+              mentions={mentions}
+              onMentionsChange={setMentions}
+              roomSlug={room}
+              maxLength={5000}
+              rows={6}
+              placeholder="Add context, what you’ve tried, or what you’d like to talk about. Type @ to tag someone."
+              className={cn(fieldClass, 'h-auto min-h-[140px] resize-y py-3 leading-6')}
+            />
+          </div>
           <p className="mt-2 text-xs leading-5 text-rh-ink/50 sm:hidden">Never share anything that could identify a patient.</p>
         </div>
       </form>
@@ -385,7 +396,7 @@ function MyGroups() {
               <span className="min-w-0 flex-1">
                 <span className="flex items-center gap-1.5">
                   <span className="truncate text-[15px] font-semibold text-rh-ink">{g.name}</span>
-                  {g.role === 'lead' && <span className="shrink-0 rounded-full bg-rh-lime px-1.5 py-px text-[10px] font-semibold text-[#0a0a0a]">Lead</span>}
+                  {g.role === 'lead' && <span className="shrink-0 rounded-full bg-rh-lime px-1.5 py-px text-[10px] font-semibold text-[#0a0a0a]">Champion</span>}
                 </span>
                 <span className="mt-0.5 block text-xs text-rh-ink/50">
                   {g.memberCount} {g.memberCount === 1 ? 'person' : 'people'}
@@ -399,6 +410,13 @@ function MyGroups() {
       </div>
     </section>
   )
+}
+
+/** Mary 2026-11-17: everyone belongs to a group. Until they pick one, the picker sits on top. */
+function PickGroupNudge() {
+  const needs = useNeedsGroup()
+  if (!needs) return null
+  return <GroupPicker className="mt-8 rounded-[2rem] bg-rh-cream/60 p-5 sm:p-7" />
 }
 
 // ── Community home ────────────────────────────────────────────────────────────
@@ -437,6 +455,8 @@ export function CommunityHome() {
       )}
 
       {data?.member && <ReportsPanel />}
+
+      {data?.member && <PickGroupNudge />}
 
       {data?.member && <MyGroups />}
 

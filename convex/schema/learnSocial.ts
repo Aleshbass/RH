@@ -31,6 +31,7 @@ export const learnSocialTables = {
     kind: v.union(v.literal("question"), v.literal("discussion")),
     title: v.string(),
     body: v.string(),
+    mentions: v.optional(v.array(v.id("users"))), // people tagged with @Name (Mary 2026-11-17)
     status: v.union(v.literal("open"), v.literal("hidden")),
     replyCount: v.number(),
     helpfulCount: v.number(),
@@ -46,6 +47,7 @@ export const learnSocialTables = {
     postId: v.id("learnPosts"),
     authorId: v.id("users"),
     body: v.string(),
+    mentions: v.optional(v.array(v.id("users"))),
     status: v.union(v.literal("open"), v.literal("hidden")),
     helpfulCount: v.number(),
     reportCount: v.number(),
@@ -135,6 +137,10 @@ export const learnSocialTables = {
     roomId: v.optional(v.id("learnRooms")),
     memberCount: v.number(),
     archived: v.optional(v.boolean()),
+    // Mary 2026-11-17: people pick their group when they join Learn. capacity: how many can join
+    // (default 40, helpers/learnGroupRules.ts); openToJoin false hides it from the picker.
+    capacity: v.optional(v.number()),
+    openToJoin: v.optional(v.boolean()),
     // Group home (owner 2026-11-15): a note the lead pins at the top, and an invite link anyone
     // signed in to Learn can use to join (off when unset; a new code replaces the old link)
     announcement: v.optional(v.object({ text: v.string(), by: v.id("users"), at: v.number() })),

@@ -14,6 +14,7 @@ import { getViewer } from "./helpers/partnerAccess";
 import { insertNotification } from "./helpers/pushNotify";
 import { learnMemberInfo } from "./learn";
 import { lagosMonth, monthLabel } from "../lib/learn/points";
+import { groupCapacity, groupIsFull } from "./helpers/learnGroupRules";
 
 type Ctx = QueryCtx | MutationCtx;
 
@@ -162,7 +163,7 @@ export const invitePreview = query({
     if (!user) return { state: "signin" as const, group: card };
     if (!(await learnMemberInfo(ctx, user))) return { state: "welcome" as const, group: card };
     if (await groupRoleOf(ctx, group._id, user._id)) return { state: "member" as const, group: card };
-    if (group.memberCount >= MAX_MEMBERS) return { state: "full" as const, group: card };
+    if (groupIsFull(group)) return { state: "full" as const, group: card };
     return { state: "ready" as const, group: card };
   },
 });
@@ -177,7 +178,7 @@ export const joinByInvite = mutation({
     const group = await groupByInvite(ctx, args.code);
     if (!group) throw new ConvexError("This invite link has been turned off. Ask the group's lead for a new one.");
     if (await groupRoleOf(ctx, group._id, user._id)) return { roomSlug: roomSlug(group._id) };
-    if (group.memberCount >= MAX_MEMBERS) throw new ConvexError(`This group is full (${MAX_MEMBERS} people).`);
+    if (groupIsFull(group)) throw new ConvexError(`This group is full (${groupCapacity(group)} people). Pick another group from Learn.`);
     const now = Date.now();
     await ctx.db.insert("learnGroupMembers", { groupId: group._id, userId: user._id, role: "member", addedBy: user._id, addedAt: now });
     await ctx.db.patch(group._id, { memberCount: group.memberCount + 1, updatedAt: now });

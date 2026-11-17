@@ -61,6 +61,8 @@ export type AdminNavItem = {
   keywords?: string[]
   /** Hidden from blog writers and Learn instructors even when they see the rest of the section. */
   adminOnly?: boolean
+  /** Courses and certificates: never for Learn super admins (owner 2026-11-17) */
+  courseAdmin?: boolean
 }
 
 export type AdminNavSection = {
@@ -86,9 +88,11 @@ export const BLOG_HOME = '/dashboard/admin/blog'
 export const LEARN_COURSES_HOME = '/dashboard/admin/learn/courses'
 
 export const LEARN_SIMULATIONS_HOME = '/dashboard/admin/learn/simulations'
+export const LEARN_GROUPS_HOME = '/dashboard/admin/learn/groups'
+export const LEARN_LEADERBOARD_HOME = '/dashboard/admin/learn/leaderboard'
 export const LEARN_HOME = '/dashboard/admin/learn'
 
-/** Full Learn powers: admins and Learn super admins (publish, prices, groups, the MSK program). */
+/** Learn admin powers in shared pages: admins and Learn super admins (simulations, groups, leaderboard). */
 export const hasLearnAdmin = (role: ConsoleRole | null | undefined) => role === 'admin' || role === 'learn_admin'
 
 /** Where each limited role starts, which (with `also`) is the only part of the console it may open. */
@@ -96,8 +100,9 @@ const ROLE_AREAS: Record<LimitedRole, { home: string; label: string; also?: stri
   blog_editor: { home: BLOG_HOME, label: 'Blog' },
   // Learn instructors also sign off simulation cases (physio reviewers)
   learn_instructor: { home: LEARN_COURSES_HOME, label: 'Learn', also: [LEARN_SIMULATIONS_HOME] },
-  // Learn super admins: all of Admin › Learn
-  learn_admin: { home: LEARN_HOME, label: 'Learn' },
+  // Learn super admins run the community side of Learn: groups, the leaderboard and simulations.
+  // Courses, the MSK program and certificates stay with platform admins (owner 2026-11-17).
+  learn_admin: { home: LEARN_GROUPS_HOME, label: 'Learn', also: [LEARN_LEADERBOARD_HOME, LEARN_SIMULATIONS_HOME] },
 }
 
 export const consoleHome = (role: ConsoleRole) => (role === 'admin' ? ADMIN_HOME : ROLE_AREAS[role].home)
@@ -228,8 +233,8 @@ export const ADMIN_NAV: AdminNavSection[] = [
     icon: GraduationCap,
     alsoFor: ['learn_instructor', 'learn_admin'],
     items: [
-      { title: 'MSK Specialist Program', href: a('/learn'), icon: GraduationCap, adminOnly: true, keywords: ['cohort', 'course', 'training', 'certificate', 'registrations', 'cpd'] },
-      { title: 'Video courses', href: a('/learn/courses'), icon: PlayCircle, keywords: ['upload', 'lessons', 'videos', 'imagekit', 'on demand'] },
+      { title: 'MSK Specialist Program', href: a('/learn'), icon: GraduationCap, adminOnly: true, courseAdmin: true, keywords: ['cohort', 'course', 'training', 'certificate', 'registrations', 'cpd'] },
+      { title: 'Video courses', href: a('/learn/courses'), icon: PlayCircle, courseAdmin: true, keywords: ['upload', 'lessons', 'videos', 'imagekit', 'on demand'] },
       { title: 'Simulations', href: a('/learn/simulations'), icon: HeartPulse, keywords: ['cases', 'clinical', 'triage', 'sign-off', 'review', 'game'] },
       { title: 'Groups', href: a('/learn/groups'), icon: Users, adminOnly: true, keywords: ['small groups', 'cohort', 'class', 'members', 'leads', 'activities', 'team'] },
       { title: 'Leaderboard', href: a('/learn/leaderboard'), icon: Crown, adminOnly: true, keywords: ['points', 'badges', 'top learners', 'monthly', 'prize', 'ranking'] },
@@ -283,8 +288,13 @@ export function devToolsEnabled() {
 export function visibleAdminNav(role: ConsoleRole = 'admin'): AdminNavSection[] {
   const showDev = devToolsEnabled()
   return ADMIN_NAV.filter((section) => (!section.devOnly || showDev) && (role === 'admin' || section.alsoFor?.includes(role))).map(
-    // Learn super admins keep the admin-only Learn items (their area is all of Admin › Learn)
-    (section) => (hasLearnAdmin(role) ? section : { ...section, items: section.items.filter((item) => !item.adminOnly) })
+    // Learn super admins keep the admin-only community items, but never courses or certificates
+    (section) =>
+      role === 'admin'
+        ? section
+        : role === 'learn_admin'
+          ? { ...section, items: section.items.filter((item) => !item.courseAdmin) }
+          : { ...section, items: section.items.filter((item) => !item.adminOnly) }
   )
 }
 

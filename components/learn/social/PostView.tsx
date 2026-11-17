@@ -3,12 +3,13 @@
 /** One community post with its replies (Learn › Community › post). */
 
 import { useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
+import type { Id } from '@/convex/_generated/dataModel'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useMutation, useQuery } from 'convex/react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { toast } from 'sonner'
-import { Eye, EyeOff, Flag, Loader2, Lock, MessageCircle, MoreHorizontal, Send, ThumbsUp, Trash2 } from '@/components/icons'
+import { Eye, EyeOff, Flag, Loader2, Lock, MessageCircle, MoreHorizontal, Reply as ReplyIcon, Send, ThumbsUp, Trash2 } from '@/components/icons'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
 import { displayFont, pillInk } from '../shared'
@@ -17,6 +18,8 @@ import { communityApi, errorText, postPath, relativeTime, roomPath, type PostPag
 import { BackToCommunity } from './Community'
 import { PostShareButton } from './PostShare'
 import { Avatar, EmptyState, JoinPrompt, Sheet, Skeleton } from './ui'
+import { GroupChip } from './GroupPicker'
+import { activeMentions, MentionText, MentionTextarea, type Mention, type MentionTextareaHandle } from './Mentions'
 
 type Ok = Extract<PostPage, { state: 'ok' }>
 type Target = { type: 'post' | 'reply'; id: string; authorId: string | null; hidden: boolean; helpfulCount: number; markedHelpful: boolean }
@@ -182,20 +185,21 @@ function ReportSheet({ target, onClose }: { target: Target | null; onClose: () =
   )
 }
 
-function ReplyBox({ postId }: { postId: Ok['post']['id'] }) {
+function ReplyBox({ postId, boxRef }: { postId: Ok['post']['id']; boxRef: React.RefObject<MentionTextareaHandle | null> }) {
   const reply = useMutation(communityApi.reply)
   const [body, setBody] = useState('')
+  const [mentions, setMentions] = useState<Mention[]>([])
   const [busy, setBusy] = useState(false)
-  const area = useRef<HTMLTextAreaElement>(null)
   const submit = async (e?: FormEvent) => {
     e?.preventDefault()
     if (!body.trim() || busy) return
     setBusy(true)
     try {
-      await reply({ postId, body })
+      const tagged = activeMentions(body, mentions)
+      await reply({ postId, body, ...(tagged.length ? { mentions: tagged } : {}) })
       playSound('send')
       setBody('')
-      if (area.current) area.current.style.height = ''
+      setMentions([])
     } catch (err) {
       playSound('error')
       toast.error(errorText(err, 'Couldn’t send your reply.'))
@@ -211,23 +215,23 @@ function ReplyBox({ postId }: { postId: Ok['post']['id'] }) {
       <label htmlFor="reply-body" className="sr-only">
         Your reply
       </label>
-      <textarea
+      <MentionTextarea
         id="reply-body"
-        ref={area}
+        ref={boxRef}
         value={body}
-        onChange={(e) => {
-          setBody(e.target.value)
-          e.target.style.height = 'auto'
-          e.target.style.height = `${Math.min(e.target.scrollHeight, 320)}px`
-        }}
+        onValueChange={setBody}
+        mentions={mentions}
+        onMentionsChange={setMentions}
+        postId={postId}
+        autoGrowMax={320}
         onKeyDown={onKey}
         rows={2}
         maxLength={4000}
-        placeholder="Write a reply"
+        placeholder="Write a reply. Type @ to tag someone"
         className="block w-full resize-none bg-transparent px-3 py-2.5 text-[15px] leading-6 text-rh-ink placeholder:text-rh-ink/40 focus:outline-none"
       />
       <div className="flex items-center justify-between gap-3 px-2 pb-1">
-        <p className="text-xs text-rh-ink/45">Keep patients unidentifiable.</p>
+        <p className="text-xs text-rh-ink/45">Type @ to tag someone. Keep patients unidentifiable.</p>
         <button type="submit" disabled={!body.trim() || busy} className={cn(pillInk, 'h-10 px-4')}>
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-3.5 w-3.5" />} Reply
         </button>
@@ -239,6 +243,13 @@ function ReplyBox({ postId }: { postId: Ok['post']['id'] }) {
 export function PostView({ postId }: { postId: string }) {
   const data = useQuery(communityApi.post, { postId })
   const [reporting, setReporting] = useState<Target | null>(null)
+  const replyBox = useRef<MentionTextareaHandle | null>(null)
+  // "Reply" on someone's message: tag them in the reply box and scroll to it
+  const replyTo = (person: { id: string; name: string } | null | undefined) => {
+    if (!person) return
+    replyBox.current?.mention({ id: person.id as Id<'users'>, name: person.name })
+    document.getElementById('reply-body')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }
 
   if (data === undefined) {
     return (
@@ -291,13 +302,25 @@ export function PostView({ postId }: { postId: string }) {
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-sm font-semibold text-rh-ink">{post.author?.name ?? 'Former member'}</span>
               {post.author?.tag && <TagBadge tag={post.author.tag} size="xs" />}
+              <GroupChip group={post.author?.group} />
             </div>
             <p className="text-xs text-rh-ink/50">{relativeTime(post.createdAt)}</p>
           </div>
         </div>
-        <div className="mt-6 whitespace-pre-line break-words text-[16px] leading-7 text-rh-ink/85">{post.body}</div>
+        <div className="mt-6 whitespace-pre-line break-words text-[16px] leading-7 text-rh-ink/85">
+          <MentionText text={post.body} mentions={post.mentions} />
+        </div>
         <div className="mt-6 flex items-center gap-2">
           <HelpfulButton target={postTarget} own={post.author?.id === viewerId} />
+          {!post.hidden && post.author && post.author.id !== viewerId && (
+            <button
+              type="button"
+              onClick={() => replyTo(post.author)}
+              className="inline-flex h-9 items-center gap-1.5 rounded-full px-3 text-sm font-semibold text-rh-ink/60 transition hover:bg-rh-ink/[0.06] hover:text-rh-ink"
+            >
+              <ReplyIcon className="h-3.5 w-3.5" /> Reply
+            </button>
+          )}
           {data.room.kind === 'open' && !post.hidden && <PostShareButton postId={post.id} title={post.title} />}
           <span className="ml-auto" />
           <MoreMenu target={postTarget} canDelete={post.author?.id === viewerId || canModerate} canModerate={canModerate} onReport={() => setReporting(postTarget)} />
@@ -327,13 +350,26 @@ export function PostView({ postId }: { postId: string }) {
                     <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
                       <span className="text-sm font-semibold text-rh-ink">{r.author?.name ?? 'Former member'}</span>
                       {r.author?.tag && <TagBadge tag={r.author.tag} size="xs" />}
+                      <GroupChip group={r.author?.group} />
                       <span className="text-xs text-rh-ink/45">{relativeTime(r.createdAt)}</span>
                       {r.hidden && <span className="text-xs font-semibold text-rose-700">Hidden</span>}
                     </div>
                   </div>
-                  <p className="mt-3 whitespace-pre-line break-words text-[15px] leading-7 text-rh-ink/85">{r.body}</p>
+                  <p className="mt-3 whitespace-pre-line break-words text-[15px] leading-7 text-rh-ink/85">
+                    <MentionText text={r.body} mentions={r.mentions} />
+                  </p>
                   <div className="mt-3 flex items-center gap-2">
                     <HelpfulButton target={target} own={r.author?.id === viewerId} />
+                    {!post.hidden && r.author && r.author.id !== viewerId && (
+                      <button
+                        type="button"
+                        onClick={() => replyTo(r.author)}
+                        aria-label={`Reply to ${r.author.name}`}
+                        className="inline-flex h-9 items-center gap-1.5 rounded-full px-3 text-sm font-semibold text-rh-ink/60 transition hover:bg-rh-ink/[0.06] hover:text-rh-ink"
+                      >
+                        <ReplyIcon className="h-3.5 w-3.5" /> Reply
+                      </button>
+                    )}
                     <span className="ml-auto" />
                     <MoreMenu target={target} canDelete={r.author?.id === viewerId || canModerate} canModerate={canModerate} onReport={() => setReporting(target)} />
                   </div>
@@ -342,7 +378,7 @@ export function PostView({ postId }: { postId: string }) {
             })}
           </AnimatePresence>
         </ul>
-        <div className="mt-6">{post.hidden ? null : <ReplyBox postId={post.id} />}</div>
+        <div className="mt-6">{post.hidden ? null : <ReplyBox postId={post.id} boxRef={replyBox} />}</div>
       </section>
 
       <ReportSheet target={reporting} onClose={() => setReporting(null)} />

@@ -2,8 +2,9 @@
 
 /**
  * Admin › Learn › Groups (Mary 2026-11-14): small groups for group activities. Learn admins and
- * Learn super admins create groups and assign people (members or leads). Each group gets a private
- * room in the Learn community and can hold group-only Spaces (leads can host them).
+ * Learn super admins create groups and assign people. Each group gets a private room in the Learn
+ * community and can hold group-only Spaces. Mary 2026-11-17: people pick their own group when they
+ * join Learn (up to the group's size, 40 by default), and each group has ONE champion (its lead).
  */
 import { useEffect, useMemo, useState } from 'react'
 import Image from 'next/image'
@@ -116,18 +117,22 @@ function NewGroupDrawer({ open, onOpenChange, onCreated }: { open: boolean; onOp
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [color, setColor] = useState<GroupColor>('lime')
+  const [capacity, setCapacity] = useState('40')
+  const [openToJoin, setOpenToJoin] = useState(true)
   const [busy, setBusy] = useState(false)
   useEffect(() => {
     if (open) {
       setName('')
       setDescription('')
+      setCapacity('40')
+      setOpenToJoin(true)
       setColor(GROUP_COLORS[Math.floor(Math.random() * GROUP_COLORS.length)])
     }
   }, [open])
   const submit = async () => {
     setBusy(true)
     try {
-      const id = await create({ name, description: description || undefined, color })
+      const id = await create({ name, description: description || undefined, color, capacity: Number(capacity) || 40, openToJoin })
       toast.success('Group created. Now add people.')
       onOpenChange(false)
       onCreated(id)
@@ -167,8 +172,47 @@ function NewGroupDrawer({ open, onOpenChange, onCreated }: { open: boolean; onOp
         <Field label="Colour">
           <ColorPicker value={color} onChange={setColor} />
         </Field>
+        <SizeFields capacity={capacity} setCapacity={setCapacity} openToJoin={openToJoin} setOpenToJoin={setOpenToJoin} idPrefix="new" />
       </div>
     </AdminDrawer>
+  )
+}
+
+/** How many people can pick the group, and whether it shows in the picker at all. */
+function SizeFields({
+  capacity,
+  setCapacity,
+  openToJoin,
+  setOpenToJoin,
+  idPrefix,
+}: {
+  capacity: string
+  setCapacity: (v: string) => void
+  openToJoin: boolean
+  setOpenToJoin: (v: boolean) => void
+  idPrefix: string
+}) {
+  return (
+    <>
+      <Field label="Group size" htmlFor={`${idPrefix}-group-capacity`} hint="When it's full, people pick the next group. Mary suggested 30–40.">
+        <Input
+          id={`${idPrefix}-group-capacity`}
+          type="number"
+          min={2}
+          max={200}
+          value={capacity}
+          onChange={(e) => setCapacity(e.target.value)}
+          className={cn(inputClass, 'w-32')}
+        />
+      </Field>
+      <label className="flex items-start gap-3 text-sm text-rh-ink dark:text-white">
+        <input type="checkbox" className="mt-1" checked={openToJoin} onChange={(e) => setOpenToJoin(e.target.checked)} />
+        <span>
+          <span className="font-medium">People can pick this group when they join Learn</span>
+          <span className="block text-xs text-neutral-500">Untick to keep it invite-only (you add people, or share its invite link).</span>
+        </span>
+      </label>
+    </>
   )
 }
 
@@ -186,7 +230,7 @@ function AddPeople({ groupId }: { groupId: Id<'learnGroups'> }) {
     try {
       const res = await add({ groupId, userIds: [userId], role })
       if (res.skipped.length) toast.error(`${res.skipped[0]} hasn't joined Rehabify Learn yet.`)
-      else toast.success(role === 'lead' ? 'Added as a lead.' : 'Added to the group.')
+      else toast.success(role === 'lead' ? 'Added as the group champion.' : 'Added to the group.')
     } catch (e) {
       toast.error(errorText(e))
     } finally {
@@ -232,7 +276,7 @@ function AddPeople({ groupId }: { groupId: Id<'learnGroups'> }) {
                     <div className="flex shrink-0 gap-1.5">
                       <Button size="sm" variant="ghost" className={cn(softButtonClass, 'h-8 px-2.5 text-xs')} disabled={Boolean(busyId)} onClick={() => addOne(p.userId, 'lead')}>
                         {busyId === p.userId + 'lead' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Crown className="h-3.5 w-3.5" />}
-                        <span className="ml-1">Lead</span>
+                        <span className="ml-1">Champion</span>
                       </Button>
                       <Button size="sm" className={cn(primaryButtonClass, 'h-8 px-2.5 text-xs')} disabled={Boolean(busyId)} onClick={() => addOne(p.userId, 'member')}>
                         {busyId === p.userId + 'member' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <UserPlus className="h-3.5 w-3.5" />}
@@ -269,7 +313,7 @@ function MemberRow({ groupId, m }: { groupId: Id<'learnGroups'>; m: AdminGroupMe
           <span className="truncate">{m.name}</span>
           {m.role === 'lead' && (
             <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-rh-lime px-1.5 py-px text-[10px] font-semibold text-rh-ink">
-              <Crown className="h-2.5 w-2.5" /> Lead
+              <Crown className="h-2.5 w-2.5" /> Champion
             </span>
           )}
         </p>
@@ -284,9 +328,9 @@ function MemberRow({ groupId, m }: { groupId: Id<'learnGroups'>; m: AdminGroupMe
         size="sm"
         className="h-8 shrink-0 rounded-lg px-2 text-xs text-neutral-600 hover:bg-rh-honeydew dark:text-neutral-300 dark:hover:bg-white/[0.06]"
         onClick={toggleLead}
-        aria-label={m.role === 'lead' ? `Make ${m.name} a member` : `Make ${m.name} a lead`}
+        aria-label={m.role === 'lead' ? `Make ${m.name} a member` : `Make ${m.name} the champion`}
       >
-        {m.role === 'lead' ? 'Make member' : 'Make lead'}
+        {m.role === 'lead' ? 'Make member' : 'Make champion'}
       </Button>
       <Button
         variant="ghost"
@@ -331,6 +375,8 @@ function GroupDrawer({ groupId, onOpenChange }: { groupId: Id<'learnGroups'> | n
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [color, setColor] = useState<GroupColor>('lime')
+  const [capacity, setCapacity] = useState('40')
+  const [openToJoin, setOpenToJoin] = useState(true)
   useEffect(() => setEditing(false), [groupId])
 
   const startEdit = () => {
@@ -338,19 +384,21 @@ function GroupDrawer({ groupId, onOpenChange }: { groupId: Id<'learnGroups'> | n
     setName(group.name)
     setDescription(group.description ?? '')
     setColor((GROUP_COLORS as readonly string[]).includes(group.color) ? (group.color as GroupColor) : 'lime')
+    setCapacity(String(group.capacity))
+    setOpenToJoin(group.openToJoin)
     setEditing(true)
   }
   const save = async () => {
     if (!group) return
     try {
-      await update({ groupId: group.id, name, description, color })
+      await update({ groupId: group.id, name, description, color, capacity: Number(capacity) || group.capacity, openToJoin })
       setEditing(false)
       toast.success('Saved.')
     } catch (e) {
       toast.error(errorText(e))
     }
   }
-  const leads = group?.members.filter((m) => m.role === 'lead').length ?? 0
+  const champion = group?.members.find((m) => m.role === 'lead')
   const tone = groupTone(group?.color)
 
   return (
@@ -363,7 +411,11 @@ function GroupDrawer({ groupId, onOpenChange }: { groupId: Id<'learnGroups'> | n
           <span className="truncate">{group?.name ?? 'Group'}</span>
         </span>
       }
-      description={group ? `${group.memberCount} of ${group.maxMembers} people · ${leads} lead${leads === 1 ? '' : 's'}` : undefined}
+      description={
+        group
+          ? `${group.memberCount} of ${group.capacity} places · ${champion ? `champion ${champion.name}` : 'no champion yet'}${group.openToJoin ? '' : ' · invite only'}`
+          : undefined
+      }
       footer={
         group ? (
           <div className="flex flex-col gap-2 sm:flex-row">
@@ -410,6 +462,7 @@ function GroupDrawer({ groupId, onOpenChange }: { groupId: Id<'learnGroups'> | n
               <Field label="Colour">
                 <ColorPicker value={color} onChange={setColor} />
               </Field>
+              <SizeFields capacity={capacity} setCapacity={setCapacity} openToJoin={openToJoin} setOpenToJoin={setOpenToJoin} idPrefix="edit" />
               <div className="flex gap-2">
                 <Button className={primaryButtonClass} onClick={save} disabled={name.trim().length < 3}>
                   Save
@@ -433,7 +486,10 @@ function GroupDrawer({ groupId, onOpenChange }: { groupId: Id<'learnGroups'> | n
           ) : (
             <section className="space-y-2">
               <h3 className="text-sm font-semibold text-rh-ink dark:text-white">Add people</h3>
-              <p className="text-xs text-neutral-500">Leads can hold Spaces for the group. Everyone gets a notification when they&apos;re added.</p>
+              <p className="text-xs text-neutral-500">
+                Each group has one champion: they look after its room (hide or delete posts there) and hold Spaces for it. Making someone champion replaces the
+                current one. Everyone gets a notification when they&apos;re added.
+              </p>
               <AddPeople groupId={group.id} />
             </section>
           )}
@@ -476,8 +532,9 @@ function GroupCard({ g, onOpen }: { g: AdminGroupRow; onOpen: () => void }) {
         <div className="min-w-0 flex-1">
           <p className="truncate text-[15px] font-semibold text-rh-ink dark:text-white">{g.name}</p>
           <p className="truncate text-xs text-neutral-500">
-            {g.memberCount} {g.memberCount === 1 ? 'person' : 'people'}
-            {g.leads.length ? ` · led by ${g.leads.join(', ')}` : ''}
+            {g.memberCount} of {g.capacity} places
+            {g.leads.length ? ` · champion ${g.leads[0]}` : ' · no champion yet'}
+            {g.openToJoin ? '' : ' · invite only'}
           </p>
         </div>
         {g.archived && <span className="shrink-0 rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] text-neutral-600 dark:bg-white/[0.06] dark:text-neutral-300">Archived</span>}

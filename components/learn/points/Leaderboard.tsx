@@ -10,7 +10,8 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { useQuery } from 'convex/react'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
-import { ChevronDown, Crown, Star, TrendingUp } from '@/components/icons'
+import { ChevronDown, Crown, Star, TrendingUp, Users } from '@/components/icons'
+import { groupStandingsRef, groupTone, type GroupStanding } from '@/lib/learnAdminsApi'
 import { cn } from '@/lib/utils'
 import { LEARN_EARN } from '@/lib/learn/points'
 import { displayFont, pillInk } from '../shared'
@@ -117,7 +118,86 @@ function HowToEarn() {
   )
 }
 
+/** Groups against each other (Mary 2026-11-17): every member's points added up. */
+export function GroupStandings({ period, limit, compact = false }: { period: Period; limit?: number; compact?: boolean }) {
+  const data = useQuery(groupStandingsRef, { period })
+  const reduce = useReducedMotion()
+  if (data === undefined) {
+    return (
+      <div className="space-y-2">
+        {[0, 1, 2].map((i) => (
+          <Skeleton key={i} className={cn('rounded-2xl', compact ? 'h-14' : 'h-20')} />
+        ))}
+      </div>
+    )
+  }
+  if (data.state !== 'ok') return null
+  const rows: GroupStanding[] = limit ? data.rows.slice(0, limit) : data.rows
+  if (rows.length === 0) {
+    return (
+      <div className="rounded-3xl border border-dashed border-rh-ink/15 bg-white px-6 py-10 text-center">
+        <Users className="mx-auto h-6 w-6 text-rh-ink/40" />
+        <p className="mt-3 font-semibold text-rh-ink">No groups yet</p>
+      </div>
+    )
+  }
+  const top = Math.max(1, ...rows.map((r) => r.points))
+  return (
+    <ol className="space-y-2">
+      {rows.map((r, i) => {
+        const tone = groupTone(r.color)
+        return (
+          <motion.li
+            key={r.id}
+            layout
+            initial={reduce ? false : { opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.35, delay: Math.min(i, 8) * 0.04, ease: [0.22, 1, 0.36, 1] }}
+            className={cn('relative overflow-hidden rounded-2xl border bg-white', compact ? 'px-3.5 py-3' : 'px-4 py-3.5', r.isMine ? 'border-transparent' : 'border-rh-ink/[0.07]')}
+            style={r.isMine ? { boxShadow: `0 0 0 2px ${tone.dot}` } : undefined}
+          >
+            <div className="flex items-center gap-3">
+              <span
+                className={cn('flex shrink-0 items-center justify-center rounded-full text-xs font-bold', compact ? 'h-7 w-7' : 'h-8 w-8', MEDAL[r.rank] || 'bg-rh-cream text-rh-ink/70')}
+              >
+                {r.rank}
+              </span>
+              <span className={cn('flex shrink-0 items-center justify-center rounded-xl', compact ? 'h-8 w-8' : 'h-10 w-10')} style={{ background: tone.soft, color: tone.ink }}>
+                <Users className="h-4 w-4" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-semibold text-rh-ink">
+                  {r.name}
+                  {r.isMine && <span className="ml-1.5 text-xs font-medium text-rh-ink/50">your group</span>}
+                </span>
+                <span className="block truncate text-xs text-rh-ink/50">
+                  {r.memberCount} {r.memberCount === 1 ? 'member' : 'members'} · {r.active} active
+                  {!compact && r.leadName ? ` · champion ${r.leadName}` : ''}
+                </span>
+              </span>
+              <span className="shrink-0 text-right">
+                <span className="block text-sm font-semibold tabular-nums text-rh-ink">{formatPoints(r.points)}</span>
+                {!compact && <span className="block text-[11px] text-rh-ink/45">{formatPoints(r.perMember)} per member</span>}
+              </span>
+            </div>
+            <div className="mt-2.5 h-1 w-full overflow-hidden rounded-full bg-rh-ink/[0.06]">
+              <motion.div
+                className="h-full rounded-full"
+                style={{ background: tone.dot }}
+                initial={reduce ? false : { width: 0 }}
+                animate={{ width: `${Math.round((r.points / top) * 100)}%` }}
+                transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
+              />
+            </div>
+          </motion.li>
+        )
+      })}
+    </ol>
+  )
+}
+
 export function Leaderboard() {
+  const [view, setView] = useState<'people' | 'groups'>('people')
   const [period, setPeriod] = useState<Period>('month')
   const [scope, setScope] = useState<Scope>('all')
   const data = useQuery(pointsApi.leaderboard, { period, scope })
@@ -141,7 +221,18 @@ export function Leaderboard() {
       <p className="mt-2 max-w-xl text-[15px] leading-6 text-rh-ink/60">
         Points for learning, practising cases and helping each other. {period === 'month' ? 'A fresh board every month.' : 'Everything you’ve earned so far.'}
       </p>
-      <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="mt-6">
+        <Segmented
+          label="view"
+          value={view}
+          onChange={setView}
+          options={[
+            { id: 'people', label: 'People' },
+            { id: 'groups', label: 'Groups' },
+          ]}
+        />
+      </div>
+      <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <Segmented
           label="period"
           value={period}
@@ -151,10 +242,14 @@ export function Leaderboard() {
             { id: 'all', label: 'All time' },
           ]}
         />
-        <Segmented label="who" value={scope} onChange={setScope} options={SCOPES} />
+        {view === 'people' && <Segmented label="who" value={scope} onChange={setScope} options={SCOPES} />}
       </div>
 
-      {data === undefined ? (
+      {view === 'groups' ? (
+        <div className="mt-8">
+          <GroupStandings period={period} />
+        </div>
+      ) : data === undefined ? (
         <div className="mt-8 space-y-3">
           <Skeleton className="h-44 rounded-3xl" />
           {[0, 1, 2, 3].map((i) => (

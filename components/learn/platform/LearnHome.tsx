@@ -1,12 +1,14 @@
 'use client'
 
 /**
- * Rehabify Learn home (learn.physioaroundme.com): a course platform, not one program's page.
- * The MSK Specialist Program is one entry in the catalogue (and the featured live program).
- * Photos come from the blog media library (./media.ts).
+ * Rehabify Learn home (learn.physioaroundme.com). Mary 2026-11-17: Learn is an e-learning
+ * COMMUNITY, half community and half courses. Signed-in members get LearnDashboard (community
+ * first, no hero pictures). Visitors get a short page: a picture-free hero, then the community
+ * and Spaces, courses, and how it works, before the longer sections.
  */
 
-import { useState, type ComponentType, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useState, type ComponentType, type FormEvent, type ReactNode } from 'react'
+import { useAuth } from '@clerk/nextjs'
 import Image from 'next/image'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -40,10 +42,11 @@ import { cn } from '@/lib/utils'
 import { displayFont, naira, pillInk, pillLime, pillOutline, usePublicCohort, PROGRAM, type PublicCohort } from '../shared'
 import { CourseCard, CourseCardSkeleton, CoverImage, programItem, useCatalog, type CatalogItem } from './catalog'
 import { TagBadge, useLearnerIdentity } from './identity'
-import { learnPath, learnSignUpHref, mainSiteUrl, MSK_PROGRAM_PATH, MY_LEARNING_PATH, WELCOME_PATH } from './learnApi'
+import { learnPath, learnSignUpHref, mainSiteUrl, MSK_PROGRAM_PATH, MY_LEARNING_PATH } from './learnApi'
 import { imagekitPhotoLoader, LEARN_PHOTOS, type LearnPhoto } from './media'
 import { LearnTogether } from '../social/LearnTogether'
 import { SimsHomeBand } from '../sims/SimsHomeBand'
+import { LearnDashboard } from './LearnDashboard'
 
 const CATEGORY_ICON: Record<CourseCategory, ComponentType<{ className?: string }>> = {
   msk: Bone,
@@ -155,17 +158,17 @@ function HeroGreeting() {
   )
 }
 
-function Hero({ cohort }: { cohort: PublicCohort | null | undefined }) {
+function Hero() {
   const reduce = useReducedMotion()
   return (
-    <section className="relative overflow-hidden bg-white px-4 pb-14 pt-10 sm:px-6 sm:pt-14 lg:pb-20">
-      <div className="mx-auto grid max-w-7xl gap-12 lg:grid-cols-[1.05fr_0.95fr] lg:items-center lg:gap-14">
+    <section className="relative overflow-hidden bg-white px-4 pb-6 pt-10 sm:px-6 sm:pt-14 lg:pb-8">
+      <div className="mx-auto max-w-4xl text-center">
         <motion.div
           initial={reduce ? false : { opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
         >
-          <h1 className={cn('text-[42px] leading-[1.02] tracking-tight text-rh-ink sm:text-[58px] lg:text-[66px]', displayFont)}>
+          <h1 className={cn('mx-auto max-w-3xl text-[40px] leading-[1.04] tracking-tight text-rh-ink sm:text-[56px] lg:text-[62px]', displayFont)}>
             Become the physio patients{' '}
             <span className="relative inline-block">
               ask for
@@ -173,12 +176,14 @@ function Hero({ cohort }: { cohort: PublicCohort | null | undefined }) {
             </span>
             .
           </h1>
-          <p className="mt-6 max-w-xl text-lg leading-relaxed text-rh-ink/65">
-            Learn with peers through clinical cases, video courses and live sessions. Earn certificates. For students, graduates and
-            practising physios.
+          <p className="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-rh-ink/65">
+            A community of physiotherapists and physio students: learn in small groups, ask and answer questions, join live Spaces,
+            and take courses with certificates.
           </p>
-          <HeroSearch />
-          <div className="mt-4 flex flex-wrap items-center gap-2">
+          <div className="mx-auto max-w-xl text-left">
+            <HeroSearch />
+          </div>
+          <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
             <span className="text-xs text-rh-ink/45">Popular:</span>
             {POPULAR.map((id) => {
               const c = COURSE_CATEGORIES.find((x) => x.id === id)!
@@ -193,41 +198,8 @@ function Hero({ cohort }: { cohort: PublicCohort | null | undefined }) {
               )
             })}
           </div>
-          <HeroGreeting />
-        </motion.div>
-
-        <motion.div
-          className="relative"
-          initial={reduce ? false : { opacity: 0, y: 24 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1], delay: 0.1 }}
-        >
-          <div aria-hidden className="absolute -right-6 -top-6 hidden h-40 w-40 rounded-[2.25rem] bg-rh-lime sm:block" />
-          <div aria-hidden className="absolute -bottom-6 -left-6 hidden h-32 w-32 rounded-[2rem] bg-rh-ink sm:block" />
-          <div className="relative grid grid-cols-5 grid-rows-[auto_auto] gap-3 sm:gap-4">
-            <Photo
-              photo={LEARN_PHOTOS.consult}
-              priority
-              sizes="(min-width: 1024px) 560px, 100vw"
-              className="col-span-5 aspect-[16/10] rounded-[1.75rem]"
-            />
-            <Photo
-              photo={LEARN_PHOTOS.backPain}
-              sizes="(min-width: 1024px) 220px, 40vw"
-              className="col-span-2 aspect-[4/5] rounded-[1.5rem]"
-            />
-            <div className="col-span-3 flex flex-col gap-3 sm:gap-4">
-              <Photo photo={LEARN_PHOTOS.stretch} sizes="(min-width: 1024px) 330px, 60vw" className="aspect-[4/3] rounded-[1.5rem]" />
-              <div className="flex flex-1 items-center gap-3 rounded-[1.5rem] bg-rh-ink p-4 text-white">
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-rh-lime text-rh-ink">
-                  <Radio className="h-5 w-5" />
-                </span>
-                <span className="min-w-0 text-sm leading-snug">
-                  <span className="block font-semibold">Live clinical sessions</span>
-                  <span className="block truncate text-white/65">{cohort?.liveSessions ? cohort.liveSessions : 'Weekly, online'}</span>
-                </span>
-              </div>
-            </div>
+          <div className="flex justify-center">
+            <HeroGreeting />
           </div>
         </motion.div>
       </div>
@@ -238,29 +210,6 @@ function Hero({ cohort }: { cohort: PublicCohort | null | undefined }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Signed-in nudge, topics, courses
 // ─────────────────────────────────────────────────────────────────────────────
-
-function WelcomeNudge() {
-  const identity = useLearnerIdentity()
-  if (!identity?.signedIn || !identity.needsWelcome) return null
-  return (
-    <section className="px-4 sm:px-6">
-      <div className="mx-auto flex max-w-7xl flex-col gap-4 rounded-[1.75rem] bg-rh-jasmine/60 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
-        <div className="flex items-start gap-4">
-          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white text-rh-ink">
-            <GraduationCap className="h-5 w-5" />
-          </span>
-          <div>
-            <p className="font-semibold text-rh-ink">Are you a physio student or a physiotherapist?</p>
-            <p className="mt-0.5 text-sm text-rh-ink/65">Tell us once and we&apos;ll show the right courses and prices, with your tag on your account.</p>
-          </div>
-        </div>
-        <Link href={WELCOME_PATH} className={cn(pillInk, 'h-11 shrink-0')}>
-          Tell us about you
-        </Link>
-      </div>
-    </section>
-  )
-}
 
 function Topics({ items }: { items: CatalogItem[] | undefined }) {
   return (
@@ -434,7 +383,7 @@ function Audiences() {
       icon: GraduationCap,
       title: 'Physio students',
       body: "Learn beyond the lecture hall, on your phone. Tell us you're a student when you join. When you qualify, join Rehabify as a physio with the same login.",
-      link: { href: learnSignUpHref(), label: 'Join as a student' },
+      link: { href: learnSignUpHref(), label: 'Join free as a student' },
     },
     {
       photo: LEARN_PHOTOS.explain,
@@ -663,24 +612,45 @@ function FinalCta() {
   )
 }
 
-export function LearnHome({ initialCohort }: { initialCohort?: PublicCohort | null }) {
+/**
+ * Signed in or not, as early as we can tell: the Learn identity when it's in, else Clerk, else a
+ * hint from Clerk's session cookie on the first client frame (so members don't see the visitor
+ * page flash). The server renders the visitor page, which is what search engines read.
+ */
+function useSignedIn(): boolean {
+  const identity = useLearnerIdentity()
+  const { isLoaded, isSignedIn } = useAuth()
+  const [hint, setHint] = useState(false)
+  useEffect(() => {
+    setHint(/(?:^|;\s*)__client_uat(?:_[^=]+)?=([1-9]\d*)/.test(document.cookie))
+  }, [])
+  if (identity) return identity.signedIn
+  if (isLoaded) return Boolean(isSignedIn)
+  return hint
+}
+
+function VisitorHome({ initialCohort }: { initialCohort?: PublicCohort | null }) {
   const cohort = usePublicCohort(initialCohort)
   const items = useCatalog(initialCohort)
   return (
     <>
-      <Hero cohort={cohort} />
-      <WelcomeNudge />
-      <Topics items={items} />
+      <Hero />
+      <LearnTogether />
       <CourseRow items={items} />
+      <HowItWorks />
+      <Topics items={items} />
       <FeaturedProgram cohort={cohort} />
       <Audiences />
       <SimsHomeBand />
-      <LearnTogether />
-      <HowItWorks />
       <Team />
       <VerifyBand />
       <Questions />
       <FinalCta />
     </>
   )
+}
+
+export function LearnHome({ initialCohort }: { initialCohort?: PublicCohort | null }) {
+  const signedIn = useSignedIn()
+  return signedIn ? <LearnDashboard initialCohort={initialCohort} /> : <VisitorHome initialCohort={initialCohort} />
 }

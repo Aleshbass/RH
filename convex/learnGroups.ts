@@ -1,8 +1,12 @@
 /**
  * Learn groups (Mary 2026-11-14): small groups for group activities. Learn admins (platform admins
- * and Learn super admins) create them and assign people, as members or leads. Each group has a
- * private community room (learnRooms kind "group", slug "group-<id>") and can hold group-only
- * Spaces (learnSpaces.groupId; leads can host those). Members only see their own groups.
+ * and Learn super admins) create them and assign people. Each group has a private community room
+ * (learnRooms kind "group", slug "group-<id>") and can hold group-only Spaces (leads host those).
+ * Members only see their own groups.
+ *
+ * Mary 2026-11-17: everyone picks a group when they join Learn (joinableGroups / joinGroup). A
+ * group holds up to its capacity (40 by default); when it's full people pick another. Each group
+ * has ONE lead, its champion (helpers/learnGroupRules.ts makeOnlyLead).
  */
 import { ConvexError, v } from "convex/values";
 import { mutation, query } from "./_generated/server";
@@ -12,12 +16,13 @@ import { requireLearnAdmin } from "./helpers/learnAccess";
 import { getViewer } from "./helpers/partnerAccess";
 import { insertNotification } from "./helpers/pushNotify";
 import { learnMemberInfo } from "./learn";
+import { DEFAULT_GROUP_CAPACITY, MAX_GROUP_CAPACITY, groupCapacity, groupIsFull, groupIsOpen, makeOnlyLead } from "./helpers/learnGroupRules";
 
 type Ctx = QueryCtx | MutationCtx;
 
 const LEARN_URL = (process.env.LEARN_PUBLIC_URL ?? "https://learn.physioaroundme.com").replace(/\/+$/, "");
-/** Keep groups small enough to work together. */
-const MAX_MEMBERS = 200;
+/** The most an admin can put in one group (self-joining stops at the group's capacity). */
+const MAX_MEMBERS = MAX_GROUP_CAPACITY;
 export const GROUP_COLORS = ["lime", "sky", "amber", "rose", "violet", "teal"] as const;
 const groupColor = v.union(v.literal("lime"), v.literal("sky"), v.literal("amber"), v.literal("rose"), v.literal("violet"), v.literal("teal"));
 
@@ -72,6 +77,8 @@ export const adminList = query({
         description: g.description ?? null,
         color: g.color,
         memberCount: g.memberCount,
+        capacity: groupCapacity(g),
+        openToJoin: g.openToJoin !== false,
         archived: Boolean(g.archived),
         leads,
         roomSlug: roomSlug(g._id),
@@ -130,6 +137,8 @@ export const adminGroup = query({
       color: group.color,
       archived: Boolean(group.archived),
       memberCount: group.memberCount,
+      capacity: groupCapacity(group),
+      openToJoin: group.openToJoin !== false,
       roomSlug: roomSlug(group._id),
       maxMembers: MAX_MEMBERS,
       members,
@@ -137,8 +146,16 @@ export const adminGroup = query({
   },
 });
 
+const capacityArg = (n: number | undefined) => (n === undefined ? undefined : Math.max(2, Math.min(MAX_MEMBERS, Math.round(n))));
+
 export const adminCreate = mutation({
-  args: { name: v.string(), description: v.optional(v.string()), color: v.optional(groupColor) },
+  args: {
+    name: v.string(),
+    description: v.optional(v.string()),
+    color: v.optional(groupColor),
+    capacity: v.optional(v.number()),
+    openToJoin: v.optional(v.boolean()),
+  },
   handler: async (ctx, args): Promise<Id<"learnGroups">> => {
     const { user } = await requireLearnAdmin(ctx);
     const name = clean(args.name, 60);
@@ -151,6 +168,8 @@ export const adminCreate = mutation({
       description,
       color: args.color ?? GROUP_COLORS[count % GROUP_COLORS.length],
       memberCount: 0,
+      capacity: capacityArg(args.capacity) ?? DEFAULT_GROUP_CAPACITY,
+      openToJoin: args.openToJoin ?? true,
       createdBy: user._id,
       createdAt: now,
       updatedAt: now,
@@ -177,6 +196,8 @@ export const adminUpdate = mutation({
     name: v.optional(v.string()),
     description: v.optional(v.string()),
     color: v.optional(groupColor),
+    capacity: v.optional(v.number()),
+    openToJoin: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     await requireLearnAdmin(ctx);
@@ -184,7 +205,14 @@ export const adminUpdate = mutation({
     const name = args.name === undefined ? group.name : clean(args.name, 60);
     if (name.length < 3) throw new ConvexError("Give the group a name.");
     const description = args.description === undefined ? group.description : clean(args.description, 240) || undefined;
-    await ctx.db.patch(group._id, { name, description, color: args.color ?? group.color, updatedAt: Date.now() });
+    await ctx.db.patch(group._id, {
+      name,
+      description,
+      color: args.color ?? group.color,
+      ...(args.capacity !== undefined ? { capacity: capacityArg(args.capacity) } : {}),
+      ...(args.openToJoin !== undefined ? { openToJoin: args.openToJoin } : {}),
+      updatedAt: Date.now(),
+    });
     if (group.roomId) await ctx.db.patch(group.roomId, { title: name, description: description ?? "Your group's private room." });
   },
 });
@@ -283,11 +311,14 @@ export const adminAddMembers = mutation({
         .withIndex("by_group_user", (q) => q.eq("groupId", group._id).eq("userId", userId))
         .first();
       if (existing) {
-        if (args.role && existing.role !== args.role) await ctx.db.patch(existing._id, { role: args.role });
+        if (args.role === "lead") await makeOnlyLead(ctx, group._id, userId);
+        else if (args.role && existing.role !== args.role) await ctx.db.patch(existing._id, { role: args.role });
         continue;
       }
       if (count >= MAX_MEMBERS) throw new ConvexError(`Groups hold up to ${MAX_MEMBERS} people.`);
       await ctx.db.insert("learnGroupMembers", { groupId: group._id, userId, role: args.role ?? "member", addedBy: admin._id, addedAt: now });
+      // One champion per group: a new lead replaces the old one (who stays as a member)
+      if (args.role === "lead") await makeOnlyLead(ctx, group._id, userId);
       count++;
       added.push(info.name);
       await insertNotification(ctx, {
@@ -297,7 +328,7 @@ export const adminAddMembers = mutation({
         status: "pending",
         payload: {
           title: `You've joined ${group.name}`,
-          body: args.role === "lead" ? "You're a lead: you can hold Spaces for the group." : "Say hello in your group's private room.",
+          body: args.role === "lead" ? "You're the group's champion: you look after its room and can hold Spaces for it." : "Say hello in your group's private room.",
           link: `${LEARN_URL}/community/${roomSlug(group._id)}`,
         },
         createdAt: now,
@@ -331,7 +362,8 @@ export const adminSetMemberRole = mutation({
       .withIndex("by_group_user", (q) => q.eq("groupId", args.groupId).eq("userId", args.userId))
       .first();
     if (!row) throw new ConvexError("They're not in this group.");
-    await ctx.db.patch(row._id, { role: args.role });
+    if (args.role === "lead") await makeOnlyLead(ctx, args.groupId, args.userId);
+    else await ctx.db.patch(row._id, { role: args.role });
   },
 });
 
@@ -365,5 +397,107 @@ export const myGroups = query({
       });
     }
     return out.sort((a, b) => (b.lastActivityAt ?? 0) - (a.lastActivityAt ?? 0));
+  },
+});
+
+/**
+ * The group picker (welcome step and Learn home): every open group, its champion, how many places
+ * are left, and the viewer's current group. Groups fill in order, so the first with room is first.
+ */
+export const joinableGroups = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = (await getViewer(ctx))?.user ?? null;
+    const info = user ? await learnMemberInfo(ctx, user) : null;
+    const mine = user
+      ? await ctx.db
+          .query("learnGroupMembers")
+          .withIndex("by_user", (q) => q.eq("userId", user._id))
+          .take(20)
+      : [];
+    const groups = (await ctx.db.query("learnGroups").withIndex("by_created").order("asc").take(200)).filter(groupIsOpen);
+    const out = [];
+    for (const g of groups) {
+      const leadRow = await ctx.db
+        .query("learnGroupMembers")
+        .withIndex("by_group", (q) => q.eq("groupId", g._id))
+        .filter((q) => q.eq(q.field("role"), "lead"))
+        .first();
+      const lead = leadRow ? await person(ctx, await ctx.db.get(leadRow.userId)) : null;
+      const capacity = groupCapacity(g);
+      out.push({
+        id: g._id,
+        name: g.name,
+        description: g.description ?? null,
+        color: g.color,
+        memberCount: g.memberCount,
+        capacity,
+        placesLeft: Math.max(0, capacity - g.memberCount),
+        full: groupIsFull(g),
+        lead: lead ? { name: lead.name, imageUrl: lead.imageUrl } : null,
+        mine: mine.some((m) => m.groupId === g._id),
+      });
+    }
+    out.sort((a, b) => Number(a.full) - Number(b.full));
+    const current = mine.length ? await ctx.db.get(mine[0].groupId) : null;
+    return {
+      signedIn: Boolean(user),
+      isMember: Boolean(info),
+      myGroup: current && !current.archived ? { id: current._id, name: current.name, roomSlug: roomSlug(current._id), role: mine[0].role } : null,
+      leadsAGroup: mine.some((m) => m.role === "lead"),
+      groups: out,
+    };
+  },
+});
+
+/**
+ * Join a group from the picker. People are in one group at a time: picking another moves them
+ * (champions are moved by a Learn admin). Full groups refuse, so people pick the next one.
+ */
+export const joinGroup = mutation({
+  args: { groupId: v.id("learnGroups") },
+  handler: async (ctx, args) => {
+    const user = (await getViewer(ctx))?.user ?? null;
+    if (!user) throw new ConvexError("Please sign in to join a group.");
+    const info = await learnMemberInfo(ctx, user);
+    if (!info) throw new ConvexError("Tell us who you are first, then pick your group.");
+    const group = await groupOrThrow(ctx, args.groupId);
+    if (!groupIsOpen(group)) throw new ConvexError("This group isn't taking new members. Pick another.");
+    const mine = await ctx.db
+      .query("learnGroupMembers")
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .take(20);
+    if (mine.some((m) => m.groupId === group._id)) return { roomSlug: roomSlug(group._id), moved: false };
+    if (mine.some((m) => m.role === "lead")) throw new ConvexError("You're a group champion. Ask a Learn admin to move you.");
+    if (groupIsFull(group)) throw new ConvexError(`${group.name} is full. Pick another group.`);
+    const now = Date.now();
+    // Leave the old group (members only; one group at a time)
+    for (const old of mine) {
+      await ctx.db.delete(old._id);
+      const oldGroup = await ctx.db.get(old.groupId);
+      if (oldGroup) await ctx.db.patch(oldGroup._id, { memberCount: Math.max(0, oldGroup.memberCount - 1), updatedAt: now });
+    }
+    await ctx.db.insert("learnGroupMembers", { groupId: group._id, userId: user._id, role: "member", addedBy: user._id, addedAt: now });
+    await ctx.db.patch(group._id, { memberCount: group.memberCount + 1, updatedAt: now });
+    const leadRow = await ctx.db
+      .query("learnGroupMembers")
+      .withIndex("by_group", (q) => q.eq("groupId", group._id))
+      .filter((q) => q.eq(q.field("role"), "lead"))
+      .first();
+    if (leadRow && leadRow.userId !== user._id) {
+      await insertNotification(ctx, {
+        userId: leadRow.userId,
+        type: "learn_group_joined",
+        priority: "low",
+        status: "pending",
+        payload: {
+          title: `${info.name} joined ${group.name}`,
+          body: `${group.memberCount + 1} of ${groupCapacity(group)} places taken.`,
+          link: `${LEARN_URL}/community/${roomSlug(group._id)}?tab=people`,
+        },
+        createdAt: now,
+      });
+    }
+    return { roomSlug: roomSlug(group._id), moved: mine.length > 0 };
   },
 });

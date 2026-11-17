@@ -17,6 +17,7 @@ import { groupRoleOf, isLearnAdminUser, requireLearnAdmin } from "./helpers/lear
 import { insertNotification } from "./helpers/pushNotify";
 import { blockingPrivacyIssue } from "../lib/community/privacy";
 import { canUserWatchCourse, isMskProgramLearner, learnMemberInfo, type LearnMemberInfo } from "./learn";
+import { groupBadgeFor } from "./helpers/learnGroupRules";
 
 type Ctx = QueryCtx | MutationCtx;
 
@@ -176,7 +177,8 @@ const publicRoom = ({ doc: _doc, ...room }: RoomView) => room;
 
 // ── Authors ───────────────────────────────────────────────────────────────────
 
-type Author = { id: Id<"users">; name: string; imageUrl: string | null; tag: LearnMemberInfo["tag"] | null };
+type AuthorGroup = { id: Id<"learnGroups">; name: string; color: string; lead: boolean };
+type Author = { id: Id<"users">; name: string; imageUrl: string | null; tag: LearnMemberInfo["tag"] | null; group: AuthorGroup | null };
 
 async function authorsFor(ctx: Ctx, ids: Id<"users">[]) {
   const map = new Map<string, Author>();
@@ -188,9 +190,63 @@ async function authorsFor(ctx: Ctx, ids: Id<"users">[]) {
       name: info?.name ?? "Former member",
       imageUrl: info?.imageUrl ?? null,
       tag: info?.tag ?? null,
+      // Mary 2026-11-17: in the general community you can see which group people are in
+      group: info ? await groupBadgeFor(ctx, id) : null,
     });
   }
   return map;
+}
+
+/** The champion (lead) of a group room can moderate it; Learn admins can moderate everything. */
+async function canModerateRoom(ctx: Ctx, member: LearnMemberInfo, room: Pick<RoomView, "kind" | "groupId">) {
+  if (member.isAdmin) return true;
+  return room.kind === "group" && Boolean(room.groupId) && (await groupRoleOf(ctx, room.groupId!, member.user._id)) === "lead";
+}
+
+/** People tagged as @Name in a post or reply: Learn members whose name is in the text and who can see the room. */
+async function validMentions(ctx: Ctx, ids: Id<"users">[] | undefined, text: string, room: RoomView, authorId: Id<"users">) {
+  const out: { id: Id<"users">; name: string }[] = [];
+  const lower = text.toLowerCase();
+  for (const id of new Set(ids ?? [])) {
+    if (out.length >= 10 || id === authorId) continue;
+    const user = await ctx.db.get(id);
+    const info = await learnMemberInfo(ctx, user);
+    if (!info || !lower.includes(`@${info.name.toLowerCase()}`)) continue;
+    if (!(await canEnterRoom(ctx, info, room))) continue;
+    out.push({ id, name: info.name });
+  }
+  return out;
+}
+
+async function notifyMentions(
+  ctx: MutationCtx,
+  mentioned: { id: Id<"users"> }[],
+  by: LearnMemberInfo,
+  where: { postId: Id<"learnPosts">; title: string },
+  skip: Set<string>,
+  now: number
+) {
+  for (const m of mentioned) {
+    if (skip.has(m.id)) continue;
+    await insertNotification(ctx, {
+      userId: m.id,
+      type: "learn_community_mention",
+      priority: "medium",
+      status: "pending",
+      payload: { title: `${by.name} mentioned you`, body: where.title, link: `${LEARN_URL}/community/post/${where.postId}` },
+      createdAt: now,
+    });
+  }
+}
+
+/** Names for the mentions on a post and its replies, so @Name shows highlighted. */
+async function mentionNames(ctx: Ctx, ids: Id<"users">[] | undefined) {
+  const out: { id: Id<"users">; name: string }[] = [];
+  for (const id of ids ?? []) {
+    const info = await learnMemberInfo(ctx, await ctx.db.get(id));
+    if (info) out.push({ id, name: info.name });
+  }
+  return out;
 }
 
 function postSummary(post: Doc<"learnPosts">, author: Author | undefined, room: { slug: string; title: string }) {
@@ -270,6 +326,7 @@ export const getRoom = query({
     if (!member) return { state: "join" as const, room: publicRoom(room), signedIn: Boolean(await ctx.auth.getUserIdentity()) };
     if (!(await canEnterRoom(ctx, member, room))) return { state: "locked" as const, room: publicRoom(room) };
     const limit = Math.min(Math.max(args.limit ?? 20, 1), 100);
+    const moderator = await canModerateRoom(ctx, member, room);
     const posts = room.doc
       ? (
           await ctx.db
@@ -278,7 +335,7 @@ export const getRoom = query({
             .order("desc")
             .take(limit + 20)
         )
-          .filter((p) => p.status === "open" || p.authorId === member.user._id || member.isAdmin)
+          .filter((p) => p.status === "open" || p.authorId === member.user._id || moderator)
           .slice(0, limit)
       : [];
     const authors = await authorsFor(ctx, posts.map((p) => p.authorId));
@@ -313,6 +370,9 @@ export const getPost = query({
         .take(300)
     ).filter((r) => r.status === "open" || r.authorId === member.user._id || member.isAdmin);
     const authors = await authorsFor(ctx, [post.authorId, ...replies.map((r) => r.authorId)]);
+    const canModerate = await canModerateRoom(ctx, member, room);
+    const replyMentions = new Map<string, { id: Id<"users">; name: string }[]>();
+    for (const r of replies) if (r.mentions?.length) replyMentions.set(r._id, await mentionNames(ctx, r.mentions));
     const marks = new Set<string>();
     for (const target of [{ type: "post" as const, id: post._id as string }, ...replies.map((r) => ({ type: "reply" as const, id: r._id as string }))]) {
       const mark = await ctx.db
@@ -324,7 +384,7 @@ export const getPost = query({
     return {
       state: "ok" as const,
       room: publicRoom(room),
-      canModerate: member.isAdmin,
+      canModerate,
       viewerId: member.user._id,
       post: {
         id: post._id,
@@ -336,6 +396,7 @@ export const getPost = query({
         hidden: post.status === "hidden",
         createdAt: post.createdAt,
         author: authors.get(post.authorId) ?? null,
+        mentions: await mentionNames(ctx, post.mentions),
       },
       replies: replies.map((r) => ({
         id: r._id,
@@ -345,6 +406,7 @@ export const getPost = query({
         hidden: r.status === "hidden",
         createdAt: r.createdAt,
         author: authors.get(r.authorId) ?? null,
+        mentions: replyMentions.get(r._id) ?? [],
       })),
     };
   },
@@ -419,6 +481,7 @@ export const createPost = mutation({
     kind: v.union(v.literal("question"), v.literal("discussion")),
     title: v.string(),
     body: v.string(),
+    mentions: v.optional(v.array(v.id("users"))),
   },
   handler: async (ctx, args): Promise<Id<"learnPosts">> => {
     const member = await requireMember(ctx);
@@ -432,12 +495,14 @@ export const createPost = mutation({
     await rateLimit(ctx, "post", member.user._id);
     const doc = await roomDocFor(ctx, room, member.user._id);
     const now = Date.now();
+    const mentioned = await validMentions(ctx, args.mentions, `${title}\n${body}`, room, member.user._id);
     const postId = await ctx.db.insert("learnPosts", {
       roomId: doc._id,
       authorId: member.user._id,
       kind: args.kind,
       title,
       body,
+      ...(mentioned.length ? { mentions: mentioned.map((m) => m.id) } : {}),
       status: "open",
       replyCount: 0,
       helpfulCount: 0,
@@ -447,6 +512,8 @@ export const createPost = mutation({
     });
     await awardLearnPoints(ctx, { userId: member.user._id, reason: "post", key: `post:${postId}` });
     await ctx.db.patch(doc._id, { postCount: doc.postCount + 1, lastActivityAt: now });
+    await notifyMentions(ctx, mentioned, member, { postId, title }, new Set(), now);
+    const mentionedIds = new Set<string>(mentioned.map((m) => m.id));
     if (room.kind === "group" && room.groupId) {
       const group = await ctx.db.get(room.groupId);
       const others = (
@@ -454,7 +521,7 @@ export const createPost = mutation({
           .query("learnGroupMembers")
           .withIndex("by_group", (q) => q.eq("groupId", room.groupId!))
           .take(150)
-      ).filter((m) => m.userId !== member.user._id);
+      ).filter((m) => m.userId !== member.user._id && !mentionedIds.has(m.userId));
       for (const m of others) {
         await insertNotification(ctx, {
           userId: m.userId,
@@ -475,22 +542,25 @@ export const createPost = mutation({
 });
 
 export const reply = mutation({
-  args: { postId: v.id("learnPosts"), body: v.string() },
+  args: { postId: v.id("learnPosts"), body: v.string(), mentions: v.optional(v.array(v.id("users"))) },
   handler: async (ctx, args): Promise<Id<"learnReplies">> => {
     const member = await requireMember(ctx);
     const post = await ctx.db.get(args.postId);
     const roomDoc = post ? await ctx.db.get(post.roomId) : null;
     if (!post || !roomDoc || post.status !== "open") throw new ConvexError("This post isn't open any more.");
-    if (!(await canEnterRoom(ctx, member, roomView(roomDoc)))) throw new ConvexError("You can't reply in this room.");
+    const replyRoom = roomView(roomDoc);
+    if (!(await canEnterRoom(ctx, member, replyRoom))) throw new ConvexError("You can't reply in this room.");
     const body = clean(args.body, 4000);
     if (!body) throw new ConvexError("Write a reply first.");
     checkPrivacy(body);
     await rateLimit(ctx, "reply", member.user._id);
     const now = Date.now();
+    const mentioned = await validMentions(ctx, args.mentions, body, replyRoom, member.user._id);
     const replyId = await ctx.db.insert("learnReplies", {
       postId: post._id,
       authorId: member.user._id,
       body,
+      ...(mentioned.length ? { mentions: mentioned.map((m) => m.id) } : {}),
       status: "open",
       helpfulCount: 0,
       reportCount: 0,
@@ -499,7 +569,9 @@ export const reply = mutation({
     await awardLearnPoints(ctx, { userId: member.user._id, reason: "reply", key: `reply:${replyId}` });
     await ctx.db.patch(post._id, { replyCount: post.replyCount + 1, lastActivityAt: now });
     await ctx.db.patch(roomDoc._id, { lastActivityAt: now });
-    if (post.authorId !== member.user._id) {
+    // Tagged people hear "mentioned you"; the post's author still hears "replied" unless tagged
+    await notifyMentions(ctx, mentioned, member, { postId: post._id, title: post.title }, new Set(), now);
+    if (post.authorId !== member.user._id && !mentioned.some((m) => m.id === post.authorId)) {
       await insertNotification(ctx, {
         userId: post.authorId,
         type: "learn_community_reply",
@@ -590,7 +662,9 @@ export const remove = mutation({
     const member = await requireMember(ctx);
     const t = await target(ctx, args.targetType, args.targetId);
     if (!t) return;
-    if (t.doc.authorId !== member.user._id && !member.isAdmin) throw new ConvexError("You can only delete your own posts.");
+    const roomDoc = await ctx.db.get(t.roomId);
+    const moderator = roomDoc ? await canModerateRoom(ctx, member, roomView(roomDoc)) : member.isAdmin;
+    if (t.doc.authorId !== member.user._id && !moderator) throw new ConvexError("You can only delete your own posts.");
     if (t.kind === "post") {
       const replies = await ctx.db
         .query("learnReplies")
@@ -650,8 +724,12 @@ export const adminReports = query({
 export const adminModerate = mutation({
   args: { ...targetArgs, action: v.union(v.literal("hide"), v.literal("restore"), v.literal("dismiss")) },
   handler: async (ctx, args) => {
-    await requireLearnAdmin(ctx);
     const t = await target(ctx, args.targetType, args.targetId);
+    // Learn admins everywhere; a group's champion inside their own group's room
+    const member = await memberOrNull(ctx);
+    const roomDoc = t ? await ctx.db.get(t.roomId) : null;
+    const allowed = member && (member.isAdmin || (roomDoc ? await canModerateRoom(ctx, member, roomView(roomDoc)) : false));
+    if (!allowed) await requireLearnAdmin(ctx);
     if (t && args.action !== "dismiss") await ctx.db.patch(t.doc._id, { status: args.action === "hide" ? "hidden" : "open", reportCount: 0 });
     const reports = await ctx.db
       .query("learnReports")
@@ -659,6 +737,67 @@ export const adminModerate = mutation({
       .take(100);
     const now = Date.now();
     for (const r of reports) if (!r.resolvedAt) await ctx.db.patch(r._id, { resolvedAt: now });
+  },
+});
+
+/**
+ * People to tag with @ (Mary 2026-11-17): the conversation's people first, then the room's group,
+ * then anyone on Learn whose name matches. Only people who can see the room are offered.
+ */
+export const mentionSearch = query({
+  args: { q: v.string(), postId: v.optional(v.string()), roomSlug: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const member = await memberOrNull(ctx);
+    if (!member) return [];
+    const q = args.q.toLowerCase().replace(/^@/, "").trim().slice(0, 40);
+    const postId = args.postId ? ctx.db.normalizeId("learnPosts", args.postId) : null;
+    const post = postId ? await ctx.db.get(postId) : null;
+    const roomDoc = post ? await ctx.db.get(post.roomId) : null;
+    const room = roomDoc ? roomView(roomDoc) : args.roomSlug ? await resolveRoom(ctx, args.roomSlug) : null;
+    if (!room || !(await canEnterRoom(ctx, member, room))) return [];
+
+    const ordered: Id<"users">[] = [];
+    const add = (id: Id<"users">) => {
+      if (id !== member.user._id && !ordered.includes(id)) ordered.push(id);
+    };
+    if (post) {
+      add(post.authorId);
+      for (const r of await ctx.db.query("learnReplies").withIndex("by_post", (x) => x.eq("postId", post._id)).take(200)) add(r.authorId);
+    }
+    if (room.kind === "group" && room.groupId) {
+      for (const m of await ctx.db.query("learnGroupMembers").withIndex("by_group", (x) => x.eq("groupId", room.groupId!)).take(200)) add(m.userId);
+    }
+    const matches = async (id: Id<"users">) => {
+      const info = await learnMemberInfo(ctx, await ctx.db.get(id));
+      if (!info) return null;
+      if (q && !info.name.toLowerCase().split(/\s+/).some((part) => part.startsWith(q)) && !info.name.toLowerCase().startsWith(q)) return null;
+      if (room.kind !== "open" && !(await canEnterRoom(ctx, info, room))) return null;
+      return { id, name: info.name, imageUrl: info.imageUrl, tag: info.tag.label, group: await groupBadgeFor(ctx, id) };
+    };
+    const out: NonNullable<Awaited<ReturnType<typeof matches>>>[] = [];
+    for (const id of ordered) {
+      if (out.length >= 8) break;
+      const hit = await matches(id);
+      if (hit) out.push(hit);
+    }
+    // Anyone on Learn whose name starts with what they typed (recent posters, then learner profiles)
+    if (q.length >= 1 && out.length < 8) {
+      const seen = new Set<string>([...ordered, member.user._id]);
+      const candidates: Id<"users">[] = [];
+      for (const p of await ctx.db.query("learnPosts").withIndex("by_activity").order("desc").take(300)) candidates.push(p.authorId);
+      for (const p of await ctx.db.query("learnProfiles").take(1500)) candidates.push(p.userId);
+      for (const id of candidates) {
+        if (out.length >= 8) break;
+        if (seen.has(id)) continue;
+        seen.add(id);
+        const user = await ctx.db.get(id);
+        const name = [user?.firstName, user?.lastName].filter(Boolean).join(" ").toLowerCase();
+        if (!name || !name.split(/\s+/).some((part) => part.startsWith(q))) continue;
+        const hit = await matches(id);
+        if (hit) out.push(hit);
+      }
+    }
+    return out;
   },
 });
 

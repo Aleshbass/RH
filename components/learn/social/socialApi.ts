@@ -32,10 +32,10 @@ export const communityApi = {
   post: makeFunctionReference<'query', { postId: string }, PostPage>('learnCommunity:getPost'),
   createPost: makeFunctionReference<
     'mutation',
-    { roomSlug: string; kind: 'question' | 'discussion'; title: string; body: string },
+    { roomSlug: string; kind: 'question' | 'discussion'; title: string; body: string; mentions?: Id<'users'>[] },
     Id<'learnPosts'>
   >('learnCommunity:createPost'),
-  reply: makeFunctionReference<'mutation', { postId: Id<'learnPosts'>; body: string }, Id<'learnReplies'>>('learnCommunity:reply'),
+  reply: makeFunctionReference<'mutation', { postId: Id<'learnPosts'>; body: string; mentions?: Id<'users'>[] }, Id<'learnReplies'>>('learnCommunity:reply'),
   toggleHelpful: makeFunctionReference<'mutation', Target, { marked: boolean }>('learnCommunity:toggleHelpful'),
   report: makeFunctionReference<'mutation', Target & { reason: string }, { hidden: boolean }>('learnCommunity:report'),
   remove: makeFunctionReference<'mutation', Target, null>('learnCommunity:remove'),

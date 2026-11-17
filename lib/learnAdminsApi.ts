@@ -52,6 +52,8 @@ export type AdminGroupRow = {
   description: string | null
   color: string
   memberCount: number
+  capacity: number
+  openToJoin: boolean
   archived: boolean
   leads: string[]
   roomSlug: string
@@ -81,6 +83,8 @@ export type AdminGroup = {
   color: string
   archived: boolean
   memberCount: number
+  capacity: number
+  openToJoin: boolean
   roomSlug: string
   maxMembers: number
   members: AdminGroupMember[]
@@ -110,14 +114,73 @@ export type MyGroup = {
 
 export const groupsListRef = makeFunctionReference<'query', Record<string, never>, AdminGroupRow[]>('learnGroups:adminList')
 export const groupRef = makeFunctionReference<'query', { groupId: Id<'learnGroups'> }, AdminGroup | null>('learnGroups:adminGroup')
-export const groupCreateRef = makeFunctionReference<'mutation', { name: string; description?: string; color?: GroupColor }, Id<'learnGroups'>>(
+export const groupCreateRef = makeFunctionReference<
+  'mutation',
+  { name: string; description?: string; color?: GroupColor; capacity?: number; openToJoin?: boolean },
+  Id<'learnGroups'>
+>(
   'learnGroups:adminCreate'
 )
 export const groupUpdateRef = makeFunctionReference<
   'mutation',
-  { groupId: Id<'learnGroups'>; name?: string; description?: string; color?: GroupColor },
+  { groupId: Id<'learnGroups'>; name?: string; description?: string; color?: GroupColor; capacity?: number; openToJoin?: boolean },
   null
 >('learnGroups:adminUpdate')
+
+// ── Picking a group (Mary 2026-11-17) ─────────────────────────────────────────
+
+export type JoinableGroup = {
+  id: Id<'learnGroups'>
+  name: string
+  description: string | null
+  color: string
+  memberCount: number
+  capacity: number
+  placesLeft: number
+  full: boolean
+  lead: { name: string; imageUrl: string | null } | null
+  mine: boolean
+}
+export type JoinableGroups = {
+  signedIn: boolean
+  isMember: boolean
+  myGroup: { id: Id<'learnGroups'>; name: string; roomSlug: string; role: GroupRole } | null
+  leadsAGroup: boolean
+  groups: JoinableGroup[]
+}
+export const joinableGroupsRef = makeFunctionReference<'query', Record<string, never>, JoinableGroups>('learnGroups:joinableGroups')
+export const joinGroupRef = makeFunctionReference<'mutation', { groupId: Id<'learnGroups'> }, { roomSlug: string; moved: boolean }>('learnGroups:joinGroup')
+
+export type GroupStanding = {
+  id: Id<'learnGroups'>
+  name: string
+  color: string
+  memberCount: number
+  points: number
+  active: number
+  perMember: number
+  leadName: string | null
+  isMine: boolean
+  rank: number
+}
+export const groupStandingsRef = makeFunctionReference<
+  'query',
+  { period: 'month' | 'all' },
+  { state: 'join'; signedIn: boolean } | { state: 'ok'; monthLabel: string; rows: GroupStanding[] }
+>('learnPoints:groupStandings')
+
+// ── @mentions ─────────────────────────────────────────────────────────────────
+
+export type MentionPerson = {
+  id: Id<'users'>
+  name: string
+  imageUrl: string | null
+  tag: string
+  group: { id: Id<'learnGroups'>; name: string; color: string; lead: boolean } | null
+}
+export const mentionSearchRef = makeFunctionReference<'query', { q: string; postId?: string; roomSlug?: string }, MentionPerson[]>(
+  'learnCommunity:mentionSearch'
+)
 export const groupArchiveRef = makeFunctionReference<'mutation', { groupId: Id<'learnGroups'>; archived: boolean }, null>(
   'learnGroups:adminSetArchived'
 )
