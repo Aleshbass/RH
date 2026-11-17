@@ -35,6 +35,8 @@ export type PhysioPlanSettings = {
   graceDays: number
   /** Show physios the plans pop-up (founding offer) once; admins switch it on when ready */
   announceOn: boolean
+  /** The email + in-app message to physios on Free about the limits (spec: 18 Dec) */
+  noticeDate: string // "YYYY-MM-DD"
 }
 
 export const DEFAULT_PHYSIO_PLAN_SETTINGS: PhysioPlanSettings = {
@@ -56,6 +58,7 @@ export const DEFAULT_PHYSIO_PLAN_SETTINGS: PhysioPlanSettings = {
   retryDays: 3,
   graceDays: 7,
   announceOn: false,
+  noticeDate: '2026-12-18',
 }
 
 /** Small card check to save a card before the first charge; refunded straight away. */

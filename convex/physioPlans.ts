@@ -36,6 +36,10 @@ type Sub = Doc<"physioSubscriptions">;
 const DAY_MS = 24 * 60 * 60 * 1000;
 /** The plans pop-up, once per physio (featureIntros) */
 const ANNOUNCE_KEY = "plans:announce-2026-11";
+/** The 18 Dec notice, once per physio */
+const NOTICE_KEY = "plans:notice-2027-limits";
+const NOTICE_BATCH = 60;
+const noticeRef = makeFunctionReference<"mutation", { after?: string }, null>("physioPlans:sendLimitsNotice");
 export const PLAN_PAGE = "/dashboard/physiotherapist/settings/plan";
 const PREFIX = "PHYSIOPRO_";
 const REFERENCE = /^PHYSIOPRO_(CARD_|RENEW_|TOPUP_)?([a-z0-9]+)_\d+$/;
@@ -991,7 +995,64 @@ export const sweep = internalMutation({
         }
       }
     }
+    // On the notice date (18 Dec): tell physios on Free what changes when the limits start
+    if (zonedDateKey(now) >= s.noticeDate && now < dayStart(s.limitsDate) + 31 * DAY_MS) {
+      await ctx.scheduler.runAfter(0, noticeRef, {});
+    }
     return { charged };
+  },
+});
+
+/**
+ * The limits notice (spec: email + in-app on 18 Dec) to independent physios on Free who haven't had
+ * it: what Free covers from the limits date, the founding price for early physios, and that what
+ * they've sent stays. Batches of NOTICE_BATCH, continuing until everyone has it.
+ */
+export const sendLimitsNotice = internalMutation({
+  args: { after: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const s = await loadPlanSettings(ctx);
+    const now = Date.now();
+    const physios = await ctx.db
+      .query("users")
+      .withIndex("by_role", (q) => q.eq("role", "physiotherapist"))
+      .take(3000);
+    const start = args.after ? physios.findIndex((u) => u._id === args.after) + 1 : 0;
+    let sent = 0;
+    let i = start;
+    for (; i < physios.length && sent < NOTICE_BATCH; i++) {
+      const user = physios[i];
+      if (user.deletedAt) continue;
+      const seen = await ctx.db
+        .query("featureIntros")
+        .withIndex("by_user_and_key", (q) => q.eq("userId", user._id).eq("key", NOTICE_KEY))
+        .first();
+      if (seen) continue;
+      const profile = await ctx.db
+        .query("physiotherapistProfiles")
+        .withIndex("by_user_id", (q) => q.eq("userId", user._id))
+        .first();
+      const plan = await physioPlanFor(ctx, user, profile, s, now);
+      await ctx.db.insert("featureIntros", { userId: user._id, key: NOTICE_KEY, seenAt: now });
+      if (plan.kind !== "free") continue;
+      const founding = isFoundingPhysio(user, profile, s);
+      const limitsDay = dayLabel(s.limitsDate, false);
+      await notifyPhysio(ctx, user._id, `Your plan from ${limitsDay}`, `Free covers ${s.freePatientsPerMonth} patients a month from ${limitsDay}. See what that means for you.`);
+      await emailPhysio(ctx, user, {
+        subject: `Your Rehabify plan from ${limitsDay}`,
+        heading: `Free stays free. Here's what changes on ${limitsDay}`,
+        paragraphs: [
+          `From ${dayLabel(s.limitsDate)}, Free covers home programmes for ${s.freePatientsPerMonth} different patients a month and ${s.freeScribeSessions} Rehabify Scribe sessions. Patients who pay for Flex themselves never count, and everything you've already sent stays as it is.`,
+          founding
+            ? `You joined early, so you can have Individual Pro for ${naira(s.foundingPriceKobo)} a month for your first ${s.foundingMonths} months (normally ${naira(s.proPriceKobo)}): programmes for every patient, ${s.proScribeSessions} Scribe sessions a month and Joy for up to ${s.proJoyPatients} patients.`
+            : `Need more? Individual Pro is ${naira(s.proPriceKobo)} a month: programmes for every patient, ${s.proScribeSessions} Scribe sessions a month and Joy for up to ${s.proJoyPatients} patients.`,
+        ],
+        buttonLabel: "See my plan",
+      });
+      sent++;
+    }
+    if (i < physios.length) await ctx.scheduler.runAfter(5000, noticeRef, { after: physios[i - 1]._id });
+    return null;
   },
 });
 
@@ -1086,6 +1147,7 @@ export const adminSaveSettings = mutation({
     retryDays: v.optional(v.number()),
     graceDays: v.optional(v.number()),
     announceOn: v.optional(v.boolean()),
+    noticeDate: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const { user } = await requireAdmin(ctx);
@@ -1096,7 +1158,7 @@ export const adminSaveSettings = mutation({
       if (!Number.isFinite(n) || n < 0) throw new ConvexError("Numbers can't be negative.");
       patch[key] = Math.round(n);
     }
-    for (const key of ["foundingCutoff", "launchDate", "limitsDate"] as const) {
+    for (const key of ["foundingCutoff", "launchDate", "limitsDate", "noticeDate"] as const) {
       const d = args[key];
       if (d === undefined) continue;
       if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) throw new ConvexError("Dates look like 2026-12-01.");

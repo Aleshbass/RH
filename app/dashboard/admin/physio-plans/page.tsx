@@ -48,6 +48,7 @@ const FIELDS: { title: string; fields: Field[] }[] = [
     fields: [
       { key: 'launchDate', label: 'Pro opens', kind: 'date', hint: 'New physios are on Free limits from this day' },
       { key: 'limitsDate', label: 'Free limits for everyone', kind: 'date' },
+      { key: 'noticeDate', label: 'Email physios about the limits', kind: 'date', hint: 'Email + in-app message to physios on Free, once each' },
       { key: 'reminderDays', label: 'Reminder before renewal (days)', kind: 'number' },
       { key: 'retryDays', label: 'Card retries (days)', kind: 'number' },
       { key: 'graceDays', label: 'Grace after retries (days)', kind: 'number' },
