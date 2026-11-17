@@ -73,8 +73,16 @@ export function paragraph(html: string, opts: { muted?: boolean; size?: number; 
   return `<p style="margin:0 0 18px;font-family:${FONT};font-size:${size}px;line-height:1.65;color:${opts.muted ? C.muted : C.text};${opts.center ? "text-align:center;" : ""}">${html}</p>`;
 }
 
+/**
+ * A name as people expect to see it: "ada" → "Ada", "mary-jane o'neil" → "Mary-Jane O'Neil".
+ * Only first letters change, so "McDonald" and "DeShawn" stay as typed.
+ */
+export function displayName(name: string): string {
+  return name.trim().replace(/(^|[\s\-'’])([^\s\-'’])/g, (_, before: string, letter: string) => before + letter.toUpperCase());
+}
+
 export function greeting(name?: string): string {
-  return paragraph(`Hello ${name ? `<strong style="color:${C.ink};">${name}</strong>` : "there"},`);
+  return paragraph(`Hello ${name ? `<strong style="color:${C.ink};">${displayName(name)}</strong>` : "there"},`);
 }
 
 export function heading(html: string): string {

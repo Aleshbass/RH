@@ -60,6 +60,7 @@ import {
   StatusBadge,
   cardClass,
   dangerButtonClass,
+  fieldClass,
   primaryButtonClass,
   softButtonClass,
   tabsListClass,
@@ -72,6 +73,7 @@ import {
   roleMeta,
 } from '@/components/dashboard/admin/UserManagement'
 import { publicAppUrl } from '@/lib/public-app-url'
+import { OTHER_COUNTRY, PRACTICE_COUNTRIES } from '@/lib/practiceCountries'
 import { NETWORK_TERMS_VERSION } from '@/lib/rehabify-network-terms'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
@@ -177,6 +179,63 @@ const setOfflinePilotRef = makeFunctionReference<'mutation', { userId: Id<'users
 const adminUserDetailsRef = makeFunctionReference<'query'>('admin:getAdminUserDetails')
 const myUserRef = makeFunctionReference<'query', Record<string, never>, { _id: Id<'users'> } | null>('users:getMyUser')
 const adminDeleteUserRef = makeFunctionReference<'mutation', { userId: Id<'users'> }, unknown>('users:adminDeleteUser')
+const setPhysioCountryRef = makeFunctionReference<'mutation', { userId: Id<'users'>; country: string }, null>('physioPlans:adminSetPhysioCountry')
+
+/** The physio's country of practice, with a change for admins (it decides plans and payments). */
+function PhysioCountryField({ userId, country }: { userId: Id<'users'>; country: string }) {
+  const setCountry = useMutation(setPhysioCountryRef)
+  const [editing, setEditing] = useState(false)
+  const [value, setValue] = useState(country)
+  const [saving, setSaving] = useState(false)
+  const save = async () => {
+    setSaving(true)
+    try {
+      await setCountry({ userId, country: value })
+      toast.success(`Country set to ${value}`)
+      setEditing(false)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message.replace(/^.*ConvexError: /, '') : 'Could not change the country')
+    } finally {
+      setSaving(false)
+    }
+  }
+  return (
+    <div className="rounded-xl bg-rh-canvas p-3.5 dark:bg-white/[0.04]">
+      <p className="flex items-center gap-1.5 text-xs font-medium text-neutral-500 dark:text-neutral-400">
+        <Globe className="h-3.5 w-3.5 text-rh-ink dark:text-rh-lime" />
+        Country of practice
+      </p>
+      {editing ? (
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <select value={value} onChange={(e) => setValue(e.target.value)} aria-label="Country of practice" className={cn(fieldClass, 'h-9 w-auto')}>
+            {PRACTICE_COUNTRIES.filter((c) => c.code !== OTHER_COUNTRY).map((c) => (
+              <option key={c.code} value={c.name}>
+                {c.name}
+              </option>
+            ))}
+            {!PRACTICE_COUNTRIES.some((c) => c.name === country) && <option value={country}>{country}</option>}
+          </select>
+          <Button size="sm" className="h-9 rounded-xl" disabled={saving || value === country} onClick={save}>
+            {saving ? 'Saving…' : 'Save'}
+          </Button>
+          <Button size="sm" variant="ghost" className="h-9 rounded-xl" onClick={() => setEditing(false)}>
+            Cancel
+          </Button>
+          <p className="basis-full text-xs font-normal text-neutral-500">
+            Outside Nigeria: they practise independently, and get Pro free as testers while that setting is on.
+          </p>
+        </div>
+      ) : (
+        <div className="mt-1 flex items-center justify-between gap-2 text-sm font-semibold text-rh-ink dark:text-white">
+          {country}
+          <button type="button" onClick={() => { setValue(country); setEditing(true) }} className="text-xs font-medium text-neutral-500 underline-offset-2 hover:text-rh-ink hover:underline dark:hover:text-white">
+            Change
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
 
 /**
  * Offline mode pilot for one account (with the app's offline mode on "pilot"). Off also switches
@@ -598,9 +657,7 @@ export default function AdminUserDetailPage() {
                       <Field icon={BookOpen} label="Certification board">
                         {physioProfile?.certificationBoard || 'Medical Rehabilitation Therapists Board (MRTB)'}
                       </Field>
-                      <Field icon={Globe} label="Country of practice">
-                        {(physioProfile as { country?: string } | undefined)?.country || 'Nigeria'}
-                      </Field>
+                      <PhysioCountryField userId={userId as Id<'users'>} country={(physioProfile as { country?: string } | undefined)?.country || 'Nigeria'} />
                       <Field icon={Calendar} label="Certification year">
                         {physioProfile?.certificationYear || '—'}
                       </Field>

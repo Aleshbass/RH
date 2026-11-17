@@ -315,6 +315,10 @@ export default defineSchema({
     // The clinic cancelled: billing stops when the current (paid) period ends
     cancelAtPeriodEnd: v.optional(v.boolean()),
     cancelRequestedAt: v.optional(v.number()),
+    // Cancelled with an unpaid invoice: the plan ends once it's paid (told once)
+    endsWhenPaidNoticeAt: v.optional(v.number()),
+    // Card checks started from "Add a card" (newest last): only these may save a card
+    cardCheckReferences: v.optional(v.array(v.string())),
     updatedBy: v.optional(v.id("users")),
     createdAt: v.number(),
     updatedAt: v.number(),
@@ -373,6 +377,9 @@ export default defineSchema({
     dueAt: v.number(), // end of the 7th day after issue (Lagos)
     // Latest Paystack checkout started for it
     paystackReference: v.optional(v.string()),
+    // Every Paystack reference started for it (checkouts, card pages, saved-card charges), newest
+    // last, so a payment on an older link is still found and applied
+    paystackReferences: v.optional(v.array(v.string())),
     authorizationUrl: v.optional(v.string()),
     checkoutCreatedAt: v.optional(v.number()),
     // Charging the clinic's saved card (clinicSelfServe.chargeSavedCard): up to 3 tries
@@ -380,6 +387,7 @@ export default defineSchema({
     lastAutoChargeAt: v.optional(v.number()),
     lastAutoChargeStatus: v.optional(v.string()),
     lastAutoChargeMessage: v.optional(v.string()),
+    lastAutoChargeReference: v.optional(v.string()),
     paidAt: v.optional(v.number()),
     paidReference: v.optional(v.string()),
     paidAmountKobo: v.optional(v.number()),
@@ -4931,6 +4939,8 @@ export default defineSchema({
     foundingUntil: v.optional(v.number()), // founding price applies to periods starting before this
     currentPeriodStart: v.optional(v.number()),
     currentPeriodEnd: v.optional(v.number()),
+    // Start of the first month of this run of Pro: every period ends on that day of the month
+    periodAnchor: v.optional(v.number()),
     cancelAtPeriodEnd: v.optional(v.boolean()),
     renewalAttempts: v.optional(v.number()),
     lastAttemptAt: v.optional(v.number()),
@@ -4977,12 +4987,15 @@ export default defineSchema({
     joyMonth: v.optional(v.string()),
     method: v.union(v.literal("checkout"), v.literal("saved_card")),
     amountKobo: v.number(),
-    status: v.union(v.literal("pending"), v.literal("paid"), v.literal("failed")),
+    status: v.union(v.literal("pending"), v.literal("paid"), v.literal("failed"), v.literal("refunded")),
     periodStart: v.optional(v.number()),
     periodEnd: v.optional(v.number()),
     receiptId: v.optional(v.id("receipts")),
     error: v.optional(v.string()),
     paidAt: v.optional(v.number()),
+    // A card check that couldn't save the card is still refunded
+    refundedAt: v.optional(v.number()),
+    refundError: v.optional(v.string()),
     createdAt: v.number(),
   })
     .index("by_reference", ["reference"])
@@ -5006,7 +5019,7 @@ export default defineSchema({
   physioScribeCredits: defineTable({
     physioId: v.id("users"),
     delta: v.number(),
-    reason: v.union(v.literal("purchase"), v.literal("used"), v.literal("admin")),
+    reason: v.union(v.literal("purchase"), v.literal("used"), v.literal("admin"), v.literal("refund")),
     reference: v.optional(v.string()),
     scribeSessionId: v.optional(v.id("scribeSessions")),
     createdAt: v.number(),

@@ -17,6 +17,7 @@ type Ctx = QueryCtx | MutationCtx;
 export const RENEW_BEFORE_MS = 24 * 3_600_000;
 export const RENEW_RETRY_AFTER_MS = 12 * 3_600_000;
 export const MAX_RENEW_ATTEMPTS = 2;
+const STALE_PENDING_MS = 6 * 3_600_000;
 
 export const chargeFlexRenewalRef = makeFunctionReference<"action", { entitlementId: Id<"patientPlanEntitlements"> }, unknown>(
   "flexRenewal:chargeFlexRenewal"
@@ -95,7 +96,10 @@ export async function saveFlexCardFromPayment(
 /** For the hourly sweep: should this ending period be renewed (again) now? */
 export function wantsRenewalCharge(card: Doc<"patientPlanCards">, entitlementId: Id<"patientPlanEntitlements">, now: number) {
   if (card.renewingEntitlementId !== entitlementId) return true;
-  if (card.lastStatus === "success" || card.lastStatus === "pending") return false;
+  if (card.lastStatus === "success") return false;
+  // Still going through: wait. Pending for hours means it never went through (the 10-minute check
+  // would have applied it, and renewalInfo refuses a period that's already renewed)
+  if (card.lastStatus === "pending") return now - (card.lastAttemptAt ?? 0) >= STALE_PENDING_MS && (card.attempts ?? 0) < MAX_RENEW_ATTEMPTS;
   if ((card.attempts ?? 0) >= MAX_RENEW_ATTEMPTS) return false;
   return now - (card.lastAttemptAt ?? 0) >= RENEW_RETRY_AFTER_MS;
 }

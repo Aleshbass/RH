@@ -398,16 +398,16 @@ export async function refundRule(ctx: Ctx, row: Entitlement, now = Date.now()): 
 // Paystack references: FLEX_<patientId>_<flex|max>_<timestamp>
 // ─────────────────────────────────────────────────────────────────────────────
 
-const REFERENCE = /^FLEX_([a-z0-9]+)_(flex|max)_\d+$/;
+const REFERENCE = /^FLEX_([a-z0-9]+)_(flex|max)_(\d+)$/;
 
 export function flexReference(patientId: Id<"users">, plan: PaidPlan, now: number) {
   return `FLEX_${patientId}_${plan === "flex_max" ? "max" : "flex"}_${now}`;
 }
 
-export function parseFlexReference(reference: string): { patientId: string; plan: PaidPlan } | null {
+export function parseFlexReference(reference: string): { patientId: string; plan: PaidPlan; startedAt: number } | null {
   const match = REFERENCE.exec(reference);
   if (!match) return null;
-  return { patientId: match[1], plan: match[2] === "max" ? "flex_max" : "flex" };
+  return { patientId: match[1], plan: match[2] === "max" ? "flex_max" : "flex", startedAt: Number(match[3]) };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

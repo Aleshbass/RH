@@ -4,7 +4,7 @@ import { v } from "convex/values";
 import { internalAction } from "../../_generated/server";
 import { Resend } from "resend";
 import { publicAppUrl } from "../../helpers/appUrl";
-import { actions, button, greeting, linkFallback, paragraph, renderEmail } from "../../../lib/email/layout";
+import { actions, button, displayName, greeting, linkFallback, paragraph, renderEmail } from "../../../lib/email/layout";
 
 /** Names and clinic details are typed by people, so never put them in HTML raw. */
 const escapeHtml = (value: string) =>
@@ -77,7 +77,7 @@ export const sendClinicPatientInviteEmail = internalAction({
     });
 
     const text = [
-      `Hello ${args.patientFirstName?.trim() || "there"},`,
+      `Hello ${args.patientFirstName?.trim() ? displayName(args.patientFirstName) : "there"},`,
       ``,
       `${args.clinicName} added you on Rehabify Health. Your appointments, home exercises and progress notes from the clinic will appear in your patient portal.${args.clinicianName?.trim() ? ` Your physiotherapist is ${args.clinicianName.trim()}.` : ""}`,
       ``,

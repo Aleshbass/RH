@@ -131,6 +131,26 @@ export default function PhysioPlansAdminPage() {
         <StatTile label="Free Pro grants" value={data?.grants.length ?? 0} />
       </div>
 
+      {/* Payments a person has to sort out: a card charge Paystack hasn't confirmed, a short payment, a refund that failed */}
+      {data && data.attention.length > 0 && (
+        <Panel title="Needs attention" description="Payments that need a person. Check each one on Paystack by its reference.">
+          <ul className="divide-y divide-black/[0.05] dark:divide-white/[0.06]">
+            {data.attention.map((item) => (
+              <li key={`${item.id}-${item.reference}`} className="flex flex-wrap items-center justify-between gap-2 px-5 py-3 text-sm">
+                <span className="min-w-0">
+                  <span className="font-medium text-rh-ink dark:text-white">{item.name}</span>
+                  {item.email && <span className="text-neutral-500"> · {item.email}</span>}
+                  <span className="block text-xs text-neutral-500">
+                    {item.what} · {naira(item.amountKobo)} · {format(item.at, 'd MMM, HH:mm')}
+                  </span>
+                </span>
+                <span className="font-mono text-xs text-neutral-500">{item.reference}</span>
+              </li>
+            ))}
+          </ul>
+        </Panel>
+      )}
+
       <Panel title="Prices, limits and dates" description="Changes apply at once. Prices already charged don't change; renewals use the new price.">
         <div className="space-y-6 p-5">
           {FIELDS.map((group) => (

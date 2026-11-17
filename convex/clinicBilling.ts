@@ -46,6 +46,8 @@ import {
   wantsAutoChargeRetry,
   type PaystackAuthorization,
 } from "./helpers/clinicCards";
+import { alertAdminsAboutClinic, invoiceReferences, referenceTime, withReference } from "./helpers/clinicAdminAlerts";
+import { paystackChargeVerdict } from "./helpers/paystackVerdict";
 import {
   CLINIC_PLAN_PAGE,
   DAY_MS,
@@ -797,7 +799,12 @@ const CLINIC_BILLING_FOOTNOTE =
 
 type PaidArgs = { reference: string; amountKobo: number; currency: string };
 type SubscriptionPaymentResult = { success: true; alreadyCompleted: boolean } | { success: false; reason: string };
-type BillableWork = { subscriptionIds: Id<"clinicSubscriptions">[]; pendingReferences: string[] };
+type BillableWork = {
+  subscriptionIds: Id<"clinicSubscriptions">[];
+  pendingReferences: string[];
+  /** Saved-card charges Paystack hasn't confirmed or declined yet */
+  autoCharges: { invoiceId: Id<"clinicSubscriptionInvoices">; reference: string; at: number }[];
+};
 type CheckoutInfo = {
   invoiceId: Id<"clinicSubscriptionInvoices">;
   number: string;
@@ -819,6 +826,12 @@ const billableSubscriptionsRef = makeFunctionReference<"query", Record<string, n
 );
 const completePaymentRef = makeFunctionReference<"mutation", PaidArgs, SubscriptionPaymentResult>(
   "clinicBilling:completeVerifiedSubscriptionPayment"
+);
+const resolveAutoChargeRef = makeFunctionReference<"mutation", { invoiceId: Id<"clinicSubscriptionInvoices">; reference: string; message: string }, null>(
+  "clinicSelfServe:resolveAutoCharge"
+);
+const refundCheckReferenceRef = makeFunctionReference<"action", { reference: string; clinicId: Id<"clinics"> }, null>(
+  "clinicSelfServe:refundCardCheckReference"
 );
 const checkoutInfoRef = makeFunctionReference<"query", { invoiceId: Id<"clinicSubscriptionInvoices"> }, CheckoutInfo>(
   "clinicBilling:subscriptionCheckoutInfo"
@@ -1143,6 +1156,13 @@ async function completeSubscriptionPayment(
       targetEntityId: String(invoice._id),
       details: { reference, amountKobo: paid.amountKobo, currency: paid.currency, invoiceKobo: invoice.amountKobo },
     });
+    const clinic = await ctx.db.get(invoice.clinicId);
+    await alertAdminsAboutClinic(
+      ctx,
+      "Clinic payment didn't match its invoice",
+      `${clinic?.name ?? "A clinic"} paid ${paid.currency} ${(paid.amountKobo / 100).toLocaleString("en-NG")} for invoice ${invoice.number} (${naira(invoice.amountKobo)}), reference ${reference}. Mark it paid by hand or refund it.`,
+      invoice.clinicId
+    );
     return { success: false, reason: "amount_mismatch" };
   }
   await settleSubscriptionInvoice(ctx, invoice, { method: "paystack", reference, amountKobo: paid.amountKobo, paidAt: now });
@@ -1242,6 +1262,28 @@ export const processClinicSubscription = internalMutation({
       // A missed day catches up; anything further behind is left for the next runs
       for (let guard = 0; guard < 3 && sub.currentPeriodStart !== undefined && sub.currentPeriodEnd !== undefined && sub.currentPeriodEnd <= now; guard++) {
         const closed = { start: sub.currentPeriodStart, end: sub.currentPeriodEnd };
+        // Cancelled but an invoice is still unpaid: the plan doesn't end (and read-only doesn't lift)
+        // until it's paid. No new period or invoice; reminders and the notice carry on below.
+        if (sub.cancelAtPeriodEnd) {
+          const owing = await openSubscriptionInvoices(ctx, clinic._id);
+          if (owing.length > 0) {
+            if (sub.endsWhenPaidNoticeAt === undefined) {
+              await ctx.db.patch(sub._id, { endsWhenPaidNoticeAt: now, updatedAt: now });
+              sub = (await ctx.db.get(sub._id))!;
+              await emailClinic(ctx, clinic, {
+                subject: `Your ${planName(sub.plan)} plan ends once your invoice is paid`,
+                heading: "One invoice to pay before your plan ends",
+                paragraphs: [
+                  `${clinic.name}'s plan was due to end on ${longDate(closed.end)}, but ${naira(owing.reduce((sum, inv) => sum + inv.amountKobo, 0))} is still unpaid for the time you used.`,
+                  "Once it's paid your plan ends and your card won't be charged again. Nothing new is billed meanwhile.",
+                ],
+                buttonLabel: "Pay now",
+                buttonPath: CLINIC_PLAN_PAGE,
+              });
+            }
+            break;
+          }
+        }
         // The clinic cancelled (clinicSelfServe.cancelClinicPlan): the paid period has ended, so stop
         if (sub.cancelAtPeriodEnd) {
           await ctx.db.patch(sub._id, { status: "cancelled", cancelledAt: now, cancelAtPeriodEnd: undefined, updatedAt: now });
@@ -1373,10 +1415,11 @@ export const billableClinicSubscriptions = internalQuery({
       .query("clinicSubscriptionInvoices")
       .withIndex("by_status", (q) => q.eq("status", "open"))
       .collect();
-    const pendingReferences = open
-      .filter((inv) => inv.paystackReference && (inv.checkoutCreatedAt ?? 0) >= since)
-      .map((inv) => inv.paystackReference as string);
-    return { subscriptionIds, pendingReferences };
+    const pendingReferences = open.flatMap((inv) => invoiceReferences(inv).filter((ref) => (referenceTime(ref) ?? inv.checkoutCreatedAt ?? 0) >= since).slice(-6));
+    const autoCharges = open
+      .filter((inv) => inv.lastAutoChargeStatus === "pending" && inv.lastAutoChargeReference && Date.now() - (inv.lastAutoChargeAt ?? 0) > 30 * 60_000)
+      .map((inv) => ({ invoiceId: inv._id, reference: inv.lastAutoChargeReference as string, at: inv.lastAutoChargeAt ?? 0 }));
+    return { subscriptionIds, pendingReferences, autoCharges };
   },
 });
 
@@ -1413,6 +1456,28 @@ export const runDailyClinicSubscriptions = internalAction({
         });
       } catch (err) {
         console.error("Clinic subscription payment check failed", err instanceof Error ? err.message : "unknown error");
+      }
+    }
+    // Saved-card charges with no answer yet: applied if they went through, else a decline (so the
+    // retry 2 days later can happen). Still nothing after a day counts as a decline.
+    for (const charge of work.autoCharges) {
+      const verdict = await paystackChargeVerdict(charge.reference);
+      try {
+        if (verdict.outcome === "success") {
+          await ctx.runMutation(completePaymentRef, {
+            reference: charge.reference,
+            amountKobo: Number(verdict.tx.amount) || 0,
+            currency: String(verdict.tx.currency || ""),
+          });
+        } else if (verdict.outcome === "failed" || Date.now() - charge.at > DAY_MS) {
+          await ctx.runMutation(resolveAutoChargeRef, {
+            invoiceId: charge.invoiceId,
+            reference: charge.reference,
+            message: verdict.outcome === "failed" ? verdict.reason : "The bank didn't confirm the payment",
+          });
+        }
+      } catch (err) {
+        console.error("Clinic card charge check failed", err instanceof Error ? err.message : "unknown error");
       }
     }
     let failed = 0;
@@ -1462,6 +1527,7 @@ export const recordSubscriptionCheckout = internalMutation({
     const now = Date.now();
     await ctx.db.patch(invoice._id, {
       paystackReference: args.reference,
+      paystackReferences: withReference(invoiceReferences(invoice), args.reference),
       authorizationUrl: args.authorizationUrl,
       checkoutCreatedAt: now,
       updatedAt: now,
@@ -1533,12 +1599,30 @@ async function saveCardFromPayment(
   const isCardCheck = CARD_CHECK_REFERENCE.test(reference);
   let clinicId: Id<"clinics"> | null = null;
   if (isCardCheck) {
-    clinicId = (await subscriptionForCardCheck(ctx, reference))?.clinicId ?? null;
+    // Only a card check started from this clinic's "Add a card" can replace its card
+    const sub = await subscriptionForCardCheck(ctx, reference);
+    if (sub && !(sub.cardCheckReferences ?? []).includes(reference)) {
+      await ctx.db.insert("systemLogs", {
+        type: "billing",
+        action: "clinic_card_check_unknown_reference",
+        timestamp: Date.now(),
+        clinicId: sub.clinicId,
+        targetEntityType: "payment_reference",
+        targetEntityId: reference,
+        details: { amountKobo: tx.amountKobo },
+      });
+      // Not saved, but the check is still given back (e.g. one opened just before references were kept)
+      if (tx.amountKobo > 0) await ctx.scheduler.runAfter(0, refundCheckReferenceRef, { reference, clinicId: sub.clinicId });
+      return false;
+    }
+    clinicId = sub?.clinicId ?? null;
   } else {
     if (paystackMetadata(tx.metadata).saveCard !== true) return false;
     const match = SUB_REFERENCE.exec(reference);
     const invoiceId = match ? ctx.db.normalizeId("clinicSubscriptionInvoices", match[1]) : null;
-    clinicId = invoiceId ? ((await ctx.db.get(invoiceId))?.clinicId ?? null) : null;
+    const invoice = invoiceId ? await ctx.db.get(invoiceId) : null;
+    // The card page for an invoice is ours only when we recorded its reference
+    clinicId = invoice && invoiceReferences(invoice).includes(reference) ? invoice.clinicId : null;
   }
   if (!clinicId) return false;
   const cardId = await saveClinicCard(ctx, {
@@ -1549,6 +1633,10 @@ async function saveCardFromPayment(
     amountKobo: tx.amountKobo,
     isCardCheck,
   });
+  // A card check that went through but can't be charged again: the check is still given back
+  if (cardId === null && isCardCheck && tx.amountKobo > 0) {
+    await ctx.scheduler.runAfter(0, refundCheckReferenceRef, { reference, clinicId });
+  }
   return cardId !== null;
 }
 

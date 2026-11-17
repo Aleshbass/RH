@@ -26,8 +26,19 @@ import { toPublicStatus } from "./partnerShared";
 import { returnAwardSession } from "./accessAwards";
 import { settleRefundRequest } from "./refunds";
 import { notifyRefundIssued } from "../pushAlerts";
+import { CARD_CHECK_REFERENCE, subscriptionForCardCheck } from "./clinicCards";
 
-type RefundKind = "marketplace" | "invoice" | "learn" | "verification" | "specialist_review" | "flex" | "clinic_subscription" | "unknown";
+type RefundKind =
+  | "marketplace"
+  | "invoice"
+  | "learn"
+  | "verification"
+  | "specialist_review"
+  | "flex"
+  | "clinic_subscription"
+  | "clinic_card_check"
+  | "physio_pro"
+  | "unknown";
 
 export type RefundResult = {
   handled: boolean;
@@ -123,6 +134,33 @@ async function refundBooking(ctx: MutationCtx, booking: Doc<"marketplaceBookings
     if (referral && toPublicStatus(referral.status) !== "completed" && toPublicStatus(referral.status) !== "cancelled") {
       await transitionReferral(ctx, referral._id, "refunded", { actorType: "system", actorId: "paystack_refund", metadata: { reference } });
     }
+  }
+}
+
+/**
+ * A refunded Pro payment takes back what it bought: the month of Pro (a month still to come is
+ * removed; the running one ends now), the top-up sessions, or the Joy month (no longer "paid").
+ */
+async function undoProPayment(ctx: MutationCtx, payment: Doc<"physioPlanPayments">, now: number) {
+  if (payment.kind === "topup") {
+    const credits = await ctx.db
+      .query("physioScribeCredits")
+      .withIndex("by_physio", (q) => q.eq("physioId", payment.physioId))
+      .take(500);
+    const bought = credits.find((c) => c.reference === payment.reference && c.reason === "purchase");
+    const refunded = credits.some((c) => c.reference === payment.reference && c.reason === "refund");
+    if (bought && !refunded) {
+      await ctx.db.insert("physioScribeCredits", { physioId: payment.physioId, delta: -bought.delta, reason: "refund", reference: payment.reference, createdAt: now });
+    }
+    return;
+  }
+  if (payment.kind !== "first" && payment.kind !== "renewal") return; // a Joy month just stops counting as paid
+  const sub = payment.subscriptionId ? await ctx.db.get(payment.subscriptionId) : null;
+  if (!sub || (sub.status !== "active" && sub.status !== "past_due") || sub.currentPeriodEnd !== payment.periodEnd) return;
+  if (payment.periodStart !== undefined && payment.periodStart > now) {
+    await ctx.db.patch(sub._id, { currentPeriodEnd: payment.periodStart, updatedAt: now });
+  } else {
+    await ctx.db.patch(sub._id, { status: "cancelled", endedAt: now, cancelAtPeriodEnd: undefined, graceUntil: undefined, updatedAt: now });
   }
 }
 
@@ -281,6 +319,47 @@ export async function applyPaystackRefund(ctx: MutationCtx, data: any): Promise<
       } else if (!full) {
         await alert(ctx, "partial_refund_needs_review", reference, { entitlementId: period._id, refundedKobo: total, paidKobo });
       }
+    }
+  } else if (reference.startsWith("PHYSIOPRO_")) {
+    // Individual Pro months, Scribe top-ups, Joy months and Pro card checks (physioPlans.ts)
+    const payment = await ctx.db
+      .query("physioPlanPayments")
+      .withIndex("by_reference", (q) => q.eq("reference", reference))
+      .first();
+    if (payment) {
+      kind = "physio_pro";
+      paidKobo = payment.amountKobo;
+      full = total >= paidKobo;
+      const now = Date.now();
+      if (payment.kind === "card_check") {
+        // The check given back (by us at once, or by hand on Paystack)
+        const card = await ctx.db
+          .query("physioPlanCards")
+          .withIndex("by_reference", (q) => q.eq("reference", reference))
+          .first();
+        if (card && card.checkRefundedAt === undefined) await ctx.db.patch(card._id, { checkRefundedAt: now, checkRefundError: undefined });
+        if (payment.status === "paid") await ctx.db.patch(payment._id, { status: "refunded", refundedAt: now, refundError: undefined });
+      } else if (!full) {
+        await alert(ctx, "partial_refund_needs_review", reference, { physioPlanPaymentId: payment._id, refundedKobo: total, paidKobo });
+      } else if (payment.status === "paid") {
+        await ctx.db.patch(payment._id, { status: "refunded", refundedAt: now });
+        await undoProPayment(ctx, payment, now);
+      }
+    }
+  } else if (CARD_CHECK_REFERENCE.test(reference)) {
+    // A clinic's card check from "Add a card": refunded at once (clinicSelfServe.refundCardCheck)
+    const sub = await subscriptionForCardCheck(ctx, reference);
+    if (sub) {
+      kind = "clinic_card_check";
+      const cards = await ctx.db
+        .query("clinicBillingCards")
+        .withIndex("by_clinic_status", (q) => q.eq("clinicId", sub.clinicId))
+        .order("desc")
+        .take(20);
+      const card = cards.find((c) => c.checkReference === reference);
+      paidKobo = card?.checkAmountKobo ?? amountKobo;
+      full = total >= paidKobo;
+      if (card && card.checkRefundedAt === undefined) await ctx.db.patch(card._id, { checkRefundedAt: Date.now(), checkRefundError: undefined });
     }
   } else if (reference.startsWith("CLINICSUB_")) {
     // Rehabify's invoice to a clinic (clinicBilling.ts). The reference carries the invoice id; a

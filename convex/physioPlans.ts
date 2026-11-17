@@ -18,7 +18,9 @@
  */
 import { ConvexError, v } from "convex/values";
 import { makeFunctionReference } from "convex/server";
-import { action, internalAction, internalMutation, internalQuery, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
+import { action, internalAction, internalMutation, internalQuery, mutation, query, type ActionCtx, type MutationCtx, type QueryCtx } from "./_generated/server";
+import { paystackChargeVerdict } from "./helpers/paystackVerdict";
+import { isOutsideRehabifyCare } from "../lib/practiceCountries";
 import type { Doc, Id } from "./_generated/dataModel";
 import { getViewer, requireAdmin } from "./helpers/partnerAccess";
 import { paystackRequest } from "./clinicBilling";
@@ -52,11 +54,22 @@ const sendEmailRef = makeFunctionReference<
 >("actions/emails/sendPatientCareEmail:sendPatientCareEmail");
 const prepareRef = makeFunctionReference<"mutation", { purpose: Purpose; patientId?: Id<"users"> }, Prepared>("physioPlans:prepareCheckout");
 const completeRef = makeFunctionReference<"mutation", Settle, SettleResult>("physioPlans:settlePayment");
-const chargeInfoRef = makeFunctionReference<"query", { subscriptionId: Id<"physioSubscriptions"> }, ChargeInfo | null>("physioPlans:chargeInfo");
+const chargeInfoRef = makeFunctionReference<"query", { subscriptionId: Id<"physioSubscriptions"> }, ChargePlan | null>("physioPlans:chargeInfo");
 const chargeFailedRef = makeFunctionReference<"mutation", { subscriptionId: Id<"physioSubscriptions">; reference: string; error: string }, null>(
   "physioPlans:recordChargeFailure"
 );
 const chargeRef = makeFunctionReference<"action", { subscriptionId: Id<"physioSubscriptions"> }, null>("physioPlans:chargeSavedCard");
+const verifyChargeRef = makeFunctionReference<"action", { subscriptionId: Id<"physioSubscriptions">; reference: string; tries: number }, null>(
+  "physioPlans:verifySavedCardCharge"
+);
+const chargeUnknownRef = makeFunctionReference<"mutation", { reference: string; error: string }, null>("physioPlans:recordChargeUnknown");
+const refundCheckRef = makeFunctionReference<"action", { paymentId: Id<"physioPlanPayments"> }, null>("physioPlans:refundUnusableCardCheck");
+const refundCheckInfoRef = makeFunctionReference<"query", { paymentId: Id<"physioPlanPayments"> }, { reference: string } | null>(
+  "physioPlans:unusableCheckInfo"
+);
+const refundCheckDoneRef = makeFunctionReference<"mutation", { paymentId: Id<"physioPlanPayments">; error?: string }, null>(
+  "physioPlans:recordUnusableCheckRefund"
+);
 const refundRef = makeFunctionReference<"action", { cardId: Id<"physioPlanCards"> }, null>("physioPlans:refundCardCheck");
 const refundInfoRef = makeFunctionReference<"query", { cardId: Id<"physioPlanCards"> }, { reference: string; refunded: boolean } | null>("physioPlans:refundInfo");
 const refundDoneRef = makeFunctionReference<"mutation", { cardId: Id<"physioPlanCards">; error?: string }, null>("physioPlans:recordRefund");
@@ -66,6 +79,8 @@ type Prepared = { reference: string; amountKobo: number; email: string; name: st
 type Settle = { reference: string; amountKobo: number; currency: string; channel?: string; authorization?: unknown; email?: string };
 type SettleResult = { ok: boolean; already?: boolean; reason?: string; kind?: string };
 type ChargeInfo = { authorizationCode: string; email: string; amountKobo: number; reference: string; label: string };
+/** Charge the card, or first find out what happened to the last charge (never charge twice). */
+type ChargePlan = { charge: ChargeInfo } | { verify: string };
 
 // ─── Settings, dates, who the physio is ──────────────────────────────────────
 
@@ -121,6 +136,69 @@ async function activeCard(ctx: Ctx, physioId: Id<"users">) {
     .query("physioPlanCards")
     .withIndex("by_physio_status", (q) => q.eq("physioId", physioId).eq("status", "active"))
     .first();
+}
+
+/** Locked in: a card check made for this Pro went through and saved a card (not just any older card). */
+async function lockedIn(ctx: Ctx, sub: Sub) {
+  const rows = await ctx.db
+    .query("physioPlanPayments")
+    .withIndex("by_physio", (q) => q.eq("physioId", sub.physioId))
+    .order("desc")
+    .take(200);
+  for (const p of rows) {
+    if (p.subscriptionId !== sub._id || p.kind !== "card_check" || (p.status !== "paid" && p.status !== "refunded")) continue;
+    const card = await ctx.db
+      .query("physioPlanCards")
+      .withIndex("by_reference", (q) => q.eq("reference", p.reference))
+      .first();
+    if (card) return true;
+  }
+  return false;
+}
+
+/** A saved-card charge for this Pro that Paystack hasn't confirmed or declined yet (last 2 days). */
+async function unresolvedCharge(ctx: Ctx, sub: Sub, now: number) {
+  const rows = await ctx.db
+    .query("physioPlanPayments")
+    .withIndex("by_physio", (q) => q.eq("physioId", sub.physioId))
+    .order("desc")
+    .take(50);
+  return rows.find((p) => p.subscriptionId === sub._id && p.method === "saved_card" && p.status === "pending" && now - p.createdAt < 2 * DAY_MS) ?? null;
+}
+
+/** The end of the month that starts at `periodStart`, on the anchor's day (31 Jan → 28 Feb → 31 Mar). */
+export function periodEndFrom(anchor: number, periodStart: number) {
+  for (let k = 1; k <= 600; k++) {
+    const end = addMonthsLagos(anchor, k);
+    if (end > periodStart + DAY_MS) return end;
+  }
+  return addMonthsLagos(periodStart, 1);
+}
+
+const nextMonthKey = (month: string) => {
+  const [y, m] = month.split("-").map(Number);
+  return m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, "0")}`;
+};
+const monthLabel = (month: string) =>
+  new Date(`${month}-15T12:00:00Z`).toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "Africa/Lagos" });
+
+/** Tells every admin (bell + push) about a Pro payment that needs a person. */
+async function alertAdmins(ctx: MutationCtx, title: string, body: string) {
+  const admins = await ctx.db
+    .query("users")
+    .withIndex("by_role", (q) => q.eq("role", "admin"))
+    .take(25);
+  const now = Date.now();
+  for (const admin of admins) {
+    await insertNotification(ctx, {
+      userId: admin._id,
+      type: "system_alert",
+      priority: "medium",
+      status: "pending",
+      payload: { title, body, data: { actionUrl: "/dashboard/admin/physio-plans" } },
+      createdAt: now,
+    });
+  }
 }
 
 async function activeGrant(ctx: Ctx, physioId: Id<"users">, now: number) {
@@ -727,16 +805,25 @@ async function settle(ctx: MutationCtx, input: Settle): Promise<SettleResult> {
   if (!payment) return { ok: false, reason: "unknown_reference" };
   if (payment.status === "paid") return { ok: true, already: true, kind: payment.kind };
   if (input.currency && input.currency !== "NGN") return { ok: false, reason: "currency" };
+  const physio = await ctx.db.get(payment.physioId);
   if (input.amountKobo < payment.amountKobo) {
     await ctx.db.patch(payment._id, { status: "failed", error: `Paid ${input.amountKobo}, expected ${payment.amountKobo}` });
+    // Money arrived but less than the price: nothing is given, so a person sorts it out
+    if (input.amountKobo > 0) {
+      const who = [physio?.firstName, physio?.lastName].filter(Boolean).join(" ") || physio?.email || "A physio";
+      await alertAdmins(ctx, "Pro payment was short", `${who} paid ${naira(input.amountKobo)} for ${naira(payment.amountKobo)} (${input.reference}). Refund it or add the rest by hand.`);
+    }
     return { ok: false, reason: "short_payment" };
   }
-  const physio = await ctx.db.get(payment.physioId);
   if (!physio) return { ok: false, reason: "missing" };
   const now = Date.now();
   const s = await loadPlanSettings(ctx);
   if (payment.kind === "joy") {
     const patient = payment.joyPatientId ? await ctx.db.get(payment.joyPatientId) : null;
+    // A transfer started on 31 Dec and settled on 1 Jan pays for January; a second payment for a
+    // month already paid moves on to the next month instead of being wasted
+    let month = payment.joyMonth && payment.joyMonth >= monthKey(now) ? payment.joyMonth : monthKey(now);
+    for (let i = 0; i < 24 && payment.joyPatientId && (await joyMonthPaid(ctx, physio._id, payment.joyPatientId, month)); i++) month = nextMonthKey(month);
     const receiptId = await issueReceipt(ctx, {
       kind: "payment",
       payerUserId: physio._id,
@@ -745,14 +832,21 @@ async function settle(ctx: MutationCtx, input: Settle): Promise<SettleResult> {
       relatedType: "physio_joy_month",
       relatedId: String(payment.joyPatientId ?? physio._id),
       relationship: "independent",
-      description: `Joy on WhatsApp for ${patient?.firstName ?? "a patient"}, ${payment.joyMonth}`,
+      description: `Joy on WhatsApp for ${patient?.firstName ?? "a patient"}, ${monthLabel(month)}`,
       lines: [{ label: "Joy for one patient, one month", amountKobo: input.amountKobo }],
       reference: input.reference,
       dedupeKey: input.reference,
       paidAt: now,
     });
-    await ctx.db.patch(payment._id, { status: "paid", paidAt: now, receiptId });
-    await notifyPhysio(ctx, physio._id, "Joy is back on", `Joy will message ${patient?.firstName ?? "your patient"} again this month.`);
+    await ctx.db.patch(payment._id, { status: "paid", paidAt: now, receiptId, joyMonth: month });
+    await notifyPhysio(
+      ctx,
+      physio._id,
+      "Joy is back on",
+      month === monthKey(now)
+        ? `Joy will message ${patient?.firstName ?? "your patient"} again this month.`
+        : `Joy is paid for ${patient?.firstName ?? "your patient"} for ${monthLabel(month)}.`
+    );
     return { ok: true, kind: "joy" };
   }
   if (payment.kind === "topup") {
@@ -781,7 +875,11 @@ async function settle(ctx: MutationCtx, input: Settle): Promise<SettleResult> {
   if (payment.kind === "card_check") {
     const cardId = await saveCard(ctx, physio._id, input.reference, input, input.amountKobo);
     await ctx.db.patch(payment._id, { status: "paid", paidAt: now });
-    if (!cardId) return { ok: false, reason: "card_unusable", kind: "card_check" };
+    if (!cardId) {
+      // The check was taken but the card can't be charged again: give the check back anyway
+      await ctx.scheduler.runAfter(0, refundCheckRef, { paymentId: payment._id });
+      return { ok: false, reason: "card_unusable", kind: "card_check" };
+    }
     if (sub.status === "scheduled") {
       const startAt = sub.currentPeriodStart ?? dayStart(s.launchDate);
       await notifyPhysio(ctx, physio._id, "Pro is locked in", `We'll charge your card on ${shortDate(startAt)}.`);
@@ -799,18 +897,25 @@ async function settle(ctx: MutationCtx, input: Settle): Promise<SettleResult> {
 
   // A month of Pro
   // Locked-in Pro charged on launch day starts at launch (midnight), so it renews on that date
+  // A second payment while Pro is running (a late transfer, or "Pay and start" racing the launch-day
+  // card charge) adds a month after the paid one instead of cutting it short
+  const extending = sub.status === "active" && (sub.currentPeriodEnd ?? 0) > now;
   const periodStart =
-    payment.kind === "renewal"
+    payment.kind === "renewal" || extending
       ? (sub.currentPeriodEnd ?? now)
       : sub.status === "scheduled" && sub.currentPeriodStart && Math.abs(now - sub.currentPeriodStart) < DAY_MS
         ? sub.currentPeriodStart
         : now;
-  const periodEnd = addMonthsLagos(periodStart, 1);
+  // Months end on the day Pro started (31 Jan → 28 Feb → 31 Mar), not on a drifting date
+  const continuing = sub.status === "active" || sub.status === "past_due";
+  const anchor = continuing ? (sub.periodAnchor ?? sub.currentPeriodStart ?? periodStart) : periodStart;
+  const periodEnd = periodEndFrom(anchor, periodStart);
   const firstPaid = payment.kind === "first";
   await ctx.db.patch(sub._id, {
     status: "active",
     currentPeriodStart: periodStart,
     currentPeriodEnd: periodEnd,
+    periodAnchor: anchor,
     ...(firstPaid && sub.founding && sub.foundingUntil === undefined ? { foundingUntil: addMonthsLagos(periodStart, s.foundingMonths) } : {}),
     renewalAttempts: 0,
     lastAttemptError: undefined,
@@ -835,7 +940,9 @@ async function settle(ctx: MutationCtx, input: Settle): Promise<SettleResult> {
     paidAt: now,
   });
   await ctx.db.patch(payment._id, { status: "paid", paidAt: now, periodStart, periodEnd, receiptId });
-  if (firstPaid) {
+  if (extending) {
+    await notifyPhysio(ctx, physio._id, "We added a month of Pro", `You paid again while Pro was running, so it now runs to ${shortDate(periodEnd - 1)}.`);
+  } else if (firstPaid) {
     await notifyPhysio(ctx, physio._id, "Welcome to Rehabify Pro", `Your Pro runs to ${shortDate(periodEnd - 1)} and renews on ${shortDate(periodEnd)}.`);
   }
   return { ok: true, kind: payment.kind };
@@ -912,8 +1019,56 @@ export const recordRefund = internalMutation({
   handler: async (ctx, args) => {
     const card = await ctx.db.get(args.cardId);
     if (!card) return null;
-    if (args.error) await ctx.db.patch(card._id, { checkRefundError: args.error.slice(0, 300) });
-    else await ctx.db.patch(card._id, { checkRefundedAt: Date.now(), checkRefundError: undefined });
+    if (args.error) {
+      await ctx.db.patch(card._id, { checkRefundError: args.error.slice(0, 300) });
+      const physio = await ctx.db.get(card.physioId);
+      const who = [physio?.firstName, physio?.lastName].filter(Boolean).join(" ") || physio?.email || "A physio";
+      await alertAdmins(ctx, "Card check refund failed", `${who}'s card check (${card.reference}) wasn't refunded: ${args.error.slice(0, 120)}. Refund it on Paystack.`);
+    } else await ctx.db.patch(card._id, { checkRefundedAt: Date.now(), checkRefundError: undefined });
+    return null;
+  },
+});
+
+/** A card check that went through but left no reusable card: it's refunded all the same. */
+export const unusableCheckInfo = internalQuery({
+  args: { paymentId: v.id("physioPlanPayments") },
+  handler: async (ctx, args) => {
+    const payment = await ctx.db.get(args.paymentId);
+    if (!payment || payment.kind !== "card_check" || payment.status !== "paid" || payment.refundedAt !== undefined) return null;
+    return { reference: payment.reference };
+  },
+});
+
+export const recordUnusableCheckRefund = internalMutation({
+  args: { paymentId: v.id("physioPlanPayments"), error: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const payment = await ctx.db.get(args.paymentId);
+    if (!payment) return null;
+    if (!args.error) {
+      await ctx.db.patch(payment._id, { status: "refunded", refundedAt: Date.now(), refundError: undefined });
+      return null;
+    }
+    await ctx.db.patch(payment._id, { refundError: args.error.slice(0, 300) });
+    const physio = await ctx.db.get(payment.physioId);
+    const who = [physio?.firstName, physio?.lastName].filter(Boolean).join(" ") || physio?.email || "A physio";
+    await alertAdmins(ctx, "Card check refund failed", `${who}'s card check (${payment.reference}) wasn't refunded: ${args.error.slice(0, 120)}. Refund it on Paystack.`);
+    return null;
+  },
+});
+
+export const refundUnusableCardCheck = internalAction({
+  args: { paymentId: v.id("physioPlanPayments") },
+  handler: async (ctx, args) => {
+    const info = await ctx.runQuery(refundCheckInfoRef, args);
+    if (!info) return null;
+    try {
+      await paystackRequest("/refund", { method: "POST", body: JSON.stringify({ transaction: info.reference }) });
+      await ctx.runMutation(refundCheckDoneRef, { paymentId: args.paymentId });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      // Already refunded is the outcome we wanted
+      await ctx.runMutation(refundCheckDoneRef, /already.*refund|fully refunded/i.test(message) ? { paymentId: args.paymentId } : { paymentId: args.paymentId, error: message });
+    }
     return null;
   },
 });
@@ -927,7 +1082,8 @@ export const refundCardCheck = internalAction({
       await paystackRequest("/refund", { method: "POST", body: JSON.stringify({ transaction: info.reference }) });
       await ctx.runMutation(refundDoneRef, { cardId: args.cardId });
     } catch (err) {
-      await ctx.runMutation(refundDoneRef, { cardId: args.cardId, error: err instanceof Error ? err.message : String(err) });
+      const message = err instanceof Error ? err.message : String(err);
+      await ctx.runMutation(refundDoneRef, /already.*refund|fully refunded/i.test(message) ? { cardId: args.cardId } : { cardId: args.cardId, error: message });
     }
     return null;
   },
@@ -938,19 +1094,33 @@ export const refundCardCheck = internalAction({
 /** The saved-card charge for a subscription's next month (first month on launch day, or a renewal). */
 export const chargeInfo = internalQuery({
   args: { subscriptionId: v.id("physioSubscriptions") },
-  handler: async (ctx, args): Promise<ChargeInfo | null> => {
+  handler: async (ctx, args): Promise<ChargePlan | null> => {
     const sub = await ctx.db.get(args.subscriptionId);
-    if (!sub) return null;
+    if (!sub || !["scheduled", "active", "past_due"].includes(sub.status)) return null;
+    const now = Date.now();
+    // In a clinic now: the clinic's plan covers them, so their own card is never charged
+    const profile = await ctx.db
+      .query("physiotherapistProfiles")
+      .withIndex("by_user_id", (q) => q.eq("userId", sub.physioId))
+      .first();
+    if (profile?.clinicId) return null;
+    // A Pro chosen but never locked in (checkout closed) is never charged to an older card
+    if (sub.status === "scheduled" && !(await lockedIn(ctx, sub))) return null;
+    // The last charge may have gone through: find out before charging again
+    const pending = await unresolvedCharge(ctx, sub, now);
+    if (pending) return { verify: pending.reference };
     const card = await activeCard(ctx, sub.physioId);
     if (!card) return null;
     const s = await loadPlanSettings(ctx);
-    const periodStart = sub.status === "scheduled" ? (sub.currentPeriodStart ?? Date.now()) : (sub.currentPeriodEnd ?? Date.now());
+    const periodStart = sub.status === "scheduled" ? (sub.currentPeriodStart ?? now) : (sub.currentPeriodEnd ?? now);
     return {
-      authorizationCode: card.authorizationCode,
-      email: card.email,
-      amountKobo: priceFor(sub, s, periodStart),
-      reference: sub.status === "scheduled" ? `${PREFIX}${sub._id}_${Date.now()}` : `${PREFIX}RENEW_${sub._id}_${Date.now()}`,
-      label: sub.founding ? "Individual Pro (founding price)" : "Individual Pro",
+      charge: {
+        authorizationCode: card.authorizationCode,
+        email: card.email,
+        amountKobo: priceFor(sub, s, periodStart),
+        reference: sub.status === "scheduled" ? `${PREFIX}${sub._id}_${now}` : `${PREFIX}RENEW_${sub._id}_${now}`,
+        label: sub.founding ? "Individual Pro (founding price)" : "Individual Pro",
+      },
     };
   },
 });
@@ -980,8 +1150,13 @@ const chargeStartRef = makeFunctionReference<"mutation", { subscriptionId: Id<"p
 export const chargeSavedCard = internalAction({
   args: { subscriptionId: v.id("physioSubscriptions") },
   handler: async (ctx, args) => {
-    const info = await ctx.runQuery(chargeInfoRef, args);
-    if (!info) return null;
+    const plan = await ctx.runQuery(chargeInfoRef, args);
+    if (!plan) return null;
+    if ("verify" in plan) {
+      await settleOrFailCharge(ctx, args.subscriptionId, plan.verify, 0);
+      return null;
+    }
+    const info = plan.charge;
     await ctx.runMutation(chargeStartRef, { subscriptionId: args.subscriptionId, reference: info.reference, amountKobo: info.amountKobo });
     try {
       const data: any = await paystackRequest("/transaction/charge_authorization", {
@@ -1002,12 +1177,61 @@ export const chargeSavedCard = internalAction({
           currency: String(data.currency ?? "NGN"),
           channel: "card",
         });
+      } else if (data?.status === "failed") {
+        await ctx.runMutation(chargeFailedRef, { subscriptionId: args.subscriptionId, reference: info.reference, error: String(data?.gateway_response ?? "declined") });
       } else {
-        await ctx.runMutation(chargeFailedRef, { subscriptionId: args.subscriptionId, reference: info.reference, error: String(data?.gateway_response ?? data?.status ?? "declined") });
+        // Still going through (pending, send_otp…): Paystack's webhook or our check settles it
+        await ctx.runMutation(chargeUnknownRef, { reference: info.reference, error: String(data?.gateway_response ?? data?.status ?? "pending") });
+        await ctx.scheduler.runAfter(15 * 60_000, verifyChargeRef, { subscriptionId: args.subscriptionId, reference: info.reference, tries: 0 });
       }
     } catch (err) {
-      await ctx.runMutation(chargeFailedRef, { subscriptionId: args.subscriptionId, reference: info.reference, error: err instanceof Error ? err.message : String(err) });
+      // No clear answer (a timeout can still have taken the money): check before doing anything else
+      await ctx.runMutation(chargeUnknownRef, { reference: info.reference, error: err instanceof Error ? err.message : String(err) });
+      await ctx.scheduler.runAfter(15 * 60_000, verifyChargeRef, { subscriptionId: args.subscriptionId, reference: info.reference, tries: 0 });
     }
+    return null;
+  },
+});
+
+/** What happened to a saved-card charge: applied if it went through, a decline if it didn't. */
+async function settleOrFailCharge(ctx: ActionCtx, subscriptionId: Id<"physioSubscriptions">, reference: string, tries: number) {
+  const verdict = await paystackChargeVerdict(reference);
+  if (verdict.outcome === "success") {
+    const tx = verdict.tx;
+    await ctx.runMutation(completeRef, {
+      reference,
+      amountKobo: Number(tx.amount) || 0,
+      currency: String(tx.currency ?? ""),
+      channel: typeof tx.channel === "string" ? tx.channel : "card",
+      authorization: tx.authorization,
+      email: typeof tx.customer?.email === "string" ? tx.customer.email : undefined,
+    });
+  } else if (verdict.outcome === "failed") {
+    await ctx.runMutation(chargeFailedRef, { subscriptionId, reference, error: verdict.reason });
+  } else if (tries < 6) {
+    await ctx.scheduler.runAfter(60 * 60_000, verifyChargeRef, { subscriptionId, reference, tries: tries + 1 });
+  } else {
+    await ctx.runMutation(chargeFailedRef, { subscriptionId, reference, error: "The bank didn't confirm the payment" });
+  }
+}
+
+export const verifySavedCardCharge = internalAction({
+  args: { subscriptionId: v.id("physioSubscriptions"), reference: v.string(), tries: v.number() },
+  handler: async (ctx, args) => {
+    await settleOrFailCharge(ctx, args.subscriptionId, args.reference, args.tries);
+    return null;
+  },
+});
+
+/** A saved-card charge with no clear answer yet: it stays pending (blocking another charge) until checked. */
+export const recordChargeUnknown = internalMutation({
+  args: { reference: v.string(), error: v.string() },
+  handler: async (ctx, args) => {
+    const payment = await ctx.db
+      .query("physioPlanPayments")
+      .withIndex("by_reference", (q) => q.eq("reference", args.reference))
+      .first();
+    if (payment && payment.status === "pending") await ctx.db.patch(payment._id, { error: `Checking: ${args.error.slice(0, 200)}` });
     return null;
   },
 });
@@ -1087,12 +1311,24 @@ export const sweep = internalMutation({
           continue;
         }
         if (status === "scheduled") {
+          // Locked in, then joined a clinic: the clinic covers them, so nothing is charged
+          if (profile?.clinicId) {
+            await ctx.db.patch(sub._id, { status: "cancelled", endedAt: now, updatedAt: now });
+            await notifyPhysio(ctx, sub.physioId, "Your clinic covers you", "You're on your clinic's plan now, so we cancelled your Pro lock-in. Nothing was charged.");
+            continue;
+          }
           const startAt = sub.currentPeriodStart ?? launchAt;
           if (now < startAt) continue;
-          if (card && (sub.renewalAttempts ?? 0) < s.retryDays && (!sub.lastAttemptAt || now - sub.lastAttemptAt > 20 * 60 * 60 * 1000)) {
+          const locked = await lockedIn(ctx, sub);
+          // Upgrade opened after launch but never paid: nothing to charge, and it lapses after 3 days
+          if (!locked && sub.currentPeriodStart === undefined) {
+            if (now - sub.startedAt > 3 * DAY_MS) await ctx.db.patch(sub._id, { status: "cancelled", endedAt: now, updatedAt: now });
+            continue;
+          }
+          if (locked && card && (sub.renewalAttempts ?? 0) < s.retryDays && (!sub.lastAttemptAt || now - sub.lastAttemptAt > 20 * 60 * 60 * 1000)) {
             await ctx.db.patch(sub._id, { lastAttemptAt: now, updatedAt: now });
             await ctx.scheduler.runAfter(charged++ * 2000, chargeRef, { subscriptionId: sub._id });
-          } else if (!card && sub.reminderSentFor !== startAt) {
+          } else if ((!card || !locked) && sub.reminderSentFor !== startAt) {
             await ctx.db.patch(sub._id, { reminderSentFor: startAt, updatedAt: now });
             await emailPhysio(ctx, physio, {
               subject: "Rehabify Pro is open",
@@ -1279,8 +1515,47 @@ export const adminOverview = query({
       const u = await ctx.db.get(g.physioId);
       grants.push({ id: g._id, name: [u?.firstName, u?.lastName].filter(Boolean).join(" ") || "Physio", email: u?.email ?? null, until: g.until, reason: g.reason });
     }
-    const paid = (await ctx.db.query("physioPlanPayments").order("desc").take(500)).filter((p) => p.status === "paid" && p.kind !== "card_check");
-    return { settings: s, counts, monthlyKobo, subscriptions: rows, grants, paidThisMonthKobo: paid.filter((p) => (p.paidAt ?? 0) >= monthStart(now)).reduce((a, p) => a + p.amountKobo, 0) };
+    const recent = await ctx.db.query("physioPlanPayments").order("desc").take(500);
+    const paid = recent.filter((p) => p.status === "paid" && p.kind !== "card_check");
+    // Payments a person should look at: unconfirmed card charges, short payments, refunds that failed
+    const attention: { id: string; name: string; email: string | null; what: string; kind: string; amountKobo: number; reference: string; at: number }[] = [];
+    const nameOf = (u: Doc<"users"> | null) => [u?.firstName, u?.lastName].filter(Boolean).join(" ") || "Physio";
+    for (const p of recent) {
+      const what =
+        p.status === "pending" && p.method === "saved_card" && now - p.createdAt > 2 * 60 * 60 * 1000
+          ? "Card charge not confirmed by Paystack yet"
+          : p.status === "failed" && p.error?.startsWith("Paid ")
+            ? "Paid less than the price: refund it or add the rest"
+            : p.refundError
+              ? "Card check refund failed: refund it on Paystack"
+              : null;
+      if (!what || attention.length >= 50) continue;
+      const u = await ctx.db.get(p.physioId);
+      attention.push({ id: p._id, name: nameOf(u), email: u?.email ?? null, what, kind: p.kind, amountKobo: p.amountKobo, reference: p.reference, at: p.createdAt });
+    }
+    for (const card of await ctx.db.query("physioPlanCards").order("desc").take(300)) {
+      if (!card.checkRefundError || card.checkRefundedAt || attention.length >= 50) continue;
+      const u = await ctx.db.get(card.physioId);
+      attention.push({
+        id: card._id,
+        name: nameOf(u),
+        email: u?.email ?? null,
+        what: "Card check refund failed: refund it on Paystack",
+        kind: "card_check",
+        amountKobo: card.checkAmountKobo ?? PRO_CARD_CHECK_KOBO,
+        reference: card.reference,
+        at: card.createdAt,
+      });
+    }
+    return {
+      settings: s,
+      counts,
+      monthlyKobo,
+      subscriptions: rows,
+      grants,
+      attention,
+      paidThisMonthKobo: paid.filter((p) => (p.paidAt ?? 0) >= monthStart(now)).reduce((a, p) => a + p.amountKobo, 0),
+    };
   },
 });
 
@@ -1323,6 +1598,26 @@ export const adminSaveSettings = mutation({
     }
     if (args.abroadFreePro !== undefined) patch.abroadFreePro = args.abroadFreePro;
     if (args.announceOn !== undefined) patch.announceOn = args.announceOn;
+    // Pro opens later than before: locked-in physios aren't charged until the new day (told in-app
+    // and by email). Opening earlier keeps the day they were promised.
+    const before = await loadPlanSettings(ctx);
+    if (args.launchDate && dayStart(args.launchDate) > dayStart(before.launchDate)) {
+      const oldAt = dayStart(before.launchDate);
+      const newAt = dayStart(args.launchDate);
+      const scheduled = await ctx.db
+        .query("physioSubscriptions")
+        .withIndex("by_status_end", (q) => q.eq("status", "scheduled"))
+        .take(1000);
+      for (const sub of scheduled.filter((r) => r.currentPeriodStart === oldAt)) {
+        await ctx.db.patch(sub._id, { currentPeriodStart: newAt, updatedAt: Date.now() });
+        await notifyPhysio(ctx, sub.physioId, "Pro now opens later", `Your first Pro charge moves to ${shortDate(newAt)}. Nothing changes until then.`);
+        await emailPhysio(ctx, await ctx.db.get(sub.physioId), {
+          subject: `Your Rehabify Pro now starts on ${shortDate(newAt)}`,
+          heading: "Pro opens a little later",
+          paragraphs: [`We've moved the start of Individual Pro to ${shortDate(newAt)}, so your first charge moves there too. Your price stays the same, and you can cancel any time before then.`],
+        });
+      }
+    }
     const row = await ctx.db.query("physioPlanSettings").first();
     if (row) await ctx.db.patch(row._id, patch);
     else await ctx.db.insert("physioPlanSettings", patch as { updatedAt: number });
@@ -1347,6 +1642,34 @@ export const adminGrant = mutation({
     const now = Date.now();
     await ctx.db.insert("physioPlanGrants", { physioId: physio._id, until: now + days * DAY_MS, reason, grantedBy: admin._id, createdAt: now });
     await notifyPhysio(ctx, physio._id, "You've been given Rehabify Pro", `Free until ${shortDate(now + days * DAY_MS)}.`);
+    return null;
+  },
+});
+
+/** Admin: a physio's country of practice (physios can't change it themselves once approved). */
+export const adminSetPhysioCountry = mutation({
+  args: { userId: v.id("users"), country: v.string() },
+  handler: async (ctx, args) => {
+    const { user: admin } = await requireAdmin(ctx);
+    const country = args.country.trim().slice(0, 60);
+    if (country.length < 2) throw new ConvexError("Choose a country.");
+    const profile = await ctx.db
+      .query("physiotherapistProfiles")
+      .withIndex("by_user_id", (q) => q.eq("userId", args.userId))
+      .first();
+    if (!profile) throw new ConvexError("That account has no physiotherapist profile.");
+    if (profile.country === country) return null;
+    // Rehabify Care patients are only in Nigeria: physios elsewhere practise independently
+    const outside = isOutsideRehabifyCare(country);
+    await ctx.db.patch(profile._id, outside ? { country, practiceMode: "independent", isAvailableOnMarketplace: false } : { country, timeZone: undefined });
+    await ctx.db.insert("auditLogs", {
+      actorUserId: admin._id,
+      action: "physio_country_changed",
+      targetEntityType: "user",
+      targetEntityId: args.userId,
+      timestamp: Date.now(),
+      details: { from: profile.country ?? null, to: country },
+    });
     return null;
   },
 });

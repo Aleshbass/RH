@@ -3,7 +3,7 @@
  * convex/actions/marketingSend.ts) and the live preview in the composer, so what admins see is
  * what people get. Everything typed by the admin is escaped.
  */
-import { actions, button, escapeEmailText, greeting, renderEmail } from "./layout";
+import { actions, button, displayName, escapeEmailText, greeting, renderEmail } from "./layout";
 import { renderEmailBody } from "./richText";
 
 export type MarketingContent = {
@@ -49,7 +49,7 @@ export function subjectHasMergeTag(content: Pick<MarketingContent, "subject" | "
 /** Plain text (subject, preview text) with the person's own values. */
 export function fillMergeTags(text: string, values: MergeValues) {
   return text
-    .replace(FIRST_NAME_TAG, () => values.firstName?.trim() || "there")
+    .replace(FIRST_NAME_TAG, () => (values.firstName?.trim() ? displayName(values.firstName) : "there"))
     .replace(CLINIC_NAME_TAG, () => values.clinicName?.trim() || "your clinic");
 }
 
@@ -78,7 +78,7 @@ export function renderMarketingEmail(
   // Tags are plain text in the admin's words, so they appear in the HTML as typed
   if (opts.merge === "resend") return html.replace(FIRST_NAME_TAG, () => RESEND_FIRST_NAME).replace(CLINIC_NAME_TAG, () => "your clinic");
   return html
-    .replace(FIRST_NAME_TAG, () => escapeEmailText(merge?.firstName?.trim() || "there"))
+    .replace(FIRST_NAME_TAG, () => escapeEmailText(merge?.firstName?.trim() ? displayName(merge.firstName) : "there"))
     .replace(CLINIC_NAME_TAG, () => escapeEmailText(merge?.clinicName?.trim() || "your clinic"));
 }
 
