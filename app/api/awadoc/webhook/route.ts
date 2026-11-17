@@ -110,6 +110,8 @@ export async function POST(request: NextRequest) {
                     env: check.env,
                     newTherapyId: `thp-${crypto.randomBytes(6).toString("hex")}`,
                     newGuestToken: crypto.randomBytes(24).toString("base64url"),
+                    // AwaDoc's booking id (since 13 Nov 2026): every callback must carry it
+                    awadocId: str(context.therapy?.id) ?? str(context.consultation?.id),
                     eventId: str(body.event_id) ?? eventId,
                     requestId,
                     traceId: str(meta.trace_id),
@@ -133,6 +135,7 @@ export async function POST(request: NextRequest) {
                 answer = await convex().mutation(awadoc.receiveConfirmed, {
                     serverSecret,
                     therapyId: str(therapy.id),
+                    partnerRef: str(therapy.partner_ref),
                     requestId: str(meta.request_id) ?? str(body.request_id),
                     preferredTime: str(therapy.schedule?.preferred_time),
                     amount: Number.isFinite(amount) ? amount : undefined,
@@ -143,7 +146,8 @@ export async function POST(request: NextRequest) {
             case "session.assigned":
                 answer = await convex().mutation(awadoc.receiveSessionAssigned, {
                     serverSecret,
-                    therapyId: str(body.therapy_id) ?? str(context.therapy?.id),
+                    therapyId: str(body.therapy_id) ?? str(context.therapy_id) ?? str(context.therapy?.id),
+                    partnerRef: str(body.partner_ref) ?? str(context.partner_ref) ?? str(context.therapy?.partner_ref),
                     requestId: str(body.request_id) ?? str(meta.request_id),
                     therapistId: str(body.therapist?.id) ?? str(context.therapist?.id),
                 });
@@ -154,6 +158,7 @@ export async function POST(request: NextRequest) {
                 answer = await convex().mutation(awadoc.receiveScheduled, {
                     serverSecret,
                     therapyId: str(therapy.id) ?? str(body.therapy_id),
+                    partnerRef: str(therapy.partner_ref),
                     requestId: str(meta.request_id) ?? str(body.request_id),
                     startTime: str(context.meeting?.start_time) ?? str(therapy.schedule?.preferred_time),
                     endTime: str(context.meeting?.end_time),

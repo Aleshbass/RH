@@ -4475,7 +4475,8 @@ export default defineSchema({
   // One AwaDoc booking (therapy.request → therapy.confirmed → visits). AwaDoc owns the patient,
   // the payment and the patient messages; we supply and track the physio.
   awadocTherapies: defineTable({
-    therapyId: v.string(), // ours, "thp-…", sent to AwaDoc
+    therapyId: v.string(), // ours, "thp-…", returned to AwaDoc as partner_ref
+    awadocId: v.optional(v.string()), // AwaDoc's booking id (context.therapy.id): every callback must carry it
     requestId: v.string(), // AwaDoc meta.request_id: one row per request
     eventId: v.optional(v.string()),
     traceId: v.optional(v.string()),
@@ -4522,6 +4523,7 @@ export default defineSchema({
   })
     .index("by_request_id", ["requestId"])
     .index("by_therapy_id", ["therapyId"])
+    .index("by_awadoc_id", ["awadocId"])
     .index("by_status", ["status"])
     .index("by_physio", ["physiotherapistId"]),
 

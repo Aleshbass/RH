@@ -49,6 +49,7 @@ interface Visit {
 interface Booking {
   id: string
   therapyId: string
+  awadocId?: string
   requestId: string
   env: 'production' | 'test'
   status: BookingStatus
@@ -190,6 +191,11 @@ export default function AwadocAdminPage() {
                     <p className="text-sm font-semibold text-rh-ink dark:text-white">
                       {booking.patientName}
                       <span className="ml-2 font-mono text-xs font-normal text-neutral-500">{booking.therapyId}</span>
+                      {booking.awadocId && (
+                        <span className="ml-2 font-mono text-xs font-normal text-neutral-500" title="AwaDoc's booking ID">
+                          AwaDoc {booking.awadocId}
+                        </span>
+                      )}
                     </p>
                     <p className="text-xs text-neutral-500 dark:text-neutral-400">
                       {MODE_LABEL[booking.mode]} · {lagosDateTime(booking.scheduledStart)} · {formatKobo(booking.priceKobo)} · received {lagosDateTime(booking.createdAt)}

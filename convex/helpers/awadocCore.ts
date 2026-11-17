@@ -218,10 +218,17 @@ export function newEventId() {
     return `evt-rh-${crypto.randomUUID()}`;
 }
 
-/** The `therapy` object AwaDoc expects in request answers and callbacks. */
+/**
+ * The booking id AwaDoc matches our callbacks on. Since AwaDoc's "booking IDs" release
+ * (13 Nov 2026) that is their own id from therapy.request (context.therapy.id); with ours they
+ * answer "unacknowledged: Therapy not found". Bookings from before it only have ours.
+ */
+export const awadocBookingId = (therapy: Pick<Doc<"awadocTherapies">, "awadocId" | "therapyId">) => therapy.awadocId ?? therapy.therapyId;
+
+/** The `therapy` object in callbacks (doctor_assigned, scheduled). */
 export function therapyObject(therapy: Doc<"awadocTherapies">, visit?: Pick<Doc<"awadocVisits">, "scheduledStart">) {
     return {
-        id: therapy.therapyId,
+        id: awadocBookingId(therapy),
         schedule: {
             preferred_mode: therapy.mode,
             preferred_time: iso(visit?.scheduledStart ?? therapy.scheduledStart),
@@ -229,6 +236,36 @@ export function therapyObject(therapy: Doc<"awadocTherapies">, visit?: Pick<Doc<
         },
         pricing: { amount: naira(therapy.priceKobo), currency: therapy.currency },
     };
+}
+
+/**
+ * The `therapy` object in our answer to therapy.request. Our own id goes back as partner_ref;
+ * id is left to AwaDoc (their changelog, 13 Nov 2026). A request without their id gets the old shape.
+ */
+export function requestAnswerTherapy(therapy: Doc<"awadocTherapies">) {
+    const { id, ...rest } = therapyObject(therapy);
+    return therapy.awadocId ? { partner_ref: therapy.therapyId, ...rest } : { id, ...rest };
+}
+
+/**
+ * A callback queued before we knew AwaDoc's booking id carries ours: swap theirs in.
+ * Returns the same object when nothing changes.
+ */
+export function withAwadocId(body: unknown, therapy: Pick<Doc<"awadocTherapies">, "awadocId" | "therapyId"> | null): unknown {
+    if (!therapy?.awadocId || !body || typeof body !== "object") return body;
+    const context = (body as Record<string, any>).context;
+    if (!context || typeof context !== "object") return body;
+    const next: Record<string, any> = { ...context };
+    let changed = false;
+    if (next.therapy && typeof next.therapy === "object" && next.therapy.id === therapy.therapyId) {
+        next.therapy = { ...next.therapy, id: therapy.awadocId };
+        changed = true;
+    }
+    if (next.therapy_id === therapy.therapyId) {
+        next.therapy_id = therapy.awadocId;
+        changed = true;
+    }
+    return changed ? { ...(body as Record<string, unknown>), context: next } : body;
 }
 
 /** Our physio's id as AwaDoc sees it: their permanent Rehabify ID when they have one. */
@@ -290,10 +327,11 @@ export function scheduledBody(therapy: Doc<"awadocTherapies">, visit: Doc<"awado
  * fields go inside context.
  */
 export function flatBody(therapy: Doc<"awadocTherapies">, action: string, fields: Record<string, unknown>) {
+    const id = awadocBookingId(therapy);
     return envelope(action, {
-        therapy: { id: therapy.therapyId },
+        therapy: { id },
         request_id: therapy.requestId,
-        therapy_id: therapy.therapyId,
+        therapy_id: id,
         ...fields,
     });
 }

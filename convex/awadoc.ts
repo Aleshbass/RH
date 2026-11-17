@@ -34,8 +34,9 @@ import {
     loadAwadocSettings,
     normalizeMode,
     notifyAdmins,
+    requestAnswerTherapy,
     scheduledBody,
-    therapyObject,
+    withAwadocId,
     type AwadocMode,
 } from "./helpers/awadocCore";
 import { lagosDateTime } from "./helpers/lagosTime";
@@ -62,10 +63,14 @@ function cleanText(value: string | undefined, max: number): string | undefined {
     return text ? text.slice(0, max) : undefined;
 }
 
-async function findTherapy(ctx: QueryCtx, therapyId?: string, requestId?: string) {
-    if (therapyId) {
-        const byId = await ctx.db.query("awadocTherapies").withIndex("by_therapy_id", (q) => q.eq("therapyId", therapyId)).first();
-        if (byId) return byId;
+/** AwaDoc may name a booking by their id, ours (partner_ref) or the request id. */
+async function findTherapy(ctx: QueryCtx, ids: Array<string | undefined>, requestId?: string) {
+    for (const id of ids) {
+        if (!id) continue;
+        const byAwadocId = await ctx.db.query("awadocTherapies").withIndex("by_awadoc_id", (q) => q.eq("awadocId", id)).first();
+        if (byAwadocId) return byAwadocId;
+        const byOurId = await ctx.db.query("awadocTherapies").withIndex("by_therapy_id", (q) => q.eq("therapyId", id)).first();
+        if (byOurId) return byOurId;
     }
     if (requestId) {
         return await ctx.db.query("awadocTherapies").withIndex("by_request_id", (q) => q.eq("requestId", requestId)).first();
@@ -180,6 +185,7 @@ export const receiveRequest = mutation({
         env: envV,
         newTherapyId: v.string(), // fresh id from the route, used only if this is a new request
         newGuestToken: v.string(),
+        awadocId: v.optional(v.string()), // AwaDoc's booking id (context.therapy.id)
         eventId: v.optional(v.string()),
         requestId: v.string(),
         traceId: v.optional(v.string()),
@@ -232,6 +238,7 @@ export const receiveRequest = mutation({
         const start = outcome.status === "declined" ? (requested ?? earliest) : outcome.at;
         const record = {
             therapyId,
+            awadocId: cleanText(args.awadocId, 100) ?? existing?.awadocId,
             requestId: args.requestId,
             eventId: args.eventId,
             traceId: args.traceId,
@@ -271,7 +278,7 @@ export const receiveRequest = mutation({
                 reason: outcome.reason,
             };
         } else {
-            const therapy = therapyObject({ ...record, response: null } as unknown as Doc<"awadocTherapies">);
+            const therapy = requestAnswerTherapy({ ...record, response: null } as unknown as Doc<"awadocTherapies">);
             response = {
                 status: "confirmed",
                 request_id: args.requestId,
@@ -291,15 +298,21 @@ export const receiveRequest = mutation({
 export const receiveConfirmed = mutation({
     args: {
         serverSecret: v.optional(v.string()),
-        therapyId: v.optional(v.string()),
+        therapyId: v.optional(v.string()), // AwaDoc's booking id (ours on older bookings)
+        partnerRef: v.optional(v.string()), // ours, echoed back
         requestId: v.optional(v.string()),
         preferredTime: v.optional(v.string()),
         amount: v.optional(v.number()),
     },
     handler: async (ctx, args): Promise<WebhookAnswer> => {
         assertServerCaller(args.serverSecret);
-        const therapy = await findTherapy(ctx, args.therapyId, args.requestId);
+        const therapy = await findTherapy(ctx, [args.therapyId, args.partnerRef], args.requestId);
         if (!therapy) return notFound(`No booking for therapy ${args.therapyId ?? "?"} / request ${args.requestId ?? "?"}`);
+        // A booking requested before AwaDoc sent their id learns it here; callbacks must carry it
+        const awadocId = cleanText(args.therapyId, 100);
+        if (!therapy.awadocId && awadocId && awadocId !== therapy.therapyId) {
+            await ctx.db.patch(therapy._id, { awadocId, updatedAt: Date.now() });
+        }
         if (therapy.paidAt || therapy.status === "cancelled") return acknowledged();
 
         const now = Date.now();
@@ -339,12 +352,13 @@ export const receiveSessionAssigned = mutation({
     args: {
         serverSecret: v.optional(v.string()),
         therapyId: v.optional(v.string()),
+        partnerRef: v.optional(v.string()),
         requestId: v.optional(v.string()),
         therapistId: v.optional(v.string()),
     },
     handler: async (ctx, args): Promise<WebhookAnswer> => {
         assertServerCaller(args.serverSecret);
-        const therapy = await findTherapy(ctx, args.therapyId, args.requestId);
+        const therapy = await findTherapy(ctx, [args.therapyId, args.partnerRef], args.requestId);
         if (!therapy) return notFound(`No booking for therapy ${args.therapyId ?? "?"}`);
         const visits = await visitsOf(ctx, therapy._id);
         // A retry, or a follow-up already waiting: nothing new to set up
@@ -405,13 +419,14 @@ export const receiveScheduled = mutation({
     args: {
         serverSecret: v.optional(v.string()),
         therapyId: v.optional(v.string()),
+        partnerRef: v.optional(v.string()),
         requestId: v.optional(v.string()),
         startTime: v.optional(v.string()),
         endTime: v.optional(v.string()),
     },
     handler: async (ctx, args): Promise<WebhookAnswer> => {
         assertServerCaller(args.serverSecret);
-        const therapy = await findTherapy(ctx, args.therapyId, args.requestId);
+        const therapy = await findTherapy(ctx, [args.therapyId, args.partnerRef], args.requestId);
         if (!therapy) return notFound(`No booking for therapy ${args.therapyId ?? "?"}`);
         const start = parseTime(args.startTime);
         if (start === undefined) return { httpStatus: 400, body: { error: "invalid_payload", message: "meeting.start_time missing" } };
@@ -464,13 +479,16 @@ export const outboxClaim = mutation({
             .take(50);
         const claimed: Array<{ id: Id<"awadocOutbox">; env: "production" | "test"; eventType: string; therapyId: string; body: unknown }> = [];
         for (const therapyId of [...new Set(due.map((row) => row.therapyId))]) {
+            const therapy = await ctx.db.query("awadocTherapies").withIndex("by_therapy_id", (q) => q.eq("therapyId", therapyId)).first();
             const rows = (await ctx.db.query("awadocOutbox").withIndex("by_therapy", (q) => q.eq("therapyId", therapyId)).collect())
                 .filter((row) => row.status === "pending")
                 .sort((a, b) => a.createdAt - b.createdAt || a._creationTime - b._creationTime);
             for (const row of rows) {
                 if (row.nextAttemptAt > now) break;
-                await ctx.db.patch(row._id, { nextAttemptAt: now + LEASE_MS });
-                claimed.push({ id: row._id, env: row.env, eventType: row.eventType, therapyId, body: row.body });
+                // Queued before we knew AwaDoc's booking id? Send theirs (and log what was really sent).
+                const body = withAwadocId(row.body, therapy);
+                await ctx.db.patch(row._id, { nextAttemptAt: now + LEASE_MS, ...(body !== row.body ? { body } : {}) });
+                claimed.push({ id: row._id, env: row.env, eventType: row.eventType, therapyId, body });
                 if (claimed.length >= 25) return claimed;
             }
         }
@@ -852,6 +870,7 @@ export const adminOverview = query({
             bookings.push({
                 id: therapy._id,
                 therapyId: therapy.therapyId,
+                awadocId: therapy.awadocId,
                 requestId: therapy.requestId,
                 env: therapy.env,
                 status: therapy.status,
@@ -1004,5 +1023,39 @@ export const adminRetryOutbox = mutation({
         for (const row of rows) await ctx.db.patch(row._id, { status: "pending", nextAttemptAt: now, attempts: row.status === "failed" ? 0 : row.attempts });
         if (rows.length > 0) await ctx.scheduler.runAfter(0, (internal as any).awadoc.kickOutbox, {});
         return rows.length;
+    },
+});
+
+/**
+ * One-off after AwaDoc's booking-ids release (13 Nov 2026): read AwaDoc's booking id for older
+ * bookings out of the logged therapy.request / therapy.confirmed events, then resend the callbacks
+ * that failed with "Therapy not found". Run: npx convex run awadoc:backfillAwadocIds --prod
+ */
+export const backfillAwadocIds = internalMutation({
+    args: {},
+    handler: async (ctx) => {
+        const now = Date.now();
+        const logs = await ctx.db.query("awadocEventLog").withIndex("by_direction", (q) => q.eq("direction", "inbound")).order("desc").take(2000);
+        let updated = 0;
+        let requeued = 0;
+        for (const log of logs) {
+            if (!/\.(request|confirmed)$/.test(log.eventType)) continue;
+            const payload = log.payload as any;
+            const awadocId = cleanText(payload?.context?.therapy?.id ?? payload?.context?.consultation?.id, 100);
+            const requestId = cleanText(payload?.meta?.request_id, 200);
+            if (!awadocId || !requestId) continue;
+            const therapy = await ctx.db.query("awadocTherapies").withIndex("by_request_id", (q) => q.eq("requestId", requestId)).first();
+            if (!therapy || therapy.awadocId || therapy.therapyId === awadocId) continue;
+            await ctx.db.patch(therapy._id, { awadocId, updatedAt: now });
+            updated++;
+            const outbox = await ctx.db.query("awadocOutbox").withIndex("by_therapy", (q) => q.eq("therapyId", therapy.therapyId)).collect();
+            for (const row of outbox) {
+                if (row.status !== "failed") continue;
+                await ctx.db.patch(row._id, { status: "pending", attempts: 0, nextAttemptAt: now });
+                requeued++;
+            }
+        }
+        if (requeued > 0) await ctx.scheduler.runAfter(0, (internal as any).awadoc.kickOutbox, {});
+        return { updated, requeued };
     },
 });
