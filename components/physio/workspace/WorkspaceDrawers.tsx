@@ -61,8 +61,43 @@ import { ScribePanel } from '@/components/physio/notes/scribe/ScribePanel'
 import type { ScribeNextStepsData } from '@/components/physio/notes/scribe/ScribeNextSteps'
 import { SCRIBE_NAME, scribeApi, scribeError, type ScribeCarePlan, type ScribeSession } from '@/components/physio/notes/scribe/scribeApi'
 import { draftToNote, nameScore } from '@/components/physio/notes/scribe/scribeTools'
+import { ScribeProgrammePane } from '@/components/physio/notes/scribe/ScribeProgrammePane'
+import { ScribeCarePlanPane, type CarePlanReview } from '@/components/physio/notes/scribe/ScribeCarePlanPane'
+import {
+  buildProgrammeSend,
+  fillBlanks,
+  reviewFromDraft,
+  sendSummary,
+  type LibraryLike,
+  type PayloadItem,
+  type ProgrammeReview,
+  type ProgrammeSend,
+} from '@/components/physio/notes/scribe/scribeProgramme'
+import type { CareTeamProgram, LibraryData } from '@/components/exercise-programs/types'
+import { useNoteMedia as useProgrammeVoice, WHATSAPP_AUDIO_TYPES } from '@/components/physio/NoteMedia'
 import type { ScribeDraft } from '@/convex/helpers/scribeDraft'
-import { useMutation } from 'convex/react'
+import { useMutation, useQuery } from 'convex/react'
+import { makeFunctionReference } from 'convex/server'
+
+// Home programmes, sent with an approved Rehabify Scribe note (plain references: TS2589)
+type ProgrammeVoice = { voiceNoteStorageId?: Id<'_storage'>; voiceNoteSeconds?: number }
+const listLibraryRef = makeFunctionReference<'query', Record<string, never>, LibraryData | null>('exerciseLibrary:listLibrary')
+const listProgramsRef = makeFunctionReference<'query', { patientId: Id<'users'> }, CareTeamProgram[] | null>('exercisePrograms:listForPatient')
+const createProgramRef = makeFunctionReference<
+  'mutation',
+  { patientId: Id<'users'>; title: string; note?: string; items: PayloadItem[] } & ProgrammeVoice,
+  Id<'exercisePrograms'>
+>('exercisePrograms:createProgram')
+const addToProgramRef = makeFunctionReference<
+  'mutation',
+  { programId: Id<'exercisePrograms'>; items: PayloadItem[]; note?: string } & ProgrammeVoice,
+  Id<'exercisePrograms'>
+>('exercisePrograms:addExercisesToProgram')
+const updateProgramRef = makeFunctionReference<
+  'mutation',
+  { programId: Id<'exercisePrograms'>; title: string; note?: string; goals?: string[]; items: PayloadItem[] } & ProgrammeVoice,
+  Id<'exercisePrograms'>
+>('exercisePrograms:updateProgram')
 import {
   draftHasContent,
   emptyDraft,
@@ -247,6 +282,62 @@ export function NoteDrawer({
   }, [])
   const scribeDraft = !editing && scribe?.draft ? scribe : null
 
+  // Rehabify Scribe's home programme and care plan, reviewed beside the note and sent with it
+  // ("Approve and send"). Nothing goes to the patient without the physio approving.
+  const [programmeReview, setProgrammeReview] = useState<ProgrammeReview | null>(null)
+  const [planReview, setPlanReview] = useState<CarePlanReview | null>(null)
+  const [reviewTab, setReviewTab] = useState<'note' | 'programme' | 'plan'>('note')
+  const [problemRow, setProblemRow] = useState<string | null>(null)
+  // What "Approve and send" has done so far, so "Try again" only repeats what failed
+  const [approved, setApproved] = useState<{ note?: boolean; plan?: boolean; programme?: boolean }>({})
+  const [failures, setFailures] = useState<{ plan?: string; programme?: string } | null>(null)
+  const programmeVoice = useProgrammeVoice({ audioTypes: WHATSAPP_AUDIO_TYPES })
+  const resetProgrammeVoice = programmeVoice.reset
+  const reviewedDraftAt = useRef<number | null>(null)
+  const draftProgramme = scribeDraft?.draft?.programme
+  const delivery = useQuery(scribeApi.delivery, open && scribeDraft ? { patientId } : 'skip')
+  const libraryData = useQuery(listLibraryRef, open && draftProgramme ? {} : 'skip')
+  const programs = useQuery(listProgramsRef, open && draftProgramme ? { patientId } : 'skip')
+  const createProgram = useMutation(createProgramRef)
+  const addToProgram = useMutation(addToProgramRef)
+  const updateProgram = useMutation(updateProgramRef)
+  const savePlan = useMutationUntyped(workspaceApi.physioCare.saveCarePlan)
+  const currentProgram = useMemo(
+    () => (delivery?.current ? (programs?.find((p) => p._id === delivery.current!._id) ?? null) : null),
+    [delivery, programs]
+  )
+  const libraryMap = useMemo(
+    () => new Map<string, LibraryLike>((libraryData?.items ?? []).map((e) => [e._id as string, e as LibraryLike])),
+    [libraryData]
+  )
+
+  // Opening the drawer starts with no review (the recording's draft brings one back)
+  useEffect(() => {
+    if (!open) return
+    reviewedDraftAt.current = null
+    setProgrammeReview(null)
+    setPlanReview(null)
+    setReviewTab('note')
+    setApproved({})
+    setFailures(null)
+    setProblemRow(null)
+    resetProgrammeVoice()
+  }, [open, resetProgrammeVoice])
+
+  // Each new draft (or redraft) starts a fresh review, once we know the patient's current programme
+  useEffect(() => {
+    const session = scribeDraft
+    if (!session?.draft || !session.draftAt || reviewedDraftAt.current === session.draftAt) return
+    if (session.draft.programme && delivery === undefined) return
+    reviewedDraftAt.current = session.draftAt
+    setProgrammeReview(session.draft.programme ? reviewFromDraft(session.draft.programme, delivery?.current ?? null) : null)
+    setPlanReview(session.draft.carePlan ? { include: true, plan: session.draft.carePlan } : null)
+    setApproved({})
+    setFailures(null)
+    setProblemRow(null)
+  }, [scribeDraft, delivery])
+  const reviewing = Boolean(scribeDraft && (programmeReview || planReview))
+
   // The note is kept in this browser as it's written, so a closed tab or a crash loses nothing.
   // An edit is kept only while it differs from the saved note.
   useEffect(() => {
@@ -274,7 +365,9 @@ export function NoteDrawer({
 
   // Escape, a click outside, the close button and Cancel all come through here
   const requestClose = () => {
-    if (saving || media.recording) return
+    if (saving || media.recording || programmeVoice.recording) return
+    // Signed already (something else failed): close, and offer what's left as a next step
+    if (approved.note) return finishApproved(approved)
     if (scribeBusy) {
       toast('Stop the recording (or wait for the draft) before closing.')
       return
@@ -290,7 +383,130 @@ export function NoteDrawer({
     onOpenChange(false)
   }
 
+  /** Sends the reviewed programme: a new one, added to the current one, or the current one updated. */
+  const sendProgramme = async (send: ProgrammeSend) => {
+    const voice: ProgrammeVoice = programmeVoice.voiceStorageId
+      ? { voiceNoteStorageId: programmeVoice.voiceStorageId, voiceNoteSeconds: programmeVoice.voice?.seconds }
+      : {}
+    if (send.kind === 'create') {
+      await createProgram({ patientId, title: send.title, ...(send.note ? { note: send.note } : {}), items: send.items, ...voice })
+    } else if (send.kind === 'add') {
+      await addToProgram({ programId: send.programId, items: send.items, ...(send.note ? { note: send.note } : {}), ...voice })
+    } else if (send.kind === 'update') {
+      await updateProgram({ programId: send.programId, title: send.title, note: send.note, goals: send.goals, items: send.items, ...voice })
+    }
+  }
+
+  /** Closes after "Approve and send"; anything left undone is offered as a next step, with the follow-up. */
+  const finishApproved = (done: typeof approved) => {
+    const steps = scribeDraft?.draft
+    discarded.current = true
+    setDraft(emptyDraft())
+    onOpenChange(false)
+    if (!steps) return
+    const exercises = steps.programme ? (programmeReview?.include && !done.programme ? steps.exercises : []) : steps.exercises
+    const carePlan = planReview ? (planReview.include && !done.plan ? planReview.plan : undefined) : steps.carePlan
+    if (exercises.length || steps.followUp || carePlan) onScribeSigned?.({ exercises, followUp: steps.followUp, carePlan })
+  }
+
+  /**
+   * "Approve and send": signs the note, saves the care plan and sends the programme, in that
+   * order. Everything is checked first, so a mistake stops it before anything goes out. If the
+   * plan or programme then fails, the note stays signed and "Try again" repeats only what failed.
+   */
+  const approveAndSend = async (final: NoteDraft | null) => {
+    if (!scribeDraft?.draft) return
+    let send: ProgrammeSend = { kind: 'none' }
+    if (programmeReview?.include && !approved.programme) {
+      if (programmeVoice.busy) return void toast.error('Wait for the voice note to finish.')
+      if (libraryData === undefined || programs === undefined) return void toast('Still loading your exercise library. Try again in a moment.')
+      send = buildProgrammeSend(programmeReview, libraryMap, currentProgram)
+      if (send.kind === 'error') {
+        playSound('error')
+        setReviewTab('programme')
+        setProblemRow(send.rowKey ?? null)
+        return void toast.error(send.message)
+      }
+    }
+    let planArgs: Record<string, unknown> | null = null
+    if (planReview?.include && !approved.plan) {
+      const result = scribePlanSaveArgs(workspace, planReview.plan)
+      if ('error' in result) {
+        playSound('error')
+        setReviewTab('plan')
+        return void toast.error(result.error)
+      }
+      planArgs = result.args
+    }
+    setProblemRow(null)
+    setSaving(true)
+    const done = { ...approved }
+    const problems: { plan?: string; programme?: string } = {}
+    try {
+      if (!done.note) {
+        if (!final) return
+        await signScribe({
+          scribeSessionId: scribeDraft._id,
+          noteType: final.noteType,
+          subjectiveAssessment: final.subjective || undefined,
+          objectiveAssessment: final.objective || undefined,
+          treatmentAdministered: final.treatment || undefined,
+          planForNextSession: final.plan || undefined,
+          diagnosis: final.assessment || undefined,
+          measures: final.measures.length ? final.measures : undefined,
+          voiceNoteStorageId: media.voiceStorageId,
+          attachments: media.attachmentIds.length ? media.attachmentIds : undefined,
+        })
+        done.note = true
+        discarded.current = true
+        if (userId) clearNoteDraft(userId, patientId)
+      }
+      if (planArgs) {
+        try {
+          await savePlan(planArgs)
+          done.plan = true
+        } catch (error) {
+          problems.plan = programError(error, 'The care plan couldn’t be saved.')
+        }
+      }
+      if (send.kind !== 'none') {
+        try {
+          await sendProgramme(send)
+          done.programme = true
+        } catch (error) {
+          problems.programme = programError(error, 'The programme couldn’t be sent.')
+        }
+      }
+    } catch (error) {
+      playSound('error')
+      toast.error(scribeError(error, 'Couldn’t sign the note. Please try again.'))
+      return
+    } finally {
+      setApproved(done)
+      setSaving(false)
+    }
+    if (problems.plan || problems.programme) {
+      setFailures(problems)
+      setReviewTab(problems.programme ? 'programme' : 'plan')
+      playSound('error')
+      toast.error('The note is signed, but not everything went out.', { description: 'Fix what’s shown and tap Try again.' })
+      return
+    }
+    setFailures(null)
+    const name = workspace.patient.firstName || 'Your patient'
+    const way = delivery?.whatsapp ? ' on WhatsApp' : delivery?.app ? ' in their app' : ''
+    const parts = [
+      done.plan ? (workspace.plan ? 'Care plan updated.' : 'Care plan created.') : null,
+      send.kind !== 'none' ? `${sendSummary(send)}, sent to ${name}${way}.` : null,
+    ].filter(Boolean)
+    playSound(send.kind !== 'none' ? 'send' : 'success')
+    toast.success('Note signed', parts.length ? { description: parts.join(' ') } : undefined)
+    finishApproved(done)
+  }
+
   const save = async () => {
+    // "Try again" after the note was signed: only what failed is repeated
+    if (reviewing && approved.note) return approveAndSend(null)
     // A measure typed into an open form or panel but not added yet is saved with the note
     const waiting = pending.current?.collect() ?? { kind: 'none' as const }
     if (waiting.kind === 'invalid') {
@@ -311,6 +527,8 @@ export function NoteDrawer({
       onOpenChange(false)
       return
     }
+    // From Rehabify Scribe with a programme or care plan beside the note: approve them all together
+    if (reviewing) return approveAndSend(final)
     setSaving(true)
     try {
       if (scribeDraft) {
@@ -392,21 +610,75 @@ export function NoteDrawer({
       keepOpenOnOutsideClick
       title={editing ? 'Edit clinical note' : 'New clinical note'}
       description={`${workspace.patient.firstName ?? 'Patient'} · ${new Date(editing ? note.sessionDate : openedAt).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}`}
-      // Wide on desktop: the note beside the last visit. sm:max-w-none keeps the phone sheet full width.
-      className="sm:max-w-none md:max-w-2xl lg:max-w-3xl xl:max-w-5xl"
+      // Wide on desktop: the note beside the last visit (and Rehabify Scribe's programme and care
+      // plan beside that). sm:max-w-none keeps the phone sheet full width.
+      className={reviewing ? 'sm:max-w-none md:max-w-2xl lg:max-w-6xl xl:max-w-7xl' : 'sm:max-w-none md:max-w-2xl lg:max-w-3xl xl:max-w-5xl'}
       footer={
         <div className="flex gap-2">
-          <Button className={cn(secondaryButtonClass, 'h-11 flex-1 sm:flex-none sm:px-6')} disabled={saving || media.recording || scribeBusy} onClick={requestClose}>
+          <Button
+            className={cn(secondaryButtonClass, 'h-11 flex-1 sm:flex-none sm:px-6')}
+            disabled={saving || media.recording || scribeBusy || programmeVoice.recording}
+            onClick={requestClose}
+          >
             {editing ? 'Cancel' : 'Close'}
           </Button>
-          <Button className={cn(primaryButtonClass, 'h-11 flex-1')} disabled={saving || media.busy || scribeBusy} onClick={() => void save()}>
+          <Button className={cn(primaryButtonClass, 'h-11 flex-1')} disabled={saving || media.busy || scribeBusy || programmeVoice.busy} onClick={() => void save()}>
             {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : scribeDraft ? <FileSignature className="mr-2 h-4 w-4" /> : null}
-            {editing ? 'Save changes' : scribeDraft ? 'Sign note' : 'Save note'}
+            {editing
+              ? 'Save changes'
+              : approved.note
+                ? 'Try again'
+                : reviewing && (programmeReview?.include || planReview?.include)
+                  ? 'Approve and send'
+                  : scribeDraft
+                    ? 'Sign note'
+                    : 'Save note'}
           </Button>
         </div>
       }
     >
-      {!editing && open && (
+      {reviewing && !approved.note && (
+        // Phones and tablets: one part at a time
+        <div className="mb-4 flex gap-1 rounded-xl bg-pt-sunken p-1 lg:hidden" role="tablist" aria-label="What to check">
+          {(
+            [
+              { value: 'note', label: 'Note', show: true },
+              { value: 'programme', label: `Programme${programmeReview ? ` (${programmeReview.rows.filter((r) => r.include && r.action !== 'continue').length})` : ''}`, show: Boolean(programmeReview) },
+              { value: 'plan', label: 'Care plan', show: Boolean(planReview) },
+            ] as const
+          )
+            .filter((tab) => tab.show)
+            .map((tab) => (
+              <button
+                key={tab.value}
+                type="button"
+                role="tab"
+                aria-selected={reviewTab === tab.value}
+                onClick={() => setReviewTab(tab.value)}
+                className={cn(
+                  'flex-1 rounded-lg px-2 py-1.5 text-sm font-medium transition',
+                  reviewTab === tab.value ? 'bg-pt-surface text-pt-ink shadow-sm' : 'text-pt-muted hover:text-pt-ink'
+                )}
+              >
+                {tab.label}
+              </button>
+            ))}
+        </div>
+      )}
+      {approved.note && (
+        <div className="mb-4 space-y-2">
+          <p className="flex items-center gap-2 rounded-xl bg-pt-green-bg px-3 py-2.5 text-sm font-medium text-pt-green-fg">
+            <Check className="h-4 w-4 shrink-0" aria-hidden />
+            Note signed{approved.plan ? ' · care plan saved' : ''}{approved.programme ? ' · programme sent' : ''}
+          </p>
+          {failures?.plan && <p className="rounded-xl bg-pt-rose-bg px-3 py-2.5 text-sm text-pt-rose-fg">Care plan not saved: {failures.plan}</p>}
+          {failures?.programme && <p className="rounded-xl bg-pt-rose-bg px-3 py-2.5 text-sm text-pt-rose-fg">Programme not sent: {failures.programme}</p>}
+          <p className="text-xs text-pt-muted">Fix it below and tap Try again, or close and send it from the patient’s page.</p>
+        </div>
+      )}
+      <div className={cn(reviewing && !approved.note && 'lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)] lg:items-start lg:gap-6')}>
+      <div className={cn(approved.note ? 'hidden' : reviewing && reviewTab !== 'note' && 'hidden lg:block')}>
+      {!editing && open && !approved.note && (
         <ScribePanel
           patientId={patientId}
           patientFirstName={workspace.patient.firstName || 'The patient'}
@@ -455,6 +727,47 @@ export function NoteDrawer({
           )
         }
       />
+      </div>
+      {reviewing && (
+        <aside
+          aria-label={`${SCRIBE_NAME}: programme and care plan`}
+          className={cn(
+            'space-y-6',
+            !approved.note && 'lg:sticky lg:top-0 lg:max-h-[calc(100dvh-12rem)] lg:overflow-y-auto lg:rounded-2xl lg:border lg:border-pt-line lg:p-4',
+            !approved.note && reviewTab === 'note' && 'hidden lg:block'
+          )}
+        >
+          {programmeReview && !approved.programme && (
+            <div className={cn(reviewTab === 'plan' && 'hidden lg:block')}>
+              <ScribeProgrammePane
+                review={programmeReview}
+                onChange={(next) => {
+                  setProgrammeReview(next)
+                  setProblemRow(null)
+                }}
+                library={libraryData?.items}
+                currentTitle={currentProgram?.title ?? null}
+                delivery={delivery}
+                patientFirstName={workspace.patient.firstName || 'your patient'}
+                media={programmeVoice}
+                onFillBlanks={() => setProgrammeReview((current) => (current ? fillBlanks(current, libraryMap, currentProgram) : current))}
+                problemRowKey={problemRow}
+              />
+            </div>
+          )}
+          {planReview && !approved.plan && (
+            <div className={cn(reviewTab === 'programme' && programmeReview && !approved.programme && 'hidden lg:block')}>
+              <ScribeCarePlanPane
+                review={planReview}
+                onChange={setPlanReview}
+                hasPlan={Boolean(workspace.plan)}
+                patientFirstName={workspace.patient.firstName || 'your patient'}
+              />
+            </div>
+          )}
+        </aside>
+      )}
+      </div>
     </PhysioDrawer>
 
     <AlertDialog open={replaceWith !== null} onOpenChange={(next) => !next && setReplaceWith(null)}>
@@ -598,6 +911,42 @@ function patchFromScribe(base: PlanDraft, plan: ScribeCarePlan): PlanDraft {
     planned: plan.plannedSessions ? String(plan.plannedSessions) : base.planned,
     reviewDate: plan.reviewInWeeks ? reviewIn(plan.reviewInWeeks) : base.reviewDate,
     precautions: plan.precautions ? (base.precautions ? `${base.precautions}\n${plan.precautions}` : plan.precautions) : base.precautions,
+  }
+}
+
+/**
+ * What "Approve and send" saves for a Rehabify Scribe care plan (physioCare.saveCarePlan), built
+ * the same way as the care plan form: a new plan, or the current one with the session's changes.
+ * A measured goal without a target is kept as a written goal.
+ */
+export function scribePlanSaveArgs(workspace: Workspace, scribePlan: ScribeCarePlan): { args: Record<string, unknown> } | { error: string } {
+  const plan = workspace.plan
+  const draft = plan ? patchFromScribe(draftFromPlan(plan), scribePlan) : draftFromScribe(scribePlan)
+  const goals: { description: string; targetValue: string; timeline: string; achieved?: boolean; measure?: GoalMeasure }[] = []
+  for (const { measure, ...goal } of draft.goals.filter((g) => g.description.trim())) {
+    if (!measure || !measure.target.trim()) {
+      goals.push(goal)
+      continue
+    }
+    const linked = linkFromDraft(measure)
+    if (linked.error !== undefined) return { error: linked.error }
+    goals.push({ ...goal, measure: linked.link })
+  }
+  if (!draft.title.trim()) return { error: 'Give the care plan a title.' }
+  if (goals.length === 0) return { error: 'Add at least one goal to the care plan, or untick it.' }
+  const reviewDate = draft.reviewDate ? new Date(`${draft.reviewDate}T09:00:00`).getTime() : undefined
+  return {
+    args: {
+      patientId: workspace.patient._id,
+      title: draft.title,
+      description: draft.description || undefined,
+      goals,
+      sessionFrequency: draft.frequency || undefined,
+      plannedSessions: draft.planned ? Number(draft.planned) : undefined,
+      reviewDate,
+      precautions: draft.precautions || undefined,
+      changeReason: plan ? scribePlan.changeReason.trim() || `Updated with ${SCRIBE_NAME} from the session` : `Drafted with ${SCRIBE_NAME} from the session`,
+    },
   }
 }
 

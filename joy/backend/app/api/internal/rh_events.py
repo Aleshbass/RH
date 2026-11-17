@@ -236,7 +236,14 @@ async def receive_event(request: Request, settings: Settings = Depends(get_setti
         patient = _patient_for_rh_id(session, str(data.get("patient_id") or ""))
         if patient:
             text = programme_sent_text(data, reminders_on=patient.exercise_reminders == "on")
-            enqueue_booking_confirmed(patient.phone_e164, "", text)
+            voice_url = str(data.get("voice_note_url") or "")
+            enqueue_booking_confirmed(
+                patient.phone_e164,
+                "",
+                text,
+                audio_url=voice_url or None,
+                audio_mime=str(data.get("voice_note_mime") or ""),
+            )
             from app.conversation.companion import forget_care_summary
 
             forget_care_summary(_patient_conversation(session, patient))
@@ -319,7 +326,11 @@ def programme_sent_text(data: dict, *, reminders_on: bool) -> str:
         lead = f"🏋️ {sender} updated your home programme: *{title}*."
     else:
         lead = f"🏋️ {sender} sent you a new home programme: *{title}*."
-    lines = [lead, "", "Reply *my exercises* to see it, with a 3D demo of each exercise."]
+    lines = [lead]
+    if data.get("voice_note_url"):
+        # The note itself follows as WhatsApp audio when it can (app/queue/voice_notes.py)
+        lines.append(f"🎧 {sender} also left you a voice note. It's in your programme too.")
+    lines += ["", "Reply *my exercises* to see it, with a 3D demo of each exercise."]
     if not reminders_on:
         lines.append("Want a daily reminder? Reply *remind me at 7am* (or any time that suits you).")
     return "\n".join(lines)

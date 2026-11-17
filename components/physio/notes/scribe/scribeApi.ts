@@ -5,9 +5,17 @@
 import { makeFunctionReference } from 'convex/server'
 import type { Doc, Id } from '@/convex/_generated/dataModel'
 import type { ClinicalMeasure } from '@/convex/helpers/clinicalMeasures'
-import type { ScribeCarePlan, ScribeDraft, ScribeNoteType } from '@/convex/helpers/scribeDraft'
+import type { ScribeCarePlan, ScribeDraft, ScribeNoteType, ScribeProgramme } from '@/convex/helpers/scribeDraft'
 
-export type { ScribeCarePlan }
+export type { ScribeCarePlan, ScribeProgramme }
+
+/** Where an approved programme reaches the patient, and the programme the draft would update (scribe.getProgrammeDelivery) */
+export type ProgrammeDelivery = {
+  whatsapp: boolean
+  app: boolean
+  email: boolean
+  current: { _id: Id<'exercisePrograms'>; title: string; itemCount: number } | null
+} | null
 
 /** The product name physios see */
 export const SCRIBE_NAME = 'Rehabify Scribe'
@@ -68,6 +76,7 @@ export const scribeApi = {
     'scribe:transcribeChunk'
   ),
   generate: makeFunctionReference<'action', { scribeSessionId: ScribeSessionId }, ScribeDraft>('scribe:generateSoapNote'),
+  delivery: makeFunctionReference<'query', { patientId: Id<'users'> }, ProgrammeDelivery>('scribe:getProgrammeDelivery'),
 }
 
 /** A Convex error's own words for the physio, or the fallback. */

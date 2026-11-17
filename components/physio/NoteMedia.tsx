@@ -15,9 +15,18 @@ const ACCEPT = 'image/*,application/pdf,.doc,.docx'
 type Attachment = { storageId: Id<'_storage'>; name: string; size: number }
 type VoiceNote = { storageId: Id<'_storage'>; previewUrl: string; seconds: number }
 
-function pickAudioType() {
+const DEFAULT_AUDIO_TYPES = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg']
+
+/**
+ * For voice notes that go to patients on WhatsApp (home programmes): AAC in MP4 first, which
+ * WhatsApp plays and every browser can play back. WebM (older Chrome) still works; Joy converts
+ * it when it can (joy/backend/app/queue/voice_notes.py).
+ */
+export const WHATSAPP_AUDIO_TYPES = ['audio/mp4;codecs=mp4a.40.2', 'audio/mp4', 'audio/webm;codecs=opus', 'audio/webm', 'audio/ogg']
+
+function pickAudioType(types: readonly string[] = DEFAULT_AUDIO_TYPES) {
   if (typeof MediaRecorder === 'undefined') return undefined
-  return ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg'].find((type) => MediaRecorder.isTypeSupported(type))
+  return types.find((type) => MediaRecorder.isTypeSupported(type))
 }
 
 function formatSeconds(total: number) {
@@ -32,7 +41,8 @@ export function formatBytes(bytes: number) {
 }
 
 /** Voice note + attachment state for a clinical note. Upload happens as soon as a file is picked or a recording stops. */
-export function useNoteMedia() {
+export function useNoteMedia(options?: { audioTypes?: readonly string[] }) {
+  const audioTypes = options?.audioTypes
   const { uploadFile } = useFileUpload()
   const [voice, setVoice] = useState<VoiceNote | null>(null)
   const [attachments, setAttachments] = useState<Attachment[]>([])
@@ -84,7 +94,7 @@ export function useNoteMedia() {
       return
     }
     streamRef.current = stream
-    const mimeType = pickAudioType()
+    const mimeType = pickAudioType(audioTypes)
     const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined)
     const chunks: Blob[] = []
     const startedAt = Date.now()
@@ -126,7 +136,7 @@ export function useNoteMedia() {
       setElapsed(seconds)
       if (seconds >= MAX_RECORDING_SECONDS) recorder.stop()
     }, 250)
-  }, [canRecord, releaseMic, uploadFile])
+  }, [canRecord, releaseMic, uploadFile, audioTypes])
 
   const removeVoice = useCallback(() => {
     if (previewRef.current) URL.revokeObjectURL(previewRef.current)

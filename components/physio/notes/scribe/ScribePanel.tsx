@@ -5,7 +5,9 @@
  * agreed, records the session (or dictates), watches the words appear, stops, and the AI drafts
  * the note into the editor below. Here they see what to check: red flags heard, what the
  * recording didn't cover, the measures the AI picked up (added one tap at a time), and the
- * transcript (which they can correct and draft again). Signing happens with the drawer's button.
+ * transcript (which they can correct and draft again). Signing happens with the drawer's button;
+ * the home programme and care plan drafted with the note are checked beside it and sent with it
+ * ("Approve and send", WorkspaceDrawers.tsx).
  *
  * An unfinished recording or unsigned draft for this patient comes back here for 7 days.
  */
@@ -512,7 +514,9 @@ export function ScribePanel({ patientId, patientFirstName, appointmentId, noteMe
                 <Dumbbell className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
                 <span>
                   <span className="font-medium text-pt-ink">Exercises heard:</span> {draft.exercises.map((e) => (e.dosage ? `${e.name} (${e.dosage})` : e.name)).join('; ')}.
-                  You can send them as a home programme after signing.
+                  {draft.programme
+                    ? ' The home programme is drafted beside the note: check it, then approve and send.'
+                    : ' You can send them as a home programme after signing.'}
                 </span>
               </p>
             )}
@@ -522,7 +526,7 @@ export function ScribePanel({ patientId, patientFirstName, appointmentId, noteMe
                 <span>
                   <span className="font-medium text-pt-ink">Care plan:</span>{' '}
                   {draft.carePlan.action === 'update' ? 'changes to the current plan' : `a new plan with ${draft.carePlan.goals.length} goal${draft.carePlan.goals.length === 1 ? '' : 's'}`},
-                  drafted from what you said. You can check and save it after signing.
+                  drafted from what you said. It’s beside the note to check and approve.
                 </span>
               </p>
             )}

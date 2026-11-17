@@ -13,11 +13,20 @@ import { logJourney } from "../joyHandoff";
  * A physio sent, added to or changed a home programme: Joy tells the patient on WhatsApp and offers
  * reminders. Only for patients Joy can reach (a WhatsApp-only record, or a record connected or linked
  * to a WhatsApp number); everyone else gets the app notification and email as before.
+ * A voice note sent with it goes as a WhatsApp voice note too (Joy plays it from the file link).
  */
 export async function queueJoyProgrammeSent(
   ctx: MutationCtx,
   patient: Doc<"users">,
-  details: { programmeId: string; title: string; senderName: string; change: "new" | "added" | "updated"; what?: string }
+  details: {
+    programmeId: string;
+    title: string;
+    senderName: string;
+    change: "new" | "added" | "updated";
+    what?: string;
+    /** The physio's voice note with this change: its file link (Convex storage) and type */
+    voiceNote?: { url: string; mime: string; seconds?: number };
+  }
 ) {
   const reachable = patient.clerkId.startsWith("joy-whatsapp:") || Boolean(patient.whatsappLinkedAt);
   if (!reachable) return;
@@ -33,6 +42,9 @@ export async function queueJoyProgrammeSent(
     sender_name: details.senderName,
     change: details.change,
     what: details.what ?? null,
+    voice_note_url: details.voiceNote?.url ?? null,
+    voice_note_mime: details.voiceNote?.mime ?? null,
+    voice_note_seconds: details.voiceNote?.seconds ?? null,
   };
   const payload = { event_id: eventId, event_type: "programme.sent", api_version: "1", occurred_at: new Date(now).toISOString(), data };
   await ctx.db.insert("joyEventOutbox", { eventId, eventType: "programme.sent", payload, status: "pending", attempts: 0, createdAt: now, updatedAt: now });
