@@ -39,6 +39,7 @@ import { isJoyLoginEmail } from "../lib/auth/joyLoginEmail";
 import type { HlsPlayback } from "./learnVideo";
 import { isCourseCategory, isCourseLevel, STUDENT_LEVELS, type LearnerTagKind } from "../lib/learn/catalog";
 import { awardLearnPoints } from "./helpers/learnPoints";
+import { lagosMonth } from "../lib/learn/points";
 import {
   defaultCohortLabel,
   endOfLagosDay,
@@ -2586,6 +2587,55 @@ export const getVideoLibrary = query({
       .filter((c) => c.progress.started && !c.progress.isComplete)
       .sort((a, b) => (b.progress.updatedAt ?? 0) - (a.progress.updatedAt ?? 0))[0];
     return { state: "ok" as const, courses: cards, available, resumeCourseId: resume?.id ?? null };
+  },
+});
+
+/**
+ * The Rehabify Learn card on the physio and clinic dashboards: the course to carry on with, the
+ * learner's group and points this month, or nothing yet (an invitation to start). Reads only the
+ * learner's own rows, so it's cheap enough for the sidebar.
+ */
+export const getDashboardLearnCard = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = (await getViewer(ctx))?.user ?? null;
+    if (!user) return null;
+    let resume: { courseId: Id<"learnVideoCourses">; title: string; completed: number; total: number } | null = null;
+    const learner = await viewerFromUser(ctx, user, await verifiedIdentityEmail(ctx), false);
+    if (learner) {
+      const rows = await ctx.db
+        .query("learnVideoProgress")
+        .withIndex("by_email_course", (q) => q.eq("email", learner.email))
+        .take(50);
+      for (const row of rows.sort((a, b) => b.updatedAt - a.updatedAt)) {
+        const course = await ctx.db.get(row.courseId);
+        if (!course || course.status !== "published") continue;
+        const progress = progressSummary(row, await courseLessons(ctx, course._id));
+        if (progress.total === 0 || progress.isComplete) continue;
+        resume = { courseId: course._id, title: course.title, completed: progress.completed, total: progress.total };
+        break;
+      }
+    }
+    const membership = await ctx.db
+      .query("learnGroupMembers")
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .first();
+    const group = membership ? await ctx.db.get(membership.groupId) : null;
+    const monthly = await ctx.db
+      .query("learnPointsMonthly")
+      .withIndex("by_month_user", (q) => q.eq("month", lagosMonth(Date.now())).eq("userId", user._id))
+      .unique();
+    const account = await ctx.db
+      .query("learnPointsAccounts")
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .unique();
+    return {
+      resume,
+      group: group && !group.archived ? { name: group.name, color: group.color ?? null } : null,
+      monthPoints: monthly?.points ?? 0,
+      totalPoints: account?.total ?? 0,
+      started: Boolean(resume || membership || account),
+    };
   },
 });
 

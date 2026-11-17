@@ -26,6 +26,7 @@ import { clearUserNoteDrafts } from '@/components/physio/notes/draftStore'
 import { usePracticeMode } from '@/components/physio/practiceMode'
 import { useClinicMode } from '@/components/physio/clinicMode'
 import { PlanBadge } from '@/components/physio/plan/PlanPage'
+import { LearnCard } from '@/components/learn/LearnCard'
 import { cn } from '@/lib/utils'
 import {
   LIMITED_NAV,
@@ -280,6 +281,7 @@ export function PhysioSidebar({
       </nav>
 
       <div className="space-y-2 p-3">
+        {!limited && <LearnCard />}
         {!limited && <PlanBadge />}
         {!limited && <FooterCard />}
         <div className="border-t border-pt-line pt-2">
@@ -363,6 +365,8 @@ export function PhysioMobileNav({ limited = false, unreadMessages }: { limited?:
               {email && <p className="truncate text-xs text-pt-faint">{email}</p>}
             </div>
           </div>
+
+          {!limited && <LearnCard onNavigate={() => setMoreOpen(false)} />}
 
           {groups.map((group, i) => {
             const items = group.items.filter((item) => !tabHrefs.has(item.href))
