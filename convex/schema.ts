@@ -4969,9 +4969,9 @@ export default defineSchema({
   // Every Pro payment (and checkout started), for receipts, history and the Plans report
   physioPlanPayments: defineTable({
     physioId: v.id("users"),
-    subscriptionId: v.id("physioSubscriptions"),
+    subscriptionId: v.optional(v.id("physioSubscriptions")), // unset for Scribe top-ups
     reference: v.string(),
-    kind: v.union(v.literal("first"), v.literal("renewal"), v.literal("card_check")),
+    kind: v.union(v.literal("first"), v.literal("renewal"), v.literal("card_check"), v.literal("topup")),
     method: v.union(v.literal("checkout"), v.literal("saved_card")),
     amountKobo: v.number(),
     status: v.union(v.literal("pending"), v.literal("paid"), v.literal("failed")),
@@ -4984,6 +4984,17 @@ export default defineSchema({
   })
     .index("by_reference", ["reference"])
     .index("by_physio", ["physioId", "createdAt"]),
+
+  // Scribe top-up sessions: +N when bought, -1 for each session started beyond the plan's
+  // sessions that month. Top-ups never expire (balance = sum of delta).
+  physioScribeCredits: defineTable({
+    physioId: v.id("users"),
+    delta: v.number(),
+    reason: v.union(v.literal("purchase"), v.literal("used"), v.literal("admin")),
+    reference: v.optional(v.string()),
+    scribeSessionId: v.optional(v.id("scribeSessions")),
+    createdAt: v.number(),
+  }).index("by_physio", ["physioId", "createdAt"]),
 
   // Free Pro given by an admin for a while, with a reason (testers, partners, make-goods)
   physioPlanGrants: defineTable({
@@ -5636,6 +5647,10 @@ export default defineSchema({
     patientId: v.id("users"),
     createdBy: v.id("users"),
     clinicId: v.optional(v.id("clinics")),
+    // Who pays for an independent physio's programme (Individual Pro spec, 17 Nov 2026): "physio"
+    // (their plan covers it: counts towards Free's patients a month, Flex features free for the
+    // patient) or "patient" (the patient pays Flex). Unset = before plans = covered by the physio.
+    coverage: v.optional(v.union(v.literal("physio"), v.literal("patient"))),
     treatmentPlanId: v.optional(v.id("treatmentPlans")),
     episodeId: v.optional(v.id("careEpisodes")),
     title: v.string(),

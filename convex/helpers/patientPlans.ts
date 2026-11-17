@@ -131,6 +131,8 @@ export async function isIndependentProgram(ctx: Ctx, program: Doc<"exerciseProgr
 export async function programNeedsFlex(ctx: Ctx, program: Doc<"exercisePrograms">, live?: RecoveryPlansLive): Promise<boolean> {
   const settings = live ?? (await planSettings(ctx));
   if (!anyPlanLive(settings)) return false;
+  // Only programmes the patient pays for need Flex; the physio's plan covers the rest (incl. older ones)
+  if (program.coverage !== "patient") return false;
   return isIndependentProgram(ctx, program);
 }
 
@@ -153,7 +155,8 @@ export async function patientFlexContext(ctx: Ctx, patientId: Id<"users">) {
   let independent: Doc<"exercisePrograms"> | null = null;
   let included = false;
   for (const program of programs) {
-    if (await isIndependentProgram(ctx, program)) independent ??= program;
+    // Covered by the physio's plan (or sent before plans existed) = included for the patient
+    if (program.coverage === "patient" && (await isIndependentProgram(ctx, program))) independent ??= program;
     else included = true;
   }
   if (independent) {

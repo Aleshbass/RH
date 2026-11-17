@@ -6,6 +6,7 @@
  * exerciseShareLinks.ts), follows the demonstrations and logs each exercise with a pain score.
  * The care team sees adherence.
  */
+import { programmeCoverage } from "./physioPlans";
 import { insertNotification } from "./helpers/pushNotify";
 import { queueJoyProgrammeSent } from "./helpers/joyEvents";
 import { advancePatientReferrals } from "./helpers/partnerAttribution";
@@ -478,6 +479,8 @@ export const createProgram = mutation({
     items: v.array(itemInput),
     // Sent from a programme template (its author is credited)
     templateId: v.optional(v.id("programTemplates")),
+    // An independent physio over Free's patients a month chose to have the patient pay with Flex
+    coverage: v.optional(v.union(v.literal("physio"), v.literal("patient"))),
   },
   handler: (ctx, args) =>
     guarded("send the programme", async () => {
@@ -491,10 +494,32 @@ export const createProgram = mutation({
 
       const { plan, episode } = await activePlanAndEpisode(ctx, args.patientId, team.kind === "physio" ? team.user._id : undefined);
       const now = Date.now();
+      // Independent physios: their plan covers the programme, or (over Free's limit) they choose
+      let coverage: "physio" | "patient" | undefined;
+      if (team.kind === "physio" && !team.clinicId && (await isIndependentPair(ctx, args.patientId, team.user._id))) {
+        const flexOpen = anyPlanLive(await planSettings(ctx));
+        if (args.coverage === "patient") {
+          if (!flexOpen) throw new ConvexError("Patients can't pay for Flex yet. Upgrade to Pro to send more programmes this month.");
+          coverage = "patient";
+        } else {
+          const decision = await programmeCoverage(ctx, team.user, args.patientId, now);
+          if (!decision.covered) {
+            throw new ConvexError({
+              code: "plan_limit",
+              message: `You've covered ${decision.used} of ${decision.limit} patients this month on Free.`,
+              used: decision.used,
+              limit: decision.limit,
+              flexAvailable: flexOpen,
+            });
+          }
+          coverage = "physio";
+        }
+      }
       const programId = await ctx.db.insert("exercisePrograms", {
         patientId: args.patientId,
         createdBy: team.user._id,
         clinicId: team.clinicId,
+        ...(coverage ? { coverage } : {}),
         treatmentPlanId: plan?._id,
         episodeId: episode?._id,
         title,

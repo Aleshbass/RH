@@ -58,6 +58,7 @@ import {
 import { isPlaceholderUser } from "./helpers/whatsappLink";
 import { activePlanFor, episodesFor, insertClinicalNote } from "./physioCare";
 import { loadPlatformControls } from "./platformSettings";
+import { scribeAllowance, useScribeCredit } from "./physioPlans";
 import { billingIsOn, subscriptionForClinic } from "./helpers/clinicSubscriptions";
 
 type Ctx = QueryCtx | MutationCtx;
@@ -243,6 +244,19 @@ export const startScribe = mutation({
     if (today.length >= MAX_SESSIONS_PER_DAY) {
       throw new ConvexError(`You've started ${MAX_SESSIONS_PER_DAY} recordings in the last 24 hours, the daily limit. Write this note by hand.`);
     }
+    // The plan's Scribe sessions this month, then top-ups (checked only when a session starts)
+    const allowance = await scribeAllowance(ctx, physio, now);
+    if (!allowance.ok) {
+      throw new ConvexError({
+        code: "scribe_limit",
+        message: `You've used your ${allowance.included} Scribe sessions this month. Write this note by hand, top up, or ${allowance.onPro ? "wait for next month" : "upgrade to Pro"}.`,
+        used: allowance.used,
+        included: allowance.included,
+        onPro: allowance.onPro,
+        topUpKobo: allowance.topUpKobo,
+        topUpSessions: allowance.topUpSessions,
+      });
+    }
     const scribeSessionId = await ctx.db.insert("scribeSessions", {
       physiotherapistId: physio._id,
       patientId: args.patientId,
@@ -258,6 +272,7 @@ export const startScribe = mutation({
       createdAt: now,
       updatedAt: now,
     });
+    if (allowance.useCredit) await useScribeCredit(ctx, physio._id, scribeSessionId);
     // Using it counts as having seen the introduction
     await markIntroSeen(ctx, physio._id);
     return { scribeSessionId };

@@ -38,7 +38,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const ANNOUNCE_KEY = "plans:announce-2026-11";
 export const PLAN_PAGE = "/dashboard/physiotherapist/settings/plan";
 const PREFIX = "PHYSIOPRO_";
-const REFERENCE = /^PHYSIOPRO_(CARD_|RENEW_)?([a-z0-9]+)_\d+$/;
+const REFERENCE = /^PHYSIOPRO_(CARD_|RENEW_|TOPUP_)?([a-z0-9]+)_\d+$/;
 const FOOTNOTE = "You're receiving this because you use Rehabify as a physiotherapist. Questions about your plan? Write to hello@myrehabifyhealth.com.";
 
 const sendEmailRef = makeFunctionReference<
@@ -56,8 +56,8 @@ const refundRef = makeFunctionReference<"action", { cardId: Id<"physioPlanCards"
 const refundInfoRef = makeFunctionReference<"query", { cardId: Id<"physioPlanCards"> }, { reference: string; refunded: boolean } | null>("physioPlans:refundInfo");
 const refundDoneRef = makeFunctionReference<"mutation", { cardId: Id<"physioPlanCards">; error?: string }, null>("physioPlans:recordRefund");
 
-type Purpose = "upgrade" | "card" | "renew";
-type Prepared = { reference: string; amountKobo: number; email: string; name: string; channels: string[]; label: string; subscriptionId: Id<"physioSubscriptions"> };
+type Purpose = "upgrade" | "card" | "renew" | "topup";
+type Prepared = { reference: string; amountKobo: number; email: string; name: string; channels: string[]; label: string; subscriptionId: Id<"physioSubscriptions"> | null };
 type Settle = { reference: string; amountKobo: number; currency: string; channel?: string; authorization?: unknown; email?: string };
 type SettleResult = { ok: boolean; already?: boolean; reason?: string; kind?: string };
 type ChargeInfo = { authorizationCode: string; email: string; amountKobo: number; reference: string; label: string };
@@ -154,15 +154,73 @@ export async function physioPlanFor(ctx: Ctx, user: Doc<"users">, profile: Doc<"
   return { kind: "free" as PlanKind, sub };
 }
 
+/** Patients whose programmes the physio's plan covers this month (clinic and patient-paid ones never count). */
+async function coveredPatientsThisMonth(ctx: Ctx, physioId: Id<"users">, now: number) {
+  const programmes = await ctx.db
+    .query("exercisePrograms")
+    .withIndex("by_creator", (q) => q.eq("createdBy", physioId).gte("createdAt", monthStart(now)))
+    .take(1000);
+  return new Set(programmes.filter((p) => !p.clinicId && p.coverage !== "patient").map((p) => p.patientId as string));
+}
+
+/** Scribe top-up sessions left (bought minus used; they never expire). */
+async function scribeCredits(ctx: Ctx, physioId: Id<"users">) {
+  const rows = await ctx.db
+    .query("physioScribeCredits")
+    .withIndex("by_physio", (q) => q.eq("physioId", physioId))
+    .take(2000);
+  return Math.max(0, rows.reduce((sum, r) => sum + r.delta, 0));
+}
+
+/** When the Free limits apply to this physio: joined after launch → from the day they joined; else the limits date. */
+function limitsFromFor(user: Doc<"users">, profile: Doc<"physiotherapistProfiles"> | null, s: PhysioPlanSettings) {
+  const joined = joinedAt(user, profile);
+  return joined >= dayStart(s.launchDate) ? joined : dayStart(s.limitsDate);
+}
+
+/**
+ * Who pays for a new programme from an independent physio (exercisePrograms.createProgram):
+ * covered by their plan, or over Free's patients a month (then the physio chooses: the patient
+ * pays Flex, or they upgrade). A patient already covered this month never counts twice.
+ */
+export async function programmeCoverage(ctx: Ctx, physio: Doc<"users">, patientId: Id<"users">, now: number) {
+  const profile = await ctx.db
+    .query("physiotherapistProfiles")
+    .withIndex("by_user_id", (q) => q.eq("userId", physio._id))
+    .first();
+  const s = await loadPlanSettings(ctx);
+  const plan = await physioPlanFor(ctx, physio, profile, s, now);
+  if (plan.kind !== "free" || now < limitsFromFor(physio, profile, s)) return { covered: true as const };
+  const covered = await coveredPatientsThisMonth(ctx, physio._id, now);
+  if (covered.has(patientId) || covered.size < s.freePatientsPerMonth) return { covered: true as const };
+  return { covered: false as const, used: covered.size, limit: s.freePatientsPerMonth };
+}
+
+/**
+ * May this physio start a Scribe session now (convex/scribe.ts startScribe)? Clinic members are
+ * covered by the clinic; others get their plan's sessions a month, then top-ups. Checked when a
+ * session starts only, so Scribe never stops mid-session.
+ */
+export async function scribeAllowance(ctx: Ctx, physio: Doc<"users">, now: number) {
+  const profile = await ctx.db
+    .query("physiotherapistProfiles")
+    .withIndex("by_user_id", (q) => q.eq("userId", physio._id))
+    .first();
+  const s = await loadPlanSettings(ctx);
+  const plan = await physioPlanFor(ctx, physio, profile, s, now);
+  if (plan.kind === "clinic" || now < limitsFromFor(physio, profile, s)) return { ok: true as const, useCredit: false };
+  const included = plan.kind === "free" ? s.freeScribeSessions : s.proScribeSessions;
+  const used = (await usageThisMonth(ctx, physio._id, now)).scribe;
+  if (used < included) return { ok: true as const, useCredit: false };
+  const credits = await scribeCredits(ctx, physio._id);
+  if (credits > 0) return { ok: true as const, useCredit: true };
+  return { ok: false as const, used, included, onPro: plan.kind !== "free", topUpKobo: s.scribeTopUpKobo, topUpSessions: s.scribeTopUpSessions };
+}
+
 /** This month's usage: different patients on programmes the physio covers, and Scribe sessions. */
 async function usageThisMonth(ctx: Ctx, physioId: Id<"users">, now: number) {
   const from = monthStart(now);
-  const programmes = await ctx.db
-    .query("exercisePrograms")
-    .withIndex("by_creator", (q) => q.eq("createdBy", physioId).gte("createdAt", from))
-    .take(1000);
-  // Clinic programmes are the clinic's; patients paying Flex themselves never count (Flex isn't on yet)
-  const patients = new Set(programmes.filter((p) => !p.clinicId).map((p) => p.patientId as string)).size;
+  const patients = (await coveredPatientsThisMonth(ctx, physioId, now)).size;
   const sessions = await ctx.db
     .query("scribeSessions")
     .withIndex("by_physio_and_created", (q) => q.eq("physiotherapistId", physioId).gte("createdAt", from))
@@ -189,13 +247,15 @@ export const getMyPlan = query({
     const sub = plan.sub;
     const card = await activeCard(ctx, user._id);
     const usage = await usageThisMonth(ctx, user._id, now);
+    const credits = await scribeCredits(ctx, user._id);
     const founding = sub?.founding ?? isFoundingPhysio(user, profile, s);
     const launchAt = dayStart(s.launchDate);
     const limitsAt = dayStart(s.limitsDate);
     const launched = now >= launchAt;
     const onPro = plan.kind !== "free";
     // New physios (joined after launch) are on the Free limits from the day they join
-    const limitsFrom = joinedAt(user, profile) >= launchAt ? joinedAt(user, profile) : limitsAt;
+    void limitsAt;
+    const limitsFrom = limitsFromFor(user, profile, s);
     const payments = await ctx.db
       .query("physioPlanPayments")
       .withIndex("by_physio", (q) => q.eq("physioId", user._id))
@@ -237,7 +297,7 @@ export const getMyPlan = query({
       usage: {
         monthLabel: new Date(now + 3_600_000).toLocaleDateString("en-GB", { month: "long", timeZone: "UTC" }),
         patients: { used: usage.patients, limit: onPro ? null : s.freePatientsPerMonth },
-        scribe: { used: usage.scribe, limit: onPro ? s.proScribeSessions : s.freeScribeSessions },
+        scribe: { used: usage.scribe, limit: plan.kind === "clinic" ? null : onPro ? s.proScribeSessions : s.freeScribeSessions, credits },
         limitsFrom,
         limitsActive: now >= limitsFrom,
       },
@@ -271,7 +331,7 @@ export const getMyPlan = query({
 
 /** Starts a checkout: upgrade (or lock in before launch), save/replace a card, or pay a renewal by hand. */
 export const prepareCheckout = internalMutation({
-  args: { purpose: v.union(v.literal("upgrade"), v.literal("card"), v.literal("renew")) },
+  args: { purpose: v.union(v.literal("upgrade"), v.literal("card"), v.literal("renew"), v.literal("topup")) },
   handler: async (ctx, args): Promise<Prepared> => {
     const { user, profile } = await requirePhysio(ctx);
     if (profile?.clinicId) throw new ConvexError("You're covered by your clinic's plan, so there's nothing to pay.");
@@ -279,6 +339,28 @@ export const prepareCheckout = internalMutation({
     if (!email || email.endsWith("@joy.rehabify")) throw new ConvexError("Add your email address in Settings › Profile first, so we can send your receipts.");
     const s = await loadPlanSettings(ctx);
     const now = Date.now();
+    if (args.purpose === "topup") {
+      // Scribe top-up: a one-off payment for more sessions, any plan
+      const reference = `${PREFIX}TOPUP_${user._id}_${now}`;
+      await ctx.db.insert("physioPlanPayments", {
+        physioId: user._id,
+        reference,
+        kind: "topup",
+        method: "checkout",
+        amountKobo: s.scribeTopUpKobo,
+        status: "pending",
+        createdAt: now,
+      });
+      return {
+        reference,
+        amountKobo: s.scribeTopUpKobo,
+        email,
+        name: [user.firstName, user.lastName].filter(Boolean).join(" ") || "Physiotherapist",
+        channels: ["card", "bank_transfer"],
+        label: `Rehabify Scribe top-up (${s.scribeTopUpSessions} sessions)`,
+        subscriptionId: null,
+      };
+    }
     const launchAt = dayStart(s.launchDate);
     let sub = await subscriptionOf(ctx, user._id);
     const name = [user.firstName, user.lastName].filter(Boolean).join(" ") || "Physiotherapist";
@@ -342,7 +424,7 @@ export const prepareCheckout = internalMutation({
 });
 
 export const startCheckout = action({
-  args: { purpose: v.union(v.literal("upgrade"), v.literal("card"), v.literal("renew")) },
+  args: { purpose: v.union(v.literal("upgrade"), v.literal("card"), v.literal("renew"), v.literal("topup")) },
   handler: async (ctx, args): Promise<{ authorizationUrl: string }> => {
     const p = await ctx.runMutation(prepareRef, { purpose: args.purpose });
     const data = await paystackRequest("/transaction/initialize", {
@@ -356,7 +438,7 @@ export const startCheckout = action({
         channels: p.channels,
         metadata: {
           source: "physio_pro",
-          subscriptionId: p.subscriptionId,
+          ...(p.subscriptionId ? { subscriptionId: p.subscriptionId } : {}),
           custom_fields: [
             { display_name: "Physiotherapist", variable_name: "physio", value: p.name },
             { display_name: "For", variable_name: "purpose", value: p.label },
@@ -508,11 +590,32 @@ async function settle(ctx: MutationCtx, input: Settle): Promise<SettleResult> {
     await ctx.db.patch(payment._id, { status: "failed", error: `Paid ${input.amountKobo}, expected ${payment.amountKobo}` });
     return { ok: false, reason: "short_payment" };
   }
-  const sub = await ctx.db.get(payment.subscriptionId);
   const physio = await ctx.db.get(payment.physioId);
-  if (!sub || !physio) return { ok: false, reason: "missing" };
+  if (!physio) return { ok: false, reason: "missing" };
   const now = Date.now();
   const s = await loadPlanSettings(ctx);
+  if (payment.kind === "topup") {
+    await ctx.db.insert("physioScribeCredits", { physioId: physio._id, delta: s.scribeTopUpSessions, reason: "purchase", reference: input.reference, createdAt: now });
+    const receiptId = await issueReceipt(ctx, {
+      kind: "payment",
+      payerUserId: physio._id,
+      email: physio.email ?? undefined,
+      name: [physio.firstName, physio.lastName].filter(Boolean).join(" ") || undefined,
+      relatedType: "physio_scribe_topup",
+      relatedId: physio._id,
+      relationship: "independent",
+      description: `Rehabify Scribe top-up: ${s.scribeTopUpSessions} sessions`,
+      lines: [{ label: `Scribe top-up (${s.scribeTopUpSessions} sessions)`, amountKobo: input.amountKobo }],
+      reference: input.reference,
+      dedupeKey: input.reference,
+      paidAt: now,
+    });
+    await ctx.db.patch(payment._id, { status: "paid", paidAt: now, receiptId });
+    await notifyPhysio(ctx, physio._id, "Scribe top-up added", `${s.scribeTopUpSessions} more Scribe sessions. They never expire.`);
+    return { ok: true, kind: "topup" };
+  }
+  const sub = payment.subscriptionId ? await ctx.db.get(payment.subscriptionId) : null;
+  if (!sub) return { ok: false, reason: "missing" };
 
   if (payment.kind === "card_check") {
     const cardId = await saveCard(ctx, physio._id, input.reference, input, input.amountKobo);
@@ -747,6 +850,11 @@ export const chargeSavedCard = internalAction({
     return null;
   },
 });
+
+/** Uses one top-up session for a Scribe session started beyond the plan's sessions (scribe.ts). */
+export async function useScribeCredit(ctx: MutationCtx, physioId: Id<"users">, scribeSessionId: Id<"scribeSessions">) {
+  await ctx.db.insert("physioScribeCredits", { physioId, delta: -1, reason: "used", scribeSessionId, createdAt: Date.now() });
+}
 
 export const recordChargeFailure = internalMutation({
   args: { subscriptionId: v.id("physioSubscriptions"), reference: v.string(), error: v.string() },
