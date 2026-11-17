@@ -20,6 +20,7 @@ import { BackToCommunity } from './Community'
 import { EmptyState, JoinPrompt, Skeleton } from './ui'
 import { roomPath } from './socialApi'
 import { groupApi, groupJoinPath } from './groupApi'
+import { GroupAvatar } from './GroupAvatar'
 
 export function GroupJoin({ code }: { code: string }) {
   const data = useQuery(groupApi.invitePreview, { code })
@@ -83,15 +84,19 @@ function GroupCard({
   group,
   children,
 }: {
-  group: { name: string; description: string | null; color: string; memberCount: number; leads: string[] }
+  group: { name: string; description: string | null; color: string; imageUrl?: string | null; memberCount: number; leads: string[] }
   children: React.ReactNode
 }) {
   const tone = groupTone(group.color)
   return (
     <div className="rounded-3xl border border-rh-ink/[0.08] bg-white p-6 sm:p-8">
-      <span className="flex h-14 w-14 items-center justify-center rounded-2xl" style={{ background: tone.soft, color: tone.ink }}>
-        <Users className="h-6 w-6" />
-      </span>
+      {group.imageUrl ? (
+        <GroupAvatar group={group} size={56} rounded="2xl" />
+      ) : (
+        <span className="flex h-14 w-14 items-center justify-center rounded-2xl" style={{ background: tone.soft, color: tone.ink }}>
+          <Users className="h-6 w-6" />
+        </span>
+      )}
       <p className="mt-5 text-xs font-semibold uppercase tracking-[0.14em] text-rh-ink/50">You’re invited to a private group</p>
       <h1 className={cn('mt-1.5 break-words text-[30px] leading-tight tracking-tight text-rh-ink sm:text-[38px]', displayFont)}>{group.name}</h1>
       {group.description && <p className="mt-2 text-[15px] leading-6 text-rh-ink/65">{group.description}</p>}

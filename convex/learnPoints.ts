@@ -11,6 +11,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { getViewer } from "./helpers/partnerAccess";
 import { awardLearnPoints } from "./helpers/learnPoints";
 import { requireLearnAdmin } from "./helpers/learnAccess";
+import { groupImageUrl } from "./helpers/learnGroupRules";
 import { learnMemberInfo, type LearnMemberInfo } from "./learn";
 import { LEARN_BADGES, lagosMonth, monthBefore, monthLabel } from "../lib/learn/points";
 
@@ -133,6 +134,7 @@ export const groupStandings = query({
         id: g._id,
         name: g.name,
         color: g.color,
+        imageUrl: await groupImageUrl(ctx, g),
         memberCount: g.memberCount,
         points,
         active,

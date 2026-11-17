@@ -34,6 +34,7 @@ import {
   type GroupColor,
 } from '@/lib/learnAdminsApi'
 import { learnUrl } from '@/lib/site-hosts'
+import { GroupAvatar, GroupImageButton } from '@/components/learn/social/GroupAvatar'
 import { cn } from '@/lib/utils'
 import type { Id } from '@/convex/_generated/dataModel'
 
@@ -451,6 +452,11 @@ function GroupDrawer({ groupId, onOpenChange }: { groupId: Id<'learnGroups'> | n
         <p className="py-8 text-center text-sm text-neutral-500">This group doesn&apos;t exist any more.</p>
       ) : (
         <div className="space-y-6">
+          {/* The group's picture: on posts, the group picker and the leaderboard */}
+          <div className="flex items-center gap-3">
+            <GroupAvatar group={group} size={56} rounded="2xl" />
+            <GroupImageButton groupId={group.id} hasImage={Boolean(group.imageUrl)} tone="admin" />
+          </div>
           {editing ? (
             <div className="space-y-4 rounded-2xl bg-rh-canvas p-4 dark:bg-white/[0.03]">
               <Field label="Name" htmlFor="edit-group-name">
@@ -526,8 +532,8 @@ function GroupCard({ g, onOpen }: { g: AdminGroupRow; onOpen: () => void }) {
       )}
     >
       <div className="flex items-center gap-2.5">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl" style={{ background: tone.soft, color: tone.ink }}>
-          <Users className="h-4 w-4" />
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-xl" style={{ background: tone.soft, color: tone.ink }}>
+          {g.imageUrl ? <GroupAvatar group={g} size={36} /> : <Users className="h-4 w-4" />}
         </span>
         <div className="min-w-0 flex-1">
           <p className="truncate text-[15px] font-semibold text-rh-ink dark:text-white">{g.name}</p>

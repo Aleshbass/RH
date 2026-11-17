@@ -51,6 +51,7 @@ export type AdminGroupRow = {
   name: string
   description: string | null
   color: string
+  imageUrl: string | null
   memberCount: number
   capacity: number
   openToJoin: boolean
@@ -81,6 +82,7 @@ export type AdminGroup = {
   name: string
   description: string | null
   color: string
+  imageUrl: string | null
   archived: boolean
   memberCount: number
   capacity: number
@@ -105,6 +107,7 @@ export type MyGroup = {
   name: string
   description: string | null
   color: string
+  imageUrl: string | null
   memberCount: number
   role: GroupRole
   roomSlug: string
@@ -134,6 +137,7 @@ export type JoinableGroup = {
   name: string
   description: string | null
   color: string
+  imageUrl: string | null
   memberCount: number
   capacity: number
   placesLeft: number
@@ -155,6 +159,7 @@ export type GroupStanding = {
   id: Id<'learnGroups'>
   name: string
   color: string
+  imageUrl: string | null
   memberCount: number
   points: number
   active: number
@@ -176,10 +181,14 @@ export type MentionPerson = {
   name: string
   imageUrl: string | null
   tag: string
-  group: { id: Id<'learnGroups'>; name: string; color: string; lead: boolean } | null
+  group: { id: Id<'learnGroups'>; name: string; color: string; imageUrl?: string | null; lead: boolean } | null
 }
 export const mentionSearchRef = makeFunctionReference<'query', { q: string; postId?: string; roomSlug?: string }, MentionPerson[]>(
   'learnCommunity:mentionSearch'
+)
+export const groupImageUploadUrlRef = makeFunctionReference<'mutation', { groupId: Id<'learnGroups'> }, string>('learnGroups:groupImageUploadUrl')
+export const setGroupImageRef = makeFunctionReference<'mutation', { groupId: Id<'learnGroups'>; storageId: Id<'_storage'> | null }, null>(
+  'learnGroups:setGroupImage'
 )
 export const groupArchiveRef = makeFunctionReference<'mutation', { groupId: Id<'learnGroups'>; archived: boolean }, null>(
   'learnGroups:adminSetArchived'
