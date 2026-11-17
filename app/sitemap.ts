@@ -50,6 +50,7 @@ const STATIC_ROUTES: StaticRoute[] = [
   { path: '/platform/clinics', changeFrequency: 'monthly', priority: 0.6 },
   { path: '/platform/doctors', changeFrequency: 'monthly', priority: 0.6 },
   { path: '/partnerships', changeFrequency: 'monthly', priority: 0.6 },
+  { path: '/platform/employers', changeFrequency: 'monthly', priority: 0.6 },
   { path: '/physio-register', changeFrequency: 'weekly', priority: 0.6 },
   // Rehabify Learn: home, catalogue and the MSK Specialist Program (cohort dates change per intake)
   { path: '/learn', changeFrequency: 'weekly', priority: 0.7 },

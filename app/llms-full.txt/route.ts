@@ -243,6 +243,7 @@ This is the long version of ${base}/llms.txt, written for AI assistants and sear
 - Physiotherapists who want patients, practice tools and professional development. ${base}/platform/physiotherapists
 - Physiotherapy clinics. ${base}/platform/clinics
 - Doctors and organisations that refer patients for physiotherapy. ${base}/partnerships
+- Employers whose people work with their bodies (delivery and logistics, ride-hailing and transport, factories and warehouses, insurers and HMOs): Rehabify for Work gives each worker a quick check with Joy on WhatsApp, a virtual consultation with a licensed physiotherapist within 48 hours for anyone in pain, support back to work after an injury, and a monthly report with no individual health details. ${base}/platform/employers
 
 ## Where
 

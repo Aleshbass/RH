@@ -28,9 +28,17 @@ type Inquiry = FunctionReturnType<typeof api.adminPartnerships.getPartnershipInq
 const STATUS_TONE: Record<InquiryStatus, 'amber' | 'teal' | 'neutral'> = { new: 'amber', contacted: 'teal', closed: 'neutral' }
 const STATUS_LABEL: Record<InquiryStatus, string> = { new: 'New', contacted: 'Contacted', closed: 'Closed' }
 
-// "Book a demo" requests from the partners page share this table, marked kind: "demo"
-type InquiryKind = 'all' | 'demo' | 'partnership'
+// "Book a demo" requests from the partners page share this table, marked kind: "demo"; employer
+// "Request a pilot" requests from /platform/employers are kind: "employer_pilot"
+type InquiryKind = 'all' | 'demo' | 'employer_pilot' | 'partnership'
 const isDemo = (inquiry: Inquiry) => inquiry.kind === 'demo'
+const isPilot = (inquiry: Inquiry) => inquiry.kind === 'employer_pilot'
+const isPartnership = (inquiry: Inquiry) => !isDemo(inquiry) && !isPilot(inquiry)
+const KIND_MATCH: Record<Exclude<InquiryKind, 'all'>, (inquiry: Inquiry) => boolean> = {
+  demo: isDemo,
+  employer_pilot: isPilot,
+  partnership: isPartnership,
+}
 
 export function InquiriesTab({ inquiries }: { inquiries: Inquiry[] | undefined }) {
   const updateStatus = useMutation(api.adminPartnerships.updatePartnershipInquiryStatus)
@@ -40,14 +48,18 @@ export function InquiriesTab({ inquiries }: { inquiries: Inquiry[] | undefined }
   const [updatingId, setUpdatingId] = useState<string | null>(null)
 
   const ofKind = useMemo(
-    () => (inquiries ?? []).filter((i) => kind === 'all' || (kind === 'demo' ? isDemo(i) : !isDemo(i))),
+    () => (inquiries ?? []).filter((i) => kind === 'all' || KIND_MATCH[kind](i)),
     [inquiries, kind],
   )
 
   const kindCounts = useMemo(() => {
     const rows = inquiries ?? []
-    const demos = rows.filter(isDemo).length
-    return { all: rows.length, demo: demos, partnership: rows.length - demos }
+    return {
+      all: rows.length,
+      demo: rows.filter(isDemo).length,
+      employer_pilot: rows.filter(isPilot).length,
+      partnership: rows.filter(isPartnership).length,
+    }
   }, [inquiries])
 
   const counts = useMemo(() => ({
@@ -89,6 +101,7 @@ export function InquiriesTab({ inquiries }: { inquiries: Inquiry[] | undefined }
         options={[
           { value: 'all', label: 'Everything', count: kindCounts.all },
           { value: 'demo', label: 'Demo requests', count: kindCounts.demo },
+          { value: 'employer_pilot', label: 'Employer pilots', count: kindCounts.employer_pilot },
           { value: 'partnership', label: 'Partnerships', count: kindCounts.partnership },
         ]}
       />
@@ -124,7 +137,7 @@ export function InquiriesTab({ inquiries }: { inquiries: Inquiry[] | undefined }
             description={
               search || filter !== 'all' || kind !== 'all'
                 ? 'Try adjusting your search or filters.'
-                : 'Partnership inquiries and demo requests from the website appear here.'
+                : 'Partnership inquiries, demo requests and employer pilot requests from the website appear here.'
             }
           />
         </div>
@@ -142,6 +155,7 @@ export function InquiriesTab({ inquiries }: { inquiries: Inquiry[] | undefined }
                           {inquiry.organization || inquiry.organizationName || 'Partner organisation'}
                         </h3>
                         {isDemo(inquiry) && <StatusBadge tone="teal">Demo request</StatusBadge>}
+                        {isPilot(inquiry) && <StatusBadge tone="teal">Employer pilot</StatusBadge>}
                         {inquiry.organizationType && <StatusBadge tone="teal">{inquiry.organizationType}</StatusBadge>}
                         <StatusBadge tone={STATUS_TONE[status]}>{STATUS_LABEL[status]}</StatusBadge>
                       </div>
@@ -164,7 +178,10 @@ export function InquiriesTab({ inquiries }: { inquiries: Inquiry[] | undefined }
                   <div className="grid grid-cols-1 gap-3 text-xs sm:grid-cols-2">
                     <div>
                       <p className="text-neutral-500 dark:text-neutral-400">Contact person</p>
-                      <p className="text-sm font-medium text-rh-ink dark:text-white">{inquiry.name || inquiry.contactName || 'Contact'}</p>
+                      <p className="text-sm font-medium text-rh-ink dark:text-white">
+                        {inquiry.name || inquiry.contactName || 'Contact'}
+                        {inquiry.role && <span className="font-normal text-neutral-500 dark:text-neutral-400"> · {inquiry.role}</span>}
+                      </p>
                       <a href={`mailto:${inquiry.email}`} className={cn(linkClass, 'text-sm')}>
                         {inquiry.email}
                       </a>
@@ -181,8 +198,18 @@ export function InquiriesTab({ inquiries }: { inquiries: Inquiry[] | undefined }
                       {inquiry.employeeCount && (
                         <p className="text-neutral-500 dark:text-neutral-400">{inquiry.employeeCount} expected patients / staff</p>
                       )}
+                      {inquiry.workerCount !== undefined && (
+                        <p className="text-neutral-500 dark:text-neutral-400">{inquiry.workerCount.toLocaleString('en-NG')} workers</p>
+                      )}
                     </div>
                   </div>
+
+                  {inquiry.workType ? (
+                    <div>
+                      <p className="text-xs text-neutral-500 dark:text-neutral-400">Type of work</p>
+                      <p className="text-sm text-rh-ink dark:text-neutral-200">{inquiry.workType}</p>
+                    </div>
+                  ) : null}
 
                   {inquiry.message ? (
                     <p className={cn(insetClass, 'whitespace-pre-wrap text-sm text-rh-ink dark:text-neutral-200')}>{inquiry.message}</p>
@@ -191,7 +218,7 @@ export function InquiriesTab({ inquiries }: { inquiries: Inquiry[] | undefined }
 
                 <div className="flex w-full flex-col justify-center gap-2 border-t border-black/[0.05] bg-rh-canvas/60 p-5 dark:border-white/[0.06] dark:bg-white/[0.02] md:w-56 md:border-l md:border-t-0">
                   <Button asChild className={primaryButtonClass}>
-                    <a href={`mailto:${inquiry.email}?subject=${isDemo(inquiry) ? 'Your Rehabify demo' : 'Partnership with RehabifyHealth'}`}>
+                    <a href={`mailto:${inquiry.email}?subject=${isDemo(inquiry) ? 'Your Rehabify demo' : isPilot(inquiry) ? 'Your Rehabify for Work pilot' : 'Partnership with RehabifyHealth'}`}>
                       <Mail className="mr-2 h-4 w-4" /> Email contact
                     </a>
                   </Button>

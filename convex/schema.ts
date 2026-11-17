@@ -4610,13 +4610,18 @@ export default defineSchema({
   ...joySyncTables,
 
   partnershipInquiries: defineTable({
-    // "demo" = Book a demo on the partners page; missing on older rows, which are partnership inquiries
-    kind: v.optional(v.union(v.literal("partnership"), v.literal("demo"))),
+    // "demo" = Book a demo on the partners page; "employer_pilot" = Request a pilot on
+    // /platform/employers; missing on older rows, which are partnership inquiries
+    kind: v.optional(v.union(v.literal("partnership"), v.literal("demo"), v.literal("employer_pilot"))),
     name: v.string(),
     email: v.string(),
     phone: v.optional(v.string()),
     organization: v.string(),
     message: v.string(),
+    // Employer pilots: the person's job title, how many workers, and the work they do
+    role: v.optional(v.string()),
+    workerCount: v.optional(v.number()),
+    workType: v.optional(v.string()),
     status: v.union(v.literal("new"), v.literal("contacted"), v.literal("closed")),
     createdAt: v.number(),
   }).index("by_status", ["status"]).index("by_created", ["createdAt"]),

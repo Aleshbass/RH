@@ -61,6 +61,7 @@ const navLinks: NavItem[] = [
       { name: "For clinics", href: "/platform/clinics" },
       { name: "For referring doctors", href: "/platform/doctors" },
       { name: "For partners", href: "/partnerships" },
+      { name: "For employers", href: "/platform/employers" },
     ],
   },
   {

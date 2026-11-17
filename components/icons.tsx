@@ -32,7 +32,7 @@ import {
   faFaceMeh, faFaceSmile, faFile, faFileCircleCheck, faFileLines, faFileMedical,
   faFileSignature, faFilter, faFire, faFlag, faFlask, faFloppyDisk, faFolderOpen, faGaugeSimple,
   faGear, faGlobe, faGraduationCap, faHand, faHandHoldingHeart, faHandshake, faHashtag, faHeadphones,
-  faHeart, faHeartPulse, faHourglassHalf, faHouse, faImage, faInbox, faKey, faLandmark,
+  faHeart, faHeartPulse, faHourglassHalf, faHouse, faImage, faInbox, faIndustry, faKey, faLandmark,
   faLanguage, faLaptop, faLayerGroup, faLightbulb, faLink, faLinkSlash, faList, faListCheck,
   faLocationCrosshairs, faLocationDot, faLock, faMagnifyingGlass, faMap, faMapLocationDot,
   faMessage, faMicrophone, faMicrophoneSlash, faMinus, faMobileScreen, faMoneyBill,
@@ -43,7 +43,7 @@ import {
   faRotateLeft, faRulerCombined, faScaleBalanced, faShare, faShareNodes, faShield, faShieldHalved, faShoePrints,
   faSliders, faSquare, faSquarePlus, faStar, faStethoscope, faStopwatch, faStore, faSun, faTableCellsLarge,
   faTableColumns, faTag, faTags, faTemperatureHalf, faTerminal, faThumbsUp, faTrash, faTrashCan,
-  faTowerBroadcast, faTriangleExclamation, faTv, faUpload, faUser, faUserCheck, faUserGear, faUserGroup,
+  faTowerBroadcast, faTriangleExclamation, faTruck, faTv, faUpload, faUser, faUserCheck, faUserGear, faUserGroup,
   faUserPlus, faUserXmark, faUsers, faVideo, faVideoSlash, faVolumeHigh, faVolumeXmark,
   faWallet, faWeightScale, faWifi, faWrench, faXmark,
 } from '@fortawesome/free-solid-svg-icons'
@@ -192,6 +192,7 @@ export const Edit = /*#__PURE__*/ createIcon('Edit', faPenToSquare)
 export const ExternalLink = /*#__PURE__*/ createIcon('ExternalLink', faArrowUpRightFromSquare)
 export const Eye = /*#__PURE__*/ createIcon('Eye', faEye)
 export const EyeOff = /*#__PURE__*/ createIcon('EyeOff', faEyeSlash)
+export const Factory = /*#__PURE__*/ createIcon('Factory', faIndustry)
 export const File = /*#__PURE__*/ createIcon('File', faFile)
 export const FileCheck = /*#__PURE__*/ createIcon('FileCheck', faFileCircleCheck)
 export const FileHeart = /*#__PURE__*/ createIcon('FileHeart', faFileMedical)
@@ -338,6 +339,7 @@ export const Trash = /*#__PURE__*/ createIcon('Trash', faTrash)
 export const Trash2 = /*#__PURE__*/ createIcon('Trash2', faTrashCan)
 export const TrendingDown = /*#__PURE__*/ createIcon('TrendingDown', faArrowTrendDown)
 export const TrendingUp = /*#__PURE__*/ createIcon('TrendingUp', faArrowTrendUp)
+export const Truck = /*#__PURE__*/ createIcon('Truck', faTruck)
 export const TriangleAlert = /*#__PURE__*/ createIcon('TriangleAlert', faTriangleExclamation)
 export const Turtle = /*#__PURE__*/ createIcon('Turtle', faGaugeSimple)
 export const Twitter = /*#__PURE__*/ createIcon('Twitter', faXTwitter)

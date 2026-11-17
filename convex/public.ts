@@ -119,3 +119,79 @@ export const requestDemo = mutation({
     return { success: true, inquiryId };
   },
 });
+
+/**
+ * "Request a pilot" on /platform/employers (Rehabify for Work). Called by /api/employer-pilot,
+ * which rate-limits and sends the emails; this keeps the request for the admin
+ * Partnerships › Inquiries tab (filter "Employer pilots") and alerts admins in-app.
+ */
+export const requestEmployerPilot = mutation({
+  args: {
+    name: v.string(),
+    company: v.string(),
+    role: v.string(),
+    email: v.string(),
+    phone: v.string(),
+    workerCount: v.number(),
+    workType: v.string(),
+  },
+  handler: async (ctx, args) => {
+    // Public form: trim and cap every field
+    const clip = (value: string, max: number) => value.trim().slice(0, max);
+    const name = clip(args.name, 120);
+    const organization = clip(args.company, 160);
+    const role = clip(args.role, 120);
+    const email = clip(args.email, 200).toLowerCase();
+    const phone = clip(args.phone, 40);
+    const workType = clip(args.workType, 300);
+    const workerCount = Math.round(args.workerCount);
+    if (!name || !organization || !role || !email || !phone || !workType) {
+      throw new Error("Please fill in every field.");
+    }
+    if (!Number.isFinite(workerCount) || workerCount < 1 || workerCount > 1_000_000) {
+      throw new Error("Enter how many workers you have.");
+    }
+
+    const now = Date.now();
+    const inquiryId = await ctx.db.insert("partnershipInquiries", {
+      kind: "employer_pilot",
+      name,
+      email,
+      phone,
+      organization,
+      role,
+      workerCount,
+      workType,
+      message: "",
+      status: "new",
+      createdAt: now,
+    });
+
+    const link = "/dashboard/admin/partnerships?tab=inquiries";
+    const body = `${organization} (${workerCount.toLocaleString("en-NG")} workers) asked for a Rehabify for Work pilot.`;
+    const admins = await ctx.db.query("users")
+      .withIndex("by_role", q => q.eq("role", "admin"))
+      .collect();
+    for (const admin of admins) {
+      await insertNotification(ctx, {
+        userId: admin._id,
+        type: "system_alert",
+        title: "New employer pilot request",
+        message: body,
+        payload: {
+          title: "New employer pilot request",
+          body,
+          link,
+          data: { inquiryId, organization, actionUrl: link },
+        },
+        data: { inquiryId, organization },
+        status: "pending",
+        priority: "high",
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+
+    return { success: true, inquiryId };
+  },
+});
