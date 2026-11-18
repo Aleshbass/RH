@@ -14,6 +14,8 @@ import { Check } from "@/components/icons";
 import { AUTH_COPY, authRoutes, type AuthAudience } from "./authConfig";
 import { EASE } from "./AuthControls";
 import { RehabifyLoader } from "@/components/brand/RehabifyLoader";
+import { LearnThemeRoot } from "@/components/learn/platform/theme";
+import { cn } from "@/lib/utils";
 
 function BrandPanel({ audience, home }: { audience: AuthAudience; home: string }) {
   const copy = AUTH_COPY[audience].panel;
@@ -94,7 +96,9 @@ export function AuthShell({
   ];
 
   return (
-    <div className="relative flex h-dvh w-full overflow-hidden bg-rh-canvas text-rh-night">
+    <div className={cn("relative flex h-dvh w-full overflow-hidden bg-rh-canvas text-rh-night", audience === "learn" && "learn-auth")}>
+      {/* Learn's sign-in and sign-up keep Learn's light or dark theme */}
+      {audience === "learn" && <LearnThemeRoot />}
       <BrandPanel audience={audience} home={routes.home} />
 
       <div className="relative flex min-w-0 flex-1 flex-col overflow-y-auto overflow-x-hidden overscroll-contain">

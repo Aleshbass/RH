@@ -255,7 +255,7 @@ function Hero({ cohort }: { cohort: PublicCohort | null | undefined }) {
 
 function Skills() {
   return (
-    <section className="bg-white px-4 py-16 sm:px-6 lg:py-20">
+    <section className="bg-learn-page px-4 py-16 sm:px-6 lg:py-20">
       <div className="mx-auto max-w-6xl">
         <FadeUp>
           <SectionHeading eyebrow="What you'll build" title="Practical skills for your next patient" />
@@ -436,7 +436,7 @@ function Pricing({ cohort }: { cohort: PublicCohort | null | undefined }) {
           : 'Next cohort dates coming soon.'
 
   return (
-    <section id="register" className="scroll-mt-24 bg-white px-4 py-20 sm:px-6 lg:py-28">
+    <section id="register" className="scroll-mt-24 bg-learn-page px-4 py-20 sm:px-6 lg:py-28">
       <div className="mx-auto max-w-6xl">
         <FadeUp>
           <SectionHeading center eyebrow="Registration" title="Choose your registration" description={description} />
@@ -541,7 +541,7 @@ function Faq({ cohort }: { cohort: PublicCohort | null | undefined }) {
 
 function FinalCta({ cohort }: { cohort: PublicCohort | null | undefined }) {
   return (
-    <section className="bg-white px-4 py-20 sm:px-6 lg:py-24">
+    <section className="bg-learn-page px-4 py-20 sm:px-6 lg:py-24">
       <FadeUp className="mx-auto max-w-6xl">
         <div className="relative overflow-hidden rounded-[2rem] bg-rh-ink px-6 py-12 text-white sm:rounded-[2.5rem] sm:px-12 sm:py-16 lg:px-16">
           <PairingShapes className="-bottom-16 -right-12 hidden h-64 w-64 sm:block" />
@@ -575,7 +575,7 @@ function FinalCta({ cohort }: { cohort: PublicCohort | null | undefined }) {
 export function MskProgramPage({ initialCohort }: { initialCohort?: PublicCohort | null }) {
   const cohort = usePublicCohort(initialCohort)
   return (
-    <div className="bg-white">
+    <div className="bg-learn-page">
       <Hero cohort={cohort} />
       <Skills />
       <HowItWorks cohort={cohort} />

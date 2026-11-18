@@ -15,7 +15,7 @@ export function SimsHomeBand() {
   const cases = data?.cases.filter((c) => c.live).slice(0, 3) ?? []
   if (cases.length === 0) return null
   return (
-    <section className="bg-white px-4 py-16 sm:px-6 lg:py-24">
+    <section className="bg-learn-page px-4 py-16 sm:px-6 lg:py-24">
       <div className="mx-auto max-w-7xl">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div className="max-w-2xl">

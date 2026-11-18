@@ -73,12 +73,26 @@ export function useToggleLearnTheme() {
   }, [])
 }
 
+/** The saved choice, or the system theme until the person chooses. */
+function savedOrSystemDark() {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY)
+    if (saved) return saved === 'dark'
+  } catch {
+    // fall through to the system theme
+  }
+  return window.matchMedia('(prefers-color-scheme: dark)').matches
+}
+
 /**
- * app/learn/layout.tsx: follows the system theme until the person chooses, warms up the sounds,
- * and takes the dark class away when they leave Learn (sign-in pages and the main site stay light).
+ * app/learn/layout.tsx and Learn's sign-in / sign-up (AuthShell): applies the saved theme (also
+ * after moving between Learn and its sign-in pages, where the first-paint script doesn't run
+ * again), follows the system theme until the person chooses, warms up the sounds, and takes the
+ * dark class away when they leave for the main site, which stays light.
  */
 export function LearnThemeRoot() {
   useEffect(() => {
+    document.documentElement.classList.toggle(DARK_CLASS, savedOrSystemDark())
     preloadSoundFile('theme-dark')
     preloadSoundFile('theme-light')
     const media = window.matchMedia('(prefers-color-scheme: dark)')

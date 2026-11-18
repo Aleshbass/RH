@@ -54,7 +54,7 @@ export function LearnTogether() {
   const next = spaces?.upcoming[0]
 
   return (
-    <section className="bg-white px-4 py-16 sm:px-6 lg:py-24">
+    <section className="bg-learn-page px-4 py-16 sm:px-6 lg:py-24">
       <div className="mx-auto max-w-7xl">
         <div className="max-w-2xl">
           <h2 className={cn('text-[30px] leading-[1.1] tracking-tight text-rh-ink sm:text-[40px]', displayFont)}>Learn together</h2>

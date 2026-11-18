@@ -144,6 +144,8 @@ body {
   --color-rh-ink: #0b1312;
   --color-rh-ink-2: #121c1b;
   --color-rh-ink-3: #1b2827;
+  /* Rehabify Learn's page background: the main platform's canvas in light mode (dark: see html.learn-dark) */
+  --color-learn-page: #f4ede3;
   /* Neutral ink shadows: no coloured tint, so nothing looks like it glows */
   --shadow-soft: 0 1px 2px rgb(11 19 18 / 0.05), 0 8px 24px -14px rgb(11 19 18 / 0.14);
   --shadow-lift: 0 2px 4px rgb(11 19 18 / 0.06), 0 14px 32px -16px rgb(11 19 18 / 0.2);
@@ -459,6 +461,7 @@ html.learn-dark {
   --color-rh-ink-3: #cfd6ce;
   --color-rh-cream: #0c1413;
   --color-rh-canvas: #182322;
+  --color-learn-page: #121b1a;
   --color-rh-sand: #1b2625;
   --color-rh-bone: #2b3431;
   --color-rh-honeydew: #14261b;
@@ -491,6 +494,26 @@ html.learn-dark .bg-rh-lime {
 }
 /* The ink-and-lime logo turns light, its lime kept */
 html.learn-dark img[src*="Ink"][src*="MainRehabify"] {
+  filter: invert(1) hue-rotate(180deg);
+}
+/* Learn's sign-in and sign-up (AuthShell adds .learn-auth) follow Learn's theme: dark text turns
+   light, the dark button turns light, and the green brand panel keeps its light-mode look. */
+html.learn-dark .learn-auth {
+  --color-rh-canvas: #121b1a;
+  --color-rh-night: #ecefe9;
+  --color-rh-teal: #7fdcc4;
+  --color-rh-teal-deep: #dfe4dd;
+}
+html.learn-dark .learn-auth .bg-rh-night:not(button):not(a) {
+  --color-rh-night: #002e2c;
+  --color-rh-teal: #005b57;
+  --color-rh-teal-deep: #00443e;
+  --color-white: #ffffff;
+}
+html.learn-dark .learn-auth button.bg-rh-night .text-rh-lime {
+  color: #0b1312;
+}
+html.learn-dark .learn-auth header img[src*="MainRehabify"] {
   filter: invert(1) hue-rotate(180deg);
 }
 /* Theme switch: the new theme grows in a circle from the tap (no default cross-fade) */

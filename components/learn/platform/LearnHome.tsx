@@ -161,7 +161,7 @@ function HeroGreeting() {
 function Hero() {
   const reduce = useReducedMotion()
   return (
-    <section className="relative overflow-hidden bg-white px-4 pb-6 pt-10 sm:px-6 sm:pt-14 lg:pb-8">
+    <section className="relative overflow-hidden bg-learn-page px-4 pb-6 pt-10 sm:px-6 sm:pt-14 lg:pb-8">
       <div className="mx-auto max-w-4xl text-center">
         <motion.div
           initial={reduce ? false : { opacity: 0, y: 16 }}
@@ -213,7 +213,7 @@ function Hero() {
 
 function Topics({ items }: { items: CatalogItem[] | undefined }) {
   return (
-    <section className="bg-white px-4 py-14 sm:px-6 lg:py-16">
+    <section className="bg-learn-page px-4 py-14 sm:px-6 lg:py-16">
       <div className="mx-auto max-w-7xl">
         <FadeUp>
           <SectionTitle title="Browse by topic" />
@@ -273,7 +273,7 @@ function MoreComingTile() {
 function CourseRow({ items }: { items: CatalogItem[] | undefined }) {
   const shown = items?.slice(0, 8)
   return (
-    <section className="bg-white px-4 pb-16 sm:px-6 lg:pb-24">
+    <section className="bg-learn-page px-4 pb-16 sm:px-6 lg:pb-24">
       <div className="mx-auto max-w-7xl">
         <FadeUp>
           <SectionTitle
@@ -442,7 +442,7 @@ function HowItWorks() {
     { icon: BadgeCheck, title: 'Get certified', body: 'Certificates anyone can check online.' },
   ]
   return (
-    <section className="bg-white px-4 py-16 sm:px-6 lg:py-24">
+    <section className="bg-learn-page px-4 py-16 sm:px-6 lg:py-24">
       <div className="mx-auto max-w-7xl">
         <FadeUp>
           <SectionTitle title="How it works" />
@@ -468,7 +468,7 @@ function HowItWorks() {
 
 function Team() {
   return (
-    <section className="bg-white px-4 pb-16 sm:px-6 lg:pb-24">
+    <section className="bg-learn-page px-4 pb-16 sm:px-6 lg:pb-24">
       <FadeUp className="mx-auto grid max-w-7xl gap-8 border-t border-rh-ink/[0.08] pt-12 lg:grid-cols-[1.2fr_0.8fr] lg:items-end lg:gap-16 lg:pt-16">
         <div>
           <h2 className={cn('text-[30px] leading-[1.1] tracking-tight text-rh-ink sm:text-[40px]', displayFont)}>Built by clinicians who treat patients</h2>
@@ -559,7 +559,7 @@ const FAQ = [
 
 function Questions() {
   return (
-    <section className="bg-white px-4 py-16 sm:px-6 lg:py-24">
+    <section className="bg-learn-page px-4 py-16 sm:px-6 lg:py-24">
       <div className="mx-auto grid max-w-7xl gap-10 lg:grid-cols-[0.8fr_1.2fr] lg:gap-16">
         <FadeUp>
           <SectionTitle title="Questions" />
@@ -587,7 +587,7 @@ function FinalCta() {
   const identity = useLearnerIdentity()
   const signedIn = Boolean(identity?.signedIn)
   return (
-    <section className="bg-white px-4 pb-20 sm:px-6 lg:pb-24">
+    <section className="bg-learn-page px-4 pb-20 sm:px-6 lg:pb-24">
       <FadeUp className="mx-auto max-w-7xl">
         <div className="relative overflow-hidden rounded-[2rem] bg-rh-ink px-6 py-12 text-white sm:rounded-[2.5rem] sm:px-12 sm:py-16 lg:px-16">
           <div aria-hidden className="absolute -bottom-14 -right-10 hidden h-56 w-56 rounded-[3rem] bg-rh-lime sm:block" />
