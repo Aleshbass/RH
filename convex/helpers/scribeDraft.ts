@@ -248,6 +248,7 @@ Reply with one JSON object and nothing else:
 }
 - programme: the home exercise programme the physiotherapist gave the patient in this session (exercises to do at home, prescribed or taught), or null when none was given. The physiotherapist checks it and sends it to the patient, so it must hold only what was said.
   - exercises: one entry per home exercise discussed.
+    - Anything the physiotherapist told the patient to do at home with a dose, time or how often is an exercise, including cardio and activity ("ride the stationary bike for ten minutes a day", "walk twenty minutes a day"), even when it is not in the exercise library (library null). Advice with no dose (ice, rest, posture) goes in note, not exercises.
     - action "new": not in "Current home programme" (or there is none).
     - action "change": in the current programme with a new dose or instruction said; "current" = its number in that list.
     - action "continue": in the current programme and said to keep doing as it is; "current" = its number.
