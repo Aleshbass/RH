@@ -15,6 +15,7 @@
 import { v } from "convex/values";
 import { makeFunctionReference } from "convex/server";
 import { Resend } from "resend";
+import { reportResendQuota } from "../../lib/email/resendQuota";
 import { action, internalAction } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
 import {
@@ -183,6 +184,7 @@ export const processCampaign = internalAction({
         );
 
         if (result.error) {
+          await reportResendQuota(result.error, "campaign");
           await ctx.runMutation(ref.recordDirect, {
             campaignId: campaign._id,
             sent: [],

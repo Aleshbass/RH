@@ -3,6 +3,7 @@
 import { v } from "convex/values";
 import { internalAction } from "../../_generated/server";
 import { Resend } from 'resend';
+import { reportResendQuota } from "../../../lib/email/resendQuota";
 import { escapeHtml, plainSubject } from "../../helpers/escapeHtml";
 import { actions, button, emailDate, greeting, highlight, linkFallback, paragraph, quote, renderEmail } from "../../../lib/email/layout";
 import { qrBlock } from "./qrImage";
@@ -82,6 +83,7 @@ export const sendClinicStaffInvitationEmail = internalAction({
 
       if (error) {
         console.error('[CLINIC EMAIL] Resend API error:', error);
+        await reportResendQuota(error, "clinic-staff-invite");
         return {
           success: false,
           error: error.message || 'Failed to send email',
@@ -164,6 +166,7 @@ export const sendClinicStaffInvitationReminderEmail = internalAction({
 
       if (error) {
         console.error('[CLINIC EMAIL REMINDER] Resend API error:', error);
+        await reportResendQuota(error, "clinic-staff-reminder");
         return {
           success: false,
           error: error.message || 'Failed to send email',

@@ -3,6 +3,7 @@
 import { v } from "convex/values";
 import { internalAction } from "../../_generated/server";
 import { Resend } from "resend";
+import { reportResendQuota } from "../../../lib/email/resendQuota";
 import { actions, button, greeting, paragraph, renderEmail } from "../../../lib/email/layout";
 
 /** Everything here is typed by people (names, notes), so it never goes into HTML raw. */
@@ -65,7 +66,12 @@ export const sendPatientCareEmail = internalAction({
       // A display name can't carry quotes, commas or angle brackets
       const fromName = args.fromName?.replace(/["<>,;\\]/g, "").trim().slice(0, 60);
       const from = `${fromName ? `${fromName} via Rehabify` : process.env.FROM_NAME || "Rehabify Health"} <info@physioaroundme.com>`;
-      await resend.emails.send({ from, to: args.to, subject: args.subject, html });
+      const { error } = await resend.emails.send({ from, to: args.to, subject: args.subject, html });
+      if (error) {
+        console.error("[PATIENT CARE EMAIL] Resend refused it:", error.name);
+        await reportResendQuota(error, "care-email");
+        return { success: false };
+      }
       return { success: true };
     } catch (error) {
       console.error("[PATIENT CARE EMAIL] Failed to send:", error);

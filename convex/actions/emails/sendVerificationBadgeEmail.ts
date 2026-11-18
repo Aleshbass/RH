@@ -1,5 +1,6 @@
 "use node";
 
+import { reportResendQuota } from "../../../lib/email/resendQuota";
 import { v } from "convex/values";
 import { internalAction } from "../../_generated/server";
 import { publicAppUrl } from "../../helpers/appUrl";
@@ -79,6 +80,7 @@ export const sendVerificationBadgeConfirmation = internalAction({
     
     if (!response.ok) {
       console.error("Failed to send verification badge email: HTTP", response.status);
+      if (response.status === 429) await reportResendQuota(await response.json().catch(() => null), "verification-badge");
       return { success: false };
     }
     

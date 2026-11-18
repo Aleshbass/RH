@@ -420,6 +420,16 @@ export default defineSchema({
   // Every Friday a cron prepares a draft run of all Available payouts. An admin reviews it and
   // presses Pay all: one Paystack transfer per physio for their total. Nothing is sent without
   // that click. Payouts in a run carry its runId.
+  // Days Resend refused emails because the plan's quota was used up (emailQuota.ts)
+  emailQuotaAlerts: defineTable({
+    day: v.string(), // UTC "YYYY-MM-DD": Resend's daily quota resets at midnight UTC
+    kind: v.union(v.literal("daily"), v.literal("monthly")),
+    firstAt: v.number(),
+    lastAt: v.number(),
+    hits: v.number(),
+    firstSource: v.string(),
+  }).index("by_day_kind", ["day", "kind"]),
+
   payoutRuns: defineTable({
     weekOf: v.string(), // the Friday it's for, Lagos date "YYYY-MM-DD"
     status: v.union(v.literal("draft"), v.literal("paying"), v.literal("paid"), v.literal("partially_failed")),

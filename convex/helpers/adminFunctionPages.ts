@@ -176,6 +176,7 @@ export const ADMIN_FUNCTION_PAGES: Readonly<Record<string, readonly number[] | "
   "commercialTerms:terminatePartnerContract": [34, 35, 36, 37, 43],
   "commercialTerms:upsertPartnerContract": [34, 35, 36, 37, 43],
   "debugTokens:debugCallTokens": [],
+  "emailQuota:getQuotaStatus": [60],
   "exerciseLibrary:adminLibraryStatus": [44, 45, 46],
   "exerciseLibrary:adminOwnExerciseShares": [44, 45, 46],
   "exerciseLibrary:adminReviewOwnExercise": [44, 45, 46],

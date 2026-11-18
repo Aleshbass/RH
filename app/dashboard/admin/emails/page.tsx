@@ -31,6 +31,26 @@ import { marketingApi, type MarketingCampaign } from '@/lib/marketingApi'
 import type { Id } from '@/convex/_generated/dataModel'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
+import { makeFunctionReference } from 'convex/server'
+
+type QuotaStatus = { today: { kind: 'daily' | 'monthly'; firstAt: number; hits: number }[]; recentDays: { day: string; kind: string; hits: number }[] }
+// A plain reference: the generated `api` type is at TypeScript's depth limit (TS2589)
+const quotaStatusRef = makeFunctionReference<'query', Record<string, never>, QuotaStatus>('emailQuota:getQuotaStatus')
+
+/** Resend refused emails today because the plan's quota is used up (convex/emailQuota.ts). */
+function QuotaNotice() {
+  const status = useQuery(quotaStatusRef, {})
+  const hit = status?.today[0]
+  if (!hit) return null
+  return (
+    <p className="rounded-2xl bg-rh-danger-soft px-4 py-3 text-sm text-rh-danger-ink">
+      <strong>Emails have stopped {hit.kind === 'daily' ? 'for today' : 'for this month'}.</strong>{' '}
+      {hit.kind === 'daily'
+        ? `Resend's free plan sends 100 emails a day and today's ran out at ${format(hit.firstAt, 'h:mm a')}. ${hit.hits} ${hit.hits === 1 ? 'email has' : 'emails have'} been refused so far. They start again at 1:00 am Lagos time. Upgrade Resend to Pro to stop this.`
+        : `Resend's monthly limit is used up. ${hit.hits} ${hit.hits === 1 ? 'email has' : 'emails have'} been refused. Upgrade the Resend plan to send again.`}
+    </p>
+  )
+}
 
 type Tab = 'compose' | 'sent' | 'contacts'
 const TABS: Tab[] = ['compose', 'sent', 'contacts']
@@ -306,6 +326,7 @@ function EmailsAdmin() {
         title="Email campaigns"
         description="Send news and updates to patients, physiotherapists, clinics, partners, or anyone you add."
       />
+      <QuotaNotice />
       <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)} className="space-y-4">
         <TabsList className={tabsListClass}>
           <TabsTrigger value="compose">Compose</TabsTrigger>

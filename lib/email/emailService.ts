@@ -1,6 +1,7 @@
 // Email service for Rehabify Health
 // Integrated with Resend for email delivery
 import { Resend } from 'resend';
+import { reportResendQuota } from './resendQuota';
 import {
   SUPPORT_EMAIL,
   actions,
@@ -397,6 +398,7 @@ export async function sendEmail(options: EmailOptions): Promise<{ success: boole
 
     if (error) {
       console.error('[EMAIL SERVICE] Error sending email:', error);
+      await reportResendQuota(error, `template:${options.template}`);
       return { success: false, error: error.message };
     }
 

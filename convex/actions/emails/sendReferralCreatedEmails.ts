@@ -3,6 +3,7 @@
 import { internalAction } from "../../_generated/server";
 import { v } from "convex/values";
 import { Resend } from "resend";
+import { reportResendQuota } from "../../../lib/email/resendQuota";
 import { sendEmail } from "../../../lib/email/emailService";
 import { actions, button, details, greeting, paragraph, renderEmail } from "../../../lib/email/layout";
 import { publicAppUrl } from "../../helpers/appUrl";
@@ -212,7 +213,10 @@ export const sendDoctorReferralUpdateEmail = internalAction({
         html,
         text,
       });
-      if (error) return { success: false, error: error.message || "Failed to send email" };
+      if (error) {
+        await reportResendQuota(error, "doctor-referral-update");
+        return { success: false, error: error.message || "Failed to send email" };
+      }
       return { success: true, messageId: data?.id };
     } catch (error) {
       console.error("sendDoctorReferralUpdateEmail failed:", error);
