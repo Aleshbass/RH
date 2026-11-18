@@ -73,6 +73,7 @@ import type * as adminMyPage from "../adminMyPage.js";
 import type * as adminPartnerships from "../adminPartnerships.js";
 import type * as adminPatients from "../adminPatients.js";
 import type * as adminReferrals from "../adminReferrals.js";
+import type * as adminViewAs from "../adminViewAs.js";
 import type * as admin_guestAccounts from "../admin/guestAccounts.js";
 import type * as admin_marketplaceBookings from "../admin/marketplaceBookings.js";
 import type * as admin_marketplaceEarnings from "../admin/marketplaceEarnings.js";
@@ -442,6 +443,7 @@ declare const fullApi: ApiFromModules<{
   adminPartnerships: typeof adminPartnerships;
   adminPatients: typeof adminPatients;
   adminReferrals: typeof adminReferrals;
+  adminViewAs: typeof adminViewAs;
   "admin/guestAccounts": typeof admin_guestAccounts;
   "admin/marketplaceBookings": typeof admin_marketplaceBookings;
   "admin/marketplaceEarnings": typeof admin_marketplaceEarnings;
