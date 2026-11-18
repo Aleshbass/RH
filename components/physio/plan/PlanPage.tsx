@@ -346,7 +346,7 @@ export function PlanPage() {
               : 'Free limits reset on the 1st of each month.'
             : onPro
               ? 'Pro covers every patient you see.'
-              : `Staying on Free? Nothing is limited until ${dayYear(data.usage.limitsFrom)}.`
+              : `Staying on Free? Everything stays unlimited until ${dayYear(data.usage.limitsFrom)}.`
         }
       >
         <div className="grid gap-3 sm:grid-cols-2">
@@ -450,9 +450,13 @@ export function PlanPage() {
             <p className="mt-4 flex items-start gap-2 text-xs leading-5 text-neutral-500">
               <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0" />
               <span>
-                <strong className="font-semibold text-neutral-700 dark:text-neutral-300">Pro starts {dayLabel(s.launchDate, false)}.</strong> Choose it now and your
-                first month is charged on {dayLabel(s.launchDate, false)}: we only check your card today ({naira(data.offer.cardCheckKobo)}, refunded straight away).
-                Staying on Free? Nothing is limited until {dayYear(data.usage.limitsFrom)}.
+                <strong className="font-semibold text-neutral-700 dark:text-neutral-300">Pro starts on {dayLabel(s.launchDate)}.</strong>{' '}
+                {data.offer.founding ? `Choose it now to lock in the founding price of ${naira(data.offer.foundingPriceKobo)} a month.` : 'Choose it now to lock it in.'} Your
+                first payment is taken on {dayLabel(s.launchDate, false)}, and you can cancel anytime. Today we only check your card (
+                {naira(data.offer.cardCheckKobo)}, refunded straight away).
+                <br />
+                Staying on Free? Everything stays unlimited until {dayYear(data.usage.limitsFrom)}. After that, Free includes {s.freeScribeSessions} Scribe sessions a
+                month.
               </span>
             </p>
           )}

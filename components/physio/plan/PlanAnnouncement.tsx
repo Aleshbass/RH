@@ -88,8 +88,12 @@ export function PlanAnnouncement() {
               </button>
             </div>
             <p className="mt-4 text-xs leading-5 text-white/45">
-              {launched ? null : <>Pro starts {dayLabel(s.launchDate)}: choose it now and nothing is charged until then. </>}
-              Staying on Free? Nothing is limited until {dayLabel(s.limitsDate)}. Your plan is always in Settings › Plan &amp; billing.
+              {launched ? null : (
+                <>
+                  Pro starts on {dayLabel(s.launchDate)}. Your first payment is taken on {dayLabel(s.launchDate, false)}, and you can cancel anytime.{' '}
+                </>
+              )}
+              Staying on Free? Everything stays unlimited until {dayLabel(s.limitsDate)}. After that, Free includes {s.freeScribeSessions} Scribe sessions a month.
             </p>
           </motion.div>
         </motion.div>

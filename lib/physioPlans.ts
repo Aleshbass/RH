@@ -42,7 +42,8 @@ export type PhysioPlanSettings = {
 export const DEFAULT_PHYSIO_PLAN_SETTINGS: PhysioPlanSettings = {
   proPriceKobo: 2_000_000,
   foundingPriceKobo: 1_500_000,
-  foundingCutoff: '2026-11-30',
+  // Owner 18 Nov 2026: Pro starts 1 Jan 2027, and the founding price can be locked in until then
+  foundingCutoff: '2026-12-31',
   foundingMonths: 12,
   freePatientsPerMonth: 3,
   freeScribeSessions: 3,
@@ -51,7 +52,7 @@ export const DEFAULT_PHYSIO_PLAN_SETTINGS: PhysioPlanSettings = {
   scribeTopUpSessions: 10,
   joyPerPatientKobo: 350_000,
   proJoyPatients: 50,
-  launchDate: '2026-12-01',
+  launchDate: '2027-01-01',
   limitsDate: '2027-01-01',
   abroadFreePro: true,
   reminderDays: 3,

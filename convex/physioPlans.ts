@@ -1602,26 +1602,46 @@ export const adminSaveSettings = mutation({
     // and by email). Opening earlier keeps the day they were promised.
     const before = await loadPlanSettings(ctx);
     if (args.launchDate && dayStart(args.launchDate) > dayStart(before.launchDate)) {
-      const oldAt = dayStart(before.launchDate);
-      const newAt = dayStart(args.launchDate);
-      const scheduled = await ctx.db
-        .query("physioSubscriptions")
-        .withIndex("by_status_end", (q) => q.eq("status", "scheduled"))
-        .take(1000);
-      for (const sub of scheduled.filter((r) => r.currentPeriodStart === oldAt)) {
-        await ctx.db.patch(sub._id, { currentPeriodStart: newAt, updatedAt: Date.now() });
-        await notifyPhysio(ctx, sub.physioId, "Pro now opens later", `Your first Pro charge moves to ${shortDate(newAt)}. Nothing changes until then.`);
-        await emailPhysio(ctx, await ctx.db.get(sub.physioId), {
-          subject: `Your Rehabify Pro now starts on ${shortDate(newAt)}`,
-          heading: "Pro opens a little later",
-          paragraphs: [`We've moved the start of Individual Pro to ${shortDate(newAt)}, so your first charge moves there too. Your price stays the same, and you can cancel any time before then.`],
-        });
-      }
+      await moveLockIns(ctx, before.launchDate, args.launchDate);
     }
     const row = await ctx.db.query("physioPlanSettings").first();
     if (row) await ctx.db.patch(row._id, patch);
     else await ctx.db.insert("physioPlanSettings", patch as { updatedAt: number });
     return null;
+  },
+});
+
+/** Locked-in Pro first charged on `fromDay` moves to `toDay`; each physio is told in-app and by email. */
+async function moveLockIns(ctx: MutationCtx, fromDay: string, toDay: string) {
+  const oldAt = dayStart(fromDay);
+  const newAt = dayStart(toDay);
+  const scheduled = await ctx.db
+    .query("physioSubscriptions")
+    .withIndex("by_status_end", (q) => q.eq("status", "scheduled"))
+    .take(1000);
+  let moved = 0;
+  for (const sub of scheduled.filter((r) => r.currentPeriodStart === oldAt)) {
+    await ctx.db.patch(sub._id, { currentPeriodStart: newAt, updatedAt: Date.now() });
+    await notifyPhysio(ctx, sub.physioId, "Pro now opens later", `Your first Pro charge moves to ${shortDate(newAt)}. Nothing changes until then.`);
+    await emailPhysio(ctx, await ctx.db.get(sub.physioId), {
+      subject: `Your Rehabify Pro now starts on ${shortDate(newAt)}`,
+      heading: "Pro opens a little later",
+      paragraphs: [`We've moved the start of Individual Pro to ${shortDate(newAt)}, so your first charge moves there too. Your price stays the same, and you can cancel any time before then.`],
+    });
+    moved += 1;
+  }
+  return moved;
+}
+
+/**
+ * Operator (CLI): the default Pro start moved in code (lib/physioPlans.ts, owner 18 Nov 2026:
+ * 1 Dec 2026 → 1 Jan 2027), so lock-ins made for the old day move too. Safe to run twice.
+ */
+export const moveLockInsInternal = internalMutation({
+  args: { fromDay: v.string(), toDay: v.string() },
+  handler: async (ctx, args) => {
+    if (dayStart(args.toDay) <= dayStart(args.fromDay)) throw new ConvexError("Only later dates");
+    return { moved: await moveLockIns(ctx, args.fromDay, args.toDay) };
   },
 });
 
