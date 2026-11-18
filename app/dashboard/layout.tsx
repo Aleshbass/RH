@@ -4,6 +4,7 @@ import { auth } from '@clerk/nextjs/server'
 import { headers } from 'next/headers'
 import { DashboardChrome } from '@/components/dashboard/shared/DashboardChrome'
 import { DeliveryReceipts } from '@/components/chat/DeliveryReceipts'
+import { SignOutGuard } from '@/components/auth/SignOutGuard'
 
 export default async function DashboardLayout({
   children,
@@ -17,10 +18,10 @@ export default async function DashboardLayout({
   // (middleware.ts already requires sign-in for every /dashboard path)
   if (pathname.startsWith('/dashboard/clinic')) {
     return (
-      <>
+      <SignOutGuard>
         {children}
         <DeliveryReceipts />
-      </>
+      </SignOutGuard>
     )
   }
 
@@ -32,10 +33,13 @@ export default async function DashboardLayout({
 
   // The clinic and physiotherapist portals bring their own shell; everyone else gets the shared one
   // DeliveryReceipts turns chat ticks from sent to delivered while someone has Rehabify open
+  // SignOutGuard: signing out swaps the page for "Signing you out…" so its queries never run logged out
   return (
-    <DashboardChrome>
-      {children}
-      <DeliveryReceipts />
-    </DashboardChrome>
+    <SignOutGuard>
+      <DashboardChrome>
+        {children}
+        <DeliveryReceipts />
+      </DashboardChrome>
+    </SignOutGuard>
   )
 }
