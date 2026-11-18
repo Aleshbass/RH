@@ -9,6 +9,10 @@
  * and each piece is sent through Convex (scribe.transcribeChunk), with retries, so a weak
  * connection still gets a full transcript, just a few seconds later.
  *
+ * Lead-in: the live link takes a few seconds to open, and people start talking as soon as they
+ * tap Start. Until it's open the audio is captured the backup way, so the first words are
+ * transcribed too; capture stops shortly after the link opens (a small overlap, never a gap).
+ *
  * Audio is never stored anywhere: pieces live in memory only until they are transcribed.
  */
 import { encodeWav } from './scribeTools'
@@ -56,6 +60,8 @@ const MAX_PIECE_BLOCKS = 200
 /** Keep at most ten minutes of audio waiting to be sent; older pieces are dropped (and said so) */
 const MAX_QUEUED_BLOCKS = 6000
 const RETRY_DELAYS_MS = [1500, 3000, 6000, 10000, 15000, 20000]
+/** Lead-in capture runs on this long after the live link opens, so no words fall in between */
+const LEAD_IN_OVERLAP_MS = 400
 
 let workletLoaded: WeakMap<BaseAudioContext, Promise<void>> | null = null
 function loadWorklet(context: AudioContext) {
@@ -94,6 +100,8 @@ export class LiveTranscriber {
   private queue: { id: string; at: number; blocks: Int16Array[] }[] = []
   private sending = false
   private pieceCount = 0
+  /** Capturing the backup way while the live link connects */
+  private leadIn = false
 
   constructor(
     private readonly key: string,
@@ -104,6 +112,7 @@ export class LiveTranscriber {
   /** Starts transcribing this stream (it may be null for now, e.g. a muted mic). */
   async start(stream: MediaStream | null) {
     this.stream = stream
+    await this.startLeadIn()
     try {
       await this.connectLive()
     } catch (error) {
@@ -126,13 +135,13 @@ export class LiveTranscriber {
   async setStream(stream: MediaStream | null) {
     this.stream = stream
     if (this.mode === 'live') await this.applyTrack()
-    else if (this.mode === 'backup') this.connectBackupSource()
+    if (this.mode === 'backup' || this.leadIn) this.connectBackupSource()
   }
 
   pause() {
     this.paused = true
     if (this.mode === 'live') void this.applyTrack()
-    if (this.mode === 'backup') this.cutPiece()
+    if (this.mode === 'backup' || this.leadIn) this.cutPiece()
   }
 
   resume() {
@@ -150,8 +159,9 @@ export class LiveTranscriber {
       const until = Date.now() + STOP_WAIT_MS
       while (Date.now() < until && [...this.items.values()].some((i) => !i.final)) await sleep(150)
     }
-    if (this.mode === 'backup') {
-      this.cutPiece()
+    // Backup pieces, and lead-in pieces still being transcribed
+    this.cutPiece()
+    if (this.mode === 'backup' || this.queue.length || this.sending) {
       const until = Date.now() + 30_000
       while (Date.now() < until && (this.queue.length || this.sending)) await sleep(200)
     }
@@ -213,6 +223,39 @@ export class LiveTranscriber {
       if (!this.stopped && this.pc === pc) void this.handleDrop()
     }
     this.setMode('live')
+    this.endLeadIn()
+  }
+
+  // ── Lead-in ───────────────────────────────────────────────────────────────
+
+  /** Captures the backup way until the live link is open (best effort: no worklet, no lead-in). */
+  private async startLeadIn() {
+    try {
+      const context = new AudioContext()
+      this.context = context
+      await loadWorklet(context)
+      if (this.stopped || this.context !== context) return
+      const node = new AudioWorkletNode(context, 'scribe-pcm')
+      this.node = node
+      node.port.onmessage = (event: MessageEvent<{ pcm: ArrayBuffer; rms: number }>) => this.onBlock(new Int16Array(event.data.pcm), event.data.rms)
+      this.connectBackupSource()
+      if (context.state === 'suspended') await context.resume()
+      this.leadIn = true
+    } catch {
+      this.closeBackup()
+    }
+  }
+
+  /** The live link is open: finish the lead-in piece a moment later and stop capturing. */
+  private endLeadIn() {
+    if (!this.leadIn) return
+    const context = this.context
+    setTimeout(() => {
+      if (!this.leadIn || this.mode !== 'live' || this.context !== context) return
+      this.leadIn = false
+      this.cutPiece()
+      this.closeBackup()
+    }, LEAD_IN_OVERLAP_MS)
   }
 
   private async applyTrack() {
@@ -319,6 +362,14 @@ export class LiveTranscriber {
 
   private async startBackup(notice: string) {
     this.closeLive()
+    // Still capturing from the lead-in: carry on the same way
+    if (this.leadIn && this.context && this.node) {
+      this.leadIn = false
+      this.setMode('backup')
+      this.events.onNotice?.(notice)
+      return
+    }
+    this.closeBackup()
     try {
       const context = new AudioContext()
       this.context = context
@@ -417,6 +468,7 @@ export class LiveTranscriber {
   }
 
   private closeBackup() {
+    this.leadIn = false
     try {
       this.source?.disconnect()
       this.node?.disconnect()

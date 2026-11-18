@@ -168,7 +168,9 @@ export async function createRealtimeTranscriptionSecret(opts: {
           input: {
             noise_reduction: opts.noiseReduction ? { type: opts.noiseReduction } : null,
             transcription: { model, prompt: opts.prompt, ...(opts.language ? { language: opts.language } : {}) },
-            turn_detection: { type: "server_vad", threshold: 0.5, prefix_padding_ms: 300, silence_duration_ms: 500 },
+            // A 0.9 s pause ends a turn: shorter cut sentences at commas ("Heel slides, two sets of
+            // fifteen, | twice a day"), and the short pieces came back misheard or not at all
+            turn_detection: { type: "server_vad", threshold: 0.5, prefix_padding_ms: 500, silence_duration_ms: 900 },
           },
         },
       },
