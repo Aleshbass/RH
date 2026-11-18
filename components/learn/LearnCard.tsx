@@ -23,6 +23,27 @@ type LearnCardData = {
 // By name: the generated api type is at TypeScript's depth limit (TS2589)
 const learnCardRef = makeFunctionReference<'query', Record<string, never>, LearnCardData>('learn:getDashboardLearnCard')
 
+/** Rehabify Learn as a row in the physio menu's Learn group (opens Learn in a new tab). */
+export function LearnNavRow({ onNavigate }: { onNavigate?: () => void }) {
+  const data = useQuery(learnCardRef, {})
+  if (data === undefined) return null
+  const resume = data?.resume ?? null
+  return (
+    <a
+      href={resume ? learnUrl(`/courses/${resume.courseId}`) : learnUrl()}
+      target="_blank"
+      rel="noreferrer"
+      onClick={onNavigate}
+      title={resume ? `Carry on: ${resume.title}` : 'Courses, cases and the physio community'}
+      className="group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-pt-muted transition-colors hover:bg-pt-hover hover:text-pt-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pt-accent/50"
+    >
+      <GraduationCap className="h-4 w-4 shrink-0" />
+      <span className="min-w-0 flex-1 truncate">{resume ? 'Carry on learning' : 'Rehabify Learn'}</span>
+      <ArrowUpRight className="h-3.5 w-3.5 shrink-0 text-pt-faint transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
+    </a>
+  )
+}
+
 export function LearnCard({ onNavigate, className }: { onNavigate?: () => void; className?: string }) {
   const data = useQuery(learnCardRef, {})
   if (data === undefined) return null

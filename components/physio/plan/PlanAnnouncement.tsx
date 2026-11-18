@@ -87,7 +87,10 @@ export function PlanAnnouncement() {
                 Not now
               </button>
             </div>
-            <p className="mt-4 text-xs text-white/45">Free limits start {dayLabel(s.limitsDate)}. You can see your plan any time in Settings › Plan &amp; billing.</p>
+            <p className="mt-4 text-xs leading-5 text-white/45">
+              {launched ? null : <>Pro starts {dayLabel(s.launchDate)}: choose it now and nothing is charged until then. </>}
+              Staying on Free? Nothing is limited until {dayLabel(s.limitsDate)}. Your plan is always in Settings › Plan &amp; billing.
+            </p>
           </motion.div>
         </motion.div>
       )}

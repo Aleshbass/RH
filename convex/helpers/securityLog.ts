@@ -6,6 +6,7 @@
  *   role_changed          – an account's platform role changed
  *   permission_updated    – a clinic team member's dashboard role changed
  *   account_deleted       – a person deleted their account (personal data erased)
+ *   admin_view_as         – a full admin made a "View as" link for someone (convex/adminViewAs.ts)
  */
 import type { MutationCtx } from "../_generated/server";
 import type { Id } from "../_generated/dataModel";
@@ -15,7 +16,8 @@ export type SecurityEventType =
   | "failed_authentication"
   | "role_changed"
   | "permission_updated"
-  | "account_deleted";
+  | "account_deleted"
+  | "admin_view_as";
 
 export async function logSecurityEvent(
   ctx: MutationCtx,

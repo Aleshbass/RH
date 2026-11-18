@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { useMutation, useQuery } from 'convex/react';
 import { makeFunctionReference } from 'convex/server';
 import { toast } from 'sonner';
@@ -22,7 +23,6 @@ import { SettingsPageHeader, SettingsSection } from '@/components/physio/Setting
 import type { SetupStatus } from '@/components/physio/SetupChecklist';
 import { errorMessage } from '@/components/partners/portal/shared';
 import { choiceOf, PRACTICE_CHOICES, type PracticeChoice } from '@/lib/practiceModes';
-import { recoveryPlanStatus } from '@/lib/recoveryPlans';
 import { useRecoveryPlans } from '@/components/exercise-programs/flex';
 import { playSound } from '@/lib/sounds';
 import { cn } from '@/lib/utils';
@@ -50,7 +50,7 @@ const CONFIRM: Record<PracticeChoice, { title: string; body: string }> = {
 export default function PracticeModePage() {
     const setup = useQuery(api.physioSetup.getMySetupStatus) as SetupStatus | null | undefined;
     const setPracticeMode = useMutation(setPracticeModeRef);
-    // Live prices once an admin launches Flex / Flex Max; "Coming soon" until then
+    // Prices always show; "Starts soon" sits beside them until an admin launches Flex / Flex Max
     const { plans: recoveryPlans } = useRecoveryPlans();
     const [change, setChange] = useState<PracticeChoice | null>(null);
     const [saving, setSaving] = useState(false);
@@ -156,7 +156,7 @@ export default function PracticeModePage() {
             {seesOwnPatients && (
                 <SettingsSection
                     title="What your patients can add"
-                    description="Support between sessions, offered to your own patients by Rehabify. You don’t need to sell or collect anything, and Rehabify Care patients have it included."
+                    description="Support between sessions, offered to your own patients by Rehabify. You don’t pay for these and don’t need to sell or collect anything: your patient pays Rehabify, and Rehabify Care patients have it included."
                 >
                     <ul className="divide-y divide-neutral-100 dark:divide-white/[0.07]">
                         {recoveryPlans.map((plan) => (
@@ -165,17 +165,28 @@ export default function PracticeModePage() {
                                     <p className="text-sm font-semibold text-rh-ink dark:text-white">{plan.name}</p>
                                     <p className="mt-0.5 text-sm text-neutral-600 dark:text-neutral-400">{plan.description}</p>
                                 </div>
-                                <span
-                                    className={cn(
-                                        'shrink-0 rounded-full px-2.5 py-0.5 text-xs font-semibold',
-                                        plan.available ? 'bg-rh-lime text-rh-ink' : 'bg-neutral-100 text-neutral-600 dark:bg-white/[0.07] dark:text-neutral-300'
-                                    )}
-                                >
-                                    {recoveryPlanStatus(plan)}
-                                </span>
+                                <div className="shrink-0 text-right">
+                                    <span
+                                        className={cn(
+                                            'inline-block rounded-full px-2.5 py-0.5 text-xs font-semibold',
+                                            plan.available ? 'bg-rh-lime text-rh-ink' : 'bg-neutral-100 text-neutral-700 dark:bg-white/[0.07] dark:text-neutral-200'
+                                        )}
+                                    >
+                                        {plan.priceLabel}
+                                    </span>
+                                    <p className="mt-1 text-[11px] text-neutral-500 dark:text-neutral-400">
+                                        {plan.priceKobo === 0 ? 'For every patient' : plan.available ? 'Paid by your patient' : 'Paid by your patient · starts soon'}
+                                    </p>
+                                </div>
                             </li>
                         ))}
                     </ul>
+                    <p className="mt-4 rounded-xl bg-neutral-50 px-4 py-3 text-sm text-neutral-600 dark:bg-white/[0.04] dark:text-neutral-300">
+                        Rather cover a patient yourself? Your plan includes it: up to 3 patients a month on Free, every patient on Pro.{' '}
+                        <Link href="/dashboard/physiotherapist/settings/plan" className="font-semibold text-rh-ink underline underline-offset-2 dark:text-white">
+                            Plan &amp; billing
+                        </Link>
+                    </p>
                 </SettingsSection>
             )}
 

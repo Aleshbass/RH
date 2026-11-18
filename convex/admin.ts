@@ -654,7 +654,7 @@ export const getRevenueAnalytics = query({
 // can filter through the by_type_and_timestamp index instead of scanning.
 
 const ACTIVITY_CATEGORIES = {
-  security: ["user_login", "user_logout", "failed_authentication", "role_changed", "permission_updated"],
+  security: ["user_login", "user_logout", "failed_authentication", "role_changed", "permission_updated", "admin_view_as"],
   admin: ["admin_settings_updated", "admin_announcement_sent"],
   account: [
     "user_signup",
@@ -817,7 +817,7 @@ const SECURITY_SUMMARY = [
   { key: "signIns", label: "Sign-ins", types: ["user_login"] },
   { key: "failedSignIns", label: "Failed sign-ins", types: ["failed_authentication"] },
   { key: "roleChanges", label: "Role & permission changes", types: ["role_changed", "permission_updated"] },
-  { key: "adminChanges", label: "Admin actions", types: ["admin_settings_updated", "admin_announcement_sent"] },
+  { key: "adminChanges", label: "Admin actions", types: ["admin_settings_updated", "admin_announcement_sent", "admin_view_as"] },
 ] as const;
 
 /**

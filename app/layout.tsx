@@ -144,6 +144,7 @@ export const metadata: Metadata = {
 import { headers } from "next/headers";
 import { clinicThemeNoFlashScript } from "@/lib/clinic-theme";
 import { domTranslationGuardScript } from "@/lib/domTranslationGuard";
+import { ViewAsBanner } from "@/components/auth/ViewAsBanner";
 
 export default async function RootLayout({
   children,
@@ -196,6 +197,8 @@ export default async function RootLayout({
               {/* Offline mode: opens the phone's encrypted copy when signed in (lib/offline) */}
               <OfflineBridge />
               <PlatformStatusGate />
+              {/* "Viewing as … (admin support)" while an admin uses View as (convex/adminViewAs.ts) */}
+              <ViewAsBanner />
 
               {/* Cookie banner and settings; also loads analytics (Umami) only once allowed */}
               <ConsentProvider>

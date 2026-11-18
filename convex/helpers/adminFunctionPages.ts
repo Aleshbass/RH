@@ -134,6 +134,7 @@ export const ADMIN_FUNCTION_PAGES: Readonly<Record<string, readonly number[] | "
   "adminReferrals:getInboundReferrals": [17],
   "adminReferrals:listClinicsForReferralRouting": [17],
   "adminReferrals:updateReferralStatus": [17],
+  "adminViewAs:createViewAsLink": "full",
   "agreements:adminAgreementSignature": [58],
   "agreements:adminAgreementsOverview": [58],
   "agreements:adminCountersignAgreement": [58],

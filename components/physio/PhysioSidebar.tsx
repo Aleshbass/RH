@@ -27,7 +27,9 @@ import { clearUserNoteDrafts } from '@/components/physio/notes/draftStore'
 import { usePracticeMode } from '@/components/physio/practiceMode'
 import { useClinicMode } from '@/components/physio/clinicMode'
 import { PlanBadge } from '@/components/physio/plan/PlanPage'
-import { LearnCard } from '@/components/learn/LearnCard'
+import { LearnCard, LearnNavRow } from '@/components/learn/LearnCard'
+import { useQuery } from 'convex/react'
+import { makeFunctionReference } from 'convex/server'
 import { cn } from '@/lib/utils'
 import {
   LIMITED_NAV,
@@ -201,13 +203,21 @@ function AccountMenu() {
   )
 }
 
+// By name: the generated api type is at TypeScript's depth limit (TS2589)
+const setupStatusRef = makeFunctionReference<'query', Record<string, never>, { items: { id: string; done: boolean }[] } | null>(
+  'physioSetup:getMySetupStatus'
+)
+
 /**
  * A card at the foot of the menu: clinic pages their role adds (Billing, Team…) in clinic mode,
- * otherwise their booking page.
+ * otherwise their booking page while its setup steps are open (team feedback 18 Nov: at most two
+ * things stacked above the account).
  */
 function FooterCard({ onNavigate }: { onNavigate?: () => void }) {
   const clinic = useClinicMode()
   const practice = usePracticeMode()
+  const setup = useQuery(setupStatusRef)
+  const bookingStepsOpen = Boolean(setup?.items.some((item) => (item.id === 'coverage' || item.id === 'profile') && !item.done))
   if (!clinic.loaded) return null
   if (clinic.active) {
     if (!clinic.adminHref) return null
@@ -228,6 +238,8 @@ function FooterCard({ onNavigate }: { onNavigate?: () => void }) {
   }
   // Services, areas and the public page are for Rehabify Care patients: not for independent physios
   if (!practice.loaded || practice.isIndependent) return null
+  // Only while the steps it leads to (services and areas, photo and bio) are still open
+  if (!bookingStepsOpen) return null
   return (
     <Link
       href={`${PHYSIO_HOME}/settings/marketplace`}
@@ -277,12 +289,12 @@ export function PhysioSidebar({
                 badge={item.href === NAV.messages.href ? unreadMessages : undefined}
               />
             ))}
+            {group.label === 'Learn' && !limited && <LearnNavRow />}
           </div>
         ))}
       </nav>
 
       <div className="space-y-2 p-3">
-        {!limited && <LearnCard />}
         {!limited && <PlanBadge />}
         {!limited && <FooterCard />}
         <div className="border-t border-pt-line pt-2">

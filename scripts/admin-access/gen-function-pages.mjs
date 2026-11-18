@@ -33,6 +33,8 @@ const FULL_ONLY = [
   'learnAdmins:addMany',
   'learnAdmins:remove',
   'learnAdmins:cancelInvite',
+  // Signs in as someone else: full admins only
+  'adminViewAs:createViewAsLink',
 ]
 /** Shell functions that still need a page: the ⌘K people search needs a people page. */
 const PAGE_OVERRIDES = {

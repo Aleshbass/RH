@@ -344,7 +344,9 @@ export function PlanPage() {
             ? onPro
               ? 'Pro covers every patient you see.'
               : 'Free limits reset on the 1st of each month.'
-            : `Nothing is limited yet. Free limits start ${dayYear(data.usage.limitsFrom)}.`
+            : onPro
+              ? 'Pro covers every patient you see.'
+              : `Staying on Free? Nothing is limited until ${dayYear(data.usage.limitsFrom)}.`
         }
       >
         <div className="grid gap-3 sm:grid-cols-2">
@@ -447,8 +449,11 @@ export function PlanPage() {
           {!launched && (
             <p className="mt-4 flex items-start gap-2 text-xs leading-5 text-neutral-500">
               <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-              Pro opens {dayLabel(s.launchDate)}. Locking in now saves your card with a {naira(data.offer.cardCheckKobo)} check that we refund straight away; your
-              first month is charged on {dayLabel(s.launchDate, false)}.
+              <span>
+                <strong className="font-semibold text-neutral-700 dark:text-neutral-300">Pro starts {dayLabel(s.launchDate, false)}.</strong> Choose it now and your
+                first month is charged on {dayLabel(s.launchDate, false)}: we only check your card today ({naira(data.offer.cardCheckKobo)}, refunded straight away).
+                Staying on Free? Nothing is limited until {dayYear(data.usage.limitsFrom)}.
+              </span>
             </p>
           )}
         </SettingsSection>

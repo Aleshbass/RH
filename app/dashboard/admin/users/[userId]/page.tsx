@@ -78,6 +78,7 @@ import { NETWORK_TERMS_VERSION } from '@/lib/rehabify-network-terms'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
 import { DeleteAccountDialog } from '@/components/admin/DeleteAccountDialog'
+import { ViewAsButton } from '@/components/admin/ViewAsButton'
 
 /** Row shapes returned by api.admin.getAdminUserDetails. */
 type PatientLink = { _id: string; patientId: string; status: string; name: string; email?: string; imageUrl?: string }
@@ -381,6 +382,8 @@ export default function AdminUserDetailPage() {
                 </a>
               </Button>
             )}
+            {/* See Rehabify as this person, for support (full admins; convex/adminViewAs.ts) */}
+            <ViewAsButton userId={user._id} role={user.role} isMe={isMe} />
             <Button onClick={() => setRoleOpen(true)} className={primaryButtonClass}>
               <UserCog className="mr-2 h-4 w-4" />
               Change role
