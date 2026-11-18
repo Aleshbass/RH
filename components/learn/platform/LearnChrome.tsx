@@ -273,7 +273,7 @@ function PhoneSearch({ open, onClose }: { open: boolean; onClose: () => void }) 
           role="dialog"
           aria-modal="true"
           aria-label="Search courses"
-          className="fixed inset-0 z-[60] flex flex-col bg-white md:hidden"
+          className="fixed inset-0 z-[60] flex flex-col bg-learn-page md:hidden"
           initial={reduce ? { opacity: 0 } : { opacity: 0, y: -16 }}
           animate={{ opacity: 1, y: 0 }}
           exit={reduce ? { opacity: 0 } : { opacity: 0, y: -16 }}
@@ -588,7 +588,7 @@ function MobileMenu({ open, onClose }: { open: boolean; onClose: () => void }) {
             transition={{ duration: 0.25, ease: 'easeOut' }}
           />
           <motion.div
-            className="absolute inset-y-0 right-0 flex w-full flex-col bg-white shadow-lift sm:max-w-sm"
+            className="absolute inset-y-0 right-0 flex w-full flex-col bg-learn-page shadow-lift sm:max-w-sm"
             initial={reduce ? { opacity: 0 } : { x: '100%' }}
             animate={reduce ? { opacity: 1 } : { x: 0 }}
             exit={reduce ? { opacity: 0 } : { x: '100%' }}
@@ -794,7 +794,7 @@ export function LearnHeader() {
   const [searchOpen, setSearchOpen] = useState(false)
   const closeSearch = useCallback(() => setSearchOpen(false), [])
   return (
-    <header className="sticky top-0 z-40 border-b border-rh-ink/[0.06] bg-white">
+    <header className="sticky top-0 z-40 border-b border-rh-ink/[0.06] bg-learn-page">
       {/* Fits a 360px phone: on very narrow screens the light/dark switch lives in the menu only (owner 2026-11-16: page shook sideways) */}
       <div className="mx-auto flex h-16 max-w-7xl items-center gap-2 px-4 max-[379px]:px-3 sm:gap-3 sm:px-6">
         <Logo />
@@ -915,7 +915,7 @@ export function LearnShell({ children }: { children: ReactNode }) {
   return (
     <ActiveSpaceProvider>
       <LearnerIdentityProvider>
-        <div className="flex min-h-screen flex-col bg-white">
+        <div className="flex min-h-screen flex-col bg-learn-page">
           <LearnHeader />
           <InviteCapture />
           <div className="flex-1">{children}</div>

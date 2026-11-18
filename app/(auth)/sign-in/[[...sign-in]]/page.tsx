@@ -4,6 +4,7 @@ import { headers } from "next/headers";
 import CustomSignIn from "@/components/auth/CustomSignIn";
 import { AuthLoading } from "@/components/auth/AuthShell";
 import type { AuthAudience } from "@/components/auth/authConfig";
+import { LEARN_THEME_SCRIPT } from "@/lib/learn/themeScript";
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
@@ -29,8 +30,12 @@ export async function generateMetadata({ searchParams }: { searchParams: SearchP
 export default async function SignInPage({ searchParams }: { searchParams: SearchParams }) {
   const { audience, ownHost } = await audienceFor(searchParams);
   return (
-    <Suspense fallback={<AuthLoading audience={audience} partnersHost={ownHost} />}>
-      <CustomSignIn audience={audience} partnersHost={ownHost} />
-    </Suspense>
+    <>
+      {/* Learn's theme before the first paint, as on every Learn page (app/learn/layout.tsx) */}
+      {audience === "learn" && <script dangerouslySetInnerHTML={{ __html: LEARN_THEME_SCRIPT }} />}
+      <Suspense fallback={<AuthLoading audience={audience} partnersHost={ownHost} />}>
+        <CustomSignIn audience={audience} partnersHost={ownHost} />
+      </Suspense>
+    </>
   );
 }
