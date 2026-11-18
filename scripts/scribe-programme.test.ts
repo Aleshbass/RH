@@ -267,6 +267,18 @@ test('something done for a time fills as once, for that long', () => {
   })
 })
 
+test('a timed activity not in the library is ready to send as said, with no tap', () => {
+  const draft = parse({ title: 'Knee', exercises: [{ action: 'new', name: 'Ride the stationary bike', frequency: 'Once a day', duration: '10 minutes' }] }, null)!
+  const review = reviewFromDraft(draft.programme!, null)
+  assert.deepEqual([review.rows[0].sets, review.rows[0].reps], [1, 1])
+  review.rows[0].asWritten = true
+  assert.deepEqual(buildProgrammeSend(review, LIBRARY, null), {
+    kind: 'create',
+    title: 'Knee',
+    items: [{ name: 'Ride the stationary bike', sets: 1, reps: 1, frequency: 'Once a day', note: 'Duration: 10 minutes' }],
+  })
+})
+
 test('if the current programme changed since drafting, nothing is changed or stopped by mistake', () => {
   const draft = parse({ exercises: [{ action: 'change', current: 2, name: 'bridges', sets: 3, reps: 15, frequency: 'Once a day' }, { action: 'stop', current: 1, name: 'SLR' }] })!
   const other = { ...NOW, _id: 'p_other' as Id<'exercisePrograms'> }

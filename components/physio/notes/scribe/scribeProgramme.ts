@@ -119,6 +119,9 @@ export function reviewFromDraft(programme: ScribeProgramme, current: { _id: stri
       action = 'new'
     }
     const tied = action !== 'new'
+    // Something done for a time, not in the library ("ride the bike ten minutes a day"): once, for
+    // that long, as said (live test 18 Nov: left blank, it held up Approve and send)
+    const timed = !tied && !item.exerciseId && Boolean(item.duration?.trim()) && item.sets == null && item.reps == null
     rows.push({
       key: nextKey(),
       action,
@@ -128,8 +131,8 @@ export function reviewFromDraft(programme: ScribeProgramme, current: { _id: stri
       name: item.name,
       ...(tied && item.fromIndex !== undefined ? { fromIndex: item.fromIndex } : {}),
       side: item.side ?? null,
-      sets: item.sets ?? null,
-      reps: item.reps ?? null,
+      sets: item.sets ?? (timed ? 1 : null),
+      reps: item.reps ?? (timed ? 1 : null),
       hold: item.holdSeconds ?? null,
       frequency: item.frequency ?? '',
       duration: item.duration ?? '',
