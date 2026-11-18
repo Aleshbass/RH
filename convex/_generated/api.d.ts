@@ -129,6 +129,7 @@ import type * as doctorPortal from "../doctorPortal.js";
 import type * as doctors from "../doctors.js";
 import type * as emailAudit from "../emailAudit.js";
 import type * as emailEvents from "../emailEvents.js";
+import type * as emailQuota from "../emailQuota.js";
 import type * as exchangeRates from "../exchangeRates.js";
 import type * as exerciseCompletions from "../exerciseCompletions.js";
 import type * as exerciseLibrary from "../exerciseLibrary.js";
@@ -497,6 +498,7 @@ declare const fullApi: ApiFromModules<{
   doctors: typeof doctors;
   emailAudit: typeof emailAudit;
   emailEvents: typeof emailEvents;
+  emailQuota: typeof emailQuota;
   exchangeRates: typeof exchangeRates;
   exerciseCompletions: typeof exerciseCompletions;
   exerciseLibrary: typeof exerciseLibrary;
