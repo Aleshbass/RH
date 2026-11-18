@@ -10,6 +10,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useClerk, useUser } from '@clerk/nextjs'
+import { safeSignOut } from '@/lib/auth/safeSignOut'
 import { ArrowLeftRight, ArrowRight, Building2, ChevronRight, LogOut, Menu, MoreVertical, PlayCircle, ShieldCheck, Store, UserRound } from '@/components/icons'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
@@ -108,7 +109,7 @@ function useAccount() {
   const signOutAndClear = () => {
     // Unsaved clinical notes stay on this device only for the person who wrote them
     clearUserNoteDrafts(user?.id)
-    return signOut({ redirectUrl: '/' })
+    return safeSignOut(signOut, '/')
   }
   return { user, name, email, openUserProfile, signOut: signOutAndClear }
 }

@@ -5,6 +5,7 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useClerk, useUser } from '@clerk/nextjs'
+import { safeSignOut } from '@/lib/auth/safeSignOut'
 import { useQuery } from 'convex/react'
 import { api } from '@/convex/_generated/api'
 import { ArrowRight, ChevronRight, LogOut, Menu, MoreVertical, PlayCircle, Settings } from '@/components/icons'
@@ -139,7 +140,7 @@ function useAccount() {
   const email = user?.primaryEmailAddress?.emailAddress
   // Joy patients start with a placeholder login address; don't show it
   const shownEmail = email && !email.endsWith('@patients.physioaroundme.com') ? email : undefined
-  return { user, name, email: shownEmail, signOut: () => signOut({ redirectUrl: '/' }) }
+  return { user, name, email: shownEmail, signOut: () => safeSignOut(signOut, '/') }
 }
 
 function AccountMenu() {

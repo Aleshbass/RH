@@ -1,6 +1,7 @@
 'use client'
 
 import { useAuth, useClerk } from '@clerk/nextjs'
+import { safeSignOut } from '@/lib/auth/safeSignOut'
 import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, type ReactNode } from 'react'
 import Link from 'next/link'
@@ -217,7 +218,7 @@ function ClinicPortal({ children }: { children: ReactNode }) {
         title="You're not part of a clinic team"
         body="Ask the clinic owner to invite you again, or sign in with a different account."
         action={
-          <Button onClick={() => signOut({ redirectUrl: '/sign-in' })} className={cn(secondaryButtonClass, 'w-full')}>
+          <Button onClick={() => void safeSignOut(signOut, '/sign-in')} className={cn(secondaryButtonClass, 'w-full')}>
             Sign out
           </Button>
         }

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
 import { useClerk, useUser } from '@clerk/nextjs'
+import { safeSignOut } from '@/lib/auth/safeSignOut'
 import { useQuery } from 'convex/react'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { ChevronDown, ChevronLeft, ChevronRight, LogOut, Settings, ShieldCheck, Volume2, VolumeX } from '@/components/icons'
@@ -141,7 +142,7 @@ function AccountMenu({ collapsed }: { collapsed: boolean }) {
         </DropdownMenuItem>
         <SoundsToggleItem />
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={() => signOut({ redirectUrl: '/' })}>
+        <DropdownMenuItem onClick={() => void safeSignOut(signOut, '/')}>
           <LogOut className="mr-2 h-4 w-4 text-neutral-500" />
           Sign out
         </DropdownMenuItem>

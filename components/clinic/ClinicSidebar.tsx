@@ -12,6 +12,7 @@ import { usePathname } from 'next/navigation'
 import { useQuery } from 'convex/react'
 import { makeFunctionReference } from 'convex/server'
 import { useClerk, useUser } from '@clerk/nextjs'
+import { safeSignOut } from '@/lib/auth/safeSignOut'
 import { api } from '@/convex/_generated/api'
 import { cn } from '@/lib/utils'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
@@ -136,7 +137,7 @@ function useAccount() {
   const { signOut, openUserProfile } = useClerk()
   const name = user?.fullName || user?.firstName || 'Your account'
   const email = user?.primaryEmailAddress?.emailAddress
-  return { user, name, email, openUserProfile, signOut: () => signOut({ redirectUrl: '/' }) }
+  return { user, name, email, openUserProfile, signOut: () => safeSignOut(signOut, '/') }
 }
 
 function Badge({ count }: { count?: number }) {

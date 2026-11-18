@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { useClerk } from '@clerk/nextjs'
+import { safeSignOut } from '@/lib/auth/safeSignOut'
 import { Clock, FileText } from '@/components/icons'
 import { Button } from '@/components/ui/button'
 import { primaryButtonClass } from '@/components/clinic/ui'
@@ -87,7 +88,7 @@ export function PhysioDeclined({ reason }: { reason?: string }) {
           <Button asChild variant="outline">
             <a href={`mailto:${SUPPORT_EMAIL}`}>Contact support</a>
           </Button>
-          <Button variant="ghost" onClick={() => signOut({ redirectUrl: '/' })} className="text-neutral-500">
+          <Button variant="ghost" onClick={() => void safeSignOut(signOut, '/')} className="text-neutral-500">
             Sign out
           </Button>
         </div>

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useClerk, useUser } from '@clerk/nextjs';
+import { safeSignOut } from '@/lib/auth/safeSignOut';
 import { ChevronRight } from '@/components/icons';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
@@ -89,7 +90,7 @@ export default function AccountPrivacyPage() {
                         title="Sign out"
                         description="Sign out of Rehabify on this device."
                         action={
-                            <Button variant="outline" size="sm" onClick={() => signOut({ redirectUrl: '/' })}>
+                            <Button variant="outline" size="sm" onClick={() => void safeSignOut(signOut, '/')}>
                                 Sign out
                             </Button>
                         }

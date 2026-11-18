@@ -12,18 +12,21 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { useAuth } from '@clerk/nextjs'
 import { RehabifyLoader } from '@/components/brand/RehabifyLoader'
+import { useSigningOut } from '@/lib/auth/safeSignOut'
 
 /** If Clerk's own redirect doesn't happen (a session that simply expired), go to sign-in ourselves */
 const FALLBACK_REDIRECT_MS = 5000
 
 export function SignOutGuard({ children }: { children: ReactNode }) {
   const { isLoaded, isSignedIn } = useAuth()
+  // Tapped Sign out (lib/auth/safeSignOut.ts): swap the page out before the session even ends
+  const tappedSignOut = useSigningOut()
   const [wasSignedIn, setWasSignedIn] = useState(false)
   useEffect(() => {
     if (isLoaded && isSignedIn) setWasSignedIn(true)
   }, [isLoaded, isSignedIn])
 
-  const signingOut = wasSignedIn && isLoaded && !isSignedIn
+  const signingOut = tappedSignOut || (wasSignedIn && isLoaded && !isSignedIn)
   useEffect(() => {
     if (!signingOut) return
     const timer = setTimeout(() => window.location.replace('/sign-in'), FALLBACK_REDIRECT_MS)

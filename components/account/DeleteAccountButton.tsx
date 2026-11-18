@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useClerk } from '@clerk/nextjs'
+import { safeSignOut } from '@/lib/auth/safeSignOut'
 import { toast } from 'sonner'
 import { Loader2, Trash2 } from '@/components/icons'
 import {
@@ -36,7 +37,7 @@ export function DeleteAccountButton({ triggerClassName, kept }: { triggerClassNa
         return
       }
       toast.success('Your account has been deleted')
-      await signOut({ redirectUrl: '/' })
+      await safeSignOut(signOut, '/')
     } catch {
       toast.error("We couldn't delete your account. Check your connection and try again.")
     } finally {

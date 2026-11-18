@@ -4,6 +4,7 @@ import { useEffect, type ReactNode } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { useClerk, useUser } from '@clerk/nextjs'
+import { safeSignOut } from '@/lib/auth/safeSignOut'
 import { useQuery } from 'convex/react'
 import { api } from '@/convex/_generated/api'
 import { HeartPulse, LogOut, MoreVertical, ShieldCheck } from '@/components/icons'
@@ -72,7 +73,7 @@ function AccountMenu() {
         <DropdownMenuSeparator className="bg-pt-line" />
         <DropdownMenuItem
           className="rounded-xl px-3 py-2.5 text-pt-rose-fg focus:bg-pt-rose-bg focus:text-pt-rose-fg"
-          onSelect={() => void signOut({ redirectUrl: '/' })}
+          onSelect={() => void safeSignOut(signOut, '/')}
         >
           <LogOut className="mr-2 h-4 w-4" />
           Sign out
