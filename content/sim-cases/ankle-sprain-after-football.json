@@ -11,7 +11,7 @@
   "narration": true,
   "scenes": {
     "couch": {
-      "src": "/sims/ankle-sprain-after-football/v1/scene/couch.webp",
+      "src": "/sims/ankle-sprain-after-football/v1/scene/couch-2d.webp",
       "alt": "Tunde sits on the treatment couch in his football kit, legs out, his left ankle swollen and bruised.",
       "art2d": {
         "character": "tunde",

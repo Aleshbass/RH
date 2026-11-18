@@ -69,7 +69,7 @@
   "startNode": "start",
   "scenes": {
     "tripod": {
-      "src": "/sims/knee-replacement-calf-pain/v1/scene/tripod.webp",
+      "src": "/sims/knee-replacement-calf-pain/v1/scene/tripod-2d.webp",
       "alt": "Mr Okafor sitting on the edge of his hospital bed, leaning forward on his knees and breathing fast",
       "art2d": {
         "character": "emeka",

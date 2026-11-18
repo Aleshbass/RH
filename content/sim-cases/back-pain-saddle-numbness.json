@@ -11,7 +11,7 @@
   "narration": true,
   "scenes": {
     "standing": {
-      "src": "/sims/back-pain-saddle-numbness/v1/scene/standing.webp",
+      "src": "/sims/back-pain-saddle-numbness/v1/scene/standing-2d.webp",
       "alt": "Mrs Adebayo stands stiffly in the clinic room, one hand pressed to her lower back.",
       "art2d": {
         "character": "funmi",
@@ -19,7 +19,7 @@
       }
     },
     "plinth": {
-      "src": "/sims/back-pain-saddle-numbness/v1/scene/plinth.webp",
+      "src": "/sims/back-pain-saddle-numbness/v1/scene/plinth-2d.webp",
       "alt": "Mrs Adebayo sits on the edge of the treatment couch, holding it steady.",
       "art2d": {
         "character": "funmi",
@@ -27,7 +27,7 @@
       }
     },
     "worried": {
-      "src": "/sims/back-pain-saddle-numbness/v1/scene/worried.webp",
+      "src": "/sims/back-pain-saddle-numbness/v1/scene/worried-2d.webp",
       "alt": "Mrs Adebayo looks worried, her hands clasped.",
       "art2d": {
         "character": "funmi",
