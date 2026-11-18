@@ -106,7 +106,7 @@ export default function AdminAccessPage() {
         description="Give each admin everything, or tick the pages they can open. They won't see the rest, and the server refuses it too."
       />
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]">
         <Panel title="Admins" description="Changing roles, team access and this page needs everything.">
           <ul className="space-y-1 p-3 pt-1">
             {admins === undefined &&
@@ -192,7 +192,7 @@ export default function AdminAccessPage() {
                       </Button>
                     </span>
                   </div>
-                  <div className="grid gap-3 md:grid-cols-2">
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                     {sections.map((section) => {
                       const hrefs = section.items.map((i) => i.href)
                       const on = hrefs.filter((h) => ticked.has(h)).length

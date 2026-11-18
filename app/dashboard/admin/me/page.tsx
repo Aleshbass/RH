@@ -33,6 +33,14 @@ const summaryRef = makeFunctionReference<'query', { widgets: string[] }, Summary
 const contactsRef = makeFunctionReference<'query', { term: string }, Contact[]>('adminMyPage:contacts')
 const saveRef = makeFunctionReference<'mutation', { widgets: string[] }, null>('adminAccess:saveMyWidgets')
 
+/** Money in a tile: short on phones' 3-column tiles (₦1.25m, ₦480k). */
+const money = (kobo: number) => {
+  const n = kobo / 100
+  if (n >= 1e6) return `₦${(n / 1e6).toFixed(n >= 1e7 ? 1 : 2).replace(/.?0+$/, '')}m`
+  if (n >= 1e4) return `₦${Math.round(n / 1e3)}k`
+  return naira(kobo)
+}
+
 const GROUPS: AdminWidgetGroup[] = ['Clinics & growth', 'People', 'Care', 'Money', 'Platform']
 
 function greeting() {
@@ -45,21 +53,21 @@ function Big({ value, label, tone }: { value: ReactNode; label: string; tone?: '
     <div className="min-w-0">
       <p
         className={cn(
-          'text-2xl font-semibold tabular-nums tracking-tight text-rh-ink dark:text-white',
+          'text-xl font-semibold leading-tight tabular-nums tracking-tight text-rh-ink dark:text-white sm:text-2xl',
           tone === 'warn' && 'text-[#be123c] dark:text-rose-300',
           tone === 'good' && 'text-[#047857] dark:text-rh-lime'
         )}
       >
         {value}
       </p>
-      <p className="truncate text-xs text-neutral-500">{label}</p>
+      <p className="mt-0.5 text-xs leading-snug text-neutral-500">{label}</p>
     </div>
   )
 }
 
 function Card({ widget, children, wide }: { widget: AdminWidget; children: ReactNode; wide?: boolean }) {
   return (
-    <section className={cn('flex flex-col rounded-2xl border border-black/[0.04] bg-white p-4 shadow-soft dark:border-white/[0.06] dark:bg-rh-ink-2 dark:shadow-none', wide && 'md:col-span-2')}>
+    <section className={cn('flex min-w-0 flex-col rounded-2xl border border-black/[0.04] bg-white p-4 shadow-soft dark:border-white/[0.06] dark:bg-rh-ink-2 dark:shadow-none', wide && 'md:col-span-2')}>
       <div className="mb-3 flex items-center justify-between gap-2">
         <h3 className="text-sm font-semibold text-rh-ink dark:text-white">{widget.title}</h3>
         <Link href={widget.pages[0]} className="inline-flex items-center gap-1 text-xs font-medium text-neutral-500 hover:text-rh-ink dark:hover:text-white">
@@ -105,7 +113,7 @@ function WidgetBody({ widget, data }: { widget: AdminWidget; data: any }) {
   if (widget.key === 'contacts') return <QuickContact />
   if (data === undefined) return <div className="h-12 animate-pulse rounded-xl bg-rh-canvas dark:bg-white/[0.04]" />
   if (data === null) return <p className="text-xs text-neutral-500">Not available.</p>
-  const grid = (items: ReactNode) => <div className="grid grid-cols-3 gap-3">{items}</div>
+  const grid = (items: ReactNode) => <div className="grid grid-cols-3 gap-2 sm:gap-3">{items}</div>
   switch (widget.key) {
     case 'sessions':
       return grid(
@@ -152,7 +160,7 @@ function WidgetBody({ widget, data }: { widget: AdminWidget; data: any }) {
         <>
           <Big value={data.onPlan} label="On a plan" />
           <Big value={data.pastDue + data.readOnly} label={`Past due${data.readOnly ? ` (${data.readOnly} read-only)` : ''}`} tone={data.pastDue + data.readOnly ? 'warn' : undefined} />
-          <Big value={naira(data.owedKobo)} label="Owed" />
+          <Big value={money(data.owedKobo)} label="Owed" />
         </>
       )
     case 'outreach':
@@ -177,12 +185,12 @@ function WidgetBody({ widget, data }: { widget: AdminWidget; data: any }) {
       ) : (
         <ul className="space-y-2">
           {data.latest.map((c: any) => (
-            <li key={c.id} className="flex items-center justify-between gap-2 text-xs">
+            <li key={c.id} className="flex flex-col gap-0.5 text-xs sm:flex-row sm:items-center sm:justify-between sm:gap-2">
               <span className="min-w-0">
                 <span className="block truncate text-sm font-medium text-rh-ink dark:text-white">{c.subject}</span>
                 <span className="text-neutral-500">{formatDistanceToNowStrict(c.at, { addSuffix: true })} · {c.status}</span>
               </span>
-              <span className="shrink-0 text-right tabular-nums text-neutral-500">
+              <span className="tabular-nums text-neutral-500 sm:shrink-0 sm:text-right">
                 <span className="font-semibold text-rh-ink dark:text-white">{c.sent}</span> sent
                 {c.opened !== null && (
                   <>
@@ -207,7 +215,7 @@ function WidgetBody({ widget, data }: { widget: AdminWidget; data: any }) {
       return grid(
         <>
           <Big value={data.waiting} label="Waiting" />
-          <Big value={naira(data.waitingKobo)} label="To pay out" />
+          <Big value={money(data.waitingKobo)} label="To pay out" />
           <Big value={data.failed} label="Failed" tone={data.failed ? 'warn' : undefined} />
         </>
       )
@@ -279,7 +287,7 @@ export default function MyPage() {
       {editing && (
         <Panel title="Choose widgets" description={access.full ? 'Everything on the platform.' : 'Widgets for the pages you can open.'}>
           <div className="space-y-4 p-5 pt-2">
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
               {GROUPS.map((group) => {
                 const items = allowed.filter((w) => w.group === group)
                 if (!items.length) return null
@@ -318,7 +326,7 @@ export default function MyPage() {
           <p className="p-8 text-center text-sm text-neutral-500">No widgets for your pages yet. A full admin can add pages for you in Admin access.</p>
         </Panel>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
           {widgets.map((w) => (
             <Card key={w.key} widget={w} wide={w.key === 'contacts' || w.key === 'emails'}>
               <WidgetBody widget={w} data={summary === undefined ? undefined : summary?.[w.key] ?? null} />
