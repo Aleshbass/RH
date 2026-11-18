@@ -2752,6 +2752,10 @@ export default defineSchema({
     runTransferId: v.optional(v.id("payoutRunTransfers")),
     skipRunId: v.optional(v.id("payoutRuns")), // an admin took it out of this run
     noteNudgedAt: v.optional(v.number()),
+    // A Friday run went by without paying it: the first Friday it missed, and the last Friday
+    // we told the physio about (one message per missed Friday)
+    dueSince: v.optional(v.string()),
+    dueNoticeWeek: v.optional(v.string()),
     // Set by admins from /dashboard/admin/payouts
     transferReference: v.optional(v.string()),
     adminNote: v.optional(v.string()),

@@ -13,12 +13,14 @@ import { currentPaystackMode } from "./helpers/paystackMode";
 import { randomString } from "./helpers/partnerShared";
 import { appLink } from "./helpers/appUrl";
 import { formatLagos } from "./helpers/lagosTime";
+import { platformAdminEmails } from "./helpers/adminRecipients";
 import {
   CONCERN_WINDOW_MS,
   NOTE_DUE_MS,
   PATIENT_CONCERN_REASON,
   firstSessionNoteAt,
   fridayOnOrAfter,
+  lagosDayKey,
   lagosDayToMs,
   nextRunFriday,
   openConcernFor,
@@ -630,6 +632,7 @@ const sendEmail = makeFunctionReference<
     buttonLabel?: string;
     buttonUrl?: string;
     footnote?: string;
+    skipGreeting?: boolean;
   }
 >("actions/emails/sendPatientCareEmail:sendPatientCareEmail");
 
@@ -1045,6 +1048,95 @@ export const sendPayoutNoteNudges = internalMutation({
       nudged += 1;
     }
     return { nudged };
+  },
+});
+
+/** The unpaid run whose Friday has gone by (from the Saturday after), with its physio lines. */
+async function overdueRun(ctx: QueryCtx | MutationCtx, now: number) {
+  const run = await draftRun(ctx);
+  if (!run || run.weekOf >= lagosDayKey(now)) return null;
+  const lines = (
+    await ctx.db
+      .query("payouts")
+      .withIndex("by_run", (q) => q.eq("runId", run._id))
+      .take(RUN_READ_CAP)
+  ).filter((p) => p.status === "pending" && p.type === "physiotherapist_earning" && p.paystackMode !== "test");
+  return lines.length > 0 ? { run, lines } : null;
+}
+
+const sessionsLabel = (n: number) => `${n} ${n === 1 ? "session" : "sessions"}`;
+
+/**
+ * Daily, 09:00 Lagos: when a Friday run hasn't been paid, each physio in it hears once per missed
+ * Friday that their money is due and not sent yet (bell, push and email), and the team is
+ * reminded every day until someone presses Pay all.
+ */
+export const sendPayoutDueReminders = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const now = Date.now();
+    const overdue = await overdueRun(ctx, now);
+    if (!overdue) return { physios: 0, totalKobo: 0 };
+    const { run, lines } = overdue;
+
+    const byPhysio = new Map<Id<"users">, Doc<"payouts">[]>();
+    for (const line of lines) byPhysio.set(line.userId, [...(byPhysio.get(line.userId) ?? []), line]);
+
+    let told = 0;
+    let earliest = run.weekOf;
+    for (const [userId, rows] of byPhysio) {
+      const dueSince = rows.map((r) => r.dueSince ?? run.weekOf).sort()[0]!;
+      if (dueSince < earliest) earliest = dueSince;
+      if (rows.every((r) => r.dueNoticeWeek === run.weekOf)) continue;
+      for (const row of rows) await ctx.db.patch(row._id, { dueSince: row.dueSince ?? run.weekOf, dueNoticeWeek: run.weekOf });
+
+      const user = await ctx.db.get(userId);
+      if (!user || user.deletedAt) continue;
+      const amount = koboToNaira(sumKobo(rows));
+      const bank = await payoutBankAccount(ctx, userId);
+      const due = `Your payout of ${amount} for ${sessionsLabel(rows.length)} was due on ${fridayLabel(dueSince)}, and we haven't sent it yet.`;
+      const next = bank
+        ? "We're on it, and we'll let you know as soon as it's paid. You don't need to do anything."
+        : "Add your bank account in Settings → Payouts so we can send it.";
+      await notifyUser(ctx, userId, "payout_due", "Your payout is due", `${due} ${next}`, bank ? `${PHYSIO_BILLING}#payouts` : PHYSIO_PAYOUT_SETTINGS, "high");
+      if (user.email) {
+        await ctx.scheduler.runAfter(0, sendEmail, {
+          to: user.email,
+          subject: `Your Rehabify payout of ${amount} is due`,
+          greetingName: user.firstName ?? undefined,
+          heading: "Your payout is due",
+          paragraphs: [
+            due,
+            bank
+              ? `We're sorry for the wait. We're on it, and it will go to your ${bank.bankName} account ending ${bank.accountNumber.slice(-4)}. We'll email your statement as soon as it's paid. You don't need to do anything.`
+              : "We can't send it until you add your bank account. Add it in Settings → Payouts and we'll send it in the next run.",
+          ],
+          buttonLabel: bank ? "View your payouts" : "Add your bank account",
+          buttonUrl: appLink(bank ? `${PHYSIO_BILLING}#payouts` : PHYSIO_PAYOUT_SETTINGS),
+          footnote: PROFESSIONAL_FOOTNOTE,
+        });
+      }
+      told += 1;
+    }
+
+    // The team, every day it stays unpaid
+    const total = koboToNaira(sumKobo(lines));
+    const physios = `${byPhysio.size} ${byPhysio.size === 1 ? "physio" : "physios"}`;
+    const title = `Payouts not sent: ${total} due to ${physios}`;
+    const body = `${total} for ${sessionsLabel(lines.length)} has been due since ${fridayLabel(earliest)}. Open Payouts, check the run and press Pay all.`;
+    await notifyAdmins(ctx, title, body, ADMIN_PAYOUTS);
+    for (const to of platformAdminEmails()) {
+      await ctx.scheduler.runAfter(0, sendEmail, {
+        to,
+        subject: title,
+        skipGreeting: true,
+        heading: title,
+        paragraphs: [body, "The physios in this run have been told their payout is due and not sent yet."],
+        buttonLabel: "Open Payouts",
+        buttonUrl: appLink(ADMIN_PAYOUTS),
+      });
+    }
+    return { physios: byPhysio.size, told, totalKobo: sumKobo(lines) };
   },
 });
 
@@ -1796,6 +1888,8 @@ export const getMyPayouts = query({
           availableAt: info.availableAt,
           heldReason: info.heldReason,
           runWeekOf: draft && p.runId === draft._id ? draft.weekOf : null,
+          // The run's Friday went by without paying it
+          dueSince: draft && p.runId === draft._id && draft.weekOf < lagosDayKey(now) ? (p.dueSince ?? draft.weekOf) : null,
           writeNoteHref:
             info.stage === "awaiting_note" && d.appointment ? `/dashboard/physiotherapist/patients/${d.appointment.patientId}?tab=notes` : null,
           completedAt: p.completedAt ?? null,

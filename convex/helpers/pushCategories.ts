@@ -85,6 +85,8 @@ const CATEGORY_OF: Record<string, PushCategory> = {
   invoice_payment_reminder: "payments",
   payout_completed: "payments",
   payout_failed: "payments",
+  payout_due: "payments",
+  payout_note_due: "payments",
   refund_issued: "payments",
   // Reminders
   appointment_reminder: "reminders",

@@ -41,6 +41,7 @@ type PayoutLine = {
   availableAt: number | null
   heldReason: string | null
   runWeekOf: string | null
+  dueSince: string | null
   writeNoteHref: string | null
   completedAt: number | null
   transferReference: string | null
@@ -93,7 +94,9 @@ function lineDetail(line: PayoutLine, nextRunFriday: string) {
     case 'pending':
       return line.availableAt ? `Available on ${dayTime(line.availableAt)}` : 'Pending'
     case 'available':
-      return `In the run on ${friday(line.runWeekOf ?? nextRunFriday)}`
+      return line.dueSince
+        ? `Due since ${friday(line.dueSince)}. Not sent yet: we’re on it.`
+        : `In the run on ${friday(line.runWeekOf ?? nextRunFriday)}`
     case 'on_hold':
       return line.heldReason ?? 'On hold'
     case 'paying':
@@ -125,6 +128,7 @@ export function PhysioPayouts() {
   if (data === null) return null
 
   const paidByHand = grouped.get('paid') ?? []
+  const dueLines = (grouped.get('available') ?? []).filter((line) => line.dueSince)
   const totals = (stage: Stage) => (grouped.get(stage) ?? []).reduce((sum, line) => sum + line.amountKobo, 0)
   const hasAnything = Boolean(data && (data.lines.length > 0 || data.statements.length > 0))
 
@@ -155,6 +159,14 @@ export function PhysioPayouts() {
                 <Link href="/dashboard/physiotherapist/settings/payout" className="font-semibold underline underline-offset-2">
                   Add account
                 </Link>
+              </p>
+            )}
+
+            {dueLines.length > 0 && (
+              <p className="rounded-2xl bg-pt-amber-bg px-4 py-3 text-sm text-pt-amber-fg">
+                {naira(dueLines.reduce((sum, line) => sum + line.amountKobo, 0))} for {dueLines.length}{' '}
+                {dueLines.length === 1 ? 'session' : 'sessions'} was due on {friday(dueLines.map((line) => line.dueSince!).sort()[0]!)} and
+                hasn’t been sent yet. We’re on it, and we’ll let you know as soon as it’s paid.
               </p>
             )}
 

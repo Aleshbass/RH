@@ -224,6 +224,13 @@ crons.interval(
   internal.payouts.sendPayoutNoteNudges,
   {}
 );
+// 09:00 WAT: a Friday run that went unpaid. Physios hear once per missed Friday; the team daily.
+crons.daily(
+  "payout-due-reminders",
+  { hourUTC: 8, minuteUTC: 0 },
+  internal.payouts.sendPayoutDueReminders,
+  {}
+);
 
 // Clinic inventory: low stock and maintenance coming up, once per item. 07:30 WAT.
 crons.daily(

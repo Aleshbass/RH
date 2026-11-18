@@ -5,7 +5,7 @@
  * their money records must stay, so they're listed with the reason and left alone.
  */
 import { ConvexError, v } from "convex/values";
-import { mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
+import { internalMutation, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { requireAdmin } from "./helpers/partnerAccess";
 import { personName } from "./helpers/patientFacts";
@@ -111,5 +111,38 @@ export const deleteTestAccounts = mutation({
       }
     }
     return { deleted, skipped };
+  },
+});
+
+// Tables an operator may clear test rows from, after a snapshot backup and an exact list of ids.
+// Money tables are limited to payouts (test-mode payout lines); payments and invoices stay.
+const PURGEABLE = new Set([
+  "analytics_events", "appointments", "conversations", "cookieConsents", "homeVisitSafety", "messages",
+  "notifications", "patientJoinLinks", "patientPhysiotherapistRelationships", "patientPinLogins",
+  "patientProfiles", "policyAcceptances", "users", "payouts",
+]);
+
+/** Operator only (CLI with the deploy key): delete the listed test rows from one table. */
+export const purgeDocsInternal = internalMutation({
+  args: { table: v.string(), ids: v.array(v.string()) },
+  handler: async (ctx, args) => {
+    if (!PURGEABLE.has(args.table)) throw new ConvexError(`Table ${args.table} isn't on the purge list`);
+    if (args.ids.length > 200) throw new ConvexError("Up to 200 ids at a time");
+    let deleted = 0;
+    let missing = 0;
+    for (const raw of args.ids) {
+      const id = ctx.db.normalizeId(args.table as "users", raw);
+      if (!id || !(await ctx.db.get(id))) {
+        missing++;
+        continue;
+      }
+      if (args.table === "users") {
+        const user = await ctx.db.get(id);
+        if (user && user.role !== "patient") throw new ConvexError("Only patient accounts can be purged here");
+      }
+      await ctx.db.delete(id);
+      deleted++;
+    }
+    return { deleted, missing };
   },
 });
