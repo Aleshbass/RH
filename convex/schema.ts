@@ -319,6 +319,8 @@ export default defineSchema({
     endsWhenPaidNoticeAt: v.optional(v.number()),
     // Card checks started from "Add a card" (newest last): only these may save a card
     cardCheckReferences: v.optional(v.array(v.string())),
+    // The charge date the "renews soon" reminder was sent for (once per charge)
+    renewalReminderFor: v.optional(v.number()),
     updatedBy: v.optional(v.id("users")),
     createdAt: v.number(),
     updatedAt: v.number(),

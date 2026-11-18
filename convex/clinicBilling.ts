@@ -1229,6 +1229,52 @@ function subscriptionView(sub: ClinicSubscription) {
 
 // ─── Daily job ───────────────────────────────────────────────────────────────
 
+const RENEWAL_REMINDER_DAYS = 3;
+
+/** "Your plan renews on …": by email and bell, 3 days before each charge (or the end, if cancelled). */
+async function sendRenewalReminder(ctx: MutationCtx, sub: ClinicSubscription, clinic: Doc<"clinics">, chargeAt: number) {
+  const name = planName(sub.plan);
+  const when = longDate(chargeAt);
+  let title: string;
+  let paragraphs: string[];
+  if (sub.cancelAtPeriodEnd) {
+    title = `Your ${name} plan ends on ${when}`;
+    paragraphs = [
+      `As you asked, ${clinic.name}'s ${name} plan ends on ${when}, and your card won't be charged again.`,
+      "Changed your mind? You can keep your plan from your plan page before then.",
+    ];
+  } else {
+    const card = await ctx.db
+      .query("clinicBillingCards")
+      .withIndex("by_clinic_status", (q) => q.eq("clinicId", clinic._id).eq("status", "active"))
+      .first();
+    const prorations = (sub.pendingProrations ?? []).reduce((sum, p) => sum + p.amountKobo, 0);
+    const amount = naira(sub.monthlyFeeKobo + prorations);
+    const over = Math.max(0, (sub.activeProgrammes ?? 0) - sub.programmeAllowance);
+    title = `Your ${name} plan renews on ${when}`;
+    paragraphs = [
+      card
+        ? `We'll charge ${amount} to your ${card.brand ? card.brand.charAt(0).toUpperCase() + card.brand.slice(1) : "card"}${card.last4 ? ` ending ${card.last4}` : ""} on ${when}, with a receipt by email.`
+        : `Your invoice for ${amount} will be ready on ${when}, payable within 7 days. Add a card on your plan page and we'll charge it automatically instead.`,
+      over > 0
+        ? `You have ${over} active patient ${over === 1 ? "programme" : "programmes"} over your allowance of ${sub.programmeAllowance}, so ${naira(over * OVERAGE_UNIT_KOBO)} may be added to it.`
+        : `That covers ${clinic.name}'s plan for the next month.`,
+      "To change or cancel your plan, open your plan page before then.",
+    ];
+  }
+  await emailClinic(ctx, clinic, { subject: title, heading: title, paragraphs, buttonLabel: "Open your plan", buttonPath: CLINIC_PLAN_PAGE });
+  const now = Date.now();
+  await insertNotification(ctx, {
+    userId: clinic.ownerId,
+    type: "clinic_plan_renewal",
+    priority: "medium",
+    status: "pending",
+    payload: { title, body: paragraphs[0]!, data: { entityType: "clinic_subscription", actionUrl: CLINIC_PLAN_PAGE } },
+    createdAt: now,
+    updatedAt: now,
+  });
+}
+
 /** Rolls periods and issues invoices, sends warnings, reminders and notices, sets the status. */
 export const processClinicSubscription = internalMutation({
   args: { subscriptionId: v.id("clinicSubscriptions") },
@@ -1320,6 +1366,19 @@ export const processClinicSubscription = internalMutation({
         sub = (await ctx.db.get(sub._id))!;
         await issuePeriodInvoice(ctx, sub, clinic, closed, now);
       }
+    }
+
+    // 1b. A few days before the next charge: when and how much (or that the plan ends, if cancelled)
+    const nextChargeAt = sub.currentPeriodEnd ?? (sub.currentPeriodStart === undefined ? sub.billingStartsAt : undefined);
+    if (
+      nextChargeAt !== undefined &&
+      now < nextChargeAt &&
+      now >= nextChargeAt - RENEWAL_REMINDER_DAYS * DAY_MS &&
+      sub.renewalReminderFor !== nextChargeAt
+    ) {
+      await ctx.db.patch(sub._id, { renewalReminderFor: nextChargeAt, updatedAt: now });
+      sub = (await ctx.db.get(sub._id))!;
+      await sendRenewalReminder(ctx, sub, clinic, nextChargeAt);
     }
 
     // 2. Allowance warnings, once per threshold per period
@@ -2162,6 +2221,60 @@ export const adminVoidSubscriptionInvoice = mutation({
 });
 
 /** Clinics that are past due or read-only, for the admin clinics list. */
+/** Admin › Clinic plans: every clinic with a plan, what it chose, its card and what it has paid. */
+export const adminListClinicPlans = query({
+  args: {},
+  handler: async (ctx) => {
+    await ensureUserRole(ctx, ["admin"], "clinicBilling:adminListClinicPlans");
+    const subs = await ctx.db.query("clinicSubscriptions").order("desc").take(300);
+    const rows = await Promise.all(
+      subs.map(async (sub) => {
+        const [clinic, card, invoices] = await Promise.all([
+          ctx.db.get(sub.clinicId),
+          ctx.db
+            .query("clinicBillingCards")
+            .withIndex("by_clinic_status", (q) => q.eq("clinicId", sub.clinicId).eq("status", "active"))
+            .first(),
+          ctx.db
+            .query("clinicSubscriptionInvoices")
+            .withIndex("by_clinic_status", (q) => q.eq("clinicId", sub.clinicId))
+            .take(60),
+        ]);
+        const mine = invoices.filter((inv) => inv.subscriptionId === sub._id);
+        const paid = mine.filter((inv) => inv.status === "paid");
+        const open = mine.filter((inv) => inv.status === "open");
+        const chooser = sub.chosenBy ? await ctx.db.get(sub.chosenBy) : null;
+        const nextChargeAt =
+          sub.status === "cancelled" || sub.cancelAtPeriodEnd
+            ? null
+            : (sub.currentPeriodEnd ?? (sub.currentPeriodStart === undefined ? sub.billingStartsAt : null));
+        return {
+          clinicId: sub.clinicId,
+          clinicName: clinic?.name ?? "Clinic",
+          clinicNumber: clinic?.clinicNumber ?? null,
+          plan: sub.plan,
+          planName: planName(sub.plan),
+          monthlyFeeKobo: sub.monthlyFeeKobo,
+          status: sub.status,
+          cancelling: Boolean(sub.cancelAtPeriodEnd),
+          chosenAt: sub.chosenAt ?? null,
+          chosenByName: chooser ? `${chooser.firstName ?? ""} ${chooser.lastName ?? ""}`.trim() || null : null,
+          selfServe: Boolean(sub.chosenAt),
+          card: card ? { brand: card.brand ?? null, last4: card.last4 ?? null } : null,
+          billingStartsAt: sub.billingStartsAt,
+          nextChargeAt,
+          paidKobo: paid.reduce((sum, inv) => sum + (inv.paidAmountKobo ?? inv.amountKobo), 0),
+          paidCount: paid.length,
+          lastPaidAt: paid.reduce<number | null>((latest, inv) => (inv.paidAt && (!latest || inv.paidAt > latest) ? inv.paidAt : latest), null),
+          owedKobo: open.reduce((sum, inv) => sum + inv.amountKobo, 0),
+          createdAt: sub.createdAt,
+        };
+      })
+    );
+    return rows.sort((a, b) => (b.chosenAt ?? b.createdAt) - (a.chosenAt ?? a.createdAt));
+  },
+});
+
 export const adminClinicBillingAttention = query({
   args: {},
   handler: async (ctx) => {

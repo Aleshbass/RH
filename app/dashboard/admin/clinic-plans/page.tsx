@@ -17,6 +17,7 @@ import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
 import { AdminPage, PageHeader, Panel, inputClass, primaryButtonClass } from '@/components/admin/ui'
+import { ClinicPlansList } from '@/components/admin/clinics/ClinicPlansList'
 import { isUnlimitedSeats, type ClinicPlanCatalogue, type ClinicPlanId } from '@/lib/clinicPlans'
 import { cn } from '@/lib/utils'
 
@@ -121,6 +122,7 @@ export default function ClinicPlansPage() {
         title="Clinic plans"
         description="The monthly subscription prices and what each plan says on the website’s clinic page. Clinics already on a plan keep their current price until you change their plan in their Subscription tab."
       />
+      <ClinicPlansList />
       {!data || !plans ? (
         <Skeleton className="h-96 rounded-2xl" />
       ) : (
