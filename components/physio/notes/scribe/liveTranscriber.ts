@@ -11,7 +11,11 @@
  *
  * Lead-in: the live link takes a few seconds to open, and people start talking as soon as they
  * tap Start. Until it's open the audio is captured the backup way, so the first words are
- * transcribed too; capture stops shortly after the link opens (a small overlap, never a gap).
+ * transcribed too (a small overlap, never a gap). The same happens while it reconnects.
+ *
+ * Safety net: while live, the last few minutes of audio stay in memory. A turn the live link
+ * didn't finish (the connection dropped, its transcription failed, or Stop came first) is
+ * transcribed from that audio the backup way instead of being lost.
  *
  * Audio is never stored anywhere: pieces live in memory only until they are transcribed.
  */
@@ -60,8 +64,13 @@ const MAX_PIECE_BLOCKS = 200
 /** Keep at most ten minutes of audio waiting to be sent; older pieces are dropped (and said so) */
 const MAX_QUEUED_BLOCKS = 6000
 const RETRY_DELAYS_MS = [1500, 3000, 6000, 10000, 15000, 20000]
-/** Lead-in capture runs on this long after the live link opens, so no words fall in between */
-const LEAD_IN_OVERLAP_MS = 400
+/** The pause that ends a live turn (convex/helpers/llm.ts turn_detection), less a little */
+const TURN_PAUSE_MS = 600
+/** Audio kept in memory while live (3 minutes), to re-transcribe a turn the live link lost */
+const RECENT_MAX_BLOCKS = 1800
+/** How far before a lost turn's start to begin (the turn starts before the server notices it) */
+const RECOVER_BEFORE_MS = 1200
+const BLOCK_MS = 100
 
 let workletLoaded: WeakMap<BaseAudioContext, Promise<void>> | null = null
 function loadWorklet(context: AudioContext) {
@@ -88,7 +97,10 @@ export class LiveTranscriber {
   private channel: RTCDataChannel | null = null
   private sender: RTCRtpSender | null = null
   private dropTimer: ReturnType<typeof setTimeout> | null = null
-  private items = new Map<string, { at: number; text: string; final: boolean }>()
+  private items = new Map<string, { at: number; text: string; final: boolean; stoppedAt?: number }>()
+  /** When this live link started hearing audio, and when the last turn ended (page clock) */
+  private liveSince = 0
+  private lastStoppedAt = 0
 
   // Backup
   private context: AudioContext | null = null
@@ -102,6 +114,15 @@ export class LiveTranscriber {
   private pieceCount = 0
   /** Capturing the backup way while the live link connects */
   private leadIn = false
+  /** While live: the last few minutes of audio, in memory only (see the safety net above) */
+  private recent: { t: number; rms: number; block: Int16Array }[] = []
+  /**
+   * A new link joins mid-sentence and garbles that first sentence ("How has the right knee been"
+   * came back as "You've been"), so the lead-in carries on through the first live turn and the
+   * live link's version of that turn is dropped.
+   */
+  private awaitingFirstTurn = false
+  private covered = new Set<string>()
 
   constructor(
     private readonly key: string,
@@ -135,7 +156,7 @@ export class LiveTranscriber {
   async setStream(stream: MediaStream | null) {
     this.stream = stream
     if (this.mode === 'live') await this.applyTrack()
-    if (this.mode === 'backup' || this.leadIn) this.connectBackupSource()
+    if (this.context && this.node) this.connectBackupSource()
   }
 
   pause() {
@@ -158,8 +179,9 @@ export class LiveTranscriber {
       this.send({ type: 'input_audio_buffer.commit' })
       const until = Date.now() + STOP_WAIT_MS
       while (Date.now() < until && [...this.items.values()].some((i) => !i.final)) await sleep(150)
+      if ([...this.items.values()].some((i) => !i.final)) this.recoverOpenTurns()
     }
-    // Backup pieces, and lead-in pieces still being transcribed
+    // Backup pieces, lead-in pieces and recovered turns still being transcribed
     this.cutPiece()
     if (this.mode === 'backup' || this.queue.length || this.sending) {
       const until = Date.now() + 30_000
@@ -223,7 +245,8 @@ export class LiveTranscriber {
       if (!this.stopped && this.pc === pc) void this.handleDrop()
     }
     this.setMode('live')
-    this.endLeadIn()
+    // The lead-in runs on to the end of the first live turn (see awaitingFirstTurn)
+    this.awaitingFirstTurn = this.leadIn
   }
 
   // ── Lead-in ───────────────────────────────────────────────────────────────
@@ -237,7 +260,7 @@ export class LiveTranscriber {
       if (this.stopped || this.context !== context) return
       const node = new AudioWorkletNode(context, 'scribe-pcm')
       this.node = node
-      node.port.onmessage = (event: MessageEvent<{ pcm: ArrayBuffer; rms: number }>) => this.onBlock(new Int16Array(event.data.pcm), event.data.rms)
+      node.port.onmessage = (event: MessageEvent<{ pcm: ArrayBuffer; rms: number }>) => this.onCapture(new Int16Array(event.data.pcm), event.data.rms)
       this.connectBackupSource()
       if (context.state === 'suspended') await context.resume()
       this.leadIn = true
@@ -246,16 +269,62 @@ export class LiveTranscriber {
     }
   }
 
-  /** The live link is open: finish the lead-in piece a moment later and stop capturing. */
+  /**
+   * The first live turn has ended (the server says so after its pause): finish the lead-in there.
+   * A piece begun after the turn ended is the next turn, which the live link has in full: drop it.
+   */
   private endLeadIn() {
     if (!this.leadIn) return
-    const context = this.context
-    setTimeout(() => {
-      if (!this.leadIn || this.mode !== 'live' || this.context !== context) return
-      this.leadIn = false
-      this.cutPiece()
-      this.closeBackup()
-    }, LEAD_IN_OVERLAP_MS)
+    this.leadIn = false
+    const turnEndedAt = performance.now() - TURN_PAUSE_MS
+    if (this.piece.length && this.pieceAt > turnEndedAt) {
+      this.piece = []
+      this.quietBlocks = 0
+      this.emitPiece(`${this.key}:b${this.pieceCount}`, '', true, this.pieceAt)
+    } else this.cutPiece()
+    // Capture carries on into the safety net (onCapture)
+  }
+
+  /** A worklet block: lead-in and backup pieces, or the safety net while live. */
+  private onCapture(block: Int16Array, rms: number) {
+    if (this.paused || this.stopped) return
+    if (this.leadIn || this.mode === 'backup') {
+      this.onBlock(block, rms)
+      return
+    }
+    if (this.mode !== 'live') return
+    this.recent.push({ t: performance.now(), rms, block })
+    if (this.recent.length > RECENT_MAX_BLOCKS) this.recent.splice(0, this.recent.length - RECENT_MAX_BLOCKS)
+  }
+
+  /** Turns the live link didn't finish: their text comes from memory, from where the first one began. */
+  private recoverOpenTurns() {
+    const open = [...this.items.entries()].filter(([, item]) => !item.final)
+    const from = open.length
+      ? Math.min(...open.map(([, item]) => item.at)) - RECOVER_BEFORE_MS
+      : (this.lastStoppedAt || this.liveSince) - 500
+    for (const [id, item] of open) {
+      item.final = true
+      this.emit(id, '', true)
+    }
+    this.queueRecent(from, Infinity)
+    this.recent = []
+  }
+
+  /** Queues the remembered audio between two page-clock times for transcription (if anyone spoke). */
+  private queueRecent(from: number, to: number) {
+    const blocks = this.recent.filter((r) => r.t - BLOCK_MS >= from && r.t - BLOCK_MS <= to)
+    if (!blocks.some((r) => r.rms >= SILENCE_RMS)) return
+    for (let i = 0; i < blocks.length; i += MAX_PIECE_BLOCKS) {
+      const part = blocks.slice(i, i + MAX_PIECE_BLOCKS)
+      if (!part.some((r) => r.rms >= SILENCE_RMS)) continue
+      this.pieceCount++
+      const id = `${this.key}:b${this.pieceCount}`
+      const at = part[0].t - BLOCK_MS
+      this.emitPiece(id, '', false, at)
+      this.queue.push({ id, at, blocks: part.map((r) => r.block) })
+    }
+    void this.drain()
   }
 
   private async applyTrack() {
@@ -274,18 +343,32 @@ export class LiveTranscriber {
   private handleEvent(event: { type?: string; item_id?: string; delta?: string; transcript?: string; error?: { message?: string } }) {
     const id = event.item_id
     switch (event.type) {
+      case 'session.created':
+      case 'transcription_session.created':
+        this.liveSince = performance.now()
+        this.lastStoppedAt = 0
+        break
       case 'input_audio_buffer.speech_started':
         this.events.onSpeaking?.(true)
         if (id && !this.items.has(id)) {
           this.items.set(id, { at: performance.now(), text: '', final: false })
-          this.emit(id, '', false)
+          if (this.awaitingFirstTurn && this.leadIn) {
+            this.covered.add(id)
+            this.awaitingFirstTurn = false
+          } else this.emit(id, '', false)
         }
         break
       case 'input_audio_buffer.speech_stopped':
         this.events.onSpeaking?.(false)
+        this.lastStoppedAt = performance.now()
+        if (id) {
+          const item = this.items.get(id)
+          if (item) item.stoppedAt = this.lastStoppedAt
+          if (this.covered.has(id)) this.endLeadIn()
+        }
         break
       case 'conversation.item.input_audio_transcription.delta':
-        if (id) {
+        if (id && !this.covered.has(id)) {
           const item = this.items.get(id) ?? { at: performance.now(), text: '', final: false }
           item.text += event.delta ?? ''
           this.items.set(id, item)
@@ -293,7 +376,11 @@ export class LiveTranscriber {
         }
         break
       case 'conversation.item.input_audio_transcription.completed':
-        if (id) {
+        if (id && this.covered.has(id)) {
+          // The lead-in has this turn's words
+          const item = this.items.get(id)
+          if (item) item.final = true
+        } else if (id) {
           const item = this.items.get(id) ?? { at: performance.now(), text: '', final: false }
           item.text = (event.transcript ?? item.text).trim()
           item.final = true
@@ -304,9 +391,12 @@ export class LiveTranscriber {
       case 'conversation.item.input_audio_transcription.failed':
         if (id) {
           const item = this.items.get(id)
-          if (item) {
+          if (item && this.covered.has(id)) item.final = true
+          else if (item) {
+            // Its words come from memory instead
             item.final = true
-            this.emit(id, item.text, true)
+            this.emit(id, '', true)
+            this.queueRecent(item.at - RECOVER_BEFORE_MS, (item.stoppedAt ?? performance.now()) + 300)
           }
         }
         break
@@ -323,13 +413,10 @@ export class LiveTranscriber {
     if (this.dropTimer) clearTimeout(this.dropTimer)
     this.dropTimer = null
     this.closeLive()
-    // Words still coming for the dropped connection won't arrive: show what we have
-    for (const [id, item] of this.items) {
-      if (!item.final) {
-        item.final = true
-        this.emit(id, item.text, true)
-      }
-    }
+    // Words still coming for the dropped connection won't arrive: transcribe that audio from memory
+    this.recoverOpenTurns()
+    // Until the new link is open, capture the lead-in way so nothing said meanwhile is lost
+    if (this.context && this.node) this.leadIn = true
     if (this.reconnects < MAX_RECONNECTS) {
       this.reconnects++
       this.events.onNotice?.('The connection dropped. Reconnecting…')
@@ -362,8 +449,8 @@ export class LiveTranscriber {
 
   private async startBackup(notice: string) {
     this.closeLive()
-    // Still capturing from the lead-in: carry on the same way
-    if (this.leadIn && this.context && this.node) {
+    // Still capturing (lead-in or safety net): carry on the same way
+    if (this.context && this.node) {
       this.leadIn = false
       this.setMode('backup')
       this.events.onNotice?.(notice)
@@ -376,7 +463,7 @@ export class LiveTranscriber {
       await loadWorklet(context)
       const node = new AudioWorkletNode(context, 'scribe-pcm')
       this.node = node
-      node.port.onmessage = (event: MessageEvent<{ pcm: ArrayBuffer; rms: number }>) => this.onBlock(new Int16Array(event.data.pcm), event.data.rms)
+      node.port.onmessage = (event: MessageEvent<{ pcm: ArrayBuffer; rms: number }>) => this.onCapture(new Int16Array(event.data.pcm), event.data.rms)
       this.connectBackupSource()
       if (context.state === 'suspended') await context.resume()
       this.setMode('backup')
@@ -469,6 +556,7 @@ export class LiveTranscriber {
 
   private closeBackup() {
     this.leadIn = false
+    this.recent = []
     try {
       this.source?.disconnect()
       this.node?.disconnect()

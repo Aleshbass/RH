@@ -168,9 +168,10 @@ export async function createRealtimeTranscriptionSecret(opts: {
           input: {
             noise_reduction: opts.noiseReduction ? { type: opts.noiseReduction } : null,
             transcription: { model, prompt: opts.prompt, ...(opts.language ? { language: opts.language } : {}) },
-            // A 0.9 s pause ends a turn: shorter cut sentences at commas ("Heel slides, two sets of
-            // fifteen, | twice a day"), and the short pieces came back misheard or not at all
-            turn_detection: { type: "server_vad", threshold: 0.5, prefix_padding_ms: 500, silence_duration_ms: 900 },
+            // A 0.7 s pause ends a turn: 0.5 s cut sentences at commas and the short pieces came back
+            // misheard; much longer turns lose more if the link drops (the browser re-transcribes a
+            // lost turn from memory, components/physio/notes/scribe/liveTranscriber.ts)
+            turn_detection: { type: "server_vad", threshold: 0.5, prefix_padding_ms: 500, silence_duration_ms: 700 },
           },
         },
       },

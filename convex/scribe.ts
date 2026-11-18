@@ -411,7 +411,12 @@ async function safetyId(physioId: string): Promise<string> {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("").slice(0, 32);
 }
 
-const language = () => process.env.SCRIBE_LANGUAGE?.trim() || undefined;
+// English unless SCRIBE_LANGUAGE says otherwise ("auto" lets the model guess): left to guess, a short
+// clip in a Nigerian accent came back as Yoruba-looking text ("Better, sir" → "Bẹ́tọsọ")
+const language = () => {
+  const set = process.env.SCRIBE_LANGUAGE?.trim();
+  return set === "auto" ? undefined : set || "en";
+};
 
 /**
  * A short-lived key (10 minutes to connect) for the browser to stream one microphone to OpenAI's
