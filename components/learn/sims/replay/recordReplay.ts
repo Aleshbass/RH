@@ -20,8 +20,19 @@ const H = 1920
 const FPS = 30
 const INK = '#0b1312'
 const LIME = '#00cd0f'
-const STAGE = { x: 40, y: 176, w: 1000, h: 667 }
-const ZONE = { top: 1000, bottom: 1660 }
+// The scene fills the frame edge to edge as a tall shot (owner 2026-11-17: the wide picture was
+// small on phones); the conversation sits over its lower part, where the floor is
+const STAGE = { x: 0, y: 160, w: 1080, h: 1240 }
+const ZONE = { top: 1060, bottom: 1690 }
+/** The 2D drawings are 1440 × 960 with the patient near x 770: the tall crop of that, in drawing units. */
+const CROP_H = 940
+const CROP_W = Math.round((CROP_H * STAGE.w) / STAGE.h)
+const FOCUS_X: Record<string, number> = { tunde: 810 }
+function portraitArt(svg: string, character: string | undefined): string {
+  const cx = FOCUS_X[character ?? ''] ?? 770
+  const x = Math.round(Math.min(1440 - CROP_W, Math.max(0, cx - CROP_W / 2)))
+  return svg.replace('viewBox="0 0 1440 960" width="1440" height="960"', `viewBox="${x} ${960 - CROP_H} ${CROP_W} ${CROP_H}" width="${STAGE.w}" height="${STAGE.h}"`)
+}
 const INTRO = 2.6
 const OUTRO = 4.8
 
@@ -231,7 +242,7 @@ async function record(share: SimShare, opts: RecordOptions, mime: string, audio:
       if (scene.art2d) {
         const art2d = scene.art2d
         const shapes = await Promise.all(
-          (['x', 'e', 'a', 'o'] as const).map(async (m) => [m, await loadImage(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(sceneSvg(art2d, { mouth: m }))}`)] as const)
+          (['x', 'e', 'a', 'o'] as const).map(async (m) => [m, await loadImage(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(portraitArt(sceneSvg(art2d, { mouth: m }), art2d.character))}`)] as const)
         )
         art = Object.fromEntries(shapes.filter(([, img]) => img)) as Record<string, HTMLImageElement>
         if (!art.x) art = null
@@ -287,6 +298,10 @@ async function record(share: SimShare, opts: RecordOptions, mime: string, audio:
   const ctx = canvas.getContext('2d')!
   const face = document.createElement('canvas')
   const faceCtx = face.getContext('2d')!
+  const layer = document.createElement('canvas')
+  layer.width = W
+  layer.height = ZONE.bottom - ZONE.top + 20
+  const layerCtx = layer.getContext('2d')!
   const site = (process.env.NEXT_PUBLIC_LEARN_URL || window.location.origin).replace(/^https?:\/\//, '').replace(/\/+$/, '')
 
   // Caption cards, measured once
@@ -298,7 +313,7 @@ async function record(share: SimShare, opts: RecordOptions, mime: string, audio:
       return {
         h,
         draw: (g, top) => {
-          g.fillStyle = 'rgba(255,255,255,0.08)'
+          g.fillStyle = 'rgba(30,38,37,0.94)'
           roundRect(g, 60, top, 960, h, 30)
           g.fill()
           g.font = `400 34px ${fontBody}`
@@ -320,8 +335,12 @@ async function record(share: SimShare, opts: RecordOptions, mime: string, audio:
         h,
         draw: (g, top) => {
           g.font = `700 28px ${fontBody}`
-          g.fillStyle = patient ? LIME : 'rgba(255,255,255,0.6)'
+          g.fillStyle = patient ? LIME : 'rgba(255,255,255,0.8)'
+          g.shadowColor = 'rgba(0,0,0,0.7)'
+          g.shadowBlur = 10
           g.fillText(patient || !b.role ? b.name : `${b.name} · ${b.role}`, 76, top + 28)
+          g.shadowColor = 'transparent'
+          g.shadowBlur = 0
           g.fillStyle = patient ? '#ffffff' : '#e3f4e6'
           roundRect(g, 60, top + 44, width, bubble, 34)
           g.fill()
@@ -370,7 +389,7 @@ async function record(share: SimShare, opts: RecordOptions, mime: string, audio:
       return {
         h,
         draw: (g, top) => {
-          g.fillStyle = b.abnormal ? 'rgba(244,63,94,0.18)' : 'rgba(255,255,255,0.08)'
+          g.fillStyle = b.abnormal ? 'rgba(53,27,32,0.95)' : 'rgba(30,38,37,0.94)'
           roundRect(g, 60, top, 960, h, 30)
           g.fill()
           g.strokeStyle = b.abnormal ? 'rgba(251,113,133,0.6)' : 'rgba(255,255,255,0.16)'
@@ -417,7 +436,8 @@ async function record(share: SimShare, opts: RecordOptions, mime: string, audio:
   const drawStage = (shot: Shot, at: number, dt: number) => {
     const media = shot.scene ? scenes.get(shot.scene) : undefined
     ctx.save()
-    roundRect(ctx, STAGE.x, STAGE.y, STAGE.w, STAGE.h, 40)
+    ctx.beginPath()
+    ctx.rect(STAGE.x, STAGE.y, STAGE.w, STAGE.h)
     ctx.clip()
     ctx.fillStyle = '#14211f'
     ctx.fillRect(STAGE.x, STAGE.y, STAGE.w, STAGE.h)
@@ -433,7 +453,7 @@ async function record(share: SimShare, opts: RecordOptions, mime: string, audio:
     }
     if (media?.art) {
       const img = media.art[shape] ?? media.art.x
-      cover(img, 1440, 960)
+      cover(img, STAGE.w, STAGE.h)
     } else if (media?.video && media.video.readyState >= 2) {
       if (media.geo) {
         if (face.width !== media.geo.w) face.width = media.geo.w
@@ -442,27 +462,35 @@ async function record(share: SimShare, opts: RecordOptions, mime: string, audio:
         cover(face, media.geo.w, media.geo.h)
       } else cover(media.video, media.video.videoWidth || 720, media.video.videoHeight || 480)
     } else if (media?.still) cover(media.still, media.still.naturalWidth, media.still.naturalHeight)
-    // A soft fade into the page at the bottom of the scene
-    const fade = ctx.createLinearGradient(0, STAGE.y + STAGE.h - 160, 0, STAGE.y + STAGE.h)
+    // Blend into the header, and darken the lower part where the captions sit
+    const top = ctx.createLinearGradient(0, STAGE.y, 0, STAGE.y + 90)
+    top.addColorStop(0, 'rgba(11,19,18,0.9)')
+    top.addColorStop(1, 'rgba(11,19,18,0)')
+    ctx.fillStyle = top
+    ctx.fillRect(STAGE.x, STAGE.y, STAGE.w, 90)
+    const fadeFrom = ZONE.top - 200
+    const fade = ctx.createLinearGradient(0, fadeFrom, 0, STAGE.y + STAGE.h)
     fade.addColorStop(0, 'rgba(11,19,18,0)')
-    fade.addColorStop(1, 'rgba(11,19,18,0.55)')
+    fade.addColorStop(0.45, 'rgba(11,19,18,0.82)')
+    fade.addColorStop(1, 'rgba(11,19,18,1)')
     ctx.fillStyle = fade
-    ctx.fillRect(STAGE.x, STAGE.y + STAGE.h - 160, STAGE.w, 160)
+    ctx.fillRect(STAGE.x, fadeFrom, STAGE.w, STAGE.y + STAGE.h - fadeFrom)
     ctx.restore()
     // Who is speaking
     if (beat?.kind === 'speech') {
       ctx.font = `700 28px ${fontBody}`
       const label = `${beat.name} speaking`
       const w = ctx.measureText(label).width + 76
-      ctx.fillStyle = 'rgba(3,8,7,0.7)'
-      roundRect(ctx, STAGE.x + 28, STAGE.y + STAGE.h - 78, w, 54, 27)
+      const y = ZONE.top - 96
+      ctx.fillStyle = 'rgba(3,8,7,0.75)'
+      roundRect(ctx, 60, y, w, 54, 27)
       ctx.fill()
       ctx.fillStyle = LIME
       ctx.beginPath()
-      ctx.arc(STAGE.x + 56, STAGE.y + STAGE.h - 51, 8 + Math.sin(at * 10) * 2, 0, Math.PI * 2)
+      ctx.arc(88, y + 27, 8 + Math.sin(at * 10) * 2, 0, Math.PI * 2)
       ctx.fill()
       ctx.fillStyle = '#ffffff'
-      ctx.fillText(label, STAGE.x + 78, STAGE.y + STAGE.h - 41)
+      ctx.fillText(label, 110, y + 37)
     }
   }
 
@@ -485,56 +513,69 @@ async function record(share: SimShare, opts: RecordOptions, mime: string, audio:
 
     drawStage(shot, at, dt)
 
-    // Patient line and the case clock
-    ctx.font = `700 40px ${fontBody}`
+    // Patient and the case clock, as chips on the picture
+    ctx.font = `700 32px ${fontBody}`
+    const who = `${c.patient.name}, ${c.patient.age}`
+    ctx.fillStyle = 'rgba(3,8,7,0.7)'
+    roundRect(ctx, 40, STAGE.y + 24, ctx.measureText(who).width + 56, 60, 30)
+    ctx.fill()
     ctx.fillStyle = '#ffffff'
-    ctx.fillText(`${c.patient.name}, ${c.patient.age}`, 60, STAGE.y + STAGE.h + 66)
-    ctx.font = `400 30px ${fontBody}`
-    ctx.fillStyle = 'rgba(255,255,255,0.55)'
-    ctx.fillText(c.setting, 60, STAGE.y + STAGE.h + 110)
+    ctx.fillText(who, 68, STAGE.y + 65)
     let caseClock = 0
     for (let i = 0; i <= Math.min(shot.index, share.beats.length - 1); i++) {
       const b = share.beats[i]
       if (b?.kind === 'action') caseClock = b.clockSec
     }
-    ctx.font = `600 34px ui-monospace, Menlo, monospace`
-    ctx.fillStyle = 'rgba(255,255,255,0.75)'
+    ctx.font = `600 32px ui-monospace, Menlo, monospace`
+    const clockW = ctx.measureText(clock(caseClock)).width + 48
+    ctx.fillStyle = 'rgba(3,8,7,0.7)'
+    roundRect(ctx, W - 40 - clockW, STAGE.y + 24, clockW, 60, 30)
+    ctx.fill()
+    ctx.fillStyle = '#ffffff'
     ctx.textAlign = 'right'
-    ctx.fillText(clock(caseClock), W - 60, STAGE.y + STAGE.h + 66)
+    ctx.fillText(clock(caseClock), W - 64, STAGE.y + 65)
     ctx.textAlign = 'left'
 
     // Conversation: newest at the bottom, older ones scroll up and fade
     if (shot.kind !== 'intro') {
       const last = Math.min(shot.index, share.beats.length - 1)
       const enter = shot.kind === 'beat' ? ease((at - shot.start) / 0.35) : 1
-      ctx.save()
-      ctx.beginPath()
-      ctx.rect(0, ZONE.top - 10, W, ZONE.bottom - ZONE.top + 20)
-      ctx.clip()
+      const g = layerCtx
+      g.clearRect(0, 0, layer.width, layer.height)
+      g.save()
+      g.translate(0, -(ZONE.top - 10))
       let bottom = ZONE.bottom
       for (let i = last; i >= 0 && bottom > ZONE.top - 400; i--) {
         const card = cards[i]
         const top = bottom - card.h
-        ctx.save()
+        g.save()
         if (i === last && shot.kind === 'beat') {
-          ctx.globalAlpha = enter
-          ctx.translate(0, (1 - enter) * 40)
+          g.globalAlpha = enter
+          g.translate(0, (1 - enter) * 40)
         }
-        card.draw(ctx, top)
-        ctx.restore()
+        card.draw(g, top)
+        g.restore()
         bottom = top - 24
       }
-      ctx.restore()
-      const fadeTop = ctx.createLinearGradient(0, ZONE.top - 10, 0, ZONE.top + 120)
-      fadeTop.addColorStop(0, INK)
-      fadeTop.addColorStop(1, 'rgba(11,19,18,0)')
-      ctx.fillStyle = fadeTop
-      ctx.fillRect(0, ZONE.top - 10, W, 130)
+      g.restore()
+      // Older lines fade out as they scroll up
+      g.save()
+      g.globalCompositeOperation = 'destination-out'
+      const fadeTop = g.createLinearGradient(0, 0, 0, 140)
+      fadeTop.addColorStop(0, 'rgba(0,0,0,1)')
+      fadeTop.addColorStop(1, 'rgba(0,0,0,0)')
+      g.fillStyle = fadeTop
+      g.fillRect(0, 0, W, 140)
+      g.restore()
+      ctx.drawImage(layer, 0, ZONE.top - 10)
     } else {
       // Intro: what this is
       const a = ease(at / 0.5) * (1 - ease((at - (INTRO - 0.5)) / 0.5))
       ctx.save()
       ctx.globalAlpha = a
+      ctx.font = `700 30px ${fontBody}`
+      ctx.fillStyle = LIME
+      ctx.fillText(wrap(ctx, c.setting, 940, 1)[0] ?? '', 60, ZONE.top + 40)
       ctx.font = `600 66px ${fontDisplay}`
       ctx.fillStyle = '#ffffff'
       const lines = wrap(ctx, c.title, 940, 3)
