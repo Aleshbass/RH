@@ -150,7 +150,7 @@ export default function JourneysPage() {
 
       <Panel>
         <div className="flex flex-col gap-3 p-4 lg:flex-row lg:items-center lg:justify-between">
-          <div className={cn(tabsListClass, 'inline-flex w-auto')}>
+          <div className={cn(tabsListClass, 'lg:w-auto')}>
             {STAGES.map((s) => (
               <button
                 key={s.key}
@@ -175,14 +175,14 @@ export default function JourneysPage() {
             >
               <TriangleAlert className="h-3.5 w-3.5" /> Needs attention
             </button>
-            <div className="relative">
+            <div className="relative w-full sm:w-auto">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Patient, physio or Rehabify ID"
                 aria-label="Search"
-                className={cn(fieldClass, 'w-72 pl-9')}
+                className={cn(fieldClass, 'w-full pl-9 sm:w-72')}
               />
             </div>
           </div>
@@ -199,7 +199,7 @@ export default function JourneysPage() {
         )}
         {data?.rows.map((row) => (
           <Panel key={row.key}>
-            <div className="grid gap-4 p-4 lg:grid-cols-[minmax(0,15rem)_minmax(0,1fr)_minmax(0,15rem)] lg:items-center">
+            <div className="grid grid-cols-1 gap-4 p-4 lg:grid-cols-[minmax(0,15rem)_minmax(0,1fr)_minmax(0,15rem)] lg:items-center">
               <div className="min-w-0 space-y-2">
                 <div className="flex items-center justify-between gap-2">
                   <Link href={`/dashboard/admin/users/${row.patient.id}`} className="min-w-0 hover:underline">
