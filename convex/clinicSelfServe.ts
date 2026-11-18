@@ -22,7 +22,13 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { CLINIC_SELF_SERVE } from "../lib/clinicPlans";
 import { emailClinic, paystackRequest } from "./clinicBilling";
 import { canUseArea, getClinicMember, getClinicMemberOrNull } from "./clinicTools";
-import { publicAppUrl } from "./helpers/appUrl";
+import { appLink, publicAppUrl } from "./helpers/appUrl";
+import { platformAdminEmails } from "./helpers/adminRecipients";
+
+const sendCareEmailRef = makeFunctionReference<
+  "action",
+  { to: string; subject: string; skipGreeting?: boolean; heading: string; paragraphs: string[]; buttonLabel?: string; buttonUrl?: string }
+>("actions/emails/sendPatientCareEmail:sendPatientCareEmail");
 import {
   CARD_CHECK_PREFIX,
   MAX_AUTO_CHARGES,
@@ -110,7 +116,19 @@ type AutoChargeInfo = {
   number: string;
 };
 
+/** Bell + push for every admin, and an email to the team inboxes (ADMIN_EMAIL), so no one misses it. */
 async function alertAdmins(ctx: MutationCtx, title: string, body: string, clinicId: Id<"clinics">) {
+  for (const to of platformAdminEmails()) {
+    await ctx.scheduler.runAfter(0, sendCareEmailRef, {
+      to,
+      subject: title,
+      skipGreeting: true,
+      heading: title,
+      paragraphs: [body],
+      buttonLabel: "Open the clinic",
+      buttonUrl: appLink(`/dashboard/admin/clinics/${clinicId}`),
+    });
+  }
   const admins = await ctx.db.query("users").withIndex("by_role", (q) => q.eq("role", "admin")).take(25);
   const now = Date.now();
   for (const admin of admins) {
