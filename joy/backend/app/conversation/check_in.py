@@ -26,6 +26,7 @@ from app.audit.logger import append
 from app.conversation.interactive import list_menu, reply_buttons
 from app.models.conversation import Conversation
 from app.models.types import AuditKind
+from app.safety.contact import CALL_REHABIFY
 
 logger = logging.getLogger(__name__)
 
@@ -193,5 +194,5 @@ def _save(session: Session, identity, answers: dict, note: str | None) -> str:
     else:
         text = "Thanks, I've sent this to your physio. Keep going with your exercises!"
     if pain >= 8:
-        text += "\n\nIf the pain is severe or suddenly worse, or you feel unwell, call 112 or go to the nearest hospital."
+        text += f"\n\nIf the pain is severe or suddenly worse, or you feel unwell, {CALL_REHABIFY} or go to the nearest hospital."
     return text

@@ -138,7 +138,7 @@ export function PhysioHelp({ className }: { className?: string }) {
               <PlayCircle className="h-6 w-6 shrink-0" />
               <span className="min-w-0">
                 <span className="block text-sm font-semibold">Watch: safe home visits</span>
-                <span className="block text-xs opacity-80">On my way, the door code and the help button. 1 min 22 s.</span>
+                <span className="block text-xs opacity-80">On my way, the door code and the help button. 1 min 29 s.</span>
               </span>
             </button>
           )}

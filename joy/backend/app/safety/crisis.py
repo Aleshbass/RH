@@ -6,7 +6,7 @@ covers English and Nigerian Pidgin. "This pain is killing me" is not a crisis; "
 is not one either (a negation in the same clause clears the match).
 
 The vocabulary is a starting set for clinical-lead review: adding a phrase only makes Joy more
-careful. Helpline numbers other than 112 are added only once clinically vetted (JOY_CRISIS_HELPLINES).
+careful. Helpline numbers other than Rehabify's own line are added only once clinically vetted (JOY_CRISIS_HELPLINES).
 """
 
 from __future__ import annotations
@@ -14,6 +14,7 @@ from __future__ import annotations
 import re
 
 from app.safety.volunteered_red_flags import is_negated
+from app.safety.contact import CALL_REHABIFY
 
 _PATTERNS: dict[str, tuple[str, ...]] = {
     "self_harm": (
@@ -59,7 +60,7 @@ def crisis_reply(kind: str, helplines: str = "") -> str:
     if kind == "abuse":
         text = (
             "Thank you for telling me. What is happening to you is not okay, and it is not your fault.\n\n"
-            "If you are in danger right now, please call 112, or go somewhere safe: a trusted neighbour or "
+            f"If you are in danger right now, please {CALL_REHABIFY}, or go somewhere safe: a trusted neighbour or "
             "relative, or the nearest police station or hospital.\n\n"
             "I've asked someone from our care team to contact you privately. If you are hurt, please see a "
             "doctor first."
@@ -68,7 +69,7 @@ def crisis_reply(kind: str, helplines: str = "") -> str:
         text = (
             "I'm really glad you told me, and I'm sorry you're going through this. You matter, and you "
             "don't have to face this alone.\n\n"
-            "If you might act on these thoughts, or you are in danger right now, please call 112 or go to "
+            f"If you might act on these thoughts, or you are in danger right now, please {CALL_REHABIFY} or go to "
             "the nearest hospital emergency department now. If you can, ask someone you trust to stay with you.\n\n"
             "I've asked someone from our care team to contact you. You can keep talking to me here."
         )
@@ -77,7 +78,7 @@ def crisis_reply(kind: str, helplines: str = "") -> str:
 
 
 FLAGGED_BY_OTHERS_REPLY = (
-    "What you're describing can be a medical emergency. Please call 112 now, or go to the nearest "
+    f"What you're describing can be a medical emergency. Please {CALL_REHABIFY} now, or go to the nearest "
     "hospital emergency department. If the person has chest pain, weakness or feels faint, don't let "
     "them drive themselves.\n\nI've let our care team know."
 )

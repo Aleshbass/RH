@@ -201,7 +201,7 @@ def _admin_text(kind: str, payload: dict) -> str:
         what = "self-harm or suicide" if payload.get("kind") == "self_harm" else "abuse or violence"
         return (
             f"URGENT: a Joy user may be at risk ({what}). Patient {payload.get('patient_id') or 'unknown'}. "
-            f"Please call {payload.get('phone') or 'them'} now. Joy gave them 112 and said someone will contact them."
+            f"Please call {payload.get('phone') or 'them'} now. Joy gave them Rehabify's number and said someone will contact them."
         )
     if kind == "booking_failed":
         return (

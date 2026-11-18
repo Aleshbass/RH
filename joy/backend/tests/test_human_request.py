@@ -113,7 +113,7 @@ def test_a_patient_reply_is_short_and_keeps_the_emergency_line(monkeypatch):
     identity = Identity(persona=Persona.PATIENT, person_id=uuid4(), phone_e164="+2348000000004")
     reply = human_request_reply(_Session(), identity, None, "talk to a human")
     assert reply.startswith("Of course. I've asked our care team to call you on +2348000000004.")
-    assert reply.endswith("If it's an emergency, call 112 or go to the nearest hospital now.")
+    assert reply.endswith("If it's an emergency, call Rehabify on 0806 152 5811 or go to the nearest hospital now.")
     assert reply.count("\n\n") == 1 and sent == ["callback"]
 
 
@@ -146,7 +146,7 @@ def test_call_me_alerts_the_care_team_once_and_keeps_the_booking_step(db_session
 
     first = handle_turn(db_session, patient_identity.phone_e164, "Can someone call me please", fake_llm)
     assert f"asked our care team to call you on {patient_identity.phone_e164}" in first.reply_text
-    assert "112" in first.reply_text
+    assert "0806 152 5811" in first.reply_text
     assert alerts["rh"] == [("patient_request_callback", {"patient_id": "rh-pat-1", "text": "Can someone call me please"})]
     assert alerts["admins"][0][0] == "callback" and alerts["journey"] == ["handed_to_human"]
     assert conversation.booking_substate == "rh_awaiting_payment"

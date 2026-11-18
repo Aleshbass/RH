@@ -79,14 +79,14 @@ def test_crisis_false_alarms(text):
     assert detect_crisis(text) is None
 
 
-def test_crisis_replies_give_112_and_vetted_helplines_only_when_set():
-    assert "112" in crisis_reply("self_harm") and "112" in crisis_reply("abuse")
+def test_crisis_replies_give_rehabify_number_and_vetted_helplines_only_when_set():
+    assert "0806 152 5811" in crisis_reply("self_harm") and "0806 152 5811" in crisis_reply("abuse")
     assert crisis_reply("self_harm").count("\n\n") == crisis_reply("self_harm", "").count("\n\n")
     assert crisis_reply("self_harm", "Helpline: 0800 000 0000").endswith("Helpline: 0800 000 0000")
 
 
-def test_every_emergency_instruction_names_112():
-    assert "112" in escalation._RED_INSTRUCTION and "112" in escalation._ORANGE_INSTRUCTION
+def test_every_emergency_instruction_names_the_rehabify_line():
+    assert "0806 152 5811" in escalation._RED_INSTRUCTION and "0806 152 5811" in escalation._ORANGE_INSTRUCTION
 
 
 @pytest.fixture
@@ -108,11 +108,11 @@ def quiet(monkeypatch):
 
 def test_a_crisis_from_anyone_is_answered_first_and_the_care_team_told(quiet):
     result = th.handle_turn(None, "+2348030000000", "I want to end my life", llm=None)
-    assert "112" in result.reply_text
+    assert "0806 152 5811" in result.reply_text
     assert quiet and quiet[0][0] == "crisis" and quiet[0][1]["kind"] == "self_harm"
 
 
 def test_a_warning_sign_from_a_new_number_gets_urgent_care_not_a_chat(quiet):
     result = th.handle_turn(None, "+2348030000000", "My dad collapsed and can't talk well", llm=None)
-    assert "112" in result.reply_text
+    assert "0806 152 5811" in result.reply_text
     assert quiet and quiet[0][0] == "safety"

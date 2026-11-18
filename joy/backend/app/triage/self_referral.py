@@ -40,6 +40,7 @@ from app.models.conversation import Conversation
 from app.models.patient import Patient
 from app.models.types import AuditKind, ConditionArea, ExtractedTriage, SafetyResult
 from app.triage import timing
+from app.safety.contact import CALL_REHABIFY, REHABIFY_PHONE
 
 logger = logging.getLogger(__name__)
 
@@ -157,7 +158,7 @@ WELCOME = (
     "Hi 👋 I'm Joy, Rehabify's recovery companion.\n\n"
     "I can help you find suitable physiotherapy care, understand your options, and book an "
     "assessment with a licensed physiotherapist.\n\n"
-    "I don't provide a diagnosis or emergency care. In an emergency, call 112 or go to the nearest hospital.\n\n"
+    f"I don't provide a diagnosis or emergency care. In an emergency, {CALL_REHABIFY} or go to the nearest hospital.\n\n"
     "Which language would you like to use? Tap *Choose language*, or reply with a number:\n"
     "1. English\n2. Pidgin\n3. Yorùbá\n4. Igbo\n5. Hausa\n\n"
     "Messaging for someone else? Just tell me who it's for."
@@ -188,7 +189,7 @@ CONSENT_TEXT = (
 CONSENT_DECLINED = (
     "That's okay. I can only arrange care once you've agreed, because I need to keep your details "
     "to do that. If you change your mind, reply *I agree*.\n\n"
-    "If this is an emergency, call 112 or go to the nearest hospital now."
+    f"If this is an emergency, {CALL_REHABIFY} or go to the nearest hospital now."
 )
 _AGREE = {"i agree", "agree", "yes", "yes i agree", "i agree to both", "both", "1 2", "1 and 2", "1, 2", "ok", "okay",
           "i consent", "consent", "accept", "i accept", "yes please", "sure", "agreed", "y"}
@@ -698,7 +699,7 @@ def start(session: Session, patient: Patient, conversation: Conversation, user_t
         name = _first_name(patient)
         _save(conversation, context, sr, REASON)
         return Step("reply", f"Hi{' ' + name if name else ''} 👋 I'm Joy. I don't give a diagnosis or emergency care "
-                             f"(in an emergency, call 112).\n\n{REASON_TEXT}")
+                             f"(in an emergency, {CALL_REHABIFY}).\n\n{REASON_TEXT}")
     return _next_front(session, patient, conversation, context, sr)
 
 
@@ -1066,13 +1067,13 @@ def parse_red_flags(text: str, extracted: ExtractedTriage) -> tuple[str, set[str
 
 RED_FLAG_STOP = (
     "Thank you for telling me. Some of these symptoms can need urgent medical assessment.\n\n"
-    "Please stop and seek urgent medical care now: go to the nearest hospital emergency department, or call 112.\n\n"
+    f"Please stop and seek urgent medical care now: go to the nearest hospital emergency department, or {CALL_REHABIFY}.\n\n"
     "I've saved a summary of what you told me, and I've let our care team know. I can't arrange routine "
     "physiotherapy until you have been medically assessed."
 )
 EMERGENCY_GUIDANCE = (
     "🚨 Getting emergency help in Nigeria\n\n"
-    "• Call 112. It's free from any phone\n"
+    f"• Call Rehabify on {REHABIFY_PHONE}\n"
     "• In Lagos, you can also call 767\n"
     "• Or go straight to the emergency department of the nearest general or teaching hospital\n"
     "• If you feel faint, or have chest pain or weakness, don't drive yourself: ask someone to take you\n"
@@ -1325,7 +1326,7 @@ def outcome_text(urgent: bool) -> str:
             "Thank you. Based on your answers, it would be best for a physiotherapist to assess you soon, "
             "so I'll show you the earliest times available.\n\n"
             "This is not a diagnosis. A licensed physiotherapist will review your information before your "
-            "appointment. If things get worse before then, get medical care straight away or call 112."
+            f"appointment. If things get worse before then, get medical care straight away or {CALL_REHABIFY}."
         )
     return (
         "Thank you. Based on your answers, a physiotherapy assessment may be helpful.\n\n"
@@ -1450,7 +1451,7 @@ CARE_TEAM_HANDOFF = (
     "I couldn't find a physiotherapist who fits your needs and is free when you need one, so I've passed "
     "your details to our care team. Someone will contact you on this WhatsApp number to arrange your consultation.\n\n"
     "If your symptoms get worse, or you notice any of the warning signs I asked about, get medical care "
-    "straight away or call 112."
+    f"straight away or {CALL_REHABIFY}."
 )
 CARE_TEAM_WAITING = (
     "Our care team has your details and will contact you on this number to arrange your consultation. "

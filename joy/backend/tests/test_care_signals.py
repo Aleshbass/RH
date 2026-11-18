@@ -49,7 +49,7 @@ def test_a_fall_stops_the_exercises_and_tells_the_physio(db_session, patient_ide
 
     result = handle_turn(db_session, patient_identity.phone_e164, "I fell on the stairs this morning", FakeLLM(reply="Okay."))
     assert result.reply_text.startswith("Please stop the exercises for now.")
-    assert "112" in result.reply_text and "Bisi Okafor" in result.reply_text
+    assert "0806 152 5811" in result.reply_text and "Bisi Okafor" in result.reply_text
     assert in_care and "a fall or new injury" in in_care[0]
 
 

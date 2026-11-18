@@ -82,7 +82,7 @@ def test_high_pain_and_no_physio_are_told_plainly(db_session, patient_identity, 
         _turn(db_session, patient_identity, fake_llm, text)
     done = _turn(db_session, patient_identity, fake_llm, "Nothing else")
     assert done.reply_text.startswith("Thanks, I've saved your check-in to your Rehabify record.")
-    assert "call 112" in done.reply_text
+    assert "call Rehabify on 0806 152 5811" in done.reply_text
     assert "note" not in calls[0][1]
 
 

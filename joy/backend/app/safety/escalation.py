@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.models.conversation import Conversation, Message
 from app.models.family_member import FamilyMember
 from app.models.types import PatientPhase, Persona, SafetyResult
+from app.safety.contact import CALL_REHABIFY
 
 logger = logging.getLogger(__name__)
 
@@ -63,13 +64,13 @@ _DEFAULT_OPENER = (
 )
 
 _RED_INSTRUCTION = (
-    "Please call 112 or go to the nearest hospital emergency department now. "
+    f"Please {CALL_REHABIFY} or go to the nearest hospital emergency department now. "
     "This needs medical care today, not a later appointment."
 )
 
 _ORANGE_INSTRUCTION = (
     "Please see a doctor today for an urgent medical assessment before we book routine "
-    "physiotherapy (if it gets worse, call 112). Once a clinician says rehab is appropriate, I can help you match."
+    f"physiotherapy (if it gets worse, {CALL_REHABIFY}). Once a clinician says rehab is appropriate, I can help you match."
 )
 
 _AMBER_MESSAGE = (

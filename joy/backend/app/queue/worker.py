@@ -25,6 +25,7 @@ from app.models.appointment_reminder import AppointmentReminder
 from app.models.types import AuditKind, PatientPhase, TurnResult
 from app.booking.appointment_reminders import AT_APPOINTMENT_START, CONFIRM_VISIT, DAY_BEFORE, appointment_reminder_text
 from app.observability import elapsed_ms, log_event, timer_start
+from app.safety.contact import CALL_REHABIFY
 from app.queue.tasks import (
     ADMIN_ESCALATION_QUEUE,
     BOOKING_CONFIRMED_QUEUE,
@@ -72,7 +73,7 @@ def _payload_media(payload: dict) -> list[str] | None:
 GEMINI_TIMEOUT_APOLOGY = "Sorry, I had a brief hiccup. Please send that again in a moment."
 VOICE_FAIL_REPLY = (
     "I couldn't process that voice note. Please try sending it again, or type what you said. "
-    "If this is an emergency, call 112."
+    f"If this is an emergency, {CALL_REHABIFY}."
 )
 
 

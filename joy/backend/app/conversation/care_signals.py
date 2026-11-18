@@ -25,6 +25,7 @@ from app.audit.logger import append
 from app.models.patient import Patient
 from app.models.types import AuditKind
 from app.safety.volunteered_red_flags import is_negated
+from app.safety.contact import CALL_REHABIFY
 
 logger = logging.getLogger(__name__)
 
@@ -60,10 +61,10 @@ def care_signal(text: str | None) -> str | None:
 def _reply(kind: str, physio: str) -> str:
     if kind == "fall":
         return (
-            f"Please stop the exercises for now. If you're badly hurt, seek medical care now or call 112. "
+            f"Please stop the exercises for now. If you're badly hurt, seek medical care now or {CALL_REHABIFY}. "
             f"I've told {physio}, and they'll get back to you."
         )
-    return f"I've told {physio} right away. If it feels urgent, please seek medical care now or call 112."
+    return f"I've told {physio} right away. If it feels urgent, please seek medical care now or {CALL_REHABIFY}."
 
 
 def care_signal_turn(session: Session, patient: Patient, care: dict, kind: str, user_text: str) -> str:

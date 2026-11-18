@@ -5,11 +5,12 @@
  * Opened from the safety card, the safety bar and Help.
  */
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Car, Clock, DoorOpen, LogOut, PlayCircle, ShieldAlert } from '@/components/icons'
 import { PhysioDrawer } from '@/components/physio/ui'
 import { cn } from '@/lib/utils'
-import { SAFETY_GUIDE_VIDEO_URL } from './safetyApi'
+import { SAFETY_GUIDE_VIDEO_URL, SAFETY_GUIDE_VIDEO_URL_VERTICAL } from './safetyApi'
+import { REHABIFY_PHONE } from '@/lib/rehabifyContact'
 
 const STEPS = [
   {
@@ -35,7 +36,7 @@ const STEPS = [
   {
     icon: ShieldAlert,
     title: 'Feel unsafe? Hold the help button',
-    text: 'It’s on every page during a visit. The care team gets your location, the address and both phone numbers, and calls you straight away. In danger, call 112 too.',
+    text: `It’s on every page during a visit. The care team gets your location, the address and both phone numbers, and calls you straight away. In danger, call Rehabify on ${REHABIFY_PHONE} too.`,
   },
 ]
 
@@ -56,17 +57,37 @@ export function SafetyGuideButton({ className, label = 'How it works' }: { class
   )
 }
 
+/** Phones get the vertical film, larger screens the landscape one. */
+function usePhoneScreen() {
+  const [phone, setPhone] = useState(false)
+  useEffect(() => {
+    const query = window.matchMedia('(max-width: 640px)')
+    const update = () => setPhone(query.matches)
+    update()
+    query.addEventListener('change', update)
+    return () => query.removeEventListener('change', update)
+  }, [])
+  return phone
+}
+
 export function SafetyGuideDrawer({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+  const phone = usePhoneScreen()
+  const vertical = phone && Boolean(SAFETY_GUIDE_VIDEO_URL_VERTICAL)
+  const src = vertical ? SAFETY_GUIDE_VIDEO_URL_VERTICAL : SAFETY_GUIDE_VIDEO_URL
   return (
     <PhysioDrawer open={open} onOpenChange={onOpenChange} title="How visit safety works" description="For every home visit. A short film, then the five steps.">
       <div className="space-y-5">
-        {SAFETY_GUIDE_VIDEO_URL && (
+        {src && (
           <video
-            src={SAFETY_GUIDE_VIDEO_URL}
+            key={src}
+            src={src}
             controls
             playsInline
             preload="metadata"
-            className="aspect-video w-full rounded-2xl bg-black"
+            className={cn(
+              'rounded-2xl bg-black',
+              vertical ? 'mx-auto block aspect-[9/16] h-[min(70vh,640px)] w-auto max-w-full' : 'aspect-video w-full'
+            )}
           />
         )}
         <ol className="space-y-4">

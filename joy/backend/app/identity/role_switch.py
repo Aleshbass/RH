@@ -30,13 +30,14 @@ from app.identity.unknown_sender import (
     looks_like_symptom,
 )
 from app.models.physiotherapist import Physiotherapist
+from app.safety.contact import CALL_REHABIFY
 
 ROLE_CHECK_KEY = "role_check"
 PHYSIO_SIGNUP_URL = "https://physioaroundme.com/sign-up?as=physio"
 
 ROLE_QUESTION = "Are you contacting us as a patient? Reply *Patient* or *Physio*."
 ROLE_QUESTION_RED_FLAG = (
-    "If you or someone with you has these symptoms now, please call 112 or go to the nearest "
+    f"If you or someone with you has these symptoms now, please {CALL_REHABIFY} or go to the nearest "
     "hospital straight away.\n\n" + ROLE_QUESTION
 )
 SWITCHED_PREFIX = "No problem, I've switched you to patient care."

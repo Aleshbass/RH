@@ -22,6 +22,7 @@ import { senderIdentity } from "./helpers/displayIdentity";
 import { recordPatientCheckIn } from "./physioCare";
 import { requestRescheduleAsPatient } from "./appointments";
 import { careSummaryForJoy, connectWithCode, messageCurrentPhysio, requestVisitFromCare } from "./joyConnect";
+import { REHABIFY_PHONE } from "../lib/rehabifyContact";
 
 type Operation =
   | "physio_work_summary" | "physio_update_availability" | "physio_session_note"
@@ -467,7 +468,7 @@ export const executeMutation = internalMutation({
       const title = reason === "no_match" ? "Joy patient needs booking" : reason === "red_flag" ? "Joy red flag: urgent care advised"
         : reason === "booking_failed" ? "Joy booking failed" : reason === "crisis" ? "URGENT: Joy patient may be at risk" : "Patient asked for a call";
       const body = reason === "crisis"
-        ? `${who} may be at risk (${said || "self-harm or abuse"}). Joy gave them 112 and said someone will contact them. Please call now.${call}`
+        ? `${who} may be at risk (${said || "self-harm or abuse"}). Joy gave them Rehabify's number (${REHABIFY_PHONE}) and said someone will contact them. Please call now.${call}`
         : reason === "booking_failed"
         ? `${who} tried to book on WhatsApp, but it didn't go through${said ? ` (${said})` : ""}. Nothing was charged. Please help them book.${call}`
         : reason === "no_match"

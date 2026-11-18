@@ -93,6 +93,7 @@ from app.identity.unknown_sender import (
     looks_like_symptom,
     resolve_unknown_sender,
 )
+from app.safety.contact import CALL_REHABIFY
 from app.llm.gemini_client import LLMClient
 from app.observability import elapsed_ms, log_event
 from app.llm.prompt_builder import build
@@ -2400,7 +2401,7 @@ def _family_turn(
     paystack=None,
 ) -> TurnResult:
     language = mirror_language(user_text, None)
-    # "Call me" from a family member reaches the care team (the reply carries the 112 line), even
+    # "Call me" from a family member reaches the care team (the reply carries the Rehabify emergency line), even
     # when it mentions warning signs: family turns have no triage, so a person is the right next step.
     # "Ask the physio to call me" is a question for the physio, which the relay below sends on.
     if is_human_request(user_text) and not is_relay_ask(user_text):
@@ -2571,7 +2572,7 @@ def _record_exchange(session: Session, identity: Identity | None, user_text: str
 def _crisis_turn(
     session: Session, identity: Identity | None, phone: str, user_text: str, kind: str, wa_message_id: str | None,
 ) -> TurnResult:
-    """Possible self-harm or abuse: a safe reply with 112, and the care team is told at once."""
+    """Possible self-harm or abuse: a safe reply with Rehabify's number, and the care team is told at once."""
     reply = crisis_reply(kind, get_settings().joy_crisis_helplines)
     person_id = identity.person_id if identity is not None else None
     route_escalation(session, "crisis", {"patient_id": str(person_id or ""), "phone": phone, "kind": kind})
@@ -2592,7 +2593,7 @@ def _flagged_by_others_turn(
     who = "a family member" if identity is not None else "a new number"
     route_escalation(session, "safety", {
         "rule_ids": sorted(flags), "action": "urgent_care",
-        "reason": f"Warning sign reported on WhatsApp by {who}. Joy told them to call 112. Call {phone}.",
+        "reason": f"Warning sign reported on WhatsApp by {who}. Joy told them to call Rehabify. Call {phone}.",
     })
     append(session, kind=AuditKind.TRIAGE, actor_phone=phone, person_id=identity.person_id if identity else None,
            payload={"decision": "red_flag_from_non_patient", "flags": sorted(flags)})
@@ -2763,7 +2764,7 @@ CAPABILITIES_REPLY = (
     "• Remind you about your appointments\n"
     "• Once your physiotherapist sets your plan: daily exercise reminders, check-ins, and answers about your plan\n"
     "• Pass you to a person on our care team: just say *talk to someone*\n\n"
-    "I don't give a diagnosis or emergency care. In an emergency, call 112."
+    f"I don't give a diagnosis or emergency care. In an emergency, {CALL_REHABIFY}."
 )
 _CAPABILITIES_RE = re.compile(
     r"\bwhat\s+(?:else\s+)?(?:can|do)\s+you\s+(?:do|help\s+(?:me\s+)?with|offer)\b"

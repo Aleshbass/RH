@@ -17,6 +17,7 @@ import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
 import { primaryButtonClass, secondaryButtonClass } from '@/components/physio/ui'
 import { HoldPill } from './HoldPill'
+import { REHABIFY_PHONE } from '@/lib/rehabifyContact'
 import { currentPosition, safetyApi, type SafetyVisit, type SkipReason } from './safetyApi'
 
 const SKIP_OPTIONS: { value: SkipReason; label: string }[] = [
@@ -167,7 +168,7 @@ export function HelpPill({ visitId, className, compact = false }: { visitId?: st
         if (later.lat !== undefined && later.lng !== undefined) await helpLocation({ alertId, lat: later.lat, lng: later.lng, accuracy: later.accuracy })
       }
     } catch (error) {
-      toast.error(errorText(error, 'The alert didn’t go. Call the care team or 112 now.'), { duration: 12000 })
+      toast.error(errorText(error, `The alert didn’t go. Call Rehabify on ${REHABIFY_PHONE} now.`), { duration: 12000 })
     } finally {
       setBusy(false)
     }

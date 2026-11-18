@@ -233,7 +233,7 @@ def test_safety_advice_from_the_carried_on_turn_leads_unprefixed(switch_calls, m
 
 def test_warning_signs_get_the_urgent_line_before_the_role_question(switch_calls):
     result, conversation, _ = _role_turn(_physio(), "I have crushing chest pain")
-    assert result.reply_text.startswith("If you or someone with you has these symptoms now, please call 112")
+    assert result.reply_text.startswith("If you or someone with you has these symptoms now, please call Rehabify on 0806 152 5811")
     assert result.reply_text.endswith(ROLE_QUESTION)
     assert conversation.booking_context[ROLE_CHECK_KEY]["text"] == "I have crushing chest pain"
 

@@ -5,7 +5,7 @@ safety guidance). When a patient writes in another language Joy supports, each o
 is translated just before it is sent:
   - links, phone numbers, prices, numbers and command words in capitals (DONE, STOP, YES,
     CHECK IN, CALL ME...) must come through unchanged, or the English is sent instead
-  - urgent safety guidance (112, emergency, hospital) is sent translated, then in English
+  - urgent safety guidance (Rehabify's emergency line, emergency, hospital) is sent translated, then in English
   - a message from the physio is sent as they wrote it
   - translations are cached, so a fixed message is translated once per language
 Any failure sends the English, so a message is never lost. JOY_TRANSLATE_MESSAGES=false turns
@@ -32,7 +32,7 @@ _NAIRA_RE = re.compile(r"₦\s?[\d,]+")
 _PHONE_RE = re.compile(r"\+?\d[\d -]{6,}\d")
 _CAPS_RE = re.compile(r"\b[A-Z]{2,}(?:\s[A-Z]{2,})*\b")
 _DIGITS_RE = re.compile(r"\d+")
-_SAFETY_RE = re.compile(r"\b(112|emergency|hospital|urgent care|see a doctor|seek medical care)\b", re.I)
+_SAFETY_RE = re.compile(r"\b(0806 152 5811|112|emergency|hospital|urgent care|see a doctor|seek medical care)\b", re.I)
 _KEEP_AS_WRITTEN_RE = re.compile(r"Message from your physiotherapist", re.I)
 
 
