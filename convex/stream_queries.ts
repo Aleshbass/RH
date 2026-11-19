@@ -32,6 +32,9 @@ export const getCallMetadata = query({
     if (!isParty && !isAdmin) return null
     return {
       ...metadata,
+      // The viewer's role from our records: the call page shows physios Rehabify Scribe from it
+      // (Clerk's public metadata has no role for physios)
+      viewerRole: viewer.role ?? null,
       participantDetails: metadata.participantDetails.map((p) => (isAdmin ? p : { ...p, email: undefined })),
     }
   },

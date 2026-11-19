@@ -32,7 +32,9 @@ export default function VideoCallPage() {
     void startAwadocVisit({ callId }).catch(() => undefined)
   }, [isAwadocRoom, awadocVisit, callId, startAwadocVisit])
 
-  const role = user?.publicMetadata?.role
+  // Our own record of the role (Clerk's public metadata only has it for some patients, never for
+  // physios, so Scribe and Patient record never showed in a physio's call)
+  const role = (callMetadata as { viewerRole?: string | null } | null | undefined)?.viewerRole ?? user?.publicMetadata?.role
   const home =
     role === 'physiotherapist'
       ? '/dashboard/physiotherapist'
