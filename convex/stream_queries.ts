@@ -50,9 +50,22 @@ async function loadCallMetadata(ctx, callId: string) {
       return null
     }
 
+    // Booked calls (Joy and marketplace bookings) keep the patient and physio on the appointment,
+    // not the call. The physio's call page needs the patient for Rehabify Scribe and "Patient
+    // record" (app/video-call/[callId]/page.tsx); without this, neither showed on booked calls.
+    let patientId = call.patientId
+    let physiotherapistId = call.physiotherapistId
+    if ((!patientId || !physiotherapistId) && call.appointmentId) {
+      const appointment = await ctx.db.get(call.appointmentId)
+      patientId = patientId ?? appointment?.patientId
+      physiotherapistId = physiotherapistId ?? appointment?.physiotherapistId
+    }
+    const ids = [...call.participants]
+    if (patientId && !ids.includes(patientId)) ids.push(patientId)
+
     // Get participant details
     const participants = await Promise.all(
-      call.participants.map(async (userId) => {
+      ids.map(async (userId) => {
         const user = await ctx.db.get(userId)
         return user ? {
           id: user._id,
@@ -66,6 +79,8 @@ async function loadCallMetadata(ctx, callId: string) {
 
     return {
       ...call,
+      patientId,
+      physiotherapistId,
       participantDetails: participants.filter(Boolean),
     }
 }
