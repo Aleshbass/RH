@@ -60,6 +60,7 @@ import { OverviewTab } from '@/components/physio/workspace/OverviewTab'
 import { CarePlanTab } from '@/components/physio/workspace/CarePlanTab'
 import { CheckInsTab, NotesTab } from '@/components/physio/workspace/RecordTabs'
 import { SOURCE_LABELS, WorkspaceReadOnly, fullName, type Workspace } from '@/components/physio/workspace/shared'
+import { MedicalHistoryLine, PatientFacts } from '@/components/physio/workspace/PatientGlance'
 import { RehabifyId } from '@/components/shared/RehabifyId'
 import { useConnectToJoy } from '@/components/joy/useConnectToJoy'
 import { useQueryUntyped } from '@/lib/convexUntyped'
@@ -261,6 +262,8 @@ function ClinicPatientRecord({ patientId }: { patientId: Id<'users'> }) {
               </Avatar>
               <div className="min-w-0">
                 <h1 className="truncate text-2xl font-semibold tracking-tight text-pt-ink sm:text-[28px]">{name}</h1>
+                {/* Age, gender, date of birth and town, at first glance */}
+                <PatientFacts profile={workspace.profile} />
                 <p className="truncate text-sm text-pt-muted">{[patient.phoneNumber, patient.email].filter(Boolean).join(' · ') || 'No contact details'}</p>
                 <div className="mt-2 flex flex-wrap items-center gap-1.5">
                   <RehabifyId value={patient.patientNumber} className="rounded-full px-2.5 text-xs" />
@@ -315,7 +318,7 @@ function ClinicPatientRecord({ patientId }: { patientId: Id<'users'> }) {
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-56 rounded-2xl border-pt-line bg-pt-surface p-1.5 text-pt-ink shadow-pt-lift">
                   <DropdownMenuItem className="rounded-xl px-3 py-2.5 focus:bg-pt-hover" onSelect={() => requireFullAccess('Edit patient details') && setDialog('edit')}>
-                    Edit contact details
+                    Edit patient details
                   </DropdownMenuItem>
                   {!record.patient.hasAccount && patient.email && (
                     <DropdownMenuItem className="rounded-xl px-3 py-2.5 focus:bg-pt-hover" disabled={sendingInvite} onSelect={() => void handleResendInvite()}>
@@ -359,8 +362,15 @@ function ClinicPatientRecord({ patientId }: { patientId: Id<'users'> }) {
             </div>
           </div>
 
+          {/* Past medical history, so it's never more than a glance away */}
+          <MedicalHistoryLine
+            history={workspace.profile?.medicalHistory}
+            onAdd={() => requireFullAccess('Edit patient details') && setDialog('edit')}
+            className="mt-5 border-t border-pt-line pt-4"
+          />
+
           {/* Who treats them: the owner assigns, the clinician treats */}
-          <div className="mt-5 flex flex-col gap-3 border-t border-pt-line pt-4 sm:flex-row sm:items-center">
+          <div className="mt-4 flex flex-col gap-3 border-t border-pt-line pt-4 sm:flex-row sm:items-center">
             <div className="flex min-w-0 flex-1 items-center gap-3">
               <IconChip icon={needsClinician ? UserPlus : Stethoscope} tone={needsClinician ? 'ink' : 'green'} />
               <div className="min-w-0">

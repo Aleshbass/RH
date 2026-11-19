@@ -1,18 +1,19 @@
 'use client'
 
-import { useRef, useState, type FormEvent } from 'react'
+import { useState, type FormEvent } from 'react'
 import { useMutation } from 'convex/react'
 import { format, isValid } from 'date-fns'
 import { toast } from 'sonner'
 import { api } from '@/convex/_generated/api'
 import type { Id } from '@/convex/_generated/dataModel'
-import { Download, FileText, Loader2, PhoneCall, Upload } from '@/components/icons'
+import { Loader2, PhoneCall } from '@/components/icons'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useClinicAccess } from '@/components/clinic/ClinicAccessContext'
+import { DocumentManager, type DocumentType, type ManagedDocument } from '@/components/patient-documents/DocumentManager'
 import { EmptyState, Panel, fieldClass, primaryButtonClass } from '@/components/clinic/ui'
 import { friendlyError, isMissingId } from './patient-record-shared'
 import { playSound } from '@/lib/sounds'
@@ -30,139 +31,53 @@ function formatDate(value: number | string | undefined | null, pattern = 'd MMM 
   return isValid(date) ? format(date, pattern) : null
 }
 
-function formatFileSize(bytes: number | undefined) {
-  if (!bytes) return null
-  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Documents
 // ─────────────────────────────────────────────────────────────────────────────
 
-type DocumentType = 'medicalRecord' | 'referralLetter' | 'insuranceCard' | 'otherDocument'
+/** A file on the clinic's record of the patient (getClinicPatientFullRecord's documents). */
+export type ClinicDocument = ManagedDocument
 
-const DOCUMENT_TYPES: { value: DocumentType; label: string }[] = [
-  { value: 'medicalRecord', label: 'Medical record or scan' },
-  { value: 'referralLetter', label: 'Referral letter' },
-  { value: 'insuranceCard', label: 'Insurance / HMO card' },
-  { value: 'otherDocument', label: 'Other' },
-]
-
-export type ClinicDocument = {
-  _id: string
-  fileName: string
-  documentType?: string
-  fileSize?: number
-  uploadedAt?: number
-  downloadUrl?: string | null
-}
-
+/**
+ * Anyone on the team with the Patients page can add files. Changing or deleting one is open to them
+ * for 24 hours after it was added, then only to the clinic admin (checked on the server).
+ */
 export function ClinicDocumentsTab({ patientId, documents }: { patientId: Id<'users'>; documents: ClinicDocument[] }) {
   const { requireFullAccess } = useClinicAccess()
   const generateUploadUrl = useMutation(api.files.generateUploadUrl)
   const attachDocument = useMutation(api.clinicTools.attachPatientDocument)
-  const [docType, setDocType] = useState<DocumentType>('medicalRecord')
-  const [uploading, setUploading] = useState(false)
-  const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const upload = async (file: File) => {
-    if (!requireFullAccess('Upload document')) return
-    setUploading(true)
-    try {
-      const uploadUrl = await generateUploadUrl({ fileType: file.type || 'application/pdf', fileName: file.name })
-      const postRes = await fetch(uploadUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': file.type || 'application/octet-stream' },
-        body: file,
-      })
-      if (!postRes.ok) throw new Error('The upload did not go through. Please try again.')
-      const { storageId } = await postRes.json()
-      await attachDocument({
-        patientId,
-        storageId,
-        fileName: file.name,
-        fileSize: file.size,
-        contentType: file.type || 'application/pdf',
-        documentType: docType,
-      })
-      playSound('success')
-      toast.success(`${file.name} added`)
-    } catch (err) {
-      playSound('error')
-      toast.error(friendlyError(err, 'Could not upload the document. Please try again.'))
-    } finally {
-      setUploading(false)
-    }
+  // One file into storage, then onto the record (DocumentManager adds several in turn)
+  const uploadOne = async (file: File, documentType: DocumentType) => {
+    const uploadUrl = await generateUploadUrl({ fileType: file.type || 'application/pdf', fileName: file.name })
+    const postRes = await fetch(uploadUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': file.type || 'application/octet-stream' },
+      body: file,
+    })
+    if (!postRes.ok) throw new Error('The upload did not go through. Please try again.')
+    const { storageId } = await postRes.json()
+    await attachDocument({
+      patientId,
+      storageId,
+      fileName: file.name,
+      fileSize: file.size,
+      contentType: file.type || 'application/pdf',
+      documentType,
+    })
   }
 
-  const typeLabel = (value?: string) => DOCUMENT_TYPES.find((t) => t.value === value)?.label ?? 'Document'
-  const sorted = [...documents].sort((a, b) => (b.uploadedAt ?? 0) - (a.uploadedAt ?? 0))
-
   return (
-    <div className="space-y-5">
-      <Panel>
-        <div className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center">
-          <input
-            ref={fileInputRef}
-            type="file"
-            className="hidden"
-            accept=".pdf,.png,.jpg,.jpeg"
-            onChange={(e) => {
-              const file = e.target.files?.[0]
-              e.target.value = ''
-              if (file) void upload(file)
-            }}
-          />
-          <Select value={docType} onValueChange={(val) => setDocType(val as DocumentType)}>
-            <SelectTrigger className={cn(fieldClass, 'h-10 sm:w-60')} aria-label="Document type">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {DOCUMENT_TYPES.map((t) => (
-                <SelectItem key={t.value} value={t.value}>
-                  {t.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Button onClick={() => fileInputRef.current?.click()} disabled={uploading} className={cn(primaryButtonClass, 'h-10')}>
-            {uploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
-            {uploading ? 'Uploading…' : 'Upload a document'}
-          </Button>
-          <p className="text-xs text-pt-muted">PDF or photo. Their clinician sees it too.</p>
-        </div>
-      </Panel>
-
-      <Panel title="Documents" description="Referral letters, scans, reports and HMO cards">
-        {sorted.length === 0 ? (
-          <EmptyState icon={<FileText />} title="No documents yet" />
-        ) : (
-          <ul className="px-2 pb-2 sm:px-3">
-            {sorted.map((doc) => (
-              <li key={doc._id} className="flex items-center gap-3 rounded-2xl px-3 py-2.5">
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-pt-sunken text-pt-ink">
-                  <FileText className="h-5 w-5" />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-pt-ink">{doc.fileName}</p>
-                  <p className="truncate text-xs text-pt-muted">
-                    {[typeLabel(doc.documentType), formatFileSize(doc.fileSize), formatDate(doc.uploadedAt)].filter(Boolean).join(' · ')}
-                  </p>
-                </div>
-                {doc.downloadUrl && (
-                  <Button asChild variant="ghost" size="icon" className="rounded-xl hover:bg-pt-hover" aria-label={`Open ${doc.fileName}`}>
-                    <a href={doc.downloadUrl} target="_blank" rel="noopener noreferrer">
-                      <Download className="h-4 w-4" />
-                    </a>
-                  </Button>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-      </Panel>
-    </div>
+    <DocumentManager
+      documents={documents}
+      uploadOne={uploadOne}
+      accept=".pdf,.png,.jpg,.jpeg,.webp"
+      uploadHint="PDF or photo, up to 15 MB each. Their clinician sees them too."
+      defaultType="medicalRecord"
+      title="Documents"
+      description="Referral letters, scans, reports and HMO cards"
+      guard={(action) => requireFullAccess(action)}
+    />
   )
 }
 

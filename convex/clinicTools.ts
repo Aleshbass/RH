@@ -27,6 +27,7 @@ import { lagosDateTime, lagosTimeRange, zonedDateKey, zonedTimeKey } from "./hel
 import { transitionReferral } from "./helpers/partnerEvents";
 import { attributeUserToReferral } from "./helpers/partnerAttribution";
 import { assertNoteTextLength, keepRevision } from "./helpers/noteRevisions";
+import { isShownDocument, withDocumentRights } from "./helpers/patientDocuments";
 import { createClinicPatientInvitation } from "./patientInvitations";
 import { insertNotification } from "./helpers/pushNotify";
 import { queueJoyAppointmentScheduled } from "./helpers/joyEvents";
@@ -122,6 +123,17 @@ export async function resolveClinicMember(ctx: QueryCtx, user: Doc<"users">): Pr
 
 export function canUseArea(member: ClinicMember, area: ClinicArea) {
   return member.permissions === "all" || member.permissions.includes(area);
+}
+
+/**
+ * The clinic admin: the owner, or a team member with full access, as the Team page shows it
+ * ("Full access": a role with no pages ticked, front desk without a role) or a role that opens
+ * every page. Only the admin can change a patient's file after its first 24 hours
+ * (helpers/patientDocuments.ts).
+ */
+export function isClinicAdmin(member: ClinicMember) {
+  const { permissions } = member;
+  return member.isOwner || permissions === "all" || CLINIC_AREAS.every((area) => permissions.includes(area));
 }
 
 /**
@@ -804,7 +816,8 @@ export const getClinicPatientFullRecord = query({
     patientId: v.id("users"),
   },
   handler: async (ctx, args) => {
-    const { clinic } = await getClinicMember(ctx, "patients");
+    const member = await getClinicMember(ctx, "patients");
+    const { clinic } = member;
 
     const patient = await ctx.db.get(args.patientId);
     if (!patient) {
@@ -873,7 +886,9 @@ export const getClinicPatientFullRecord = query({
       })
     );
 
-    // Patient Documents: the patient's own uploads only when they shared them with their clinician
+    // Patient Documents: the patient's own uploads only when they shared them with their clinician.
+    // Deleted files stay stored for the audit trail but leave the record. Who added each file, and
+    // whether this member may still change it (anyone with Patients for 24 hours, then the admin).
     let documents: any[] = [];
     if (profile?._id) {
       const rawDocuments = (
@@ -881,10 +896,13 @@ export const getClinicPatientFullRecord = query({
           .query("patientDocuments")
           .withIndex("by_patient_profile_id", (q: any) => q.eq("patientProfileId", profile._id))
           .collect()
-      ).filter((doc: any) => doc.sharedWithPhysiotherapist !== false);
+      ).filter((doc) => doc.sharedWithPhysiotherapist !== false && isShownDocument(doc));
+      const editor = { userId: member.user._id, isAdmin: isClinicAdmin(member), patientUserId: args.patientId };
+      const described = await withDocumentRights(ctx, rawDocuments, editor, args.patientId, Date.now());
       documents = await Promise.all(
-        rawDocuments.map(async (doc: any) => ({
+        described.map(async ({ doc, ...rights }) => ({
           ...doc,
+          ...rights,
           downloadUrl: (await ctx.storage.getUrl(doc.storageId)) || "",
         }))
       );
@@ -1065,6 +1083,7 @@ export const attachPatientDocument = mutation({
       documentType: args.documentType,
       storageId: args.storageId,
       uploadedAt: Date.now(),
+      uploadedBy: user._id,
       sharedWithPhysiotherapist: true,
     });
 

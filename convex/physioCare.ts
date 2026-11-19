@@ -27,6 +27,7 @@ import { getClinicMember, getClinicStaffUserIds } from "./clinicTools";
 import { cleanMeasures, measureValidator, sameMeasures } from "./helpers/clinicalMeasures";
 import { autoTargetText, cleanGoalMeasure, firstValueSince, goalMeasureValidator, type GoalMeasure } from "./helpers/goalMeasures";
 import { physioMeasuredNotes } from "./helpers/measuredNotes";
+import { ageOf } from "./helpers/patientFacts";
 import { isRehabifyCareInvoice, rehabifyCarePayoutKobo } from "./helpers/marketplaceInvoices";
 import {
   currentUser,
@@ -484,6 +485,8 @@ export const getPatientWorkspace = query({
       profile: profile
         ? {
             dateOfBirth: profile.dateOfBirth,
+            // From the date of birth, or an age the care team noted: shown at a glance in the header
+            ageYears: ageOf(profile, now),
             gender: profile.gender,
             medicalHistory: profile.medicalHistorySummary?.trim() || null,
             city: profile.city ?? null,
@@ -1604,6 +1607,7 @@ export const attachPatientFile = mutation({
       fileSize: args.fileSize,
       contentType: args.contentType,
       uploadedAt: Date.now(),
+      uploadedBy: physio._id,
       sharedWithPhysiotherapist: true,
     });
     return { docId };

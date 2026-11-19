@@ -8,6 +8,7 @@ import { getClinicMember, requireClinicWrite } from "./clinicTools";
 import { normalizePhone } from "./helpers/partnerShared";
 import { patientJoinStatus, shownEmail } from "./helpers/patientJoinStatus";
 import { isPlaceholderUser } from "./helpers/whatsappLink";
+import { isShownDocument } from "./helpers/patientDocuments";
 
 /**
  * Get authenticated physiotherapist user and validate permissions
@@ -343,13 +344,13 @@ export const getPatientDetails = query({
       .filter((q) => q.eq(q.field("physiotherapistId"), physiotherapist._id))
       .collect();
 
-    // Get patient documents
-    const documents = patientProfile ? await ctx.db
+    // Get patient documents (not ones the care team deleted: those are kept only for the audit trail)
+    const documents = patientProfile ? (await ctx.db
       .query("patientDocuments")
       .withIndex("by_patient_profile_id", (q) =>
         q.eq("patientProfileId", patientProfile._id)
       )
-      .collect() : [];
+      .collect()).filter(isShownDocument) : [];
 
     return {
       patient: {
@@ -489,6 +490,8 @@ export const updatePatientBasicInfo = mutation({
         v.literal("other"),
         v.literal("prefer_not_to_say")
       )),
+      // Free-text past medical history (patientProfiles.medicalHistorySummary); empty clears it
+      medicalHistorySummary: v.optional(v.string()),
     }),
   },
   handler: async (ctx, args) => {
@@ -526,6 +529,11 @@ export const updatePatientBasicInfo = mutation({
     const profileUpdateData: any = {};
     if (args.updates.dateOfBirth !== undefined) profileUpdateData.dateOfBirth = args.updates.dateOfBirth;
     if (args.updates.gender !== undefined) profileUpdateData.gender = args.updates.gender;
+    if (args.updates.medicalHistorySummary !== undefined) {
+      const history = args.updates.medicalHistorySummary.trim();
+      if (history.length > 4000) throw new ConvexError("Keep the medical history under 4,000 characters.");
+      profileUpdateData.medicalHistorySummary = history || undefined;
+    }
 
     if (Object.keys(profileUpdateData).length > 0) {
       // Marketplace and Joy patients have a profile without the user pointer, or none yet
@@ -1169,8 +1177,11 @@ export const exportMyData = query({
       .query("appointments")
       .withIndex("by_patient_id_and_time", (q) => q.eq("patientId", user._id))
       .collect();
+    // Files the care team deleted (a wrong upload can be another person's) are left out
     const documents = profile
-      ? await ctx.db.query("patientDocuments").withIndex("by_patient_profile_id", (q) => q.eq("patientProfileId", profile._id)).collect()
+      ? (await ctx.db.query("patientDocuments").withIndex("by_patient_profile_id", (q) => q.eq("patientProfileId", profile._id)).collect()).filter(
+          isShownDocument
+        )
       : [];
     const checkIns = await ctx.db.query("patientCheckIns").withIndex("by_patient", (q) => q.eq("patientId", user._id)).collect();
     const exerciseLogs = await ctx.db.query("exerciseProgramLogs").withIndex("by_patient", (q) => q.eq("patientId", user._id)).collect();

@@ -89,6 +89,8 @@ export type Workspace = {
   }
   profile: {
     dateOfBirth?: string
+    /** From the date of birth, or an age the care team noted (convex/helpers/patientFacts.ts ageOf) */
+    ageYears: number | null
     gender?: string
     /** patientProfiles.medicalHistorySummary (free text) */
     medicalHistory: string | null

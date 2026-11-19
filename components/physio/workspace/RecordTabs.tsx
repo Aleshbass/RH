@@ -4,11 +4,10 @@ import { useMemo, useRef, useState } from 'react'
 import { useAction, useMutation, useQuery } from 'convex/react'
 import { format, formatDistanceToNow } from 'date-fns'
 import { makeFunctionReference } from 'convex/server'
-import { AlertTriangle, CheckCircle2, ChevronDown, Copy, Download, FileText, HeartPulse, History, Loader2, Mail, Mic, NotebookPen, Paperclip, Pencil, Plus, Receipt, Ruler, Upload } from '@/components/icons'
+import { AlertTriangle, CheckCircle2, ChevronDown, Copy, HeartPulse, History, Loader2, Mail, Mic, NotebookPen, Paperclip, Pencil, Plus, Receipt, Ruler } from '@/components/icons'
 import { toast } from 'sonner'
 import type { Id } from '@/convex/_generated/dataModel'
 import { Button } from '@/components/ui/button'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState, InfoTip, Panel, StatusBadge, formatNaira, primaryButtonClass, secondaryButtonClass } from '@/components/physio/ui'
 import { useFileUpload } from '@/lib/hooks/useFileUpload'
@@ -19,6 +18,7 @@ import { programError } from '@/components/exercise-programs/errors'
 import { DIFFICULTY_LABELS, EXERCISES_LABELS, HIGH_PAIN, MOOD_LABELS, PainPill, useWorkspaceReadOnly, type ExerciseLog, type Workspace } from './shared'
 import { NoteDrawer, type EditableNote } from './WorkspaceDrawers'
 import { NoteHistoryDrawer } from './NoteHistoryDrawer'
+import { DocumentManager, type DocumentType, type ManagedDocument } from '@/components/patient-documents/DocumentManager'
 import { MeasureList } from '@/components/physio/notes/MeasureList'
 import { NOTE_TYPE_LABELS, previousBySeries, type ClinicalNote } from '@/components/physio/notes/progress'
 
@@ -465,110 +465,36 @@ export function CheckInsTab({ workspace }: { workspace: Workspace }) {
 // Files
 // ─────────────────────────────────────────────────────────────────────────────
 
-type DocType = 'referralLetter' | 'medicalRecord' | 'insuranceCard' | 'otherDocument'
-const DOC_LABELS: Record<DocType, string> = {
-  referralLetter: 'Referral letter',
-  medicalRecord: 'Medical record or scan',
-  insuranceCard: 'Insurance card',
-  otherDocument: 'Other',
-}
-
-function formatSize(bytes: number) {
-  return bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-}
-
 export function FilesTab({ workspace }: { workspace: Workspace }) {
-  const files = useQuery(getPatientDocumentsRef, { patientUserId: workspace.patient._id }) as
-    | { _id: string; fileName: string; documentType: DocType; uploadedAt: number; fileSize: number; downloadUrl: string }[]
-    | undefined
+  const files = useQuery(getPatientDocumentsRef, { patientUserId: workspace.patient._id }) as ManagedDocument[] | undefined
   const attach = useMutation(attachPatientFileRef)
   const { uploadFile } = useFileUpload()
-  const inputRef = useRef<HTMLInputElement>(null)
-  const [docType, setDocType] = useState<DocType>('referralLetter')
-  const [uploading, setUploading] = useState(false)
   const isActive = workspace.episode.status === 'active'
 
-  const onFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    event.target.value = ''
-    if (!file) return
-    setUploading(true)
-    try {
-      const result = await uploadFile(file)
-      if (!result?.storageId) throw new Error('Upload failed')
-      await attach({
-        patientId: workspace.patient._id,
-        storageId: result.storageId as Id<'_storage'>,
-        fileName: file.name,
-        fileSize: file.size,
-        contentType: file.type || 'application/octet-stream',
-        documentType: docType,
-      })
-      toast.success(`${file.name} added`)
-    } catch (error) {
-      toast.error(programError(error, 'Upload failed. Please try again.'))
-    } finally {
-      setUploading(false)
-    }
+  // One file into storage, then onto the patient's record (DocumentManager adds several in turn)
+  const uploadOne = async (file: File, documentType: DocumentType) => {
+    const result = await uploadFile(file)
+    if (!result?.storageId) throw new Error('Upload failed')
+    await attach({
+      patientId: workspace.patient._id,
+      storageId: result.storageId as Id<'_storage'>,
+      fileName: file.name,
+      fileSize: file.size,
+      contentType: file.type || 'application/octet-stream',
+      documentType,
+    })
   }
 
   return (
-    <div className="space-y-5">
-      {isActive && (
-        <Panel>
-          <div className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center">
-            <input ref={inputRef} type="file" className="hidden" accept="application/pdf,image/*" onChange={onFile} />
-            <Select value={docType} onValueChange={(v) => setDocType(v as DocType)}>
-              <SelectTrigger className="rounded-xl sm:w-56" aria-label="File type">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {(Object.keys(DOC_LABELS) as DocType[]).map((key) => (
-                  <SelectItem key={key} value={key}>
-                    {DOC_LABELS[key]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Button onClick={() => inputRef.current?.click()} disabled={uploading} className={primaryButtonClass}>
-              {uploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
-              {uploading ? 'Uploading…' : 'Upload a file'}
-            </Button>
-            <p className="text-xs text-neutral-500 dark:text-neutral-400">PDF or photo, up to 15 MB.</p>
-          </div>
-        </Panel>
-      )}
-      <Panel title="Files" description="Referral letters, scans and reports">
-        {files === undefined ? (
-          <div className="p-5">
-            <Skeleton className="h-12 rounded-xl" />
-          </div>
-        ) : files.length === 0 ? (
-          <EmptyState icon={<FileText />} title="No files yet" />
-        ) : (
-          <ul className="divide-y divide-black/[0.04] dark:divide-white/[0.05]">
-            {files.map((file) => (
-              <li key={file._id} className="flex items-center gap-3 px-5 py-3">
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rh-honeydew text-rh-ink dark:bg-white/[0.06] dark:text-rh-lime">
-                  <FileText className="h-5 w-5" />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-rh-ink dark:text-white">{file.fileName}</p>
-                  <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">
-                    {DOC_LABELS[file.documentType] ?? 'File'} · {formatSize(file.fileSize)} · {format(file.uploadedAt, 'd MMM yyyy')}
-                  </p>
-                </div>
-                <Button asChild variant="ghost" size="icon" aria-label={`Download ${file.fileName}`}>
-                  <a href={file.downloadUrl} target="_blank" rel="noopener noreferrer">
-                    <Download className="h-4 w-4" />
-                  </a>
-                </Button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Panel>
-    </div>
+    <DocumentManager
+      documents={files}
+      uploadOne={isActive ? uploadOne : undefined}
+      accept="application/pdf,image/*"
+      uploadHint="PDF or photo, up to 15 MB each. You can pick several."
+      defaultType="referralLetter"
+      title="Files"
+      description="Referral letters, scans and reports"
+    />
   )
 }
 

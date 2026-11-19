@@ -63,6 +63,7 @@ import { CheckInsTab, FilesTab, NotesTab, PaymentsTab } from '@/components/physi
 import { CompleteCareDialog, EpisodeDialog } from '@/components/physio/workspace/CareDialogs';
 import { CarePlanDrawer, NoteDrawer, RequestPaymentDrawer, SaveTemplateDrawer } from '@/components/physio/workspace/WorkspaceDrawers';
 import { SOURCE_LABELS, fullName, type Workspace } from '@/components/physio/workspace/shared';
+import { MedicalHistoryLine, PatientFacts } from '@/components/physio/workspace/PatientGlance';
 import { RehabifyId } from '@/components/shared/RehabifyId';
 import { useMutationUntyped, useQueryUntyped } from '@/lib/convexUntyped';
 import { cn } from '@/lib/utils';
@@ -231,6 +232,8 @@ export default function PatientWorkspacePage() {
             </Avatar>
             <div className="min-w-0">
               <h1 className="truncate text-2xl font-semibold tracking-tight text-pt-ink sm:text-[28px]">{name}</h1>
+              {/* Age, gender, date of birth and town, at first glance */}
+              <PatientFacts profile={workspace.profile} />
               <p className="truncate text-sm text-pt-muted">{[patient.email, patient.phoneNumber].filter(Boolean).join(' · ') || 'No contact details'}</p>
               <div className="mt-2 flex flex-wrap items-center gap-1.5">
                 <RehabifyId value={patient.patientNumber} className="rounded-full px-2.5 text-xs" />
@@ -294,7 +297,7 @@ export default function PatientWorkspacePage() {
                     )}
                   </>
                 )}
-                <DropdownMenuItem onClick={() => setDrawer('edit')}>Edit contact details</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setDrawer('edit')}>Edit patient details</DropdownMenuItem>
                 {isActive && (
                   <>
                     <DropdownMenuSeparator />
@@ -308,6 +311,13 @@ export default function PatientWorkspacePage() {
             </DropdownMenu>
           </div>
         </div>
+
+        {/* Past medical history, so it's never more than a glance away (editing needs active care) */}
+        <MedicalHistoryLine
+          history={workspace.profile?.medicalHistory}
+          onAdd={isActive ? () => setDrawer('edit') : undefined}
+          className="mt-4 border-t border-pt-line pt-4"
+        />
 
         {/* The four things you do most, one tap each */}
         {isActive && (
@@ -481,6 +491,7 @@ export default function PatientWorkspacePage() {
           phoneNumber: patient.phoneNumber,
           dateOfBirth: workspace.profile?.dateOfBirth,
           gender: workspace.profile?.gender,
+          medicalHistory: workspace.profile?.medicalHistory ?? undefined,
         }}
         onSuccess={() => setDrawer(null)}
       />

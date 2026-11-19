@@ -11,6 +11,7 @@ import { Id } from '@/convex/_generated/dataModel'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Loader2, User } from '@/components/icons'
@@ -23,6 +24,7 @@ const editPatientSchema = z.object({
   phoneNumber: z.string().optional(),
   dateOfBirth: z.string().optional(),
   gender: z.enum(['male', 'female', 'other', 'prefer_not_to_say']).optional(),
+  medicalHistorySummary: z.string().max(4000, 'Keep the medical history under 4,000 characters').optional(),
 })
 
 type EditPatientFormData = z.infer<typeof editPatientSchema>
@@ -38,6 +40,8 @@ interface EditPatientModalProps {
     phoneNumber?: string
     dateOfBirth?: string
     gender?: string
+    /** Past medical history (patientProfiles.medicalHistorySummary), shown in the workspace header */
+    medicalHistory?: string
   }
   onSuccess?: () => void
 }
@@ -66,6 +70,7 @@ export default function EditPatientModal({
       phoneNumber: currentData.phoneNumber || '',
       dateOfBirth: currentData.dateOfBirth?.slice(0, 10) || '',
       gender: currentData.gender as any,
+      medicalHistorySummary: currentData.medicalHistory || '',
     }
   })
 
@@ -79,12 +84,16 @@ export default function EditPatientModal({
         phoneNumber: currentData.phoneNumber || '',
         dateOfBirth: currentData.dateOfBirth?.slice(0, 10) || '',
         gender: currentData.gender as any,
+        medicalHistorySummary: currentData.medicalHistory || '',
       })
     }
   }, [isOpen, currentData, reset])
 
   const onSubmit = async (data: EditPatientFormData) => {
     setIsSubmitting(true)
+    // Only sent when changed, so saving contact details never rewrites the history
+    const history = (data.medicalHistorySummary ?? '').trim()
+    const historyChanged = history !== (currentData.medicalHistory ?? '').trim()
 
     try {
       await updatePatientBasicInfo({
@@ -95,6 +104,7 @@ export default function EditPatientModal({
           phoneNumber: data.phoneNumber || undefined,
           dateOfBirth: data.dateOfBirth || undefined,
           gender: data.gender || undefined,
+          medicalHistorySummary: historyChanged ? history : undefined,
         }
       })
 
@@ -118,7 +128,7 @@ export default function EditPatientModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-[500px]">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-[500px]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <User className="h-5 w-5" />
@@ -224,6 +234,21 @@ export default function EditPatientModal({
               </Select>
               {errors.gender && (
                 <p className="text-sm text-red-600">{errors.gender.message}</p>
+              )}
+            </div>
+
+            {/* Medical history: shown under the patient's name in the workspace */}
+            <div className="space-y-2">
+              <Label htmlFor="medicalHistorySummary">Medical history</Label>
+              <Textarea
+                id="medicalHistorySummary"
+                rows={3}
+                {...register('medicalHistorySummary')}
+                placeholder="e.g. Type 2 diabetes, hypertension. Left knee replacement 2019."
+                disabled={isSubmitting}
+              />
+              {errors.medicalHistorySummary && (
+                <p className="text-sm text-red-600">{errors.medicalHistorySummary.message}</p>
               )}
             </div>
           </div>

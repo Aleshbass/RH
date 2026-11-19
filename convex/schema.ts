@@ -1440,6 +1440,14 @@ export default defineSchema({
     contentType: v.string(),
     uploadedAt: v.number(),
     sharedWithPhysiotherapist: v.optional(v.boolean()), // Privacy control - defaults to true
+    // Who added it: the patient, or someone on their care team. Older files don't say.
+    uploadedBy: v.optional(v.id("users")),
+    // Renamed or re-typed by the care team (helpers/patientDocuments.ts has who may)
+    editedAt: v.optional(v.number()),
+    editedBy: v.optional(v.id("users")),
+    // Deleted from the record. The stored file is kept for the audit trail; normal views hide it.
+    deletedAt: v.optional(v.number()),
+    deletedBy: v.optional(v.id("users")),
   })
     .index("by_patient_profile_id", ["patientProfileId"])
     .index("by_document_type", ["patientProfileId", "documentType"]),
