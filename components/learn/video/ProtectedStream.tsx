@@ -3,9 +3,11 @@
 /**
  * Protected lesson playback (convex/learnVideo.ts): hls.js plays the AES-128 encrypted stream,
  * sending the short-lived playback token with the playlist and key requests and swapping in a
- * fresh token before it expires. A watermark with the learner's name and email moves around the
- * picture, comes back if it's removed or hidden, and stays visible in fullscreen (the frame, not
- * the bare <video>, goes fullscreen). Safari without Media Source plays the stream natively.
+ * fresh token before it expires. A small, faint watermark with the learner's name and email sits in a
+ * corner of the picture and moves to another corner now and then (owner 19 Nov 2026: it mustn't
+ * get in the way; it's there so a leaked recording can be traced). It comes back if it's removed or
+ * hidden, and stays visible in fullscreen: the lesson's Expand button puts the frame, not the bare
+ * <video>, in fullscreen (LessonPlayer). Safari without Media Source plays the stream natively.
  *
  * Known limit: this stops casual copying and makes leaks traceable; it can't stop screen recording.
  */
@@ -16,7 +18,7 @@ import type { LessonPlayback } from './videoApi'
 export type HlsStream = NonNullable<LessonPlayback['hls']>
 
 const REFRESH_BEFORE_MS = 2 * 60 * 1000
-const MOVE_EVERY_MS = 6000
+const MOVE_EVERY_MS = 40_000
 const CHECK_EVERY_MS = 1500
 
 /** Replace (or add) the token on a URL to our own video endpoints. */
@@ -35,22 +37,31 @@ const STYLE: Record<string, string> = {
   'user-select': 'none',
   'white-space': 'nowrap',
   'font-family': 'ui-sans-serif, system-ui, sans-serif',
-  'font-size': '13px',
-  'font-weight': '600',
+  'font-size': '11px',
+  'font-weight': '500',
   'line-height': '1.2',
-  color: 'rgba(255,255,255,0.55)',
-  'text-shadow': '0 1px 2px rgba(0,0,0,0.6)',
+  // Faint, but in every frame (the tamper check reads the element's opacity, not the colour's)
+  color: 'rgba(255,255,255,0.32)',
+  'text-shadow': '0 1px 1px rgba(0,0,0,0.35)',
   display: 'block',
   visibility: 'visible',
   opacity: '1',
   transform: 'none',
-  transition: 'top 1.2s ease, left 1.2s ease',
+  transition: 'top 0.8s ease, left 0.8s ease, right 0.8s ease, bottom 0.8s ease',
 }
 
-function applyStyle(el: HTMLElement, top: number, left: number) {
+/** The four corners, clear of the player's controls at the bottom. */
+const CORNERS = [
+  { top: '12px', left: '14px' },
+  { top: '12px', right: '14px' },
+  { bottom: '64px', right: '14px' },
+  { bottom: '64px', left: '14px' },
+] as const
+
+function applyStyle(el: HTMLElement, corner: number) {
   for (const [k, v] of Object.entries(STYLE)) el.style.setProperty(k, v, 'important')
-  el.style.setProperty('top', `${top}%`, 'important')
-  el.style.setProperty('left', `${left}%`, 'important')
+  const at = CORNERS[corner % CORNERS.length] as Record<string, string>
+  for (const side of ['top', 'right', 'bottom', 'left']) el.style.setProperty(side, at[side] ?? 'auto', 'important')
 }
 
 function looksHidden(el: HTMLElement, frame: HTMLElement) {
@@ -75,13 +86,12 @@ function useWatermark(frame: RefObject<HTMLDivElement | null>, video: RefObject<
   useEffect(() => {
     const host = frame.current
     if (!host || !text) return
-    let top = 10 + Math.random() * 70
-    let left = 5 + Math.random() * 55
+    let corner = Math.floor(Math.random() * CORNERS.length)
     const make = () => {
       const el = document.createElement('div')
       el.setAttribute('aria-hidden', 'true')
       el.textContent = text
-      applyStyle(el, top, left)
+      applyStyle(el, corner)
       host.appendChild(el)
       return el
     }
@@ -108,9 +118,8 @@ function useWatermark(frame: RefObject<HTMLDivElement | null>, video: RefObject<
     observer.observe(host, { childList: true, subtree: true, attributes: true, characterData: true })
     const checker = window.setInterval(check, CHECK_EVERY_MS)
     const mover = window.setInterval(() => {
-      top = 8 + Math.random() * 74
-      left = 4 + Math.random() * 58
-      applyStyle(mark, top, left)
+      corner = (corner + 1 + Math.floor(Math.random() * (CORNERS.length - 1))) % CORNERS.length
+      applyStyle(mark, corner)
     }, MOVE_EVERY_MS)
 
     return () => {
@@ -124,20 +133,29 @@ function useWatermark(frame: RefObject<HTMLDivElement | null>, video: RefObject<
 
 // ── Fullscreen on the frame (so the watermark stays) ────────────────────────
 
-function useFrameFullscreen(frame: RefObject<HTMLDivElement | null>, video: RefObject<HTMLVideoElement | null>) {
-  useEffect(() => {
-    const onChange = () => {
-      const host = frame.current
-      if (!host || document.fullscreenElement !== video.current) return
-      // The video's own fullscreen button: move fullscreen to the frame with the watermark
-      document
-        .exitFullscreen()
-        .then(() => host.requestFullscreen())
-        .catch(() => {})
-    }
-    document.addEventListener('fullscreenchange', onChange)
-    return () => document.removeEventListener('fullscreenchange', onChange)
-  }, [frame, video])
+/**
+ * Puts the lesson frame (video + watermark) in fullscreen, or takes it out. Call it straight from
+ * a click: browsers only allow fullscreen from the person's own tap. (Moving fullscreen from the
+ * video to the frame afterwards was refused for that reason, so Expand did nothing.) iPhones
+ * can't put an element in fullscreen, only the video itself.
+ */
+export function toggleFrameFullscreen(frame: HTMLElement | null, video: HTMLVideoElement | null) {
+  const doc = document as Document & { webkitFullscreenElement?: Element | null; webkitExitFullscreen?: () => void }
+  if (document.fullscreenElement || doc.webkitFullscreenElement) {
+    if (document.exitFullscreen) void document.exitFullscreen().catch(() => {})
+    else doc.webkitExitFullscreen?.()
+    return
+  }
+  const el = frame as (HTMLElement & { webkitRequestFullscreen?: () => void }) | null
+  if (el?.requestFullscreen) {
+    void el.requestFullscreen().catch(() => {})
+    return
+  }
+  if (el?.webkitRequestFullscreen) {
+    el.webkitRequestFullscreen()
+    return
+  }
+  ;(video as (HTMLVideoElement & { webkitEnterFullscreen?: () => void }) | null)?.webkitEnterFullscreen?.()
 }
 
 // ── hls.js ───────────────────────────────────────────────────────────────────
@@ -168,7 +186,6 @@ export function ProtectedStream({
   })
 
   useWatermark(frameRef, videoRef, `${stream.watermark.name} · ${stream.watermark.email}`, onTamper)
-  useFrameFullscreen(frameRef, videoRef)
 
   // Keep a live token while the lesson is open
   useEffect(() => {

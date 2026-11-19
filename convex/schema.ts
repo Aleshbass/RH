@@ -1743,6 +1743,8 @@ export default defineSchema({
     animationStatus: v.optional(v.union(v.literal("draft"), v.literal("approved"))),
     animationApprovedBy: v.optional(v.id("users")),
     animationApprovedAt: v.optional(v.number()),
+    // An admin renamed it: a library refresh keeps their name (exerciseLibrary.syncCatalog)
+    nameEditedAt: v.optional(v.number()),
 
     // A physio's own exercise (createdBy): their photos or video, private on ImageKit and opened
     // through signed links (lib/ownExerciseMedia.ts). The consent they confirmed is kept with it.

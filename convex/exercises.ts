@@ -115,7 +115,9 @@ export const updateExercise = mutation({
   handler: async (ctx, args) => {
     await ensureUserRole(ctx, ["admin"], "exercises:updateExercise");
     const { id, ...updates } = args;
-    await ctx.db.patch(id, updates);
+    const before = await ctx.db.get(id);
+    const renamed = updates.name !== undefined && before !== null && updates.name.trim() !== before.name;
+    await ctx.db.patch(id, { ...updates, ...(renamed ? { nameEditedAt: Date.now() } : {}) });
   },
 });
 

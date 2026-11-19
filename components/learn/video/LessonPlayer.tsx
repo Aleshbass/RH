@@ -10,13 +10,13 @@ import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
 import Image from 'next/image'
 import { useAction, useMutation } from 'convex/react'
 import { useReducedMotion } from 'framer-motion'
-import { ArrowLeft, ArrowRight, Check, Loader2, Play, RotateCcw } from '@/components/icons'
+import { ArrowLeft, ArrowRight, Check, Loader2, Maximize, Play, RotateCcw } from '@/components/icons'
 import { errorMessage } from '@/components/partners/portal/shared'
 import type { Id } from '@/convex/_generated/dataModel'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
 import { displayFont, pillLime, pillOutline } from '../shared'
-import { ProtectedStream, type HlsStream } from './ProtectedStream'
+import { ProtectedStream, toggleFrameFullscreen, type HlsStream } from './ProtectedStream'
 import { formatClock, formatLength, imagekitLoader, videoApi, type VideoCourse } from './videoApi'
 
 type LessonId = Id<'learnVideoLessons'>
@@ -446,7 +446,8 @@ function Stage({
     <div className="min-w-0">
       <div
         ref={frameRef}
-        className="relative aspect-video overflow-hidden rounded-[1.5rem] bg-rh-ink shadow-soft sm:rounded-[1.75rem] [&:fullscreen]:rounded-none [&:fullscreen_video]:h-full"
+        className="group/frame relative aspect-video overflow-hidden rounded-[1.5rem] bg-rh-ink shadow-soft sm:rounded-[1.75rem] [&:fullscreen]:rounded-none [&:fullscreen_video]:h-full"
+        onDoubleClick={stream ? () => toggleFrameFullscreen(frameRef.current, videoRef.current) : undefined}
       >
         {youtubeId && !error ? (
           <YoutubeFrame
@@ -470,7 +471,8 @@ function Stage({
             autoPlay
             playsInline
             preload="metadata"
-            controlsList="nodownload"
+            // Protected lessons: our Expand (below) puts the frame with the watermark in fullscreen
+            controlsList={stream ? 'nodownload nofullscreen' : 'nodownload'}
             onContextMenu={(e) => e.preventDefault()}
             onLoadedMetadata={restore}
             onTimeUpdate={tick}
@@ -498,6 +500,19 @@ function Stage({
               </div>
             )}
           </>
+        )}
+
+        {stream && !error && (
+          <button
+            type="button"
+            onClick={() => toggleFrameFullscreen(frameRef.current, videoRef.current)}
+            aria-label="Expand to full screen"
+            title="Expand (or double-click the video)"
+            className="absolute right-3 top-3 z-10 flex h-9 items-center gap-1.5 rounded-full bg-black/55 px-3 text-xs font-semibold text-white opacity-90 backdrop-blur transition hover:bg-black/75 sm:opacity-0 sm:group-hover/frame:opacity-100 sm:focus-visible:opacity-100"
+          >
+            <Maximize className="h-3.5 w-3.5" />
+            Expand
+          </button>
         )}
 
         {stream && !error && (

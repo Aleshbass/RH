@@ -145,8 +145,10 @@ async function syncCatalog(ctx: MutationCtx, overwriteText: boolean) {
       .withIndex("by_animation_slug", (q) => q.eq("animationSlug", entry.slug))
       .first();
     if (existing) {
+      // A name an admin chose stays
+      const { name: _catalogName, ...rest } = text;
       await ctx.db.patch(existing._id, {
-        ...(overwriteText ? text : {}),
+        ...(overwriteText ? (existing.nameEditedAt ? rest : text) : {}),
         sided: entry.sided,
         position: entry.position,
       });
@@ -166,6 +168,20 @@ async function syncCatalog(ctx: MutationCtx, overwriteText: boolean) {
   }
   return { created, updated, version: EXERCISE_CATALOG.version };
 }
+
+/** Admin › Exercise library: rename an exercise; physios and patients see the new name everywhere. */
+export const adminRenameExercise = mutation({
+  args: { exerciseId: v.id("exercises"), name: v.string() },
+  handler: async (ctx, args) => {
+    await ensureUserRole(ctx, ["admin"], "exerciseLibrary:adminRenameExercise");
+    const name = args.name.replace(/\s+/g, " ").trim();
+    if (name.length < 2 || name.length > 80) throw new ConvexError("Give it a name of 2 to 80 characters.");
+    const exercise = await ctx.db.get(args.exerciseId);
+    if (!exercise) throw new ConvexError("That exercise no longer exists.");
+    await ctx.db.patch(args.exerciseId, { name, nameEditedAt: Date.now() });
+    return { name };
+  },
+});
 
 /** A licensed physiotherapist (signed in as admin) signs off an animation, or withdraws it. */
 export const setAnimationApproval = mutation({
@@ -200,7 +216,9 @@ export const adminLibraryStatus = query({
       }
       out.push({
         slug: entry.slug,
-        name: entry.name,
+        // The name physios and patients see (an admin may have renamed it), and the catalogue's
+        name: row?.name ?? entry.name,
+        catalogName: entry.name,
         sided: entry.sided,
         exercise: row ? libraryItem(row) : null,
         approvedAt: row?.animationApprovedAt ?? null,

@@ -400,6 +400,27 @@ export const adminRemoveMember = mutation({
   },
 });
 
+/** Admin › Learn › Groups: the Learn super admins, to choose a group's leader (champion) from. */
+export const leaderCandidates = query({
+  args: {},
+  handler: async (ctx) => {
+    await requireLearnAdmin(ctx);
+    const rows = await ctx.db.query("learnAdmins").take(200);
+    const out: { userId: Id<"users">; name: string; email: string | null; imageUrl: string | null }[] = [];
+    for (const r of rows) {
+      const user = await ctx.db.get(r.userId);
+      if (!user || user.deletedAt) continue;
+      out.push({
+        userId: user._id,
+        name: [user.firstName, user.lastName].filter(Boolean).join(" ").trim() || user.email || "Super admin",
+        email: user.email ?? null,
+        imageUrl: user.imageUrl ?? null,
+      });
+    }
+    return out.sort((a, b) => a.name.localeCompare(b.name));
+  },
+});
+
 export const adminSetMemberRole = mutation({
   args: { groupId: v.id("learnGroups"), userId: v.id("users"), role: v.union(v.literal("member"), v.literal("lead")) },
   handler: async (ctx, args) => {

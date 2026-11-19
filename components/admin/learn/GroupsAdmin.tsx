@@ -20,6 +20,7 @@ import { AdminDrawer, Field } from '@/components/admin/learn/drawer'
 import {
   GROUP_COLORS,
   groupAddRef,
+  groupLeaderCandidatesRef,
   groupArchiveRef,
   groupCreateRef,
   groupRef,
@@ -490,6 +491,8 @@ function GroupDrawer({ groupId, onOpenChange }: { groupId: Id<'learnGroups'> | n
           {group.archived ? (
             <p className="rounded-xl bg-rh-warn-soft px-3 py-2 text-sm text-rh-warn-ink">Archived: members don&apos;t see this group. Restore it to add people.</p>
           ) : (
+            <>
+            <LeaderPicker groupId={group.id} current={champion ? { userId: champion.userId, name: champion.name } : null} />
             <section className="space-y-2">
               <h3 className="text-sm font-semibold text-rh-ink dark:text-white">Add people</h3>
               <p className="text-xs text-neutral-500">
@@ -498,6 +501,7 @@ function GroupDrawer({ groupId, onOpenChange }: { groupId: Id<'learnGroups'> | n
               </p>
               <AddPeople groupId={group.id} />
             </section>
+            </>
           )}
 
           <section>
@@ -515,6 +519,67 @@ function GroupDrawer({ groupId, onOpenChange }: { groupId: Id<'learnGroups'> | n
         </div>
       )}
     </AdminDrawer>
+  )
+}
+
+/** The group's leader (its champion), chosen from the Learn super admins. Owner 19 Nov 2026. */
+function LeaderPicker({ groupId, current }: { groupId: Id<'learnGroups'>; current: { userId: Id<'users'>; name: string } | null }) {
+  const candidates = useQuery(groupLeaderCandidatesRef, {})
+  const add = useMutation(groupAddRef)
+  const [choice, setChoice] = useState('')
+  const [busy, setBusy] = useState(false)
+  const options = (candidates ?? []).filter((c) => c.userId !== current?.userId)
+  const make = async () => {
+    const pick = options.find((c) => c.userId === choice)
+    if (!pick) return
+    setBusy(true)
+    try {
+      const res = await add({ groupId, userIds: [pick.userId], role: 'lead' })
+      if (res.skipped.length) toast.error(`${pick.name} doesn't have a Rehabify Learn account yet, so they can't lead a group.`)
+      else toast.success(`${pick.name} now leads this group.`)
+      setChoice('')
+    } catch (e) {
+      toast.error(errorText(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <section className="space-y-2 rounded-2xl bg-rh-canvas p-4 dark:bg-white/[0.03]">
+      <h3 className="flex items-center gap-1.5 text-sm font-semibold text-rh-ink dark:text-white">
+        <Crown className="h-4 w-4" /> Group leader
+      </h3>
+      <p className="text-xs text-neutral-500">
+        {current ? `${current.name} leads this group (its champion).` : 'No leader yet.'} Choose one of the Learn super admins; they join the group if they
+        aren&apos;t in it, and replace the current leader.
+      </p>
+      {candidates === undefined ? (
+        <Loader2 className="h-4 w-4 animate-spin text-neutral-400" />
+      ) : options.length === 0 ? (
+        <p className="text-xs text-neutral-500">No other super admins yet. Add them on Learn › Super admins.</p>
+      ) : (
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <select
+            value={choice}
+            onChange={(e) => setChoice(e.target.value)}
+            aria-label="Choose a super admin to lead this group"
+            className={cn(inputClass, 'h-10 flex-1 rounded-xl border border-black/10 bg-white px-3 text-sm dark:border-white/10 dark:bg-rh-ink-2')}
+          >
+            <option value="">Choose a super admin…</option>
+            {options.map((c) => (
+              <option key={c.userId} value={c.userId}>
+                {c.name}
+                {c.email ? ` · ${c.email}` : ''}
+              </option>
+            ))}
+          </select>
+          <Button className={primaryButtonClass} disabled={!choice || busy} onClick={() => void make()}>
+            {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Crown className="mr-2 h-4 w-4" />}
+            {current ? 'Make leader' : 'Set leader'}
+          </Button>
+        </div>
+      )}
+    </section>
   )
 }
 

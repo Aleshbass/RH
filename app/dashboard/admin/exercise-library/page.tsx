@@ -3,8 +3,9 @@
 import { useState } from 'react'
 import Image from 'next/image'
 import { useMutation, useQuery } from 'convex/react'
+import { makeFunctionReference } from 'convex/server'
 import { format } from 'date-fns'
-import { Building2, CheckCircle2, Clock, Eye, Layers, Loader2, Plus, RefreshCw, Rotate3d, ShieldCheck, Trash2, UserPlus } from '@/components/icons'
+import { Building2, Check, CheckCircle2, Clock, Eye, Layers, Loader2, Pencil, Plus, RefreshCw, Rotate3d, ShieldCheck, Trash2, UserPlus, X } from '@/components/icons'
 import { toast } from 'sonner'
 import { api } from '@/convex/_generated/api'
 import type { Doc, Id } from '@/convex/_generated/dataModel'
@@ -41,7 +42,7 @@ const errorText = (e: unknown, fallback: string) => (e as Error)?.message?.repla
 // Query results are cast: the generated `api` type degrades to `any` in this app.
 type SignOffStatus = {
   version: string
-  items: { slug: string; name: string; sided: boolean; exercise: LibraryEntry | null; approvedAt: number | null; approvedByName: string | null }[]
+  items: { slug: string; name: string; catalogName: string; sided: boolean; exercise: LibraryEntry | null; approvedAt: number | null; approvedByName: string | null }[]
 }
 type LicenceRow = Doc<'libraryLicences'> & {
   members: { _id: Id<'libraryLicenceMembers'>; userId: Id<'users'>; name: string; email: string | null; addedAt: number }[]
@@ -49,6 +50,73 @@ type LicenceRow = Doc<'libraryLicences'> & {
 }
 
 type SignOffFilter = 'all' | 'awaiting' | 'approved'
+
+// A plain reference: the generated `api` type is at TypeScript's depth limit (TS2589)
+const renameExerciseRef = makeFunctionReference<'mutation', { exerciseId: Id<'exercises'>; name: string }, { name: string }>('exerciseLibrary:adminRenameExercise')
+
+/** An exercise's name with Rename (owner 19 Nov 2026: admins edit the title of any exercise). */
+function ExerciseName({ exerciseId, name, catalogName }: { exerciseId: Id<'exercises'>; name: string; catalogName: string }) {
+  const rename = useMutation(renameExerciseRef)
+  const [editing, setEditing] = useState(false)
+  const [value, setValue] = useState(name)
+  const [saving, setSaving] = useState(false)
+  const save = async () => {
+    setSaving(true)
+    try {
+      await rename({ exerciseId, name: value })
+      toast.success('Renamed. Physios and patients see the new name.')
+      setEditing(false)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message.replace(/^.*ConvexError: /, '').split('\n')[0] : 'Could not rename it.')
+    } finally {
+      setSaving(false)
+    }
+  }
+  if (editing) {
+    return (
+      <div className="flex items-center gap-1">
+        <Input
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') void save()
+            if (e.key === 'Escape') setEditing(false)
+          }}
+          maxLength={80}
+          autoFocus
+          aria-label="Exercise name"
+          className="h-8 rounded-lg text-sm"
+        />
+        <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0" disabled={saving || value.trim().length < 2} onClick={() => void save()} aria-label="Save name">
+          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+        </Button>
+        <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0" onClick={() => setEditing(false)} aria-label="Cancel">
+          <X className="h-4 w-4" />
+        </Button>
+      </div>
+    )
+  }
+  return (
+    <div>
+      <p className="flex items-start gap-1 font-semibold text-rh-ink dark:text-white">
+        <span className="min-w-0">{name}</span>
+        <button
+          type="button"
+          onClick={() => {
+            setValue(name)
+            setEditing(true)
+          }}
+          className="mt-0.5 shrink-0 rounded-md p-0.5 text-neutral-400 transition hover:bg-black/5 hover:text-rh-ink dark:hover:bg-white/10 dark:hover:text-white"
+          aria-label={`Rename ${name}`}
+          title="Rename"
+        >
+          <Pencil className="h-3.5 w-3.5" />
+        </button>
+      </p>
+      {name !== catalogName && <p className="text-[11px] text-neutral-500">Renamed · was “{catalogName}”</p>}
+    </div>
+  )
+}
 
 function SignOff() {
   const status = useQuery(api.exerciseLibrary.adminLibraryStatus) as SignOffStatus | undefined
@@ -149,7 +217,7 @@ function SignOff() {
                       <Image src={posterUrl(clipId)} alt={item.name} fill sizes="96px" unoptimized className="object-contain" />
                     </div>
                     <div className="min-w-0 flex-1 space-y-1.5">
-                      <p className="font-semibold text-rh-ink dark:text-white">{item.name}</p>
+                      {ex ? <ExerciseName exerciseId={ex._id} name={item.name} catalogName={item.catalogName} /> : <p className="font-semibold text-rh-ink dark:text-white">{item.name}</p>}
                       <div className="flex flex-wrap gap-1">
                         {!ex ? (
                           <StatusBadge>Not synced</StatusBadge>

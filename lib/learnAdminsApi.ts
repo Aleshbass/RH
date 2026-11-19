@@ -196,6 +196,13 @@ export const groupArchiveRef = makeFunctionReference<'mutation', { groupId: Id<'
 export const groupSearchRef = makeFunctionReference<'query', { q: string; groupId?: Id<'learnGroups'> }, PersonResult[]>(
   'learnGroups:adminSearchPeople'
 )
+/** The Learn super admins, to make one a group's leader (Admin › Learn › Groups). */
+export const groupLeaderCandidatesRef = makeFunctionReference<
+  'query',
+  Record<string, never>,
+  { userId: Id<'users'>; name: string; email: string | null; imageUrl: string | null }[]
+>('learnGroups:leaderCandidates')
+
 export const groupAddRef = makeFunctionReference<
   'mutation',
   { groupId: Id<'learnGroups'>; userIds: Id<'users'>[]; role?: GroupRole },
