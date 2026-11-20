@@ -37,7 +37,7 @@ export function PatientFacts({ profile, className }: { profile: Workspace['profi
   const born = bornOn(profile?.dateOfBirth)
   const facts = [
     ageLabel(profile?.ageYears),
-    profile?.gender ? GENDER_LABELS[profile.gender] : null,
+    profile?.gender ? (GENDER_LABELS[profile.gender.toLowerCase()] ?? null) : null,
     born ? `Born ${born}` : null,
     profile?.city?.trim() || null,
   ].filter((fact): fact is string => Boolean(fact))

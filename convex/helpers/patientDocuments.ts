@@ -7,6 +7,8 @@
  * - After that only the clinic admin can: the owner, or a team member with full access
  *   (isClinicAdmin in clinicTools.ts). An independent physio is their own admin.
  * - Files the patient added stay the patient's: only the admin can change them.
+ * - A patient can see more than one provider. Nobody changes a file another practice added
+ *   (another clinic, or an independent physio's own upload); only that practice can.
  * - Deleting keeps the stored file (deletedAt): medical records need an audit trail. Normal views
  *   hide deleted files; erasing an account (users.ts) still removes them.
  *
@@ -24,6 +26,8 @@ export type DocumentEditor = {
   isAdmin: boolean;
   /** The patient's account, to tell their own uploads apart */
   patientUserId: Id<"users">;
+  /** Their practice: the clinic, or null for an independent physio (their own uploads only) */
+  clinicId: Id<"clinics"> | null;
 };
 
 type DocumentFields = Pick<Doc<"patientDocuments">, "uploadedAt" | "uploadedBy" | "deletedAt">;
@@ -38,6 +42,24 @@ export function isStaffUpload(doc: DocumentFields, patientUserId: Id<"users">) {
   return !doc.uploadedBy || doc.uploadedBy !== patientUserId;
 }
 
+/**
+ * Added by the editor's own practice: by them, someone on their clinic's team (the owner too), the
+ * patient, or an older file that doesn't say who added it.
+ */
+export async function addedByOwnPractice(ctx: QueryCtx, doc: DocumentFields, editor: DocumentEditor) {
+  const by = doc.uploadedBy;
+  if (!by || by === editor.patientUserId || by === editor.userId) return true;
+  if (!editor.clinicId) return false;
+  const uploader = await ctx.db.get(by);
+  if (!uploader) return false;
+  if (uploader.clinicId === editor.clinicId) return true;
+  const owned = await ctx.db
+    .query("clinics")
+    .withIndex("by_owner_id", (q) => q.eq("ownerId", by))
+    .first();
+  return owned?._id === editor.clinicId;
+}
+
 export type DocumentRight = { canEdit: true; editableUntil?: number } | { canEdit: false; reason: string };
 
 /**
@@ -48,10 +70,13 @@ export function documentRight(
   doc: DocumentFields,
   editor: DocumentEditor | null,
   now: number,
-  verb: "change" | "delete" = "change"
+  verb: "change" | "delete",
+  /** addedByOwnPractice(doc, editor) */
+  ownPractice: boolean
 ): DocumentRight {
   if (doc.deletedAt) return { canEdit: false, reason: "This file was already deleted." };
   if (!editor) return { canEdit: false, reason: `You can't ${verb} this patient's files.` };
+  if (!ownPractice) return { canEdit: false, reason: `Another provider added this file. Only they can ${verb} it.` };
   if (editor.isAdmin) return { canEdit: true };
   if (!isStaffUpload(doc, editor.patientUserId)) {
     return { canEdit: false, reason: `Only the clinic admin can ${verb} files the patient added.` };
@@ -96,7 +121,7 @@ export async function withDocumentRights<T extends Doc<"patientDocuments">>(
   };
   const rows = [];
   for (const doc of docs) {
-    const right = documentRight(doc, editor, now);
+    const right = documentRight(doc, editor, now, "change", editor ? await addedByOwnPractice(ctx, doc, editor) : false);
     rows.push({
       doc,
       uploadedByName: !doc.uploadedBy ? null : doc.uploadedBy === patientUserId ? "Patient" : await nameOf(doc.uploadedBy),

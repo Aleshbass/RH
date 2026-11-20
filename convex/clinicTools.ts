@@ -897,7 +897,7 @@ export const getClinicPatientFullRecord = query({
           .withIndex("by_patient_profile_id", (q: any) => q.eq("patientProfileId", profile._id))
           .collect()
       ).filter((doc) => doc.sharedWithPhysiotherapist !== false && isShownDocument(doc));
-      const editor = { userId: member.user._id, isAdmin: isClinicAdmin(member), patientUserId: args.patientId };
+      const editor = { userId: member.user._id, isAdmin: isClinicAdmin(member), patientUserId: args.patientId, clinicId: member.clinic._id };
       const described = await withDocumentRights(ctx, rawDocuments, editor, args.patientId, Date.now());
       documents = await Promise.all(
         described.map(async ({ doc, ...rights }) => ({

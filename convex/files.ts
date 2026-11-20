@@ -5,6 +5,7 @@ import { Doc, Id } from "./_generated/dataModel";
 import { findRelationship, isApproved, requireActiveRelationship, requirePhysio } from "./helpers/careAccess";
 import { assertPatientInClinic, canUseArea, isClinicAdmin, requireClinicWrite, resolveClinicMember } from "./clinicTools";
 import {
+  addedByOwnPractice,
   documentRight,
   isShownDocument,
   renamedFileName,
@@ -679,11 +680,11 @@ async function physioDocumentEditor(
 ): Promise<DocumentEditor | null> {
   if (relationship.status !== "active" || !(await isApproved(ctx, physio._id))) return null;
   // An independent physio's own patient: they're their own admin
-  if (!relationship.clinicId) return { userId: physio._id, isAdmin: true, patientUserId };
+  if (!relationship.clinicId) return { userId: physio._id, isAdmin: true, patientUserId, clinicId: null };
   if (physio.clinicId !== relationship.clinicId || (physio.status && physio.status !== "active")) return null;
   const member = await resolveClinicMember(ctx, physio);
   if (!member || !canUseArea(member, "patients")) return null;
-  return { userId: physio._id, isAdmin: isClinicAdmin(member), patientUserId };
+  return { userId: physio._id, isAdmin: isClinicAdmin(member), patientUserId, clinicId: relationship.clinicId };
 }
 
 /**
@@ -696,15 +697,15 @@ async function requireDocumentEditor(ctx: MutationCtx, patientUserId: Id<"users"
     const physio = await requirePhysio(ctx);
     // Active care; for a clinic's patient also the clinic's rules (team, read-only, Patients page)
     const relationship = await requireActiveRelationship(ctx, physio._id, patientUserId);
-    if (!relationship.clinicId) return { userId: physio._id, isAdmin: true, patientUserId };
+    if (!relationship.clinicId) return { userId: physio._id, isAdmin: true, patientUserId, clinicId: null };
     const member = await resolveClinicMember(ctx, physio);
     const isAdmin = Boolean(member && member.clinic._id === relationship.clinicId && isClinicAdmin(member));
-    return { userId: physio._id, isAdmin, patientUserId };
+    return { userId: physio._id, isAdmin, patientUserId, clinicId: relationship.clinicId };
   }
   if (user.role === "clinic_owner" || user.role === "clinic_staff") {
     const member = await requireClinicWrite(ctx, "patients");
     await assertPatientInClinic(ctx, member.clinic, patientUserId);
-    return { userId: member.user._id, isAdmin: isClinicAdmin(member), patientUserId };
+    return { userId: member.user._id, isAdmin: isClinicAdmin(member), patientUserId, clinicId: member.clinic._id };
   }
   throw new ConvexError("Only the patient's care team can change files on their record.");
 }
@@ -730,7 +731,7 @@ export const updatePatientDocument = mutation({
     if (!patientUserId) throw new ConvexError("This patient's record couldn't be found.");
     const editor = await requireDocumentEditor(ctx, patientUserId);
     const now = Date.now();
-    const right = documentRight(doc, editor, now, "change");
+    const right = documentRight(doc, editor, now, "change", await addedByOwnPractice(ctx, doc, editor));
     if (!right.canEdit) throw new ConvexError(right.reason);
 
     const patch: { fileName?: string; documentType?: Doc<"patientDocuments">["documentType"] } = {};
@@ -796,7 +797,7 @@ export const deletePatientDocuments = mutation({
         skipped.push({ documentId, fileName: doc.fileName, reason: editor });
         continue;
       }
-      const right = documentRight(doc, editor, now, "delete");
+      const right = documentRight(doc, editor, now, "delete", await addedByOwnPractice(ctx, doc, editor));
       if (!right.canEdit) {
         skipped.push({ documentId, fileName: doc.fileName, reason: right.reason });
         continue;
