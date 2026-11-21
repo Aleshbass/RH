@@ -553,10 +553,11 @@ export function AppSetupPrompt({ audience = 'clinician' }: { audience?: SetupAud
   const onOpenChange = useCallback(
     (open: boolean) => {
       if (open) return openAppSetup();
-      if (need && need !== 'done') snoozeAppSetup();
+      // Patients are asked again in 3 days, physios and clinics (who need the alerts) tomorrow
+      if (need && need !== 'done') snoozeAppSetup(audience === 'patient' ? 3 * 24 * 60 * 60 * 1000 : undefined);
       closeAppSetup();
     },
-    [need]
+    [need, audience]
   );
 
   // Closed (by any route): the next waiting prompt may open
@@ -566,7 +567,10 @@ export function AppSetupPrompt({ audience = 'clinician' }: { audience?: SetupAud
   useEffect(() => () => endPromptTurn('app-setup'), []);
 
   if (!need || !env) return null;
-  const copy = TITLES[need];
+  const copy =
+    audience === 'patient' && need === 'notify'
+      ? { title: TITLES.notify.title, description: 'So you never miss a visit reminder or a message from your physio.' }
+      : TITLES[need];
 
   return (
     <SetupAudienceContext.Provider value={audience}>

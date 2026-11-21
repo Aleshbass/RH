@@ -1,26 +1,24 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { AppSetupPrompt } from '@/components/pwa/AppSetup'
 import { JUST_JOINED_KEY } from './refs'
 
 /**
- * Right after joining from their physio's link: "Add Rehabify to your home screen" opens once,
- * so next time they just tap the icon. Other patients find it in the top bar or Settings.
+ * "Add Rehabify to your home screen" for every patient (owner, 20 Nov 2026: patients couldn't find
+ * how to install the app; it only opened once, right after joining from a physio's link). It opens
+ * on its own until the app is installed and notifications are on; "Not now" waits 3 days. The top
+ * bar's "Get the app" and Settings open it any time.
  */
 export function JoinedAppSetup() {
-  const [show, setShow] = useState(false)
-
   useEffect(() => {
     try {
-      if (localStorage.getItem(JUST_JOINED_KEY)) {
-        localStorage.removeItem(JUST_JOINED_KEY)
-        setShow(true)
-      }
+      // Just joined from their physio's link: it opens now anyway (nothing has snoozed it yet)
+      localStorage.removeItem(JUST_JOINED_KEY)
     } catch {
-      // Storage blocked: nothing to show
+      // Storage blocked: nothing to tidy
     }
   }, [])
 
-  return show ? <AppSetupPrompt audience="patient" /> : null
+  return <AppSetupPrompt audience="patient" />
 }

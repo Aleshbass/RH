@@ -21,6 +21,7 @@ import { PatientHelp, PatientNotifications, PatientThemeToggle } from '@/compone
 import { PatientTour } from '@/components/patient/shell/PatientTour'
 import { ConsentDialog, useConsentsSettled } from '@/components/patient/ConsentDialog'
 import { JoinedAppSetup } from '@/components/patient-join/JoinedAppSetup'
+import { AppSetupButton } from '@/components/pwa/AppSetup'
 import { WebsiteLink } from '@/components/dashboard/shared/WebsiteLink'
 
 // Staff accounts have their own dashboards; the patient pages would only show them an empty record
@@ -126,6 +127,8 @@ function PatientPortal({ children }: { children: ReactNode }) {
                   </Link>
                 </Button>
               )}
+              {/* "Get the app" until it's on their home screen, then "Turn on alerts" */}
+              <AppSetupButton tone="portal" />
               <span data-tour="help" className="inline-flex">
                 <PatientHelp />
               </span>
@@ -144,7 +147,7 @@ function PatientPortal({ children }: { children: ReactNode }) {
         <PatientTour enabled={pathname === PATIENT_HOME && consentsSettled}firstName={user?.firstName} homeHref={PATIENT_HOME} />
         {/* Terms and Privacy, asked once if missing */}
         {user?.role === 'patient' && <ConsentDialog />}
-        {/* Just joined from their physio's WhatsApp link: "add to home screen" once */}
+        {/* "Add Rehabify to your home screen", until it's installed with notifications on */}
         {user?.role === 'patient' && <JoinedAppSetup />}
       </div>
     </DashboardAuthGuard>
