@@ -1,7 +1,6 @@
 // Email service for Rehabify Health
-// Integrated with Resend for email delivery
-import { Resend } from 'resend';
-import { reportResendQuota } from './resendQuota';
+// Delivered through Resend, with Amazon SES as the backup (deliver.ts)
+import { deliverEmail } from './deliver';
 import {
   SUPPORT_EMAIL,
   actions,
@@ -369,46 +368,23 @@ export type EmailOptions =
   | { to: string; subject?: string; template: 'PARTNER_NOTICE'; data: PartnerNoticeData };
 
 /**
- * Send an email using the specified template and data
- * Uses Resend for email delivery
+ * Send an email using the specified template and data.
+ * Resend first, Amazon SES as the backup (lib/email/deliver.ts).
  */
 export async function sendEmail(options: EmailOptions): Promise<{ success: boolean; messageId?: string; error?: string }> {
   const { subject: finalSubject, body: emailBody } = getEmailContent(options);
-
-  console.log(`[EMAIL SERVICE] Sending email to ${options.to}`);
-  console.log(`[EMAIL SERVICE] Subject: ${options.subject || finalSubject}`);
-  console.log(`[EMAIL SERVICE] Template: ${options.template}`);
-
-  // Check if we have the Resend API key
-  if (!process.env.RESEND_API_KEY) {
-    console.error('[EMAIL SERVICE] RESEND_API_KEY not configured');
-    return { success: false, error: 'Email service not configured' };
-  }
-
-  try {
-    const resend = new Resend(process.env.RESEND_API_KEY);
-    const fromEmail = process.env.FROM_EMAIL || 'onboarding@resend.dev';
-    const fromName = process.env.FROM_NAME || 'Rehabify Health';
-    const { data: resendData, error } = await resend.emails.send({
+  const fromEmail = process.env.FROM_EMAIL || 'onboarding@resend.dev';
+  const fromName = process.env.FROM_NAME || 'Rehabify Health';
+  const result = await deliverEmail(
+    {
       from: `${fromName} <${fromEmail}>`,
       to: [options.to],
       subject: options.subject || finalSubject,
       html: emailBody,
-    });
-
-    if (error) {
-      console.error('[EMAIL SERVICE] Error sending email:', error);
-      await reportResendQuota(error, `template:${options.template}`);
-      return { success: false, error: error.message };
-    }
-
-    console.log(`[EMAIL SERVICE] Email sent successfully to ${options.to}, messageId: ${resendData?.id}`);
-    return { success: true, messageId: resendData?.id };
-  } catch (e: unknown) {
-    const errMessage = e instanceof Error ? e.message : String(e);
-    console.error('[EMAIL SERVICE] Exception sending email:', errMessage);
-    return { success: false, error: errMessage };
-  }
+    },
+    `template:${options.template}`
+  );
+  return result.success ? { success: true, messageId: result.id } : { success: false, error: result.error };
 }
 
 /** Time of day in Lagos, e.g. "10:30 am". */

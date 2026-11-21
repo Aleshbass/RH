@@ -3,6 +3,8 @@
  * exhausted"). Any email sender that gets daily_quota_exceeded / monthly_quota_exceeded from
  * Resend posts here (lib/email/resendQuota.ts). The first one each day alerts every admin by bell
  * and push (email can't go out, so it never emails); later ones only add to the day's count.
+ * With the Amazon SES backup set up (lib/email/deliver.ts) emails keep going out through SES,
+ * so the alert says that instead of "emails have stopped".
  */
 import { makeFunctionReference } from "convex/server";
 import { v } from "convex/values";
@@ -13,6 +15,9 @@ import { resendQuotaToken } from "../lib/email/resendQuota";
 
 const ADMIN_EMAILS_PAGE = "/dashboard/admin/emails";
 const kindValidator = v.union(v.literal("daily"), v.literal("monthly"));
+
+/** Same check as lib/email/ses.ts: are the SES backup keys set on this deployment? */
+const sesBackupConfigured = () => !!(process.env.SES_ACCESS_KEY_ID?.trim() && process.env.SES_SECRET_ACCESS_KEY?.trim());
 
 const recordRef = makeFunctionReference<"mutation", { kind: "daily" | "monthly"; source: string }, null>("emailQuota:recordQuotaHit");
 
@@ -49,9 +54,15 @@ export const recordQuotaHit = internalMutation({
     }
     await ctx.db.insert("emailQuotaAlerts", { day, kind: args.kind, firstAt: now, lastAt: now, hits: 1, firstSource: args.source });
 
-    const title = args.kind === "daily" ? "Emails have stopped for today" : "Emails have stopped for this month";
-    const body =
-      args.kind === "daily"
+    const backup = sesBackupConfigured();
+    const title = backup
+      ? `Resend's ${args.kind} limit is used up; Amazon SES is sending instead`
+      : args.kind === "daily" ? "Emails have stopped for today" : "Emails have stopped for this month";
+    const body = backup
+      ? args.kind === "daily"
+        ? "Resend's free plan sends 100 emails a day and today's are used up. Receipts, approvals and reminders are now going out through Amazon SES (the backup) until Resend resets at 1:00 am Lagos time. Group emails still need Resend. Upgrade Resend to Pro to stop this happening."
+        : "Resend's monthly email limit is used up. Platform emails are going out through Amazon SES (the backup); group emails will wait until Resend resets or the plan is upgraded."
+      : args.kind === "daily"
         ? "Resend's free plan sends 100 emails a day and today's are used up. Receipts, approvals, reminders and other emails won't go out until 1:00 am Lagos time. Upgrade Resend to the Pro plan to stop this happening."
         : "Resend's monthly email limit is used up. No emails will go out until it resets or the Resend plan is upgraded.";
     const admins = await ctx.db
@@ -85,6 +96,7 @@ export const getQuotaStatus = query({
       .take(5);
     const recent = await ctx.db.query("emailQuotaAlerts").order("desc").take(10);
     return {
+      sesBackup: sesBackupConfigured(),
       today: rows.map((r) => ({ kind: r.kind, firstAt: r.firstAt, hits: r.hits })),
       recentDays: recent.map((r) => ({ day: r.day, kind: r.kind, hits: r.hits })),
     };

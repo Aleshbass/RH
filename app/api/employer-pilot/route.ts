@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { Resend } from "resend";
+import { sendEmailWithBackup } from "@/lib/email/deliver";
 import { ConvexHttpClient } from "convex/browser";
 import { makeFunctionReference } from "convex/server";
 import { checkRateLimit, getClientIp, createRateLimitResponse } from "@/lib/rate-limiter";
@@ -86,8 +86,7 @@ export async function POST(request: Request) {
 
     // The request is already saved, so a mail outage is logged rather than shown to the visitor
     try {
-      const resend = new Resend(process.env.RESEND_API_KEY);
-      await resend.emails.send({
+      await sendEmailWithBackup("employer-pilot", {
         from: fromAddress,
         to: TEAM_INBOXES,
         replyTo: email,
@@ -116,7 +115,7 @@ export async function POST(request: Request) {
         }),
       });
 
-      await resend.emails.send({
+      await sendEmailWithBackup("employer-pilot", {
         from: fromAddress,
         to: email,
         subject: "We've received your pilot request - Rehabify for Work",

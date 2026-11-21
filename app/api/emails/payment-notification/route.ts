@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { Resend } from 'resend'
+import { sendEmailWithBackup } from '@/lib/email/deliver'
 import { log } from '@/lib/monitoring/logger'
 import { ErrorTracker } from '@/lib/monitoring/sentry'
 import { escapeHtml, isServerOrAdmin } from '../_auth'
@@ -48,19 +48,17 @@ export async function POST(request: NextRequest) {
 
     const emailData = createAdminEmail(paymentType, reference, typeof amount === 'number' ? amount : undefined, metadata)
 
-    const apiKey = process.env.RESEND_API_KEY
-    if (!apiKey) {
-      log.warn('Resend API key missing; skipping payment email send', { type, reference })
-      return NextResponse.json({ success: true, skipped: true })
-    }
-    const resend = new Resend(apiKey)
-
-    const result = await resend.emails.send({
+    const result = await sendEmailWithBackup('payment-notification', {
       from: `RehabifyHealth <${process.env.FROM_EMAIL || 'info@physioaroundme.com'}>`,
       to: emailData.to,
       subject: emailData.subject,
       html: emailData.html,
     })
+
+    if (result.error) {
+      log.warn('Payment notification email not sent', { type, reference, error: result.error.message })
+      return NextResponse.json({ error: 'Failed to send email' }, { status: 502 })
+    }
 
     log.info('Payment notification email sent successfully', {
       emailId: result.data?.id,

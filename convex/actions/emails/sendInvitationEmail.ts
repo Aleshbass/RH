@@ -2,8 +2,7 @@
 
 import { v } from "convex/values";
 import { internalAction } from "../../_generated/server";
-import { Resend } from 'resend';
-import { reportResendQuota } from "../../../lib/email/resendQuota";
+import { sendEmailWithBackup } from "../../../lib/email/deliver";
 import { escapeHtml } from "../../helpers/escapeHtml";
 import { actions, button, emailDate, greeting, linkFallback, paragraph, renderEmail } from "../../../lib/email/layout";
 import { qrBlock } from "./qrImage";
@@ -36,18 +35,6 @@ export const sendPatientInvitationEmail = internalAction({
       : args.physiotherapistName;
     
     try {
-      // Check for Resend API key
-      const RESEND_API_KEY = process.env.RESEND_API_KEY;
-      if (!RESEND_API_KEY) {
-        console.error('[EMAIL ACTION] RESEND_API_KEY not found in environment variables');
-        return {
-          success: false,
-          error: 'Email service not configured. RESEND_API_KEY missing.',
-        };
-      }
-
-      const resend = new Resend(RESEND_API_KEY);
-      
       // Use your verified domain email
       const fromEmail = 'info@physioaroundme.com';
       const fromName = process.env.FROM_NAME || 'Rehabify Health';
@@ -85,7 +72,7 @@ export const sendPatientInvitationEmail = internalAction({
       });
       
       
-      const { data, error } = await resend.emails.send({
+      const { data, error } = await sendEmailWithBackup("invitation", {
         from: `${fromName} <${fromEmail}>`,
         to: [args.patientEmail],
         subject: `${inviter} invited you to your patient portal`,
@@ -93,8 +80,7 @@ export const sendPatientInvitationEmail = internalAction({
       });
       
       if (error) {
-        console.error('[EMAIL ACTION] Resend API error:', error);
-        await reportResendQuota(error, "invitation");
+        console.error('[EMAIL ACTION] send error:', error);
         return {
           success: false,
           error: error.message || 'Failed to send email',
@@ -163,17 +149,6 @@ export const sendInvitationReminderEmail = internalAction({
   handler: async (ctx, args) => {
     
     try {
-      // Check for Resend API key
-      const RESEND_API_KEY = process.env.RESEND_API_KEY;
-      if (!RESEND_API_KEY) {
-        console.error('[EMAIL ACTION] RESEND_API_KEY not found');
-        return {
-          success: false,
-          error: 'Email service not configured',
-        };
-      }
-
-      const resend = new Resend(RESEND_API_KEY);
       const fromEmail = 'info@physioaroundme.com';
       const fromName = 'Rehabify Health';
       
@@ -206,7 +181,7 @@ export const sendInvitationReminderEmail = internalAction({
         footerNote: "If you didn't expect this invitation, you can safely ignore this email.",
       });
       
-      const { data, error } = await resend.emails.send({
+      const { data, error } = await sendEmailWithBackup("invitation", {
         from: `${fromName} <${fromEmail}>`,
         to: [args.patientEmail],
         subject: 'Reminder: Complete Your Rehabify Health Registration',
@@ -214,8 +189,7 @@ export const sendInvitationReminderEmail = internalAction({
       });
       
       if (error) {
-        console.error('[EMAIL ACTION] Resend API error:', error);
-        await reportResendQuota(error, "invitation");
+        console.error('[EMAIL ACTION] send error:', error);
         return {
           success: false,
           error: error.message || 'Failed to send email',

@@ -34,7 +34,8 @@ export const healthCheck = internalQuery({
     );
 
     // Check email service configuration
-    const emailConfigured = !!process.env.RESEND_API_KEY;
+    // Resend, or the Amazon SES backup (lib/email/deliver.ts)
+    const emailConfigured = !!process.env.RESEND_API_KEY || !!(process.env.SES_ACCESS_KEY_ID && process.env.SES_SECRET_ACCESS_KEY);
     const baseUrlConfigured = !!process.env.NEXT_PUBLIC_APP_URL;
 
     // Performance metrics
@@ -70,7 +71,7 @@ export const healthCheck = internalQuery({
       recommendations: [
         ...(recentFailures.length > 5 ? ["High failure rate detected - check email service"] : []),
         ...(stuckRetries.length > 0 ? ["Stuck retries detected - manual intervention required"] : []),
-        ...(!emailConfigured ? ["RESEND_API_KEY not configured"] : []),
+        ...(!emailConfigured ? ["Neither RESEND_API_KEY nor the SES backup keys are configured"] : []),
         ...(!baseUrlConfigured ? ["NEXT_PUBLIC_APP_URL not configured"] : []),
       ],
     };

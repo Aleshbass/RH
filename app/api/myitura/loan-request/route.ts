@@ -6,7 +6,7 @@
  * What this does:
  *  1. Validates the patient's form fields
  *  2. Saves the request to Convex `loanRequests` table (status: "pending")
- *  3. Sends an email to the Rehabify admin inboxes (lib/email/adminRecipients) via Resend
+ *  3. Sends an email to the Rehabify admin inboxes (lib/email/adminRecipients) via Resend (Amazon SES as backup)
  *     notifying them that a patient is interested in a MediLoan
  *  4. Returns success — the patient sees a confirmation message
  *
@@ -17,7 +17,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { Resend } from "resend";
+import { sendEmailWithBackup } from "@/lib/email/deliver";
 import { platformAdminEmails } from "@/lib/email/adminRecipients";
 import { publicAppUrl } from "@/lib/public-app-url";
 import {
@@ -37,8 +37,6 @@ import {
   getClientIp,
   createRateLimitResponse,
 } from "@/lib/rate-limiter";
-
-const resend = new Resend(process.env.RESEND_API_KEY);
 
 const ADMIN_EMAILS = platformAdminEmails();
 const FROM_EMAIL  = process.env.FROM_EMAIL || "noreply@physioaroundme.com";
@@ -132,7 +130,7 @@ export async function POST(request: NextRequest) {
             physiotherapistName: physiotherapistName ? escapeEmailText(physiotherapistName) : undefined,
         };
 
-        await resend.emails.send({
+        await sendEmailWithBackup("mediloan-request", {
             from: `Rehabify Health Notifications <${FROM_EMAIL}>`,
             to: ADMIN_EMAILS,
             subject: `🏦 New MediLoan Request — ${firstName} ${lastName}`,

@@ -46,6 +46,7 @@ import type * as actions_emails_sendReferralCreatedEmails from "../actions/email
 import type * as actions_emails_sendTeamEmails from "../actions/emails/sendTeamEmails.js";
 import type * as actions_emails_sendVerificationBadgeEmail from "../actions/emails/sendVerificationBadgeEmail.js";
 import type * as actions_emails_sendVideoCallInvitation from "../actions/emails/sendVideoCallInvitation.js";
+import type * as actions_emails_sesBackupTest from "../actions/emails/sesBackupTest.js";
 import type * as actions_index from "../actions/index.js";
 import type * as actions_joyDashboard from "../actions/joyDashboard.js";
 import type * as actions_marketingSend from "../actions/marketingSend.js";
@@ -417,6 +418,7 @@ declare const fullApi: ApiFromModules<{
   "actions/emails/sendTeamEmails": typeof actions_emails_sendTeamEmails;
   "actions/emails/sendVerificationBadgeEmail": typeof actions_emails_sendVerificationBadgeEmail;
   "actions/emails/sendVideoCallInvitation": typeof actions_emails_sendVideoCallInvitation;
+  "actions/emails/sesBackupTest": typeof actions_emails_sesBackupTest;
   "actions/index": typeof actions_index;
   "actions/joyDashboard": typeof actions_joyDashboard;
   "actions/marketingSend": typeof actions_marketingSend;

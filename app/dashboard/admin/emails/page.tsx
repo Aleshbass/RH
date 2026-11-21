@@ -33,7 +33,7 @@ import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
 import { makeFunctionReference } from 'convex/server'
 
-type QuotaStatus = { today: { kind: 'daily' | 'monthly'; firstAt: number; hits: number }[]; recentDays: { day: string; kind: string; hits: number }[] }
+type QuotaStatus = { sesBackup?: boolean; today: { kind: 'daily' | 'monthly'; firstAt: number; hits: number }[]; recentDays: { day: string; kind: string; hits: number }[] }
 // A plain reference: the generated `api` type is at TypeScript's depth limit (TS2589)
 const quotaStatusRef = makeFunctionReference<'query', Record<string, never>, QuotaStatus>('emailQuota:getQuotaStatus')
 
@@ -42,6 +42,17 @@ function QuotaNotice() {
   const status = useQuery(quotaStatusRef, {})
   const hit = status?.today[0]
   if (!hit) return null
+  // Platform emails switch to Amazon SES when Resend runs out (lib/email/deliver.ts); group emails don't
+  if (status?.sesBackup) {
+    return (
+      <p className="rounded-2xl bg-rh-warn-soft px-4 py-3 text-sm text-rh-warn-ink">
+        <strong>Resend&apos;s {hit.kind} limit is used up. Amazon SES is sending instead.</strong>{' '}
+        {hit.kind === 'daily'
+          ? `Today's 100 Resend emails ran out at ${format(hit.firstAt, 'h:mm a')}. Receipts, approvals and reminders are going out through Amazon SES (the backup) until Resend resets at 1:00 am Lagos time. Group emails below still need Resend. Upgrade Resend to Pro to stop this.`
+          : 'Platform emails are going out through Amazon SES (the backup). Group emails below need Resend, so they wait until it resets or the plan is upgraded.'}
+      </p>
+    )
+  }
   return (
     <p className="rounded-2xl bg-rh-danger-soft px-4 py-3 text-sm text-rh-danger-ink">
       <strong>Emails have stopped {hit.kind === 'daily' ? 'for today' : 'for this month'}.</strong>{' '}

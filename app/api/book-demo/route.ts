@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { Resend } from "resend";
+import { sendEmailWithBackup } from "@/lib/email/deliver";
 import { ConvexHttpClient } from "convex/browser";
 import { makeFunctionReference } from "convex/server";
 import {
@@ -36,7 +36,6 @@ const DEMO_INBOXES = (process.env.DEMO_REQUEST_EMAIL || "support@physioaroundme.
   .filter(Boolean);
 
 export async function POST(request: Request) {
-  const resend = new Resend(process.env.RESEND_API_KEY);
   try {
     const clientIp = getClientIp(request);
     const rateLimitResult = await checkRateLimit(
@@ -97,7 +96,7 @@ export async function POST(request: Request) {
     // The request is already saved, so a mail outage is logged rather than shown to the visitor
     try {
       // Send email to admin/sales team
-      await resend.emails.send({
+      await sendEmailWithBackup("book-demo", {
         from: fromAddress,
         to: DEMO_INBOXES,
         replyTo: email,
@@ -125,7 +124,7 @@ export async function POST(request: Request) {
       });
 
       // Send confirmation email to the requester
-      await resend.emails.send({
+      await sendEmailWithBackup("book-demo", {
         from: fromAddress,
         to: email,
         subject: "Demo Request Received - Rehabify",

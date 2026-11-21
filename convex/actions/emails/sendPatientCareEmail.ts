@@ -2,8 +2,7 @@
 
 import { v } from "convex/values";
 import { internalAction } from "../../_generated/server";
-import { Resend } from "resend";
-import { reportResendQuota } from "../../../lib/email/resendQuota";
+import { sendEmailWithBackup } from "../../../lib/email/deliver";
 import { actions, button, greeting, paragraph, renderEmail } from "../../../lib/email/layout";
 
 /** Everything here is typed by people (names, notes), so it never goes into HTML raw. */
@@ -36,12 +35,6 @@ export const sendPatientCareEmail = internalAction({
     footnote: v.optional(v.string()),
   },
   handler: async (_ctx, args) => {
-    const apiKey = process.env.RESEND_API_KEY;
-    if (!apiKey) {
-      console.error("[PATIENT CARE EMAIL] RESEND_API_KEY is not set; email not sent");
-      return { success: false };
-    }
-
     const cta =
       args.buttonLabel && args.buttonUrl && /^https:\/\//.test(args.buttonUrl)
         ? actions(button(escapeHtml(args.buttonLabel), escapeHtml(args.buttonUrl)))
@@ -61,15 +54,13 @@ export const sendPatientCareEmail = internalAction({
     });
 
     try {
-      const resend = new Resend(apiKey);
       // Same verified sender as the other Rehabify emails
       // A display name can't carry quotes, commas or angle brackets
       const fromName = args.fromName?.replace(/["<>,;\\]/g, "").trim().slice(0, 60);
       const from = `${fromName ? `${fromName} via Rehabify` : process.env.FROM_NAME || "Rehabify Health"} <info@physioaroundme.com>`;
-      const { error } = await resend.emails.send({ from, to: args.to, subject: args.subject, html });
+      const { error } = await sendEmailWithBackup("care-email", { from, to: args.to, subject: args.subject, html });
       if (error) {
-        console.error("[PATIENT CARE EMAIL] Resend refused it:", error.name);
-        await reportResendQuota(error, "care-email");
+        console.error("[PATIENT CARE EMAIL] not sent:", error.name);
         return { success: false };
       }
       return { success: true };

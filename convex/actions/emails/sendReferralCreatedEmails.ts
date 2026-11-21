@@ -2,8 +2,7 @@
 
 import { internalAction } from "../../_generated/server";
 import { v } from "convex/values";
-import { Resend } from "resend";
-import { reportResendQuota } from "../../../lib/email/resendQuota";
+import { sendEmailWithBackup } from "../../../lib/email/deliver";
 import { sendEmail } from "../../../lib/email/emailService";
 import { actions, button, details, greeting, paragraph, renderEmail } from "../../../lib/email/layout";
 import { publicAppUrl } from "../../helpers/appUrl";
@@ -172,11 +171,6 @@ export const sendDoctorReferralUpdateEmail = internalAction({
   handler: async (_ctx, args) => {
     const copy = DOCTOR_UPDATE_COPY[args.status];
     if (!copy) return { success: false, error: `No update email for status ${args.status}` };
-    const apiKey = process.env.RESEND_API_KEY;
-    if (!apiKey) {
-      console.error("[DOCTOR REFERRAL EMAIL] RESEND_API_KEY is not set; update email not sent");
-      return { success: false, error: "Email service not configured" };
-    }
     const portalUrl = `${publicAppUrl()}/partners/portal`;
     const patient = esc(args.patientName);
     const html = renderEmail({
@@ -205,8 +199,7 @@ export const sendDoctorReferralUpdateEmail = internalAction({
     ].join("\n");
 
     try {
-      const resend = new Resend(apiKey);
-      const { data, error } = await resend.emails.send({
+      const { data, error } = await sendEmailWithBackup("doctor-referral-update", {
         from: `${process.env.FROM_NAME || "Rehabify Health"} <info@physioaroundme.com>`,
         to: [args.doctorEmail],
         subject: `${copy.subject}: ${args.patientName}`,
@@ -214,7 +207,6 @@ export const sendDoctorReferralUpdateEmail = internalAction({
         text,
       });
       if (error) {
-        await reportResendQuota(error, "doctor-referral-update");
         return { success: false, error: error.message || "Failed to send email" };
       }
       return { success: true, messageId: data?.id };

@@ -2,8 +2,7 @@
 
 import { v } from "convex/values";
 import { internalAction } from "../../_generated/server";
-import { Resend } from "resend";
-import { reportResendQuota } from "../../../lib/email/resendQuota";
+import { sendEmailWithBackup } from "../../../lib/email/deliver";
 import { publicAppUrl } from "../../helpers/appUrl";
 import { actions, button, displayName, greeting, linkFallback, paragraph, renderEmail } from "../../../lib/email/layout";
 
@@ -34,12 +33,6 @@ export const sendClinicPatientInviteEmail = internalAction({
     clinicianName: v.optional(v.string()),
   },
   handler: async (_ctx, args) => {
-    const apiKey = process.env.RESEND_API_KEY;
-    if (!apiKey) {
-      console.error("[CLINIC PATIENT EMAIL] RESEND_API_KEY is not set; invite email not sent");
-      return { success: false, error: "Email service not configured" };
-    }
-
     const base = publicAppUrl();
     const destination = encodeURIComponent("/dashboard/patient");
     const link = args.inviteCode
@@ -92,8 +85,7 @@ export const sendClinicPatientInviteEmail = internalAction({
     ].join("\n");
 
     try {
-      const resend = new Resend(apiKey);
-      const { data, error } = await resend.emails.send({
+      const { data, error } = await sendEmailWithBackup("clinic-patient-invite", {
         from: `${process.env.FROM_NAME || "Rehabify Health"} <info@physioaroundme.com>`,
         to: [args.patientEmail],
         subject: `${args.clinicName} added you on Rehabify Health`,
@@ -101,8 +93,7 @@ export const sendClinicPatientInviteEmail = internalAction({
         text,
       });
       if (error) {
-        console.error("[CLINIC PATIENT EMAIL] Resend error:", error);
-        await reportResendQuota(error, "clinic-patient-invite");
+        console.error("[CLINIC PATIENT EMAIL] send error:", error);
         return { success: false, error: error.message || "Failed to send email" };
       }
       return { success: true, messageId: data?.id };

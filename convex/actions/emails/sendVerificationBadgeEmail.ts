@@ -1,6 +1,6 @@
 "use node";
 
-import { reportResendQuota } from "../../../lib/email/resendQuota";
+import { deliverEmail } from "../../../lib/email/deliver";
 import { v } from "convex/values";
 import { internalAction } from "../../_generated/server";
 import { publicAppUrl } from "../../helpers/appUrl";
@@ -63,29 +63,19 @@ export const sendVerificationBadgeConfirmation = internalAction({
   });
   
   try {
-    // Send email using Resend
-    const response = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
-      },
-      body: JSON.stringify({
+    const result = await deliverEmail(
+      {
         from: "RehabifyHealth <info@physioaroundme.com>",
         to: [userEmail],
         subject: `🎉 Your Verification Badge is Active!`,
         html: emailHtml,
-      }),
-    });
-    
-    if (!response.ok) {
-      console.error("Failed to send verification badge email: HTTP", response.status);
-      if (response.status === 429) await reportResendQuota(await response.json().catch(() => null), "verification-badge");
+      },
+      "verification-badge"
+    );
+    if (!result.success) {
+      console.error("Failed to send verification badge email:", result.error);
       return { success: false };
     }
-    
-    const result = await response.json();
-    
     return { success: true, emailId: result.id };
   } catch (error) {
     console.error("Error sending verification badge email:", error);

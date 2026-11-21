@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { Resend } from 'resend';
+import { sendEmailWithBackup } from '@/lib/email/deliver';
 import { format } from 'date-fns';
 import { escapeHtml, isServerOrAdmin } from '../_auth';
 import { actions, button, bulletList, callout, details, heading, renderEmail, statusPill, type EmailTone } from '@/lib/email/layout';
@@ -121,12 +121,10 @@ export async function POST(request: NextRequest) {
       html,
     };
 
-    const apiKey = process.env.RESEND_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json({ success: true, skipped: true, message: 'Resend API key missing; skipped email send' });
+    const result = await sendEmailWithBackup('maintenance-alert', emailData);
+    if (result.error) {
+      return NextResponse.json({ success: false, error: result.error.message }, { status: 502 });
     }
-    const resend = new Resend(apiKey);
-    const result = await resend.emails.send(emailData);
 
     return NextResponse.json({
       success: true,
