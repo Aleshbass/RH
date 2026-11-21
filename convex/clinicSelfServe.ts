@@ -24,6 +24,7 @@ import { emailClinic, paystackRequest } from "./clinicBilling";
 import { canUseArea, getClinicMember, getClinicMemberOrNull } from "./clinicTools";
 import { appLink, publicAppUrl } from "./helpers/appUrl";
 import { platformAdminEmails } from "./helpers/adminRecipients";
+import { chargeWithRouting, initializeWithRouting, rehabifyOnlySplit } from "./helpers/paystackRouting";
 
 const sendCareEmailRef = makeFunctionReference<
   "action",
@@ -393,7 +394,11 @@ export const startCardSetup = action({
     const reference = invoice ? `CLINICSUB_${invoice._id}_${Date.now()}` : `${CARD_CHECK_PREFIX}${info.subscriptionId}_${Date.now()}`;
     // Only references recorded here can save a card (a payment made up elsewhere can't swap it)
     if (!invoice) await ctx.runMutation(recordCardCheckRef, { subscriptionId: info.subscriptionId, reference });
-    const data = await paystackRequest("/transaction/initialize", {
+    // Paying a plan invoice is Rehabify's revenue: with money routing on it goes to Rehabify's
+    // sub-account. The small card check is refunded straight away, and Paystack takes refunds from
+    // the main balance, so it is never routed (it stays exactly as before).
+    const split = invoice ? await rehabifyOnlySplit(ctx) : {};
+    const data = await initializeWithRouting(ctx, "clinic_subscription", split, (routed) => paystackRequest("/transaction/initialize", {
       method: "POST",
       body: JSON.stringify({
         reference,
@@ -403,6 +408,7 @@ export const startCardSetup = action({
         callback_url: `${publicAppUrl()}${CLINIC_PLAN_PAGE}`,
         // Only a card can be charged again later
         channels: ["card"],
+        ...routed,
         metadata: {
           source: invoice ? "clinic_subscription" : "clinic_card_check",
           saveCard: true,
@@ -419,7 +425,7 @@ export const startCardSetup = action({
           ],
         },
       }),
-    });
+    }));
     const authorizationUrl = typeof data?.authorization_url === "string" ? data.authorization_url : "";
     if (!authorizationUrl.startsWith("https://")) throw new ConvexError("We couldn't open the card page. Please try again.");
     if (invoice) await ctx.runMutation(recordCheckoutRef, { invoiceId: invoice._id, reference, authorizationUrl });
@@ -602,8 +608,11 @@ export const chargeSavedCard = internalAction({
     const reference = `CLINICSUB_${args.invoiceId}_${Date.now()}`;
     let status = "failed";
     let message: string | undefined;
+    // Rehabify's own fee: with money routing on, to Rehabify's sub-account (read before the try,
+    // so the charge's own error handling below is unchanged)
+    const split = await rehabifyOnlySplit(ctx);
     try {
-      const data = await paystackRequest("/transaction/charge_authorization", {
+      const data = await chargeWithRouting(ctx, "clinic_subscription_auto", split, (routed) => paystackRequest("/transaction/charge_authorization", {
         method: "POST",
         body: JSON.stringify({
           authorization_code: info.authorizationCode,
@@ -611,9 +620,10 @@ export const chargeSavedCard = internalAction({
           amount: info.amountKobo,
           currency: "NGN",
           reference,
+          ...routed,
           metadata: { source: "clinic_subscription", invoiceId: args.invoiceId, clinicId: info.clinicId, automatic: true },
         }),
-      });
+      }));
       status = typeof data?.status === "string" ? data.status : "failed";
       message = typeof data?.gateway_response === "string" ? data.gateway_response : undefined;
       if (status === "success") {

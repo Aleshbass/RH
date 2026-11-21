@@ -1,5 +1,6 @@
 import {
   Activity,
+  ArrowLeftRight,
   Award,
   BarChart3,
   Banknote,
@@ -225,6 +226,8 @@ export const ADMIN_NAV: AdminNavSection[] = [
       { title: 'Refunds', href: a('/refunds'), icon: RotateCcw, badgeKey: 'refunds', keywords: ['refund', 'cancellation', 'paystack', 'money back'] },
       { title: 'Marketplace revenue', href: a('/marketplace-analytics'), icon: LineChart, keywords: ['earnings', 'packages', 'analytics'] },
       { title: 'Revenue settings', href: a('/partnerships?tab=revenue'), icon: Percent, keywords: ['split', 'commission'] },
+      // Decides which bank account Rehabify's revenue is paid to: full admins only
+      { title: 'Money routing', href: a('/money-routing'), icon: ArrowLeftRight, fullOnly: true, keywords: ['paystack', 'subaccount', 'settlement', 'balance', 'bank account', 'split', 'payouts'] },
     ],
   },
   {

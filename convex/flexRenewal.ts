@@ -10,6 +10,7 @@ import { internalAction, internalMutation, internalQuery, mutation } from "./_ge
 import type { Id } from "./_generated/dataModel";
 import { paystackRequest } from "./clinicBilling";
 import { appLink } from "./helpers/appUrl";
+import { chargeWithRouting, rehabifyOnlySplit } from "./helpers/paystackRouting";
 import { MAX_RENEW_ATTEMPTS, activeFlexCard, flexCardView } from "./helpers/flexCards";
 import { flexReference, isLive, patientEntitlements, patientFlexContext, planName, planPriceKobo, planSettings, type PaidPlan } from "./helpers/patientPlans";
 import { insertNotification } from "./helpers/pushNotify";
@@ -152,8 +153,11 @@ export const chargeFlexRenewal = internalAction({
     await ctx.runMutation(recordCheckoutRef, { patientId: info.patientId, reference, plan: info.plan, amountKobo: info.amountKobo });
     let status = "failed";
     let message: string | undefined;
+    // Rehabify's revenue: with money routing on, to Rehabify's sub-account (read before the try,
+    // so the charge's own error handling below is unchanged)
+    const split = await rehabifyOnlySplit(ctx);
     try {
-      const data = await paystackRequest("/transaction/charge_authorization", {
+      const data = await chargeWithRouting(ctx, "flex_renewal", split, (routed) => paystackRequest("/transaction/charge_authorization", {
         method: "POST",
         body: JSON.stringify({
           authorization_code: info.authorizationCode,
@@ -161,9 +165,10 @@ export const chargeFlexRenewal = internalAction({
           amount: info.amountKobo,
           currency: "NGN",
           reference,
+          ...routed,
           metadata: { source: "rehabify_flex", plan: info.plan, automatic: true, rehabify_id: info.patientNumber },
         }),
-      });
+      }));
       status = typeof data?.status === "string" ? data.status : "failed";
       message = typeof data?.gateway_response === "string" ? data.gateway_response : undefined;
       if (status === "success") {

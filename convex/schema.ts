@@ -3688,6 +3688,33 @@ export default defineSchema({
     .index("by_doctor_id", ["doctorId"])
     .index("by_subaccount_code", ["subaccountCode"]),
 
+  // Money routing (Admin › Finance › Money routing; convex/paystackRouting.ts and
+  // helpers/paystackRouting.ts): Rehabify's own bank account as a Paystack sub-account, and the
+  // switch that sends Rehabify's share of checkouts to it, so the Paystack balance keeps only
+  // what is owed to clinicians. One row (the latest is used). With no row, or routingOn false,
+  // every checkout is exactly as before.
+  paystackRouting: defineTable({
+    rehabifySubaccountCode: v.string(),
+    bankCode: v.string(),
+    bankName: v.string(),
+    accountName: v.string(),
+    // Only the last 4 digits are kept: the full number lives on Paystack's sub-account
+    accountNumberLast4: v.string(),
+    // The Paystack key the sub-account was made with: a test sub-account doesn't exist in live mode
+    paystackMode: v.union(v.literal("test"), v.literal("live")),
+    routingOn: v.boolean(),
+    // Earlier Rehabify sub-accounts, so a payment started before the account was changed is still
+    // recognised as Rehabify's own (never mistaken for a provider's split)
+    previousSubaccountCodes: v.optional(v.array(v.string())),
+    // The last time Paystack refused a routed checkout (it was then sent without the split)
+    lastSplitProblem: v.optional(v.object({ at: v.number(), source: v.string(), message: v.string() })),
+    routingChangedAt: v.optional(v.number()),
+    routingChangedBy: v.optional(v.id("users")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    updatedBy: v.optional(v.id("users")),
+  }),
+
   assessments: defineTable({
     patientId: v.id("users"),
     physiotherapistId: v.id("users"),

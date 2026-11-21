@@ -25,6 +25,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { ensureUserRole } from "./auth";
 import { paystackRequest } from "./clinicBilling";
+import { initializeWithRouting, rehabifyOnlySplit } from "./helpers/paystackRouting";
 import { exerciseAuthor, libraryItem, type ExerciseAuthor } from "./exerciseLibrary";
 import { EXERCISE_CATALOG } from "./exerciseLibraryCatalog";
 import { appLink, publicAppUrl } from "./helpers/appUrl";
@@ -1255,7 +1256,10 @@ export const startFlexCheckout = action({
     const prep: FlexCheckout = await ctx.runQuery(prepareFlexCheckoutRef, { plan: args.plan, share: args.share, from: args.from });
     const back = `${checkoutOrigin(args.returnOrigin)}${prep.returnPath}`;
     const reference = flexReference(prep.patientId, prep.plan, Date.now());
-    const data = await paystackRequest("/transaction/initialize", {
+    // Flex / Flex Max is a patient's plan with Rehabify (no clinician share): with money routing
+    // on, to Rehabify's sub-account
+    const split = await rehabifyOnlySplit(ctx);
+    const data = await initializeWithRouting(ctx, "flex", split, (routed) => paystackRequest("/transaction/initialize", {
       method: "POST",
       body: JSON.stringify({
         reference,
@@ -1264,6 +1268,7 @@ export const startFlexCheckout = action({
         currency: "NGN",
         callback_url: back,
         channels: args.autoRenew ? ["card"] : ["card", "bank", "ussd", "bank_transfer"],
+        ...routed,
         metadata: {
           source: "rehabify_flex",
           plan: prep.plan,
@@ -1275,7 +1280,7 @@ export const startFlexCheckout = action({
           ],
         },
       }),
-    });
+    }));
     const authorizationUrl = typeof data?.authorization_url === "string" ? data.authorization_url : "";
     if (!authorizationUrl.startsWith("https://")) throw new ConvexError("We couldn't start the payment. Please try again.");
     // Remembered, so a payment whose webhook and browser check are both lost still settles

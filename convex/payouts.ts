@@ -10,6 +10,7 @@ import { paystackRequest } from "./clinicBilling";
 import { bookingDescription } from "./helpers/marketplaceInvoices";
 import { verifyPaystackSignature } from "./helpers/paystackSignature";
 import { currentPaystackMode } from "./helpers/paystackMode";
+import { plainTransferFailure } from "./helpers/transferFailure";
 import { randomString } from "./helpers/partnerShared";
 import { appLink } from "./helpers/appUrl";
 import { formatLagos } from "./helpers/lagosTime";
@@ -1605,6 +1606,52 @@ const paystackSecret = () => {
   return secret;
 };
 
+/** Admin check for adminPaystackBalance (actions can't read the user's role themselves). */
+export const adminBalanceAccess = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    await ensureUserRole(ctx, ["admin"], "payouts:adminBalanceAccess");
+    return null;
+  },
+});
+const balanceAccessRef = makeFunctionReference<"query", Record<string, never>, null>("payouts:adminBalanceAccess");
+
+type BalanceResult = { ok: true; balanceKobo: number; mode: "test" | "live"; checkedAt: number } | { ok: false; message: string };
+
+/**
+ * Rehabify's available Paystack balance in Naira (GET /balance with the current key), shown on the
+ * payout run next to what the run needs. Read-only, and never throws for Paystack problems: the
+ * page shows "couldn't check" and Pay/Retry still work.
+ */
+export const adminPaystackBalance = action({
+  args: {},
+  handler: async (ctx): Promise<BalanceResult> => {
+    await ctx.runQuery(balanceAccessRef, {});
+    const secret = process.env.PAYSTACK_SECRET_KEY;
+    if (!secret) return { ok: false, message: "PAYSTACK_SECRET_KEY is missing." };
+    try {
+      const response = await fetch(`${PAYSTACK_API}/balance`, {
+        headers: { Authorization: `Bearer ${secret}` },
+        signal: AbortSignal.timeout(15_000),
+      });
+      const data = (await response.json().catch(() => null)) as {
+        status?: boolean;
+        message?: string;
+        data?: Array<{ currency?: string; balance?: number }>;
+      } | null;
+      if (!response.ok || !data?.status || !Array.isArray(data.data)) {
+        return { ok: false, message: data?.message || `Paystack answered HTTP ${response.status}.` };
+      }
+      // Payouts are Naira transfers, so only the NGN balance counts
+      const ngn = data.data.find((b) => b.currency === "NGN");
+      if (!ngn || typeof ngn.balance !== "number") return { ok: false, message: "Paystack didn't return a Naira balance." };
+      return { ok: true, balanceKobo: ngn.balance, mode: currentPaystackMode(), checkedAt: Date.now() };
+    } catch (error) {
+      return { ok: false, message: errorMessage(error) };
+    }
+  },
+});
+
 /** Paystack's transfer status in our words. */
 function transferStateFrom(status: string | undefined): TransferState {
   if (status === "success") return "success";
@@ -1686,14 +1733,15 @@ async function sendRunTransfer(ctx: ActionCtx, item: SendItem): Promise<Transfer
   }
   if (!response.ok || !data?.status) {
     const refused = data !== null && response.status >= 400 && response.status < 500;
+    // A low balance is said plainly (helpers/transferFailure.ts), so the admin knows to top up and retry
     return refused
-      ? record("failed", { reason: data?.message || `Paystack refused the transfer (HTTP ${response.status}).` })
+      ? record("failed", { reason: plainTransferFailure(data?.message || `Paystack refused the transfer (HTTP ${response.status}).`) })
       : record("pending", { reason: `Outcome unknown (HTTP ${response.status}). Check it on Paystack before paying again.` });
   }
   const state = transferStateFrom(data.data?.status);
   return record(state, {
     transferCode: data.data?.transfer_code,
-    reason: state === "failed" ? data.message || "Paystack reported that the transfer failed." : undefined,
+    reason: state === "failed" ? plainTransferFailure(data.message || "Paystack reported that the transfer failed.") : undefined,
   });
 }
 

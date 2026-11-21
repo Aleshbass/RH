@@ -5,6 +5,7 @@ import { JoyAuthError } from "@/lib/joy-integration/auth";
 import { callJoyConvexGateway } from "@/lib/joy-integration/convex-gateway";
 import { publicAppUrl } from "@/lib/public-app-url";
 import { joyLoginEmail } from "@/lib/auth/joyLoginEmail";
+import { bookingCheckoutSplit, initializeCheckout } from "@/lib/paystack-routing";
 
 export const runtime = "nodejs";
 
@@ -38,10 +39,12 @@ export async function POST(request: Request, context: { params: Promise<{ bookin
     const feeMetadata: Record<string, unknown> = {};
 
     const appUrl = publicAppUrl();
-    const response = await fetch("https://api.paystack.co/transaction/initialize", {
-      method: "POST", headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY ?? ""}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ email: input.email ?? joyLoginEmail(input.patient_id), amount: chargeAmountKobo, currency: "NGN", reference, callback_url: `${appUrl}/payment/callback`, metadata: { rh_booking_id: bookingId, source_system: "joy_ai", source_channel: "whatsapp", correlation_id: requestId, ...feeMetadata } }),
-    });
+    // A Rehabify Care booking: Rehabify holds the money and pays the physio's fixed payout later.
+    // With money routing switched on (Admin › Finance › Money routing), the physio's share stays in
+    // the Paystack balance that pays payouts and Rehabify's part goes to Rehabify's bank account;
+    // otherwise (the default) there is no split, as before.
+    const split = await bookingCheckoutSplit(bookingId, chargeAmountKobo);
+    const response = await initializeCheckout("joy_booking", { email: input.email ?? joyLoginEmail(input.patient_id), amount: chargeAmountKobo, currency: "NGN", reference, callback_url: `${appUrl}/payment/callback`, metadata: { rh_booking_id: bookingId, source_system: "joy_ai", source_channel: "whatsapp", correlation_id: requestId, ...feeMetadata } }, split);
     let result: { status?: boolean; message?: string; data?: { authorization_url?: string; access_code?: string } };
     try {
       result = await response.json() as typeof result;

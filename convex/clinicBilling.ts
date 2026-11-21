@@ -30,6 +30,7 @@ import { appLink, publicAppUrl } from "./helpers/appUrl";
 import { activePaymentLink, closeInvoicePaymentLinks, PAYMENT_LINK_TTL_MS } from "./helpers/paymentLinks";
 import { reverseCommissionsForPayment } from "./helpers/partnerLedger";
 import { currentPaystackMode, usableSubaccount } from "./helpers/paystackMode";
+import { initializeWithRouting, rehabifyOnlySplit } from "./helpers/paystackRouting";
 import { offlinePaidAt, settleClinicInvoiceOffline } from "./helpers/clinicOfflinePayment";
 import { verifyPaystackSignature } from "./helpers/paystackSignature";
 import { issueReceipt } from "./helpers/receipts";
@@ -1609,7 +1610,10 @@ export const payClinicSubscriptionInvoice = action({
       throw new ConvexError("Add an email address for your clinic in Clinic settings before paying online.");
     }
     const reference = `CLINICSUB_${info.invoiceId}_${Date.now()}`;
-    const data = await paystackRequest("/transaction/initialize", {
+    // Rehabify's own fee: never the clinic's subaccount. With money routing on, it goes to
+    // Rehabify's revenue sub-account (its bank) instead of the Paystack balance; off, no split.
+    const split = await rehabifyOnlySplit(ctx);
+    const data = await initializeWithRouting(ctx, "clinic_subscription", split, (routed) => paystackRequest("/transaction/initialize", {
       method: "POST",
       body: JSON.stringify({
         reference,
@@ -1618,7 +1622,7 @@ export const payClinicSubscriptionInvoice = action({
         currency: "NGN",
         callback_url: `${publicAppUrl()}${CLINIC_PLAN_PAGE}`,
         channels: ["card", "bank", "ussd", "bank_transfer"],
-        // Rehabify's own fee: no subaccount split
+        ...routed,
         metadata: {
           source: "clinic_subscription",
           invoiceId: info.invoiceId,
@@ -1629,7 +1633,7 @@ export const payClinicSubscriptionInvoice = action({
           ],
         },
       }),
-    });
+    }));
     const authorizationUrl = typeof data?.authorization_url === "string" ? data.authorization_url : "";
     if (!authorizationUrl.startsWith("https://")) {
       throw new ConvexError("We couldn't start the payment. Please try again.");

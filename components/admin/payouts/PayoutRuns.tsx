@@ -7,12 +7,13 @@
  * past runs. Patients appear by Rehabify ID only, as on every finance screen.
  */
 
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useAction, useMutation, useQuery } from 'convex/react'
 import { makeFunctionReference } from 'convex/server'
 import { toast } from 'sonner'
 import {
+  AlertTriangle,
   ArrowLeft,
   Banknote,
   CalendarCheck,
@@ -30,6 +31,7 @@ import {
 } from '@/components/icons'
 import type { Id } from '@/convex/_generated/dataModel'
 import { formatLagos } from '@/convex/helpers/lagosTime'
+import { plainTransferFailure } from '@/convex/helpers/transferFailure'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -139,6 +141,7 @@ type WaitingRow = {
 
 type WaitingData = { rows: WaitingRow[]; draftRunId: Id<'payoutRuns'> | null; nextFriday: string }
 type PayResult = { sent: number; pending: number; otp: number; failed: number; skipped: { name: string; reason: string }[]; message: string }
+type BalanceResult = { ok: true; balanceKobo: number; mode: 'test' | 'live'; checkedAt: number } | { ok: false; message: string }
 
 // Plain references: the generated `api` type is at TypeScript's depth limit (TS2589)
 const refs = {
@@ -162,6 +165,7 @@ const refs = {
   finalize: makeFunctionReference<'action', { transferId: Id<'payoutRunTransfers'>; otp: string }, { state: TransferStatus }>(
     'payouts:adminFinalizeRunTransfer'
   ),
+  balance: makeFunctionReference<'action', Record<string, never>, BalanceResult>('payouts:adminPaystackBalance'),
 }
 
 const fridayLong = (key: string) => formatLagos(Date.parse(`${key}T11:00:00Z`), { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }, 'en-GB')
@@ -278,6 +282,121 @@ function HoldReleaseDialog({ actions }: { actions: ReturnType<typeof useLineActi
 }
 
 /* ---------------------------------------------------------------------------------------------- */
+/* Paystack balance: payouts are transfers from it, so a short balance fails every transfer        */
+/* ---------------------------------------------------------------------------------------------- */
+
+/**
+ * Paystack's fee for one Naira transfer, which also comes out of the balance (Paystack's published
+ * pricing: ₦10 up to ₦5,000, ₦25 up to ₦50,000, ₦50 above). Only used to estimate what a run
+ * needs; check paystack.com/pricing if Paystack changes it.
+ */
+function transferFeeKobo(amountKobo: number) {
+  if (amountKobo <= 500_000) return 1_000
+  if (amountKobo <= 5_000_000) return 2_500
+  return 5_000
+}
+
+type BalanceState =
+  | { status: 'loading' }
+  | { status: 'ok'; balanceKobo: number; mode: 'test' | 'live' }
+  | { status: 'unknown'; message: string }
+
+/** Reads the live balance on open and on demand. A failed read never blocks Pay or Retry. */
+function usePaystackBalance() {
+  const check = useAction(refs.balance)
+  const [state, setState] = useState<BalanceState>({ status: 'loading' })
+  const refresh = useCallback(async () => {
+    setState({ status: 'loading' })
+    try {
+      const result = await check({})
+      setState(result.ok ? { status: 'ok', balanceKobo: result.balanceKobo, mode: result.mode } : { status: 'unknown', message: result.message })
+    } catch (error) {
+      setState({ status: 'unknown', message: errorText(error) })
+    }
+  }, [check])
+  useEffect(() => {
+    void refresh()
+  }, [refresh])
+  return { state, refresh }
+}
+
+/** How much more the balance needs, rounded up to whole naira, or 0 when it covers the run (or can't be read). */
+function balanceShortKobo(state: BalanceState, needKobo: number) {
+  if (state.status !== 'ok' || needKobo <= 0) return 0
+  const short = needKobo - state.balanceKobo
+  return short > 0 ? Math.ceil(short / 100) * 100 : 0
+}
+
+function LowBalanceWarning({ shortKobo }: { shortKobo: number }) {
+  return (
+    <p className="flex items-start gap-2 rounded-xl bg-rh-peach px-3 py-2 text-sm text-[#b4690e] dark:bg-amber-400/10 dark:text-amber-300">
+      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+      <span>
+        Top up your Paystack balance by {formatKobo(shortKobo)} first (Paystack › Balance › Top up), or the transfers will fail.
+      </span>
+    </p>
+  )
+}
+
+/** "Paystack balance ₦X · this run needs ₦Y", with the top-up warning when it's short. */
+function BalanceNote({
+  state,
+  needKobo,
+  feesKobo,
+  onRefresh,
+}: {
+  state: BalanceState
+  needKobo: number
+  feesKobo: number
+  onRefresh: () => void
+}) {
+  const refreshButton = (
+    <button
+      type="button"
+      onClick={onRefresh}
+      disabled={state.status === 'loading'}
+      className={cn('inline-flex items-center gap-1 text-xs font-medium hover:underline disabled:opacity-50', muted)}
+    >
+      <RefreshCw className={cn('h-3 w-3', state.status === 'loading' && 'animate-spin')} />
+      {state.status === 'unknown' ? 'Check again' : 'Refresh'}
+    </button>
+  )
+  const needs =
+    needKobo > 0 ? (
+      <span className={muted}>
+        · this run needs {formatKobo(needKobo)}
+        {feesKobo > 0 ? ` (with about ${formatKobo(feesKobo)} in transfer fees)` : ''}
+      </span>
+    ) : null
+  if (state.status !== 'ok') {
+    return (
+      <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+        <span className={strong}>
+          Paystack balance: {state.status === 'loading' ? 'checking…' : 'couldn’t check'}
+        </span>
+        {needs}
+        {state.status === 'unknown' && <span className={cn('text-xs', muted)}>({state.message}) Pay and Retry still work.</span>}
+        {refreshButton}
+      </p>
+    )
+  }
+  const short = balanceShortKobo(state, needKobo)
+  return (
+    <div className="space-y-2">
+      <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+        <span className={cn('font-medium', strong)}>
+          Paystack balance {formatKobo(state.balanceKobo)}
+          {state.mode === 'test' ? ' (test keys)' : ''}
+        </span>
+        {needs}
+        {refreshButton}
+      </p>
+      {short > 0 && <LowBalanceWarning shortKobo={short} />}
+    </div>
+  )
+}
+
+/* ---------------------------------------------------------------------------------------------- */
 /* This week's run (or any run)                                                                   */
 /* ---------------------------------------------------------------------------------------------- */
 
@@ -289,6 +408,7 @@ export function PayoutRunView({ runId, onBack }: { runId?: Id<'payoutRuns'>; onB
   const retry = useAction(refs.retry)
   const check = useAction(refs.check)
   const finalize = useAction(refs.finalize)
+  const balance = usePaystackBalance()
   const actions = useLineActions()
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [busy, setBusy] = useState<string | null>(null)
@@ -354,6 +474,12 @@ export function PayoutRunView({ runId, onBack }: { runId?: Id<'payoutRuns'>; onB
   const payable = groups.filter((g) => g.bank)
   const payableTotal = payable.reduce((s, g) => s + g.totalKobo, 0)
   const noBank = groups.filter((g) => !g.bank)
+  // What the Paystack balance must cover: the draft's payable transfers (Pay all), or the failed
+  // ones a Retry would send again; each also costs Paystack's transfer fee from the balance
+  const toSend = isDraft ? payable : groups.filter((g) => g.transfer && (g.transfer.status === 'failed' || g.transfer.status === 'reversed'))
+  const sendFeesKobo = toSend.reduce((s, g) => s + transferFeeKobo(g.totalKobo), 0)
+  const sendNeedKobo = toSend.reduce((s, g) => s + g.totalKobo, 0) + sendFeesKobo
+  const shortKobo = balanceShortKobo(balance.state, sendNeedKobo)
 
   const description = isDraft
     ? `Prepared ${dayTime(run.preparedAt)}. Check each physio, take out or hold anything that shouldn't be paid, then press Pay all. Nothing is sent until you do.`
@@ -371,6 +497,7 @@ export function PayoutRunView({ runId, onBack }: { runId?: Id<'payoutRuns'>; onB
         description: result.skipped.length ? `Skipped: ${result.skipped.map((s) => s.name).join(', ')}. They stay Available for the next run.` : undefined,
         duration: 10000,
       })
+      void balance.refresh()
     } catch (error) {
       playSound('error')
       toast.error('Pay all didn’t start', { description: errorText(error) })
@@ -438,6 +565,9 @@ export function PayoutRunView({ runId, onBack }: { runId?: Id<'payoutRuns'>; onB
             </div>
           ))}
         </dl>
+        <div className="px-5 pb-5 sm:px-6">
+          <BalanceNote state={balance.state} needKobo={sendNeedKobo} feesKobo={sendFeesKobo} onRefresh={() => void balance.refresh()} />
+        </div>
       </Panel>
 
       {groups.length === 0 ? (
@@ -485,6 +615,7 @@ export function PayoutRunView({ runId, onBack }: { runId?: Id<'payoutRuns'>; onB
                           withBusy(`retry-${t._id}`, async () => {
                             const result = await retry({ transferId: t._id })
                             toast.success(`Retry: ${result.message}`)
+                            void balance.refresh()
                           })
                         }
                       >
@@ -525,7 +656,8 @@ export function PayoutRunView({ runId, onBack }: { runId?: Id<'payoutRuns'>; onB
                 </div>
                 {t?.failureReason && t.status !== 'success' && (
                   <p className="px-4 pb-3 text-xs text-rose-600 dark:text-rose-300 sm:px-12">
-                    {t.failureReason}
+                    {/* Plain words also for transfers recorded before the server said it plainly */}
+                    {plainTransferFailure(t.failureReason)}
                     {t.attempts > 1 ? ` (attempt ${t.attempts})` : ''}
                   </p>
                 )}
@@ -606,6 +738,11 @@ export function PayoutRunView({ runId, onBack }: { runId?: Id<'payoutRuns'>; onB
         confirmLabel="Pay all"
         onConfirm={doPay}
       >
+        {/* A warning, never a block: the balance may have been topped up since it was read */}
+        {shortKobo > 0 && <LowBalanceWarning shortKobo={shortKobo} />}
+        {balance.state.status === 'unknown' && (
+          <p className={cn('text-sm', muted)}>We couldn’t check the Paystack balance just now, so make sure it covers {formatKobo(sendNeedKobo)}.</p>
+        )}
         {noBank.length > 0 && (
           <p className="rounded-xl bg-rh-peach px-3 py-2 text-sm text-[#b4690e] dark:bg-amber-400/10 dark:text-amber-300">
             Skipped, no verified payout account: {noBank.map((g) => g.name).join(', ')}. Their payouts stay Available for the next run.

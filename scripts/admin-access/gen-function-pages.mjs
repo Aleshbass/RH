@@ -35,6 +35,11 @@ const FULL_ONLY = [
   'learnAdmins:cancelInvite',
   // Signs in as someone else: full admins only
   'adminViewAs:createViewAsLink',
+  // Money routing decides which bank account Rehabify's revenue is paid to: full admins only
+  // (adminRoutingAccess is the check inside the account look-up and save actions)
+  'paystackRouting:adminGetRouting',
+  'paystackRouting:adminRoutingAccess',
+  'paystackRouting:adminSetRouting',
 ]
 /** Shell functions that still need a page: the ⌘K people search needs a people page. */
 const PAGE_OVERRIDES = {

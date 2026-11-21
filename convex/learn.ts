@@ -24,6 +24,7 @@ import {
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { paystackRequest } from "./clinicBilling";
+import { initializeWithRouting, rehabifyOnlySplit } from "./helpers/paystackRouting";
 import { libraryItem } from "./exerciseLibrary";
 import { listRow } from "./libraryResources";
 import { appLink, publicAppUrl } from "./helpers/appUrl";
@@ -426,7 +427,9 @@ export const startRegistration = action({
     const origin = checkoutOrigin(returnOrigin);
     const reference = `LEARN_${prepared.registrationId}_${Date.now()}`;
 
-    const data = await paystackRequest("/transaction/initialize", {
+    // The MSK program is Rehabify's revenue: with money routing on, to Rehabify's sub-account
+    const split = await rehabifyOnlySplit(ctx);
+    const data = await initializeWithRouting(ctx, "learn_cohort", split, (routed) => paystackRequest("/transaction/initialize", {
       method: "POST",
       body: JSON.stringify({
         reference,
@@ -435,6 +438,7 @@ export const startRegistration = action({
         currency: "NGN",
         callback_url: `${origin}/learn/confirmation`,
         channels: ["card", "bank", "ussd", "bank_transfer"],
+        ...routed,
         metadata: {
           source: "rehabify_learn",
           program: MSK_PROGRAM,
@@ -449,7 +453,7 @@ export const startRegistration = action({
           ],
         },
       }),
-    });
+    }));
 
     const authorizationUrl = typeof data?.authorization_url === "string" ? data.authorization_url : "";
     if (!authorizationUrl.startsWith("https://")) {
@@ -3588,7 +3592,10 @@ export const startCoursePayment = action({
       await ctx.runMutation(internal.learn.prepareCourseEnrollment, { courseId: args.courseId });
     const origin = checkoutOrigin(args.returnOrigin);
     const reference = `LEARNC_${prepared.enrollmentId}_${Date.now()}`;
-    const data = await paystackRequest("/transaction/initialize", {
+    // Courses are Rehabify's revenue (instructors get no share of the fee): with money routing on,
+    // to Rehabify's sub-account
+    const split = await rehabifyOnlySplit(ctx);
+    const data = await initializeWithRouting(ctx, "learn_course", split, (routed) => paystackRequest("/transaction/initialize", {
       method: "POST",
       body: JSON.stringify({
         reference,
@@ -3597,6 +3604,7 @@ export const startCoursePayment = action({
         currency: "NGN",
         callback_url: `${origin}/learn/courses/${args.courseId}`,
         channels: ["card", "bank", "ussd", "bank_transfer"],
+        ...routed,
         metadata: {
           source: "rehabify_learn_course",
           courseId: args.courseId,
@@ -3609,7 +3617,7 @@ export const startCoursePayment = action({
           ],
         },
       }),
-    });
+    }));
     const authorizationUrl = typeof data?.authorization_url === "string" ? data.authorization_url : "";
     if (!authorizationUrl.startsWith("https://")) throw new ConvexError("We couldn't start the payment. Please try again.");
     await ctx.runMutation(internal.learn.recordCoursePaymentAttempt, { enrollmentId: prepared.enrollmentId, reference });

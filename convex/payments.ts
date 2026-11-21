@@ -10,6 +10,7 @@ import { internal } from "./_generated/api";
 import { closeInvoicePaymentLinks } from "./helpers/paymentLinks";
 import { recordInvoicePartnerCommission } from "./helpers/partnerLedger";
 import { issueReceipt } from "./helpers/receipts";
+import { rehabifySubaccountCodes } from "./helpers/paystackRouting";
 
 // Payment status enum (aligned with schema.payments.status)
 const paymentStatus = v.union(
@@ -550,6 +551,13 @@ async function applyPaymentStatus(
     return { success: true, message: "Payment recorded; invoice was already settled", paymentId: payment._id, invoiceId: payment.invoiceId };
   }
 
+  // Paystack names the subaccount when it split the payment. Rehabify's own revenue sub-account
+  // (money routing, helpers/paystackRouting.ts) is never the provider's: a payment split there is
+  // held by Rehabify exactly as an unsplit one, so the provider is still paid out what they're owed.
+  // (Invoice checkouts aren't routed today; this keeps it right if one ever is.)
+  const rehabifyCodes = await rehabifySubaccountCodes(ctx);
+  const providerSubaccount =
+    evidence.subaccount_code && !rehabifyCodes.has(evidence.subaccount_code) ? evidence.subaccount_code : undefined;
   await ctx.db.patch(invoice._id, {
     status: "paid" as const,
     paymentDate: now,
@@ -557,13 +565,13 @@ async function applyPaymentStatus(
     paymentReference: args.paystackReference,
     paidAmount: (invoice.paidAmount ?? 0) + paidKobo,
     // Paystack names the subaccount when it split the payment to the provider's bank
-    payoutRoute: evidence.subaccount_code ? "split_to_provider" : "held_by_platform",
+    payoutRoute: providerSubaccount ? "split_to_provider" : "held_by_platform",
   });
   // A physio's own invoice (not Rehabify Care, not a clinic's) that Paystack couldn't split to
   // their bank: that money is entirely theirs, so it's owed now rather than when a linked
   // session is completed (appointments.ts skips invoices that already have a payout)
   const ownInvoice = !invoice.clinicId && invoice.physiotherapistId && !invoice.invoiceNumber?.startsWith("INV-MKT-");
-  if (ownInvoice && !evidence.subaccount_code && invoice.physiotherapistId && (invoice.physiotherapistShare ?? 0) > 0) {
+  if (ownInvoice && !providerSubaccount && invoice.physiotherapistId && (invoice.physiotherapistShare ?? 0) > 0) {
     const existingPayout = await ctx.db
       .query("payouts")
       .withIndex("by_payout_invoice_id", (q) => q.eq("invoiceId", invoice._id))

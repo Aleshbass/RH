@@ -24,6 +24,7 @@ import { isOutsideRehabifyCare } from "../lib/practiceCountries";
 import type { Doc, Id } from "./_generated/dataModel";
 import { getViewer, requireAdmin } from "./helpers/partnerAccess";
 import { paystackRequest } from "./clinicBilling";
+import { chargeWithRouting, initializeWithRouting, rehabifyOnlySplit } from "./helpers/paystackRouting";
 import { verifyPaystackSignature } from "./helpers/paystackSignature";
 import { issueReceipt } from "./helpers/receipts";
 import { addMonthsLagos } from "./helpers/clinicSubscriptions";
@@ -646,7 +647,12 @@ export const startCheckout = action({
   },
   handler: async (ctx, args): Promise<{ authorizationUrl: string }> => {
     const p = await ctx.runMutation(prepareRef, { purpose: args.purpose, ...(args.patientId ? { patientId: args.patientId } : {}) });
-    const data = await paystackRequest("/transaction/initialize", {
+    // Pro, Scribe top-ups and Joy months are Rehabify's revenue: with money routing on they go to
+    // Rehabify's sub-account. The card check (PHYSIOPRO_CARD_) is refunded at once, and Paystack
+    // takes refunds from the main balance, so it is never routed.
+    const isCardCheck = p.reference.startsWith(`${PREFIX}CARD_`);
+    const split = isCardCheck ? {} : await rehabifyOnlySplit(ctx);
+    const data = await initializeWithRouting(ctx, "physio_pro", split, (routed) => paystackRequest("/transaction/initialize", {
       method: "POST",
       body: JSON.stringify({
         reference: p.reference,
@@ -655,6 +661,7 @@ export const startCheckout = action({
         currency: "NGN",
         callback_url: `${publicAppUrl()}${PLAN_PAGE}?pro=return`,
         channels: p.channels,
+        ...routed,
         metadata: {
           source: "physio_pro",
           ...(p.subscriptionId ? { subscriptionId: p.subscriptionId } : {}),
@@ -664,7 +671,7 @@ export const startCheckout = action({
           ],
         },
       }),
-    });
+    }));
     const authorizationUrl = typeof data?.authorization_url === "string" ? data.authorization_url : "";
     if (!authorizationUrl.startsWith("https://")) throw new ConvexError("We couldn't open the payment page. Please try again.");
     return { authorizationUrl };
@@ -1158,8 +1165,11 @@ export const chargeSavedCard = internalAction({
     }
     const info = plan.charge;
     await ctx.runMutation(chargeStartRef, { subscriptionId: args.subscriptionId, reference: info.reference, amountKobo: info.amountKobo });
+    // Rehabify's revenue: with money routing on, to Rehabify's sub-account (read before the try,
+    // so the charge's own error handling below is unchanged)
+    const split = await rehabifyOnlySplit(ctx);
     try {
-      const data: any = await paystackRequest("/transaction/charge_authorization", {
+      const data: any = await chargeWithRouting(ctx, "physio_pro_renewal", split, (routed) => paystackRequest("/transaction/charge_authorization", {
         method: "POST",
         body: JSON.stringify({
           authorization_code: info.authorizationCode,
@@ -1167,9 +1177,10 @@ export const chargeSavedCard = internalAction({
           amount: info.amountKobo,
           currency: "NGN",
           reference: info.reference,
+          ...routed,
           metadata: { source: "physio_pro", subscriptionId: args.subscriptionId, renewal: true },
         }),
-      });
+      }));
       if (data?.status === "success") {
         await ctx.runMutation(completeRef, {
           reference: info.reference,
