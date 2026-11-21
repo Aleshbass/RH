@@ -4982,7 +4982,10 @@ export default defineSchema({
   })
     .index("by_message_id", ["messageId"])
     .index("by_day", ["day"])
-    .index("by_enrollment", ["enrollmentId"]),
+    .index("by_enrollment", ["enrollmentId"])
+    // Sent emails tab: each list's newest emails, per sequence (clinic and employer sequences
+    // share this table, so a plain newest-first read could be all one list)
+    .index("by_sequence", ["sequenceId", "sentAt"]),
 
   // Replies, bounces and out-of-office answers to our emails (other inbox mail is never stored)
   outreachInbox: defineTable({

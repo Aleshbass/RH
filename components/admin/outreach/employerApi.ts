@@ -5,6 +5,7 @@
 import { makeFunctionReference } from 'convex/server'
 import { ConvexError } from 'convex/values'
 import type { EmployerStage, RoleGroup } from '@/lib/employerOutreach'
+import type { OutreachNumbers, SendingDay } from './OutreachHelp'
 
 export type Source = 'google_places' | 'web_search'
 export type SeqStatus = 'draft' | 'active' | 'paused'
@@ -134,8 +135,16 @@ export type SequencesData = {
     day: string
     lastInboxCheckAt: number | null
     lastSendError: string | null
+    dailyStart: number
+    rampPerDay: number
+    dailyMax: number
+    next: SendingDay
   }
   employerSentToday: number
+  /** Headline numbers for employer sequences (outreachSend.ts outreachNumbers) */
+  numbers: OutreachNumbers
+  /** Replies, automatic replies and bounces from companies in all (the list shows the newest) */
+  repliesTotal: number
   sequences: { _id: string; name: string; status: SeqStatus; steps: Step[]; updatedAt: number; stats: Stats }[]
   replies: {
     _id: string

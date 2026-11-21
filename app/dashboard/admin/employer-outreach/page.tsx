@@ -16,6 +16,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { EmployerCompanyDrawer } from "@/components/admin/outreach/EmployerCompanyDrawer";
 import { EmployerSequences } from "@/components/admin/outreach/EmployerSequences";
+import { OutreachGuide } from "@/components/admin/outreach/OutreachHelp";
+import { SentEmails } from "@/components/admin/outreach/SentEmails";
 import { STAGE_TONE, employerApi, errorText, lagosDay, type CompanyRow, type Source } from "@/components/admin/outreach/employerApi";
 import {
   AdminPage,
@@ -66,7 +68,7 @@ function contactsSummary(c: CompanyRow) {
 }
 
 export default function EmployerOutreachPage() {
-  const [tab, setTab] = useState<"companies" | "sequences">("companies");
+  const [tab, setTab] = useState<"companies" | "sequences" | "sent">("companies");
   const data = useQuery(employerApi.companies, {});
   const convex = useConvex();
   const find = useAction(employerApi.find);
@@ -227,14 +229,19 @@ export default function EmployerOutreachPage() {
         }
       />
 
-      <Tabs value={tab} onValueChange={(value) => setTab(value as "companies" | "sequences")}>
+      <OutreachGuide audience="employer" onShowSent={() => setTab("sent")} />
+
+      <Tabs value={tab} onValueChange={(value) => setTab(value as "companies" | "sequences" | "sent")}>
         <TabsList className={tabsListClass}>
           <TabsTrigger value="companies">Companies</TabsTrigger>
           <TabsTrigger value="sequences">Sequences</TabsTrigger>
+          <TabsTrigger value="sent">Sent emails</TabsTrigger>
         </TabsList>
       </Tabs>
 
-      {tab === "sequences" ? (
+      {tab === "sent" ? (
+        <SentEmails audience="employer" onOpenLead={setOpenId} />
+      ) : tab === "sequences" ? (
         <EmployerSequences onOpenCompany={setOpenId} />
       ) : (
         <>

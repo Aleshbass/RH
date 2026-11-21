@@ -23,6 +23,8 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { OutreachSender } from "@/components/admin/outreach/OutreachSender";
+import { OutreachGuide } from "@/components/admin/outreach/OutreachHelp";
+import { SentEmails } from "@/components/admin/outreach/SentEmails";
 import {
   AdminPage,
   EmptyState,
@@ -162,7 +164,7 @@ const errorText = (
       : fallback;
 
 export default function ClinicOutreachPage() {
-  const [tab, setTab] = useState<"find" | "send">("find");
+  const [tab, setTab] = useState<"find" | "send" | "sent">("find");
   const [filter, setFilter] = useState<Status | "all">("all");
   const [city, setCity] = useState("");
   const data = useQuery(leadsRef, {
@@ -272,17 +274,22 @@ export default function ClinicOutreachPage() {
         }
       />
 
+      <OutreachGuide audience="clinic" onShowSent={() => setTab("sent")} />
+
       <Tabs
         value={tab}
-        onValueChange={(value) => setTab(value as "find" | "send")}
+        onValueChange={(value) => setTab(value as "find" | "send" | "sent")}
       >
         <TabsList className={tabsListClass}>
           <TabsTrigger value="find">Find clinics</TabsTrigger>
           <TabsTrigger value="send">Send emails</TabsTrigger>
+          <TabsTrigger value="sent">Sent emails</TabsTrigger>
         </TabsList>
       </Tabs>
 
-      {tab === "send" ? (
+      {tab === "sent" ? (
+        <SentEmails audience="clinic" />
+      ) : tab === "send" ? (
         <OutreachSender />
       ) : (
         <>
@@ -395,13 +402,56 @@ export default function ClinicOutreachPage() {
           </Panel>
 
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <StatTile label="Clinics found" value={data?.total ?? "—"} />
-            <StatTile label="Ready to email" value={counts.ready ?? 0} />
+            <StatTile
+              label="Clinics found"
+              value={data?.total ?? "—"}
+              info={
+                <p>
+                  Every clinic found so far, in every city, with or without an
+                  email.
+                </p>
+              }
+            />
+            <StatTile
+              label="Ready to email"
+              value={counts.ready ?? 0}
+              info={
+                <p>
+                  Clinics with an email that haven&apos;t been emailed yet. This
+                  includes clinics already waiting in a sequence for their first
+                  email.
+                </p>
+              }
+            />
             <StatTile
               label="Exported or contacted"
               value={(counts.exported ?? 0) + (counts.contacted ?? 0)}
+              info={
+                <>
+                  <p>
+                    Clinics exported to a CSV, plus clinics that have had at
+                    least one of our emails.
+                  </p>
+                  <p>
+                    A clinic whose email bounced moves to &ldquo;Email
+                    bounced&rdquo; and isn&apos;t counted here. The Send emails
+                    and Sent emails tabs have the full email numbers.
+                  </p>
+                </>
+              }
             />
-            <StatTile label="Replied" value={counts.replied ?? 0} />
+            <StatTile
+              label="Replied"
+              value={counts.replied ?? 0}
+              info={
+                <p>
+                  Clinics where a real person replied. Automatic out-of-office
+                  replies don&apos;t count. A clinic that said &ldquo;not
+                  interested&rdquo; or &ldquo;stop&rdquo; moves to those groups
+                  instead.
+                </p>
+              }
+            />
           </div>
 
           <Panel

@@ -29,6 +29,7 @@ export {
   EmptyState,
   formatNaira,
   IconChip,
+  InfoTip,
   listRowClass,
   Panel,
   PageHeader,

@@ -22,7 +22,7 @@ import { action, internalAction, internalMutation, internalQuery, mutation, quer
 import type { Doc, Id } from "./_generated/dataModel";
 import { requireAdmin } from "./helpers/partnerAccess";
 import { autoAdvanceStage, crawlPendingRef as crawlRef, emailDoNotContact, logActivity, stopEnrollment } from "./helpers/outreachShared";
-import { saveSequence, senderSummary } from "./outreachSend";
+import { outreachNumbers, saveSequence, senderSummary } from "./outreachSend";
 import {
   JUNK_EMAIL,
   clean,
@@ -1060,8 +1060,11 @@ export const adminSequences = query({
     await requireAdmin(ctx, "employerOutreach:adminSequences");
     const sequences = (await ctx.db.query("outreachSequences").order("desc").take(200)).filter((q) => q.audience === "employer");
     const ids = new Set<string>(sequences.map((q) => q._id));
+    // Every employer enrollment read below, for the headline numbers (outreachNumbers)
+    const everyEnrollment: Doc<"outreachEnrollments">[] = [];
     const stats = async (sequenceId: Id<"outreachSequences">) => {
       const rows = await ctx.db.query("outreachEnrollments").withIndex("by_sequence", (q) => q.eq("sequenceId", sequenceId)).take(3000);
+      everyEnrollment.push(...rows);
       const out = { total: rows.length, active: 0, finished: 0, replied: 0, bounced: 0, unsubscribed: 0, stopped: 0, sent: 0, contacted: 0, people: 0 };
       for (const e of rows) {
         out[e.status]++;
@@ -1073,9 +1076,15 @@ export const adminSequences = query({
     };
     const sender = await senderSummary(ctx);
     const today = await ctx.db.query("outreachMessages").withIndex("by_day", (q) => q.eq("day", sender.day)).take(1000);
-    const inboxAll = await ctx.db.query("outreachInbox").order("desc").take(150);
+    const sequenceRows = await Promise.all(
+      sequences.map(async (q) => ({ _id: q._id, name: q.name, status: q.status, steps: q.steps, updatedAt: q.updatedAt, stats: await stats(q._id) }))
+    );
+    // Enough inbox rows to count every reply and bounce; the list shows the newest from companies
+    const inboxAll = await ctx.db.query("outreachInbox").order("desc").take(1500);
+    const employerEnrollmentIds = new Set<string>(everyEnrollment.map((e) => e._id));
+    const employerInbox = inboxAll.filter((i) => employerEnrollmentIds.has(i.enrollmentId));
     const replies: { _id: Id<"outreachInbox">; leadId: Id<"outreachLeads">; company: string; kind: string; intent: string | null; fromEmail: string | null; subject: string; snippet: string; receivedAt: number }[] = [];
-    for (const i of inboxAll) {
+    for (const i of employerInbox) {
       if (replies.length >= 20) break;
       const lead = await ctx.db.get(i.leadId);
       if (lead?.kind !== "employer") continue;
@@ -1084,10 +1093,10 @@ export const adminSequences = query({
     return {
       sender,
       employerSentToday: today.filter((m) => ids.has(m.sequenceId)).length,
-      sequences: await Promise.all(
-        sequences.map(async (q) => ({ _id: q._id, name: q.name, status: q.status, steps: q.steps, updatedAt: q.updatedAt, stats: await stats(q._id) }))
-      ),
+      sequences: sequenceRows,
       replies,
+      numbers: outreachNumbers(everyEnrollment, employerInbox),
+      repliesTotal: employerInbox.length,
     };
   },
 });

@@ -262,6 +262,7 @@ export const ADMIN_FUNCTION_PAGES: Readonly<Record<string, readonly number[] | "
   "outreachSend:adminSaveSequence": [26],
   "outreachSend:adminSenderOverview": [26],
   "outreachSend:adminStopEnrollment": [26],
+  "outreachSent:adminSentEmails": [26, 36],
   "partners:adminCreatePartner": [2, 5, 9, 15, 17, 19, 20, 22, 23, 27, 28, 29, 31, 32, 34, 35, 37, 38, 39, 44, 47, 48, 49, 50, 57],
   "partners:adminListPartners": [2, 5, 9, 15, 17, 19, 20, 22, 23, 27, 28, 29, 31, 32, 34, 35, 37, 38, 39, 44, 47, 48, 49, 50, 57],
   "payments:adminDecideRefund": [42],

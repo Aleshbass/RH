@@ -1,7 +1,9 @@
 'use client'
 
 import Link from 'next/link'
-import type { ComponentType, ReactNode } from 'react'
+import { useState, type ComponentType, type ReactNode } from 'react'
+import { Info } from '@/components/icons'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
 
 /**
@@ -54,9 +56,60 @@ export function PageHeader({
   )
 }
 
+/**
+ * A small "i" that explains a number or a setting in plain words. Opens on hover with a mouse, and
+ * on tap or Enter/Space everywhere else (phones have no hover); Escape or a tap outside closes it.
+ */
+export function InfoTip({
+  children,
+  label = 'What does this mean?',
+  side = 'top',
+  className,
+}: {
+  children: ReactNode
+  label?: string
+  side?: 'top' | 'bottom' | 'left' | 'right'
+  className?: string
+}) {
+  const [open, setOpen] = useState(false)
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          aria-label={label}
+          onPointerEnter={(event) => event.pointerType === 'mouse' && setOpen(true)}
+          onPointerLeave={(event) => event.pointerType === 'mouse' && setOpen(false)}
+          onClick={(event) => {
+            // Inside a link or a clickable row, the tip mustn't trigger the parent too
+            event.preventDefault()
+            event.stopPropagation()
+            setOpen((o) => !o)
+          }}
+          className={cn(
+            'inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full align-middle text-neutral-400 transition-colors hover:text-rh-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-lime dark:text-neutral-500 dark:hover:text-white',
+            className
+          )}
+        >
+          <Info className="h-3.5 w-3.5" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        side={side}
+        sideOffset={6}
+        onOpenAutoFocus={(event) => event.preventDefault()}
+        className="w-auto max-w-[min(20rem,calc(100vw-2rem))] space-y-1.5 rounded-2xl border border-black/[0.06] bg-white px-3.5 py-2.5 text-[13px] font-normal leading-relaxed text-neutral-600 shadow-lift dark:border-white/10 dark:bg-rh-ink-2 dark:text-neutral-300"
+      >
+        {children}
+      </PopoverContent>
+    </Popover>
+  )
+}
+
 export function Panel({
   title,
   description,
+  info,
   actions,
   children,
   className,
@@ -64,6 +117,8 @@ export function Panel({
 }: {
   title?: ReactNode
   description?: ReactNode
+  /** An "i" next to the title that explains the panel */
+  info?: ReactNode
   actions?: ReactNode
   children: ReactNode
   className?: string
@@ -74,7 +129,12 @@ export function Panel({
       {(title || actions) && (
         <div className="flex flex-wrap items-center justify-between gap-2 px-5 pb-1 pt-4">
           <div className="min-w-0">
-            {title && <h2 className="text-[15px] font-semibold tracking-tight text-rh-ink dark:text-white">{title}</h2>}
+            {title && (
+              <h2 className="text-[15px] font-semibold tracking-tight text-rh-ink dark:text-white">
+                {title}
+                {info && <InfoTip className="ml-1">{info}</InfoTip>}
+              </h2>
+            )}
             {description && <p className="text-xs text-neutral-500 dark:text-neutral-400">{description}</p>}
           </div>
           {actions && <div className="flex items-center gap-2">{actions}</div>}
@@ -108,6 +168,7 @@ export function StatTile({
   label,
   value,
   hint,
+  info,
   href,
   icon,
   tone = 'teal',
@@ -115,6 +176,8 @@ export function StatTile({
   label: string
   value: ReactNode
   hint?: ReactNode
+  /** An "i" next to the label that says what the number counts */
+  info?: ReactNode
   href?: string
   icon?: ComponentType<{ className?: string }>
   tone?: Tone | 'attention' | 'default'
@@ -130,7 +193,14 @@ export function StatTile({
       )}
     >
       <div className="flex items-start justify-between gap-3">
-        <p className="text-[13px] font-medium text-neutral-500 dark:text-neutral-400">{label}</p>
+        <p className="text-[13px] font-medium text-neutral-500 dark:text-neutral-400">
+          {label}
+          {info && (
+            <InfoTip label={`What "${label}" counts`} className="ml-0.5">
+              {info}
+            </InfoTip>
+          )}
+        </p>
         {icon && <IconChip icon={icon} tone={chipTone} className="h-8 w-8 rounded-lg" />}
       </div>
       <p className="mt-2 break-words text-2xl font-semibold tabular-nums tracking-tight text-rh-ink dark:text-white sm:text-[28px]">

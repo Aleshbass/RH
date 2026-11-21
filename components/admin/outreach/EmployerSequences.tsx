@@ -17,7 +17,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   EmptyState,
   Panel,
-  StatTile,
   StatusBadge,
   fieldClass,
   primaryButtonClass,
@@ -26,6 +25,7 @@ import {
 } from "@/components/admin/ui";
 import { cn } from "@/lib/utils";
 import { employerApi, errorText, type SeqStatus, type Step } from "./employerApi";
+import { DailyLimitTip, OutreachNumbersTiles, REPLIES_INFO, inboxLabel } from "./OutreachHelp";
 
 /**
  * A starting point the team edits: short and plain, from what /platform/employers already says
@@ -105,17 +105,6 @@ export function EmployerSequences({ onOpenCompany }: { onOpenCompany?: (leadId: 
   }
 
   const s = data.sender;
-  const totals = data.sequences.reduce(
-    (t, q) => ({
-      contacted: t.contacted + q.stats.contacted,
-      sent: t.sent + q.stats.sent,
-      replied: t.replied + q.stats.replied,
-      bounced: t.bounced + q.stats.bounced,
-      unsubscribed: t.unsubscribed + q.stats.unsubscribed,
-      active: t.active + q.stats.active,
-    }),
-    { contacted: 0, sent: 0, replied: 0, bounced: 0, unsubscribed: 0, active: 0 }
-  );
   const activeSequences = data.sequences.filter((q) => q.status === "active").length;
 
   const saveEditing = () =>
@@ -143,13 +132,27 @@ export function EmployerSequences({ onOpenCompany }: { onOpenCompany?: (leadId: 
             ? `From ${s.fromName} <${s.address}>, one email at a time, weekdays 9:00–17:00 Lagos time.`
             : "The inbox isn't connected yet: OUTREACH_SMTP_USER and OUTREACH_SMTP_PASS on Convex."
         }
+        info={
+          <>
+            <p>
+              Employer outreach shares one sender with Clinic outreach: the same hello@ inbox, the same daily limit and the same on/off switch.
+            </p>
+            <p>The switch, the sender&apos;s name and the limit are changed on the Clinic outreach page.</p>
+          </>
+        }
       >
         <div className="space-y-2 p-5 text-sm text-rh-ink dark:text-white">
           <p>
             <StatusBadge tone={s.sendingOn ? "green" : "neutral"}>{s.sendingOn ? "On" : "Off"}</StatusBadge>{" "}
             <span className="ml-1">
               Today: <strong>{data.employerSentToday}</strong> to companies. Shared with clinic outreach:{" "}
-              <strong>{s.sentToday}</strong> of {s.quota} sent today.{" "}
+              <strong>{s.sentToday}</strong> of {s.quota} sent today.
+              <DailyLimitTip
+                today={{ sent: s.sentToday, quota: s.quota, weekday: s.weekday, windowOpen: s.windowOpen, day: s.day, next: s.next }}
+                ramp={s}
+                sendingOn={s.sendingOn}
+                audience="employer"
+              />{" "}
               {!s.weekday ? "No emails at weekends." : s.windowOpen ? "" : "Outside 9:00–17:00, so nothing goes out now."}
             </span>
           </p>
@@ -168,13 +171,7 @@ export function EmployerSequences({ onOpenCompany }: { onOpenCompany?: (leadId: 
         </div>
       </Panel>
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-        <StatTile label="Addresses emailed" value={totals.contacted} hint={`${totals.sent} emails in all`} />
-        <StatTile label="Replied" value={totals.replied} hint={`${pct(totals.replied, totals.contacted)} of those emailed`} />
-        <StatTile label="Still in a sequence" value={totals.active} />
-        <StatTile label="Bounced" value={totals.bounced} hint={pct(totals.bounced, totals.contacted)} />
-        <StatTile label="Asked to stop" value={totals.unsubscribed} />
-      </div>
+      <OutreachNumbersTiles n={data.numbers} audience="employer" />
 
       <Panel
         title="Sequences"
@@ -366,7 +363,11 @@ export function EmployerSequences({ onOpenCompany }: { onOpenCompany?: (leadId: 
         </p>
       </Panel>
 
-      <Panel title="Replies from companies" description="Only answers to these emails are shown. Read and answer them in the hello@ inbox in Zoho.">
+      <Panel
+        title="Replies from companies"
+        description="What came back from companies, newest first: real replies, automatic out-of-office replies and bounces. Read and answer replies in the hello@ inbox in Zoho."
+        info={REPLIES_INFO}
+      >
         {data.replies.length === 0 ? (
           <EmptyState icon={<Inbox className="h-5 w-5" />} title="Nothing yet" description="Replies show here within 15 minutes of arriving." />
         ) : (
@@ -381,19 +382,7 @@ export function EmployerSequences({ onOpenCompany }: { onOpenCompany?: (leadId: 
                   ) : (
                     m.company
                   )}
-                  <StatusBadge
-                    tone={m.kind === "bounce" ? "amber" : m.intent === "stop" ? "red" : m.kind === "auto_reply" ? "neutral" : "green"}
-                  >
-                    {m.kind === "bounce"
-                      ? "Bounced"
-                      : m.kind === "auto_reply"
-                        ? "Automatic reply"
-                        : m.intent === "stop"
-                          ? "Asked to stop"
-                          : m.intent === "not_interested"
-                            ? "Not interested"
-                            : "Replied"}
-                  </StatusBadge>
+                  <StatusBadge tone={inboxLabel(m.kind, m.intent).tone}>{inboxLabel(m.kind, m.intent).label}</StatusBadge>
                   <span className="text-xs font-normal text-neutral-500">{formatDistanceToNowStrict(m.receivedAt, { addSuffix: true })}</span>
                 </p>
                 <p className="text-xs text-neutral-500">
@@ -403,6 +392,11 @@ export function EmployerSequences({ onOpenCompany }: { onOpenCompany?: (leadId: 
               </li>
             ))}
           </ul>
+        )}
+        {data.repliesTotal > data.replies.length && (
+          <p className="border-t border-black/[0.05] px-5 py-3 text-xs text-neutral-500 dark:border-white/[0.06]">
+            Showing the newest {data.replies.length} of {data.repliesTotal}. The numbers above count them all.
+          </p>
         )}
       </Panel>
     </div>

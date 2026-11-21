@@ -27,7 +27,6 @@ import {
   EmptyState,
   FilterChips,
   Panel,
-  StatTile,
   StatusBadge,
   fieldClass,
   textareaFieldClass,
@@ -36,6 +35,14 @@ import {
   softButtonClass,
 } from "@/components/admin/ui";
 import { cn } from "@/lib/utils";
+import {
+  DailyLimitTip,
+  OutreachNumbersTiles,
+  REPLIES_INFO,
+  inboxLabel,
+  type OutreachNumbers,
+  type SendingDay,
+} from "./OutreachHelp";
 
 type Step = { subject: string; body: string; waitDays: number };
 type SeqStatus = "draft" | "active" | "paused";
@@ -66,8 +73,18 @@ type Overview = {
     lastSendErrorAt: number | null;
   };
   inboxCheck: { at: number | null; error: string | null };
-  today: { sent: number; quota: number; windowOpen: boolean; weekday: boolean };
+  today: {
+    sent: number;
+    quota: number;
+    windowOpen: boolean;
+    weekday: boolean;
+    day: string;
+    next: SendingDay;
+  };
   totals: Stats;
+  numbers: OutreachNumbers;
+  inboxShown: number;
+  inboxTotal: number;
   sequences: {
     _id: string;
     name: string;
@@ -352,7 +369,13 @@ export function OutreachSender({ defaultTestTo }: { defaultTestTo?: string }) {
             </StatusBadge>{" "}
             <span className="ml-1">
               Today: <strong>{data.today.sent}</strong> of {data.today.quota}{" "}
-              sent.{" "}
+              sent.
+              <DailyLimitTip
+                today={data.today}
+                ramp={s}
+                sendingOn={s.sendingOn}
+                audience="clinic"
+              />{" "}
               {!data.today.weekday
                 ? "No emails at weekends."
                 : data.today.windowOpen
@@ -407,25 +430,7 @@ export function OutreachSender({ defaultTestTo }: { defaultTestTo?: string }) {
         </div>
       </Panel>
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-        <StatTile
-          label="Clinics emailed"
-          value={data.totals.contacted}
-          hint={`${data.totals.sent} emails in all`}
-        />
-        <StatTile
-          label="Replied"
-          value={data.totals.replied}
-          hint={`${pct(data.totals.replied, data.totals.contacted)} of clinics emailed`}
-        />
-        <StatTile label="Still in a sequence" value={data.totals.active} />
-        <StatTile
-          label="Bounced"
-          value={data.totals.bounced}
-          hint={pct(data.totals.bounced, data.totals.contacted)}
-        />
-        <StatTile label="Asked to stop" value={data.totals.unsubscribed} />
-      </div>
+      <OutreachNumbersTiles n={data.numbers} audience="clinic" />
 
       {/* Sequences */}
       <Panel
@@ -801,7 +806,8 @@ export function OutreachSender({ defaultTestTo }: { defaultTestTo?: string }) {
       {/* Replies */}
       <Panel
         title="Replies and bounces"
-        description="Only answers to these emails are shown. Read and answer them in the hello@ inbox in Zoho."
+        description="What came back from clinics, newest first: real replies, automatic out-of-office replies and bounces. Read and answer replies in the hello@ inbox in Zoho."
+        info={REPLIES_INFO}
       >
         {data.inbox.length === 0 ? (
           <EmptyState
@@ -815,26 +821,8 @@ export function OutreachSender({ defaultTestTo }: { defaultTestTo?: string }) {
               <li key={m._id} className="space-y-1 px-5 py-3">
                 <p className="flex flex-wrap items-center gap-2 text-sm font-medium text-rh-ink dark:text-white">
                   {m.leadName}
-                  <StatusBadge
-                    tone={
-                      m.kind === "bounce"
-                        ? "amber"
-                        : m.intent === "stop"
-                          ? "red"
-                          : m.kind === "auto_reply"
-                            ? "neutral"
-                            : "green"
-                    }
-                  >
-                    {m.kind === "bounce"
-                      ? "Bounced"
-                      : m.kind === "auto_reply"
-                        ? "Automatic reply"
-                        : m.intent === "stop"
-                          ? "Asked to stop"
-                          : m.intent === "not_interested"
-                            ? "Not interested"
-                            : "Replied"}
+                  <StatusBadge tone={inboxLabel(m.kind, m.intent).tone}>
+                    {inboxLabel(m.kind, m.intent).label}
                   </StatusBadge>
                   <span className="text-xs font-normal text-neutral-500">
                     {formatDistanceToNowStrict(m.receivedAt, {
@@ -854,10 +842,31 @@ export function OutreachSender({ defaultTestTo }: { defaultTestTo?: string }) {
             ))}
           </ul>
         )}
+        {data.inboxTotal > data.inboxShown && (
+          <p className="border-t border-black/[0.05] px-5 py-3 text-xs text-neutral-500 dark:border-white/[0.06]">
+            Showing the newest {data.inboxShown} of {data.inboxTotal}. The numbers
+            above count them all.
+          </p>
+        )}
       </Panel>
 
       {/* Who is where */}
-      <Panel title="Clinics in sequences">
+      <Panel
+        title="Clinics in sequences"
+        info={
+          <>
+            <p>Where each clinic you added is up to.</p>
+            <p>
+              In sequence: more emails to come (or the first one is still
+              waiting). All sent, no reply: every email went and nobody
+              answered. Replied: a real person answered, so the follow-ups
+              stopped. Bounced: the address doesn&apos;t work. Asked to stop:
+              never emailed again. Removed: taken out by the team, or the
+              clinic was closed.
+            </p>
+          </>
+        }
+      >
         <div className="border-b border-black/[0.05] px-5 py-3 dark:border-white/[0.06]">
           <FilterChips
             value={listFilter}
@@ -937,6 +946,19 @@ export function OutreachSender({ defaultTestTo }: { defaultTestTo?: string }) {
         <Panel
           title="Sender"
           description="How the emails are signed, and how fast the daily limit grows."
+          info={
+            <>
+              <p>
+                First day: the limit on the first day sending was switched on.
+                More each day: added every weekday after that. Most a day: the
+                limit never goes above this.
+              </p>
+              <p>
+                The limit is shared by clinic and employer emails. Start slowly:
+                a new mailbox that sends a lot at once lands in spam.
+              </p>
+            </>
+          }
         >
           <form
             className="grid gap-3 p-5 sm:grid-cols-2"

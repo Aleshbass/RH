@@ -13,6 +13,8 @@
  *  - Employer outreach (employerOutreach.ts) uses this same schedule, inbox and daily cap: its
  *    sequences have audience "employer" and its enrollments can be for a named person at the
  *    company (contactId). The clinic screens below only show clinic sequences and clinics.
+ *  - Both pages count the same way (outreachNumbers below); outreachSent.ts lists every email
+ *    actually sent, with what came back since, so the team can tell ours from other inbox mail.
  */
 import { ConvexError, v } from "convex/values";
 import { makeFunctionReference } from "convex/server";
@@ -400,6 +402,81 @@ export async function senderSummary(ctx: QueryCtx) {
     day: clock.day,
     lastInboxCheckAt: row?.lastInboxCheckAt ?? null,
     lastSendError: row?.lastSendError ?? null,
+    // For the "i" next to today's count: how the limit grows and the next sending day's limit
+    dailyStart: s.dailyStart,
+    rampPerDay: s.rampPerDay,
+    dailyMax: s.dailyMax,
+    next: nextSendingDay(s, clock.day),
+  };
+}
+
+/** The next weekday after `day` ("YYYY-MM-DD") and its daily limit: "Monday's limit: 20". */
+function nextSendingDay(s: ReturnType<typeof withDefaults>, day: string) {
+  let t = Date.parse(`${day}T00:00:00Z`);
+  for (let i = 0; i < 7; i++) {
+    t += DAY_MS;
+    const wd = new Date(t).getUTCDay();
+    if (wd !== 0 && wd !== 6) break;
+  }
+  const next = new Date(t).toISOString().slice(0, 10);
+  // Before sending is first switched on there's no start day yet: the first day gets dailyStart
+  return { day: next, quota: dailyQuota(s, next) };
+}
+
+/**
+ * The headline numbers on both outreach pages (owner, 21 Nov 2026: "we need to know what is going
+ * on"). Each counts addresses (a clinic, or a company inbox or named person), once each, so they
+ * add up: emailed = contacted + bounced back, and replies and automatic replies are separate.
+ * `inbox` may hold rows from the other list too; only these enrollments' rows are counted.
+ */
+export function outreachNumbers(enrollments: Doc<"outreachEnrollments">[], inbox: Doc<"outreachInbox">[]) {
+  const ids = new Set<string>(enrollments.map((e) => e._id));
+  const replied = new Set<string>();
+  const askedToStop = new Set<string>();
+  const notInterested = new Set<string>();
+  const autoReplies = new Set<string>();
+  for (const i of inbox) {
+    if (!ids.has(i.enrollmentId)) continue;
+    if (i.kind === "auto_reply") autoReplies.add(i.enrollmentId);
+    else if (i.kind === "reply") {
+      // A real person answering, even to say no or stop
+      replied.add(i.enrollmentId);
+      if (i.intent === "stop") askedToStop.add(i.enrollmentId);
+      else if (i.intent === "not_interested") notInterested.add(i.enrollmentId);
+    }
+  }
+  let sent = 0;
+  let emailed = 0;
+  let bouncedBack = 0;
+  let refused = 0;
+  let waiting = 0;
+  let waitingFollowUp = 0;
+  for (const e of enrollments) {
+    sent += e.nextStep;
+    if (e.nextStep > 0) emailed++;
+    if (e.status === "bounced") {
+      // Came back after sending, or the address was refused before anything went out
+      if (e.nextStep > 0) bouncedBack++;
+      else refused++;
+    }
+    if (e.status === "active") {
+      if (e.nextStep === 0) waiting++;
+      else waitingFollowUp++;
+    }
+  }
+  return {
+    sent,
+    emailed,
+    contacted: emailed - bouncedBack,
+    replies: replied.size,
+    askedToStop: askedToStop.size,
+    notInterested: notInterested.size,
+    autoReplies: autoReplies.size,
+    bounced: bouncedBack + refused,
+    bouncedBack,
+    refused,
+    waiting,
+    waitingFollowUp,
   };
 }
 
@@ -420,11 +497,13 @@ export const adminSenderOverview = query({
     const allEnrollments = await ctx.db.query("outreachEnrollments").order("desc").take(3000);
     const enrollments = allEnrollments.filter((e) => !employerSequences.has(e.sequenceId));
     const leadIds = new Set(enrollments.slice(0, 300).map((e) => e.leadId));
-    const inboxAll = await ctx.db.query("outreachInbox").order("desc").take(100);
-    for (const i of inboxAll) leadIds.add(i.leadId);
+    // Clinic rows only (by their enrollment), enough of them to count every reply and bounce
+    const clinicEnrollmentIds = new Set<string>(enrollments.map((e) => e._id));
+    const inboxClinic = (await ctx.db.query("outreachInbox").order("desc").take(1500)).filter((i) => clinicEnrollmentIds.has(i.enrollmentId));
+    const inbox = inboxClinic.slice(0, 30);
+    for (const i of inbox) leadIds.add(i.leadId);
     const leads = new Map<string, Doc<"outreachLeads"> | null>();
     for (const id of leadIds) leads.set(id, await ctx.db.get(id));
-    const inbox = inboxAll.filter((i) => leads.get(i.leadId)?.kind !== "employer").slice(0, 30);
 
     const sequences = allSequences.filter(isClinicSequence).slice(0, 20);
     const stats = (list: Doc<"outreachEnrollments">[]) => {
@@ -454,8 +533,18 @@ export const adminSenderOverview = query({
       },
       settings: { ...s, lastSendError: row?.lastSendError ?? null, lastSendErrorAt: row?.lastSendErrorAt ?? null },
       inboxCheck: { at: row?.lastInboxCheckAt ?? null, error: row?.lastInboxError ?? null },
-      today: { sent: await sentOn(ctx, clock.day), quota: dailyQuota(s, clock.day), windowOpen: windowOpen(now), weekday: clock.weekday !== 0 && clock.weekday !== 6 },
+      today: {
+        sent: await sentOn(ctx, clock.day),
+        quota: dailyQuota(s, clock.day),
+        windowOpen: windowOpen(now),
+        weekday: clock.weekday !== 0 && clock.weekday !== 6,
+        day: clock.day,
+        next: nextSendingDay(s, clock.day),
+      },
       totals: stats(enrollments),
+      numbers: outreachNumbers(enrollments, inboxClinic),
+      inboxShown: inbox.length,
+      inboxTotal: inboxClinic.length,
       sequences: sequences.map((seq) => ({
         _id: seq._id,
         name: seq.name,
