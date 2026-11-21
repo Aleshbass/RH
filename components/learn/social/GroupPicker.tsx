@@ -19,6 +19,24 @@ import { displayFont, pillInk } from '../shared'
 import { errorText, roomPath } from './socialApi'
 import { Avatar, Skeleton } from './ui'
 import { GroupAvatar } from './GroupAvatar'
+import { LayoutSwitch, useCardLayout, usePhone, type CardLayout } from './CommunityCards'
+
+// Grid · List · Scroll (owner, 21 Nov 2026: with many groups the cards stacked down the whole
+// page on phones). The choice is shared with the community's other card lists (CommunityCards).
+// Before the browser's choice is known: scroll on phones, grid above, in CSS alone.
+const PICK_LIST: Record<CardLayout | 'auto', string> = {
+  grid: 'grid grid-cols-2 gap-2.5 sm:gap-3 lg:grid-cols-3',
+  list: 'grid gap-3 md:grid-cols-2',
+  scroll:
+    '-mx-4 flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-2 [scroll-padding-inline:1rem] [scrollbar-width:none] sm:-mx-6 sm:px-6 sm:[scroll-padding-inline:1.5rem] [&::-webkit-scrollbar]:hidden',
+  auto: '-mx-4 flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-2 [scroll-padding-inline:1rem] [scrollbar-width:none] sm:mx-0 sm:grid sm:grid-cols-2 sm:overflow-visible sm:px-0 sm:pb-0 lg:grid-cols-3 [&::-webkit-scrollbar]:hidden',
+}
+const PICK_ITEM: Record<CardLayout | 'auto', string> = {
+  grid: 'min-w-0',
+  list: 'min-w-0',
+  scroll: 'w-[80vw] max-w-[300px] shrink-0 snap-start sm:w-[290px]',
+  auto: 'w-[80vw] max-w-[300px] shrink-0 snap-start sm:w-auto sm:max-w-none',
+}
 
 /** "Group 3" pill with the group's colour, used beside names in the community. */
 export function GroupChip({ group, className }: { group: { name: string; color: string; imageUrl?: string | null; lead?: boolean } | null | undefined; className?: string }) {
@@ -68,7 +86,22 @@ function Seats({ group }: { group: JoinableGroup }) {
   )
 }
 
-function GroupCard({ group, busy, onJoin, index }: { group: JoinableGroup; busy: boolean; onJoin: () => void; index: number }) {
+function GroupCard({
+  group,
+  busy,
+  onJoin,
+  index,
+  compact,
+  className,
+}: {
+  group: JoinableGroup
+  busy: boolean
+  onJoin: () => void
+  index: number
+  /** Two to a row on a phone (Grid): smaller type and padding */
+  compact?: boolean
+  className?: string
+}) {
   const reduce = useReducedMotion()
   const tone = groupTone(group.color)
   return (
@@ -78,7 +111,9 @@ function GroupCard({ group, busy, onJoin, index }: { group: JoinableGroup; busy:
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, delay: Math.min(index, 8) * 0.04, ease: [0.22, 1, 0.36, 1] }}
       className={cn(
-        'relative flex flex-col overflow-hidden rounded-[1.5rem] border bg-white p-5 transition',
+        'relative flex flex-col overflow-hidden border bg-white transition',
+        compact ? 'rounded-[1.25rem] p-3.5' : 'rounded-[1.5rem] p-5',
+        className,
         group.mine ? 'border-transparent' : 'border-rh-ink/[0.08]',
         group.full && !group.mine && 'opacity-60'
       )}
@@ -86,24 +121,26 @@ function GroupCard({ group, busy, onJoin, index }: { group: JoinableGroup; busy:
     >
       <span aria-hidden className="absolute inset-x-0 top-0 h-1" style={{ background: tone.dot }} />
       <div className="flex items-start gap-3">
-        <GroupAvatar group={group} size={44} rounded="2xl" />
+        <GroupAvatar group={group} size={compact ? 34 : 44} rounded="2xl" />
         <div className="min-w-0 flex-1">
           <p className="flex items-center gap-2">
-            <span className="truncate text-[16px] font-semibold text-rh-ink">{group.name}</span>
-            {group.mine && (
+            <span className={cn('truncate font-semibold text-rh-ink', compact ? 'text-[14px]' : 'text-[16px]')}>{group.name}</span>
+            {group.mine && !compact && (
               <span className="inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold" style={{ background: tone.soft, color: tone.ink }}>
                 <Check className="h-3 w-3" /> Your group
               </span>
             )}
           </p>
-          {group.description && <p className="mt-0.5 line-clamp-2 text-sm leading-5 text-rh-ink/60">{group.description}</p>}
+          {group.description && (
+            <p className={cn('mt-0.5 line-clamp-2 text-rh-ink/60', compact ? 'text-[12px] leading-4' : 'text-sm leading-5')}>{group.description}</p>
+          )}
         </div>
       </div>
 
-      <div className="mt-4 flex items-center gap-2.5 rounded-2xl bg-rh-cream/70 px-3 py-2.5">
+      <div className={cn('flex items-center rounded-2xl bg-rh-cream/70', compact ? 'mt-3 gap-2 px-2.5 py-2' : 'mt-4 gap-2.5 px-3 py-2.5')}>
         {group.lead ? (
           <>
-            <Avatar name={group.lead.name} imageUrl={group.lead.imageUrl} size={30} />
+            <Avatar name={group.lead.name} imageUrl={group.lead.imageUrl} size={compact ? 24 : 30} />
             <span className="min-w-0 text-sm leading-tight">
               <span className="block truncate font-semibold text-rh-ink">{group.lead.name}</span>
               <span className="flex items-center gap-1 text-xs text-rh-ink/55">
@@ -112,23 +149,29 @@ function GroupCard({ group, busy, onJoin, index }: { group: JoinableGroup; busy:
             </span>
           </>
         ) : (
-          <span className="text-sm text-rh-ink/55">Champion to be announced</span>
+          <span className={cn('text-rh-ink/55', compact ? 'text-xs' : 'text-sm')}>{compact ? 'Champion soon' : 'Champion to be announced'}</span>
         )}
       </div>
 
-      <div className="mt-4">
+      <div className={compact ? 'mt-3' : 'mt-4'}>
         <Seats group={group} />
       </div>
 
-      <div className="mt-5">
+      {/* Pinned to the bottom, so buttons line up across a row of cards */}
+      <div className={cn('mt-auto', compact ? 'pt-3' : 'pt-5')}>
         {group.mine ? (
-          <Link href={roomPath(`group-${group.id}`)} className={cn(pillInk, 'h-11 w-full')}>
-            Open your group <ArrowRight className="h-4 w-4" />
+          <Link href={roomPath(`group-${group.id}`)} className={cn(pillInk, compact ? 'h-10 w-full text-[13px]' : 'h-11 w-full')}>
+            {compact ? 'Open' : 'Open your group'} <ArrowRight className="h-4 w-4" />
           </Link>
         ) : (
-          <button type="button" onClick={onJoin} disabled={busy || group.full} className={cn(pillInk, 'h-11 w-full disabled:opacity-60')}>
+          <button
+            type="button"
+            onClick={onJoin}
+            disabled={busy || group.full}
+            className={cn(pillInk, compact ? 'h-10 w-full text-[13px]' : 'h-11 w-full', 'disabled:opacity-60')}
+          >
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-            {group.full ? 'Full' : 'Join this group'}
+            {group.full ? 'Full' : compact ? 'Join' : 'Join this group'}
           </button>
         )}
       </div>
@@ -141,6 +184,8 @@ function GroupCard({ group, busy, onJoin, index }: { group: JoinableGroup; busy:
  * stays here (the card turns into "Your group") and `onJoined` runs.
  */
 export function GroupPicker({ heading = true, onJoined, className }: { heading?: boolean; onJoined?: (roomSlug: string) => void; className?: string }) {
+  const [layout, setLayout] = useCardLayout()
+  const phone = usePhone()
   const data = useQuery(joinableGroupsRef, {})
   const join = useMutation(joinGroupRef)
   const [busy, setBusy] = useState<string | null>(null)
@@ -173,10 +218,12 @@ export function GroupPicker({ heading = true, onJoined, className }: { heading?:
   }
 
   const open = data.groups.filter((g) => !g.full).length
+  const switcher = data.groups.length > 1 ? <LayoutSwitch value={layout} onChange={setLayout} /> : null
   return (
     <section className={className} aria-labelledby={heading ? 'pick-group-heading' : undefined}>
-      {heading && (
-        <div className="mb-5">
+      {heading ? (
+        <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
+          <div className="min-w-0">
           <h2 id="pick-group-heading" className={cn('text-[26px] leading-tight tracking-tight text-rh-ink sm:text-[32px]', displayFont)}>
             {data.myGroup ? 'Your group' : 'Pick your group'}
           </h2>
@@ -185,12 +232,16 @@ export function GroupPicker({ heading = true, onJoined, className }: { heading?:
               ? `You're in ${data.myGroup.name}. You can move while another group has room.`
               : 'Learn with a small group: your own room, a champion to guide you, and a group leaderboard. When a group is full, pick the next.'}
           </p>
+          </div>
+          {switcher}
         </div>
+      ) : (
+        switcher && <div className="mb-3 flex justify-end">{switcher}</div>
       )}
       {open === 0 && !data.myGroup && (
         <p className="mb-4 rounded-2xl bg-rh-cream px-4 py-3 text-sm text-rh-ink/70">Every group is full right now. A new one opens soon, so check back.</p>
       )}
-      <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <ul aria-label="Groups" className={PICK_LIST[layout ?? 'auto']}>
         <AnimatePresence initial={false}>
           {data.groups.map((g, i) => (
             <GroupCard
@@ -198,6 +249,8 @@ export function GroupPicker({ heading = true, onJoined, className }: { heading?:
               group={g}
               index={i}
               busy={busy === g.id}
+              compact={layout === 'grid' && phone === true}
+              className={PICK_ITEM[layout ?? 'auto']}
               onJoin={() => {
                 if (data.leadsAGroup) {
                   toast.message('You’re a group champion. Ask a Learn admin to move you.')
