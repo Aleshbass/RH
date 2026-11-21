@@ -39,6 +39,7 @@ import { simPath } from '../sims/simApi'
 import { Avatar, EmptyState, Sheet, Skeleton } from './ui'
 import { relativeTime, spacePath } from './socialApi'
 import { coursePath, groupApi, type AssignmentKind, type GroupAssignment, type GroupPerson } from './groupApi'
+import { groupEnterRef, groupLeaveRef, groupMoveRef, groupRemoveRef, groupsListRef } from '@/lib/learnAdminsApi'
 
 type GroupId = Id<'learnGroups'>
 type Tab = 'posts' | 'work' | 'board' | 'people'
@@ -70,6 +71,7 @@ export function GroupHub({ groupId, posts }: { groupId: GroupId; posts: ReactNod
 
   return (
     <div>
+      {home?.isLearnAdmin && <TeamBar groupId={groupId} inGroup={Boolean(home.myRole)} />}
       {home && <PinnedNote groupId={groupId} note={home.announcement} canManage={home.canManage} />}
       {home && home.spaces.length > 0 && (
         <div className="mt-4 flex snap-x gap-2 overflow-x-auto pb-1 [scrollbar-width:none]">
@@ -118,7 +120,7 @@ export function GroupHub({ groupId, posts }: { groupId: GroupId; posts: ReactNod
         {tab === 'posts' && posts}
         {tab === 'work' && <WorkTab groupId={groupId} />}
         {tab === 'board' && <BoardTab groupId={groupId} />}
-        {tab === 'people' && <PeopleTab groupId={groupId} />}
+        {tab === 'people' && <PeopleTab groupId={groupId} teamAdmin={Boolean(home?.isLearnAdmin)} />}
       </div>
     </div>
   )
@@ -698,7 +700,118 @@ function BoardTab({ groupId }: { groupId: GroupId }) {
   )
 }
 
-function PeopleTab({ groupId }: { groupId: GroupId }) {
+/**
+ * The Rehabify team on a group's page: go into the group or leave it (owner, 21 Nov 2026). Learn
+ * admins can read every group without joining; joining puts them in the People list and gives
+ * them the group's notifications.
+ */
+function TeamBar({ groupId, inGroup }: { groupId: GroupId; inGroup: boolean }) {
+  const enter = useMutation(groupEnterRef)
+  const leave = useMutation(groupLeaveRef)
+  const [busy, setBusy] = useState(false)
+  const run = async () => {
+    if (inGroup && !window.confirm('Leave this group? You can come back any time.')) return
+    setBusy(true)
+    try {
+      if (inGroup) await leave({ groupId })
+      else await enter({ groupId })
+      playSound('success')
+      toast.success(inGroup ? 'You left the group' : 'You’re in the group')
+    } catch (err) {
+      playSound('error')
+      toast.error(errorText(err, 'Couldn’t do that. Try again.'))
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <div className="mb-3 flex items-center justify-between gap-3 rounded-2xl border border-rh-ink/[0.07] bg-white px-4 py-2.5">
+      <p className="min-w-0 text-[13px] leading-5 text-rh-ink/60">
+        <span className="font-semibold text-rh-ink">Rehabify team</span> · {inGroup ? 'You’re in this group.' : 'You can see this group without joining.'}
+      </p>
+      <button type="button" onClick={() => void run()} disabled={busy} className={cn(inGroup ? pillOutline : pillInk, 'h-9 shrink-0 px-4 text-[13px] disabled:opacity-60')}>
+        {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+        {inGroup ? 'Leave group' : 'Enter group'}
+      </button>
+    </div>
+  )
+}
+
+/** The Rehabify team on someone in the People list: move them to another group, or remove them. */
+function PersonActions({ groupId, person }: { groupId: GroupId; person: GroupPerson }) {
+  const groups = useQuery(groupsListRef, {})
+  const move = useMutation(groupMoveRef)
+  const remove = useMutation(groupRemoveRef)
+  const [open, setOpen] = useState(false)
+  const [to, setTo] = useState('')
+  const [busy, setBusy] = useState(false)
+  const others = (groups ?? []).filter((g) => g.id !== groupId && !g.archived)
+  const act = async (what: 'move' | 'remove') => {
+    const target = others.find((g) => g.id === to)
+    if (what === 'move' && !target) return
+    if (what === 'remove' && !window.confirm(`Remove ${person.name} from this group?`)) return
+    setBusy(true)
+    try {
+      if (what === 'move' && target) {
+        await move({ fromGroupId: groupId, userId: person.userId, toGroupId: target.id })
+        toast.success(`${person.name} moved to ${target.name}`)
+      } else {
+        await remove({ groupId, userId: person.userId })
+        toast.success(`${person.name} removed from the group`)
+      }
+      playSound('success')
+      setOpen(false)
+    } catch (err) {
+      playSound('error')
+      toast.error(errorText(err, 'Couldn’t do that. Try again.'))
+    } finally {
+      setBusy(false)
+    }
+  }
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="h-9 shrink-0 rounded-full px-3 text-[13px] font-semibold text-rh-ink/55 transition hover:bg-rh-ink/[0.05] hover:text-rh-ink"
+      >
+        Manage
+      </button>
+    )
+  }
+  return (
+    <div className="mt-2 flex w-full flex-wrap items-center gap-2 rounded-2xl bg-rh-ink/[0.03] p-2.5">
+      <label className="sr-only" htmlFor={`move-${person.userId}`}>
+        Move to
+      </label>
+      <select
+        id={`move-${person.userId}`}
+        value={to}
+        onChange={(e) => setTo(e.target.value)}
+        className={cn(fieldClass, 'h-10 min-w-0 flex-1 text-[13px]')}
+      >
+        <option value="">Move to another group…</option>
+        {others.map((g) => (
+          <option key={g.id} value={g.id}>
+            {g.name} ({g.memberCount}/{g.capacity})
+          </option>
+        ))}
+      </select>
+      <button type="button" disabled={!to || busy} onClick={() => void act('move')} className={cn(pillInk, 'h-10 px-4 text-[13px] disabled:opacity-50')}>
+        {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+        Move
+      </button>
+      <button type="button" disabled={busy} onClick={() => void act('remove')} className="h-10 rounded-full px-3 text-[13px] font-semibold text-rose-600 transition hover:bg-rose-50 disabled:opacity-50">
+        Remove
+      </button>
+      <button type="button" onClick={() => setOpen(false)} className="h-10 rounded-full px-3 text-[13px] text-rh-ink/50 hover:text-rh-ink">
+        Cancel
+      </button>
+    </div>
+  )
+}
+
+function PeopleTab({ groupId, teamAdmin }: { groupId: GroupId; teamAdmin: boolean }) {
   const data = useQuery(groupApi.people, { groupId })
   if (data === undefined) return <Skeleton className="h-64 rounded-3xl" />
   if (data === null) return null
@@ -706,7 +819,7 @@ function PeopleTab({ groupId }: { groupId: GroupId }) {
   return (
     <ul className="divide-y divide-rh-ink/[0.06] rounded-3xl border border-rh-ink/[0.07] bg-white px-4">
       {people.map((p) => (
-        <li key={p.userId} className="flex items-center gap-3 py-3">
+        <li key={p.userId} className="flex flex-wrap items-center gap-3 py-3">
           <Avatar name={p.name} imageUrl={p.imageUrl} size={40} />
           <span className="min-w-0 flex-1">
             <span className="block truncate text-sm font-semibold text-rh-ink">
@@ -717,6 +830,7 @@ function PeopleTab({ groupId }: { groupId: GroupId }) {
               {p.tag ? `${p.tag} · ` : ''}joined {relativeTime(p.joinedAt)}
             </span>
           </span>
+          {teamAdmin && !p.isMe && <PersonActions groupId={groupId} person={p} />}
         </li>
       ))}
     </ul>

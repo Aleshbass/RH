@@ -12,7 +12,7 @@ import { ConvexError, v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
-import { requireLearnAdmin } from "./helpers/learnAccess";
+import { isLearnAdminUser, requireLearnAdmin } from "./helpers/learnAccess";
 import { getViewer } from "./helpers/partnerAccess";
 import { insertNotification } from "./helpers/pushNotify";
 import { learnMemberInfo } from "./learn";
@@ -400,6 +400,91 @@ export const adminRemoveMember = mutation({
   },
 });
 
+/**
+ * A Learn admin moves someone from one group to another (owner, 21 Nov 2026). They join the new
+ * group as a member (a champion stops being the old group's champion); a full group takes them
+ * anyway, up to the hard limit. They're told where they've gone. All or nothing: a refusal
+ * leaves them where they were.
+ */
+export const adminMoveMember = mutation({
+  args: { fromGroupId: v.id("learnGroups"), userId: v.id("users"), toGroupId: v.id("learnGroups") },
+  handler: async (ctx, args) => {
+    const { user: admin } = await requireLearnAdmin(ctx);
+    if (args.fromGroupId === args.toGroupId) throw new ConvexError("Pick a different group.");
+    const from = await groupOrThrow(ctx, args.fromGroupId);
+    const to = await groupOrThrow(ctx, args.toGroupId);
+    if (to.archived) throw new ConvexError("That group is archived. Pick another.");
+    const rows = await ctx.db
+      .query("learnGroupMembers")
+      .withIndex("by_group_user", (q) => q.eq("groupId", from._id).eq("userId", args.userId))
+      .take(5);
+    if (!rows.length) throw new ConvexError("They're not in this group any more.");
+    const now = Date.now();
+    for (const r of rows) await ctx.db.delete(r._id);
+    await ctx.db.patch(from._id, { memberCount: Math.max(0, from.memberCount - rows.length), updatedAt: now });
+    const already = await ctx.db
+      .query("learnGroupMembers")
+      .withIndex("by_group_user", (q) => q.eq("groupId", to._id).eq("userId", args.userId))
+      .first();
+    if (!already) {
+      if (to.memberCount >= MAX_MEMBERS) throw new ConvexError(`${to.name} already holds ${MAX_MEMBERS} people.`);
+      await ctx.db.insert("learnGroupMembers", { groupId: to._id, userId: args.userId, role: "member", addedBy: admin._id, addedAt: now });
+      await ctx.db.patch(to._id, { memberCount: to.memberCount + 1, updatedAt: now });
+    }
+    await insertNotification(ctx, {
+      userId: args.userId,
+      type: "learn_group_added",
+      priority: "medium",
+      status: "pending",
+      payload: {
+        title: `You've moved to ${to.name}`,
+        body: "The Rehabify team moved you. Say hello in your new group's room.",
+        link: `${LEARN_URL}/community/${roomSlug(to._id)}`,
+      },
+      createdAt: now,
+    });
+    return { roomSlug: roomSlug(to._id) };
+  },
+});
+
+/**
+ * The Rehabify team (Learn admins) go into any group, full or not, and stay in their others
+ * (owner, 21 Nov 2026: "team admins can enter and exit any group").
+ */
+export const adminEnterGroup = mutation({
+  args: { groupId: v.id("learnGroups") },
+  handler: async (ctx, args) => {
+    const { user } = await requireLearnAdmin(ctx);
+    const group = await groupOrThrow(ctx, args.groupId);
+    if (group.archived) throw new ConvexError("Bring the group back from the archive first.");
+    const existing = await ctx.db
+      .query("learnGroupMembers")
+      .withIndex("by_group_user", (q) => q.eq("groupId", group._id).eq("userId", user._id))
+      .first();
+    if (existing) return { roomSlug: roomSlug(group._id) };
+    if (group.memberCount >= MAX_MEMBERS) throw new ConvexError(`${group.name} already holds ${MAX_MEMBERS} people.`);
+    const now = Date.now();
+    await ctx.db.insert("learnGroupMembers", { groupId: group._id, userId: user._id, role: "member", addedBy: user._id, addedAt: now });
+    await ctx.db.patch(group._id, { memberCount: group.memberCount + 1, updatedAt: now });
+    return { roomSlug: roomSlug(group._id) };
+  },
+});
+
+/** A Learn admin leaves a group they're in (champions too: the group then has none until one is picked). */
+export const adminLeaveGroup = mutation({
+  args: { groupId: v.id("learnGroups") },
+  handler: async (ctx, args) => {
+    const { user } = await requireLearnAdmin(ctx);
+    const group = await groupOrThrow(ctx, args.groupId);
+    const rows = await ctx.db
+      .query("learnGroupMembers")
+      .withIndex("by_group_user", (q) => q.eq("groupId", group._id).eq("userId", user._id))
+      .take(5);
+    for (const r of rows) await ctx.db.delete(r._id);
+    if (rows.length) await ctx.db.patch(group._id, { memberCount: Math.max(0, group.memberCount - rows.length), updatedAt: Date.now() });
+  },
+});
+
 /** Admin › Learn › Groups: the Learn super admins, to choose a group's leader (champion) from. */
 export const leaderCandidates = query({
   args: {},
@@ -513,6 +598,8 @@ export const joinableGroups = query({
     return {
       signedIn: Boolean(user),
       isMember: Boolean(info),
+      // The Rehabify team enter and leave any group freely (adminEnterGroup / adminLeaveGroup)
+      isLearnAdmin: user ? await isLearnAdminUser(ctx, user) : false,
       myGroup: current && !current.archived ? { id: current._id, name: current.name, roomSlug: roomSlug(current._id), role: mine[0].role } : null,
       leadsAGroup: mine.some((m) => m.role === "lead"),
       groups: out,
@@ -529,9 +616,23 @@ export const joinGroup = mutation({
   handler: async (ctx, args) => {
     const user = (await getViewer(ctx))?.user ?? null;
     if (!user) throw new ConvexError("Please sign in to join a group.");
+    const group = await groupOrThrow(ctx, args.groupId);
+    // The Rehabify team: any group, full or not, keeping their other groups
+    if (await isLearnAdminUser(ctx, user)) {
+      if (group.archived) throw new ConvexError("Bring the group back from the archive first.");
+      const existing = await ctx.db
+        .query("learnGroupMembers")
+        .withIndex("by_group_user", (q) => q.eq("groupId", group._id).eq("userId", user._id))
+        .first();
+      if (!existing) {
+        if (group.memberCount >= MAX_MEMBERS) throw new ConvexError(`${group.name} already holds ${MAX_MEMBERS} people.`);
+        await ctx.db.insert("learnGroupMembers", { groupId: group._id, userId: user._id, role: "member", addedBy: user._id, addedAt: Date.now() });
+        await ctx.db.patch(group._id, { memberCount: group.memberCount + 1, updatedAt: Date.now() });
+      }
+      return { roomSlug: roomSlug(group._id), moved: false };
+    }
     const info = await learnMemberInfo(ctx, user);
     if (!info) throw new ConvexError("Tell us who you are first, then pick your group.");
-    const group = await groupOrThrow(ctx, args.groupId);
     if (!groupIsOpen(group)) throw new ConvexError("This group isn't taking new members. Pick another.");
     const mine = await ctx.db
       .query("learnGroupMembers")

@@ -95,6 +95,8 @@ export const home = query({
     return {
       canManage: a.canManage,
       myRole: a.role,
+      // The Rehabify team: enter/leave this group, move or remove people (learnGroups.adminMoveMember…)
+      isLearnAdmin: a.admin,
       announcement: group.announcement ? { text: group.announcement.text, at: group.announcement.at, by: fullName(by) } : null,
       spaces,
       openAssignments: open,

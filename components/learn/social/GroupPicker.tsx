@@ -93,6 +93,7 @@ function GroupCard({
   index,
   compact,
   className,
+  teamAdmin,
 }: {
   group: JoinableGroup
   busy: boolean
@@ -101,6 +102,8 @@ function GroupCard({
   /** Two to a row on a phone (Grid): smaller type and padding */
   compact?: boolean
   className?: string
+  /** The Rehabify team: enters any group, full or not, keeping their others */
+  teamAdmin?: boolean
 }) {
   const reduce = useReducedMotion()
   const tone = groupTone(group.color)
@@ -167,11 +170,11 @@ function GroupCard({
           <button
             type="button"
             onClick={onJoin}
-            disabled={busy || group.full}
+            disabled={busy || (group.full && !teamAdmin)}
             className={cn(pillInk, compact ? 'h-10 w-full text-[13px]' : 'h-11 w-full', 'disabled:opacity-60')}
           >
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-            {group.full ? 'Full' : compact ? 'Join' : 'Join this group'}
+            {teamAdmin ? (compact ? 'Enter' : 'Enter group') : group.full ? 'Full' : compact ? 'Join' : 'Join this group'}
           </button>
         )}
       </div>
@@ -202,12 +205,13 @@ export function GroupPicker({ heading = true, onJoined, className }: { heading?:
   if (!data.isMember || data.groups.length === 0) return null
 
   const pick = async (group: JoinableGroup) => {
-    if (data.myGroup && !window.confirm(`Move from ${data.myGroup.name} to ${group.name}?`)) return
+    // The Rehabify team keep their other groups, so there's nothing to confirm
+    if (!data.isLearnAdmin && data.myGroup && !window.confirm(`Move from ${data.myGroup.name} to ${group.name}?`)) return
     setBusy(group.id)
     try {
       const res = await join({ groupId: group.id })
       playSound('success')
-      toast.success(res.moved ? `You've moved to ${group.name}` : `Welcome to ${group.name}`)
+      toast.success(res.moved ? `You've moved to ${group.name}` : data.isLearnAdmin ? `You're in ${group.name}` : `Welcome to ${group.name}`)
       onJoined?.(res.roomSlug)
     } catch (err) {
       playSound('error')
@@ -250,9 +254,10 @@ export function GroupPicker({ heading = true, onJoined, className }: { heading?:
               index={i}
               busy={busy === g.id}
               compact={layout === 'grid' && phone === true}
+              teamAdmin={Boolean(data.isLearnAdmin)}
               className={PICK_ITEM[layout ?? 'auto']}
               onJoin={() => {
-                if (data.leadsAGroup) {
+                if (data.leadsAGroup && !data.isLearnAdmin) {
                   toast.message('You’re a group champion. Ask a Learn admin to move you.')
                   return
                 }

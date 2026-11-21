@@ -150,6 +150,8 @@ export type JoinableGroups = {
   isMember: boolean
   myGroup: { id: Id<'learnGroups'>; name: string; roomSlug: string; role: GroupRole } | null
   leadsAGroup: boolean
+  /** The Rehabify team: enter and leave any group (adminEnterGroup / adminLeaveGroup) */
+  isLearnAdmin?: boolean
   groups: JoinableGroup[]
 }
 export const joinableGroupsRef = makeFunctionReference<'query', Record<string, never>, JoinableGroups>('learnGroups:joinableGroups')
@@ -215,3 +217,10 @@ export const groupSetRoleRef = makeFunctionReference<'mutation', { groupId: Id<'
   'learnGroups:adminSetMemberRole'
 )
 export const myGroupsRef = makeFunctionReference<'query', Record<string, never>, MyGroup[]>('learnGroups:myGroups')
+export const groupMoveRef = makeFunctionReference<
+  'mutation',
+  { fromGroupId: Id<'learnGroups'>; userId: Id<'users'>; toGroupId: Id<'learnGroups'> },
+  { roomSlug: string }
+>('learnGroups:adminMoveMember')
+export const groupEnterRef = makeFunctionReference<'mutation', { groupId: Id<'learnGroups'> }, { roomSlug: string }>('learnGroups:adminEnterGroup')
+export const groupLeaveRef = makeFunctionReference<'mutation', { groupId: Id<'learnGroups'> }, null>('learnGroups:adminLeaveGroup')
