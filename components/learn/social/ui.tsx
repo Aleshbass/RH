@@ -62,7 +62,7 @@ const BACKDROP = 'bg-[rgb(3_8_7/0.5)]'
  * How much of the screen the on-screen keyboard covers (iPhone; Android resizes the page instead,
  * see interactiveWidget in app/learn/layout.tsx), so a sheet's fields and buttons stay above it.
  */
-function useKeyboardInset(active: boolean) {
+export function useKeyboardInset(active: boolean) {
   const [inset, setInset] = useState(0)
   useEffect(() => {
     const vv = window.visualViewport

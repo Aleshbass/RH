@@ -72,7 +72,7 @@ export function GroupHub({ groupId, posts }: { groupId: GroupId; posts: ReactNod
     <div>
       {home && <PinnedNote groupId={groupId} note={home.announcement} canManage={home.canManage} />}
       {home && home.spaces.length > 0 && (
-        <div className="mt-4 flex gap-2 overflow-x-auto pb-1">
+        <div className="mt-4 flex snap-x gap-2 overflow-x-auto pb-1 [scrollbar-width:none]">
           {home.spaces.map((s) => (
             <Link
               key={s.id}
@@ -93,7 +93,7 @@ export function GroupHub({ groupId, posts }: { groupId: GroupId; posts: ReactNod
         </div>
       )}
 
-      <div className="mt-6 flex gap-1 overflow-x-auto rounded-full bg-rh-ink/[0.05] p-1" role="tablist" aria-label="Group">
+      <div className="mt-5 flex gap-1 overflow-x-auto rounded-full bg-rh-ink/[0.05] p-1 [scrollbar-width:none] sm:mt-6" role="tablist" aria-label="Group">
         {TABS.map((t) => (
           <button
             key={t.id}
@@ -102,7 +102,7 @@ export function GroupHub({ groupId, posts }: { groupId: GroupId; posts: ReactNod
             aria-selected={tab === t.id}
             onClick={() => setTab(t.id)}
             className={cn(
-              'flex h-10 flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-full px-3 text-sm font-semibold transition',
+              'flex h-10 flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-full px-3 text-[13px] font-semibold transition sm:text-sm',
               tab === t.id ? 'bg-white text-rh-ink shadow-sm' : 'text-rh-ink/55 hover:text-rh-ink'
             )}
           >
@@ -219,7 +219,7 @@ function PinnedNote({ groupId, note, canManage }: { groupId: GroupId; note: { te
 // ── Invite ────────────────────────────────────────────────────────────────────
 
 /** Header button for leads: the group's invite link, QR and WhatsApp. */
-export function GroupInviteButton({ groupId, groupName }: { groupId: GroupId; groupName: string }) {
+export function GroupInviteButton({ groupId, groupName, className }: { groupId: GroupId; groupName: string; className?: string }) {
   const home = useQuery(groupApi.home, { groupId })
   const setInvite = useMutation(groupApi.setInvite)
   const [open, setOpen] = useState(false)
@@ -252,7 +252,7 @@ export function GroupInviteButton({ groupId, groupName }: { groupId: GroupId; gr
 
   return (
     <>
-      <button type="button" onClick={() => setOpen(true)} className={cn(pillOutline, 'h-12 shrink-0 px-5')}>
+      <button type="button" onClick={() => setOpen(true)} className={cn(pillOutline, 'h-12 shrink-0 px-5', className)}>
         <UserPlus className="h-4 w-4" /> Invite
       </button>
       <Sheet open={open} onClose={() => setOpen(false)} title={`Invite people to ${groupName}`}>

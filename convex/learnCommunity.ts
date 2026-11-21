@@ -57,6 +57,8 @@ type RoomView = {
   groupId: Id<"learnGroups"> | null;
   postCount: number;
   lastActivityAt: number | null;
+  /** A group room's colour (community cards and room chips); null for other rooms. */
+  color: string | null;
   doc: Doc<"learnRooms"> | null;
 };
 
@@ -70,6 +72,7 @@ function roomView(doc: Doc<"learnRooms">): RoomView {
     groupId: doc.groupId ?? null,
     postCount: doc.postCount,
     lastActivityAt: doc.lastActivityAt ?? null,
+    color: null,
     doc,
   };
 }
@@ -82,7 +85,7 @@ async function resolveRoom(ctx: Ctx, slug: string): Promise<RoomView | null> {
     .first();
   if (doc) return doc.archived ? null : roomView(doc);
   const preset = DEFAULT_ROOMS.find((r) => r.slug === slug);
-  if (preset) return { ...preset, kind: "open", courseId: null, groupId: null, postCount: 0, lastActivityAt: null, doc: null };
+  if (preset) return { ...preset, kind: "open", courseId: null, groupId: null, postCount: 0, lastActivityAt: null, color: null, doc: null };
   if (slug === "msk-program") {
     return {
       slug,
@@ -92,6 +95,7 @@ async function resolveRoom(ctx: Ctx, slug: string): Promise<RoomView | null> {
       courseId: null, groupId: null,
       postCount: 0,
       lastActivityAt: null,
+      color: null,
       doc: null,
     };
   }
@@ -108,6 +112,7 @@ async function resolveRoom(ctx: Ctx, slug: string): Promise<RoomView | null> {
     groupId: null,
     postCount: 0,
     lastActivityAt: null,
+    color: null,
     doc: null,
   };
 }
@@ -128,7 +133,7 @@ async function roomsFor(ctx: Ctx, member: LearnMemberInfo | null) {
   const bySlug = new Map(docs.map((d) => [d.slug, roomView(d)]));
   const rooms: RoomView[] = [];
   for (const preset of DEFAULT_ROOMS) {
-    rooms.push(bySlug.get(preset.slug) ?? { ...preset, kind: "open", courseId: null, groupId: null, postCount: 0, lastActivityAt: null, doc: null });
+    rooms.push(bySlug.get(preset.slug) ?? { ...preset, kind: "open", courseId: null, groupId: null, postCount: 0, lastActivityAt: null, color: null, doc: null });
   }
   for (const d of docs) if (d.kind === "open" && !DEFAULT_ROOMS.some((p) => p.slug === d.slug)) rooms.push(roomView(d));
   if (!member) return rooms;
@@ -141,7 +146,7 @@ async function roomsFor(ctx: Ctx, member: LearnMemberInfo | null) {
   for (const m of memberships) {
     const group = await ctx.db.get(m.groupId);
     const doc = group?.roomId && !group.archived ? await ctx.db.get(group.roomId) : null;
-    if (doc && !doc.archived) rooms.push(roomView(doc));
+    if (doc && !doc.archived && group) rooms.push({ ...roomView(doc), color: group.color });
   }
 
   if (await isMskProgramLearner(ctx, member.user)) {
@@ -166,6 +171,7 @@ async function roomsFor(ctx: Ctx, member: LearnMemberInfo | null) {
         groupId: null,
         postCount: 0,
         lastActivityAt: null,
+        color: null,
         doc: null,
       }
     );
@@ -222,10 +228,12 @@ async function notifyMentions(
   ctx: MutationCtx,
   mentioned: { id: Id<"users"> }[],
   by: LearnMemberInfo,
-  where: { postId: Id<"learnPosts">; title: string },
+  where: { postId: Id<"learnPosts">; title: string; replyId?: Id<"learnReplies"> },
   skip: Set<string>,
   now: number
 ) {
+  // A mention in a reply opens the thread scrolled to that reply
+  const anchor = where.replyId ? `#reply-${where.replyId}` : "";
   for (const m of mentioned) {
     if (skip.has(m.id)) continue;
     await insertNotification(ctx, {
@@ -233,7 +241,7 @@ async function notifyMentions(
       type: "learn_community_mention",
       priority: "medium",
       status: "pending",
-      payload: { title: `${by.name} mentioned you`, body: where.title, link: `${LEARN_URL}/community/post/${where.postId}` },
+      payload: { title: `${by.name} mentioned you`, body: where.title, link: `${LEARN_URL}/community/post/${where.postId}${anchor}` },
       createdAt: now,
     });
   }
@@ -249,7 +257,55 @@ async function mentionNames(ctx: Ctx, ids: Id<"users">[] | undefined) {
   return out;
 }
 
-function postSummary(post: Doc<"learnPosts">, author: Author | undefined, room: { slug: string; title: string }) {
+type Face = { name: string; imageUrl: string | null };
+type ReplyActivity = { lastRepliers: Face[]; lastReplyAt: number | null };
+const NO_REPLIES: ReplyActivity = { lastRepliers: [], lastReplyAt: null };
+
+/**
+ * Feed cards (community redesign 2026-11-21): the last few people who replied to each post, newest
+ * first, for "Ada replied 2h ago". Bounded: six newest replies per post, a name and photo per person.
+ */
+async function replyActivity(ctx: Ctx, posts: Doc<"learnPosts">[]) {
+  const people = new Map<string, Face | null>();
+  const out = new Map<string, ReplyActivity>();
+  for (const post of posts) {
+    if (post.replyCount <= 0) continue;
+    const recent = await ctx.db
+      .query("learnReplies")
+      .withIndex("by_post", (q) => q.eq("postId", post._id))
+      .order("desc")
+      .take(6);
+    const faces: Face[] = [];
+    const seen = new Set<string>();
+    let lastReplyAt: number | null = null;
+    for (const r of recent) {
+      if (r.status !== "open") continue;
+      lastReplyAt ??= r.createdAt;
+      if (faces.length >= 3 || seen.has(r.authorId)) continue;
+      seen.add(r.authorId);
+      if (!people.has(r.authorId)) {
+        const user = await ctx.db.get(r.authorId);
+        people.set(
+          r.authorId,
+          user && !user.deletedAt
+            ? { name: [user.firstName, user.lastName].filter(Boolean).join(" ").trim() || "Rehabify learner", imageUrl: user.imageUrl ?? null }
+            : null
+        );
+      }
+      const face = people.get(r.authorId);
+      if (face) faces.push(face);
+    }
+    out.set(post._id, { lastRepliers: faces, lastReplyAt });
+  }
+  return out;
+}
+
+function postSummary(
+  post: Doc<"learnPosts">,
+  author: Author | undefined,
+  room: { slug: string; title: string; color?: string | null },
+  activity: ReplyActivity = NO_REPLIES
+) {
   return {
     id: post._id,
     kind: post.kind,
@@ -260,7 +316,9 @@ function postSummary(post: Doc<"learnPosts">, author: Author | undefined, room: 
     lastActivityAt: post.lastActivityAt,
     createdAt: post.createdAt,
     author: author ?? null,
-    room: { slug: room.slug, title: room.title },
+    room: { slug: room.slug, title: room.title, color: room.color ?? null },
+    lastRepliers: activity.lastRepliers,
+    lastReplyAt: activity.lastReplyAt,
   };
 }
 
@@ -276,15 +334,16 @@ export const getCommunityHome = query({
     if (!member) {
       return { signedIn, member: null, rooms: rooms.filter((r) => r.kind === "open").map(publicRoom), latest: [], physioCommunity: false };
     }
-    const roomIds = new Map(rooms.filter((r) => r.doc).map((r) => [r.doc!._id as string, { slug: r.slug, title: r.title }]));
+    const roomIds = new Map(rooms.filter((r) => r.doc).map((r) => [r.doc!._id as string, { slug: r.slug, title: r.title, color: r.color }]));
     const recent = await ctx.db.query("learnPosts").withIndex("by_activity").order("desc").take(80);
     const latest = recent.filter((p) => p.status === "open" && roomIds.has(p.roomId)).slice(0, 12);
     const authors = await authorsFor(ctx, latest.map((p) => p.authorId));
+    const activity = await replyActivity(ctx, latest);
     return {
       signedIn,
       member: { name: member.name, tag: member.tag, isStudent: member.isStudent },
       rooms: rooms.map(publicRoom),
-      latest: latest.map((p) => postSummary(p, authors.get(p.authorId), roomIds.get(p.roomId)!)),
+      latest: latest.map((p) => postSummary(p, authors.get(p.authorId), roomIds.get(p.roomId)!, activity.get(p._id))),
       // Approved Rehabify physios (and the team) also have the physio-only community
       physioCommunity: member.isRehabifyPhysio || member.isAdmin,
     };
@@ -339,11 +398,12 @@ export const getRoom = query({
           .slice(0, limit)
       : [];
     const authors = await authorsFor(ctx, posts.map((p) => p.authorId));
+    const activity = await replyActivity(ctx, posts);
     return {
       state: "ok" as const,
       group: room.kind === "group" && room.groupId ? await groupCard(ctx, room.groupId, member) : null,
       room: publicRoom(room),
-      posts: posts.map((p) => ({ ...postSummary(p, authors.get(p.authorId), room), hidden: p.status === "hidden" })),
+      posts: posts.map((p) => ({ ...postSummary(p, authors.get(p.authorId), room, activity.get(p._id)), hidden: p.status === "hidden" })),
       hasMore: posts.length === limit,
     };
   },
@@ -385,6 +445,8 @@ export const getPost = query({
     }
     const replyMentions = new Map<string, { id: Id<"users">; name: string }[]>();
     for (const r of replies) if (r.mentions?.length) replyMentions.set(r._id, await mentionNames(ctx, r.mentions));
+    // A group room's thread header shows the group's colour
+    const group = room.kind === "group" && room.groupId ? await ctx.db.get(room.groupId) : null;
     const marks = new Set<string>();
     for (const target of [{ type: "post" as const, id: post._id as string }, ...replies.map((r) => ({ type: "reply" as const, id: r._id as string }))]) {
       const mark = await ctx.db
@@ -395,9 +457,10 @@ export const getPost = query({
     }
     return {
       state: "ok" as const,
-      room: publicRoom(room),
+      room: { ...publicRoom(room), color: group?.color ?? null },
       canModerate,
       viewerId: member.user._id,
+      viewer: { name: member.name, imageUrl: member.imageUrl },
       post: {
         id: post._id,
         kind: post.kind,
@@ -585,7 +648,7 @@ export const reply = mutation({
     await ctx.db.patch(post._id, { replyCount: post.replyCount + 1, lastActivityAt: now });
     await ctx.db.patch(roomDoc._id, { lastActivityAt: now });
     // Tagged people hear "mentioned you"; the post's author still hears "replied" unless tagged
-    await notifyMentions(ctx, mentioned, member, { postId: post._id, title: post.title }, new Set(), now);
+    await notifyMentions(ctx, mentioned, member, { postId: post._id, title: post.title, replyId }, new Set(), now);
     if (post.authorId !== member.user._id && !mentioned.some((m) => m.id === post.authorId)) {
       await insertNotification(ctx, {
         userId: post.authorId,
@@ -595,7 +658,7 @@ export const reply = mutation({
         payload: {
           title: `${member.name} replied to your post`,
           body: post.title,
-          link: `${LEARN_URL}/community/post/${post._id}`,
+          link: `${LEARN_URL}/community/post/${post._id}#reply-${replyId}`,
         },
         createdAt: now,
       });

@@ -122,7 +122,17 @@ function CompactPost({ post, index }: { post: PostSummary; index: number }) {
           <span className="mt-1 flex items-center gap-3 text-xs text-rh-ink/50">
             <span className="truncate">in {post.room.title}</span>
             <span className="inline-flex shrink-0 items-center gap-1">
-              <MessageSquare className="h-3 w-3" /> {post.replyCount}
+              {/* The last people to reply, as on the community feed */}
+              {post.lastRepliers.length > 0 ? (
+                <span className="mr-0.5 flex -space-x-1.5">
+                  {post.lastRepliers.map((person, i) => (
+                    <Avatar key={`${person.name}-${i}`} name={person.name} imageUrl={person.imageUrl} size={18} className="ring-2 ring-white" />
+                  ))}
+                </span>
+              ) : (
+                <MessageSquare className="h-3 w-3" />
+              )}{' '}
+              {post.replyCount}
             </span>
             <LoveCount count={post.helpfulCount} className="shrink-0" />
           </span>
