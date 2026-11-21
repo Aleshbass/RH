@@ -59,6 +59,7 @@ import { AccessAwardCard } from '@/components/patient/AccessAwardCard'
 import { YourPlanCard } from '@/components/patient/YourPlanCard'
 import { YourClinicCard } from '@/components/patient/YourClinicCard'
 import { TodayCarePlanCard } from '@/components/patient/TodayCarePlanCard'
+import { BirthdayCard } from '@/components/moments/BirthdayCard'
 import { cn } from '@/lib/utils'
 
 interface PatientDashboardProps {
@@ -429,6 +430,8 @@ export function PatientDashboard({ initialUser, initialAppointments, initialStat
       <MediLoanCard />
       <PatientFollowUpBanner />
       <PatientQuestionnaireBanner />
+      {/* Asks for their birthday once (for their care team), and says happy birthday on the day */}
+      <BirthdayCard firstName={user.firstName} />
 
       <div className="grid gap-5 lg:grid-cols-5">
         <div className="lg:col-span-3">

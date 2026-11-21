@@ -257,6 +257,17 @@ async def receive_event(request: Request, settings: Settings = Depends(get_setti
             forget_care_summary(_patient_conversation(session, patient))
             append(session, kind=AuditKind.BOOKING, actor_phone="rh-service", person_id=patient.id,
                    payload={"event": "programme_sent_notified", "change": str(data.get("change") or "")})
+    elif event_type == "care.moment":
+        # A birthday wish or care milestone from the patient's care team (RH careMoments.deliver,
+        # helpers/joyEvents.queueJoyCareMoment). Outside the 24-hour window it goes on the general
+        # update template.
+        data = payload.get("data") or {}
+        patient = _patient_for_rh_id(session, str(data.get("patient_id") or ""))
+        text = care_moment_text(data)
+        if patient and text:
+            enqueue_booking_confirmed(patient.phone_e164, "", text)
+            append(session, kind=AuditKind.BOOKING, actor_phone="rh-service", person_id=patient.id,
+                   payload={"event": "care_moment_sent", "kind": _short(data.get("kind"), 40)})
     elif event_type == "appointment.rescheduled":
         _appointment_rescheduled(session, payload.get("data") or {})
     elif event_type == "appointment.cancelled":
@@ -321,6 +332,20 @@ def _patient_for_rh_id(session: Session, rh_patient_id: str) -> Patient | None:
 def _short(value: object, limit: int) -> str:
     text = " ".join(str(value or "").split())
     return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+def care_moment_text(data: dict) -> str:
+    """The care team's birthday wish or milestone message, as sent; empty when there's no message."""
+    message = str(data.get("message") or "").strip()
+    if not message:
+        return ""
+    if len(message) > 1200:
+        message = message[:1199] + "…"
+    title = _short(data.get("title"), 120)
+    sender = _short(data.get("sender_name"), 120) or "Your care team"
+    icon = "🎉" if str(data.get("kind") or "") == "birthday" else "💚"
+    lines = [f"{icon} *{title}*" if title else icon, "", message, "", f"From {sender}"]
+    return "\n".join(lines)
 
 
 def programme_sent_text(data: dict, *, reminders_on: bool) -> str:

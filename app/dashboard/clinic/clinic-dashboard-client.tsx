@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useQuery } from 'convex/react'
 import { format, formatDistanceToNow } from 'date-fns'
 import {
+  Cake,
   Calendar,
   CalendarPlus,
   CheckCircle2,
@@ -41,6 +42,9 @@ import { WhosInCard } from '@/components/clinic/attendance/WhosInCard'
 import { Quiet } from '@/components/physio/schedule/shared'
 import { useClinicAccess, type ClinicStaffKind } from '@/components/clinic/ClinicAccessContext'
 import { PlanStatusCard } from '@/components/clinic/PlanStatusCard'
+import { CareMomentsPanel } from '@/components/moments/CareMomentsPanel'
+import { BirthdayCard } from '@/components/moments/BirthdayCard'
+import { careMomentsApi } from '@/lib/careMomentsApi'
 import { makeFunctionReference } from 'convex/server'
 import { APPOINTMENT_STATUS_LABELS, appointmentStatusTone } from '@/convex/helpers/appointmentStatus'
 
@@ -117,6 +121,8 @@ export default function ClinicDashboardClient() {
   const counts = useQuery(api.clinicTools.getClinicNavCounts, {}) as NavCounts | undefined
   const unreadMessages = useQuery(api.chat.getUnreadCount, isReadOnly ? 'skip' : {}) as number | undefined
   const teamUnread = useQuery(teamUnreadRef, isReadOnly ? 'skip' : {})
+  // Same subscription as the Birthdays and milestones panel
+  const moments = useQuery(careMomentsApi.moments, canUse('patients') ? { scope: 'clinic' } : 'skip')
   const title = personalGreeting(firstName)
 
   // Null only for someone outside a clinic, whom the portal is already sending elsewhere
@@ -126,6 +132,7 @@ export default function ClinicDashboardClient() {
   const needsClinician = counts?.needsClinician ?? 0
   const invitesPending = counts?.invitesPending ?? 0
   const checkInsDue = followUps?.length ?? 0
+  const momentsToday = moments?.items.filter((item) => item.date === moments.today && item.status === 'upcoming').length ?? 0
   const referrals = dashboard.newReferralsCount
   const waitingOnYou = (canUse('appointments') ? requests : 0) + (canUse('patients') ? needsClinician : 0) + (canUse('referrals') ? referrals : 0)
 
@@ -176,6 +183,12 @@ export default function ClinicDashboardClient() {
       icon: PhoneCall,
       label: `${plural(checkInsDue, 'patient')} due for a check-in`,
     },
+    canUse('patients') && momentsToday > 0 && {
+      key: 'moments',
+      href: '#moments',
+      icon: Cake,
+      label: `${plural(momentsToday, 'birthday or milestone', 'birthdays and milestones')} today`,
+    },
     canUse('patients') && invitesPending > 0 && {
       key: 'invites',
       href: `${CLINIC}/patients?filter=invited`,
@@ -223,6 +236,9 @@ export default function ClinicDashboardClient() {
       }
     >
       {isOwner && <SetupChecklist />}
+
+      {/* Asks for their birthday once (Rehabify and the clinic wish them), and celebrates on the day */}
+      <BirthdayCard firstName={firstName} />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {canUse('appointments') && (
@@ -373,6 +389,8 @@ export default function ClinicDashboardClient() {
               <PlanStatusCard />
             </div>
           )}
+
+          {canUse('patients') && <CareMomentsPanel scope="clinic" />}
 
           <Panel title="Recent activity">
             {dashboard.recentActivity.length === 0 ? (

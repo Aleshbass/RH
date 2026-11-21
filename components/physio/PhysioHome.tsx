@@ -47,6 +47,8 @@ import { SetupChecklistCard, type SetupStatus } from '@/components/physio/SetupC
 import { PracticeModePrompt } from '@/components/physio/PracticeModePrompt'
 import { PHYSIO_HOME } from '@/components/physio/PhysioSidebar'
 import { PainPill } from '@/components/physio/workspace/shared'
+import { CareMomentsPanel } from '@/components/moments/CareMomentsPanel'
+import { BirthdayCard } from '@/components/moments/BirthdayCard'
 import { RehabifyId } from '@/components/shared/RehabifyId'
 import { matchesRehabifyId } from '@/convex/helpers/rehabifyIdFormat'
 import { publicAppUrl } from '@/lib/public-app-url'
@@ -658,6 +660,9 @@ export function PhysioHome({ setup }: { setup: SetupStatus | null | undefined })
 
       {setup && <SetupChecklistCard setup={setup} />}
 
+      {/* Asks for their birthday once (Rehabify and their clinic wish them), and celebrates on the day */}
+      <BirthdayCard firstName={user?.firstName} />
+
       {/* New: patients join from a WhatsApp link with a PIN (one-time card) */}
       <InviteNewsCard />
 
@@ -700,6 +705,7 @@ export function PhysioHome({ setup }: { setup: SetupStatus | null | undefined })
         </div>
         <div className="space-y-5">
           <NeedsAttention items={attention} />
+          <CareMomentsPanel scope="physio" />
           <OpenWorkspace patients={patients} />
           {/* Every physio: one link patients use to join them with their phone number (no email) */}
           {user?._id && setup && <PatientLinkCard physioId={user._id} name={name || undefined} />}

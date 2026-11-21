@@ -16,6 +16,7 @@ import { makeFunctionReference } from "convex/server";
 import { internalAction, internalMutation, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { insertNotification } from "./helpers/pushNotify";
+import { queueJoyCareMoment } from "./helpers/joyEvents";
 import { canUseArea, getClinicMember, getClinicMemberOrNull, getOwnerClinic } from "./clinicTools";
 import { currentUser, requirePhysio } from "./helpers/careAccess";
 import { liveCareGrantsFor } from "./helpers/careCircleAccess";
@@ -475,7 +476,10 @@ const PATIENT_NOTE =
   "You're receiving this because you're a patient on Rehabify Health. To stop birthday and milestone messages, turn them off in Settings.";
 const TEAM_NOTE = "You're receiving this because you work with patients on Rehabify Health.";
 
-/** Sends the message in the app (and so to their phone) and by email, tells the family who manage their care, and records it. */
+/**
+ * Sends the message in the app (and so to their phone), by email and, for a patient Joy can reach,
+ * on WhatsApp; tells the family who manage their care, and records it.
+ */
 async function deliver(ctx: MutationCtx, moment: Moment, context: MomentContext, message: string, by: Doc<"users"> | null) {
   const { person, sender } = context;
   const title = momentTitle(moment.kind, person.firstName, moment.years);
@@ -510,6 +514,8 @@ async function deliver(ctx: MutationCtx, moment: Moment, context: MomentContext,
     });
   const isPatient = person.role === "patient";
   if (email) await emailFor(email, title, [message, `With warm wishes from ${sender}.`], home, isPatient ? PATIENT_NOTE : TEAM_NOTE);
+  // WhatsApp, through Joy (patients only; Joy doesn't message physios)
+  if (isPatient) await queueJoyCareMoment(ctx, person, { momentId: moment._id, kind: moment.kind, title, message, senderName: sender });
 
   // Family who manage a patient's care (e.g. an elderly parent) hear about it too
   if (isPatient) {

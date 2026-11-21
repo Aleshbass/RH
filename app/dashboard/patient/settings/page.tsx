@@ -15,6 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Bell,
+  Cake,
   Calendar,
   CheckCircle2,
   Download,
@@ -23,6 +24,7 @@ import {
   Moon,
   Play,
   Shield,
+  Smartphone,
   Sun,
   Trash2,
   User,
@@ -40,6 +42,9 @@ import { SUPPORT_EMAIL } from '@/lib/contact'
 import { PATIENT_POLICIES, POLICIES } from '@/lib/policies'
 import { useConsent } from '@/components/consent/ConsentProvider'
 import { DeleteAccountButton } from '@/components/account/DeleteAccountButton'
+import { careMomentsApi } from '@/lib/careMomentsApi'
+import { useAppSetup } from '@/components/pwa/AppSetup'
+import { openAppSetup } from '@/lib/pwa'
 import {
   IconChip,
   InfoTip,
@@ -149,6 +154,11 @@ export default function PatientSettingsPage() {
   const [formLoaded, setFormLoaded] = useState(false)
   const [savingProfile, setSavingProfile] = useState(false)
   const [savingReminders, setSavingReminders] = useState(false)
+  const birthday = useQuery(careMomentsApi.myBirthday, {})
+  const setCelebrationsOptOut = useMutation(careMomentsApi.setOptOut)
+  const [savingCelebrations, setSavingCelebrations] = useState(false)
+  // This device's phone notifications (components/pwa/AppSetup.tsx)
+  const phoneSetup = useAppSetup()
   const [exporting, setExporting] = useState(false)
   const { openSettings: openCookieSettings } = useConsent()
   const [calendarNotice, setCalendarNotice] = useState<'success' | 'access_denied' | 'error' | null>(null)
@@ -253,6 +263,18 @@ export default function PatientSettingsPage() {
       toast.error(readableError(error, "We couldn't update your reminders."))
     } finally {
       setSavingReminders(false)
+    }
+  }
+
+  const handleCelebrationsChange = async (checked: boolean) => {
+    setSavingCelebrations(true)
+    try {
+      await setCelebrationsOptOut({ optOut: !checked })
+      toast.success(checked ? 'Birthday and milestone messages on' : 'Birthday and milestone messages off')
+    } catch (error) {
+      toast.error(readableError(error, "We couldn't update this setting."))
+    } finally {
+      setSavingCelebrations(false)
     }
   }
 
@@ -465,6 +487,42 @@ export default function PatientSettingsPage() {
                 disabled={patient === undefined || savingReminders}
                 onCheckedChange={handleRemindersChange}
                 aria-label="Visit and exercise reminders"
+                className="data-[state=checked]:bg-pt-accent"
+              />
+            }
+          />
+          {phoneSetup.need && !(phoneSetup.need === 'done' && !phoneSetup.env?.subscribed) && (
+            <SettingRow
+              icon={Smartphone}
+              title="Phone notifications"
+              description={
+                phoneSetup.need === 'done'
+                  ? 'On for this device. Visit reminders, messages and birthday wishes show on your lock screen.'
+                  : 'Get visit reminders, messages and birthday wishes on your lock screen, even when Rehabify is closed.'
+              }
+              control={
+                phoneSetup.need === 'done' ? (
+                  <StatusBadge tone="green">On</StatusBadge>
+                ) : (
+                  <Button className={cn(secondaryButtonClass, 'h-9 px-3')} onClick={() => openAppSetup()}>
+                    {phoneSetup.need === 'install' ? 'Get the app' : 'Turn on'}
+                  </Button>
+                )
+              }
+            />
+          )}
+          <SettingRow
+            icon={Cake}
+            title="Birthday and milestone messages"
+            info="Your care team can wish you a happy birthday, mark a year since your first visit, and check in a few months after treatment."
+            description="Wishes and check-ins from your care team, in the app and by email."
+            control={
+              <Switch
+                id="celebrations"
+                checked={birthday ? !birthday.optedOut : true}
+                disabled={birthday === undefined || savingCelebrations}
+                onCheckedChange={handleCelebrationsChange}
+                aria-label="Birthday and milestone messages"
                 className="data-[state=checked]:bg-pt-accent"
               />
             }

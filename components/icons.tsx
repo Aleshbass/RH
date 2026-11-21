@@ -21,7 +21,7 @@ import {
   faArrowTrendDown, faArrowTrendUp, faArrowTurnDown, faArrowUp, faArrowUpFromBracket, faArrowUpRightFromSquare,
   faArrowsRotate, faAward, faBaby, faBan, faBars, faBell, faBolt, faBone, faBook, faBookOpen,
   faBox, faBoxArchive, faBoxOpen, faBrain, faBriefcase, faBuilding, faBullhorn, faBullseye,
-  faCalendar, faCalendarCheck, faCalendarDay, faCalendarDays, faCalendarPlus, faCalendarWeek,
+  faCakeCandles, faCalendar, faCalendarCheck, faCalendarDay, faCalendarDays, faCalendarPlus, faCalendarWeek,
   faCalendarXmark, faCamera, faCameraRotate, faCar, faChartColumn, faChartLine, faCheck,
   faCheckDouble, faChevronDown, faChevronLeft, faChevronRight, faChevronUp, faCircle,
   faCircleCheck, faCircleExclamation, faCircleInfo, faCircleNotch, faCirclePlay,
@@ -31,7 +31,7 @@ import {
   faEllipsis, faEllipsisVertical, faEnvelope, faExpand, faEye, faEyeSlash, faFaceFrown,
   faFaceMeh, faFaceSmile, faFile, faFileCircleCheck, faFileLines, faFileMedical,
   faFileSignature, faFilter, faFire, faFlag, faFlask, faFloppyDisk, faFolderOpen, faGaugeSimple,
-  faGear, faGlobe, faGraduationCap, faHand, faHandHoldingHeart, faHandshake, faHashtag, faHeadphones,
+  faGear, faGift, faGlobe, faGraduationCap, faHand, faHandHoldingHeart, faHandshake, faHashtag, faHeadphones,
   faHeart, faHeartPulse, faHourglassHalf, faHouse, faImage, faInbox, faIndustry, faKey, faLandmark,
   faLanguage, faLaptop, faLayerGroup, faLightbulb, faLink, faLinkSlash, faList, faListCheck,
   faLocationCrosshairs, faLocationDot, faLock, faMagnifyingGlass, faMap, faMapLocationDot,
@@ -150,6 +150,7 @@ export const Brain = /*#__PURE__*/ createIcon('Brain', faBrain)
 export const Briefcase = /*#__PURE__*/ createIcon('Briefcase', faBriefcase)
 export const Building = /*#__PURE__*/ createIcon('Building', faBuilding)
 export const Building2 = /*#__PURE__*/ createIcon('Building2', faBuilding)
+export const Cake = /*#__PURE__*/ createIcon('Cake', faCakeCandles)
 export const Calendar = /*#__PURE__*/ createIcon('Calendar', faCalendar)
 export const CalendarCheck = /*#__PURE__*/ createIcon('CalendarCheck', faCalendarCheck)
 export const CalendarClock = /*#__PURE__*/ createIcon('CalendarClock', faCalendarDay)
@@ -206,6 +207,7 @@ export const FlaskConical = /*#__PURE__*/ createIcon('FlaskConical', faFlask)
 export const FolderOpen = /*#__PURE__*/ createIcon('FolderOpen', faFolderOpen)
 export const Footprints = /*#__PURE__*/ createIcon('Footprints', faShoePrints)
 export const Frown = /*#__PURE__*/ createIcon('Frown', faFaceFrown)
+export const Gift = /*#__PURE__*/ createIcon('Gift', faGift)
 export const Globe = /*#__PURE__*/ createIcon('Globe', faGlobe)
 export const GraduationCap = /*#__PURE__*/ createIcon('GraduationCap', faGraduationCap)
 export const Hand = /*#__PURE__*/ createIcon('Hand', faHand)

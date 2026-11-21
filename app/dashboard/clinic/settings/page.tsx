@@ -30,6 +30,7 @@ import { HowPayoutsWork } from '@/components/clinic/FeeBreakdown'
 import { PageShell, Panel, StatusBadge, primaryButtonClass } from '@/components/clinic/ui'
 import { RehabifyId } from '@/components/shared/RehabifyId'
 import { NotificationSettings } from '@/components/pwa/NotificationSettings'
+import { MyBirthdayFields } from '@/components/moments/MyBirthdayFields'
 import { playSound } from '@/lib/sounds'
 import { ClockSettingsPanel } from '@/components/clinic/attendance/ClockSettingsPanel'
 import { Quiet } from '@/components/physio/schedule/shared'
@@ -405,6 +406,12 @@ export default function ClinicSettingsPage() {
       <PayoutSection />
 
       {/* Personal to whoever is signed in, not the clinic */}
+      <Panel title="Your birthday" description="Rehabify will wish you on the day. Patients never see it.">
+        <div className="p-4 sm:p-5">
+          <MyBirthdayFields />
+        </div>
+      </Panel>
+
       <Panel title="Phone notifications" description="What reaches your phone, and when Rehabify should stay quiet.">
         <div className="p-4 sm:p-5">
           <NotificationSettings />

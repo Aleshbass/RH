@@ -22,6 +22,7 @@ import {
     fieldLabelClass,
 } from '@/components/physio/SettingsUI';
 import { usePracticeMode } from '@/components/physio/practiceMode';
+import { MyBirthdayFields } from '@/components/moments/MyBirthdayFields';
 import { useFileUpload } from '@/lib/hooks/useFileUpload';
 
 /** Matches the "photo and short bio" item on the setup checklist (convex/physioSetup.ts). */
@@ -298,6 +299,10 @@ export default function ProfileSettingsPage() {
                         <SpecialisationPicker value={specializations} onChange={setSpecializations} />
                     </div>
                 </div>
+            </SettingsSection>
+
+            <SettingsSection title="Your birthday" description="Rehabify (and your clinic) will wish you on the day. Patients never see it.">
+                <MyBirthdayFields />
             </SettingsSection>
         </div>
     );

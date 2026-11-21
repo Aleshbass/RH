@@ -51,6 +51,34 @@ export async function queueJoyProgrammeSent(
 }
 
 /**
+ * A birthday wish or a care milestone (a year since the first visit, a check-in after discharge)
+ * from the patient's care team: Joy sends it on WhatsApp as well (careMoments.deliver). Only for
+ * patients Joy can reach; one message per moment. Outside WhatsApp's 24-hour window Joy uses its
+ * approved general update template, so no new template is needed.
+ */
+export async function queueJoyCareMoment(
+  ctx: MutationCtx,
+  patient: Doc<"users">,
+  details: { momentId: string; kind: string; title: string; message: string; senderName: string }
+) {
+  const reachable = patient.clerkId.startsWith("joy-whatsapp:") || Boolean(patient.whatsappLinkedAt);
+  if (!reachable) return;
+  const eventId = `care-moment-${details.momentId}`;
+  const existing = await ctx.db.query("joyEventOutbox").withIndex("by_event_id", (q) => q.eq("eventId", eventId)).first();
+  if (existing) return;
+  const now = Date.now();
+  const data = {
+    patient_id: patient._id,
+    kind: details.kind,
+    title: details.title.slice(0, 120),
+    message: details.message.slice(0, 1200),
+    sender_name: details.senderName.slice(0, 120),
+  };
+  const payload = { event_id: eventId, event_type: "care.moment", api_version: "1", occurred_at: new Date(now).toISOString(), data };
+  await ctx.db.insert("joyEventOutbox", { eventId, eventType: "care.moment", payload, status: "pending", attempts: 0, createdAt: now, updatedAt: now });
+}
+
+/**
  * A physio or clinic booked a visit for a patient Joy can reach (not a Joy booking: those have their
  * own booking.* events). Joy sends the time on WhatsApp. payToConfirm: a Rehabify Care visit the
  * patient pays for in the app within 24 hours.

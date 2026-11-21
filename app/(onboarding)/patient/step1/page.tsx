@@ -83,26 +83,20 @@ function PatientStep1Content() {
   const completeProfile = useMutation(api.users.completeUserProfile);
 
   const handleSubmit = async (formData: PatientInfoValues) => {
-    const { acceptTerms, ...details } = formData;
+    const { acceptTerms, birthDay, birthMonth, birthYear, ...details } = formData;
+    const monthDay = `${String(birthMonth).padStart(2, '0')}-${String(birthDay).padStart(2, '0')}`;
+    const dateOfBirth = `${birthYear}-${monthDay}`;
     // Store the form data in Zustand store
-    updatePatientData({
-      ...details,
-      // medicalHistory removed from form, so we don't append invitation info here anymore
-      // or we can just store the invitation info if needed, but formData doesn't have medicalHistory
-    });
+    updatePatientData({ ...details, dateOfBirth });
 
     try {
-      // Calculate approximate date of birth from age
-      // We set it to January 1st of the birth year
-      const currentYear = new Date().getFullYear();
-      const birthYear = currentYear - (formData.age || 0);
-      const dateOfBirth = `${birthYear}-01-01`;
-
       // Save to backend
       await completeProfile({
         role: 'patient',
         profileData: {
-          dateOfBirth: dateOfBirth,
+          dateOfBirth,
+          // Their real birthday, so the care team can celebrate it (convex/careMoments.ts)
+          birthdayMonthDay: monthDay,
           gender: formData.gender,
           address: formData.location, // Mapping location to address
           phoneNumber: formData.phoneNumber,

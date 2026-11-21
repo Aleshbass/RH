@@ -15,6 +15,7 @@ import { Label } from '@/components/ui/label';
 import { PatientData } from '@/stores/onboardingStore';
 import { POLICIES } from '@/lib/policies';
 import { cn } from '@/lib/utils';
+import { MONTHS, toMonthDay } from '@/convex/helpers/careMoments';
 
 const policyLink = 'font-medium text-rh-ink underline underline-offset-2 hover:text-black';
 
@@ -26,7 +27,10 @@ const patientInfoSchema = z.object({
   lastName: z.string().min(2, 'Last name must be at least 2 characters'),
   email: z.string().email('Please enter a valid email address'),
   phoneNumber: z.string().min(10, 'Please enter a valid phone number'),
-  age: z.coerce.number().min(17, 'You must be at least 17 years old').max(99, 'Please enter a valid age'),
+  // A real birthday, not an age: care teams use it to wish them a happy birthday (convex/careMoments.ts)
+  birthDay: z.coerce.number({ invalid_type_error: 'Choose the day' }).int().min(1, 'Choose the day').max(31),
+  birthMonth: z.coerce.number({ invalid_type_error: 'Choose the month' }).int().min(1, 'Choose the month').max(12),
+  birthYear: z.coerce.number({ invalid_type_error: 'Choose the year' }).int().min(1900, 'Choose the year'),
   gender: z.enum(['male', 'female', 'other', 'prefer_not_to_say'], {
     required_error: "Please select your gender",
   }),
@@ -36,8 +40,25 @@ const patientInfoSchema = z.object({
 
 export type PatientInfoValues = z.infer<typeof patientInfoSchema>;
 
+/** Why a birthday can't be used, or null: a real date, and 17 to 99 years old. */
+function birthdayProblem(day?: number, month?: number, year?: number): string | null {
+  if (!day || !month || !year) return 'Choose your day, month and year of birth';
+  const monthDay = toMonthDay(month, day, year);
+  if (!monthDay) return 'That date doesn’t exist. Please check the day.';
+  const today = new Date();
+  const hadBirthday = today.getMonth() + 1 > month || (today.getMonth() + 1 === month && today.getDate() >= day);
+  const age = today.getFullYear() - year - (hadBirthday ? 0 : 1);
+  if (age < 17) return 'You must be at least 17 years old';
+  if (age > 99) return 'Please check the year';
+  return null;
+}
+
+const THIS_YEAR = new Date().getFullYear();
+const BIRTH_YEARS = Array.from({ length: 99 - 17 + 1 }, (_, i) => THIS_YEAR - 17 - i);
+const selectClass = 'h-14 w-full rounded-xl border-2 bg-white px-3 text-base text-gray-900 focus:border-teal-500 focus:outline-none focus:ring-teal-500';
+
 interface PersonalInfoFormProps {
-  initialData?: Partial<PatientData> & { age?: number };
+  initialData?: Partial<PatientData>;
   invitationInfo?: {
     isValid: boolean;
     message: string;
@@ -56,7 +77,7 @@ const steps = [
   { id: 'personal', title: 'Personal Info' },
   { id: 'therapy-for', title: 'Therapy For' },
   { id: 'gender', title: 'Gender' },
-  { id: 'age', title: 'Age' },
+  { id: 'birthday', title: 'Birthday' },
   { id: 'location', title: 'Location' },
   { id: 'consent', title: 'Consent' },
 ];
@@ -71,14 +92,21 @@ export default function PersonalInfoForm({
   const [currentStep, setCurrentStep] = useState(0);
   const [direction, setDirection] = useState(0);
 
-  const { control, handleSubmit, trigger, watch, setValue, formState: { errors, isSubmitting } } = useForm<PatientInfoValues>({
+  // A birthday they already entered (going back a step keeps it in the onboarding store)
+  const savedBirthday = /^\d{4}-\d{2}-\d{2}$/.test(initialData?.dateOfBirth ?? '')
+    ? initialData!.dateOfBirth!.split('-').map(Number)
+    : null;
+
+  const { control, handleSubmit, trigger, watch, setValue, setError, getValues, formState: { errors, isSubmitting } } = useForm<PatientInfoValues>({
     resolver: zodResolver(patientInfoSchema),
     defaultValues: {
       firstName: initialData?.firstName || '',
       lastName: initialData?.lastName || '',
       email: initialData?.email || '',
       phoneNumber: initialData?.phoneNumber || '',
-      age: initialData?.age || undefined,
+      birthDay: savedBirthday?.[2],
+      birthMonth: savedBirthday?.[1],
+      birthYear: savedBirthday?.[0],
       gender: initialData?.gender || undefined,
       location: initialData?.location || '',
       therapyFor: initialData?.therapyFor || '',
@@ -103,7 +131,9 @@ export default function PersonalInfoForm({
           lastName: initialData.lastName || '',
           email: initialData.email || '',
           phoneNumber: initialData.phoneNumber || '',
-          age: initialData.age || undefined,
+          birthDay: currentValues.birthDay,
+          birthMonth: currentValues.birthMonth,
+          birthYear: currentValues.birthYear,
           gender: initialData.gender || undefined,
           location: initialData.location || '',
           therapyFor: initialData.therapyFor || '',
@@ -130,8 +160,8 @@ export default function PersonalInfoForm({
       case 2: // Gender
         fieldsToValidate = ['gender'];
         break;
-      case 3: // Age
-        fieldsToValidate = ['age'];
+      case 3: // Birthday
+        fieldsToValidate = ['birthDay', 'birthMonth', 'birthYear'];
         break;
       case 4: // Location
         fieldsToValidate = ['location'];
@@ -141,7 +171,15 @@ export default function PersonalInfoForm({
         break;
     }
 
-    const isStepValid = await trigger(fieldsToValidate);
+    let isStepValid = await trigger(fieldsToValidate);
+    if (isStepValid && currentStep === 3) {
+      const { birthDay, birthMonth, birthYear } = getValues();
+      const problem = birthdayProblem(birthDay, birthMonth, birthYear);
+      if (problem) {
+        setError('birthDay', { type: 'validate', message: problem });
+        isStepValid = false;
+      }
+    }
 
     if (isStepValid) {
       if (currentStep < steps.length - 1) {
@@ -377,40 +415,51 @@ export default function PersonalInfoForm({
                 </div>
               )}
 
-              {/* Step 4: Age */}
+              {/* Step 4: Birthday */}
               {currentStep === 3 && (
                 <div className="space-y-6">
                   <div className="text-center mb-8">
-                    <h2 className="text-2xl font-bold text-gray-900">How old are you?</h2>
-                    <p className="text-gray-500">We need this to ensure you get age-appropriate care</p>
+                    <h2 className="text-2xl font-bold text-gray-900">When&apos;s your birthday?</h2>
+                    <p className="text-gray-500">It helps us give you age-appropriate care, and your care team can celebrate with you</p>
                   </div>
 
-                  <div className="max-w-xs mx-auto">
-                    <Controller
-                      control={control}
-                      name="age"
-                      render={({ field }) => (
-                        <div className="relative">
-                          <Input
-                            {...field}
-                            type="number"
-                            min={17}
-                            max={99}
-                            placeholder="Enter your age (17-99)"
-                            className={cn(
-                              "h-14 text-lg text-center border-2 rounded-xl focus:ring-teal-500 focus:border-teal-500",
-                              errors.age ? "border-red-500" : "border-gray-200"
-                            )}
-                            onChange={(e) => field.onChange(e.target.valueAsNumber)}
-                          />
-                        </div>
-                      )}
-                    />
-                    {errors.age && <p className="text-center text-sm text-red-500 mt-2">{errors.age.message}</p>}
-                    <p className="text-xs text-gray-400 text-center mt-4">
-                      Must be between 17 and 99 years old.
-                    </p>
+                  <div className="mx-auto grid max-w-md grid-cols-[1fr_1.6fr_1.2fr] gap-2">
+                    {([
+                      { name: 'birthDay', label: 'Day', options: Array.from({ length: 31 }, (_, i) => ({ value: i + 1, label: String(i + 1) })) },
+                      { name: 'birthMonth', label: 'Month', options: MONTHS.map((month, i) => ({ value: i + 1, label: month })) },
+                      { name: 'birthYear', label: 'Year', options: BIRTH_YEARS.map((year) => ({ value: year, label: String(year) })) },
+                    ] as const).map(({ name, label, options }) => (
+                      <Controller
+                        key={name}
+                        control={control}
+                        name={name}
+                        render={({ field }) => (
+                          <label className="block">
+                            <span className="sr-only">{label}</span>
+                            <select
+                              value={field.value ?? ''}
+                              onChange={(e) => field.onChange(e.target.value ? Number(e.target.value) : undefined)}
+                              onBlur={field.onBlur}
+                              className={cn(selectClass, errors[name] || errors.birthDay ? 'border-red-500' : 'border-gray-200')}
+                            >
+                              <option value="">{label}</option>
+                              {options.map((option) => (
+                                <option key={option.value} value={option.value}>{option.label}</option>
+                              ))}
+                            </select>
+                          </label>
+                        )}
+                      />
+                    ))}
                   </div>
+                  {(errors.birthDay || errors.birthMonth || errors.birthYear) && (
+                    <p className="text-center text-sm text-red-500">
+                      {(errors.birthDay ?? errors.birthMonth ?? errors.birthYear)?.message}
+                    </p>
+                  )}
+                  <p className="text-xs text-gray-400 text-center">
+                    You must be 17 or older. Only your care team sees your birthday.
+                  </p>
                 </div>
               )}
 
