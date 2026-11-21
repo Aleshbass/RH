@@ -301,7 +301,9 @@ export function CallRoom({
         </div>
       </header>
 
-      <div className="flex min-h-0 flex-1 gap-4 px-3 sm:px-6">
+      {/* Phones and tablets: the scribe sits under the video, above the call's buttons (it used to
+          cover them, so you couldn't mute or leave while it was open). Wide screens: side by side. */}
+      <div className="flex min-h-0 flex-1 flex-col gap-3 px-3 sm:px-6 lg:flex-row lg:gap-4">
         <main className="relative min-h-0 min-w-0 flex-1">
           {stage}
           {disconnected && (

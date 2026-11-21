@@ -106,8 +106,9 @@ export function CallScribePanel({
     <aside
       aria-label={SCRIBE_NAME}
       className={cn(
-        'fixed inset-x-0 bottom-0 z-40 flex max-h-[75dvh] flex-col rounded-t-[28px] bg-white pb-[env(safe-area-inset-bottom)] text-neutral-900 shadow-[0_-20px_60px_-24px_rgba(0,0,0,0.3)]',
-        'lg:static lg:z-auto lg:max-h-none lg:w-[360px] lg:shrink-0 lg:overflow-hidden lg:rounded-[28px] lg:pb-0 lg:shadow-[0_20px_60px_-24px_rgba(0,0,0,0.2)] lg:ring-1 lg:ring-black/5',
+        // In the page, not over it: the call's mute and leave buttons stay reachable (CallRoom)
+        'flex max-h-[52dvh] shrink-0 flex-col overflow-hidden rounded-[24px] bg-white text-neutral-900 shadow-[0_20px_60px_-24px_rgba(0,0,0,0.2)] ring-1 ring-black/5',
+        'lg:max-h-none lg:w-[360px] lg:rounded-[28px]',
         !open && 'hidden'
       )}
     >
