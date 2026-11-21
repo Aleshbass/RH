@@ -292,6 +292,7 @@ import type * as offline from "../offline.js";
 import type * as outcomes from "../outcomes.js";
 import type * as outreach from "../outreach.js";
 import type * as outreachSend from "../outreachSend.js";
+import type * as outreachSent from "../outreachSent.js";
 import type * as partnerApi from "../partnerApi.js";
 import type * as partnerBankAccounts from "../partnerBankAccounts.js";
 import type * as partnerGateway from "../partnerGateway.js";
@@ -667,6 +668,7 @@ declare const fullApi: ApiFromModules<{
   outcomes: typeof outcomes;
   outreach: typeof outreach;
   outreachSend: typeof outreachSend;
+  outreachSent: typeof outreachSent;
   partnerApi: typeof partnerApi;
   partnerBankAccounts: typeof partnerBankAccounts;
   partnerGateway: typeof partnerGateway;
