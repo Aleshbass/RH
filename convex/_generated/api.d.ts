@@ -47,6 +47,7 @@ import type * as actions_emails_sendTeamEmails from "../actions/emails/sendTeamE
 import type * as actions_emails_sendVerificationBadgeEmail from "../actions/emails/sendVerificationBadgeEmail.js";
 import type * as actions_emails_sendVideoCallInvitation from "../actions/emails/sendVideoCallInvitation.js";
 import type * as actions_emails_sesBackupTest from "../actions/emails/sesBackupTest.js";
+import type * as actions_employerOutreachMail from "../actions/employerOutreachMail.js";
 import type * as actions_index from "../actions/index.js";
 import type * as actions_joyDashboard from "../actions/joyDashboard.js";
 import type * as actions_marketingSend from "../actions/marketingSend.js";
@@ -132,6 +133,7 @@ import type * as doctors from "../doctors.js";
 import type * as emailAudit from "../emailAudit.js";
 import type * as emailEvents from "../emailEvents.js";
 import type * as emailQuota from "../emailQuota.js";
+import type * as employerOutreach from "../employerOutreach.js";
 import type * as exchangeRates from "../exchangeRates.js";
 import type * as exerciseCompletions from "../exerciseCompletions.js";
 import type * as exerciseLibrary from "../exerciseLibrary.js";
@@ -195,6 +197,7 @@ import type * as helpers_mediloanStatus from "../helpers/mediloanStatus.js";
 import type * as helpers_noteAccess from "../helpers/noteAccess.js";
 import type * as helpers_noteRevisions from "../helpers/noteRevisions.js";
 import type * as helpers_outreachMail from "../helpers/outreachMail.js";
+import type * as helpers_outreachShared from "../helpers/outreachShared.js";
 import type * as helpers_partnerAccess from "../helpers/partnerAccess.js";
 import type * as helpers_partnerAttribution from "../helpers/partnerAttribution.js";
 import type * as helpers_partnerEvents from "../helpers/partnerEvents.js";
@@ -419,6 +422,7 @@ declare const fullApi: ApiFromModules<{
   "actions/emails/sendVerificationBadgeEmail": typeof actions_emails_sendVerificationBadgeEmail;
   "actions/emails/sendVideoCallInvitation": typeof actions_emails_sendVideoCallInvitation;
   "actions/emails/sesBackupTest": typeof actions_emails_sesBackupTest;
+  "actions/employerOutreachMail": typeof actions_employerOutreachMail;
   "actions/index": typeof actions_index;
   "actions/joyDashboard": typeof actions_joyDashboard;
   "actions/marketingSend": typeof actions_marketingSend;
@@ -504,6 +508,7 @@ declare const fullApi: ApiFromModules<{
   emailAudit: typeof emailAudit;
   emailEvents: typeof emailEvents;
   emailQuota: typeof emailQuota;
+  employerOutreach: typeof employerOutreach;
   exchangeRates: typeof exchangeRates;
   exerciseCompletions: typeof exerciseCompletions;
   exerciseLibrary: typeof exerciseLibrary;
@@ -567,6 +572,7 @@ declare const fullApi: ApiFromModules<{
   "helpers/noteAccess": typeof helpers_noteAccess;
   "helpers/noteRevisions": typeof helpers_noteRevisions;
   "helpers/outreachMail": typeof helpers_outreachMail;
+  "helpers/outreachShared": typeof helpers_outreachShared;
   "helpers/partnerAccess": typeof helpers_partnerAccess;
   "helpers/partnerAttribution": typeof helpers_partnerAttribution;
   "helpers/partnerEvents": typeof helpers_partnerEvents;
