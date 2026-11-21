@@ -11,6 +11,7 @@ import {
   CalendarCheck,
   ClipboardCheck,
   Code2,
+  Factory,
   FileSignature,
   Flag,
   Globe,
@@ -206,6 +207,7 @@ export const ADMIN_NAV: AdminNavSection[] = [
     items: [
       { title: 'Partners & applications', href: a('/partnerships'), icon: Handshake, badgeKey: 'partnerApplications', keywords: ['go-live', 'inquiries', 'api'] },
       { title: 'Demo requests & inquiries', href: a('/partnerships?tab=inquiries'), icon: Inbox, badgeKey: 'inquiries', keywords: ['demo', 'book a demo', 'clinic demo', 'contact', 'leads'] },
+      { title: 'Employer outreach', href: a('/employer-outreach'), icon: Factory, keywords: ['rehabify for work', 'employers', 'companies', 'hr', 'hse', 'leads', 'pipeline', 'corporate', 'sales'] },
       { title: 'Contracts', href: a('/partner-contracts'), icon: FileSignature, keywords: ['commercial terms', 'pricing'] },
       { title: 'Partner payouts', href: a('/partnerships?tab=bulk_payouts'), icon: Banknote, keywords: ['settlements', 'monthly'] },
       { title: 'AwaDoc', href: a('/awadoc'), icon: Globe, keywords: ['integration', 'webhooks'] },

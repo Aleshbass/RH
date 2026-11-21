@@ -11,15 +11,19 @@
  *    Rehabify's product domain on Resend, which would hurt receipts and reminders and isn't
  *    allowed there). The list also exports as CSV. "Do not contact" sticks to the email address.
  *  - Clinics already on Rehabify are marked and left out of exports.
+ *  - Employer outreach (employerOutreach.ts) keeps its companies in the same table with kind
+ *    "employer" and reuses the finders and the website reader here. Every clinic list below
+ *    filters them out (isClinicLead), so clinics and companies never mix.
  */
 import { ConvexError, v } from "convex/values";
 import { makeFunctionReference } from "convex/server";
 import { action, internalAction, internalMutation, internalQuery, mutation, query, type MutationCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { requireAdmin } from "./helpers/partnerAccess";
+import { autoAdvanceStage, clinicLeadsDesc, emailDoNotContact, isClinicLead } from "./helpers/outreachShared";
 
 export type LeadStatus = Doc<"outreachLeads">["status"];
-type Candidate = {
+export type Candidate = {
   name: string;
   address?: string;
   phone?: string;
@@ -59,17 +63,21 @@ const upsertRef = makeFunctionReference<
   { city: string; country: string; candidates: Candidate[]; by: Id<"users">; log: { source: string; found: number; error?: string }[] },
   { added: number; updated: number; skipped: number }
 >("outreach:upsertLeads");
-const pendingRef = makeFunctionReference<"query", { limit: number }, { _id: Id<"outreachLeads">; website: string }[]>("outreach:pendingCrawl");
+const pendingRef = makeFunctionReference<
+  "query",
+  { limit: number },
+  { _id: Id<"outreachLeads">; website: string; employer: boolean }[]
+>("outreach:pendingCrawl");
 const saveCrawlRef = makeFunctionReference<
   "mutation",
-  { leadId: Id<"outreachLeads">; emails: string[]; error?: string },
+  { leadId: Id<"outreachLeads">; emails: string[]; phones?: string[]; error?: string },
   null
 >("outreach:saveCrawl");
 const crawlRef = makeFunctionReference<"action", Record<string, never>, null>("outreach:crawlPending");
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-const clean = (value: unknown, max = 200) =>
+export const clean = (value: unknown, max = 200) =>
   typeof value === "string" && value.trim() && value.trim().toLowerCase() !== "null" ? value.trim().replace(/\s+/g, " ").slice(0, max) : undefined;
 
 /** "D&H Physiotherapy Clinic Ltd." → "dhphysiotherapy": for spotting the same clinic twice. */
@@ -100,7 +108,7 @@ export function domainOf(url: string | undefined) {
 }
 
 const EMAIL_RE = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,24}/gi;
-const JUNK_EMAIL = /\.(png|jpe?g|gif|svg|webp|css|js)$|^(your|name|email|user|example|test)@|@(example|domain|email|sentry|wixpress|sentry-next|yourdomain)\./i;
+export const JUNK_EMAIL = /\.(png|jpe?g|gif|svg|webp|css|js)$|^(your|name|email|user|example|test)@|@(example|domain|email|sentry|wixpress|sentry-next|yourdomain)\./i;
 
 /** Published addresses in a page: mailto links and plain text, without image names and placeholders. */
 export function emailsIn(html: string): string[] {
@@ -129,7 +137,51 @@ export function bestEmail(emails: string[], domain?: string): string | undefined
   return [...emails].sort((a, b) => score(b) - score(a))[0];
 }
 
-async function fetchText(url: string): Promise<string> {
+/**
+ * The best address at a company (employer outreach): its own domain first, then hr@, careers@,
+ * people@ and info@ in that order, then other general inboxes.
+ */
+export function bestEmployerEmail(emails: string[], domain?: string): string | undefined {
+  const score = (email: string) => {
+    const [local, host] = email.split("@");
+    let s = 0;
+    if (domain && (host === domain || host.endsWith(`.${domain}`))) s += 10;
+    if (/^(hr|human[._-]?resources?|humancapital)([._-]|$)/.test(local)) s += 6;
+    else if (/^(careers?|jobs|recruit)/.test(local)) s += 5;
+    else if (/^people/.test(local)) s += 4;
+    else if (/^info/.test(local)) s += 3;
+    else if (/^(contact|hello|enquir|inquir|admin|office|customer)/.test(local)) s += 2;
+    if (/^(no-?reply|noreply|privacy|abuse|webmaster|dpo|support@wix)/.test(local)) s -= 20;
+    return s;
+  };
+  return [...emails].sort((a, b) => score(b) - score(a))[0];
+}
+
+const TEL_LINK_RE = /href=["']tel:([^"']{6,40})["']/gi;
+// Nigerian mobiles as written on websites: 0803 123 4567, +234 803 123 4567, +234 (0) 803…
+const NG_MOBILE_RE = /(?:\+234[\s.-]?(?:\(0\)[\s.-]?)?|\b234[\s.-]?|\b0)[789][01]\d[\s.-]?\d{3}[\s.-]?\d{4}(?!\d)/g;
+
+/** The digits that identify a phone number, for spotting the same one written two ways. */
+export function phoneKey(phone: string): string {
+  const digits = phone.replace(/\D/g, "");
+  // +234 (0) 803… and 0803… are the same number
+  return digits.startsWith("234") ? `0${digits.slice(3).replace(/^0/, "")}` : digits;
+}
+
+/** Published phone numbers in a page: tel: links first, then Nigerian mobiles in the text. */
+export function phonesIn(html: string): string[] {
+  const found = new Map<string, string>();
+  const add = (raw: string) => {
+    const phone = raw.replace(/%20/g, " ").replace(/[^\d+()\s.-]/g, "").replace(/\s+/g, " ").trim();
+    const key = phoneKey(phone);
+    if (key.length >= 7 && key.length <= 14 && !found.has(key)) found.set(key, phone);
+  };
+  for (const m of html.matchAll(TEL_LINK_RE)) add(m[1]);
+  for (const m of html.matchAll(NG_MOBILE_RE)) add(m[0]);
+  return [...found.values()].slice(0, 8);
+}
+
+export async function fetchText(url: string): Promise<string> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
@@ -145,13 +197,23 @@ async function fetchText(url: string): Promise<string> {
 
 /** The home page, then up to two "contact" / "about" pages on the same site. */
 export async function crawlSite(website: string): Promise<string[]> {
+  return (await readSite(website, /contact|about|reach|location|get-in-touch/i, 2)).emails;
+}
+
+/** A company's website (employer outreach): home, contact, careers and about pages; emails and phones. */
+export async function crawlCompanySite(website: string): Promise<{ emails: string[]; phones: string[] }> {
+  return await readSite(website, /contact|careers?|jobs|about|people|reach|get-in-touch/i, 3);
+}
+
+async function readSite(website: string, pagePattern: RegExp, extraPages: number): Promise<{ emails: string[]; phones: string[] }> {
   const start = /^https?:\/\//i.test(website) ? website : `https://${website}`;
   const home = await fetchText(start);
   const emails = new Set(emailsIn(home));
+  const phones = new Set(phonesIn(home));
   const base = new URL(start);
   const links = [...home.matchAll(/href=["']([^"'#]+)["']/gi)]
     .map((m) => m[1])
-    .filter((href) => /contact|about|reach|location|get-in-touch/i.test(href))
+    .filter((href) => pagePattern.test(href))
     .map((href) => {
       try {
         return new URL(href, base).toString();
@@ -160,25 +222,28 @@ export async function crawlSite(website: string): Promise<string[]> {
       }
     })
     .filter((href): href is string => Boolean(href) && new URL(href!).hostname === base.hostname);
-  for (const link of [...new Set(links)].slice(0, 2)) {
+  for (const link of [...new Set(links)].slice(0, extraPages)) {
     try {
-      for (const email of emailsIn(await fetchText(link))) emails.add(email);
+      const html = await fetchText(link);
+      for (const email of emailsIn(html)) emails.add(email);
+      for (const phone of phonesIn(html)) phones.add(phone);
     } catch {
       // A broken contact page shouldn't lose what the home page gave
     }
   }
-  return [...emails];
+  return { emails: [...emails], phones: [...phones] };
 }
 
 // ─── Finding clinics ─────────────────────────────────────────────────────────
 
-async function searchGooglePlaces(city: string, country: string): Promise<Candidate[]> {
+/** Google Maps listings for each search phrase ("physiotherapy clinic in Ibadan, Nigeria"), up to 20 a page. */
+export async function searchGooglePlaces(textQueries: string[], pages = 3): Promise<Candidate[]> {
   const key = process.env.GOOGLE_PLACES_API_KEY;
   if (!key) throw new Error("GOOGLE_PLACES_API_KEY isn't set on Convex.");
   const byId = new Map<string, Candidate>();
-  for (const textQuery of [`physiotherapy clinic in ${city}, ${country}`, `physiotherapist in ${city}, ${country}`]) {
+  for (const textQuery of textQueries) {
     let pageToken: string | undefined;
-    for (let page = 0; page < 3; page++) {
+    for (let page = 0; page < pages; page++) {
       const res = await fetch("https://places.googleapis.com/v1/places:searchText", {
         method: "POST",
         headers: {
@@ -238,18 +303,14 @@ export function parseJsonArray(text: string): any[] {
   }
 }
 
-async function searchWithAi(city: string, country: string): Promise<Candidate[]> {
+/**
+ * One OpenAI Responses call with web search (OPENAI_API_KEY, OUTREACH_AI_MODEL): the answer's
+ * text. Finds clinics here, and companies and the people at them in employerOutreach.ts.
+ */
+export async function webSearchText(input: string, label = "AI search"): Promise<string> {
   const key = process.env.OPENAI_API_KEY;
   if (!key) throw new Error("OPENAI_API_KEY isn't set on Convex.");
   const model = process.env.OUTREACH_AI_MODEL?.trim() || "gpt-5-mini";
-  const input = [
-    `Find physiotherapy clinics and private physiotherapy practices in ${city}, ${country}.`,
-    "Search the web: clinic websites, Google Business listings, Facebook and Instagram pages, health directories.",
-    "For each clinic give: name, address, phone, email, website, and source_url (the page where you found its details).",
-    "Only include an email or phone you actually saw published for that clinic. Never guess or build one; use null instead.",
-    "Leave out hospitals' general switchboards unless they run a named physiotherapy clinic.",
-    'Reply with only a JSON array, up to 40 items: [{"name":"","address":null,"phone":null,"email":null,"website":null,"source_url":null}]',
-  ].join("\n");
   let lastError = "";
   // "web_search" is the current tool name; older accounts only know the preview one
   for (const tool of ["web_search", "web_search_preview"]) {
@@ -262,26 +323,38 @@ async function searchWithAi(city: string, country: string): Promise<Candidate[]>
     if (!res.ok) {
       lastError = data?.error?.message ?? `HTTP ${res.status}`;
       if (res.status === 400 && /tool|web_search/i.test(lastError)) continue;
-      throw new Error(`AI search: ${lastError}`);
+      throw new Error(`${label}: ${lastError}`);
     }
-    const out: Candidate[] = [];
-    for (const row of parseJsonArray(responseText(data))) {
-      const name = clean(row?.name, 150);
-      if (!name) continue;
-      const email = clean(row?.email, 100)?.toLowerCase();
-      out.push({
-        name,
-        address: clean(row?.address, 300),
-        phone: clean(row?.phone, 40),
-        email: email && emailsIn(email).length === 1 && !JUNK_EMAIL.test(email) ? email : undefined,
-        website: clean(row?.website, 300),
-        sourceUrl: clean(row?.source_url, 300),
-        source: "web_search",
-      });
-    }
-    return out;
+    return responseText(data);
   }
-  throw new Error(`AI search: ${lastError}`);
+  throw new Error(`${label}: ${lastError}`);
+}
+
+async function searchWithAi(city: string, country: string): Promise<Candidate[]> {
+  const input = [
+    `Find physiotherapy clinics and private physiotherapy practices in ${city}, ${country}.`,
+    "Search the web: clinic websites, Google Business listings, Facebook and Instagram pages, health directories.",
+    "For each clinic give: name, address, phone, email, website, and source_url (the page where you found its details).",
+    "Only include an email or phone you actually saw published for that clinic. Never guess or build one; use null instead.",
+    "Leave out hospitals' general switchboards unless they run a named physiotherapy clinic.",
+    'Reply with only a JSON array, up to 40 items: [{"name":"","address":null,"phone":null,"email":null,"website":null,"source_url":null}]',
+  ].join("\n");
+  const out: Candidate[] = [];
+  for (const row of parseJsonArray(await webSearchText(input))) {
+    const name = clean(row?.name, 150);
+    if (!name) continue;
+    const email = clean(row?.email, 100)?.toLowerCase();
+    out.push({
+      name,
+      address: clean(row?.address, 300),
+      phone: clean(row?.phone, 40),
+      email: email && emailsIn(email).length === 1 && !JUNK_EMAIL.test(email) ? email : undefined,
+      website: clean(row?.website, 300),
+      sourceUrl: clean(row?.source_url, 300),
+      source: "web_search",
+    });
+  }
+  return out;
 }
 
 // ─── Admin ───────────────────────────────────────────────────────────────────
@@ -296,7 +369,8 @@ export const adminLeads = query({
   args: { status: v.optional(statusValidator), city: v.optional(v.string()) },
   handler: async (ctx, args) => {
     await requireAdmin(ctx, "outreach:adminLeads");
-    const all = await ctx.db.query("outreachLeads").order("desc").take(3000);
+    // Clinics only: employer companies share the table (Admin › Employer outreach)
+    const all = await clinicLeadsDesc(ctx, 3000);
     const counts: Record<string, number> = {};
     const cities = new Map<string, number>();
     for (const lead of all) {
@@ -326,7 +400,7 @@ export const adminLeads = query({
         exportedAt: l.exportedAt ?? null,
         createdAt: l.createdAt,
       }));
-    const searches = await ctx.db.query("outreachSearches").order("desc").take(10);
+    const searches = await ctx.db.query("outreachSearches").withIndex("by_kind", (q) => q.eq("kind", undefined)).order("desc").take(10);
     return {
       leads,
       total: all.length,
@@ -357,7 +431,10 @@ export const adminFindClinics = action({
     const log: { source: string; found: number; error?: string }[] = [];
     for (const source of args.sources) {
       try {
-        const found = source === "google_places" ? await searchGooglePlaces(city, country) : await searchWithAi(city, country);
+        const found =
+          source === "google_places"
+            ? await searchGooglePlaces([`physiotherapy clinic in ${city}, ${country}`, `physiotherapist in ${city}, ${country}`])
+            : await searchWithAi(city, country);
         candidates.push(...found);
         log.push({ source, found: found.length });
       } catch (err) {
@@ -384,10 +461,9 @@ async function onRehabify(ctx: MutationCtx, name: string, city: string, email?: 
   return false;
 }
 
+/** Do not contact sticks to the address: a clinic, a company or a person at one marked so. */
 async function blockedEmail(ctx: MutationCtx, email: string | undefined) {
-  if (!email) return false;
-  const rows = await ctx.db.query("outreachLeads").withIndex("by_email", (q) => q.eq("email", email)).take(10);
-  return rows.some((r) => r.status === "do_not_contact");
+  return await emailDoNotContact(ctx, email);
 }
 
 const candidateValidator = v.object({
@@ -421,10 +497,12 @@ export const upsertLeads = internalMutation({
     for (const c of args.candidates) {
       const key = nameKey(c.name, args.city);
       const domain = domainOf(c.website);
+      // The same clinic found again (never an employer company with the same place or website)
+      const clinicOf = (rows: Doc<"outreachLeads">[]) => rows.find(isClinicLead) ?? null;
       const existing =
-        (c.placeId ? await ctx.db.query("outreachLeads").withIndex("by_place", (q) => q.eq("placeId", c.placeId)).first() : null) ??
-        (domain ? await ctx.db.query("outreachLeads").withIndex("by_domain", (q) => q.eq("domain", domain)).first() : null) ??
-        (await ctx.db.query("outreachLeads").withIndex("by_name_key", (q) => q.eq("nameKey", key)).first());
+        (c.placeId ? clinicOf(await ctx.db.query("outreachLeads").withIndex("by_place", (q) => q.eq("placeId", c.placeId)).take(5)) : null) ??
+        (domain ? clinicOf(await ctx.db.query("outreachLeads").withIndex("by_domain", (q) => q.eq("domain", domain)).take(5)) : null) ??
+        clinicOf(await ctx.db.query("outreachLeads").withIndex("by_name_key", (q) => q.eq("nameKey", key)).take(5));
       const email = c.email?.toLowerCase();
       if (existing) {
         // Fill gaps only: what the team edited or decided stays
@@ -494,19 +572,21 @@ export const upsertLeads = internalMutation({
 export const pendingCrawl = internalQuery({
   args: { limit: v.number() },
   handler: async (ctx, args) => {
+    // Clinics and employer companies share the website reader
     const rows = await ctx.db.query("outreachLeads").withIndex("by_crawl", (q) => q.eq("crawlStatus", "pending")).take(args.limit);
-    return rows.filter((r) => r.website).map((r) => ({ _id: r._id, website: r.website! }));
+    return rows.filter((r) => r.website).map((r) => ({ _id: r._id, website: r.website!, employer: r.kind === "employer" }));
   },
 });
 
 export const saveCrawl = internalMutation({
-  args: { leadId: v.id("outreachLeads"), emails: v.array(v.string()), error: v.optional(v.string()) },
+  args: { leadId: v.id("outreachLeads"), emails: v.array(v.string()), phones: v.optional(v.array(v.string())), error: v.optional(v.string()) },
   handler: async (ctx, args) => {
     const lead = await ctx.db.get(args.leadId);
     if (!lead) return null;
     const now = Date.now();
+    const employer = lead.kind === "employer";
     const emails = args.emails.map((e) => e.toLowerCase()).slice(0, 10);
-    const best = lead.email ?? bestEmail(emails, lead.domain);
+    const best = lead.email ?? (employer ? bestEmployerEmail(emails, lead.domain) : bestEmail(emails, lead.domain));
     const patch: Partial<Doc<"outreachLeads">> = {
       crawlStatus: args.error ? "failed" : "done",
       crawlError: args.error?.slice(0, 200),
@@ -522,7 +602,17 @@ export const saveCrawl = internalMutation({
     } else if (!lead.email && (lead.status === "new" || lead.status === "no_email")) {
       patch.status = "no_email";
     }
+    // Companies: the phones on their pages too (not ones we already have)
+    const phones: string[] = [];
+    if (employer) {
+      const known = new Set([lead.phone, ...(lead.otherPhones ?? [])].filter((p): p is string => Boolean(p)).map(phoneKey));
+      for (const phone of args.phones ?? []) if (!known.has(phoneKey(phone))) phones.push(phone);
+      if (phones.length) patch.otherPhones = [...(lead.otherPhones ?? []), ...phones].slice(0, 8);
+    }
     await ctx.db.patch(lead._id, patch);
+    if (employer && (emails.length > 0 || phones.length > 0)) {
+      await autoAdvanceStage(ctx, lead._id, "contacts_found", "found on the website");
+    }
     return null;
   },
 });
@@ -536,8 +626,13 @@ export const crawlPending = internalAction({
     await Promise.all(
       batch.map(async (lead) => {
         try {
-          const emails = await crawlSite(lead.website);
-          await ctx.runMutation(saveCrawlRef, { leadId: lead._id, emails });
+          if (lead.employer) {
+            const found = await crawlCompanySite(lead.website);
+            await ctx.runMutation(saveCrawlRef, { leadId: lead._id, emails: found.emails, phones: found.phones });
+          } else {
+            const emails = await crawlSite(lead.website);
+            await ctx.runMutation(saveCrawlRef, { leadId: lead._id, emails });
+          }
         } catch (err) {
           const message = err instanceof Error ? (err.name === "AbortError" ? "The website took too long to answer" : err.message) : "Couldn't read the website";
           await ctx.runMutation(saveCrawlRef, { leadId: lead._id, emails: [], error: message });
@@ -617,7 +712,7 @@ export const adminExportLeads = mutation({
     for (const status of want) {
       const leads = await ctx.db.query("outreachLeads").withIndex("by_status", (q) => q.eq("status", status)).take(2000);
       for (const lead of leads) {
-        if (!lead.email || (args.city && lead.city !== args.city)) continue;
+        if (!isClinicLead(lead) || !lead.email || (args.city && lead.city !== args.city)) continue;
         if (await blockedEmail(ctx, lead.email)) continue;
         rows.push({
           email: lead.email,

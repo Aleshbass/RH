@@ -43,7 +43,8 @@ const testRef = makeFunctionReference<
   { fromName: string; emails: { subject: string; text: string }[] }
 >("outreachSend:testPayload");
 
-function config() {
+/** The inbox settings, or null when it isn't connected (also used by actions/employerOutreachMail.ts). */
+export function config() {
   const user = process.env.OUTREACH_SMTP_USER?.trim();
   const pass = process.env.OUTREACH_SMTP_PASS?.trim();
   if (!user || !pass) return null;
@@ -162,7 +163,7 @@ async function smtpStep(conn: Conn, command: string | null, expect: number[], st
   return reply;
 }
 
-async function smtpSend(cfg: Config, to: string, message: string) {
+export async function smtpSend(cfg: Config, to: string, message: string) {
   const conn = await Conn.open(cfg.smtpHost, cfg.smtpPort);
   try {
     await smtpStep(conn, null, [220], "connect");
@@ -202,7 +203,7 @@ async function domainTakesMail(email: string): Promise<boolean> {
   }
 }
 
-const newMessageId = (cfg: Config) => `<${Date.now().toString(36)}.${randomBytes(8).toString("hex")}@${cfg.domain}>`;
+export const newMessageId = (cfg: Config) => `<${Date.now().toString(36)}.${randomBytes(8).toString("hex")}@${cfg.domain}>`;
 
 /** Sends one scheduled email (outreachSend.tick) and records what happened. */
 export const sendOne = internalAction({

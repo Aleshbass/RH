@@ -4770,8 +4770,11 @@ export default defineSchema({
   }).index("by_day", ["day"]),
 
   // Clinic outreach (outreach.ts): physiotherapy clinics found city by city, with a contact
-  // email read from their websites, worked through by the team and exported to a cold-email tool
+  // email read from their websites, worked through by the team and exported to a cold-email tool.
+  // Employer outreach (employerOutreach.ts, "Rehabify for Work") keeps its companies here too, with
+  // kind "employer", so both share one sender; a missing kind is a clinic.
   outreachLeads: defineTable({
+    kind: v.optional(v.union(v.literal("clinic"), v.literal("employer"))),
     name: v.string(),
     nameKey: v.string(), // normalised name + city, to spot the same clinic twice
     city: v.string(),
@@ -4787,7 +4790,7 @@ export default defineSchema({
     placeId: v.optional(v.string()), // Google Places id
     rating: v.optional(v.number()),
     reviews: v.optional(v.number()),
-    source: v.union(v.literal("google_places"), v.literal("web_search"), v.literal("admin")),
+    source: v.union(v.literal("google_places"), v.literal("web_search"), v.literal("admin"), v.literal("pilot_form")),
     sourceUrl: v.optional(v.string()),
     status: v.union(
       v.literal("new"), // found, email not looked for yet
@@ -4808,6 +4811,36 @@ export default defineSchema({
     exportedAt: v.optional(v.number()),
     contactedAt: v.optional(v.number()),
     addedBy: v.optional(v.id("users")),
+    // Employers only: the sector key (lib/employerOutreach.ts), staff size as found ("200-500"),
+    // the company's LinkedIn page and phones read from its website
+    sector: v.optional(v.string()),
+    staffSize: v.optional(v.string()),
+    linkedinUrl: v.optional(v.string()),
+    otherPhones: v.optional(v.array(v.string())),
+    // Employers only: the sales pipeline the team works by hand (a few moves are automatic)
+    stage: v.optional(
+      v.union(
+        v.literal("found"),
+        v.literal("contacts_found"),
+        v.literal("contacted"),
+        v.literal("replied"),
+        v.literal("meeting_booked"),
+        v.literal("pilot_proposed"),
+        v.literal("pilot_live"),
+        v.literal("paying"),
+        v.literal("lost"),
+        v.literal("do_not_contact")
+      )
+    ),
+    stageChangedAt: v.optional(v.number()),
+    nextFollowUpAt: v.optional(v.number()),
+    ownerId: v.optional(v.id("users")), // the admin who owns the deal
+    dealStaffCount: v.optional(v.number()),
+    dealValueNaira: v.optional(v.number()), // a month
+    sourceInquiryId: v.optional(v.id("partnershipInquiries")), // a pilot request from /platform/employers
+    peopleSearchedAt: v.optional(v.number()), // the last AI "Find people" run (each one costs)
+    peopleQueuedAt: v.optional(v.number()), // waiting for, or in, a "Find people" run
+    peopleSearchError: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
@@ -4816,10 +4849,48 @@ export default defineSchema({
     .index("by_domain", ["domain"])
     .index("by_email", ["email"])
     .index("by_status", ["status"])
-    .index("by_crawl", ["crawlStatus"]),
+    .index("by_crawl", ["crawlStatus"])
+    // Clinics are kind undefined; employers "employer" (by stage for the pipeline)
+    .index("by_kind_stage", ["kind", "stage"]),
 
-  // Each "Find clinics" run, per finder, for Admin › Clinic outreach
+  // People at an employer (outreachLeads kind "employer"): found by the AI web search, typed by
+  // the team or sent in with a pilot request. An email is only kept when a public page shows it.
+  outreachContacts: defineTable({
+    leadId: v.id("outreachLeads"),
+    name: v.string(),
+    role: v.optional(v.string()), // as written
+    roleGroup: v.union(v.literal("hr"), v.literal("operations"), v.literal("hse"), v.literal("leadership"), v.literal("other")),
+    email: v.optional(v.string()),
+    // "published": seen on a public page; "admin": typed by the team; "pilot_form": they sent it
+    emailStatus: v.optional(v.union(v.literal("published"), v.literal("admin"), v.literal("pilot_form"))),
+    phone: v.optional(v.string()),
+    linkedinUrl: v.optional(v.string()),
+    source: v.union(v.literal("web_search"), v.literal("website"), v.literal("admin"), v.literal("pilot_form")),
+    sourceUrl: v.optional(v.string()),
+    notes: v.optional(v.string()),
+    doNotContact: v.optional(v.boolean()), // follows the email address, like a lead's
+    bouncedAt: v.optional(v.number()),
+    addedBy: v.optional(v.id("users")),
+    createdAt: v.number(),
+    updatedAt: v.optional(v.number()),
+  })
+    .index("by_lead", ["leadId"])
+    .index("by_email", ["email"]),
+
+  // What happened with an employer, newest first in its drawer: stage moves, notes, emails, replies
+  outreachActivities: defineTable({
+    leadId: v.id("outreachLeads"),
+    kind: v.union(v.literal("stage"), v.literal("note"), v.literal("email_sent"), v.literal("reply"), v.literal("contact_added")),
+    text: v.string(),
+    byUserId: v.optional(v.id("users")),
+    at: v.number(),
+  }).index("by_lead", ["leadId", "at"]),
+
+  // Each "Find clinics" run, per finder, for Admin › Clinic outreach ("Find companies" for
+  // Employer outreach: kind "employer", with the sectors searched)
   outreachSearches: defineTable({
+    kind: v.optional(v.literal("employer")),
+    sectors: v.optional(v.array(v.string())),
     city: v.string(),
     source: v.string(),
     found: v.number(),
@@ -4827,7 +4898,7 @@ export default defineSchema({
     error: v.optional(v.string()),
     by: v.id("users"),
     createdAt: v.number(),
-  }),
+  }).index("by_kind", ["kind"]),
 
   // Outreach sending (outreachSend.ts + actions/outreachMail.ts): emails to clinics one at a time
   // from the team's own Zoho inbox, with follow-ups, stopped by a reply, a bounce or "stop".
@@ -4852,8 +4923,10 @@ export default defineSchema({
     updatedAt: v.number(),
   }),
 
-  // A sequence: the first email and its follow-ups (a blank subject replies in the same thread)
+  // A sequence: the first email and its follow-ups (a blank subject replies in the same thread).
+  // Audience "employer" for Employer outreach; missing = clinics.
   outreachSequences: defineTable({
+    audience: v.optional(v.union(v.literal("clinic"), v.literal("employer"))),
     name: v.string(),
     steps: v.array(v.object({ subject: v.string(), body: v.string(), waitDays: v.number() })),
     status: v.union(v.literal("draft"), v.literal("active"), v.literal("paused")),
@@ -4862,10 +4935,12 @@ export default defineSchema({
     updatedAt: v.number(),
   }),
 
-  // One clinic in one sequence. An email address is only ever enrolled once.
+  // One clinic in one sequence. An email address is only ever enrolled once. For an employer, the
+  // email is the company's own or a named person's (contactId), so templates can greet them.
   outreachEnrollments: defineTable({
     sequenceId: v.id("outreachSequences"),
     leadId: v.id("outreachLeads"),
+    contactId: v.optional(v.id("outreachContacts")),
     email: v.string(),
     status: v.union(
       v.literal("active"),

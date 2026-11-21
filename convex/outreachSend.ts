@@ -10,13 +10,26 @@
  *    sequence and marks it Replied; "stop"/"unsubscribe" marks Do not contact; a bounce marks the
  *    clinic Bounced. Out-of-office answers change nothing. Other mail in the inbox isn't stored.
  *  - Sending is off until an admin switches it on, and a Zoho login failure switches it off again.
+ *  - Employer outreach (employerOutreach.ts) uses this same schedule, inbox and daily cap: its
+ *    sequences have audience "employer" and its enrollments can be for a named person at the
+ *    company (contactId). The clinic screens below only show clinic sequences and clinics.
  */
 import { ConvexError, v } from "convex/values";
 import { makeFunctionReference } from "convex/server";
 import { internalMutation, internalQuery, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { requireAdmin } from "./helpers/partnerAccess";
-import { composeText, dailyQuota, fillTags, lagosClock, unknownTags } from "./helpers/outreachMail";
+import { EMPLOYER_TAGS, OUTREACH_TAGS, composeText, dailyQuota, fillTags, lagosClock, unknownTags } from "./helpers/outreachMail";
+import {
+  autoAdvanceStage,
+  emailDoNotContact,
+  isClinicLead,
+  isClinicSequence,
+  logActivity,
+  patchPerson,
+  stopEnrollment,
+} from "./helpers/outreachShared";
+import { STAGE_LABEL, firstNameOf, stageStopsEmails } from "../lib/employerOutreach";
 
 const sendOneRef = makeFunctionReference<"action", { enrollmentId: Id<"outreachEnrollments"> }, null>("actions/outreachMail:sendOne");
 
@@ -37,6 +50,8 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** Leads the sender leaves alone */
 const CLOSED_LEAD = new Set<Doc<"outreachLeads">["status"]>(["do_not_contact", "not_interested", "on_rehabify", "replied", "bounced"]);
+/** For a named person at a company: the company's own address bouncing doesn't stop them */
+const CLOSED_FOR_PERSON = new Set<Doc<"outreachLeads">["status"]>(["do_not_contact", "not_interested", "on_rehabify", "replied"]);
 /** Leads that can be added to a sequence */
 const ENROLLABLE = ["ready", "exported"] as const;
 
@@ -75,13 +90,9 @@ async function sentOn(ctx: Ctx, day: string) {
   return (await ctx.db.query("outreachMessages").withIndex("by_day", (q) => q.eq("day", day)).take(1000)).length;
 }
 
+/** A lead or a person marked do not contact with this address (helpers/outreachShared.ts). */
 async function emailBlocked(ctx: Ctx, email: string) {
-  const rows = await ctx.db.query("outreachLeads").withIndex("by_email", (q) => q.eq("email", email)).take(20);
-  return rows.some((r) => r.status === "do_not_contact");
-}
-
-async function stopEnrollment(ctx: MutationCtx, e: Doc<"outreachEnrollments">, status: Doc<"outreachEnrollments">["status"], reason?: string) {
-  await ctx.db.patch(e._id, { status, nextSendAt: undefined, claimedAt: undefined, stoppedReason: reason, updatedAt: Date.now() });
+  return await emailDoNotContact(ctx, email);
 }
 
 // ─── The schedule ────────────────────────────────────────────────────────────
@@ -115,11 +126,24 @@ export const tick = internalMutation({
       const seq = sequences.get(e.sequenceId);
       if (!seq || seq.status !== "active") continue;
       const lead = await ctx.db.get(e.leadId);
-      if (!lead || CLOSED_LEAD.has(lead.status)) {
-        await stopEnrollment(ctx, e, "stopped", lead ? `The clinic was marked ${lead.status.replace(/_/g, " ")}` : "The clinic was removed");
+      const closed = e.contactId ? CLOSED_FOR_PERSON : CLOSED_LEAD;
+      if (!lead || closed.has(lead.status)) {
+        const what = lead?.kind === "employer" ? "company" : "clinic";
+        await stopEnrollment(ctx, e, "stopped", lead ? `The ${what} was marked ${lead.status.replace(/_/g, " ")}` : "The clinic was removed");
         continue;
       }
-      if (lead.email !== e.email) {
+      // Employers: once they answer, or the team has taken the deal on (or lost it), no more emails
+      if (lead.kind === "employer" && lead.stage && stageStopsEmails(lead.stage)) {
+        await stopEnrollment(ctx, e, "stopped", `The company is at ${STAGE_LABEL[lead.stage]}`);
+        continue;
+      }
+      if (e.contactId) {
+        const person = await ctx.db.get(e.contactId);
+        if (!person || person.email !== e.email) {
+          await stopEnrollment(ctx, e, "stopped", "The person's email was changed or removed");
+          continue;
+        }
+      } else if (lead.email !== e.email) {
         await stopEnrollment(ctx, e, "stopped", "The clinic's email was changed");
         continue;
       }
@@ -148,7 +172,9 @@ export const loadForSend = internalQuery({
     const step = seq.steps[e.nextStep];
     if (!step) return { ok: false as const, reason: "no step" };
     const s = withDefaults(await settingsRow(ctx));
-    const values = { clinicName: lead.name, city: lead.city };
+    // Employers: {company}, and {first_name} when the email is to a named person ("there" if not)
+    const person = e.contactId ? await ctx.db.get(e.contactId) : null;
+    const values = { clinicName: lead.name, city: lead.city, company: lead.name, firstName: firstNameOf(person?.name) };
     const firstSubject = e.firstSubject ?? fillTags(seq.steps[0]?.subject ?? "", values);
     const threaded = e.nextStep > 0 && !step.subject.trim() && Boolean(e.firstMessageId);
     const previous = threaded ? await ctx.db.query("outreachMessages").withIndex("by_enrollment", (q) => q.eq("enrollmentId", e._id)).take(10) : [];
@@ -197,7 +223,9 @@ export const recordSend = internalMutation({
     const lead = await ctx.db.get(e.leadId);
     if (args.outcome === "bounced") {
       await stopEnrollment(ctx, e, "bounced", error);
-      if (lead && !CLOSED_LEAD.has(lead.status)) await ctx.db.patch(lead._id, { status: "bounced", note: lead.note ?? error, updatedAt: now });
+      // A named person's address bouncing says nothing about the company's own address
+      if (e.contactId) await patchPerson(ctx, e.contactId, { bouncedAt: now, updatedAt: now });
+      else if (lead && !CLOSED_LEAD.has(lead.status)) await ctx.db.patch(lead._id, { status: "bounced", note: lead.note ?? error, updatedAt: now });
       return null;
     }
     // Sent
@@ -226,6 +254,10 @@ export const recordSend = internalMutation({
     });
     if (lead && (lead.status === "ready" || lead.status === "exported" || lead.status === "new")) {
       await ctx.db.patch(lead._id, { status: "contacted", contactedAt: now, updatedAt: now });
+    }
+    if (lead?.kind === "employer") {
+      await logActivity(ctx, lead._id, "email_sent", `Email ${e.nextStep + 1} sent to ${e.email}${args.subject ? `: ${args.subject}` : ""}`);
+      await autoAdvanceStage(ctx, lead._id, "contacted", "first email sent");
     }
     return null;
   },
@@ -293,6 +325,7 @@ export const processInbox = internalMutation({
       const e = await enrollmentFor(ctx, item.messageIds, emails);
       if (!e) continue; // Not about our outreach: left alone and not stored
       matched++;
+      const employer = (await ctx.db.get(e.leadId))?.kind === "employer";
       await ctx.db.insert("outreachInbox", {
         kind: item.kind,
         intent: item.intent,
@@ -307,17 +340,28 @@ export const processInbox = internalMutation({
       if (item.kind === "auto_reply") continue;
       if (item.kind === "bounce") {
         if (e.status === "active" || e.status === "finished") await stopEnrollment(ctx, e, "bounced", "The email bounced");
-        await markLead(ctx, e.leadId, "bounced");
+        // A named person's address: only that person is marked, not the company
+        if (e.contactId) await patchPerson(ctx, e.contactId, { bouncedAt: now, updatedAt: now });
+        else await markLead(ctx, e.leadId, "bounced");
         continue;
       }
       if (item.intent === "stop") {
         await stopEnrollment(ctx, e, "unsubscribed", "Asked not to be emailed");
-        await markLead(ctx, e.leadId, "do_not_contact");
+        // A person who says stop is marked do not contact (it follows their address); the company's
+        // own address saying stop marks the company, as for clinics
+        if (e.contactId) await patchPerson(ctx, e.contactId, { doNotContact: true, updatedAt: now });
+        else await markLead(ctx, e.leadId, "do_not_contact");
+        if (employer) await logActivity(ctx, e.leadId, "reply", `${e.email} asked not to be emailed`);
       } else {
         if (e.status === "active" || e.status === "finished") {
           await ctx.db.patch(e._id, { status: "replied", repliedAt: now, nextSendAt: undefined, claimedAt: undefined, updatedAt: now });
         }
         await markLead(ctx, e.leadId, item.intent === "not_interested" ? "not_interested" : "replied");
+        if (employer) {
+          const said = item.intent === "not_interested" ? "Not interested" : "Replied";
+          await logActivity(ctx, e.leadId, "reply", `${said} (${item.fromEmail ?? e.email}): ${item.snippet.slice(0, 200)}`);
+          await autoAdvanceStage(ctx, e.leadId, "replied", "reply to our email");
+        }
       }
     }
     await patchSettings(ctx, { imapUidValidity: args.uidValidity, imapLastUid: args.lastUid, lastInboxCheckAt: now, lastInboxError: undefined });
@@ -335,6 +379,30 @@ export const recordInboxError = internalMutation({
 
 // ─── Admin ───────────────────────────────────────────────────────────────────
 
+/**
+ * The shared sender as Employer outreach shows it: on or off (switched on the Clinic outreach
+ * page) and today's emails against the one daily cap both lists share.
+ */
+export async function senderSummary(ctx: QueryCtx) {
+  const now = Date.now();
+  const row = await settingsRow(ctx);
+  const s = withDefaults(row);
+  const clock = lagosClock(now);
+  return {
+    configured: Boolean(process.env.OUTREACH_SMTP_USER && process.env.OUTREACH_SMTP_PASS),
+    address: process.env.OUTREACH_SMTP_USER ?? null,
+    sendingOn: s.sendingOn,
+    fromName: s.fromName,
+    sentToday: await sentOn(ctx, clock.day),
+    quota: dailyQuota(s, clock.day),
+    windowOpen: windowOpen(now),
+    weekday: clock.weekday !== 0 && clock.weekday !== 6,
+    day: clock.day,
+    lastInboxCheckAt: row?.lastInboxCheckAt ?? null,
+    lastSendError: row?.lastSendError ?? null,
+  };
+}
+
 const stepValidator = v.object({ subject: v.string(), body: v.string(), waitDays: v.number() });
 
 /** Everything the Send emails tab shows. */
@@ -346,14 +414,19 @@ export const adminSenderOverview = query({
     const row = await settingsRow(ctx);
     const s = withDefaults(row);
     const clock = lagosClock(now);
-    const enrollments = await ctx.db.query("outreachEnrollments").order("desc").take(3000);
+    // Clinics only: employer sequences, their enrollments and replies are on Employer outreach
+    const allSequences = await ctx.db.query("outreachSequences").order("desc").take(200);
+    const employerSequences = new Set(allSequences.filter((q) => !isClinicSequence(q)).map((q) => q._id));
+    const allEnrollments = await ctx.db.query("outreachEnrollments").order("desc").take(3000);
+    const enrollments = allEnrollments.filter((e) => !employerSequences.has(e.sequenceId));
     const leadIds = new Set(enrollments.slice(0, 300).map((e) => e.leadId));
-    const inbox = await ctx.db.query("outreachInbox").order("desc").take(30);
-    for (const i of inbox) leadIds.add(i.leadId);
+    const inboxAll = await ctx.db.query("outreachInbox").order("desc").take(100);
+    for (const i of inboxAll) leadIds.add(i.leadId);
     const leads = new Map<string, Doc<"outreachLeads"> | null>();
     for (const id of leadIds) leads.set(id, await ctx.db.get(id));
+    const inbox = inboxAll.filter((i) => leads.get(i.leadId)?.kind !== "employer").slice(0, 30);
 
-    const sequences = await ctx.db.query("outreachSequences").order("desc").take(20);
+    const sequences = allSequences.filter(isClinicSequence).slice(0, 20);
     const stats = (list: Doc<"outreachEnrollments">[]) => {
       const out = { total: list.length, active: 0, finished: 0, replied: 0, bounced: 0, unsubscribed: 0, stopped: 0, sent: 0, contacted: 0 };
       for (const e of list) {
@@ -364,11 +437,12 @@ export const adminSenderOverview = query({
       return out;
     };
 
-    const enrolledEmails = new Set(enrollments.map((e) => e.email));
+    // An address is only ever enrolled once, whichever list enrolled it
+    const enrolledEmails = new Set(allEnrollments.map((e) => e.email));
     const eligibleByCity = new Map<string, number>();
     for (const status of ENROLLABLE) {
       for (const lead of await ctx.db.query("outreachLeads").withIndex("by_status", (q) => q.eq("status", status)).take(2000)) {
-        if (!lead.email || enrolledEmails.has(lead.email)) continue;
+        if (!isClinicLead(lead) || !lead.email || enrolledEmails.has(lead.email)) continue;
         eligibleByCity.set(lead.city, (eligibleByCity.get(lead.city) ?? 0) + 1);
       }
     }
@@ -475,31 +549,64 @@ export const adminSaveSequence = mutation({
   },
   handler: async (ctx, args) => {
     const { user } = await requireAdmin(ctx, "outreachSend:adminSaveSequence");
-    const name = args.name.trim().slice(0, 80);
-    if (!name) throw new ConvexError("Give the sequence a name.");
-    if (args.steps.length === 0 || args.steps.length > 5) throw new ConvexError("A sequence has one to five emails.");
-    const steps = args.steps.map((step, i) => ({
-      subject: step.subject.trim().slice(0, 150),
-      body: step.body.trim().slice(0, 5000),
-      waitDays: i === 0 ? 0 : clampInt(step.waitDays, 1, 30),
-    }));
-    if (!steps[0].subject) throw new ConvexError("The first email needs a subject.");
-    steps.forEach((step, i) => {
-      if (!step.body) throw new ConvexError(`Email ${i + 1} has no words yet.`);
-      const unknown = unknownTags(`${step.subject} ${step.body}`);
-      if (unknown.length) throw new ConvexError(`Email ${i + 1} uses ${unknown.join(", ")}. Only {clinic_name} and {city} can be filled in.`);
-    });
-    const now = Date.now();
-    if (args.sequenceId) {
-      const seq = await ctx.db.get(args.sequenceId);
-      if (!seq) throw new ConvexError("That sequence isn't there any more.");
-      await ctx.db.patch(seq._id, { name, steps, status: args.status, updatedAt: now });
-      // Clinics already past the last step are done; a step added later doesn't reopen them
-      return seq._id;
-    }
-    return await ctx.db.insert("outreachSequences", { name, steps, status: args.status, createdBy: user._id, createdAt: now, updatedAt: now });
+    return await saveSequence(ctx, user._id, args, "clinic");
   },
 });
+
+/**
+ * Saves a clinic or an employer sequence (employerOutreach.ts). Each list only edits its own, and
+ * fills in its own tags: {clinic_name} and {city}, or {first_name}, {company} and {city}.
+ */
+export async function saveSequence(
+  ctx: MutationCtx,
+  userId: Id<"users">,
+  args: {
+    sequenceId?: Id<"outreachSequences">;
+    name: string;
+    steps: { subject: string; body: string; waitDays: number }[];
+    status: Doc<"outreachSequences">["status"];
+  },
+  audience: "clinic" | "employer"
+): Promise<Id<"outreachSequences">> {
+  const employer = audience === "employer";
+  const name = args.name.trim().slice(0, 80);
+  if (!name) throw new ConvexError("Give the sequence a name.");
+  if (args.steps.length === 0 || args.steps.length > 5) throw new ConvexError("A sequence has one to five emails.");
+  const steps = args.steps.map((step, i) => ({
+    subject: step.subject.trim().slice(0, 150),
+    body: step.body.trim().slice(0, 5000),
+    waitDays: i === 0 ? 0 : clampInt(step.waitDays, 1, 30),
+  }));
+  if (!steps[0].subject) throw new ConvexError("The first email needs a subject.");
+  steps.forEach((step, i) => {
+    if (!step.body) throw new ConvexError(`Email ${i + 1} has no words yet.`);
+    const unknown = unknownTags(`${step.subject} ${step.body}`, employer ? EMPLOYER_TAGS : OUTREACH_TAGS);
+    if (unknown.length) {
+      const allowed = employer ? "{first_name}, {company} and {city}" : "{clinic_name} and {city}";
+      throw new ConvexError(`Email ${i + 1} uses ${unknown.join(", ")}. Only ${allowed} can be filled in.`);
+    }
+  });
+  const now = Date.now();
+  if (args.sequenceId) {
+    const seq = await ctx.db.get(args.sequenceId);
+    if (!seq) throw new ConvexError("That sequence isn't there any more.");
+    if ((seq.audience === "employer") !== employer) {
+      throw new ConvexError(employer ? "That's a clinic sequence: edit it in Clinic outreach." : "That's an employer sequence: edit it in Employer outreach.");
+    }
+    await ctx.db.patch(seq._id, { name, steps, status: args.status, updatedAt: now });
+    // Clinics already past the last step are done; a step added later doesn't reopen them
+    return seq._id;
+  }
+  return await ctx.db.insert("outreachSequences", {
+    ...(employer ? { audience: "employer" as const } : {}),
+    name,
+    steps,
+    status: args.status,
+    createdBy: userId,
+    createdAt: now,
+    updatedAt: now,
+  });
+}
 
 /** Adds clinics to a sequence: chosen ones, or every clinic ready to email (in a city). */
 export const adminEnroll = mutation({
@@ -513,16 +620,18 @@ export const adminEnroll = mutation({
     const { user } = await requireAdmin(ctx, "outreachSend:adminEnroll");
     const seq = await ctx.db.get(args.sequenceId);
     if (!seq) throw new ConvexError("That sequence isn't there any more.");
+    if (!isClinicSequence(seq)) throw new ConvexError("That's an employer sequence: add companies in Employer outreach.");
     const limit = clampInt(args.limit ?? 500, 1, 1000);
     let candidates: Doc<"outreachLeads">[] = [];
     if (args.leadIds) {
       for (const id of args.leadIds.slice(0, limit)) {
         const lead = await ctx.db.get(id);
-        if (lead) candidates.push(lead);
+        if (lead && isClinicLead(lead)) candidates.push(lead);
       }
     } else {
       for (const status of ENROLLABLE) {
-        candidates.push(...(await ctx.db.query("outreachLeads").withIndex("by_status", (q) => q.eq("status", status)).take(2000)));
+        const rows = await ctx.db.query("outreachLeads").withIndex("by_status", (q) => q.eq("status", status)).take(2000);
+        candidates.push(...rows.filter(isClinicLead));
       }
       if (args.city) candidates = candidates.filter((l) => l.city === args.city);
       candidates.sort((a, b) => a.createdAt - b.createdAt);
@@ -575,7 +684,9 @@ export const testPayload = internalQuery({
     if (!seq) throw new ConvexError("That sequence isn't there any more.");
     const lead = args.leadId ? await ctx.db.get(args.leadId) : null;
     const s = withDefaults(await settingsRow(ctx));
-    const values = { clinicName: lead?.name ?? "Your Clinic Name", city: lead?.city ?? "Lagos" };
+    // Employer sequences greet a sample person; clinic ones never use {first_name} or {company}
+    const sample = seq.audience === "employer" ? "Your Company" : "Your Clinic Name";
+    const values = { clinicName: lead?.name ?? sample, city: lead?.city ?? "Lagos", company: lead?.name ?? sample, firstName: "Ada" };
     const first = fillTags(seq.steps[0]?.subject ?? "", values);
     return {
       fromName: s.fromName,

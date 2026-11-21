@@ -1,7 +1,15 @@
 import { insertNotification } from "./helpers/pushNotify";
 import { mutation } from "./_generated/server";
 import { v } from "convex/values";
+import { makeFunctionReference } from "convex/server";
 import { internal } from "./_generated/api";
+import type { Id } from "./_generated/dataModel";
+
+// A pilot request also lands in Admin › Employer outreach as a company at "Replied" (by name, as
+// the generated api type is at TypeScript's depth limit)
+const pilotToPipelineRef = makeFunctionReference<"mutation", { inquiryId: Id<"partnershipInquiries"> }, null>(
+  "employerOutreach:pilotToPipeline"
+);
 
 export const submitPartnershipInquiry = mutation({
   args: {
@@ -166,6 +174,9 @@ export const requestEmployerPilot = mutation({
       status: "new",
       createdAt: now,
     });
+
+    // Scheduled, so a problem in the pipeline never loses the request itself
+    await ctx.scheduler.runAfter(0, pilotToPipelineRef, { inquiryId });
 
     const link = "/dashboard/admin/partnerships?tab=inquiries";
     const body = `${organization} (${workerCount.toLocaleString("en-NG")} workers) asked for a Rehabify for Work pilot.`;

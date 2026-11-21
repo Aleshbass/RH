@@ -10,6 +10,7 @@ import { getViewer } from "./helpers/partnerAccess";
 import { adminAccessOf, type AdminAccess } from "./helpers/adminAccess";
 import { buildJourneys, sessionTotals } from "./helpers/journeys";
 import { openCareSignalCount } from "./careQueue";
+import { isClinicSequence } from "./helpers/outreachShared";
 import { ADMIN_WIDGETS, widgetAllowed, type AdminWidgetKey } from "../lib/adminWidgets";
 
 const DAY_MS = 86_400_000;
@@ -96,9 +97,17 @@ export const summary = query({
     if (can("outreach")) {
       const settings = await ctx.db.query("outreachSettings").first();
       const sentToday = await count(ctx.db.query("outreachMessages").withIndex("by_day", (q) => q.eq("day", lagosDay(now))).take(1000));
+      // Clinic outreach only: employer outreach shares the inbox and the sender (emails sent today
+      // is the shared daily count)
       const inbox = await ctx.db.query("outreachInbox").order("desc").take(200);
-      const replies = inbox.filter((m) => m.kind === "reply" && m.receivedAt >= weekAgo);
-      const active = await count(ctx.db.query("outreachEnrollments").withIndex("by_status_next", (q) => q.eq("status", "active")).take(2000));
+      const recent = inbox.filter((m) => m.kind === "reply" && m.receivedAt >= weekAgo);
+      const replies: typeof recent = [];
+      for (const m of recent) if ((await ctx.db.get(m.leadId))?.kind !== "employer") replies.push(m);
+      const employerSequences = new Set(
+        (await ctx.db.query("outreachSequences").take(200)).filter((q) => !isClinicSequence(q)).map((q) => q._id)
+      );
+      const activeRows = await ctx.db.query("outreachEnrollments").withIndex("by_status_next", (q) => q.eq("status", "active")).take(2000);
+      const active = activeRows.filter((e) => !employerSequences.has(e.sequenceId)).length;
       out.outreach = {
         sendingOn: Boolean(settings?.sendingOn),
         sentToday,

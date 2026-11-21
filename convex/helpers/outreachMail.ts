@@ -42,15 +42,21 @@ export function dailyQuota(ramp: Ramp, today: string): number {
 // ─── Templates ───────────────────────────────────────────────────────────────
 
 export const OUTREACH_TAGS = ["{clinic_name}", "{city}"] as const;
+/** Employer sequences (employerOutreach.ts): the person's first name ("there" without one) and the company */
+export const EMPLOYER_TAGS = ["{first_name}", "{company}", "{city}"] as const;
 
 /** Tags in the text that we can't fill (a typo like {clinic} would go out as-is). */
-export function unknownTags(text: string): string[] {
+export function unknownTags(text: string, allowed: readonly string[] = OUTREACH_TAGS): string[] {
   const found = text.match(/\{[a-z_ ]+\}/gi) ?? [];
-  return [...new Set(found.filter((tag) => !(OUTREACH_TAGS as readonly string[]).includes(tag.toLowerCase())))];
+  return [...new Set(found.filter((tag) => !allowed.includes(tag.toLowerCase())))];
 }
 
-export function fillTags(text: string, values: { clinicName: string; city: string }): string {
-  return text.replace(/\{clinic_name\}/gi, values.clinicName).replace(/\{city\}/gi, values.city);
+export function fillTags(text: string, values: { clinicName: string; city: string; company?: string; firstName?: string }): string {
+  return text
+    .replace(/\{clinic_name\}/gi, values.clinicName)
+    .replace(/\{city\}/gi, values.city)
+    .replace(/\{company\}/gi, () => values.company ?? values.clinicName)
+    .replace(/\{first_name\}/gi, () => values.firstName?.trim() || "there");
 }
 
 /** The body as sent: the step's words, the signature, then the reply-"stop" line. */
