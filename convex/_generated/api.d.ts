@@ -200,6 +200,7 @@ import type * as helpers_partnerEvents from "../helpers/partnerEvents.js";
 import type * as helpers_partnerLedger from "../helpers/partnerLedger.js";
 import type * as helpers_partnerReferralCore from "../helpers/partnerReferralCore.js";
 import type * as helpers_partnerShared from "../helpers/partnerShared.js";
+import type * as helpers_patientDocuments from "../helpers/patientDocuments.js";
 import type * as helpers_patientFacts from "../helpers/patientFacts.js";
 import type * as helpers_patientJoinStatus from "../helpers/patientJoinStatus.js";
 import type * as helpers_patientPlans from "../helpers/patientPlans.js";
@@ -570,6 +571,7 @@ declare const fullApi: ApiFromModules<{
   "helpers/partnerLedger": typeof helpers_partnerLedger;
   "helpers/partnerReferralCore": typeof helpers_partnerReferralCore;
   "helpers/partnerShared": typeof helpers_partnerShared;
+  "helpers/patientDocuments": typeof helpers_patientDocuments;
   "helpers/patientFacts": typeof helpers_patientFacts;
   "helpers/patientJoinStatus": typeof helpers_patientJoinStatus;
   "helpers/patientPlans": typeof helpers_patientPlans;
