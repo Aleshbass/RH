@@ -30,6 +30,7 @@ import { HowPayoutsWork } from '@/components/clinic/FeeBreakdown'
 import { PageShell, Panel, StatusBadge, primaryButtonClass } from '@/components/clinic/ui'
 import { RehabifyId } from '@/components/shared/RehabifyId'
 import { NotificationSettings } from '@/components/pwa/NotificationSettings'
+import { OfflineUseSettings, WhenOfflineAvailable } from '@/components/offline/OfflineUseSettings'
 import { MyBirthdayFields } from '@/components/moments/MyBirthdayFields'
 import { playSound } from '@/lib/sounds'
 import { ClockSettingsPanel } from '@/components/clinic/attendance/ClockSettingsPanel'
@@ -417,6 +418,15 @@ export default function ClinicSettingsPage() {
           <NotificationSettings />
         </div>
       </Panel>
+
+      {/* Offline use on this phone (offline pilot accounts only) */}
+      <WhenOfflineAvailable>
+        <Panel title="Without internet" description="Use Rehabify on this phone when the network drops.">
+          <div className="p-4 sm:p-5">
+            <OfflineUseSettings />
+          </div>
+        </Panel>
+      </WhenOfflineAvailable>
     </PageShell>
   )
 }

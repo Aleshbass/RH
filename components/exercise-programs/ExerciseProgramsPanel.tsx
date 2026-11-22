@@ -27,6 +27,7 @@ import type { Id } from '@/convex/_generated/dataModel'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { EmptyState, Panel, StatusBadge, primaryButtonClass, softButtonClass } from '@/components/physio/ui'
+import { PROGRAM_CHANGE_KINDS, useOutbox, type OutboxItem } from '@/lib/offline/outbox'
 import { posterUrl } from '@/convex/exerciseLibraryCatalog'
 import { CameraSessions } from '@/components/guided-session/CameraSessions'
 import { useViewerGrant } from '@/lib/exercise3d/useViewerGrant'
@@ -128,6 +129,7 @@ function ProgramCard({
   onShare,
   onEdit,
   onAdd,
+  waiting,
 }: {
   program: CareTeamProgram
   /** Camera-coach sessions of this programme, newest first */
@@ -137,6 +139,8 @@ function ProgramCard({
   onShare: () => void
   onEdit: () => void
   onAdd: () => void
+  /** A change to this programme kept on this phone and not sent yet (it isn't changed again until it goes) */
+  waiting?: OutboxItem
 }) {
   const archive = useMutation(api.exercisePrograms.archiveProgram)
   const archived = program.status === 'archived'
@@ -157,6 +161,7 @@ function ProgramCard({
           <p className="font-semibold text-rh-ink dark:text-white">
             {program.title} {archived && <StatusBadge className="ml-1">Archived</StatusBadge>}
           </p>
+          {waiting && <WaitingBadge change={waiting} what="Your changes" />}
           <p className="text-xs text-neutral-500 dark:text-neutral-400">
             {itemsSummary(program.items)} · sent {format(program.createdAt, 'd MMM yyyy')} by {program.senderName}
             {edited && ` · updated ${formatDistanceToNow(program.updatedAt, { addSuffix: true })}`}
@@ -169,8 +174,8 @@ function ProgramCard({
           <Button size="sm" variant="outline" className="rounded-xl" onClick={onPreview}><Eye className="mr-1.5 h-4 w-4" /> Preview</Button>
           {canWrite && !archived && (
             <>
-              <Button size="sm" variant="outline" className="rounded-xl" onClick={onAdd}><ListPlus className="mr-1.5 h-4 w-4" /> Add exercises</Button>
-              <Button size="sm" variant="outline" className="rounded-xl" onClick={onEdit}><Pencil className="mr-1.5 h-4 w-4" /> Edit</Button>
+              <Button size="sm" variant="outline" className="rounded-xl" onClick={onAdd} disabled={Boolean(waiting)}><ListPlus className="mr-1.5 h-4 w-4" /> Add exercises</Button>
+              <Button size="sm" variant="outline" className="rounded-xl" onClick={onEdit} disabled={Boolean(waiting)}><Pencil className="mr-1.5 h-4 w-4" /> Edit</Button>
               <Button size="sm" className="rounded-xl bg-[#25D366] text-white hover:bg-[#1ebe5b]" onClick={onShare}>
                 <MessageCircle className="mr-1.5 h-4 w-4" /> WhatsApp
               </Button>
@@ -238,6 +243,34 @@ function ProgramCard({
   )
 }
 
+/** A change kept on this phone: waiting for internet, or (amber/rose) needing a look in the list at the bottom. */
+function WaitingBadge({ change, what }: { change: OutboxItem; what: string }) {
+  const stuck = change.status !== 'pending'
+  return (
+    <p className="mt-1">
+      <StatusBadge tone={stuck ? 'rose' : 'amber'}>
+        {stuck ? `${what} couldn’t be sent: tap the bar at the bottom` : `${what} are saved on this phone, waiting to send`}
+      </StatusBadge>
+    </p>
+  )
+}
+
+/** A new programme made offline, until it's sent (then it appears as a normal programme). */
+function WaitingProgramCard({ change }: { change: OutboxItem }) {
+  const title = typeof change.meta.title === 'string' ? change.meta.title : 'New programme'
+  const names = Array.isArray(change.meta.itemNames) ? change.meta.itemNames.filter((n): n is string => typeof n === 'string') : []
+  return (
+    <li className="space-y-2 px-5 py-4">
+      <p className="font-semibold text-rh-ink dark:text-white">{title}</p>
+      <p className="text-xs text-neutral-500 dark:text-neutral-400">
+        {names.length} {names.length === 1 ? 'item' : 'items'} · made {format(change.createdAt, 'd MMM, h:mm a')}
+      </p>
+      <WaitingBadge change={change} what="This programme" />
+      {names.length > 0 && <p className="text-xs text-neutral-600 dark:text-neutral-300">{names.join(' · ')}</p>}
+    </li>
+  )
+}
+
 type DialogState = { mode: ProgramDialogMode; program: CareTeamProgram | null }
 
 /**
@@ -267,6 +300,11 @@ export function ExerciseProgramsPanel({
   const [preview, setPreview] = useState<CareTeamProgram | null>(null)
   const [shareFor, setShareFor] = useState<Id<'exercisePrograms'> | null>(null)
   const [showArchived, setShowArchived] = useState(false)
+
+  // Programmes made, and changes to programmes made, on this phone offline and not sent yet
+  const outbox = useOutbox()
+  const waitingNew = outbox.filter((change) => change.kind === 'programCreate' && change.meta.patientId === patientId)
+  const waitingFor = (programId: string) => outbox.find((change) => PROGRAM_CHANGE_KINDS.has(change.kind) && change.meta.programId === programId)
 
   const all = programs ?? []
   const active = all.filter((p) => p.status === 'active')
@@ -300,7 +338,7 @@ export function ExerciseProgramsPanel({
           <div className="flex justify-center py-10"><Loader2 className="h-5 w-5 animate-spin text-rh-ink" /></div>
         ) : programs === null ? (
           <p className="px-5 pb-5 text-sm text-neutral-500">You can&apos;t see this patient&apos;s programmes.</p>
-        ) : visible.length === 0 ? (
+        ) : visible.length === 0 && waitingNew.length === 0 ? (
           <EmptyState
             icon={<Dumbbell />}
             title={archivedCount > 0 ? 'No active programmes' : 'No home programme yet'}
@@ -315,6 +353,9 @@ export function ExerciseProgramsPanel({
           />
         ) : (
           <ul className="divide-y divide-black/[0.04] dark:divide-white/[0.05]">
+            {waitingNew.map((change) => (
+              <WaitingProgramCard key={change.id} change={change} />
+            ))}
             {visible.map((program) => (
               <ProgramCard
                 key={program._id}
@@ -325,6 +366,7 @@ export function ExerciseProgramsPanel({
                 onShare={() => setShareFor(program._id)}
                 onEdit={() => openDialog('edit', program)}
                 onAdd={() => openDialog('send', program)}
+                waiting={waitingFor(program._id)}
               />
             ))}
           </ul>

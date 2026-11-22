@@ -62,6 +62,11 @@ export type OfflineWrites = {
   ticks: { kind: 'item' | 'finish'; itemIndex: number | null; doneCount: number | null; total: number | null; createdAt: number }[];
   /** The test physio's latest "finished the programme" alert */
   finishedAlert: { title: string | null; body: string | null } | null;
+  /** Phase 4: the test patient's care plans, programmes, and scores and questionnaires sent from a phone */
+  plans: { version: number; title: string; status: string; lastClientId: string | null }[];
+  programs: { _id: string; title: string; items: string[]; keys: (string | null)[]; sets: (number | null)[]; lastClientId: string | null; updatedAt: number }[];
+  outcomes: { clientId: string | null; pain: number | null; createdAt: number }[];
+  questionnaires: { clientId: string | null; instrument: string; completedAt: number | null }[];
 };
 
 /** What the server has saved from phones' ids (to check each change arrived exactly once). */

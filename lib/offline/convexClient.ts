@@ -7,11 +7,23 @@
  * - while there is no live answer (offline, or still loading) the saved one is shown, so pages open
  *   instantly and work without internet. Live answers always win once they arrive.
  * Every other query behaves exactly as before. With offline mode off, nothing changes at all.
+ *
+ * For everyone (offline mode or not), saves and actions never wait forever: without a connection
+ * they're refused on the phone at once (lib/offline/connection.ts), before anything is sent.
  */
-import { ConvexReactClient, type Watch, type WatchQueryOptions } from 'convex/react';
-import { getFunctionName, type ArgsAndOptions, type FunctionReference, type FunctionReturnType } from 'convex/server';
+import { ConvexReactClient, type MutationOptions, type Watch, type WatchQueryOptions } from 'convex/react';
+import {
+  getFunctionName,
+  makeFunctionReference,
+  type ArgsAndOptions,
+  type FunctionArgs,
+  type FunctionReference,
+  type FunctionReturnType,
+  type OptionalRestArgs,
+} from 'convex/server';
 import type { Value } from 'convex/values';
 import { offlineModeOn } from '@/lib/pwa';
+import { OfflineSaveError, phoneOffline } from './connection';
 import { offlineRuleFor } from './offlineQueries';
 import { keepAnswer, onSavedAnswersChange, savedAnswer } from './savedAnswers';
 import { kickSync } from './sync';
@@ -32,6 +44,14 @@ function subjectOf(token: string | null | undefined): string | null {
 }
 
 type ActiveQuery = { name: string; keyArgs: Record<string, unknown>; read: () => unknown };
+
+/**
+ * How long a save waits for the connection to come back (the phone says it's online, but the
+ * line to the server is down) before it's refused. Longer before the first connection, which can
+ * take a while on a slow network.
+ */
+const RECONNECT_WAIT_MS = 8_000;
+const FIRST_CONNECT_WAIT_MS = 20_000;
 
 export class OfflineConvexClient extends ConvexReactClient {
   /** The person the server has accepted, or null (signed out, or not confirmed yet) */
@@ -96,6 +116,67 @@ export class OfflineConvexClient extends ConvexReactClient {
     this.signedInAs = null;
     super.clearAuth();
     this.setAuthState('signedOut');
+  }
+
+  /**
+   * Resolves once the line to the server is up. Refuses at once when the phone has no network,
+   * or after a short wait when the line doesn't come back. Nothing has been sent when it refuses.
+   */
+  private async whenConnected(): Promise<void> {
+    if (phoneOffline()) throw new OfflineSaveError();
+    if (this.connectionState().isWebSocketConnected) return;
+    const deadline = Date.now() + (this.connectionState().hasEverConnected ? RECONNECT_WAIT_MS : FIRST_CONNECT_WAIT_MS);
+    while (!this.connectionState().isWebSocketConnected) {
+      if (phoneOffline() || Date.now() >= deadline) throw new OfflineSaveError();
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+  }
+
+  override async mutation<Mutation extends FunctionReference<'mutation'>>(
+    mutation: Mutation,
+    ...argsAndOptions: ArgsAndOptions<Mutation, MutationOptions<FunctionArgs<Mutation>>>
+  ): Promise<FunctionReturnType<Mutation>> {
+    await this.whenConnected();
+    return super.mutation(mutation, ...argsAndOptions);
+  }
+
+  override async action<Action extends FunctionReference<'action'>>(
+    action: Action,
+    ...args: OptionalRestArgs<Action>
+  ): Promise<FunctionReturnType<Action>> {
+    await this.whenConnected();
+    return super.action(action, ...args);
+  }
+
+  /**
+   * One answer straight from the server (never a saved one), for keeping data offline ahead of
+   * time (lib/offline/caseload.ts). Refuses after `timeoutMs` without an answer.
+   */
+  async liveQuery(name: string, args: Record<string, Value>, timeoutMs = 20_000): Promise<unknown> {
+    if (phoneOffline()) throw new OfflineSaveError();
+    const watch = super.watchQuery(makeFunctionReference<'query', Record<string, Value>, unknown>(name), args);
+    const now = watch.localQueryResult();
+    if (now !== undefined) return now;
+    return new Promise((resolve, reject) => {
+      let stop: () => void = () => undefined;
+      const timer = setTimeout(() => {
+        stop();
+        reject(new Error('No answer from the server in time'));
+      }, timeoutMs);
+      stop = watch.onUpdate(() => {
+        try {
+          const value = watch.localQueryResult();
+          if (value === undefined) return;
+          clearTimeout(timer);
+          stop();
+          resolve(value);
+        } catch (error) {
+          clearTimeout(timer);
+          stop();
+          reject(error);
+        }
+      });
+    });
   }
 
   /** The person the server has accepted right now (changes kept offline are sent only as them). */

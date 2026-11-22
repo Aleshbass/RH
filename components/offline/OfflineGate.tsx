@@ -24,6 +24,7 @@ import {
   unlockWithPin,
   useVault,
 } from '@/lib/offline/vault';
+import { onOfflineSetupRequest, takeOfflineSetupRequest } from '@/lib/offline/setupRequest';
 import { endPromptTurn, whenPromptTurn } from '@/lib/overlayTurn';
 import { cn } from '@/lib/utils';
 
@@ -202,6 +203,18 @@ function PinSetupPrompt({ userId }: { userId: string }) {
       window.clearTimeout(timer);
       cancel();
     };
+  }, [needsPin]);
+
+  // "Turn on" / "Choose a PIN" in Settings: open now (no snooze, no waiting for its turn)
+  useEffect(() => {
+    if (!needsPin) return;
+    const openNow = () => {
+      if (!takeOfflineSetupRequest()) return;
+      offered.current = true;
+      setOpen(true);
+    };
+    openNow();
+    return onOfflineSetupRequest(openNow);
   }, [needsPin]);
 
   // Closed (set up, "Not now", or no longer needed): the next waiting prompt may open

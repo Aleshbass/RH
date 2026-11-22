@@ -10,6 +10,7 @@ import { ExerciseProgramsPanel } from '@/components/exercise-programs/ExercisePr
 import { EmptyState, Panel, StatusBadge, primaryButtonClass, secondaryButtonClass } from '@/components/physio/ui'
 import { programError } from '@/components/exercise-programs/errors'
 import { useMutationUntyped, useQueryUntyped } from '@/lib/convexUntyped'
+import { useOutbox } from '@/lib/offline/outbox'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
 import { goalMeasureName, goalProgress, goalValueText, type GoalMeasure, type GoalProgress, type MeasuredNote } from '@/convex/helpers/goalMeasures'
@@ -101,6 +102,15 @@ function GoalRow({
   )
 }
 
+/** A plan change kept on this phone: waiting for internet, or needing a look in the list at the bottom. */
+function WaitingPlanNote({ stuck, what }: { stuck: boolean; what: string }) {
+  return (
+    <p className={cn('rounded-2xl px-4 py-3 text-sm', stuck ? 'bg-pt-rose-bg text-pt-rose-fg' : 'bg-pt-sunken text-pt-ink')}>
+      {stuck ? `${what} couldn’t be sent. Tap the bar at the bottom to see why.` : `${what} are saved on this phone and go out when you’re back online.`}
+    </p>
+  )
+}
+
 export function CarePlanTab({
   workspace,
   onEditPlan,
@@ -116,6 +126,10 @@ export function CarePlanTab({
     | undefined
   const plan = workspace.plan
   const isActive = workspace.episode.status === 'active'
+  // A plan change made offline and not sent yet (lib/offline/outbox.ts)
+  const outbox = useOutbox()
+  const waitingPlan = outbox.find((change) => change.kind === 'planSave' && change.meta.patientId === workspace.patient._id)
+  const waitingStuck = Boolean(waitingPlan && waitingPlan.status !== 'pending')
   // The clinic owner reading the record: the plan, goals and programmes show; only the clinician changes them
   const readOnly = useWorkspaceReadOnly()
   // Measures for goals with a measured target (clinic colleagues' notes included, as on the server)
@@ -143,7 +157,7 @@ export function CarePlanTab({
                 Save as template
               </Button>
               {isActive && (
-                <Button size="sm" className={cn(primaryButtonClass, 'h-9')} onClick={onEditPlan}>
+                <Button size="sm" className={cn(primaryButtonClass, 'h-9')} onClick={onEditPlan} disabled={Boolean(waitingPlan)}>
                   Revise plan
                 </Button>
               )}
@@ -152,6 +166,7 @@ export function CarePlanTab({
           }
         >
           <div className="space-y-5 px-5 pb-5 pt-3">
+            {waitingPlan && <WaitingPlanNote stuck={waitingStuck} what="Your changes to this plan" />}
             {plan.description && <p className="text-sm text-pt-muted">{plan.description}</p>}
             <dl className="grid grid-cols-2 gap-4 sm:grid-cols-4">
               <Fact label="Frequency">{plan.sessionFrequency || 'Not set'}</Fact>
@@ -203,10 +218,15 @@ export function CarePlanTab({
                 : 'Set out functional goals, how often you’ll see them, when to review, and any precautions. Start blank or from one of your templates. Your patient sees it in their app.'
             }
             action={
-              isActive && !readOnly && (
-                <Button className={primaryButtonClass} onClick={onEditPlan}>
-                  Create care plan
-                </Button>
+              waitingPlan ? (
+                <WaitingPlanNote stuck={waitingStuck} what="Your new care plan" />
+              ) : (
+                isActive &&
+                !readOnly && (
+                  <Button className={primaryButtonClass} onClick={onEditPlan}>
+                    Create care plan
+                  </Button>
+                )
               )
             }
           />

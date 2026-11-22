@@ -4,7 +4,19 @@
  * (Build with NEXT_PUBLIC_OFFLINE_MODE=pilot.)
  */
 import { expect, test, type Page } from '@playwright/test';
-import { PHYSIO_ID, cacheNames, clearTestDevices, setPilot, signIn, snoozeAppSetup, startWebsite, stopWebsite, visitAndStore } from './helpers';
+import {
+  PHYSIO_ID,
+  cacheNames,
+  clearTestDevices,
+  offlineWrites,
+  seedTestPatient,
+  setPilot,
+  signIn,
+  snoozeAppSetup,
+  startWebsite,
+  stopWebsite,
+  visitAndStore,
+} from './helpers';
 
 const PIN = '246810';
 
@@ -52,6 +64,39 @@ test('not in the pilot: nothing kept, no PIN offer, offline shows the offline pa
     expect(await page.title()).toMatch(/You're offline/);
   } finally {
     await startWebsite();
+    await context.setOffline(false);
+    // The other tests run with the test accounts in the pilot
+    setPilot(PHYSIO_ID, true);
+  }
+});
+
+test('not in the pilot: offline, a save is refused at once (no endless spinner) and a banner says so', async ({ page, context }) => {
+  setPilot(PHYSIO_ID, false);
+  const banner = page.getByText('You’re offline. Changes won’t save until you’re back online.');
+  try {
+    const { patientId } = seedTestPatient();
+    await snoozeAppSetup(page);
+    await signIn(page, PHYSIO_ID);
+    await page.goto(`/dashboard/physiotherapist/patients/${patientId}?tab=notes`);
+    const write = page.getByRole('button', { name: /Write a clinical note for today/ });
+    await expect(write).toBeVisible({ timeout: 60_000 });
+
+    await context.setOffline(true);
+    await expect(banner).toBeVisible({ timeout: 10_000 });
+    await write.click();
+    const subjective = page.getByRole('textbox', { name: 'Subjective' });
+    await subjective.fill('Typed with no internet');
+    const started = Date.now();
+    await page.getByRole('button', { name: 'Save note' }).click();
+    await expect(page.getByText(/You’re offline, so this wasn’t saved/).first()).toBeVisible({ timeout: 10_000 });
+    expect(Date.now() - started, 'refused straight away').toBeLessThan(10_000);
+    // What was typed is still there to save later, and nothing reached the server
+    await expect(subjective).toHaveValue('Typed with no internet');
+
+    await context.setOffline(false);
+    await expect(banner).toBeHidden({ timeout: 15_000 });
+    expect(offlineWrites().notes.filter((note) => note.subjective === 'Typed with no internet')).toHaveLength(0);
+  } finally {
     await context.setOffline(false);
     // The other tests run with the test accounts in the pilot
     setPilot(PHYSIO_ID, true);

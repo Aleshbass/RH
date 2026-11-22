@@ -46,8 +46,11 @@ export const questionnaireTables = {
     reviewedAt: v.optional(v.number()), // The physio who asked opened the result
     cancelledAt: v.optional(v.number()),
     cancelledBy: v.optional(v.id("users")),
+    // Typed in offline: the id the phone gave it, so it's saved once however often it's sent
+    clientId: v.optional(v.string()),
   })
     .index("by_patient_and_status", ["patientId", "status"])
+    .index("by_client_id", ["clientId"])
     .index("by_patient_and_instrument", ["patientId", "instrument"])
     .index("by_physiotherapist_and_status", ["physiotherapistId", "status"]),
 };

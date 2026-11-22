@@ -12,7 +12,20 @@ import { randomBytes } from './crypto';
 import { offlineDb, type OutboxRow, type OutboxStatus } from './db';
 import { openFor, sealFor, subscribeVault, vaultOpenFor, vaultState } from './vault';
 
-export type OutboxKind = 'exerciseLog' | 'programTick' | 'programFinish' | 'checkIn' | 'noteAdd' | 'noteUpdate';
+export type OutboxKind =
+  | 'exerciseLog'
+  | 'programTick'
+  | 'programFinish'
+  | 'checkIn'
+  | 'noteAdd'
+  | 'noteUpdate'
+  // The care team's records (Phase 4)
+  | 'planSave'
+  | 'programCreate'
+  | 'programAdd'
+  | 'programUpdate'
+  | 'scoresRecord'
+  | 'questionnaireEnter';
 
 /** The Convex mutation each kind of change goes to. */
 export const OUTBOX_FUNCTIONS: Record<OutboxKind, string> = {
@@ -23,7 +36,19 @@ export const OUTBOX_FUNCTIONS: Record<OutboxKind, string> = {
   checkIn: 'physioCare:submitCheckIn',
   noteAdd: 'physioCare:addClinicalNote',
   noteUpdate: 'physioCare:updateClinicalNote',
+  // A care plan created or revised; an edit carries the version it started from (PLAN_CHANGED)
+  planSave: 'physioCare:saveCarePlan',
+  // Home programmes: a new one, exercises added to one, and edits (checked against updatedAt)
+  programCreate: 'exercisePrograms:createProgram',
+  programAdd: 'exercisePrograms:addExercisesToProgram',
+  programUpdate: 'exercisePrograms:updateProgram',
+  // Scores taken in the room, and questionnaires typed in
+  scoresRecord: 'outcomes:recordScores',
+  questionnaireEnter: 'questionnaires:enterResponse',
 };
+
+/** Changes to a programme: while one is waiting, that programme isn't changed again offline. */
+export const PROGRAM_CHANGE_KINDS: ReadonlySet<OutboxKind> = new Set(['programAdd', 'programUpdate']);
 
 /** The note as saved on the server, when an offline edit met another change (NOTE_CHANGED). */
 export type NoteConflict = {
@@ -36,6 +61,34 @@ export type NoteConflict = {
   diagnosis: string | null;
 };
 
+/** The care plan as saved on the server, when an offline edit met another change (PLAN_CHANGED). */
+export type PlanConflict =
+  | {
+      version: number;
+      title: string;
+      description: string | null;
+      goals: { description: string; targetValue: string; timeline: string }[];
+      sessionFrequency: string | null;
+      plannedSessions: number | null;
+      reviewDate: number | null;
+      precautions: string | null;
+    }
+  /** The plan was closed or replaced meanwhile: there's no active plan now */
+  | { gone: true };
+
+/** The programme as saved on the server, when an offline edit met another change (PROGRAM_CHANGED). */
+export type ProgramConflict = {
+  updatedAt: number;
+  title: string;
+  status: string;
+  /** Item names as the patient sees them, e.g. "Straight leg raise (left)" */
+  items: string[];
+  goals: string[];
+  note: string | null;
+};
+
+export type Conflict = NoteConflict | PlanConflict | ProgramConflict;
+
 type Args = Record<string, Value>;
 
 /** The encrypted part: the change, how it's listed ("Clinical note · Ada Obi") and what it's for. */
@@ -44,7 +97,7 @@ type Payload = {
   label: string;
   /** e.g. the patient or programme, so their pages show it before it's sent */
   meta: Args;
-  conflict?: NoteConflict;
+  conflict?: Conflict;
 };
 
 export type OutboxItem = Payload & {
@@ -155,7 +208,7 @@ export async function addToOutbox(
 /** Changes what a waiting change will send (an offline edit made again before it went). */
 export async function replaceInOutbox(
   id: string,
-  update: { args?: Args; label?: string; conflict?: NoteConflict | null; status?: OutboxStatus }
+  update: { args?: Args; label?: string; meta?: Args; conflict?: Conflict | null; status?: OutboxStatus }
 ) {
   const db = offlineDb();
   const userId = vaultState().userId;
@@ -166,6 +219,7 @@ export async function replaceInOutbox(
     ...payload,
     args: update.args ?? payload.args,
     label: update.label ?? payload.label,
+    meta: update.meta ?? payload.meta,
     conflict: update.conflict === null ? undefined : (update.conflict ?? payload.conflict),
   };
   if (next.conflict === undefined) delete next.conflict;

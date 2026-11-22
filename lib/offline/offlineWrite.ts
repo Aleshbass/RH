@@ -2,7 +2,8 @@
 
 /**
  * Saving that works without internet, for the changes in lib/offline/outbox.ts (exercise logs,
- * check-ins, clinical notes). Online it saves straight away as before, and the server's answer or
+ * check-ins, clinical notes, care plans, home programmes, scores and questionnaires). Online it
+ * saves straight away as before, and the server's answer or
  * refusal comes back as usual. Offline, or with no answer in time, the change is kept on this
  * phone (encrypted) and sent when the connection is back: `{ queued: true }`.
  * Without offline use on this phone (not in the pilot, no PIN) it simply saves online.
@@ -12,7 +13,7 @@ import { useConvex } from 'convex/react';
 import { makeFunctionReference } from 'convex/server';
 import type { Value } from 'convex/values';
 import { offlineModeOn } from '@/lib/pwa';
-import { OUTBOX_FUNCTIONS, addToOutbox, newClientId, type OutboxKind } from './outbox';
+import { OUTBOX_FUNCTIONS, addToOutbox, newClientId, outboxItems, replaceInOutbox, type OutboxKind } from './outbox';
 import { kickSync, refusal, withTimeout } from './sync';
 import { vaultOpenFor, vaultState } from './vault';
 
@@ -35,6 +36,11 @@ export type WriteOptions = {
   meta?: Args;
   /** Sent instead of `args` when saving straight away online (e.g. a note edit without its offline version check) */
   liveArgs?: Input;
+  /**
+   * An earlier change to the same record still waiting on this phone (e.g. a care plan edit made
+   * offline): this one replaces it, so the two never meet as a conflict with each other.
+   */
+  replaceId?: string;
 };
 
 /** True when changes can be kept on this phone (offline use on and the vault open). */
@@ -57,6 +63,13 @@ export function useOfflineWrite<R = unknown>(kind: OutboxKind) {
 
       if (!offlineModeOn() || !vaultOpenFor(userId)) {
         return { queued: false, result: await convex.mutation(ref, live) };
+      }
+      // Changed again before the earlier change went: the waiting one becomes this one (a new id,
+      // in case the earlier one did arrive: then the server shows both for review, never loses one)
+      if (options.replaceId && outboxItems().some((item) => item.id === options.replaceId)) {
+        await replaceInOutbox(options.replaceId, { args: stamp(args), label: options.label, meta: options.meta, conflict: null, status: 'pending' });
+        kickSync();
+        return { queued: true };
       }
       if (navigator.onLine && convex.connectionState().isWebSocketConnected) {
         try {

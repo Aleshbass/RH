@@ -112,7 +112,9 @@ const itemFields = {
 };
 const itemInput = v.object(itemFields);
 // When editing, items already in the programme say where they were, so logs follow them.
-const editItemInput = v.object({ ...itemFields, fromIndex: v.optional(v.number()) });
+// fromIndex: where a kept item was in the programme as loaded. fromKey (edits made offline): the
+// item's permanent key instead, so it's found even if the order changed before the edit arrived.
+const editItemInput = v.object({ ...itemFields, fromIndex: v.optional(v.number()), fromKey: v.optional(v.string()) });
 type ItemInput = Infer<typeof itemInput>;
 
 /** A programme item's permanent id (exercisePrograms.items[].key). */
@@ -493,11 +495,23 @@ export const createProgram = mutation({
     templateId: v.optional(v.id("programTemplates")),
     // An independent physio over Free's patients a month chose to have the patient pay with Flex
     coverage: v.optional(v.union(v.literal("physio"), v.literal("patient"))),
+    // Sent offline (lib/offline/outbox.ts): created once however often it's sent
+    ...offlineWriteArgs,
   },
   handler: (ctx, args) =>
     guarded("send the programme", async () => {
       const team = await requireCareTeam(ctx, args.patientId, { write: true });
       const patient = await patientOrThrow(ctx, args.patientId);
+      // Sent again after a lost answer: it's already there
+      const clientId = cleanClientId(args.clientId);
+      if (clientId) {
+        const theirs = await ctx.db
+          .query("exercisePrograms")
+          .withIndex("by_patient", (q) => q.eq("patientId", args.patientId))
+          .collect();
+        const saved = theirs.find((p) => p.lastClientId === clientId);
+        if (saved) return saved._id;
+      }
       const title = clean(args.title, 120);
       if (!title) throw new ConvexError("Give the programme a title.");
       if (args.items.length === 0) throw new ConvexError("Add at least one exercise or education item.");
@@ -541,6 +555,7 @@ export const createProgram = mutation({
         voiceNoteSeconds: args.voiceNoteStorageId ? cleanVoiceSeconds(args.voiceNoteSeconds) : undefined,
         items,
         status: "active",
+        lastClientId: clientId,
         createdAt: now,
         updatedAt: now,
       });
@@ -570,10 +585,15 @@ export const addExercisesToProgram = mutation({
     voiceNoteStorageId: v.optional(v.id("_storage")),
     voiceNoteSeconds: v.optional(v.number()),
     templateId: v.optional(v.id("programTemplates")),
+    // Sent offline (lib/offline/outbox.ts): added once however often it's sent
+    ...offlineWriteArgs,
   },
   handler: (ctx, args) =>
     guarded("add to the programme", async () => {
       const { program, team } = await editableProgram(ctx, args.programId);
+      // Sent again after a lost answer: it's already added
+      const clientId = cleanClientId(args.clientId);
+      if (clientId && program.lastClientId === clientId) return program._id;
       if (args.items.length === 0) throw new ConvexError("Add at least one exercise or education item.");
       if (program.items.length + args.items.length > MAX_ITEMS) {
         throw new ConvexError(
@@ -582,7 +602,7 @@ export const addExercisesToProgram = mutation({
       }
       const added = withKeys(await cleanItems(ctx, team, args.items));
       const now = Date.now();
-      const patch: Partial<Doc<"exercisePrograms">> = { items: [...program.items, ...added], updatedAt: now };
+      const patch: Partial<Doc<"exercisePrograms">> = { items: [...program.items, ...added], lastClientId: clientId, updatedAt: now };
       const note = clean(args.note);
       if (note) {
         const combined = program.note ? `${program.note}\n\n${lagosDay(now)}: ${note}` : note;
@@ -605,6 +625,25 @@ export const addExercisesToProgram = mutation({
     }),
 });
 
+/** A programme as it is now, for reviewing an offline edit that met another change (PROGRAM_CHANGED). */
+async function programConflictView(ctx: Ctx, program: Doc<"exercisePrograms">) {
+  const names = await Promise.all(
+    program.items.map(async (item) => {
+      const exercise = item.exerciseId ? await ctx.db.get(item.exerciseId) : null;
+      const name = exercise?.name ?? item.name ?? (item.kind === "education" ? "Information" : "Exercise");
+      return item.side ? `${name} (${item.side === "L" ? "left" : "right"})` : name;
+    })
+  );
+  return {
+    updatedAt: program.updatedAt,
+    title: program.title,
+    status: program.status,
+    items: names,
+    goals: program.goals ?? [],
+    note: program.note ?? null,
+  };
+}
+
 /**
  * Edits a programme: title, note, goals, voice note, and the full list of items (changed doses,
  * new order, removed or added items). Patient logs follow their item when the order changes;
@@ -621,10 +660,34 @@ export const updateProgram = mutation({
     voiceNoteStorageId: v.optional(v.id("_storage")),
     voiceNoteSeconds: v.optional(v.number()),
     removeVoiceNote: v.optional(v.boolean()),
+    // Edited offline (lib/offline/outbox.ts): saved once however often it's sent
+    ...offlineWriteArgs,
+    /**
+     * Edited offline: the programme's updatedAt when the edit started. If it changed since,
+     * nothing is saved and the physio reviews both (PROGRAM_CHANGED).
+     */
+    expectedUpdatedAt: v.optional(v.number()),
   },
   handler: (ctx, args) =>
     guarded("save the programme", async () => {
       const { program, team } = await editableProgram(ctx, args.programId);
+      // Sent again after a lost answer: it's already saved
+      const clientId = cleanClientId(args.clientId);
+      if (clientId && program.lastClientId === clientId) return program._id;
+      if (args.expectedUpdatedAt !== undefined && program.updatedAt !== args.expectedUpdatedAt) {
+        throw new ConvexError({
+          code: "PROGRAM_CHANGED",
+          message: "This programme was changed somewhere else after you edited it offline. Nothing has been overwritten.",
+          current: await programConflictView(ctx, program),
+        });
+      }
+      // Items named by permanent key (offline edits): where they are now. A key that's gone (the
+      // item was removed meanwhile) makes it a new item.
+      const editItems = args.items.map(({ fromKey, ...item }) => {
+        if (fromKey === undefined) return item;
+        const index = program.items.findIndex((existing) => existing.key === fromKey);
+        return { ...item, fromIndex: index >= 0 ? index : undefined };
+      });
       const title = clean(args.title, 120);
       if (!title) throw new ConvexError("Give the programme a title.");
       if (args.items.length === 0) throw new ConvexError("A programme needs at least one item. Archive it instead if it's finished.");
@@ -632,7 +695,7 @@ export const updateProgram = mutation({
 
       // Where each kept item used to be, so logs keep pointing at the right exercise.
       const newIndexOf = new Map<number, number>();
-      args.items.forEach((item, newIndex) => {
+      editItems.forEach((item, newIndex) => {
         if (item.fromIndex === undefined) return;
         const from = item.fromIndex;
         if (!Number.isInteger(from) || from < 0 || from >= program.items.length || newIndexOf.has(from)) {
@@ -641,10 +704,10 @@ export const updateProgram = mutation({
         newIndexOf.set(from, newIndex);
       });
       // Kept items keep their permanent key (offline logs find them by it); new items get one
-      const cleaned = await cleanItems(ctx, team, args.items.map(({ fromIndex: _from, ...item }) => item));
+      const cleaned = await cleanItems(ctx, team, editItems.map(({ fromIndex: _from, ...item }) => item));
       const items = withKeys(
         cleaned.map((item, i) => {
-          const from = args.items[i].fromIndex;
+          const from = editItems[i].fromIndex;
           const key = from === undefined ? undefined : program.items[from]?.key;
           return key ? { ...item, key } : item;
         })
@@ -672,7 +735,7 @@ export const updateProgram = mutation({
         }
       }
 
-      const patch: Partial<Doc<"exercisePrograms">> = { title, items, updatedAt: Date.now() };
+      const patch: Partial<Doc<"exercisePrograms">> = { title, items, lastClientId: clientId, updatedAt: Date.now() };
       if (args.note !== undefined) patch.note = clean(args.note, MAX_STORED_NOTE);
       if (args.goals !== undefined) patch.goals = cleanGoals(args.goals);
       if (args.voiceNoteStorageId) {

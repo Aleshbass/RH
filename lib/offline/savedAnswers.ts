@@ -23,8 +23,21 @@ export function onSavedAnswersChange(listener: () => void): () => void {
   return () => listeners.delete(listener);
 }
 
+/** The same arguments give the same key whatever order their fields were written in. */
+function sortedKeys(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sortedKeys);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.keys(value)
+        .sort()
+        .map((key) => [key, sortedKeys((value as Record<string, unknown>)[key])])
+    );
+  }
+  return value;
+}
+
 export function answerKey(userId: string, functionName: string, keyArgs: Record<string, unknown>) {
-  return `${userId}|${functionName}|${JSON.stringify(convexToJson(keyArgs as Value))}`;
+  return `${userId}|${functionName}|${JSON.stringify(sortedKeys(convexToJson(keyArgs as Value)))}`;
 }
 
 subscribeVault(() => {

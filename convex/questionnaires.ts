@@ -23,6 +23,7 @@ import { currentUser, findRelationship, requireActiveRelationship, requirePhysio
 import { clinicNoteReader, physioNoteReader, type NoteReader } from "./helpers/noteAccess";
 import { measureNumber, seriesKey, type ClinicalMeasure } from "./helpers/clinicalMeasures";
 import { psfsActivitiesValidator, questionnaireAnswersValidator } from "./schema/questionnaires";
+import { cleanClientId, offlineWriteArgs, whenItHappened } from "./helpers/offlineWrites";
 import { instrumentDef, isAvailable } from "../lib/questionnaires/instruments";
 import { AnswerError, cleanAnswers, cleanDraftAnswers, cleanPsfs, compareScores, scoreResponse, scoreText } from "../lib/questionnaires/scoring";
 import type { InstrumentDef, PsfsActivity } from "../lib/questionnaires/types";
@@ -582,14 +583,28 @@ export const enterResponse = mutation({
     requestId: v.optional(v.id("patientQuestionnaires")),
     /** When it was filled in, if not now (a paper form from an earlier visit) */
     completedAt: v.optional(v.number()),
+    // Typed in offline (lib/offline/outbox.ts): saved once, dated when typed in (or completedAt)
+    ...offlineWriteArgs,
   },
   handler: async (ctx, args) => {
     const physio = await requirePhysio(ctx);
     const relationship = await requireActiveRelationship(ctx, physio._id, args.patientId);
+    // Sent again after a lost answer: it's already saved
+    const clientId = cleanClientId(args.clientId);
+    if (clientId) {
+      const saved = await ctx.db
+        .query("patientQuestionnaires")
+        .withIndex("by_client_id", (q) => q.eq("clientId", clientId))
+        .first();
+      if (saved) {
+        if (saved.patientId !== args.patientId) throw new ConvexError("Questionnaire not found.");
+        return saved._id;
+      }
+    }
     if (!isAvailable(args.instrument)) throw new ConvexError("That questionnaire isn't available.");
     const def = defOf(args.instrument);
     const now = Date.now();
-    const completedAt = args.completedAt ?? now;
+    const completedAt = args.completedAt ?? whenItHappened(args.occurredAt, now);
     if (completedAt > now + 5 * 60 * 1000 || completedAt < now - 365 * DAY) throw new ConvexError("Choose a date in the last year.");
 
     const done = completion(def, args, false, []);
@@ -616,6 +631,7 @@ export const enterResponse = mutation({
       completedBy: "physio" as const,
       enteredBy: physio._id,
       reviewedAt: now,
+      clientId,
       draftAnswers: undefined,
       draftPsfs: undefined,
       draftSavedAt: undefined,

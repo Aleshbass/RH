@@ -45,6 +45,7 @@ import { DeleteAccountButton } from '@/components/account/DeleteAccountButton'
 import { careMomentsApi } from '@/lib/careMomentsApi'
 import { useAppSetup } from '@/components/pwa/AppSetup'
 import { openAppSetup } from '@/lib/pwa'
+import { OfflineUseSettings, WhenOfflineAvailable } from '@/components/offline/OfflineUseSettings'
 import {
   IconChip,
   InfoTip,
@@ -511,6 +512,12 @@ export default function PatientSettingsPage() {
               }
             />
           )}
+          {/* Offline use on this phone (offline pilot accounts only) */}
+          <WhenOfflineAvailable>
+            <div className="py-3">
+              <OfflineUseSettings />
+            </div>
+          </WhenOfflineAvailable>
           <SettingRow
             icon={Cake}
             title="Birthday and milestone messages"

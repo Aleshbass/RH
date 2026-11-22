@@ -1152,6 +1152,21 @@ async function cleanPlanGoals(
     .filter((g) => g.description);
 }
 
+/** A care plan as it is now, for reviewing an offline edit that met another change (PLAN_CHANGED). */
+function planConflictView(plan: Doc<"treatmentPlans"> | null) {
+  if (!plan) return null;
+  return {
+    version: plan.version,
+    title: plan.title,
+    description: plan.description ?? null,
+    goals: plan.goals.map((g) => ({ description: g.description, targetValue: g.targetValue ?? "", timeline: g.timeline ?? "" })),
+    sessionFrequency: plan.sessionFrequency ?? null,
+    plannedSessions: plan.plannedSessions ?? null,
+    reviewDate: plan.reviewDate ?? null,
+    precautions: plan.precautions ?? null,
+  };
+}
+
 /**
  * Create the care plan, or revise it. A revision keeps the previous version (with the reason
  * for the change) and tells the patient their plan was updated.
@@ -1167,10 +1182,28 @@ export const saveCarePlan = mutation({
     reviewDate: v.optional(v.number()),
     precautions: v.optional(v.string()),
     changeReason: v.optional(v.string()),
+    // Saved offline (lib/offline/outbox.ts): saved once, dated in the plan's history when made
+    ...offlineWriteArgs,
+    /**
+     * Edited offline: the plan version the edit started from (0 when there was no plan yet). If
+     * the plan changed since, nothing is saved and the physio reviews both (PLAN_CHANGED).
+     */
+    expectedVersion: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const physio = await requirePhysio(ctx);
     const relationship = await requireActiveRelationship(ctx, physio._id, args.patientId);
+    const clientId = cleanClientId(args.clientId);
+    const current = await activePlanFor(ctx, physio._id, args.patientId, relationship.clinicId);
+    // Sent again after a lost answer: it's already saved
+    if (clientId && current?.lastClientId === clientId) return { planId: current._id, version: current.version };
+    if (args.expectedVersion !== undefined && (current?.version ?? 0) !== args.expectedVersion) {
+      throw new ConvexError({
+        code: "PLAN_CHANGED",
+        message: "This care plan was changed somewhere else after you edited it offline. Nothing has been overwritten.",
+        current: planConflictView(current),
+      });
+    }
     const episode = await ensureActiveEpisode(ctx, physio, relationship);
 
     const title = args.title.trim();
@@ -1178,6 +1211,8 @@ export const saveCarePlan = mutation({
     const goals = await cleanPlanGoals(ctx, physio._id, args.patientId, episode.startedAt, args.goals, relationship.clinicId);
     if (goals.length === 0) throw new ConvexError("Add at least one functional goal.");
     const now = Date.now();
+    // When the physio made the change (made offline: earlier than now), for the plan's history
+    const madeAt = whenItHappened(args.occurredAt, now);
     const fields = {
       title,
       description: args.description?.trim() || undefined,
@@ -1187,7 +1222,7 @@ export const saveCarePlan = mutation({
       reviewDate: args.reviewDate,
       precautions: args.precautions?.trim() || undefined,
     };
-    const existing = await activePlanFor(ctx, physio._id, args.patientId, relationship.clinicId);
+    const existing = current;
 
     if (existing) {
       const reason = args.changeReason?.trim();
@@ -1199,6 +1234,7 @@ export const saveCarePlan = mutation({
         changeReason: reason,
         episodeId: episode._id,
         version,
+        lastClientId: clientId,
         updatedAt: now,
       });
       await ctx.db.insert("treatmentPlanVersions", {
@@ -1209,7 +1245,7 @@ export const saveCarePlan = mutation({
         changeDescription: reason,
         previousData: planSnapshot(existing),
         newData: { ...fields, changeReason: reason },
-        timestamp: now,
+        timestamp: madeAt,
         patientNotified: true,
         notificationSentAt: now,
       });
@@ -1239,6 +1275,7 @@ export const saveCarePlan = mutation({
       phases: [],
       reviewInterval,
       version: 1,
+      lastClientId: clientId,
       createdAt: now,
       updatedAt: now,
     });
@@ -1249,7 +1286,7 @@ export const saveCarePlan = mutation({
       changedBy: physio._id,
       changeDescription: args.changeReason?.trim() || "First plan",
       newData: fields,
-      timestamp: now,
+      timestamp: madeAt,
       patientNotified: true,
       notificationSentAt: now,
     });

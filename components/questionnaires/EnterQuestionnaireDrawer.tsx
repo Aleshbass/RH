@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react'
 import { format } from 'date-fns'
-import { useMutation } from 'convex/react'
 import { toast } from 'sonner'
 import { ArrowLeft } from '@/components/icons'
 import { Input } from '@/components/ui/input'
@@ -11,10 +10,10 @@ import { programError } from '@/components/exercise-programs/errors'
 import type { Id } from '@/convex/_generated/dataModel'
 import { INSTRUMENTS, instrumentDef } from '@/lib/questionnaires/instruments'
 import { scoreResponse, scoreText } from '@/lib/questionnaires/scoring'
+import { useOfflineWrite } from '@/lib/offline/offlineWrite'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
 import { QuestionnaireForm, type QuestionnaireInput } from './QuestionnaireForm'
-import { questionnaireRefs } from './refs'
 
 export type EnterTarget = { instrument?: string; requestId?: Id<'patientQuestionnaires'> }
 
@@ -36,7 +35,8 @@ export function EnterQuestionnaireDrawer({
   /** Activities from the patient's last PSFS, offered to rate again */
   lastPsfs: string[]
 }) {
-  const enter = useMutation(questionnaireRefs.enterResponse)
+  // Saved straight away online; offline (offline use on), kept on this phone and sent later
+  const enter = useOfflineWrite('questionnaireEnter')
   const [instrument, setInstrument] = useState<string | null>(null)
   const [date, setDate] = useState(format(new Date(), 'yyyy-MM-dd'))
   const [saving, setSaving] = useState(false)
@@ -56,10 +56,14 @@ export function EnterQuestionnaireDrawer({
     try {
       // Today: now. An earlier day: midday on that day
       const completedAt = date === today ? undefined : new Date(`${date}T12:00`).getTime()
-      await enter({ patientId, instrument: def.key, answers: input.answers, psfs: input.psfs, requestId: target?.requestId, completedAt })
+      const result = await enter(
+        { patientId, instrument: def.key, answers: input.answers, psfs: input.psfs, requestId: target?.requestId, completedAt },
+        { label: `${def.short} · ${patientName}`, meta: { patientId } }
+      )
       const total = scoreResponse(def, input).total
       playSound('success')
-      toast.success(`${def.short} saved: ${scoreText(def, total)}`)
+      if (result.queued) toast.success(`${def.short} saved on this phone: ${scoreText(def, total)}`, { description: 'It goes to the record once you’re back online.' })
+      else toast.success(`${def.short} saved: ${scoreText(def, total)}`)
       onOpenChange(false)
     } catch (error) {
       playSound('error')

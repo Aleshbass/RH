@@ -54,6 +54,7 @@ import { useCareBillingMode } from '@/components/physio/practiceMode'
 import { useMutationUntyped, useQueryUntyped, useActionUntyped } from '@/lib/convexUntyped'
 import { useOfflineWrite } from '@/lib/offline/offlineWrite'
 import { replaceInOutbox, useOutbox } from '@/lib/offline/outbox'
+import { useOnline } from '@/lib/offline/session'
 import { kickSync } from '@/lib/offline/sync'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
@@ -1169,9 +1170,14 @@ export function CarePlanDrawer({
   /** A plan (or changes) Rehabify Scribe drafted from the session, to check before saving */
   prefill?: ScribeCarePlan | null
 }) {
-  const save = useMutationUntyped(workspaceApi.physioCare.saveCarePlan)
+  // Saved straight away online; offline (offline use on), kept on this phone and sent when back
+  // online, checked against the plan version it started from (PLAN_CHANGED: reviewed, never overwritten)
+  const save = useOfflineWrite('planSave')
   const saveTemplate = useMutationUntyped(workspaceApi.physioCare.saveCarePlanTemplate)
   const noteUsed = useMutationUntyped(workspaceApi.physioCare.noteCarePlanTemplateUsed)
+  const planOutbox = useOutbox()
+  // A plan change made offline and not sent yet: the plan isn't changed again until it's gone
+  const waitingPlan = planOutbox.find((change) => change.kind === 'planSave' && change.meta.patientId === workspace.patient._id)
   const [templates, setTemplates] = useState<CarePlanTemplate[] | undefined>(undefined)
   const templatesFailed = useCallback(() => setTemplates([]), [])
   const plan = workspace.plan
@@ -1209,10 +1215,11 @@ export function CarePlanDrawer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
-  // No templates yet: go straight to the form
+  // No templates yet, or offline with none saved on this phone: go straight to the form
+  const planOnline = useOnline()
   useEffect(() => {
-    if (step === 'start' && templates && templates.length === 0) setStep('form')
-  }, [step, templates])
+    if (step === 'start' && ((templates && templates.length === 0) || (templates === undefined && !planOnline))) setStep('form')
+  }, [step, templates, planOnline])
 
   const set = <K extends keyof PlanDraft>(key: K, value: PlanDraft[K]) => setDraft((d) => ({ ...d, [key]: value }))
   const updateGoal = (index: number, patch: Partial<DraftGoal>) =>
@@ -1239,10 +1246,11 @@ export function CarePlanDrawer({
     if (!draft.title.trim()) return toast.error('Give the plan a title.')
     if (goals.length === 0) return toast.error('Add at least one functional goal.')
     if (plan && !reason.trim()) return toast.error('Say why the plan is changing.')
+    if (waitingPlan) return toast.error('Your earlier change to this care plan hasn’t been sent yet. You can change it again once it has (tap the bar at the bottom to see it).')
     setSaving(true)
     try {
       const reviewDate = draft.reviewDate ? new Date(`${draft.reviewDate}T09:00:00`).getTime() : undefined
-      await save({
+      const planArgs = {
         patientId: workspace.patient._id,
         title: draft.title,
         description: draft.description || undefined,
@@ -1254,7 +1262,22 @@ export function CarePlanDrawer({
         changeReason:
           reason ||
           (fromTemplate ? `Started from the “${fromTemplate}” template` : fromScribe ? `Drafted with ${SCRIBE_NAME} from the session` : undefined),
-      })
+      }
+      const patientLabel = [workspace.patient.firstName, workspace.patient.lastName].filter(Boolean).join(' ') || 'Patient'
+      const result = await save(
+        // Kept offline, it carries the version it started from (0: there was no plan yet)
+        { ...planArgs, expectedVersion: plan?.version ?? 0 },
+        { label: `${plan ? 'Care plan changes' : 'New care plan'} · ${patientLabel}`, meta: { patientId: workspace.patient._id }, liveArgs: planArgs }
+      )
+      if (result.queued) {
+        playSound('success')
+        toast.success('Saved on this phone', {
+          description: `${workspace.patient.firstName ?? 'Your patient'} sees the ${plan ? 'changes' : 'plan'} once you’re back online.`,
+        })
+        if (alsoTemplate) toast.info('Saving as a template needs internet', { description: 'Save it as a template once you’re back online.' })
+        onOpenChange(false)
+        return
+      }
       if (alsoTemplate) {
         await saveTemplate({
           title: draft.title,

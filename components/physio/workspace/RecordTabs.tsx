@@ -21,6 +21,7 @@ import { NoteHistoryDrawer } from './NoteHistoryDrawer'
 import { DocumentManager, type DocumentType, type ManagedDocument } from '@/components/patient-documents/DocumentManager'
 import { MeasureList } from '@/components/physio/notes/MeasureList'
 import { NOTE_TYPE_LABELS, previousBySeries, type ClinicalNote } from '@/components/physio/notes/progress'
+import { RECORD_NOTES_PAGE } from '@/lib/offline/caseload'
 import { useOutbox, type OutboxItem } from '@/lib/offline/outbox'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -58,7 +59,8 @@ const recordPaymentRef = makeFunctionReference<
 >('billing:recordPayment')
 
 /** Notes shown at first, and how many more each "Show older notes" adds. */
-const NOTES_PAGE = 30
+// The first page of notes; the offline caseload download asks for the same (lib/offline/caseload.ts)
+const NOTES_PAGE = RECORD_NOTES_PAGE
 
 /**
  * A note's text without the template prompts left empty ("How it started:" with nothing after it),

@@ -2059,6 +2059,9 @@ export default defineSchema({
     precautions: v.optional(v.string()), // Precautions and safety guidance
     changeReason: v.optional(v.string()), // Why this version of the plan exists
     version: v.number(),
+    // The phone's id for the last change saved offline (lib/offline/outbox.ts), so a change sent
+    // twice (after a lost answer) is saved once
+    lastClientId: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.number(),
     completedAt: v.optional(v.number()),
@@ -6028,6 +6031,9 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
     archivedAt: v.optional(v.number()),
+    // The phone's id for the last change saved offline (created, added to or edited), so a change
+    // sent twice (after a lost answer) is saved once
+    lastClientId: v.optional(v.string()),
   })
     .index("by_patient", ["patientId", "createdAt"])
     .index("by_creator", ["createdBy", "createdAt"])

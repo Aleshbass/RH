@@ -12,9 +12,11 @@
 import { useEffect } from 'react';
 import { useConvex, useConvexAuth, useMutation, useQuery } from 'convex/react';
 import { makeFunctionReference } from 'convex/server';
+import { ConnectionBanner } from '@/components/offline/ConnectionBanner';
 import { offlineModeOn, setOfflinePilot, useOfflineMode } from '@/lib/pwa';
 import { lastSignedInUser, useOfflineSession } from '@/lib/offline/session';
 import { startOutboxSync, type SyncClient } from '@/lib/offline/sync';
+import { downloadCaseload, type CaseloadClient } from '@/lib/offline/caseload';
 import {
   deviceId,
   forgetDeviceId,
@@ -33,7 +35,7 @@ type UnlockResult = { status: 'ok'; secret: string } | { status: 'revoked' };
 export const unlockDeviceRef = makeFunctionReference<'mutation', { deviceId: string; label?: string }, UnlockResult>(
   'offline:unlockDevice'
 );
-const myUserRef = makeFunctionReference<'query', Record<string, never>, { offlinePilot?: boolean } | null>(
+const myUserRef = makeFunctionReference<'query', Record<string, never>, { offlinePilot?: boolean; role?: string } | null>(
   'users:getMyUser'
 );
 
@@ -59,8 +61,9 @@ export default function OfflineBridge() {
   useEffect(() => {
     if (signedOut) (convex as unknown as { noteSignedOut?: () => void }).noteSignedOut?.();
   }, [signedOut, convex]);
-  // Pilot: the account's switch, read live whenever someone is signed in online
-  const me = useQuery(myUserRef, PILOT_MODE && signedInUser && isAuthenticated ? {} : 'skip');
+  // Pilot: the account's switch, read live whenever someone is signed in online (and the role, for
+  // keeping a physio's recent patients ahead of time)
+  const me = useQuery(myUserRef, (PILOT_MODE || offlineMode) && signedInUser && isAuthenticated ? {} : 'skip');
 
   useEffect(() => {
     if (!PILOT_MODE || !signedInUser || !isAuthenticated || me === undefined || me === null) return;
@@ -103,6 +106,21 @@ export default function OfflineBridge() {
     };
   }, [offlineMode, signedInUser, isAuthenticated, vault.status, unlockDevice]);
 
+  // A physio's recent patients kept on the phone ahead of time once offline use is set up
+  // (lib/offline/caseload.ts: after the PIN is set, then at most every 12 hours), a little after
+  // the page has loaded so it stays quick
+  const isPhysio = me?.role === 'physiotherapist';
+  useEffect(() => {
+    if (!isPhysio || !offlineModeOn() || !signedInUser || !isAuthenticated || vault.status !== 'unlocked' || vault.userId !== signedInUser) return;
+    const timer = window.setTimeout(() => {
+      const client = convex as unknown as Partial<CaseloadClient>;
+      if (typeof client.liveQuery === 'function' && typeof client.signedInUser === 'function') {
+        void downloadCaseload(client as CaseloadClient).catch(() => undefined);
+      }
+    }, 8000);
+    return () => window.clearTimeout(timer);
+  }, [isPhysio, offlineMode, signedInUser, isAuthenticated, vault.status, vault.userId, convex]);
+
   // Offline (or still loading): find the last person's vault for the PIN screen
   useEffect(() => {
     if (!offlineModeOn() || session.mode === 'online') return;
@@ -110,5 +128,6 @@ export default function OfflineBridge() {
     if (last) void loadVault(last).catch(() => undefined);
   }, [offlineMode, session.mode]);
 
-  return null;
+  // "You're offline" / "Reconnecting", for everyone, on every page
+  return <ConnectionBanner />;
 }

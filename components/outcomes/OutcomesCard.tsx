@@ -15,6 +15,8 @@ import { ScoreScale, painWord } from './CheckFlow'
 import { FeedbackCardComposer } from './FeedbackCardComposer'
 import { PainTrend } from './PainTrend'
 import { outcomeRefs } from './refs'
+import { useOfflineWrite } from '@/lib/offline/offlineWrite'
+import { useOutbox } from '@/lib/offline/outbox'
 
 /** "7 → 3" with what it means underneath. `higherIsBetter` for function and goal scores. */
 export function ChangeTile({
@@ -88,6 +90,8 @@ export function OutcomesCard({
   // Folded to a one-row summary until the physio opens it, so Overview stays short
   const [expanded, setExpanded] = useState(false)
   const first = patientFirstName || 'The patient'
+  // Scores taken offline and kept on this phone, not sent yet
+  const waitingScores = useOutbox().filter((change) => change.kind === 'scoresRecord' && change.meta.patientId === patientId).length
 
   if (data === undefined) return <div className="h-64 animate-pulse rounded-3xl bg-pt-sunken" />
   if (!data || !data.episode) return null
@@ -110,6 +114,10 @@ export function OutcomesCard({
           : data.next
             ? `Next automatic check-in: ${format(data.next.at, 'EEEE d MMM')}.`
             : 'Automatic checks are on.'
+
+  const shownStatus = waitingScores
+    ? `${waitingScores === 1 ? 'Scores you took are' : `${waitingScores} sets of scores you took are`} saved on this phone and go out when you’re back online. ${statusText}`
+    : statusText
 
   // The folded summary: pain and daily activities (or the patient's goal) as start → latest
   const scoreText = (from: number | null, to: number | null) => (from === null ? '–' : to === null || to === from ? `${from}` : `${from} → ${to}`)
@@ -176,7 +184,7 @@ export function OutcomesCard({
             </span>
             {pain?.meaningful && <StatusBadge tone="green">Meaningful change</StatusBadge>}
           </span>
-          <span className="mt-2.5 line-clamp-2 block text-[13px] leading-relaxed text-pt-muted">{statusText}</span>
+          <span className="mt-2.5 line-clamp-2 block text-[13px] leading-relaxed text-pt-muted">{shownStatus}</span>
         </button>
       ) : (
       <div className="space-y-4 px-5 pb-5 pt-3 sm:px-6">
@@ -265,7 +273,7 @@ export function OutcomesCard({
 
         <div className="flex items-start gap-3 rounded-2xl bg-pt-green-bg/60 px-4 py-3">
           <IconChip icon={HeartPulse} tone="green" className="h-8 w-8 rounded-lg [&_svg]:h-4 [&_svg]:w-4" />
-          <p className="pt-1 text-[13px] leading-relaxed text-pt-ink">{statusText}</p>
+          <p className="pt-1 text-[13px] leading-relaxed text-pt-ink">{shownStatus}</p>
         </div>
 
         {canAct && (
@@ -405,7 +413,8 @@ function RecordScoresDrawer({
   patientId: Id<'users'>
   firstName: string
 }) {
-  const record = useMutation(outcomeRefs.recordScores)
+  // Saved straight away online; offline (offline use on), kept on this phone and sent later, dated when taken
+  const record = useOfflineWrite('scoresRecord')
   const [when, setWhen] = useState<(typeof WHEN)[number]['value']>('pre_session')
   const [pain, setPain] = useState<number | null>(null)
   const [fn, setFn] = useState<number | null>(null)
@@ -416,9 +425,13 @@ function RecordScoresDrawer({
     if (pain === null) return
     setBusy(true)
     try {
-      await record({ patientId, when, pain, functionScore: withFunction && fn !== null ? fn : undefined })
+      const result = await record(
+        { patientId, when, pain, functionScore: withFunction && fn !== null ? fn : undefined },
+        { label: `Scores · ${firstName}`, meta: { patientId } }
+      )
       playSound('success')
-      toast.success('Scores saved')
+      if (result.queued) toast.success('Saved on this phone', { description: 'They go to the record once you’re back online, dated now.' })
+      else toast.success('Scores saved')
       setPain(null)
       setFn(null)
       onOpenChange(false)

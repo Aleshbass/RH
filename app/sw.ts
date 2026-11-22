@@ -195,7 +195,11 @@ const serwist = new Serwist({
   // Quiet updates: a new version takes over at once, but never reloads a page
   skipWaiting: true,
   clientsClaim: true,
-  navigationPreload: false,
+  // Pages come from the browser's own request (navigation preload), which the strategies here use
+  // instead of fetching again: it carries what sign-in needs (Clerk refreshes an expired session on
+  // document requests), so coming back online never bounces through /sign-in. Offline or on a
+  // weak connection, the stored copy is shown as before.
+  navigationPreload: true,
   disableDevLogs: true,
   runtimeCaching: [
     // Never stored: other sites' patient files, our /api, private files and RSC fetches
@@ -249,17 +253,65 @@ self.addEventListener('activate', (event) => {
     Promise.all([
       // Old caches: pages from earlier builds (their code no longer exists) and the previous worker's cache
       deleteCaches((key) => (key.startsWith('rh-pages-') && key !== PAGE_CACHE) || key.startsWith('rehabify-offline-')),
-      // The previous worker turned navigation preload on; these strategies don't use it, so with it
-      // left on every page would be downloaded twice
-      self.registration.navigationPreload?.disable().catch(() => undefined),
+      // Pages come from the browser's own request (see navigationPreload above)
+      self.registration.navigationPreload?.enable().catch(() => undefined),
     ])
   );
 });
 
-type PageMessage = { type?: string; on?: unknown; path?: unknown };
+type PageMessage = { type?: string; on?: unknown; path?: unknown; paths?: unknown };
+
+/** The most a page asks to store in one go (lib/offline/caseload.ts sends up to 30). */
+const MAX_STORE_PATHS = 40;
+
+/**
+ * Stores pages the person is likely to need offline (their recent patients' records) as if they had
+ * opened them: network first, through the same rules as a visit (only plain 200 pages of ours,
+ * never a redirect such as a signed-out bounce), plus the app files each page needs.
+ */
+async function storePages(paths: string[], event: ExtendableEvent) {
+  if (!(await offlinePagesOn())) return;
+  const pages = await caches.open(PAGE_CACHE);
+  const statics = await caches.open('rh-static');
+  for (const path of paths.slice(0, MAX_STORE_PATHS)) {
+    let url: URL;
+    try {
+      url = new URL(path, self.location.origin);
+    } catch {
+      continue;
+    }
+    if (url.origin !== self.location.origin || !isOfflinePage(url.pathname)) continue;
+    try {
+      // The page as the strategy got it, once it's been stored (storing finishes after the answer)
+      const [answered, stored] = storedPage.handleAll({ request: new Request(url.href, { credentials: 'same-origin' }), event });
+      const page = await answered;
+      await stored;
+      if (!page || page.status !== 200 || page.type !== 'basic' || page.redirected) continue;
+      if (!(await pages.match(url.href, { ignoreSearch: true }))) continue;
+      // The scripts and styles the page loads, if this phone doesn't have them yet: those in its
+      // tags ("/_next/static/...") and the route's own code named in its embedded data
+      // ("static/chunks/...", e.g. the record page itself), or a page never opened can't run offline
+      const html = await page.clone().text();
+      const found = html.match(/(?:\/_next\/)?static\/(?:chunks|css|media)\/[^"'\s)\\]+/g) ?? [];
+      const assets = [...new Set(found.map((asset) => (asset.startsWith('/_next/') ? asset : `/_next/${asset}`)))];
+      for (const asset of assets) {
+        if (await statics.match(asset)) continue;
+        const response = await fetch(asset).catch(() => null);
+        if (response?.ok && response.type === 'basic') await statics.put(asset, response);
+      }
+    } catch {
+      // One page failing doesn't stop the rest
+    }
+  }
+}
 
 self.addEventListener('message', (event) => {
   const data = event.data as PageMessage | null;
+  // Recent patients' records, stored ahead of time for offline use (lib/offline/caseload.ts)
+  if (data?.type === 'rehabify:store-pages' && Array.isArray(data.paths)) {
+    const paths = data.paths.filter((path): path is string => typeof path === 'string');
+    event.waitUntil(storePages(paths, event));
+  }
   // Offline mode switched on or off for this device (off also wipes stored pages)
   if (data?.type === 'rehabify:offline-pages' && typeof data.on === 'boolean') {
     event.waitUntil(setOfflinePages(data.on));

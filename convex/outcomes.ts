@@ -25,6 +25,7 @@ import { requireAdmin } from "./helpers/partnerAccess";
 import { getClinicMemberOrNull } from "./clinicTools";
 import { ensureActiveEpisode, episodesFor } from "./physioCare";
 import { awardPoints } from "./rewards";
+import { cleanClientId, offlineWriteArgs, whenItHappened } from "./helpers/offlineWrites";
 import { isJoyLoginEmail } from "../lib/auth/joyLoginEmail";
 import { CHECK_LINK_DAYS, MOMENT_QUESTIONS, SHARE_CONSENT_VERSION, momentMessage, quoteOptions, type OutcomeMoment } from "../lib/outcomes/moments";
 import {
@@ -631,12 +632,27 @@ export const recordScores = mutation({
     when: v.union(v.literal("pre_session"), v.literal("post_session"), v.literal("check_in")),
     pain: v.number(),
     functionScore: v.optional(v.number()),
+    // Taken offline (lib/offline/outbox.ts): saved once, dated when taken
+    ...offlineWriteArgs,
   },
   handler: async (ctx, args) => {
     const physio = await requirePhysio(ctx);
     const relationship = await requireActiveRelationship(ctx, physio._id, args.patientId);
+    // Sent again after a lost answer: it's already saved
+    const clientId = cleanClientId(args.clientId);
+    if (clientId) {
+      const saved = await ctx.db
+        .query("outcomeChecks")
+        .withIndex("by_client_id", (q) => q.eq("clientId", clientId))
+        .first();
+      if (saved) {
+        if (saved.physiotherapistId !== physio._id || saved.patientId !== args.patientId) throw new ConvexError("These scores couldn't be saved.");
+        return { moment: saved.moment };
+      }
+    }
     const episode = await ensureActiveEpisode(ctx, physio, relationship);
-    const now = Date.now();
+    // When the scores were taken (taken offline: earlier than now); "today's visit" is that day's
+    const now = whenItHappened(args.occurredAt, Date.now());
     const startOfDay = Math.floor((now + LAGOS_OFFSET) / DAY) * DAY - LAGOS_OFFSET;
     const visit =
       args.when === "check_in"
@@ -670,6 +686,7 @@ export const recordScores = mutation({
       functionScore: clampScore(args.functionScore, 0, 10, "score"),
       answeredAt: now,
       createdAt: now,
+      clientId,
     });
     await ctx.scheduler.runAfter(0, internal.outcomes.recomputeSummary, { physiotherapistId: physio._id });
     return { moment };

@@ -146,17 +146,65 @@ function pilotOn(): boolean {
   return pilot;
 }
 
+/** Turned off on this phone in Settings (components/offline/OfflineUseSettings.tsx) */
+const OFF_HERE_KEY = 'rh_offline_off_here';
+let offHere: boolean | null = null;
+
+function offOnThisPhone(): boolean {
+  if (offHere === null) {
+    try {
+      offHere = window.localStorage.getItem(OFF_HERE_KEY) === '1';
+    } catch {
+      offHere = false;
+    }
+  }
+  return offHere;
+}
+
 /**
- * Whether this device keeps pages and data for offline use. NEXT_PUBLIC_OFFLINE_MODE is the master
- * switch: "on" for everyone, "pilot" only for accounts an admin put in the pilot (users.offlinePilot,
- * remembered here so it holds offline), anything else off. Off is also the kill switch: stored
- * pages and the encrypted copy are wiped, and only push and the "You're offline" page remain.
+ * Whether this account may use Rehabify offline: NEXT_PUBLIC_OFFLINE_MODE is the master switch,
+ * "on" for everyone, "pilot" only for accounts an admin put in the pilot (users.offlinePilot,
+ * remembered here so it holds offline), anything else off.
  */
-export function offlineModeOn(): boolean {
+export function offlineAvailable(): boolean {
   const mode = process.env.NEXT_PUBLIC_OFFLINE_MODE;
   if (mode === 'on') return true;
   if (mode === 'pilot') return typeof window !== 'undefined' && pilotOn();
   return false;
+}
+
+/**
+ * Whether this device keeps pages and data for offline use: available to the account, and not
+ * turned off on this phone in Settings. Off is also the kill switch: stored pages and the
+ * encrypted copy are wiped, and only push and the "You're offline" page remain.
+ */
+export function offlineModeOn(): boolean {
+  return offlineAvailable() && !(typeof window !== 'undefined' && offOnThisPhone());
+}
+
+/** Settings: offline use on or off for this phone only (off wipes this phone's offline copy). */
+export function setOfflineOnThisPhone(on: boolean) {
+  if (typeof window === 'undefined' || offOnThisPhone() === !on) return;
+  offHere = !on;
+  try {
+    if (on) window.localStorage.removeItem(OFF_HERE_KEY);
+    else window.localStorage.setItem(OFF_HERE_KEY, '1');
+  } catch {
+    // Storage blocked: it holds for this visit only
+  }
+  offlineModeListeners.forEach((listener) => listener());
+  void sendOfflineSwitch();
+}
+
+export function useOfflineAvailable(): boolean {
+  return useSyncExternalStore(
+    (listener) => {
+      offlineModeListeners.add(listener);
+      return () => offlineModeListeners.delete(listener);
+    },
+    offlineAvailable,
+    () => false
+  );
 }
 
 /** The signed-in account's pilot switch, seen online (components/offline/OfflineBridge.tsx). */

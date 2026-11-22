@@ -46,8 +46,11 @@ export const outcomeTables = {
     featuredOnSite: v.optional(v.boolean()),
     answeredAt: v.optional(v.number()),
     createdAt: v.number(),
+    // Scores taken offline: the id the phone gave them, so they're saved once however often sent
+    clientId: v.optional(v.string()),
   })
     .index("by_token", ["tokenHash"])
+    .index("by_client_id", ["clientId"])
     .index("by_patient", ["patientId", "createdAt"])
     .index("by_physiotherapist", ["physiotherapistId", "createdAt"])
     .index("by_episode", ["episodeId", "createdAt"])

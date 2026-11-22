@@ -3,8 +3,9 @@
 /**
  * Changes made offline, in one place (lib/offline/outbox.ts). A small pill says when something is
  * waiting to be sent, couldn't be sent, or the phone is offline; it opens the list, where each
- * change can be retried or discarded, and a note edit that met another change is reviewed side
- * by side. Nothing leaves the list until the server has it or the person discards it.
+ * change can be retried or discarded, and a note, care plan or programme edit that met another
+ * change is reviewed side by side. Nothing leaves the list until the server has it or the person
+ * discards it.
  */
 import { useState } from 'react';
 import { format } from 'date-fns';
@@ -23,6 +24,8 @@ import {
   useOutbox,
   type NoteConflict,
   type OutboxItem,
+  type PlanConflict,
+  type ProgramConflict,
 } from '@/lib/offline/outbox';
 import { kickSync } from '@/lib/offline/sync';
 import { vaultState } from '@/lib/offline/vault';
@@ -61,10 +64,10 @@ async function saveAsNewNote(item: OutboxItem) {
   kickSync();
 }
 
-function ConflictReview({ item, onDone }: { item: OutboxItem; onDone: () => void }) {
+/** Runs one of the review's choices, then closes the review (or says what went wrong). */
+function useReviewAction(onDone: () => void) {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const saved = item.conflict as NoteConflict;
   const act = async (key: string, run: () => Promise<void>) => {
     setBusy(key);
     setError(null);
@@ -78,6 +81,156 @@ function ConflictReview({ item, onDone }: { item: OutboxItem; onDone: () => void
       setBusy(null);
     }
   };
+  return { busy, error, act };
+}
+
+/** Saved version and the offline edit, side by side; only what differs (everything when nothing does). */
+function CompareRows({ rows }: { rows: { label: string; saved: string; mine: string }[] }) {
+  const differing = rows.filter((row) => row.saved !== row.mine);
+  return (
+    <div className="max-h-[50vh] space-y-3 overflow-y-auto">
+      {(differing.length ? differing : rows).map((row) => (
+        <div key={row.label} className="rounded-2xl border border-pt-line p-3">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-pt-faint">{row.label}</p>
+          <div className="mt-2 grid gap-2 sm:grid-cols-2">
+            <div>
+              <p className="text-xs font-medium text-pt-muted">Saved version</p>
+              <p className="mt-0.5 whitespace-pre-line text-sm text-pt-ink">{row.saved || '—'}</p>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-pt-muted">Your offline edit</p>
+              <p className="mt-0.5 whitespace-pre-line text-sm text-pt-ink">{row.mine || '—'}</p>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+const text = (value: Value | undefined) => (typeof value === 'string' ? value.trim() : '');
+
+function planGoalsText(goals: unknown): string {
+  if (!Array.isArray(goals)) return '';
+  return goals
+    .map((goal) => {
+      const g = (goal ?? {}) as { description?: unknown; targetValue?: unknown; timeline?: unknown };
+      const detail = [g.targetValue, g.timeline].filter((part): part is string => typeof part === 'string' && part.trim() !== '').join(', ');
+      return typeof g.description === 'string' && g.description.trim() ? `• ${g.description.trim()}${detail ? ` (${detail})` : ''}` : '';
+    })
+    .filter(Boolean)
+    .join('\n');
+}
+
+function sessionsText(frequency: unknown, planned: unknown): string {
+  return [typeof frequency === 'string' ? frequency.trim() : '', typeof planned === 'number' ? `${planned} sessions` : ''].filter(Boolean).join(' · ');
+}
+
+const dayText = (value: unknown) => (typeof value === 'number' ? format(value, 'd MMM yyyy') : '');
+
+/** A care plan edited offline that met another change: keep mine (the saved one stays in the plan's history), or theirs. */
+function PlanConflictReview({ item, onDone }: { item: OutboxItem; onDone: () => void }) {
+  const { busy, error, act } = useReviewAction(onDone);
+  const saved = item.conflict as PlanConflict;
+  const gone = 'gone' in saved;
+  const a = item.args;
+  const rows = gone
+    ? []
+    : [
+        { label: 'Title', saved: saved.title, mine: text(a.title) },
+        { label: 'Goals', saved: planGoalsText(saved.goals), mine: planGoalsText(a.goals) },
+        { label: 'Sessions', saved: sessionsText(saved.sessionFrequency, saved.plannedSessions), mine: sessionsText(a.sessionFrequency, a.plannedSessions) },
+        { label: 'Review date', saved: dayText(saved.reviewDate), mine: dayText(a.reviewDate) },
+        { label: 'Precautions', saved: saved.precautions ?? '', mine: text(a.precautions) },
+        { label: 'Description', saved: saved.description ?? '', mine: text(a.description) },
+      ];
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-pt-muted">
+        {gone
+          ? 'This care plan was closed or replaced after you edited it offline. Keep your changes to start a new plan with them, or discard them.'
+          : 'This care plan was changed somewhere else after you edited it offline. Nothing has been overwritten: choose what to keep. Whichever you choose, the other stays in the plan’s history.'}
+      </p>
+      {rows.length ? <CompareRows rows={rows} /> : null}
+      <ReviewError error={error} />
+      <div className="flex flex-col gap-2 sm:flex-row-reverse">
+        <Button
+          type="button"
+          disabled={busy !== null}
+          className={cn(primaryButtonClass, 'h-11 sm:flex-1')}
+          onClick={() =>
+            act('mine', () =>
+              replaceInOutbox(item.id, { args: { ...item.args, expectedVersion: gone ? 0 : saved.version }, conflict: null, status: 'pending' })
+            )
+          }
+        >
+          {busy === 'mine' ? <Loader2 className="h-4 w-4 animate-spin" /> : gone ? 'Start a new plan with my changes' : 'Keep my changes'}
+        </Button>
+        <Button type="button" variant="ghost" disabled={busy !== null} className="h-11 text-pt-muted sm:flex-1" onClick={() => act('theirs', () => removeFromOutbox(item.id))}>
+          {gone ? 'Discard my changes' : 'Keep the saved version'}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/** A home programme edited offline that met another change: keep mine, or theirs. */
+function ProgramConflictReview({ item, onDone }: { item: OutboxItem; onDone: () => void }) {
+  const { busy, error, act } = useReviewAction(onDone);
+  const saved = item.conflict as ProgramConflict;
+  const a = item.args;
+  const mineItems = Array.isArray(item.meta.itemNames) ? (item.meta.itemNames as Value[]).filter((n): n is string => typeof n === 'string') : [];
+  const goals = (list: unknown) => (Array.isArray(list) ? list.filter((g): g is string => typeof g === 'string' && g.trim() !== '').map((g) => `• ${g}`).join('\n') : '');
+  const rows = [
+    { label: 'Title', saved: saved.title, mine: text(a.title) },
+    { label: 'Exercises and information', saved: saved.items.map((name, i) => `${i + 1}. ${name}`).join('\n'), mine: mineItems.map((name, i) => `${i + 1}. ${name}`).join('\n') },
+    { label: 'Goals', saved: goals(saved.goals), mine: goals(a.goals) },
+    { label: 'Note to the patient', saved: saved.note ?? '', mine: text(a.note) },
+  ];
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-pt-muted">
+        This programme was changed somewhere else after you edited it offline{saved.status === 'archived' ? ', and it has been archived' : ''}. Nothing has been
+        overwritten: choose what to keep. Patients’ exercise logs stay with their exercises either way.
+      </p>
+      <CompareRows rows={rows} />
+      <ReviewError error={error} />
+      <div className="flex flex-col gap-2 sm:flex-row-reverse">
+        <Button
+          type="button"
+          disabled={busy !== null}
+          className={cn(primaryButtonClass, 'h-11 sm:flex-1')}
+          onClick={() =>
+            act('mine', () => replaceInOutbox(item.id, { args: { ...item.args, expectedUpdatedAt: saved.updatedAt }, conflict: null, status: 'pending' }))
+          }
+        >
+          {busy === 'mine' ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Keep my changes'}
+        </Button>
+        <Button type="button" variant="ghost" disabled={busy !== null} className="h-11 text-pt-muted sm:flex-1" onClick={() => act('theirs', () => removeFromOutbox(item.id))}>
+          Keep the saved version
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function ReviewError({ error }: { error: string | null }) {
+  return error ? (
+    <p role="alert" className="text-sm text-pt-rose-fg">
+      {error}
+    </p>
+  ) : null;
+}
+
+function ConflictReview({ item, onDone }: { item: OutboxItem; onDone: () => void }) {
+  if (item.kind === 'planSave') return <PlanConflictReview item={item} onDone={onDone} />;
+  if (item.kind === 'programUpdate') return <ProgramConflictReview item={item} onDone={onDone} />;
+  return <NoteConflictReview item={item} onDone={onDone} />;
+}
+
+function NoteConflictReview({ item, onDone }: { item: OutboxItem; onDone: () => void }) {
+  const { busy, error, act } = useReviewAction(onDone);
+  const saved = item.conflict as NoteConflict;
   const differing = NOTE_SECTIONS.filter(([key]) => (saved[key] ?? '') !== ((item.args[key] as string | undefined) ?? ''));
 
   return (

@@ -12,7 +12,8 @@
 import { makeFunctionReference } from 'convex/server';
 import type { ConvexReactClient } from 'convex/react';
 import type { Value } from 'convex/values';
-import { OUTBOX_FUNCTIONS, markOutbox, outboxItems, reloadOutbox, removeFromOutbox, replaceInOutbox, type NoteConflict, type OutboxItem } from './outbox';
+import { isOfflineSaveError } from './connection';
+import { OUTBOX_FUNCTIONS, markOutbox, outboxItems, reloadOutbox, removeFromOutbox, replaceInOutbox, type Conflict, type OutboxItem } from './outbox';
 import { subscribeVault, vaultOpenFor, vaultState } from './vault';
 
 /** The Convex client, as far as sending needs it (lib/offline/convexClient.ts) */
@@ -48,6 +49,8 @@ export function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 
 /** The server's reason when it refused (ConvexError data), or undefined when there was no answer. */
 export function refusal(error: unknown): unknown {
+  // Refused on the phone for want of a connection (lib/offline/connection.ts): nothing was sent
+  if (isOfflineSaveError(error)) return undefined;
   if (error && typeof error === 'object' && 'data' in error && (error as { name?: string }).name === 'ConvexError') {
     return (error as { data: unknown }).data;
   }
@@ -60,9 +63,17 @@ function refusalMessage(data: unknown): string {
   return 'The server couldn’t save this.';
 }
 
-function noteConflictOf(data: unknown): NoteConflict | null {
-  if (!data || typeof data !== 'object' || (data as { code?: unknown }).code !== 'NOTE_CHANGED') return null;
-  return ((data as { current?: NoteConflict }).current ?? null) as NoteConflict | null;
+/** Refusals that mean "changed somewhere else meanwhile": kept for the person to review, never overwritten. */
+const CONFLICT_CODES = new Set(['NOTE_CHANGED', 'PLAN_CHANGED', 'PROGRAM_CHANGED']);
+
+function conflictOf(data: unknown): Conflict | null {
+  if (!data || typeof data !== 'object') return null;
+  const code = (data as { code?: unknown }).code;
+  if (typeof code !== 'string' || !CONFLICT_CODES.has(code)) return null;
+  const current = (data as { current?: unknown }).current;
+  if (current && typeof current === 'object') return current as Conflict;
+  // A care plan closed or replaced meanwhile: there's no plan to compare with
+  return code === 'PLAN_CHANGED' ? { gone: true } : null;
 }
 
 export function startOutboxSync(next: SyncClient) {
@@ -145,7 +156,7 @@ async function send(item: OutboxItem): Promise<'sent' | 'refused' | 'no answer'>
       }
       return 'no answer';
     }
-    const conflict = noteConflictOf(data);
+    const conflict = conflictOf(data);
     if (conflict) {
       await replaceInOutbox(item.id, { conflict, status: 'conflict' });
       return 'refused';

@@ -35,6 +35,8 @@ import { Textarea } from '@/components/ui/textarea'
 import { useNoteMedia, WHATSAPP_AUDIO_TYPES } from '@/components/physio/NoteMedia'
 import { PlanLimitDialog, planLimitOf, type PlanLimit } from '@/components/physio/plan/PlanLimitDialog'
 import { primaryButtonClass, useIsPhone } from '@/components/physio/ui'
+import { useOfflineWrite, type WriteResult } from '@/lib/offline/offlineWrite'
+import { PROGRAM_CHANGE_KINDS, useOutbox } from '@/lib/offline/outbox'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
 import { programError } from './errors'
@@ -96,6 +98,8 @@ type PayloadItem = {
   note?: string
   resourceKey?: string
   fromIndex?: number
+  /** The item's permanent key when editing: an edit kept offline finds the item by it */
+  fromKey?: string
 }
 
 let draftCounter = 0
@@ -142,9 +146,6 @@ type Args = Record<string, unknown>
 const listLibraryRef = makeFunctionReference<'query', Args, unknown>('exerciseLibrary:listLibrary')
 const allowanceRef = makeFunctionReference<'query', Args, unknown>('exercisePrograms:programmeAllowanceFor')
 const listForPatientRef = makeFunctionReference<'query', Args, unknown>('exercisePrograms:listForPatient')
-const createProgramRef = makeFunctionReference<'mutation', Args, Id<'exercisePrograms'>>('exercisePrograms:createProgram')
-const addExercisesRef = makeFunctionReference<'mutation', Args, unknown>('exercisePrograms:addExercisesToProgram')
-const updateProgramRef = makeFunctionReference<'mutation', Args, unknown>('exercisePrograms:updateProgram')
 const currentUserRef = makeFunctionReference<'query', Record<string, never>, { _id: Id<'users'>; clinicId?: Id<'clinics'> } | null>('queries:getCurrentUser')
 
 function draftsFromProgram(program: Pick<CareTeamProgram, 'items'>): Draft[] {
@@ -343,9 +344,16 @@ export function SendProgramDialog({
     | CareTeamProgram[]
     | null
     | undefined
-  const create = useMutation(createProgramRef)
-  const addTo = useMutation(addExercisesRef)
-  const update = useMutation(updateProgramRef)
+  // Saved straight away online. With offline use on and no internet, kept on this phone and sent
+  // when back online (lib/offline/outbox.ts); every other save here needs internet.
+  const create = useOfflineWrite<Id<'exercisePrograms'>>('programCreate')
+  const addTo = useOfflineWrite('programAdd')
+  const update = useOfflineWrite('programUpdate')
+  const outbox = useOutbox()
+  // A change to a programme made offline and not sent yet: that programme isn't changed again
+  // until it's gone, so two offline changes never undo each other
+  const waitingChange = (programId: string | undefined) =>
+    programId ? outbox.find((change) => PROGRAM_CHANGE_KINDS.has(change.kind) && change.meta.programId === programId) : undefined
   const saveTemplate = useMutation(templateRefs.save)
   // Recorded so it can play as a WhatsApp voice note for patients on Joy
   const media = useNoteMedia({ audioTypes: WHATSAPP_AUDIO_TYPES })
@@ -477,6 +485,9 @@ export function SendProgramDialog({
       if (d.type === 'education' && !(d.resource && !d.resource.missing) && !d.name.trim() && !d.note.trim()) return `Item ${i + 1} is empty education. Give it a title or some text, or remove it.`
       if (d.type === 'library' && d.entry?.sided && !d.side) return `Choose a side for ${d.name}.`
     }
+    if (!templateMode && waitingChange(editing ? program?._id : existing?._id)) {
+      return 'Your earlier change to this programme hasn’t been sent yet. You can change it again once it has (tap the bar at the bottom to see it).'
+    }
     const total = (existing && !editing ? existing.items.length : 0) + itemCount
     if (total > MAX_ITEMS) {
       return existing
@@ -489,10 +500,11 @@ export function SendProgramDialog({
   const payloadItems = () =>
     drafts.flatMap((d): PayloadItem[] => {
       const fromIndex = d.fromIndex
+      const fromKey = fromIndex === undefined ? undefined : (program?.items.find((item) => item.index === fromIndex)?.key ?? undefined)
       if (d.type === 'education') {
         // A resource that has left the library is kept as plain education (its title and note)
         const resourceKey = d.resource && !d.resource.missing ? d.resource.key : undefined
-        return [{ kind: 'education' as const, name: d.name.trim() || undefined, note: d.note.trim() || undefined, resourceKey, fromIndex }]
+        return [{ kind: 'education' as const, name: d.name.trim() || undefined, note: d.note.trim() || undefined, resourceKey, fromIndex, fromKey }]
       }
       const dose = {
         sets: d.sets,
@@ -501,10 +513,18 @@ export function SendProgramDialog({
         frequency: d.frequency.trim() || 'Once a day',
         note: d.note.trim() || undefined,
       }
-      if (d.type === 'custom') return [{ ...dose, name: d.name.trim(), fromIndex }]
+      if (d.type === 'custom') return [{ ...dose, name: d.name.trim(), fromIndex, fromKey }]
       const exercise = { ...dose, exerciseId: d.exerciseId as Id<'exercises'> }
-      if (d.side === 'both') return [{ ...exercise, side: 'L' as const, fromIndex }, { ...exercise, side: 'R' as const }]
-      return [{ ...exercise, side: d.side ?? undefined, fromIndex }]
+      if (d.side === 'both') return [{ ...exercise, side: 'L' as const, fromIndex, fromKey }, { ...exercise, side: 'R' as const }]
+      return [{ ...exercise, side: d.side ?? undefined, fromIndex, fromKey }]
+    })
+
+  /** What the programme will list, for the list of changes waiting on this phone and its review screen. */
+  const itemNames = () =>
+    drafts.flatMap((d) => {
+      const name = d.name.trim() || (d.resource?.title ?? (d.type === 'education' ? 'Information' : 'Exercise'))
+      if (d.side === 'both') return [`${name} (left)`, `${name} (right)`]
+      return [d.side === 'L' ? `${name} (left)` : d.side === 'R' ? `${name} (right)` : name]
     })
 
   // Over Free's patients a month: the choice (patient pays Flex, or upgrade), then the same send
@@ -523,7 +543,12 @@ export function SendProgramDialog({
     }
     if (media.busy) return toast.error('Wait for the voice note to finish uploading.')
     const withIndex = payloadItems()
-    const items = withIndex.map(({ fromIndex: _from, ...item }) => item)
+    const items = withIndex.map(({ fromIndex: _from, fromKey: _key, ...item }) => item)
+    const names = itemNames()
+    // Templates are saved online only: offline, say so instead of failing after the send
+    const templateNeedsInternet = () => {
+      if (saveAsTemplate) toast.info('Saving as a template needs internet', { description: 'Save it as a template once you’re back online.' })
+    }
     const voice = media.voiceStorageId ? { voiceNoteStorageId: media.voiceStorageId, voiceNoteSeconds: media.voice?.seconds } : {}
     const cleanGoals = goals.map((g) => g.trim()).filter(Boolean)
     // "Save as a template" after sending: a failure here never undoes the send
@@ -564,7 +589,7 @@ export function SendProgramDialog({
         return
       }
       if (editing && program) {
-        await update({
+        const editArgs = {
           programId: program._id,
           title: title.trim(),
           note: note.trim(),
@@ -572,15 +597,31 @@ export function SendProgramDialog({
           items: withIndex,
           ...voice,
           removeVoiceNote: !media.voiceStorageId && !keepVoice && Boolean(program.voiceNoteUrl) ? true : undefined,
-        })
+        }
+        // Kept offline, the edit carries when the programme last changed: if it changed again
+        // before this arrives, nothing is overwritten (PROGRAM_CHANGED, reviewed side by side)
+        const result = await update(
+          { ...editArgs, expectedUpdatedAt: program.updatedAt },
+          { label: `Programme edit · ${title.trim()}`, meta: { programId: program._id, itemNames: names }, liveArgs: editArgs }
+        )
         playSound('success')
-        toast.success('Programme saved', { description: `${patientName} sees the changes in their app now.` })
+        toast.success(result.queued ? 'Saved on this phone' : 'Programme saved', {
+          description: result.queued ? `${patientName} sees the changes once you’re back online.` : `${patientName} sees the changes in their app now.`,
+        })
         onOpenChange(false)
       } else if (existing) {
-        await addTo({ programId: existing._id, items, note: note.trim() || undefined, templateId: usedTemplate ?? undefined, ...voice })
+        const result = await addTo(
+          { programId: existing._id, items, note: note.trim() || undefined, templateId: usedTemplate ?? undefined, ...voice },
+          { label: `Added to “${existing.title}”`, meta: { programId: existing._id, itemNames: names } }
+        )
         playSound('send')
-        toast.success(`Added to “${existing.title}”`, { description: `${patientName} can see the new ${itemsSummary(items)} in their app now.` })
-        await keepAsTemplate(existing.title)
+        if (result.queued) {
+          toast.success('Saved on this phone', { description: `The new ${itemsSummary(items)} go into “${existing.title}” once you’re back online.` })
+          templateNeedsInternet()
+        } else {
+          toast.success(`Added to “${existing.title}”`, { description: `${patientName} can see the new ${itemsSummary(items)} in their app now.` })
+          await keepAsTemplate(existing.title)
+        }
         onOpenChange(false)
       } else {
         if (!patientId) throw new Error('no patient')
@@ -593,8 +634,20 @@ export function SendProgramDialog({
           items,
           ...voice,
         }
-        const finish = async (programId: Id<'exercisePrograms'>, patientPays: boolean) => {
+        const send = (coverage?: 'patient') =>
+          create(
+            { ...createArgs, ...(coverage ? { coverage } : {}) },
+            { label: `New programme · ${createArgs.title}`, meta: { patientId, title: createArgs.title, itemNames: names } }
+          )
+        const finish = async (result: WriteResult<Id<'exercisePrograms'>>, patientPays: boolean) => {
           playSound('send')
+          if (result.queued) {
+            // Kept on this phone: it goes (and the patient is told) once back online
+            toast.success('Saved on this phone', { description: `“${createArgs.title}” goes to ${patientName} once you’re back online.` })
+            templateNeedsInternet()
+            onOpenChange(false)
+            return
+          }
           toast.success('Programme sent', {
             description: patientPays
               ? `${patientName} can see it now and unlocks the videos and tracking with Flex in their app.`
@@ -602,15 +655,14 @@ export function SendProgramDialog({
           })
           await keepAsTemplate(title.trim())
           onOpenChange(false)
-          onSent?.(programId)
+          onSent?.(result.result)
         }
         retryCreate.current = async () => {
-          const programId = await create({ ...createArgs, coverage: 'patient' })
+          const result = await send('patient')
           setLimitHit(null)
-          await finish(programId, true)
+          await finish(result, true)
         }
-        const programId = await create(createArgs)
-        await finish(programId, false)
+        await finish(await send(), false)
       }
     } catch (error) {
       const limit = planLimitOf(error)

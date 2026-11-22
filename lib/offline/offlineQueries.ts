@@ -40,12 +40,21 @@ export const OFFLINE_QUERIES: Record<string, OfflineQueryRule> = {
   'physioCare:getClinicalNotes': same,
   'physioCare:getClinicalNoteMeasures': same,
   'exercisePrograms:patientPlanForCareTeam': same,
+  // Care plans offline (Phase 4): the plan's history, and the physio's plan templates to start from
+  'physioCare:getCarePlanHistory': same,
+  'physioCare:listCarePlanTemplates': same,
   'careCircle:getPatientCareCircleForStaff': same,
   'outcomes:getPatientOutcomes': same,
   'questionnaires:forPatient': same,
   'questionnaires:seriesForPatient': same,
 
   // Physio: appointments
+  // Home programmes offline (Phase 4): the patient's programmes, the exercise library to pick
+  // from, and who's sending. Not the clinic's programme allowance: it carries prices.
+  'exercisePrograms:listForPatient': same,
+  'exerciseLibrary:listLibrary': same,
+  'queries:getCurrentUser': same,
+
   'patients:getMyPatientOptions': same,
   'recurringAppointments:getRecurringSeries': same,
 
