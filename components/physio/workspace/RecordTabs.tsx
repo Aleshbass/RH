@@ -247,6 +247,14 @@ export function NotesTab({ workspace, onWrite }: { workspace: Workspace; onWrite
                       </span>
                       <span className="min-w-0 flex-1">
                         <span className="block text-sm font-semibold text-pt-ink">{format(note.sessionDate, 'EEE d MMM yyyy')}</span>
+                        {/* Under the date, so on a phone it doesn't squeeze the date to a sliver */}
+                        {waitingEdits.has(note._id) && (
+                          <span className="mt-1 block">
+                            <StatusBadge tone={waitingEdits.get(note._id)?.status === 'pending' ? 'amber' : 'rose'}>
+                              {waitingEdits.get(note._id)?.status === 'pending' ? 'Your edit is waiting to send' : 'Your edit needs a look'}
+                            </StatusBadge>
+                          </span>
+                        )}
                         {(!note.mine || note.editedAt || note.aiAssisted) && (
                           <span className="block text-xs text-pt-muted">
                             {[
@@ -281,11 +289,6 @@ export function NotesTab({ workspace, onWrite }: { workspace: Workspace; onWrite
                       </span>
                     </button>
                     <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
-                      {waitingEdits.has(note._id) && (
-                        <StatusBadge tone={waitingEdits.get(note._id)?.status === 'pending' ? 'amber' : 'rose'}>
-                          {waitingEdits.get(note._id)?.status === 'pending' ? 'Your edit is waiting to send' : 'Your edit needs a look'}
-                        </StatusBadge>
-                      )}
                       <StatusBadge tone={note.noteType === 'discharge_summary' ? 'violet' : 'teal'}>{NOTE_TYPE_LABELS[note.noteType] ?? 'Note'}</StatusBadge>
                       {note.revisionCount > 0 && (
                         <Button
