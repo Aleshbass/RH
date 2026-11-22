@@ -42,6 +42,7 @@ import {
   PEOPLE_SEARCH_COOLDOWN_MS,
   STAGE_LABEL,
   canAutoAdvance,
+  emailSendable,
   roleGroupOf,
   sectorByKey,
   stageStopsEmails,
@@ -675,9 +676,13 @@ export const adminCompanies = query({
           peopleSearchedAt: l.peopleSearchedAt ?? null,
           peopleRunning: Boolean(l.peopleQueuedAt && now - l.peopleQueuedAt < 30 * 60 * 1000),
           peopleSearchError: l.peopleSearchError ?? null,
+          contactsEnrichedAt: l.contactsEnrichedAt ?? null,
+          contactsRunning: Boolean(l.contactsQueuedAt && now - l.contactsQueuedAt < 30 * 60 * 1000),
           people: {
             count: people.length,
             withEmail: people.filter((p) => p.email && !p.doNotContact).length,
+            // Emails that may go into a sequence now (checked, or trusted as typed or published)
+            sendable: people.filter((p) => emailSendable(p)).length,
             groups: [...new Set(people.map((p) => p.roleGroup))],
           },
           source: l.source,
@@ -753,6 +758,12 @@ export const adminCompany = query({
       peopleSearchedAt: lead.peopleSearchedAt ?? null,
       peopleRunning: Boolean(lead.peopleQueuedAt && Date.now() - lead.peopleQueuedAt < 30 * 60 * 1000),
       peopleSearchError: lead.peopleSearchError ?? null,
+      // Find contacts (employerContacts.ts)
+      emailPattern: lead.emailPattern ?? null,
+      contactsEnrichedAt: lead.contactsEnrichedAt ?? null,
+      contactsRunning: Boolean(lead.contactsQueuedAt && Date.now() - lead.contactsQueuedAt < 30 * 60 * 1000),
+      contactsEnrichError: lead.contactsEnrichError ?? null,
+      enrichResults: lead.enrichResults ?? [],
       people: people
         .sort((a, b) => a.createdAt - b.createdAt)
         .map((p) => ({
@@ -762,6 +773,14 @@ export const adminCompany = query({
           roleGroup: p.roleGroup,
           email: p.email ?? null,
           emailStatus: p.emailStatus ?? null,
+          verifyStatus: p.verifyStatus ?? null,
+          verifiedBy: p.verifiedBy ?? null,
+          verifiedAt: p.verifiedAt ?? null,
+          sendAnyway: p.sendAnyway === true,
+          sendable: emailSendable(p),
+          confidence: p.confidence ?? null,
+          suggestedEmail: p.suggestedEmail ?? null,
+          nameIncomplete: p.nameIncomplete === true,
           phone: p.phone ?? null,
           linkedinUrl: p.linkedinUrl ?? null,
           source: p.source,
@@ -1002,7 +1021,20 @@ export const adminSaveContact = mutation({
       const emailChanged = (email ?? undefined) !== person.email;
       await ctx.db.patch(person._id, {
         ...fields,
-        ...(emailChanged ? { email, emailStatus: email ? ("admin" as const) : undefined, bouncedAt: undefined } : {}),
+        // A new address is the team's own: the old check, "send anyway" and any guess no longer apply
+        ...(emailChanged
+          ? {
+              email,
+              emailStatus: email ? ("admin" as const) : undefined,
+              bouncedAt: undefined,
+              verifyStatus: undefined,
+              verifiedBy: undefined,
+              verifiedAt: undefined,
+              sendAnyway: undefined,
+              confidence: undefined,
+              suggestedEmail: email ? undefined : person.suggestedEmail,
+            }
+          : {}),
         ...(args.doNotContact !== undefined ? { doNotContact: args.doNotContact || undefined } : {}),
         updatedAt: now,
       });
@@ -1148,7 +1180,8 @@ export const adminEnroll = mutation({
       if (args.companyEmail && lead.email && lead.status !== "bounced") targets.push({ email: lead.email });
       if (args.people) {
         for (const p of await ctx.db.query("outreachContacts").withIndex("by_lead", (q) => q.eq("leadId", lead._id)).take(50)) {
-          if (p.email && !p.doNotContact && !p.bouncedAt && (!groups || groups.has(p.roleGroup))) targets.push({ email: p.email, contactId: p._id });
+          // Only emails cleared to send: checked "valid", "send anyway" ticked, or typed / published
+          if (emailSendable(p) && !p.bouncedAt && (!groups || groups.has(p.roleGroup))) targets.push({ email: p.email!, contactId: p._id });
         }
       }
       let any = false;
@@ -1231,7 +1264,18 @@ export const adminExport = query({
         company_linkedin: lead.linkedinUrl ?? "",
       };
       const people = peopleByLead.get(lead._id) ?? [];
-      const blank = { person: "", role: "", role_group: "", person_email: "", person_phone: "", person_linkedin: "", person_source: "", do_not_contact: "" };
+      const blank = {
+        person: "",
+        role: "",
+        role_group: "",
+        person_email: "",
+        email_check: "",
+        person_phone: "",
+        person_linkedin: "",
+        found_by: "",
+        person_source: "",
+        do_not_contact: "",
+      };
       if (people.length === 0) rows.push({ ...base, ...blank });
       for (const p of people) {
         rows.push({
@@ -1240,8 +1284,10 @@ export const adminExport = query({
           role: p.role ?? "",
           role_group: p.roleGroup,
           person_email: p.email && !p.doNotContact ? p.email : "",
+          email_check: p.verifyStatus ?? (p.email ? "not checked" : ""),
           person_phone: p.phone ?? "",
           person_linkedin: p.linkedinUrl ?? "",
+          found_by: p.source,
           person_source: p.sourceUrl ?? "",
           do_not_contact: p.doNotContact ? "yes" : "",
         });

@@ -16,6 +16,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { EmployerCompanyDrawer } from "@/components/admin/outreach/EmployerCompanyDrawer";
 import { EmployerSequences } from "@/components/admin/outreach/EmployerSequences";
+import { PhoneActions } from "@/components/admin/outreach/ContactLinks";
+import { ProviderCredits } from "@/components/admin/outreach/ProviderCredits";
 import { OutreachGuide } from "@/components/admin/outreach/OutreachHelp";
 import { SentEmails } from "@/components/admin/outreach/SentEmails";
 import { STAGE_TONE, employerApi, errorText, lagosDay, type CompanyRow, type Source } from "@/components/admin/outreach/employerApi";
@@ -39,6 +41,7 @@ import {
 import {
   EMPLOYER_SECTORS,
   EMPLOYER_STAGES,
+  MAX_CONTACTS_RUN,
   MAX_PEOPLE_RUN,
   MAX_SECTORS_PER_RUN,
   ROLE_GROUPS,
@@ -61,6 +64,7 @@ function contactsSummary(c: CompanyRow) {
     const groups = c.people.groups.filter((g) => g !== "other").map((g) => GROUP_SHORT[g]);
     parts.push(`${c.people.count} ${c.people.count === 1 ? "person" : "people"}${groups.length ? ` (${groups.join(", ")})` : ""}`);
   }
+  if (c.people.sendable) parts.push(`${c.people.sendable} email${c.people.sendable === 1 ? "" : "s"} ready`);
   if (c.email) parts.push(`${c.email.split("@")[0]}@`);
   const phones = (c.phone ? 1 : 0) + c.extraPhones;
   if (phones) parts.push(phones === 1 ? "phone" : `${phones} phones`);
@@ -75,6 +79,7 @@ export default function EmployerOutreachPage() {
   const update = useMutation(employerApi.update);
   const setStages = useMutation(employerApi.setStage);
   const findPeople = useMutation(employerApi.findPeople);
+  const findContacts = useMutation(employerApi.findContacts);
   const enroll = useMutation(employerApi.enroll);
 
   // Finding
@@ -202,6 +207,23 @@ export default function EmployerOutreachPage() {
         res.queued
           ? `Looking for people at ${res.queued} compan${res.queued === 1 ? "y" : "ies"}, one at a time.${res.skipped ? ` ${res.skipped} skipped (searched in the last 7 days, or do not contact).` : ""}`
           : "All of these were searched in the last 7 days. Open a company to search it again."
+      );
+    });
+  };
+
+  // Hunter, Apollo and Prospeo: free plans, so 5 companies at most and one at a time
+  const bulkFindContacts = () => {
+    if (selectedIds.length > MAX_CONTACTS_RUN) return toast.error(`Find contacts for up to ${MAX_CONTACTS_RUN} companies at a time: the free plans are small.`);
+    run("contacts", async () => {
+      const res = await findContacts({ leadIds: selectedIds });
+      const notes = [
+        res.noWebsite ? `${res.noWebsite} without a website` : "",
+        res.skipped ? `${res.skipped} looked up in the last 30 days or do not contact` : "",
+      ].filter(Boolean);
+      toast.success(
+        res.queued
+          ? `Finding contacts at ${res.queued} compan${res.queued === 1 ? "y" : "ies"}, one at a time.${notes.length ? ` Skipped: ${notes.join(", ")}.` : ""}`
+          : `Nothing to look up${notes.length ? `: ${notes.join(", ")}` : ""}. Open a company to look it up again.`
       );
     });
   };
@@ -343,6 +365,8 @@ export default function EmployerOutreachPage() {
             </div>
           </Panel>
 
+          <ProviderCredits />
+
           {/* The pipeline: a count per stage (press to filter) and what's live */}
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-6">
             {EMPLOYER_STAGES.map((s) => (
@@ -436,6 +460,10 @@ export default function EmployerOutreachPage() {
                 <button type="button" className={cn(softButtonClass, "h-8 px-3 text-xs")} disabled={busy !== null} onClick={bulkFindPeople}>
                   {busy === "people" ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <UserSearch className="mr-1.5 h-3.5 w-3.5" />}
                   Find people
+                </button>
+                <button type="button" className={cn(softButtonClass, "h-8 px-3 text-xs")} disabled={busy !== null} onClick={bulkFindContacts}>
+                  {busy === "contacts" ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Search className="mr-1.5 h-3.5 w-3.5" />}
+                  Find contacts
                 </button>
                 <button type="button" className={cn(softButtonClass, "h-8 px-3 text-xs")} disabled={busy !== null} onClick={() => setEnrolOpen(true)}>
                   <Send className="mr-1.5 h-3.5 w-3.5" /> Add to sequence
@@ -531,14 +559,15 @@ export default function EmployerOutreachPage() {
                                 {c.website.replace(/^https?:\/\/(www\.)?/i, "").replace(/\/$/, "")}
                               </p>
                             )}
+                            {c.phone && <PhoneActions phone={c.phone} compact className="mt-1" />}
                           </td>
                           <td className="px-2 py-3 text-xs text-neutral-600 dark:text-neutral-300">{c.sector ? (SECTOR_LABEL[c.sector] ?? c.sector) : "—"}</td>
                           <td className="px-2 py-3 text-xs text-neutral-600 dark:text-neutral-300">{c.city || "—"}</td>
                           <td className="px-2 py-3 text-xs text-neutral-600 dark:text-neutral-300">{c.staffSize ?? "—"}</td>
                           <td className="max-w-[220px] px-2 py-3 text-xs">
-                            {c.peopleRunning ? (
+                            {c.peopleRunning || c.contactsRunning ? (
                               <span className="inline-flex items-center gap-1 text-neutral-500">
-                                <Loader2 className="h-3 w-3 animate-spin" /> Looking for people…
+                                <Loader2 className="h-3 w-3 animate-spin" /> {c.contactsRunning ? "Finding contacts…" : "Looking for people…"}
                               </span>
                             ) : summary ? (
                               <span className="text-rh-ink dark:text-white">{summary}</span>

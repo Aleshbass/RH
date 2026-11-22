@@ -31,7 +31,7 @@ import {
   patchPerson,
   stopEnrollment,
 } from "./helpers/outreachShared";
-import { STAGE_LABEL, firstNameOf, stageStopsEmails } from "../lib/employerOutreach";
+import { STAGE_LABEL, emailSendable, firstNameOf, stageStopsEmails } from "../lib/employerOutreach";
 
 const sendOneRef = makeFunctionReference<"action", { enrollmentId: Id<"outreachEnrollments"> }, null>("actions/outreachMail:sendOne");
 
@@ -143,6 +143,11 @@ export const tick = internalMutation({
         const person = await ctx.db.get(e.contactId);
         if (!person || person.email !== e.email) {
           await stopEnrollment(ctx, e, "stopped", "The person's email was changed or removed");
+          continue;
+        }
+        // The email check can fail after they were added (or the team unticks "send anyway")
+        if (!emailSendable({ ...person, doNotContact: false })) {
+          await stopEnrollment(ctx, e, "stopped", "The email didn't pass the check");
           continue;
         }
       } else if (lead.email !== e.email) {

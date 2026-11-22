@@ -4925,6 +4925,31 @@ export default defineSchema({
     peopleSearchedAt: v.optional(v.number()), // the last AI "Find people" run (each one costs)
     peopleQueuedAt: v.optional(v.number()), // waiting for, or in, a "Find people" run
     peopleSearchError: v.optional(v.string()),
+    // "Find contacts" (employerContacts.ts: Hunter, Apollo, Prospeo): the company's email pattern
+    // as Hunter reports it ("{first}.{last}"), the last run, and what each provider said then
+    emailPattern: v.optional(v.string()),
+    contactsEnrichedAt: v.optional(v.number()),
+    contactsQueuedAt: v.optional(v.number()),
+    contactsEnrichError: v.optional(v.string()),
+    enrichResults: v.optional(
+      v.array(
+        v.object({
+          provider: v.union(v.literal("hunter"), v.literal("apollo"), v.literal("prospeo")),
+          step: v.string(),
+          outcome: v.union(
+            v.literal("found"),
+            v.literal("none"),
+            v.literal("skipped"),
+            v.literal("no_key"),
+            v.literal("refused"),
+            v.literal("used_up"),
+            v.literal("error")
+          ),
+          count: v.optional(v.number()),
+          message: v.optional(v.string()),
+        })
+      )
+    ),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
@@ -4945,11 +4970,53 @@ export default defineSchema({
     role: v.optional(v.string()), // as written
     roleGroup: v.union(v.literal("hr"), v.literal("operations"), v.literal("hse"), v.literal("leadership"), v.literal("other")),
     email: v.optional(v.string()),
-    // "published": seen on a public page; "admin": typed by the team; "pilot_form": they sent it
-    emailStatus: v.optional(v.union(v.literal("published"), v.literal("admin"), v.literal("pilot_form"))),
+    // Where the email came from. "published": seen on a public page; "admin": typed by the team;
+    // "pilot_form": they sent it; a provider's name: from Hunter, Apollo or Prospeo; "pattern": the
+    // company's email pattern, kept only after it passed the check
+    emailStatus: v.optional(
+      v.union(
+        v.literal("published"),
+        v.literal("admin"),
+        v.literal("pilot_form"),
+        v.literal("hunter"),
+        v.literal("apollo"),
+        v.literal("prospeo"),
+        v.literal("pattern")
+      )
+    ),
+    // The email check (Hunter's verifier, or the provider that found it). Only "valid" can be
+    // emailed without the team ticking "send anyway" (lib/employerOutreach.ts emailSendable)
+    verifyStatus: v.optional(
+      v.union(
+        v.literal("valid"),
+        v.literal("accept_all"),
+        v.literal("unknown"),
+        v.literal("webmail"),
+        v.literal("disposable"),
+        v.literal("invalid")
+      )
+    ),
+    verifiedBy: v.optional(v.union(v.literal("hunter"), v.literal("apollo"), v.literal("prospeo"))),
+    verifiedAt: v.optional(v.number()),
+    sendAnyway: v.optional(v.boolean()), // the team's tick for "accepts all" / "unknown"
+    confidence: v.optional(v.number()), // Hunter's score, 0-100
+    // A guess from the company's email pattern: shown to the team, never emailed until checked
+    suggestedEmail: v.optional(v.string()),
+    emailLookupAt: v.optional(v.number()), // the last time a provider was asked for their email
+    department: v.optional(v.string()),
+    apolloId: v.optional(v.string()),
+    nameIncomplete: v.optional(v.boolean()), // Apollo's search hides most of the last name
     phone: v.optional(v.string()),
     linkedinUrl: v.optional(v.string()),
-    source: v.union(v.literal("web_search"), v.literal("website"), v.literal("admin"), v.literal("pilot_form")),
+    source: v.union(
+      v.literal("web_search"),
+      v.literal("website"),
+      v.literal("admin"),
+      v.literal("pilot_form"),
+      v.literal("hunter"),
+      v.literal("apollo"),
+      v.literal("prospeo")
+    ),
     sourceUrl: v.optional(v.string()),
     notes: v.optional(v.string()),
     doNotContact: v.optional(v.boolean()), // follows the email address, like a lead's
@@ -4960,6 +5027,24 @@ export default defineSchema({
   })
     .index("by_lead", ["leadId"])
     .index("by_email", ["email"]),
+
+  // What each contact-data provider has left this month (employerContacts.ts), read from their
+  // free account endpoints at most every 10 minutes, and marked stale after a run spends some
+  outreachProviderStatus: defineTable({
+    provider: v.union(v.literal("hunter"), v.literal("apollo"), v.literal("prospeo")),
+    ok: v.boolean(),
+    message: v.optional(v.string()),
+    plan: v.optional(v.string()),
+    resetDate: v.optional(v.string()), // "YYYY-MM-DD"
+    searchesUsed: v.optional(v.number()),
+    searchesAvailable: v.optional(v.number()),
+    verificationsUsed: v.optional(v.number()),
+    verificationsAvailable: v.optional(v.number()),
+    creditsUsed: v.optional(v.number()),
+    creditsAvailable: v.optional(v.number()),
+    stale: v.optional(v.boolean()),
+    checkedAt: v.number(),
+  }).index("by_provider", ["provider"]),
 
   // What happened with an employer, newest first in its drawer: stage moves, notes, emails, replies
   outreachActivities: defineTable({

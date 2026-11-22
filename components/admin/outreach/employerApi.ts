@@ -4,13 +4,31 @@
  */
 import { makeFunctionReference } from 'convex/server'
 import { ConvexError } from 'convex/values'
-import type { EmployerStage, RoleGroup } from '@/lib/employerOutreach'
+import type { EmployerStage, RoleGroup, VerifyStatus } from '@/lib/employerOutreach'
 import type { OutreachNumbers, SendingDay } from './OutreachHelp'
 
 export type Source = 'google_places' | 'web_search'
 export type SeqStatus = 'draft' | 'active' | 'paused'
 export type EnrollStatus = 'active' | 'finished' | 'replied' | 'bounced' | 'unsubscribed' | 'stopped'
 export type Step = { subject: string; body: string; waitDays: number }
+export type ContactProvider = 'hunter' | 'apollo' | 'prospeo'
+
+/** One provider in the credits strip (employerContacts:adminProviders) */
+export type ProviderView = {
+  configured: boolean
+  checkedAt: number | null
+  ok: boolean | null
+  message: string | null
+  plan: string | null
+  resetDate: string | null
+  searchesLeft: number | null
+  searchesAvailable: number | null
+  verificationsLeft: number | null
+  verificationsAvailable: number | null
+  creditsLeft: number | null
+  creditsAvailable: number | null
+}
+export type ProvidersData = Record<ContactProvider, ProviderView>
 
 export type CompanyRow = {
   _id: string
@@ -32,7 +50,9 @@ export type CompanyRow = {
   peopleSearchedAt: number | null
   peopleRunning: boolean
   peopleSearchError: string | null
-  people: { count: number; withEmail: number; groups: RoleGroup[] }
+  contactsEnrichedAt: number | null
+  contactsRunning: boolean
+  people: { count: number; withEmail: number; sendable: number; groups: RoleGroup[] }
   source: string
   createdAt: number
   updatedAt: number
@@ -57,10 +77,21 @@ export type PersonRow = {
   role: string | null
   roleGroup: RoleGroup
   email: string | null
-  emailStatus: 'published' | 'admin' | 'pilot_form' | null
+  emailStatus: 'published' | 'admin' | 'pilot_form' | 'hunter' | 'apollo' | 'prospeo' | 'pattern' | null
+  verifyStatus: VerifyStatus | null
+  verifiedBy: ContactProvider | null
+  verifiedAt: number | null
+  sendAnyway: boolean
+  /** May go into a sequence now (lib/employerOutreach.ts emailSendable) */
+  sendable: boolean
+  confidence: number | null
+  /** A guess from the company's email pattern: never emailed until checked */
+  suggestedEmail: string | null
+  /** Apollo's search hid most of the last name */
+  nameIncomplete: boolean
   phone: string | null
   linkedinUrl: string | null
-  source: 'web_search' | 'website' | 'admin' | 'pilot_form'
+  source: 'web_search' | 'website' | 'admin' | 'pilot_form' | ContactProvider
   sourceUrl: string | null
   notes: string | null
   doNotContact: boolean
@@ -97,6 +128,17 @@ export type CompanyDetail = {
   peopleSearchedAt: number | null
   peopleRunning: boolean
   peopleSearchError: string | null
+  emailPattern: string | null
+  contactsEnrichedAt: number | null
+  contactsRunning: boolean
+  contactsEnrichError: string | null
+  enrichResults: {
+    provider: ContactProvider
+    step: string
+    outcome: 'found' | 'none' | 'skipped' | 'no_key' | 'refused' | 'used_up' | 'error'
+    count?: number
+    message?: string
+  }[]
   people: PersonRow[]
   activities: { _id: string; kind: 'stage' | 'note' | 'email_sent' | 'reply' | 'contact_added'; text: string; by: string | null; at: number }[]
   enrollments: {
@@ -220,6 +262,18 @@ export const employerApi = {
   stopEnrollment: makeFunctionReference<'mutation', { enrollmentId: string }, null>('employerOutreach:adminStopEnrollment'),
   exportRows: makeFunctionReference<'query', { leadIds?: string[] }, { rows: Record<string, string>[] }>('employerOutreach:adminExport'),
   sendTest: makeFunctionReference<'action', { sequenceId: string; to: string }, { sent: number }>('actions/employerOutreachMail:adminSendTest'),
+  // Find contacts (convex/employerContacts.ts: Hunter, Apollo, Prospeo)
+  findContacts: makeFunctionReference<
+    'mutation',
+    { leadIds: string[]; force?: boolean },
+    { queued: number; skipped: number; noWebsite: number }
+  >('employerContacts:adminFindContacts'),
+  verifyEmail: makeFunctionReference<'action', { contactId: string; suggestion?: boolean }, { status: VerifyStatus | 'claimed' | null }>(
+    'employerContacts:adminVerifyEmail'
+  ),
+  setSendAnyway: makeFunctionReference<'mutation', { contactId: string; sendAnyway: boolean }, null>('employerContacts:adminSetSendAnyway'),
+  providers: makeFunctionReference<'query', Record<string, never>, ProvidersData>('employerContacts:adminProviders'),
+  refreshProviders: makeFunctionReference<'action', { force?: boolean }, null>('employerContacts:adminRefreshProviders'),
 }
 
 export const errorText = (err: unknown, fallback = 'Something went wrong. Please try again.') =>

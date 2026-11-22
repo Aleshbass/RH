@@ -3,24 +3,26 @@
 /**
  * Admin › Employer outreach: one company in a drawer (convex/employerOutreach.ts adminCompany).
  * The deal (stage, follow-up, owner, staff and monthly value), the company's details, its people
- * (found by "Find people", added by hand or from a pilot request), emails and replies, and a
- * timeline of notes and changes.
+ * (found by "Find people", by "Find contacts" through Hunter, Apollo and Prospeo, added by hand or
+ * from a pilot request), with each email's check and Call / WhatsApp / LinkedIn buttons, emails
+ * and replies, and a timeline of notes and changes.
  */
 
 import { useEffect, useState } from "react";
-import { useMutation, useQuery } from "convex/react";
+import { useAction, useMutation, useQuery } from "convex/react";
 import { format, formatDistanceToNowStrict } from "date-fns";
 import { toast } from "sonner";
 import {
   ExternalLink,
   Globe,
-  Linkedin,
   Loader2,
   Mail,
   MapPin,
   Pencil,
   Phone,
   Plus,
+  Search,
+  ShieldCheck,
   Trash2,
   UserSearch,
 } from "@/components/icons";
@@ -43,11 +45,14 @@ import {
   ROLE_GROUP_LABEL,
   SECTOR_LABEL,
   STAGE_LABEL,
+  VERIFY_LABEL,
   type EmployerStage,
   type RoleGroup,
+  type VerifyStatus,
 } from "@/lib/employerOutreach";
 import { cn } from "@/lib/utils";
 import { STAGE_TONE, employerApi, errorText, fromLagosDay, lagosDay, type CompanyDetail, type PersonRow } from "./employerApi";
+import { LinkedInButton, PhoneActions } from "./ContactLinks";
 
 const linkClass = "inline-flex items-center gap-1 text-neutral-600 hover:underline dark:text-neutral-300";
 const sectionTitle = "text-[13px] font-semibold text-rh-ink dark:text-white";
@@ -58,13 +63,38 @@ const EMAIL_FROM: Record<NonNullable<PersonRow["emailStatus"]>, string> = {
   published: "on a public page",
   admin: "added by the team",
   pilot_form: "from their pilot request",
+  hunter: "from Hunter",
+  apollo: "from Apollo",
+  prospeo: "from Prospeo",
+  pattern: "the company's pattern, checked",
 };
+/** Who found the person (badge on each person) */
 const SOURCE_LABEL: Record<PersonRow["source"], string> = {
-  web_search: "Find people",
+  web_search: "AI search",
   website: "Website",
-  admin: "Added by the team",
+  admin: "Team",
   pilot_form: "Pilot request",
+  hunter: "Hunter",
+  apollo: "Apollo",
+  prospeo: "Prospeo",
 };
+const VERIFY_TONE: Record<VerifyStatus, "green" | "amber" | "red"> = {
+  valid: "green",
+  accept_all: "amber",
+  unknown: "amber",
+  webmail: "amber",
+  disposable: "red",
+  invalid: "red",
+};
+const VERIFY_HINT: Record<VerifyStatus, string> = {
+  valid: "The mailbox exists.",
+  accept_all: "The company's server accepts every address, so this one can't be confirmed.",
+  unknown: "The check couldn't reach a clear answer.",
+  webmail: "A personal address (Gmail, Yahoo…), not a work one.",
+  disposable: "A throwaway address.",
+  invalid: "This address would bounce.",
+};
+const PROVIDER_NAME = { hunter: "Hunter", apollo: "Apollo", prospeo: "Prospeo" } as const;
 const ENROLL_LABEL: Record<CompanyDetail["enrollments"][number]["status"], string> = {
   active: "In sequence",
   finished: "All sent, no reply",
@@ -103,6 +133,16 @@ export function EmployerCompanyDrawer({
   const deleteContact = useMutation(employerApi.deleteContact);
   const stopEnrollment = useMutation(employerApi.stopEnrollment);
   const recrawl = useMutation(employerApi.recrawl);
+  const findContacts = useMutation(employerApi.findContacts);
+  const verifyEmail = useAction(employerApi.verifyEmail);
+  const setSendAnyway = useMutation(employerApi.setSendAnyway);
+  const check = (contactId: string, suggestion: boolean) =>
+    run(`check-${contactId}`, async () => {
+      const res = await verifyEmail({ contactId, suggestion });
+      if (res.status === null) toast.message("Hunter is still checking. Try again in a minute.");
+      else if (res.status === "claimed") toast.message("This person asked Hunter not to share their email: marked do not contact.");
+      else toast.success(`Checked: ${VERIFY_LABEL[res.status].toLowerCase()}`);
+    });
 
   const [busy, setBusy] = useState<string | null>(null);
   const run = async (key: string, task: () => Promise<unknown>, done?: string) => {
@@ -365,24 +405,18 @@ export function EmployerCompanyDrawer({
                     )}
                     {data.otherEmails.length > 0 && <p className="text-xs text-neutral-500">Also on the site: {data.otherEmails.slice(0, 5).join(", ")}</p>}
                     {[data.phone, ...data.otherPhones].filter(Boolean).length > 0 && (
-                      <p className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
                         <Phone className="h-3.5 w-3.5 text-neutral-400" />
                         {[data.phone, ...data.otherPhones].filter((p): p is string => Boolean(p)).map((p) => (
-                          <a key={p} href={`tel:${p.replace(/\s+/g, "")}`} className="hover:underline">
-                            {p}
-                          </a>
+                          <PhoneActions key={p} phone={p} />
                         ))}
-                      </p>
+                      </div>
                     )}
+                    {data.linkedinUrl && <LinkedInButton url={data.linkedinUrl} label="LinkedIn page" />}
                     <p className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
                       {data.website && (
                         <a href={href(data.website)} target="_blank" rel="noreferrer" className={linkClass}>
                           <Globe className="h-3.5 w-3.5" /> {shortUrl(data.website)}
-                        </a>
-                      )}
-                      {data.linkedinUrl && (
-                        <a href={data.linkedinUrl} target="_blank" rel="noreferrer" className={linkClass}>
-                          <Linkedin className="h-3.5 w-3.5" /> LinkedIn page
                         </a>
                       )}
                       {data.mapsUrl && (
@@ -435,6 +469,32 @@ export function EmployerCompanyDrawer({
                       )}
                       {data.peopleRunning ? "Looking…" : data.peopleSearchedAt ? "Search again" : "Find people"}
                     </button>
+                    <button
+                      type="button"
+                      className={cn(softButtonClass, "h-8 px-3 text-xs")}
+                      disabled={busy !== null || data.contactsRunning || data.stage === "do_not_contact" || !data.website}
+                      title={data.website ? undefined : "Add the company's website first"}
+                      onClick={() =>
+                        run("contacts", async () => {
+                          const recent = data.contactsEnrichedAt && Date.now() - data.contactsEnrichedAt < 30 * 86_400_000;
+                          const res = await findContacts({ leadIds: [data._id], force: Boolean(recent) });
+                          toast.success(
+                            res.queued
+                              ? "Asking Hunter, Apollo and Prospeo. This takes a minute."
+                              : res.noWebsite
+                                ? "Add the company's website first."
+                                : "Nothing to look up."
+                          );
+                        })
+                      }
+                    >
+                      {data.contactsRunning || busy === "contacts" ? (
+                        <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Search className="mr-1.5 h-3.5 w-3.5" />
+                      )}
+                      {data.contactsRunning ? "Looking…" : data.contactsEnrichedAt ? "Find contacts again" : "Find contacts"}
+                    </button>
                     {!person && (
                       <button type="button" className={cn(softButtonClass, "h-8 px-3 text-xs")} onClick={() => setPerson({ ...emptyPerson })}>
                         <Plus className="mr-1.5 h-3.5 w-3.5" /> Add person
@@ -449,6 +509,35 @@ export function EmployerCompanyDrawer({
                   Emails are only kept when a public page shows them.
                   {data.peopleSearchError && <span className="text-rose-600"> Last search: {data.peopleSearchError}</span>}
                 </p>
+                <div className="space-y-1 text-xs text-neutral-500">
+                  <p>
+                    {data.contactsEnrichedAt
+                      ? `Find contacts ran ${formatDistanceToNowStrict(data.contactsEnrichedAt, { addSuffix: true })}. `
+                      : "Find contacts asks Hunter, then Apollo and Prospeo, for named people and their work emails. "}
+                    New emails are checked before anyone can email them.
+                    {data.emailPattern && (
+                      <>
+                        {" "}
+                        Email pattern: <code>{data.emailPattern}</code>
+                      </>
+                    )}
+                    {data.contactsEnrichError && <span className="text-rose-600"> Last run: {data.contactsEnrichError}</span>}
+                  </p>
+                  {data.enrichResults.length > 0 && (
+                    <ul className="space-y-0.5">
+                      {data.enrichResults.map((r, i) => (
+                        <li key={i}>
+                          <span className="font-medium text-rh-ink dark:text-neutral-200">
+                            {PROVIDER_NAME[r.provider]} · {r.step.toLowerCase()}:
+                          </span>{" "}
+                          <span className={cn(r.outcome === "refused" || r.outcome === "error" ? "text-rose-600" : r.outcome === "used_up" ? "text-amber-700 dark:text-amber-300" : "")}>
+                            {r.message ?? r.outcome}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
 
                 {person && (
                   <form
@@ -525,8 +614,12 @@ export function EmployerCompanyDrawer({
                     {data.people.map((p) => (
                       <li key={p._id} className="space-y-1 py-2.5">
                         <div className="flex flex-wrap items-center gap-2">
-                          <p className="text-sm font-medium text-rh-ink dark:text-white">{p.name}</p>
+                          <p className="text-sm font-medium text-rh-ink dark:text-white">
+                            {p.name}
+                            {p.nameIncomplete && <span className="ml-1 text-xs font-normal text-neutral-500">(Apollo hides the rest of the surname)</span>}
+                          </p>
                           <StatusBadge tone="teal">{ROLE_GROUP_LABEL[p.roleGroup]}</StatusBadge>
+                          <StatusBadge tone="neutral">{SOURCE_LABEL[p.source]}</StatusBadge>
                           {p.doNotContact && <StatusBadge tone="red">Do not contact</StatusBadge>}
                           {p.bounced && <StatusBadge tone="amber">Email bounced</StatusBadge>}
                           <span className="ml-auto flex items-center gap-2">
@@ -573,23 +666,79 @@ export function EmployerCompanyDrawer({
                               {p.emailStatus && <span className="text-neutral-500">({EMAIL_FROM[p.emailStatus]})</span>}
                             </span>
                           )}
-                          {p.phone && (
-                            <a href={`tel:${p.phone.replace(/\s+/g, "")}`} className={linkClass}>
-                              <Phone className="h-3 w-3" /> {p.phone}
-                            </a>
-                          )}
-                          {p.linkedinUrl && (
-                            <a href={p.linkedinUrl} target="_blank" rel="noreferrer" className={linkClass}>
-                              <Linkedin className="h-3 w-3" /> LinkedIn
-                            </a>
-                          )}
                           {p.sourceUrl && p.sourceUrl !== p.linkedinUrl && (
                             <a href={p.sourceUrl} target="_blank" rel="noreferrer" className={linkClass}>
                               <ExternalLink className="h-3 w-3" /> Source
                             </a>
                           )}
-                          <span className="text-neutral-500">{SOURCE_LABEL[p.source]}</span>
                         </p>
+                        {p.email && !p.doNotContact && (
+                          <div className="flex flex-wrap items-center gap-2 text-xs">
+                            {p.verifyStatus ? (
+                              <StatusBadge tone={VERIFY_TONE[p.verifyStatus]} className="gap-1">
+                                <ShieldCheck className="h-3 w-3" /> {VERIFY_LABEL[p.verifyStatus]}
+                              </StatusBadge>
+                            ) : (
+                              <StatusBadge tone="neutral">Not checked</StatusBadge>
+                            )}
+                            <span className="text-neutral-500">
+                              {p.verifyStatus
+                                ? `${VERIFY_HINT[p.verifyStatus]}${p.verifiedBy ? ` Checked by ${PROVIDER_NAME[p.verifiedBy]}` : ""}${p.verifiedAt ? ` ${formatDistanceToNowStrict(p.verifiedAt, { addSuffix: true })}.` : p.verifiedBy ? "." : ""}`
+                                : p.sendable
+                                  ? "Can be emailed (typed by the team or shown on a public page)."
+                                  : "Check it before it can be emailed."}
+                              {p.confidence !== null && ` Hunter's confidence: ${p.confidence}%.`}
+                            </span>
+                            {(!p.verifyStatus || p.verifyStatus === "unknown") && (
+                              <button
+                                type="button"
+                                className={cn(softButtonClass, "h-7 px-2 text-xs")}
+                                disabled={busy !== null}
+                                onClick={() => check(p._id, false)}
+                              >
+                                {busy === `check-${p._id}` && <Loader2 className="mr-1 h-3 w-3 animate-spin" />} Check
+                              </button>
+                            )}
+                            {(p.verifyStatus === "accept_all" || p.verifyStatus === "unknown" || p.verifyStatus === "webmail") && (
+                              <label className="flex items-center gap-1.5 text-rh-ink dark:text-white">
+                                <input
+                                  type="checkbox"
+                                  className={checkboxClass}
+                                  checked={p.sendAnyway}
+                                  disabled={busy !== null}
+                                  onChange={(e) =>
+                                    run(
+                                      `anyway-${p._id}`,
+                                      () => setSendAnyway({ contactId: p._id, sendAnyway: e.target.checked }),
+                                      e.target.checked ? "This email can now be added to a sequence" : "Saved"
+                                    )
+                                  }
+                                />
+                                Send anyway
+                              </label>
+                            )}
+                          </div>
+                        )}
+                        {!p.email && p.suggestedEmail && !p.doNotContact && (
+                          <p className="flex flex-wrap items-center gap-2 text-xs text-neutral-500">
+                            Probably <span className="text-rh-ink dark:text-white">{p.suggestedEmail}</span> (from the company&apos;s pattern, not
+                            checked)
+                            <button
+                              type="button"
+                              className={cn(softButtonClass, "h-7 px-2 text-xs")}
+                              disabled={busy !== null}
+                              onClick={() => check(p._id, true)}
+                            >
+                              {busy === `check-${p._id}` && <Loader2 className="mr-1 h-3 w-3 animate-spin" />} Check it
+                            </button>
+                          </p>
+                        )}
+                        {(p.phone || p.linkedinUrl) && (
+                          <div className="flex flex-wrap items-center gap-2">
+                            {p.phone && <PhoneActions phone={p.phone} />}
+                            {p.linkedinUrl && <LinkedInButton url={p.linkedinUrl} />}
+                          </div>
+                        )}
                         {p.notes && <p className="text-xs text-neutral-500">{p.notes}</p>}
                         <label className="flex items-center gap-2 text-xs text-neutral-500">
                           <input
