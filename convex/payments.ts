@@ -3,14 +3,14 @@ import { mutation, query, action, internalMutation, internalQuery, MutationCtx, 
 import { ConvexError, v } from "convex/values";
 import { makeFunctionReference } from "convex/server";
 import { requireAdmin } from "./helpers/partnerAccess";
-import { paystackRequest } from "./clinicBilling";
+import { mainAccountChargeKobo, paystackRequest } from "./clinicBilling";
 import { Id, Doc } from "./_generated/dataModel";
 import { api } from "./_generated/api";
 import { internal } from "./_generated/api";
 import { closeInvoicePaymentLinks } from "./helpers/paymentLinks";
 import { recordInvoicePartnerCommission } from "./helpers/partnerLedger";
 import { issueReceipt } from "./helpers/receipts";
-import { rehabifySubaccountCodes } from "./helpers/paystackRouting";
+import { recordProviderSplitFee, rehabifySubaccountCodes } from "./helpers/paystackRouting";
 
 // Payment status enum (aligned with schema.payments.status)
 const paymentStatus = v.union(
@@ -427,6 +427,7 @@ export function paystackEvidence(data: any): PaystackEvidence {
     subaccount_code: subaccount || undefined,
     metadata_invoice_id: typeof data?.metadata?.invoiceId === "string" ? data.metadata.invoiceId : undefined,
     status: typeof data?.status === "string" ? data.status : undefined,
+    fees: typeof data?.fees === "number" ? data.fees : undefined,
   };
 }
 
@@ -454,6 +455,8 @@ export type PaystackEvidence = {
   /** The invoiceId our server put in the checkout metadata */
   metadata_invoice_id?: string;
   status?: string;
+  /** Paystack's fee on this payment (kobo), when it reported it */
+  fees?: number;
 };
 
 async function logPaymentProblem(ctx: MutationCtx, action: string, reference: string, details: Record<string, unknown>) {
@@ -567,6 +570,18 @@ async function applyPaymentStatus(
     // Paystack names the subaccount when it split the payment to the provider's bank
     payoutRoute: providerSubaccount ? "split_to_provider" : "held_by_platform",
   });
+  // Split to the clinic's or physio's own account while money routing is on: Rehabify's fee (the
+  // main account's transaction_charge, less the Paystack fee it bore) stays in the Paystack
+  // balance. Recorded so an admin can move it to Rehabify's bank (nothing when routing is off).
+  if (providerSubaccount) {
+    await recordProviderSplitFee(ctx, {
+      reference: args.paystackReference,
+      invoiceId: invoice._id,
+      mainChargeKobo: mainAccountChargeKobo(invoice),
+      paidKobo,
+      paystackFeeKobo: evidence.fees,
+    });
+  }
   // A physio's own invoice (not Rehabify Care, not a clinic's) that Paystack couldn't split to
   // their bank: that money is entirely theirs, so it's owed now rather than when a linked
   // session is completed (appointments.ts skips invoices that already have a payout)

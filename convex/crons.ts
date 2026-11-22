@@ -224,6 +224,15 @@ crons.interval(
   internal.payouts.sendPayoutNoteNudges,
   {}
 );
+// Money routing (paystackRouting.ts): Monday 08:00 WAT, full admins hear when more than ₦10,000 of
+// Rehabify's fees are waiting in the Paystack balance, or Rehabify owes the payout pool. Silent
+// until the switch has been on; nothing is moved automatically.
+crons.weekly(
+  "money-routing-fee-reminder",
+  { dayOfWeek: "monday", hourUTC: 7, minuteUTC: 0 },
+  internal.paystackRouting.weeklyFeeSweepReminder,
+  {}
+);
 // 09:00 WAT: a Friday run that went unpaid. Physios hear once per missed Friday; the team daily.
 crons.daily(
   "payout-due-reminders",

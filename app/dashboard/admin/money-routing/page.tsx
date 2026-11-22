@@ -30,6 +30,7 @@ import {
   softButtonClass,
 } from '@/components/admin/ui'
 import { errorText } from '@/components/admin/finance/format'
+import { PayoutPoolSection } from '@/components/admin/finance/PayoutPool'
 import { formatLagos } from '@/convex/helpers/lagosTime'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
@@ -51,6 +52,8 @@ type Routing = {
   routingChangedAt: number | null
   routingChangedByName: string | null
   lastSplitProblem: { at: number; source: string; message: string } | null
+  routingOnSince: number | null
+  transfersReady: boolean
 }
 type Bank = { name: string; code: string; slug: string | null }
 
@@ -91,6 +94,8 @@ export default function MoneyRoutingPage() {
         <>
           <AccountPanel routing={routing} />
           <SwitchPanel routing={routing} />
+          {/* The pool and fee moves only mean something once an account is saved */}
+          {routing.account && <PayoutPoolSection />}
         </>
       )}
     </AdminPage>
@@ -130,10 +135,13 @@ function HowItWorks() {
         <div>
           <p className={cn('font-medium', strong)}>Good to know</p>
           <ul className="mt-1 list-disc space-y-1 pl-5">
-            <li>Refunds come out of the Paystack balance, even for payments whose Rehabify share went to the bank. Top the balance up after a refund.</li>
-            <li>Rehabify’s fee on clinic and independent-physio invoices stays in the Paystack balance. Move it to the bank yourself for now.</li>
-            <li>Money paid before the switch went on has already settled to the bank. It doesn’t move.</li>
-            <li>Partner commissions are paid from the Paystack balance but come out of Rehabify’s share. Top up before partner payouts.</li>
+            <li>
+              Refunds come out of the Paystack balance, even for payments whose Rehabify share went to the bank. What the payout pool can’t cover
+              is counted below as owed by Rehabify; top it up and record it.
+            </li>
+            <li>Rehabify’s fee on clinic and independent-physio invoices stays in the Paystack balance. Move it to the bank below.</li>
+            <li>Money paid before the switch went on has already settled to the bank. It doesn’t move, and refunds of it aren’t counted below.</li>
+            <li>Partner commissions are paid from the Paystack balance but come out of Rehabify’s share, so they’re taken off Rehabify’s fees below.</li>
             <li>If Paystack ever refuses a split, that checkout goes ahead without it (as before) and the reason shows below.</li>
           </ul>
         </div>

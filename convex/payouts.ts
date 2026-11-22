@@ -11,6 +11,7 @@ import { bookingDescription } from "./helpers/marketplaceInvoices";
 import { verifyPaystackSignature } from "./helpers/paystackSignature";
 import { currentPaystackMode } from "./helpers/paystackMode";
 import { plainTransferFailure } from "./helpers/transferFailure";
+import { feeSweepByReference, settleFeeSweep } from "./helpers/paystackRouting";
 import { randomString } from "./helpers/partnerShared";
 import { appLink } from "./helpers/appUrl";
 import { formatLagos } from "./helpers/lagosTime";
@@ -1870,6 +1871,16 @@ export const recordPayoutTransferWebhook = mutation({
     const data = payload.data ?? {};
     const reference = typeof data.reference === "string" ? data.reference : "";
     if (!["transfer.success", "transfer.failed", "transfer.reversed"].includes(event) || !reference) return { handled: false };
+    const state: TransferState = event === "transfer.success" ? "success" : event === "transfer.reversed" ? "reversed" : "failed";
+    // Rehabify's fees moved from the balance to its bank (Money routing, "rhsweep_" references)
+    if (reference.toLowerCase().startsWith("rhsweep_")) {
+      const sweep = await feeSweepByReference(ctx, reference);
+      if (!sweep) return { handled: false };
+      const changed = await settleFeeSweep(ctx, sweep, state, {
+        transferCode: typeof data.transfer_code === "string" ? data.transfer_code : undefined,
+      });
+      return { handled: true, kind: "fee_sweep", state, changed };
+    }
     const transfer =
       (await ctx.db
         .query("payoutRunTransfers")
@@ -1880,7 +1891,6 @@ export const recordPayoutTransferWebhook = mutation({
         .withIndex("by_reference", (q) => q.eq("reference", reference.toLowerCase()))
         .first());
     if (!transfer) return { handled: false };
-    const state: TransferState = event === "transfer.success" ? "success" : event === "transfer.reversed" ? "reversed" : "failed";
     const changed = await settleRunTransfer(ctx, transfer, state, {
       transferCode: typeof data.transfer_code === "string" ? data.transfer_code : undefined,
     });

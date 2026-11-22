@@ -1613,7 +1613,7 @@ export const payClinicSubscriptionInvoice = action({
     // Rehabify's own fee: never the clinic's subaccount. With money routing on, it goes to
     // Rehabify's revenue sub-account (its bank) instead of the Paystack balance; off, no split.
     const split = await rehabifyOnlySplit(ctx);
-    const data = await initializeWithRouting(ctx, "clinic_subscription", split, (routed) => paystackRequest("/transaction/initialize", {
+    const data = await initializeWithRouting(ctx, "clinic_subscription", split, { reference, amountKobo: info.amountKobo }, (routed) => paystackRequest("/transaction/initialize", {
       method: "POST",
       body: JSON.stringify({
         reference,

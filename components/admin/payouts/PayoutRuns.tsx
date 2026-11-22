@@ -166,6 +166,8 @@ const refs = {
     'payouts:adminFinalizeRunTransfer'
   ),
   balance: makeFunctionReference<'action', Record<string, never>, BalanceResult>('payouts:adminPaystackBalance'),
+  // Money routing: what Rehabify owes the payout pool (refunds and partner payouts taken from it)
+  poolOwed: makeFunctionReference<'query', Record<string, never>, { owedKobo: number }>('paystackRouting:adminPoolOwed'),
 }
 
 const fridayLong = (key: string) => formatLagos(Date.parse(`${key}T11:00:00Z`), { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }, 'en-GB')
@@ -338,16 +340,34 @@ function LowBalanceWarning({ shortKobo }: { shortKobo: number }) {
   )
 }
 
+/**
+ * Money routing: refunds of split payments (and partner payouts) came out of the payout pool, and
+ * Rehabify hasn't topped it up yet, so the balance holds less clinicians' money than it should.
+ */
+function PoolOwedWarning({ owedKobo }: { owedKobo: number }) {
+  return (
+    <p className="flex items-start gap-2 rounded-xl bg-rh-peach px-3 py-2 text-sm text-[#b4690e] dark:bg-amber-400/10 dark:text-amber-300">
+      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+      <span>
+        Rehabify owes the payout pool {formatKobo(owedKobo)} for refunds and partner payouts taken from it. Top up the Paystack balance by{' '}
+        {formatKobo(owedKobo)} from Rehabify’s bank (Paystack › Balance › Top up), then record it in Finance › Money routing.
+      </span>
+    </p>
+  )
+}
+
 /** "Paystack balance ₦X · this run needs ₦Y", with the top-up warning when it's short. */
 function BalanceNote({
   state,
   needKobo,
   feesKobo,
+  owedKobo,
   onRefresh,
 }: {
   state: BalanceState
   needKobo: number
   feesKobo: number
+  owedKobo: number
   onRefresh: () => void
 }) {
   const refreshButton = (
@@ -370,14 +390,17 @@ function BalanceNote({
     ) : null
   if (state.status !== 'ok') {
     return (
-      <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
-        <span className={strong}>
-          Paystack balance: {state.status === 'loading' ? 'checking…' : 'couldn’t check'}
-        </span>
-        {needs}
-        {state.status === 'unknown' && <span className={cn('text-xs', muted)}>({state.message}) Pay and Retry still work.</span>}
-        {refreshButton}
-      </p>
+      <div className="space-y-2">
+        <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+          <span className={strong}>
+            Paystack balance: {state.status === 'loading' ? 'checking…' : 'couldn’t check'}
+          </span>
+          {needs}
+          {state.status === 'unknown' && <span className={cn('text-xs', muted)}>({state.message}) Pay and Retry still work.</span>}
+          {refreshButton}
+        </p>
+        {owedKobo > 0 && <PoolOwedWarning owedKobo={owedKobo} />}
+      </div>
     )
   }
   const short = balanceShortKobo(state, needKobo)
@@ -392,6 +415,7 @@ function BalanceNote({
         {refreshButton}
       </p>
       {short > 0 && <LowBalanceWarning shortKobo={short} />}
+      {owedKobo > 0 && <PoolOwedWarning owedKobo={owedKobo} />}
     </div>
   )
 }
@@ -409,6 +433,7 @@ export function PayoutRunView({ runId, onBack }: { runId?: Id<'payoutRuns'>; onB
   const check = useAction(refs.check)
   const finalize = useAction(refs.finalize)
   const balance = usePaystackBalance()
+  const poolOwed = useQuery(refs.poolOwed, {})
   const actions = useLineActions()
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [busy, setBusy] = useState<string | null>(null)
@@ -566,7 +591,13 @@ export function PayoutRunView({ runId, onBack }: { runId?: Id<'payoutRuns'>; onB
           ))}
         </dl>
         <div className="px-5 pb-5 sm:px-6">
-          <BalanceNote state={balance.state} needKobo={sendNeedKobo} feesKobo={sendFeesKobo} onRefresh={() => void balance.refresh()} />
+          <BalanceNote
+            state={balance.state}
+            needKobo={sendNeedKobo}
+            feesKobo={sendFeesKobo}
+            owedKobo={poolOwed?.owedKobo ?? 0}
+            onRefresh={() => void balance.refresh()}
+          />
         </div>
       </Panel>
 

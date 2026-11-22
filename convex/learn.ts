@@ -429,7 +429,7 @@ export const startRegistration = action({
 
     // The MSK program is Rehabify's revenue: with money routing on, to Rehabify's sub-account
     const split = await rehabifyOnlySplit(ctx);
-    const data = await initializeWithRouting(ctx, "learn_cohort", split, (routed) => paystackRequest("/transaction/initialize", {
+    const data = await initializeWithRouting(ctx, "learn_cohort", split, { reference, amountKobo: prepared.amountKobo }, (routed) => paystackRequest("/transaction/initialize", {
       method: "POST",
       body: JSON.stringify({
         reference,
@@ -3595,7 +3595,7 @@ export const startCoursePayment = action({
     // Courses are Rehabify's revenue (instructors get no share of the fee): with money routing on,
     // to Rehabify's sub-account
     const split = await rehabifyOnlySplit(ctx);
-    const data = await initializeWithRouting(ctx, "learn_course", split, (routed) => paystackRequest("/transaction/initialize", {
+    const data = await initializeWithRouting(ctx, "learn_course", split, { reference, amountKobo: prepared.amountKobo }, (routed) => paystackRequest("/transaction/initialize", {
       method: "POST",
       body: JSON.stringify({
         reference,

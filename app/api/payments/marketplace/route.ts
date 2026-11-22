@@ -87,7 +87,7 @@ export async function POST(request: NextRequest) {
     // (Admin › Payouts). With money routing switched on (Admin › Finance › Money routing), the
     // physio's share stays in the Paystack balance that pays those payouts and Rehabify's part goes
     // to Rehabify's bank account; otherwise (the default) there is no split, as before.
-    const split = await bookingCheckoutSplit(bookingId, amountInKobo);
+    const split = await bookingCheckoutSplit(bookingId, amountInKobo, txRef, 'marketplace_booking');
     const response = await initializeCheckout('marketplace_booking', paymentData, split);
     const data = await response.json().catch(() => null);
 

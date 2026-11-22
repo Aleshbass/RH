@@ -3710,10 +3710,67 @@ export default defineSchema({
     lastSplitProblem: v.optional(v.object({ at: v.number(), source: v.string(), message: v.string() })),
     routingChangedAt: v.optional(v.number()),
     routingChangedBy: v.optional(v.id("users")),
+    // When the switch first went on (under this Paystack mode): from then on Rehabify's fee on
+    // clinic/physio invoices is counted as waiting in the balance, and partner payouts as taken
+    // from Rehabify's share
+    routingOnSince: v.optional(v.number()),
+    // A Paystack transfer recipient for the same bank account, for "Move Rehabify's fees to the
+    // bank", and the Paystack mode it was made with
+    transferRecipientCode: v.optional(v.string()),
+    transferRecipientMode: v.optional(v.union(v.literal("test"), v.literal("live"))),
     createdAt: v.number(),
     updatedAt: v.number(),
     updatedBy: v.optional(v.id("users")),
   }),
+
+  // Every checkout that was sent with Rehabify's revenue split (helpers/paystackRouting.ts),
+  // written just before it is sent and removed if Paystack refused the split. A refund of one of
+  // these is taken by Paystack from the main balance (the clinicians' payout pool), so the refund
+  // code needs to know what this payment left there (keptKobo).
+  paystackRoutedPayments: defineTable({
+    reference: v.string(),
+    // held_booking: the clinician's share stayed in the main account; rehabify_only: nothing did
+    kind: v.union(v.literal("held_booking"), v.literal("rehabify_only")),
+    amountKobo: v.number(),
+    keptKobo: v.number(), // the transaction_charge: what stayed in the main account (the balance)
+    subaccountCode: v.string(),
+    source: v.string(), // e.g. marketplace_booking, joy_booking, flex
+    paystackMode: v.union(v.literal("test"), v.literal("live")),
+    bookingId: v.optional(v.id("marketplaceBookings")),
+    createdAt: v.number(),
+  }).index("by_reference", ["reference"]),
+
+  // The payout pool's ledger (Admin › Finance › Money routing): what Rehabify owes the clinicians'
+  // money in the Paystack balance, and what of Rehabify's own money is waiting there. Amounts in
+  // kobo, always positive; the kind says which way it goes.
+  //   refund_shortfall: a refund took more from the balance than that payment left there
+  //   topup: an admin topped the balance up from Rehabify's bank (reduces what's owed)
+  //   fee_earned: Rehabify's fee on a clinic/physio invoice that stayed in the balance
+  //   fee_sweep: Rehabify's fees moved from the balance to Rehabify's bank (a Paystack transfer)
+  paystackPoolLedger: defineTable({
+    kind: v.union(v.literal("refund_shortfall"), v.literal("topup"), v.literal("fee_earned"), v.literal("fee_sweep")),
+    amountKobo: v.number(),
+    paystackMode: v.union(v.literal("test"), v.literal("live")),
+    // fee_sweep only: the transfer's state (failed and reversed sweeps count as not moved)
+    status: v.optional(
+      v.union(v.literal("sending"), v.literal("pending"), v.literal("otp_required"), v.literal("success"), v.literal("failed"), v.literal("reversed"))
+    ),
+    paymentReference: v.optional(v.string()), // the payment refunded (refund_shortfall) or paid (fee_earned)
+    refundKey: v.optional(v.string()), // the Paystack refund it came from, so a repeat webhook adds nothing
+    bookingId: v.optional(v.id("marketplaceBookings")),
+    invoiceId: v.optional(v.id("invoices")),
+    transferReference: v.optional(v.string()), // fee_sweep: rhsweep_<date>_<random>
+    transferCode: v.optional(v.string()),
+    failureReason: v.optional(v.string()),
+    note: v.optional(v.string()),
+    createdBy: v.optional(v.id("users")),
+    createdAt: v.number(),
+    updatedAt: v.optional(v.number()),
+    completedAt: v.optional(v.number()),
+  })
+    .index("by_kind", ["kind", "createdAt"])
+    .index("by_payment_reference", ["paymentReference"])
+    .index("by_transfer_reference", ["transferReference"]),
 
   assessments: defineTable({
     patientId: v.id("users"),

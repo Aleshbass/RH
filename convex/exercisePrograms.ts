@@ -1259,7 +1259,7 @@ export const startFlexCheckout = action({
     // Flex / Flex Max is a patient's plan with Rehabify (no clinician share): with money routing
     // on, to Rehabify's sub-account
     const split = await rehabifyOnlySplit(ctx);
-    const data = await initializeWithRouting(ctx, "flex", split, (routed) => paystackRequest("/transaction/initialize", {
+    const data = await initializeWithRouting(ctx, "flex", split, { reference, amountKobo: prep.amountKobo }, (routed) => paystackRequest("/transaction/initialize", {
       method: "POST",
       body: JSON.stringify({
         reference,

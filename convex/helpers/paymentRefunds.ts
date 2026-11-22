@@ -27,6 +27,7 @@ import { returnAwardSession } from "./accessAwards";
 import { settleRefundRequest } from "./refunds";
 import { notifyRefundIssued } from "../pushAlerts";
 import { CARD_CHECK_REFERENCE, subscriptionForCardCheck } from "./clinicCards";
+import { recordRefundShortfall } from "./paystackRouting";
 
 type RefundKind =
   | "marketplace"
@@ -398,6 +399,10 @@ export async function applyPaystackRefund(ctx: MutationCtx, data: any): Promise<
     relatedType: booking ? "marketplace_booking" : undefined,
     relatedId: booking?._id,
   });
+  // Paystack took this refund from the main balance. If the payment was split by money routing
+  // (or its Rehabify fee counted as left in the balance), what the clinicians' payout pool can't
+  // cover is recorded for Rehabify to top up (helpers/paystackRouting.ts). Nothing otherwise.
+  await recordRefundShortfall(ctx, { reference, refundKey, refundedTotalKobo: total });
   await ctx.db.insert("paymentRefunds", {
     refundKey,
     reference,

@@ -157,7 +157,7 @@ export const chargeFlexRenewal = internalAction({
     // so the charge's own error handling below is unchanged)
     const split = await rehabifyOnlySplit(ctx);
     try {
-      const data = await chargeWithRouting(ctx, "flex_renewal", split, (routed) => paystackRequest("/transaction/charge_authorization", {
+      const data = await chargeWithRouting(ctx, "flex_renewal", split, { reference, amountKobo: info.amountKobo }, (routed) => paystackRequest("/transaction/charge_authorization", {
         method: "POST",
         body: JSON.stringify({
           authorization_code: info.authorizationCode,

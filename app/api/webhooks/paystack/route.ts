@@ -410,8 +410,10 @@ async function handlePaymentFailed(data: {
  */
 async function handleTransferEvent(data: any, rawBody: string, signature: string, event: string) {
     const { convex, api } = await convexClient()
-    // Physio payout runs use "rhpo_" references (convex/payouts.ts); everything else is a partner payout
-    const physioPayout = String(data?.reference ?? '').toLowerCase().startsWith('rhpo_')
+    // Physio payout runs use "rhpo_" references and Rehabify's fee moves to its bank "rhsweep_"
+    // (both settled by convex/payouts.ts); everything else is a partner payout
+    const transferRef = String(data?.reference ?? '').toLowerCase()
+    const physioPayout = transferRef.startsWith('rhpo_') || transferRef.startsWith('rhsweep_')
     const result = physioPayout
         ? await convex.mutation(api.payouts.recordPayoutTransferWebhook, { rawBody, signature })
         : await convex.mutation(api.monthlySettlements.recordPaystackTransferWebhook, { rawBody, signature })

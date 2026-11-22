@@ -43,7 +43,7 @@ export async function POST(request: Request, context: { params: Promise<{ bookin
     // With money routing switched on (Admin › Finance › Money routing), the physio's share stays in
     // the Paystack balance that pays payouts and Rehabify's part goes to Rehabify's bank account;
     // otherwise (the default) there is no split, as before.
-    const split = await bookingCheckoutSplit(bookingId, chargeAmountKobo);
+    const split = await bookingCheckoutSplit(bookingId, chargeAmountKobo, reference, "joy_booking");
     const response = await initializeCheckout("joy_booking", { email: input.email ?? joyLoginEmail(input.patient_id), amount: chargeAmountKobo, currency: "NGN", reference, callback_url: `${appUrl}/payment/callback`, metadata: { rh_booking_id: bookingId, source_system: "joy_ai", source_channel: "whatsapp", correlation_id: requestId, ...feeMetadata } }, split);
     let result: { status?: boolean; message?: string; data?: { authorization_url?: string; access_code?: string } };
     try {

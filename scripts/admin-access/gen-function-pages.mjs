@@ -40,6 +40,10 @@ const FULL_ONLY = [
   'paystackRouting:adminGetRouting',
   'paystackRouting:adminRoutingAccess',
   'paystackRouting:adminSetRouting',
+  // The payout pool ledger and top-ups (fee moves, transfer set-up and checks use adminRoutingAccess).
+  // adminPoolOwed stays page-based: the Payouts page shows what's owed on its balance line.
+  'paystackRouting:adminPoolLedger',
+  'paystackRouting:adminRecordTopUp',
 ]
 /** Shell functions that still need a page: the ⌘K people search needs a people page. */
 const PAGE_OVERRIDES = {

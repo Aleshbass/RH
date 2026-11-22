@@ -17,30 +17,45 @@ import { convexServerSecret } from '@/lib/convex-server-secret'
 export type PaystackSplit = { subaccount?: string; transaction_charge?: number; bearer?: 'account' | 'subaccount' }
 
 // Plain references: the generated api type is at TypeScript's depth limit
-const bookingSplitRef = makeFunctionReference<
-  'query',
-  { serverSecret: string; bookingId: Id<'marketplaceBookings'>; amountKobo: number },
-  { split: PaystackSplit; keyMode: 'test' | 'live' }
->('paystackRouting:bookingCheckoutSplit')
-const reportProblemRef = makeFunctionReference<'mutation', { serverSecret: string; source: string; message: string }, null>(
-  'paystackRouting:reportSplitProblem'
-)
+const bookingRoutingRef = makeFunctionReference<
+  'mutation',
+  {
+    serverSecret: string
+    bookingId: Id<'marketplaceBookings'>
+    amountKobo: number
+    reference: string
+    source: string
+    serverKeyMode: 'test' | 'live'
+  },
+  { split: PaystackSplit }
+>('paystackRouting:bookingCheckoutRouting')
+const reportProblemRef = makeFunctionReference<
+  'mutation',
+  { serverSecret: string; source: string; message: string; reference?: string },
+  null
+>('paystackRouting:reportSplitProblem')
 
 /** The mode of this server's Paystack key (same rule as convex/helpers/paystackMode.ts). */
-const serverKeyMode = () => ((process.env.PAYSTACK_SECRET_KEY ?? '').startsWith('sk_live_') ? 'live' : 'test')
+const serverKeyMode = (): 'test' | 'live' => ((process.env.PAYSTACK_SECRET_KEY ?? '').startsWith('sk_live_') ? 'live' : 'test')
 
-/** The split for a Rehabify Care booking's checkout, or {} (no split) when routing is off or anything is unclear. */
-export async function bookingCheckoutSplit(bookingId: string, amountKobo: number): Promise<PaystackSplit> {
+/**
+ * The split for a Rehabify Care booking's checkout, or {} (no split) when routing is off or
+ * anything is unclear. Convex records the split against `reference` before it is returned, so a
+ * later refund of this payment knows what it left in the payout pool.
+ */
+export async function bookingCheckoutSplit(bookingId: string, amountKobo: number, reference: string, source: string): Promise<PaystackSplit> {
   try {
-    const result = await getConvexClient().query(bookingSplitRef, {
+    const result = await getConvexClient().mutation(bookingRoutingRef, {
       serverSecret: convexServerSecret(),
       bookingId: bookingId as Id<'marketplaceBookings'>,
       amountKobo,
+      reference,
+      source,
+      // The sub-account exists only under the Paystack mode of Convex's key: if this server's key is
+      // in the other mode (e.g. a test key on a preview), Convex returns no split
+      serverKeyMode: serverKeyMode(),
     })
-    // The sub-account exists only under the Paystack mode of Convex's key: if this server's key is in
-    // the other mode (e.g. a test key on a preview), Paystack would refuse it, so don't send it
-    if (!result?.split?.subaccount || result.keyMode !== serverKeyMode()) return {}
-    return result.split
+    return result?.split?.subaccount ? result.split : {}
   } catch {
     // Routing must never stop a payment
     return {}
@@ -51,8 +66,10 @@ export async function bookingCheckoutSplit(bookingId: string, amountKobo: number
  * POSTs /transaction/initialize with the split. If Paystack answers with a refusal, the refusal is
  * noted on the Money routing page and the same checkout is sent again without the split (exactly
  * as before routing), so a routing problem never stops a patient paying; the money then simply
- * stays in the main account. A refused initialize creates no transaction, so the reference can be
- * reused. Network errors and unreadable answers are returned to the caller as before.
+ * stays in the main account, and Convex forgets the payment's routing record. A refused
+ * initialize creates no transaction, so the reference can be reused. Network errors and
+ * unreadable answers are returned to the caller as before (the record stays: the checkout may
+ * exist with the split).
  */
 export async function initializeCheckout(source: string, body: Record<string, unknown>, split: PaystackSplit): Promise<Response> {
   const send = (routed: PaystackSplit) =>
@@ -69,7 +86,8 @@ export async function initializeCheckout(source: string, body: Record<string, un
   // No keys, emails or amounts: the product and Paystack's reason only
   console.warn('paystack_routing_split_refused', { source, message })
   try {
-    await getConvexClient().mutation(reportProblemRef, { serverSecret: convexServerSecret(), source, message })
+    const reference = typeof body.reference === 'string' ? body.reference : undefined
+    await getConvexClient().mutation(reportProblemRef, { serverSecret: convexServerSecret(), source, message, reference })
   } catch {
     // The payment matters more than the note
   }

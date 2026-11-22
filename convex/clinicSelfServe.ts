@@ -398,7 +398,7 @@ export const startCardSetup = action({
     // sub-account. The small card check is refunded straight away, and Paystack takes refunds from
     // the main balance, so it is never routed (it stays exactly as before).
     const split = invoice ? await rehabifyOnlySplit(ctx) : {};
-    const data = await initializeWithRouting(ctx, "clinic_subscription", split, (routed) => paystackRequest("/transaction/initialize", {
+    const data = await initializeWithRouting(ctx, "clinic_subscription", split, { reference, amountKobo: invoice ? invoice.amountKobo : CLINIC_SELF_SERVE.cardCheckKobo }, (routed) => paystackRequest("/transaction/initialize", {
       method: "POST",
       body: JSON.stringify({
         reference,
@@ -612,7 +612,7 @@ export const chargeSavedCard = internalAction({
     // so the charge's own error handling below is unchanged)
     const split = await rehabifyOnlySplit(ctx);
     try {
-      const data = await chargeWithRouting(ctx, "clinic_subscription_auto", split, (routed) => paystackRequest("/transaction/charge_authorization", {
+      const data = await chargeWithRouting(ctx, "clinic_subscription_auto", split, { reference, amountKobo: info.amountKobo }, (routed) => paystackRequest("/transaction/charge_authorization", {
         method: "POST",
         body: JSON.stringify({
           authorization_code: info.authorizationCode,

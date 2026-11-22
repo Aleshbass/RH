@@ -652,7 +652,7 @@ export const startCheckout = action({
     // takes refunds from the main balance, so it is never routed.
     const isCardCheck = p.reference.startsWith(`${PREFIX}CARD_`);
     const split = isCardCheck ? {} : await rehabifyOnlySplit(ctx);
-    const data = await initializeWithRouting(ctx, "physio_pro", split, (routed) => paystackRequest("/transaction/initialize", {
+    const data = await initializeWithRouting(ctx, "physio_pro", split, { reference: p.reference, amountKobo: p.amountKobo }, (routed) => paystackRequest("/transaction/initialize", {
       method: "POST",
       body: JSON.stringify({
         reference: p.reference,
@@ -1169,7 +1169,7 @@ export const chargeSavedCard = internalAction({
     // so the charge's own error handling below is unchanged)
     const split = await rehabifyOnlySplit(ctx);
     try {
-      const data: any = await chargeWithRouting(ctx, "physio_pro_renewal", split, (routed) => paystackRequest("/transaction/charge_authorization", {
+      const data: any = await chargeWithRouting(ctx, "physio_pro_renewal", split, { reference: info.reference, amountKobo: info.amountKobo }, (routed) => paystackRequest("/transaction/charge_authorization", {
         method: "POST",
         body: JSON.stringify({
           authorization_code: info.authorizationCode,
