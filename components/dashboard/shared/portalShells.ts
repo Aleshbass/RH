@@ -10,19 +10,12 @@ export function hasOwnPortalShell(pathname: string) {
 }
 
 /**
- * Pages that mount their own toast container: video pages, the clinic portal (ClinicTheme) and the
- * shared dashboard shell (DashboardChrome). Every other page uses the one in app/providers.tsx;
- * without it, toasts (saves, errors, the "new version" prompt) would never show.
+ * Pages that mount their own toast container: video pages, every portal with its own shell
+ * (clinic, physio, admin, patient and family all sit in ClinicThemeProvider, which has one) and
+ * the rest of /dashboard (DashboardChrome has one). Every other page uses the one in
+ * app/providers.tsx; without it, toasts (saves, errors, the "new version" prompt) would never
+ * show, and with two, every toast shows twice.
  */
 export function hasOwnToaster(pathname: string) {
-  // The physio portal sits in ClinicThemeProvider, which has its own toast container too
-  if (
-    pathname.startsWith('/v/') ||
-    pathname.startsWith('/video-call/') ||
-    pathname.startsWith('/dashboard/clinic') ||
-    pathname.startsWith('/dashboard/physiotherapist')
-  ) {
-    return true;
-  }
-  return pathname.startsWith('/dashboard') && !hasOwnPortalShell(pathname);
+  return pathname.startsWith('/v/') || pathname.startsWith('/video-call/') || pathname.startsWith('/dashboard');
 }
