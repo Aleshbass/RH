@@ -41,7 +41,9 @@ function Banner() {
     return () => window.clearTimeout(timer);
   }, [lineDown]);
 
-  if (vault.status === 'unlocked' && offlineModeOn()) return null;
+  // With offline use set up on this phone, its own screens say so (and changes ARE kept): the PIN
+  // screen while it's locked offline, the portals' pill (components/offline/SyncStatus.tsx) once open
+  if (offlineModeOn() && (vault.status === 'unlocked' || (vault.status === 'locked' && !online))) return null;
   if (online && !reconnecting) return null;
 
   return (

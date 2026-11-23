@@ -230,6 +230,11 @@ test('physio: recent patients are kept ahead of time, so a record never opened s
   await goOffline(page);
   await page.goto(`${recordPath}?tab=notes`);
   const write = page.getByRole('button', { name: /Write a clinical note for today/ });
+  // The PIN screen says it's offline; the "changes won't save" banner (for phones without offline
+  // use) stays away, since here changes are kept
+  await expect(page.getByLabel('PIN', { exact: true }).or(write).first()).toBeVisible({ timeout: 60_000 });
+  await page.waitForTimeout(1_500);
+  await expect(page.getByText('You’re offline. Changes won’t save until you’re back online.')).toHaveCount(0);
   await unlockIfAsked(page, write);
   // The patient's name and notes come from the answers kept ahead of time
   await expect(page.getByText(/Testpatient|Obi/).first()).toBeVisible({ timeout: 30_000 });
