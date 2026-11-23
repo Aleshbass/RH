@@ -370,7 +370,7 @@ export function SyncStatus() {
         className={cn(
           'fixed left-1/2 z-[45] flex max-w-[calc(100vw-2rem)] -translate-x-1/2 items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium shadow-lg',
           'bottom-[calc(4.75rem+env(safe-area-inset-bottom))] lg:bottom-6',
-          problems ? 'border-pt-line bg-pt-surface text-pt-rose-fg' : 'border-pt-line bg-pt-ink text-pt-on-ink'
+          problems ? 'border-pt-line bg-pt-surface text-pt-rose-fg' : 'border-pt-line bg-pt-primary text-pt-on-primary'
         )}
       >
         {!online ? (

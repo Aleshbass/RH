@@ -238,6 +238,10 @@ test('physio: recent patients are kept ahead of time, so a record never opened s
   await unlockIfAsked(page, write);
   // The patient's name and notes come from the answers kept ahead of time
   await expect(page.getByText(/Testpatient|Obi/).first()).toBeVisible({ timeout: 30_000 });
+  // The pill saying so is readable: light text on the dark pill (it once used a colour that didn't exist)
+  const pill = page.getByRole('button', { name: /^Offline ·/ });
+  await expect(pill).toBeVisible();
+  await expect(pill).toHaveCSS('color', 'rgb(255, 255, 255)');
 });
 
 test('back online after the session expired: the page opens without a detour through sign-in', async ({ page }) => {
