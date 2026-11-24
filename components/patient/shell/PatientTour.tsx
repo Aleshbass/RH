@@ -207,6 +207,16 @@ export function PatientTour({ firstName, enabled, homeHref }: { firstName?: stri
     return () => window.removeEventListener('keydown', onKey)
   }, [phase, next, back, finish])
 
+  // The page behind stays still while the welcome is open (phones scrolled it under the sheet)
+  useEffect(() => {
+    if (phase !== 'welcome') return
+    const previous = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = previous
+    }
+  }, [phase])
+
   if (!mounted) return null
 
   const pad = 6
@@ -218,15 +228,16 @@ export function PatientTour({ firstName, enabled, homeHref }: { firstName?: stri
   }
 
   // Desktop bubble: below the element when there's room, otherwise above; kept on screen
-  const bubbleWidth = 320
+  const bubbleWidth = Math.min(320, window.innerWidth - 32)
   let bubbleStyle: React.CSSProperties | undefined
   if (spotlight && !isPhone) {
     const spaceBelow = window.innerHeight - (spotlight.top + spotlight.height)
     const placeBelow = spaceBelow > 220 || spotlight.top < 220
     const left = Math.min(Math.max(16, spotlight.left), window.innerWidth - bubbleWidth - 16)
+    const top = Math.min(spotlight.top + spotlight.height + 12, window.innerHeight - 200)
     bubbleStyle = placeBelow
-      ? { top: Math.min(spotlight.top + spotlight.height + 12, window.innerHeight - 200), left, width: bubbleWidth }
-      : { bottom: window.innerHeight - spotlight.top + 12, left, width: bubbleWidth }
+      ? { top, left, width: bubbleWidth, maxHeight: window.innerHeight - top - 16, overflowY: 'auto' }
+      : { bottom: window.innerHeight - spotlight.top + 12, left, width: bubbleWidth, maxHeight: spotlight.top - 28, overflowY: 'auto' }
   }
 
   return createPortal(
@@ -250,7 +261,7 @@ export function PatientTour({ firstName, enabled, homeHref }: { firstName?: stri
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: 24, opacity: 0 }}
               transition={{ type: 'spring', stiffness: 380, damping: 34 }}
-              className="relative w-full max-w-md rounded-t-3xl border border-pt-line bg-pt-surface p-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))] shadow-pt-lift sm:rounded-3xl sm:pb-6"
+              className="relative w-full max-w-md max-h-[calc(100dvh-0.5rem)] overflow-y-auto overscroll-contain sm:max-h-[calc(100dvh-2rem)] rounded-t-3xl border border-pt-line bg-pt-surface p-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))] shadow-pt-lift sm:rounded-3xl sm:pb-6"
             >
               <button
                 type="button"
@@ -260,14 +271,14 @@ export function PatientTour({ firstName, enabled, homeHref }: { firstName?: stri
               >
                 <X className="h-4 w-4" />
               </button>
-              <p className="text-xs font-semibold uppercase tracking-wider text-pt-accent-ink">Welcome to Rehabify</p>
-              <h2 id="patient-tour-title" className="mt-2 text-xl font-semibold tracking-tight text-pt-ink">
+              <p className="pr-10 text-xs font-semibold uppercase tracking-wider text-pt-accent-ink">Welcome to Rehabify</p>
+              <h2 id="patient-tour-title" className="mt-2 break-words pr-6 text-lg font-semibold tracking-tight text-pt-ink sm:text-xl">
                 {firstName ? `Hi ${firstName}, this is your space.` : 'This is your space.'}
               </h2>
               <p className="mt-2 text-sm leading-relaxed text-pt-muted">
                 Your visits, exercises and messages with your physio, all in one place. Want a 30-second look around?
               </p>
-              <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <div className="mt-5 flex flex-col-reverse gap-2 sm:mt-6 sm:flex-row sm:justify-end [&>button]:h-11 [&>button]:w-full sm:[&>button]:h-10 sm:[&>button]:w-auto">
                 <Button variant="ghost" onClick={finish} className="rounded-xl text-pt-muted hover:bg-pt-hover hover:text-pt-ink">
                   Not now
                 </Button>
