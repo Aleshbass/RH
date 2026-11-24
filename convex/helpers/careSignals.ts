@@ -74,6 +74,13 @@ async function openSignalFor(ctx: MutationCtx, input: CareSignalInput): Promise<
       .first();
   }
   if (input.patientId) {
+    // Still open from an earlier day: refresh that one rather than list the patient twice
+    const open = await ctx.db
+      .query("careSignals")
+      .withIndex("by_patient_kind", (q) => q.eq("patientId", input.patientId).eq("kind", input.kind))
+      .filter((q) => q.eq(q.field("status"), "open"))
+      .first();
+    if (open) return open;
     const since = Date.now() - DAY;
     return await ctx.db
       .query("careSignals")
@@ -81,7 +88,23 @@ async function openSignalFor(ctx: MutationCtx, input: CareSignalInput): Promise<
       .filter((q) => q.gte(q.field("createdAt"), since))
       .first();
   }
+  // A guest (no account) asking twice: the same phone number is the same person
+  const phone = phoneKey(input.guestPhone);
+  if (phone) {
+    const open = await ctx.db
+      .query("careSignals")
+      .withIndex("by_status", (q) => q.eq("status", "open"))
+      .order("desc")
+      .take(300);
+    return open.find((s) => !s.patientId && s.kind === input.kind && phoneKey(s.guestPhone) === phone) ?? null;
+  }
   return null;
+}
+
+/** The last 10 digits of a phone number, so 0803…, +234803… and 234 803… match. */
+export function phoneKey(phone: string | null | undefined): string | null {
+  const digits = (phone ?? "").replace(/\D/g, "");
+  return digits.length >= 7 ? digits.slice(-10) : null;
 }
 
 /** Who the alert names: the Rehabify ID, else the guest's name. */
@@ -169,7 +192,13 @@ export async function raiseCareSignal(ctx: MutationCtx, input: CareSignalInput) 
 }
 
 /** Close a signal (automatically when the booking moves on, or by an admin). */
-export async function closeCareSignal(ctx: MutationCtx, signal: Doc<"careSignals">, note: string, by?: Id<"users">) {
+export async function closeCareSignal(ctx: MutationCtx, signal: Doc<"careSignals">, note: string, by?: Id<"users">, resolution?: string) {
   if (signal.status !== "open") return;
-  await ctx.db.patch(signal._id, { status: "handled", handledAt: Date.now(), handledNote: note.slice(0, 300), ...(by ? { handledBy: by } : {}) });
+  await ctx.db.patch(signal._id, {
+    status: "handled",
+    handledAt: Date.now(),
+    handledNote: note.slice(0, 300),
+    ...(by ? { handledBy: by } : {}),
+    ...(resolution ? { resolution } : {}),
+  });
 }

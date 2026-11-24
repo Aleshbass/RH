@@ -209,7 +209,16 @@ export const record = query({
       signals: signals
         .sort((a, b) => b.createdAt - a.createdAt)
         .slice(0, 6)
-        .map((s) => ({ id: s._id, kind: s.kind, status: s.status, detail: s.detail, createdAt: s.createdAt, handledNote: s.handledNote ?? null })),
+        .map((s) => ({
+          id: s._id,
+          kind: s.kind,
+          status: s.status,
+          detail: s.detail,
+          createdAt: s.createdAt,
+          handledNote: s.handledNote ?? null,
+          // The care team's follow-up notes on this case, newest first (careQueue.adminAddNote)
+          followUps: (s.followUps ?? []).slice(-5).reverse().map((f) => ({ at: f.at, outcome: f.outcome ?? null, text: f.text })),
+        })),
     };
   },
 });

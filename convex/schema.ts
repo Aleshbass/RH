@@ -564,6 +564,19 @@ export default defineSchema({
     handledNote: v.optional(v.string()),
     nudgedAt: v.optional(v.number()),
     nudgeCount: v.optional(v.number()),
+    // How the case ended when the team resolved it (careQueue.ts OUTCOMES)
+    resolution: v.optional(v.string()),
+    // The team's follow-up log: calls, messages, what the patient said (careQueue.adminAddNote)
+    followUps: v.optional(
+      v.array(
+        v.object({
+          at: v.number(),
+          by: v.optional(v.id("users")),
+          outcome: v.optional(v.string()),
+          text: v.string(),
+        })
+      )
+    ),
   })
     .index("by_status", ["status", "createdAt"])
     .index("by_booking", ["bookingId"])

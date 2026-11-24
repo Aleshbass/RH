@@ -102,7 +102,15 @@ export type PatientRecord = Omit<PatientFactsRow, 'physios'> & {
   upcoming: { id: string; startTime: number; status: string; online: boolean; physioName: string | null }[]
   past: { id: string; startTime: number; status: string; online: boolean; physioName: string | null }[]
   journey: { stage: string; occurredAt: number; note: string | null; source: string }[]
-  signals: { id: string; kind: string; status: 'open' | 'handled'; detail: string; createdAt: number; handledNote: string | null }[]
+  signals: {
+    id: string
+    kind: string
+    status: 'open' | 'handled'
+    detail: string
+    createdAt: number
+    handledNote: string | null
+    followUps: { at: number; outcome: string | null; text: string }[]
+  }[]
   viewedPhysios: ViewedPhysio[]
   helpRequest: (HelpRequest & { askedAt: number; open: boolean }) | null
 }

@@ -12,6 +12,7 @@ import { EmptyState, StatusBadge, cardClass, primaryButtonClass, softButtonClass
 import { PhysioSheet } from '@/components/admin/physios/PhysioSheet'
 import { RehabifyId } from '@/components/shared/RehabifyId'
 import { cn } from '@/lib/utils'
+import { CARE_OUTCOME_LABEL, isCareOutcome } from '@/lib/careOutcomes'
 import { ContactButtons, SourceTags } from './PatientBits'
 import { EditDetails } from './EditDetails'
 import { SuggestedPhysios } from './SuggestedPhysios'
@@ -413,15 +414,28 @@ function Body({ record, onOpenPhysio }: { record: PatientRecord; onOpenPhysio: (
 
         {record.signals.length > 0 && (
           <Section title="Looking for care">
-            <ul className="space-y-1 text-sm">
+            <ul className="space-y-2 text-sm">
               {record.signals.map((s) => (
-                <li key={s.id} className="flex flex-wrap items-center gap-2">
-                  <StatusBadge tone={s.status === 'open' ? 'red' : 'neutral'}>{s.status === 'open' ? 'Open' : 'Handled'}</StatusBadge>
-                  <span className="text-rh-ink dark:text-white">{SIGNAL_LABEL[s.kind] ?? s.kind}</span>
-                  <span className={muted}>
-                    {format(s.createdAt, 'd MMM, h:mmaaa')}
-                    {s.handledNote ? ` · ${s.handledNote}` : ''}
-                  </span>
+                <li key={s.id}>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <StatusBadge tone={s.status === 'open' ? 'amber' : 'green'}>{s.status === 'open' ? 'Waiting for care' : 'Resolved'}</StatusBadge>
+                    <span className="text-rh-ink dark:text-white">{SIGNAL_LABEL[s.kind] ?? s.kind}</span>
+                    <span className={muted}>
+                      {format(s.createdAt, 'd MMM, h:mmaaa')}
+                      {s.handledNote ? ` · ${s.handledNote}` : ''}
+                    </span>
+                  </div>
+                  {s.followUps.length > 0 && (
+                    <ul className="mt-1 space-y-0.5 border-l-2 border-black/[0.06] pl-3 dark:border-white/[0.1]">
+                      {s.followUps.map((f) => (
+                        <li key={f.at} className="text-xs text-neutral-700 dark:text-neutral-300">
+                          {f.outcome && isCareOutcome(f.outcome) && <span className="font-medium">{CARE_OUTCOME_LABEL[f.outcome]}: </span>}
+                          {f.text}
+                          <span className={muted}> · {format(f.at, 'd MMM, h:mmaaa')}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </li>
               ))}
             </ul>

@@ -12,7 +12,7 @@ import { makeFunctionReference } from "convex/server";
 import { ConvexError, v } from "convex/values";
 import { internalMutation, mutation, query, type MutationCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
-import { CARE_QUEUE_PATH, closeCareSignal, raiseCareSignal } from "./helpers/careSignals";
+import { CARE_QUEUE_PATH, closeCareSignal, phoneKey, raiseCareSignal } from "./helpers/careSignals";
 import { appLink } from "./helpers/appUrl";
 import { lagosDateTime, lagosTime } from "./helpers/lagosTime";
 import { requireAdmin } from "./helpers/partnerAccess";
@@ -20,6 +20,7 @@ import { factsRow, patientFacts, personName } from "./helpers/patientFacts";
 import { recentPatientViews, recordPatientView, validPhysioIds } from "./helpers/patientViews";
 import { insertNotification } from "./helpers/pushNotify";
 import { getService } from "../lib/rehabify-services";
+import { CARE_OUTCOME_LABEL } from "../lib/careOutcomes";
 
 const MINUTE = 60_000;
 const DAY = 24 * 60 * MINUTE;
@@ -260,7 +261,8 @@ export const sweep = internalMutation({
       .withIndex("by_status", (q) => q.eq("status", "open"))
       .take(300);
     for (const signal of open) {
-      if (now - signal.createdAt > SIGNAL_EXPIRES) {
+      // 3 days after the patient was last seen looking (a reopened case counts from the reopen)
+      if (now - Math.max(signal.createdAt, signal.lastSeenAt) > SIGNAL_EXPIRES) {
         await closeCareSignal(ctx, signal, "Closed after 3 days");
         closed++;
         continue;
@@ -313,63 +315,152 @@ export const sweep = internalMutation({
 // ─────────────────────────────────────────────────────────────────────────────
 
 const KIND_ORDER: Record<string, number> = { awaiting_physio: 0, help_choosing: 1, joy_matching: 2, no_physio: 3, unpaid_checkout: 4, browsing: 5 };
+// Resolved cases stay on the page for a week, so the team can see who was reached and how it went
+const RESOLVED_WITHIN = 7 * DAY;
+const MAX_FOLLOW_UPS = 30;
 
-/** Open signals (most urgent first) and the last day's handled ones. */
+const outcomeValidator = v.union(
+  v.literal("booked"),
+  v.literal("book_later"),
+  v.literal("just_looking"),
+  v.literal("no_response"),
+  v.literal("feedback"),
+  v.literal("not_suitable"),
+  v.literal("other")
+);
+
+/** The keys that make two signals the same person: their account, phone number or email. */
+function personKeys(row: { patient: { userId: string | null; phone: string | null; email: string | null } }) {
+  const keys: string[] = [];
+  if (row.patient.userId) keys.push(`u:${row.patient.userId}`);
+  const phone = phoneKey(row.patient.phone);
+  if (phone) keys.push(`p:${phone}`);
+  const email = row.patient.email?.trim().toLowerCase();
+  if (email) keys.push(`e:${email}`);
+  return keys;
+}
+
+/**
+ * One row per person looking for care, newest first (owner, 24 Nov 2026: strict time order, no
+ * patient listed twice). A person with several open signals (signed up, then browsing, then asked
+ * for help) is one row under the most urgent one, with the others named. Resolved cases from the
+ * last week stay listed, and every row carries the team's follow-up notes about that person.
+ */
 export const adminList = query({
   args: {},
   handler: async (ctx) => {
     await requireAdmin(ctx, "careQueue:adminList");
+    const now = Date.now();
     const open = await ctx.db
       .query("careSignals")
       .withIndex("by_status", (q) => q.eq("status", "open"))
       .order("desc")
       .take(200);
-    const handled = await ctx.db
-      .query("careSignals")
-      .withIndex("by_status", (q) => q.eq("status", "handled").gte("createdAt", Date.now() - DAY))
-      .order("desc")
-      .take(50);
+    const handled = (
+      await ctx.db
+        .query("careSignals")
+        .withIndex("by_status", (q) => q.eq("status", "handled").gte("createdAt", now - 30 * DAY))
+        .order("desc")
+        .take(150)
+    ).filter((s) => (s.handledAt ?? s.createdAt) >= now - RESOLVED_WITHIN);
 
-    const rows = [];
-    const physioNames = new Map<string, Promise<string>>();
-    const physioName = (id: Id<"users">) => {
-      if (!physioNames.has(id)) physioNames.set(id, ctx.db.get(id).then((u) => personName(u, "Physiotherapist")));
-      return physioNames.get(id)!;
+    const names = new Map<string, Promise<string>>();
+    const nameOf = (id: Id<"users">, fallback: string) => {
+      if (!names.has(id)) names.set(id, ctx.db.get(id).then((u) => personName(u, fallback)));
+      return names.get(id)!;
     };
+    const physioName = (id: Id<"users">) => nameOf(id, "Physiotherapist");
+    const factsCache = new Map<string, Promise<ReturnType<typeof factsRow> | null>>();
+
+    const signalRows = [];
     for (const signal of [...open, ...handled]) {
       const patient = signal.patientId ? await ctx.db.get(signal.patientId) : null;
       // Who they are and what they need, so the team can act without phoning first
-      const facts = patient && patient.role === "patient" ? factsRow(await patientFacts(ctx, patient, physioName)) : null;
-      // Who they were considering: their own record, else what the browser sent with a guest request
-      const viewed = patient
-        ? (await recentPatientViews(ctx, patient._id, 5)).map((v) => ({ physioId: v.physioId, name: v.name, at: v.lastViewedAt }))
-        : await Promise.all(
-            (signal.request?.viewedPhysioIds ?? []).slice(0, 5).map(async (id) => ({ physioId: id, name: await physioName(id), at: null as number | null }))
-          );
-      const physio = signal.physiotherapistId ? await ctx.db.get(signal.physiotherapistId) : null;
+      let facts: ReturnType<typeof factsRow> | null = null;
+      if (patient && patient.role === "patient") {
+        if (!factsCache.has(patient._id)) factsCache.set(patient._id, patientFacts(ctx, patient, physioName).then(factsRow));
+        facts = await factsCache.get(patient._id)!;
+      }
       const booking = signal.bookingId ? await ctx.db.get(signal.bookingId) : null;
-      const handler = signal.handledBy ? await ctx.db.get(signal.handledBy) : null;
       const name = patient ? [patient.firstName, patient.lastName].filter(Boolean).join(" ") : signal.guestName ?? null;
-      rows.push({
-        id: signal._id,
-        kind: signal.kind,
-        status: signal.status,
-        detail: signal.detail,
-        createdAt: signal.createdAt,
-        lastSeenAt: signal.lastSeenAt,
-        dueAt: signal.dueAt ?? booking?.providerResponseDueAt ?? null,
+      signalRows.push({
+        signal,
+        patientDoc: patient,
+        booking,
+        facts,
         patient: {
-          userId: patient?._id ?? null,
+          userId: (patient?._id as string | undefined) ?? null,
           name: name || null,
           rehabifyId: patient?.patientNumber ?? null,
           phone: patient?.phoneNumber ?? signal.guestPhone ?? booking?.guestPhone ?? null,
           email: facts?.email ?? booking?.guestEmail ?? null,
         },
+      });
+    }
+
+    // Group the signals by person: any shared account, phone number or email joins them
+    const parent = signalRows.map((_, i) => i);
+    const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+    const firstWithKey = new Map<string, number>();
+    signalRows.forEach((row, i) => {
+      for (const key of personKeys(row)) {
+        const j = firstWithKey.get(key);
+        if (j === undefined) firstWithKey.set(key, i);
+        else parent[find(i)] = find(j);
+      }
+    });
+    const groups = new Map<number, typeof signalRows>();
+    signalRows.forEach((row, i) => {
+      const root = find(i);
+      groups.set(root, [...(groups.get(root) ?? []), row]);
+    });
+
+    const rows = [];
+    for (const members of groups.values()) {
+      const openMembers = members.filter((m) => m.signal.status === "open");
+      const isOpen = openMembers.length > 0;
+      // The row is about what's open now; once everything is resolved, about the latest resolution
+      const current = isOpen ? openMembers : members;
+      const primary = isOpen
+        ? [...openMembers].sort((a, b) => (KIND_ORDER[a.signal.kind] ?? 9) - (KIND_ORDER[b.signal.kind] ?? 9) || b.signal.createdAt - a.signal.createdAt)[0]
+        : [...members].sort((a, b) => (b.signal.handledAt ?? 0) - (a.signal.handledAt ?? 0))[0];
+      const { signal, booking, facts, patient, patientDoc } = primary;
+      // Who they were considering: their own record, else what the browser sent with a guest request
+      const viewed = patientDoc
+        ? (await recentPatientViews(ctx, patientDoc._id, 5)).map((v) => ({ physioId: v.physioId, name: v.name, at: v.lastViewedAt }))
+        : await Promise.all(
+            (signal.request?.viewedPhysioIds ?? []).slice(0, 5).map(async (id) => ({ physioId: id, name: await physioName(id), at: null as number | null }))
+          );
+      const physio = signal.physiotherapistId ? await ctx.db.get(signal.physiotherapistId) : null;
+      // The team's notes about this person, from every case of theirs on the page, newest first
+      const notes = members
+        .flatMap((m) => (m.signal.followUps ?? []).map((f) => ({ ...f, signalId: m.signal._id })))
+        .sort((a, b) => b.at - a.at)
+        .slice(0, 12);
+      const followUps = await Promise.all(
+        notes.map(async (f) => ({ at: f.at, by: f.by ? await nameOf(f.by, "Admin") : null, outcome: f.outcome ?? null, text: f.text }))
+      );
+      const others = current.filter((m) => m !== primary);
+      rows.push({
+        id: signal._id,
+        // Every open signal of this person: resolving the row closes them all
+        openIds: openMembers.map((m) => m.signal._id),
+        kind: signal.kind,
+        otherKinds: [...new Set(others.map((m) => m.signal.kind).filter((k) => k !== signal.kind))],
+        status: isOpen ? ("open" as const) : ("handled" as const),
+        detail: signal.detail,
+        otherDetails: [...new Set(others.map((m) => m.signal.detail).filter((d) => d !== signal.detail))].slice(0, 3),
+        // The newest moment this person asked for care: what the list is sorted by and shows
+        createdAt: Math.max(...current.map((m) => m.signal.createdAt)),
+        signedUpAt: patientDoc?._creationTime ?? null,
+        lastSeenAt: Math.max(...current.map((m) => m.signal.lastSeenAt)),
+        dueAt: signal.dueAt ?? booking?.providerResponseDueAt ?? null,
+        patient,
         facts,
         request: signal.request ?? null,
         viewed,
         // Joy patients stay under Joy whatever stage they reach (a Joy booking waiting on a physio too)
-        fromJoy: Boolean(facts?.fromJoy || booking?.joyServiceMode || signal.kind === "joy_matching"),
+        fromJoy: current.some((m) => Boolean(m.facts?.fromJoy || m.booking?.joyServiceMode || m.signal.kind === "joy_matching")),
         physio: physio ? { userId: physio._id, name: [physio.firstName, physio.lastName].filter(Boolean).join(" ") || "Physiotherapist", phone: physio.phoneNumber ?? null } : null,
         booking: booking
           ? {
@@ -381,24 +472,94 @@ export const adminList = query({
             }
           : null,
         nudgedAt: signal.nudgedAt ?? null,
-        handledAt: signal.handledAt ?? null,
-        handledNote: signal.handledNote ?? null,
-        handledBy: handler ? [handler.firstName, handler.lastName].filter(Boolean).join(" ") || "Admin" : null,
+        followUps,
+        lastFollowUpAt: followUps[0]?.at ?? null,
+        handledAt: isOpen ? null : signal.handledAt ?? null,
+        handledNote: isOpen ? null : signal.handledNote ?? null,
+        handledBy: !isOpen && signal.handledBy ? await nameOf(signal.handledBy, "Admin") : null,
+        resolution: isOpen ? null : signal.resolution ?? null,
+        // Closed by the system (booking moved on, or 3 days passed) rather than by the team
+        closedAutomatically: !isOpen && !signal.handledBy,
       });
     }
-    return rows.sort((a, b) =>
-      a.status !== b.status ? (a.status === "open" ? -1 : 1) : (KIND_ORDER[a.kind] ?? 9) - (KIND_ORDER[b.kind] ?? 9) || b.createdAt - a.createdAt
-    );
+    // Strictly newest first, so "2 minutes ago" is always above "3 days ago"
+    return rows.sort((a, b) => b.createdAt - a.createdAt);
   },
 });
 
+/** Adds a follow-up note to a case (a call, a WhatsApp, what the patient said), capped per case. */
+async function addFollowUp(
+  ctx: MutationCtx,
+  signal: Doc<"careSignals">,
+  entry: { by: Id<"users">; outcome?: string; text: string }
+) {
+  const followUps = [...(signal.followUps ?? []), { at: Date.now(), by: entry.by, outcome: entry.outcome, text: entry.text.slice(0, 1000) }];
+  await ctx.db.patch(signal._id, { followUps: followUps.slice(-MAX_FOLLOW_UPS) });
+}
+
+/**
+ * Resolves a case: closes the person's open signals (`signalIds`, the row's openIds) with how it
+ * went, and logs the note. Old pages send only `signalId`.
+ */
 export const adminMarkHandled = mutation({
-  args: { signalId: v.id("careSignals"), note: v.optional(v.string()) },
+  args: {
+    signalId: v.id("careSignals"),
+    signalIds: v.optional(v.array(v.id("careSignals"))),
+    outcome: v.optional(outcomeValidator),
+    note: v.optional(v.string()),
+  },
   handler: async (ctx, args) => {
     const { user } = await requireAdmin(ctx, "careQueue:adminMarkHandled");
+    const ids = [...new Set([args.signalId, ...(args.signalIds ?? [])])].slice(0, 20);
+    const note = args.note?.trim().slice(0, 1000) ?? "";
+    const label = args.outcome ? CARE_OUTCOME_LABEL[args.outcome] : null;
+    const summary = [label, note].filter(Boolean).join(": ") || "Resolved by the team";
+    if (!(await ctx.db.get(args.signalId))) throw new ConvexError("That case isn't there any more.");
+    for (const id of ids) {
+      const signal = await ctx.db.get(id);
+      if (!signal) continue;
+      // The note goes in the log once, on the row's own case
+      if (id === args.signalId && (note || label)) {
+        await addFollowUp(ctx, signal, { by: user._id, outcome: args.outcome, text: note || `Resolved: ${label}` });
+      }
+      if (signal.status === "open") await closeCareSignal(ctx, signal, summary, user._id, args.outcome);
+    }
+    return { ok: true };
+  },
+});
+
+/** Logs a follow-up without resolving the case: "Called, no answer", "Will book after payday". */
+export const adminAddNote = mutation({
+  args: { signalId: v.id("careSignals"), outcome: v.optional(outcomeValidator), text: v.string() },
+  handler: async (ctx, args) => {
+    const { user } = await requireAdmin(ctx, "careQueue:adminAddNote");
     const signal = await ctx.db.get(args.signalId);
-    if (!signal) throw new ConvexError("Not found.");
-    await closeCareSignal(ctx, signal, args.note?.trim() || "Handled by the team", user._id);
+    if (!signal) throw new ConvexError("That case isn't there any more.");
+    const text = args.text.trim() || (args.outcome ? CARE_OUTCOME_LABEL[args.outcome] : "");
+    if (!text) throw new ConvexError("Write what happened, or pick how it went.");
+    await addFollowUp(ctx, signal, { by: user._id, outcome: args.outcome, text });
+    return { ok: true };
+  },
+});
+
+/** Puts a resolved case back in the queue (the patient got back in touch, or it was resolved by mistake). */
+export const adminReopen = mutation({
+  args: { signalId: v.id("careSignals") },
+  handler: async (ctx, args) => {
+    const { user } = await requireAdmin(ctx, "careQueue:adminReopen");
+    const signal = await ctx.db.get(args.signalId);
+    if (!signal) throw new ConvexError("That case isn't there any more.");
+    if (signal.status === "open") return { ok: true };
+    await ctx.db.patch(signal._id, {
+      status: "open",
+      handledAt: undefined,
+      handledBy: undefined,
+      handledNote: undefined,
+      resolution: undefined,
+      // The 3-day automatic close counts from now
+      lastSeenAt: Date.now(),
+    });
+    await addFollowUp(ctx, (await ctx.db.get(signal._id))!, { by: user._id, text: "Reopened" });
     return { ok: true };
   },
 });
@@ -420,13 +581,14 @@ export const adminNudgePhysio = mutation({
   },
 });
 
-/** Count for the admin nav badge. */
+/** Count for the admin nav badge: people waiting, not signals (one person can have several). */
 export async function openCareSignalCount(ctx: { db: MutationCtx["db"] | any }, cap: number): Promise<number> {
-  const rows = await ctx.db
+  const rows: Doc<"careSignals">[] = await ctx.db
     .query("careSignals")
     .withIndex("by_status", (q: any) => q.eq("status", "open"))
-    .take(cap);
-  return rows.length;
+    .take(Math.min(300, cap * 3));
+  const people = new Set(rows.map((s) => s.patientId ?? (phoneKey(s.guestPhone) ? `p:${phoneKey(s.guestPhone)}` : s._id)));
+  return Math.min(people.size, cap);
 }
 
 export type CareSignalId = Id<"careSignals">;
