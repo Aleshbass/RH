@@ -194,6 +194,7 @@ export const ADMIN_FUNCTION_PAGES: Readonly<Record<string, readonly number[] | "
   "employerOutreach:adminGuard": [36],
   "employerOutreach:adminRecrawl": [36],
   "employerOutreach:adminSaveContact": [36],
+  "employerOutreach:adminSaveSender": [36],
   "employerOutreach:adminSaveSequence": [36],
   "employerOutreach:adminSequences": [36],
   "employerOutreach:adminSetStage": [36],

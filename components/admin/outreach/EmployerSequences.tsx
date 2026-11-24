@@ -2,9 +2,10 @@
 
 /**
  * Admin › Employer outreach › Sequences (convex/employerOutreach.ts): the employer sequences
- * (first email + follow-ups), "Send me a test", the shared sender's state and the latest replies
- * from companies. Mirrors the clinic outreach editor (OutreachSender.tsx); sending itself is
- * switched on and off on the Clinic outreach page, as both lists share one inbox and daily limit.
+ * (first email + follow-ups), "Send me a test", the shared sender's state, the latest replies
+ * from companies, and the name and signature companies see (Sender). Mirrors the clinic outreach
+ * editor (OutreachSender.tsx); sending itself is switched on and off on the Clinic outreach page,
+ * as both lists share one inbox and daily limit.
  */
 
 import { useEffect, useState } from "react";
@@ -73,6 +74,7 @@ const pct = (part: number, whole: number) => (whole ? `${Math.round((part / whol
 export function EmployerSequences({ onOpenCompany }: { onOpenCompany?: (leadId: string) => void }) {
   const data = useQuery(employerApi.sequences, {});
   const saveSequence = useMutation(employerApi.saveSequence);
+  const saveSender = useMutation(employerApi.saveSender);
   const sendTest = useAction(employerApi.sendTest);
 
   const [busy, setBusy] = useState<string | null>(null);
@@ -93,6 +95,14 @@ export function EmployerSequences({ onOpenCompany }: { onOpenCompany?: (leadId: 
   useEffect(() => {
     if (!testTo && data?.sender.address) setTestTo(data.sender.address);
   }, [data?.sender.address, testTo]);
+
+  // Sender form: starts from what companies get now (the Clinic outreach sender until saved here)
+  const [senderForm, setSenderForm] = useState<{ fromName: string; signature: string; optOut: string } | null>(null);
+  useEffect(() => {
+    if (data && !senderForm) {
+      setSenderForm({ fromName: data.sender.fromName, signature: data.sender.signature, optOut: data.sender.optOut });
+    }
+  }, [data, senderForm]);
 
   if (data === undefined) {
     return (
@@ -135,9 +145,12 @@ export function EmployerSequences({ onOpenCompany }: { onOpenCompany?: (leadId: 
         info={
           <>
             <p>
-              Employer outreach shares one sender with Clinic outreach: the same hello@ inbox, the same daily limit and the same on/off switch.
+              Employer outreach shares one inbox with Clinic outreach: the same hello@ address, the same daily limit and the same on/off switch.
             </p>
-            <p>The switch, the sender&apos;s name and the limit are changed on the Clinic outreach page.</p>
+            <p>
+              The switch and the limit are changed on the Clinic outreach page. The name and signature companies see are under Sender at the
+              bottom of this tab.
+            </p>
           </>
         }
       >
@@ -160,12 +173,15 @@ export function EmployerSequences({ onOpenCompany }: { onOpenCompany?: (leadId: 
             <p className="text-xs text-amber-700 dark:text-amber-300">No employer sequence is set to Sending yet, so no company emails go out.</p>
           )}
           <p className="text-xs text-neutral-500">
-            Clinics and companies go out from the same inbox under one daily limit. Start or pause sending, and change the sender
-            and the limit, on{" "}
+            Clinics and companies go out from the same inbox under one daily limit. Start or pause sending, and change the limit, on{" "}
             <Link href="/dashboard/admin/outreach" className="underline underline-offset-2">
               Clinic outreach
             </Link>
-            .
+            . Change the name and signature companies see under{" "}
+            <a href="#employer-sender" className="underline underline-offset-2">
+              Sender
+            </a>{" "}
+            below.
           </p>
           {s.lastSendError && <p className="text-xs text-rose-600">Last problem: {s.lastSendError}</p>}
         </div>
@@ -399,6 +415,98 @@ export function EmployerSequences({ onOpenCompany }: { onOpenCompany?: (leadId: 
           </p>
         )}
       </Panel>
+
+      {/* Sender: Employer outreach's own name, signature and stop line */}
+      {senderForm && (
+        <div id="employer-sender" className="scroll-mt-24">
+          <Panel
+            title="Sender"
+            description="The name companies see the emails come from, and how every email is signed."
+            info={
+              <>
+                <p>
+                  These are only for emails to companies. Clinic emails keep the name and signature set on the Clinic outreach page.
+                </p>
+                <p>The emails still go from {s.address ?? "the hello@ inbox"}, so replies land in the same place.</p>
+              </>
+            }
+          >
+            <form
+              className="grid gap-3 p-5 sm:grid-cols-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                run("sender", () => saveSender(senderForm), "Saved. New emails to companies use this sender.");
+              }}
+            >
+              <p className="text-xs text-neutral-500 sm:col-span-2">
+                {s.ownSender ? (
+                  "Companies get this name and signature. Clinic emails are not affected."
+                ) : (
+                  <>
+                    Companies get the Clinic outreach name and signature for now (shown below). Change them and press Save to give
+                    employer emails their own.
+                  </>
+                )}
+              </p>
+              <label className="space-y-1 text-sm text-rh-ink dark:text-white sm:col-span-2">
+                From name
+                <input
+                  value={senderForm.fromName}
+                  onChange={(e) => setSenderForm({ ...senderForm, fromName: e.target.value })}
+                  maxLength={60}
+                  className={fieldClass}
+                  placeholder="e.g. Mary from Rehabify for Work"
+                />
+              </label>
+              <label className="space-y-1 text-sm text-rh-ink dark:text-white">
+                Signature
+                <textarea
+                  rows={4}
+                  value={senderForm.signature}
+                  onChange={(e) => setSenderForm({ ...senderForm, signature: e.target.value })}
+                  maxLength={500}
+                  className={textareaFieldClass}
+                  placeholder={"Mary\nRehabify for Work\nphysioaroundme.com/platform/employers"}
+                />
+              </label>
+              <label className="space-y-1 text-sm text-rh-ink dark:text-white">
+                How to stop the emails (always added)
+                <textarea
+                  rows={4}
+                  value={senderForm.optOut}
+                  onChange={(e) => setSenderForm({ ...senderForm, optOut: e.target.value })}
+                  maxLength={300}
+                  className={textareaFieldClass}
+                />
+              </label>
+              <div className="flex flex-wrap items-center gap-2 sm:col-span-2">
+                <button type="submit" className={primaryButtonClass} disabled={busy !== null}>
+                  {busy === "sender" && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />} Save
+                </button>
+                {s.ownSender && (
+                  <button
+                    type="button"
+                    className={softButtonClass}
+                    disabled={busy !== null}
+                    onClick={() =>
+                      run(
+                        "sender-reset",
+                        async () => {
+                          await saveSender({ useClinic: true });
+                          setSenderForm(null);
+                        },
+                        "Companies now get the Clinic outreach sender"
+                      )
+                    }
+                  >
+                    {busy === "sender-reset" && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />} Use the clinic sender
+                  </button>
+                )}
+              </div>
+            </form>
+          </Panel>
+        </div>
+      )}
     </div>
   );
 }

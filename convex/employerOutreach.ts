@@ -14,6 +14,7 @@
  *    first email sent, a reply: helpers/outreachShared.ts); the rest are the team's.
  *  - Emails go through the clinic outreach sender (outreachSend.ts): the same inbox, weekday
  *    window and daily cap, employer sequences only, to a company's own address or named people.
+ *    The name, signature and "reply stop" line can be Employer outreach's own (adminSaveSender).
  *  - A pilot request on /platform/employers joins the pipeline at "Replied" (pilotToPipeline).
  */
 import { ConvexError, v } from "convex/values";
@@ -22,7 +23,7 @@ import { action, internalAction, internalMutation, internalQuery, mutation, quer
 import type { Doc, Id } from "./_generated/dataModel";
 import { requireAdmin } from "./helpers/partnerAccess";
 import { autoAdvanceStage, crawlPendingRef as crawlRef, emailDoNotContact, logActivity, stopEnrollment } from "./helpers/outreachShared";
-import { outreachNumbers, saveSequence, senderSummary } from "./outreachSend";
+import { outreachNumbers, saveEmployerSender, saveSequence, senderSummary } from "./outreachSend";
 import {
   JUNK_EMAIL,
   clean,
@@ -1143,6 +1144,34 @@ export const adminSaveSequence = mutation({
   handler: async (ctx, args) => {
     const { user } = await requireAdmin(ctx, "employerOutreach:adminSaveSequence");
     return await saveSequence(ctx, user._id, args, "employer");
+  },
+});
+
+/**
+ * The name companies see the emails come from, the signature and the "reply stop" line. Only
+ * employer emails use them; `useClinic` goes back to the Clinic outreach ones. The inbox, the
+ * daily limit and the on/off switch stay shared (Clinic outreach page).
+ */
+export const adminSaveSender = mutation({
+  args: {
+    fromName: v.optional(v.string()),
+    signature: v.optional(v.string()),
+    optOut: v.optional(v.string()),
+    useClinic: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const { user } = await requireAdmin(ctx, "employerOutreach:adminSaveSender");
+    if (args.useClinic) {
+      await saveEmployerSender(ctx, null, user._id);
+      return null;
+    }
+    const fromName = (args.fromName ?? "").trim().slice(0, 60);
+    const optOut = (args.optOut ?? "").trim().slice(0, 300);
+    if (!fromName) throw new ConvexError("Type the name companies see the emails come from.");
+    // The law and the inbox providers both expect a way to say no
+    if (!optOut) throw new ConvexError("Keep a line telling companies how to stop the emails.");
+    await saveEmployerSender(ctx, { fromName, signature: (args.signature ?? "").trim().slice(0, 500), optOut }, user._id);
+    return null;
   },
 });
 

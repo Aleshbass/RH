@@ -169,7 +169,11 @@ export type SequencesData = {
     configured: boolean
     address: string | null
     sendingOn: boolean
+    /** The name, signature and stop line companies get (the Clinic outreach ones until ownSender) */
     fromName: string
+    signature: string
+    optOut: string
+    ownSender: boolean
     sentToday: number
     quota: number
     windowOpen: boolean
@@ -254,6 +258,11 @@ export const employerApi = {
   saveSequence: makeFunctionReference<'mutation', { sequenceId?: string; name: string; steps: Step[]; status: SeqStatus }, string>(
     'employerOutreach:adminSaveSequence'
   ),
+  saveSender: makeFunctionReference<
+    'mutation',
+    { fromName?: string; signature?: string; optOut?: string; useClinic?: boolean },
+    null
+  >('employerOutreach:adminSaveSender'),
   enroll: makeFunctionReference<
     'mutation',
     { sequenceId: string; leadIds: string[]; companyEmail: boolean; people: boolean; roleGroups?: RoleGroup[] },

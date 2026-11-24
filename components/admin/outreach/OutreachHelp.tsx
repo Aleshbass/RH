@@ -228,11 +228,11 @@ const GUIDE_STEPS: Record<Audience, { title: string; text: ReactNode }[]> = {
       title: "Rehabify sends from hello@, slowly",
       text: (
         <>
-          Weekdays 9am to 5pm Lagos time, one at a time. It&apos;s the same sender, daily limit and on/off switch as{" "}
+          Weekdays 9am to 5pm Lagos time, one at a time. It&apos;s the same inbox, daily limit and on/off switch as{" "}
           <Link href="/dashboard/admin/outreach" className="underline underline-offset-2">
             Clinic outreach
           </Link>
-          , and the switch lives there.
+          , and the switch lives there. The name and signature companies see are under Sender on the Sequences tab.
         </>
       ),
     },

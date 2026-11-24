@@ -5088,6 +5088,10 @@ export default defineSchema({
     fromName: v.optional(v.string()),
     signature: v.optional(v.string()),
     optOut: v.optional(v.string()),
+    // Employer outreach's own name, signature and "reply stop" line (unset: the ones above)
+    employerFromName: v.optional(v.string()),
+    employerSignature: v.optional(v.string()),
+    employerOptOut: v.optional(v.string()),
     dailyStart: v.optional(v.number()),
     rampPerDay: v.optional(v.number()),
     dailyMax: v.optional(v.number()),

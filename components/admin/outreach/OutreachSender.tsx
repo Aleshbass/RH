@@ -957,6 +957,10 @@ export function OutreachSender({ defaultTestTo }: { defaultTestTo?: string }) {
                 The limit is shared by clinic and employer emails. Start slowly:
                 a new mailbox that sends a lot at once lands in spam.
               </p>
+              <p>
+                Employer outreach can set its own name and signature (Sequences
+                tab, Sender). Until it does, companies get the ones here.
+              </p>
             </>
           }
         >

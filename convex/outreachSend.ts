@@ -77,10 +77,39 @@ function withDefaults(row: Settings | null) {
   };
 }
 
+/**
+ * The name an email comes from and how it's signed. Employer emails use Employer outreach's own
+ * sender where one is saved (employerOutreach.ts adminSaveSender), and the clinic one otherwise.
+ */
+function signedAs(row: Settings | null, audience: Doc<"outreachSequences">["audience"]) {
+  const s = withDefaults(row);
+  if (audience !== "employer") return { fromName: s.fromName, signature: s.signature, optOut: s.optOut, own: false };
+  return {
+    fromName: row?.employerFromName ?? s.fromName,
+    signature: row?.employerSignature ?? s.signature,
+    optOut: row?.employerOptOut ?? s.optOut,
+    own: Boolean(row?.employerFromName || row?.employerSignature !== undefined || row?.employerOptOut),
+  };
+}
+
 async function patchSettings(ctx: MutationCtx, patch: Partial<Settings>) {
   const row = await settingsRow(ctx);
   if (row) await ctx.db.patch(row._id, { ...patch, updatedAt: Date.now() });
   else await ctx.db.insert("outreachSettings", { sendingOn: false, ...patch, updatedAt: Date.now() });
+}
+
+/** Employer outreach's own sender, or back to the clinic one (`null`). */
+export async function saveEmployerSender(
+  ctx: MutationCtx,
+  sender: { fromName: string; signature: string; optOut: string } | null,
+  userId: Id<"users">
+) {
+  await patchSettings(
+    ctx,
+    sender
+      ? { employerFromName: sender.fromName, employerSignature: sender.signature, employerOptOut: sender.optOut, updatedBy: userId }
+      : { employerFromName: undefined, employerSignature: undefined, employerOptOut: undefined, updatedBy: userId }
+  );
 }
 
 function windowOpen(now: number) {
@@ -178,7 +207,7 @@ export const loadForSend = internalQuery({
     if (!seq || !lead) return { ok: false as const, reason: "missing" };
     const step = seq.steps[e.nextStep];
     if (!step) return { ok: false as const, reason: "no step" };
-    const s = withDefaults(await settingsRow(ctx));
+    const s = signedAs(await settingsRow(ctx), seq.audience);
     // Employers: {company}, and {first_name} when the email is to a named person ("there" if not)
     const person = e.contactId ? await ctx.db.get(e.contactId) : null;
     const values = { clinicName: lead.name, city: lead.city, company: lead.name, firstName: firstNameOf(person?.name) };
@@ -388,18 +417,24 @@ export const recordInboxError = internalMutation({
 
 /**
  * The shared sender as Employer outreach shows it: on or off (switched on the Clinic outreach
- * page) and today's emails against the one daily cap both lists share.
+ * page), today's emails against the one daily cap both lists share, and the name and signature
+ * companies see (their own, or the clinic one until Employer outreach saves its own).
  */
 export async function senderSummary(ctx: QueryCtx) {
   const now = Date.now();
   const row = await settingsRow(ctx);
   const s = withDefaults(row);
+  const employer = signedAs(row, "employer");
   const clock = lagosClock(now);
   return {
     configured: Boolean(process.env.OUTREACH_SMTP_USER && process.env.OUTREACH_SMTP_PASS),
     address: process.env.OUTREACH_SMTP_USER ?? null,
     sendingOn: s.sendingOn,
-    fromName: s.fromName,
+    fromName: employer.fromName,
+    signature: employer.signature,
+    optOut: employer.optOut,
+    /** false: companies get the Clinic outreach name and signature */
+    ownSender: employer.own,
     sentToday: await sentOn(ctx, clock.day),
     quota: dailyQuota(s, clock.day),
     windowOpen: windowOpen(now),
@@ -777,7 +812,7 @@ export const testPayload = internalQuery({
     const seq = await ctx.db.get(args.sequenceId);
     if (!seq) throw new ConvexError("That sequence isn't there any more.");
     const lead = args.leadId ? await ctx.db.get(args.leadId) : null;
-    const s = withDefaults(await settingsRow(ctx));
+    const s = signedAs(await settingsRow(ctx), seq.audience);
     // Employer sequences greet a sample person; clinic ones never use {first_name} or {company}
     const sample = seq.audience === "employer" ? "Your Company" : "Your Clinic Name";
     const values = { clinicName: lead?.name ?? sample, city: lead?.city ?? "Lagos", company: lead?.name ?? sample, firstName: "Ada" };
