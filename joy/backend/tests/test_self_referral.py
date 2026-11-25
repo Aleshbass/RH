@@ -69,6 +69,41 @@ def test_profile_in_one_message(text, expected):
     assert sr.parse_profile(text, ["name", "age", "place"]) == expected
 
 
+@pytest.mark.parametrize("text, expected", [
+    ("I agree", True),
+    ("Ok I agree", True),
+    ("Yes I agree to both", True),
+    ("I have agreed", True),
+    ("okay", True),
+    ("Yes please", True),
+    ("1 and 2", True),
+    ("No wahala", True),
+    ("Mo gba", True),
+    ("I don't agree", False),
+    ("I do not consent", False),
+    ("No", False),
+    ("Disagree", False),
+    ("what is this for?", None),
+    ("hello", None),
+])
+def test_consent_in_any_wording(text, expected):
+    # Only an exact "I agree" used to count, so other wordings were asked again forever (Nov 2026)
+    assert sr.parse_consent(text) is expected
+
+
+@pytest.mark.parametrize("text, expected", [
+    ("Funke Adeyemi", {"name": "Funke"}),
+    ("Mrs Funke Adeyemi", {"name": "Funke"}),
+    ("my name is Funke", {"name": "Funke"}),
+    ("funke", {"name": "Funke"}),
+    ("My lower back has been hurting", {}),
+    ("34", {}),
+    ("Yaba Lagos", {}),
+])
+def test_a_full_name_answers_the_name_question(text, expected):
+    assert sr._just_the_name(text) == expected
+
+
 def test_only_unanswered_questions_are_asked():
     assert [q["key"] for q in sr.condition_questions(BACK)] == ["onset", "pain", "radiation", "impact", "seen"]
     told = BACK.model_copy(update={"onset": "3 weeks ago", "severity": 6, "seen_clinician": False})
@@ -338,6 +373,28 @@ def test_a_story_sent_first_is_kept_for_after_the_intake(db_session, new_patient
     _turn(db_session, new_patient, STORY, "female")
     screen = _turn(db_session, new_patient, STORY, "no preference")
     assert screen.reply_text.startswith("Thanks, Ada. I need to ask a few safety questions.")
+
+
+def test_agreeing_in_their_own_words_and_a_full_name_move_on(db_session, new_patient, rh):
+    # A patient reported Joy kept asking the same questions (24 Nov 2026): "Ok I agree" and a
+    # full name were both asked again
+    _turn(db_session, new_patient, STORY, "Hi")
+    _turn(db_session, new_patient, STORY, "English")
+    name = _turn(db_session, new_patient, STORY, "Ok I agree")
+    assert name.reply_text == "What's your first name?"
+    age = _turn(db_session, new_patient, STORY, "Funke Adeyemi")
+    assert age.reply_text.startswith("How old are you?")
+    assert db_session.get(Patient, new_patient.person_id).name == "Funke"
+
+
+def test_an_unclear_consent_answer_is_not_asked_the_same_way_forever(db_session, new_patient, rh):
+    _turn(db_session, new_patient, STORY, "Hi")
+    _turn(db_session, new_patient, STORY, "English")
+    first = _turn(db_session, new_patient, STORY, "hmm")
+    assert first.reply_text.startswith("Please tap *I agree* to continue")
+    second = _turn(db_session, new_patient, STORY, "what")
+    assert "CALL ME" in second.reply_text
+    assert _turn(db_session, new_patient, STORY, "yes").reply_text == "What's your first name?"
 
 
 def test_off_by_default(db_session, new_patient, monkeypatch):

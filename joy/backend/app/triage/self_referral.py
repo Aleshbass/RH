@@ -194,6 +194,29 @@ CONSENT_DECLINED = (
 _AGREE = {"i agree", "agree", "yes", "yes i agree", "i agree to both", "both", "1 2", "1 and 2", "1, 2", "ok", "okay",
           "i consent", "consent", "accept", "i accept", "yes please", "sure", "agreed", "y"}
 _DISAGREE = {"no", "i don't agree", "i do not agree", "dont agree", "don't agree", "disagree", "no thanks", "i disagree"}
+_REFUSE_RE = re.compile(r"\b(?:don'?t|do not|dont|not|never|won'?t)\s+(?:agree|accept|consent)\b|\bdisagree|\brefuse|^(?:no|nope|nah)\b")
+_ACCEPT_RE = re.compile(r"\b(?:agree[ds]?|accept(?:ed)?|consent(?:ed)?)\b")
+_ACCEPT_STARTS = ("yes", "yeah", "yep", "ok", "okay", "sure", "alright", "fine", "i do", "go ahead", "continue", "proceed",
+                  "both", "1 2", "1 and 2", "1&2", "1 & 2")
+# "No wahala" (Pidgin: no problem), and "I agree" in Yorùbá, Hausa and Igbo
+_ACCEPT_PHRASES = ("no wahala", "e no wahala", "i gree", "a gree", "mo gba", "mo gbà", "mo fara mo", "na yarda", "naa yarda",
+                   "na amince", "ekwere m", "ekwenyere m", "a kwere m")
+
+
+def parse_consent(text: str) -> bool | None:
+    """True for "I agree" in any wording ("Ok I agree", "Yes I agree to both", "I have agreed"), False
+    for a no, None when it isn't an answer. Only an exact "I agree" used to count, and every other
+    wording asked again with no way out (a patient reported Joy kept asking, 24 Nov 2026)."""
+    plain = _norm(text)
+    if not plain:
+        return None
+    if any(phrase in plain for phrase in _ACCEPT_PHRASES):
+        return True
+    if plain in _DISAGREE or _REFUSE_RE.search(plain):
+        return False
+    if plain in _AGREE or _ACCEPT_RE.search(plain) or plain.startswith(_ACCEPT_STARTS):
+        return True
+    return None
 
 PROFILE_TEXT = (
     "Thank you. Let's get started.\n\n"
@@ -341,6 +364,27 @@ def parse_profile(text: str, missing: list[str]) -> dict[str, Any]:
         if city or area:
             found.update({"city": city, "area": area})
     return found
+
+
+_TITLES = {"mr", "mrs", "miss", "ms", "dr", "doctor", "chief", "pastor", "prof", "engr", "alhaji", "alhaja", "madam", "aunty", "uncle"}
+
+
+def _just_the_name(text: str) -> dict[str, Any]:
+    """The first name, when Joy asked for the name and the reply is only a name: "Funke Adeyemi",
+    "Mrs Funke Adeyemi". Several words used to count as no name at all, so Joy asked again and
+    again. A sentence (a story), a number or a place is not a name."""
+    raw = " ".join((text or "").split()).strip(" .")
+    if not raw or re.search(r"\d", raw):
+        return {}
+    match = _NAME_RE.search(raw)
+    if match and _tidy_name(match.group(1)):
+        return {"name": _tidy_name(match.group(1))}
+    words = [w.strip(" .,") for w in raw.split() if w.strip(" .,")]
+    words = [w for w in words if w.casefold().rstrip(".") not in _TITLES]
+    if not 1 <= len(words) <= 3 or place_from_text(raw)[0] is not None:
+        return {}
+    name = _tidy_name(words[0])
+    return {"name": name} if name else {}
 
 
 _SEXES = ("female", "male", "other", "prefer_not_to_say")
@@ -752,7 +796,8 @@ def front_turn(
         return step_result
 
     if step == CONSENT:
-        if text in _AGREE or text.startswith("i agree"):
+        answer = parse_consent(user_text)
+        if answer is True:
             patient.care_consent_at = datetime.now(timezone.utc)
             sr["consented_at"] = patient.care_consent_at.isoformat()
             append(session, kind=AuditKind.POLICY, actor_phone=patient.phone_e164, person_id=patient.id,
@@ -760,16 +805,24 @@ def front_turn(
             session.flush()
             _record_consent(session, patient, conversation)
             return _next_front(session, patient, conversation, context, sr)
-        if text in _DISAGREE:
+        if answer is False:
             _save(conversation, context, sr, CONSENT)
             append(session, kind=AuditKind.POLICY, actor_phone=patient.phone_e164, person_id=patient.id,
                    payload={"event": "care_consent_declined", "conversation_id": str(conversation.id)})
             return Step("reply", CONSENT_DECLINED, _buttons(("I agree", "I agree")))
+        attempts = int(sr.get("consent_attempts") or 0) + 1
+        sr["consent_attempts"] = attempts
         if _looks_like_story(user_text):
             _keep_story(sr, user_text)
             _save(conversation, context, sr, CONSENT)
-            return Step("reply", "Thanks, I've noted that. " + CONSENT_TEXT, _buttons(("I agree", "I agree"), ("I don't agree", "I don't agree")))
+            return Step("reply", "Thanks, I've noted that. Before I can help, please tap *I agree* below.",
+                        _buttons(("I agree", "I agree"), ("I don't agree", "I don't agree")))
         _save(conversation, context, sr, CONSENT)
+        if attempts >= 2:
+            # Never the same message over and over: a short ask, and a person if they're stuck
+            return Step("reply", "Just reply *I agree* (or tap the button) and we'll carry on. "
+                                 "If something isn't clear, reply *CALL ME* and our care team will help.",
+                        _buttons(("I agree", "I agree"), ("I don't agree", "I don't agree")))
         return Step("reply", "Please tap *I agree* to continue, or *I don't agree*.\n\n" + CONSENT_TEXT,
                     _buttons(("I agree", "I agree"), ("I don't agree", "I don't agree")))
 
@@ -866,6 +919,8 @@ def front_turn(
             # The person they care for: "Tobi, 8, Yaba" fills what's still missing
             core = [item[2:] for item in ("s_name", "s_age", "s_place") if item in missing]
             found = parse_profile(user_text, core)
+            if field == "s_name" and "name" not in found:
+                found.update(_just_the_name(user_text))
             subject = _subject(sr)
             if found.get("name") and "s_name" in missing:
                 subject["name"] = found["name"]
@@ -879,6 +934,9 @@ def front_turn(
             # Their answer, and anything else they typed with it ("Ada, 34, Yaba")
             core = [item for item in ("name", "age", "place") if item in missing]
             found = parse_profile(user_text, core)
+            if field == "name" and "name" not in found:
+                # Asked for their name, they gave it: a full name ("Funke Adeyemi") or "Mrs Funke"
+                found.update(_just_the_name(user_text))
             if found.get("name") and "name" in missing:
                 patient.name = found["name"]
             if found.get("age") and "age" in missing:
